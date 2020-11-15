@@ -1,42 +1,48 @@
+import time
 import acalla
 import requests
+import threading
 
-from typing import Optional, List
+from typing import Optional, List, Callable
 
 from .enforcer import enforcer_factory
-from .constants import POLICY_SERVICE_URL
+from .constants import POLICY_SERVICE_URL, UPDATE_INTERVAL_IN_SEC
+
 
 class UnboundAction:
     def dict(self):
         pass
+
 
 class ResourceStub:
     @classmethod
     def from_response(cls, json):
         return ResourceStub()
 
+
 class AuthorizationClient:
     def __init__(self):
         self._initialized = False
 
-    def initialize(
-        self,
-        token,
-        app_name,
-        service_name,
-        **kwargs
-    ):
+    def initialize(self, token, app_name, service_name, **kwargs):
         self._token = token
-        self._client_context = {
-            "app_name": app_name,
-            "service_name": service_name
-        }
+        self._client_context = {"app_name": app_name, "service_name": service_name}
         self._client_context.update(kwargs)
         self._initialized = True
         self._requests = requests.session()
-        self._requests.headers.update({"Authorization": "Bearer {}".format(self._token)})
+        self._requests.headers.update(
+            {"Authorization": "Bearer {}".format(self._token)}
+        )
 
-    def resource(self, *, name: str, type: str, path: str, description: str = None, actions: Optional[List[UnboundAction]]) -> ResourceStub:
+    def resource(
+        self,
+        *,
+        name: str,
+        type: str,
+        path: str,
+        description: str = None,
+        actions: Optional[List[UnboundAction]],
+    ) -> ResourceStub:
         """
         declare a resource type.
 
@@ -59,13 +65,16 @@ class AuthorizationClient:
         )
         """
         self._throw_if_not_initialized()
-        response = self._requests.put(f"{POLICY_SERVICE_URL}/resource", data = {
-            "name": name,
-            "type": type,
-            "path": path,
-            "description": description,
-            "actions": [a.dict() for a in actions]
-        })
+        response = self._requests.put(
+            f"{POLICY_SERVICE_URL}/resource",
+            data={
+                "name": name,
+                "type": type,
+                "path": path,
+                "description": description,
+                "actions": [a.dict() for a in actions],
+            },
+        )
         return ResourceStub.from_response(response.json())
 
     def action(self):
@@ -139,24 +148,60 @@ class AuthorizationClient:
         if not self._initialized:
             raise RuntimeError("You must call acalla.init() first!")
 
+
 authorization_client = AuthorizationClient()
 
-def init(
-    token,
-    app_name,
-    service_name,
-    **kwargs
-):
+
+class PolicyUpdater:
+    def __init__(self, update_interval=UPDATE_INTERVAL_IN_SEC):
+        self.set_interval(update_interval)
+        self._thread = threading.Thread(target=self._run, args=())
+        self._thread.daemon = True
+
+    def set_interval(self, update_interval):
+        self._interval = update_interval
+
+    def on_interval(self, callback: Callable):
+        self._callback = callback
+
+    def start(self):
+        if self._interval is not None:
+            self._thread.start()
+
+    def _run(self):
+        while True:
+            time.sleep(self._interval)
+            self._callback()
+
+
+policy_updater = PolicyUpdater()
+
+
+def update_policy():
+    policy = authorization_client.fetch_policy()
+    enforcer_factory.set_policy(policy)
+
+
+def update_policy_data():
+    policy_data = authorization_client.fetch_policy_data()
+    enforcer_factory.set_policy_data(policy_data)
+
+
+def init(token, app_name, service_name, **kwargs):
     """
     inits the acalla client
     """
     authorization_client.initialize(
-        token=token,
-        app_name=app_name,
-        service_name=service_name,
-        **kwargs
+        token=token, app_name=app_name, service_name=service_name, **kwargs
     )
-    policy = authorization_client.fetch_policy()
-    policy_data = authorization_client.fetch_policy_data()
-    enforcer_factory.set_policy(policy)
-    enforcer_factory.set_policy_data(policy_data)
+
+    if "update_interval" in kwargs:
+        policy_updater.set_interval(kwargs.get("update_interval"))
+
+    # initial fetch of policy
+    update_policy()
+    update_policy_data()
+
+    # fetch and update policy every {interval} seconds
+    policy_updater.on_interval(update_policy_data)
+    policy_updater.start()
