@@ -3,21 +3,39 @@ import acalla
 import requests
 import threading
 
-from typing import Optional, List, Callable
+from typing import Optional, List, Callable, Dict, Any
 
 from .enforcer import enforcer_factory
 from .constants import POLICY_SERVICE_URL, UPDATE_INTERVAL_IN_SEC
 
 
-class UnboundAction:
-    def dict(self):
-        pass
-
-
 class ResourceStub:
+    def __init__(self, remote_id: str):
+        self._remote_id = remote_id
+
     @classmethod
     def from_response(cls, json):
-        return ResourceStub()
+        return ResourceStub(json.get('id'))
+
+    def action(
+        self,
+        name: str,
+        title: Optional[str] = None,
+        description: Optional[str] = None,
+        path: Optional[str] = None,
+        **attributes
+    ):
+        if self._remote_id is None:
+            return
+
+        return acalla.action(
+            name=name,
+            title=title,
+            description=description,
+            path=path,
+            resource_id=self._remote_id
+            **attributes
+        )
 
 
 class AuthorizationClient:
@@ -41,7 +59,7 @@ class AuthorizationClient:
         type: str,
         path: str,
         description: str = None,
-        actions: Optional[List[UnboundAction]],
+        actions: Optional[List[Dict[str, Any]]],
     ) -> ResourceStub:
         """
         declare a resource type.
@@ -65,6 +83,7 @@ class AuthorizationClient:
         )
         """
         self._throw_if_not_initialized()
+        actions = actions or []
         response = self._requests.put(
             f"{POLICY_SERVICE_URL}/resource",
             data={
@@ -72,12 +91,20 @@ class AuthorizationClient:
                 "type": type,
                 "path": path,
                 "description": description,
-                "actions": [a.dict() for a in actions],
+                "actions": [a for a in actions if a],
             },
         )
         return ResourceStub.from_response(response.json())
 
-    def action(self):
+    def action(
+            self,
+            name: str,
+            title: Optional[str] = None,
+            description: Optional[str] = None,
+            path: Optional[str] = None,
+            resource_id: Optional[str] = None,
+            **attributes
+        ) -> Dict[str, Any]:
         """
         declare an action on a resource.
 
@@ -100,7 +127,21 @@ class AuthorizationClient:
         )
         """
         self._throw_if_not_initialized()
-        print("acalla.action()")
+        action_data = {
+            "name": name,
+            "title": title,
+            "description": description,
+            "path": path,
+            "attributes": attributes
+        }
+        if resource_id is not None:
+            self._requests.put(
+                f"{POLICY_SERVICE_URL}/resource/{resource_id}/action",
+                data=action_data
+            )
+            return {}
+        else:
+            return action_data
 
     def new_user(self):
         """
