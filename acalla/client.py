@@ -6,8 +6,7 @@ from typing import Optional, List, Callable, Dict, Any
 
 from .enforcer import enforcer_factory
 from .constants import POLICY_SERVICE_URL, UPDATE_INTERVAL_IN_SEC
-from .resource_registry import ResourceRegistry, ResourceDefinition, ActionDefinition
-
+from .resource_registry import resource_registry, ResourceDefinition, ActionDefinition
 
 class ResourceStub:
     def __init__(self, resource_name: str):
@@ -37,7 +36,7 @@ class ResourceStub:
 class AuthorizationClient:
     def __init__(self):
         self._initialized = False
-        self._registry = ResourceRegistry()
+        self._registry = resource_registry
 
     def initialize(self, token, app_name, service_name, **kwargs):
         self._token = token

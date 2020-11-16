@@ -6,6 +6,7 @@ from pprint import pprint
 from typing import Optional, Dict, Any
 
 from .constants import JWT_USER_CLAIMS, OPA_SERVICE_URL
+from .resource import Resource
 
 def set_if_not_none(d: dict, k: str, v):
     if v is not None:
@@ -88,11 +89,22 @@ class EnforcerFactory:
         TODO: create comprehesive input
         TODO: currently assuming resource is a dict
         """
+        print(f"acalla.is_allowed({user}, {action}, {resource})")
+        resource_dict = {}
+        if isinstance(resource, str):
+            resource_dict = Resource.from_path(resource).dict()
+        elif isinstance(resource, Resource):
+            resource_dict = resource.dict()
+        elif isinstance(resource, dict):
+            resource_dict = resource
+        else:
+            raise ValueError("Unsupported resource type: {}".format(type(resource)))
+
         opa_input = {
             "input": {
                 "user": user,
                 "action": action,
-                "resource": resource
+                "resource": resource_dict
             }
         }
         response = requests.post(f"{OPA_SERVICE_URL}/data/rbac/allow", data=json.dumps(opa_input))

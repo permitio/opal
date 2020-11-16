@@ -1,4 +1,26 @@
-from typing import Optional, List, Callable, Dict, Any, Union
+import re
+
+from typing import Optional, List, Callable, Dict, Any, Union, Tuple
+
+FASTAPI_PATH_VARIABLE = re.compile(r"\{(\w+)\}")
+PLACEHOLDER = r"(\w+)"
+
+
+def extract_pattern_and_context(path: str):
+    # we want to match two options: both ending and non ending with /
+    if path.endswith("/"):
+        path = path[:-1]
+    parts = path.split("/")
+    context_vars = []
+    for i, part in enumerate(parts):
+        match = FASTAPI_PATH_VARIABLE.match(part)
+        if match:
+            context_vars.append(match.group(1))
+            parts[i] = PLACEHOLDER
+        else:
+            parts[i] = re.escape(parts[i])
+    path_pattern = "^" + "/".join(parts) + r"[/]?$"
+    return path_pattern, context_vars
 
 
 class ActionDefinition:
@@ -9,7 +31,7 @@ class ActionDefinition:
         description: Optional[str] = None,
         path: Optional[str] = None,
         resource_id: Optional[str] = None,
-        attributes: Dict[str, Any] = {}
+        attributes: Dict[str, Any] = {},
     ):
         self.name = name
         self.title = title
@@ -57,7 +79,7 @@ class ResourceDefinition:
         path: str,
         description: str = None,
         actions: List[ActionDefinition] = [],
-        attributes: Dict[str, Any] = {}
+        attributes: Dict[str, Any] = {},
     ):
         self.name = name
         self.type = type
@@ -86,9 +108,7 @@ class ResourceDefinition:
 
     def __repr__(self):
         return "ResourceDefinition(name='{}', path='{}', actions={})".format(
-            self.name,
-            self.path,
-            repr(self.actions)
+            self.name, self.path, repr(self.actions)
         )
 
 
@@ -96,6 +116,8 @@ class ResourceRegistry:
     def __init__(self):
         self._resources = {}
         self._already_synced = set()
+        self._processed_paths = set()
+        self._path_regexes = []
 
     @property
     def resources(self):
@@ -107,6 +129,8 @@ class ResourceRegistry:
 
         for action in resource.actions:
             action.set_resource_name(resource.name)
+
+        self._process_path(resource.path, resource.name)
 
     def add_action_to_resource(
         self, resource_name: str, action: ActionDefinition
@@ -121,6 +145,8 @@ class ResourceRegistry:
         existing_actions = [action.name for action in resource.actions]
         if not action.name in existing_actions:
             resource.actions.append(action)
+
+        self._process_path(action.path, resource.name)
         return action
 
     def is_synced(self, obj: Union[ResourceDefinition, ActionDefinition]) -> bool:
@@ -147,3 +173,31 @@ class ResourceRegistry:
     @classmethod
     def action_key(cls, action: ActionDefinition) -> str:
         return "{}:{}".format(action.resource_name, action.name)
+
+    def _process_path(self, path: str, resource_name: str):
+        if path in self._processed_paths:
+            return
+
+        path_pattern, context_vars = extract_pattern_and_context(path)
+        self._path_regexes.append(
+            dict(pattern=path_pattern, context=context_vars, resource_name=resource_name)
+        )
+        self._processed_paths.add(path)
+
+    def get_resource_by_path(self, path: str) -> Tuple[Optional[str], Optional[ResourceDefinition]]:
+        for potential in self._path_regexes:
+            pattern = potential["pattern"]
+            resource_name = potential["resource_name"]
+            context_vars = potential["context"]
+            m = re.match(pattern, path)
+            if m:
+                resource_def = self._resources.get(resource_name, None)
+                match_groups = m.groups()
+                if len(context_vars) == len(match_groups):
+                    context = dict(zip(context_vars, match_groups))
+                else:
+                    context = {}
+                return resource_name, resource_def, context
+        return None, None, None
+
+resource_registry = ResourceRegistry()
