@@ -1,21 +1,17 @@
-import time
 import acalla
 import requests
-import threading
+import json
 
 from typing import Optional, List, Callable, Dict, Any
 
 from .enforcer import enforcer_factory
 from .constants import POLICY_SERVICE_URL, UPDATE_INTERVAL_IN_SEC
+from .resource_registry import ResourceRegistry, ResourceDefinition, ActionDefinition
 
 
 class ResourceStub:
-    def __init__(self, remote_id: str):
-        self._remote_id = remote_id
-
-    @classmethod
-    def from_response(cls, json):
-        return ResourceStub(json.get('id'))
+    def __init__(self, resource_name: str):
+        self._resource_name = resource_name
 
     def action(
         self,
@@ -23,24 +19,25 @@ class ResourceStub:
         title: Optional[str] = None,
         description: Optional[str] = None,
         path: Optional[str] = None,
-        **attributes
+        attributes: Optional[Dict[str, Any]] = None,
+        **kwargs
     ):
-        if self._remote_id is None:
-            return
-
-        return acalla.action(
+        attributes = attributes or {}
+        attributes.update(kwargs)
+        action = ActionDefinition(
             name=name,
             title=title,
             description=description,
             path=path,
-            resource_id=self._remote_id
-            **attributes
+            attributes=attributes
         )
+        authorization_client.add_action_to_resource(self._resource_name, action)
 
 
 class AuthorizationClient:
     def __init__(self):
         self._initialized = False
+        self._registry = ResourceRegistry()
 
     def initialize(self, token, app_name, service_name, **kwargs):
         self._token = token
@@ -51,97 +48,46 @@ class AuthorizationClient:
         self._requests.headers.update(
             {"Authorization": "Bearer {}".format(self._token)}
         )
+        self._sync_resources()
 
-    def resource(
-        self,
-        *,
-        name: str,
-        type: str,
-        path: str,
-        description: str = None,
-        actions: Optional[List[Dict[str, Any]]],
-    ) -> ResourceStub:
-        """
-        declare a resource type.
+    def add_resource(self, resource: ResourceDefinition) -> ResourceStub:
+        self._registry.add_resource(resource)
+        self._maybe_sync_resource(resource)
+        return ResourceStub(resource.name)
 
-        usage:
+    def add_action_to_resource(self, resource_name: str, action: ActionDefinition):
+        action = self._registry.add_action_to_resource(resource_name, action)
+        if action is not None:
+            self._maybe_sync_action(action)
 
-        acalla.resource(
-            name="Todo",
-            description="todo item",
-            type=acalla.types.REST,
-            path="/lists/{list_id}/todos/{todo_id}",
-            actions=[
-                acalla.action(
-                    name="add",
-                    title="Add",
-                    path="/lists/{list_id}/todos/",
-                    verb="post", # acalla.types.http.POST
-                ),
-                ...
-            ]
-        )
-        """
-        self._throw_if_not_initialized()
-        actions = actions or []
-        response = self._requests.put(
-            f"{POLICY_SERVICE_URL}/resource",
-            data={
-                "name": name,
-                "type": type,
-                "path": path,
-                "description": description,
-                "actions": [a for a in actions if a],
-            },
-        )
-        return ResourceStub.from_response(response.json())
-
-    def action(
-            self,
-            name: str,
-            title: Optional[str] = None,
-            description: Optional[str] = None,
-            path: Optional[str] = None,
-            resource_id: Optional[str] = None,
-            **attributes
-        ) -> Dict[str, Any]:
-        """
-        declare an action on a resource.
-
-        usage:
-        todo = acalla.resource( ... )
-        todo.action(
-            name="add",
-            title="Add",
-            path="/lists/{list_id}/todos/",
-            verb="post", # acalla.types.http.POST
-        )
-
-        or inline inside acalla.resource(), like so:
-        acalla.resource(
-            ...,
-            actions = [
-                acalla.action(...),
-                acalla.action(...),
-            ]
-        )
-        """
-        self._throw_if_not_initialized()
-        action_data = {
-            "name": name,
-            "title": title,
-            "description": description,
-            "path": path,
-            "attributes": attributes
-        }
-        if resource_id is not None:
-            self._requests.put(
-                f"{POLICY_SERVICE_URL}/resource/{resource_id}/action",
-                data=action_data
+    def _maybe_sync_resource(self, resource: ResourceDefinition):
+        if self._initialized and not self._registry.is_synced(resource):
+            print("syncing resource: {}".format(resource))
+            response = self._requests.put(
+                f"{POLICY_SERVICE_URL}/resource",
+                data=json.dumps(resource.dict()),
             )
-            return {}
-        else:
-            return action_data
+            self._registry.mark_as_synced(
+                resource, remote_id=response.json().get('id'))
+
+    def _maybe_sync_action(self, action: ActionDefinition):
+        resource_id = action.resource_id
+        if resource_id is None:
+            return
+
+        if self._initialized and not self._registry.is_synced(action):
+            print("syncing action: {}".format(action))
+            response = self._requests.put(
+                f"{POLICY_SERVICE_URL}/resource/{resource_id}/action",
+                data=json.dumps(action.dict())
+            )
+            self._registry.mark_as_synced(
+                action, remote_id=response.json().get('id'))
+
+    def _sync_resources(self):
+        # will also sync actions
+        for resource in self._registry.resources:
+            self._maybe_sync_resource(resource)
 
     def new_user(self):
         """
@@ -191,58 +137,3 @@ class AuthorizationClient:
 
 
 authorization_client = AuthorizationClient()
-
-
-class PolicyUpdater:
-    def __init__(self, update_interval=UPDATE_INTERVAL_IN_SEC):
-        self.set_interval(update_interval)
-        self._thread = threading.Thread(target=self._run, args=())
-        self._thread.daemon = True
-
-    def set_interval(self, update_interval):
-        self._interval = update_interval
-
-    def on_interval(self, callback: Callable):
-        self._callback = callback
-
-    def start(self):
-        if self._interval is not None:
-            self._thread.start()
-
-    def _run(self):
-        while True:
-            time.sleep(self._interval)
-            self._callback()
-
-
-policy_updater = PolicyUpdater()
-
-
-def update_policy():
-    policy = authorization_client.fetch_policy()
-    enforcer_factory.set_policy(policy)
-
-
-def update_policy_data():
-    policy_data = authorization_client.fetch_policy_data()
-    enforcer_factory.set_policy_data(policy_data)
-
-
-def init(token, app_name, service_name, **kwargs):
-    """
-    inits the acalla client
-    """
-    authorization_client.initialize(
-        token=token, app_name=app_name, service_name=service_name, **kwargs
-    )
-
-    if "update_interval" in kwargs:
-        policy_updater.set_interval(kwargs.get("update_interval"))
-
-    # initial fetch of policy
-    update_policy()
-    update_policy_data()
-
-    # fetch and update policy every {interval} seconds
-    policy_updater.on_interval(update_policy_data)
-    policy_updater.start()

@@ -77,7 +77,11 @@ class EnforcerFactory:
 
         acalla.is_allowed(user, 'get', '/tasks/23')
         acalla.is_allowed(user, 'get', '/tasks')
-        acalla.is_allowed(user, 'post', '/lists/3/todos/37')
+
+
+        acalla.is_allowed(user, 'post', '/lists/3/todos/37', context={org_id=2})
+
+
         acalla.is_allowed(user, 'view', task)
         acalla.is_allowed('view', task)
 
