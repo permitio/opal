@@ -49,6 +49,22 @@ class AuthorizationClient:
         )
         self._sync_resources()
 
+    def fetch_policy(self):
+        """
+        get rego
+        """
+        self._throw_if_not_initialized()
+        response = self._requests.get(f"{POLICY_SERVICE_URL}/policy")
+        return response.text
+
+    def fetch_policy_data(self):
+        """
+        get opa data.json
+        """
+        self._throw_if_not_initialized()
+        response = self._requests.get(f"{POLICY_SERVICE_URL}/policy-config")
+        return response.json()
+
     def add_resource(self, resource: ResourceDefinition) -> ResourceStub:
         self._registry.add_resource(resource)
         self._maybe_sync_resource(resource)
@@ -88,46 +104,71 @@ class AuthorizationClient:
         for resource in self._registry.resources:
             self._maybe_sync_resource(resource)
 
-    def new_user(self):
-        """
-        sync the user to authz service
-
-        usage:
-        acalla.new_user(id=user_id, data=user_data)
-        """
+    def sync_user(
+        self,
+        user_id: str,
+        user_data: Dict[str, Any]
+    ) -> Dict[str, Any]:
         self._throw_if_not_initialized()
-        print("acalla.new_user()")
+        data = {
+            "id": user_id,
+            "data": user_data
+        }
+        response = self._requests.put(
+            f"{POLICY_SERVICE_URL}/user",
+            data=json.dumps(data),
+        )
+        return response.json()
 
-    def new_resource(self):
-        """
-        call this on resource creation, syncs the resource to authz service.
-
-        usage:
-        acalla.new_resource(id=<resource id>, name=<resource name>)
-        acalla.new_resource(id=<resource id>, path=<resource path>)
-        """
+    def create_org(
+        self,
+        org_id: str,
+        org_name: str,
+        org_metadata: Dict[str, Any]={}
+    ):
         self._throw_if_not_initialized()
-        print("acalla.new_resource()")
+        data = {
+            "external_id": org_id,
+            "name": org_name,
+        }
+        response = self._requests.post(
+            f"{POLICY_SERVICE_URL}/organization",
+            data=json.dumps(data),
+        )
+        return response.json()
 
-    def remove_resource(self):
-        """
-        call this on resource destruction
-        """
+    def add_user_to_org(
+        self,
+        user_id: str,
+        org_id: str
+    ):
         self._throw_if_not_initialized()
-        print("acalla.new_resource()")
+        data = {
+            "user_id": user_id,
+            "org_id": org_id,
+        }
+        response = self._requests.post(
+            f"{POLICY_SERVICE_URL}/add_user_to_org",
+            data=json.dumps(data),
+        )
+        return response.json()
 
-    def fetch_policy(self):
-        """
-        get rego
-        """
-        response = self._requests.get(f"{POLICY_SERVICE_URL}/policy")
-        return response.text
-
-    def fetch_policy_data(self):
-        """
-        get opa data.json
-        """
-        response = self._requests.get(f"{POLICY_SERVICE_URL}/policy-config")
+    def assign_role(
+        self,
+        role: str,
+        user_id: str,
+        org_id: str
+    ):
+        self._throw_if_not_initialized()
+        data = {
+            "role": role,
+            "user_id": user_id,
+            "org_id": org_id,
+        }
+        response = self._requests.post(
+            f"{POLICY_SERVICE_URL}/assign_role",
+            data=json.dumps(data),
+        )
         return response.json()
 
     def _throw_if_not_initialized(self):

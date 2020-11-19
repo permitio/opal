@@ -107,8 +107,10 @@ def action(
         attributes=attributes
     )
 
-new_user = authorization_client.new_user
-new_resource = authorization_client.new_resource
+sync_user = authorization_client.sync_user
+create_org = authorization_client.create_org
+add_user_to_org = authorization_client.add_user_to_org
+assign_role = authorization_client.assign_role
 
 set_user = enforcer_factory.set_user
 set_org = enforcer_factory.set_org
