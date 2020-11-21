@@ -126,11 +126,11 @@ class ResourceRegistry:
     def add_resource(self, resource: ResourceDefinition):
         if not resource.name in self._resources:
             self._resources[resource.name] = resource
+            self._process_path(resource.path, resource.name)
 
         for action in resource.actions:
             action.set_resource_name(resource.name)
-
-        self._process_path(resource.path, resource.name)
+            self._process_path(action.path, resource.name)
 
     def add_action_to_resource(
         self, resource_name: str, action: ActionDefinition
