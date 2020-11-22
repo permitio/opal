@@ -116,3 +116,4 @@ set_user = enforcer_factory.set_user
 set_org = enforcer_factory.set_org
 set_context = enforcer_factory.set_context
 is_allowed = enforcer_factory.is_allowed
+transform_resource_context = enforcer_factory.add_transform

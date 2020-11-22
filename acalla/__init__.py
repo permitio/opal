@@ -13,6 +13,7 @@ from .api import (
     resource_id,
     resource_type,
     org_id,
+    transform_resource_context,
 )
 
 __all__ = [
@@ -30,4 +31,5 @@ __all__ = [
     'resource_id',
     'resource_type',
     'org_id',
+    'transform_resource_context',
 ]
