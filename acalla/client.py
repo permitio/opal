@@ -120,7 +120,7 @@ class AuthorizationClient:
         )
         return response.json()
 
-    def create_org(
+    def sync_org(
         self,
         org_id: str,
         org_name: str,
@@ -137,6 +137,15 @@ class AuthorizationClient:
         )
         return response.json()
 
+    def delete_org(
+        self,
+        org_id: str
+    ):
+        self._throw_if_not_initialized()
+        self._requests.delete(
+            f"{POLICY_SERVICE_URL}/organization/{org_id}",
+        )
+
     def add_user_to_org(
         self,
         user_id: str,
@@ -150,6 +159,16 @@ class AuthorizationClient:
         response = self._requests.post(
             f"{POLICY_SERVICE_URL}/add_user_to_org",
             data=json.dumps(data),
+        )
+        return response.json()
+
+    def get_orgs_for_user(
+        self,
+        user_id: str
+    ):
+        self._throw_if_not_initialized()
+        response = self._requests.get(
+            f"{POLICY_SERVICE_URL}/get_orgs_for_user/{user_id}",
         )
         return response.json()
 

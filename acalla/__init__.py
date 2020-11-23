@@ -3,8 +3,10 @@ from .api import (
     resource,
     action,
     sync_user,
-    create_org,
+    sync_org,
+    delete_org,
     add_user_to_org,
+    get_orgs_for_user,
     assign_role,
     set_user,
     set_org,
@@ -14,6 +16,7 @@ from .api import (
     resource_type,
     org_id,
     transform_resource_context,
+    update_policy_data,
 )
 
 __all__ = [
@@ -21,8 +24,10 @@ __all__ = [
     'resource',
     'action',
     'sync_user',
-    'create_org',
+    'sync_org',
+    'delete_org',
     'add_user_to_org',
+    'get_orgs_for_user',
     'assign_role',
     'set_user',
     'set_org',
@@ -32,4 +37,5 @@ __all__ = [
     'resource_type',
     'org_id',
     'transform_resource_context',
+    'update_policy_data',
 ]

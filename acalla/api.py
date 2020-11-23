@@ -108,8 +108,10 @@ def action(
     )
 
 sync_user = authorization_client.sync_user
-create_org = authorization_client.create_org
+sync_org = authorization_client.sync_org
+delete_org = authorization_client.delete_org
 add_user_to_org = authorization_client.add_user_to_org
+get_orgs_for_user = authorization_client.get_orgs_for_user
 assign_role = authorization_client.assign_role
 
 set_user = enforcer_factory.set_user
@@ -117,3 +119,4 @@ set_org = enforcer_factory.set_org
 set_context = enforcer_factory.set_context
 is_allowed = enforcer_factory.is_allowed
 transform_resource_context = enforcer_factory.add_transform
+update_policy_data = update_policy_data
