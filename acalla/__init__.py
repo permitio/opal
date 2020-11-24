@@ -1,23 +1,34 @@
-from .client import init, authorization_client as _authorization_client
-from .enforcer import enforcer_factory as _enforcer_factory
-from .markers import resource_id, resource_type, org_id
-
-resource = _authorization_client.resource
-action = _authorization_client.action
-new_user = _authorization_client.new_user
-new_resource = _authorization_client.new_resource
-
-set_user = _enforcer_factory.set_user
-set_org = _enforcer_factory.set_org
-set_context = _enforcer_factory.set_context
-is_allowed = _enforcer_factory.is_allowed
+from .api import (
+    init,
+    resource,
+    action,
+    sync_user,
+    sync_org,
+    delete_org,
+    add_user_to_org,
+    get_orgs_for_user,
+    assign_role,
+    set_user,
+    set_org,
+    set_context,
+    is_allowed,
+    resource_id,
+    resource_type,
+    org_id,
+    transform_resource_context,
+    update_policy_data,
+)
 
 __all__ = [
     'init',
     'resource',
     'action',
-    'new_user',
-    'new_resource',
+    'sync_user',
+    'sync_org',
+    'delete_org',
+    'add_user_to_org',
+    'get_orgs_for_user',
+    'assign_role',
     'set_user',
     'set_org',
     'set_context',
@@ -25,4 +36,6 @@ __all__ = [
     'resource_id',
     'resource_type',
     'org_id',
+    'transform_resource_context',
+    'update_policy_data',
 ]

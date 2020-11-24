@@ -8,3 +8,5 @@ JWT_USER_CLAIMS = [
     "email",
     "email_verified",
 ]
+
+UPDATE_INTERVAL_IN_SEC = 5 # 5 seconds
