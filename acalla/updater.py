@@ -1,35 +1,70 @@
+import asyncio
 import threading
 import time
+import logging
 
-from typing import Callable
+from typing import Callable, Coroutine
 
-from .constants import UPDATE_INTERVAL_IN_SEC
+from libws.rpc_event_notifier.event_rpc_client import EventRpcClient
+from libws.event_notifier import Subscription, Topic
+
+from .constants import POLICY_UPDATES_WS_URL
 from .client import authorization_client
 from .enforcer import enforcer_factory
 
-class PolicyUpdater:
-    def __init__(self, update_interval=UPDATE_INTERVAL_IN_SEC):
-        self.set_interval(update_interval)
-        self._thread = threading.Thread(target=self._run, args=())
-        self._thread.daemon = True
 
-    def set_interval(self, update_interval):
-        self._interval = update_interval
+class PolicyUpdatesEventRpcClient(EventRpcClient):
+    """
+    adds a tenant-aware prefix to `EventRpcClient` topic names
+    """
 
-    def on_interval(self, callback: Callable):
-        self._callback = callback
-
-    def start(self):
-        if self._interval is not None:
-            self._thread.start()
-
-    def _run(self):
-        while True:
-            time.sleep(self._interval)
-            self._callback()
+    def subscribe(self, client_id: str, topic: Topic, callback: Coroutine):
+        topic = f"{client_id}::{topic}"
+        super().subscribe(topic, callback)
 
 
-policy_updater = PolicyUpdater()
+class AsyncioEventLoopThread(threading.Thread):
+    """
+    This class enable a syncronous program to run an
+    asyncio event loop in a separate thread.
+
+    usage:
+    thr = AsyncioEventLoopThread()
+
+    # not yet running
+    thr.create_task(coroutine1())
+    thr.create_task(coroutine2())
+
+    # will start the event loop and all scheduled tasks
+    thr.start()
+
+    # can be called from the main thread, but will run the coroutine
+    # on the event loop running inside `thr`. the main thread will
+    # block until a result is returned. calling run_coro is thread-safe.
+    thr.run_coro(coroutine3())
+    """
+
+    def __init__(self, *args, loop=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.daemon = True
+        self.loop = loop or asyncio.new_event_loop()
+        self.running = False
+
+    def create_task(self, coro):
+        return self.loop.create_task(coro)
+
+    def run(self):
+        self.running = True
+        logging.info("starting event loop")
+        self.loop.run_forever()
+
+    def run_coro(self, coro):
+        return asyncio.run_coroutine_threadsafe(coro, loop=self.loop).result()
+
+    def stop(self):
+        self.loop.call_soon_threadsafe(self.loop.stop)
+        self.join()
+        self.running = False
 
 
 def update_policy():
@@ -40,3 +75,48 @@ def update_policy():
 def update_policy_data():
     policy_data = authorization_client.fetch_policy_data()
     enforcer_factory.set_policy_data(policy_data)
+
+
+class PolicyUpdater:
+    def __init__(self):
+        self._thread = AsyncioEventLoopThread(name="PolicyUpdaterThread")
+        self._client = PolicyUpdatesEventRpcClient()
+        self._client_id = None
+
+    def set_client_id(self, client_id):
+        """
+        the client_id will identify the tenant.
+
+        i.e: we subscribe to `15074816ba6f4aadac7cf97517373149_policy` topic
+        where `15074816ba6f4aadac7cf97517373149` identifies the tenant and
+        `policy` identifies the actual topic.
+        """
+        self._client_id = client_id
+
+    async def _update_policy(self, data=None):
+        """
+        will run when we get notifications on the policy topic.
+        i.e: when rego changes
+        """
+        update_policy()
+
+    async def _update_policy_data(self, data=None):
+        """
+        will run when we get notifications on the policy_data topic.
+        i.e: when new roles are added, changes to permissions, etc.
+        """
+        update_policy_data()
+
+    def start(self):
+        self._client.subscribe(self._client_id, "policy", self._update_policy)
+        self._client.subscribe(self._client_id, "policy_data", self._update_policy_data)
+        self._thread.create_task(
+            self._client.run(f"{POLICY_UPDATES_WS_URL}/{self._client_id}")
+        )
+        self._thread.start()
+
+    def stop(self):
+        self._thread.stop()
+
+
+policy_updater = PolicyUpdater()

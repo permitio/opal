@@ -1,11 +1,9 @@
-import acalla
 import requests
 import json
 
-from typing import Optional, List, Callable, Dict, Any
+from typing import Optional, Dict, Any
 
-from .enforcer import enforcer_factory
-from .constants import POLICY_SERVICE_URL, UPDATE_INTERVAL_IN_SEC
+from .constants import POLICY_SERVICE_URL
 from .resource_registry import resource_registry, ResourceDefinition, ActionDefinition
 
 class ResourceStub:
