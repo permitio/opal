@@ -7,7 +7,7 @@ from .enforcer import enforcer_factory
 from .markers import resource_id, resource_type, org_id
 from .constants import POLICY_SERVICE_URL, OPA_SERVICE_URL
 
-def init(token, app_name, service_name, **kwargs):
+def init(token, app_name, service_name, client_id, **kwargs):
     """
     inits the acalla client
     """
@@ -20,7 +20,6 @@ def init(token, app_name, service_name, **kwargs):
     update_policy()
     update_policy_data()
 
-    client_id = kwargs.get("client_id", "hello")
     policy_updater.set_client_id(client_id)
     policy_updater.start()
 
