@@ -1,12 +1,12 @@
 import asyncio
 import threading
-import time
 import logging
 
-from typing import Callable, Coroutine
+from typing import Coroutine
 
 from libws.rpc_event_notifier.event_rpc_client import EventRpcClient
-from libws.event_notifier import Subscription, Topic
+from libws.event_notifier import Topic
+from libws.logger import logger
 
 from .constants import POLICY_UPDATES_WS_URL
 from .client import authorization_client
@@ -37,11 +37,6 @@ class AsyncioEventLoopThread(threading.Thread):
 
     # will start the event loop and all scheduled tasks
     thr.start()
-
-    # can be called from the main thread, but will run the coroutine
-    # on the event loop running inside `thr`. the main thread will
-    # block until a result is returned. calling run_coro is thread-safe.
-    thr.run_coro(coroutine3())
     """
 
     def __init__(self, *args, loop=None, **kwargs):
@@ -55,10 +50,15 @@ class AsyncioEventLoopThread(threading.Thread):
 
     def run(self):
         self.running = True
-        logging.info("starting event loop")
+        logger.info("starting event loop")
         self.loop.run_forever()
 
     def run_coro(self, coro):
+        """
+        can be called from the main thread, but will run the coroutine
+        on the event loop thread. the main thread will block until a
+        result is returned. calling run_coro() is thread-safe.
+        """
         return asyncio.run_coroutine_threadsafe(coro, loop=self.loop).result()
 
     def stop(self):
@@ -98,6 +98,8 @@ class PolicyUpdater:
         will run when we get notifications on the policy topic.
         i.e: when rego changes
         """
+        reason = "" if data is None else data.get("reason", "periodic update")
+        logger.info("Refetching policy (rego)", reason=reason)
         update_policy()
 
     async def _update_policy_data(self, data=None):
@@ -105,6 +107,8 @@ class PolicyUpdater:
         will run when we get notifications on the policy_data topic.
         i.e: when new roles are added, changes to permissions, etc.
         """
+        reason = "" if data is None else data.get("reason", "periodic update")
+        logger.info("Refetching policy data", reason=reason)
         update_policy_data()
 
     def start(self):
