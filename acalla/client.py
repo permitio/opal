@@ -5,6 +5,7 @@ from typing import Optional, Dict, Any
 
 from .constants import POLICY_SERVICE_URL
 from .resource_registry import resource_registry, ResourceDefinition, ActionDefinition
+from .logger import logger
 
 class ResourceStub:
     def __init__(self, resource_name: str):
@@ -75,7 +76,7 @@ class AuthorizationClient:
 
     def _maybe_sync_resource(self, resource: ResourceDefinition):
         if self._initialized and not self._registry.is_synced(resource):
-            print("syncing resource: {}".format(resource))
+            logger.info("syncing resource", resource=repr(resource))
             response = self._requests.put(
                 f"{POLICY_SERVICE_URL}/resource",
                 data=json.dumps(resource.dict()),
@@ -89,7 +90,7 @@ class AuthorizationClient:
             return
 
         if self._initialized and not self._registry.is_synced(action):
-            print("syncing action: {}".format(action))
+            logger.info("syncing action", action=repr(action))
             response = self._requests.put(
                 f"{POLICY_SERVICE_URL}/resource/{resource_id}/action",
                 data=json.dumps(action.dict())

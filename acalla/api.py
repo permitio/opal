@@ -6,12 +6,13 @@ from .updater import policy_updater, update_policy, update_policy_data
 from .enforcer import enforcer_factory
 from .markers import resource_id, resource_type, org_id
 from .constants import POLICY_SERVICE_URL, OPA_SERVICE_URL
+from .logger import logger
 
 def init(token, app_name, service_name, client_id, **kwargs):
     """
     inits the acalla client
     """
-    print(f"acalla.init(backend_url={POLICY_SERVICE_URL}, opa_url={OPA_SERVICE_URL})")
+    logger.info(f"acalla.init", backend_url=POLICY_SERVICE_URL, opa_url=OPA_SERVICE_URL)
     authorization_client.initialize(
         token=token, app_name=app_name, service_name=service_name, **kwargs
     )
