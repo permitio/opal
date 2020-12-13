@@ -4,9 +4,9 @@ import logging
 
 from typing import Coroutine
 
-from libws.rpc_event_notifier.event_rpc_client import EventRpcClient
-from libws.event_notifier import Topic
-from libws.logger import logger
+from fastapi_websocket_rpc.pubsub import EventRpcClient
+from fastapi_websocket_rpc.pubsub.event_notifier import Topic
+from .logger import logger
 
 from .constants import POLICY_UPDATES_WS_URL
 from .client import authorization_client
