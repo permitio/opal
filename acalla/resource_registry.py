@@ -198,6 +198,6 @@ class ResourceRegistry:
                 else:
                     context = {}
                 return resource_name, resource_def, context
-        return None, None, None
+        return None, None, {}
 
 resource_registry = ResourceRegistry()

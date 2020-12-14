@@ -5,24 +5,22 @@ from .resource_registry import ResourceDefinition, ActionDefinition
 from .updater import policy_updater, update_policy, update_policy_data
 from .enforcer import enforcer_factory
 from .markers import resource_id, resource_type, org_id
+from .constants import POLICY_SERVICE_URL, OPA_SERVICE_URL
+from .logger import logger
 
 def init(token, app_name, service_name, **kwargs):
     """
     inits the acalla client
     """
+    logger.info(f"acalla.init", backend_url=POLICY_SERVICE_URL, opa_url=OPA_SERVICE_URL)
     authorization_client.initialize(
         token=token, app_name=app_name, service_name=service_name, **kwargs
     )
-
-    if "update_interval" in kwargs:
-        policy_updater.set_interval(kwargs.get("update_interval"))
 
     # initial fetch of policy
     update_policy()
     update_policy_data()
 
-    # fetch and update policy every {interval} seconds
-    policy_updater.on_interval(update_policy_data)
     policy_updater.start()
 
 def resource(
