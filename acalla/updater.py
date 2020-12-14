@@ -2,10 +2,12 @@ import asyncio
 import threading
 import logging
 
-from typing import Coroutine
+from typing import Coroutine, List, Tuple
 
 from fastapi_websocket_rpc.pubsub import EventRpcClient
+from fastapi_websocket_rpc.pubsub.rpc_event_methods import RpcEventClientMethods
 from fastapi_websocket_rpc.pubsub.event_notifier import Topic
+from fastapi_websocket_rpc.websocket.rpc_methods import RpcMethodsBase
 from .logger import logger
 
 from .constants import POLICY_UPDATES_WS_URL
@@ -13,14 +15,33 @@ from .client import authorization_client
 from .enforcer import enforcer_factory
 
 
-class PolicyUpdatesEventRpcClient(EventRpcClient):
-    """
-    adds a tenant-aware prefix to `EventRpcClient` topic names
-    """
+TOPIC_SEPARATOR = "::"
 
-    def subscribe(self, client_id: str, topic: Topic, callback: Coroutine):
-        topic = f"{client_id}::{topic}"
-        super().subscribe(topic, callback)
+
+def get_authorization_header(token: str) -> Tuple[str, str]:
+    return ("Authorization", f"Bearer {token}")
+
+
+class AuthenticatedEventRpcClient(EventRpcClient):
+    """
+    adds HTTP Authorization header before connecting to the server's websocket.
+    """
+    def __init__(self, token: str, topics: List[Topic] = [], methods_class=None):
+        super().__init__(topics=topics, methods_class=methods_class, extra_headers=[get_authorization_header(token)])
+
+
+class TenantAwareRpcEventClientMethods(RpcEventClientMethods):
+    """
+    use this methods class when the server uses `TenantAwareRpcEventServerMethods`.
+    """
+    async def notify(self, subscription=None, data=None):
+        self.logger.info("Received notification of event", subscription=subscription, data=data)
+        topic = subscription["topic"]
+        if TOPIC_SEPARATOR in topic:
+            topic_parts = topic.split(TOPIC_SEPARATOR)
+            if len(topic_parts) > 1:
+                topic = topic_parts[1] # index 0 holds the app id
+        await self.client.act_on_topic(topic=topic, data=data)
 
 
 class AsyncioEventLoopThread(threading.Thread):
@@ -80,18 +101,6 @@ def update_policy_data():
 class PolicyUpdater:
     def __init__(self):
         self._thread = AsyncioEventLoopThread(name="PolicyUpdaterThread")
-        self._client = PolicyUpdatesEventRpcClient()
-        self._client_id = None
-
-    def set_client_id(self, client_id):
-        """
-        the client_id will identify the tenant.
-
-        i.e: we subscribe to `15074816ba6f4aadac7cf97517373149_policy` topic
-        where `15074816ba6f4aadac7cf97517373149` identifies the tenant and
-        `policy` identifies the actual topic.
-        """
-        self._client_id = client_id
 
     async def _update_policy(self, data=None):
         """
@@ -112,10 +121,13 @@ class PolicyUpdater:
         update_policy_data()
 
     def start(self):
-        self._client.subscribe(self._client_id, "policy", self._update_policy)
-        self._client.subscribe(self._client_id, "policy_data", self._update_policy_data)
+        self._client = AuthenticatedEventRpcClient(
+            authorization_client.token,
+            methods_class=TenantAwareRpcEventClientMethods)
+        self._client.subscribe("policy", self._update_policy)
+        self._client.subscribe("policy_data", self._update_policy_data)
         self._thread.create_task(
-            self._client.run(f"{POLICY_UPDATES_WS_URL}/{self._client_id}")
+            self._client.run(f"{POLICY_UPDATES_WS_URL}")
         )
         self._thread.start()
 
