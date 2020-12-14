@@ -48,6 +48,11 @@ class AuthorizationClient:
         )
         self._sync_resources()
 
+    @property
+    def token(self):
+        self._throw_if_not_initialized()
+        return self._token
+
     def fetch_policy(self):
         """
         get rego
