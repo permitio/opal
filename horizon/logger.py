@@ -125,4 +125,4 @@ if not structlog.is_configured():
         processors=processors_list,
     )
 
-logger = get_logger("SDK")
+logger = get_logger("Horizon")
