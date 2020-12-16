@@ -1,1 +1,12 @@
-requests==2.24.0
+aiohttp
+colorama
+fastapi==0.62.0
+gunicorn
+inflection
+ipython
+pydantic[email]
+python-json-logger
+starlette==0.13.6
+structlog
+uvicorn[standard]
+websockets
