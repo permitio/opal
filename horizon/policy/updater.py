@@ -29,6 +29,14 @@ async def update_policy_data(**kwargs):
     await opa.set_policy_data(policy_data)
 
 
+async def refetch_policy_and_update_opa(**kwargs):
+    """
+    will bring both rego and data from backend, and will inject into OPA.
+    """
+    await update_policy(**kwargs)
+    await update_policy_data(**kwargs)
+
+
 class PolicyUpdater:
     def __init__(self, token=CLIENT_TOKEN, server_url=POLICY_UPDATES_WS_URL):
         self._thread = AsyncioEventLoopThread(name="PolicyUpdaterThread")
