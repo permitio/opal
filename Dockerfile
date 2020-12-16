@@ -19,11 +19,17 @@ RUN pip install --user -r requirements.txt
 # ---------------------------------------------------
 FROM python:3.8-alpine
 # git is needed to fetch websockets lib
-RUN apk add --update --no-cache git
+RUN apk add --update --no-cache git bash
 # copy opa from official image
 COPY --from=opa /opa /
 # copy libraries from build stage
 COPY --from=BuildStage /root/.local /root/.local
+# copy wait-for-it (use only for development! e.g: docker compose)
+COPY scripts/wait-for-it.sh /usr/wait-for-it.sh
+RUN chmod +x /usr/wait-for-it.sh
+# copy startup script
+COPY ./scripts/start.sh /start.sh
+RUN chmod +x /start.sh
 # install websockets lib from github (this is our library and may update a lot)
 RUN pip install --user git+https://61c18c826840c46f67f7fdada5f0928104dbe91a@github.com/acallasec/websockets.git
 # copy app code
@@ -39,4 +45,4 @@ ENV CLIENT_TOKEN="MUST BE DEFINED"
 # expose sidecar port
 EXPOSE 7000
 # run gunicorn
-CMD gunicorn -b 0.0.0.0:7000 -k uvicorn.workers.UvicornWorker --workers=1 horizon.main:app
+CMD ["/start.sh"]
