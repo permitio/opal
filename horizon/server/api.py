@@ -49,7 +49,7 @@ async def sdk_proxy(path: str, request: Request):
                 return await proxy_response(backend_response)
 
         # these methods has data payload
-        data = request.body
+        data = await request.body()
 
         if request.method == HTTP_POST:
             async with session.post(path, headers=headers, data=data) as backend_response:
