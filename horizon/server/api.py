@@ -22,7 +22,7 @@ ALL_METHODS = [
 router = APIRouter()
 
 
-@router.route("/sdk/{path:path}", methods=ALL_METHODS)
+@router.api_route("/sdk/{path:path}", methods=ALL_METHODS)
 async def sdk_proxy(path: str, request: Request):
     """
     this one route proxies sdk route from the backend.
@@ -36,7 +36,7 @@ async def sdk_proxy(path: str, request: Request):
             detail="Must provide a bearer token!",
             headers={"WWW-Authenticate": "Bearer"}
         )
-    headers = {"Authorization", auth_header}
+    headers = {"Authorization": auth_header}
     path = f"{POLICY_SERVICE_URL}/{path}"
 
     async with aiohttp.ClientSession() as session:
