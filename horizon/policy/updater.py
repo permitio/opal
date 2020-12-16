@@ -2,20 +2,20 @@ import asyncio
 
 from typing import Coroutine, List, Tuple
 
-from horizon.logger import get_logger
+from horizon.logger import get_logger, logger
 from horizon.config import POLICY_UPDATES_WS_URL, CLIENT_TOKEN
 from horizon.policy.rpc import AuthenticatedEventRpcClient, TenantAwareRpcEventClientMethods
 from horizon.utils import AsyncioEventLoopThread
 from horizon.policy.fetcher import policy_fetcher
 from horizon.enforcer.client import opa
 
-logger = get_logger("Updater")
+updater_logger = get_logger("Updater")
 
 async def update_policy(**kwargs):
     """
     fetches policy (rego) from backend and updates OPA
     """
-    logger.info("Refetching policy (rego)", **kwargs)
+    updater_logger.info("Refetching policy (rego)", **kwargs)
     policy = await policy_fetcher.fetch_policy()
     await opa.set_policy(policy)
 
@@ -24,7 +24,7 @@ async def update_policy_data(**kwargs):
     """
     fetches policy data (policy configuration) from backend and updates OPA
     """
-    logger.info("Refetching policy data", **kwargs)
+    updater_logger.info("Refetching policy data", **kwargs)
     policy_data = await policy_fetcher.fetch_policy_data()
     await opa.set_policy_data(policy_data)
 
@@ -52,6 +52,7 @@ class PolicyUpdater:
         await update_policy_data(reason=reason)
 
     def start(self):
+        logger.info("Launching updater")
         self._client = AuthenticatedEventRpcClient(
             self._token,
             methods_class=TenantAwareRpcEventClientMethods)
@@ -63,6 +64,7 @@ class PolicyUpdater:
         self._thread.start()
 
     def stop(self):
+        logger.info("Stopping updater")
         self._thread.stop()
 
 

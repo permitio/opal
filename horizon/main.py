@@ -19,7 +19,10 @@ def healthcheck():
 
 @app.on_event("startup")
 async def startup_event():
-    logger.info("Launching updater thread")
     policy_updater.start()
-    logger.info("Launching opa subprocess")
     opa_runner.start()
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    opa_runner.stop()
+    policy_updater.stop()
