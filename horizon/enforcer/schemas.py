@@ -1,4 +1,4 @@
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 from pydantic import BaseModel
 
 
@@ -21,4 +21,4 @@ class AuthorizationQuery(BaseSchema):
     user: str # user_id or jwt
     action: str
     resource: Resource
-    context: Dict[str, Any]
+    context: Optional[Dict[str, Any]] = {}
