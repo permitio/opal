@@ -48,7 +48,6 @@ class AsyncioEventLoopThread(threading.Thread):
 
     def run(self):
         self.running = True
-        logger.info("starting event loop")
         self.loop.run_forever()
 
     def run_coro(self, coro):

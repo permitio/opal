@@ -2,26 +2,29 @@ import asyncio
 
 from typing import Coroutine, List, Tuple
 
-from horizon.logger import logger
+from horizon.logger import get_logger
 from horizon.config import POLICY_UPDATES_WS_URL, CLIENT_TOKEN
 from horizon.policy.rpc import AuthenticatedEventRpcClient, TenantAwareRpcEventClientMethods
 from horizon.utils import AsyncioEventLoopThread
 from horizon.policy.fetcher import policy_fetcher
 from horizon.enforcer.client import opa
 
+logger = get_logger("Updater")
 
-async def update_policy():
+async def update_policy(**kwargs):
     """
     fetches policy (rego) from backend and updates OPA
     """
+    logger.info("Refetching policy (rego)", **kwargs)
     policy = await policy_fetcher.fetch_policy()
     await opa.set_policy(policy)
 
 
-async def update_policy_data():
+async def update_policy_data(**kwargs):
     """
     fetches policy data (policy configuration) from backend and updates OPA
     """
+    logger.info("Refetching policy data", **kwargs)
     policy_data = await policy_fetcher.fetch_policy_data()
     await opa.set_policy_data(policy_data)
 
@@ -38,8 +41,7 @@ class PolicyUpdater:
         i.e: when rego changes
         """
         reason = "" if data is None else data.get("reason", "periodic update")
-        logger.info("Refetching policy (rego)", reason=reason)
-        await update_policy()
+        await update_policy(reason=reason)
 
     async def _update_policy_data(self, data=None):
         """
@@ -47,8 +49,7 @@ class PolicyUpdater:
         i.e: when new roles are added, changes to permissions, etc.
         """
         reason = "" if data is None else data.get("reason", "periodic update")
-        logger.info("Refetching policy data", reason=reason)
-        await update_policy_data()
+        await update_policy_data(reason=reason)
 
     def start(self):
         self._client = AuthenticatedEventRpcClient(

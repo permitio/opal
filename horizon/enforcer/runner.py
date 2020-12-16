@@ -1,11 +1,33 @@
 import json
 import asyncio
+import logging
 
 from horizon.config import OPA_PORT
 from horizon.logger import get_logger
 from horizon.utils import AsyncioEventLoopThread
 
-logger = get_logger("OPA")
+logger = get_logger("Opa Runner")
+opa_logger = get_logger("OPA")
+
+def logging_level_from_string(level: str) -> int:
+    """
+    logger.log() requires an int logging level
+    """
+    level = level.lower()
+    if level == "info":
+        return logging.INFO
+    elif level == "critical":
+        return logging.CRITICAL
+    elif level == "fatal":
+        return logging.FATAL
+    elif level == "error":
+        return logging.ERROR
+    elif level == "warning" or level == "warn":
+        return logging.WARNING
+    elif level == "debug":
+        return logging.DEBUG
+    # default
+    return logging.INFO
 
 class OpaRunner:
     """
@@ -37,7 +59,7 @@ class OpaRunner:
         This function runs opa server as a subprocess.
         it returns only when the process terminates.
         """
-        process = await asyncio.create_subprocess_exec(
+        process = await asyncio.create_subprocess_shell(
             self.command,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE
@@ -48,7 +70,7 @@ class OpaRunner:
         ])
         return await process.wait()
 
-    async def _log_output(stream):
+    async def _log_output(self, stream):
         while True:
             line = await stream.readline()
             if not line:
@@ -56,12 +78,12 @@ class OpaRunner:
             try:
                 log_line = json.loads(line)
                 msg = log_line.pop("msg", None)
-                level = log_line.pop("level", "info")
+                level = logging_level_from_string(log_line.pop("level", "info"))
                 if msg is not None:
-                    logger.log(level, msg, **log_line)
+                    opa_logger.log(level, msg, **log_line)
                 else:
-                    logger.info(log_line)
+                    opa_logger.log(level, line)
             except json.JSONDecodeError:
-                logger.info(line)
+                opa_logger.info(line)
 
 opa_runner = OpaRunner()
