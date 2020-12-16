@@ -34,7 +34,7 @@ RUN python setup.py develop
 ENV PATH=/:/root/.local/bin:$PATH
 # by default, the backend is at port 8000 on the docker host
 # in prod, you must pass the correct url
-ENV AUTHZ_SERVICE_URL="http://host.docker.internal:8000"
+ENV AUTHZ_SERVICE_URL=https://api.authorizon.com
 # expose sidecar port
 EXPOSE 7000
 # run gunicorn
