@@ -11,6 +11,7 @@ from horizon.enforcer.client import opa
 
 updater_logger = get_logger("Updater")
 
+
 async def update_policy(**kwargs):
     """
     fetches policy (rego) from backend and updates OPA
@@ -33,6 +34,7 @@ async def refetch_policy_and_update_opa(**kwargs):
     """
     will bring both rego and data from backend, and will inject into OPA.
     """
+    updater_logger.info("Reconnected")
     await update_policy(**kwargs)
     await update_policy_data(**kwargs)
 
@@ -66,6 +68,9 @@ class PolicyUpdater:
             methods_class=TenantAwareRpcEventClientMethods)
         self._client.subscribe("policy", self._update_policy)
         self._client.subscribe("policy_data", self._update_policy_data)
+        # on connection to backend, whether its the first connection
+        # or reconnecting after downtime, refetch the state opa needs.
+        self._client.on_connect(refetch_policy_and_update_opa)
         self._thread.create_task(
             self._client.run(f"{self._server_url}")
         )
