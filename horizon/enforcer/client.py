@@ -48,4 +48,12 @@ class OpaClient:
             ) as opa_response:
                 return await proxy_response(opa_response)
 
+    async def rehydrate_opa_from_process_cache(self):
+        if self._policy is not None:
+            await self.set_policy(self._policy)
+
+        if self._policy_data is not None:
+            await self.set_policy_data(self._policy_data)
+
+
 opa = OpaClient()
