@@ -19,7 +19,7 @@ RUN pip install --user -r requirements.txt
 # ---------------------------------------------------
 FROM python:3.8-alpine
 # git is needed to fetch websockets lib
-RUN apk add --update --no-cache git bash
+RUN apk add --update --no-cache git bash build-base
 # copy opa from official image
 COPY --from=opa /opa /
 # copy libraries from build stage
@@ -31,7 +31,7 @@ RUN chmod +x /usr/wait-for-it.sh
 COPY ./scripts/start.sh /start.sh
 RUN chmod +x /start.sh
 # install websockets lib from github (this is our library and may update a lot)
-RUN pip install --user git+https://61c18c826840c46f67f7fdada5f0928104dbe91a@github.com/acallasec/websockets.git
+RUN pip install --user git+https://cb7b77be16043e553fedf0c11e7e7a7df5878489@github.com/acallasec/websockets.git
 # copy app code
 COPY . ./
 # install sidecar package
