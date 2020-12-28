@@ -19,5 +19,12 @@ By default the image exposes port 7000 but you can change it.
 
 ## Building the docker image yourself
 ```
-docker build . -t authorizon/sidecar
+make build
 ```
+you must declare the environment variable `READ_ONLY_GITHUB_TOKEN` for this command to work.
+
+## Running the image in development mode
+```
+make run
+```
+you must declare the environment variable `DEV_MODE_CLIENT_TOKEN` for this command to work.
