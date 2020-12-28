@@ -18,6 +18,9 @@ RUN pip install --user -r requirements.txt
 # most of the time only this image should be built
 # ---------------------------------------------------
 FROM python:3.8-alpine
+# this will be overriden in github action
+# default value works for local runs (with private ssh key)
+ARG READ_ONLY_GITHUB_TOKEN="<you must pass a token>"
 # git is needed to fetch websockets lib
 RUN apk add --update --no-cache git bash build-base
 # copy opa from official image
@@ -31,7 +34,7 @@ RUN chmod +x /usr/wait-for-it.sh
 COPY ./scripts/start.sh /start.sh
 RUN chmod +x /start.sh
 # install websockets lib from github (this is our library and may update a lot)
-RUN pip install --user git+https://cb7b77be16043e553fedf0c11e7e7a7df5878489@github.com/acallasec/websockets.git
+RUN pip install --user git+https://${READ_ONLY_GITHUB_TOKEN}@github.com/acallasec/websockets.git
 # copy app code
 COPY . ./
 # install sidecar package
