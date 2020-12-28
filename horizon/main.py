@@ -24,6 +24,7 @@ def healthcheck():
 @app.on_event("startup")
 async def startup_event():
     opa_runner.start()
+    await asyncio.sleep(1) # wait for opa
     policy_updater.start()
 
 @app.on_event("shutdown")

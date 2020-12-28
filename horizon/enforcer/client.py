@@ -1,11 +1,30 @@
 import aiohttp
 import json
+import functools
 from typing import Dict, Any
 
+from tenacity import retry, stop_after_attempt, wait_fixed
+
 from horizon.config import OPA_SERVICE_URL
+from horizon.logger import get_logger
 from horizon.utils import proxy_response
 from horizon.enforcer.schemas import AuthorizationQuery
 
+logger = get_logger("Opa Client")
+
+# 2 retries with 2 seconds apart
+RETRY_CONFIG = dict(wait=wait_fixed(2), stop=stop_after_attempt(2))
+
+def fail_silently(fallback=None):
+    def decorator(func):
+        @functools.wraps(func)
+        async def wrapper(*args, **kwargs):
+            try:
+                return await func(*args, **kwargs)
+            except (aiohttp.errors.ClientConnectionError, aiohttp.errors.ClientError) as e:
+                return fallback
+        return wrapper
+    return decorator
 
 class OpaClient:
     """
@@ -18,35 +37,54 @@ class OpaClient:
         self._policy = None
         self._policy_data = None
 
+    # by default, if OPA is down, authorization is denied
+    @fail_silently(fallback=dict(result=False))
+    @retry(**RETRY_CONFIG)
     async def is_allowed(self, query: AuthorizationQuery):
         # opa data api format needs the input to sit under "input"
         opa_input = {
             "input": query.dict()
         }
-        async with aiohttp.ClientSession() as session:
-            async with session.post(
-                f"{self._opa_url}/data/rbac/allow",
-                data=json.dumps(opa_input)) as opa_response:
-                return await proxy_response(opa_response)
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.post(
+                    f"{self._opa_url}/data/rbac/allow",
+                    data=json.dumps(opa_input)) as opa_response:
+                    return await proxy_response(opa_response)
+        except (aiohttp.errors.ClientConnectionError, aiohttp.errors.ClientError) as e:
+            logger.warn("Opa connection error", err=e)
+            raise
 
+    @fail_silently()
+    @retry(**RETRY_CONFIG)
     async def set_policy(self, policy: str):
         self._policy = policy
         async with aiohttp.ClientSession() as session:
-            async with session.put(
-                f"{self._opa_url}/policies/{self.POLICY_NAME}",
-                data=policy,
-                headers={'content-type': 'text/plain'}
-            ) as opa_response:
-                return await proxy_response(opa_response)
+            try:
+                async with session.put(
+                    f"{self._opa_url}/policies/{self.POLICY_NAME}",
+                    data=policy,
+                    headers={'content-type': 'text/plain'}
+                ) as opa_response:
+                    return await proxy_response(opa_response)
+            except (aiohttp.errors.ClientConnectionError, aiohttp.errors.ClientError) as e:
+                logger.warn("Opa connection error", err=e)
+                raise
 
+    @fail_silently()
+    @retry(**RETRY_CONFIG)
     async def set_policy_data(self, policy_data: Dict[str, Any]):
         self._policy_data = policy_data
         async with aiohttp.ClientSession() as session:
-            async with session.put(
-                f"{self._opa_url}/data",
-                data=json.dumps(self._policy_data),
-            ) as opa_response:
-                return await proxy_response(opa_response)
+            try:
+                async with session.put(
+                    f"{self._opa_url}/data",
+                    data=json.dumps(self._policy_data),
+                ) as opa_response:
+                    return await proxy_response(opa_response)
+            except (aiohttp.errors.ClientConnectionError, aiohttp.errors.ClientError) as e:
+                logger.warn("Opa connection error", err=e)
+                raise
 
     async def rehydrate_opa_from_process_cache(self):
         if self._policy is not None:

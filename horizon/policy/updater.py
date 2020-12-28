@@ -34,7 +34,7 @@ async def refetch_policy_and_update_opa(**kwargs):
     """
     will bring both rego and data from backend, and will inject into OPA.
     """
-    updater_logger.info("Reconnected")
+    updater_logger.info("Updater Connected")
     await update_policy(**kwargs)
     await update_policy_data(**kwargs)
 
