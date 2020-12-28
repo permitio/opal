@@ -49,5 +49,7 @@ ENV AUTHZ_SERVICE_URL=https://api.authorizon.com
 ENV CLIENT_TOKEN="MUST BE DEFINED"
 # expose sidecar port
 EXPOSE 7000
+# expose opa directly
+EXPOSE 8181
 # run gunicorn
 CMD ["/start.sh"]
