@@ -21,14 +21,24 @@ ARG READ_ONLY_GITHUB_TOKEN="<you must pass a token>"
 # install websockets lib from github (this is our library and may update a lot)
 RUN pip install --user git+https://${READ_ONLY_GITHUB_TOKEN}@github.com/acallasec/websockets.git
 
+# clone OPA
+WORKDIR /opaclone
+RUN git clone https://github.com/open-policy-agent/opa.git
+
 # MAIN IMAGE ----------------------------------------
 # most of the time only this image should be built
 # ---------------------------------------------------
 FROM python:3.8-alpine
 # git is needed to fetch websockets lib
-RUN apk add --update --no-cache bash
-# copy opa from official image
+RUN apk add --update --no-cache \
+        # needed for ./start/sh script
+        bash \
+        # these 2 libs are needed for opa binary
+        libc6-compat \
+        libstdc++
+# copy opa from official image (main binary and lib for web assembly)
 COPY --from=opa /opa /
+COPY --from=BuildStage /opaclone/opa/vendor/github.com/wasmerio/go-ext-wasm/wasmer/libwasmer.so /usr/lib/opa/libwasmer.so
 # copy libraries from build stage
 COPY --from=BuildStage /root/.local /root/.local
 # copy wait-for-it (use only for development! e.g: docker compose)
