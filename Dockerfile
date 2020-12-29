@@ -29,13 +29,11 @@ RUN git clone https://github.com/open-policy-agent/opa.git
 # most of the time only this image should be built
 # ---------------------------------------------------
 FROM python:3.8-alpine
-# git is needed to fetch websockets lib
-RUN apk add --update --no-cache \
-        # needed for ./start/sh script
-        bash \
-        # these 2 libs are needed for opa binary
-        libc6-compat \
-        libstdc++
+# bash is needed for ./start/sh script
+# libc6-compat and libstdc are needed for opa binary
+RUN apk add --update --no-cache bash libc6-compat libstdc++
+# Fucking shit that libwasmer.so needs
+RUN ln -s /lib/libc.musl-x86_64.so.1 /lib/ld-linux-x86-64.so.2
 # copy opa from official image (main binary and lib for web assembly)
 COPY --from=opa /opa /
 COPY --from=BuildStage /opaclone/opa/vendor/github.com/wasmerio/go-ext-wasm/wasmer/libwasmer.so /usr/lib/opa/libwasmer.so
