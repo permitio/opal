@@ -13,3 +13,8 @@ OPA_SERVICE_URL = f"{_opa_url}/v1"
 CLIENT_TOKEN = os.environ.get("CLIENT_TOKEN", "PJUKkuwiJkKxbIoC4o4cguWxB_2gX6MyATYKc2OCM")
 
 ALLOWED_ORIGINS = ["*"]
+
+try:
+    KEEP_ALIVE_INTERVAL = int(os.environ.get("AUTHZ_KEEP_ALIVE", "0"))
+except ValueError:
+    KEEP_ALIVE_INTERVAL = 0
