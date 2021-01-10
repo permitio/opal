@@ -10,6 +10,7 @@ from fastapi_websocket_rpc.pubsub.event_notifier import Topic
 from fastapi_websocket_rpc.websocket.rpc_methods import RpcMethodsBase
 from horizon.logger import logger
 from horizon.utils import get_authorization_header
+from horizon.config import KEEP_ALIVE_INTERVAL
 
 
 TOPIC_SEPARATOR = "::"
@@ -20,7 +21,12 @@ class AuthenticatedEventRpcClient(EventRpcClient):
     adds HTTP Authorization header before connecting to the server's websocket.
     """
     def __init__(self, token: str, topics: List[Topic] = [], methods_class=None):
-        super().__init__(topics=topics, methods_class=methods_class, extra_headers=[get_authorization_header(token)])
+        super().__init__(
+            topics=topics,
+            methods_class=methods_class,
+            extra_headers=[get_authorization_header(token)],
+            keep_alive_interval=KEEP_ALIVE_INTERVAL
+        )
 
 
 class TenantAwareRpcEventClientMethods(RpcEventClientMethods):
