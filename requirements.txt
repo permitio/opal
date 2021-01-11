@@ -12,3 +12,4 @@ structlog
 tenacity==6.3.1
 uvicorn[standard]
 websockets
+# fastapi_websockets_rpc 2021_01_10 - until pypi: forces docker to ignore cache
