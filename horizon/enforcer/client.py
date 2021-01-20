@@ -14,6 +14,7 @@ logger = get_logger("Opa Client")
 
 # 2 retries with 2 seconds apart
 RETRY_CONFIG = dict(wait=wait_fixed(2), stop=stop_after_attempt(2))
+IS_ALLOWED_FALLBACK = dict(result=dict(allow=False, debug="OPA not responding"))
 
 def fail_silently(fallback=None):
     def decorator(func):
@@ -38,7 +39,7 @@ class OpaClient:
         self._policy_data = None
 
     # by default, if OPA is down, authorization is denied
-    @fail_silently(fallback=dict(result=False))
+    @fail_silently(fallback=IS_ALLOWED_FALLBACK)
     @retry(**RETRY_CONFIG)
     async def is_allowed(self, query: AuthorizationQuery):
         # opa data api format needs the input to sit under "input"
@@ -48,7 +49,7 @@ class OpaClient:
         try:
             async with aiohttp.ClientSession() as session:
                 async with session.post(
-                    f"{self._opa_url}/data/rbac/allow",
+                    f"{self._opa_url}/data/rbac",
                     data=json.dumps(opa_input)) as opa_response:
                     return await proxy_response(opa_response)
         except (aiohttp.errors.ClientConnectionError, aiohttp.errors.ClientError) as e:
