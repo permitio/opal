@@ -94,5 +94,25 @@ class OpaClient:
         if self._policy_data is not None:
             await self.set_policy_data(self._policy_data)
 
+    @fail_silently()
+    @retry(**RETRY_CONFIG)
+    async def get_data(self, path: str):
+        """
+        wraps opa's "GET /data" api that extracts base data documents from opa cache.
+        NOTE: opa always returns 200 and empty dict (for valid input) even if the data does not exist.
+
+        returns a dict (parsed json).
+        """
+        # function accepts paths that start with / and also path that do not start with /
+        if path.startswith("/"):
+            path = path[1:]
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(f"{self._opa_url}/data/{path}") as opa_response:
+                    return await opa_response.json()
+        except (aiohttp.errors.ClientConnectionError, aiohttp.errors.ClientError) as e:
+            logger.warn("Opa connection error", err=e)
+            raise
+
 
 opa = OpaClient()
