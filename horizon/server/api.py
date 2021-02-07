@@ -36,29 +36,30 @@ async def sdk_proxy(path: str, request: Request):
         )
     headers = {"Authorization": auth_header}
     path = f"{POLICY_SERVICE_URL}/{path}"
+    params = dict(request.query_params) or {}
 
     async with aiohttp.ClientSession() as session:
         if request.method == HTTP_GET:
-            async with session.get(path, headers=headers) as backend_response:
+            async with session.get(path, headers=headers, params=params) as backend_response:
                 return await proxy_response(backend_response)
 
         if request.method == HTTP_DELETE:
-            async with session.delete(path, headers=headers) as backend_response:
+            async with session.delete(path, headers=headers, params=params) as backend_response:
                 return await proxy_response(backend_response)
 
         # these methods has data payload
         data = await request.body()
 
         if request.method == HTTP_POST:
-            async with session.post(path, headers=headers, data=data) as backend_response:
+            async with session.post(path, headers=headers, data=data, params=params) as backend_response:
                 return await proxy_response(backend_response)
 
         if request.method == HTTP_PUT:
-            async with session.put(path, headers=headers, data=data) as backend_response:
+            async with session.put(path, headers=headers, data=data, params=params) as backend_response:
                 return await proxy_response(backend_response)
 
         if request.method == HTTP_PATCH:
-            async with session.patch(path, headers=headers, data=data) as backend_response:
+            async with session.patch(path, headers=headers, data=data, params=params) as backend_response:
                 return await proxy_response(backend_response)
 
     raise HTTPException(
