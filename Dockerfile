@@ -3,7 +3,7 @@ FROM openpolicyagent/opa as opa
 # BUILD STAGE ---------------------------------------
 # split this stage to save time and reduce image size
 # ---------------------------------------------------
-FROM python:3.8-alpine as BuildStage
+FROM python:3.8-alpine3.11 as BuildStage
 # install linux libraries necessary to compile some python packages
 RUN apk update
 RUN apk add --update --no-cache --virtual .build-deps gcc git build-base alpine-sdk python3-dev musl-dev postgresql-dev libffi-dev libressl-dev
@@ -28,7 +28,7 @@ RUN git clone https://github.com/open-policy-agent/opa.git
 # MAIN IMAGE ----------------------------------------
 # most of the time only this image should be built
 # ---------------------------------------------------
-FROM python:3.8-alpine
+FROM python:3.8-alpine3.11
 # bash is needed for ./start/sh script
 # libc6-compat and libstdc are needed for opa binary
 RUN apk add --update --no-cache bash libc6-compat libstdc++
