@@ -22,45 +22,44 @@ ALL_METHODS = [
 router = APIRouter()
 
 
-@router.api_route("/sdk/{path:path}", methods=ALL_METHODS)
+@router.api_route("/sdk/{path:path}", methods=ALL_METHODS, summary="Proxy Endpoint")
 async def sdk_proxy(path: str, request: Request):
     """
-    this one route proxies sdk route from the backend.
-    obviously this is a very stupid route with no caching, etc.
-    but we will probably throw this and write the sidecar in Go anyways.
+    Proxies the request to the cloud API. Actual API docs are located here: https://api.authorizon.com/redoc
     """
     auth_header = request.headers.get("Authorization")
     if auth_header is None:
-        HTTPException(
+        raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Must provide a bearer token!",
             headers={"WWW-Authenticate": "Bearer"}
         )
     headers = {"Authorization": auth_header}
     path = f"{POLICY_SERVICE_URL}/{path}"
+    params = dict(request.query_params) or {}
 
     async with aiohttp.ClientSession() as session:
         if request.method == HTTP_GET:
-            async with session.get(path, headers=headers) as backend_response:
+            async with session.get(path, headers=headers, params=params) as backend_response:
                 return await proxy_response(backend_response)
 
         if request.method == HTTP_DELETE:
-            async with session.delete(path, headers=headers) as backend_response:
+            async with session.delete(path, headers=headers, params=params) as backend_response:
                 return await proxy_response(backend_response)
 
         # these methods has data payload
         data = await request.body()
 
         if request.method == HTTP_POST:
-            async with session.post(path, headers=headers, data=data) as backend_response:
+            async with session.post(path, headers=headers, data=data, params=params) as backend_response:
                 return await proxy_response(backend_response)
 
         if request.method == HTTP_PUT:
-            async with session.put(path, headers=headers, data=data) as backend_response:
+            async with session.put(path, headers=headers, data=data, params=params) as backend_response:
                 return await proxy_response(backend_response)
 
         if request.method == HTTP_PATCH:
-            async with session.patch(path, headers=headers, data=data) as backend_response:
+            async with session.patch(path, headers=headers, data=data, params=params) as backend_response:
                 return await proxy_response(backend_response)
 
     raise HTTPException(
