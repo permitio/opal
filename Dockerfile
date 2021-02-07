@@ -19,7 +19,7 @@ RUN pip install --user -r requirements.txt
 ARG READ_ONLY_GITHUB_TOKEN="<you must pass a token>"
 
 # install websockets lib from github (this is our library and may update a lot)
-RUN pip install --user git+https://${READ_ONLY_GITHUB_TOKEN}@github.com/acallasec/websockets.git
+RUN pip install --user git+https://${READ_ONLY_GITHUB_TOKEN}@github.com/authorizon/websockets.git
 
 # clone OPA
 WORKDIR /opaclone
