@@ -22,12 +22,10 @@ ALL_METHODS = [
 router = APIRouter()
 
 
-@router.api_route("/sdk/{path:path}", methods=ALL_METHODS)
+@router.api_route("/sdk/{path:path}", methods=ALL_METHODS, summary="Proxy Endpoint")
 async def sdk_proxy(path: str, request: Request):
     """
-    this one route proxies sdk route from the backend.
-    obviously this is a very stupid route with no caching, etc.
-    but we will probably throw this and write the sidecar in Go anyways.
+    Proxies the request to the cloud API. Actual API docs are located here: https://api.authorizon.com/redoc
     """
     auth_header = request.headers.get("Authorization")
     if auth_header is None:
