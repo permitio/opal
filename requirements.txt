@@ -9,7 +9,5 @@ pydantic[email]
 python-json-logger
 starlette==0.13.6
 structlog
-tenacity==6.3.1
 uvicorn[standard]
-websockets
-# fastapi_websockets_rpc 2021_01_10 - until pypi: forces docker to ignore cache
+fastapi_websocket_pubsub
