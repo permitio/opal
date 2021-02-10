@@ -157,6 +157,7 @@ async def list_roles():
             SyncedRole(
                 id=role_id,
                 name=role_data.get("name"),
+                metadata=role_data.get("metadata", {}),
                 permissions=permissions
             )
         )
@@ -191,6 +192,7 @@ async def get_role_by_id(role_id: str):
     role = SyncedRole(
         id=role_id,
         name=role_data.get("name"),
+        metadata=role_data.get("metadata", {}),
         permissions=permissions
     )
     return role
@@ -228,6 +230,7 @@ async def get_role_by_name(role_name: str):
         return SyncedRole(
             id=role_id,
             name=name,
+            metadata=role_data.get("metadata", {}),
             permissions=permissions
         )
     raise HTTPException(
