@@ -22,7 +22,7 @@ def fail_silently(fallback=None):
         async def wrapper(*args, **kwargs):
             try:
                 return await func(*args, **kwargs)
-            except (aiohttp.errors.ClientConnectionError, aiohttp.errors.ClientError) as e:
+            except aiohttp.ClientError as e:
                 return fallback
         return wrapper
     return decorator
@@ -52,7 +52,7 @@ class OpaClient:
                     f"{self._opa_url}/data/rbac",
                     data=json.dumps(opa_input)) as opa_response:
                     return await proxy_response(opa_response)
-        except (aiohttp.errors.ClientConnectionError, aiohttp.errors.ClientError) as e:
+        except aiohttp.ClientError as e:
             logger.warn("Opa connection error", err=e)
             raise
 
@@ -68,7 +68,7 @@ class OpaClient:
                     headers={'content-type': 'text/plain'}
                 ) as opa_response:
                     return await proxy_response(opa_response)
-            except (aiohttp.errors.ClientConnectionError, aiohttp.errors.ClientError) as e:
+            except aiohttp.ClientError as e:
                 logger.warn("Opa connection error", err=e)
                 raise
 
@@ -83,7 +83,7 @@ class OpaClient:
                     data=json.dumps(self._policy_data),
                 ) as opa_response:
                     return await proxy_response(opa_response)
-            except (aiohttp.errors.ClientConnectionError, aiohttp.errors.ClientError) as e:
+            except aiohttp.ClientError as e:
                 logger.warn("Opa connection error", err=e)
                 raise
 
@@ -110,7 +110,7 @@ class OpaClient:
             async with aiohttp.ClientSession() as session:
                 async with session.get(f"{self._opa_url}/data/{path}") as opa_response:
                     return await opa_response.json()
-        except (aiohttp.errors.ClientConnectionError, aiohttp.errors.ClientError) as e:
+        except aiohttp.ClientError as e:
             logger.warn("Opa connection error", err=e)
             raise
 
