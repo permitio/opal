@@ -75,6 +75,7 @@ class PolicyUpdater:
             methods_class=TenantAwareRpcEventClientMethods,
             on_connect=[self.on_connect])
         # Subscribe to updates
+        logger.info("Subscribing to policy update topics", topics=['policy', 'policy_data'])
         self._client.subscribe("policy", self._update_policy)
         self._client.subscribe("policy_data", self._update_policy_data)
         self._thread.create_task(
