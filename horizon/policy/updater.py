@@ -1,10 +1,12 @@
 import asyncio
 
-from typing import Coroutine, List, Tuple
+from typing import Coroutine, List, Tuple, cast
+
+from fastapi_websocket_rpc.rpc_channel import RpcChannel
 
 from horizon.logger import get_logger, logger
 from horizon.config import POLICY_UPDATES_WS_URL, CLIENT_TOKEN
-from horizon.policy.rpc import AuthenticatedEventRpcClient, TenantAwareRpcEventClientMethods
+from horizon.policy.rpc import AuthenticatedPubSubClient, TenantAwareRpcEventClientMethods
 from horizon.utils import AsyncioEventLoopThread
 from horizon.policy.fetcher import policy_fetcher
 from horizon.enforcer.client import opa
@@ -61,23 +63,28 @@ class PolicyUpdater:
         reason = "" if data is None else data.get("reason", "periodic update")
         await update_policy_data(reason=reason)
 
+    async def on_connect(self, client:AuthenticatedPubSubClient, channel:RpcChannel):
+        # on connection to backend, whether its the first connection
+        # or reconnecting after downtime, refetch the state opa needs.    
+        await refetch_policy_and_update_opa()
+
     def start(self):
         logger.info("Launching updater")
-        self._client = AuthenticatedEventRpcClient(
+        self._client = AuthenticatedPubSubClient(
             self._token,
-            methods_class=TenantAwareRpcEventClientMethods)
+            methods_class=TenantAwareRpcEventClientMethods,
+            on_connect=[self.on_connect])
+        # Subscribe to updates
         self._client.subscribe("policy", self._update_policy)
         self._client.subscribe("policy_data", self._update_policy_data)
-        # on connection to backend, whether its the first connection
-        # or reconnecting after downtime, refetch the state opa needs.
-        self._client.on_connect(refetch_policy_and_update_opa)
         self._thread.create_task(
             self._client.run(f"{self._server_url}")
         )
         self._thread.start()
 
-    def stop(self):
+    async def stop(self):
         logger.info("Stopping updater")
+        await self._client.disconnect()
         self._thread.stop()
 
 
