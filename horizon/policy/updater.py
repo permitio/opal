@@ -4,13 +4,15 @@ from typing import Coroutine, List, Tuple, cast
 
 from fastapi_websocket_rpc.rpc_channel import RpcChannel
 
-from horizon.logger import get_logger, logger
+from horizon.logger import get_logger
 from horizon.config import POLICY_UPDATES_WS_URL, CLIENT_TOKEN
 from horizon.policy.rpc import AuthenticatedPubSubClient, TenantAwareRpcEventClientMethods
 from horizon.utils import AsyncioEventLoopThread
 from horizon.policy.fetcher import policy_fetcher
 from horizon.enforcer.client import opa
 
+
+logger = get_logger("Horizon")
 updater_logger = get_logger("Updater")
 
 
@@ -75,7 +77,7 @@ class PolicyUpdater:
             methods_class=TenantAwareRpcEventClientMethods,
             on_connect=[self.on_connect])
         # Subscribe to updates
-        logger.info("Subscribing to policy update topics", topics=['policy', 'policy_data'])
+        updater_logger.info("Subscribing to topics", topics=['policy', 'policy_data'])
         self._client.subscribe("policy", self._update_policy)
         self._client.subscribe("policy_data", self._update_policy_data)
         self._thread.create_task(

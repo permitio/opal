@@ -7,13 +7,13 @@ from typing import Coroutine, List
 from fastapi_websocket_pubsub import PubSubClient
 from fastapi_websocket_pubsub.event_notifier import Topic
 from fastapi_websocket_pubsub.rpc_event_methods import RpcEventClientMethods, RpcMethodsBase
-from horizon.logger import logger
+from horizon.logger import get_logger
 from horizon.utils import get_authorization_header
 from horizon.config import KEEP_ALIVE_INTERVAL
 
 
 TOPIC_SEPARATOR = "::"
-
+logger = get_logger("Updater")
 
 class AuthenticatedPubSubClient(PubSubClient):
     """
