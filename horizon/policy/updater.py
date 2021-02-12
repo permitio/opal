@@ -47,25 +47,25 @@ class PolicyUpdater:
         self._token = token
         self._server_url = server_url
 
-    async def _update_policy(self, data=None):
+    async def _update_policy(self, data=None, **kwargs):
         """
         will run when we get notifications on the policy topic.
         i.e: when rego changes
         """
         reason = "" if data is None else data.get("reason", "periodic update")
-        await update_policy(reason=reason)
+        await update_policy(reason=reason, **kwargs)
 
-    async def _update_policy_data(self, data=None):
+    async def _update_policy_data(self, data=None, **kwargs):
         """
         will run when we get notifications on the policy_data topic.
         i.e: when new roles are added, changes to permissions, etc.
         """
         reason = "" if data is None else data.get("reason", "periodic update")
-        await update_policy_data(reason=reason)
+        await update_policy_data(reason=reason, **kwargs)
 
     async def on_connect(self, client:AuthenticatedPubSubClient, channel:RpcChannel):
         # on connection to backend, whether its the first connection
-        # or reconnecting after downtime, refetch the state opa needs.    
+        # or reconnecting after downtime, refetch the state opa needs.
         await refetch_policy_and_update_opa()
 
     def start(self):
