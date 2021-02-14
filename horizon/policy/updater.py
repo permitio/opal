@@ -72,18 +72,18 @@ class PolicyUpdater:
 
     def start(self):
         logger.info("Launching updater")
+        self._thread.create_task(self._run_client())
+        self._thread.start()
+
+    async def _run_client(self):
         self._client = AuthenticatedPubSubClient(
             self._token,
             methods_class=TenantAwareRpcEventClientMethods,
             on_connect=[self.on_connect])
-        # Subscribe to updates
         updater_logger.info("Subscribing to topics", topics=['policy', 'policy_data'])
         self._client.subscribe("policy", self._update_policy)
         self._client.subscribe("policy_data", self._update_policy_data)
-        self._thread.create_task(
-            self._client.run(f"{self._server_url}")
-        )
-        self._thread.start()
+        self._client.start_client(f"{self._server_url}", loop=self._thread.loop)
 
     async def stop(self):
         logger.info("Stopping updater")
