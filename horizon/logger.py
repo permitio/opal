@@ -124,5 +124,3 @@ if not structlog.is_configured():
         wrapper_class=stdlib.BoundLogger,
         processors=processors_list,
     )
-
-logger = get_logger("Horizon")

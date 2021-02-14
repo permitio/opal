@@ -18,9 +18,6 @@ RUN pip install --user -r requirements.txt
 # default value works for local runs (with private ssh key)
 ARG READ_ONLY_GITHUB_TOKEN="<you must pass a token>"
 
-# install websockets lib from github (this is our library and may update a lot)
-RUN pip install --user git+https://${READ_ONLY_GITHUB_TOKEN}@github.com/authorizon/websockets.git
-
 # clone OPA
 WORKDIR /opaclone
 RUN git clone https://github.com/open-policy-agent/opa.git

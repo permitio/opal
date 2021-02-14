@@ -1,31 +1,42 @@
-import asyncio
-import threading
-import logging
+from fastapi_websocket_rpc.logger import logging_config, LoggingModes
+logging_config.set_mode(LoggingModes.UVICORN)
 
-from typing import Coroutine, List, Tuple
 
-from fastapi_websocket_rpc.pubsub import EventRpcClient
-from fastapi_websocket_rpc.pubsub.rpc_event_methods import RpcEventClientMethods
-from fastapi_websocket_rpc.pubsub.event_notifier import Topic
-from fastapi_websocket_rpc.websocket.rpc_methods import RpcMethodsBase
-from horizon.logger import logger
+from typing import Coroutine, List
+
+from fastapi_websocket_pubsub import PubSubClient
+from fastapi_websocket_pubsub.event_notifier import Topic
+from fastapi_websocket_pubsub.rpc_event_methods import RpcEventClientMethods, RpcMethodsBase
+from horizon.logger import get_logger
 from horizon.utils import get_authorization_header
 from horizon.config import KEEP_ALIVE_INTERVAL
 
 
 TOPIC_SEPARATOR = "::"
+logger = get_logger("Updater")
 
-
-class AuthenticatedEventRpcClient(EventRpcClient):
+class AuthenticatedPubSubClient(PubSubClient):
     """
     adds HTTP Authorization header before connecting to the server's websocket.
     """
-    def __init__(self, token: str, topics: List[Topic] = [], methods_class=None):
+    def __init__(self, token: str, topics: List[Topic] = [], callback=None,
+                 methods_class: RpcMethodsBase = None,
+                 retry_config=None,
+                 keep_alive: float = KEEP_ALIVE_INTERVAL,
+                 on_connect: List[Coroutine] = None,
+                 on_disconnect: List[Coroutine] = None,
+                 server_uri = None,
+                 **kwargs):
         super().__init__(
             topics=topics,
             methods_class=methods_class,
+            retry_config=retry_config,
+            on_connect=on_connect,
+            on_disconnect=on_disconnect,
+            server_uri=server_uri,
+            keep_alive=keep_alive,
             extra_headers=[get_authorization_header(token)],
-            keep_alive_interval=KEEP_ALIVE_INTERVAL
+            **kwargs
         )
 
 
@@ -34,10 +45,10 @@ class TenantAwareRpcEventClientMethods(RpcEventClientMethods):
     use this methods class when the server uses `TenantAwareRpcEventServerMethods`.
     """
     async def notify(self, subscription=None, data=None):
-        self.logger.info("Received notification of event", subscription=subscription, data=data)
+        logger.info("Received notification of event", subscription=subscription, data=data)
         topic = subscription["topic"]
         if TOPIC_SEPARATOR in topic:
             topic_parts = topic.split(TOPIC_SEPARATOR)
             if len(topic_parts) > 1:
                 topic = topic_parts[1] # index 0 holds the app id
-        await self.client.act_on_topic(topic=topic, data=data)
+        await self.client.trigger_topic(topic=topic, data=data)

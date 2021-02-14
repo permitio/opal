@@ -39,5 +39,5 @@ async def startup_event():
 
 @app.on_event("shutdown")
 async def shutdown_event():
-    policy_updater.stop()
+    await policy_updater.stop()
     opa_runner.stop()

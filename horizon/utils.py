@@ -4,7 +4,6 @@ import threading
 
 from typing import Tuple
 from fastapi import Response
-from horizon.logger import logger
 
 
 async def proxy_response(response: aiohttp.ClientResponse):
