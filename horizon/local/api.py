@@ -61,6 +61,7 @@ async def get_user(user_id: str):
         id=user_id,
         email=result.get("email", None),
         name=result.get("name", None),
+        metadata=result.get("metadata", {}),
         roles=roles,
     )
     return user
@@ -101,6 +102,7 @@ async def list_users():
                 id=user_id,
                 email=user_data.get("email", None),
                 name=user_data.get("name", None),
+                metadata=user_data.get("metadata", {}),
                 roles=roles,
             )
         )
