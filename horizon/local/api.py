@@ -119,16 +119,26 @@ async def get_user_roles(user_id: str):
 
     If user does not exist in OPA cache (i.e: not synced), returns 404.
     """
+    # will issue an opa request to get cached user data
     result = await get_data_for_synced_user(user_id)
-    roles=result.get("roles", [])
-    roles=[
-        SyncedRole(
-            id=r.get("id"),
-            name=r.get("name"),
-            org_id=r.get("scope", {}).get("org", None),
+    # will issue *another* opa request to list all roles, not just the roles for this user
+    cached_roles: List[SyncedRole] = await list_roles()
+    role_data = {role.id: role for role in cached_roles }
+
+    raw_roles=result.get("roles", [])
+
+    roles = []
+    for r in raw_roles:
+        role_id = r.get("id")
+        roles.append(
+            SyncedRole(
+                id=role_id,
+                name=r.get("name"),
+                org_id=r.get("scope", {}).get("org", None),
+                metadata=role_data.get(role_id, {}).metadata,
+                permissions=role_data.get(role_id, {}).permissions,
+            )
         )
-        for r in roles
-    ]
     return roles
 
 @router.get(
