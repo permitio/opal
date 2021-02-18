@@ -144,6 +144,28 @@ async def get_user_roles(user_id: str):
     return roles
 
 @router.get(
+    "/users/{user_id}/organizations",
+    response_model=List[str],
+    responses={
+        404: error_message("User not found (i.e: not synced to Authorization service)"),
+    }
+)
+async def get_user_orgs(user_id: str):
+    """
+    Get orgs **assigned to user** directly from OPA cache.
+    This endpoint only returns orgs that the user **has an assigned role in**.
+    i.e: if the user is assigned to org "org1" but has no roles in that org,
+    "org1" will not be returned by this endpoint.
+
+    If user does not exist in OPA cache (i.e: not synced), returns 404.
+    """
+    result = await get_data_for_synced_user(user_id)
+    roles = result.get("roles", [])
+    orgs = [r.get("scope", {}).get("org", None) for r in roles]
+    orgs = [org for org in orgs if org is not None]
+    return orgs
+
+@router.get(
     "/roles",
     response_model=List[SyncedRole],
     responses={
