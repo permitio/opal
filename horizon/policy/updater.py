@@ -38,7 +38,6 @@ async def refetch_policy_and_update_opa(**kwargs):
     """
     will bring both rego and data from backend, and will inject into OPA.
     """
-    updater_logger.info("Updater Connected")
     await update_policy(**kwargs)
     await update_policy_data(**kwargs)
 
@@ -68,22 +67,27 @@ class PolicyUpdater:
     async def on_connect(self, client:AuthenticatedPubSubClient, channel:RpcChannel):
         # on connection to backend, whether its the first connection
         # or reconnecting after downtime, refetch the state opa needs.
+        updater_logger.info("Connected to server")
         await refetch_policy_and_update_opa()
+
+    async def on_disconnect(self, channel:RpcChannel):
+        updater_logger.info("Disconnected from server")
 
     def start(self):
         logger.info("Launching updater")
+        self._thread.create_task(self._run_client())
+        self._thread.start()
+
+    async def _run_client(self):
         self._client = AuthenticatedPubSubClient(
             self._token,
             methods_class=TenantAwareRpcEventClientMethods,
-            on_connect=[self.on_connect])
-        # Subscribe to updates
+            on_connect=[self.on_connect],
+            on_disconnect=[self.on_disconnect])
         updater_logger.info("Subscribing to topics", topics=['policy', 'policy_data'])
         self._client.subscribe("policy", self._update_policy)
         self._client.subscribe("policy_data", self._update_policy_data)
-        self._thread.create_task(
-            self._client.run(f"{self._server_url}")
-        )
-        self._thread.start()
+        self._client.start_client(f"{self._server_url}", loop=self._thread.loop)
 
     async def stop(self):
         logger.info("Stopping updater")
