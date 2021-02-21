@@ -1,7 +1,8 @@
 import os
 
 _acalla_backend_url = os.environ.get("AUTHZ_SERVICE_URL", "http://localhost:8000")
-POLICY_SERVICE_URL = f"{_acalla_backend_url}/sdk"
+POLICY_SERVICE_LEGACY_URL = f"{_acalla_backend_url}/sdk"
+POLICY_SERVICE_URL = f"{_acalla_backend_url}/v1"
 
 _ws_backend_url = _acalla_backend_url.replace("https", "ws").replace("http", "ws")
 POLICY_UPDATES_WS_URL = f"{_ws_backend_url}/sdk/ws"

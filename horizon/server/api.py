@@ -1,7 +1,7 @@
 import aiohttp
 
 from fastapi import APIRouter, status, Request, HTTPException
-from horizon.config import POLICY_SERVICE_URL
+from horizon.config import POLICY_SERVICE_URL, POLICY_SERVICE_LEGACY_URL
 from horizon.utils import proxy_response
 
 
@@ -22,11 +22,21 @@ ALL_METHODS = [
 router = APIRouter()
 
 
-@router.api_route("/sdk/{path:path}", methods=ALL_METHODS, summary="Proxy Endpoint")
-async def sdk_proxy(path: str, request: Request):
+@router.api_route("/cloud/{path:path}", methods=ALL_METHODS, summary="Proxy Endpoint")
+async def cloud_proxy(request: Request, path: str):
     """
     Proxies the request to the cloud API. Actual API docs are located here: https://api.authorizon.com/redoc
     """
+    return await proxy_request_to_cloud_service(request, path, cloud_service_url=POLICY_SERVICE_URL)
+
+
+# TODO: remove this once we migrate all clients
+@router.api_route("/sdk/{path:path}", methods=ALL_METHODS, summary="Old Proxy Endpoint", include_in_schema=False)
+async def old_proxy(request: Request, path: str):
+    return await proxy_request_to_cloud_service(request, path, cloud_service_url=POLICY_SERVICE_LEGACY_URL)
+
+
+async def proxy_request_to_cloud_service(request: Request, path: str, cloud_service_url: str):
     auth_header = request.headers.get("Authorization")
     if auth_header is None:
         raise HTTPException(
@@ -35,7 +45,7 @@ async def sdk_proxy(path: str, request: Request):
             headers={"WWW-Authenticate": "Bearer"}
         )
     headers = {"Authorization": auth_header}
-    path = f"{POLICY_SERVICE_URL}/{path}"
+    path = f"{cloud_service_url}/{path}"
     params = dict(request.query_params) or {}
 
     async with aiohttp.ClientSession() as session:
