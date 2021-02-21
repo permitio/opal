@@ -21,4 +21,5 @@ class SyncedUser(BaseSchema):
     id: str
     name: Optional[str]
     email: Optional[str]
+    metadata: Optional[Dict[str, Any]]
     roles: List[SyncedRole]
