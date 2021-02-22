@@ -1,3 +1,4 @@
+import asyncio
 import aiohttp
 import json
 import functools
@@ -5,10 +6,12 @@ from typing import Dict, Any
 
 from tenacity import retry, stop_after_attempt, wait_fixed
 
+from opal.client import policy
 from opal.client.config import OPA_SERVICE_URL
 from opal.client.logger import get_logger
 from opal.client.utils import proxy_response
 from opal.client.enforcer.schemas import AuthorizationQuery
+from opal.client.policy.schemas import PolicyBundle
 
 logger = get_logger("Opa Client")
 
@@ -35,7 +38,6 @@ class OpaClient:
 
     def __init__(self, opa_server_url=OPA_SERVICE_URL):
         self._opa_url = opa_server_url
-        self._policy = None
         self._policy_data = None
 
     # by default, if OPA is down, authorization is denied
@@ -58,19 +60,35 @@ class OpaClient:
 
     @fail_silently()
     @retry(**RETRY_CONFIG)
-    async def set_policy(self, policy: str):
-        self._policy = policy
+    async def set_policy(self, policy_id: str, policy_code: str):
         async with aiohttp.ClientSession() as session:
             try:
                 async with session.put(
-                    f"{self._opa_url}/policies/{self.POLICY_NAME}",
-                    data=policy,
+                    f"{self._opa_url}/policies/{policy_id}",
+                    data=policy_code,
                     headers={'content-type': 'text/plain'}
                 ) as opa_response:
                     return await proxy_response(opa_response)
             except aiohttp.ClientError as e:
                 logger.warn("Opa connection error", err=e)
                 raise
+
+    @fail_silently()
+    async def set_policies(self, bundle: PolicyBundle):
+        lock = asyncio.Lock()
+        async with aiohttp.ClientSession() as session:
+            async with lock:
+                for module in bundle.rego_modules:
+                    try:
+                        async with session.put(
+                            f"{self._opa_url}/policies/{module.path}",
+                            data=module.rego,
+                            headers={'content-type': 'text/plain'}
+                        ) as opa_response:
+                            return await proxy_response(opa_response)
+                    except aiohttp.ClientError as e:
+                        logger.warn("Opa connection error", err=e)
+                        raise
 
     @fail_silently()
     @retry(**RETRY_CONFIG)
