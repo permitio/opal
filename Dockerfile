@@ -1,5 +1,3 @@
-FROM openpolicyagent/opa as opa
-
 # BUILD STAGE ---------------------------------------
 # split this stage to save time and reduce image size
 # ---------------------------------------------------
@@ -18,22 +16,17 @@ RUN pip install --user -r requirements.txt
 # default value works for local runs (with private ssh key)
 ARG READ_ONLY_GITHUB_TOKEN="<you must pass a token>"
 
-# clone OPA
-WORKDIR /opaclone
-RUN git clone https://github.com/open-policy-agent/opa.git
-
 # MAIN IMAGE ----------------------------------------
 # most of the time only this image should be built
 # ---------------------------------------------------
 FROM python:3.8-alpine3.11
 # bash is needed for ./start/sh script
 # libc6-compat and libstdc are needed for opa binary
-RUN apk add --update --no-cache bash libc6-compat libstdc++
+RUN apk add --update --no-cache bash curl libc6-compat libstdc++
 # Fucking shit that libwasmer.so needs
 RUN ln -s /lib/libc.musl-x86_64.so.1 /lib/ld-linux-x86-64.so.2
 # copy opa from official image (main binary and lib for web assembly)
-COPY --from=opa /opa /
-COPY --from=BuildStage /opaclone/opa/vendor/github.com/wasmerio/go-ext-wasm/wasmer/libwasmer.so /usr/lib/opa/libwasmer.so
+RUN curl -L -o /opa https://openpolicyagent.org/downloads/latest/opa_linux_amd64 && chmod 755 /opa
 # copy libraries from build stage
 COPY --from=BuildStage /root/.local /root/.local
 # copy wait-for-it (use only for development! e.g: docker compose)
