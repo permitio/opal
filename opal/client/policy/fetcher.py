@@ -2,9 +2,9 @@ import aiohttp
 import json
 from typing import Dict, Any, Tuple
 
-from horizon.config import POLICY_SERVICE_URL, CLIENT_TOKEN
-from horizon.utils import proxy_response, get_authorization_header
-from horizon.enforcer.schemas import AuthorizationQuery
+from opal.client.config import POLICY_SERVICE_URL, CLIENT_TOKEN
+from opal.client.utils import proxy_response, get_authorization_header
+from opal.client.enforcer.schemas import AuthorizationQuery
 
 
 def tuple_to_dict(tup: Tuple[str, str]) -> Dict[str, str]:

@@ -4,12 +4,12 @@ from typing import Coroutine, List, Tuple, cast
 
 from fastapi_websocket_rpc.rpc_channel import RpcChannel
 
-from horizon.logger import get_logger
-from horizon.config import POLICY_UPDATES_WS_URL, CLIENT_TOKEN
-from horizon.policy.rpc import AuthenticatedPubSubClient, TenantAwareRpcEventClientMethods
-from horizon.utils import AsyncioEventLoopThread
-from horizon.policy.fetcher import policy_fetcher
-from horizon.enforcer.client import opa
+from opal.client.logger import get_logger
+from opal.client.config import POLICY_UPDATES_WS_URL, CLIENT_TOKEN
+from opal.client.policy.rpc import AuthenticatedPubSubClient, TenantAwareRpcEventClientMethods
+from opal.client.utils import AsyncioEventLoopThread
+from opal.client.policy.fetcher import policy_fetcher
+from opal.client.enforcer.client import opa
 
 
 logger = get_logger("Horizon")

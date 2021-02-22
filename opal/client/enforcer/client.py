@@ -5,10 +5,10 @@ from typing import Dict, Any
 
 from tenacity import retry, stop_after_attempt, wait_fixed
 
-from horizon.config import OPA_SERVICE_URL
-from horizon.logger import get_logger
-from horizon.utils import proxy_response
-from horizon.enforcer.schemas import AuthorizationQuery
+from opal.client.config import OPA_SERVICE_URL
+from opal.client.logger import get_logger
+from opal.client.utils import proxy_response
+from opal.client.enforcer.schemas import AuthorizationQuery
 
 logger = get_logger("Opa Client")
 

@@ -1,8 +1,8 @@
 import aiohttp
 
 from fastapi import APIRouter, status, Request, HTTPException
-from horizon.config import POLICY_SERVICE_URL, POLICY_SERVICE_LEGACY_URL
-from horizon.utils import proxy_response
+from opal.client.config import POLICY_SERVICE_URL, POLICY_SERVICE_LEGACY_URL
+from opal.client.utils import proxy_response
 
 
 HTTP_GET = "GET"

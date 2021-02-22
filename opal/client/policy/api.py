@@ -1,6 +1,6 @@
 from fastapi import APIRouter, status
 from starlette.status import HTTP_200_OK
-from horizon.policy.updater import update_policy, update_policy_data
+from opal.client.policy.updater import update_policy, update_policy_data
 
 router = APIRouter()
 

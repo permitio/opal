@@ -8,10 +8,10 @@ from typing import Coroutine
 
 from tenacity import retry, wait_random_exponential
 
-from horizon.config import OPA_PORT
-from horizon.logger import get_logger
-from horizon.utils import AsyncioEventLoopThread
-from horizon.enforcer.client import opa
+from opal.client.config import OPA_PORT
+from opal.client.logger import get_logger
+from opal.client.utils import AsyncioEventLoopThread
+from opal.client.enforcer.client import opa
 
 logger = get_logger("Horizon")
 runner_logger = get_logger("Opa Runner")
