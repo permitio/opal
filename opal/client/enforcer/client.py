@@ -6,7 +6,6 @@ from typing import Dict, Any
 
 from tenacity import retry, stop_after_attempt, wait_fixed
 
-from opal.client import policy
 from opal.client.config import OPA_SERVICE_URL
 from opal.client.logger import get_logger
 from opal.client.utils import proxy_response
