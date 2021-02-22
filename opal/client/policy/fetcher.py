@@ -1,10 +1,10 @@
 import aiohttp
 import json
-from typing import Dict, Any, Tuple
+from typing import Dict, Tuple, List
 
 from opal.client.config import POLICY_SERVICE_URL, CLIENT_TOKEN
-from opal.client.utils import proxy_response, get_authorization_header
-from opal.client.enforcer.schemas import AuthorizationQuery
+from opal.client.utils import get_authorization_header
+from opal.client.policy.schemas import PolicyBundle
 
 
 def tuple_to_dict(tup: Tuple[str, str]) -> Dict[str, str]:
@@ -28,13 +28,16 @@ class PolicyFetcher:
             ) as response:
                 return await response.text()
 
-    async def fetch_policy_data(self) -> Dict[str, Any]:
+    async def fetch_policy_bundle(self, directories: List[str] = ['.']) -> PolicyBundle:
         async with aiohttp.ClientSession() as session:
+            params = {"path": directories}
             async with session.get(
-                f"{self._backend_url}/policy-config",
-                headers=self._auth_headers
+                f"{self._backend_url}/policy",
+                headers={'content-type': 'text/plain', **self._auth_headers},
+                params=params
             ) as response:
-                return await response.json()
+                bundle = await response.json()
+                return PolicyBundle(**bundle)
 
 
 policy_fetcher = PolicyFetcher()
