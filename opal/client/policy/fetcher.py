@@ -1,14 +1,24 @@
 import aiohttp
-import json
-from typing import Dict, Tuple, List
+
+from typing import List, Optional
+from pydantic import ValidationError
+from fastapi import status
 
 from opal.client.config import POLICY_SERVICE_URL, CLIENT_TOKEN
-from opal.client.utils import get_authorization_header
+from opal.client.utils import get_authorization_header, tuple_to_dict
 from opal.common.schemas.policy import PolicyBundle
+from opal.client.logger import get_logger
 
 
-def tuple_to_dict(tup: Tuple[str, str]) -> Dict[str, str]:
-    return dict([tup])
+logger = get_logger("opal.policy.fetcher")
+
+
+def policy_bundle_or_none(bundle) -> Optional[PolicyBundle]:
+    try:
+        return PolicyBundle(**bundle)
+    except ValidationError as e:
+        logger.warn("server returned invalid bundle", bundle=bundle, err=e)
+        return None
 
 
 class PolicyFetcher:
@@ -20,24 +30,23 @@ class PolicyFetcher:
         self._token = token
         self._auth_headers = tuple_to_dict(get_authorization_header(token))
 
-    async def fetch_policy(self) -> str:
-        async with aiohttp.ClientSession() as session:
-            async with session.get(
-                f"{self._backend_url}/policy",
-                headers={'content-type': 'text/plain', **self._auth_headers}
-            ) as response:
-                return await response.text()
-
-    async def fetch_policy_bundle(self, directories: List[str] = ['.']) -> PolicyBundle:
+    async def fetch_policy_bundle(self, directories: List[str] = ['.']) -> Optional[PolicyBundle]:
         async with aiohttp.ClientSession() as session:
             params = {"path": directories}
-            async with session.get(
-                f"{self._backend_url}/policy",
-                headers={'content-type': 'text/plain', **self._auth_headers},
-                params=params
-            ) as response:
-                bundle = await response.json()
-                return PolicyBundle(**bundle)
+            try:
+                async with session.get(
+                    f"{self._backend_url}/policy",
+                    headers={'content-type': 'text/plain', **self._auth_headers},
+                    params=params
+                ) as response:
+                    if response.status == status.HTTP_404_NOT_FOUND:
+                        logger.warn("requested paths not found", paths=directories)
+                        return None
+                    bundle = await response.json()
+                    return policy_bundle_or_none(bundle)
+            except aiohttp.ClientError as e:
+                logger.warn("server connection error", err=e)
+                raise
 
 
 policy_fetcher = PolicyFetcher()

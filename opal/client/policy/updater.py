@@ -1,5 +1,4 @@
 from typing import List
-from pathlib import Path
 
 from fastapi_websocket_rpc.rpc_channel import RpcChannel
 from fastapi_websocket_pubsub import PubSubClient
@@ -9,7 +8,7 @@ from opal.client.config import POLICY_SUBSCRIPTION_DIRS, POLICY_UPDATES_WS_URL, 
 from opal.client.utils import AsyncioEventLoopThread, get_authorization_header
 from opal.client.policy.fetcher import policy_fetcher
 from opal.client.enforcer.client import opa
-from opal.client.policy.topics import dirs_to_topics, all_policy_directories, POLICY_PREFIX
+from opal.client.policy.topics import dirs_to_topics, all_policy_directories, POLICY_PREFIX, remove_prefix
 
 
 logger = get_logger("Opal Client")
@@ -21,10 +20,11 @@ async def update_policy(directories: List[str] = [], **kwargs):
     fetches policy (rego) from backend and updates OPA
     """
     directories = directories if directories else all_policy_directories()
-    updater_logger.info("Refetching policy (rego)", **kwargs)
+    updater_logger.info("Refetching policy (rego)")
     bundle = await policy_fetcher.fetch_policy_bundle(directories)
-    updater_logger.info("got bundle", bundle=bundle.dict())
-    await opa.set_policies(bundle)
+    if bundle:
+        updater_logger.info("got bundle")
+        await opa.set_policies(bundle)
 
 async def refetch_policy_and_update_opa(**kwargs):
     """
@@ -48,13 +48,12 @@ class PolicyUpdater:
         will run when we get notifications on the policy topic.
         i.e: when rego changes
         """
-        reason = "" if data is None else data.get("reason", "periodic update")
         if topic.startswith(POLICY_PREFIX):
-            directories = [topic.lstrip(POLICY_PREFIX)]
+            directories = [remove_prefix(topic, prefix=POLICY_PREFIX)]
         else:
             logger.warn("invalid policy topic", topic=topic)
             directories = all_policy_directories()
-        await update_policy(directories, reason=reason, **kwargs)
+        await update_policy(directories, **kwargs)
 
     async def on_connect(self, client:PubSubClient, channel:RpcChannel):
         # on connection to backend, whether its the first connection

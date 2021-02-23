@@ -2,11 +2,7 @@ import aiohttp
 from typing import Dict, Any, Tuple
 
 from opal.client.config import BACKEND_SERVICE_URL, CLIENT_TOKEN
-from opal.client.utils import get_authorization_header
-
-
-def tuple_to_dict(tup: Tuple[str, str]) -> Dict[str, str]:
-    return dict([tup])
+from opal.client.utils import get_authorization_header, tuple_to_dict
 
 
 class DataFetcher:
