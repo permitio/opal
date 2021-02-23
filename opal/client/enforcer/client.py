@@ -10,7 +10,7 @@ from opal.client.config import OPA_SERVICE_URL
 from opal.client.logger import get_logger
 from opal.client.utils import proxy_response
 from opal.client.enforcer.schemas import AuthorizationQuery
-from opal.client.policy.schemas import PolicyBundle
+from opal.common.schemas.policy import PolicyBundle
 
 logger = get_logger("Opa Client")
 
