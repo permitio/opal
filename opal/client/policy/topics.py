@@ -27,4 +27,5 @@ def dirs_to_topics(dirs: List[str]) -> List[str]:
     return policy_topics(policy_directories)
 
 def all_policy_directories() -> List[str]:
-    return non_intersecting_dirs([Path(d) for d in POLICY_SUBSCRIPTION_DIRS])
+    directories = non_intersecting_dirs([Path(d) for d in POLICY_SUBSCRIPTION_DIRS])
+    return [str(directory) for directory in directories]
