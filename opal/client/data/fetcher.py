@@ -1,8 +1,8 @@
 import aiohttp
 from typing import Dict, Any, Tuple
 
-from horizon.config import BACKEND_SERVICE_URL, CLIENT_TOKEN
-from horizon.utils import get_authorization_header
+from opal.client.config import BACKEND_SERVICE_URL, CLIENT_TOKEN
+from opal.client.utils import get_authorization_header
 
 
 def tuple_to_dict(tup: Tuple[str, str]) -> Dict[str, str]:

@@ -1,7 +1,7 @@
 from typing import List, Set
 from pathlib import Path
 
-from horizon.config import POLICY_SUBSCRIPTION_DIRS
+from opal.client.config import POLICY_SUBSCRIPTION_DIRS
 
 POLICY_PREFIX = "policy:"
 
