@@ -75,19 +75,9 @@ class OpaClient:
     @fail_silently()
     async def set_policies(self, bundle: PolicyBundle):
         lock = asyncio.Lock()
-        async with aiohttp.ClientSession() as session:
-            async with lock:
-                for module in bundle.rego_modules:
-                    try:
-                        async with session.put(
-                            f"{self._opa_url}/policies/{module.path}",
-                            data=module.rego,
-                            headers={'content-type': 'text/plain'}
-                        ) as opa_response:
-                            return await proxy_response(opa_response)
-                    except aiohttp.ClientError as e:
-                        logger.warn("Opa connection error", err=e)
-                        raise
+        async with lock:
+            for module in bundle.rego_modules:
+                await self.set_policy(policy_id=module.path, policy_code=module.rego)
 
     @fail_silently()
     @retry(**RETRY_CONFIG)
