@@ -12,7 +12,7 @@ from opal.client.enforcer.client import opa
 from opal.client.policy.topics import dirs_to_topics, all_policy_directories, POLICY_PREFIX
 
 
-logger = get_logger("Horizon")
+logger = get_logger("Opal Client")
 updater_logger = get_logger("Policy Updater")
 
 
@@ -23,7 +23,7 @@ async def update_policy(directories: List[str] = [], **kwargs):
     directories = directories if directories else all_policy_directories()
     updater_logger.info("Refetching policy (rego)", **kwargs)
     bundle = await policy_fetcher.fetch_policy_bundle(directories)
-    logger.info("got bundle", bundle=bundle.dict())
+    updater_logger.info("got bundle", bundle=bundle.dict())
     await opa.set_policies(bundle)
 
 async def refetch_policy_and_update_opa(**kwargs):

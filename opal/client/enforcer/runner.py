@@ -13,7 +13,7 @@ from opal.client.logger import get_logger
 from opal.client.utils import AsyncioEventLoopThread
 from opal.client.enforcer.client import opa
 
-logger = get_logger("Horizon")
+logger = get_logger("Opal Client")
 runner_logger = get_logger("Opa Runner")
 opa_logger = get_logger("OPA")
 

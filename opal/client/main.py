@@ -1,10 +1,10 @@
 import asyncio
-from opal.client.config import OPENAPI_TAGS_METADATA
 from fastapi import FastAPI
 
 from fastapi_websocket_rpc.logger import logging_config, LoggingModes
 logging_config.set_mode(LoggingModes.UVICORN)
 
+from opal.client.config import OPENAPI_TAGS_METADATA
 from opal.client.server.api import router as proxy_router
 from opal.client.enforcer.api import router as enforcer_router
 from opal.client.policy.api import router as policy_router

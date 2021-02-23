@@ -9,7 +9,7 @@ from opal.client.data.fetcher import data_fetcher
 from opal.client.data.rpc import TenantAwareRpcEventClientMethods
 
 
-logger = get_logger("Horizon")
+logger = get_logger("Opal Client")
 updater_logger = get_logger("Data Updater")
 
 
