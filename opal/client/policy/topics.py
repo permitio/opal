@@ -22,6 +22,11 @@ def non_intersecting_dirs(paths: List[Path]) -> Set[Path]:
 def policy_topics(paths: List[Path]) -> List[str]:
     return ["{}{}".format(POLICY_PREFIX, str(path)) for path in paths]
 
+def remove_prefix(topic: str, prefix: str = POLICY_PREFIX):
+    if topic.startswith(prefix):
+        return topic[len(prefix):]
+    return topic
+
 def dirs_to_topics(dirs: List[str]) -> List[str]:
     policy_directories = non_intersecting_dirs([Path(d) for d in dirs])
     return policy_topics(policy_directories)

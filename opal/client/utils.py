@@ -2,7 +2,7 @@ import asyncio
 import aiohttp
 import threading
 
-from typing import Tuple
+from typing import Tuple, Dict
 from fastapi import Response
 
 
@@ -14,6 +14,10 @@ async def proxy_response(response: aiohttp.ClientResponse):
         headers=dict(response.headers),
         media_type="application/json",
     )
+
+
+def tuple_to_dict(tup: Tuple[str, str]) -> Dict[str, str]:
+    return dict([tup])
 
 
 def get_authorization_header(token: str) -> Tuple[str, str]:
