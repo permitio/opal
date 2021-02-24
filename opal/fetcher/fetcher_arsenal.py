@@ -1,4 +1,4 @@
-from .data_fetcher import HttpGetFetchProvider, RestfulFetchProvider, BaseFetchProvider
+from .data_fetcher import HttpGetFetchProvider, BaseFetchProvider
 from .events import FetchEvent
 
 
@@ -7,7 +7,6 @@ class FetcherArsenal:
 
     BASIC_CONFIG = {
         "HttpGetFetchProvider": HttpGetFetchProvider,
-        "RestfulFetchProvider": RestfulFetchProvider
     }
 
     def __init__(self, config=None) -> None:
