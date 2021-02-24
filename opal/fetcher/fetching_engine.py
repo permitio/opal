@@ -4,7 +4,7 @@ from typing import Coroutine
 import typing
 from .events import FetchEvent, FetcherConfig
 from .fetcher_arsenal import FetcherArsenal
-from .data_fetcher import BaseFetchProvider
+from .fetch_provider import BaseFetchProvider
 from .logger import get_logger
 
 logger = get_logger("engine")

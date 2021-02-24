@@ -1,4 +1,4 @@
-from .data_fetcher import HttpGetFetchProvider, BaseFetchProvider
+from .fetch_provider import HttpGetFetchProvider, BaseFetchProvider
 from .events import FetchEvent
 
 
