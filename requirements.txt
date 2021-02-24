@@ -1,15 +1,17 @@
 aiohttp
 colorama
 fastapi==0.62.0
+GitPython
 gunicorn
-inflection
 ipython
 psutil==5.8.0
 pydantic[email]
 python-json-logger
 starlette==0.13.6
 structlog
+tenacity==6.3.1
 uvicorn[standard]
-fastapi_websocket_rpc==0.1.12
-fastapi_websocket_pubsub==0.1.9
+websockets
+fastapi_websocket_rpc==0.1.16
+fastapi_websocket_pubsub==0.1.12
 broadcaster[postgres] # needed by fastapi_websocket_pubsub (can change based on the broadcaster backend engine)
