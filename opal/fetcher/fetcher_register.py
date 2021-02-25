@@ -1,4 +1,4 @@
-from typing import Dict, Type
+from typing import Type, Optional, Dict
 from .fetch_provider import BaseFetchProvider
 from .providers.http_get_fetch_provider import HttpGetFetchProvider
 from .events import FetchEvent
@@ -15,7 +15,7 @@ class FetcherRegister:
         "HttpGetFetchProvider": HttpGetFetchProvider,
     }
 
-    def __init__(self, config:Dict[str, BaseFetchProvider]=None) -> None:
+    def __init__(self, config: Optional[Dict[str, BaseFetchProvider]]=None) -> None:
         self._config = config or self.BASIC_CONFIG
 
     def register_fetcher(self, name:str, fetcher_class:Type[BaseFetchProvider]):
@@ -32,7 +32,8 @@ class FetcherRegister:
         Returns:
             BaseFetchProvider: A fetcher instance
         """
-        return self._config.get(name)(event)
+        provider_class = self._config.get(name)
+        return provider_class(event)
 
     def get_fetcher_for_event(self, event:FetchEvent)->BaseFetchProvider:
         """
