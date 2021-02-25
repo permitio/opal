@@ -1,11 +1,9 @@
-from .events import FetchEvent, FetcherConfig
-import typing
-import requests
+from .events import FetchEvent
 from tenacity import retry, wait, stop
 import tenacity
 
 from .logger import get_logger
-logger = get_logger("fetchers")
+logger = get_logger("providers")
 
 
 class BaseFetchProvider:
@@ -41,24 +39,3 @@ class BaseFetchProvider:
         pass
 
 
-class HttpGetFetcherConfig(FetcherConfig):
-    headers: dict
-
-
-class HttpGetFetchEvent(FetchEvent):
-    fetcher_config: HttpGetFetcherConfig
-
-
-class HttpGetFetchProvider(BaseFetchProvider):
-
-    def __init__(self, event: HttpGetFetchEvent) -> None:
-        self._event: HttpGetFetchEvent
-        super().__init__(event)
-
-    async def _fetch_(self):
-        logger.info(f"{self.__class__.__name__} fetching from {self._url}")
-        headers = {}
-        if self._event.fetcher_config is not None:
-            headers = self._event.fetcher_config.headers
-        result = requests.get(self._url, headers=headers)
-        return result

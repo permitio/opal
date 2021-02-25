@@ -3,14 +3,14 @@ from asyncio import events
 from typing import Coroutine
 import typing
 from .events import FetchEvent, FetcherConfig
-from .fetcher_arsenal import FetcherArsenal
+from .fetcher_register import FetcherRegister
 from .fetch_provider import BaseFetchProvider
 from .logger import get_logger
 
 logger = get_logger("engine")
 
 
-async def fetch_worker(queue:asyncio.Queue, arsenal:FetcherArsenal):
+async def fetch_worker(queue:asyncio.Queue, arsenal:FetcherRegister):
     """
     The worker task performing items added to the Engine's Queue
 
@@ -43,13 +43,17 @@ class FetchingEngine:
 
     DEFAULT_WORKER_COUNT=5
     
-    def __init__(self, arsenal_config=None, worker_count=DEFAULT_WORKER_COUNT) -> None:
+    def __init__(self, register_config=None, worker_count=DEFAULT_WORKER_COUNT) -> None:
         self._queue = asyncio.Queue()
         self._tasks = []
-        self._fetcher_arsenal = FetcherArsenal(arsenal_config)
+        self._fetcher_register = FetcherRegister(register_config)
         # create worker tasks
         for _ in range(worker_count):
             self.create_worker()
+
+    @property
+    def register(self):
+        return self._fetcher_register
 
     async def __aenter__(self):
         """
@@ -67,18 +71,18 @@ class FetchingEngine:
         await asyncio.gather(*self._tasks, return_exceptions=True)
 
 
-    async def queue_url(self, url:str, callback:Coroutine, fetcher_config:FetcherConfig=None, fetcher="HttpGetFetchProvider"):
+    async def queue_url(self, url:str, callback:Coroutine, config:FetcherConfig=None, fetcher="HttpGetFetchProvider"):
         """
         Simplified default fetching handler for queuing a fetch task
 
         Args:
             url (str): the URL to fetch from
             callback (Coroutine): a callback to call with the fetched result
-            fetcher_config (FetcherConfig, optional): Configuration to be used by the fetcher. Defaults to None.
+            config (FetcherConfig, optional): Configuration to be used by the fetcher. Defaults to None.
             fetcher (str, optional): Which fetcher class to use. Defaults to "HttpGetFetchProvider".
         """
         #init a URL event
-        event = FetchEvent(url=url, fetcher=fetcher, fetcher_config=fetcher_config)
+        event = FetchEvent(url=url, fetcher=fetcher, config=config)
         await self.queue_fetch_event(event, callback)
 
     async def queue_fetch_event(self, event:FetchEvent, callback:Coroutine):
@@ -93,6 +97,6 @@ class FetchingEngine:
 
 
     def create_worker(self)-> asyncio.Task:
-        task = asyncio.create_task(fetch_worker(self._queue, self._fetcher_arsenal))
+        task = asyncio.create_task(fetch_worker(self._queue, self._fetcher_register))
         self._tasks.append(task)
         return task
