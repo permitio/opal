@@ -48,4 +48,14 @@ class BaseFetchProvider:
         """
         pass
 
+    def set_retry_config(self, retry_config:dict):
+        """ 
+        Set the configuration for retrying failed fetches
+        @see self.DEFAULT_RETRY_CONFIG
+
+        Args:
+            retry_config (dict): Tenacity retry config
+        """
+        self._retry_config = retry_config
+
 
