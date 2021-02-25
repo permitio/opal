@@ -61,9 +61,13 @@ class FetchingEngine:
     DEFAULT_WORKER_COUNT = 5
 
     def __init__(self, register_config=Dict[str, BaseFetchProvider], worker_count=DEFAULT_WORKER_COUNT) -> None:
+        # The internal task queue
         self._queue = asyncio.Queue()
+        # Worker working the queue
         self._tasks = []
+        # register of the fetch providers workers can use
         self._fetcher_register = FetcherRegister(register_config)
+        
         # create worker tasks
         for _ in range(worker_count):
             self.create_worker()
