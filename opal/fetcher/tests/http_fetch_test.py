@@ -80,7 +80,7 @@ async def test_authorized_http_get(server):
             assert data[DATA_KEY] == DATA_SECRET_VALUE
             got_data_event.set()
         # fetch with bearer token authorization 
-        await engine.queue_url(f"{BASE_URL}{AUTHORIZED_DATA_ROUTE}", callback,HttpGetFetcherConfig(headers={"X-TOKEN": SECRET_TOKEN}))
+        await engine.queue_url(f"{BASE_URL}{AUTHORIZED_DATA_ROUTE}", callback, HttpGetFetcherConfig(headers={"X-TOKEN": SECRET_TOKEN}))
         await asyncio.wait_for(got_data_event.wait(), 5)
         assert got_data_event.is_set()
 
