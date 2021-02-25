@@ -24,17 +24,28 @@ class BaseFetchProvider:
     }
 
     def __init__(self, event: FetchEvent, retry_config=None) -> None:
+        """[summary]
+
+        Args:
+            event (FetchEvent): the event desciring what we should fetch
+            retry_config (dict): Tenacity.retry config (@see https://tenacity.readthedocs.io/en/latest/api.html#retry-main-api) for retrying fetching
+        """
         self._event = event
         self._url = event.url
         self._retry_config = retry_config if retry_config is not None else self.DEFAULT_RETRY_CONFIG
 
     async def fetch(self):
         """
-        Call self._fetch_ with a retry mechanism
+        Fetch and return data.
+        Calls self._fetch_ with a retry mechanism
         """
         return await retry(**self._retry_config)(self._fetch_)()
 
     async def _fetch_():
+        """
+        Internal fetch operation called by self.fetch()
+        Override this method to implement a new fetch provider
+        """
         pass
 
 
