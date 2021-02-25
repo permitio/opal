@@ -13,13 +13,9 @@ class BaseFetchProvider:
      - call self.fetch() to retrive data (wrapped in retries and safe execution guards)
     """
 
-    def logerror(retry_state: tenacity.RetryCallState):
-        logger.exception(retry_state.outcome.exception())
-
     DEFAULT_RETRY_CONFIG = {
         'wait': wait.wait_random_exponential(),
         "stop": stop.stop_after_attempt(200),
-        "retry_error_callback": logerror,
         "reraise": True
     }
 
