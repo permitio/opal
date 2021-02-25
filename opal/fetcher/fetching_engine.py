@@ -2,7 +2,7 @@ import asyncio
 import typing
 import tenacity
 from asyncio import events
-from typing import Coroutine
+from typing import Coroutine, Dict
 
 from .events import FetcherConfig, FetchEvent
 from .fetch_provider import BaseFetchProvider
@@ -44,10 +44,18 @@ async def fetch_worker(queue:asyncio.Queue, arsenal:FetcherRegister):
 
 
 class FetchingEngine:
+    """
+    A Task queue manager for fetching events.
+    
+    - Configure with different fetcher providers - via __init__'s register_config or via self.register.register_fetcher()
+    - Use queue_url() to fetch a given URL with the default FetchProvider
+    - Use queue_fetch_event() to fetch data using a configured FetchProvider
+    - Use with 'async with' to terminate tasks (or call self.terminate_tasks() when done)
+    """
 
     DEFAULT_WORKER_COUNT=5
     
-    def __init__(self, register_config=None, worker_count=DEFAULT_WORKER_COUNT) -> None:
+    def __init__(self, register_config=Dict[str, BaseFetchProvider], worker_count=DEFAULT_WORKER_COUNT) -> None:
         self._queue = asyncio.Queue()
         self._tasks = []
         self._fetcher_register = FetcherRegister(register_config)
@@ -68,12 +76,17 @@ class FetchingEngine:
     async def  __aexit__(self, exc_type, exc, tb):
         if (exc is not None):
             logger.error("Error occurred within FetchingEngine context", exc_info=(exc_type, exc, tb))
+        await self.terminate_tasks()
+
+    async def terminate_tasks(self):
+        """
+        Cancel and wait on the internal worker tasks
+        """
         # Cancel our worker tasks.
         for task in self._tasks:
             task.cancel()
         # Wait until all worker tasks are cancelled.
         await asyncio.gather(*self._tasks, return_exceptions=True)
-
 
     async def queue_url(self, url:str, callback:Coroutine, config:FetcherConfig=None, fetcher="HttpGetFetchProvider"):
         """
@@ -101,6 +114,10 @@ class FetchingEngine:
 
 
     def create_worker(self)-> asyncio.Task:
+        """
+        Create an asyncio worker tak to work the engine's queue
+        Engine init starts several workers according to given configuration
+        """
         task = asyncio.create_task(fetch_worker(self._queue, self._fetcher_register))
         self._tasks.append(task)
         return task

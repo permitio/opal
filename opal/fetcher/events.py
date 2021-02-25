@@ -3,11 +3,16 @@ from pydantic import BaseModel
 
 
 class FetcherConfig(BaseModel):
+    """
+    The configuration of a fetcher, used as part of a FetchEvent
+    Fetch Provider's have their own uniqueue events and configurations.
+    Configurations  
+    """
     pass
 
 class FetchEvent(BaseModel):
     """
-    Event used to descrive an queue fetching tasks
+    Event used to describe an queue fetching tasks
     """
     # optional name of the specific event
     name:str = ""
