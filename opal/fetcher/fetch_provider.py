@@ -13,14 +13,14 @@ class BaseFetchProvider:
      - call self.fetch() to retrive data (wrapped in retries and safe execution guards)
     """
 
-    @staticmethod
     def logerror(retry_state: tenacity.RetryCallState):
         logger.exception(retry_state.outcome.exception())
 
     DEFAULT_RETRY_CONFIG = {
         'wait': wait.wait_random_exponential(),
         "stop": stop.stop_after_attempt(200),
-        "retry_error_callback": logerror
+        "retry_error_callback": logerror,
+        "reraise": True
     }
 
     def __init__(self, event: FetchEvent, retry_config=None) -> None:
@@ -39,9 +39,12 @@ class BaseFetchProvider:
         Fetch and return data.
         Calls self._fetch_ with a retry mechanism
         """
-        return await retry(**self._retry_config)(self._fetch_)()
+        attempter = retry(**self._retry_config)(self._fetch_)
+        res = await attempter()
+        return res
 
-    async def _fetch_():
+
+    async def _fetch_(self):
         """
         Internal fetch operation called by self.fetch()
         Override this method to implement a new fetch provider

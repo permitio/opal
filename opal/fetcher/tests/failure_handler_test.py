@@ -1,4 +1,4 @@
-import logging
+import aiohttp
 import os
 import sys
 
@@ -7,12 +7,14 @@ root_dir = os.path.abspath(os.path.join(os.path.basename(__file__), os.path.pard
 sys.path.append(root_dir)
 
 import asyncio
+import tenacity
 from multiprocessing import Process
 
 import pytest
 import uvicorn
 from fastapi import FastAPI
 
+from opal.fetcher.providers.http_get_fetch_provider import HttpGetFetchEvent, HttpGetFetchProvider
 from opal.fetcher import FetchingEngine, FetchEvent
 
 # Configurable
@@ -23,26 +25,8 @@ DATA_KEY = "Hello"
 DATA_VALUE = "World"
 DATA_SECRET_VALUE = "SecretWorld"
 
-
-def setup_server():
-    app =  FastAPI()
-
-    @app.get(DATA_ROUTE)
-    def get_data():
-        return {DATA_KEY: DATA_VALUE}
-
-    uvicorn.run(app, port=PORT )
-
-@pytest.fixture(scope="module")
-def server():
-    # Run the server as a separate process
-    proc = Process(target=setup_server, args=(), daemon=True)
-    proc.start()
-    yield proc
-    proc.kill() # Cleanup after test
-
 @pytest.mark.asyncio
-async def test_retry_failure(server):
+async def test_retry_failure():
     """
     Test callback on failure
     """
@@ -50,18 +34,23 @@ async def test_retry_failure(server):
     got_error = asyncio.Event()
     
     async with FetchingEngine() as engine:
-        
+        # callback to handle failure
         async def error_callback(error:Exception, event:FetchEvent):
+            # check we got the expection we expected
+            assert isinstance(error, aiohttp.client_exceptions.ClientConnectorError)
             got_error.set()
-
+        # register the callback
         engine.register_failure_handler(error_callback)
-
+        # callback for success - shouldn't eb called in this test
         async def callback(result):
-            data = result.json()
-            assert data[DATA_KEY] == DATA_VALUE
             got_data_event.set()
-
-        await engine.queue_url(f"{BASE_URL}/wrongroute", callback)
-        await asyncio.wait_for(got_error.wait(), 5)
+        # Use an event on an invalid port - and only to attempts
+        retry_config = HttpGetFetchProvider.DEFAULT_RETRY_CONFIG.copy()
+        retry_config["stop"] = tenacity.stop.stop_after_attempt(2)
+        event = HttpGetFetchEvent(url=f"http://localhost:25", retry=retry_config)
+        # queue the event
+        await engine.queue_fetch_event(event, callback)
+        # wait for the failure callback
+        await asyncio.wait_for(got_error.wait(), 25)
         assert not got_data_event.is_set()
-        assert not got_error.is_set()
+        assert got_error.is_set()

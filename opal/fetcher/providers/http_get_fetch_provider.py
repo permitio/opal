@@ -3,13 +3,13 @@ Simple HTTP get data fetcher using requests
 supports 
 """
 
-import requests
+from aiohttp_requests import requests
 
 from ..fetch_provider import BaseFetchProvider
 from ..events import FetcherConfig, FetchEvent
 from ..logger import get_logger
 
-logger = get_logger("providers.http_get_fetch_provider")
+logger = get_logger("http_get_fetch_provider")
 
 class HttpGetFetcherConfig(FetcherConfig):
     """
@@ -20,8 +20,7 @@ class HttpGetFetcherConfig(FetcherConfig):
 
 class HttpGetFetchEvent(FetchEvent):
     fetcher: str = "HttpGetFetchProvider"
-    config: HttpGetFetcherConfig
-
+    config: HttpGetFetcherConfig = None
 
 class HttpGetFetchProvider(BaseFetchProvider):
 
@@ -30,9 +29,10 @@ class HttpGetFetchProvider(BaseFetchProvider):
         super().__init__(event)
 
     async def _fetch_(self):
+        print("111111")
         logger.info(f"{self.__class__.__name__} fetching from {self._url}")
         headers = {}
         if self._event.config is not None:
             headers = self._event.config.headers
-        result = requests.get(self._url, headers=headers)
+        result = await requests.get(self._url, headers=headers)
         return result

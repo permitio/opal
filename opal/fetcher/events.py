@@ -24,6 +24,8 @@ class FetchEvent(BaseModel):
     fetcher: str
     # The url the event targets for fetching
     url: str
-    #  Specific fetcher configuration (overridden by deriving event classes)
+    # Specific fetcher configuration (overridden by deriving event classes)
     config: FetcherConfig = None
+    # Tenacity.retry - Override default retry configuration for this event     
+    retry: dict = None
 

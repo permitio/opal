@@ -61,11 +61,11 @@ async def test_simple_http_get(server):
     got_data_event = asyncio.Event()
     async with FetchingEngine() as engine:
         async def callback(result):
-            data = result.json()
+            data = await result.json()
             assert data[DATA_KEY] == DATA_VALUE
             got_data_event.set()
         await engine.queue_url(f"{BASE_URL}{DATA_ROUTE}", callback)
-        await asyncio.wait_for(got_data_event.wait(), 5)
+        await asyncio.wait_for(got_data_event.wait(), 10)
         assert got_data_event.is_set()
 
 @pytest.mark.asyncio
@@ -76,12 +76,12 @@ async def test_authorized_http_get(server):
     got_data_event = asyncio.Event()
     async with FetchingEngine() as engine:
         async def callback(result):
-            data = result.json()
+            data = await result.json()
             assert data[DATA_KEY] == DATA_SECRET_VALUE
             got_data_event.set()
         # fetch with bearer token authorization 
         await engine.queue_url(f"{BASE_URL}{AUTHORIZED_DATA_ROUTE}", callback, HttpGetFetcherConfig(headers={"X-TOKEN": SECRET_TOKEN}))
-        await asyncio.wait_for(got_data_event.wait(), 5)
+        await asyncio.wait_for(got_data_event.wait(), 15)
         assert got_data_event.is_set()
 
 
@@ -94,7 +94,7 @@ async def test_external_http_get():
     got_data_event = asyncio.Event()
     async with FetchingEngine() as engine:
         async def callback(result):
-            data = result.json()
+            data = await result.json()
             assert data["ip"] == "8.8.8.8"
             got_data_event.set()
         await engine.queue_url(f"https://freegeoip.app/json/8.8.8.8", callback)

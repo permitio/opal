@@ -43,7 +43,6 @@ async def fetch_worker(queue: asyncio.Queue, engine):
         try:
             # get fetcher for the event
             fetcher = register.get_fetcher_for_event(event)
-            assert fetcher is not None
             # fetch
             data = await fetcher.fetch()
             # callback to event owner
@@ -51,13 +50,10 @@ async def fetch_worker(queue: asyncio.Queue, engine):
                 await callback(data)
             except Exception as err:
                 logger.exception(f"Callback - {callback} failed")
-                engine.on_failure(err, event)
-        except tenacity.RetryError as err:
-            logger.exception("Fetch event retries have timed-out")
-            engine.on_failure(err, event)
+                engine.on_failure(err, event)        
         except Exception as err:
             logger.exception("Failed to process fetch event")
-            engine.on_failure(err, event)
+            await engine._on_failure(err, event)
         finally:
             # Notify the queue that the "work item" has been processed.
             queue.task_done()
@@ -186,4 +182,4 @@ class FetchingEngine:
             error (Exception): thrown exception
             event (FetchEvent): event which was being handled
         """
-        await self.on_handler_event(self._failure_handlers, error, event)
+        await self._management_event_handler(self._failure_handlers, error, event)
