@@ -20,7 +20,6 @@ class BaseFetchProvider:
     DEFAULT_RETRY_CONFIG = {
         'wait': wait.wait_random_exponential(),
         "stop": stop.stop_after_attempt(200),
-        'reraise': True,
         "retry_error_callback": logerror
     }
 

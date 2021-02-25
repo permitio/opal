@@ -1,10 +1,12 @@
 import asyncio
+import typing
+import tenacity
 from asyncio import events
 from typing import Coroutine
-import typing
-from .events import FetchEvent, FetcherConfig
-from .fetcher_register import FetcherRegister
+
+from .events import FetcherConfig, FetchEvent
 from .fetch_provider import BaseFetchProvider
+from .fetcher_register import FetcherRegister
 from .logger import get_logger
 
 logger = get_logger("engine")
@@ -31,8 +33,10 @@ async def fetch_worker(queue:asyncio.Queue, arsenal:FetcherRegister):
                 await callback(data)
             except: 
                 logger.exception(f"Callback - {callback} failed")
+        except tenacity.RetryError:
+            logger.exception("Fetch event retries have timed-out")
         except:
-            logger.exception("failed to process fetch event")
+            logger.exception("Failed to process fetch event")
         finally:
             # Notify the queue that the "work item" has been processed.
             queue.task_done()
