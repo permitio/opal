@@ -20,7 +20,7 @@ class FetchEvent(BaseModel):
     id: str = None
     # optional name of the specific event
     name: str = None
-    # A string identifying the fetcher class to use (as registered in the fetcher arsenal)
+    # A string identifying the fetcher class to use (as registered in the fetcher register)
     fetcher: str
     # The url the event targets for fetching
     url: str

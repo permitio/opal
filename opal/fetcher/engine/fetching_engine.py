@@ -1,65 +1,19 @@
 import asyncio
 import uuid
-import tenacity
-from asyncio import events
 from typing import Coroutine, Dict, List
 
-from .events import FetcherConfig, FetchEvent
-from .fetch_provider import BaseFetchProvider
-from .fetcher_register import FetcherRegister
-from .logger import get_logger
+from ..events import FetcherConfig, FetchEvent
+from ..fetch_provider import BaseFetchProvider
+from ..fetcher_register import FetcherRegister
+from ..logger import get_logger
+from .base_fetching_engine import BaseFetchingEngine
+from .fetch_worker import fetch_worker
+from .core_callbacks import OnFetchFailureCallback
 
 logger = get_logger("engine")
 
 
-# Callback signatures 
-async def OnFetchFailureCallback(exception:Exception, event: FetchEvent):
-    """
-    Args:
-        exception (Exception): The exception thrown causing the failure 
-        event (FetchEvent): the queued event which failed
-    """
-    pass
-
-
-async def fetch_worker(queue: asyncio.Queue, engine):
-    """
-    The worker task performing items added to the Engine's Queue
-
-    Args:
-        queue (asyncio.Queue): The Queue 
-        engine (FetchingEnging): The engine itself
-    """
-    engine: FetchingEngine
-    register: FetcherRegister = engine.register
-    
-    while True:
-        # types
-        event: FetchEvent
-        callback: Coroutine
-        # get a event from the queue
-        event, callback = await queue.get()
-        # take care of it
-        try:
-            # get fetcher for the event
-            fetcher = register.get_fetcher_for_event(event)
-            # fetch
-            data = await fetcher.fetch()
-            # callback to event owner
-            try:
-                await callback(data)
-            except Exception as err:
-                logger.exception(f"Callback - {callback} failed")
-                engine.on_failure(err, event)        
-        except Exception as err:
-            logger.exception("Failed to process fetch event")
-            await engine._on_failure(err, event)
-        finally:
-            # Notify the queue that the "work item" has been processed.
-            queue.task_done()
-
-
-class FetchingEngine:
+class FetchingEngine(BaseFetchingEngine):
     """
     A Task queue manager for fetching events.
 
