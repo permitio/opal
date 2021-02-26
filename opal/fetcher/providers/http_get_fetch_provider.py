@@ -29,7 +29,6 @@ class HttpGetFetchProvider(BaseFetchProvider):
         super().__init__(event)
 
     async def _fetch_(self):
-        print("111111")
         logger.info(f"{self.__class__.__name__} fetching from {self._url}")
         headers = {}
         if self._event.config is not None:
