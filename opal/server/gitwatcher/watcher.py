@@ -68,7 +68,7 @@ class PolicyWatcher:
         watcher to pull changes from the remote and (if they exist) publish
         policy changes to clients.
         """
-        self._thread.run_coro(self._pull_and_publish_updates())
+        self._thread.create_task(self._pull_and_publish_updates())
 
     def _fail(self):
         self.stop()

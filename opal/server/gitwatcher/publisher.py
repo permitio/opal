@@ -31,7 +31,7 @@ class PolicyPublisher:
         logger.info("Connected to WS Server")
 
     def publish_updates(self, topics: TopicList, data: Any):
-        return self._thread.run_coro(self._publish(topics=topics, data=data))
+        return self._thread.create_task(self._publish(topics=topics, data=data))
 
     async def _publish(self, topics: TopicList, data: Any) -> bool:
         """
