@@ -38,6 +38,7 @@ class OpaClient:
     def __init__(self, opa_server_url=OPA_SERVICE_URL):
         self._opa_url = opa_server_url
         self._policy_data = None
+        self._cached_policies: Dict[str, str] = {}
 
     # by default, if OPA is down, authorization is denied
     @fail_silently(fallback=IS_ALLOWED_FALLBACK)
@@ -60,6 +61,7 @@ class OpaClient:
     @fail_silently()
     @retry(**RETRY_CONFIG)
     async def set_policy(self, policy_id: str, policy_code: str):
+        self._cached_policies[policy_id] = policy_code
         async with aiohttp.ClientSession() as session:
             try:
                 async with session.put(
@@ -95,8 +97,9 @@ class OpaClient:
                 raise
 
     async def rehydrate_opa_from_process_cache(self):
-        if self._policy is not None:
-            await self.set_policy(self._policy)
+        policies = self._cached_policies.copy()
+        for policy_id, policy_code in iter(policies.items()):
+            await self.set_policy(policy_id, policy_code)
 
         if self._policy_data is not None:
             await self.set_policy_data(self._policy_data)
