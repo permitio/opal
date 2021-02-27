@@ -28,4 +28,4 @@ async def startup_event():
 @app.on_event("shutdown")
 async def shutdown_event():
     policy_watcher.stop()
-    policy_publisher.stop()
+    await policy_publisher.stop()
