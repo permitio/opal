@@ -1,31 +1,13 @@
-import re
-
-from typing import Optional, List, Tuple, Generator
+from typing import Optional, List, Generator
 
 from pathlib import Path
-from git import Repo, Head, Remote, DiffIndex
+from git import Repo, DiffIndex
 from git.objects.commit import Commit
 from git.objects.tree import Tree
 
 from opal.common.utils import sorted_list_from_set
 from opal.common.schemas.policy import PolicyBundle, DataModule, RegoModule
-
-# retry in case of temp network error
-REGO_PACKAGE_DECLARATION = re.compile(r'^package\s+([a-zA-Z0-9\.\"\[\]]+)$')
-
-def is_data_module(path: Path) -> bool:
-    return path.suffix == '.json'
-
-def is_rego_module(path: Path) -> bool:
-    return path.suffix == '.rego'
-
-def get_rego_package(contents: str) -> Optional[str]:
-    lines = contents.splitlines()
-    for line in lines:
-        match = REGO_PACKAGE_DECLARATION.match(line)
-        if match is not None:
-            return match.group(1)
-    return None
+from opal.common.opa import get_rego_package, is_rego_module, is_data_module
 
 
 class GitActions:
