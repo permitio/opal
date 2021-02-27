@@ -1,8 +1,9 @@
 import aiohttp
 from typing import Dict, Any, Tuple
 
+from opal.common.utils import get_authorization_header
+from opal.client.utils import tuple_to_dict
 from opal.client.config import BACKEND_SERVICE_URL, CLIENT_TOKEN
-from opal.client.utils import get_authorization_header, tuple_to_dict
 
 
 class DataFetcher:
