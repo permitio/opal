@@ -10,6 +10,16 @@ from opal.common.schemas.policy import PolicyBundle, DataModule, RegoModule
 from opal.common.opa import get_rego_package, is_rego_module, is_data_module
 
 
+class GitFailed(Exception):
+    """
+    an exception we throw on git failures that are caused by wrong assumptions.
+    i.e: we want to track a non-existing branch, or git url is not valid.
+    """
+    def __init__(self, exc: Exception):
+        self._original_exc = exc
+        super().__init__()
+
+
 class GitActions:
     @classmethod
     def repo_dir(cls, repo: Repo) -> Path:

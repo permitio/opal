@@ -48,7 +48,7 @@ async def trigger_git_webhook(request: Request, urls: List[str] = Depends(affect
     if POLICY_REPO_URL is not None and POLICY_REPO_URL in urls:
         logger.info("triggered webhook", repo=urls[0], hook_event=event)
         if event == 'push':
-            policy_watcher.trigger_pull()
+            policy_watcher.trigger()
         return { "status": "ok", "event": event, "repo_url": urls[0] }
 
     return { "status": "ignored", "event": event }

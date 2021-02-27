@@ -11,7 +11,7 @@ from opal.common.utils import AsyncioEventLoopThread, get_authorization_header
 from opal.server.config import OPAL_WS_LOCAL_URL, OPAL_WS_TOKEN
 
 
-logger = get_logger("Policy Publisher")
+logger = get_logger("opal.policy.publisher")
 
 
 class PolicyPublisher:
