@@ -63,10 +63,22 @@ async def get_input_paths_or_throw(
 async def get_policy(
     repo: Repo = Depends(get_repo),
     input_paths: List[Path] = Depends(get_input_paths_or_throw),
+    base_hash: Optional[str] = Query(
+        None, description="hash of previous bundle already downloaded, server will return a diff bundle.")
 ):
     maker = BundleMaker(
         repo,
         in_directories=set(input_paths),
         extensions=OPA_FILE_EXTENSIONS
     )
-    return maker.make_bundle(repo.head.commit)
+    if base_hash is None:
+        return maker.make_bundle(repo.head.commit)
+
+    try:
+        old_commit = repo.commit(base_hash)
+        return maker.make_diff_bundle(old_commit, repo.head.commit)
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"commit with hash {base_hash} was not found in the policy repo!"
+        )

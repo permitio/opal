@@ -6,8 +6,9 @@ from git import Repo
 from git.objects import Commit
 
 from opal.common.git.commit_viewer import CommitViewer, has_extension, is_under_directories
+from opal.common.git.diff_viewer import DiffViewer, diffed_file_has_extension, diffed_file_is_under_directories
 from opal.common.opa import get_rego_package, is_data_module, is_rego_module
-from opal.common.schemas.policy import DataModule, PolicyBundle, RegoModule
+from opal.common.schemas.policy import DataModule, PolicyBundle, RegoModule, DeletedFiles
 
 
 class BundleMaker:
@@ -19,6 +20,8 @@ class BundleMaker:
         self._directories = in_directories
         self._has_extension = partial(has_extension, extensions=extensions)
         self._is_under_directories = partial(is_under_directories, directories=in_directories)
+        self._diffed_file_has_extension = partial(diffed_file_has_extension, extensions=extensions)
+        self._diffed_file_is_under_directories = partial(diffed_file_is_under_directories, directories=in_directories)
 
     def make_bundle(self, commit: Commit) -> PolicyBundle:
         data_modules = []
@@ -53,4 +56,62 @@ class BundleMaker:
                 hash=commit.hexsha,
                 data_modules=data_modules,
                 rego_modules=rego_modules,
+            )
+
+    def make_diff_bundle(self, old_commit: Commit, new_commit: Commit) -> PolicyBundle:
+        data_modules = []
+        rego_modules = []
+        deleted_data_modules = []
+        deleted_rego_modules = []
+        manifest = []
+
+        with DiffViewer(old_commit, new_commit) as viewer:
+            filter = lambda diff: (
+                self._diffed_file_has_extension(diff) and \
+                    self._diffed_file_is_under_directories(diff)
+                )
+            for source_file in viewer.added_or_modified_files(filter):
+                contents = source_file.read()
+                path = source_file.path
+
+                if is_data_module(path):
+                    data_modules.append(
+                        DataModule(path=str(path.parent), data=contents)
+                    )
+                elif is_rego_module(path):
+                    rego_modules.append(
+                        RegoModule(
+                            path=str(path),
+                            package_name=get_rego_package(contents) or "",
+                            rego=contents,
+                        )
+                    )
+                else:
+                    continue
+
+                manifest.append(str(path)) # only returns the relative path
+
+            for source_file in viewer.deleted_files(filter):
+                path = source_file.path
+
+                if is_data_module(path):
+                    deleted_data_modules.append(path)
+                elif is_rego_module(path):
+                    deleted_rego_modules.append(path)
+
+            if deleted_data_modules or deleted_rego_modules:
+                deleted_files = DeletedFiles(
+                    data_modules=deleted_data_modules,
+                    rego_modules=deleted_rego_modules,
+                )
+            else:
+                deleted_files = None
+
+            return PolicyBundle(
+                manifest=manifest,
+                hash=new_commit.hexsha,
+                old_hash=old_commit.hexsha,
+                data_modules=data_modules,
+                rego_modules=rego_modules,
+                deleted_files=deleted_files
             )

@@ -1,4 +1,5 @@
-from typing import List
+from typing import List, Optional
+from pathlib import Path
 from pydantic import BaseModel, Field
 
 
@@ -15,8 +16,14 @@ class RegoModule(BaseSchema):
     package_name: str = Field(..., description="opa module package name")
     rego: str = Field(..., description="rego module file contents (text)")
 
+class DeletedFiles(BaseSchema):
+    data_modules: List[Path] = []
+    rego_modules: List[Path] = []
+
 class PolicyBundle(BaseSchema):
     manifest: List[str]
     hash: str = Field(..., description="commit hash (debug version)")
+    old_hash: Optional[str] = Field(None, description="old commit hash (in diff bundles)")
     data_modules: List[DataModule]
     rego_modules: List[RegoModule]
+    deleted_files: Optional[DeletedFiles]
