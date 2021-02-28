@@ -4,7 +4,7 @@ from tenacity import retry, wait_fixed, stop_after_attempt
 from git import Repo, GitError, GitCommandError
 
 from opal.common.logger import get_logger
-from opal.common.git.repo_utils import GitFailed
+from opal.common.git.exceptions import GitFailed
 
 
 class CloneResult:

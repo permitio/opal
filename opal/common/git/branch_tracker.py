@@ -5,7 +5,7 @@ from git.objects.commit import Commit
 from tenacity import retry, wait_fixed, stop_after_attempt
 
 from opal.common.logger import get_logger
-from opal.common.git.repo_utils import GitFailed
+from opal.common.git.exceptions import GitFailed
 
 logger = get_logger("Policy Watcher")
 

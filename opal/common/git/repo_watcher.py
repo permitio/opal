@@ -4,7 +4,7 @@ from git.objects import Commit
 
 from opal.common.git.branch_tracker import BranchTracker
 from opal.common.git.repo_cloner import RepoCloner
-from opal.common.git.repo_utils import GitFailed
+from opal.common.git.exceptions import GitFailed
 from opal.common.logger import get_logger
 from opal.common.utils import AsyncioEventLoopThread
 

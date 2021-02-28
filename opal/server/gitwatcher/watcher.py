@@ -1,9 +1,11 @@
 from typing import List
 from pathlib import Path
+from functools import partial
 from git.objects import Commit
 
-from opal.common.git.repo_utils import GitActions, DirActions
+from opal.common.paths import PathUtils
 from opal.common.logger import get_logger
+from opal.common.git.commit_viewer import CommitViewer, has_extension
 from opal.common.git.repo_watcher import RepoWatcher
 from opal.server.config import (
     POLICY_REPO_URL,
@@ -28,11 +30,13 @@ async def publish_full_manifest(
     publishes policy topics matching all relevant directories in tracked repo,
     prompting the client to ask for *all* contents of these directories (and not just diffs).
     """
-    all_paths = GitActions.all_files_in_repo(new_commit, file_extensions)
-    directories = DirActions.parents(all_paths)
-    logger.info("Publishing policy update", directories=[str(d) for d in directories])
-    topics = policy_topics(directories)
-    policy_publisher.publish_updates(topics=topics, data=new_commit.hexsha)
+    with CommitViewer(new_commit) as viewer:
+        filter = partial(has_extension, extensions=file_extensions)
+        all_paths = list(viewer.files(filter))
+        directories = PathUtils.intermediate_directories(all_paths)
+        logger.info("Publishing policy update", directories=[str(d) for d in directories])
+        topics = policy_topics(directories)
+        policy_publisher.publish_updates(topics=topics, data=new_commit.hexsha)
 
 
 policy_watcher = RepoWatcher(

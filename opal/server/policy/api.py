@@ -1,3 +1,4 @@
+from opal.common.git.bundle_maker import BundleMaker
 from typing import Optional, List
 from fastapi import APIRouter, Depends, Query, HTTPException, status
 from pathlib import Path
@@ -5,12 +6,14 @@ from pathlib import Path
 from git import Repo
 
 from opal.common.logger import get_logger
+from opal.common.git.repo_utils import GitActions
+from opal.common.git.commit_viewer import CommitViewer
+from opal.common.paths import PathUtils
+from opal.common.schemas.policy import PolicyBundle
 from opal.server.config import (
     POLICY_REPO_CLONE_PATH,
     OPA_FILE_EXTENSIONS
 )
-from opal.common.git.repo_utils import GitActions
-from opal.common.schemas.policy import PolicyBundle
 
 logger = get_logger("Policy API")
 router = APIRouter()
@@ -27,40 +30,43 @@ async def get_repo(
         )
     return Repo(repo_path)
 
-async def get_parent_dirs_from_paths(
-    repo: Repo = Depends(get_repo),
-    path: Optional[List[str]] = Query(None)
-) -> List[Path]:
-    repo_dir = GitActions.repo_dir(repo)
-    paths = path or []
-    parents = []
 
-    for p in paths:
-        if p.startswith('/'):
-            p = p[1:] # remove first slash
-        repo_path = repo_dir / Path(p)
-        if not repo_path.exists():
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"requested path {p} was not found in the policy repo!"
-            )
-        parents.append(repo_path)
+def normalize_path(path: str) -> Path:
+    return Path(path[1:]) if path.startswith('/') else Path(path)
+
+async def get_input_paths_or_throw(
+    repo: Repo = Depends(get_repo),
+    paths: Optional[List[str]] = Query(None, alias="path")
+) -> List[Path]:
+    """
+    validates the :path query param, and return valid paths.
+    if an invalid path is provided, will throw 404.
+    """
+    paths = paths or []
+    paths = [normalize_path(p) for p in paths]
+
+    # verify all input paths exists under the commit hash
+    with CommitViewer(repo.head.commit) as viewer:
+        for path in paths:
+            if not viewer.exists(path):
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail=f"requested path {path} was not found in the policy repo!"
+                )
 
     # the default of GET /policy (without path params) is to return all
     # the (opa) files in the repo.
-    if not parents:
-        parents = [repo_dir]
-
-    return parents
+    paths = paths or [Path(".")]
+    return paths
 
 @router.get("/policy", response_model=PolicyBundle)
 async def get_policy(
     repo: Repo = Depends(get_repo),
-    parent_dirs: List[Path] = Depends(get_parent_dirs_from_paths),
+    input_paths: List[Path] = Depends(get_input_paths_or_throw),
 ):
-    return GitActions.create_bundle(
+    maker = BundleMaker(
         repo,
-        repo.head.commit,
-        parent_dirs,
+        in_directories=set(input_paths),
         extensions=OPA_FILE_EXTENSIONS
     )
+    return maker.make_bundle(repo.head.commit)
