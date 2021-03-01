@@ -21,9 +21,10 @@ class UvicornWorkerPidLeaderElection(LeaderElectionBase):
     """
     def __init__(self):
         self._my_pid = os.getpid()
-        self._logger = get_logger(f"opal.worker.{self._my_pid}")
+        self._logger = get_logger(f"election.candidate.{self._my_pid}")
+        super().__init__()
 
-    def elect(self) -> bool:
+    async def _elect(self) -> bool:
         """
         returns true if the calling process was elected leader.
         """
@@ -33,8 +34,8 @@ class UvicornWorkerPidLeaderElection(LeaderElectionBase):
         sibling_pids.sort()
         leader_pid = sibling_pids[-1] # highest pid
         if leader_pid == self._my_pid:
-            self._logger.info("leader election: elected", leader=leader_pid, siblings=sibling_pids)
+            self._logger.info("elected", leader=leader_pid, siblings=sibling_pids)
             return True
         else:
-            self._logger.info("leader election: NOT elected", leader=leader_pid, siblings=sibling_pids)
+            self._logger.info("NOT elected", leader=leader_pid, siblings=sibling_pids)
             return False

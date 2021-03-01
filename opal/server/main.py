@@ -36,7 +36,7 @@ elected_as_leader = False
 @app.on_event("startup")
 async def startup_event():
     election = UvicornWorkerPidLeaderElection()
-    elected_as_leader = election.elect()
+    elected_as_leader = await election.elect()
     if elected_as_leader:
         logger.info("i am the leader!")
         policy_publisher.start()
