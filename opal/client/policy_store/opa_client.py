@@ -6,7 +6,7 @@ from typing import Dict, Any
 
 from tenacity import retry, stop_after_attempt, wait_fixed
 
-from opal.client.config import OPA_SERVICE_URL
+from opal.client.config import POLICY_STORE_URL
 from opal.client.logger import get_logger
 from opal.client.utils import proxy_response
 from opal.client.enforcer.schemas import AuthorizationQuery
@@ -35,7 +35,7 @@ class OpaClient:
     """
     POLICY_NAME = "rbac"
 
-    def __init__(self, opa_server_url=OPA_SERVICE_URL):
+    def __init__(self, opa_server_url=POLICY_STORE_URL):
         self._opa_url = opa_server_url
         self._policy_data = None
 
@@ -121,5 +121,3 @@ class OpaClient:
             logger.warn("Opa connection error", err=e)
             raise
 
-
-opa = OpaClient()

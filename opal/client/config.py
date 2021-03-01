@@ -34,7 +34,7 @@ POLICY_STORE_TYPE = config.enum("POLICY_STORE_TYPE", PolicyStoreTypes, PolicySto
 
 OPA_PORT = config.str("OPA_PORT", "8181")
 _opa_url = config.str("OPA_SERVICE_URL", f"http://localhost:{OPA_PORT}")
-OPA_SERVICE_URL = f"{_opa_url}/v1"
+POLICY_STORE_URL = f"{_opa_url}/v1"
 
 CLIENT_TOKEN = config.str("CLIENT_TOKEN", "PJUKkuwiJkKxbIoC4o4cguWxB_2gX6MyATYKc2OCM")
 

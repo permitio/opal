@@ -7,7 +7,7 @@ from fastapi_websocket_pubsub import PubSubClient
 from opal.client.logger import get_logger
 from opal.client.config import DATA_TOPICS, DATA_UPDATES_WS_URL, CLIENT_TOKEN, KEEP_ALIVE_INTERVAL
 from opal.client.utils import AsyncioEventLoopThread, get_authorization_header
-from opal.client.enforcer.policy_store.opa_client import opa
+from opal.client.policy_store.policy_store_client_factory import policy_store
 from opal.client.data.fetcher import data_fetcher
 from opal.client.data.rpc import TenantAwareRpcEventClientMethods
 
@@ -36,15 +36,15 @@ async def update_policy_data(update:DataUpdate=None):
     for url in policy_data_by_urls:
         # get path to store the URL data (default mode (None) is as "" - i.e. as all the data at root)
         entry = url_to_entry.get(url, None)
-        opa_path = "" if entry is None  else entry.dst_path
+        policy_store_path = "" if entry is None  else entry.dst_path
         # None is not valid - use "" (protect from missconfig)
-        if opa_path is None:
-            opa_path = ""
+        if policy_store_path is None:
+            policy_store_path = ""
         # fix opa_path (if not empty must start with "/" to be nested under data)
-        if opa_path != "" and not opa_path.startswith("/"):
-            opa_path = f"/{opa_path}"
+        if policy_store_path != "" and not policy_store_path.startswith("/"):
+            policy_store_path = f"/{policy_store_path}"
         policy_data = policy_data_by_urls[url]
-        opa.set_policy_data(policy_data, path=opa_path)
+        policy_store.set_policy_data(policy_data, path=policy_store_path)
 
 
 async def refetch_policy_data_and_update_store(**kwargs):

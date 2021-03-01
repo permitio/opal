@@ -11,7 +11,9 @@ from tenacity import retry, wait_random_exponential
 from opal.client.config import OPA_PORT
 from opal.client.logger import get_logger
 from opal.client.utils import AsyncioEventLoopThread
-from opal.client.enforcer.client import opa
+from opal.client.policy_store.policy_store_client_factory import policy_store, PolicyStoreTypes
+
+opa = policy_store
 
 logger = get_logger("Opal Client")
 runner_logger = get_logger("Opa Runner")
@@ -127,13 +129,15 @@ class OpaRunner:
             except json.JSONDecodeError:
                 opa_logger.info(line)
 
-opa_runner = OpaRunner()
+    @staticmethod
+    def setup_opa_runner():
+        opa_runner = OpaRunner()
+        # if opa was down and restarted - its cache is clean,
+        # meaning it cannot answer isAllowed queries correctly
+        # in that case we rehydrate the cache.
+        async def rehydrate_opa():
+            runner_logger.info("Rehydrating OPA from cache")
+            await opa.rehydrate_opa_from_process_cache()
 
-# if opa was down and restarted - its cache is clean,
-# meaning it cannot answer isAllowed queries correctly
-# in that case we rehydrate the cache.
-async def rehydrate_opa():
-    runner_logger.info("Rehydrating OPA from cache")
-    await opa.rehydrate_opa_from_process_cache()
-
-opa_runner.on_opa_start(rehydrate_opa)
+        opa_runner.on_opa_start(rehydrate_opa)
+        return opa_runner
