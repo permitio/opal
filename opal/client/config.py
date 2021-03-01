@@ -1,33 +1,48 @@
 import os
+from enum import Enum
+
+from opal.common.confi import Confi
+
+config = Confi()
+
+class PolicyStoreTypes(Enum):
+    OPA="OPA"
+    MOCK="MOCK"
+        
+# Data topics to subscribe to
+DATA_TOPICS = config.list("DATA_TOPICS", ["policy_data"])
+DEFAULT_DATA_URL = config.str("DEFAULT_DATA_URL", "http://localhost:8000/policy-config")
+
 
 # backend service
-_acalla_backend_url = os.environ.get("AUTHZ_SERVICE_URL", "http://localhost:8000")
-BACKEND_SERVICE_LEGACY_URL = f"{_acalla_backend_url}/sdk"
-BACKEND_SERVICE_URL = f"{_acalla_backend_url}/v1"
+BACKEND_URL = config.str("AUTHZ_SERVICE_URL", "http://localhost:8000")
+BACKEND_SERVICE_LEGACY_URL = f"{BACKEND_URL}/sdk"
+BACKEND_SERVICE_URL = f"{BACKEND_URL}/v1"
 
 # data service (currently points to backend)
-_ws_backend_url = _acalla_backend_url.replace("https", "ws").replace("http", "ws")
+_ws_backend_url = BACKEND_URL.replace("https", "ws").replace("http", "ws")
 DATA_UPDATES_WS_URL = f"{_ws_backend_url}/sdk/ws"
 
 # policy service (opal server)
-POLICY_SERVICE_URL = os.environ.get("POLICY_SERVICE_URL", "http://localhost:7002")
+POLICY_SERVICE_URL = config.str("POLICY_SERVICE_URL", "http://localhost:7002")
 _policy_ws_url = POLICY_SERVICE_URL.replace("https", "ws").replace("http", "ws")
 POLICY_UPDATES_WS_URL = f"{_policy_ws_url}/ws"
 
-POLICY_SUBSCRIPTION_DIRS = os.environ.get("POLICY_SUBSCRIPTION_DIRS", "some/dir:other").split(":")
+POLICY_SUBSCRIPTION_DIRS = config.list("POLICY_SUBSCRIPTION_DIRS", ["some/dir","other"], delimiter=":")
 
-OPA_PORT = os.environ.get("OPA_PORT", "8181")
-_opa_url = os.environ.get("OPA_SERVICE_URL", f"http://localhost:{OPA_PORT}")
+POLICY_STORE_TYPE = config.enum("POLICY_STORE_TYPE", PolicyStoreTypes, PolicyStoreTypes.OPA)
+
+OPA_PORT = config.str("OPA_PORT", "8181")
+_opa_url = config.str("OPA_SERVICE_URL", f"http://localhost:{OPA_PORT}")
 OPA_SERVICE_URL = f"{_opa_url}/v1"
 
-CLIENT_TOKEN = os.environ.get("CLIENT_TOKEN", "PJUKkuwiJkKxbIoC4o4cguWxB_2gX6MyATYKc2OCM")
+CLIENT_TOKEN = config.str("CLIENT_TOKEN", "PJUKkuwiJkKxbIoC4o4cguWxB_2gX6MyATYKc2OCM")
 
 ALLOWED_ORIGINS = ["*"]
 
-try:
-    KEEP_ALIVE_INTERVAL = int(os.environ.get("AUTHZ_KEEP_ALIVE", "0"))
-except ValueError:
-    KEEP_ALIVE_INTERVAL = 0
+
+KEEP_ALIVE_INTERVAL = config.int("AUTHZ_KEEP_ALIVE", 0)
+
 
 OPENAPI_TAGS_METADATA = [
     {
