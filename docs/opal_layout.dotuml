@@ -1,0 +1,36 @@
+
+    DeploymentDiagram {
+        
+        node "Backend/Cloud" as cloud {
+            artifact "OPAL server" as server [icon=server]
+            artifact "Policy Git Repo" as git [icon=git] 
+        }
+
+     
+        node "OPAL sidecar" as opal [icon=gem]{
+            artifact "OpenPolicyAgent" as opa
+            artifact "OPAL-fetcher" as fetcher
+            artifact "OPAL-updater" as updater
+        }
+        artifact "app-service" as service [icon=cog]
+     
+        node "Data Cloud" as datacloud [icon=database]{
+            artifact "data-source" as data [icon=database]
+        }
+
+        git -- server "webhook"
+        service -> opa "isAllowed? / OPA query"
+
+        fetcher -> opa "push data updates"
+        updater -> opa "push policy updates"
+        updater -> fetcher "update"
+        fetcher -> data 
+
+        server -> updater "Policy Pub/Sub"
+        server -> updater "Data Pub/Sub"
+
+
+
+    }
+
+    
