@@ -72,3 +72,11 @@ policy_watcher = RepoWatcher(
 )
 
 policy_watcher.on_new_commits(publish_changed_directories)
+
+async def trigger_webhook(topic, data):
+    """
+    triggers the policy watcher check for changes.
+    will trigger a task on the watcher's thread.
+    """
+    logger.info("webhook listener triggered")
+    policy_watcher.trigger()

@@ -9,6 +9,7 @@ from opal.server.policy.github_webhook.api import router as webhook_router
 from opal.server.policy.bundles.api import router as bundles_router
 from opal.server.policy.watcher import policy_watcher
 from opal.server.policy.publisher import policy_publisher
+from opal.server.policy.github_webhook.listener import webhook_listener
 from opal.server.pubsub import router as websocket_router
 
 logger = get_logger("opal.server")
@@ -40,10 +41,12 @@ async def startup_event():
         logger.info("i am the leader!")
         policy_publisher.start()
         policy_watcher.start()
+        webhook_listener.start()
 
 @app.on_event("shutdown")
 async def shutdown_event():
     if elected_as_leader:
         policy_watcher.stop()
         await policy_publisher.stop()
+        await webhook_listener.stop()
 

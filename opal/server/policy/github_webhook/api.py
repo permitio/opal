@@ -5,6 +5,7 @@ from opal.common.logger import get_logger
 from opal.server.config import POLICY_REPO_URL
 from opal.server.policy.github_webhook.deps import validate_github_signature_or_throw, affected_repo_urls
 from opal.server.policy.watcher import policy_watcher
+from opal.server.pubsub import endpoint
 
 
 logger = get_logger('opal.webhook.api')
@@ -25,7 +26,8 @@ async def trigger_git_webhook(
     if POLICY_REPO_URL is not None and POLICY_REPO_URL in urls:
         logger.info("triggered webhook", repo=urls[0], hook_event=event)
         if event == 'push':
-            policy_watcher.trigger()
+            # notifies the webhook listener via the pubsub broadcaster
+            await endpoint.publish("webhook")
         return { "status": "ok", "event": event, "repo_url": urls[0] }
 
     return { "status": "ignored", "event": event }
