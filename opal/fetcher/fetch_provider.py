@@ -39,6 +39,13 @@ class BaseFetchProvider:
         res = await attempter()
         return res
 
+    async def process(self, data):
+        try: 
+            return await self._process_(data)
+        except:
+            logger.exception("Failed to process fetched data")
+            return data
+
 
     async def _fetch_(self):
         """
@@ -46,6 +53,9 @@ class BaseFetchProvider:
         Override this method to implement a new fetch provider
         """
         pass
+
+    async def _process_(self, data):
+        return data
 
     def set_retry_config(self, retry_config:dict):
         """ 

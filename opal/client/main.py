@@ -16,7 +16,7 @@ from opal.client.data.updater import data_updater
 from opal.client.enforcer.runner import opa_runner
 
 app = FastAPI(
-    title="Authorizon Sidecar",
+    title="OPAL client Sidecar",
     description="This sidecar wraps Open Policy Agent (OPA) with a higher-level API intended for fine grained " + \
         "application-level authorization. The sidecar automatically handles pulling policy updates in real-time " + \
         "from a centrally managed cloud-service (api.authorizon.com).",

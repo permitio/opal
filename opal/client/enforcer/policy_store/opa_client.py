@@ -81,12 +81,12 @@ class OpaClient:
 
     @fail_silently()
     @retry(**RETRY_CONFIG)
-    async def set_policy_data(self, policy_data: Dict[str, Any]):
+    async def set_policy_data(self, policy_data: Dict[str, Any], path=""):
         self._policy_data = policy_data
         async with aiohttp.ClientSession() as session:
             try:
                 async with session.put(
-                    f"{self._opa_url}/data",
+                    f"{self._opa_url}/data{path}",
                     data=json.dumps(self._policy_data),
                 ) as opa_response:
                     return await proxy_response(opa_response)
