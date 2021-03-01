@@ -16,7 +16,7 @@ from opal.server.config import (
     POLICY_REPO_POLLING_INTERVAL,
     OPA_FILE_EXTENSIONS,
 )
-from opal.server.gitwatcher.publisher import policy_publisher
+from opal.server.policy.publisher import policy_publisher
 
 logger = get_logger("opal.git.watcher")
 

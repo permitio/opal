@@ -7,7 +7,7 @@ from tenacity import retry, wait_fixed, stop_after_attempt
 from opal.common.logger import get_logger
 from opal.common.git.exceptions import GitFailed
 
-logger = get_logger("Policy Watcher")
+logger = get_logger("opal.branch.tracker")
 
 
 class BranchTracker:
@@ -50,7 +50,6 @@ class BranchTracker:
                 - prev: the previous (before the pull) top-most commit on the tracked branch
                 - latest: the new top-most (latest) commit on the tracked branch
         """
-        logger.info("Pulling changes from remote", remote=self.tracked_remote.name)
         self._pull()
 
         if (self.prev_commit.hexsha == self.latest_commit.hexsha):
