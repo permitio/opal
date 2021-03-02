@@ -3,7 +3,7 @@ import asyncio
 from uuid import uuid4
 from typing import Optional, List, Tuple
 
-from fastapi_websocket_pubsub import PubSubEndpoint, PubSubClient, Topic
+from fastapi_websocket_pubsub import PubSubClient, Topic
 
 from opal.common.election.base import LeaderElectionBase
 from opal.common.logger import get_logger
@@ -21,13 +21,11 @@ class PubSubBullyLeaderElection(LeaderElectionBase):
     """
     def __init__(
         self,
-        pubsub_endpoint: PubSubEndpoint,
         server_uri: str,
         extra_headers: Optional[List[Tuple[str, str]]] = None,
         wait_time_for_publish: float = 1,
         wait_time_for_decision: float = 1,
     ):
-        self._endpoint = pubsub_endpoint
         self._server_uri = server_uri
         self._extra_headers = extra_headers
         self._wait_time_for_publish = wait_time_for_publish
@@ -37,9 +35,6 @@ class PubSubBullyLeaderElection(LeaderElectionBase):
         self._known_candidates.add(self._my_id)
         self._logger = get_logger(f"election.candidate.{self._my_id}")
         super().__init__()
-
-    async def _publish_id(self):
-        await self._endpoint.publish(ELECTION_TOPIC, data=self._my_id)
 
     async def _elect(self) -> bool:
         """
@@ -60,7 +55,7 @@ class PubSubBullyLeaderElection(LeaderElectionBase):
             )
 
             # publish own random id
-            await self._publish_id()
+            await client.publish(ELECTION_TOPIC, data=self._my_id)
 
             # wait for all candidates to finish publishing their id
             await asyncio.sleep(self._wait_time_for_decision)

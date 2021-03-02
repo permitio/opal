@@ -21,3 +21,5 @@ except ValueError:
 
 ALLOWED_ORIGINS = ["*"]
 OPA_FILE_EXTENSIONS = ('.rego', '.json')
+
+NO_RPC_LOGS = bool(int(os.environ.get("NO_RPC_LOGS", 0)))

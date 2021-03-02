@@ -1,8 +1,13 @@
+import logging
+from fastapi_websocket_rpc.logger import logging_config, LoggingModes
+
+import asyncio
 from fastapi import FastAPI, Depends
 
 from opal.common.middleware import configure_middleware
+from opal.common.utils import get_authorization_header
 from opal.common.logger import get_logger
-from opal.common.election.uvicorn_worker_pid import UvicornWorkerPidLeaderElection
+from opal.common.election.pubsub_bully import PubSubBullyLeaderElection
 
 from opal.server.deps.authentication import verify_logged_in
 from opal.server.policy.github_webhook.api import router as webhook_router
@@ -11,6 +16,10 @@ from opal.server.policy.watcher import policy_watcher
 from opal.server.policy.publisher import policy_publisher
 from opal.server.policy.github_webhook.listener import webhook_listener
 from opal.server.pubsub import router as websocket_router
+from opal.server.config import NO_RPC_LOGS, OPAL_WS_LOCAL_URL, OPAL_WS_TOKEN
+
+if NO_RPC_LOGS:
+    logging_config.set_mode(LoggingModes.UVICORN, level=logging.WARN)
 
 logger = get_logger("opal.server")
 
@@ -33,15 +42,22 @@ def healthcheck():
 
 elected_as_leader = False
 
-@app.on_event("startup")
-async def startup_event():
-    election = UvicornWorkerPidLeaderElection()
-    elected_as_leader = await election.elect()
+async def on_election_desicion(descision: bool):
+    elected_as_leader = descision
     if elected_as_leader:
         logger.info("i am the leader!")
         policy_publisher.start()
         policy_watcher.start()
         webhook_listener.start()
+
+@app.on_event("startup")
+async def startup_event():
+    election = PubSubBullyLeaderElection(
+        server_uri=OPAL_WS_LOCAL_URL,
+        extra_headers=[get_authorization_header(OPAL_WS_TOKEN)]
+    )
+    election.on_desicion(on_election_desicion)
+    asyncio.create_task(election.elect())
 
 @app.on_event("shutdown")
 async def shutdown_event():
