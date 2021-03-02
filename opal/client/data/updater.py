@@ -7,7 +7,7 @@ from fastapi_websocket_pubsub import PubSubClient
 from opal.client.logger import get_logger
 from opal.client.config import DATA_TOPICS, DATA_UPDATES_WS_URL, CLIENT_TOKEN, KEEP_ALIVE_INTERVAL
 from opal.client.utils import AsyncioEventLoopThread, get_authorization_header
-from opal.client.policy_store.policy_store_client_factory import policy_store
+from opal.client.policy_store.policy_store_client_factory import DEFAULT_POLICY_STORE
 from opal.client.data.fetcher import data_fetcher
 from opal.client.data.rpc import TenantAwareRpcEventClientMethods
 
@@ -16,7 +16,7 @@ logger = get_logger("Opal Client")
 updater_logger = get_logger("Data Updater")
 
 
-async def update_policy_data(update:DataUpdate=None):
+async def update_policy_data(update:DataUpdate=None, policy_store=DEFAULT_POLICY_STORE):
     """
     fetches policy data (policy configuration) from backend and updates it into policy-store (i.e. OPA)
     """
@@ -47,15 +47,16 @@ async def update_policy_data(update:DataUpdate=None):
         policy_store.set_policy_data(policy_data, path=policy_store_path)
 
 
-async def refetch_policy_data_and_update_store(**kwargs):
+async def refetch_policy_data_and_update_store(policy_store=DEFAULT_POLICY_STORE):
     """
     will bring fresh data from backend, and will inject into OPA.
     """
     # TODO - this should be replaced by an update coming the server on client connect
-    await update_policy_data(**kwargs)
+    await update_policy_data(policy_store=policy_store)
 
 class DataUpdater:
-    def __init__(self, token=CLIENT_TOKEN, server_url=DATA_UPDATES_WS_URL, data_topics=None):
+    def __init__(self, token=CLIENT_TOKEN, server_url=DATA_UPDATES_WS_URL, data_topics=None, policy_store=DEFAULT_POLICY_STORE):
+        self._policy_store = policy_store
         self._data_topics = DATA_TOPICS
         if data_topics is not None:
             self._data_topics.extend(data_topics)
@@ -78,13 +79,13 @@ class DataUpdater:
             reason = "Periodic update"
         updater_logger.info("Updating policy data", reason=reason)
 
-        await update_policy_data(update)
+        await update_policy_data(update, policy_store=self._policy_store)
 
     async def on_connect(self, client:PubSubClient, channel:RpcChannel):
         # on connection to backend, whether its the first connection
         # or reconnecting after downtime, refetch the state opa needs.
         updater_logger.info("Connected to server")
-        await refetch_policy_data_and_update_store()
+        await refetch_policy_data_and_update_store(policy_store=self._policy_store)
 
     async def on_disconnect(self, channel:RpcChannel):
         updater_logger.info("Disconnected from server")
@@ -118,5 +119,3 @@ class DataUpdater:
         await data_fetcher.stop()
         self._thread.stop()
 
-
-data_updater = DataUpdater()

@@ -11,9 +11,9 @@ from tenacity import retry, wait_random_exponential
 from opal.client.config import OPA_PORT
 from opal.client.logger import get_logger
 from opal.client.utils import AsyncioEventLoopThread
-from opal.client.policy_store.policy_store_client_factory import policy_store, PolicyStoreTypes
+from opal.client.policy_store.policy_store_client_factory import DEFAULT_POLICY_STORE, PolicyStoreTypes
 
-opa = policy_store
+opa = DEFAULT_POLICY_STORE
 
 logger = get_logger("Opal Client")
 runner_logger = get_logger("Opa Runner")

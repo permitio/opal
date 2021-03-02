@@ -13,17 +13,17 @@ class InvalidPolicyStoreTypeException(Exception):
 class PolicyStoreClientFactory:
 
     @classmethod
-    def create(type=POLICY_STORE_TYPE, url=POLICY_STORE_URL):
+    def create(store_type=POLICY_STORE_TYPE, url=POLICY_STORE_URL):
         # OPA
-        if PolicyStoreTypes.OPA == type:
+        if PolicyStoreTypes.OPA == store_type:
             from opal.client.policy_store.opa_client import OpaClient
             return OpaClient(url)
         # MOCK
-        elif PolicyStoreTypes.MOCK == type:
+        elif PolicyStoreTypes.MOCK == store_type:
             from opal.client.policy_store.mock_policy_store_client import MockPolicyStoreClient
             return MockPolicyStoreClient()
         else:
-            raise InvalidPolicyStoreTypeException(f"{type} is not a valid policy store type")
+            raise InvalidPolicyStoreTypeException(f"{store_type} is not a valid policy store type")
 
 
-policy_store = PolicyStoreClientFactory.create()
+DEFAULT_POLICY_STORE = PolicyStoreClientFactory.create()

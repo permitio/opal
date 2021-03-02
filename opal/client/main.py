@@ -12,11 +12,11 @@ from opal.client.data.api import router as data_router
 from opal.client.local.api import router as local_router
 from opal.client.server.middleware import configure_middleware
 from opal.client.policy.updater import policy_updater
-from opal.client.data.updater import data_updater
+from opal.client.data.updater import DataUpdater
 from opal.client.enforcer.runner import OpaRunner
 
 
-def main():
+def main(policy_store_type=POLICY_STORE_TYPE):
     app = FastAPI(
         title="OPAL client Sidecar",
         description="This sidecar wraps Open Policy Agent (OPA) with a higher-level API intended for fine grained " + \
@@ -34,11 +34,16 @@ def main():
     app.include_router(data_router, tags=["Data Updater"])
     app.include_router(proxy_router, tags=["Cloud API Proxy"])
 
-    if POLICY_STORE_TYPE == PolicyStoreTypes.OPA:
+    # Internal services
+    # Policy store
+    if policy_store_type == PolicyStoreTypes.OPA:
         opa_runner = OpaRunner.setup_opa_runner()
     else:
         opa_runner = None
+    # Data updating service
+    data_updater = DataUpdater()
 
+    # API Routes
     @app.get("/healthcheck", include_in_schema=False)
     @app.get("/", include_in_schema=False)
     def healthcheck():
