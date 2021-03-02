@@ -1,9 +1,9 @@
-from typing import Coroutine, Optional, Any, List, Tuple, Protocol
+from typing import Coroutine, Any, Protocol
 
 from fastapi_websocket_pubsub import PubSubClient, Topic, TopicList
 
-from opal.common.logger import get_logger
 from opal.common.utils import AsyncioEventLoopThread
+from opal.common.logger import get_logger
 
 
 logger = get_logger("opal.topic-listener")
@@ -24,6 +24,16 @@ class TopicListenerThread:
         topics: TopicList = None,
         callback: TopicCallback = None,
     ):
+        """[summary]
+
+        Args:
+            client (PubSubClient): a configured not-yet-started pub sub client
+                we want to start in the listener thread
+            server_uri (str): the URI of the pub sub server we subscribe to
+            topics (TopicList): the topic(s) we subscribe to
+            callback (TopicCallback): the (async) callback to run when a message
+                arrive on one of the subsribed topics
+        """
         self._thread = AsyncioEventLoopThread(name="TopicListenerThread")
         self._client = client
         self._server_uri = server_uri

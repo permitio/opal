@@ -20,6 +20,13 @@ class TopicPublisherThread:
     publishing messages on that thread asyncio event loop.
     """
     def __init__(self, client: PubSubClient, server_uri: str):
+        """[summary]
+
+        Args:
+            client (PubSubClient): a configured not-yet-started pub sub client
+                we want to start in the publisher thread
+            server_uri (str): the URI of the pub sub server we publish to
+        """
         self._thread = AsyncioEventLoopThread(name="TopicPublisherThread")
         self._client = client
         self._server_uri = server_uri
@@ -44,6 +51,10 @@ class TopicPublisherThread:
     def publish(self, topics: TopicList, data: Any = None):
         """
         publish a message by launching a task on the thread's event loop.
+
+        Args:
+            topics (TopicList): a list of topics to publish the message to
+            data (Any): optional data to publish as part of the message
         """
         return self._thread.create_task(self._publish(topics=topics, data=data))
 
