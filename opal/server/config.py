@@ -2,7 +2,7 @@ import os
 
 # ws server (TODO: merge with opal client config)
 OPAL_WS_LOCAL_URL = os.environ.get("OPAL_WS_LOCAL_URL", "ws://localhost:7002/ws")
-OPAL_WS_TOKEN = os.environ.get("OPAL_WS_TOKEN", "PJUKkuwiJkKxbIoC4o4cguWxB_2gX6MyATYKc2OCM")
+OPAL_WS_TOKEN = os.environ.get("OPAL_WS_TOKEN", "THIS_IS_A_DEV_SECRET")
 BROADCAST_URI = "postgres://localhost/acalladb"
 
 # repo watcher
