@@ -7,7 +7,7 @@ from opal.common.paths import PathUtils
 from opal.common.logger import get_logger
 from opal.common.git.commit_viewer import CommitViewer, has_extension
 from opal.common.git.diff_viewer import DiffViewer
-from opal.server.policy.publisher import policy_publisher
+from opal.common.communication.topic_publisher import TopicPublisherThread
 
 
 logger = get_logger("opal.git.watcher")
@@ -18,7 +18,11 @@ def policy_topics(paths: List[Path]) -> List[str]:
 
 
 async def publish_all_directories_in_repo(
-    old_commit: Commit, new_commit: Commit, file_extensions: Optional[List[str]] = None):
+    publisher: TopicPublisherThread,
+    old_commit: Commit,
+    new_commit: Commit,
+    file_extensions: Optional[List[str]] = None
+):
     """
     publishes policy topics matching all relevant directories in tracked repo,
     prompting the client to ask for *all* contents of these directories (and not just diffs).
@@ -29,17 +33,22 @@ async def publish_all_directories_in_repo(
         directories = PathUtils.intermediate_directories(all_paths)
         logger.info("Publishing policy update", directories=[str(d) for d in directories])
         topics = policy_topics(directories)
-        policy_publisher.publish_updates(topics=topics, data=new_commit.hexsha)
+        publisher.publish(topics=topics, data=new_commit.hexsha)
 
 
 async def publish_changed_directories(
-    old_commit: Commit, new_commit: Commit, file_extensions: Optional[List[str]] = None):
+    publisher: TopicPublisherThread,
+    old_commit: Commit,
+    new_commit: Commit,
+    file_extensions: Optional[List[str]] = None
+):
     """
     publishes policy topics matching all relevant directories in tracked repo,
     prompting the client to ask for *all* contents of these directories (and not just diffs).
     """
     if new_commit == old_commit:
         return await publish_all_directories_in_repo(
+            publisher,
             old_commit,
             new_commit,
             file_extensions=file_extensions
@@ -61,4 +70,4 @@ async def publish_changed_directories(
         directories = PathUtils.intermediate_directories(all_paths)
         logger.info("Publishing policy update", directories=[str(d) for d in directories])
         topics = policy_topics(directories)
-        policy_publisher.publish_updates(topics=topics, data=new_commit.hexsha)
+        publisher.publish(topics=topics, data=new_commit.hexsha)

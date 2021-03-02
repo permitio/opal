@@ -14,6 +14,7 @@ from opal.server.config import (
 )
 from opal.server.policy.watcher.watcher_thread import RepoWatcherThread
 from opal.server.policy.watcher.watcher_callbacks import publish_changed_directories
+from opal.server.publisher import publisher
 
 logger = get_logger("opal.git.watcher.thread")
 
@@ -24,7 +25,7 @@ watcher = RepoWatcher(
     remote_name=POLICY_REPO_MAIN_REMOTE,
     polling_interval=POLICY_REPO_POLLING_INTERVAL,
 )
-watcher.on_new_commits(partial(publish_changed_directories, file_extensions=OPA_FILE_EXTENSIONS))
+watcher.on_new_commits(partial(publish_changed_directories, publisher=publisher, file_extensions=OPA_FILE_EXTENSIONS))
 
 repo_watcher = RepoWatcherThread(watcher)
 
