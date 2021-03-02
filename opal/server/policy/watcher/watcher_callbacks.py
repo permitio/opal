@@ -18,9 +18,9 @@ def policy_topics(paths: List[Path]) -> List[str]:
 
 
 async def publish_all_directories_in_repo(
-    publisher: TopicPublisherThread,
     old_commit: Commit,
     new_commit: Commit,
+    publisher: TopicPublisherThread,
     file_extensions: Optional[List[str]] = None
 ):
     """
@@ -37,9 +37,9 @@ async def publish_all_directories_in_repo(
 
 
 async def publish_changed_directories(
-    publisher: TopicPublisherThread,
     old_commit: Commit,
     new_commit: Commit,
+    publisher: TopicPublisherThread,
     file_extensions: Optional[List[str]] = None
 ):
     """
@@ -48,9 +48,9 @@ async def publish_changed_directories(
     """
     if new_commit == old_commit:
         return await publish_all_directories_in_repo(
-            publisher,
             old_commit,
             new_commit,
+            publisher=publisher,
             file_extensions=file_extensions
         )
 
