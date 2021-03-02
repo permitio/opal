@@ -6,7 +6,6 @@ from pathlib import Path
 from git import Repo
 
 from opal.common.logger import get_logger
-from opal.common.git.repo_utils import GitActions
 from opal.common.git.commit_viewer import CommitViewer
 from opal.common.paths import PathUtils
 from opal.common.schemas.policy import PolicyBundle
