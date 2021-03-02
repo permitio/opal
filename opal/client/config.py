@@ -20,7 +20,7 @@ OPA_PORT = os.environ.get("OPA_PORT", "8181")
 _opa_url = os.environ.get("OPA_SERVICE_URL", f"http://localhost:{OPA_PORT}")
 OPA_SERVICE_URL = f"{_opa_url}/v1"
 
-CLIENT_TOKEN = os.environ.get("CLIENT_TOKEN", "PJUKkuwiJkKxbIoC4o4cguWxB_2gX6MyATYKc2OCM")
+CLIENT_TOKEN = os.environ.get("CLIENT_TOKEN", "THIS_IS_A_DEV_SECRET")
 
 ALLOWED_ORIGINS = ["*"]
 

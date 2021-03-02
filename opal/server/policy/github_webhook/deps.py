@@ -2,14 +2,18 @@ import hashlib
 import hmac
 from typing import Optional, List
 
-from fastapi import APIRouter, status, Request, Depends, Header, HTTPException, status
-from opal.common.logger import get_logger
-from opal.server.config import POLICY_REPO_WEBHOOK_SECRET, POLICY_REPO_URL
-from opal.server.gitwatcher.watcher import policy_watcher
+from fastapi import status, Request, Header, HTTPException, status
+from opal.server.config import POLICY_REPO_WEBHOOK_SECRET
 
-logger = get_logger('Git Webhook')
 
-async def validate_github_signature(request: Request, x_hub_signature_256: Optional[str] = Header(None)) -> bool:
+async def validate_github_signature_or_throw(
+    request: Request,
+    x_hub_signature_256: Optional[str] = Header(None)
+) -> bool:
+    """
+    authenticates a request from github webhook system by checking that the
+    request contains a valid signature (i.e: the secret stored on github).
+    """
     if POLICY_REPO_WEBHOOK_SECRET is None:
         # webhook can be configured without secret (not recommended but quite possible)
         return True
@@ -28,9 +32,12 @@ async def validate_github_signature(request: Request, x_hub_signature_256: Optio
     return True
 
 
-router = APIRouter()
-
 async def affected_repo_urls(request: Request) -> List[str]:
+    """
+    extracts the repo url from a webhook request payload.
+
+    used to make sure that the webhook was triggered on *our* monitored repo.
+    """
     payload = await request.json()
     repo_payload = payload.get("repository", {})
     git_url = repo_payload.get("git_url", None)
@@ -40,15 +47,3 @@ async def affected_repo_urls(request: Request) -> List[str]:
     if not urls:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="repo url not found in payload!")
     return urls
-
-@router.post("/webhook", status_code=status.HTTP_200_OK)
-async def trigger_git_webhook(request: Request, urls: List[str] = Depends(affected_repo_urls), verified: bool = Depends(validate_github_signature)):
-    event = request.headers.get('X-GitHub-Event', 'ping')
-
-    if POLICY_REPO_URL is not None and POLICY_REPO_URL in urls:
-        logger.info("triggered webhook", repo=urls[0], hook_event=event)
-        if event == 'push':
-            policy_watcher.trigger_pull()
-        return { "status": "ok", "event": event, "repo_url": urls[0] }
-
-    return { "status": "ignored", "event": event }

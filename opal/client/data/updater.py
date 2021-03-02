@@ -3,7 +3,7 @@ from fastapi_websocket_pubsub import PubSubClient
 
 from opal.client.logger import get_logger
 from opal.client.config import DATA_UPDATES_WS_URL, CLIENT_TOKEN, KEEP_ALIVE_INTERVAL
-from opal.client.utils import AsyncioEventLoopThread, get_authorization_header
+from opal.common.utils import AsyncioEventLoopThread, get_authorization_header
 from opal.client.enforcer.client import opa
 from opal.client.data.fetcher import data_fetcher
 from opal.client.data.rpc import TenantAwareRpcEventClientMethods
