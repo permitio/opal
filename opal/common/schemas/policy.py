@@ -18,12 +18,12 @@ class RegoModule(BaseSchema):
 
 class DeletedFiles(BaseSchema):
     data_modules: List[Path] = []
-    rego_modules: List[Path] = []
+    policy_modules: List[Path] = []
 
 class PolicyBundle(BaseSchema):
     manifest: List[str]
     hash: str = Field(..., description="commit hash (debug version)")
     old_hash: Optional[str] = Field(None, description="old commit hash (in diff bundles)")
     data_modules: List[DataModule]
-    rego_modules: List[RegoModule]
+    policy_modules: List[RegoModule]
     deleted_files: Optional[DeletedFiles]

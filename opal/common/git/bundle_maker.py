@@ -50,7 +50,7 @@ class BundleMaker:
             bundle (PolicyBundle): the bundle of policy modules found in the repo (checked out on `commit`)
         """
         data_modules = []
-        rego_modules = []
+        policy_modules = []
         manifest = []
 
         with CommitViewer(commit) as viewer:
@@ -64,7 +64,7 @@ class BundleMaker:
                         DataModule(path=str(path.parent), data=contents)
                     )
                 elif is_rego_module(path):
-                    rego_modules.append(
+                    policy_modules.append(
                         RegoModule(
                             path=str(path),
                             package_name=get_rego_package(contents) or "",
@@ -80,7 +80,7 @@ class BundleMaker:
                 manifest=manifest,
                 hash=commit.hexsha,
                 data_modules=data_modules,
-                rego_modules=rego_modules,
+                policy_modules=policy_modules,
             )
 
     def make_diff_bundle(self, old_commit: Commit, new_commit: Commit) -> PolicyBundle:
@@ -107,9 +107,9 @@ class BundleMaker:
                 between `old_commit` and `new_commit`.
         """
         data_modules = []
-        rego_modules = []
+        policy_modules = []
         deleted_data_modules = []
-        deleted_rego_modules = []
+        deleted_policy_modules = []
         manifest = []
 
         with DiffViewer(old_commit, new_commit) as viewer:
@@ -126,7 +126,7 @@ class BundleMaker:
                         DataModule(path=str(path.parent), data=contents)
                     )
                 elif is_rego_module(path):
-                    rego_modules.append(
+                    policy_modules.append(
                         RegoModule(
                             path=str(path),
                             package_name=get_rego_package(contents) or "",
@@ -144,12 +144,12 @@ class BundleMaker:
                 if is_data_module(path):
                     deleted_data_modules.append(path)
                 elif is_rego_module(path):
-                    deleted_rego_modules.append(path)
+                    deleted_policy_modules.append(path)
 
-            if deleted_data_modules or deleted_rego_modules:
+            if deleted_data_modules or deleted_policy_modules:
                 deleted_files = DeletedFiles(
                     data_modules=deleted_data_modules,
-                    rego_modules=deleted_rego_modules,
+                    policy_modules=deleted_policy_modules,
                 )
             else:
                 deleted_files = None
@@ -159,6 +159,6 @@ class BundleMaker:
                 hash=new_commit.hexsha,
                 old_hash=old_commit.hexsha,
                 data_modules=data_modules,
-                rego_modules=rego_modules,
+                policy_modules=policy_modules,
                 deleted_files=deleted_files
             )

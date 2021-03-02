@@ -78,7 +78,7 @@ class OpaClient:
     async def set_policies(self, bundle: PolicyBundle):
         lock = asyncio.Lock()
         async with lock:
-            for module in bundle.rego_modules:
+            for module in bundle.policy_modules:
                 await self.set_policy(policy_id=module.path, policy_code=module.rego)
 
     @fail_silently()
