@@ -9,15 +9,20 @@ from opal.common.logger import get_logger
 
 class UvicornWorkerPidLeaderElection(LeaderElectionBase):
     """
-    a very simple leader election algorithm for uvicorn workers.
-    all workers are spawned as subprocesses of the uvicorn monitor,
-    therefore they are all sibling processes.
+    A very simple leader election algorithm for uvicorn workers.
+    all workers are spawned as subprocesses of the uvicorn monitor
+    process, therefore they are all sibling processes.
 
-    The algorithm (which is a form of a Bully algorithm) simply picks
+    The algorithm (which is a form of a "Bully algorithm") simply picks
     the worker with the highest process id (pid).
+    @see https://en.wikipedia.org/wiki/Bully_algorithm
 
     This algorithm should be called after all workers processes are up
-    and will only work for one execution of uvicorn (same machine).
+    and will only work for workers running on the same machine.
+
+    Usage:
+      - call on_decision(callback) to register a callback (optional)
+      - call await self.elect() to run the algorithm
     """
     def __init__(self):
         self._my_pid = os.getpid()
@@ -26,6 +31,7 @@ class UvicornWorkerPidLeaderElection(LeaderElectionBase):
 
     async def _elect(self) -> bool:
         """
+        the election method we use, see the class description for details.
         returns true if the calling process was elected leader.
         """
         my_process = psutil.Process(self._my_pid)

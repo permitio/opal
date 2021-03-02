@@ -12,12 +12,18 @@ ELECTION_TOPIC = "leader_election"
 
 class PubSubBullyLeaderElection(LeaderElectionBase):
     """
-    a bully election algorithm, each process selects a random number (UUID)
-    and publishes it to a shared channel. all participants also subscribe to
-    the shared channel, after a timeout, all participants pick the candidate
-    with the highest number.
+    A "bully" election algorithm to elect a leader (coordinator) process
+    @see https://en.wikipedia.org/wiki/Bully_algorithm
 
-    Communication is transmitted over the PubSubEndpoint broadcast channel.
+    Each process selects a random number (UUID) and publishes it to a shared
+    broadcast channel. It also listens on the broadcast channel and keep a
+    record of all the candidates ids (including its own). After a predefined
+    timeout, each participant locally picks the candidate with the highest
+    number.
+
+    Usage:
+      - call on_decision(callback) to register a callback (optional)
+      - call await self.elect() to run the algorithm
     """
     def __init__(
         self,
@@ -26,6 +32,20 @@ class PubSubBullyLeaderElection(LeaderElectionBase):
         wait_time_for_publish: float = 1,
         wait_time_for_decision: float = 1,
     ):
+        """[summary]
+
+        Args:
+            server_uri (str): the URI of the pub sub server we subscribe to
+            extra_headers (dict): optional headers for the websocket client
+                http request (@see PubSubClient docs)
+            wait_time_for_publish (float): wait time in seconds *before*
+                publishing own number, intended to make sure all participants
+                are up and listening on the broadcast channel.
+            wait_time_for_decision (float): wait time in seconds *after*
+                publishing own number, intended to make sure all participants
+                received all the messages from all other partipicants and are
+                ready to pick the leader.
+        """
         self._server_uri = server_uri
         self._extra_headers = extra_headers
         self._wait_time_for_publish = wait_time_for_publish
@@ -38,6 +58,7 @@ class PubSubBullyLeaderElection(LeaderElectionBase):
 
     async def _elect(self) -> bool:
         """
+        the election method we use, see the class description for details.
         returns true if the calling process was elected leader.
         """
         async with PubSubClient(extra_headers=self._extra_headers) as client:
