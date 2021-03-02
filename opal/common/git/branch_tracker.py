@@ -16,7 +16,6 @@ class BranchTracker:
     can also perform git pull and detect if the hash changed.
     """
 
-    # retry config in case of temporary network error
     DEFAULT_RETRY_CONFIG = {
         'wait': wait_fixed(3),
         'stop': stop_after_attempt(2)
@@ -29,6 +28,14 @@ class BranchTracker:
         remote_name: str,
         retry_config = None,
     ):
+        """[summary]
+
+        Args:
+            repo (Repo): a git repo in which we want to track the latest commit of a branch
+            branch_name (str): the branch we want to track
+            remote_name (str): the remote in which the branch upstream is located
+            retry_config (dict): Tenacity.retry config (@see https://tenacity.readthedocs.io/en/latest/api.html#retry-main-api)
+        """
         self._repo = repo
         self._branch_name = branch_name
         self._remote_name = remote_name
@@ -38,6 +45,9 @@ class BranchTracker:
 
     @property
     def repo(self) -> Repo:
+        """
+        the repo we are tracking
+        """
         return self._repo
 
     def pull(self) -> Tuple[bool, Commit, Commit]:
@@ -45,10 +55,10 @@ class BranchTracker:
         git pulls from tracked remote.
 
         Returns:
-            returns a tuple of (has_changes: bool, prev: Commit, latest: Commit)
-                - has_changes: whether the remote had new commits on our tracked branch
-                - prev: the previous (before the pull) top-most commit on the tracked branch
-                - latest: the new top-most (latest) commit on the tracked branch
+            pull_result (bool, Commit, Commit): a tuple consisting of:
+                has_changes (bool): whether the remote had new commits on our tracked branch
+                prev (Commit): the previous (before the pull) top-most commit on the tracked branch
+                latest (Commit): the new top-most (latest) commit on the tracked branch
         """
         self._pull()
 
@@ -61,27 +71,38 @@ class BranchTracker:
 
     def _pull(self):
         """
-        runs git pull, retries if fails for some reason.
+        runs git pull with retries.
         """
         attempt_pull = retry(**self._retry_config)(self.tracked_remote.pull)
         return attempt_pull()
 
     def _save_latest_commit_as_prev_commit(self):
+        """
+        saves the top of the branch as a last known commit (HEAD).
+        in the next pull, we can then compare the new branch HEAD to the previous _prev_commit.
+        """
         self._prev_commit = self.latest_commit
 
     @property
     def latest_commit(self) -> Commit:
+        """
+        the top commit (HEAD) of the tracked branch
+        """
         return self.tracked_branch.commit
 
     @property
     def prev_commit(self) -> Commit:
         """
-        latest commit before last git pull
+        the last previously known HEAD of the tracked branch
         """
         return self._prev_commit
 
     @property
     def tracked_branch(self) -> Head:
+        """
+        returns the tracked branch object (of type git.HEAD)
+        or throws if such branch does not exist on the repo
+        """
         try:
             return getattr(self._repo.heads, self._branch_name)
         except AttributeError as e:
@@ -91,6 +112,10 @@ class BranchTracker:
 
     @property
     def tracked_remote(self) -> Remote:
+        """
+        returns the tracked remote object (of type git.Remote)
+        or throws if such branch does not exist on the repo
+        """
         try:
             return getattr(self._repo.remotes, self._remote_name)
         except AttributeError as e:

@@ -13,9 +13,24 @@ from opal.common.schemas.policy import DataModule, PolicyBundle, RegoModule, Del
 
 class BundleMaker:
     """
-    creates a policy bundle based on input parameters.
+    creates a policy bundle based on:
+    - the current state of the policy git repo
+    - filtering criteria on the policy git repo (specific directories, specific file types, etc)
+
+    there are two types of bundles:
+    - a full/complete bundle, representing the state of the repo at one commit
+    - a diff bundle, representing only the *changes* made to the policy between two commits (the diff).
     """
     def __init__(self, repo: Repo, in_directories: Set[Path], extensions: Optional[List[str]] = None):
+        """[summary]
+
+        Args:
+            repo (Repo): the policy repo
+            in_directories (Set[Path]): the directories in the repo that we want to filter on.
+                if the entire repo is relevant, pass Path(".") as the directory
+                (all paths are relative to the repo root).
+            extensions (Optional[List[str]]): optional filtering on file extensions.
+        """
         self._repo = repo
         self._directories = in_directories
         self._has_extension = partial(has_extension, extensions=extensions)
@@ -24,6 +39,16 @@ class BundleMaker:
         self._diffed_file_is_under_directories = partial(diffed_file_is_under_directories, directories=in_directories)
 
     def make_bundle(self, commit: Commit) -> PolicyBundle:
+        """
+        creates a *complete* bundle of all the policy and data modules found
+        in the policy repo, when the repo HEAD is at the given `commit`.
+
+        Args:
+            commit (Commit): the commit the repo should be checked out on to search for policy files.
+
+        Returns:
+            bundle (PolicyBundle): the bundle of policy modules found in the repo (checked out on `commit`)
+        """
         data_modules = []
         rego_modules = []
         manifest = []
@@ -59,6 +84,28 @@ class BundleMaker:
             )
 
     def make_diff_bundle(self, old_commit: Commit, new_commit: Commit) -> PolicyBundle:
+        """
+        creates a *diff* bundle of all the policy and data modules that were changed
+        (either added, renamed, modified or deleted) between the `old_commit` and `new_commit`.
+        essentially all the relevant files when running `git diff old_commit..new_commit`.
+
+        Note that we still filter only directories and file types given in the constructor.
+
+        Args:
+            old_commit (Commit): represents the previous known state of the repo.
+                The opal client subscribes to the policy state and gets updates from
+                the server via a pubsub channel. When it receives an update that
+                new state is available in the policy repo, the client requests a
+                *diff bundle* from the /policy api route. The client will report
+                its last known commit as the `old_commit`, and only new state
+                (the diff from the client known commit to the server newest commit)
+                will be returned back.
+            commit (Commit): represents the newest known commit in the server (the new state).
+
+        Returns:
+            bundle (PolicyBundle): a diff bundle containing only the policy modules changed
+                between `old_commit` and `new_commit`.
+        """
         data_modules = []
         rego_modules = []
         deleted_data_modules = []

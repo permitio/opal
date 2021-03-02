@@ -9,7 +9,8 @@ from opal.common.git.exceptions import GitFailed
 
 class CloneResult:
     """
-    wraps a git.Repo instance but knows if we cloned from remote or from local .git
+    wraps a git.Repo instance but knows if the repo was initialized with a url
+    and cloned from a remote repo, or was initialed from a local `.git` repo.
     """
     def __init__(self, repo: Repo, cloned_from_remote: bool):
         self._repo = repo
@@ -17,10 +18,16 @@ class CloneResult:
 
     @property
     def repo(self) -> Repo:
+        """
+        the wrapped repo instance
+        """
         return self._repo
 
     @property
     def cloned_from_remote(self) -> bool:
+        """
+        whether the repo was cloned from remote, or we found a local matching .git repo
+        """
         return self._cloned_from_remote
 
 
@@ -38,7 +45,8 @@ class RepoCloner:
     """
     simple wrapper for git.Repo() to simplify other classes that need to deal
     with the case where a repo must be cloned from url *only if* the repo does
-    not already exists locally.
+    not already exists locally, and otherwise initialize the repo instance from
+    the repo already existing on the filesystem.
     """
 
     DEFAULT_RETRY_CONFIG = {
@@ -52,6 +60,14 @@ class RepoCloner:
         clone_path: str,
         retry_config = None,
     ):
+        """[summary]
+
+        Args:
+            repo_url (str): the url to the remote repo we want to clone
+            clone_path (str): the target local path in our file system we want the
+                repo to be cloned to
+            retry_config (dict): Tenacity.retry config (@see https://tenacity.readthedocs.io/en/latest/api.html#retry-main-api)
+        """
         if repo_url is None:
             raise ValueError("must provide repo url!")
 
@@ -62,6 +78,12 @@ class RepoCloner:
         self._logger = get_logger("opal.git.cloner")
 
     def clone(self) -> CloneResult:
+        """
+        initializes a git.Repo and returns the clone result.
+        it either:
+            - does not found a cloned repo locally and clones from remote url
+            - finds a cloned repo locally and does not clone from remote.
+        """
         self._logger.info("Cloning repo", url=self.url, to_path=self.path)
         git_path = Path(self.path) / Path(".git")
         if git_path.exists():
