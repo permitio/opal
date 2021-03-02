@@ -1,1 +1,1 @@
-from .repo_watcher import policy_watcher, trigger_webhook
+from .watcher_instance import repo_watcher, trigger_webhook

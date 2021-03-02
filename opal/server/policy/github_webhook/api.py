@@ -4,7 +4,6 @@ from fastapi import APIRouter, status, Request, Depends, status
 from opal.common.logger import get_logger
 from opal.server.config import POLICY_REPO_URL
 from opal.server.policy.github_webhook.deps import validate_github_signature_or_throw, affected_repo_urls
-from opal.server.policy.watcher import policy_watcher
 from opal.server.pubsub import endpoint
 
 

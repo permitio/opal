@@ -33,7 +33,6 @@ class RepoWatcher:
         remote_name: str = "origin",
         polling_interval: int = 0,
     ):
-        self._thread = AsyncioEventLoopThread(name="PolicyWatcherThread")
         self._cloner = RepoCloner(repo_url, clone_path)
         self._branch_name = branch_name
         self._remote_name = remote_name
@@ -41,24 +40,6 @@ class RepoWatcher:
         self._polling_interval = polling_interval
         self._on_failure_callbacks: List[OnNewCommitsCallback] = []
         self._on_new_commits_callbacks: List[OnGitFailureCallback] = []
-
-    def start(self):
-        logger.info("Launching repo watcher")
-        self._thread.create_task(self._init_repo())
-        self._thread.start()
-
-    def stop(self):
-        logger.info("Stopping repo watcher")
-        self._thread.stop()
-
-    def trigger(self):
-        """
-        this method can be called inside the thread (by the polling task)
-        or outside the thread (by the webhook route) and will cause the
-        watcher to pull changes from the remote and (if they exist) publish
-        policy changes to clients.
-        """
-        self._thread.create_task(self._check_for_changes())
 
     def on_new_commits(self, callback: OnNewCommitsCallback):
         """
@@ -75,14 +56,14 @@ class RepoWatcher:
         """
         self._on_failure_callbacks.append(callback)
 
-    async def _init_repo(self):
+    async def run(self):
         """
-        initial task: clones the repo and potentially starts the polling task
+        clones the repo and potentially starts the polling task
         """
         try:
             result = self._cloner.clone()
         except GitFailed as e:
-            await self._fail(e)
+            await self._on_git_failed(e)
 
         self._tracker = BranchTracker(
             repo=result.repo,
@@ -99,17 +80,11 @@ class RepoWatcher:
         else:
             logger.info("Polling task is off")
 
-    async def _polling_task(self):
+    async def check_for_changes(self):
         """
-        optional task to periodically check the remote for changes (git pull and compare hash).
-        """
-        while True:
-            await asyncio.sleep(self._polling_interval)
-            self.trigger()
-
-    async def _check_for_changes(self):
-        """
-        called either by polling task or by webhook and git pull from origin
+        calling this method will trigger a git pull from the tracked remote.
+        if after the pull the watcher detects new commits, it will call the
+        callbacks registered with on_new_commits().
         """
         logger.info("Pulling changes from remote", remote=self._tracker.tracked_remote.name)
         has_changes, prev, latest = self._tracker.pull()
@@ -119,15 +94,29 @@ class RepoWatcher:
             logger.info("Found new commits", prev_head=prev.hexsha, new_head=latest.hexsha)
             await self._on_new_commits(old=prev, new=latest)
 
-    async def _fail(self, exc: Exception):
-        await self._on_git_failed(exc)
-        self.stop()
+    async def _polling_task(self):
+        """
+        optional task to periodically check the remote for changes (git pull and compare hash).
+        """
+        while True:
+            await asyncio.sleep(self._polling_interval)
+            await self.check_for_changes()
 
     async def _on_new_commits(self, old: Commit, new: Commit):
+        """
+        triggers callbacks registered with on_new_commits().
+        """
         await self._run_callbacks(self._on_new_commits_callbacks, old, new)
 
     async def _on_git_failed(self, exc: Exception):
+        """
+        will be triggered if a git failure occurred (i.e: repo does not exist, can't clone, etc).
+        triggers callbacks registered with on_git_failed().
+        """
         await self._run_callbacks(self._on_failure_callbacks, exc)
 
     async def _run_callbacks(self, handlers, *args, **kwargs):
+        """
+        triggers a list of callbacks
+        """
         await asyncio.gather(*(callback(*args, **kwargs) for callback in handlers))

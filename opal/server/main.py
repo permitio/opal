@@ -12,7 +12,7 @@ from opal.common.election.pubsub_bully import PubSubBullyLeaderElection
 from opal.server.deps.authentication import verify_logged_in
 from opal.server.policy.github_webhook.api import router as webhook_router
 from opal.server.policy.bundles.api import router as bundles_router
-from opal.server.policy.watcher import policy_watcher
+from opal.server.policy.watcher import repo_watcher
 from opal.server.policy.publisher import policy_publisher
 from opal.server.policy.github_webhook.listener import webhook_listener
 from opal.server.pubsub import router as websocket_router
@@ -45,9 +45,8 @@ elected_as_leader = False
 async def on_election_desicion(descision: bool):
     elected_as_leader = descision
     if elected_as_leader:
-        logger.info("i am the leader!")
         policy_publisher.start()
-        policy_watcher.start()
+        repo_watcher.start()
         webhook_listener.start()
 
 @app.on_event("startup")
@@ -62,7 +61,7 @@ async def startup_event():
 @app.on_event("shutdown")
 async def shutdown_event():
     if elected_as_leader:
-        policy_watcher.stop()
+        repo_watcher.stop()
         await policy_publisher.stop()
         await webhook_listener.stop()
 
