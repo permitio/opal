@@ -80,6 +80,17 @@ class DataUpdater:
         else:
             self._extra_headers = [get_authorization_header(self._token)]
 
+    async def __aenter__(self):
+        await self.start()
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb):
+        """
+        Context handler to terminate internal tasks
+        """
+        await self.stop()
+
+
     async def _update_policy_data(self, data: dict = None, topic=""):
         """
         will run when we get notifications on the policy_data topic.

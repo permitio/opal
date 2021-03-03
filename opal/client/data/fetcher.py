@@ -26,6 +26,15 @@ class DataFetcher:
         self._auth_headers = tuple_to_dict(get_authorization_header(token))
         self._default_fetcher_config = HttpGetFetcherConfig(headers=self._auth_headers, is_json=True)
 
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb):
+        """
+        Context handler to terminate internal tasks
+        """
+        await self.stop()
+
     async def stop(self):
         """
         Release internal tasks and resources
