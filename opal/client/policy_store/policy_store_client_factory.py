@@ -12,7 +12,7 @@ class InvalidPolicyStoreTypeException(Exception):
 
 class PolicyStoreClientFactory:
 
-    @classmethod
+    @staticmethod
     def create(store_type=POLICY_STORE_TYPE, url=POLICY_STORE_URL):
         # OPA
         if PolicyStoreTypes.OPA == store_type:
