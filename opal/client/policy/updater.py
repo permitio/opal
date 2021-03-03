@@ -7,7 +7,8 @@ from opal.client.logger import get_logger
 from opal.client.config import POLICY_SUBSCRIPTION_DIRS, POLICY_UPDATES_WS_URL, CLIENT_TOKEN, KEEP_ALIVE_INTERVAL
 from opal.client.utils import AsyncioEventLoopThread, get_authorization_header
 from opal.client.policy.fetcher import policy_fetcher
-from opal.client.enforcer.client import opa
+from opal.client.policy_store.base_policy_store_client import BasePolicyStoreClient
+from opal.client.policy_store.policy_store_client_factory import DEFAULT_POLICY_STORE
 from opal.client.policy.topics import dirs_to_topics, all_policy_directories, POLICY_PREFIX, remove_prefix
 
 
@@ -15,7 +16,7 @@ logger = get_logger("Opal Client")
 updater_logger = get_logger("Policy Updater")
 
 
-async def update_policy(directories: List[str] = [], **kwargs):
+async def update_policy(directories: List[str] = [], policy_store: BasePolicyStoreClient = DEFAULT_POLICY_STORE):
     """
     fetches policy (rego) from backend and updates OPA
     """
@@ -24,16 +25,21 @@ async def update_policy(directories: List[str] = [], **kwargs):
     bundle = await policy_fetcher.fetch_policy_bundle(directories)
     if bundle:
         updater_logger.info("got bundle")
-        await opa.set_policies(bundle)
+        await policy_store.set_policies(bundle)
 
-async def refetch_policy_and_update_opa(**kwargs):
+
+async def refetch_policy_and_update_opa(policy_store: BasePolicyStoreClient = DEFAULT_POLICY_STORE):
     """
     will bring both rego and data from backend, and will inject into OPA.
     """
-    await update_policy(**kwargs)
+    await update_policy(policy_store=policy_store)
+
 
 class PolicyUpdater:
-    def __init__(self, token=CLIENT_TOKEN, server_url=POLICY_UPDATES_WS_URL, dirs: List[str] = POLICY_SUBSCRIPTION_DIRS):
+    def __init__(self, token=CLIENT_TOKEN,
+                 server_url=POLICY_UPDATES_WS_URL, dirs: List[str] = POLICY_SUBSCRIPTION_DIRS, 
+                 policy_store: BasePolicyStoreClient = DEFAULT_POLICY_STORE):
+        self._policy_store = policy_store
         self._thread = AsyncioEventLoopThread(name="PolicyUpdaterThread")
         self._token = token
         self._server_url = server_url
@@ -55,13 +61,13 @@ class PolicyUpdater:
             directories = all_policy_directories()
         await update_policy(directories, **kwargs)
 
-    async def on_connect(self, client:PubSubClient, channel:RpcChannel):
+    async def on_connect(self, client: PubSubClient, channel: RpcChannel):
         # on connection to backend, whether its the first connection
         # or reconnecting after downtime, refetch the state opa needs.
         updater_logger.info("Connected to server")
-        await refetch_policy_and_update_opa()
+        await refetch_policy_and_update_opa(policy_store=self._policy_store)
 
-    async def on_disconnect(self, channel:RpcChannel):
+    async def on_disconnect(self, channel: RpcChannel):
         updater_logger.info("Disconnected from server")
 
     def start(self):
