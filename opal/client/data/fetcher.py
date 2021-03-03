@@ -12,10 +12,16 @@ class DataFetcher:
     """
     fetches policy data from backend
     """
-    def __init__(self, data_url:str=DEFAULT_DATA_URL, token:str=CLIENT_TOKEN):
+    def __init__(self, default_data_url:str=DEFAULT_DATA_URL, token:str=CLIENT_TOKEN):
+        """[summary]
+
+        Args:
+            default_data_url (str, optional): The URL used to fetch data if no specific url is given in a fetch request. Defaults to DEFAULT_DATA_URL.
+            token (str, optional): default auth token. Defaults to CLIENT_TOKEN.
+        """
         # The underlying fetching engine
         self._engine = FetchingEngine()
-        self._data_url = data_url
+        self._data_url = default_data_url
         self._token = token
         self._auth_headers = tuple_to_dict(get_authorization_header(token))
         self._default_fetcher_config = HttpGetFetcherConfig(headers=self._auth_headers, is_json=True)
@@ -62,8 +68,5 @@ class DataFetcher:
         results_bu_url = {url: response for url, response in results  } 
         # return results
         return results_bu_url
-
-
-data_fetcher = DataFetcher()
 
 
