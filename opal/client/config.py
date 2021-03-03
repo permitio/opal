@@ -15,13 +15,14 @@ DEFAULT_DATA_URL = config.str("DEFAULT_DATA_URL", "http://localhost:8000/policy-
 
 
 # backend service
-BACKEND_URL = config.str("AUTHZ_SERVICE_URL", "http://localhost:8000")
+BACKEND_URL = config.str("OPAL_SERVER_URL", "http://localhost:8000")
 BACKEND_SERVICE_LEGACY_URL = f"{BACKEND_URL}/sdk"
 BACKEND_SERVICE_URL = f"{BACKEND_URL}/v1"
 
 # data service (currently points to backend)
 _ws_backend_url = BACKEND_URL.replace("https", "ws").replace("http", "ws")
-DATA_UPDATES_WS_URL = f"{_ws_backend_url}/sdk/ws"
+DATA_UPDATES_ROUTE = "/sdk/ws"
+DATA_UPDATES_WS_URL = f"{_ws_backend_url}{DATA_UPDATES_ROUTE}"
 
 # policy service (opal server)
 POLICY_SERVICE_URL = config.str("POLICY_SERVICE_URL", "http://localhost:7002")
