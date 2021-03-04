@@ -73,5 +73,3 @@ def main(policy_store_type=POLICY_STORE_TYPE):
             opa_runner.stop()
 
 
-if __name__ == "__main__":
-    main()
