@@ -64,9 +64,9 @@ def create_app() -> FastAPI:
 
     @app.on_event("startup")
     async def startup_event():
-        webhook_listener = setup_webhook_listener(trigger_repo_watcher_pull)
         publisher = setup_publisher_thread()
         watcher = setup_watcher_thread(publisher)
+        webhook_listener = setup_webhook_listener(partial(trigger_repo_watcher_pull, watcher))
         election = PubSubBullyLeaderElection(
             server_uri=OPAL_WS_LOCAL_URL,
             extra_headers=[get_authorization_header(OPAL_WS_TOKEN)]
