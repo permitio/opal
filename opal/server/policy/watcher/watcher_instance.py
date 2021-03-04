@@ -1,4 +1,5 @@
-from typing import Any
+from opal.common.communication.topic_publisher import TopicPublisherThread
+from typing import Any, Optional, List
 from functools import partial
 
 from fastapi_websocket_pubsub import Topic
@@ -14,25 +15,40 @@ from opal.server.config import (
 )
 from opal.server.policy.watcher.watcher_thread import RepoWatcherThread
 from opal.server.policy.watcher.watcher_callbacks import publish_changed_directories
-from opal.server.publisher import publisher
 
 logger = get_logger("opal.git.watcher.thread")
 
-watcher = RepoWatcher(
-    repo_url=POLICY_REPO_URL,
-    clone_path=POLICY_REPO_CLONE_PATH,
-    branch_name=POLICY_REPO_MAIN_BRANCH,
-    remote_name=POLICY_REPO_MAIN_REMOTE,
-    polling_interval=POLICY_REPO_POLLING_INTERVAL,
-)
-watcher.on_new_commits(partial(publish_changed_directories, publisher=publisher, file_extensions=OPA_FILE_EXTENSIONS))
 
-repo_watcher = RepoWatcherThread(watcher)
+def setup_watcher_thread(
+    publisher: TopicPublisherThread,
+    repo_url: str = POLICY_REPO_URL,
+    clone_path: str = POLICY_REPO_CLONE_PATH,
+    branch_name: str = POLICY_REPO_MAIN_BRANCH,
+    remote_name: str = POLICY_REPO_MAIN_REMOTE,
+    polling_interval: int = POLICY_REPO_POLLING_INTERVAL,
+    extensions: Optional[List[str]] = None,
+) -> RepoWatcherThread:
+    extensions = extensions if extensions is not None else OPA_FILE_EXTENSIONS
+    watcher = RepoWatcher(
+        repo_url=repo_url,
+        clone_path=clone_path,
+        branch_name=branch_name,
+        remote_name=remote_name,
+        polling_interval=polling_interval,
+    )
+    watcher.on_new_commits(
+        partial(
+            publish_changed_directories,
+            publisher=publisher,
+            file_extensions=extensions
+        )
+    )
+    return RepoWatcherThread(watcher)
 
-async def trigger_webhook(topic: Topic, data: Any):
+async def trigger_repo_watcher_pull(watcher: RepoWatcherThread, topic: Topic, data: Any):
     """
     triggers the policy watcher check for changes.
     will trigger a task on the watcher's thread.
     """
     logger.info("webhook listener triggered")
-    repo_watcher.trigger()
+    watcher.trigger()
