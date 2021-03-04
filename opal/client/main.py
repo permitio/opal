@@ -7,7 +7,7 @@ logging_config.set_mode(LoggingModes.UVICORN)
 from opal.client.config import OPENAPI_TAGS_METADATA, PolicyStoreTypes, POLICY_STORE_TYPE
 from opal.client.policy_store.policy_store_client_factory import PolicyStoreClientFactory
 from opal.client.server.api import router as proxy_router
-from opal.client.enforcer.api import init_enforcer_api_route 
+from opal.client.enforcer.api import init_enforcer_api_router 
 from opal.client.policy.api import router as policy_router
 from opal.client.data.api import router as data_router
 from opal.client.local.api import init_local_cache_api_router
@@ -31,7 +31,7 @@ def main(policy_store_type=POLICY_STORE_TYPE):
     # Init policy store client
     policy_store = PolicyStoreClientFactory.create(policy_store_type)
     # Init api routes
-    enforcer_router = init_enforcer_api_route(policy_store=policy_store)
+    enforcer_router = init_enforcer_api_router(policy_store=policy_store)
     local_router = init_local_cache_api_router(policy_store=policy_store)
 
     # include the api routes

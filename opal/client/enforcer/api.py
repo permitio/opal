@@ -7,7 +7,7 @@ from opal.client.policy_store.base_policy_store_client import BasePolicyStoreCli
 from opal.client.logger import get_logger
 
 
-def init_enforcer_api_route(policy_store:BasePolicyStoreClient):
+def init_enforcer_api_router(policy_store:BasePolicyStoreClient):
 
     logger = get_logger("Enforcer")
     router = APIRouter()
