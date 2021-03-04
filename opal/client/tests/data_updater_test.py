@@ -62,6 +62,7 @@ def server():
 
 @pytest.mark.asyncio
 async def test_client_data_updates(server):
+    # Wait for the server to start
     server.wait(5)
     # config to use mock OPA
     policy_store = PolicyStoreClientFactory.create(store_type=PolicyStoreTypes.MOCK)
@@ -80,13 +81,14 @@ async def test_client_data_updates(server):
             # Channel must be ready before we can publish on it
             await asyncio.wait_for(client.wait_until_ready(),5)
             await client.publish(DATA_TOPICS,data=update)
-
         # wait until new data arrives into the strore via the updater
         await asyncio.wait_for(policy_store.wait_for_data(),25)
+        
     #cleanup
     finally:
         pass
-        #await updater.stop()
+        #doesn't work due to separate thread loops
+        # await updater.stop()
 
 
     
