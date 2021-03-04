@@ -2,12 +2,14 @@ import os
 
 # ws server (TODO: merge with opal client config)
 OPAL_WS_LOCAL_URL = os.environ.get("OPAL_WS_LOCAL_URL", "ws://localhost:7002/ws")
-OPAL_WS_TOKEN = os.environ.get("OPAL_WS_TOKEN", "PJUKkuwiJkKxbIoC4o4cguWxB_2gX6MyATYKc2OCM")
+OPAL_WS_TOKEN = os.environ.get("OPAL_WS_TOKEN", "THIS_IS_A_DEV_SECRET")
 BROADCAST_URI = "postgres://localhost/acalladb"
 
-# git watcher
+# repo watcher
 POLICY_REPO_URL = os.environ.get("POLICY_REPO_URL", None)
 POLICY_REPO_CLONE_PATH = os.environ.get("POLICY_REPO_CLONE_PATH", "regoclone")
+POLICY_REPO_MAIN_BRANCH = os.environ.get("POLICY_REPO_MAIN_BRANCH", "master")
+POLICY_REPO_MAIN_REMOTE = os.environ.get("POLICY_REPO_MAIN_REMOTE", "origin")
 
 # github webhook
 POLICY_REPO_WEBHOOK_SECRET = os.environ.get("POLICY_REPO_WEBHOOK_SECRET", None)
@@ -19,3 +21,5 @@ except ValueError:
 
 ALLOWED_ORIGINS = ["*"]
 OPA_FILE_EXTENSIONS = ('.rego', '.json')
+
+NO_RPC_LOGS = bool(int(os.environ.get("NO_RPC_LOGS", 0)))

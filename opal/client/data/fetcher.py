@@ -4,9 +4,9 @@ import asyncio
 from typing import Dict, Any, List, Tuple
 
 from opal.client.config import DEFAULT_DATA_URL, CLIENT_TOKEN
-from opal.client.utils import get_authorization_header, tuple_to_dict
+from opal.common.utils import get_authorization_header
+from opal.client.utils import tuple_to_dict
 from opal.fetcher import FetchingEngine
-
 
 class DataFetcher:
     """

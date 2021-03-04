@@ -4,10 +4,11 @@ from typing import List, Optional
 from pydantic import ValidationError
 from fastapi import status
 
-from opal.client.config import POLICY_SERVICE_URL, CLIENT_TOKEN
-from opal.client.utils import get_authorization_header, tuple_to_dict
+from opal.common.utils import get_authorization_header
 from opal.common.schemas.policy import PolicyBundle
+from opal.client.utils import tuple_to_dict
 from opal.client.logger import get_logger
+from opal.client.config import POLICY_SERVICE_URL, CLIENT_TOKEN
 
 
 logger = get_logger("opal.policy.fetcher")
