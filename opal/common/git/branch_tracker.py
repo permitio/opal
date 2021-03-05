@@ -24,8 +24,8 @@ class BranchTracker:
     def __init__(
         self,
         repo: Repo,
-        branch_name: str,
-        remote_name: str,
+        branch_name: str = "master",
+        remote_name: str = "origin",
         retry_config = None,
     ):
         """[summary]
