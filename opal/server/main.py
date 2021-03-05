@@ -28,7 +28,7 @@ if NO_RPC_LOGS:
 
 logger = get_logger("opal.server")
 
-def create_app() -> FastAPI:
+def create_app(init_git_watcher=True, init_publisher=True) -> FastAPI:
     elected_as_leader = False
     webhook_listener: Optional[TopicListenerThread] = None
     publisher: Optional[TopicPublisherThread] = None
@@ -64,22 +64,24 @@ def create_app() -> FastAPI:
 
     @app.on_event("startup")
     async def startup_event():
-        publisher = setup_publisher_thread()
-        watcher = setup_watcher_thread(publisher)
-        webhook_listener = setup_webhook_listener(partial(trigger_repo_watcher_pull, watcher))
-        election = PubSubBullyLeaderElection(
-            server_uri=OPAL_WS_LOCAL_URL,
-            extra_headers=[get_authorization_header(OPAL_WS_TOKEN)]
-        )
-        election.on_desicion(
-            partial(
-                on_election_desicion,
-                webhook_listener=webhook_listener,
-                publisher=publisher,
-                repo_watcher=watcher,
-            )
-        )
-        asyncio.create_task(election.elect())
+        if init_publisher:
+            publisher = setup_publisher_thread()
+            if init_git_watcher:
+                watcher = setup_watcher_thread(publisher)
+                webhook_listener = setup_webhook_listener(partial(trigger_repo_watcher_pull, watcher))
+                election = PubSubBullyLeaderElection(
+                    server_uri=OPAL_WS_LOCAL_URL,
+                    extra_headers=[get_authorization_header(OPAL_WS_TOKEN)]
+                )
+                election.on_desicion(
+                    partial(
+                        on_election_desicion,
+                        webhook_listener=webhook_listener,
+                        publisher=publisher,
+                        repo_watcher=watcher,
+                    )
+                )                
+                asyncio.create_task(election.elect())
 
     @app.on_event("shutdown")
     async def shutdown_event():
