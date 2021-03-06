@@ -25,7 +25,7 @@ TEST_DATA = {
 }
 
 from opal.client import config
-from opal.client.data.updater import DataUpdater, DataUpdate, DataUpdateEntry
+from opal.client.data.updater import DataUpdater, DataUpdate, DataSourceEntry
 from opal.client.policy_store import PolicyStoreTypes, PolicyStoreClientFactory, MockPolicyStoreClient
 from opal.server.main import create_app
 from opal.common.utils import get_authorization_header
@@ -59,7 +59,7 @@ def server():
 def trigger_update():
     async def run():
         # trigger an update
-        entries = [DataUpdateEntry(url=DATA_URL)]
+        entries = [DataSourceEntry(url=DATA_URL)]
         update = DataUpdate(reason="Test", entries=entries)
         async with PubSubClient(
             server_uri=UPDATES_URL,

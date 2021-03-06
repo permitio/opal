@@ -5,7 +5,7 @@ from pydantic import BaseModel, Field
 from opal.fetcher.events import FetcherConfig
 
 
-class DataUpdateEntry(BaseModel):
+class DataSourceEntry(BaseModel):
     """
     Data source configuration - where 
     """
@@ -16,7 +16,7 @@ class DataUpdateEntry(BaseModel):
     config:FetcherConfig =  Field(None, description="Suggested fetcher configuration (e.g. auth or method) to fetch data with")
 
 class DataUpdate(BaseModel):
-    entries: List[DataUpdateEntry] = Field(..., description="list of related updates the OPAL client should perform")
+    entries: List[DataSourceEntry] = Field(..., description="list of related updates the OPAL client should perform")
     reason: str = Field(None, description="Reason for triggering the update")
 
 
@@ -24,4 +24,4 @@ class DataConfig(BaseModel):
     """
 
     """
-    topic_map: Dict[str, DataUpdateEntry]
+    topic_map: Dict[str, DataSourceEntry]
