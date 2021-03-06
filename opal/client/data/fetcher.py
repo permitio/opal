@@ -27,6 +27,7 @@ class DataFetcher:
         self._default_fetcher_config = HttpGetFetcherConfig(headers=self._auth_headers, is_json=True)
 
     async def __aenter__(self):
+        await self.start()
         return self
 
     async def __aexit__(self, exc_type, exc, tb):
@@ -35,15 +36,18 @@ class DataFetcher:
         """
         await self.stop()
 
+    async def start(self):
+        self._engine.start_workers()
+
     async def stop(self):
         """
         Release internal tasks and resources
         """
-        await self._engine.terminate_tasks()
+        await self._engine.terminate_workers()
 
     async def _handle_url(self, url, config):
         """
-        Helper function wrapping self._engine.handle_url, returnign the fetched result with the url used for it
+        Helper function wrapping self._engine.handle_url, returning the fetched result with the url used for it
         """
         # ask the engine to get our data     
         response = await self._engine.handle_url(url, config=config)

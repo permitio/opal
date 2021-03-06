@@ -40,9 +40,13 @@ class FetchingEngine(BaseFetchingEngine):
         self._fetcher_register = FetcherRegister(register_config)
         # core event callback regsiters
         self._failure_handlers:List[OnFetchFailureCallback] = []
+        # how many workers to run
+        self._worker_count = worker_count
         
+
+    def start_workers(self):
         # create worker tasks
-        for _ in range(worker_count):
+        for _ in range(self._worker_count):
             self.create_worker()
 
     @property
@@ -53,14 +57,15 @@ class FetchingEngine(BaseFetchingEngine):
         """
         Async Context manager to cancel tasks on exit 
         """
+        self.start_workers()
         return self
 
     async def __aexit__(self, exc_type, exc, tb):
         if (exc is not None):
             logger.error("Error occurred within FetchingEngine context", exc_info=(exc_type, exc, tb))
-        await self.terminate_tasks()
+        await self.terminate_workers()
 
-    async def terminate_tasks(self):
+    async def terminate_workers(self):
         """
         Cancel and wait on the internal worker tasks
         """
@@ -149,7 +154,7 @@ class FetchingEngine(BaseFetchingEngine):
 
     def create_worker(self) -> asyncio.Task:
         """
-        Create an asyncio worker tak to work the engine's queue
+        Create an asyncio worker to work the engine's queue
         Engine init starts several workers according to given configuration
         """
         task = asyncio.create_task(fetch_worker(self._queue, self))

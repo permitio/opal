@@ -1,7 +1,8 @@
+import asyncio
 from opal.client.policy_store.base_policy_store_client import BasePolicyStoreClient
 from opal.fetcher.events import FetcherConfig
 from typing import Dict, Iterable, List
-from opal.common.schemas.data import DataUpdate, DataUpdateEntry
+from opal.common.schemas.data import DataUpdate, DataSourceEntry
 from fastapi_websocket_rpc.rpc_channel import RpcChannel
 from fastapi_websocket_pubsub import PubSubClient
 
@@ -25,10 +26,10 @@ async def update_policy_data(update: DataUpdate = None, policy_store: BasePolicy
         data_fetcher = DataFetcher()
     # types
     urls: Dict[str, FetcherConfig] = None
-    url_to_entry: Dict[str, DataUpdateEntry] = None
+    url_to_entry: Dict[str, DataSourceEntry] = None
     # if we have an actual specification for the update
     if update is not None:
-        entries: List[DataUpdateEntry] = update.entries
+        entries: List[DataSourceEntry] = update.entries
         urls = {entry.url: entry.config for entry in entries}
         url_to_entry = {entry.url: entry for entry in entries}
     # get the data for the update
@@ -50,12 +51,12 @@ async def update_policy_data(update: DataUpdate = None, policy_store: BasePolicy
         await policy_store.set_policy_data(policy_data, path=policy_store_path)
 
 
-async def refetch_policy_data_and_update_store(policy_store: BasePolicyStoreClient = DEFAULT_POLICY_STORE):
+async def refetch_policy_data_and_update_store(policy_store: BasePolicyStoreClient = DEFAULT_POLICY_STORE, data_fetcher=None):
     """
     will bring fresh data from backend, and will inject into OPA.
     """
     # TODO - this should be replaced by an update coming the server on client connect
-    await update_policy_data(policy_store=policy_store)
+    await update_policy_data(policy_store=policy_store, data_fetcher=data_fetcher)
 
 
 class DataUpdater:
@@ -70,9 +71,12 @@ class DataUpdater:
         self._policy_store = policy_store
         # Pub/Sub topics we subscribe to for data updates
         self._data_topics = data_topics if data_topics is not None else DATA_TOPICS
+        # The pub/sub client for data updates
+        self._client = None
+        # The task running the Pub/Sub subcribing client
+        self._subscriber_task = None
         # Data fetcher
         self._data_fetcher = DataFetcher()
-        self._thread = AsyncioEventLoopThread(name="PolicyUpdaterThread")
         self._token = token
         self._server_url = server_url
         if self._token is None:
@@ -102,25 +106,28 @@ class DataUpdater:
             reason = "Periodic update"
         updater_logger.info("Updating policy data", reason=reason)
         update = DataUpdate.parse_obj(data)
-        await update_policy_data(update, policy_store=self._policy_store)
+        asyncio.create_task(update_policy_data(update, policy_store=self._policy_store, data_fetcher=self._data_fetcher))
 
     async def on_connect(self, client: PubSubClient, channel: RpcChannel):
         # on connection to backend, whether its the first connection
         # or reconnecting after downtime, refetch the state opa needs.
         updater_logger.info("Connected to server")
         if self._fetch_on_connect:
-            await refetch_policy_data_and_update_store(policy_store=self._policy_store)
+            await refetch_policy_data_and_update_store(policy_store=self._policy_store, data_fetcher=self._data_fetcher)
 
     async def on_disconnect(self, channel: RpcChannel):
         updater_logger.info("Disconnected from server")
 
-    def start(self):
-        logger.info("Launching updater")
-        self._thread.create_task(self._run_client())
-        self._thread.start()
-
-    async def _run_client(self):
+    async def start(self):
         logger.info("Launching data updater")
+        if self._subscriber_task is None:
+            self._subscriber_task = asyncio.create_task(self._subscriber())
+            await self._data_fetcher.start()
+
+    async def _subscriber(self):
+        """
+        Coroutine meant to be spunoff with create_task to listen in the background for data events and pass them to the data_fetcher 
+        """
         updater_logger.info("Subscribing to topics", topics=self._data_topics)
         self._client = PubSubClient(
             self._data_topics,
@@ -134,9 +141,15 @@ class DataUpdater:
         async with self._client:
             await self._client.wait_until_done()
 
+
     async def stop(self):
         logger.info("Stopping data updater")
+        # disconnect from Pub/Sub
         await self._client.disconnect()
+        # stop subscriber task
+        self._subscriber_task.cancel()
         # stop the data fetcher
         await self._data_fetcher.stop()
-        self._thread.stop()
+
+
+
