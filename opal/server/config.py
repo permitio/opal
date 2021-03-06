@@ -1,3 +1,4 @@
+from opal.common.schemas.data import DataUpdate
 from opal.common.confi import Confi
 
 
@@ -13,6 +14,17 @@ POLICY_REPO_URL = confi.str("POLICY_REPO_URL", None)
 POLICY_REPO_CLONE_PATH = confi.str("POLICY_REPO_CLONE_PATH", "regoclone")
 POLICY_REPO_MAIN_BRANCH = confi.str("POLICY_REPO_MAIN_BRANCH", "master")
 POLICY_REPO_MAIN_REMOTE = confi.str("POLICY_REPO_MAIN_REMOTE", "origin")
+
+# Data updates 
+DATA_CONFIG_ROUTE = confi.str("DATA_CONFIG_ROUTE", "/data/config", description="URL to fetch the full basic configuration of data")
+DATA_CONFIG_SOURCES = confi.json(
+    "DATA_CONFIG_SOURCES",
+    DataUpdate, 
+    {
+        "entries":[]
+    }, 
+    description="URL to fetch the full basic configuration of data"
+)
 
 # github webhook
 POLICY_REPO_WEBHOOK_SECRET = confi.str("POLICY_REPO_WEBHOOK_SECRET", None)
