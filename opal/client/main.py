@@ -63,7 +63,7 @@ def main(policy_store_type=POLICY_STORE_TYPE):
             # wait for opa
             await asyncio.sleep(1) 
         policy_updater.start()
-        data_updater.start()
+        await data_updater.start()
 
     @app.on_event("shutdown")
     async def shutdown_event():
