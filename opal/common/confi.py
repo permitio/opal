@@ -32,35 +32,44 @@ T = TypeVar("T", bound=BaseModel)
 
 class Confi:
 
-    def __init__(self) -> None:
-        pass
+
+    def __init__(self, prefix="") -> None:
+        """[summary]
+
+        Args:
+            prefix (str, optional): Prefix to add to all env-var keys. Defaults to "".
+        """
+        self._prefix = prefix
+
+    def _prefix_key(self, key):
+        return f"{self._prefix}key"
 
     def str(self, key, default=undefined, description=None, **kwargs) -> str:
-        return config(key, default=default, **kwargs)
+        return config(self._prefix_key(key), default=default, **kwargs)
 
     def int(self, key, default=undefined, description=None, **kwargs) -> int:
-        return config(key, default=default, cast=int, **kwargs)
+        return config(self._prefix_key(key), default=default, cast=int, **kwargs)
 
     def bool(self, key, default=undefined, description=None, **kwargs) -> bool:
-        return config(key, default=default, cast=cast_boolean, **kwargs)
+        return config(self._prefix_key(key), default=default, cast=cast_boolean, **kwargs)
 
     def float(self, key, default=undefined, description=None, **kwargs) -> float:
-        return config(key, default=default, cast=float, **kwargs)
+        return config(self._prefix_key(key), default=default, cast=float, **kwargs)
 
     def list(self, key, default=undefined, sub_cast=text_type, delimiter=",", strip=string.whitespace, description=None, **kwargs) -> list:
         try:
-            return config(key, cast=Csv(cast=sub_cast, delimiter=delimiter, strip=strip), **kwargs)
+            return config(self._prefix_key(key), cast=Csv(cast=sub_cast, delimiter=delimiter, strip=strip), **kwargs)
         except:
             if default is undefined:
                 raise
             return default
 
     def json(self, key, value_type:T, default=undefined, description=None, **kwargs) -> T:       
-        return config(key, default=default, cast=cast_pydantic(value_type), **kwargs)
+        return config(self._prefix_key(key), default=default, cast=cast_pydantic(value_type), **kwargs)
 
     def enum(self, key, enum_type: EnumT, default=undefined, description=None, **kwargs) -> EnumT:
         try:
-            return config(key, default=default, cast=enum_type, **kwargs)
+            return config(self._prefix_key(key), default=default, cast=enum_type, **kwargs)
         except:
             if default is undefined:
                 raise
