@@ -50,13 +50,13 @@ def create_app(init_git_watcher=True, init_publisher=True) -> FastAPI:
     def healthcheck():
         return {"status": "ok"}
 
-    async def on_election_desicion(
-        descision: bool,
+    async def on_election_decision(
+        decision: bool,
         webhook_listener: TopicListenerThread,
         publisher: TopicPublisherThread,
         repo_watcher: RepoWatcherThread,
     ):
-        elected_as_leader = descision
+        elected_as_leader = decision
         if elected_as_leader:
             publisher.start()
             webhook_listener.start()
@@ -73,9 +73,9 @@ def create_app(init_git_watcher=True, init_publisher=True) -> FastAPI:
                     server_uri=OPAL_WS_LOCAL_URL,
                     extra_headers=[get_authorization_header(OPAL_WS_TOKEN)]
                 )
-                election.on_desicion(
+                election.on_decision(
                     partial(
-                        on_election_desicion,
+                        on_election_decision,
                         webhook_listener=webhook_listener,
                         publisher=publisher,
                         repo_watcher=watcher,
