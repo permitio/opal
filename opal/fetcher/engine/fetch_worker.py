@@ -18,7 +18,6 @@ async def fetch_worker(queue: asyncio.Queue, engine):
     """
     engine: BaseFetchingEngine
     register: FetcherRegister = engine.register
-    
     while True:
         # types
         event: FetchEvent
