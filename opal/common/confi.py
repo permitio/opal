@@ -64,8 +64,11 @@ class Confi:
                 raise
             return default
 
-    def json(self, key, value_type:T, default=undefined, description=None, **kwargs) -> T:       
-        return config(self._prefix_key(key), default=default, cast=cast_pydantic(value_type), **kwargs)
+    def model(self, key, model_type:T, default=undefined, description=None, **kwargs) -> T:
+        """
+        Parse a config using a Pydantic model
+        """       
+        return config(self._prefix_key(key), default=default, cast=cast_pydantic(model_type), **kwargs)
 
     def enum(self, key, enum_type: EnumT, default=undefined, description=None, **kwargs) -> EnumT:
         try:
