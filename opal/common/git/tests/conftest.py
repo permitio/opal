@@ -2,10 +2,28 @@ from pathlib import Path
 from typing import Union
 
 import pytest
+import json
 from git import Actor, Repo
 
 
+REGO_CONTENTS = """
+# Role-based Access Control (RBAC)
+# --------------------------------
+package {package_name}
+
+# By default, deny requests.
+default allow = false
+"""
+
 class Helpers:
+    @staticmethod
+    def rego_contents(package_name: str = "app.rbac") -> str:
+        return REGO_CONTENTS.format(package_name=package_name)
+
+    @staticmethod
+    def json_contents() -> str:
+        return json.dumps({"roles": ["admin"]})
+
     @staticmethod
     def create_new_file_commit(
         repo: Repo,
@@ -49,14 +67,65 @@ def helpers() -> Helpers:
 
 @pytest.fixture
 def local_repo(tmp_path, helpers: Helpers) -> Repo:
-    root = tmp_path / "myrepo"
+    """
+    creates a dummy repo with the following file structure:
+    # .
+    # ├── other
+    # │   ├── abac.rego
+    # │   └── data.json
+    # │   └── some.json
+    # ├── rbac.rego
+    # ├── ignored.json
+    # ├── mylist.txt
+    # └── some
+    #     └── dir
+    #         └── to
+    #             └── file.rego
+    """
+    root: Path = tmp_path / "myrepo"
     root.mkdir()
     repo = Repo.init(root)
+
+    # create file to delete later
+    helpers.create_new_file_commit(repo, root / "deleted.rego")
+
+    # creating a text file we can modify later
     helpers.create_new_file_commit(repo, root / "mylist.txt")
-    helpers.create_new_file_commit(repo, root / "mylist2.txt")
-    helpers.create_new_file_commit(repo, root / "mylist3.txt")
-    helpers.create_modify_file_commit(repo, root / "mylist2.txt")
-    helpers.create_delete_file_commit(repo, root / "mylist3.txt")
+
+    # create rego module file at root dir
+    helpers.create_new_file_commit(
+        repo, root / "rbac.rego", contents=helpers.rego_contents()
+    )
+    helpers.create_new_file_commit(
+        repo, root / "ignored.json", contents=helpers.json_contents()
+    )
+
+    # create another rego and data module files at subdirectory
+    other = root / "other"
+    other.mkdir()
+    helpers.create_new_file_commit(
+        repo, other / "abac.rego", contents=helpers.rego_contents("app.abac")
+    )
+    helpers.create_new_file_commit(
+        repo, other / "data.json", contents=helpers.json_contents()
+    )
+    # this json is not an opa data module
+    helpers.create_new_file_commit(
+        repo, other / "some.json", contents=helpers.json_contents()
+    )
+
+    # create another rego at another subdirectory
+    somedir = root / "some/dir/to"
+    somedir.mkdir(parents=True)
+    helpers.create_new_file_commit(
+        repo, somedir / "file.rego", contents=helpers.rego_contents("envoy.http.public")
+    )
+
+    # create a "modify" commit
+    helpers.create_modify_file_commit(repo, root / "mylist.txt")
+
+    # create a "delete" commit
+    helpers.create_delete_file_commit(repo, root / "deleted.rego")
     return repo
 
 @pytest.fixture
