@@ -202,6 +202,8 @@ class DiffViewer:
             for str_path in [diff.a_path, diff.b_path]:
                 if str_path is not None:
                     path = Path(str_path)
-                    if filter(path):
+                    if filter is None:
+                        paths.add(path)
+                    elif filter(path):
                         paths.add(path)
         return paths
