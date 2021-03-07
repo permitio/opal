@@ -10,9 +10,13 @@
         node "OPAL sidecar" as opal [icon=gem]{
             artifact "OpenPolicyAgent" as opa
             artifact "OPAL-fetcher" as fetcher
-            artifact "OPAL-updater" as updater
+            artifact "OPAL-data-updater" as data_updater
+            artifact "OPAL-policy-updater" as policy_updater
         }
-        artifact "app-service" as service [icon=cog]
+
+        node "application" as app{
+            artifact "app-service" as service [icon=cog]
+        }
      
         node "Data Cloud" as datacloud [icon=database]{
             artifact "data-source" as data [icon=database]
@@ -21,13 +25,15 @@
         git -- server "webhook"
         service -> opa "isAllowed? / OPA query"
 
-        fetcher -> opa "push data updates"
-        updater -> opa "push policy updates"
-        updater -> fetcher "update"
+        data_updater -> fetcher "data update request"
+        data_updater -> opa "push data updates"
+        fetcher -> data_updater "data update"
+        data_updater -> opa "push data updates"
+        policy_updater -> opa "push policy updates"
         fetcher -> data 
 
-        server -> updater "Policy Pub/Sub"
-        server -> updater "Data Pub/Sub"
+        server -> policy_updater "Policy Pub/Sub"
+        server -> data_updater "Data Pub/Sub"
 
 
 
