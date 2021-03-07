@@ -1,3 +1,6 @@
+"""
+Warpper for aiohttp_requests.requests to fix deprecation warnings
+"""
 from aiohttp_requests import Requests
 import aiohttp
 
