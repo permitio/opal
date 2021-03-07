@@ -5,7 +5,7 @@ import sys
 import logging
 
 # Add parent path to use local src as package for tests
-root_dir = os.path.abspath(os.path.join(os.path.basename(__file__), os.path.pardir))
+root_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), os.path.pardir, os.path.pardir, os.path.pardir ))
 sys.path.append(root_dir)
 
 import asyncio
@@ -86,34 +86,33 @@ async def test_data_updater(server):
         proc = multiprocessing.Process(target=trigger_update, daemon=True)
         proc.start()
         # wait until new data arrives into the strore via the updater
-        await asyncio.wait_for(policy_store.wait_for_data(),205)
+        await asyncio.wait_for(policy_store.wait_for_data(),5)
     #cleanup
     finally:
         await updater.stop()
         proc.terminate()
 
-# @pytest.mark.asyncio
-# async def test_client_data_updates(server):
-#     # Wait for the server to start
-#     server.wait(5)
-#     from opal.client.app import app
-#     # config to use mock OPA
-#     policy_store = PolicyStoreClientFactory.create(store_type=PolicyStoreTypes.MOCK)
-#     updater = DataUpdater(server_url=UPDATES_URL, policy_store=policy_store, fetch_on_connect=False, data_topics=DATA_TOPICS)
+@pytest.mark.asyncio
+async def test_client_get_initial_data(server):
+    # Wait for the server to start
+    server.wait(5)
+    from opal.client.app import app
+    # config to use mock OPA
+    policy_store = PolicyStoreClientFactory.create(store_type=PolicyStoreTypes.MOCK)
+    updater = DataUpdater(server_url=UPDATES_URL, policy_store=policy_store, 
+                          fetch_on_connect=True, data_topics=DATA_TOPICS)
 
-#     uvicorn.run(app, port=PORT)
+    uvicorn.run(app, port=PORT)
 
-#     # start the updater (terminate on exit)
-#     await updater.start()
-#     try:
-#         proc = multiprocessing.Process(target=trigger_update, daemon=True)
-#         proc.start()
-#         # wait until new data arrives into the strore via the updater
-#         await asyncio.wait_for(policy_store.wait_for_data(),205)
-#     #cleanup
-#     finally:
-#         await updater.stop()
-#         proc.terminate()
+    # start the updater (terminate on exit)
+    await updater.start()
+    try:
+        # wait until new data arrives into the strore via the updater's on-connect
+        await asyncio.wait_for(policy_store.wait_for_data(),205)
+    #cleanup
+    finally:
+        await updater.stop()
+
 
 
     
