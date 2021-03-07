@@ -1,4 +1,18 @@
 import pytest
+import os
+import sys
+
+# Add root opal dir to use local src as package for tests (i.e, no need for python -m pytest)
+root_dir = os.path.abspath(
+    os.path.join(
+        os.path.dirname(__file__),
+        os.path.pardir,
+        os.path.pardir,
+        os.path.pardir,
+        os.path.pardir,
+    )
+)
+sys.path.append(root_dir)
 
 from pathlib import Path
 from git import Repo

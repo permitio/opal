@@ -1,9 +1,10 @@
 from pathlib import Path
-from typing import Union
+from typing import Union, Tuple
 
 import pytest
 import json
 from git import Actor, Repo
+from git.objects import Commit
 
 
 REGO_CONTENTS = """
@@ -45,7 +46,7 @@ class Helpers:
         commit_msg: str = "change file"
     ):
         filename = str(filename)
-        open(filename, 'w+').write(contents)
+        open(filename, 'a').write(contents)
         author = Actor("John doe", "john@doe.com")
         repo.index.add([filename])
         repo.index.commit(commit_msg, author=author)
@@ -59,6 +60,19 @@ class Helpers:
         filename = str(filename)
         author = Actor("John doe", "john@doe.com")
         repo.index.remove([filename], working_tree=True)
+        repo.index.commit(commit_msg, author=author)
+
+    @staticmethod
+    def create_rename_file_commit(
+        repo: Repo,
+        filename: Union[str, Path],
+        new_filename: Union[str, Path],
+        commit_msg: str = "rename file"
+    ):
+        filename = str(filename)
+        new_filename = str(new_filename)
+        author = Actor("John doe", "john@doe.com")
+        repo.index.move([filename, new_filename])
         repo.index.commit(commit_msg, author=author)
 
 @pytest.fixture
@@ -132,3 +146,26 @@ def local_repo(tmp_path, helpers: Helpers) -> Repo:
 def local_repo_clone(local_repo: Repo) -> Repo:
     clone_root = Path(local_repo.working_tree_dir).parent / "myclone"
     return local_repo.clone(clone_root)
+
+@pytest.fixture
+def repo_with_diffs(local_repo: Repo, helpers: Helpers) -> Tuple[Repo, Commit, Commit]:
+    repo: Repo = local_repo
+    root = Path(repo.working_tree_dir)
+
+    # save initial state as old commit
+    previous_head: Commit = repo.head.commit
+
+    # create "added", "modify", "delete" and "rename" changes
+    helpers.create_new_file_commit(
+        repo,
+        root / "other/gbac.rego",
+        contents=helpers.rego_contents("app.gbac")
+    )
+    helpers.create_modify_file_commit(repo, root / "mylist.txt")
+    helpers.create_delete_file_commit(repo, root / "other/some.json")
+    helpers.create_rename_file_commit(repo, root / "ignored.json", root / "ignored2.json")
+
+    # save the new head as the new commit
+    new_head: Commit = repo.head.commit
+
+    return (repo, previous_head, new_head)
