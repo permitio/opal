@@ -1,6 +1,6 @@
 import asyncio
-from aiohttp_requests import requests
 
+from opal.common.aio_requests import requests
 from opal.client.policy_store.base_policy_store_client import BasePolicyStoreClient
 from opal.fetcher.events import FetcherConfig
 from typing import Dict, Iterable, List
@@ -153,7 +153,7 @@ class DataUpdater:
         # translate config to a data update 
         entries = sources_config.entries
         update = DataUpdate(reason=data_fetch_reason, entries=entries)
-        await self.trigger_data_update(update)
+        self.trigger_data_update(update)
         
 
     async def on_connect(self, client: PubSubClient, channel: RpcChannel):
