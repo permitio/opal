@@ -3,19 +3,22 @@ from enum import Enum
 
 from opal.common.confi import Confi
 
-config = Confi()
+confi = Confi()
 
 class PolicyStoreTypes(Enum):
     OPA="OPA"
     MOCK="MOCK"
         
 # Data topics to subscribe to
-DATA_TOPICS = config.list("DATA_TOPICS", ["policy_data"])
-DEFAULT_DATA_URL = config.str("DEFAULT_DATA_URL", "http://localhost:8000/policy-config")
+DATA_TOPICS = confi.list("DATA_TOPICS", ["policy_data"])
+# Default URL to fetch data configuration from 
+DEFAULT_DATA_SOURCES_CONFIG_URL = confi.str("DEFAULT_DATA_SOURCES_CONFIG_URL", "http://localhost:8000/data/config")
+# Default URL to fetch data from
+DEFAULT_DATA_URL = confi.str("DEFAULT_DATA_URL", "http://localhost:8000/policy-config")
 
 
 # backend service
-BACKEND_URL = config.str("OPAL_SERVER_URL", "http://localhost:8000")
+BACKEND_URL = confi.str("OPAL_SERVER_URL", "http://localhost:8000")
 BACKEND_SERVICE_LEGACY_URL = f"{BACKEND_URL}/sdk"
 BACKEND_SERVICE_URL = f"{BACKEND_URL}/v1"
 
@@ -24,24 +27,25 @@ _ws_backend_url = BACKEND_URL.replace("https", "ws").replace("http", "ws")
 DATA_UPDATES_ROUTE = "/sdk/ws"
 DATA_UPDATES_WS_URL = f"{_ws_backend_url}{DATA_UPDATES_ROUTE}"
 
+
 # policy service (opal server)
-POLICY_SERVICE_URL = config.str("POLICY_SERVICE_URL", "http://localhost:7002")
+POLICY_SERVICE_URL = confi.str("POLICY_SERVICE_URL", "http://localhost:7002")
 _policy_ws_url = POLICY_SERVICE_URL.replace("https", "ws").replace("http", "ws")
 POLICY_UPDATES_WS_URL = f"{_policy_ws_url}/ws"
 
-POLICY_SUBSCRIPTION_DIRS = config.list("POLICY_SUBSCRIPTION_DIRS", ["some/dir","other"], delimiter=":")
+POLICY_SUBSCRIPTION_DIRS = confi.list("POLICY_SUBSCRIPTION_DIRS", ["some/dir","other"], delimiter=":")
 
-POLICY_STORE_TYPE = config.enum("POLICY_STORE_TYPE", PolicyStoreTypes, PolicyStoreTypes.OPA)
+POLICY_STORE_TYPE = confi.enum("POLICY_STORE_TYPE", PolicyStoreTypes, PolicyStoreTypes.OPA)
 
-OPA_PORT = config.str("OPA_PORT", "8181")
-_opa_url = config.str("OPA_SERVICE_URL", f"http://localhost:{OPA_PORT}")
+OPA_PORT = confi.str("OPA_PORT", "8181")
+_opa_url = confi.str("OPA_SERVICE_URL", f"http://localhost:{OPA_PORT}")
 POLICY_STORE_URL = f"{_opa_url}/v1"
-CLIENT_TOKEN = config.str("CLIENT_TOKEN", "THIS_IS_A_DEV_SECRET")
+CLIENT_TOKEN = confi.str("CLIENT_TOKEN", "THIS_IS_A_DEV_SECRET")
 
 ALLOWED_ORIGINS = ["*"]
 
 
-KEEP_ALIVE_INTERVAL = config.int("AUTHZ_KEEP_ALIVE", 0)
+KEEP_ALIVE_INTERVAL = confi.int("AUTHZ_KEEP_ALIVE", 0)
 
 
 OPENAPI_TAGS_METADATA = [

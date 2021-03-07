@@ -15,6 +15,13 @@ import pytest
 import uvicorn
 from fastapi_websocket_pubsub import PubSubClient
 
+from opal.client import config
+from opal.client.data.updater import DataUpdater, DataUpdate, DataSourceEntry
+from opal.client.policy_store import PolicyStoreTypes, PolicyStoreClientFactory, MockPolicyStoreClient
+from opal.server.main import create_app
+from opal.common.utils import get_authorization_header
+from opal.client.data.rpc import TenantAwareRpcEventClientMethods
+
 PORT = int(os.environ.get("PORT") or "9123")
 UPDATES_URL = f"ws://localhost:{PORT}/ws"
 DATA_ROUTE = "/fetchable_data"
@@ -23,13 +30,6 @@ DATA_TOPICS = ["policy_data"]
 TEST_DATA = {
     "hello": "world"
 }
-
-from opal.client import config
-from opal.client.data.updater import DataUpdater, DataUpdate, DataSourceEntry
-from opal.client.policy_store import PolicyStoreTypes, PolicyStoreClientFactory, MockPolicyStoreClient
-from opal.server.main import create_app
-from opal.common.utils import get_authorization_header
-from opal.client.data.rpc import TenantAwareRpcEventClientMethods
 
 def setup_server(event):
     server_app = create_app(init_git_watcher=False)
@@ -79,7 +79,7 @@ async def test_data_updater(server):
     server.wait(5)
     # config to use mock OPA
     policy_store = PolicyStoreClientFactory.create(store_type=PolicyStoreTypes.MOCK)
-    updater = DataUpdater(server_url=UPDATES_URL, policy_store=policy_store, fetch_on_connect=False, data_topics=DATA_TOPICS)
+    updater = DataUpdater(pubsub_url=UPDATES_URL, policy_store=policy_store, fetch_on_connect=False, data_topics=DATA_TOPICS)
     # start the updater (terminate on exit)
     await updater.start()
     try:

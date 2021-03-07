@@ -1,9 +1,8 @@
-from opal.common.schemas.data import DataUpdate
+from opal.common.schemas.data import DataSourceConfig
 from opal.common.confi import Confi
 
 
 confi = Confi()
-
 # ws server (TODO: merge with opal client config)
 OPAL_WS_LOCAL_URL = confi.str("OPAL_WS_LOCAL_URL", "ws://localhost:7002/ws")
 OPAL_WS_TOKEN = confi.str("OPAL_WS_TOKEN", "THIS_IS_A_DEV_SECRET")
@@ -16,15 +15,22 @@ POLICY_REPO_MAIN_BRANCH = confi.str("POLICY_REPO_MAIN_BRANCH", "master")
 POLICY_REPO_MAIN_REMOTE = confi.str("POLICY_REPO_MAIN_REMOTE", "origin")
 
 # Data updates 
+ALL_DATA_TOPIC = confi.str("ALL_DATA_TOPIC", "policy_data", description="Top level topic for data")
+ALL_DATA_URL = confi.str("ALL_DATA_URL", "http://localhost:7002/policy-data", description="URL for all data config [If you choose to have it all at one place]")
 DATA_CONFIG_ROUTE = confi.str("DATA_CONFIG_ROUTE", "/data/config", description="URL to fetch the full basic configuration of data")
-DATA_CONFIG_SOURCES = confi.json(
+DATA_CONFIG_SOURCES = confi.model(
     "DATA_CONFIG_SOURCES",
-    DataUpdate, 
+    DataSourceConfig, 
     {
-        "entries":[]
+        "entries":[
+            {"url": ALL_DATA_URL, "topics":[ALL_DATA_TOPIC]}
+        ]
     }, 
-    description="URL to fetch the full basic configuration of data"
+    description="Configuration of data sources by topics"
 )
+
+DATA_UPDATE_TRIGGER_ROUTE = confi.str("DATA_CONFIG_ROUTE", "/data/update", description="URL to trigger data update events")
+
 
 # github webhook
 POLICY_REPO_WEBHOOK_SECRET = confi.str("POLICY_REPO_WEBHOOK_SECRET", None)
