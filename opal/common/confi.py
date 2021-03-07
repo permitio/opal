@@ -1,16 +1,26 @@
+"""
+Easy Python configuration interface built on rop of python-decouple.
+Adding typing support and parsing with Pydantic and Enum
+"""
+
 from typing import TypeVar, cast
 from pydantic import BaseModel
 from decouple import config, Csv, text_type, undefined, UndefinedValueError
 import string
 
 def cast_boolean(value):
+    """
+    Parse an entry as a boolean.
+     - all variations of "true" and 1 are treated as True
+     - all variations of "false" and 0 are treated as False
+    """
     if isinstance(value, bool):
         return value
     elif isinstance(value, str):        
         value = value.lower()
-        if (value == "true"):
+        if (value == "true" or value == "1"):
             return True
-        elif value == "false":
+        elif value == "false" or value == "0":
             return False
         else:
             raise UndefinedValueError(f"{value} - is not a valid boolean")
@@ -31,10 +41,13 @@ T = TypeVar("T", bound=BaseModel)
 
 
 class Confi:
+    """
+    Interface to create typed configuration entries
+    """
 
 
     def __init__(self, prefix="") -> None:
-        """[summary]
+        """
 
         Args:
             prefix (str, optional): Prefix to add to all env-var keys. Defaults to "".
