@@ -16,8 +16,7 @@ from opal.client.data.fetcher import DataFetcher
 from opal.client.data.rpc import TenantAwareRpcEventClientMethods
 
 
-logger = get_logger("Opal Client")
-updater_logger = get_logger("Data Updater")
+logger = get_logger("opal.updater")
 
 
 async def update_policy_data(update: DataUpdate = None, policy_store: BasePolicyStoreClient = DEFAULT_POLICY_STORE, data_fetcher=None):
@@ -35,10 +34,10 @@ async def update_policy_data(update: DataUpdate = None, policy_store: BasePolicy
         urls = {entry.url: entry.config for entry in entries}
         url_to_entry = {entry.url: entry for entry in entries}
     # get the data for the update
-    updater_logger.info("Fetching policy data", urls=urls.keys())
+    logger.info("Fetching policy data", urls=urls.keys())
     policy_data_by_urls = await data_fetcher.fetch_policy_data(urls)
     # save the data from the update
-    updater_logger.info("Saving fetched data to policy-store")
+    logger.info("Saving fetched data to policy-store")
     for url in policy_data_by_urls:
         # get path to store the URL data (default mode (None) is as "" - i.e. as all the data at root)
         entry = url_to_entry.get(url, None)
@@ -114,7 +113,7 @@ class DataUpdater:
             reason = data.get("reason", "")
         else:
             reason = "Periodic update"
-        updater_logger.info("Updating policy data", reason=reason)
+        logger.info("Updating policy data", reason=reason)
         update = DataUpdate.parse_obj(data)
         self.trigger_data_update(update)
 
@@ -133,8 +132,12 @@ class DataUpdater:
         if url is None:
             url = self._data_sources_config_url
         logger.info(f"Getting data-sources configuration from {url}")
-        res = await requests.get(url, headers=self._extra_headers)
-        return DataSourceConfig.parse_obj(await res.json())
+        try:
+            res = await requests.get(url, headers=self._extra_headers)
+            return DataSourceConfig.parse_obj(await res.json())
+        except:
+            logger.exception(f"Failed to load data sources config")
+            raise 
 
 
     async def get_base_policy_data(self, config_url:str=None, data_fetch_reason="Initial load"):
@@ -160,12 +163,12 @@ class DataUpdater:
         or reconnecting after downtime, refetch the state opa needs.
         As long as the connection is alive we know we are in sync with the state - if the connection is lost we assume we need to start from scratch
         """
-        updater_logger.info("Connected to server")
+        logger.info("Connected to server")
         if self._fetch_on_connect:
-            await self.get_base_policy_data(policy_store=self._policy_store, data_fetcher=self._data_fetcher)
+            await self.get_base_policy_data()
 
     async def on_disconnect(self, channel: RpcChannel):
-        updater_logger.info("Disconnected from server")
+        logger.info("Disconnected from server")
 
     async def start(self):
         logger.info("Launching data updater")
@@ -177,7 +180,7 @@ class DataUpdater:
         """
         Coroutine meant to be spunoff with create_task to listen in the background for data events and pass them to the data_fetcher 
         """
-        updater_logger.info("Subscribing to topics", topics=self._data_topics)
+        logger.info("Subscribing to topics", topics=self._data_topics)
         self._client = PubSubClient(
             self._data_topics,
             self._update_policy_data_callback,
