@@ -4,8 +4,8 @@ supports
 """
 
 from aiohttp.client_reqrep import ClientResponse
-from aiohttp_requests import requests
 
+from ...aio_requests import requests
 from ..fetch_provider import BaseFetchProvider
 from ..events import FetcherConfig, FetchEvent
 from ..logger import get_logger

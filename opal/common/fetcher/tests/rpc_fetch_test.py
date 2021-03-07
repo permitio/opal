@@ -3,7 +3,7 @@ import os
 import sys
 
 # Add parent path to use local src as package for tests
-root_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), os.path.pardir, os.path.pardir, os.path.pardir ))
+root_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), os.path.pardir, os.path.pardir, os.path.pardir, os.path.pardir ))
 sys.path.append(root_dir)
 
 import asyncio
@@ -15,8 +15,8 @@ from fastapi import FastAPI
 from fastapi_websocket_rpc import WebsocketRPCEndpoint, RpcMethodsBase, rpc_methods
 
 
-from opal.fetcher import FetchingEngine
-from opal.fetcher.providers.fastapi_rpc_fetch_provider import FastApiRpcFetchProvider, FastApiRpcFetchEvent, FastApiRpcFetchConfig
+from opal.common.fetcher import FetchingEngine
+from opal.common.fetcher.providers.fastapi_rpc_fetch_provider import FastApiRpcFetchProvider, FastApiRpcFetchEvent, FastApiRpcFetchConfig
 
 
 # Configurable

@@ -3,7 +3,8 @@ import os
 import sys
 
 # Add parent path to use local src as package for tests
-root_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), os.path.pardir, os.path.pardir, os.path.pardir ))
+root_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), os.path.pardir, os.path.pardir, os.path.pardir, os.path.pardir ))
+print(root_dir)
 sys.path.append(root_dir)
 
 import asyncio
@@ -14,8 +15,8 @@ import pytest
 import uvicorn
 from fastapi import FastAPI
 
-from opal.fetcher.providers.http_get_fetch_provider import HttpGetFetchEvent, HttpGetFetchProvider
-from opal.fetcher import FetchingEngine, FetchEvent
+from opal.common.fetcher.providers.http_get_fetch_provider import HttpGetFetchEvent, HttpGetFetchProvider
+from opal.common.fetcher import FetchingEngine, FetchEvent
 
 # Configurable
 PORT = int(os.environ.get("PORT") or "9110")

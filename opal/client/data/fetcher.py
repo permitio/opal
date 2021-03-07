@@ -1,12 +1,12 @@
-from opal.fetcher.events import FetcherConfig
-from opal.fetcher.providers.http_get_fetch_provider import HttpGetFetcherConfig
 import asyncio
-from typing import Dict, Any, List, Tuple
+from typing import Dict, Any
 
 from opal.client.config import DEFAULT_DATA_URL, CLIENT_TOKEN
 from opal.common.utils import get_authorization_header
 from opal.client.utils import tuple_to_dict
-from opal.fetcher import FetchingEngine
+from opal.common.fetcher import FetchingEngine
+from opal.common.fetcher.events import FetcherConfig
+from opal.common.fetcher.providers.http_get_fetch_provider import HttpGetFetcherConfig
 
 class DataFetcher:
     """

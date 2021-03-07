@@ -3,7 +3,7 @@ import asyncio
 from opal.common.aio_requests import requests
 from opal.client.policy_store.base_policy_store_client import BasePolicyStoreClient
 from opal.common.fetcher.events import FetcherConfig
-from typing import Dict, Iterable, List
+from typing import Dict, List
 from opal.common.schemas.data import DataSourceConfig, DataUpdate, DataSourceEntry
 from fastapi_websocket_rpc.rpc_channel import RpcChannel
 from fastapi_websocket_pubsub import PubSubClient

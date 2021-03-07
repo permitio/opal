@@ -15,8 +15,7 @@ sys.path.append(root_dir)
 from opal.client import config
 from opal.client.data.rpc import TenantAwareRpcEventClientMethods
 from opal.client.data.updater import DataSourceEntry, DataUpdate, DataUpdater
-from opal.client.policy_store import (MockPolicyStoreClient,
-                                      PolicyStoreClientFactory,
+from opal.client.policy_store import (PolicyStoreClientFactory,
                                       PolicyStoreTypes)
 from opal.common.schemas.data import DataSourceConfig
 from opal.common.utils import get_authorization_header
@@ -125,7 +124,7 @@ async def test_client_get_initial_data(server):
     await updater.start()
     try:
         # wait until new data arrives into the strore via the updater
-        await asyncio.wait_for(policy_store.wait_for_data(), 25)
+        await asyncio.wait_for(policy_store.wait_for_data(), 5)
     # cleanup
     finally:
         await updater.stop()
