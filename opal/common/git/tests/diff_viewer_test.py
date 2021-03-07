@@ -48,7 +48,7 @@ def test_diff_viewer_filter_changes(repo_with_diffs: Tuple[Repo, Commit, Commit]
         paths = diff_paths(diffs)
         assert Path("other/gbac.rego") in paths
         assert Path("mylist.txt") in paths
-        assert Path("other/some.json") in paths
+        assert Path("other/data.json") in paths
         # renamed file diffs have 2 paths (old and new)
         assert Path("ignored.json") in paths
         assert Path("ignored2.json") in paths
@@ -60,12 +60,12 @@ def test_diff_viewer_filter_changes(repo_with_diffs: Tuple[Repo, Commit, Commit]
         # only diffs under 'other' directory is returned
         # matching diffs:
         # (A) other/gbac.rego
-        # (D) other/some.json
+        # (D) other/data.json
         assert len(diffs) == 2
 
         paths = diff_paths(diffs)
         assert Path("other/gbac.rego") in paths
-        assert Path("other/some.json") in paths
+        assert Path("other/data.json") in paths
         assert Path("mylist.txt") not in paths
         assert Path("ignored2.json") not in paths
 
@@ -91,7 +91,7 @@ def test_diff_viewer_filter_by_change_type(repo_with_diffs: Tuple[Repo, Commit, 
         diffs = list(viewer.deleted())
         assert len(diffs) == 1
         paths = diff_paths(diffs)
-        assert Path("other/some.json") in paths
+        assert Path("other/data.json") in paths
 
         # we renamed 1 file, we expect the renamed() generator to return only 1 diff
         diffs = list(viewer.renamed())
@@ -112,7 +112,7 @@ def test_diff_viewer_affected_paths(repo_with_diffs: Tuple[Repo, Commit, Commit]
         assert len(paths) == 5
         assert Path("other/gbac.rego") in paths
         assert Path("mylist.txt") in paths
-        assert Path("other/some.json") in paths
+        assert Path("other/data.json") in paths
         assert Path("ignored.json") in paths
         assert Path("ignored2.json") in paths
 
@@ -156,5 +156,5 @@ def test_diff_viewer_returns_blob_for_deleted_file(repo_with_diffs: Tuple[Repo, 
         files: List[VersionedFile] = list(viewer.deleted_files())
         assert len(files) == 2
         paths = file_paths(files)
-        assert Path("other/some.json") in paths
+        assert Path("other/data.json") in paths
         assert Path("ignored.json") in paths

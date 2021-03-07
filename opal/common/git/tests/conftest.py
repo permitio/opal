@@ -162,7 +162,7 @@ def repo_with_diffs(local_repo: Repo, helpers: Helpers) -> Tuple[Repo, Commit, C
         contents=helpers.rego_contents("app.gbac")
     )
     helpers.create_modify_file_commit(repo, root / "mylist.txt")
-    helpers.create_delete_file_commit(repo, root / "other/some.json")
+    helpers.create_delete_file_commit(repo, root / "other/data.json")
     helpers.create_rename_file_commit(repo, root / "ignored.json", root / "ignored2.json")
 
     # save the new head as the new commit
