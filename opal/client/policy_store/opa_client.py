@@ -1,4 +1,5 @@
 import asyncio
+from opal.client.policy_store.base_policy_store_client import BasePolicyStoreClient
 import aiohttp
 import json
 import functools
@@ -29,7 +30,7 @@ def fail_silently(fallback=None):
         return wrapper
     return decorator
 
-class OpaClient:
+class OpaClient(BasePolicyStoreClient):
     """
     communicates with OPA via its REST API.
     """

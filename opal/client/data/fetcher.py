@@ -66,7 +66,7 @@ class DataFetcher:
             Dict[str, Any]: urls mapped to their resulting fetched data
         """
         # return value - /fetch-results mapped by url
-        results_bu_url = {}
+        results_by_url = {}
         # tasks  
         tasks = []
         # if no url provided - default to the builtin route
@@ -78,8 +78,8 @@ class DataFetcher:
         # wait for all data fetches to complete
         results = await asyncio.gather(*tasks)
         # Map results by urls
-        results_bu_url = {url: response for url, response in results  } 
+        results_by_url = {url: response for url, response in results  } 
         # return results
-        return results_bu_url
+        return results_by_url
 
 

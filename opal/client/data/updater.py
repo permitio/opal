@@ -35,6 +35,7 @@ async def update_policy_data(update: DataUpdate = None, policy_store: BasePolicy
         url_to_entry = {entry.url: entry for entry in entries}
     # get the data for the update
     logger.info("Fetching policy data", urls=urls.keys())
+    # Urls may be None - fetch_policy_data has a default for None
     policy_data_by_urls = await data_fetcher.fetch_policy_data(urls)
     # save the data from the update
     logger.info("Saving fetched data to policy-store")
