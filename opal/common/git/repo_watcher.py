@@ -64,6 +64,7 @@ class RepoWatcher:
             result = self._cloner.clone()
         except GitFailed as e:
             await self._on_git_failed(e)
+            return
 
         self._tracker = BranchTracker(
             repo=result.repo,
