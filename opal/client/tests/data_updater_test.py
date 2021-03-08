@@ -20,7 +20,7 @@ from opal.client.policy_store import (PolicyStoreClientFactory,
 from opal.common.schemas.data import DataSourceConfig
 from opal.common.utils import get_authorization_header
 from opal.server.config import DATA_CONFIG_ROUTE
-from opal.server.main import create_app
+from opal.server.opal_server import OpalServer
 
 
 
@@ -40,10 +40,11 @@ DATA_SOURCES_CONFIG = DataSourceConfig(entries=[
 
 
 def setup_server(event):
-    # Server without git watcher and with a test specifc url for data
-    server_app = create_app(init_git_watcher=False, data_sources_config=DATA_SOURCES_CONFIG)
+    # Server without git watcher and with a test specifc url for data, and without broadcasting
+    server = OpalServer(init_git_watcher=False, data_sources_config=DATA_SOURCES_CONFIG, broadcaster_uri=None)
+    server_app = server.app
+    
     # add a url to fetch data from
-
     @server_app.get(DATA_ROUTE)
     def fetchable_data():
         return TEST_DATA

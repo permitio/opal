@@ -17,13 +17,13 @@ from opal.server.config import DATA_CONFIG_SOURCES, NO_RPC_LOGS, OPAL_WS_LOCAL_U
 from opal.server.data.api import init_data_updates_router
 from opal.server.deps.authentication import verify_logged_in
 from opal.server.policy.bundles.api import router as bundles_router
-from opal.server.policy.github_webhook.api import router as webhook_router
+from opal.server.policy.github_webhook.api import init_git_webhook_router
 from opal.server.policy.github_webhook.listener import setup_webhook_listener
 from opal.server.policy.watcher import (setup_watcher_thread,
                                         trigger_repo_watcher_pull)
 from opal.server.policy.watcher.watcher_thread import RepoWatcherThread
 from opal.server.publisher import setup_publisher_thread
-from opal.server.pubsub import init_pubsub_router
+from opal.server.pubsub import PubSub
 
 if NO_RPC_LOGS:
     logging_config.set_mode(LoggingModes.UVICORN, level=logging.WARN)
@@ -60,13 +60,14 @@ class OpalServer:
 
         # Init routers
         data_updates_router = init_data_updates_router(data_update_publisher, data_sources_config)
-        pubsub_router = init_pubsub_router(broadcaster_uri=broadcaster_uri)
+        pubsub = PubSub(broadcaster_uri=broadcaster_uri)
+        webhook_router = init_git_webhook_router(pubsub.endpoint)
 
         # include the api routes
         app.include_router(bundles_router, tags=["Bundle Server"], dependencies=[Depends(verify_logged_in)])
         app.include_router(data_updates_router, tags=["Data Updates"], dependencies=[Depends(verify_logged_in)])
         app.include_router(webhook_router, tags=["Github Webhook"])
-        app.include_router(pubsub_router, tags=["Pub/Sub"])
+        app.include_router(pubsub.router, tags=["Pub/Sub"])
 
         @app.get("/healthcheck", include_in_schema=False)
         @app.get("/", include_in_schema=False)
