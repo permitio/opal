@@ -9,11 +9,11 @@ from opal.client.config import OPENAPI_TAGS_METADATA, PolicyStoreTypes, POLICY_S
 from opal.client.policy_store.policy_store_client_factory import PolicyStoreClientFactory
 from opal.client.server.api import router as proxy_router
 from opal.client.enforcer.api import init_enforcer_api_router 
-from opal.client.policy.api import router as policy_router
+from opal.client.policy.api import init_policy_router
 from opal.client.data.api import router as data_router
 from opal.client.local.api import init_local_cache_api_router
 from opal.client.server.middleware import configure_middleware
-from opal.client.policy.updater import policy_updater
+from opal.client.policy.updater import PolicyUpdater
 from opal.client.data.updater import DataUpdater
 from opal.client.enforcer.runner import OpaRunner
 
@@ -24,7 +24,20 @@ class OpalClient:
         # Init policy store client
         self.policy_store_type = policy_store_type
         self.policy_store = PolicyStoreClientFactory.create(policy_store_type)
-        self.app = self._init_fast_api_app
+        # Init policy updater
+        self.policy_updater = PolicyUpdater()
+        # Data updating service
+        self.data_updater = DataUpdater(policy_store=policy_store)
+
+        # Internal services
+        # Policy store
+        if self.policy_store_type == PolicyStoreTypes.OPA:
+            self.opa_runner = OpaRunner.setup_opa_runner()
+        else:
+            self.opa_runner = None
+            
+        # init fastapi app
+        self.app:FastAPI = self._init_fast_api_app()
 
     def _init_fast_api_app(self):
         policy_store = self.policy_store
@@ -41,6 +54,7 @@ class OpalClient:
         # Init api routes
         enforcer_router = init_enforcer_api_router(policy_store=policy_store)
         local_router = init_local_cache_api_router(policy_store=policy_store)
+        policy_router = init_policy_router()
 
         # include the api routes
         app.include_router(enforcer_router, tags=["Authorization API"])
@@ -48,15 +62,6 @@ class OpalClient:
         app.include_router(policy_router, tags=["Policy Updater"])
         app.include_router(data_router, tags=["Data Updater"])
         app.include_router(proxy_router, tags=["Cloud API Proxy"])
-
-        # Internal services
-        # Policy store
-        if self.policy_store_type == PolicyStoreTypes.OPA:
-            opa_runner = OpaRunner.setup_opa_runner()
-        else:
-            opa_runner = None
-        # Data updating service
-        data_updater = DataUpdater(policy_store=policy_store)
 
         # API Routes
         @app.get("/healthcheck", include_in_schema=False)
@@ -66,19 +71,19 @@ class OpalClient:
 
         @app.on_event("startup")
         async def startup_event():
-            if opa_runner is not None:
-                opa_runner.start()
+            if self.opa_runner is not None:
+                self.opa_runner.start()
                 # wait for opa
                 await asyncio.sleep(1) 
-            policy_updater.start()
-            await data_updater.start()
+            self.policy_updater.start()
+            await self.data_updater.start()
 
         @app.on_event("shutdown")
         async def shutdown_event():
-            await data_updater.stop()
-            await policy_updater.stop()
-            if opa_runner is not None:
-                opa_runner.stop()
+            await self.data_updater.stop()
+            await self.policy_updater.stop()
+            if self.opa_runner is not None:
+                self.opa_runner.stop()
 
         return app
 

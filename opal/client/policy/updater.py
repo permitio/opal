@@ -93,5 +93,3 @@ class PolicyUpdater:
         await self._client.disconnect()
         self._thread.stop()
 
-
-policy_updater = PolicyUpdater()
