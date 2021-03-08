@@ -21,7 +21,8 @@ from git.objects import Commit
 
 from opal.common.git.bundle_maker import BundleMaker
 from opal.common.schemas.policy import PolicyBundle, RegoModule
-from opal.server.config import OPA_FILE_EXTENSIONS
+
+OPA_FILE_EXTENSIONS = ('.rego', '.json')
 
 def assert_is_complete_bundle(bundle: PolicyBundle):
     assert bundle.old_hash is None
