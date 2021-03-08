@@ -29,14 +29,22 @@ class HttpGetFetchProvider(BaseFetchProvider):
         if event.config is None:
             event.config = HttpGetFetcherConfig()
         super().__init__(event)
+        self._session = None
+
+    async def __aenter__(self):
+        headers = {}
+        if self._event.config.headers is not None:
+            headers = self._event.config.headers        
+        self._session = await ClientSession(headers=headers).__aenter__()
+        return self 
+
+    async def __aexit__(self, exc_type=None, exc_val=None, tb=None):
+        await self._session.__aexit__(exc_type=exc_type, exc_val=exc_val, exc_tb=tb)
 
     async def _fetch_(self):
         logger.debug(f"{self.__class__.__name__} fetching from {self._url}")
-        headers = {}
-        if self._event.config.headers is not None:
-            headers = self._event.config.headers
-        async with ClientSession(headers=headers) as session:
-            result = await session.get(self._url)
+        
+        result = await self._session.get(self._url)
         return result
 
     async def _process_(self, res: ClientResponse):
@@ -44,9 +52,10 @@ class HttpGetFetchProvider(BaseFetchProvider):
         if self._event.config.process_data:
             # if data is JSON
             if self._event.config.is_json:
-                return await res.json()
+                data = await res.json()
             else:
-                return await res.text() 
+                data = await res.text() 
+            return data
         # return raw result
         else:
             return res
