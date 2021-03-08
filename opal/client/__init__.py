@@ -1,3 +1,4 @@
+from opal.client.policy_store import opa_client
 
-if __name__ == "__main__":
-    from .main import main
+
+from .opal_client import OpalClient
