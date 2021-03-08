@@ -1,6 +1,6 @@
 from functools import partial
 from pathlib import Path
-from tenacity import retry, wait_fixed, stop_after_attempt
+from tenacity import retry, wait_fixed, stop_after_attempt, RetryError
 from git import Repo, GitError, GitCommandError
 
 from opal.common.logger import get_logger
@@ -51,7 +51,8 @@ class RepoCloner:
 
     DEFAULT_RETRY_CONFIG = {
         'wait': wait_fixed(5),
-        'stop': stop_after_attempt(2)
+        'stop': stop_after_attempt(2),
+        'reraise': True,
     }
 
     def __init__(
@@ -113,6 +114,9 @@ class RepoCloner:
         try:
             repo = _clone_with_retries()
         except (GitError, GitCommandError) as e:
+            self._logger.exception("cannot clone policy repo", error=e)
+            raise GitFailed(e)
+        except RetryError as e:
             self._logger.exception("cannot clone policy repo", error=e)
             raise GitFailed(e)
         else:
