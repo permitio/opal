@@ -3,9 +3,7 @@ Simple HTTP get data fetcher using requests
 supports 
 """
 
-from aiohttp.client_reqrep import ClientResponse
-
-from ...aio_requests import requests
+from aiohttp import ClientResponse, ClientSession
 from ..fetch_provider import BaseFetchProvider
 from ..events import FetcherConfig, FetchEvent
 from ..logger import get_logger
@@ -37,7 +35,8 @@ class HttpGetFetchProvider(BaseFetchProvider):
         headers = {}
         if self._event.config.headers is not None:
             headers = self._event.config.headers
-        result = await requests.get(self._url, headers=headers)
+        async with ClientSession(headers=headers) as session:
+            result = await session.get(self._url)
         return result
 
     async def _process_(self, res: ClientResponse):

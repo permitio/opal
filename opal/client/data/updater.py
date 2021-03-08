@@ -1,6 +1,6 @@
 import asyncio
+from aiohttp.client import ClientSession
 
-from opal.common.aio_requests import requests
 from opal.client.policy_store.base_policy_store_client import BasePolicyStoreClient
 from opal.common.fetcher.events import FetcherConfig
 from typing import Dict, List
@@ -16,7 +16,7 @@ from opal.client.data.fetcher import DataFetcher
 from opal.client.data.rpc import TenantAwareRpcEventClientMethods
 
 
-logger = get_logger("opal.updater")
+logger = get_logger("opal.client.updater")
 
 
 async def update_policy_data(update: DataUpdate = None, policy_store: BasePolicyStoreClient = DEFAULT_POLICY_STORE, data_fetcher=None):
@@ -134,7 +134,8 @@ class DataUpdater:
             url = self._data_sources_config_url
         logger.info(f"Getting data-sources configuration from {url}")
         try:
-            res = await requests.get(url, headers=self._extra_headers)
+            async with ClientSession(headers=self._extra_headers) as session:
+                res = await session.get(url)
             return DataSourceConfig.parse_obj(await res.json())
         except:
             logger.exception(f"Failed to load data sources config")
