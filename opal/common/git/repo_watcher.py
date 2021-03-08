@@ -6,7 +6,6 @@ from opal.common.git.branch_tracker import BranchTracker
 from opal.common.git.repo_cloner import RepoCloner
 from opal.common.git.exceptions import GitFailed
 from opal.common.logger import get_logger
-from opal.common.utils import AsyncioEventLoopThread
 
 logger = get_logger("opal.git.watcher")
 
@@ -37,9 +36,10 @@ class RepoWatcher:
         self._branch_name = branch_name
         self._remote_name = remote_name
         self._tracker = None
-        self._polling_interval = polling_interval
         self._on_failure_callbacks: List[OnNewCommitsCallback] = []
         self._on_new_commits_callbacks: List[OnGitFailureCallback] = []
+        self._polling_interval = polling_interval
+        self._polling_task = None
 
     def on_new_commits(self, callback: OnNewCommitsCallback):
         """
@@ -77,9 +77,12 @@ class RepoWatcher:
 
         if (self._polling_interval > 0):
             logger.info("Launching polling task", interval=self._polling_interval)
-            asyncio.create_task(self._polling_task())
+            self._start_polling_task()
         else:
             logger.info("Polling task is off")
+
+    async def stop(self):
+        return await self._stop_polling_task()
 
     async def check_for_changes(self):
         """
@@ -95,13 +98,25 @@ class RepoWatcher:
             logger.info("Found new commits", prev_head=prev.hexsha, new_head=latest.hexsha)
             await self._on_new_commits(old=prev, new=latest)
 
-    async def _polling_task(self):
+    async def _do_polling(self):
         """
         optional task to periodically check the remote for changes (git pull and compare hash).
         """
         while True:
             await asyncio.sleep(self._polling_interval)
             await self.check_for_changes()
+
+    def _start_polling_task(self):
+        if self._polling_task is None and self._polling_interval > 0:
+            self._polling_task = asyncio.create_task(self._do_polling())
+
+    async def _stop_polling_task(self):
+        if self._polling_task is not None:
+            self._polling_task.cancel()
+            try:
+                await self._polling_task
+            except asyncio.CancelledError:
+                pass
 
     async def _on_new_commits(self, old: Commit, new: Commit):
         """

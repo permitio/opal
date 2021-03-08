@@ -195,3 +195,6 @@ async def test_repo_watcher_detect_new_commits_with_polling(
 
     # assert local repo was updated and again matches the state of remote repo
     assert repo.head.commit == remote_repo.head.commit == new_expected_head
+
+    # stops the watcher outstanding tasks
+    await watcher.stop()
