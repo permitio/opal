@@ -24,6 +24,8 @@ class FetchingEngine(BaseFetchingEngine):
     """
 
     DEFAULT_WORKER_COUNT = 5
+    DEFAULT_CALLBACK_TIMEOUT = 10
+    DEFAULT_ENQUEUE_TIMEOUT = 10
 
     @staticmethod
     def gen_uid():
@@ -38,9 +40,13 @@ class FetchingEngine(BaseFetchingEngine):
         self._fetcher_register = FetcherRegister(register_config)
         # core event callback regsiters
         self._failure_handlers:List[OnFetchFailureCallback] = []
+        # how many workers to run
+        self._worker_count = worker_count
         
+
+    def start_workers(self):
         # create worker tasks
-        for _ in range(worker_count):
+        for _ in range(self._worker_count):
             self.create_worker()
 
     @property
@@ -51,14 +57,15 @@ class FetchingEngine(BaseFetchingEngine):
         """
         Async Context manager to cancel tasks on exit 
         """
+        self.start_workers()
         return self
 
     async def __aexit__(self, exc_type, exc, tb):
         if (exc is not None):
             logger.error("Error occurred within FetchingEngine context", exc_info=(exc_type, exc, tb))
-        await self.terminate_tasks()
+        await self.terminate_workers()
 
-    async def terminate_tasks(self):
+    async def terminate_workers(self):
         """
         Cancel and wait on the internal worker tasks
         """
@@ -67,6 +74,36 @@ class FetchingEngine(BaseFetchingEngine):
             task.cancel()
         # Wait until all worker tasks are cancelled.
         await asyncio.gather(*self._tasks, return_exceptions=True)
+
+    async def handle_url(self, url:str, timeout: float=DEFAULT_CALLBACK_TIMEOUT, **kwargs ):
+        """
+        Same as self.queue_url but instead of using a callback, you can wait on this coroutine for the result as a return value
+        Args:
+            url (str): 
+            timeout (float, optional): time in seconds to wait on the queued fetch task. Defaults to DEFAULT_CALLBACK_TIMEOUT.
+            kwargs: additional args passed to self.queue_url
+
+        Raises:
+            asyncio.TimeoutError: if the given timeout has expired
+            also - @see self.queue_fetch_event            
+        """
+        wait_event = asyncio.Event()
+        data = {'result': None}
+        # Callback to wait and retrive data
+        async def waiter_callback(answer):
+            data['result'] = answer
+            # Signal callback is done
+            wait_event.set()
+        await self.queue_url(url, waiter_callback, **kwargs)
+        # Wait with timeout
+        if timeout is not None:
+            await asyncio.wait_for(wait_event.wait(), timeout)
+        # wait forever
+        else:
+            await wait_event.wait()
+        # return saved result value from callback
+        return data['result']
+
 
     async def queue_url(self, url: str, callback: Coroutine, config: FetcherConfig = None, fetcher="HttpGetFetchProvider")->FetchEvent:
         """
@@ -79,31 +116,45 @@ class FetchingEngine(BaseFetchingEngine):
             fetcher (str, optional): Which fetcher class to use. Defaults to "HttpGetFetchProvider".
         Returns: 
             the queued event (which will be mutated to at least have an Id)
+
+        Raises:
+            @see self.queue_fetch_event
         """
         # init a URL event
         event = FetchEvent(url=url, fetcher=fetcher, config=config)
         return await self.queue_fetch_event(event, callback)
 
-    async def queue_fetch_event(self, event: FetchEvent, callback: Coroutine)->FetchEvent:
+    async def queue_fetch_event(self, event: FetchEvent, callback: Coroutine, enqueue_timeout=DEFAULT_ENQUEUE_TIMEOUT)->FetchEvent:
         """
         Basic handler to queue a fetch event for a fetcher class.
-        Waits if the queue is full.
+        Waits if the queue is full until enqueue_timeout seconds; if enqueue_timeout is None returns immediately or raises QueueFull
 
         Args:
             event (FetchEvent): the fetch event to queue as a task
             callback (Coroutine): a callback to call with the fetched result
+            enqueue_timeout (float): timeout in seconds or None for no timeout, Defaults to self.DEFAULT_ENQUEUE_TIMEOUT
+
         Returns: 
-            the queued event (which will be mutated to at least have an Id)            
+            the queued event (which will be mutated to at least have an Id)  
+
+        Raises:
+            asyncio.QueueFull: if the queue is full and enqueue_timeout is set as None
+            asyncio.TimeoutError: if enqueue_timeout is not None, and the queue is full and hasn't cleared by the timeout time
         """
         # Assign a unique identifier for the event 
         event.id = self.gen_uid()
         # add to the queue for handling
-        await self._queue.put((event, callback))
+        # if no timeout we return immediately or raise QueueFull
+        if enqueue_timeout is None:
+            await self._queue.put_nowait((event, callback))
+        # if timeout
+        else:
+            await asyncio.wait_for(self._queue.put((event, callback)), enqueue_timeout)
         return event
 
     def create_worker(self) -> asyncio.Task:
         """
-        Create an asyncio worker tak to work the engine's queue
+        Create an asyncio worker to work the engine's queue
         Engine init starts several workers according to given configuration
         """
         task = asyncio.create_task(fetch_worker(self._queue, self))

@@ -3,7 +3,7 @@ from tenacity import retry, wait, stop
 import tenacity
 
 from .logger import get_logger
-logger = get_logger("providers")
+logger = get_logger("opal.providers")
 
 
 class BaseFetchProvider:
@@ -11,6 +11,7 @@ class BaseFetchProvider:
     Base class for data fetching providers.
      - Override self._fetch_ to implement fetching
      - call self.fetch() to retrive data (wrapped in retries and safe execution guards)
+     - override __aenter__ and __aexit__ for async context 
     """
 
     DEFAULT_RETRY_CONFIG = {
@@ -20,8 +21,7 @@ class BaseFetchProvider:
     }
 
     def __init__(self, event: FetchEvent, retry_config=None) -> None:
-        """[summary]
-
+        """
         Args:
             event (FetchEvent): the event desciring what we should fetch
             retry_config (dict): Tenacity.retry config (@see https://tenacity.readthedocs.io/en/latest/api.html#retry-main-api) for retrying fetching
@@ -39,6 +39,18 @@ class BaseFetchProvider:
         res = await attempter()
         return res
 
+    async def process(self, data):
+        try: 
+            return await self._process_(data)
+        except:
+            logger.exception("Failed to process fetched data")
+            raise
+
+    async def __aenter__(self):
+        return self 
+
+    async def __aexit__(self, exc_type=None, exc_val=None, tb=None):
+        pass
 
     async def _fetch_(self):
         """
@@ -46,6 +58,9 @@ class BaseFetchProvider:
         Override this method to implement a new fetch provider
         """
         pass
+
+    async def _process_(self, data):
+        return data
 
     def set_retry_config(self, retry_config:dict):
         """ 

@@ -29,3 +29,4 @@ class FetchEvent(BaseModel):
     # Tenacity.retry - Override default retry configuration for this event     
     retry: dict = None
 
+

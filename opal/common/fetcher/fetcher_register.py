@@ -1,8 +1,10 @@
+from opal.common.fetcher.logger import get_logger
 from typing import Type, Optional, Dict
 from .fetch_provider import BaseFetchProvider
 from .providers.http_get_fetch_provider import HttpGetFetchProvider
 from .events import FetchEvent
 
+logger = get_logger("opal.fetcher_register")
 
 class FetcherRegisterException(Exception):
     pass
@@ -23,7 +25,13 @@ class FetcherRegister:
     }
 
     def __init__(self, config: Optional[Dict[str, BaseFetchProvider]] = None) -> None:
-        self._config = config or self.BASIC_CONFIG
+        if config is not None:
+            self._config = config
+        else:
+            from ..emport import emport_objects_by_class
+            fetchers = emport_objects_by_class("opal.common.fetcher.providers", BaseFetchProvider, ["*"])
+            self._config = {name: fetcher for name,fetcher in fetchers}    
+        logger.info("Fetcher Register loaded with config", self._config)
 
     def register_fetcher(self, name: str, fetcher_class: Type[BaseFetchProvider]):
         self._config[name] = fetcher_class

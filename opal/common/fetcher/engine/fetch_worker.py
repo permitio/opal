@@ -18,7 +18,6 @@ async def fetch_worker(queue: asyncio.Queue, engine):
     """
     engine: BaseFetchingEngine
     register: FetcherRegister = engine.register
-    
     while True:
         # types
         event: FetchEvent
@@ -30,13 +29,15 @@ async def fetch_worker(queue: asyncio.Queue, engine):
             # get fetcher for the event
             fetcher = register.get_fetcher_for_event(event)
             # fetch
-            data = await fetcher.fetch()
+            async with fetcher:
+                res = await fetcher.fetch()
+                data = await fetcher.process(res)
             # callback to event owner
             try:
                 await callback(data)
             except Exception as err:
-                logger.exception(f"Callback - {callback} failed")
-                engine.on_failure(err, event)        
+                logger.exception(f"Fetcher callback - {callback} failed")
+                await engine._on_failure(err, event)        
         except Exception as err:
             logger.exception("Failed to process fetch event")
             await engine._on_failure(err, event)

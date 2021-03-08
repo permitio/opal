@@ -19,7 +19,7 @@ class LeaderElectionBase:
     def __init__(self):
         self._on_decision_callbacks: List[ElectionDecisionCallback] = []
 
-    def on_desicion(self, callback: ElectionDecisionCallback):
+    def on_decision(self, callback: ElectionDecisionCallback):
         """
         register a callback on the election result.
 

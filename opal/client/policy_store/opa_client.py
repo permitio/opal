@@ -1,4 +1,5 @@
 import asyncio
+from opal.client.policy_store.base_policy_store_client import BasePolicyStoreClient
 import aiohttp
 import json
 import functools
@@ -6,7 +7,7 @@ from typing import Dict, Any
 
 from tenacity import retry, stop_after_attempt, wait_fixed
 
-from opal.client.config import OPA_SERVICE_URL
+from opal.client.config import POLICY_STORE_URL
 from opal.client.logger import get_logger
 from opal.client.utils import proxy_response
 from opal.client.enforcer.schemas import AuthorizationQuery
@@ -29,13 +30,13 @@ def fail_silently(fallback=None):
         return wrapper
     return decorator
 
-class OpaClient:
+class OpaClient(BasePolicyStoreClient):
     """
     communicates with OPA via its REST API.
     """
     POLICY_NAME = "rbac"
 
-    def __init__(self, opa_server_url=OPA_SERVICE_URL):
+    def __init__(self, opa_server_url=POLICY_STORE_URL):
         self._opa_url = opa_server_url
         self._policy_data = None
         self._cached_policies: Dict[str, str] = {}
@@ -83,12 +84,12 @@ class OpaClient:
 
     @fail_silently()
     @retry(**RETRY_CONFIG)
-    async def set_policy_data(self, policy_data: Dict[str, Any]):
+    async def set_policy_data(self, policy_data: Dict[str, Any], path=""):
         self._policy_data = policy_data
         async with aiohttp.ClientSession() as session:
             try:
                 async with session.put(
-                    f"{self._opa_url}/data",
+                    f"{self._opa_url}/data{path}",
                     data=json.dumps(self._policy_data),
                 ) as opa_response:
                     return await proxy_response(opa_response)
@@ -124,5 +125,3 @@ class OpaClient:
             logger.warn("Opa connection error", err=e)
             raise
 
-
-opa = OpaClient()

@@ -3,7 +3,7 @@ import os
 import sys
 
 # Add parent path to use local src as package for tests
-root_dir = os.path.abspath(os.path.join(os.path.basename(__file__), os.path.pardir))
+root_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), os.path.pardir, os.path.pardir, os.path.pardir, os.path.pardir ))
 sys.path.append(root_dir)
 
 import asyncio
@@ -13,8 +13,8 @@ import pytest
 import uvicorn
 from fastapi import FastAPI, Depends, Header, HTTPException
 
-from opal.fetcher import FetchingEngine
-from opal.fetcher.providers.http_get_fetch_provider import HttpGetFetcherConfig
+from opal.common.fetcher import FetchingEngine
+from opal.common.fetcher.providers.http_get_fetch_provider import HttpGetFetcherConfig
 
 
 # Configurable
@@ -60,13 +60,22 @@ async def test_simple_http_get(server):
     """
     got_data_event = asyncio.Event()
     async with FetchingEngine() as engine:
-        async def callback(result):
-            data = await result.json()
+        async def callback(data):
             assert data[DATA_KEY] == DATA_VALUE
             got_data_event.set()
         await engine.queue_url(f"{BASE_URL}{DATA_ROUTE}", callback)
-        await asyncio.wait_for(got_data_event.wait(), 10)
+        await asyncio.wait_for(got_data_event.wait(), 5)
         assert got_data_event.is_set()
+
+@pytest.mark.asyncio
+async def test_simple_http_get_with_wait(server):
+    """
+    Simple http get - with 'queue_url_and_wait'
+    """
+    async with FetchingEngine() as engine:
+        data = await engine.handle_url(f"{BASE_URL}{DATA_ROUTE}")
+        assert data[DATA_KEY] == DATA_VALUE
+
 
 @pytest.mark.asyncio
 async def test_authorized_http_get(server):
@@ -75,13 +84,12 @@ async def test_authorized_http_get(server):
     """
     got_data_event = asyncio.Event()
     async with FetchingEngine() as engine:
-        async def callback(result):
-            data = await result.json()
+        async def callback(data):
             assert data[DATA_KEY] == DATA_SECRET_VALUE
             got_data_event.set()
         # fetch with bearer token authorization 
         await engine.queue_url(f"{BASE_URL}{AUTHORIZED_DATA_ROUTE}", callback, HttpGetFetcherConfig(headers={"X-TOKEN": SECRET_TOKEN}))
-        await asyncio.wait_for(got_data_event.wait(), 15)
+        await asyncio.wait_for(got_data_event.wait(), 5)
         assert got_data_event.is_set()
 
 
@@ -93,8 +101,7 @@ async def test_external_http_get():
     """
     got_data_event = asyncio.Event()
     async with FetchingEngine() as engine:
-        async def callback(result):
-            data = await result.json()
+        async def callback(data):
             assert data["ip"] == "8.8.8.8"
             got_data_event.set()
         await engine.queue_url(f"https://freegeoip.app/json/8.8.8.8", callback)
