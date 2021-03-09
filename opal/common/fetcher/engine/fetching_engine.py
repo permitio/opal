@@ -149,7 +149,6 @@ class FetchingEngine(BaseFetchingEngine):
         event.id = self.gen_uid()
         # add to the queue for handling
         # if no timeout we return immediately or raise QueueFull
-        print(self._queue)
         if enqueue_timeout is None:
             await self._queue.put_nowait((event, callback))
         # if timeout
