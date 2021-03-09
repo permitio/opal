@@ -5,48 +5,62 @@ from opal.common.confi import Confi
 
 confi = Confi()
 
+
+# Opal Client general configuration -------------------------------------------
 class PolicyStoreTypes(Enum):
     OPA="OPA"
     MOCK="MOCK"
-        
+
+# opa client (policy store) configuration
+POLICY_STORE_TYPE = confi.enum("POLICY_STORE_TYPE", PolicyStoreTypes, PolicyStoreTypes.OPA)
+OPA_PORT = confi.str("OPA_PORT", "8181")
+_opa_url = confi.str("OPA_SERVICE_URL", f"http://localhost:{OPA_PORT}")
+POLICY_STORE_URL = f"{_opa_url}/v1"
+
+# configuration for fastapi routes
+ALLOWED_ORIGINS = ["*"]
+
+# general configuration for pub/sub clients
+KEEP_ALIVE_INTERVAL = confi.int("AUTHZ_KEEP_ALIVE", 0)
+
+
+# Opal Server general configuration -------------------------------------------
+
+# opal server url
+OPAL_SERVER_URL = confi.str("OPAL_SERVER_URL", "http://localhost:7002")
+_opal_server_ws_url = OPAL_SERVER_URL.replace("https", "ws").replace("http", "ws")
+
+# opal server ws pubsub url
+OPAL_WS_ROUTE = "/ws"
+OPAL_SERVER_WS_URL = f"{_opal_server_ws_url}{OPAL_WS_ROUTE}"
+
+# opal server auth token
+CLIENT_TOKEN = confi.str("CLIENT_TOKEN", "THIS_IS_A_DEV_SECRET")
+
+# Policy updater configuration ------------------------------------------------
+
+# directories in policy repo we should subscribe to for policy code (rego) modules
+POLICY_SUBSCRIPTION_DIRS = confi.list("POLICY_SUBSCRIPTION_DIRS", ["some/dir","other"], delimiter=":")
+
+
+# Data updater configuration --------------------------------------------------
+
 # Data topics to subscribe to
 DATA_TOPICS = confi.list("DATA_TOPICS", ["policy_data"])
-# Default URL to fetch data configuration from 
-DEFAULT_DATA_SOURCES_CONFIG_URL = confi.str("DEFAULT_DATA_SOURCES_CONFIG_URL", "http://localhost:8000/data/config")
+
+# Default URL to fetch data configuration from
+DEFAULT_DATA_SOURCES_CONFIG_URL = confi.str("DEFAULT_DATA_SOURCES_CONFIG_URL", f"{OPAL_SERVER_URL}/data/config")
+
 # Default URL to fetch data from
 DEFAULT_DATA_URL = confi.str("DEFAULT_DATA_URL", "http://localhost:8000/policy-config")
 
 
+# Authorizon Sidecar configuration --------------------------------------------
+
 # backend service
-BACKEND_URL = confi.str("OPAL_SERVER_URL", "http://localhost:8000")
+BACKEND_URL = confi.str("AUTHORIZON_API_URL", "http://localhost:8000")
 BACKEND_SERVICE_LEGACY_URL = f"{BACKEND_URL}/sdk"
 BACKEND_SERVICE_URL = f"{BACKEND_URL}/v1"
-
-# data service (currently points to backend)
-_ws_backend_url = BACKEND_URL.replace("https", "ws").replace("http", "ws")
-DATA_UPDATES_ROUTE = "/sdk/ws"
-DATA_UPDATES_WS_URL = f"{_ws_backend_url}{DATA_UPDATES_ROUTE}"
-
-
-# policy service (opal server)
-POLICY_SERVICE_URL = confi.str("POLICY_SERVICE_URL", "http://localhost:7002")
-_policy_ws_url = POLICY_SERVICE_URL.replace("https", "ws").replace("http", "ws")
-POLICY_UPDATES_WS_URL = f"{_policy_ws_url}/ws"
-
-POLICY_SUBSCRIPTION_DIRS = confi.list("POLICY_SUBSCRIPTION_DIRS", ["some/dir","other"], delimiter=":")
-
-POLICY_STORE_TYPE = confi.enum("POLICY_STORE_TYPE", PolicyStoreTypes, PolicyStoreTypes.OPA)
-
-OPA_PORT = confi.str("OPA_PORT", "8181")
-_opa_url = confi.str("OPA_SERVICE_URL", f"http://localhost:{OPA_PORT}")
-POLICY_STORE_URL = f"{_opa_url}/v1"
-CLIENT_TOKEN = confi.str("CLIENT_TOKEN", "THIS_IS_A_DEV_SECRET")
-
-ALLOWED_ORIGINS = ["*"]
-
-
-KEEP_ALIVE_INTERVAL = confi.int("AUTHZ_KEEP_ALIVE", 0)
-
 
 OPENAPI_TAGS_METADATA = [
     {

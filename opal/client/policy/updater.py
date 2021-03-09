@@ -5,7 +5,7 @@ from fastapi_websocket_pubsub import PubSubClient
 
 from opal.common.utils import AsyncioEventLoopThread, get_authorization_header
 from opal.client.logger import get_logger
-from opal.client.config import POLICY_SUBSCRIPTION_DIRS, POLICY_UPDATES_WS_URL, CLIENT_TOKEN, KEEP_ALIVE_INTERVAL
+from opal.client.config import POLICY_SUBSCRIPTION_DIRS, OPAL_SERVER_WS_URL, CLIENT_TOKEN, KEEP_ALIVE_INTERVAL
 from opal.client.policy.fetcher import policy_fetcher
 from opal.client.policy_store.base_policy_store_client import BasePolicyStoreClient
 from opal.client.policy_store.policy_store_client_factory import DEFAULT_POLICY_STORE
@@ -36,9 +36,13 @@ async def refetch_policy_and_update_opa(policy_store: BasePolicyStoreClient = DE
 
 
 class PolicyUpdater:
-    def __init__(self, token=CLIENT_TOKEN,
-                 server_url=POLICY_UPDATES_WS_URL, dirs: List[str] = POLICY_SUBSCRIPTION_DIRS, 
-                 policy_store: BasePolicyStoreClient = DEFAULT_POLICY_STORE):
+    def __init__(
+        self,
+        token=CLIENT_TOKEN,
+        server_url=OPAL_SERVER_WS_URL,
+        dirs: List[str] = POLICY_SUBSCRIPTION_DIRS,
+        policy_store: BasePolicyStoreClient = DEFAULT_POLICY_STORE
+    ):
         self._policy_store = policy_store
         self._thread = AsyncioEventLoopThread(name="PolicyUpdaterThread")
         self._token = token

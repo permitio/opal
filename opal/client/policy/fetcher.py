@@ -8,7 +8,7 @@ from opal.common.utils import get_authorization_header
 from opal.common.schemas.policy import PolicyBundle
 from opal.client.utils import tuple_to_dict
 from opal.client.logger import get_logger
-from opal.client.config import POLICY_SERVICE_URL, CLIENT_TOKEN
+from opal.client.config import OPAL_SERVER_URL, CLIENT_TOKEN
 
 
 logger = get_logger("opal.policy.fetcher")
@@ -26,7 +26,7 @@ class PolicyFetcher:
     """
     fetches policy from backend
     """
-    def __init__(self, backend_url=POLICY_SERVICE_URL, token=CLIENT_TOKEN):
+    def __init__(self, backend_url=OPAL_SERVER_URL, token=CLIENT_TOKEN):
         self._backend_url = backend_url
         self._token = token
         self._auth_headers = tuple_to_dict(get_authorization_header(token))
