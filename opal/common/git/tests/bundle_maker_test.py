@@ -45,7 +45,7 @@ def test_bundle_maker_only_includes_opa_files(local_repo: Repo, helpers):
     assert_is_complete_bundle(bundle)
     # assert the commit hash is correct
     assert bundle.hash == commit.hexsha
-    # assert the manifest only include opa files
+    # assert the manifest only includes opa files
     # the source repo contains 3 rego files and 1 data.json file
     # the bundler ignores files like "some.json" and "mylist.txt"
     assert len(bundle.manifest) == 4
@@ -205,7 +205,7 @@ def test_bundle_maker_diff_bundle(repo_with_diffs: Tuple[Repo, Commit, Commit]):
     assert bundle.policy_modules[0].package_name == "app.gbac"
     assert "Role-based Access Control (RBAC)" in bundle.policy_modules[0].rego
 
-    # assert bundle.deleted_files include deleted files
+    # assert bundle.deleted_files only includes deleted files
     assert bundle.deleted_files is not None
     assert len(bundle.deleted_files.policy_modules) == 0
     assert len(bundle.deleted_files.data_modules) == 1

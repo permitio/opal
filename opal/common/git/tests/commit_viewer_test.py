@@ -62,7 +62,7 @@ def test_commit_viewer_node_filters(local_repo: Repo):
 
 def test_commit_viewer_file_filters(local_repo: Repo):
     """
-    Test files() return only files and not directories
+    Check files() returns only the file paths we expect (and no directory paths)
     """
     repo: Repo = local_repo
 
@@ -107,7 +107,7 @@ def test_commit_viewer_file_filters(local_repo: Repo):
 
 def test_commit_viewer_directory_filters(local_repo: Repo):
     """
-    Test directories() return only directories and not files
+    Check directories() returns only the directory paths we expect (and no file paths)
     """
     repo: Repo = local_repo
 
@@ -138,7 +138,11 @@ def test_commit_viewer_directory_filters(local_repo: Repo):
 
 def test_file_removed_file_does_not_exist(local_repo: Repo, helpers):
     """
-    Test file exists, remove the file, test that file does not exist
+    Check that viewing the repository from the perspective of two
+    different commits yields different results. More specifically,
+    if in the 2nd commit we removed a file from the repo, we will
+    see the file when viewing from the 1st commit perspective, and
+    won't see the file from the 2nd commit perspective.
     """
     repo: Repo = local_repo
     previous_head: Commit = repo.head.commit
