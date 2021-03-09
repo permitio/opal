@@ -16,8 +16,6 @@ from opal.server.config import (
 from opal.server.policy.watcher.watcher_thread import RepoWatcherThread
 from opal.server.policy.watcher.watcher_callbacks import publish_changed_directories
 
-logger = get_logger("opal.git.watcher.thread")
-
 
 def setup_watcher_thread(
     publisher: TopicPublisherThread,
@@ -50,5 +48,6 @@ async def trigger_repo_watcher_pull(watcher: RepoWatcherThread, topic: Topic, da
     triggers the policy watcher check for changes.
     will trigger a task on the watcher's thread.
     """
+    logger = get_logger("opal.git.watcher.thread")
     logger.info("webhook listener triggered")
     watcher.trigger()
