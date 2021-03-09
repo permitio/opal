@@ -11,7 +11,7 @@ from opal.client.logger import get_logger
 from opal.client.config import OPAL_SERVER_URL, CLIENT_TOKEN
 
 
-logger = get_logger("opal.policy.fetcher")
+logger = get_logger("opal.client.policy.fetcher")
 
 
 def policy_bundle_or_none(bundle) -> Optional[PolicyBundle]:
