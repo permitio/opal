@@ -18,7 +18,7 @@ from fastapi import FastAPI
 
 
 class OpalClient:
-   
+
 
     def __init__(self,
                  policy_store_type:PolicyStoreTypes=POLICY_STORE_TYPE,
@@ -39,9 +39,9 @@ class OpalClient:
         self.policy_store_type:PolicyStoreTypes = policy_store_type
         self.policy_store:BasePolicyStoreClient = policy_store or PolicyStoreClientFactory.create(policy_store_type)
         # Init policy updater
-        self.policy_updater = policy_updater if policy_updater is not None else PolicyUpdater()
+        self.policy_updater = policy_updater if policy_updater is not None else PolicyUpdater(policy_store=self.policy_store)
         # Data updating service
-        self.data_updater = data_updater if data_updater is not None else DataUpdater(policy_store=policy_store)
+        self.data_updater = data_updater if data_updater is not None else DataUpdater(policy_store=self.policy_store)
 
         # Internal services
         # Policy store
