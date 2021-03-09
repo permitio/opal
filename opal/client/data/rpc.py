@@ -1,5 +1,5 @@
 from fastapi_websocket_rpc.logger import logging_config, LoggingModes
-logging_config.set_mode(LoggingModes.UVICORN)
+
 
 
 from typing import Coroutine, List

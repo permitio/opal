@@ -25,8 +25,6 @@ from opal.server.policy.watcher.watcher_thread import RepoWatcherThread
 from opal.server.publisher import setup_publisher_thread
 from opal.server.pubsub import PubSub
 
-if NO_RPC_LOGS:
-    logging_config.set_mode(LoggingModes.UVICORN, level=logging.WARN)
 
 logger = get_logger("opal.server")
 
@@ -38,7 +36,7 @@ class OpalServer:
                  init_publisher=True,
                  data_sources_config=None,
                  broadcaster_uri=BROADCAST_URI) -> None:
-
+        
         elected_as_leader = False
         webhook_listener: Optional[TopicListenerThread] = None
         publisher: Optional[TopicPublisherThread] = None
