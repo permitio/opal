@@ -31,23 +31,25 @@ class FetchingEngine(BaseFetchingEngine):
     def gen_uid():
         return uuid.uuid4().hex
 
-    def __init__(self, register_config:Dict[str, BaseFetchProvider]=None, worker_count=DEFAULT_WORKER_COUNT) -> None:
-        # The internal task queue
-        self._queue = asyncio.Queue()
+    def __init__(self, register_config:Dict[str, BaseFetchProvider]=None, worker_count:int=DEFAULT_WORKER_COUNT) -> None:
+        # The internal task queue (created at start_workers)
+        self._queue:asyncio.Queue = None
         # Worker working the queue
-        self._tasks = []
+        self._tasks:List[asyncio.Task] = []
         # register of the fetch providers workers can use
         self._fetcher_register = FetcherRegister(register_config)
         # core event callback regsiters
         self._failure_handlers:List[OnFetchFailureCallback] = []
         # how many workers to run
-        self._worker_count = worker_count
+        self._worker_count:int = worker_count
         
 
     def start_workers(self):
-        # create worker tasks
-        for _ in range(self._worker_count):
-            self.create_worker()
+        if self._queue is None:
+            self._queue = asyncio.Queue()
+            # create worker tasks
+            for _ in range(self._worker_count):
+                self.create_worker()
 
     @property
     def register(self)->FetcherRegister:
@@ -74,6 +76,8 @@ class FetchingEngine(BaseFetchingEngine):
             task.cancel()
         # Wait until all worker tasks are cancelled.
         await asyncio.gather(*self._tasks, return_exceptions=True)
+        # reset queue 
+        self._queue = None
 
     async def handle_url(self, url:str, timeout: float=DEFAULT_CALLBACK_TIMEOUT, **kwargs ):
         """
@@ -145,6 +149,7 @@ class FetchingEngine(BaseFetchingEngine):
         event.id = self.gen_uid()
         # add to the queue for handling
         # if no timeout we return immediately or raise QueueFull
+        print(self._queue)
         if enqueue_timeout is None:
             await self._queue.put_nowait((event, callback))
         # if timeout
