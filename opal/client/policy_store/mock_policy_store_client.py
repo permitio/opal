@@ -42,7 +42,7 @@ class MockPolicyStoreClient(BasePolicyStoreClient):
     async def get_policy_version(self) -> Optional[str]:
         return None
 
-    async def set_policy_data(self, policy_data: Dict[str, Any], path=""):
+    async def set_policy_data(self, policy_data: Dict[str, Any], path: str = ""):
         self._data[path] = policy_data
         self.has_data_event.set()
 
@@ -51,6 +51,12 @@ class MockPolicyStoreClient(BasePolicyStoreClient):
             return self._data
         else:
             return self._data[path]
+
+    async def delete_policy_data(self, path: str = ""):
+        if not path:
+            self._data = {}
+        else:
+            del self._data[path]
 
     async def wait_for_data(self):
         """

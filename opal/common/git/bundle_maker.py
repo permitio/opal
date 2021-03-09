@@ -142,7 +142,7 @@ class BundleMaker:
                 path = source_file.path
 
                 if is_data_module(path):
-                    deleted_data_modules.append(path)
+                    deleted_data_modules.append(str(path.parent))
                 elif is_rego_module(path):
                     deleted_policy_modules.append(path)
 

@@ -28,7 +28,10 @@ class BasePolicyStoreClient:
     async def get_policy_version(self) -> Optional[str]:
         raise NotImplementedError()
 
-    async def set_policy_data(self, policy_data: Dict[str, Any], path=""):
+    async def set_policy_data(self, policy_data: Dict[str, Any], path: str = ""):
+        raise NotImplementedError()
+
+    async def delete_policy_data(self, path: str = ""):
         raise NotImplementedError()
 
     async def get_data(self, path: str):

@@ -11,7 +11,7 @@ from opal.client.config import POLICY_STORE_URL
 from opal.client.logger import get_logger
 from opal.client.utils import proxy_response
 from opal.client.enforcer.schemas import AuthorizationQuery
-from opal.common.schemas.policy import PolicyBundle
+from opal.common.schemas.policy import DataModule, PolicyBundle
 
 logger = get_logger("Opa Client")
 
@@ -145,6 +145,10 @@ class OpaClient(BasePolicyStoreClient):
             for module in bundle.policy_modules:
                 await self.set_policy(policy_id=module.path, policy_code=module.rego)
 
+            # save bundled policy *static* data into store
+            for module in bundle.data_modules:
+                await self._set_policy_data_from_bundle_data_module(module, hash=bundle.hash)
+
             # remove policies from the store that are not in the bundle
             # (because this bundle is "complete", i.e: contains all policy modules for a given hash)
             for module_id in module_ids_to_delete:
@@ -160,23 +164,72 @@ class OpaClient(BasePolicyStoreClient):
             for module in bundle.policy_modules:
                 await self.set_policy(policy_id=module.path, policy_code=module.rego)
 
-            # remove deleted policies from store
+            # save bundled policy *static* data into store
+            for module in bundle.data_modules:
+                await self._set_policy_data_from_bundle_data_module(module, hash=bundle.hash)
+
+            # remove deleted policies (or static policy data) from store
             if bundle.deleted_files is not None:
                 for module_id in bundle.deleted_files.policy_modules:
                     await self.delete_policy(policy_id=module_id)
 
+                for module_id in bundle.deleted_files.data_modules:
+                    await self.delete_policy_data(path=self._safe_data_module_path(str(module_id)))
+
             # save policy version (hash) into store
             self._policy_version = bundle.hash
 
+    @classmethod
+    def _safe_data_module_path(cls, path: str):
+        if not path or path == ".":
+            return ""
+
+        if not path.startswith("/"):
+            return f"/{path}"
+
+        return path
+
+    async def _set_policy_data_from_bundle_data_module(self, module: DataModule, hash: Optional[str]=None):
+        module_path = self._safe_data_module_path(module.path)
+        try:
+            module_data = json.loads(module.data)
+            return await self.set_policy_data(
+                policy_data=module_data,
+                path=module_path,
+            )
+        except json.JSONDecodeError as e:
+            logger.warn(
+                "bundle contains non-json data module",
+                err=e,
+                module_path=module_path,
+                bundle_hash=hash
+            )
+
     @fail_silently()
     @retry(**RETRY_CONFIG)
-    async def set_policy_data(self, policy_data: Dict[str, Any], path=""):
+    async def set_policy_data(self, policy_data: Dict[str, Any], path: str = ""):
         self._policy_data = policy_data
         async with aiohttp.ClientSession() as session:
             try:
                 async with session.put(
                     f"{self._opa_url}/data{path}",
                     data=json.dumps(self._policy_data),
+                ) as opa_response:
+                    return await proxy_response(opa_response)
+            except aiohttp.ClientError as e:
+                logger.warn("Opa connection error", err=e)
+                raise
+
+    @fail_silently()
+    @retry(**RETRY_CONFIG)
+    async def delete_policy_data(self, path: str = ""):
+        if not path:
+            return await self.set_policy_data({})
+
+        async with aiohttp.ClientSession() as session:
+            try:
+                async with session.delete(
+                    f"{self._opa_url}/data{path}",
                 ) as opa_response:
                     return await proxy_response(opa_response)
             except aiohttp.ClientError as e:
