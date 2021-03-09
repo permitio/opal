@@ -1,28 +1,33 @@
-from opal.client.policy_store.mock_policy_store_client import MockPolicyStoreClient
-from fastapi_websocket_rpc.logger import logging_config, LoggingModes
-from opal.server.opal_server import OpalServer
-from opal.server.config import DATA_CONFIG_ROUTE
-from opal.common.utils import get_authorization_header
-from opal.common.schemas.data import DataSourceConfig
-from opal.client.policy_store import (PolicyStoreClientFactory,
-                                      PolicyStoreTypes)
-from opal.client.data.updater import DataSourceEntry, DataUpdate, DataUpdater
-from opal.client.data.rpc import TenantAwareRpcEventClientMethods
-from opal.client import config, OpalClient
 import asyncio
-from aiohttp import ClientSession
 import logging
 import multiprocessing
 import os
 import sys
 from multiprocessing import Event, Process
+
 import pytest
 import uvicorn
+from aiohttp import ClientSession
 from fastapi_websocket_pubsub import PubSubClient
+from fastapi_websocket_rpc.logger import LoggingModes, logging_config
+
 
 # Add parent path to use local src as package for tests
 root_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), os.path.pardir, os.path.pardir, os.path.pardir))
 sys.path.append(root_dir)
+
+
+from opal.client import OpalClient, config
+from opal.client.data.rpc import TenantAwareRpcEventClientMethods
+from opal.client.data.updater import DataSourceEntry, DataUpdate, DataUpdater
+from opal.client.policy_store import PolicyStoreClientFactory, PolicyStoreTypes
+from opal.client.policy_store.mock_policy_store_client import \
+    MockPolicyStoreClient
+from opal.common.schemas.data import DataSourceConfig
+from opal.common.utils import get_authorization_header
+from opal.server.config import DATA_CONFIG_ROUTE
+from opal.server.opal_server import OpalServer
+
 
 
 
