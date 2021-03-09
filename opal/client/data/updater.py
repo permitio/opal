@@ -119,7 +119,7 @@ class DataUpdater:
         self.trigger_data_update(update)
 
     def trigger_data_update(self, update:DataUpdate):
-        logger.info("Triggering data fetch and update", update)
+        logger.info("Triggering data fetch and update", update=update)
         asyncio.create_task(update_policy_data(update, policy_store=self._policy_store, data_fetcher=self._data_fetcher))
 
     async def get_policy_data_config(self, url:str=None)->DataSourceConfig:
