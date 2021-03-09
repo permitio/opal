@@ -12,8 +12,14 @@ class MockPolicyStoreClient(BasePolicyStoreClient):
 
     def __init__(self) -> None:
         super().__init__()
-        self._has_data_event = asyncio.Event()
+        self._has_data_event:asyncio.Event() = None
         self._data = {}
+
+    @property
+    def has_data_event(self):
+        if self._has_data_event is None:
+            self._has_data_event = asyncio.Event() 
+        return self._has_data_event
 
     async def is_allowed(self, query: AuthorizationQuery):
         return True
@@ -26,13 +32,16 @@ class MockPolicyStoreClient(BasePolicyStoreClient):
 
     async def set_policy_data(self, policy_data: Dict[str, Any], path=""):
         self._data[path] = policy_data
-        self._has_data_event.set()
+        self.has_data_event.set()
         
-    async def get_data(self, path: str):
-        return self._data[path]
+    async def get_data(self, path: str=None):
+        if path is None:
+            return self._data
+        else: 
+            return self._data[path]
 
     async def wait_for_data(self):
         """
         Wait until the store has data set in it
         """
-        await self._has_data_event.wait()
+        await self.has_data_event.wait()
