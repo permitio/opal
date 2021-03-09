@@ -3,7 +3,7 @@ from opal.client.policy_store.base_policy_store_client import BasePolicyStoreCli
 import aiohttp
 import json
 import functools
-from typing import Dict, Any
+from typing import Dict, Any, Optional, List, Set
 
 from tenacity import retry, stop_after_attempt, wait_fixed
 
@@ -40,6 +40,10 @@ class OpaClient(BasePolicyStoreClient):
         self._opa_url = opa_server_url
         self._policy_data = None
         self._cached_policies: Dict[str, str] = {}
+        self._policy_version: Optional[str] = None
+
+    async def get_policy_version(self) -> Optional[str]:
+        return self._policy_version
 
     # by default, if OPA is down, authorization is denied
     @fail_silently(fallback=IS_ALLOWED_FALLBACK)
@@ -76,11 +80,93 @@ class OpaClient(BasePolicyStoreClient):
                 raise
 
     @fail_silently()
+    @retry(**RETRY_CONFIG)
+    async def get_policy(self, policy_id: str) -> Optional[str]:
+        async with aiohttp.ClientSession() as session:
+            try:
+                async with session.get(
+                    f"{self._opa_url}/policies/{policy_id}",
+                ) as opa_response:
+                    result = await opa_response.json()
+                    return result.get("result", {}).get("raw", None)
+            except aiohttp.ClientError as e:
+                logger.warn("Opa connection error", err=e)
+                raise
+
+    @fail_silently()
+    @retry(**RETRY_CONFIG)
+    async def delete_policy(self, policy_id: str):
+        async with aiohttp.ClientSession() as session:
+            try:
+                async with session.delete(
+                    f"{self._opa_url}/policies/{policy_id}",
+                ) as opa_response:
+                    return await proxy_response(opa_response)
+            except aiohttp.ClientError as e:
+                logger.warn("Opa connection error", err=e)
+                raise
+
+    @fail_silently()
+    @retry(**RETRY_CONFIG)
+    async def get_policy_module_ids(self) -> List[str]:
+        async with aiohttp.ClientSession() as session:
+            try:
+                async with session.get(
+                    f"{self._opa_url}/policies",
+                ) as opa_response:
+                    result = await opa_response.json()
+                    return OpaClient._extract_module_ids_from_policies_json(result)
+            except aiohttp.ClientError as e:
+                logger.warn("Opa connection error", err=e)
+                raise
+
+    @staticmethod
+    def _extract_module_ids_from_policies_json(result: Dict[str, Any]) -> List[str]:
+        modules: List[Dict[str, Any]] = result.get("result", [])
+        module_ids = [module.get("id", None) for module in modules]
+        module_ids = [module_id for module_id in module_ids if module_id is not None]
+        return module_ids
+
+    @fail_silently()
     async def set_policies(self, bundle: PolicyBundle):
+        if bundle.old_hash is None:
+            return await self._set_policies_from_complete_bundle(bundle)
+        else:
+            return await self._set_policies_from_delta_bundle(bundle)
+
+    async def _set_policies_from_complete_bundle(self, bundle: PolicyBundle):
+        module_ids_in_store: Set[str] = set(await self.get_policy_module_ids())
+        module_ids_in_bundle: Set[str] = {module.path for module in bundle.policy_modules}
+        module_ids_to_delete: Set[str] = module_ids_in_store.difference(module_ids_in_bundle)
+
         lock = asyncio.Lock()
         async with lock:
+            # save bundled policies into store
             for module in bundle.policy_modules:
                 await self.set_policy(policy_id=module.path, policy_code=module.rego)
+
+            # remove policies from the store that are not in the bundle
+            # (because this bundle is "complete", i.e: contains all policy modules for a given hash)
+            for module_id in module_ids_to_delete:
+                await self.delete_policy(policy_id=module_id)
+
+            # save policy version (hash) into store
+            self._policy_version = bundle.hash
+
+    async def _set_policies_from_delta_bundle(self, bundle: PolicyBundle):
+        lock = asyncio.Lock()
+        async with lock:
+            # save bundled policies into store
+            for module in bundle.policy_modules:
+                await self.set_policy(policy_id=module.path, policy_code=module.rego)
+
+            # remove deleted policies from store
+            if bundle.deleted_files is not None:
+                for module_id in bundle.deleted_files.policy_modules:
+                    await self.delete_policy(policy_id=module_id)
+
+            # save policy version (hash) into store
+            self._policy_version = bundle.hash
 
     @fail_silently()
     @retry(**RETRY_CONFIG)

@@ -31,9 +31,15 @@ class PolicyFetcher:
         self._token = token
         self._auth_headers = tuple_to_dict(get_authorization_header(token))
 
-    async def fetch_policy_bundle(self, directories: List[str] = ['.']) -> Optional[PolicyBundle]:
+    async def fetch_policy_bundle(
+        self,
+        directories: List[str] = ['.'],
+        base_hash: Optional[str] = None
+    ) -> Optional[PolicyBundle]:
+        params = {"path": directories}
+        if base_hash is not None:
+            params["base_hash"] = base_hash
         async with aiohttp.ClientSession() as session:
-            params = {"path": directories}
             try:
                 async with session.get(
                     f"{self._backend_url}/policy",
@@ -51,5 +57,3 @@ class PolicyFetcher:
 
 
 policy_fetcher = PolicyFetcher()
-
-

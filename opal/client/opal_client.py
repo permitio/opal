@@ -1,25 +1,24 @@
 from logging import disable
+import asyncio
+from fastapi import FastAPI
+
 from opal import common
-from opal.client.policy_store.base_policy_store_client import BasePolicyStoreClient
+
+from opal.client.config import OPENAPI_TAGS_METADATA, PolicyStoreTypes, POLICY_STORE_TYPE
+from opal.client.data.api import router as data_router
+from opal.client.data.updater import DataUpdater
 from opal.client.enforcer.api import init_enforcer_api_router
 from opal.client.enforcer.runner import OpaRunner
-from opal.client.data.updater import DataUpdater
-from opal.client.policy.updater import PolicyUpdater
-from opal.client.server.middleware import configure_middleware
 from opal.client.local.api import init_local_cache_api_router
-from opal.client.data.api import router as data_router
-from opal.client.policy.api import init_policy_router
-from opal.client.server.api import router as proxy_router
+from opal.client.policy_store.base_policy_store_client import BasePolicyStoreClient
 from opal.client.policy_store.policy_store_client_factory import PolicyStoreClientFactory
-from opal.client.config import OPENAPI_TAGS_METADATA, PolicyStoreTypes, POLICY_STORE_TYPE
-import asyncio
-from opal.client import policy_store
-from fastapi import FastAPI
+from opal.client.policy.api import init_policy_router
+from opal.client.policy.updater import PolicyUpdater
+from opal.client.server.api import router as proxy_router
+from opal.client.server.middleware import configure_middleware
 
 
 class OpalClient:
-
-
     def __init__(self,
                  policy_store_type:PolicyStoreTypes=POLICY_STORE_TYPE,
                  policy_store:BasePolicyStoreClient=None,
@@ -48,7 +47,7 @@ class OpalClient:
         if self.policy_store_type == PolicyStoreTypes.OPA:
             self.opa_runner = OpaRunner.setup_opa_runner()
         else:
-            self.opa_runner = False
+            self.opa_runner = None
 
         # init fastapi app
         self.app: FastAPI = self._init_fast_api_app()
@@ -68,7 +67,7 @@ class OpalClient:
         # Init api routes
         enforcer_router = init_enforcer_api_router(policy_store=policy_store)
         local_router = init_local_cache_api_router(policy_store=policy_store)
-        policy_router = init_policy_router()
+        policy_router = init_policy_router(policy_store=policy_store)
 
         # include the api routes
         app.include_router(enforcer_router, tags=["Authorization API"])

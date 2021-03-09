@@ -14,17 +14,17 @@ from opal.client.policy_store.policy_store_client_factory import DEFAULT_POLICY_
 from opal.client.policy.topics import dirs_to_topics, all_policy_directories, POLICY_PREFIX, remove_prefix
 
 
-async def update_policy(directories: List[str] = [], policy_store: BasePolicyStoreClient = DEFAULT_POLICY_STORE):
+async def update_policy(policy_store: BasePolicyStoreClient, directories: List[str] = None):
     """
     fetches policy (rego) from backend and updates OPA
     """
     logger = get_logger("opal.client.policy.updater")
 
-    directories = directories if directories else all_policy_directories()
-    logger.info("Refetching policy (rego)")
-    bundle: Optional[PolicyBundle] = await policy_fetcher.fetch_policy_bundle(directories)
+    directories = directories if directories is not None else all_policy_directories()
+    stored_policy_hash = await policy_store.get_policy_version()
+    logger.info("Refetching policy code", base_hash=stored_policy_hash)
+    bundle: Optional[PolicyBundle] = await policy_fetcher.fetch_policy_bundle(directories, base_hash=stored_policy_hash)
     if bundle:
-        msg = "got policy bundle" if bundle.old_hash is None else "got policy bundle (delta)"
         if bundle.old_hash is None:
             logger.info(
                 "got policy bundle",
@@ -32,12 +32,13 @@ async def update_policy(directories: List[str] = [], policy_store: BasePolicySto
                 manifest=bundle.manifest
             )
         else:
+            deleted_files = None if bundle.deleted_files is None else bundle.deleted_files.dict()
             logger.info(
                 "got policy bundle (delta)",
                 commit_hash=bundle.hash,
                 diff_against_hash=bundle.old_hash,
                 manifest=bundle.manifest,
-                deleted=bundle.deleted_files.dict()
+                deleted=deleted_files
             )
         await policy_store.set_policies(bundle)
 
@@ -78,7 +79,7 @@ class PolicyUpdater:
         else:
             self._logger.warn("invalid policy topic", topic=topic)
             directories = all_policy_directories()
-        await update_policy(directories, **kwargs)
+        await update_policy(self._policy_store, directories)
 
     async def on_connect(self, client: PubSubClient, channel: RpcChannel):
         # on connection to backend, whether its the first connection
