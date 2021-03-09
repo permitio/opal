@@ -55,7 +55,7 @@ class Confi:
         self._prefix = prefix
 
     def _prefix_key(self, key):
-        return f"{self._prefix}key"
+        return f"{self._prefix}{key}"
 
     def str(self, key, default=undefined, description=None, **kwargs) -> str:
         return config(self._prefix_key(key), default=default, **kwargs)
