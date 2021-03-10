@@ -30,15 +30,15 @@ class FetcherRegister:
         else:
             from ..emport import emport_objects_by_class
             fetchers = emport_objects_by_class("opal.common.fetcher.providers", BaseFetchProvider, ["*"])
-            self._config = {name: fetcher for name,fetcher in fetchers}    
-        logger.info("Fetcher Register loaded with config", self._config)
+            self._config = {name: fetcher for name,fetcher in fetchers}
+        logger.info("Fetcher Register loaded", extra={'config': self._config})
 
     def register_fetcher(self, name: str, fetcher_class: Type[BaseFetchProvider]):
         self._config[name] = fetcher_class
 
     def get_fetcher(self, name: str, event: FetchEvent) -> BaseFetchProvider:
         """
-        Init a fetcher instance from a registered fetcher class name 
+        Init a fetcher instance from a registered fetcher class name
 
         Args:
             name (str): Name of a registered fetcher

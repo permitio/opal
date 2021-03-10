@@ -132,7 +132,7 @@ class DataUpdater:
         """
         if url is None:
             url = self._data_sources_config_url
-        logger.info(f"Getting data-sources configuration from {url}")
+        logger.info(f"Getting data-sources configuration", source=url)
         try:
             async with ClientSession(headers=self._extra_headers) as session:
                 res = await session.get(url)
@@ -150,7 +150,7 @@ class DataUpdater:
             config_url (str, optional): URL to retrive data sources config from. Defaults to None ( self._data_sources_config_url).
             data_fetch_reason (str, optional): Reason to log for the update operation. Defaults to "Initial load".
         """
-        logger.info(f"Performing data configuration - {data_fetch_reason}")
+        logger.info(f"Performing data configuration", reason={data_fetch_reason})
         sources_config = await self.get_policy_data_config(url=config_url)
         # translate config to a data update
         entries = sources_config.entries
