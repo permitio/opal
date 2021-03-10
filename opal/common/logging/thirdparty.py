@@ -1,4 +1,6 @@
+from logging.config import dictConfig
 def hijack_uvicorn_logs():
+    # Intercept future UVICORN
     from uvicorn.config import LOGGING_CONFIG
     LOGGING_CONFIG["handlers"] =  {
             "default": {
@@ -10,3 +12,8 @@ def hijack_uvicorn_logs():
                 "class": "opal.common.logging.intercept.InterceptHandler",
             },
         }
+    # force existing UVICORN logging
+    dictConfig(LOGGING_CONFIG)
+
+
+    
