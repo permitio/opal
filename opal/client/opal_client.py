@@ -8,10 +8,10 @@ from opal.client.config import OPENAPI_TAGS_METADATA, PolicyStoreTypes, POLICY_S
 from opal.client.data.api import router as data_router
 from opal.client.data.updater import DataUpdater
 from opal.client.enforcer.api import init_enforcer_api_router
-from opal.client.enforcer.runner import OpaRunner
 from opal.client.local.api import init_local_cache_api_router
 from opal.client.policy_store.base_policy_store_client import BasePolicyStoreClient
 from opal.client.policy_store.policy_store_client_factory import PolicyStoreClientFactory
+from opal.client.opa.runner import OpaRunner
 from opal.client.policy.api import init_policy_router
 from opal.client.policy.updater import PolicyUpdater
 from opal.client.server.api import router as proxy_router
