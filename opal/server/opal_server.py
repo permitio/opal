@@ -19,9 +19,9 @@ from opal.server.deps.authentication import verify_logged_in
 from opal.server.policy.bundles.api import router as bundles_router
 from opal.server.policy.github_webhook.api import init_git_webhook_router
 from opal.server.policy.github_webhook.listener import setup_webhook_listener
-from opal.server.policy.watcher import (setup_watcher_thread,
+from opal.server.policy.watcher import (setup_watcher_task,
                                         trigger_repo_watcher_pull)
-from opal.server.policy.watcher.watcher_thread import RepoWatcherThread
+from opal.server.policy.watcher.task import RepoWatcherTask
 from opal.server.publisher import setup_publisher_thread
 from opal.server.pubsub import PubSub
 
@@ -36,12 +36,12 @@ class OpalServer:
                  init_publisher=True,
                  data_sources_config=None,
                  broadcaster_uri=BROADCAST_URI) -> None:
-        
+
         elected_as_leader = False
         webhook_listener: Optional[TopicListenerThread] = None
         publisher: Optional[TopicPublisherThread] = None
         data_update_publisher: Optional[DataUpdatePublisher] = None
-        watcher: Optional[RepoWatcherThread] = None
+        watcher: Optional[RepoWatcherTask] = None
 
         if data_sources_config is None:
             data_sources_config = DATA_CONFIG_SOURCES
@@ -75,7 +75,7 @@ class OpalServer:
         async def on_election_decision(
             decision: bool,
             webhook_listener: TopicListenerThread,
-            repo_watcher: RepoWatcherThread,
+            repo_watcher: RepoWatcherTask,
         ):
             elected_as_leader = decision
             if elected_as_leader:
@@ -87,7 +87,7 @@ class OpalServer:
             if init_publisher:
                 publisher.start()
                 if init_git_watcher:
-                    watcher = setup_watcher_thread(publisher)
+                    watcher = setup_watcher_task(publisher)
                     webhook_listener = setup_webhook_listener(partial(trigger_repo_watcher_pull, watcher))
                     election = PubSubBullyLeaderElection(
                         server_uri=OPAL_WS_LOCAL_URL,
@@ -112,5 +112,5 @@ class OpalServer:
                 if watcher is not None:
                     watcher.stop()
 
-    
+
 

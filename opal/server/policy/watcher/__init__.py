@@ -1,1 +1,1 @@
-from .watcher_instance import setup_watcher_thread, trigger_repo_watcher_pull
+from .factory import setup_watcher_task, trigger_repo_watcher_pull

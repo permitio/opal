@@ -13,11 +13,11 @@ from opal.server.config import (
     POLICY_REPO_POLLING_INTERVAL,
     OPA_FILE_EXTENSIONS,
 )
-from opal.server.policy.watcher.watcher_thread import RepoWatcherThread
-from opal.server.policy.watcher.watcher_callbacks import publish_changed_directories
+from opal.server.policy.watcher.task import RepoWatcherTask
+from opal.server.policy.watcher.callbacks import publish_changed_directories
 
 
-def setup_watcher_thread(
+def setup_watcher_task(
     publisher: TopicPublisherThread,
     repo_url: str = POLICY_REPO_URL,
     clone_path: str = POLICY_REPO_CLONE_PATH,
@@ -25,7 +25,7 @@ def setup_watcher_thread(
     remote_name: str = POLICY_REPO_MAIN_REMOTE,
     polling_interval: int = POLICY_REPO_POLLING_INTERVAL,
     extensions: Optional[List[str]] = None,
-) -> RepoWatcherThread:
+) -> RepoWatcherTask:
     extensions = extensions if extensions is not None else OPA_FILE_EXTENSIONS
     watcher = RepoWatcher(
         repo_url=repo_url,
@@ -41,9 +41,9 @@ def setup_watcher_thread(
             file_extensions=extensions
         )
     )
-    return RepoWatcherThread(watcher)
+    return RepoWatcherTask(watcher)
 
-async def trigger_repo_watcher_pull(watcher: RepoWatcherThread, topic: Topic, data: Any):
+async def trigger_repo_watcher_pull(watcher: RepoWatcherTask, topic: Topic, data: Any):
     """
     triggers the policy watcher check for changes.
     will trigger a task on the watcher's thread.
