@@ -91,8 +91,8 @@ class OpaRunner:
         self._thread.loop.call_later(1, self._run_start_callbacks_if_process_is_up, self._process.pid)
 
         await asyncio.wait([
-            self._log_output(self._process.stdout),
-            self._log_output(self._process.stderr)
+            self._log_opa_output(self._process.stdout),
+            self._log_opa_output(self._process.stderr)
         ])
 
         return_code = await self._process.wait()
@@ -113,7 +113,7 @@ class OpaRunner:
     async def _run_start_callbacks(self):
         return await asyncio.gather(*(callback() for callback in self._on_opa_start_callbacks))
 
-    async def _log_output(self, stream):
+    async def _log_opa_output(self, stream):
         while True:
             line = await stream.readline()
             if not line:
@@ -121,7 +121,7 @@ class OpaRunner:
             try:
                 log_line = json.loads(line)
                 msg = log_line.pop("msg", None)
-                level = logging_level_from_string(log_line.pop("level", "info"))
+                level = logging.getLevelName(logging_level_from_string(log_line.pop("level", "info")))
                 if msg is not None:
                     opa_logger.log(level, msg, **log_line)
                 else:
