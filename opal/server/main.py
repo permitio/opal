@@ -3,5 +3,4 @@ def create_app(*args, **kwargs):
     server = OpalServer(*args, **kwargs)
     return server.app
 
-if __name__ == '__main__':
-    create_app()
+app = create_app()

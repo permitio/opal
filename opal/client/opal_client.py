@@ -1,4 +1,5 @@
 from logging import disable
+from opal import common
 from opal.client.policy_store.base_policy_store_client import BasePolicyStoreClient
 from opal.client.enforcer.api import init_enforcer_api_router
 from opal.client.enforcer.runner import OpaRunner
@@ -15,10 +16,6 @@ import asyncio
 from opal.client import policy_store
 from fastapi import FastAPI
 
-from fastapi_websocket_rpc.logger import logging_config, LoggingModes
-logging_config.set_mode(LoggingModes.UVICORN)
-
-
 
 class OpalClient:
    
@@ -29,8 +26,7 @@ class OpalClient:
                  data_updater:DataUpdater=None,
                  policy_updater:PolicyUpdater=None
                  ) -> None:
-        """[summary]
-
+        """
         Args:
             policy_store_type (PolicyStoreTypes, optional): [description]. Defaults to POLICY_STORE_TYPE.
 
