@@ -26,3 +26,8 @@ LOG_FILE_RETENTION = confi.str("LOG_FILE_RETENTION", "10 days")
 LOG_FILE_COMPRESSION = confi.str("LOG_FILE_COMPRESSION", None)
 LOG_FILE_SERIALIZE = confi.str("LOG_FILE_SERIALIZE", True)
 LOG_FILE_LEVEL = confi.str("LOG_FILE_LEVEL", "INFO")
+
+# potentially exclude opa logs
+LOG_MODULE_EXCLUDE_OPA = confi.bool("LOG_MODULE_EXCLUDE_OPA", True)
+if LOG_MODULE_EXCLUDE_OPA:
+    LOG_MODULE_EXCLUDE_LIST.append("opal.client.opa.logger")
