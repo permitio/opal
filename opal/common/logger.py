@@ -26,7 +26,7 @@ def configure_logs():
         sys.stderr,
         filter=filter.filter,
         format=formatter.format,
-        level="INFO",
+        level=config.LOG_LEVEL,
         backtrace=config.LOG_TRACEBACK,
         diagnose=config.LOG_DIAGNOSE,
         colorize=config.LOG_COLORIZE,
