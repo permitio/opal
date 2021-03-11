@@ -1,10 +1,10 @@
-from opal.common.communication.topic_publisher import TopicPublisherThread
 from typing import Any, Optional, List
 from functools import partial
 
 from fastapi_websocket_pubsub import Topic
 from opal.common.logger import get_logger
 from opal.common.git.repo_watcher import RepoWatcher
+from opal.common.topics.publisher import TopicPublisher
 from opal.server.config import (
     POLICY_REPO_URL,
     POLICY_REPO_CLONE_PATH,
@@ -18,7 +18,7 @@ from opal.server.policy.watcher.callbacks import publish_changed_directories
 
 
 def setup_watcher_task(
-    publisher: TopicPublisherThread,
+    publisher: TopicPublisher,
     repo_url: str = POLICY_REPO_URL,
     clone_path: str = POLICY_REPO_CLONE_PATH,
     branch_name: str = POLICY_REPO_MAIN_BRANCH,

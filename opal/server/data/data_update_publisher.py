@@ -1,13 +1,13 @@
 from typing import List
 from opal.common.schemas.data import DataUpdate
-from opal.common.communication.topic_publisher import TopicPublisherThread
+from opal.common.topics.publisher import TopicPublisher
 
 
 TOPIC_DELIMETER = "/"
 
 class DataUpdatePublisher:
-    
-    def __init__(self, publisher:TopicPublisherThread) -> None:
+
+    def __init__(self, publisher:TopicPublisher) -> None:
         self._publisher = publisher
 
 
@@ -40,7 +40,7 @@ class DataUpdatePublisher:
         Notify OPAL subscribers of a new data update by topic
 
         Args:
-            topics (List[str]): topics (with hierarchy) to notify subscribers of 
+            topics (List[str]): topics (with hierarchy) to notify subscribers of
             update (DataUpdate): update data-source configuration for subscribers to fetch data from
         """
         all_topic_combos = []
@@ -51,4 +51,3 @@ class DataUpdatePublisher:
                 all_topic_combos.extend(topic_combos)
         # publish all topics with all their sub combinations
         self._publisher.publish(all_topic_combos, update)
-        

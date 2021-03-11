@@ -7,7 +7,7 @@ from opal.common.paths import PathUtils
 from opal.common.logger import get_logger
 from opal.common.git.commit_viewer import CommitViewer, has_extension
 from opal.common.git.diff_viewer import DiffViewer
-from opal.common.communication.topic_publisher import TopicPublisherThread
+from opal.common.topics.publisher import TopicPublisher
 
 
 def policy_topics(paths: List[Path]) -> List[str]:
@@ -17,7 +17,7 @@ def policy_topics(paths: List[Path]) -> List[str]:
 async def publish_all_directories_in_repo(
     old_commit: Commit,
     new_commit: Commit,
-    publisher: TopicPublisherThread,
+    publisher: TopicPublisher,
     file_extensions: Optional[List[str]] = None
 ):
     """
@@ -37,7 +37,7 @@ async def publish_all_directories_in_repo(
 async def publish_changed_directories(
     old_commit: Commit,
     new_commit: Commit,
-    publisher: TopicPublisherThread,
+    publisher: TopicPublisher,
     file_extensions: Optional[List[str]] = None
 ):
     """

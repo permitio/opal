@@ -1,14 +1,12 @@
 import asyncio
-import logging
 from functools import partial
 from opal.server.data.data_update_publisher import DataUpdatePublisher
 from typing import Optional
 
 from fastapi import Depends, FastAPI
-from fastapi_websocket_rpc.logger import LoggingModes, logging_config
 
-from opal.common.communication.topic_listener import TopicListenerThread
-from opal.common.communication.topic_publisher import TopicPublisherThread
+from opal.common.topics.listener import TopicListener
+from opal.common.topics.publisher import TopicPublisher
 from opal.common.election.pubsub_bully import PubSubBullyLeaderElection
 from opal.common.logger import get_logger
 from opal.common.middleware import configure_middleware
@@ -22,7 +20,7 @@ from opal.server.policy.github_webhook.listener import setup_webhook_listener
 from opal.server.policy.watcher import (setup_watcher_task,
                                         trigger_repo_watcher_pull)
 from opal.server.policy.watcher.task import RepoWatcherTask
-from opal.server.publisher import setup_publisher_thread
+from opal.server.publisher import setup_publisher_task
 from opal.server.pubsub import PubSub
 
 
@@ -38,8 +36,8 @@ class OpalServer:
                  broadcaster_uri=BROADCAST_URI) -> None:
 
         elected_as_leader = False
-        webhook_listener: Optional[TopicListenerThread] = None
-        publisher: Optional[TopicPublisherThread] = None
+        webhook_listener: Optional[TopicListener] = None
+        publisher: Optional[TopicPublisher] = None
         data_update_publisher: Optional[DataUpdatePublisher] = None
         watcher: Optional[RepoWatcherTask] = None
 
@@ -53,7 +51,7 @@ class OpalServer:
         configure_middleware(app)
 
         if init_publisher:
-            publisher = setup_publisher_thread()
+            publisher = setup_publisher_task()
             data_update_publisher = DataUpdatePublisher(publisher)
 
         # Init routers
@@ -74,7 +72,7 @@ class OpalServer:
 
         async def on_election_decision(
             decision: bool,
-            webhook_listener: TopicListenerThread,
+            webhook_listener: TopicListener,
             repo_watcher: RepoWatcherTask,
         ):
             elected_as_leader = decision
@@ -110,7 +108,7 @@ class OpalServer:
                 if publisher is not None:
                     await publisher.stop()
                 if watcher is not None:
-                    watcher.stop()
+                    await watcher.stop()
 
 
 

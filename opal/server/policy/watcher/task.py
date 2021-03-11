@@ -36,7 +36,8 @@ class RepoWatcherTask:
         self._logger.info("Stopping repo watcher")
         await self._watcher.stop()
         for task in self._tasks:
-            task.cancel()
+            if not task.done():
+                task.cancel()
         try:
             await asyncio.gather(*self._tasks, return_exceptions=True)
         except asyncio.CancelledError:
