@@ -34,6 +34,7 @@ class UvicornWorkerPidLeaderElection(LeaderElectionBase):
         the election method we use, see the class description for details.
         returns true if the calling process was elected leader.
         """
+        self._logger.info("started election", my_id=self._my_pid)
         my_process = psutil.Process(self._my_pid)
         sibling_processes: List[Process] = my_process.parent().children()
         sibling_pids = [sibling.pid for sibling in sibling_processes]

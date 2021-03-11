@@ -7,7 +7,7 @@ from fastapi import Depends, FastAPI
 
 from opal.common.topics.listener import TopicListener
 from opal.common.topics.publisher import TopicPublisher
-from opal.common.election.pubsub_bully import PubSubBullyLeaderElection
+from opal.common.election.pubsub import PubSubBullyLeaderElection
 from opal.common.logger import get_logger
 from opal.common.middleware import configure_middleware
 from opal.common.utils import get_authorization_header

@@ -61,6 +61,7 @@ class PubSubBullyLeaderElection(LeaderElectionBase):
         the election method we use, see the class description for details.
         returns true if the calling process was elected leader.
         """
+        self._logger.info("started leader election", my_id=self._my_id)
         async with PubSubClient(extra_headers=self._extra_headers) as client:
             async def on_new_candidate(data: str, topic: Topic):
                 self._known_candidates.add(data)
@@ -70,15 +71,18 @@ class PubSubBullyLeaderElection(LeaderElectionBase):
             client.start_client(self._server_uri)
 
             # await for all other processes to go up and subscribe
+            self._logger.info("waiting until client is ready", my_id=self._my_id)
             await asyncio.gather(
                 client.wait_until_ready(),
                 asyncio.sleep(self._wait_time_for_publish)
             )
 
             # publish own random id
+            self._logger.info("publishing my id", my_id=self._my_id)
             await client.publish(ELECTION_TOPIC, data=self._my_id)
 
             # wait for all candidates to finish publishing their id
+            self._logger.info("waiting for decision", my_id=self._my_id)
             await asyncio.sleep(self._wait_time_for_decision)
 
             leader_id = max(self._known_candidates)
