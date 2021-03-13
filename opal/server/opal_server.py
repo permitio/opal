@@ -88,6 +88,7 @@ class OpalServer:
                     watcher = setup_watcher_task(publisher)
                     webhook_listener = setup_webhook_listener(partial(trigger_repo_watcher_pull, watcher))
                     election = PubSubBullyLeaderElection(
+                        endpoint=pubsub.endpoint,
                         server_uri=OPAL_WS_LOCAL_URL,
                         extra_headers=[get_authorization_header(OPAL_WS_TOKEN)]
                     )
