@@ -40,10 +40,7 @@ class RepoWatcherTask:
         for task in self._tasks:
             if not task.done():
                 task.cancel()
-        try:
-            await asyncio.gather(*self._tasks, return_exceptions=True)
-        except asyncio.CancelledError:
-            pass
+        await asyncio.gather(*self._tasks, return_exceptions=True)
 
     def trigger(self):
         """

@@ -44,15 +44,12 @@ class TopicPublisher:
         """
         stops the pubsub client, and cancels any publishing tasks.
         """
+        logger.info("stopping topic publisher")
         await self._client.disconnect()
         for task in self._tasks:
             if not task.done():
                 task.cancel()
-        try:
-            await asyncio.gather(*self._tasks, return_exceptions=True)
-        except asyncio.CancelledError:
-            pass
-        logger.info("stopped topic publisher")
+        await asyncio.gather(*self._tasks, return_exceptions=True)
 
     async def wait_until_done(self):
         """
