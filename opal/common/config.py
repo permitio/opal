@@ -15,7 +15,7 @@ LOG_LEVEL = confi.str("LOG_LEVEL", "INFO")
 #  - Which modules should be logged
 LOG_MODULE_EXCLUDE_LIST = confi.list("LOG_MODULE_EXCLUDE_LIST", [
                                      "fastapi_websocket_rpc", "fastapi_websocket_pubsub", "uvicorn"])
-LOG_MODULE_INCLUDE_LIST = confi.list("LOG_MODULE_INCLUDE_LIST", ["uvicorn.access"])
+LOG_MODULE_INCLUDE_LIST = confi.list("LOG_MODULE_INCLUDE_LIST", ["uvicorn.protocols.http"])
 LOG_PATCH_UVICORN_LOGS = confi.bool("LOG_PATCH_UVICORN_LOGS", True,
                                     description="Should we takeover UVICORN's logs so they appear in the main logger")
 # - Log to file as well ( @see https://github.com/Delgan/loguru#easier-file-logging-with-rotation--retention--compression)
