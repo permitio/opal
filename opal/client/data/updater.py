@@ -9,7 +9,7 @@ from fastapi_websocket_rpc.rpc_channel import RpcChannel
 from fastapi_websocket_pubsub import PubSubClient
 
 from opal.client.logger import get_logger
-from opal.client.config import DATA_TOPICS, OPAL_SERVER_WS_URL, CLIENT_TOKEN, DEFAULT_DATA_SOURCES_CONFIG_URL, KEEP_ALIVE_INTERVAL
+from opal.client.config import DATA_TOPICS, OPAL_SERVER_PUBSUB_URL, CLIENT_TOKEN, DEFAULT_DATA_SOURCES_CONFIG_URL, KEEP_ALIVE_INTERVAL
 from opal.common.utils import get_authorization_header
 from opal.client.policy_store.policy_store_client_factory import DEFAULT_POLICY_STORE
 from opal.client.data.fetcher import DataFetcher
@@ -55,7 +55,7 @@ async def update_policy_data(update: DataUpdate = None, policy_store: BasePolicy
 
 class DataUpdater:
     def __init__(self, token: str = CLIENT_TOKEN,
-                 pubsub_url: str = OPAL_SERVER_WS_URL,
+                 pubsub_url: str = OPAL_SERVER_PUBSUB_URL,
                  data_sources_config_url: str = DEFAULT_DATA_SOURCES_CONFIG_URL,
                  fetch_on_connect:bool=True,
                  data_topics: List[str] = None,

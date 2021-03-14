@@ -30,9 +30,9 @@ KEEP_ALIVE_INTERVAL = confi.int("AUTHZ_KEEP_ALIVE", 0)
 OPAL_SERVER_URL = confi.str("OPAL_SERVER_URL", "http://localhost:7002")
 _opal_server_ws_url = OPAL_SERVER_URL.replace("https", "ws").replace("http", "ws")
 
-# opal server ws pubsub url
+# opal server pubsub url
 OPAL_WS_ROUTE = "/ws"
-OPAL_SERVER_WS_URL = f"{_opal_server_ws_url}{OPAL_WS_ROUTE}"
+OPAL_SERVER_PUBSUB_URL = f"{_opal_server_ws_url}{OPAL_WS_ROUTE}"
 
 # opal server auth token
 CLIENT_TOKEN = confi.str("CLIENT_TOKEN", "THIS_IS_A_DEV_SECRET")
