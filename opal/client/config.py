@@ -3,7 +3,7 @@ from enum import Enum
 
 from opal.common.confi import Confi
 
-confi = Confi()
+confi = Confi(prefix="OPAL_")
 
 
 # Opal Client general configuration -------------------------------------------
@@ -21,13 +21,13 @@ POLICY_STORE_URL = f"{_opa_url}/v1"
 ALLOWED_ORIGINS = ["*"]
 
 # general configuration for pub/sub clients
-KEEP_ALIVE_INTERVAL = confi.int("AUTHZ_KEEP_ALIVE", 0)
+KEEP_ALIVE_INTERVAL = confi.int("KEEP_ALIVE_INTERVAL", 0)
 
 
 # Opal Server general configuration -------------------------------------------
 
 # opal server url
-OPAL_SERVER_URL = confi.str("OPAL_SERVER_URL", "http://localhost:7002")
+OPAL_SERVER_URL = confi.str("SERVER_URL", "http://localhost:7002")
 _opal_server_ws_url = OPAL_SERVER_URL.replace("https", "ws").replace("http", "ws")
 
 # opal server pubsub url
@@ -58,7 +58,7 @@ DEFAULT_DATA_URL = confi.str("DEFAULT_DATA_URL", "http://localhost:8000/policy-c
 # Authorizon Sidecar configuration --------------------------------------------
 
 # backend service
-BACKEND_URL = confi.str("AUTHORIZON_API_URL", "http://localhost:8000")
+BACKEND_URL = confi.str("BACKEND_URL", "http://localhost:8000")
 BACKEND_SERVICE_LEGACY_URL = f"{BACKEND_URL}/sdk"
 BACKEND_SERVICE_URL = f"{BACKEND_URL}/v1"
 
