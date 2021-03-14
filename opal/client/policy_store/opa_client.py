@@ -41,6 +41,7 @@ class OpaClient(BasePolicyStoreClient):
         self._policy_data = None
         self._cached_policies: Dict[str, str] = {}
         self._policy_version: Optional[str] = None
+        self._lock = asyncio.Lock()
 
     async def get_policy_version(self) -> Optional[str]:
         return self._policy_version
@@ -139,8 +140,7 @@ class OpaClient(BasePolicyStoreClient):
         module_ids_in_bundle: Set[str] = {module.path for module in bundle.policy_modules}
         module_ids_to_delete: Set[str] = module_ids_in_store.difference(module_ids_in_bundle)
 
-        lock = asyncio.Lock()
-        async with lock:
+        async with self._lock:
             # save bundled policies into store
             for module in bundle.policy_modules:
                 await self.set_policy(policy_id=module.path, policy_code=module.rego)
@@ -158,8 +158,7 @@ class OpaClient(BasePolicyStoreClient):
             self._policy_version = bundle.hash
 
     async def _set_policies_from_delta_bundle(self, bundle: PolicyBundle):
-        lock = asyncio.Lock()
-        async with lock:
+        async with self._lock:
             # save bundled policies into store
             for module in bundle.policy_modules:
                 await self.set_policy(policy_id=module.path, policy_code=module.rego)
