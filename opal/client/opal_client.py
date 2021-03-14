@@ -47,7 +47,7 @@ class OpalClient:
         if self.policy_store_type == PolicyStoreTypes.OPA:
             self.opa_runner = OpaRunner.setup_opa_runner()
         else:
-            self.opa_runner = None
+            self.opa_runner = False
 
         # init fastapi app
         self.app: FastAPI = self._init_fast_api_app()
