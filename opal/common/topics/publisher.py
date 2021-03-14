@@ -26,7 +26,7 @@ class TopicPublisher:
         self._tasks: List[asyncio.Task] = []
 
     async def __aenter__(self):
-        await self.start()
+        self.start()
         return self
 
     async def __aexit__(self, exc_type, exc, tb):
@@ -53,6 +53,13 @@ class TopicPublisher:
         except asyncio.CancelledError:
             pass
         logger.info("stopped topic publisher")
+
+    async def wait_until_done(self):
+        """
+        When the publisher is a used as a context manager, this method waits until
+        the client is done (i.e: terminated) to prevent exiting the context.
+        """
+        return await self._client.wait_until_done()
 
     def publish(self, topics: TopicList, data: Any = None):
         """

@@ -1,18 +1,17 @@
 import asyncio
 from functools import partial
-from opal.server.data.data_update_publisher import DataUpdatePublisher
 from typing import Optional
 
 from fastapi import Depends, FastAPI
 
 from opal.common.topics.listener import TopicListener
 from opal.common.topics.publisher import TopicPublisher
-from opal.common.election.pubsub import PubSubBullyLeaderElection
 from opal.common.logger import get_logger
+from opal.common.synchronization.named_lock import NamedLock
 from opal.common.middleware import configure_middleware
-from opal.common.utils import get_authorization_header
-from opal.server.config import DATA_CONFIG_SOURCES, NO_RPC_LOGS, OPAL_WS_LOCAL_URL, OPAL_WS_TOKEN, BROADCAST_URI
+from opal.server.config import DATA_CONFIG_SOURCES, BROADCAST_URI, LEADER_LOCK_FILE_PATH
 from opal.server.data.api import init_data_updates_router
+from opal.server.data.data_update_publisher import DataUpdatePublisher
 from opal.server.deps.authentication import verify_logged_in
 from opal.server.policy.bundles.api import router as bundles_router
 from opal.server.policy.github_webhook.api import init_git_webhook_router
@@ -35,7 +34,6 @@ class OpalServer:
                  data_sources_config=None,
                  broadcaster_uri=BROADCAST_URI) -> None:
 
-        elected_as_leader = False
         webhook_listener: Optional[TopicListener] = None
         publisher: Optional[TopicPublisher] = None
         data_update_publisher: Optional[DataUpdatePublisher] = None
@@ -70,46 +68,33 @@ class OpalServer:
         def healthcheck():
             return {"status": "ok"}
 
-        async def on_election_decision(
-            decision: bool,
-            webhook_listener: TopicListener,
-            repo_watcher: RepoWatcherTask,
-        ):
-            elected_as_leader = decision
-            if elected_as_leader:
-                webhook_listener.start()
-                repo_watcher.start()
+        async def start_background_tasks():
+            if init_publisher:
+                async with publisher:
+                    if init_git_watcher:
+                        watcher = setup_watcher_task(publisher)
+                        webhook_listener = setup_webhook_listener(partial(trigger_repo_watcher_pull, watcher))
+                        leadership_lock = NamedLock(LEADER_LOCK_FILE_PATH)
+                        async with leadership_lock:
+                            async with webhook_listener:
+                                async with watcher:
+                                    await watcher.wait_until_should_stop()
+                                await webhook_listener.wait_until_done()
+                    await publisher.wait_until_done()
 
         @app.on_event("startup")
         async def startup_event():
-            if init_publisher:
-                publisher.start()
-                if init_git_watcher:
-                    watcher = setup_watcher_task(publisher)
-                    webhook_listener = setup_webhook_listener(partial(trigger_repo_watcher_pull, watcher))
-                    election = PubSubBullyLeaderElection(
-                        endpoint=pubsub.endpoint,
-                        server_uri=OPAL_WS_LOCAL_URL,
-                        extra_headers=[get_authorization_header(OPAL_WS_TOKEN)]
-                    )
-                    election.on_decision(
-                        partial(
-                            on_election_decision,
-                            webhook_listener=webhook_listener,
-                            repo_watcher=watcher,
-                        )
-                    )
-                    asyncio.create_task(election.elect())
+            asyncio.create_task(start_background_tasks())
 
         @app.on_event("shutdown")
         async def shutdown_event():
-            if elected_as_leader:
-                if webhook_listener is not None:
-                    await webhook_listener.stop()
-                if publisher is not None:
-                    await publisher.stop()
-                if watcher is not None:
-                    await watcher.stop()
+            if publisher is not None:
+                await publisher.stop()
+            if webhook_listener is not None:
+                await webhook_listener.stop()
+            if watcher is not None:
+                watcher.signal_stop()
+
 
 
 
