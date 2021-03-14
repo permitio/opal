@@ -9,7 +9,7 @@ from fastapi_websocket_rpc.rpc_channel import RpcChannel
 from fastapi_websocket_pubsub import PubSubClient
 
 from opal.client.logger import get_logger
-from opal.client.config import DATA_TOPICS, DATA_UPDATES_WS_URL, CLIENT_TOKEN, DEFAULT_DATA_SOURCES_CONFIG_URL, KEEP_ALIVE_INTERVAL
+from opal.client.config import DATA_TOPICS, OPAL_SERVER_PUBSUB_URL, CLIENT_TOKEN, DEFAULT_DATA_SOURCES_CONFIG_URL, KEEP_ALIVE_INTERVAL
 from opal.common.utils import get_authorization_header
 from opal.client.policy_store.policy_store_client_factory import DEFAULT_POLICY_STORE
 from opal.client.data.fetcher import DataFetcher
@@ -54,11 +54,11 @@ async def update_policy_data(update: DataUpdate = None, policy_store: BasePolicy
 
 
 class DataUpdater:
-    def __init__(self, token: str = CLIENT_TOKEN, 
-                 pubsub_url: str = DATA_UPDATES_WS_URL,
+    def __init__(self, token: str = CLIENT_TOKEN,
+                 pubsub_url: str = OPAL_SERVER_PUBSUB_URL,
                  data_sources_config_url: str = DEFAULT_DATA_SOURCES_CONFIG_URL,
                  fetch_on_connect:bool=True,
-                 data_topics: List[str] = None, 
+                 data_topics: List[str] = None,
                  policy_store: BasePolicyStoreClient = DEFAULT_POLICY_STORE):
         """
         Keeps policy-stores (e.g. OPA) up to date with relevant data
@@ -132,14 +132,14 @@ class DataUpdater:
         """
         if url is None:
             url = self._data_sources_config_url
-        logger.info(f"Getting data-sources configuration from {url}")
+        logger.info(f"Getting data-sources configuration", source=url)
         try:
             async with ClientSession(headers=self._extra_headers) as session:
                 res = await session.get(url)
             return DataSourceConfig.parse_obj(await res.json())
         except:
             logger.exception(f"Failed to load data sources config")
-            raise 
+            raise
 
 
     async def get_base_policy_data(self, config_url:str=None, data_fetch_reason="Initial load"):
@@ -150,17 +150,17 @@ class DataUpdater:
             config_url (str, optional): URL to retrive data sources config from. Defaults to None ( self._data_sources_config_url).
             data_fetch_reason (str, optional): Reason to log for the update operation. Defaults to "Initial load".
         """
-        logger.info(f"Performing data configuration - {data_fetch_reason}")
+        logger.info(f"Performing data configuration", reason={data_fetch_reason})
         sources_config = await self.get_policy_data_config(url=config_url)
-        # translate config to a data update 
+        # translate config to a data update
         entries = sources_config.entries
         update = DataUpdate(reason=data_fetch_reason, entries=entries)
         self.trigger_data_update(update)
-        
+
 
     async def on_connect(self, client: PubSubClient, channel: RpcChannel):
         """
-        Pub/Sub on_connect callback 
+        Pub/Sub on_connect callback
         On connection to backend, whether its the first connection,
         or reconnecting after downtime, refetch the state opa needs.
         As long as the connection is alive we know we are in sync with the state - if the connection is lost we assume we need to start from scratch
@@ -180,7 +180,7 @@ class DataUpdater:
 
     async def _subscriber(self):
         """
-        Coroutine meant to be spunoff with create_task to listen in the background for data events and pass them to the data_fetcher 
+        Coroutine meant to be spunoff with create_task to listen in the background for data events and pass them to the data_fetcher
         """
         logger.info("Subscribing to topics", topics=self._data_topics)
         self._client = PubSubClient(

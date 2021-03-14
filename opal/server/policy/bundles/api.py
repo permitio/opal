@@ -5,7 +5,6 @@ from pathlib import Path
 
 from git import Repo
 
-from opal.common.logger import get_logger
 from opal.common.git.commit_viewer import CommitViewer
 from opal.common.schemas.policy import PolicyBundle
 from opal.server.config import (
@@ -13,7 +12,6 @@ from opal.server.config import (
     OPA_FILE_EXTENSIONS
 )
 
-logger = get_logger("Policy API")
 router = APIRouter()
 
 async def get_repo(

@@ -8,10 +8,10 @@ from opal.common.utils import get_authorization_header
 from opal.common.schemas.policy import PolicyBundle
 from opal.client.utils import tuple_to_dict
 from opal.client.logger import get_logger
-from opal.client.config import POLICY_SERVICE_URL, CLIENT_TOKEN
+from opal.client.config import OPAL_SERVER_URL, CLIENT_TOKEN
 
 
-logger = get_logger("opal.policy.fetcher")
+logger = get_logger("opal.client.policy.fetcher")
 
 
 def policy_bundle_or_none(bundle) -> Optional[PolicyBundle]:
@@ -26,14 +26,20 @@ class PolicyFetcher:
     """
     fetches policy from backend
     """
-    def __init__(self, backend_url=POLICY_SERVICE_URL, token=CLIENT_TOKEN):
+    def __init__(self, backend_url=OPAL_SERVER_URL, token=CLIENT_TOKEN):
         self._backend_url = backend_url
         self._token = token
         self._auth_headers = tuple_to_dict(get_authorization_header(token))
 
-    async def fetch_policy_bundle(self, directories: List[str] = ['.']) -> Optional[PolicyBundle]:
+    async def fetch_policy_bundle(
+        self,
+        directories: List[str] = ['.'],
+        base_hash: Optional[str] = None
+    ) -> Optional[PolicyBundle]:
+        params = {"path": directories}
+        if base_hash is not None:
+            params["base_hash"] = base_hash
         async with aiohttp.ClientSession() as session:
-            params = {"path": directories}
             try:
                 async with session.get(
                     f"{self._backend_url}/policy",
@@ -51,5 +57,3 @@ class PolicyFetcher:
 
 
 policy_fetcher = PolicyFetcher()
-
-

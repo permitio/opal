@@ -3,7 +3,7 @@ import asyncio
 from uuid import uuid4
 from typing import Optional, List, Tuple
 
-from fastapi_websocket_pubsub import PubSubClient, Topic
+from fastapi_websocket_pubsub import PubSubClient, PubSubEndpoint, Topic
 
 from opal.common.election.base import LeaderElectionBase
 from opal.common.logger import get_logger
@@ -27,6 +27,7 @@ class PubSubBullyLeaderElection(LeaderElectionBase):
     """
     def __init__(
         self,
+        endpoint: PubSubEndpoint,
         server_uri: str,
         extra_headers: Optional[List[Tuple[str, str]]] = None,
         wait_time_for_publish: float = 1,
@@ -47,6 +48,7 @@ class PubSubBullyLeaderElection(LeaderElectionBase):
                 ready to pick the leader.
         """
         self._server_uri = server_uri
+        self._endpoint = endpoint
         self._extra_headers = extra_headers
         self._wait_time_for_publish = wait_time_for_publish
         self._wait_time_for_decision = wait_time_for_decision
@@ -61,6 +63,7 @@ class PubSubBullyLeaderElection(LeaderElectionBase):
         the election method we use, see the class description for details.
         returns true if the calling process was elected leader.
         """
+        self._logger.info("started leader election", my_id=self._my_id)
         async with PubSubClient(extra_headers=self._extra_headers) as client:
             async def on_new_candidate(data: str, topic: Topic):
                 self._known_candidates.add(data)
@@ -70,15 +73,15 @@ class PubSubBullyLeaderElection(LeaderElectionBase):
             client.start_client(self._server_uri)
 
             # await for all other processes to go up and subscribe
-            await asyncio.gather(
-                client.wait_until_ready(),
-                asyncio.sleep(self._wait_time_for_publish)
-            )
+            self._logger.info("waiting until clients will connect", my_id=self._my_id)
+            await asyncio.sleep(self._wait_time_for_publish)
 
             # publish own random id
-            await client.publish(ELECTION_TOPIC, data=self._my_id)
+            self._logger.info("publishing my id", my_id=self._my_id)
+            asyncio.create_task(self._endpoint.publish(ELECTION_TOPIC, data=self._my_id))
 
             # wait for all candidates to finish publishing their id
+            self._logger.info("waiting for decision", my_id=self._my_id)
             await asyncio.sleep(self._wait_time_for_decision)
 
             leader_id = max(self._known_candidates)

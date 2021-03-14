@@ -1,6 +1,4 @@
-import json
 import asyncio
-import logging
 import time
 import psutil
 
@@ -11,33 +9,13 @@ from tenacity import retry, wait_random_exponential
 from opal.common.utils import AsyncioEventLoopThread
 from opal.client.config import OPA_PORT
 from opal.client.logger import get_logger
-from opal.client.policy_store.policy_store_client_factory import DEFAULT_POLICY_STORE, PolicyStoreTypes
+from opal.client.policy_store.policy_store_client_factory import DEFAULT_POLICY_STORE
+from opal.client.opa.logger import pipe_opa_logs
 
 opa = DEFAULT_POLICY_STORE
 
 logger = get_logger("Opal Client")
 runner_logger = get_logger("Opa Runner")
-opa_logger = get_logger("OPA")
-
-def logging_level_from_string(level: str) -> int:
-    """
-    logger.log() requires an int logging level
-    """
-    level = level.lower()
-    if level == "info":
-        return logging.INFO
-    elif level == "critical":
-        return logging.CRITICAL
-    elif level == "fatal":
-        return logging.FATAL
-    elif level == "error":
-        return logging.ERROR
-    elif level == "warning" or level == "warn":
-        return logging.WARNING
-    elif level == "debug":
-        return logging.DEBUG
-    # default
-    return logging.INFO
 
 class OpaRunner:
     """
@@ -91,8 +69,8 @@ class OpaRunner:
         self._thread.loop.call_later(1, self._run_start_callbacks_if_process_is_up, self._process.pid)
 
         await asyncio.wait([
-            self._log_output(self._process.stdout),
-            self._log_output(self._process.stderr)
+            pipe_opa_logs(self._process.stdout),
+            pipe_opa_logs(self._process.stderr)
         ])
 
         return_code = await self._process.wait()
@@ -112,22 +90,6 @@ class OpaRunner:
 
     async def _run_start_callbacks(self):
         return await asyncio.gather(*(callback() for callback in self._on_opa_start_callbacks))
-
-    async def _log_output(self, stream):
-        while True:
-            line = await stream.readline()
-            if not line:
-                break
-            try:
-                log_line = json.loads(line)
-                msg = log_line.pop("msg", None)
-                level = logging_level_from_string(log_line.pop("level", "info"))
-                if msg is not None:
-                    opa_logger.log(level, msg, **log_line)
-                else:
-                    opa_logger.log(level, line)
-            except json.JSONDecodeError:
-                opa_logger.info(line)
 
     @staticmethod
     def setup_opa_runner():

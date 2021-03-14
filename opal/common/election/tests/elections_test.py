@@ -25,8 +25,6 @@ import uvicorn
 import aiohttp
 import time
 
-from opal.common.election.uvicorn_worker_pid import UvicornWorkerPidLeaderElection
-
 # Configurable
 PORT = int(os.environ.get("PORT") or "9110")
 BASE_URL = f"http://localhost:{PORT}"

@@ -123,6 +123,8 @@ class BundleMaker:
 
                 if is_data_module(path):
                     data_modules.append(
+                        # in OPA, the data module path is the containing directory
+                        # i.e: /path/to/data.json will put the json contents under "/path/to" in the opa tree
                         DataModule(path=str(path.parent), data=contents)
                     )
                 elif is_rego_module(path):
@@ -142,7 +144,8 @@ class BundleMaker:
                 path = source_file.path
 
                 if is_data_module(path):
-                    deleted_data_modules.append(path)
+                    # in OPA, the data module path is the containing directory (see above)
+                    deleted_data_modules.append(str(path.parent))
                 elif is_rego_module(path):
                     deleted_policy_modules.append(path)
 
