@@ -38,6 +38,7 @@ class OpalServer:
         data_update_publisher: Optional[DataUpdatePublisher] = None
         self.webhook_listener: Optional[TopicListener] = None
         self.watcher: Optional[RepoWatcherTask] = None
+        self.leadership_lock: Optional[NamedLock] = None
 
         if data_sources_config is None:
             data_sources_config = DATA_CONFIG_SOURCES
@@ -72,15 +73,13 @@ class OpalServer:
             if init_publisher:
                 async with publisher:
                     if init_git_watcher:
-                        self.watcher = setup_watcher_task(publisher)
-                        self.webhook_listener = setup_webhook_listener(partial(trigger_repo_watcher_pull, self.watcher))
-                        leadership_lock = NamedLock(LEADER_LOCK_FILE_PATH)
-                        async with leadership_lock:
+                        self.leadership_lock = NamedLock(LEADER_LOCK_FILE_PATH)
+                        async with self.leadership_lock:
+                            self.watcher = setup_watcher_task(publisher)
+                            self.webhook_listener = setup_webhook_listener(partial(trigger_repo_watcher_pull, self.watcher))
                             async with self.webhook_listener:
                                 async with self.watcher:
                                     await self.watcher.wait_until_should_stop()
-                                await self.webhook_listener.wait_until_done()
-                    await publisher.wait_until_done()
 
         @app.on_event("startup")
         async def startup_event():
