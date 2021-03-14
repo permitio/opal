@@ -34,10 +34,10 @@ class OpalServer:
                  data_sources_config=None,
                  broadcaster_uri=BROADCAST_URI) -> None:
 
-        webhook_listener: Optional[TopicListener] = None
         publisher: Optional[TopicPublisher] = None
         data_update_publisher: Optional[DataUpdatePublisher] = None
-        watcher: Optional[RepoWatcherTask] = None
+        self.webhook_listener: Optional[TopicListener] = None
+        self.watcher: Optional[RepoWatcherTask] = None
 
         if data_sources_config is None:
             data_sources_config = DATA_CONFIG_SOURCES
@@ -72,29 +72,27 @@ class OpalServer:
             if init_publisher:
                 async with publisher:
                     if init_git_watcher:
-                        watcher = setup_watcher_task(publisher)
-                        webhook_listener = setup_webhook_listener(partial(trigger_repo_watcher_pull, watcher))
+                        self.watcher = setup_watcher_task(publisher)
+                        self.webhook_listener = setup_webhook_listener(partial(trigger_repo_watcher_pull, self.watcher))
                         leadership_lock = NamedLock(LEADER_LOCK_FILE_PATH)
                         async with leadership_lock:
-                            async with webhook_listener:
-                                async with watcher:
-                                    await watcher.wait_until_should_stop()
-                                await webhook_listener.wait_until_done()
+                            async with self.webhook_listener:
+                                async with self.watcher:
+                                    await self.watcher.wait_until_should_stop()
+                                await self.webhook_listener.wait_until_done()
                     await publisher.wait_until_done()
 
         @app.on_event("startup")
         async def startup_event():
+            logger.info("triggered startup event")
             asyncio.create_task(start_background_tasks())
 
         @app.on_event("shutdown")
         async def shutdown_event():
+            logger.info("triggered shutdown event")
             if publisher is not None:
                 await publisher.stop()
-            if webhook_listener is not None:
-                await webhook_listener.stop()
-            if watcher is not None:
-                watcher.signal_stop()
-
-
-
-
+            if self.webhook_listener is not None:
+                await self.webhook_listener.stop()
+            if self.watcher is not None:
+                self.watcher.signal_stop()
