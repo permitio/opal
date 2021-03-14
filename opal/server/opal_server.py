@@ -89,9 +89,9 @@ class OpalServer:
         @app.on_event("shutdown")
         async def shutdown_event():
             logger.info("triggered shutdown event")
-            if publisher is not None:
-                await publisher.stop()
-            if self.webhook_listener is not None:
-                await self.webhook_listener.stop()
             if self.watcher is not None:
                 self.watcher.signal_stop()
+            if self.webhook_listener is not None:
+                asyncio.create_task(self.webhook_listener.stop())
+            if publisher is not None:
+                asyncio.create_task(publisher.stop())
