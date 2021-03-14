@@ -43,7 +43,7 @@ def configure_logs():
         )
 
 
-def get_logger(name):
+def get_logger(name=""):
     """
     backward comptability to old get_logger
     """
