@@ -87,13 +87,21 @@ class OpalClient:
                 async with self.opa_runner:
                     await self.opa_runner.wait_until_done()
 
+        async def launch_policy_updater():
+            if self.policy_updater:
+                async with self.policy_updater:
+                    await self.policy_updater.wait_until_done()
+
+        async def launch_data_updater():
+            if self.data_updater:
+                async with self.data_updater:
+                    await self.data_updater.wait_until_done()
+
         @app.on_event("startup")
         async def startup_event():
             asyncio.create_task(launch_opa_in_background())
-            if self.policy_updater:
-                self.policy_updater.start()
-            if self.data_updater:
-                await self.data_updater.start()
+            asyncio.create_task(launch_policy_updater())
+            asyncio.create_task(launch_data_updater())
 
         @app.on_event("shutdown")
         async def shutdown_event():

@@ -27,7 +27,7 @@ def remove_prefix(topic: str, prefix: str = POLICY_PREFIX):
         return topic[len(prefix):]
     return topic
 
-def dirs_to_topics(dirs: List[str]) -> List[str]:
+def pubsub_topics_from_directories(dirs: List[str]) -> List[str]:
     policy_directories = non_intersecting_dirs([Path(d) for d in dirs])
     return policy_topics(policy_directories)
 

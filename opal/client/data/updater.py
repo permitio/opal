@@ -66,8 +66,8 @@ class DataUpdater:
         Uses Pub/Sub to subscribe to data update events, and fetches (using FetchingEngine) data from sources.
 
         Args:
-            token (str, optional): Auth token to include in concnetions to OPAL server. Defaults to CLIENT_TOKEN.
-            pubsub_url (str, optional): URL for Pub/Sub updates for data. Defaults to DATA_UPDATES_WS_URL.
+            token (str, optional): Auth token to include in connections to OPAL server. Defaults to CLIENT_TOKEN.
+            pubsub_url (str, optional): URL for Pub/Sub updates for data. Defaults to OPAL_SERVER_PUBSUB_URL.
             data_sources_config_url (str, optional): URL to retrive base data configuration. Defaults to DEFAULT_DATA_SOURCES_CONFIG_URL.
             fetch_on_connect (bool, optional): Should the update fetch basic data immediately upon connection/reconnection. Defaults to True.
             data_topics (List[str], optional): Topics of data to fetch and subscribe to. Defaults to DATA_TOPICS.
@@ -163,7 +163,8 @@ class DataUpdater:
         Pub/Sub on_connect callback
         On connection to backend, whether its the first connection,
         or reconnecting after downtime, refetch the state opa needs.
-        As long as the connection is alive we know we are in sync with the state - if the connection is lost we assume we need to start from scratch
+        As long as the connection is alive we know we are in sync with the server,
+        when the connection is lost we assume we need to start from scratch.
         """
         logger.info("Connected to server")
         if self._fetch_on_connect:
@@ -180,7 +181,8 @@ class DataUpdater:
 
     async def _subscriber(self):
         """
-        Coroutine meant to be spunoff with create_task to listen in the background for data events and pass them to the data_fetcher
+        Coroutine meant to be spunoff with create_task to listen in
+        the background for data events and pass them to the data_fetcher
         """
         logger.info("Subscribing to topics", topics=self._data_topics)
         self._client = PubSubClient(
@@ -195,15 +197,21 @@ class DataUpdater:
         async with self._client:
             await self._client.wait_until_done()
 
-
     async def stop(self):
-        logger.info("Stopping data updater")
         # disconnect from Pub/Sub
         await self._client.disconnect()
         # stop subscriber task
-        self._subscriber_task.cancel()
+        if self._subscriber_task is not None:
+            logger.info("Stopping data updater")
+            self._subscriber_task.cancel()
+            await self._subscriber_task
+            self._subscriber_task = None
         # stop the data fetcher
         await self._data_fetcher.stop()
+
+    async def wait_until_done(self):
+        if self._subscriber_task is not None:
+            await self._subscriber_task
 
 
 
