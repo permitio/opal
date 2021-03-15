@@ -7,8 +7,6 @@ from opal.common.git.repo_cloner import RepoCloner
 from opal.common.git.exceptions import GitFailed
 from opal.common.logger import get_logger
 
-logger = get_logger("opal.git.watcher")
-
 
 OnNewCommitsCallback = Callable[[Commit, Commit], Coroutine]
 OnGitFailureCallback = Callable[[Exception], Coroutine]
@@ -40,6 +38,7 @@ class RepoWatcher:
         self._on_new_commits_callbacks: List[OnGitFailureCallback] = []
         self._polling_interval = polling_interval
         self._polling_task = None
+        self._logger = get_logger("opal.git.watcher")
 
     def on_new_commits(self, callback: OnNewCommitsCallback):
         """
@@ -76,10 +75,10 @@ class RepoWatcher:
             self._tracker.pull()
 
         if (self._polling_interval > 0):
-            logger.info("Launching polling task", interval=self._polling_interval)
+            self._logger.info("Launching polling task", interval=self._polling_interval)
             self._start_polling_task()
         else:
-            logger.info("Polling task is off")
+            self._logger.info("Polling task is off")
 
     async def stop(self):
         return await self._stop_polling_task()
@@ -90,12 +89,12 @@ class RepoWatcher:
         if after the pull the watcher detects new commits, it will call the
         callbacks registered with on_new_commits().
         """
-        logger.info("Pulling changes from remote", remote=self._tracker.tracked_remote.name)
+        self._logger.info("Pulling changes from remote", remote=self._tracker.tracked_remote.name)
         has_changes, prev, latest = self._tracker.pull()
         if not has_changes:
-            logger.info("No new commits", new_head=latest.hexsha)
+            self._logger.info("No new commits", new_head=latest.hexsha)
         else:
-            logger.info("Found new commits", prev_head=prev.hexsha, new_head=latest.hexsha)
+            self._logger.info("Found new commits", prev_head=prev.hexsha, new_head=latest.hexsha)
             await self._on_new_commits(old=prev, new=latest)
 
     async def _do_polling(self):

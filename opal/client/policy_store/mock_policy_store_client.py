@@ -1,5 +1,5 @@
 import asyncio
-from typing import Any, Dict
+from typing import Any, Dict, Optional, List
 from opal.client.enforcer.schemas import AuthorizationQuery
 from opal.common.schemas.policy import PolicyBundle
 
@@ -18,7 +18,7 @@ class MockPolicyStoreClient(BasePolicyStoreClient):
     @property
     def has_data_event(self):
         if self._has_data_event is None:
-            self._has_data_event = asyncio.Event() 
+            self._has_data_event = asyncio.Event()
         return self._has_data_event
 
     async def is_allowed(self, query: AuthorizationQuery):
@@ -27,18 +27,36 @@ class MockPolicyStoreClient(BasePolicyStoreClient):
     async def set_policy(self, policy_id: str, policy_code: str):
         pass
 
+    async def get_policy(self, policy_id: str) -> Optional[str]:
+        pass
+
+    async def delete_policy(self, policy_id: str):
+        pass
+
+    async def get_policy_module_ids(self) -> List[str]:
+        pass
+
     async def set_policies(self, bundle: PolicyBundle):
         pass
 
-    async def set_policy_data(self, policy_data: Dict[str, Any], path=""):
+    async def get_policy_version(self) -> Optional[str]:
+        return None
+
+    async def set_policy_data(self, policy_data: Dict[str, Any], path: str = ""):
         self._data[path] = policy_data
         self.has_data_event.set()
-        
+
     async def get_data(self, path: str=None):
-        if path is None:
+        if path is None or path == "":
             return self._data
-        else: 
+        else:
             return self._data[path]
+
+    async def delete_policy_data(self, path: str = ""):
+        if not path:
+            self._data = {}
+        else:
+            del self._data[path]
 
     async def wait_for_data(self):
         """

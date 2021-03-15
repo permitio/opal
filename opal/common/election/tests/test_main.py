@@ -9,8 +9,8 @@ from fastapi.websockets import WebSocket
 from fastapi_websocket_pubsub.pub_sub_server import PubSubEndpoint
 
 from opal.common.election.base import LeaderElectionBase
-from opal.common.election.uvicorn_worker_pid import UvicornWorkerPidLeaderElection
-from opal.common.election.pubsub_bully import PubSubBullyLeaderElection
+from opal.common.election.worker_pid import UvicornWorkerPidLeaderElection
+from opal.common.election.pubsub import PubSubBullyLeaderElection
 
 # Configurable
 PORT = int(os.environ.get("PORT") or "9110")

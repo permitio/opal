@@ -1,21 +1,21 @@
 from typing import Coroutine, Any, Protocol
-
 from fastapi_websocket_pubsub import PubSubClient, Topic, TopicList
 
-from opal.common.utils import AsyncioEventLoopThread
 from opal.common.logger import get_logger
 
 
-logger = get_logger("opal.topic-listener")
+logger = get_logger("opal.common.topics.listener")
 
 
 class TopicCallback(Protocol):
     def __call__(self, topic: Topic, data: Any) -> Coroutine: ...
 
-class TopicListenerThread:
+class TopicListener:
     """
-    Runs a PubSubClient in a separate thread, listens to a predefined
-    topic list and runs a callback when messages arrive for that topic.
+    A simple wrapper around a PubSubClient that listens on a topic
+    and runs a callback when messages arrive for that topic.
+    Provides start() and stop() shortcuts that helps treat this client
+    as a separate "process" or task that runs in the background.
     """
     def __init__(
         self,
@@ -28,40 +28,43 @@ class TopicListenerThread:
 
         Args:
             client (PubSubClient): a configured not-yet-started pub sub client
-                we want to start in the listener thread
             server_uri (str): the URI of the pub sub server we subscribe to
             topics (TopicList): the topic(s) we subscribe to
             callback (TopicCallback): the (async) callback to run when a message
                 arrive on one of the subsribed topics
         """
-        self._thread = AsyncioEventLoopThread(name="TopicListenerThread")
         self._client = client
         self._server_uri = server_uri
         self._topics = topics
         self._callback = callback
 
+    async def __aenter__(self):
+        await self.start()
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb):
+        await self.stop()
+
     def start(self):
         """
-        starts the listener thread and run a pubsub client in the thread's event loop.
+        starts the pub/sub client and subscribes to the predefined topic.
         the client will attempt to connect to the pubsub server until successful.
         """
         logger.info("started topic listener", topics=self._topics)
-        self._thread.create_task(self._run_client())
-        self._thread.start()
+        for topic in self._topics:
+            self._client.subscribe(topic, self._callback)
+        self._client.start_client(f"{self._server_uri}")
 
     async def stop(self):
         """
-        stops the pubsub client, and then stops the thread.
+        stops the pubsub client
         """
         await self._client.disconnect()
-        self._thread.stop()
         logger.info("stopped topic listener", topics=self._topics)
 
-    async def _run_client(self):
+    async def wait_until_done(self):
         """
-        starts the client in the thread's event loop
+        When the listener is a used as a context manager, this method waits until
+        the client is done (i.e: terminated) to prevent exiting the context.
         """
-        for topic in self._topics:
-            self._client.subscribe(topic, self._callback)
-        self._client.start_client(f"{self._server_uri}", loop=self._thread.loop)
-
+        return await self._client.wait_until_done()

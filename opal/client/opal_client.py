@@ -1,25 +1,24 @@
 from logging import disable
-from opal import common
-from opal.client.policy_store.base_policy_store_client import BasePolicyStoreClient
-from opal.client.enforcer.api import init_enforcer_api_router
-from opal.client.enforcer.runner import OpaRunner
-from opal.client.data.updater import DataUpdater
-from opal.client.policy.updater import PolicyUpdater
-from opal.client.server.middleware import configure_middleware
-from opal.client.local.api import init_local_cache_api_router
-from opal.client.data.api import router as data_router
-from opal.client.policy.api import init_policy_router
-from opal.client.server.api import router as proxy_router
-from opal.client.policy_store.policy_store_client_factory import PolicyStoreClientFactory
-from opal.client.config import OPENAPI_TAGS_METADATA, PolicyStoreTypes, POLICY_STORE_TYPE
 import asyncio
-from opal.client import policy_store
 from fastapi import FastAPI
+
+from opal import common
+
+from opal.client.config import OPENAPI_TAGS_METADATA, PolicyStoreTypes, POLICY_STORE_TYPE
+from opal.client.data.api import router as data_router
+from opal.client.data.updater import DataUpdater
+from opal.client.enforcer.api import init_enforcer_api_router
+from opal.client.local.api import init_local_cache_api_router
+from opal.client.policy_store.base_policy_store_client import BasePolicyStoreClient
+from opal.client.policy_store.policy_store_client_factory import PolicyStoreClientFactory
+from opal.client.opa.runner import OpaRunner
+from opal.client.policy.api import init_policy_router
+from opal.client.policy.updater import PolicyUpdater
+from opal.client.server.api import router as proxy_router
+from opal.client.server.middleware import configure_middleware
 
 
 class OpalClient:
-   
-
     def __init__(self,
                  policy_store_type:PolicyStoreTypes=POLICY_STORE_TYPE,
                  policy_store:BasePolicyStoreClient=None,
@@ -39,9 +38,9 @@ class OpalClient:
         self.policy_store_type:PolicyStoreTypes = policy_store_type
         self.policy_store:BasePolicyStoreClient = policy_store or PolicyStoreClientFactory.create(policy_store_type)
         # Init policy updater
-        self.policy_updater = policy_updater if policy_updater is not None else PolicyUpdater()
+        self.policy_updater = policy_updater if policy_updater is not None else PolicyUpdater(policy_store=self.policy_store)
         # Data updating service
-        self.data_updater = data_updater if data_updater is not None else DataUpdater(policy_store=policy_store)
+        self.data_updater = data_updater if data_updater is not None else DataUpdater(policy_store=self.policy_store)
 
         # Internal services
         # Policy store
@@ -68,7 +67,7 @@ class OpalClient:
         # Init api routes
         enforcer_router = init_enforcer_api_router(policy_store=policy_store)
         local_router = init_local_cache_api_router(policy_store=policy_store)
-        policy_router = init_policy_router()
+        policy_router = init_policy_router(policy_store=policy_store)
 
         # include the api routes
         app.include_router(enforcer_router, tags=["Authorization API"])
