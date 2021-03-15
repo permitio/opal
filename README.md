@@ -1,10 +1,20 @@
 
- <div style="text-align:center">
+<p align="center">
  <img src="https://i.ibb.co/BGVBmMK/opal.png" height=256 alt="opal" border="0" />
+</p>
+<p style="font-size:xx-large" align="center">
+⚡OPAL⚡
+</p>
 
-# ⚡OPAL⚡
-# Open Policy Administration Layer 
-</div>
+#
+
+<p style="font-size:x-large" align="center">
+Open Policy Administration Layer 
+</p>
+
+# 
+
+
 
 OPAL adds real-time updates to your fleet of policy agents,
 enabling policy enforcement to meet the state-freshness requirements of the application layer.
