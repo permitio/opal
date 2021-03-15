@@ -82,12 +82,14 @@ class OpalClient:
         def healthcheck():
             return {"status": "ok"}
 
+        async def launch_opa_in_background():
+            if self.opa_runner:
+                async with self.opa_runner:
+                    await self.opa_runner.wait_until_done()
+
         @app.on_event("startup")
         async def startup_event():
-            if self.opa_runner:
-                self.opa_runner.start()
-                # wait for opa
-                await asyncio.sleep(1)
+            asyncio.create_task(launch_opa_in_background())
             if self.policy_updater:
                 self.policy_updater.start()
             if self.data_updater:
@@ -95,11 +97,11 @@ class OpalClient:
 
         @app.on_event("shutdown")
         async def shutdown_event():
+            if self.opa_runner:
+                await self.opa_runner.stop()
             if self.data_updater:
                 await self.data_updater.stop()
             if self.policy_updater:
                 await self.policy_updater.stop()
-            if self.opa_runner:
-                self.opa_runner.stop()
 
         return app
