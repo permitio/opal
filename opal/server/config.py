@@ -13,7 +13,7 @@ POLICY_REPO_URL = confi.str("POLICY_REPO_URL", None)
 POLICY_REPO_CLONE_PATH = confi.str("POLICY_REPO_CLONE_PATH", "regoclone")
 POLICY_REPO_MAIN_BRANCH = confi.str("POLICY_REPO_MAIN_BRANCH", "master")
 POLICY_REPO_MAIN_REMOTE = confi.str("POLICY_REPO_MAIN_REMOTE", "origin")
-LEADER_LOCK_FILE_PATH = confi.str("LEADER_LOCK_FILE_PATH", "/tmp/opalfifo")
+LEADER_LOCK_FILE_PATH = confi.str("LEADER_LOCK_FILE_PATH", "/tmp/opal_server_leader.lock")
 
 # Data updates
 ALL_DATA_TOPIC = confi.str("ALL_DATA_TOPIC", "policy_data", description="Top level topic for data")

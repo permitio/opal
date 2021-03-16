@@ -17,14 +17,6 @@ class NamedLock:
         self._lock_file: str = path
         self._lock_file_fd = None
         self._attempt_interval = attempt_interval
-        # self._create_lock_pipe()
-
-    # def _create_lock_pipe(self):
-    #     try:
-    #         os.mkfifo(self._lock_file)
-    #     except OSError as e:
-    #         if e.errno != errno.EEXIST:
-    #             raise
 
     async def __aenter__(self):
         """

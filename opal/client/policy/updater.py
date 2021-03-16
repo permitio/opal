@@ -50,7 +50,7 @@ async def update_policy(policy_store: BasePolicyStoreClient, directories: List[s
 class PolicyUpdater:
     """
     Keeps policy-stores (e.g. OPA) up to date with relevant policy code
-    (i.e: rego) and static data (i.e: data.json files like in OPA bundles).
+    (e.g: rego) and static data (e.g: data.json files like in OPA bundles).
 
     Uses Pub/Sub to subscribe to specific directories in the policy code
     repository (i.e: git), and fetches bundles containing updated policy code.
@@ -62,12 +62,15 @@ class PolicyUpdater:
         subscription_directories: List[str] = POLICY_SUBSCRIPTION_DIRS,
         policy_store: BasePolicyStoreClient = DEFAULT_POLICY_STORE,
     ):
-        """[summary]
+        """inits the policy updater.
 
         Args:
             token (str, optional): Auth token to include in connections to OPAL server. Defaults to CLIENT_TOKEN.
             pubsub_url (str, optional): URL for Pub/Sub updates for policy. Defaults to OPAL_SERVER_PUBSUB_URL.
-            subscription_directories (List[str], optional): directories in the policy source repo to subscribe to. Defaults to POLICY_SUBSCRIPTION_DIRS.
+            subscription_directories (List[str], optional): directories in the policy source repo to subscribe to.
+                Defaults to POLICY_SUBSCRIPTION_DIRS. every time the directory is updated by a commit we will receive
+                a message on its respective topic. we dedups directories with ancestral relation, and will only
+                receive one message for each updated file.
             policy_store (BasePolicyStoreClient, optional): Policy store client to use to store policy code. Defaults to DEFAULT_POLICY_STORE.
         """
         # The policy store we'll save policy modules into (i.e: OPA)
@@ -80,11 +83,6 @@ class PolicyUpdater:
         else:
             self._extra_headers = [get_authorization_header(self._token)]
         # Pub/Sub topics we subscribe to for policy updates
-        # each topic represent a directory in the policy source repository
-        # every time the directory is updated by a commit we will receive a
-        # message on its topic. since pubsub_topics_from_directories() dedups
-        # directories with ancestral relation, we will only receive one message
-        # for each updated file.
         self._topics = pubsub_topics_from_directories(subscription_directories)
         # The pub/sub client for data updates
         self._client = None
