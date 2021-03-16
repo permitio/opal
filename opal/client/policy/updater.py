@@ -4,14 +4,19 @@ from typing import List, Optional
 from fastapi_websocket_rpc.rpc_channel import RpcChannel
 from fastapi_websocket_pubsub import PubSubClient
 
-from opal.common.utils import AsyncioEventLoopThread, get_authorization_header
+from opal.common.utils import get_authorization_header
 from opal.common.schemas.policy import PolicyBundle
+from opal.common.topics.utils import (
+    pubsub_topics_from_directories,
+    POLICY_PREFIX,
+    remove_prefix
+)
 from opal.client.logger import logger
 from opal.client.config import POLICY_SUBSCRIPTION_DIRS, OPAL_SERVER_PUBSUB_URL, CLIENT_TOKEN, KEEP_ALIVE_INTERVAL
 from opal.client.policy.fetcher import policy_fetcher
 from opal.client.policy_store.base_policy_store_client import BasePolicyStoreClient
 from opal.client.policy_store.policy_store_client_factory import DEFAULT_POLICY_STORE
-from opal.client.policy.topics import pubsub_topics_from_directories, all_policy_directories, POLICY_PREFIX, remove_prefix
+from opal.client.policy.topics import default_subscribed_policy_directories
 
 
 async def update_policy(policy_store: BasePolicyStoreClient, directories: List[str] = None):
@@ -19,7 +24,7 @@ async def update_policy(policy_store: BasePolicyStoreClient, directories: List[s
     fetches policy (rego) from backend and updates OPA
     """
 
-    directories = directories if directories is not None else all_policy_directories()
+    directories = directories if directories is not None else default_subscribed_policy_directories()
     stored_policy_hash = await policy_store.get_policy_version()
     logger.info("Refetching policy code", base_hash=stored_policy_hash)
     bundle: Optional[PolicyBundle] = await policy_fetcher.fetch_policy_bundle(directories, base_hash=stored_policy_hash)
@@ -104,7 +109,7 @@ class PolicyUpdater:
             directories = [remove_prefix(topic, prefix=POLICY_PREFIX)]
         else:
             logger.warning("invalid policy topic", topic=topic)
-            directories = all_policy_directories()
+            directories = default_subscribed_policy_directories()
 
         await update_policy(self._policy_store, directories)
 

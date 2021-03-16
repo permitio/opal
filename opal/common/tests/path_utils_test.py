@@ -138,3 +138,16 @@ def test_filter_children_paths_of_directories():
     # no parent match sources
     paths = PathUtils.filter_children_paths_of_directories(sources, set(to_paths(['not/in/repo'])))
     assert len(paths) == 0
+
+def test_non_intersecting_directories():
+    # assert PathUtils.is_child_of_directories(Path('/hello'), set(to_paths(['/']))) == True
+
+    # relative paths are all displaced by '.'
+    assert PathUtils.non_intersecting_directories(to_paths(['.', 'hello', 'world'])) == set(to_paths(['.']))
+
+    # absolute paths are all displaced by '/'
+    assert PathUtils.non_intersecting_directories(to_paths(['/', '/hello', '/hello/world'])) == set(to_paths(['/']))
+
+    # parents displace children
+    assert PathUtils.non_intersecting_directories(
+        to_paths(['/hello', '/hello/world', 'world', 'world/of/tomorrow'])) == set(to_paths(['/hello', 'world']))
