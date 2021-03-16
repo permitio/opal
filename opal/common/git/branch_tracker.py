@@ -105,7 +105,7 @@ class BranchTracker:
             return getattr(self._repo.heads, self._branch_name)
         except AttributeError as e:
             branches = [{'name': head.name, 'path': head.path} for head in self._repo.heads]
-            logger.critical("did not find main branch", error=e, branches_found=branches)
+            logger.exception("did not find main branch: {error}, instead found: {branches_found}", error=e, branches_found=branches)
             raise GitFailed(e)
 
     @property
@@ -117,6 +117,6 @@ class BranchTracker:
         try:
             return getattr(self._repo.remotes, self._remote_name)
         except AttributeError as e:
-            branches = [{'name': head.name, 'path': head.path} for head in self._repo.heads]
-            logger.critical("did not find main branch", error=e, branches_found=branches)
+            remotes = [remote.name for remote in self._repo.remotes]
+            logger.exception("did not find main branch: {error}, instead found: {remotes_found}", error=e, remotes_found=remotes)
             raise GitFailed(e)

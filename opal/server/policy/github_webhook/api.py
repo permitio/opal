@@ -20,7 +20,7 @@ def init_git_webhook_router(pubsub_endpoint):
         event = request.headers.get('X-GitHub-Event', 'ping')
 
         if POLICY_REPO_URL is not None and POLICY_REPO_URL in urls:
-            logger.info("triggered webhook", repo=urls[0], hook_event=event)
+            logger.info("triggered webhook on repo: {repo}", repo=urls[0], hook_event=event)
             if event == 'push':
                 # notifies the webhook listener via the pubsub broadcaster
                 await pubsub_endpoint.publish("webhook")

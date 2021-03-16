@@ -10,8 +10,8 @@ class TenantAwareRpcEventClientMethods(RpcEventClientMethods):
     TOPIC_SEPARATOR = "::"
 
     async def notify(self, subscription=None, data=None):
-        logger.info("Received notification of event", subscription=subscription, data=data)
         topic = subscription["topic"]
+        logger.info("Received notification of event: {topic}", topic=topic, subscription=subscription, data=data)
         if self.TOPIC_SEPARATOR in topic:
             topic_parts = topic.split(self.TOPIC_SEPARATOR)
             if len(topic_parts) > 1:

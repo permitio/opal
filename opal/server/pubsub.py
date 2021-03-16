@@ -27,7 +27,7 @@ class PubSub:
             as you can see, this endpoint is protected by an HTTP Authorization Bearer token.
             """
             if not logged_in:
-                logger.info("Closing connection", remote_address=websocket.client, reason="Authentication failed")
+                logger.info("Closing connection, remote address: {remote_address}", remote_address=websocket.client, reason="Authentication failed")
                 await websocket.close()
                 return
             # Init PubSub main-loop with or without broadcasting

@@ -88,7 +88,7 @@ class OpaRunner:
         ])
 
         return_code = await self._process.wait()
-        logger.info("OPA exited", return_code=return_code)
+        logger.info("OPA exited with return code: {return_code}", return_code=return_code)
         if return_code > 0: # exception in running opa
             raise Exception(f"OPA exited with return code: {return_code}")
         return return_code

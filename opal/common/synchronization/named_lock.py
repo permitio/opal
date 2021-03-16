@@ -40,11 +40,11 @@ class NamedLock:
         an optional timeout can be provided to give up before acquiring the lock,
         in case we reach timeout, function throws TimeoutError.
         """
-        logger.info("trying to acquire lock", my_pid=os.getpid(), lock=self._lock_file)
+        logger.debug("[{pid}] trying to acquire lock (lock={lock})", pid=os.getpid(), lock=self._lock_file)
         start_time = time.time()
         while True:
             if self._acquire():
-                logger.info("lock acquired!", my_pid=os.getpid(), lock=self._lock_file)
+                logger.debug("[{pid}] lock acquired! (lock={lock})", pid=os.getpid(), lock=self._lock_file)
                 break
             await asyncio.sleep(self._attempt_interval)
             # potentially give up due to timeout (if timeout is set)
@@ -55,7 +55,7 @@ class NamedLock:
         """
         releases the lock
         """
-        logger.info("releasing lock", my_pid=os.getpid(), lock=self._lock_file)
+        logger.debug("[{pid}] releasing lock (lock={lock})", pid=os.getpid(), lock=self._lock_file)
         fd = self._lock_file_fd
         self._lock_file_fd = None
         fcntl.flock(fd, fcntl.LOCK_UN)

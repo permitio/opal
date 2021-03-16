@@ -25,7 +25,7 @@ async def publish_all_directories_in_repo(
         filter = partial(has_extension, extensions=file_extensions)
         all_paths = list(viewer.files(filter))
         directories = PathUtils.intermediate_directories(all_paths)
-        logger.info("Publishing policy update", directories=[str(d) for d in directories])
+        logger.info("Publishing policy update, directories: {directories}", directories=[str(d) for d in directories])
         topics = policy_topics(directories)
         publisher.publish(topics=topics, data=new_commit.hexsha)
 
@@ -55,13 +55,13 @@ async def publish_changed_directories(
             return path.suffix in file_extensions
         all_paths = list(viewer.affected_paths(has_extension))
         if not all_paths:
-            logger.warn(
-                "new commits detected but no files are affected",
+            logger.warning(
+                f"new commits detected but no tracked files were affected: '{old_commit.hexsha}' -> '{new_commit.hexsha}'",
                 old_commit=old_commit,
                 new_commit=new_commit
             )
             return
         directories = PathUtils.intermediate_directories(all_paths)
-        logger.info("Publishing policy update", directories=[str(d) for d in directories])
+        logger.info("Publishing policy update, directories: {directories}", directories=[str(d) for d in directories])
         topics = policy_topics(directories)
         publisher.publish(topics=topics, data=new_commit.hexsha)

@@ -32,9 +32,9 @@ class PathUtils:
     @staticmethod
     def non_intersecting_directories(paths: List[Path]) -> Set[Path]:
         """
-        gets a list of paths (directories), and returns a set of directories that is
-        *non-intersecting*, meaning no directory in the set is a parent of another directory
-        in the set (i.e: parent directories "swallow" their subdirectories).
+        gets a list of paths (directories), and returns a set of directories that are non-intersecting,
+        meaning no directory in the set is a parent of another directory in the set (i.e: parent
+        directories "swallow" their subdirectories).
         """
         output_paths = set()
         for candidate in paths:

@@ -1,3 +1,4 @@
+import os
 import asyncio
 from functools import partial
 from typing import Optional
@@ -113,6 +114,7 @@ class OpalServer:
                     if init_git_watcher:
                         self.leadership_lock = NamedLock(LEADER_LOCK_FILE_PATH)
                         async with self.leadership_lock:
+                            logger.info("leadership lock acquired, leader pid: {pid}", pid=os.getpid())
                             self.watcher = setup_watcher_task(publisher)
                             self.webhook_listener = setup_webhook_listener(partial(trigger_repo_watcher_pull, self.watcher))
                             async with self.webhook_listener:

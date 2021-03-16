@@ -15,7 +15,7 @@ def policy_bundle_or_none(bundle) -> Optional[PolicyBundle]:
     try:
         return PolicyBundle(**bundle)
     except ValidationError as e:
-        logger.warn("server returned invalid bundle", bundle=bundle, err=e)
+        logger.warning("server returned invalid bundle: {err}", bundle=bundle, err=e)
         return None
 
 
@@ -44,12 +44,12 @@ class PolicyFetcher:
                     params=params
                 ) as response:
                     if response.status == status.HTTP_404_NOT_FOUND:
-                        logger.warn("requested paths not found", paths=directories)
+                        logger.warning("requested paths not found: {paths}", paths=directories)
                         return None
                     bundle = await response.json()
                     return policy_bundle_or_none(bundle)
             except aiohttp.ClientError as e:
-                logger.warn("server connection error", err=e)
+                logger.warning("server connection error: {err}", err=e)
                 raise
 
 

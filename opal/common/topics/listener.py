@@ -48,7 +48,7 @@ class TopicListener:
         starts the pub/sub client and subscribes to the predefined topic.
         the client will attempt to connect to the pubsub server until successful.
         """
-        logger.info("started topic listener", topics=self._topics)
+        logger.info("started topic listener, topics={topics}", topics=self._topics)
         for topic in self._topics:
             self._client.subscribe(topic, self._callback)
         self._client.start_client(f"{self._server_uri}")

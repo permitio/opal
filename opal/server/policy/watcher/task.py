@@ -71,5 +71,5 @@ class RepoWatcherTask:
         """
         called when the watcher fails, and stops all tasks gracefully
         """
-        logger.error("watcher failed with exception", watcher_exception=exc)
+        logger.error("watcher failed with exception: {err}", err=exc)
         await self.stop()

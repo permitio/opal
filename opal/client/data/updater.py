@@ -111,7 +111,7 @@ class DataUpdater:
             reason = data.get("reason", "")
         else:
             reason = "Periodic update"
-        logger.info("Updating policy data", reason=reason)
+        logger.info("Updating policy data, reason: {reason}", reason=reason)
         update = DataUpdate.parse_obj(data)
         self.trigger_data_update(update)
 
@@ -129,7 +129,7 @@ class DataUpdater:
         """
         if url is None:
             url = self._data_sources_config_url
-        logger.info(f"Getting data-sources configuration", source=url)
+        logger.info("Getting data-sources configuration from '{source}'", source=url)
         try:
             async with ClientSession(headers=self._extra_headers) as session:
                 res = await session.get(url)
@@ -147,7 +147,7 @@ class DataUpdater:
             config_url (str, optional): URL to retrive data sources config from. Defaults to None ( self._data_sources_config_url).
             data_fetch_reason (str, optional): Reason to log for the update operation. Defaults to "Initial load".
         """
-        logger.info(f"Performing data configuration", reason={data_fetch_reason})
+        logger.info("Performing data configuration, reason: {reason}", reason={data_fetch_reason})
         sources_config = await self.get_policy_data_config(url=config_url)
         # translate config to a data update
         entries = sources_config.entries
@@ -181,7 +181,7 @@ class DataUpdater:
         Coroutine meant to be spunoff with create_task to listen in
         the background for data events and pass them to the data_fetcher
         """
-        logger.info("Subscribing to topics", topics=self._data_topics)
+        logger.info("Subscribing to topics: {topics}", topics=self._data_topics)
         self._client = PubSubClient(
             self._data_topics,
             self._update_policy_data_callback,

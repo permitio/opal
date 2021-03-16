@@ -60,7 +60,7 @@ class OpaClient(BasePolicyStoreClient):
                     data=json.dumps(opa_input)) as opa_response:
                     return await proxy_response(opa_response)
         except aiohttp.ClientError as e:
-            logger.warn("Opa connection error", err=e)
+            logger.warning("Opa connection error: {err}", err=e)
             raise
 
     @fail_silently()
@@ -76,7 +76,7 @@ class OpaClient(BasePolicyStoreClient):
                 ) as opa_response:
                     return await proxy_response(opa_response)
             except aiohttp.ClientError as e:
-                logger.warn("Opa connection error", err=e)
+                logger.warning("Opa connection error: {err}", err=e)
                 raise
 
     @fail_silently()
@@ -90,7 +90,7 @@ class OpaClient(BasePolicyStoreClient):
                     result = await opa_response.json()
                     return result.get("result", {}).get("raw", None)
             except aiohttp.ClientError as e:
-                logger.warn("Opa connection error", err=e)
+                logger.warning("Opa connection error: {err}", err=e)
                 raise
 
     @fail_silently()
@@ -103,7 +103,7 @@ class OpaClient(BasePolicyStoreClient):
                 ) as opa_response:
                     return await proxy_response(opa_response)
             except aiohttp.ClientError as e:
-                logger.warn("Opa connection error", err=e)
+                logger.warning("Opa connection error: {err}", err=e)
                 raise
 
     @fail_silently()
@@ -117,7 +117,7 @@ class OpaClient(BasePolicyStoreClient):
                     result = await opa_response.json()
                     return OpaClient._extract_module_ids_from_policies_json(result)
             except aiohttp.ClientError as e:
-                logger.warn("Opa connection error", err=e)
+                logger.warning("Opa connection error: {err}", err=e)
                 raise
 
     @staticmethod
@@ -196,8 +196,8 @@ class OpaClient(BasePolicyStoreClient):
                 path=module_path,
             )
         except json.JSONDecodeError as e:
-            logger.warn(
-                "bundle contains non-json data module",
+            logger.warning(
+                "bundle contains non-json data module: {module_path}",
                 err=e,
                 module_path=module_path,
                 bundle_hash=hash
@@ -215,7 +215,7 @@ class OpaClient(BasePolicyStoreClient):
                 ) as opa_response:
                     return await proxy_response(opa_response)
             except aiohttp.ClientError as e:
-                logger.warn("Opa connection error", err=e)
+                logger.warning("Opa connection error: {err}", err=e)
                 raise
 
     @fail_silently()
@@ -231,7 +231,7 @@ class OpaClient(BasePolicyStoreClient):
                 ) as opa_response:
                     return await proxy_response(opa_response)
             except aiohttp.ClientError as e:
-                logger.warn("Opa connection error", err=e)
+                logger.warning("Opa connection error: {err}", err=e)
                 raise
 
     async def rehydrate_opa_from_process_cache(self):
@@ -259,6 +259,6 @@ class OpaClient(BasePolicyStoreClient):
                 async with session.get(f"{self._opa_url}/data/{path}") as opa_response:
                     return await opa_response.json()
         except aiohttp.ClientError as e:
-            logger.warn("Opa connection error", err=e)
+            logger.warning("Opa connection error: {err}", err=e)
             raise
 

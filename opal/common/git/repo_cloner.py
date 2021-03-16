@@ -83,7 +83,7 @@ class RepoCloner:
             - does not found a cloned repo locally and clones from remote url
             - finds a cloned repo locally and does not clone from remote.
         """
-        logger.info("Cloning repo", url=self.url, to_path=self.path)
+        logger.info("Cloning repo from '{url}' to '{to_path}'", url=self.url, to_path=self.path)
         git_path = Path(self.path) / Path(".git")
         if git_path.exists():
             return self._attempt_init_from_local_repo()
@@ -94,11 +94,11 @@ class RepoCloner:
         """
         inits the repo from local .git or throws GitFailed
         """
-        logger.info("Repo already exists", repo_path=self.path)
+        logger.info("Repo already exists in '{repo_path}'", repo_path=self.path)
         try:
             repo = Repo(self.path)
         except Exception as e:
-            logger.exception("cannot init local repo", error=e)
+            logger.exception("cannot init local repo: {error}", error=e)
             raise GitFailed(e)
 
         return LocalClone(repo)
@@ -112,10 +112,10 @@ class RepoCloner:
         try:
             repo = _clone_with_retries()
         except (GitError, GitCommandError) as e:
-            logger.exception("cannot clone policy repo", error=e)
+            logger.exception("cannot clone policy repo: {error}", error=e)
             raise GitFailed(e)
         except RetryError as e:
-            logger.exception("cannot clone policy repo", error=e)
+            logger.exception("cannot clone policy repo: {error}", error=e)
             raise GitFailed(e)
         else:
             logger.info("Clone succeeded", repo_path=self.path)
