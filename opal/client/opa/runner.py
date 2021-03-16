@@ -117,7 +117,10 @@ class OpaRunner:
     def on_opa_restart(self, callbacks: List[AsyncCallback]):
         self._on_opa_restart_callbacks.extend(callbacks)
 
-    def _run_start_callbacks(self):
+    async def _run_start_callbacks(self):
+        # TODO: make policy store expose the /health api of OPA
+        await asyncio.sleep(1)
+
         if self._process_was_never_up_before:
             # no need to rehydrate the first time
             self._process_was_never_up_before = False
