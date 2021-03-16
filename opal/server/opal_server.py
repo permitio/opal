@@ -33,6 +33,37 @@ class OpalServer:
                  init_publisher=True,
                  data_sources_config=None,
                  broadcaster_uri=BROADCAST_URI) -> None:
+        """
+        Args:
+            init_git_watcher (bool, optional): whether or not to launch the policy repo watcher.
+            init_publisher (bool, optional): whether or not to launch a publisher pub/sub client.
+                this publisher is used by the server processes to publish data to the client.
+            data_sources_config (DataSourceConfig, optional): base data configuration. the opal
+            broadcaster_uri (str, optional): Which server/medium should the PubSub use for broadcasting.
+                Defaults to BROADCAST_URI.
+
+            The server can run in multiple workers (by gunicorn or uvicorn).
+
+            Every worker of the server launches the following internal components:
+                publisher (PubSubClient): a client that is used to publish updates to the client.
+                data_update_publisher (DataUpdatePublisher): a specialized publisher for data updates.
+
+            Besides the components above, the works are also deciding among themselves
+            on a *leader* worker (the first worker to obtain a file-lock) that also
+            launches the following internal components:
+
+                webhook_listener (TopicListener): *each* worker can receive messages from
+                github on its webhook api route. regardless of the worker receiving the
+                webhook request, the worker will broadcast via the pub/sub to the webhook
+                topic. only the *leader* worker runs the webhook_listener and listens on
+                the webhook topic. upon receiving a message on this topic, the leader will
+                trigger the repo watcher to check for updates.
+
+                watcher (RepoWatcherTask): run by the leader, monitors the policy git repository
+                by polling on it or by being triggered from the webhook_listener. upon being
+                triggered, will detect updates to the policy (new commits) and will update
+                the opal client via pubsub.
+        """
 
         publisher: Optional[TopicPublisher] = None
         data_update_publisher: Optional[DataUpdatePublisher] = None
@@ -70,6 +101,16 @@ class OpalServer:
             return {"status": "ok"}
 
         async def start_background_tasks():
+            """
+            starts the background processes (as asyncio tasks) if such are configured.
+
+            all workers will start these tasks:
+            - publisher: a client that is used to publish updates to the client.
+
+            only the leader worker (first to obtain leadership lock) will start these tasks:
+            - webhook_listener: a client that listens on the webhook topic.
+            - (repo) watcher: monitors the policy git repository for changes.
+            """
             if init_publisher:
                 async with publisher:
                     if init_git_watcher:
