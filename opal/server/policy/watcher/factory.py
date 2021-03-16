@@ -2,7 +2,7 @@ from typing import Any, Optional, List
 from functools import partial
 
 from fastapi_websocket_pubsub import Topic
-from opal.common.logger import get_logger
+from opal.common.logger import logger
 from opal.common.git.repo_watcher import RepoWatcher
 from opal.common.topics.publisher import TopicPublisher
 from opal.server.config import (
@@ -48,6 +48,5 @@ async def trigger_repo_watcher_pull(watcher: RepoWatcherTask, topic: Topic, data
     triggers the policy watcher check for changes.
     will trigger a task on the watcher's thread.
     """
-    logger = get_logger("opal.git.watcher.thread")
     logger.info("webhook listener triggered")
     watcher.trigger()

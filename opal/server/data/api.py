@@ -1,14 +1,9 @@
-from opal.common.schemas.data import DataUpdate
-from opal.server.data.data_update_publisher import DataUpdatePublisher
-from typing import List
-
 from fastapi import APIRouter
-from opal.common.logger import get_logger
-from opal.server.config import DATA_CONFIG_ROUTE, DATA_CONFIG_SOURCES, DataSourceConfig
 
-
-
-logger = get_logger('opal.server.data.api')
+from opal.common.logger import logger
+from opal.common.schemas.data import DataUpdate
+from opal.server.config import DATA_CONFIG_ROUTE, DataSourceConfig
+from opal.server.data.data_update_publisher import DataUpdatePublisher
 
 
 def init_data_updates_router(data_update_publisher: DataUpdatePublisher, data_sources_config: DataSourceConfig):

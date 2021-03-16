@@ -26,19 +26,19 @@ async def update_policy(policy_store: BasePolicyStoreClient, directories: List[s
 
     directories = directories if directories is not None else default_subscribed_policy_directories()
     stored_policy_hash = await policy_store.get_policy_version()
-    logger.info("Refetching policy code", base_hash=stored_policy_hash)
+    logger.info("Refetching policy code, base hash: '{base_hash}'", base_hash=stored_policy_hash)
     bundle: Optional[PolicyBundle] = await policy_fetcher.fetch_policy_bundle(directories, base_hash=stored_policy_hash)
     if bundle:
         if bundle.old_hash is None:
             logger.info(
-                "got policy bundle",
+                "got policy bundle, commit hash: '{commit_hash}'",
                 commit_hash=bundle.hash,
                 manifest=bundle.manifest
             )
         else:
             deleted_files = None if bundle.deleted_files is None else bundle.deleted_files.dict()
             logger.info(
-                "got policy bundle (delta)",
+                "got policy bundle (delta): '{diff_against_hash}' -> '{commit_hash}'",
                 commit_hash=bundle.hash,
                 diff_against_hash=bundle.old_hash,
                 manifest=bundle.manifest,
@@ -102,12 +102,17 @@ class PolicyUpdater:
         will run when we get notifications on the policy topic.
         i.e: when the source repository changes (new commits)
         """
-        logger.info("Received policy update message", topic=topic, new_hash=data)
         if topic.startswith(POLICY_PREFIX):
             directories = [remove_prefix(topic, prefix=POLICY_PREFIX)]
+            logger.info(
+                "Received policy update: affected directories={directories}, new commit hash='{new_hash}'",
+                directories=directories,
+                topic=topic,
+                new_hash=data
+            )
         else:
-            logger.warning("invalid policy topic", topic=topic)
             directories = default_subscribed_policy_directories()
+            logger.warning("Received policy updated (invalid topic): {topic}", topic=topic)
 
         await update_policy(self._policy_store, directories)
 
@@ -160,7 +165,7 @@ class PolicyUpdater:
         update_policy() callback (which will fetch the relevant policy
         bundle from the server and update the policy store).
         """
-        logger.info("Subscribing to topics", topics=self._topics)
+        logger.info("Subscribing to topics: {topics}", topics=self._topics)
         self._client = PubSubClient(
             topics=self._topics,
             callback=self._update_policy_callback,

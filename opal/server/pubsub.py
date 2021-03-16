@@ -1,11 +1,9 @@
 from fastapi import APIRouter, Depends, WebSocket
 
 from fastapi_websocket_pubsub import PubSubEndpoint
-from opal.common.logger import get_logger
+from opal.common.logger import logger
 from opal.server.config import BROADCAST_URI
 from opal.server.deps.authentication import logged_in
-
-logger = get_logger("opal.server.pubsub")
 
 
 class PubSub:
@@ -29,7 +27,7 @@ class PubSub:
             as you can see, this endpoint is protected by an HTTP Authorization Bearer token.
             """
             if not logged_in:
-                logger.info("Closing connection", remote_address=websocket.client, reason="Authentication failed")
+                logger.info("Closing connection, remote address: {remote_address}", remote_address=websocket.client, reason="Authentication failed")
                 await websocket.close()
                 return
             # Init PubSub main-loop with or without broadcasting

@@ -1,7 +1,7 @@
 import asyncio
 from typing import List, Optional, Coroutine
 
-from opal.common.logger import get_logger
+from opal.common.logger import logger
 from opal.common.git.repo_watcher import RepoWatcher
 
 
@@ -11,7 +11,6 @@ class RepoWatcherTask:
     """
     def __init__(self, repo_watcher: RepoWatcher):
         self._watcher = repo_watcher
-        self._logger = get_logger("opal.git.watcher.task")
         self._tasks: List[asyncio.Task] = []
         self._should_stop: Optional[asyncio.Event] = None
 
@@ -26,7 +25,7 @@ class RepoWatcherTask:
         """
         starts the repo watcher and registers a failure callback to terminate gracefully
         """
-        self._logger.info("Launching repo watcher")
+        logger.info("Launching repo watcher")
         self._watcher.on_git_failed(self._fail)
         self._tasks.append(asyncio.create_task(self._watcher.run()))
         self._init_should_stop()
@@ -35,7 +34,7 @@ class RepoWatcherTask:
         """
         stops all repo watcher tasks
         """
-        self._logger.info("Stopping repo watcher")
+        logger.info("Stopping repo watcher")
         await self._watcher.stop()
         for task in self._tasks:
             if not task.done():
@@ -72,5 +71,5 @@ class RepoWatcherTask:
         """
         called when the watcher fails, and stops all tasks gracefully
         """
-        self._logger.error("watcher failed with exception", watcher_exception=exc)
+        logger.error("watcher failed with exception: {err}", err=exc)
         await self.stop()

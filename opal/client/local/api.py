@@ -4,11 +4,10 @@ from fastapi import APIRouter, status, HTTPException
 from starlette.status import HTTP_404_NOT_FOUND
 from opal.client.local.schemas import Message, SyncedRole, SyncedUser
 from opal.client.policy_store import BasePolicyStoreClient, DEFAULT_POLICY_STORE
-from opal.client.logger import get_logger
+from opal.client.logger import logger
 
 
 def init_local_cache_api_router(policy_store:BasePolicyStoreClient=DEFAULT_POLICY_STORE):
-    logger = get_logger("Local API")
     router = APIRouter()
 
     def error_message(msg: str):
