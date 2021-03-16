@@ -39,7 +39,7 @@ class TopicListener:
         self._callback = callback
 
     async def __aenter__(self):
-        await self.start()
+        self.start()
         return self
 
     async def __aexit__(self, exc_type, exc, tb):

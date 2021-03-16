@@ -8,10 +8,7 @@ from opal.common.logger import get_logger
 from opal.common.git.commit_viewer import CommitViewer, has_extension
 from opal.common.git.diff_viewer import DiffViewer
 from opal.common.topics.publisher import TopicPublisher
-
-
-def policy_topics(paths: List[Path]) -> List[str]:
-    return ["policy:{}".format(str(path)) for path in paths]
+from opal.common.topics.utils import policy_topics
 
 
 async def publish_all_directories_in_repo(

@@ -13,19 +13,20 @@ POLICY_REPO_URL = confi.str("POLICY_REPO_URL", None)
 POLICY_REPO_CLONE_PATH = confi.str("POLICY_REPO_CLONE_PATH", "regoclone")
 POLICY_REPO_MAIN_BRANCH = confi.str("POLICY_REPO_MAIN_BRANCH", "master")
 POLICY_REPO_MAIN_REMOTE = confi.str("POLICY_REPO_MAIN_REMOTE", "origin")
+LEADER_LOCK_FILE_PATH = confi.str("LEADER_LOCK_FILE_PATH", "/tmp/opal_server_leader.lock")
 
-# Data updates 
+# Data updates
 ALL_DATA_TOPIC = confi.str("ALL_DATA_TOPIC", "policy_data", description="Top level topic for data")
 ALL_DATA_URL = confi.str("ALL_DATA_URL", "http://localhost:7002/policy-data", description="URL for all data config [If you choose to have it all at one place]")
 DATA_CONFIG_ROUTE = confi.str("DATA_CONFIG_ROUTE", "/data/config", description="URL to fetch the full basic configuration of data")
 DATA_CONFIG_SOURCES = confi.model(
     "DATA_CONFIG_SOURCES",
-    DataSourceConfig, 
+    DataSourceConfig,
     {
         "entries":[
             {"url": ALL_DATA_URL, "topics":[ALL_DATA_TOPIC]}
         ]
-    }, 
+    },
     description="Configuration of data sources by topics"
 )
 
