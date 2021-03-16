@@ -5,7 +5,7 @@ from git.objects import Commit
 from opal.common.git.branch_tracker import BranchTracker
 from opal.common.git.repo_cloner import RepoCloner
 from opal.common.git.exceptions import GitFailed
-from opal.common.logger import get_logger
+from opal.common.logger import logger
 
 
 OnNewCommitsCallback = Callable[[Commit, Commit], Coroutine]
@@ -38,7 +38,6 @@ class RepoWatcher:
         self._on_new_commits_callbacks: List[OnGitFailureCallback] = []
         self._polling_interval = polling_interval
         self._polling_task = None
-        self._logger = get_logger("opal.git.watcher")
 
     def on_new_commits(self, callback: OnNewCommitsCallback):
         """
@@ -75,10 +74,10 @@ class RepoWatcher:
             self._tracker.pull()
 
         if (self._polling_interval > 0):
-            self._logger.info("Launching polling task", interval=self._polling_interval)
+            logger.info("Launching polling task", interval=self._polling_interval)
             self._start_polling_task()
         else:
-            self._logger.info("Polling task is off")
+            logger.info("Polling task is off")
 
     async def stop(self):
         return await self._stop_polling_task()
@@ -89,12 +88,12 @@ class RepoWatcher:
         if after the pull the watcher detects new commits, it will call the
         callbacks registered with on_new_commits().
         """
-        self._logger.info("Pulling changes from remote", remote=self._tracker.tracked_remote.name)
+        logger.info("Pulling changes from remote", remote=self._tracker.tracked_remote.name)
         has_changes, prev, latest = self._tracker.pull()
         if not has_changes:
-            self._logger.info("No new commits", new_head=latest.hexsha)
+            logger.info("No new commits", new_head=latest.hexsha)
         else:
-            self._logger.info("Found new commits", prev_head=prev.hexsha, new_head=latest.hexsha)
+            logger.info("Found new commits", prev_head=prev.hexsha, new_head=latest.hexsha)
             await self._on_new_commits(old=prev, new=latest)
 
     async def _do_polling(self):

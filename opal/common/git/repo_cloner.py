@@ -3,7 +3,7 @@ from pathlib import Path
 from tenacity import retry, wait_fixed, stop_after_attempt, RetryError
 from git import Repo, GitError, GitCommandError
 
-from opal.common.logger import get_logger
+from opal.common.logger import logger
 from opal.common.git.exceptions import GitFailed
 
 
@@ -76,8 +76,6 @@ class RepoCloner:
         self.path = clone_path
         self._retry_config = retry_config if retry_config is not None else self.DEFAULT_RETRY_CONFIG
 
-        self._logger = get_logger("opal.git.cloner")
-
     def clone(self) -> CloneResult:
         """
         initializes a git.Repo and returns the clone result.
@@ -85,7 +83,7 @@ class RepoCloner:
             - does not found a cloned repo locally and clones from remote url
             - finds a cloned repo locally and does not clone from remote.
         """
-        self._logger.info("Cloning repo", url=self.url, to_path=self.path)
+        logger.info("Cloning repo", url=self.url, to_path=self.path)
         git_path = Path(self.path) / Path(".git")
         if git_path.exists():
             return self._attempt_init_from_local_repo()
@@ -96,11 +94,11 @@ class RepoCloner:
         """
         inits the repo from local .git or throws GitFailed
         """
-        self._logger.info("Repo already exists", repo_path=self.path)
+        logger.info("Repo already exists", repo_path=self.path)
         try:
             repo = Repo(self.path)
         except Exception as e:
-            self._logger.exception("cannot init local repo", error=e)
+            logger.exception("cannot init local repo", error=e)
             raise GitFailed(e)
 
         return LocalClone(repo)
@@ -114,11 +112,11 @@ class RepoCloner:
         try:
             repo = _clone_with_retries()
         except (GitError, GitCommandError) as e:
-            self._logger.exception("cannot clone policy repo", error=e)
+            logger.exception("cannot clone policy repo", error=e)
             raise GitFailed(e)
         except RetryError as e:
-            self._logger.exception("cannot clone policy repo", error=e)
+            logger.exception("cannot clone policy repo", error=e)
             raise GitFailed(e)
         else:
-            self._logger.info("Clone succeeded", repo_path=self.path)
+            logger.info("Clone succeeded", repo_path=self.path)
             return RemoteClone(repo)
