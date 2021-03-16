@@ -53,7 +53,9 @@ class OpalClient:
         self.app: FastAPI = self._init_fast_api_app()
 
     def _init_fast_api_app(self):
-        policy_store = self.policy_store
+        """
+        inits the fastapi app object
+        """
         app = FastAPI(
             title="OPAL client Sidecar",
             description="This sidecar wraps Open Policy Agent (OPA) with a higher-level API intended for fine grained " +
@@ -63,45 +65,45 @@ class OpalClient:
             openapi_tags=OPENAPI_TAGS_METADATA
         )
         configure_middleware(app)
+        self._configure_api_routes(app)
+        self._configure_lifecycle_callbacks(app)
+        return app
 
-        # Init api routes
-        enforcer_router = init_enforcer_api_router(policy_store=policy_store)
-        local_router = init_local_cache_api_router(policy_store=policy_store)
-        policy_router = init_policy_router(policy_store=policy_store)
+    def _configure_api_routes(self, app: FastAPI):
+        """
+        mounts the api routes on the app object
+        """
+        # Init api routers with required dependencies
+        enforcer_router = init_enforcer_api_router(policy_store=self.policy_store)
+        local_router = init_local_cache_api_router(policy_store=self.policy_store)
+        policy_router = init_policy_router(policy_store=self.policy_store)
 
-        # include the api routes
+        # mount the api routes on the app object
         app.include_router(enforcer_router, tags=["Authorization API"])
         app.include_router(local_router, prefix="/local", tags=["Local Queries"])
         app.include_router(policy_router, tags=["Policy Updater"])
         app.include_router(data_router, tags=["Data Updater"])
         app.include_router(proxy_router, tags=["Cloud API Proxy"])
 
-        # API Routes
+        # top level routes (i.e: healthchecks)
         @app.get("/healthcheck", include_in_schema=False)
         @app.get("/", include_in_schema=False)
         def healthcheck():
             return {"status": "ok"}
+        return app
 
-        async def launch_opa_in_background():
-            if self.opa_runner:
-                async with self.opa_runner:
-                    await self.opa_runner.wait_until_done()
+    def _configure_lifecycle_callbacks(self, app: FastAPI):
+        """
+        registers callbacks on app startup and shutdown.
 
-        async def launch_policy_updater():
-            if self.policy_updater:
-                async with self.policy_updater:
-                    await self.policy_updater.wait_until_done()
-
-        async def launch_data_updater():
-            if self.data_updater:
-                async with self.data_updater:
-                    await self.data_updater.wait_until_done()
-
+        on app startup we launch our long running processes (async tasks)
+        on the event loop. on app shutdown we stop these long running tasks.
+        """
         @app.on_event("startup")
         async def startup_event():
-            asyncio.create_task(launch_opa_in_background())
-            asyncio.create_task(launch_policy_updater())
-            asyncio.create_task(launch_data_updater())
+            asyncio.create_task(self.launch_opa_in_background(), name="opa_runner")
+            asyncio.create_task(self.launch_policy_updater(), name="policy_updater")
+            asyncio.create_task(self.launch_data_updater(), name="data_updater")
 
         @app.on_event("shutdown")
         async def shutdown_event():
@@ -113,3 +115,18 @@ class OpalClient:
                 await self.policy_updater.stop()
 
         return app
+
+    async def launch_opa_in_background(self):
+        if self.opa_runner:
+            async with self.opa_runner:
+                await self.opa_runner.wait_until_done()
+
+    async def launch_policy_updater(self):
+        if self.policy_updater:
+            async with self.policy_updater:
+                await self.policy_updater.wait_until_done()
+
+    async def launch_data_updater(self):
+        if self.data_updater:
+            async with self.data_updater:
+                await self.data_updater.wait_until_done()
