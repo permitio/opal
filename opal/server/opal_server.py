@@ -6,7 +6,7 @@ from fastapi import Depends, FastAPI
 
 from opal.common.topics.listener import TopicListener
 from opal.common.topics.publisher import TopicPublisher
-from opal.common.logger import get_logger
+from opal.common.logger import logger
 from opal.common.synchronization.named_lock import NamedLock
 from opal.common.middleware import configure_middleware
 from opal.server.config import DATA_CONFIG_SOURCES, BROADCAST_URI, LEADER_LOCK_FILE_PATH
@@ -21,9 +21,6 @@ from opal.server.policy.watcher import (setup_watcher_task,
 from opal.server.policy.watcher.task import RepoWatcherTask
 from opal.server.publisher import setup_publisher_task
 from opal.server.pubsub import PubSub
-
-
-logger = get_logger("opal.server")
 
 
 class OpalServer:

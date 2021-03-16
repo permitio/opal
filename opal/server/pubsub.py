@@ -1,11 +1,9 @@
 from fastapi import APIRouter, Depends, WebSocket
 
 from fastapi_websocket_pubsub import PubSubEndpoint
-from opal.common.logger import get_logger
+from opal.common.logger import logger
 from opal.server.config import BROADCAST_URI
 from opal.server.deps.authentication import logged_in
-
-logger = get_logger("opal.server.pubsub")
 
 
 class PubSub:

@@ -8,12 +8,11 @@ from typing import Dict, Any, Optional, List, Set
 from tenacity import retry, stop_after_attempt, wait_fixed
 
 from opal.client.config import POLICY_STORE_URL
-from opal.client.logger import get_logger
+from opal.client.logger import logger
 from opal.client.utils import proxy_response
 from opal.client.enforcer.schemas import AuthorizationQuery
 from opal.common.schemas.policy import DataModule, PolicyBundle
 
-logger = get_logger("Opa Client")
 
 # 2 retries with 2 seconds apart
 RETRY_CONFIG = dict(wait=wait_fixed(2), stop=stop_after_attempt(2))

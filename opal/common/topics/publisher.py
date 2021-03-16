@@ -1,11 +1,8 @@
 import asyncio
 from typing import Any, List
+
 from fastapi_websocket_pubsub import PubSubClient, TopicList
-
-from opal.common.logger import get_logger
-
-
-logger = get_logger("opal.common.topics.publisher")
+from opal.common.logger import logger
 
 
 class TopicPublisher:

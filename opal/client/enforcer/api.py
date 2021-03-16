@@ -1,15 +1,12 @@
 import json
 
 from fastapi import APIRouter, status, Response
-from starlette import responses
 from opal.client.enforcer.schemas import AuthorizationQuery, AuthorizationResult
 from opal.client.policy_store.base_policy_store_client import BasePolicyStoreClient
-from opal.client.logger import get_logger
+from opal.client.logger import logger
 
 
 def init_enforcer_api_router(policy_store:BasePolicyStoreClient):
-
-    logger = get_logger("Enforcer")
     router = APIRouter()
 
     def log_query_and_result(query: AuthorizationQuery, response: Response):

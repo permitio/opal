@@ -1,14 +1,12 @@
 from typing import Coroutine, Any, Protocol
+
 from fastapi_websocket_pubsub import PubSubClient, Topic, TopicList
-
-from opal.common.logger import get_logger
-
-
-logger = get_logger("opal.common.topics.listener")
+from opal.common.logger import logger
 
 
 class TopicCallback(Protocol):
     def __call__(self, topic: Topic, data: Any) -> Coroutine: ...
+
 
 class TopicListener:
     """

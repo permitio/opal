@@ -7,11 +7,8 @@ from fastapi import status
 from opal.common.utils import get_authorization_header
 from opal.common.schemas.policy import PolicyBundle
 from opal.client.utils import tuple_to_dict
-from opal.client.logger import get_logger
+from opal.client.logger import logger
 from opal.client.config import OPAL_SERVER_URL, CLIENT_TOKEN
-
-
-logger = get_logger("opal.client.policy.fetcher")
 
 
 def policy_bundle_or_none(bundle) -> Optional[PolicyBundle]:
