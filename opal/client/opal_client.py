@@ -48,7 +48,7 @@ class OpalClient:
         if self.policy_store_type == PolicyStoreTypes.OPA:
             self.opa_runner = OpaRunner.setup_opa_runner(rehydration_callbacks=[
                 # refetches policy code (e.g: rego) and static data from server
-                functools.partial(update_policy, policy_store=self.policy_store),
+                functools.partial(update_policy, policy_store=self.policy_store, force_full_update=True),
                 functools.partial(self.data_updater.get_base_policy_data, data_fetch_reason="policy store rehydration"),
             ])
         else:
