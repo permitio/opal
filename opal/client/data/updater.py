@@ -35,7 +35,6 @@ async def update_policy_data(update: DataUpdate = None, policy_store: BasePolicy
     # Urls may be None - fetch_policy_data has a default for None
     policy_data_by_urls = await data_fetcher.fetch_policy_data(urls)
     # save the data from the update
-    logger.info("Saving fetched data to policy-store")
     for url in policy_data_by_urls:
         # get path to store the URL data (default mode (None) is as "" - i.e. as all the data at root)
         entry = url_to_entry.get(url, None)
@@ -47,6 +46,11 @@ async def update_policy_data(update: DataUpdate = None, policy_store: BasePolicy
         if policy_store_path != "" and not policy_store_path.startswith("/"):
             policy_store_path = f"/{policy_store_path}"
         policy_data = policy_data_by_urls[url]
+        logger.info(
+            "Saving fetched data to policy-store: source url='{url}', destination path='{path}'",
+            url=url,
+            path=policy_store_path or '/'
+        )
         await policy_store.set_policy_data(policy_data, path=policy_store_path)
 
 

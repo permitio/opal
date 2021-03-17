@@ -234,14 +234,6 @@ class OpaClient(BasePolicyStoreClient):
                 logger.warning("Opa connection error: {err}", err=e)
                 raise
 
-    async def rehydrate_opa_from_process_cache(self):
-        policies = self._cached_policies.copy()
-        for policy_id, policy_code in iter(policies.items()):
-            await self.set_policy(policy_id, policy_code)
-
-        if self._policy_data is not None:
-            await self.set_policy_data(self._policy_data)
-
     @fail_silently()
     @retry(**RETRY_CONFIG)
     async def get_data(self, path: str):

@@ -1,5 +1,6 @@
 from logging import disable
 import asyncio
+import functools
 from fastapi import FastAPI
 
 from opal import common
@@ -13,7 +14,7 @@ from opal.client.policy_store.base_policy_store_client import BasePolicyStoreCli
 from opal.client.policy_store.policy_store_client_factory import PolicyStoreClientFactory
 from opal.client.opa.runner import OpaRunner
 from opal.client.policy.api import init_policy_router
-from opal.client.policy.updater import PolicyUpdater
+from opal.client.policy.updater import PolicyUpdater, update_policy
 from opal.client.server.api import router as proxy_router
 from opal.client.server.middleware import configure_middleware
 
@@ -45,7 +46,11 @@ class OpalClient:
         # Internal services
         # Policy store
         if self.policy_store_type == PolicyStoreTypes.OPA:
-            self.opa_runner = OpaRunner.setup_opa_runner()
+            self.opa_runner = OpaRunner.setup_opa_runner(rehydration_callbacks=[
+                # refetches policy code (e.g: rego) and static data from server
+                functools.partial(update_policy, policy_store=self.policy_store, force_full_update=True),
+                functools.partial(self.data_updater.get_base_policy_data, data_fetch_reason="policy store rehydration"),
+            ])
         else:
             self.opa_runner = False
 
@@ -101,25 +106,47 @@ class OpalClient:
         """
         @app.on_event("startup")
         async def startup_event():
-            asyncio.create_task(self.launch_opa_in_background(), name="opa_runner")
-            asyncio.create_task(self.launch_policy_updater(), name="policy_updater")
-            asyncio.create_task(self.launch_data_updater(), name="data_updater")
+            asyncio.create_task(self.start_client_background_tasks(), name="opa_runner")
 
         @app.on_event("shutdown")
         async def shutdown_event():
-            if self.opa_runner:
-                await self.opa_runner.stop()
-            if self.data_updater:
-                await self.data_updater.stop()
-            if self.policy_updater:
-                await self.policy_updater.stop()
+            await self.stop_client_background_tasks()
 
         return app
 
-    async def launch_opa_in_background(self):
+    async def start_client_background_tasks(self):
+        """
+        Launch OPAL client long-running tasks:
+        - Policy Store runner (e.g: Opa Runner)
+        - Policy Updater
+        - Data Updater
+
+        If there is a policy store to run, we wait until its up before launching dependent tasks.
+        """
         if self.opa_runner:
+            # runs the policy store dependent tasks after policy store is up
+            self.opa_runner.register_opa_initial_start_callbacks([self.launch_policy_store_dependent_tasks])
             async with self.opa_runner:
                 await self.opa_runner.wait_until_done()
+        else:
+            # we do not run the policy store in the same container
+            # therefore we can immediately launch dependent tasks
+            await self.launch_policy_store_dependent_tasks()
+
+    async def stop_client_background_tasks(self):
+        """
+        stops all background tasks (called on shutdown event)
+        """
+        if self.opa_runner:
+            await self.opa_runner.stop()
+        if self.data_updater:
+            await self.data_updater.stop()
+        if self.policy_updater:
+            await self.policy_updater.stop()
+
+    async def launch_policy_store_dependent_tasks(self):
+        asyncio.create_task(self.launch_policy_updater(), name="policy_updater")
+        asyncio.create_task(self.launch_data_updater(), name="data_updater")
 
     async def launch_policy_updater(self):
         if self.policy_updater:
