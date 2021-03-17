@@ -30,7 +30,12 @@ async def wait_until_process_is_up(process_pid: int, callback: Optional[AsyncCal
 
 class OpaRunner:
     """
-    Runs Opa in a subprocess
+    Runs OPA in a supervised subprocess.
+
+    - if the OPA process fails, OPA runner will restart the process.
+    - OPA runner can register callbacks on the lifecycle of OPA,
+    making it easy to keep the OPA cache hydrated (up-to-date).
+    - OPA runner can pipe the logs of the OPA process into OPAL logger.
     """
     def __init__(self, port=OPA_PORT):
         self._port = port
@@ -50,10 +55,16 @@ class OpaRunner:
         await self.stop()
 
     def start(self):
+        """
+        starts the opa runner task, and launches the OPA subprocess
+        """
         logger.info("Launching opa runner")
         self._run_task = asyncio.create_task(self._run())
 
     async def stop(self):
+        """
+        stops the opa runner task (and terminates OPA)
+        """
         self._init_events()
         if not self._should_stop.is_set():
             logger.info("Stopping opa runner")
@@ -66,6 +77,10 @@ class OpaRunner:
         self._run_task = None
 
     async def wait_until_done(self):
+        """
+        waits until the OPA runner task is complete.
+        this is great when using opa runner as a context manager.
+        """
         if self._run_task is not None:
             await self._run_task
 
@@ -111,13 +126,25 @@ class OpaRunner:
             raise Exception(f"OPA exited with return code: {return_code}")
         return return_code
 
-    def on_opa_initial_start(self, callbacks: List[AsyncCallback]):
+    def register_opa_initial_start_callbacks(self, callbacks: List[AsyncCallback]):
+        """
+        register a callback to run when OPA is started the first time.
+        """
         self._on_opa_initial_start_callbacks.extend(callbacks)
 
-    def on_opa_restart(self, callbacks: List[AsyncCallback]):
+    def register_opa_restart_callbacks(self, callbacks: List[AsyncCallback]):
+        """
+        register a callback to run when OPA is restarted (i.e: OPA was already up,
+        then got terminated, and now is up again). this is most often used to keep
+        OPA's cache (policy and data) up-to-date, since OPA is started without policy
+        or data. With empty cache, OPA cannot evaluate authorization queries correctly.
+        """
         self._on_opa_restart_callbacks.extend(callbacks)
 
     async def _run_start_callbacks(self):
+        """
+        runs callbacks after OPA process starts
+        """
         # TODO: make policy store expose the /health api of OPA
         await asyncio.sleep(1)
 
@@ -156,7 +183,7 @@ class OpaRunner:
         """
         opa_runner = OpaRunner()
         if initial_start_callbacks:
-            opa_runner.on_opa_initial_start(initial_start_callbacks)
+            opa_runner.register_opa_initial_start_callbacks(initial_start_callbacks)
         if rehydration_callbacks:
-            opa_runner.on_opa_restart(rehydration_callbacks)
+            opa_runner.register_opa_restart_callbacks(rehydration_callbacks)
         return opa_runner
