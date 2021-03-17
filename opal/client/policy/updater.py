@@ -19,15 +19,27 @@ from opal.client.policy_store.policy_store_client_factory import DEFAULT_POLICY_
 from opal.client.policy.topics import default_subscribed_policy_directories
 
 
-async def update_policy(policy_store: BasePolicyStoreClient, directories: List[str] = None):
+async def update_policy(policy_store: BasePolicyStoreClient, directories: List[str] = None, force_full_update=False):
     """
-    fetches policy (rego) from backend and updates OPA
-    """
+    fetches policy (code, e.g: rego) from backend and stores it in the policy store.
 
+    Args:
+        policy_store (BasePolicyStoreClient, optional): Policy store client to use to store policy code.
+        directories (List[str], optional): specific source directories we want.
+        force_full_update (bool, optional): if true, ignore stored hash and fetch full policy bundle.
+    """
     directories = directories if directories is not None else default_subscribed_policy_directories()
-    stored_policy_hash = await policy_store.get_policy_version()
-    logger.info("Refetching policy code, base hash: '{base_hash}'", base_hash=stored_policy_hash)
-    bundle: Optional[PolicyBundle] = await policy_fetcher.fetch_policy_bundle(directories, base_hash=stored_policy_hash)
+    if force_full_update:
+        logger.info("full update was forced (ignoring stored hash if exists)")
+        base_hash = None
+    else:
+        base_hash = await policy_store.get_policy_version()
+
+    if base_hash is None:
+        logger.info("Refetching policy code (full bundle)")
+    else:
+        logger.info("Refetching policy code (delta bundle), base hash: '{base_hash}'", base_hash=base_hash)
+    bundle: Optional[PolicyBundle] = await policy_fetcher.fetch_policy_bundle(directories, base_hash=base_hash)
     if bundle:
         if bundle.old_hash is None:
             logger.info(
