@@ -35,3 +35,5 @@ LOG_FILE_LEVEL = confi.str("LOG_FILE_LEVEL", "INFO")
 LOG_MODULE_EXCLUDE_OPA = confi.bool("LOG_MODULE_EXCLUDE_OPA", True)
 if LOG_MODULE_EXCLUDE_OPA:
     LOG_MODULE_EXCLUDE_LIST.append("opal.client.opa.logger")
+
+GIT_SSH_KEY_FILE = confi.str("GIT_SSH_KEY_FILE", "~/.ssh/opal_repo_ssh_key")

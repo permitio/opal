@@ -1,10 +1,25 @@
+import os
+
 from functools import partial
+from typing import Optional
 from pathlib import Path
 from tenacity import retry, wait_fixed, stop_after_attempt, RetryError
 from git import Repo, GitError, GitCommandError
 
 from opal.common.logger import logger
 from opal.common.git.exceptions import GitFailed
+from opal.common.config import GIT_SSH_KEY_FILE
+
+
+SSH_PREFIX = "ssh://"
+GITHUB_SSH_PREFIX = "git@"
+
+def is_ssh_repo_url(repo_url: str):
+    """
+    return True if the repo url uses SSH authentication.
+    (see: https://docs.github.com/en/github/authenticating-to-github/connecting-to-github-with-ssh)
+    """
+    return repo_url.startswith(SSH_PREFIX) or repo_url.startswith(GITHUB_SSH_PREFIX)
 
 
 class CloneResult:
@@ -60,6 +75,8 @@ class RepoCloner:
         repo_url: str,
         clone_path: str,
         retry_config = None,
+        ssh_key: Optional[str] = None,
+        ssh_key_file_path: Optional[str] = GIT_SSH_KEY_FILE,
     ):
         """[summary]
 
@@ -73,7 +90,9 @@ class RepoCloner:
             raise ValueError("must provide repo url!")
 
         self.url = repo_url
-        self.path = clone_path
+        self.path = os.path.expanduser(clone_path)
+        self._ssh_key = ssh_key
+        self._ssh_key_file_path = ssh_key_file_path
         self._retry_config = retry_config if retry_config is not None else self.DEFAULT_RETRY_CONFIG
 
     def clone(self) -> CloneResult:
@@ -107,7 +126,8 @@ class RepoCloner:
         """
         clones the repo from url or throws GitFailed
         """
-        _clone_func = partial(Repo.clone_from, url=self.url, to_path=self.path)
+        env = self._provide_git_ssh_environment()
+        _clone_func = partial(Repo.clone_from, url=self.url, to_path=self.path, env=env)
         _clone_with_retries = retry(**self._retry_config)(_clone_func)
         try:
             repo = _clone_with_retries()
@@ -120,3 +140,31 @@ class RepoCloner:
         else:
             logger.info("Clone succeeded", repo_path=self.path)
             return RemoteClone(repo)
+
+    def _provide_git_ssh_environment(self):
+        """
+        provides git SSH configuration via GIT_SSH_COMMAND.
+
+        the git ssh config will be provided only if the following conditions are met:
+        - the repo url is a git ssh url
+        - an ssh private key is provided in Repo Cloner __init__
+        """
+        if not is_ssh_repo_url(self.url) or self._ssh_key is None:
+            return None # no ssh config
+        git_ssh_identity_file = self._save_ssh_key_to_pem_file(self._ssh_key)
+        return {
+            "GIT_SSH_COMMAND": f"ssh -o StrictHostKeyChecking=no -i {git_ssh_identity_file}"
+        }
+
+    def _save_ssh_key_to_pem_file(self, key: str) -> Path:
+        key = key.replace("_", "\n")
+        if not key.endswith('\n'):
+            key = key + '\n' # pem file must end with newline
+        key_path = os.path.expanduser(self._ssh_key_file_path)
+        parent_directory = os.path.dirname(key_path)
+        if not os.path.exists(parent_directory):
+            os.makedirs(parent_directory, exist_ok=True)
+        with open(key_path, 'w') as f:
+            f.write(key)
+        os.chmod(key_path, 0o600)
+        return Path(key_path)
