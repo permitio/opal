@@ -2,18 +2,15 @@
 <p align="center">
  <img src="https://i.ibb.co/BGVBmMK/opal.png" height=256 alt="opal" border="0" />
 </p>
-<p style="font-size:xx-large" align="center">
+<h1 align="center">
 ⚡OPAL⚡
-</p>
+</h1>
 
-#
-
-<p style="font-size:x-large" align="center">
+<h2 align="center">
 Open Policy Administration Layer 
-</p>
+</h2>
 
 # 
-
 
 
 OPAL adds real-time updates to your fleet of policy agents,
@@ -21,25 +18,41 @@ enabling policy enforcement to meet the state-freshness requirements of the appl
 
 ## 🛠️ Installation 
 
-- As containers (from pre-made images)
+- As containers 
     
     - server
         ```
         docker pull authorizon/opal-server
         ```
 
-    - client
+    - client (prebuilt with OPA inside)
         ```
         docker pull authorizon/opal-client
         ```
 
-## 📖 Intro
+- As Python packages (python 3.7 >)
+    - server
+        ```
+        pip install opal-server
+        python -m opal-server.main
+        ```
+
+    - client
+        ```
+        pip install opal-client
+        python -m opal-client.main
+        ```
+
+## 📖 Introduction to OPAL - focused data and policy realtime delivery  
 Modern applications are complex, distributed, multi-tenant and serve at scale - creating (often) overwhelming authorization challenges. OPA (Open-Policy-Agent) brings the power of decoupled policy to the infrastructure layer (especially K8s), and light applications.OPAL supercharges OPA to meet the pace of live applications, where the picture may change with every user click and api call.
 
-OPAL builds on top of OPA adding realtime updates (via Websocket Pub/Sub) for both policy and data 
+OPAL builds on top of OPA adding realtime updates (via Websocket Pub/Sub) for both policy and data.
+
 OPAL embraces decoupling of policy and code, and doubles down on decoupling policy (GIT driven) and data (distributed data-source fetching engines).
 
-### Problem solved by OPAL - focused data and policy realtime delivery  
+
+
+### Problem solved by 
 
 - Bringing OPA to the application layer (live realtime updates, simplified multi-tenancy, distributed api, multiple data sources (SaaS, dbs, own APIs) ) 
 - Realtime API driven updates
@@ -56,10 +69,14 @@ OPAL embraces decoupling of policy and code, and doubles down on decoupling poli
 
 
 ## 📡  Architecture
+
+<img src="https://i.ibb.co/kGc9nDd/main.png" alt="main" border="0">
+
 OPAL consists of two key components that work together:
 1. OPAL Server 
     - Creates a Pub/Sub channel client's subscribe to
     - Tracks a Git repository (via webhook) for updates to policy (or static data)
+        - Additional versioned repositories can be supported (e.g. S3, SVN)
     - Accepts data update notifications via Rest API
     - pushes updates to clients (as diffs)
     - scales with other server instances via a configurable backbone pub/sub (Postgre, Redis, Kafka , (more options to be added) )
@@ -72,8 +89,7 @@ OPAL consists of two key components that work together:
     - Downloads policy from server
     - Keeps policy agent always up to date
 
-### Diagram
-<img src="https://i.ibb.co/5Gdbm0y/main.png" alt="main" border="0">
+
 
 ### Flows
  - Policy 
@@ -87,19 +103,26 @@ OPAL consists of two key components that work together:
 ## 💡 Key Concepts
 ### Realtime Pub/Sub updates
 
-Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum
+### OPAL is stateless
+OPAL is designed for scale, mainly via scaling out both client and server instances, as such neither are stateful. state is retained in the end components (the policy agent) and source components (e.g. GIT, databases, API servers)
+
+### OPAL is extendable
+OPAL's Pythonic nature makes extending and embedding it extremely easy.
+Built with typed Python3, Pydantic, and FastAPI - OPAL is balanced just right for stability and fast development.
+
+We have (and will continue to) put significant effort into OPALs documentation. Each module 
 
 - ## Foundations
     OPAL is built on the shoulders of open-source giants, including:
     - [OpenPolicyAgent](https://www.openpolicyagent.org/)- the default policy agent managed by OPAL.
-    - [FAST-API](https://github.com/tiangolo/fastapi) - the ASGI server framework used by OPAL-servers and OPAL-clients.
-    - [FAST-API WS PubSub](https://github.com/authorizon/fastapi_websocket_pubsub) - powering the live realtime update channels
-    - [broadcaster](https://pypi.org/project/broadcaster/) allowing syncing server instances through a backend backbone (e.g. Redis, Kafka) 
+    - [FastAPI](https://github.com/tiangolo/fastapi) - the ASGI server framework used by OPAL-servers and OPAL-clients.
+    - [FastAPI WS PubSub](https://github.com/authorizon/fastapi_websocket_pubsub) - powering the live realtime update channels
+    - [Broadcaster](https://pypi.org/project/broadcaster/) allowing syncing server instances through a backend backbone (e.g. Redis, Kafka) 
     
 
 - ## Implementation with Python
     OPAL is written completely in Python3 using FastAPI and Pydantic.
-    OPAL was initially created as a component of [AUTHorizon.com](https://www.authorizon.com) , and we've chosen Python for development speed, ease of use and extendability (e.g. Fetcher providers).
+    OPAL was initially created as a component of [**auth**orizon.com](https://www.authorizon.com) , and we've chosen Python for development speed, ease of use and extendability (e.g. Fetcher providers).
 
 
 - ## Decouple data/policy management from policy agents
