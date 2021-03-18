@@ -6,9 +6,9 @@ from typing import Callable, Coroutine, Optional, List
 
 from tenacity import retry, wait_random_exponential
 
-from opal.client.config import OPA_PORT
 from opal.client.logger import logger
 from opal.client.policy_store.policy_store_client_factory import DEFAULT_POLICY_STORE
+from opal.client.opa.options import OpaServerOptions
 from opal.client.opa.logger import pipe_opa_logs
 
 
@@ -37,8 +37,8 @@ class OpaRunner:
     making it easy to keep the OPA cache hydrated (up-to-date).
     - OPA runner can pipe the logs of the OPA process into OPAL logger.
     """
-    def __init__(self, port=OPA_PORT):
-        self._port = port
+    def __init__(self, options: Optional[OpaServerOptions] = None):
+        self._options = options or OpaServerOptions()
         self._stopped = False
         self._process = None
         self._should_stop: Optional[asyncio.Event] = None
@@ -86,7 +86,9 @@ class OpaRunner:
 
     @property
     def command(self):
-        return f"opa run --server -a :{self._port}"
+        opts = self._options.get_cli_options_dict()
+        opts_string = ' '.join([f"{k}={v}" for k,v in opts.items()])
+        return f"opa run --server {opts_string}"
 
     def _terminate_opa(self):
         logger.info("Stopping OPA")
@@ -105,7 +107,7 @@ class OpaRunner:
         This function runs opa server as a subprocess.
         it returns only when the process terminates.
         """
-        logger.info("Running OPA", command=self.command)
+        logger.info("Running OPA inline: {command}", command=self.command)
         self._process = await asyncio.create_subprocess_shell(
             self.command,
             stdout=asyncio.subprocess.PIPE,
@@ -166,6 +168,7 @@ class OpaRunner:
 
     @staticmethod
     def setup_opa_runner(
+        options: Optional[OpaServerOptions] = None,
         initial_start_callbacks: Optional[List[AsyncCallback]] = None,
         rehydration_callbacks: Optional[List[AsyncCallback]] = None
     ):
@@ -181,7 +184,7 @@ class OpaRunner:
             to handle authorization queries. therefore it is necessary that we rehydrate the
             cache with fresh state fetched from the server.
         """
-        opa_runner = OpaRunner()
+        opa_runner = OpaRunner(options=options)
         if initial_start_callbacks:
             opa_runner.register_opa_initial_start_callbacks(initial_start_callbacks)
         if rehydration_callbacks:
