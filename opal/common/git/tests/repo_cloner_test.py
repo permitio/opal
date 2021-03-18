@@ -19,6 +19,7 @@ from git import Repo
 
 from opal.common.git.repo_cloner import RepoCloner
 from opal.common.git.exceptions import GitFailed
+from opal.common.confi import Confi
 
 VALID_REPO_REMOTE_URL_HTTPS = \
     "https://github.com/authorizon/fastapi_websocket_pubsub.git"
@@ -95,12 +96,32 @@ def test_repo_cloner_clone_remote_repo_ssh_url(tmp_path):
     Cloner can handle a valid remote git url (ssh scheme)
     """
     target_path: Path = tmp_path / "target"
-    result = RepoCloner(
-        repo_url=VALID_REPO_REMOTE_URL_SSH,
-        clone_path=target_path
-    ).clone()
-    assert result.cloned_from_remote == True
-    assert Path(result.repo.working_tree_dir) == target_path
+
+    # fastapi_websocket_pubsub is a *public* repository, however
+    # accessing with an ssh url always demands a valid ssh key.
+    # when running in CI (github actions) the actions machine does
+    # not have access to the ssh key of a valid user, causing the
+    # clone to fail.
+    # we could store a real secret in the repo secret, but it's probably
+    # not smart/secure enough since the secret is decrypted on the actions runner
+    # machine. thus we simply expect the clone to fail when running in ci.
+    confi = Confi()
+    running_in_ci = confi.bool("CI", False) or confi.bool("GITHUB_ACTIONS", False)
+
+    if running_in_ci:
+        with pytest.raises(GitFailed):
+            # result =
+            RepoCloner(
+                repo_url=VALID_REPO_REMOTE_URL_SSH,
+                clone_path=target_path
+            ).clone()
+    else:
+        result = RepoCloner(
+            repo_url=VALID_REPO_REMOTE_URL_SSH,
+            clone_path=target_path
+        ).clone()
+        assert result.cloned_from_remote == True
+        assert Path(result.repo.working_tree_dir) == target_path
 
 def test_repo_cloner_clone_fail_on_invalid_remote_url(tmp_path):
     """
