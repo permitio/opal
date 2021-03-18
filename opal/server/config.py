@@ -10,7 +10,7 @@ BROADCAST_URI = confi.str("BROADCAST_URI", "postgres://localhost/acalladb")
 
 # repo watcher
 POLICY_REPO_URL = confi.str("POLICY_REPO_URL", None)
-POLICY_REPO_CLONE_PATH = confi.str("POLICY_REPO_CLONE_PATH", "regoclone")
+POLICY_REPO_CLONE_PATH = confi.str("POLICY_REPO_CLONE_PATH", "~/regoclone")
 POLICY_REPO_MAIN_BRANCH = confi.str("POLICY_REPO_MAIN_BRANCH", "master")
 POLICY_REPO_MAIN_REMOTE = confi.str("POLICY_REPO_MAIN_REMOTE", "origin")
 POLICY_REPO_SSH_KEY = confi.str("POLICY_REPO_SSH_KEY", None)
