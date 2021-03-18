@@ -112,7 +112,10 @@ class RepoWatcher:
     async def _stop_polling_task(self):
         if self._polling_task is not None:
             self._polling_task.cancel()
-            await self._polling_task
+            try:
+                await self._polling_task
+            except asyncio.CancelledError:
+                pass
 
     async def _on_new_commits(self, old: Commit, new: Commit):
         """

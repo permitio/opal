@@ -34,8 +34,8 @@ def test_repo_cloner_clone_local_repo(local_repo: Repo):
     """
     repo: Repo = local_repo
 
-    root: Path = Path(repo.working_tree_dir)
-    target_path: Path = root.parent / "target"
+    root: str = repo.working_tree_dir
+    target_path: str = Path(root).parent / "target"
 
     result = RepoCloner(
         repo_url=root,
