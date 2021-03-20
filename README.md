@@ -22,45 +22,27 @@ As you push updates to your application's stores (e.g. Git, DBs, S3, SaaS servic
 - As containers 
     
     - Server
-        - install  and run
-            ```
-            docker pull authorizon/opal-server
-            ```
-            ```
-            docker run authorizon/opal-server
-            ```
+        ```
+        docker pull authorizon/opal-server
+        ```
+        ```
+        docker run authorizon/opal-server
+        ```
 
     - Client (prebuilt with OPA inside)
-        - install and run
-            ```
-            docker pull authorizon/opal-client
-            ```
-            ```
-            docker run authorizon/opal-client
-            ```
+        ```
+        docker pull authorizon/opal-client
+        ```
+        ```
+        docker run authorizon/opal-client
+        ```
 
-- As Python packages (python 3.7 >)
-    - Server
-        - install and run
-            ```
-            pip install opal-server
-            ```
-            ```
-            opal-server
-            ```
+- Or [install as directly as Python packages (python 3.7 >)](docs/HOWTO/install_as_python_packages.md)
 
-    - Client
-        - install and run
-            ```
-            pip install opal-client
-            ```
-            ```
-            opal-client
-            ```
 
 #
 
-## 📖 Introduction to OPAL - focused data and policy realtime delivery  
+## 📖 Introduction to OPAL - data and policy realtime delivery  
 - Modern applications are complex, distributed, multi-tenant and serve at scale - creating (often) overwhelming authorization challenges. OPA (Open-Policy-Agent) brings the power of decoupled policy to the infrastructure layer (especially K8s), and light applications.OPAL supercharges OPA to meet the pace of live applications, where the picture may change with every user click and api call.
 
 - OPAL builds on top of OPA adding realtime updates (via Websocket Pub/Sub) for both policy and data.
@@ -74,8 +56,7 @@ As you push updates to your application's stores (e.g. Git, DBs, S3, SaaS servic
 
 <img src="https://i.ibb.co/kGc9nDd/main.png" alt="main" border="0">
 
-- ### OPAL servers and clients:
-    OPAL consists of two key components that work together:
+- ### OPAL consists of two key components that work together:
     1. OPAL Server 
         - Creates a Pub/Sub channel client's subscribe to
         - Tracks a Git repository (via webhook) for updates to policy (or static data)
@@ -94,7 +75,7 @@ As you push updates to your application's stores (e.g. Git, DBs, S3, SaaS servic
 
 - ### Further reading
     - [Architecture](docs/architecture.md) deep dive
-    - Code module review
+    - [Code modules](docs/modules.md) review
 
 
 
