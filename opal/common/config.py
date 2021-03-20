@@ -31,6 +31,10 @@ LOG_FILE_COMPRESSION = confi.str("LOG_FILE_COMPRESSION", None)
 LOG_FILE_SERIALIZE = confi.str("LOG_FILE_SERIALIZE", True)
 LOG_FILE_LEVEL = confi.str("LOG_FILE_LEVEL", "INFO")
 
+# Fetching Providers
+# - where to load providers from 
+FETCH_PROVIDER_MODULES = confi.list("FETCH_PROVIDER_MODULES", ["opal.common.fetcher.providers"])
+
 # potentially exclude opa logs
 LOG_MODULE_EXCLUDE_OPA = confi.bool("LOG_MODULE_EXCLUDE_OPA", True)
 if LOG_MODULE_EXCLUDE_OPA:
