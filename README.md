@@ -10,6 +10,11 @@
 Open Policy Administration Layer 
 </h2>
 
+#
+<a href="https://github.com/authorizon/opal/actions?query=workflow%3ATests" target="_blank">
+    <img src="https://github.com/authorizon/opal/workflows/Tests/badge.svg" alt="Tests">
+</a>
+
 # 
 
 
@@ -37,8 +42,9 @@ As you push updates to your application's stores (e.g. Git, DBs, S3, SaaS servic
         docker run authorizon/opal-client
         ```
 
-- Or [install as directly as Python packages (python 3.7 >)](docs/HOWTO/install_as_python_packages.md)
-
+- Or [install as directly as Python packages (python >3.7 )](docs/HOWTO/install_as_python_packages.md) 
+    - ```pip install opal-client``` 
+    - ```pip install opal-server``` 
 
 #
 
@@ -47,7 +53,7 @@ As you push updates to your application's stores (e.g. Git, DBs, S3, SaaS servic
 
 - OPAL builds on top of OPA adding realtime updates (via Websocket Pub/Sub) for both policy and data.
 
-- OPAL embraces decoupling of policy and code, and doubles down on decoupling policy (GIT driven) and data (distributed data-source fetching engines).
+- OPAL embraces decoupling of policy and code, and doubles down on decoupling policy (Git driven) and data (distributed data-source fetching engines).
 
 
 
@@ -95,8 +101,13 @@ As you push updates to your application's stores (e.g. Git, DBs, S3, SaaS servic
     - OPAL's Pythonic nature makes extending and embedding it extremely easy.
     - Built with typed Python3, Pydantic, and FastAPI - OPAL is balanced just right for stability and fast development.
     - A key example is OPAL's FetchingEngine and FetchProviders.
-    Want to use authorization data from a new source (a SaaS service, a new DB, your own proprietary solution)? Simply [implement a new fetch-provider](docs/fetch_providers.md) 
+    Want to use authorization data from a new source (a SaaS service, a new DB, your own proprietary solution)? Simply [implement a new fetch-provider](docs/HOWTO/write_your_own_fetch_provider.md) 
 #
+
+- ## HOW-TOs
+    - How to extend OPAL to fetch data from your sources with [FetchProviders](docs/HOWTO/write_your_own_fetch_provider.md)
+
+
 
 - ## Foundations
     OPAL is built on the shoulders of open-source giants, including:
@@ -146,10 +157,13 @@ As you push updates to your application's stores (e.g. Git, DBs, S3, SaaS servic
 
  - ## Joining the community 
     - We are eager to hear from you 😃 
-    - Raise questions and ask for features in our [Github discussions](https://github.com/authorizon/opal/discussions)
+    - Raise questions and ask for features to be added to the road-map in our [Github discussions](https://github.com/authorizon/opal/discussions)
+    - Report issues in [Github issues](https://github.com/authorizon/opal/issues)
     - Chat with us in our [Slack community](https://join.slack.com/t/opal-access/shared_invite/zt-nz6yjgnp-RlP9rtOPwO0n0aH_vLbmBQ)
 - ## Contributing to OPAL
 
-    - Pull requests are welcome! (please make sure to include tests and docs)
+    - Pull requests are welcome! (please make sure to include *passing* tests and docs)
+    - Prior to submitting a PR - open an issue on GitHub, or make sure your PR addresses an existing issue well.   
+    
     
     
