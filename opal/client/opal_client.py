@@ -114,7 +114,7 @@ class OpalClient:
         """
         @app.on_event("startup")
         async def startup_event():
-            asyncio.create_task(self.start_client_background_tasks(), name="opa_runner")
+            asyncio.create_task(self.start_client_background_tasks())
 
         @app.on_event("shutdown")
         async def shutdown_event():
@@ -153,8 +153,8 @@ class OpalClient:
             await self.policy_updater.stop()
 
     async def launch_policy_store_dependent_tasks(self):
-        asyncio.create_task(self.launch_policy_updater(), name="policy_updater")
-        asyncio.create_task(self.launch_data_updater(), name="data_updater")
+        asyncio.create_task(self.launch_policy_updater())
+        asyncio.create_task(self.launch_data_updater())
 
     async def launch_policy_updater(self):
         if self.policy_updater:
