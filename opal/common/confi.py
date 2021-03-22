@@ -9,7 +9,7 @@ from pydantic import BaseModel
 from decouple import config, Csv, text_type, undefined, UndefinedValueError
 import string
 
-from opal.common.authentication.keys import (
+from opal.common.authentication.jwt import (
     EncryptionKeyFormat,
     cast_private_key,
     cast_public_key,

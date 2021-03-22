@@ -3,6 +3,7 @@ import os
 from enum import Enum
 from typing import Optional
 
+import jwt
 from jwt.algorithms import get_default_algorithms, Algorithm
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.backends import default_backend
@@ -10,6 +11,8 @@ from cryptography.hazmat._types import (
     _PRIVATE_KEY_TYPES,
     _PUBLIC_KEY_TYPES,
 )
+
+from opal.common.logger import logger
 
 # custom types
 PrivateKey = _PRIVATE_KEY_TYPES
@@ -105,3 +108,33 @@ def cast_public_key(value: str, key_format: EncryptionKeyFormat) -> PublicKey:
 
     if key_format == EncryptionKeyFormat.der:
         return serialization.load_der_public_key(raw_key, backend=default_backend())
+
+
+class JWTSigner:
+    """
+    given cryptographic keys, signs and verifies jwt tokens.
+    """
+    def __init__(self, private_key: Optional[PrivateKey], public_key: Optional[PublicKey], algorithm: JWTAlgorithm):
+        self._private_key = private_key
+        self._public_key = public_key
+        self._algorithm: str = algorithm.value
+        self._enabled = True
+        self._verify_crypto_keys()
+
+    def _verify_crypto_keys(self):
+        if self._private_key is not None and self._public_key is not None:
+            # both keys provided, let's make sure these keys were generated correctly
+            token = jwt.encode({"some": "payload"}, self._private_key, algorithm=self._algorithm)
+            try:
+                jwt.decode(token, self._public_key, algorithms=[self._algorithm])
+            except jwt.PyJWTError as e:
+                logger.info("JWT Signer key verification failed with error: {err}", err=e)
+                raise
+        elif (self._private_key != self._public_key) and (self._private_key is None or self._public_key is None):
+            raise ValueError("JWT Signer not valid, only one of private key / public key pair was provided!")
+        elif self._private_key is None and self._public_key is None:
+            # valid situation, running in dev mode and api security is off
+            self._enabled = False
+            logger.info("OPAL was not provided with JWT encryption keys, cannot verify api requests!")
+        else:
+            raise ValueError("Invalid JWT Signer input!")
