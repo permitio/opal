@@ -12,14 +12,14 @@ from opal.common.config import GIT_SSH_KEY_FILE
 
 
 SSH_PREFIX = "ssh://"
-GITHUB_SSH_PREFIX = "git@"
+GIT_SSH_USER_PREFIX = "git@"
 
 def is_ssh_repo_url(repo_url: str):
     """
     return True if the repo url uses SSH authentication.
     (see: https://docs.github.com/en/github/authenticating-to-github/connecting-to-github-with-ssh)
     """
-    return repo_url.startswith(SSH_PREFIX) or repo_url.startswith(GITHUB_SSH_PREFIX)
+    return repo_url.startswith(SSH_PREFIX) or repo_url.startswith(GIT_SSH_USER_PREFIX)
 
 
 class CloneResult:
@@ -78,13 +78,15 @@ class RepoCloner:
         ssh_key: Optional[str] = None,
         ssh_key_file_path: Optional[str] = GIT_SSH_KEY_FILE,
     ):
-        """[summary]
+        """inits the repo cloner.
 
         Args:
             repo_url (str): the url to the remote repo we want to clone
             clone_path (str): the target local path in our file system we want the
                 repo to be cloned to
             retry_config (dict): Tenacity.retry config (@see https://tenacity.readthedocs.io/en/latest/api.html#retry-main-api)
+            ssh_key (str, optional): private ssh key used to gain access to the cloned repo
+            ssh_key_file_path (str, optional): local path to save the private ssh key contents
         """
         if repo_url is None:
             raise ValueError("must provide repo url!")

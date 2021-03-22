@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from opal.common.confi import Confi
 from opal.common.schemas.data import DataSourceConfig
 from opal.common.authentication.keys import EncryptionKeyFormat, JWTAlgorithm
@@ -25,7 +27,7 @@ AUTH_MASTER_TOKEN = confi.str("AUTH_MASTER_TOKEN", None)
 
 # repo watcher
 POLICY_REPO_URL = confi.str("POLICY_REPO_URL", None)
-POLICY_REPO_CLONE_PATH = confi.str("POLICY_REPO_CLONE_PATH", "~/regoclone")
+POLICY_REPO_CLONE_PATH = confi.str("POLICY_REPO_CLONE_PATH", str(Path.home() / "regoclone"))
 POLICY_REPO_MAIN_BRANCH = confi.str("POLICY_REPO_MAIN_BRANCH", "master")
 POLICY_REPO_MAIN_REMOTE = confi.str("POLICY_REPO_MAIN_REMOTE", "origin")
 POLICY_REPO_SSH_KEY = confi.str("POLICY_REPO_SSH_KEY", None)
