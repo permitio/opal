@@ -3,10 +3,20 @@ Easy Python configuration interface built on rop of python-decouple.
 Adding typing support and parsing with Pydantic and Enum
 """
 
-from typing import TypeVar, cast
+from typing import TypeVar, Optional, Any
+from functools import partial
 from pydantic import BaseModel
 from decouple import config, Csv, text_type, undefined, UndefinedValueError
 import string
+
+from opal.common.authentication.keys import (
+    EncryptionKeyFormat,
+    cast_private_key,
+    cast_public_key,
+    Algorithm,
+    PrivateKey,
+    PublicKey,
+)
 
 def cast_boolean(value):
     """
@@ -16,7 +26,7 @@ def cast_boolean(value):
     """
     if isinstance(value, bool):
         return value
-    elif isinstance(value, str):        
+    elif isinstance(value, str):
         value = value.lower()
         if (value == "true" or value == "1"):
             return True
@@ -80,7 +90,7 @@ class Confi:
     def model(self, key, model_type:T, default=undefined, description=None, **kwargs) -> T:
         """
         Parse a config using a Pydantic model
-        """       
+        """
         return config(self._prefix_key(key), default=default, cast=cast_pydantic(model_type), **kwargs)
 
     def enum(self, key, enum_type: EnumT, default=undefined, description=None, **kwargs) -> EnumT:
@@ -91,10 +101,35 @@ class Confi:
                 raise
             return default
 
+    def private_key(
+        self,
+        key: str,
+        default: Any = undefined,
+        description: str = None,
+        key_format: Optional[EncryptionKeyFormat] = None,
+        passphrase: Optional[str] = None,
+        **kwargs
+    ) -> Optional[PrivateKey]:
+        """
+        parse a cryptographic private key from env vars
+        """
+        cast_key = partial(cast_private_key, key_format=key_format, passphrase=passphrase)
+        return config(self._prefix_key(key), default=default, cast=cast_key, **kwargs)
+
+    def public_key(
+        self,
+        key: str,
+        default: Any = undefined,
+        description: str = None,
+        key_format: Optional[EncryptionKeyFormat] = None,
+        **kwargs
+    ) -> Optional[PublicKey]:
+        """
+        parse a cryptographic public key from env vars
+        """
+        cast_key = partial(cast_public_key, key_format=key_format)
+        return config(self._prefix_key(key), default=default, cast=cast_key, **kwargs)
+
+
 # default parser
 confi = Confi()
-
-
-
-
-
