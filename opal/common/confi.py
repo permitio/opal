@@ -9,14 +9,8 @@ from pydantic import BaseModel
 from decouple import config, Csv, text_type, undefined, UndefinedValueError
 import string
 
-from opal.common.authentication.jwt import (
-    EncryptionKeyFormat,
-    cast_private_key,
-    cast_public_key,
-    Algorithm,
-    PrivateKey,
-    PublicKey,
-)
+from opal.common.authentication.types import EncryptionKeyFormat, PrivateKey, PublicKey
+from opal.common.authentication.casting import cast_private_key, cast_public_key
 
 def cast_boolean(value):
     """

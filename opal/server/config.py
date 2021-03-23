@@ -2,7 +2,7 @@ from pathlib import Path
 
 from opal.common.confi import Confi
 from opal.common.schemas.data import DataSourceConfig
-from opal.common.authentication.jwt import EncryptionKeyFormat, JWTAlgorithm
+from opal.common.authentication.types import EncryptionKeyFormat, JWTAlgorithm
 
 confi = Confi()
 # ws server (TODO: merge with opal client config)

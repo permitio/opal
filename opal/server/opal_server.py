@@ -11,7 +11,7 @@ from opal.common.logger import logger
 from opal.common.schemas.data import DataSourceConfig
 from opal.common.synchronization.named_lock import NamedLock
 from opal.common.middleware import configure_middleware
-from opal.common.authentication.jwt import JWTSigner
+from opal.common.authentication.signer import JWTSigner
 from opal.server.config import (
     DATA_CONFIG_SOURCES,
     BROADCAST_URI,
@@ -24,7 +24,7 @@ from opal.server.config import (
 )
 from opal.server.data.api import init_data_updates_router
 from opal.server.data.data_update_publisher import DataUpdatePublisher
-from opal.server.deps.authentication import verify_logged_in
+from opal.server.deps.authentication import JWTVerifier
 from opal.server.policy.bundles.api import router as bundles_router
 from opal.server.policy.github_webhook.api import init_git_webhook_router
 from opal.server.policy.github_webhook.listener import setup_webhook_listener
@@ -133,13 +133,13 @@ class OpalServer:
             data_update_publisher,
             self.data_sources_config
         )
-        pubsub = PubSub(broadcaster_uri=self.broadcaster_uri)
+        pubsub = PubSub(signer=self.signer, broadcaster_uri=self.broadcaster_uri)
         webhook_router = init_git_webhook_router(pubsub.endpoint)
-        verify_jwt = partial(verify_logged_in, signer=self.signer)
+        verifier = JWTVerifier(self.signer)
 
         # mount the api routes on the app object
-        app.include_router(bundles_router, tags=["Bundle Server"], dependencies=[Depends(verify_jwt)])
-        app.include_router(data_updates_router, tags=["Data Updates"], dependencies=[Depends(verify_jwt)])
+        app.include_router(bundles_router, tags=["Bundle Server"], dependencies=[Depends(verifier)])
+        app.include_router(data_updates_router, tags=["Data Updates"], dependencies=[Depends(verifier)])
         app.include_router(webhook_router, tags=["Github Webhook"])
         app.include_router(pubsub.router, tags=["Pub/Sub"])
 
