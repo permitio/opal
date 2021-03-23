@@ -1,26 +1,22 @@
 import asyncio
 from typing import Any, List
 
-from fastapi_websocket_pubsub import PubSubClient, TopicList
+from fastapi_websocket_pubsub import PubSubEndpoint, PubSubClient, TopicList
 from opal.common.logger import logger
 
 
 class TopicPublisher:
     """
-    A simple wrapper around a PubSubClient that exposes publish().
-    Provides start() and stop() shortcuts that helps treat this client
-    as a separate "process" or task that runs in the background.
+    abstract publisher, base class for client side and server side publisher
     """
-    def __init__(self, client: PubSubClient, server_uri: str):
-        """[summary]
-
-        Args:
-            client (PubSubClient): a configured not-yet-started pub sub client
-            server_uri (str): the URI of the pub sub server we publish to
+    def __init__(self):
         """
-        self._client = client
-        self._server_uri = server_uri
+        inits the publisher's asyncio tasks list
+        """
         self._tasks: List[asyncio.Task] = []
+
+    def publish(self, topics: TopicList, data: Any = None):
+        raise NotImplementedError()
 
     async def __aenter__(self):
         self.start()
@@ -31,22 +27,69 @@ class TopicPublisher:
 
     def start(self):
         """
+        starts the publisher
+        """
+        logger.info("started topic publisher")
+
+    async def stop(self):
+        """
+        stops the publisher (cancels any running publishing tasks)
+        """
+        logger.info("stopping topic publisher")
+        for task in self._tasks:
+            if not task.done():
+                task.cancel()
+        await asyncio.gather(*self._tasks, return_exceptions=True)
+
+
+class ServerSideTopicPublisher(TopicPublisher):
+    """
+    A simple wrapper around a PubSubEndpoint that exposes publish().
+    """
+    def __init__(self, endpoint: PubSubEndpoint):
+        """inits the publisher.
+
+        Args:
+            endpoint (PubSubEndpoint): a pub/sub endpoint
+        """
+        self._endpoint = endpoint
+        super().__init__()
+
+    def publish(self, topics: TopicList, data: Any = None):
+        self._tasks.append(asyncio.create_task(self._endpoint.publish(topics=topics, data=data)))
+
+
+class ClientSideTopicPublisher(TopicPublisher):
+    """
+    A simple wrapper around a PubSubClient that exposes publish().
+    Provides start() and stop() shortcuts that helps treat this client
+    as a separate "process" or task that runs in the background.
+    """
+    def __init__(self, client: PubSubClient, server_uri: str):
+        """inits the publisher.
+
+        Args:
+            client (PubSubClient): a configured not-yet-started pub sub client
+            server_uri (str): the URI of the pub sub server we publish to
+        """
+        self._client = client
+        self._server_uri = server_uri
+        super().__init__()
+
+    def start(self):
+        """
         starts the pub/sub client as a background asyncio task.
         the client will attempt to connect to the pubsub server until successful.
         """
-        logger.info("started topic publisher")
+        super().start()
         self._client.start_client(f"{self._server_uri}")
 
     async def stop(self):
         """
         stops the pubsub client, and cancels any publishing tasks.
         """
-        logger.info("stopping topic publisher")
         await self._client.disconnect()
-        for task in self._tasks:
-            if not task.done():
-                task.cancel()
-        await asyncio.gather(*self._tasks, return_exceptions=True)
+        await super().stop()
 
     async def wait_until_done(self):
         """

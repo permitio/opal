@@ -8,8 +8,7 @@ from pathlib import Path
 from fastapi import Depends, FastAPI
 from fastapi.staticfiles import StaticFiles
 
-from opal.common.topics.listener import TopicListener
-from opal.common.topics.publisher import TopicPublisher
+from opal.common.topics.publisher import TopicPublisher, ServerSideTopicPublisher
 from opal.common.logger import logger
 from opal.common.schemas.data import DataSourceConfig
 from opal.common.synchronization.named_lock import NamedLock
@@ -28,13 +27,13 @@ from opal.server.config import (
     AUTH_JWT_ISSUER,
     AUTH_JWKS_URL,
     AUTH_JWKS_STATIC_DIR,
+    POLICY_REPO_WEBHOOK_TOPIC
 )
 from opal.server.data.api import init_data_updates_router
 from opal.server.data.data_update_publisher import DataUpdatePublisher
 from opal.server.deps.authentication import JWTVerifier
 from opal.server.policy.bundles.api import router as bundles_router
 from opal.server.policy.github_webhook.api import init_git_webhook_router
-from opal.server.policy.github_webhook.listener import setup_webhook_listener
 from opal.server.policy.watcher import (setup_watcher_task,
                                         trigger_repo_watcher_pull)
 from opal.server.policy.watcher.task import RepoWatcherTask
@@ -73,32 +72,17 @@ class OpalServer:
             on a *leader* worker (the first worker to obtain a file-lock) that also
             launches the following internal components:
 
-                webhook_listener (TopicListener): *each* worker can receive messages from
-                github on its webhook api route. regardless of the worker receiving the
-                webhook request, the worker will broadcast via the pub/sub to the webhook
-                topic. only the *leader* worker runs the webhook_listener and listens on
-                the webhook topic. upon receiving a message on this topic, the leader will
-                trigger the repo watcher to check for updates.
-
                 watcher (RepoWatcherTask): run by the leader, monitors the policy git repository
-                by polling on it or by being triggered from the webhook_listener. upon being
-                triggered, will detect updates to the policy (new commits) and will update
-                the opal client via pubsub.
+                by polling on it or by being triggered by the callback subscribed on the "webhook"
+                topic. upon being triggered, will detect updates to the policy (new commits) and
+                will update the opal client via pubsub.
         """
-
-        self.webhook_listener: Optional[TopicListener] = None
         self.watcher: Optional[RepoWatcherTask] = None
         self.leadership_lock: Optional[NamedLock] = None
         self.data_sources_config = data_sources_config if data_sources_config is not None else DATA_CONFIG_SOURCES
         self.broadcaster_uri = broadcaster_uri
         self.jwks_url = Path(jwks_url)
         self.jwks_static_dir = Path(jwks_static_dir)
-
-        self.publisher: Optional[TopicPublisher] = None
-        if init_publisher:
-            self.publisher = setup_publisher_task()
-            if init_git_watcher:
-                self.watcher = setup_watcher_task(self.publisher)
 
         if signer is not None:
             self.signer = signer
@@ -110,6 +94,14 @@ class OpalServer:
                 audience=AUTH_JWT_AUDIENCE,
                 issuer=AUTH_JWT_ISSUER,
             )
+
+        self.pubsub = PubSub(signer=self.signer, broadcaster_uri=broadcaster_uri)
+
+        self.publisher: Optional[TopicPublisher] = None
+        if init_publisher:
+            self.publisher = ServerSideTopicPublisher(self.pubsub.endpoint)
+            if init_git_watcher:
+                self.watcher = setup_watcher_task(self.publisher)
 
         # init fastapi app
         self.app: FastAPI = self._init_fast_api_app()
@@ -144,15 +136,14 @@ class OpalServer:
             data_update_publisher,
             self.data_sources_config
         )
-        pubsub = PubSub(signer=self.signer, broadcaster_uri=self.broadcaster_uri)
-        webhook_router = init_git_webhook_router(pubsub.endpoint)
+        webhook_router = init_git_webhook_router(self.pubsub.endpoint)
         verifier = JWTVerifier(self.signer)
 
         # mount the api routes on the app object
         app.include_router(bundles_router, tags=["Bundle Server"], dependencies=[Depends(verifier)])
         app.include_router(data_updates_router, tags=["Data Updates"], dependencies=[Depends(verifier)])
         app.include_router(webhook_router, tags=["Github Webhook"])
-        app.include_router(pubsub.router, tags=["Pub/Sub"])
+        app.include_router(self.pubsub.router, tags=["Pub/Sub"])
 
         # mount jwts (static) route
         self._configure_static_jwks_route(app)
@@ -204,8 +195,6 @@ class OpalServer:
             logger.info("triggered shutdown event")
             if self.watcher is not None:
                 self.watcher.signal_stop()
-            if self.webhook_listener is not None:
-                asyncio.create_task(self.webhook_listener.stop())
             if self.publisher is not None:
                 asyncio.create_task(self.publisher.stop())
 
@@ -219,7 +208,6 @@ class OpalServer:
         - publisher: a client that is used to publish updates to the client.
 
         only the leader worker (first to obtain leadership lock) will start these tasks:
-        - webhook_listener: a client that listens on the webhook topic.
         - (repo) watcher: monitors the policy git repository for changes.
         """
         if self.publisher is not None:
@@ -228,7 +216,7 @@ class OpalServer:
                     self.leadership_lock = NamedLock(LEADER_LOCK_FILE_PATH)
                     async with self.leadership_lock:
                         logger.info("leadership lock acquired, leader pid: {pid}", pid=os.getpid())
-                        self.webhook_listener = setup_webhook_listener(partial(trigger_repo_watcher_pull, self.watcher))
-                        async with self.webhook_listener:
-                            async with self.watcher:
-                                await self.watcher.wait_until_should_stop()
+                        logger.info("listening on webhook topic: '{topic}'", topic=POLICY_REPO_WEBHOOK_TOPIC)
+                        await self.pubsub.endpoint.subscribe([POLICY_REPO_WEBHOOK_TOPIC], partial(trigger_repo_watcher_pull, self.watcher))
+                        async with self.watcher:
+                            await self.watcher.wait_until_should_stop()
