@@ -13,16 +13,27 @@ BROADCAST_URI = confi.str("BROADCAST_URI", "postgres://localhost/acalladb")
 # server security
 AUTH_PRIVATE_KEY_FORMAT = confi.enum("AUTH_PRIVATE_KEY_FORMAT", EncryptionKeyFormat, EncryptionKeyFormat.pem)
 AUTH_PRIVATE_KEY_PASSPHRASE = confi.str("AUTH_PRIVATE_KEY_PASSPHRASE", "")
-AUTH_PRIVATE_KEY = confi.str("AUTH_PRIVATE_KEY", None)
+AUTH_PRIVATE_KEY = confi.private_key(
+    "AUTH_PRIVATE_KEY",
+    default=None,
+    key_format=AUTH_PRIVATE_KEY_FORMAT,
+    passphrase=AUTH_PRIVATE_KEY_PASSPHRASE
+)
 
 AUTH_PUBLIC_KEY_FORMAT = confi.enum("AUTH_PUBLIC_KEY_FORMAT", EncryptionKeyFormat, EncryptionKeyFormat.ssh)
-AUTH_PUBLIC_KEY = confi.str("AUTH_PUBLIC_KEY", None)
+AUTH_PUBLIC_KEY = confi.public_key(
+    "AUTH_PUBLIC_KEY",
+    default=None,
+    key_format=AUTH_PUBLIC_KEY_FORMAT
+)
 AUTH_JWT_ALGORITHM = confi.enum(
     "AUTH_JWT_ALGORITHM",
     JWTAlgorithm,
     getattr(JWTAlgorithm, "RS256"),
     description="jwt algorithm, possible values: see: https://pyjwt.readthedocs.io/en/stable/algorithms.html"
 )
+AUTH_JWT_AUDIENCE = confi.str("AUTH_JWT_AUDIENCE", "https://api.authorizon.com/v1/")
+AUTH_JWT_ISSUER = confi.str("AUTH_JWT_ISSUER", f"https://authorizon.com/")
 AUTH_MASTER_TOKEN = confi.str("AUTH_MASTER_TOKEN", None)
 
 # repo watcher

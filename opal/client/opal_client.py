@@ -70,12 +70,10 @@ class OpalClient:
         inits the fastapi app object
         """
         app = FastAPI(
-            title="OPAL client Sidecar",
-            description="This sidecar wraps Open Policy Agent (OPA) with a higher-level API intended for fine grained " +
-            "application-level authorization. The sidecar automatically handles pulling policy updates in real-time " +
-            "from a centrally managed cloud-service (api.authorizon.com).",
-            version="0.1.0",
-            openapi_tags=OPENAPI_TAGS_METADATA
+            title="OPAL Client",
+            description="The client is deployed alongside a policy-store (e.g: OPA), " + \
+            "keeping it up-to-date, by subscribes to pub/sub updates for policy and policy data",
+            version="0.1.0"
         )
         configure_middleware(app)
         self._configure_api_routes(app)
