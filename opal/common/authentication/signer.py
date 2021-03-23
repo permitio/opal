@@ -11,16 +11,6 @@ from opal.common.authentication.types import JWTAlgorithm, JWTClaims, PrivateKey
 from opal.common.logger import logger
 
 
-def convert_public_key_to_jwk(public_key: PublicKey, algo: JWTAlgorithm) -> str:
-    """
-    returns the jwk json contents
-    """
-    algorithm: Optional[Algorithm] = get_default_algorithms().get(algo.value)
-    if algorithm is None:
-        raise ValueError(f"invalid jwt algorithm: {algo.value}")
-    algorithm.to_jwk(public_key)
-
-
 class Unauthorized(HTTPException):
     """
     HTTP 401 Unauthorized exception.
@@ -66,7 +56,7 @@ class JWTSigner:
                 raise
             # save jwk
             self._jwk: PyJWK = PyJWK.from_json(
-                convert_public_key_to_jwk(
+                self.get_jwk(
                     self._public_key,
                     getattr(JWTAlgorithm, self._algorithm)
                 )
@@ -79,6 +69,15 @@ class JWTSigner:
             logger.info("OPAL was not provided with JWT encryption keys, cannot verify api requests!")
         else:
             raise ValueError("Invalid JWT Signer input!")
+
+    def get_jwk(self) -> str:
+        """
+        returns the jwk json contents
+        """
+        algorithm: Optional[Algorithm] = get_default_algorithms().get(self._algorithm)
+        if algorithm is None:
+            raise ValueError(f"invalid jwt algorithm: {self._algorithm}")
+        algorithm.to_jwk(self._public_key)
 
     @property
     def enabled(self):

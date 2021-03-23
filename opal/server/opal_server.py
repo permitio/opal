@@ -1,9 +1,12 @@
+import json
 import os
 import asyncio
 from functools import partial
 from typing import Optional
+from pathlib import Path
 
 from fastapi import Depends, FastAPI
+from fastapi.staticfiles import StaticFiles
 
 from opal.common.topics.listener import TopicListener
 from opal.common.topics.publisher import TopicPublisher
@@ -21,6 +24,8 @@ from opal.server.config import (
     AUTH_JWT_ALGORITHM,
     AUTH_JWT_AUDIENCE,
     AUTH_JWT_ISSUER,
+    AUTH_JWKS_URL,
+    AUTH_JWKS_STATIC_DIR,
 )
 from opal.server.data.api import init_data_updates_router
 from opal.server.data.data_update_publisher import DataUpdatePublisher
@@ -44,6 +49,8 @@ class OpalServer:
         data_sources_config: Optional[DataSourceConfig] = None,
         broadcaster_uri: str = BROADCAST_URI,
         signer: Optional[JWTSigner] = None,
+        jwks_url: str = AUTH_JWKS_URL,
+        jwks_static_dir: str = AUTH_JWKS_STATIC_DIR,
     ) -> None:
         """
         Args:
@@ -82,6 +89,8 @@ class OpalServer:
         self.leadership_lock: Optional[NamedLock] = None
         self.data_sources_config = data_sources_config if data_sources_config is not None else DATA_CONFIG_SOURCES
         self.broadcaster_uri = broadcaster_uri
+        self.jwks_url = Path(jwks_url)
+        self.jwks_static_dir = Path(jwks_static_dir)
 
         self.publisher: Optional[TopicPublisher] = None
         if init_publisher:
@@ -143,11 +152,36 @@ class OpalServer:
         app.include_router(webhook_router, tags=["Github Webhook"])
         app.include_router(pubsub.router, tags=["Pub/Sub"])
 
+        # mount jwts (static) route
+        self._configure_static_jwks_route(app)
+
         # top level routes (i.e: healthchecks)
         @app.get("/healthcheck", include_in_schema=False)
         @app.get("/", include_in_schema=False)
         def healthcheck():
             return {"status": "ok"}
+
+        return app
+
+    def _configure_static_jwks_route(self, app: FastAPI):
+        # create the directory in which the jwks.json file should sit
+        self.jwks_static_dir.mkdir(parents=True, exist_ok=True)
+
+        # get the jwks contents from the signer
+        jwks_contents = {}
+        if self.signer.enabled:
+            jwk = json.loads(self.signer.get_jwk())
+            jwks_contents = {
+                "keys": [jwk]
+            }
+
+        # write the jwks.json file
+        filename = self.jwks_static_dir / self.jwks_url.name
+        with open(filename, "w") as f:
+            f.write(json.dumps(jwks_contents))
+
+        route_url = str(self.jwks_url.parent)
+        app.mount(route_url, StaticFiles(directory=str(self.jwks_static_dir)), name="jwks_dir")
 
         return app
 
@@ -196,6 +230,3 @@ class OpalServer:
                         async with self.webhook_listener:
                             async with self.watcher:
                                 await self.watcher.wait_until_should_stop()
-
-    def _init_signer(self):
-        pass

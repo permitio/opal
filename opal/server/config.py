@@ -34,6 +34,10 @@ AUTH_JWT_ALGORITHM = confi.enum(
 )
 AUTH_JWT_AUDIENCE = confi.str("AUTH_JWT_AUDIENCE", "https://api.authorizon.com/v1/")
 AUTH_JWT_ISSUER = confi.str("AUTH_JWT_ISSUER", f"https://authorizon.com/")
+
+AUTH_JWKS_URL = confi.str("AUTH_JWKS_URL", "/.well-known/jwks.json")
+AUTH_JWKS_STATIC_DIR = confi.str("AUTH_JWKS_STATIC_DIR", str(Path.home() / "jwks_dir"))
+
 AUTH_MASTER_TOKEN = confi.str("AUTH_MASTER_TOKEN", None)
 
 # repo watcher

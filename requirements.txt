@@ -1,4 +1,5 @@
 aiohttp
+aiofiles
 colorama
 fastapi==0.62.0
 GitPython
