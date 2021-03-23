@@ -12,7 +12,7 @@ BROADCAST_URI = confi.str("BROADCAST_URI", "postgres://localhost/acalladb")
 
 # server security
 AUTH_PRIVATE_KEY_FORMAT = confi.enum("AUTH_PRIVATE_KEY_FORMAT", EncryptionKeyFormat, EncryptionKeyFormat.pem)
-AUTH_PRIVATE_KEY_PASSPHRASE = confi.str("AUTH_PRIVATE_KEY_PASSPHRASE", "")
+AUTH_PRIVATE_KEY_PASSPHRASE = confi.str("AUTH_PRIVATE_KEY_PASSPHRASE", None)
 AUTH_PRIVATE_KEY = confi.private_key(
     "AUTH_PRIVATE_KEY",
     default=None,
