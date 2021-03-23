@@ -48,6 +48,11 @@ POLICY_REPO_MAIN_REMOTE = confi.str("POLICY_REPO_MAIN_REMOTE", "origin")
 POLICY_REPO_SSH_KEY = confi.str("POLICY_REPO_SSH_KEY", None)
 LEADER_LOCK_FILE_PATH = confi.str("LEADER_LOCK_FILE_PATH", "/tmp/opal_server_leader.lock")
 
+REPO_WATCHER_ENABLED = confi.bool("REPO_WATCHER_ENABLED", True)
+
+# publisher
+PUBLISHER_ENABLED = confi.bool("PUBLISHER_ENABLED", True)
+
 # Data updates
 ALL_DATA_TOPIC = confi.str("ALL_DATA_TOPIC", "policy_data", description="Top level topic for data")
 ALL_DATA_URL = confi.str("ALL_DATA_URL", "http://localhost:7002/policy-data", description="URL for all data config [If you choose to have it all at one place]")

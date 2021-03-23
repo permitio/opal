@@ -16,6 +16,8 @@ from opal.common.synchronization.named_lock import NamedLock
 from opal.common.middleware import configure_middleware
 from opal.common.authentication.signer import JWTSigner
 from opal.server.config import (
+    REPO_WATCHER_ENABLED,
+    PUBLISHER_ENABLED,
     DATA_CONFIG_SOURCES,
     BROADCAST_URI,
     LEADER_LOCK_FILE_PATH,
@@ -44,8 +46,8 @@ class OpalServer:
 
     def __init__(
         self,
-        init_git_watcher: bool = True,
-        init_publisher: bool = True,
+        init_git_watcher: bool = REPO_WATCHER_ENABLED,
+        init_publisher: bool = PUBLISHER_ENABLED,
         data_sources_config: Optional[DataSourceConfig] = None,
         broadcaster_uri: str = BROADCAST_URI,
         signer: Optional[JWTSigner] = None,
