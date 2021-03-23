@@ -1,4 +1,5 @@
 import json
+from opal.server.security.jwks import JwksStaticEndpoint
 import os
 import asyncio
 from functools import partial
@@ -81,8 +82,6 @@ class OpalServer:
         self.leadership_lock: Optional[NamedLock] = None
         self.data_sources_config = data_sources_config if data_sources_config is not None else DATA_CONFIG_SOURCES
         self.broadcaster_uri = broadcaster_uri
-        self.jwks_url = Path(jwks_url)
-        self.jwks_static_dir = Path(jwks_static_dir)
 
         if signer is not None:
             self.signer = signer
@@ -94,6 +93,12 @@ class OpalServer:
                 audience=AUTH_JWT_AUDIENCE,
                 issuer=AUTH_JWT_ISSUER,
             )
+
+        self.jwks_endpoint = JwksStaticEndpoint(
+            signer=self.signer,
+            jwks_url=jwks_url,
+            jwks_static_dir=jwks_static_dir
+        )
 
         self.pubsub = PubSub(signer=self.signer, broadcaster_uri=broadcaster_uri)
 
@@ -146,35 +151,13 @@ class OpalServer:
         app.include_router(self.pubsub.router, tags=["Pub/Sub"])
 
         # mount jwts (static) route
-        self._configure_static_jwks_route(app)
+        self.jwks_endpoint.configure_app(app)
 
         # top level routes (i.e: healthchecks)
         @app.get("/healthcheck", include_in_schema=False)
         @app.get("/", include_in_schema=False)
         def healthcheck():
             return {"status": "ok"}
-
-        return app
-
-    def _configure_static_jwks_route(self, app: FastAPI):
-        # create the directory in which the jwks.json file should sit
-        self.jwks_static_dir.mkdir(parents=True, exist_ok=True)
-
-        # get the jwks contents from the signer
-        jwks_contents = {}
-        if self.signer.enabled:
-            jwk = json.loads(self.signer.get_jwk())
-            jwks_contents = {
-                "keys": [jwk]
-            }
-
-        # write the jwks.json file
-        filename = self.jwks_static_dir / self.jwks_url.name
-        with open(filename, "w") as f:
-            f.write(json.dumps(jwks_contents))
-
-        route_url = str(self.jwks_url.parent)
-        app.mount(route_url, StaticFiles(directory=str(self.jwks_static_dir)), name="jwks_dir")
 
         return app
 
