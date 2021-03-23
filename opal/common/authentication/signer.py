@@ -25,6 +25,13 @@ class Unauthorized(HTTPException):
             headers={"WWW-Authenticate": "Bearer"}
         )
 
+
+class InvalidJWTCryptoKeysException(Exception):
+    """
+    raised when JWT signer provided with invalid crypto keys
+    """
+    pass
+
 class JWTSigner:
     """
     given cryptographic keys, signs and verifies jwt tokens.
@@ -51,16 +58,11 @@ class JWTSigner:
             token = jwt.encode({"some": "payload"}, self._private_key, algorithm=self._algorithm)
             try:
                 jwt.decode(token, self._public_key, algorithms=[self._algorithm])
-            except jwt.PyJWTError as e:
-                logger.info("JWT Signer key verification failed with error: {err}", err=e)
-                raise
+            except jwt.PyJWTError as exc:
+                logger.info("JWT Signer key verification failed with error: {err}", err=exc)
+                raise InvalidJWTCryptoKeysException("private key and public key do not match!") from exc
             # save jwk
-            self._jwk: PyJWK = PyJWK.from_json(
-                self.get_jwk(
-                    self._public_key,
-                    getattr(JWTAlgorithm, self._algorithm)
-                )
-            )
+            self._jwk: PyJWK = PyJWK.from_json(self.get_jwk(), algorithm=self._algorithm)
         elif (self._private_key != self._public_key) and (self._private_key is None or self._public_key is None):
             raise ValueError("JWT Signer not valid, only one of private key / public key pair was provided!")
         elif self._private_key is None and self._public_key is None:
@@ -77,7 +79,7 @@ class JWTSigner:
         algorithm: Optional[Algorithm] = get_default_algorithms().get(self._algorithm)
         if algorithm is None:
             raise ValueError(f"invalid jwt algorithm: {self._algorithm}")
-        algorithm.to_jwk(self._public_key)
+        return algorithm.to_jwk(self._public_key)
 
     @property
     def enabled(self):
