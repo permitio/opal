@@ -10,6 +10,7 @@ from opal.server.config import (
     POLICY_REPO_CLONE_PATH,
     POLICY_REPO_MAIN_BRANCH,
     POLICY_REPO_MAIN_REMOTE,
+    POLICY_REPO_SSH_KEY,
     POLICY_REPO_POLLING_INTERVAL,
     OPA_FILE_EXTENSIONS,
 )
@@ -23,6 +24,7 @@ def setup_watcher_task(
     clone_path: str = POLICY_REPO_CLONE_PATH,
     branch_name: str = POLICY_REPO_MAIN_BRANCH,
     remote_name: str = POLICY_REPO_MAIN_REMOTE,
+    ssh_key: Optional[str] = POLICY_REPO_SSH_KEY,
     polling_interval: int = POLICY_REPO_POLLING_INTERVAL,
     extensions: Optional[List[str]] = None,
 ) -> RepoWatcherTask:
@@ -32,6 +34,7 @@ def setup_watcher_task(
         clone_path=clone_path,
         branch_name=branch_name,
         remote_name=remote_name,
+        ssh_key=ssh_key,
         polling_interval=polling_interval,
     )
     watcher.on_new_commits(

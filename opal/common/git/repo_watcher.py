@@ -1,5 +1,5 @@
 import asyncio
-from typing import Callable, Coroutine, List
+from typing import Callable, Coroutine, List, Optional
 from git.objects import Commit
 
 from opal.common.git.branch_tracker import BranchTracker
@@ -28,9 +28,10 @@ class RepoWatcher:
         clone_path: str,
         branch_name: str = "master",
         remote_name: str = "origin",
+        ssh_key: Optional[str] = None,
         polling_interval: int = 0,
     ):
-        self._cloner = RepoCloner(repo_url, clone_path)
+        self._cloner = RepoCloner(repo_url, clone_path, ssh_key=ssh_key)
         self._branch_name = branch_name
         self._remote_name = remote_name
         self._tracker = None
@@ -111,7 +112,10 @@ class RepoWatcher:
     async def _stop_polling_task(self):
         if self._polling_task is not None:
             self._polling_task.cancel()
-            await self._polling_task
+            try:
+                await self._polling_task
+            except asyncio.CancelledError:
+                pass
 
     async def _on_new_commits(self, old: Commit, new: Commit):
         """

@@ -2,6 +2,7 @@ import os
 from enum import Enum
 
 from opal.common.confi import Confi
+from opal.client.opa.options import OpaServerOptions
 
 confi = Confi(prefix="OPAL_")
 
@@ -13,9 +14,21 @@ class PolicyStoreTypes(Enum):
 
 # opa client (policy store) configuration
 POLICY_STORE_TYPE = confi.enum("POLICY_STORE_TYPE", PolicyStoreTypes, PolicyStoreTypes.OPA)
-OPA_PORT = confi.str("OPA_PORT", "8181")
-_opa_url = confi.str("OPA_SERVICE_URL", f"http://localhost:{OPA_PORT}")
-POLICY_STORE_URL = f"{_opa_url}/v1"
+POLICY_STORE_URL = confi.str("POLICY_STORE_URL", f"http://localhost:8181/v1")
+
+# opa runner configuration (OPA can optionally be run by OPAL) ----------------
+
+# whether or not OPAL should run OPA by itself in the same container
+INLINE_OPA_ENABLED = confi.bool("INLINE_OPA_ENABLED", True)
+
+# if inline OPA is indeed enabled, user can pass cli options
+# (configuration) that affects how OPA will run
+INLINE_OPA_CONFIG = confi.model(
+    "INLINE_OPA_CONFIG",
+    OpaServerOptions,
+    {}, # defaults are being set according to OpaServerOptions pydantic definitions (see class)
+    description="cli options used when running `opa run --server` inline"
+)
 
 # configuration for fastapi routes
 ALLOWED_ORIGINS = ["*"]

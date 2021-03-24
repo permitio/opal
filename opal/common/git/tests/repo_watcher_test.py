@@ -24,6 +24,10 @@ from functools import partial
 from opal.common.git.repo_watcher import RepoWatcher
 from opal.common.git.exceptions import GitFailed
 
+try:
+    from asyncio.exceptions import TimeoutError
+except ImportError:
+    from asyncio import TimeoutError
 
 VALID_REPO_REMOTE_URL_HTTPS = \
     "https://github.com/authorizon/fastapi_websocket_pubsub.git"
@@ -95,7 +99,7 @@ async def test_repo_watcher_detect_new_commits_with_manual_trigger(
 
     # assert watcher will not detect new commits when forced to check
     await watcher.check_for_changes()
-    with pytest.raises(asyncio.exceptions.TimeoutError):
+    with pytest.raises(TimeoutError):
         await asyncio.wait_for(detected_new_commits.wait(), 5)
     assert not detected_new_commits.is_set()
     assert detected_commits['old'] is None
@@ -165,7 +169,7 @@ async def test_repo_watcher_detect_new_commits_with_polling(
     await watcher.run()
 
     # assert watcher will not detect new commits after 6 seconds (enough for first polling check)
-    with pytest.raises(asyncio.exceptions.TimeoutError):
+    with pytest.raises(TimeoutError):
         await asyncio.wait_for(detected_new_commits.wait(), 6)
     assert not detected_new_commits.is_set()
     assert detected_commits['old'] is None

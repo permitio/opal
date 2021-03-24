@@ -209,4 +209,4 @@ def test_bundle_maker_diff_bundle(repo_with_diffs: Tuple[Repo, Commit, Commit]):
     assert bundle.deleted_files is not None
     assert len(bundle.deleted_files.policy_modules) == 0
     assert len(bundle.deleted_files.data_modules) == 1
-    assert bundle.deleted_files.data_modules[0] == Path("other/data.json")
+    assert bundle.deleted_files.data_modules[0] == Path("other") # other/data.json was deleted
