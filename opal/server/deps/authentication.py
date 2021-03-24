@@ -74,3 +74,21 @@ class JWTVerifierWebsocket:
             return True
         except (Unauthorized, HTTPException):
             return False
+
+
+class StaticBearerTokenVerifier:
+    """
+    bearer token authentication for http(s) api endpoints.
+    throws 401 if token does not match a preconfigured value.
+    """
+    def __init__(self, preconfigured_token: Optional[str]):
+        self._preconfigured_token = preconfigured_token
+
+    def __call__(self, authorization: str = Header(...)):
+        if self._preconfigured_token is None:
+            # always allow
+            return
+
+        token = get_token_from_header(authorization)
+        if token is None or token != self._preconfigured_token:
+            raise Unauthorized(token=token, description="unauthorized to access this endpoint!")

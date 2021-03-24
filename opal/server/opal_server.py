@@ -1,4 +1,5 @@
 import json
+from opal.server.security.api import init_security_router
 from opal.server.security.jwks import JwksStaticEndpoint
 import os
 import asyncio
@@ -23,6 +24,7 @@ from opal.server.config import (
     LEADER_LOCK_FILE_PATH,
     AUTH_PRIVATE_KEY,
     AUTH_PUBLIC_KEY,
+    AUTH_MASTER_TOKEN,
     AUTH_JWT_ALGORITHM,
     AUTH_JWT_AUDIENCE,
     AUTH_JWT_ISSUER,
@@ -32,7 +34,7 @@ from opal.server.config import (
 )
 from opal.server.data.api import init_data_updates_router
 from opal.server.data.data_update_publisher import DataUpdatePublisher
-from opal.server.deps.authentication import JWTVerifier
+from opal.server.deps.authentication import JWTVerifier, StaticBearerTokenVerifier
 from opal.server.policy.bundles.api import router as bundles_router
 from opal.server.policy.github_webhook.api import init_git_webhook_router
 from opal.server.policy.watcher import (setup_watcher_task,
@@ -53,6 +55,7 @@ class OpalServer:
         signer: Optional[JWTSigner] = None,
         jwks_url: str = AUTH_JWKS_URL,
         jwks_static_dir: str = AUTH_JWKS_STATIC_DIR,
+        master_token: str = AUTH_MASTER_TOKEN,
     ) -> None:
         """
         Args:
@@ -82,6 +85,7 @@ class OpalServer:
         self.leadership_lock: Optional[NamedLock] = None
         self.data_sources_config = data_sources_config if data_sources_config is not None else DATA_CONFIG_SOURCES
         self.broadcaster_uri = broadcaster_uri
+        self.master_token = master_token
 
         if signer is not None:
             self.signer = signer
@@ -142,12 +146,15 @@ class OpalServer:
             self.data_sources_config
         )
         webhook_router = init_git_webhook_router(self.pubsub.endpoint)
+        security_router = init_security_router(self.signer, StaticBearerTokenVerifier(self.master_token))
+
         verifier = JWTVerifier(self.signer)
 
         # mount the api routes on the app object
         app.include_router(bundles_router, tags=["Bundle Server"], dependencies=[Depends(verifier)])
         app.include_router(data_updates_router, tags=["Data Updates"], dependencies=[Depends(verifier)])
         app.include_router(webhook_router, tags=["Github Webhook"])
+        app.include_router(security_router, tags=["Security"])
         app.include_router(self.pubsub.router, tags=["Pub/Sub"])
 
         # mount jwts (static) route

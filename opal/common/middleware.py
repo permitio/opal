@@ -1,10 +1,11 @@
-from fastapi import FastAPI, status
+from fastapi import FastAPI, status, Request
 from fastapi.responses import JSONResponse
 from fastapi.encoders import jsonable_encoder
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from opal.common.config import ALLOWED_ORIGINS
+from opal.common.logger import logger
 
 class ErrorResponse(BaseModel):
     error: str
@@ -23,8 +24,9 @@ def register_default_server_exception_handler(app: FastAPI):
     we need to include them manually. Otherwise the frontend cries on the wrong issue.
     """
     @app.exception_handler(status.HTTP_500_INTERNAL_SERVER_ERROR)
-    async def default_server_exception_handler(request, exception):
+    async def default_server_exception_handler(request: Request, exception: Exception):
         response = get_response()
+        logger.exception("Uncaught server exception: {exc}", exc=exception)
 
         # Since the CORSMiddleware is not executed when an unhandled server exception
         # occurs, we need to manually set the CORS headers ourselves if we want the FE

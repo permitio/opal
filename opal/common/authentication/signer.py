@@ -112,7 +112,7 @@ class JWTSigner:
         except Exception:
             raise Unauthorized(token=token, description="Unknown JWT error")
 
-    def sign(self, sub: UUID, token_lifetime: timedelta, custom_claims: dict = {}):
+    def sign(self, sub: UUID, token_lifetime: timedelta, custom_claims: dict = {}) -> str:
         payload = {}
         issued_at = datetime.utcnow()
         expire_at = issued_at + token_lifetime
