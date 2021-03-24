@@ -203,10 +203,18 @@ class OpalServer:
         if self.publisher is not None:
             async with self.publisher:
                 if self.watcher is not None:
+                    # repo watcher is enabled, but we want only one worker to run it
+                    # (otherwise for each new commit, we will publish multiple updates via pub/sub).
+                    # leadership is determined by the first worker to obtain a lock
                     self.leadership_lock = NamedLock(LEADER_LOCK_FILE_PATH)
                     async with self.leadership_lock:
+                        # only one worker gets here, the others block. in case the leader worker
+                        # is terminated, another one will obtain the lock and become leader.
                         logger.info("leadership lock acquired, leader pid: {pid}", pid=os.getpid())
                         logger.info("listening on webhook topic: '{topic}'", topic=POLICY_REPO_WEBHOOK_TOPIC)
+                        # the leader listens to the webhook topic (webhook api route can be hit randomly in all workers)
+                        # and triggers the watcher to check for changes in the tracked upstream remote.
                         await self.pubsub.endpoint.subscribe([POLICY_REPO_WEBHOOK_TOPIC], partial(trigger_repo_watcher_pull, self.watcher))
+                        # running the watcher, and waiting until it stops (until self.watcher.signal_stop() is called)
                         async with self.watcher:
                             await self.watcher.wait_until_should_stop()

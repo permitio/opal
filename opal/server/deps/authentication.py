@@ -26,7 +26,7 @@ def get_token_from_header(authorization_header: str) -> Optional[str]:
 
 def verify_logged_in(signer: JWTSigner, token: str) -> UUID:
     """
-    forces bearer token authentication with valid JWT or throws 401 (can not be used for websocket endpoints)
+    forces bearer token authentication with valid JWT or throws 401.
     """
     if not signer.enabled:
         logger.debug("signer diabled, cannot verify request!")
@@ -60,9 +60,20 @@ class JWTVerifierWebsocket:
     """
     bearer token authentication for websocket endpoints.
 
-    with fastapi ws endpoint, we cannot throw http exceptions inside dependencies.
-    instead we return a boolean to the endpoint, in order for it to gracefully
+    with fastapi ws endpoint, we cannot throw http exceptions inside dependencies,
+    because no matter the http status code, uvicorn will treat it as http 500.
+    see: https://github.com/encode/uvicorn/blob/master/uvicorn/protocols/websockets/websockets_impl.py#L168
+
+    Instead we return a boolean to the endpoint, in order for it to gracefully
     close the connection in case authentication was unsuccessful.
+
+    In this case uvicorn's hardcoded behavior suits us:
+    - if websocket.accept() was called, http 200 will be sent
+    - if websocket.close() was called instead, http 403 will be sent
+    no other status code are supported.
+    see: https://github.com/encode/uvicorn/blob/master/uvicorn/protocols/websockets/websockets_impl.py#L189-L207
+
+    thus we return a boolean and the endpoint can use it to potentially call websocket.close()
     """
     def __init__(self, signer: JWTSigner):
         self.signer = signer

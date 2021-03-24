@@ -15,7 +15,7 @@ class Unauthorized(HTTPException):
     """
     HTTP 401 Unauthorized exception.
     """
-    def __init__(self, *, description="Bearer token is not valid!", **kwargs):
+    def __init__(self, description="Bearer token is not valid!", **kwargs):
         super().__init__(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail={
@@ -44,6 +44,24 @@ class JWTSigner:
         audience: str,
         issuer: str,
     ):
+        """
+        inits the signer if and only if the keys provided to __init__
+        were generate together are are valid. otherwise will throw.
+
+        JWT signer can be initialized with empty keys (None),
+        in which case signer.enabled == False.
+
+        This allows opal to run both in secure mode (which keys, requires jwt authentication)
+        and in insecure mode (good for development and running locally).
+
+        Args:
+            private_key (PrivateKey): a valid private key or None
+            public_key (PublicKey): a valid public key or None
+            algorithm (JWTAlgorithm): the jwt algorithm to use
+                (possible values: https://pyjwt.readthedocs.io/en/stable/algorithms.html)
+            audience (string): the value for the aud claim: https://tools.ietf.org/html/rfc7519#section-4.1.3
+            issuer (string): the value for the iss claim: https://tools.ietf.org/html/rfc7519#section-4.1.1
+        """
         self._private_key = private_key
         self._public_key = public_key
         self._algorithm: str = algorithm.value
@@ -53,6 +71,15 @@ class JWTSigner:
         self._verify_crypto_keys()
 
     def _verify_crypto_keys(self):
+        """
+        verifies whether or not valid crypto keys were provided to the signer.
+        if both keys are valid, encodes and decodes a JWT to make sure the keys match.
+
+        if both private and public keys are valid and are matching => signer is enabled
+        if both private and public keys are None => signer is disabled (self.enabled == False)
+        if only one key is valid/not-None => throws ValueError
+        any other case => throws ValueError
+        """
         if self._private_key is not None and self._public_key is not None:
             # both keys provided, let's make sure these keys were generated correctly
             token = jwt.encode({"some": "payload"}, self._private_key, algorithm=self._algorithm)
