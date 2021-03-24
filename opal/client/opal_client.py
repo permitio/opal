@@ -1,11 +1,12 @@
 from logging import disable
 import asyncio
 import functools
+from typing import List
+
 from fastapi import FastAPI
 
-from opal import common
-
-from opal.client.config import OPENAPI_TAGS_METADATA, PolicyStoreTypes, POLICY_STORE_TYPE, INLINE_OPA_ENABLED, INLINE_OPA_CONFIG
+from opal.common.logger import logger
+from opal.client.config import PolicyStoreTypes, POLICY_STORE_TYPE, INLINE_OPA_ENABLED, INLINE_OPA_CONFIG
 from opal.client.data.api import router as data_router
 from opal.client.data.updater import DataUpdater
 from opal.client.enforcer.api import init_enforcer_api_router
@@ -143,12 +144,26 @@ class OpalClient:
         """
         stops all background tasks (called on shutdown event)
         """
+        logger.info("stopping background tasks...")
+
+        # stopping opa runner
         if self.opa_runner:
             await self.opa_runner.stop()
+
+        # stopping updater tasks (each updater runs a pub/sub client)
+        logger.info("trying to shutdown DataUpdater and PolicyUpdater gracefully...")
+        tasks: List[asyncio.Task] = []
         if self.data_updater:
-            await self.data_updater.stop()
+            tasks.append(asyncio.create_task(self.data_updater.stop()))
         if self.policy_updater:
-            await self.policy_updater.stop()
+            tasks.append(asyncio.create_task(self.policy_updater.stop()))
+
+        # disconnect might hang if client is currently in the middle of __connect__
+        # so we put a time limit, and then we let uvicorn kill the worker.
+        try:
+            await asyncio.wait_for(asyncio.gather(*tasks, return_exceptions=True), timeout=5)
+        except asyncio.TimeoutError:
+            logger.info("timeout while waiting for DataUpdater and PolicyUpdater to disconnect")
 
     async def launch_policy_store_dependent_tasks(self):
         asyncio.create_task(self.launch_policy_updater())
