@@ -1,9 +1,12 @@
 from logging import disable
+import os
+import signal
 import asyncio
 import functools
 from typing import List
 
 from fastapi import FastAPI
+import websockets
 
 from opal.common.logger import logger
 from opal.client.config import PolicyStoreTypes, POLICY_STORE_TYPE, INLINE_OPA_ENABLED, INLINE_OPA_CONFIG
@@ -166,8 +169,14 @@ class OpalClient:
             logger.info("timeout while waiting for DataUpdater and PolicyUpdater to disconnect")
 
     async def launch_policy_store_dependent_tasks(self):
-        asyncio.create_task(self.launch_policy_updater())
-        asyncio.create_task(self.launch_data_updater())
+        try:
+            for task in asyncio.as_completed([self.launch_policy_updater(), self.launch_data_updater()]):
+                await task
+        except websockets.exceptions.InvalidStatusCode as err:
+            logger.error("Failed to launch background task -- {err}", err=err)
+            logger.info("triggering shutdown...")
+            await self.stop_client_background_tasks()
+            os.kill(os.getpid(), signal.SIGTERM)
 
     async def launch_policy_updater(self):
         if self.policy_updater:
