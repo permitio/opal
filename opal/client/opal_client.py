@@ -1,11 +1,15 @@
 from logging import disable
+import os
+import signal
 import asyncio
 import functools
+from typing import List
+
 from fastapi import FastAPI
+import websockets
 
-from opal import common
-
-from opal.client.config import OPENAPI_TAGS_METADATA, PolicyStoreTypes, POLICY_STORE_TYPE, INLINE_OPA_ENABLED, INLINE_OPA_CONFIG
+from opal.common.logger import logger
+from opal.client.config import PolicyStoreTypes, POLICY_STORE_TYPE, INLINE_OPA_ENABLED, INLINE_OPA_CONFIG
 from opal.client.data.api import router as data_router
 from opal.client.data.updater import DataUpdater
 from opal.client.enforcer.api import init_enforcer_api_router
@@ -143,16 +147,40 @@ class OpalClient:
         """
         stops all background tasks (called on shutdown event)
         """
+        logger.info("stopping background tasks...")
+
+        # stopping opa runner
         if self.opa_runner:
             await self.opa_runner.stop()
+
+        # stopping updater tasks (each updater runs a pub/sub client)
+        logger.info("trying to shutdown DataUpdater and PolicyUpdater gracefully...")
+        tasks: List[asyncio.Task] = []
         if self.data_updater:
-            await self.data_updater.stop()
+            tasks.append(asyncio.create_task(self.data_updater.stop()))
         if self.policy_updater:
-            await self.policy_updater.stop()
+            tasks.append(asyncio.create_task(self.policy_updater.stop()))
+
+        # disconnect might hang if client is currently in the middle of __connect__
+        # so we put a time limit, and then we let uvicorn kill the worker.
+        try:
+            await asyncio.wait_for(asyncio.gather(*tasks, return_exceptions=True), timeout=5)
+        except asyncio.TimeoutError:
+            logger.info("timeout while waiting for DataUpdater and PolicyUpdater to disconnect")
 
     async def launch_policy_store_dependent_tasks(self):
-        asyncio.create_task(self.launch_policy_updater())
-        asyncio.create_task(self.launch_data_updater())
+        try:
+            for task in asyncio.as_completed([self.launch_policy_updater(), self.launch_data_updater()]):
+                await task
+        except websockets.exceptions.InvalidStatusCode as err:
+            logger.error("Failed to launch background task -- {err}", err=err)
+            logger.info("triggering shutdown with SIGTERM...")
+            # this will send SIGTERM (Keyboard interrupt) to the worker, making uvicorn
+            # send "lifespan.shutdown" event to Starlette via the ASGI lifespan interface.
+            # Starlette will then trigger the @app.on_event("shutdown") callback, which
+            # in our case (self.stop_client_background_tasks()) will gracefully shutdown
+            # the background processes and only then will terminate the worker.
+            os.kill(os.getpid(), signal.SIGTERM)
 
     async def launch_policy_updater(self):
         if self.policy_updater:
