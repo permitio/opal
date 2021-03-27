@@ -3,12 +3,12 @@ from pathlib import Path
 from functools import partial
 from git.objects import Commit
 
-from opal.common.paths import PathUtils
-from opal.common.logger import logger
-from opal.common.git.commit_viewer import CommitViewer, has_extension
-from opal.common.git.diff_viewer import DiffViewer
-from opal.common.topics.publisher import TopicPublisher
-from opal.common.topics.utils import policy_topics
+from opal_common.paths import PathUtils
+from opal_common.logger import logger
+from opal_common.git.commit_viewer import CommitViewer, has_extension
+from opal_common.git.diff_viewer import DiffViewer
+from opal_common.topics.publisher import TopicPublisher
+from opal_common.topics.utils import policy_topics
 
 
 async def publish_all_directories_in_repo(

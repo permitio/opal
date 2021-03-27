@@ -2,10 +2,10 @@ from typing import Any, Optional, List
 from functools import partial
 
 from fastapi_websocket_pubsub import Topic
-from opal.common.logger import logger
-from opal.common.git.repo_watcher import RepoWatcher
-from opal.common.topics.publisher import TopicPublisher
-from opal.server.config import (
+from opal_common.logger import logger
+from opal_common.git.repo_watcher import RepoWatcher
+from opal_common.topics.publisher import TopicPublisher
+from opal_server.config import (
     POLICY_REPO_URL,
     POLICY_REPO_CLONE_PATH,
     POLICY_REPO_MAIN_BRANCH,
@@ -14,8 +14,8 @@ from opal.server.config import (
     POLICY_REPO_POLLING_INTERVAL,
     OPA_FILE_EXTENSIONS,
 )
-from opal.server.policy.watcher.task import RepoWatcherTask
-from opal.server.policy.watcher.callbacks import publish_changed_directories
+from opal_server.policy.watcher.task import RepoWatcherTask
+from opal_server.policy.watcher.callbacks import publish_changed_directories
 
 
 def setup_watcher_task(

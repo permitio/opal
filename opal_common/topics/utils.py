@@ -1,7 +1,7 @@
 from typing import List
 from pathlib import Path
 
-from opal.common.paths import PathUtils
+from opal_common.paths import PathUtils
 
 POLICY_PREFIX = "policy:"
 

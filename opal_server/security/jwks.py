@@ -5,7 +5,7 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
-from opal.common.authentication.signer import JWTSigner
+from opal_common.authentication.signer import JWTSigner
 
 
 class JwksStaticEndpoint:

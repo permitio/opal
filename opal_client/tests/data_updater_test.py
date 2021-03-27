@@ -12,15 +12,15 @@ from fastapi_websocket_pubsub import PubSubClient
 root_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), os.path.pardir, os.path.pardir, os.path.pardir))
 sys.path.append(root_dir)
 
-from opal.client import config
-from opal.client.data.rpc import TenantAwareRpcEventClientMethods
-from opal.client.data.updater import DataSourceEntry, DataUpdate, DataUpdater
-from opal.client.policy_store import (PolicyStoreClientFactory,
+from opal_client import config
+from opal_client.data.rpc import TenantAwareRpcEventClientMethods
+from opal_client.data.updater import DataSourceEntry, DataUpdate, DataUpdater
+from opal_client.policy_store import (PolicyStoreClientFactory,
                                       PolicyStoreTypes)
-from opal.common.schemas.data import DataSourceConfig
-from opal.common.utils import get_authorization_header
-from opal.server.config import DATA_CONFIG_ROUTE
-from opal.server.opal_server import OpalServer
+from opal_common.schemas.data import DataSourceConfig
+from opal_common.utils import get_authorization_header
+from opal_server.config import DATA_CONFIG_ROUTE
+from opal_server.opal_server import OpalServer
 
 
 
@@ -43,7 +43,7 @@ def setup_server(event):
     # Server without git watcher and with a test specifc url for data, and without broadcasting
     server = OpalServer(init_git_watcher=False, data_sources_config=DATA_SOURCES_CONFIG, broadcaster_uri=None)
     server_app = server.app
-    
+
     # add a url to fetch data from
     @server_app.get(DATA_ROUTE)
     def fetchable_data():

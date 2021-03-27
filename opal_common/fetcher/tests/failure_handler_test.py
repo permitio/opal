@@ -15,8 +15,8 @@ import pytest
 import uvicorn
 from fastapi import FastAPI
 
-from opal.common.fetcher.providers.http_get_fetch_provider import HttpGetFetchEvent, HttpGetFetchProvider
-from opal.common.fetcher import FetchingEngine, FetchEvent
+from opal_common.fetcher.providers.http_get_fetch_provider import HttpGetFetchEvent, HttpGetFetchProvider
+from opal_common.fetcher import FetchingEngine, FetchEvent
 
 # Configurable
 PORT = int(os.environ.get("PORT") or "9110")
@@ -33,7 +33,7 @@ async def test_retry_failure():
     """
     got_data_event = asyncio.Event()
     got_error = asyncio.Event()
-    
+
     async with FetchingEngine() as engine:
         # callback to handle failure
         async def error_callback(error:Exception, event:FetchEvent):

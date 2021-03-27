@@ -1,7 +1,7 @@
 import asyncio
 from typing import Any, Dict, Optional, List
-from opal.client.enforcer.schemas import AuthorizationQuery
-from opal.common.schemas.policy import PolicyBundle
+from opal_client.enforcer.schemas import AuthorizationQuery
+from opal_common.schemas.policy import PolicyBundle
 
 from .base_policy_store_client import  BasePolicyStoreClient
 

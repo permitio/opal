@@ -4,8 +4,8 @@ from git import Repo, Head, Remote
 from git.objects.commit import Commit
 from tenacity import retry, wait_fixed, stop_after_attempt
 
-from opal.common.logger import logger
-from opal.common.git.exceptions import GitFailed
+from opal_common.logger import logger
+from opal_common.git.exceptions import GitFailed
 
 
 class BranchTracker:

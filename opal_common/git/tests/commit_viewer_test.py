@@ -19,7 +19,7 @@ from pathlib import Path
 from git import Repo
 from git.objects import Commit
 
-from opal.common.git.commit_viewer import CommitViewer, VersionedNode
+from opal_common.git.commit_viewer import CommitViewer, VersionedNode
 
 def node_paths(nodes: List[VersionedNode]) -> List[Path]:
     return [node.path for node in nodes]

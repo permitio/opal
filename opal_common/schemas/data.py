@@ -2,7 +2,7 @@ from logging import basicConfig
 from typing import List, Dict, Union
 from pydantic import BaseModel, Field
 
-from opal.common.fetcher.events import FetcherConfig
+from opal_common.fetcher.events import FetcherConfig
 
 
 class DataSourceEntry(BaseModel):

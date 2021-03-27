@@ -7,8 +7,8 @@ from fastapi import HTTPException, status
 from jwt.algorithms import Algorithm, get_default_algorithms
 from jwt.api_jwk import PyJWK
 
-from opal.common.authentication.types import JWTAlgorithm, JWTClaims, PrivateKey, PublicKey
-from opal.common.logger import logger
+from opal_common.authentication.types import JWTAlgorithm, JWTClaims, PrivateKey, PublicKey
+from opal_common.logger import logger
 
 
 class Unauthorized(HTTPException):

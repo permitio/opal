@@ -6,9 +6,9 @@ from pathlib import Path
 from tenacity import retry, wait_fixed, stop_after_attempt, RetryError
 from git import Repo, GitError, GitCommandError
 
-from opal.common.logger import logger
-from opal.common.git.exceptions import GitFailed
-from opal.common.config import GIT_SSH_KEY_FILE
+from opal_common.logger import logger
+from opal_common.git.exceptions import GitFailed
+from opal_common.config import GIT_SSH_KEY_FILE
 
 
 SSH_PREFIX = "ssh://"

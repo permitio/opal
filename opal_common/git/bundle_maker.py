@@ -5,10 +5,10 @@ from typing import List, Optional, Set
 from git import Repo
 from git.objects import Commit
 
-from opal.common.git.commit_viewer import CommitViewer, has_extension, is_under_directories
-from opal.common.git.diff_viewer import DiffViewer, diffed_file_has_extension, diffed_file_is_under_directories
-from opal.common.opa import get_rego_package, is_data_module, is_rego_module
-from opal.common.schemas.policy import DataModule, PolicyBundle, RegoModule, DeletedFiles
+from opal_common.git.commit_viewer import CommitViewer, has_extension, is_under_directories
+from opal_common.git.diff_viewer import DiffViewer, diffed_file_has_extension, diffed_file_is_under_directories
+from opal_common.opa import get_rego_package, is_data_module, is_rego_module
+from opal_common.schemas.policy import DataModule, PolicyBundle, RegoModule, DeletedFiles
 
 
 class BundleMaker:

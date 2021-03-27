@@ -5,7 +5,7 @@ except ImportError:
     from typing_extensions import Protocol
 
 from fastapi_websocket_pubsub import PubSubClient, Topic, TopicList
-from opal.common.logger import logger
+from opal_common.logger import logger
 
 
 class TopicCallback(Protocol):

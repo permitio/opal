@@ -20,8 +20,8 @@ from pathlib import Path
 from git import Repo, Diff
 from git.objects import Commit
 
-from opal.common.git.commit_viewer import VersionedFile
-from opal.common.git.diff_viewer import DiffViewer, diffed_file_is_under_directories
+from opal_common.git.commit_viewer import VersionedFile
+from opal_common.git.diff_viewer import DiffViewer, diffed_file_is_under_directories
 
 def diff_paths(diffs: List[Diff]) -> List[Path]:
     paths = set()

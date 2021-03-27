@@ -2,10 +2,10 @@ import asyncio
 from typing import Callable, Coroutine, List, Optional
 from git.objects import Commit
 
-from opal.common.git.branch_tracker import BranchTracker
-from opal.common.git.repo_cloner import RepoCloner
-from opal.common.git.exceptions import GitFailed
-from opal.common.logger import logger
+from opal_common.git.branch_tracker import BranchTracker
+from opal_common.git.repo_cloner import RepoCloner
+from opal_common.git.exceptions import GitFailed
+from opal_common.logger import logger
 
 
 OnNewCommitsCallback = Callable[[Commit, Commit], Coroutine]

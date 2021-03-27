@@ -1,1 +1,1 @@
-from opal.common.logger import *
+from opal_common.logger import *

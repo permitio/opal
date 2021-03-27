@@ -1,5 +1,5 @@
 import asyncio
-from opal.client.policy_store.base_policy_store_client import BasePolicyStoreClient
+from opal_client.policy_store.base_policy_store_client import BasePolicyStoreClient
 import aiohttp
 import json
 import functools
@@ -7,11 +7,11 @@ from typing import Dict, Any, Optional, List, Set
 
 from tenacity import retry, stop_after_attempt, wait_fixed
 
-from opal.client.config import POLICY_STORE_URL
-from opal.client.logger import logger
-from opal.client.utils import proxy_response
-from opal.client.enforcer.schemas import AuthorizationQuery
-from opal.common.schemas.policy import DataModule, PolicyBundle
+from opal_client.config import POLICY_STORE_URL
+from opal_client.logger import logger
+from opal_client.utils import proxy_response
+from opal_client.enforcer.schemas import AuthorizationQuery
+from opal_common.schemas.policy import DataModule, PolicyBundle
 
 
 # 2 retries with 2 seconds apart

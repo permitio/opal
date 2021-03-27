@@ -1,9 +1,9 @@
 from typing import Optional, Any
 
 from fastapi_websocket_pubsub.pub_sub_client import PubSubClient
-from opal.common.utils import get_authorization_header
-from opal.common.topics.publisher import TopicPublisher, ClientSideTopicPublisher
-from opal.server.config import OPAL_WS_LOCAL_URL, OPAL_WS_TOKEN
+from opal_common.utils import get_authorization_header
+from opal_common.topics.publisher import TopicPublisher, ClientSideTopicPublisher
+from opal_server.config import OPAL_WS_LOCAL_URL, OPAL_WS_TOKEN
 
 
 publisher = None

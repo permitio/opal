@@ -4,9 +4,9 @@ from datetime import datetime
 from fastapi import APIRouter, status, Request, Depends, status, HTTPException
 from fastapi_websocket_pubsub.pub_sub_server import PubSubEndpoint
 
-from opal.common.authentication.signer import JWTSigner
-from opal.server.deps.authentication import StaticBearerTokenVerifier
-from opal.server.security.schemas import AccessToken, AccessTokenRequest, TokenDetails
+from opal_common.authentication.signer import JWTSigner
+from opal_server.deps.authentication import StaticBearerTokenVerifier
+from opal_server.security.schemas import AccessToken, AccessTokenRequest, TokenDetails
 
 def init_security_router(signer: JWTSigner, verifier: StaticBearerTokenVerifier):
     router = APIRouter()

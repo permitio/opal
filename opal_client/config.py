@@ -1,8 +1,8 @@
 import os
 from enum import Enum
 
-from opal.common.confi import Confi
-from opal.client.opa.options import OpaServerOptions
+from opal_common.confi import Confi
+from opal_client.opa.options import OpaServerOptions
 
 confi = Confi(prefix="OPAL_")
 

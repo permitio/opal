@@ -9,9 +9,9 @@ publishes on the `webhook` topic, and the listener's callback is triggered.
 """
 
 from fastapi_websocket_pubsub.pub_sub_client import PubSubClient, Topic
-from opal.common.utils import get_authorization_header
-from opal.common.topics.listener import TopicListener, TopicCallback
-from opal.server.config import OPAL_WS_LOCAL_URL, OPAL_WS_TOKEN
+from opal_common.utils import get_authorization_header
+from opal_common.topics.listener import TopicListener, TopicCallback
+from opal_server.config import OPAL_WS_LOCAL_URL, OPAL_WS_TOKEN
 
 
 def setup_webhook_listener(

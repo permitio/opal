@@ -4,19 +4,19 @@ from typing import List, Optional
 from fastapi_websocket_rpc.rpc_channel import RpcChannel
 from fastapi_websocket_pubsub import PubSubClient
 
-from opal.common.utils import get_authorization_header
-from opal.common.schemas.policy import PolicyBundle
-from opal.common.topics.utils import (
+from opal_common.utils import get_authorization_header
+from opal_common.schemas.policy import PolicyBundle
+from opal_common.topics.utils import (
     pubsub_topics_from_directories,
     POLICY_PREFIX,
     remove_prefix
 )
-from opal.client.logger import logger
-from opal.client.config import POLICY_SUBSCRIPTION_DIRS, OPAL_SERVER_PUBSUB_URL, CLIENT_TOKEN, KEEP_ALIVE_INTERVAL
-from opal.client.policy.fetcher import policy_fetcher
-from opal.client.policy_store.base_policy_store_client import BasePolicyStoreClient
-from opal.client.policy_store.policy_store_client_factory import DEFAULT_POLICY_STORE
-from opal.client.policy.topics import default_subscribed_policy_directories
+from opal_client.logger import logger
+from opal_client.config import POLICY_SUBSCRIPTION_DIRS, OPAL_SERVER_PUBSUB_URL, CLIENT_TOKEN, KEEP_ALIVE_INTERVAL
+from opal_client.policy.fetcher import policy_fetcher
+from opal_client.policy_store.base_policy_store_client import BasePolicyStoreClient
+from opal_client.policy_store.policy_store_client_factory import DEFAULT_POLICY_STORE
+from opal_client.policy.topics import default_subscribed_policy_directories
 
 
 async def update_policy(policy_store: BasePolicyStoreClient, directories: List[str] = None, force_full_update=False):

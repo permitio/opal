@@ -16,7 +16,7 @@ sys.path.append(root_dir)
 
 from pathlib import Path
 
-from opal.common.opa.paths import is_data_module, is_rego_module
+from opal_common.opa.paths import is_data_module, is_rego_module
 
 def test_is_data_module():
     """

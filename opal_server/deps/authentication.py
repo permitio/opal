@@ -5,8 +5,8 @@ from fastapi import Depends, Header
 from fastapi.exceptions import HTTPException
 from fastapi.security.utils import get_authorization_scheme_param
 
-from opal.common.authentication.signer import JWTSigner, JWTClaims, Unauthorized
-from opal.common.logger import logger
+from opal_common.authentication.signer import JWTSigner, JWTClaims, Unauthorized
+from opal_common.logger import logger
 
 def get_token_from_header(authorization_header: str) -> Optional[str]:
     """

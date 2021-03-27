@@ -1,4 +1,4 @@
-from opal.common.fetcher.logger import get_logger
+from opal_common.fetcher.logger import get_logger
 from typing import Type, Optional, Dict
 from .fetch_provider import BaseFetchProvider
 from .providers.http_get_fetch_provider import HttpGetFetchProvider

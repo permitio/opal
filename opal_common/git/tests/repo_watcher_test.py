@@ -21,8 +21,8 @@ from git.objects import Commit
 from typing import Optional, Dict
 from functools import partial
 
-from opal.common.git.repo_watcher import RepoWatcher
-from opal.common.git.exceptions import GitFailed
+from opal_common.git.repo_watcher import RepoWatcher
+from opal_common.git.exceptions import GitFailed
 
 try:
     from asyncio.exceptions import TimeoutError

@@ -15,7 +15,7 @@ sys.path.append(root_dir)
 
 from pathlib import Path
 from typing import List
-from opal.common.paths import PathUtils
+from opal_common.paths import PathUtils
 
 
 def to_paths(paths: List[str]) -> List[Path]:

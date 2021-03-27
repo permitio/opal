@@ -5,8 +5,8 @@ from git import Repo
 from git.diff import DiffIndex, Diff
 from git.objects.commit import Commit
 
-from opal.common.git.commit_viewer import VersionedFile
-from opal.common.paths import PathUtils
+from opal_common.git.commit_viewer import VersionedFile
+from opal_common.paths import PathUtils
 
 DiffFilter = Callable[[Diff], bool]
 PathFilter = Callable[[Path], bool]

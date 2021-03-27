@@ -15,8 +15,8 @@ from fastapi import FastAPI
 from fastapi_websocket_rpc import WebsocketRPCEndpoint, RpcMethodsBase, rpc_methods
 
 
-from opal.common.fetcher import FetchingEngine
-from opal.common.fetcher.providers.fastapi_rpc_fetch_provider import FastApiRpcFetchProvider, FastApiRpcFetchEvent, FastApiRpcFetchConfig
+from opal_common.fetcher import FetchingEngine
+from opal_common.fetcher.providers.fastapi_rpc_fetch_provider import FastApiRpcFetchProvider, FastApiRpcFetchEvent, FastApiRpcFetchConfig
 
 
 # Configurable

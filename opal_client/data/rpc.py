@@ -1,6 +1,6 @@
 from fastapi_websocket_pubsub.rpc_event_methods import RpcEventClientMethods
 
-from opal.client.logger import logger
+from opal_client.logger import logger
 
 
 class TenantAwareRpcEventClientMethods(RpcEventClientMethods):

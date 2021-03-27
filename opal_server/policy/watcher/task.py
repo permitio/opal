@@ -1,8 +1,8 @@
 import asyncio
 from typing import List, Optional, Coroutine
 
-from opal.common.logger import logger
-from opal.common.git.repo_watcher import RepoWatcher
+from opal_common.logger import logger
+from opal_common.git.repo_watcher import RepoWatcher
 
 
 class RepoWatcherTask:

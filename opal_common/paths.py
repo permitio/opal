@@ -1,7 +1,7 @@
 from typing import List, Set, Union
 from pathlib import Path
 
-from opal.common.utils import sorted_list_from_set
+from opal_common.utils import sorted_list_from_set
 
 class PathUtils:
     @staticmethod

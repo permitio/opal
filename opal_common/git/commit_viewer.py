@@ -4,7 +4,7 @@ from git import Repo
 from git.objects import Commit, Tree, Blob, IndexObject
 from pathlib import Path
 
-from opal.common.paths import PathUtils
+from opal_common.paths import PathUtils
 
 class VersionedNode:
     """

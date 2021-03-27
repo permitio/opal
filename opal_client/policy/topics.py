@@ -1,8 +1,8 @@
 from typing import List
 from pathlib import Path
 
-from opal.common.paths import PathUtils
-from opal.client.config import POLICY_SUBSCRIPTION_DIRS
+from opal_common.paths import PathUtils
+from opal_client.config import POLICY_SUBSCRIPTION_DIRS
 
 def default_subscribed_policy_directories() -> List[str]:
     """

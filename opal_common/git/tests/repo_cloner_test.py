@@ -17,9 +17,9 @@ sys.path.append(root_dir)
 from pathlib import Path
 from git import Repo
 
-from opal.common.git.repo_cloner import RepoCloner
-from opal.common.git.exceptions import GitFailed
-from opal.common.confi import Confi
+from opal_common.git.repo_cloner import RepoCloner
+from opal_common.git.exceptions import GitFailed
+from opal_common.confi import Confi
 
 VALID_REPO_REMOTE_URL_HTTPS = \
     "https://github.com/authorizon/fastapi_websocket_pubsub.git"

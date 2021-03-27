@@ -18,8 +18,8 @@ from pathlib import Path
 from git import Repo
 from git.objects.commit import Commit
 
-from opal.common.git.exceptions import GitFailed
-from opal.common.git.branch_tracker import BranchTracker
+from opal_common.git.exceptions import GitFailed
+from opal_common.git.branch_tracker import BranchTracker
 
 def test_pull_with_no_changes(local_repo_clone: Repo):
     """

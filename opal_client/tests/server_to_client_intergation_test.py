@@ -17,16 +17,16 @@ root_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), os.path.pardi
 sys.path.append(root_dir)
 
 
-from opal.client import OpalClient, config
-from opal.client.data.rpc import TenantAwareRpcEventClientMethods
-from opal.client.data.updater import DataSourceEntry, DataUpdate, DataUpdater
-from opal.client.policy_store import PolicyStoreClientFactory, PolicyStoreTypes
-from opal.client.policy_store.mock_policy_store_client import \
+from opal_client import OpalClient, config
+from opal_client.data.rpc import TenantAwareRpcEventClientMethods
+from opal_client.data.updater import DataSourceEntry, DataUpdate, DataUpdater
+from opal_client.policy_store import PolicyStoreClientFactory, PolicyStoreTypes
+from opal_client.policy_store.mock_policy_store_client import \
     MockPolicyStoreClient
-from opal.common.schemas.data import DataSourceConfig
-from opal.common.utils import get_authorization_header
-from opal.server.config import DATA_CONFIG_ROUTE
-from opal.server.opal_server import OpalServer
+from opal_common.schemas.data import DataSourceConfig
+from opal_common.utils import get_authorization_header
+from opal_server.config import DATA_CONFIG_ROUTE
+from opal_server.opal_server import OpalServer
 
 
 
@@ -74,12 +74,12 @@ def setup_client(event):
 
         # config to use mock OPA
         policy_store = PolicyStoreClientFactory.create(store_type=PolicyStoreTypes.MOCK)
-        data_updater = DataUpdater(pubsub_url=UPDATES_URL, 
+        data_updater = DataUpdater(pubsub_url=UPDATES_URL,
                                 data_sources_config_url=DATA_CONFIG_URL,
-                                policy_store=policy_store, 
-                                fetch_on_connect=True, 
+                                policy_store=policy_store,
+                                fetch_on_connect=True,
                                 data_topics=DATA_TOPICS)
-        
+
         client = OpalClient(
             policy_store_type=PolicyStoreTypes.MOCK,
             policy_store=policy_store,
@@ -132,7 +132,7 @@ async def test_client_connect_to_server_data_updates(client, server):
     """
     server.wait(5)
     client.wait(5)
-    
+
     async with ClientSession() as session:
         res = await session.get(CLIENT_STORE_URL)
         data = await res.json()

@@ -1,13 +1,13 @@
-from opal.common.git.bundle_maker import BundleMaker
+from opal_common.git.bundle_maker import BundleMaker
 from typing import Optional, List
 from fastapi import APIRouter, Depends, Query, HTTPException, status
 from pathlib import Path
 
 from git import Repo
 
-from opal.common.git.commit_viewer import CommitViewer
-from opal.common.schemas.policy import PolicyBundle
-from opal.server.config import (
+from opal_common.git.commit_viewer import CommitViewer
+from opal_common.schemas.policy import PolicyBundle
+from opal_server.config import (
     POLICY_REPO_CLONE_PATH,
     OPA_FILE_EXTENSIONS
 )

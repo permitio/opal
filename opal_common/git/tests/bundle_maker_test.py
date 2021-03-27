@@ -19,8 +19,8 @@ from pathlib import Path
 from git import Repo
 from git.objects import Commit
 
-from opal.common.git.bundle_maker import BundleMaker
-from opal.common.schemas.policy import PolicyBundle, RegoModule
+from opal_common.git.bundle_maker import BundleMaker
+from opal_common.schemas.policy import PolicyBundle, RegoModule
 
 OPA_FILE_EXTENSIONS = ('.rego', '.json')
 

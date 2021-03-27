@@ -1,6 +1,6 @@
 from typing import List
-from opal.common.schemas.data import DataUpdate
-from opal.common.topics.publisher import TopicPublisher
+from opal_common.schemas.data import DataUpdate
+from opal_common.topics.publisher import TopicPublisher
 
 
 TOPIC_DELIMETER = "/"

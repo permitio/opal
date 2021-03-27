@@ -1,7 +1,7 @@
 import json
 import logging
 
-from opal.client.logger import logger
+from opal_client.logger import logger
 
 def logging_level_from_string(level: str) -> int:
     """

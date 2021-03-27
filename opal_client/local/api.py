@@ -2,9 +2,9 @@ from typing import Dict, Any, List, Optional
 
 from fastapi import APIRouter, status, HTTPException
 from starlette.status import HTTP_404_NOT_FOUND
-from opal.client.local.schemas import Message, SyncedRole, SyncedUser
-from opal.client.policy_store import BasePolicyStoreClient, DEFAULT_POLICY_STORE
-from opal.client.logger import logger
+from opal_client.local.schemas import Message, SyncedRole, SyncedUser
+from opal_client.policy_store import BasePolicyStoreClient, DEFAULT_POLICY_STORE
+from opal_client.logger import logger
 
 
 def init_local_cache_api_router(policy_store:BasePolicyStoreClient=DEFAULT_POLICY_STORE):

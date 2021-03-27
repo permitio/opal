@@ -3,7 +3,7 @@ import hmac
 from typing import Optional, List
 
 from fastapi import status, Request, Header, HTTPException, status
-from opal.server.config import POLICY_REPO_WEBHOOK_SECRET
+from opal_server.config import POLICY_REPO_WEBHOOK_SECRET
 
 
 async def validate_github_signature_or_throw(

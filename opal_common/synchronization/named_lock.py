@@ -4,7 +4,7 @@ import os
 import asyncio
 
 from typing import Optional
-from opal.common.logger import logger
+from opal_common.logger import logger
 
 DEFAULT_LOCK_ATTEMPT_INTERVAL = 5.0
 

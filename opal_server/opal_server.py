@@ -1,6 +1,6 @@
 import json
-from opal.server.security.api import init_security_router
-from opal.server.security.jwks import JwksStaticEndpoint
+from opal_server.security.api import init_security_router
+from opal_server.security.jwks import JwksStaticEndpoint
 import os
 import asyncio
 from functools import partial
@@ -10,13 +10,13 @@ from pathlib import Path
 from fastapi import Depends, FastAPI
 from fastapi.staticfiles import StaticFiles
 
-from opal.common.topics.publisher import TopicPublisher, ServerSideTopicPublisher
-from opal.common.logger import logger
-from opal.common.schemas.data import DataSourceConfig
-from opal.common.synchronization.named_lock import NamedLock
-from opal.common.middleware import configure_middleware
-from opal.common.authentication.signer import JWTSigner
-from opal.server.config import (
+from opal_common.topics.publisher import TopicPublisher, ServerSideTopicPublisher
+from opal_common.logger import logger
+from opal_common.schemas.data import DataSourceConfig
+from opal_common.synchronization.named_lock import NamedLock
+from opal_common.middleware import configure_middleware
+from opal_common.authentication.signer import JWTSigner
+from opal_server.config import (
     REPO_WATCHER_ENABLED,
     PUBLISHER_ENABLED,
     DATA_CONFIG_SOURCES,
@@ -32,16 +32,16 @@ from opal.server.config import (
     AUTH_JWKS_STATIC_DIR,
     POLICY_REPO_WEBHOOK_TOPIC
 )
-from opal.server.data.api import init_data_updates_router
-from opal.server.data.data_update_publisher import DataUpdatePublisher
-from opal.server.deps.authentication import JWTVerifier, StaticBearerTokenVerifier
-from opal.server.policy.bundles.api import router as bundles_router
-from opal.server.policy.github_webhook.api import init_git_webhook_router
-from opal.server.policy.watcher import (setup_watcher_task,
+from opal_server.data.api import init_data_updates_router
+from opal_server.data.data_update_publisher import DataUpdatePublisher
+from opal_server.deps.authentication import JWTVerifier, StaticBearerTokenVerifier
+from opal_server.policy.bundles.api import router as bundles_router
+from opal_server.policy.github_webhook.api import init_git_webhook_router
+from opal_server.policy.watcher import (setup_watcher_task,
                                         trigger_repo_watcher_pull)
-from opal.server.policy.watcher.task import RepoWatcherTask
-from opal.server.publisher import setup_publisher_task
-from opal.server.pubsub import PubSub
+from opal_server.policy.watcher.task import RepoWatcherTask
+from opal_server.publisher import setup_publisher_task
+from opal_server.pubsub import PubSub
 
 
 class OpalServer:
