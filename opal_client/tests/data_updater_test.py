@@ -9,7 +9,7 @@ import uvicorn
 from fastapi_websocket_pubsub import PubSubClient
 
 # Add parent path to use local src as package for tests
-root_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), os.path.pardir, os.path.pardir, os.path.pardir))
+root_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), os.path.pardir, os.path.pardir))
 sys.path.append(root_dir)
 
 from opal_client import config

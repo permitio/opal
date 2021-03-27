@@ -8,7 +8,6 @@ root_dir = os.path.abspath(
         os.path.dirname(__file__),
         os.path.pardir,
         os.path.pardir,
-        os.path.pardir,
     )
 )
 sys.path.append(root_dir)

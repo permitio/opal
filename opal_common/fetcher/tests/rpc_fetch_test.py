@@ -3,7 +3,7 @@ import os
 import sys
 
 # Add parent path to use local src as package for tests
-root_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), os.path.pardir, os.path.pardir, os.path.pardir, os.path.pardir ))
+root_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), os.path.pardir, os.path.pardir, os.path.pardir ))
 sys.path.append(root_dir)
 
 import asyncio
@@ -12,7 +12,7 @@ from multiprocessing import Process
 import pytest
 import uvicorn
 from fastapi import FastAPI
-from fastapi_websocket_rpc import WebsocketRPCEndpoint, RpcMethodsBase, rpc_methods
+from fastapi_websocket_rpc import WebsocketRPCEndpoint, RpcMethodsBase
 
 
 from opal_common.fetcher import FetchingEngine
