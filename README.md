@@ -60,8 +60,10 @@ As you push updates to your application's stores (e.g. Git, DBs, S3, SaaS servic
 
 ## 📡  Architecture
 
-<img src="https://i.ibb.co/kGc9nDd/main.png" alt="main" border="0">
 
+<img src="https://i.ibb.co/YD8phRD/simplified-diagram-highlight.png" alt="simplified" border="0">
+
+See a [More detailed diagram](<img src="https://i.ibb.co/kGc9nDd/main.png" alt="main" border="0">)
 - ### OPAL consists of two key components that work together:
     1. OPAL Server 
         - Creates a Pub/Sub channel client's subscribe to
