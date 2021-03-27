@@ -33,12 +33,12 @@ LOG_FILE_SERIALIZE = confi.str("LOG_FILE_SERIALIZE", True)
 LOG_FILE_LEVEL = confi.str("LOG_FILE_LEVEL", "INFO")
 
 # Fetching Providers
-# - where to load providers from 
-FETCH_PROVIDER_MODULES = confi.list("FETCH_PROVIDER_MODULES", ["opal.common.fetcher.providers"])
+# - where to load providers from
+FETCH_PROVIDER_MODULES = confi.list("FETCH_PROVIDER_MODULES", ["opal_common.fetcher.providers"])
 
 # potentially exclude opa logs
 LOG_MODULE_EXCLUDE_OPA = confi.bool("LOG_MODULE_EXCLUDE_OPA", True)
 if LOG_MODULE_EXCLUDE_OPA:
-    LOG_MODULE_EXCLUDE_LIST.append("opal.client.opa.logger")
+    LOG_MODULE_EXCLUDE_LIST.append("opal_client.opa.logger")
 
 GIT_SSH_KEY_FILE = confi.str("GIT_SSH_KEY_FILE", str(Path.home() / ".ssh/opal_repo_ssh_key"))

@@ -5,15 +5,15 @@ def hijack_uvicorn_logs():
     LOGGING_CONFIG["handlers"] =  {
             "default": {
                 "formatter": "default",
-                "class": "opal.common.logging.intercept.InterceptHandler",
+                "class": "opal_common.logging.intercept.InterceptHandler",
             },
             "access": {
                 "formatter": "access",
-                "class": "opal.common.logging.intercept.InterceptHandler",
+                "class": "opal_common.logging.intercept.InterceptHandler",
             },
         }
     # force existing UVICORN logging
     dictConfig(LOGGING_CONFIG)
 
 
-    
+
