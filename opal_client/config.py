@@ -53,7 +53,7 @@ CLIENT_TOKEN = confi.str("CLIENT_TOKEN", "THIS_IS_A_DEV_SECRET")
 # Policy updater configuration ------------------------------------------------
 
 # directories in policy repo we should subscribe to for policy code (rego) modules
-POLICY_SUBSCRIPTION_DIRS = confi.list("POLICY_SUBSCRIPTION_DIRS", ["some/dir","other"], delimiter=":")
+POLICY_SUBSCRIPTION_DIRS = confi.list("POLICY_SUBSCRIPTION_DIRS", ["."], delimiter=":")
 
 
 # Data updater configuration --------------------------------------------------
