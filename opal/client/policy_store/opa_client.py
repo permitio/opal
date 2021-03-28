@@ -7,7 +7,7 @@ from typing import Dict, Any, Optional, List, Set
 
 from tenacity import retry, stop_after_attempt, wait_fixed
 
-from opal.client.config import POLICY_STORE_URL
+from opal.config.client.config import POLICY_STORE_URL
 from opal.client.logger import logger
 from opal.client.utils import proxy_response
 from opal.client.enforcer.schemas import AuthorizationQuery

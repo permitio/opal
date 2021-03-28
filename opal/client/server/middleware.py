@@ -4,7 +4,7 @@ from fastapi.encoders import jsonable_encoder
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-from opal.client.config import ALLOWED_ORIGINS
+from opal.config.client.config import ALLOWED_ORIGINS
 
 class ErrorResponse(BaseModel):
     error: str

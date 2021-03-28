@@ -6,7 +6,7 @@ from typing import Callable, Coroutine, Optional, List
 
 from tenacity import retry, wait_random_exponential
 
-from opal.client.config import OPA_PORT
+from opal.config.client.config import OPA_PORT
 from opal.client.logger import logger
 from opal.client.policy_store.policy_store_client_factory import DEFAULT_POLICY_STORE
 from opal.client.opa.logger import pipe_opa_logs
@@ -105,7 +105,7 @@ class OpaRunner:
         This function runs opa server as a subprocess.
         it returns only when the process terminates.
         """
-        logger.info("Running OPA", command=self.command)
+        logger.info(f"Running OPA on port {self._port}", command=self.command)
         self._process = await asyncio.create_subprocess_shell(
             self.command,
             stdout=asyncio.subprocess.PIPE,

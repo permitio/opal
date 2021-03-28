@@ -1,5 +1,5 @@
 
-from opal.client.config import POLICY_STORE_TYPE, PolicyStoreTypes, POLICY_STORE_URL
+from opal.config.client.config import POLICY_STORE_TYPE, PolicyStoreTypes, POLICY_STORE_URL
 
 
 class PolicyStoreClientFactoryException(Exception):

@@ -12,7 +12,7 @@ from opal.common.topics.utils import (
     remove_prefix
 )
 from opal.client.logger import logger
-from opal.client.config import POLICY_SUBSCRIPTION_DIRS, OPAL_SERVER_PUBSUB_URL, CLIENT_TOKEN, KEEP_ALIVE_INTERVAL
+from opal.config.client.config import POLICY_SUBSCRIPTION_DIRS, OPAL_SERVER_PUBSUB_URL, CLIENT_TOKEN, KEEP_ALIVE_INTERVAL
 from opal.client.policy.fetcher import policy_fetcher
 from opal.client.policy_store.base_policy_store_client import BasePolicyStoreClient
 from opal.client.policy_store.policy_store_client_factory import DEFAULT_POLICY_STORE

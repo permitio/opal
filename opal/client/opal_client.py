@@ -5,7 +5,7 @@ from fastapi import FastAPI
 
 from opal import common
 
-from opal.client.config import OPENAPI_TAGS_METADATA, PolicyStoreTypes, POLICY_STORE_TYPE
+from opal.config.client.config import OPENAPI_TAGS_METADATA, PolicyStoreTypes, POLICY_STORE_TYPE
 from opal.client.data.api import router as data_router
 from opal.client.data.updater import DataUpdater
 from opal.client.enforcer.api import init_enforcer_api_router

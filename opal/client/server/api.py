@@ -1,7 +1,7 @@
 import aiohttp
 
 from fastapi import APIRouter, status, Request, HTTPException
-from opal.client.config import BACKEND_SERVICE_URL, BACKEND_SERVICE_LEGACY_URL
+from opal.config.client.config import BACKEND_SERVICE_URL, BACKEND_SERVICE_LEGACY_URL
 from opal.client.utils import proxy_response
 
 

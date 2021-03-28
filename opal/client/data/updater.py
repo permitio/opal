@@ -9,7 +9,7 @@ from fastapi_websocket_rpc.rpc_channel import RpcChannel
 from fastapi_websocket_pubsub import PubSubClient
 
 from opal.client.logger import logger
-from opal.client.config import DATA_TOPICS, OPAL_SERVER_PUBSUB_URL, CLIENT_TOKEN, DEFAULT_DATA_SOURCES_CONFIG_URL, KEEP_ALIVE_INTERVAL
+from opal.config.client.config import DATA_TOPICS, OPAL_SERVER_PUBSUB_URL, CLIENT_TOKEN, DEFAULT_DATA_SOURCES_CONFIG_URL, KEEP_ALIVE_INTERVAL
 from opal.common.utils import get_authorization_header
 from opal.client.policy_store.policy_store_client_factory import DEFAULT_POLICY_STORE
 from opal.client.data.fetcher import DataFetcher
