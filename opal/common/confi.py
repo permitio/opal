@@ -16,7 +16,7 @@ def cast_boolean(value):
     """
     if isinstance(value, bool):
         return value
-    elif isinstance(value, str):        
+    elif isinstance(value, str):
         value = value.lower()
         if (value == "true" or value == "1"):
             return True
@@ -53,11 +53,20 @@ class Confi:
             prefix (str, optional): Prefix to add to all env-var keys. Defaults to "".
         """
         self._prefix = prefix
+        self.cli_options = {}
 
     def _prefix_key(self, key):
         return f"{self._prefix}{key}"
 
-    def str(self, key, default=undefined, description=None, **kwargs) -> str:
+    def str(self, key, default=undefined, description=None, cli_key=None, **kwargs) -> str:
+        if cli_key is not None:
+            assert cli_key not in self.cli_options, f"Redefined cli_key {cli_key}"
+            self.cli_options[cli_key] = {
+                "env_key": self._prefix_key(key),
+                "required": False,
+                "description": description
+            }
+
         return config(self._prefix_key(key), default=default, **kwargs)
 
     def int(self, key, default=undefined, description=None, **kwargs) -> int:
@@ -80,7 +89,7 @@ class Confi:
     def model(self, key, model_type:T, default=undefined, description=None, **kwargs) -> T:
         """
         Parse a config using a Pydantic model
-        """       
+        """
         return config(self._prefix_key(key), default=default, cast=cast_pydantic(model_type), **kwargs)
 
     def enum(self, key, enum_type: EnumT, default=undefined, description=None, **kwargs) -> EnumT:
@@ -93,8 +102,3 @@ class Confi:
 
 # default parser
 confi = Confi()
-
-
-
-
-

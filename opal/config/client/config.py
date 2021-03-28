@@ -13,7 +13,7 @@ class PolicyStoreTypes(Enum):
 
 # opa client (policy store) configuration
 POLICY_STORE_TYPE = confi.enum("POLICY_STORE_TYPE", PolicyStoreTypes, PolicyStoreTypes.OPA)
-OPA_PORT = confi.str("OPA_PORT", "8181")
+OPA_PORT = confi.str("OPA_PORT", "8181", cli_key="opa_port")
 _opa_url = confi.str("OPA_SERVICE_URL", f"http://localhost:{OPA_PORT}")
 POLICY_STORE_URL = f"{_opa_url}/v1"
 
@@ -40,7 +40,7 @@ CLIENT_TOKEN = confi.str("CLIENT_TOKEN", "THIS_IS_A_DEV_SECRET")
 # Policy updater configuration ------------------------------------------------
 
 # directories in policy repo we should subscribe to for policy code (rego) modules
-POLICY_SUBSCRIPTION_DIRS = confi.list("POLICY_SUBSCRIPTION_DIRS", ["some/dir","other"], delimiter=":")
+POLICY_SUBSCRIPTION_DIRS = confi.list("POLICY_SUBSCRIPTION_DIRS", ["some/dir2", "other"], delimiter=":")
 
 
 # Data updater configuration --------------------------------------------------
