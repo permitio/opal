@@ -16,11 +16,9 @@ Open Policy Administration Layer
 </a>
 
 # 
+OPAL is an administration layer for Open Policy Agent (OPA), detecting changes to both policy and data and pushing live updates to your agents.
 
-
-OPAL adds real-time updates to your fleet of policy agents,
-bringing open-policy up to the speed needed by live applications.
-
+OPAL brings open-policy up to the speed needed by live applications.
 As you push updates to your application's stores (e.g. Git, DBs, S3, SaaS services) OPAL will make sure your services are always in sync with the authorization data and policy they need (and only those they need.) 
 ## 🛠️ Installation 
 
@@ -93,7 +91,7 @@ See a [More detailed diagram](<img src="https://i.ibb.co/kGc9nDd/main.png" alt="
 ## 💡 Key Concepts
 - ### OPAL is realtime (with Pub/Sub updates)
     - OPAL is all about easily managing your authorization layer in realtime.
-    - This is achieved by a Websocket Pub/Sub channel between OPAL clients and servers.
+    - This is achieved by a **Websocket Pub/Sub** channel between OPAL clients and servers.
     - Each OPAL-client (and through it each policy agent) subscribes to and receives updates instantly 
 - ### OPAL is stateless
     - OPAL is designed for scale, mainly via scaling out both client and server instances, as such neither are stateful. 
@@ -152,6 +150,10 @@ See a [More detailed diagram](<img src="https://i.ibb.co/kGc9nDd/main.png" alt="
     - For these larger scale cases, OPAL can potentially become a link between a solution like Google Zanzibar (or equivalent CDN) and local policy-agents. (Allowing both Google like scales, low latency, and high performance)
     - I you're developing such a service, or considering such high-scale scenarios; you're welcome to contact us, we'd be happy to share our plans for OPAL in that area.
 
+- ## Using OPAL for other live update needs
+    - While OPAL was created and primarily designed for open-policy and authorization needs; it can be generically applied for other live updates and data/code propagation needs
+    - If you'd like to use OPAL or some of its underlying modules for other update cases - please contact us (See below), we'd love to help you do that.
+
 - ## Administration capabilities and UI
     - We've already built policy editors, back-office, frontend-embeddable interfaces, and more as part of [**auth**orizon.com](https://www.authorizon.com)
     - We have plans to migrate more parts of [**auth**orizon.com](https://www.authorizon.com) to be open-source; please let us know what you'd like to see next
@@ -162,8 +164,11 @@ See a [More detailed diagram](<img src="https://i.ibb.co/kGc9nDd/main.png" alt="
     - Raise questions and ask for features to be added to the road-map in our [Github discussions](https://github.com/authorizon/opal/discussions)
     - Report issues in [Github issues](https://github.com/authorizon/opal/issues)
     - Chat with us in our [Slack community](https://join.slack.com/t/opal-access/shared_invite/zt-nz6yjgnp-RlP9rtOPwO0n0aH_vLbmBQ)
-- ## Contributing to OPAL
 
+- ## Contacting us (the authors)
+    - We love talking about authorization, open-source, realtime communication, and tech in general
+    - feel free to reach out to us on our [GitHub discussions](https://github.com/authorizon/opal/discussions) or directly over [email](mailto:or@authorizon.com)
+- ## Contributing to OPAL
     - Pull requests are welcome! (please make sure to include *passing* tests and docs)
     - Prior to submitting a PR - open an issue on GitHub, or make sure your PR addresses an existing issue well.   
     
