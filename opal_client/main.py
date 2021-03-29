@@ -1,4 +1,4 @@
-from .opal_client import OpalClient
+from .client import OpalClient
 
 client = OpalClient()
 # expose app for Uvicorn

@@ -20,7 +20,7 @@ from opal_client.policy_store import (PolicyStoreClientFactory,
 from opal_common.schemas.data import DataSourceConfig
 from opal_common.utils import get_authorization_header
 from opal_server.config import DATA_CONFIG_ROUTE
-from opal_server.opal_server import OpalServer
+from opal_server.server import OpalServer
 
 
 
