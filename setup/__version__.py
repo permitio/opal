@@ -7,8 +7,11 @@ changes to your authorization policies and pushes live updates to your policy ag
 Project homepage: https://github.com/authorizon/opal
 """
 
-VERSION = (0, 0, 1)
+VERSION = (0, 0, 3)
 VERSION_STRING = '.'.join(map(str,VERSION))
 
-__author__ = "Or Weis, Asaf Cohen"
 __version__ = VERSION_STRING
+__author__ = 'Or Weis, Asaf Cohen'
+__author_email__ = 'or@authorizon.com'
+__license__ = 'Apache 2.0'
+__copyright__ = 'Copyright 2021 Or Weis and Asaf Cohen'

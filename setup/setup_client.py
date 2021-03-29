@@ -28,10 +28,11 @@ def get_long_description():
     with open(readme_path, "r", encoding="utf-8") as fh:
         return fh.read()
 
-package = get_package_metadata()
-version = package.get('__version__')
-if not version:
-    raise ValueError('could not find project version!')
+about = get_package_metadata()
+version = about.get('__version__')
+license = about.get('__license__')
+if not version or not license:
+    raise ValueError('could not find project metadata!')
 
 requirements = get_requirements()
 requirements.append('opal-common=={}'.format(version))
@@ -48,10 +49,11 @@ setup(
     long_description_content_type='text/markdown',
     long_description=get_long_description(),
     url='https://github.com/authorizon/opal',
+    license=license,
     packages=find_packages(where=project_root, include=('opal_client*', )),
     classifiers=[
         'Operating System :: OS Independent',
-        'License :: OSI Approved :: GNU General Public License v3 (GPLv3)',
+        'License :: OSI Approved :: Apache Software License',
         'Programming Language :: Python',
         'Programming Language :: Python :: 3',
         'Programming Language :: Python :: 3.7',
