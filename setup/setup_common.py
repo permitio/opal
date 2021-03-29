@@ -39,7 +39,8 @@ setup(
     author='Or Weis, Asaf Cohen',
     author_email="or@authorizon.com",
     description='OPAL is an administration layer for Open Policy Agent (OPA), detecting changes' + \
-        ' to both policy and data and pushing live updates to your agents.',
+        ' to both policy and data and pushing live updates to your agents. opal-common contains' + \
+        ' common code used by both opal-client and opal-server.',
     long_description_content_type='text/markdown',
     long_description=get_long_description(),
     url='https://github.com/authorizon/opal',

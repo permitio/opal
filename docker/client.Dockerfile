@@ -26,7 +26,7 @@ RUN apk add --update --no-cache bash curl
 RUN curl -L -o /opa https://openpolicyagent.org/downloads/latest/opa_linux_amd64 && chmod 755 /opa
 # copy libraries from build stage
 COPY --from=BuildStage /root/.local /root/.local
-# copy wait-for-it (use only for development! e.g: docker compose)
+# copy wait-for-it script
 COPY scripts/wait-for-it.sh /usr/wait-for-it.sh
 RUN chmod +x /usr/wait-for-it.sh
 # copy startup script
