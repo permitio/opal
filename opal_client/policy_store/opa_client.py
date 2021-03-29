@@ -6,17 +6,16 @@ import functools
 from typing import Dict, Any, Optional, List, Set
 
 from tenacity import retry, stop_after_attempt, wait_fixed
+from pydantic import BaseModel
 
 from opal_client.config import POLICY_STORE_URL
 from opal_client.logger import logger
 from opal_client.utils import proxy_response
-from opal_client.enforcer.schemas import AuthorizationQuery
 from opal_common.schemas.policy import DataModule, PolicyBundle
 
 
 # 2 retries with 2 seconds apart
 RETRY_CONFIG = dict(wait=wait_fixed(2), stop=stop_after_attempt(2))
-IS_ALLOWED_FALLBACK = dict(result=dict(allow=False, debug="OPA not responding"))
 
 def fail_silently(fallback=None):
     def decorator(func):
@@ -44,24 +43,6 @@ class OpaClient(BasePolicyStoreClient):
 
     async def get_policy_version(self) -> Optional[str]:
         return self._policy_version
-
-    # by default, if OPA is down, authorization is denied
-    @fail_silently(fallback=IS_ALLOWED_FALLBACK)
-    @retry(**RETRY_CONFIG)
-    async def is_allowed(self, query: AuthorizationQuery):
-        # opa data api format needs the input to sit under "input"
-        opa_input = {
-            "input": query.dict()
-        }
-        try:
-            async with aiohttp.ClientSession() as session:
-                async with session.post(
-                    f"{self._opa_url}/data/rbac",
-                    data=json.dumps(opa_input)) as opa_response:
-                    return await proxy_response(opa_response)
-        except aiohttp.ClientError as e:
-            logger.warning("Opa connection error: {err}", err=e)
-            raise
 
     @fail_silently()
     @retry(**RETRY_CONFIG)
@@ -254,3 +235,31 @@ class OpaClient(BasePolicyStoreClient):
             logger.warning("Opa connection error: {err}", err=e)
             raise
 
+    @retry(**RETRY_CONFIG)
+    async def get_data_with_input(self, path: str, input: BaseModel):
+        """
+        evaluates a data document against an input.
+        that is how OPA "runs queries".
+
+        see explanation how opa evaluate documents:
+        https://www.openpolicyagent.org/docs/latest/philosophy/#the-opa-document-model
+
+        see api reference:
+        https://www.openpolicyagent.org/docs/latest/rest-api/#get-a-document-with-input
+        """
+        # opa data api format needs the input to sit under "input"
+        opa_input = {
+            "input": input.dict()
+        }
+        if path.startswith("/"):
+            path = path[1:]
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.post(
+                    f"{self._opa_url}/data/{path}",
+                    data=json.dumps(opa_input)
+                ) as opa_response:
+                    return await proxy_response(opa_response)
+        except aiohttp.ClientError as e:
+            logger.warning("Opa connection error: {err}", err=e)
+            raise

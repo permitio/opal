@@ -1,15 +1,11 @@
 from typing import Any, Dict, Optional, List
-from opal_client.enforcer.schemas import AuthorizationQuery
+from pydantic import BaseModel
 from opal_common.schemas.policy import PolicyBundle
 
 class BasePolicyStoreClient:
     """
     A pure-virtual interface for policy and policy-data store
     """
-
-    async def is_allowed(self, query: AuthorizationQuery):
-        raise NotImplementedError()
-
     async def set_policy(self, policy_id: str, policy_code: str):
         raise NotImplementedError()
 
@@ -35,4 +31,7 @@ class BasePolicyStoreClient:
         raise NotImplementedError()
 
     async def get_data(self, path: str):
+        raise NotImplementedError()
+
+    async def get_data_with_input(self, path: str, input: BaseModel):
         raise NotImplementedError()
