@@ -39,4 +39,4 @@ docker-build-server:
 	docker build -t authorizon/opal-server -f docker/server.Dockerfile .
 
 docker-run-server:
-	docker run -it -e "POLICY_REPO_URL=$(POLICY_REPO_URL)" -p 7002:7002 authorizon/opal-server
+	docker run -it -e "OPAL_POLICY_REPO_URL=$(OPAL_POLICY_REPO_URL)" -p 7002:7002 authorizon/opal-server

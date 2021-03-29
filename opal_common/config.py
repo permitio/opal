@@ -1,7 +1,7 @@
 from pathlib import Path
 from .confi import Confi
 
-confi = Confi()
+confi = Confi(prefix="OPAL_")
 
 ALLOWED_ORIGINS = confi.list("ALLOWED_ORIGINS", ["*"])
 PROCESS_NAME = ""

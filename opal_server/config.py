@@ -4,10 +4,11 @@ from opal_common.confi import Confi
 from opal_common.schemas.data import DataSourceConfig
 from opal_common.authentication.types import EncryptionKeyFormat, JWTAlgorithm
 
-confi = Confi()
-# ws server (TODO: merge with opal client config)
-OPAL_WS_LOCAL_URL = confi.str("OPAL_WS_LOCAL_URL", "ws://localhost:7002/ws")
-OPAL_WS_TOKEN = confi.str("OPAL_WS_TOKEN", "THIS_IS_A_DEV_SECRET")
+confi = Confi(prefix="OPAL_")
+
+# ws server
+OPAL_WS_LOCAL_URL = confi.str("WS_LOCAL_URL", "ws://localhost:7002/ws")
+OPAL_WS_TOKEN = confi.str("WS_TOKEN", "THIS_IS_A_DEV_SECRET")
 BROADCAST_URI = confi.str("BROADCAST_URI", "postgres://localhost/acalladb")
 
 # server security
