@@ -20,7 +20,8 @@ OPAL is an administration layer for Open Policy Agent (OPA), detecting changes t
 
 OPAL brings open-policy up to the speed needed by live applications.
 As you push updates to your application's stores (e.g. Git, DBs, S3, SaaS services) OPAL will make sure your services are always in sync with the authorization data and policy they need (and only those they need.) 
-## 🛠️ Installation 
+
+## 🛠️ Installation / Quick start
 
 - As containers 
     
@@ -47,13 +48,34 @@ As you push updates to your application's stores (e.g. Git, DBs, S3, SaaS servic
 #
 
 ## 📖 Introduction to OPAL - data and policy realtime delivery  
-- Modern applications are complex, distributed, multi-tenant and serve at scale - creating (often) overwhelming authorization challenges. OPA (Open-Policy-Agent) brings the power of decoupled policy to the infrastructure layer (especially K8s), and light applications.OPAL supercharges OPA to meet the pace of live applications, where the picture may change with every user click and api call.
+- Modern applications are complex, distributed, multi-tenant and serve at scale - creating (often) overwhelming authorization challenges. OPA (Open-Policy-Agent) brings the power of decoupled policy to the infrastructure layer (especially K8s), and light applications. OPAL supercharges OPA to meet the pace of live applications, where the picture may change with every user click and api call.
 
 - OPAL builds on top of OPA adding realtime updates (via Websocket Pub/Sub) for both policy and data.
 
 - OPAL embraces decoupling of policy and code, and doubles down on decoupling policy (Git driven) and data (distributed data-source fetching engines).
 
+## Why use OPAL
+- OPAL is the easiest why to keep your solution's authorization layer up-to-date in realtime.
+    - OPAL aggregates policy and data from across the field and integrates them seamlessly into the authorization layer. 
+    - OPAL is microservices and cloud-native (see key concepts below) 
 
+- ### Why OPA + OPAL == 💪💜
+    OPA (OpenPolicyAgent) is great! it decouples policy from code in a highly performant and elegant way. But keeping policy agents up to the date is hard- especially in applications - where each user interaction or API call can affect access-control.
+    OPAL runs in the background - supercharging policy-agents, keeping them in sync with events in realtime. 
+    
+- ### What OPAL *is not*
+    - A Policy Engine - 
+        - OPAL uses a policy-engine, but isn't one itself
+        - Check out <a href="https://www.openpolicyagent.org/" target="_blank">OpenPolicyAgent</a>
+        
+    - Large scale Global FGA 
+        - Currently OPAL is not meant for managing ridiculous (>100GB) amounts of data  within one layer. Though it can complement a CDN to achieve a similar result - see below.
+        - Check out [Google-Zanzibar](https://research.google/pubs/pub48190/)
+         
+    - Fullstack authorization 
+        - OPAL and OPA essentially provide microservices for authorization
+        - Developers still need to add control interfaces on top (e.g. user-management, api-key-management, audit, impersonation, invites) both as APIs and UIs 
+        - Check out [**auth**orizon](https://authorizon.com)
 
 
 ## 📡  Architecture
@@ -61,7 +83,7 @@ As you push updates to your application's stores (e.g. Git, DBs, S3, SaaS servic
 
 <img src="https://i.ibb.co/YD8phRD/simplified-diagram-highlight.png" alt="simplified" border="0">
 
-See a [More detailed diagram](<img src="https://i.ibb.co/kGc9nDd/main.png" alt="main" border="0">)
+See a [more detailed diagram](https://i.ibb.co/kGc9nDd/main.png)
 - ### OPAL consists of two key components that work together:
     1. OPAL Server 
         - Creates a Pub/Sub channel client's subscribe to
