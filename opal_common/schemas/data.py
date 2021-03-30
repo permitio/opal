@@ -11,7 +11,7 @@ class DataSourceEntry(BaseModel):
     """
     # How to obtain the data
     url:str = Field(..., description="Url source to query for data")
-    config:FetcherConfig =  Field(None, description="Suggested fetcher configuration (e.g. auth or method) to fetch data with")
+    config:dict =  Field(None, description="Suggested fetcher configuration (e.g. auth or method) to fetch data with")
     # How to catalog data
     topics:List[str] = Field(None, description="topics the data applies to")
     # How to save the data

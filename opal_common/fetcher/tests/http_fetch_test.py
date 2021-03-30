@@ -80,7 +80,7 @@ async def test_simple_http_get_with_wait(server):
 @pytest.mark.asyncio
 async def test_authorized_http_get(server):
     """
-    Test getting from a server route with an auth token
+    Test getting data from a server route with an auth token
     """
     got_data_event = asyncio.Event()
     async with FetchingEngine() as engine:
@@ -89,6 +89,25 @@ async def test_authorized_http_get(server):
             got_data_event.set()
         # fetch with bearer token authorization
         await engine.queue_url(f"{BASE_URL}{AUTHORIZED_DATA_ROUTE}", callback, HttpGetFetcherConfig(headers={"X-TOKEN": SECRET_TOKEN}))
+        await asyncio.wait_for(got_data_event.wait(), 5)
+        assert got_data_event.is_set()
+
+@pytest.mark.asyncio
+async def test_authorized_http_get_from_dict(server):
+    """
+    Just like test_authorized_http_get, but we also check that the FetcherConfig is adapted from "the wire" (as a dict instead of the explicit HttpGetFetcherConfig)
+    """
+    got_data_event = asyncio.Event()
+    async with FetchingEngine() as engine:
+        async def callback(data):
+            assert data[DATA_KEY] == DATA_SECRET_VALUE
+            got_data_event.set()
+        # raw config to be parsed
+        config = {
+            "headers" : {"X-TOKEN": SECRET_TOKEN}
+        }
+        # fetch with bearer token authorization
+        await engine.queue_url(f"{BASE_URL}{AUTHORIZED_DATA_ROUTE}", callback, config)
         await asyncio.wait_for(got_data_event.wait(), 5)
         assert got_data_event.is_set()
 
