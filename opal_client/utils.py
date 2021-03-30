@@ -4,7 +4,7 @@ from typing import Tuple, Dict
 from fastapi import Response
 
 
-async def proxy_response(response: aiohttp.ClientResponse):
+async def proxy_response(response: aiohttp.ClientResponse) -> Response:
     content = await response.text()
     return Response(
         content=content,

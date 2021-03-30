@@ -44,13 +44,13 @@ class MockPolicyStoreClient(BasePolicyStoreClient):
         self._data[path] = policy_data
         self.has_data_event.set()
 
-    async def get_data(self, path: str=None):
+    async def get_data(self, path: str=None) -> Dict:
         if path is None or path == "":
             return self._data
         else:
             return self._data[path]
 
-    async def get_data_with_input(self, path: str, input: BaseModel):
+    async def get_data_with_input(self, path: str, input: BaseModel) -> Dict:
         return {}
 
     async def delete_policy_data(self, path: str = ""):
