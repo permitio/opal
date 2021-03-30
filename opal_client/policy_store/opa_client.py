@@ -217,7 +217,7 @@ class OpaClient(BasePolicyStoreClient):
 
     @fail_silently()
     @retry(**RETRY_CONFIG)
-    async def get_data(self, path: str):
+    async def get_data(self, path: str) -> Dict:
         """
         wraps opa's "GET /data" api that extracts base data documents from opa cache.
         NOTE: opa always returns 200 and empty dict (for valid input) even if the data does not exist.
@@ -236,7 +236,7 @@ class OpaClient(BasePolicyStoreClient):
             raise
 
     @retry(**RETRY_CONFIG)
-    async def get_data_with_input(self, path: str, input: BaseModel):
+    async def get_data_with_input(self, path: str, input: BaseModel) -> Dict:
         """
         evaluates a data document against an input.
         that is how OPA "runs queries".
