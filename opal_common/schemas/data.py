@@ -2,7 +2,11 @@ from logging import basicConfig
 from typing import List, Dict, Union
 from pydantic import BaseModel, Field
 
-from opal_common.fetcher.events import FetcherConfig
+from opal_common.fetcher.events import FetcherConfig as BaseFetcherConfig
+from opal_common.fetcher.providers.http_get_fetch_provider import HttpGetFetcherConfig
+from opal_common.fetcher.providers.fastapi_rpc_fetch_provider import FastApiRpcFetchConfig
+
+FetcherConfig = Union[HttpGetFetcherConfig, FastApiRpcFetchConfig, BaseFetcherConfig]
 
 
 class DataSourceEntry(BaseModel):
