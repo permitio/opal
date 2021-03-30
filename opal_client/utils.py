@@ -1,6 +1,4 @@
-import asyncio
 import aiohttp
-import threading
 
 from typing import Tuple, Dict
 from fastapi import Response
