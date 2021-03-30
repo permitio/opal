@@ -1,6 +1,5 @@
-
-<p align="center">
- <img src="https://i.ibb.co/BGVBmMK/opal.png" height=256 alt="opal" border="0" />
+<p  align="center">
+ <img src="https://i.ibb.co/BGVBmMK/opal.png" height=170 alt="opal" border="0" />
 </p>
 <h1 align="center">
 ⚡OPAL⚡
@@ -9,6 +8,7 @@
 <h2 align="center">
 Open Policy Administration Layer 
 </h2>
+
 
 #
 <a href="https://github.com/authorizon/opal/actions?query=workflow%3ATests" target="_blank">
@@ -21,7 +21,18 @@ OPAL is an administration layer for Open Policy Agent (OPA), detecting changes t
 OPAL brings open-policy up to the speed needed by live applications.
 As you push updates to your application's stores (e.g. Git, DBs, S3, SaaS services) OPAL will make sure your services are always in sync with the authorization data and policy they need (and only those they need.) 
 
-## 🛠️ Installation / Quick start
+## Table of contents
+ - [Getting started](#getting-started)
+ - [Intro to OPAL](#intro)
+ - [Architecture](#architecture)
+ - [Key-Concepts](#key-concepts)
+ - [HOW-TOs](#how-tos)
+ - [Design choices](#design)
+ - [Join the Community](#community)
+
+
+
+## <a name="getting-started"></a>🛠️ Getting started
 
 - As containers 
     
@@ -47,41 +58,41 @@ As you push updates to your application's stores (e.g. Git, DBs, S3, SaaS servic
 
 #
 
-## 📖 Introduction to OPAL - data and policy realtime delivery  
+## <a name="intro"></a>📖 Introduction to OPAL - data and policy realtime delivery  
 - Modern applications are complex, distributed, multi-tenant and serve at scale - creating (often) overwhelming authorization challenges. OPA (Open-Policy-Agent) brings the power of decoupled policy to the infrastructure layer (especially K8s), and light applications. OPAL supercharges OPA to meet the pace of live applications, where the picture may change with every user click and api call.
 
 - OPAL builds on top of OPA adding realtime updates (via Websocket Pub/Sub) for both policy and data.
 
 - OPAL embraces decoupling of policy and code, and doubles down on decoupling policy (Git driven) and data (distributed data-source fetching engines).
 
-## Why use OPAL
+### Why use OPAL
 - OPAL is the easiest why to keep your solution's authorization layer up-to-date in realtime.
     - OPAL aggregates policy and data from across the field and integrates them seamlessly into the authorization layer. 
     - OPAL is microservices and cloud-native (see key concepts below) 
 
-- ### Why OPA + OPAL == 💪💜
-    OPA (OpenPolicyAgent) is great! it decouples policy from code in a highly performant and elegant way. But keeping policy agents up to the date is hard- especially in applications - where each user interaction or API call can affect access-control.
-    OPAL runs in the background - supercharging policy-agents, keeping them in sync with events in realtime. 
+### Why OPA + OPAL == 💪💜
+OPA (OpenPolicyAgent) is great! it decouples policy from code in a highly performant and elegant way. But keeping policy agents up to the date is hard- especially in applications - where each user interaction or API call can affect access-control.
+OPAL runs in the background - supercharging policy-agents, keeping them in sync with events in realtime. 
+
+### What OPAL *is not*
+- A Policy Engine:
+    - OPAL uses a policy-engine, but isn't one itself
+    - Check out <a href="https://www.openpolicyagent.org/" target="_blank">Open-Policy-Agent</a>
     
-- ### What OPAL *is not*
-    - A Policy Engine - 
-        - OPAL uses a policy-engine, but isn't one itself
-        - Check out <a href="https://www.openpolicyagent.org/" target="_blank">OpenPolicyAgent</a>
+- Large scale Global FGA: 
+    - Currently OPAL is not meant for managing ridiculous (>100GB) amounts of data  within one layer. Though it can complement a CDN to achieve a similar result - see below.
+    - Check out <a href="https://research.google/pubs/pub48190/" target="_blank">Google-Zanzibar</a>
         
-    - Large scale Global FGA 
-        - Currently OPAL is not meant for managing ridiculous (>100GB) amounts of data  within one layer. Though it can complement a CDN to achieve a similar result - see below.
-        - Check out [Google-Zanzibar](https://research.google/pubs/pub48190/)
-         
-    - Fullstack authorization 
-        - OPAL and OPA essentially provide microservices for authorization
-        - Developers still need to add control interfaces on top (e.g. user-management, api-key-management, audit, impersonation, invites) both as APIs and UIs 
-        - Check out [**auth**orizon](https://authorizon.com)
+- Fullstack authorization: 
+    - OPAL and OPA essentially provide microservices for authorization
+    - Developers still need to add control interfaces on top (e.g. user-management, api-key-management, audit, impersonation, invites) both as APIs and UIs 
+    - Check out <a href="https://authorizon.com" target="_blank">**auth**orizon</a>
 
 
-## 📡  Architecture
+## <a name="architecture"></a>📡  Architecture
 
 
-<img src="https://i.ibb.co/YD8phRD/simplified-diagram-highlight.png" alt="simplified" border="0">
+<img src="https://i.ibb.co/HqFRfQk/simplified-diagram.png" alt="simplified" border="0">
 
 See a [more detailed diagram](https://i.ibb.co/kGc9nDd/main.png)
 - ### OPAL consists of two key components that work together:
@@ -110,7 +121,7 @@ See a [more detailed diagram](https://i.ibb.co/kGc9nDd/main.png)
 #
 
 
-## 💡 Key Concepts
+## <a name="key-concepts"></a>💡 Key Concepts
 - ### OPAL is realtime (with Pub/Sub updates)
     - OPAL is all about easily managing your authorization layer in realtime.
     - This is achieved by a **Websocket Pub/Sub** channel between OPAL clients and servers.
@@ -126,45 +137,45 @@ See a [more detailed diagram](https://i.ibb.co/kGc9nDd/main.png)
     Want to use authorization data from a new source (a SaaS service, a new DB, your own proprietary solution)? Simply [implement a new fetch-provider](docs/HOWTO/write_your_own_fetch_provider.md) 
 #
 
-- ## HOW-TOs
-    - How to extend OPAL to fetch data from your sources with [FetchProviders](docs/HOWTO/write_your_own_fetch_provider.md)
+## 👩‍🏫 <a name="how-tos"></a> HOW-TOs
+- How to extend OPAL to fetch data from your sources with [FetchProviders](docs/HOWTO/write_your_own_fetch_provider.md)
 
 
 
-- ## Foundations
-    OPAL is built on the shoulders of open-source giants, including:
-    - [OpenPolicyAgent](https://www.openpolicyagent.org/)- the default policy agent managed by OPAL.
-    - [FastAPI](https://github.com/tiangolo/fastapi) - the ASGI server framework used by OPAL-servers and OPAL-clients.
-    - [FastAPI WS PubSub](https://github.com/authorizon/fastapi_websocket_pubsub) - powering the live realtime update channels
-    - [Broadcaster](https://pypi.org/project/broadcaster/) allowing syncing server instances through a backend backbone (e.g. Redis, Kafka) 
+## <a name="foundations"></a> 🗿 Foundations
+OPAL is built on the shoulders of open-source giants, including:
+- [OpenPolicyAgent](https://www.openpolicyagent.org/)- the default policy agent managed by OPAL.
+- [FastAPI](https://github.com/tiangolo/fastapi) - the ASGI server framework used by OPAL-servers and OPAL-clients.
+- [FastAPI WS PubSub](https://github.com/authorizon/fastapi_websocket_pubsub) - powering the live realtime update channels
+- [Broadcaster](https://pypi.org/project/broadcaster/) allowing syncing server instances through a backend backbone (e.g. Redis, Kafka) 
     
-## 🎨 Design choices
+## <a name="design"></a> 🎨 Design choices
 
-- ## Networking
+- ### Networking
     - OPAL creates a highly efficient communications channel Using [websocket Pub/Sub connections](https://github.com/authorizon/fastapi_websocket_pubsub) to subscribe to both data and policy updates allows OPAL clients (and the services they support) to be deployed anywhere - in your VPC, at the edge, on-premises, etc.
     - By using  outgoing websocket connections to establish the Pub/Sub channel most routing/firewall concerns are circumnavigated
     - Using Websocket connections allows network connections to be dormant most fo the time (saving CPU cycles for both clients and servers) - especially when comparing to polling based methods.
 
-- ## Implementation with Python
+- ### Implementation with Python
     - OPAL is written completely in Python3 using FastAPI and Pydantic.
     OPAL was initially created as a component of [**auth**orizon.com](https://www.authorizon.com), and we've chosen Python for development speed, ease of use and extendability (e.g. Fetcher providers).
     - Python3 with coroutines (Asyncio) and FastAPI has presented [significant improvements for Python server performance](https://www.techempower.com/benchmarks/#section=test&runid=7464e520-0dc2-473d-bd34-dbdfd7e85911&hw=ph&test=composite&a=2&f=zik0zj-qmx0qn-zhwum7-zijx1b-z8kflr-zik0zj-zik0zj-zijunz-zik0zj-zik0zj-zik0zj-1kv). While still not on par with GO or Rust - the results match and in some cases even surpass NodeJS.
 
-- ## Performance
+- ### Performance
     - It's important to note that OPAL *doesn't replace* the direct channel to the policy-engine - so for example with OPA all authorization queries are processed directly by OPA's GO based engine.
 
     - Pub/Sub benchmarks - While we haven't run thorough benchmarks **yet**- we are using OPAL in production- seeing its Pub/Sub channel handle 100s of events per second per server instance with no issue.
 
-- ## Decouple Data from Policy 
+- ### Decouple Data from Policy 
     - Open-Policy-Agent sets the stage for authorization-data and policy decoupling by providing a separate API to manage each. 
     - OPAL takes this approach a step forward by enabling independent update channels for each into the policy cache.
     - POLICY - Policy as code - is code, and as such is naturally maintained best within version control (e.g. GIT). OPAL allows open-policy agents to get the subset of policy they need directly from repositories (as part of CI/CD or independently)
     - DATA - OPAL takes a more distributed approach to authorization data - recognizing that there are many potential data sources we'd like to include in the authorization conversion (e.g. billing data, compliance data, usage data, etc. etc. ). OPAL-clients can be configured and extended to aggregate any data-source into whichever service needs it.
 
-- ## Decouple data/policy management from policy agents
+- ### Decouple data/policy management from policy agents
     - OPAL was built initially with OPA in mind, and OPA is mostly a first-class citizen in OPAL. That said OPAL can support various and multiple policy agents, even in parallel - allowing developers to choose the best policy and agent for their needs.
 
-- ## FGA, large scale / global authorization (e.g. Google Zanzibar)
+- ### FGA, large scale / global authorization (e.g. Google Zanzibar)
     - OPAL is built for fine grained authorizon (FGA), allowing developers to aggregate all and any the data they need and restructure it for the authorization layer     
     - By making sure each policy-agent is loaded with only the data it needs (via topic subscriptions) - i.e. data focus and separation.
         - examples of data-separation: the back-office service doesn't need to know about customer users, a tenant specific service doesn't need the user list of other tenants, ...
@@ -172,27 +183,27 @@ See a [more detailed diagram](https://i.ibb.co/kGc9nDd/main.png)
     - For these larger scale cases, OPAL can potentially become a link between a solution like Google Zanzibar (or equivalent CDN) and local policy-agents. (Allowing both Google like scales, low latency, and high performance)
     - I you're developing such a service, or considering such high-scale scenarios; you're welcome to contact us, we'd be happy to share our plans for OPAL in that area.
 
-- ## Using OPAL for other live update needs
+- ### Using OPAL for other live update needs
     - While OPAL was created and primarily designed for open-policy and authorization needs; it can be generically applied for other live updates and data/code propagation needs
     - If you'd like to use OPAL or some of its underlying modules for other update cases - please contact us (See below), we'd love to help you do that.
 
-- ## Administration capabilities and UI
+- ### Administration capabilities and UI
     - We've already built policy editors, back-office, frontend-embeddable interfaces, and more as part of [**auth**orizon.com](https://www.authorizon.com)
     - We have plans to migrate more parts of [**auth**orizon.com](https://www.authorizon.com) to be open-source; please let us know what you'd like to see next
-#
+# <a name="community"></a>
 
- - ## Joining the community 
-    - We are eager to hear from you 😃 
-    - Raise questions and ask for features to be added to the road-map in our [Github discussions](https://github.com/authorizon/opal/discussions)
-    - Report issues in [Github issues](https://github.com/authorizon/opal/issues)
-    - Chat with us in our [Slack community](https://join.slack.com/t/opal-access/shared_invite/zt-nz6yjgnp-RlP9rtOPwO0n0aH_vLbmBQ)
+ ## Joining the community 
+- We are eager to hear from you 😃 
+- Raise questions and ask for features to be added to the road-map in our [Github discussions](https://github.com/authorizon/opal/discussions)
+- Report issues in [Github issues](https://github.com/authorizon/opal/issues)
+- Chat with us in our [Slack community](https://join.slack.com/t/opal-access/shared_invite/zt-nz6yjgnp-RlP9rtOPwO0n0aH_vLbmBQ)
 
-- ## Contacting us (the authors)
-    - We love talking about authorization, open-source, realtime communication, and tech in general
-    - feel free to reach out to us on our [GitHub discussions](https://github.com/authorizon/opal/discussions) or directly over [email](mailto:or@authorizon.com)
-- ## Contributing to OPAL
-    - Pull requests are welcome! (please make sure to include *passing* tests and docs)
-    - Prior to submitting a PR - open an issue on GitHub, or make sure your PR addresses an existing issue well.   
-    
+## Contacting us (the authors)
+- We love talking about authorization, open-source, realtime communication, and tech in general
+- feel free to reach out to us on our [GitHub discussions](https://github.com/authorizon/opal/discussions) or directly over [email](mailto:or@authorizon.com)
+## Contributing to OPAL
+- Pull requests are welcome! (please make sure to include *passing* tests and docs)
+- Prior to submitting a PR - open an issue on GitHub, or make sure your PR addresses an existing issue well.   
+
     
     
