@@ -1,6 +1,7 @@
 import asyncio
 from typing import Any, Dict, Optional, List
-from opal_client.enforcer.schemas import AuthorizationQuery
+from pydantic import BaseModel
+
 from opal_common.schemas.policy import PolicyBundle
 
 from .base_policy_store_client import  BasePolicyStoreClient
@@ -20,9 +21,6 @@ class MockPolicyStoreClient(BasePolicyStoreClient):
         if self._has_data_event is None:
             self._has_data_event = asyncio.Event()
         return self._has_data_event
-
-    async def is_allowed(self, query: AuthorizationQuery):
-        return True
 
     async def set_policy(self, policy_id: str, policy_code: str):
         pass
@@ -51,6 +49,9 @@ class MockPolicyStoreClient(BasePolicyStoreClient):
             return self._data
         else:
             return self._data[path]
+
+    async def get_data_with_input(self, path: str, input: BaseModel):
+        return {}
 
     async def delete_policy_data(self, path: str = ""):
         if not path:

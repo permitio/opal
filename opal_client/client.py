@@ -9,20 +9,16 @@ from fastapi import FastAPI
 import websockets
 
 from opal_common.logger import logger
+from opal_common.middleware import configure_middleware
 from opal_client.config import PolicyStoreTypes, POLICY_STORE_TYPE, INLINE_OPA_ENABLED, INLINE_OPA_CONFIG
 from opal_client.data.api import router as data_router
 from opal_client.data.updater import DataUpdater
-from opal_client.enforcer.api import init_enforcer_api_router
-from opal_client.local.api import init_local_cache_api_router
-from opal_client.opa import options
 from opal_client.policy_store.base_policy_store_client import BasePolicyStoreClient
 from opal_client.policy_store.policy_store_client_factory import PolicyStoreClientFactory
 from opal_client.opa.runner import OpaRunner
 from opal_client.opa.options import OpaServerOptions
 from opal_client.policy.api import init_policy_router
 from opal_client.policy.updater import PolicyUpdater, update_policy
-from opal_client.server.api import router as proxy_router
-from opal_client.server.middleware import configure_middleware
 
 
 class OpalClient:
@@ -91,16 +87,11 @@ class OpalClient:
         mounts the api routes on the app object
         """
         # Init api routers with required dependencies
-        enforcer_router = init_enforcer_api_router(policy_store=self.policy_store)
-        local_router = init_local_cache_api_router(policy_store=self.policy_store)
         policy_router = init_policy_router(policy_store=self.policy_store)
 
         # mount the api routes on the app object
-        app.include_router(enforcer_router, tags=["Authorization API"])
-        app.include_router(local_router, prefix="/local", tags=["Local Queries"])
         app.include_router(policy_router, tags=["Policy Updater"])
         app.include_router(data_router, tags=["Data Updater"])
-        app.include_router(proxy_router, tags=["Cloud API Proxy"])
 
         # top level routes (i.e: healthchecks)
         @app.get("/healthcheck", include_in_schema=False)
