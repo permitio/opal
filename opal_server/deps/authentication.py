@@ -24,13 +24,15 @@ def get_token_from_header(authorization_header: str) -> Optional[str]:
 
     return token
 
-def verify_logged_in(signer: JWTSigner, token: str) -> UUID:
+def verify_logged_in(signer: JWTSigner, token: Optional[str]) -> UUID:
     """
     forces bearer token authentication with valid JWT or throws 401.
     """
     if not signer.enabled:
         logger.debug("signer diabled, cannot verify request!")
         return
+    if token is None:
+        raise Unauthorized(token=token, description="access token was not provided")
     claims: JWTClaims = signer.verify(token)
     subject = claims.get("sub", "")
 
@@ -51,7 +53,7 @@ class JWTVerifier:
     def __init__(self, signer: JWTSigner):
         self.signer = signer
 
-    def __call__(self, authorization: str = Header(...)) -> UUID:
+    def __call__(self, authorization: Optional[str] = Header(None)) -> UUID:
         token = get_token_from_header(authorization)
         return verify_logged_in(self.signer, token)
 
@@ -78,7 +80,7 @@ class JWTVerifierWebsocket:
     def __init__(self, signer: JWTSigner):
         self.signer = signer
 
-    def __call__(self, authorization: str = Header(...)) -> bool:
+    def __call__(self, authorization: Optional[str] = Header(None)) -> bool:
         token = get_token_from_header(authorization)
         try:
             verify_logged_in(self.signer, token)
