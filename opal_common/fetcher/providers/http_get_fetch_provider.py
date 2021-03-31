@@ -31,6 +31,9 @@ class HttpGetFetchProvider(BaseFetchProvider):
         super().__init__(event)
         self._session = None
 
+    def parse_event(self, event: FetchEvent) -> HttpGetFetchEvent:
+        return HttpGetFetchEvent(**event.dict(exclude={"config"}), config=event.config)   
+
     async def __aenter__(self):
         headers = {}
         if self._event.config.headers is not None:

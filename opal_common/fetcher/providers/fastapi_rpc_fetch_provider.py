@@ -34,6 +34,10 @@ class FastApiRpcFetchProvider(BaseFetchProvider):
         self._event: FastApiRpcFetchEvent
         super().__init__(event)
 
+    def parse_event(self, event: FetchEvent) -> FastApiRpcFetchEvent:
+        return FastApiRpcFetchEvent(**event.dict(exclude={"config"}), config=event.config)   
+
+
     async def _fetch_(self):
         assert self._event is not None, "FastApiRpcFetchEvent not provided for FastApiRpcFetchProvider"
         args = self._event.config.rpc_arguments

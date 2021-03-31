@@ -26,9 +26,23 @@ class BaseFetchProvider:
             event (FetchEvent): the event desciring what we should fetch
             retry_config (dict): Tenacity.retry config (@see https://tenacity.readthedocs.io/en/latest/api.html#retry-main-api) for retrying fetching
         """
-        self._event = event
+        # convert the event as needed and save it
+        self._event = self.parse_event(event)
         self._url = event.url
         self._retry_config = retry_config if retry_config is not None else self.DEFAULT_RETRY_CONFIG
+
+    def parse_event(self, event:FetchEvent)->FetchEvent:
+        """
+        Parse the event (And config within it) into the right object type
+
+        Args:
+            event (FetchEvent): the event to be parsed
+
+        Returns:
+            FetchEvent: an event deriving from FetchEvent
+        """
+        return event
+        
 
     async def fetch(self):
         """
