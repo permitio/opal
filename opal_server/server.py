@@ -62,7 +62,7 @@ class OpalServer:
         """
         Args:
             init_git_watcher (bool, optional): whether or not to launch the policy repo watcher.
-            tracked_repo_url (str, optional): the url of the repo watched by policy repo watcher.
+            policy_repo_url (str, optional): the url of the repo watched by policy repo watcher.
             init_publisher (bool, optional): whether or not to launch a publisher pub/sub client.
                 this publisher is used by the server processes to publish data to the client.
             data_sources_config (DataSourceConfig, optional): base data configuration. the opal
