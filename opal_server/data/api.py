@@ -18,7 +18,8 @@ def init_data_updates_router(data_update_publisher: DataUpdatePublisher, data_so
     @router.post(DATA_CONFIG_ROUTE)
     async def publish_data_update_event(update:DataUpdate):
         logger.info("Publishing received update event")
-        await data_update_publisher.publish_data_updates()
+        data_update_publisher.publish_data_updates(update)
+        return {"status": "ok"}
 
     return router
 
