@@ -2,6 +2,7 @@ import os
 from enum import Enum
 
 from opal_common.confi import Confi
+from opal_common.config import LOG_MODULE_EXCLUDE_LIST
 from opal_client.opa.options import OpaServerOptions
 
 confi = Confi(prefix="OPAL_")
@@ -11,6 +12,12 @@ confi = Confi(prefix="OPAL_")
 class PolicyStoreTypes(Enum):
     OPA="OPA"
     MOCK="MOCK"
+
+class OpaLogFormat(str, Enum):
+    NONE = "none" # no opa logs are piped
+    MINIMAL = "minimal" # only the event name is logged
+    HTTP = "http" # tries to extract http method, path and response status code
+    FULL = "full" # logs the entire data dict returned
 
 # opa client (policy store) configuration
 POLICY_STORE_TYPE = confi.enum("POLICY_STORE_TYPE", PolicyStoreTypes, PolicyStoreTypes.OPA)
@@ -29,6 +36,10 @@ INLINE_OPA_CONFIG = confi.model(
     {}, # defaults are being set according to OpaServerOptions pydantic definitions (see class)
     description="cli options used when running `opa run --server` inline"
 )
+
+INLINE_OPA_LOG_FORMAT: OpaLogFormat = confi.enum("INLINE_OPA_LOG_FORMAT", OpaLogFormat, OpaLogFormat.NONE)
+if INLINE_OPA_LOG_FORMAT == OpaLogFormat.NONE:
+    LOG_MODULE_EXCLUDE_LIST.append("opal_client.opa.logger")
 
 # configuration for fastapi routes
 ALLOWED_ORIGINS = ["*"]
