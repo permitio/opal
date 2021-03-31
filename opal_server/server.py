@@ -30,6 +30,7 @@ from opal_server.config import (
     AUTH_JWT_ISSUER,
     AUTH_JWKS_URL,
     AUTH_JWKS_STATIC_DIR,
+    POLICY_REPO_URL,
     POLICY_REPO_WEBHOOK_TOPIC
 )
 from opal_server.data.api import init_data_updates_router
@@ -49,6 +50,7 @@ class OpalServer:
     def __init__(
         self,
         init_git_watcher: bool = REPO_WATCHER_ENABLED,
+        policy_repo_url: str = POLICY_REPO_URL,
         init_publisher: bool = PUBLISHER_ENABLED,
         data_sources_config: Optional[DataSourceConfig] = None,
         broadcaster_uri: str = BROADCAST_URI,
@@ -60,6 +62,7 @@ class OpalServer:
         """
         Args:
             init_git_watcher (bool, optional): whether or not to launch the policy repo watcher.
+            tracked_repo_url (str, optional): the url of the repo watched by policy repo watcher.
             init_publisher (bool, optional): whether or not to launch a publisher pub/sub client.
                 this publisher is used by the server processes to publish data to the client.
             data_sources_config (DataSourceConfig, optional): base data configuration. the opal
@@ -109,8 +112,12 @@ class OpalServer:
         self.publisher: Optional[TopicPublisher] = None
         if init_publisher:
             self.publisher = ServerSideTopicPublisher(self.pubsub.endpoint)
+
             if init_git_watcher:
-                self.watcher = setup_watcher_task(self.publisher)
+                if policy_repo_url is not None:
+                    self.watcher = setup_watcher_task(self.publisher)
+                else:
+                    logger.warning("POLICY_REPO_URL is unset but repo watcher is enabled! disabling watcher.")
 
         # init fastapi app
         self.app: FastAPI = self._init_fast_api_app()
