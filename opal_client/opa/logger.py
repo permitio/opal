@@ -1,7 +1,11 @@
 import json
 import logging
 
+from typing import Optional
+from enum import Enum
+
 from opal_client.logger import logger
+from opal_client.config import INLINE_OPA_LOG_FORMAT, OpaLogFormat
 
 def logging_level_from_string(level: str) -> int:
     """
@@ -27,17 +31,57 @@ async def pipe_opa_logs(stream):
     """
     gets a stream of logs from the opa process, and logs it into the main opal log.
     """
+    if INLINE_OPA_LOG_FORMAT == OpaLogFormat.NONE:
+        return
+
     while True:
         line = await stream.readline()
         if not line:
             break
         try:
             log_line = json.loads(line)
-            msg = log_line.pop("msg", None)
             level = logging.getLevelName(logging_level_from_string(log_line.pop("level", "info")))
-            if msg is not None:
-                logger.log(level, msg, **log_line)
-            else:
-                logger.log(level, line)
+            msg = log_line.pop("msg", None)
+
+            logged = False
+            if INLINE_OPA_LOG_FORMAT == OpaLogFormat.MINIMAL:
+                logged = log_event_name(level, msg)
+            elif INLINE_OPA_LOG_FORMAT == OpaLogFormat.HTTP:
+                logged = log_formatted_http_details(level, msg, log_line)
+
+            # always fall back to log the entire line
+            if not logged or INLINE_OPA_LOG_FORMAT == OpaLogFormat.FULL:
+                log_entire_dict(level, msg, log_line)
         except json.JSONDecodeError:
             logger.info(line)
+
+def log_event_name(level: str, msg: Optional[str]) -> bool:
+    if msg is not None:
+        logger.log(level, "{msg: <20}", msg=msg)
+        return True
+    return False
+
+def log_formatted_http_details(level: str, msg: Optional[str], log_line: dict) -> bool:
+    method: Optional[str] = log_line.pop("req_method", None)
+    path: Optional[str] = log_line.pop("req_path", None)
+    status: Optional[int] = log_line.pop("resp_status", None)
+
+    if msg is None or method is None or path is None:
+        return False
+
+    if status is None:
+        format = "{msg: <20} <fg #999>{method} {path}</>"
+        logger.opt(colors=True).log(level, format, msg=msg, method=method, path=path)
+    else:
+        format = "{msg: <20} <fg #999>{method} {path} -> {status}</>"
+        logger.opt(colors=True).log(level, format, msg=msg, method=method, path=path, status=status)
+
+    return True
+
+def log_entire_dict(level: str, msg: Optional[str], log_line: dict):
+    if msg is None:
+        format = "<fg #999>{log_line}</>"
+    else:
+        format = "{msg: <20} <fg #bfbfbf>{log_line}</>"
+    logger.opt(colors=True).log(level, format, msg=msg, log_line=log_line)
+    return True

@@ -56,7 +56,8 @@ PUBLISHER_ENABLED = confi.bool("PUBLISHER_ENABLED", True)
 
 # Data updates
 ALL_DATA_TOPIC = confi.str("ALL_DATA_TOPIC", "policy_data", description="Top level topic for data")
-ALL_DATA_URL = confi.str("ALL_DATA_URL", "http://localhost:7002/policy-data", description="URL for all data config [If you choose to have it all at one place]")
+ALL_DATA_ROUTE = confi.str("ALL_DATA_ROUTE", "/policy-data")
+ALL_DATA_URL = confi.str("ALL_DATA_URL", f"http://localhost:7002{ALL_DATA_ROUTE}", description="URL for all data config [If you choose to have it all at one place]")
 DATA_CONFIG_ROUTE = confi.str("DATA_CONFIG_ROUTE", "/data/config", description="URL to fetch the full basic configuration of data")
 DATA_CONFIG_SOURCES = confi.model(
     "DATA_CONFIG_SOURCES",
