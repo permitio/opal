@@ -3,6 +3,8 @@
 .DEFAULT_GOAL := help
 
 OPAL_SERVER_URL ?= http://host.docker.internal:7002
+OPAL_AUTH_PRIVATE_KEY ?= /root/ssh/opal_rsa
+OPAL_AUTH_PUBLIC_KEY ?= /root/ssh/opal_rsa.pub
 
 # python packages (pypi)
 clean:
@@ -30,13 +32,33 @@ publish:
 
 # docker
 docker-build-client:
-	docker build -t authorizon/opal-client -f docker/client.Dockerfile .
+	@docker build -t authorizon/opal-client -f docker/client.Dockerfile .
 
 docker-run-client:
-	docker run -it -e "OPAL_SERVER_URL=$(OPAL_SERVER_URL)" -p 7000:7000 -p 8181:8181 authorizon/opal-client
+	@docker run -it -e "OPAL_SERVER_URL=$(OPAL_SERVER_URL)" -p 7000:7000 -p 8181:8181 authorizon/opal-client
 
 docker-build-server:
-	docker build -t authorizon/opal-server -f docker/server.Dockerfile .
+	@docker build -t authorizon/opal-server -f docker/server.Dockerfile .
 
 docker-run-server:
-	docker run -it -e "OPAL_POLICY_REPO_URL=$(OPAL_POLICY_REPO_URL)" -p 7002:7002 authorizon/opal-server
+	@if [[ -z "$(OPAL_POLICY_REPO_SSH_KEY)" ]]; then \
+		docker run -it \
+			-e "OPAL_POLICY_REPO_URL=$(OPAL_POLICY_REPO_URL)" \
+			-p 7002:7002 \
+			authorizon/opal-server; \
+	else \
+		docker run -it \
+			-e "OPAL_POLICY_REPO_URL=$(OPAL_POLICY_REPO_URL)" \
+			-e "OPAL_POLICY_REPO_SSH_KEY=$(OPAL_POLICY_REPO_SSH_KEY)" \
+			-p 7002:7002 \
+			authorizon/opal-server; \
+	fi
+
+docker-run-server-secure:
+	@docker run -it \
+		-v ~/.ssh:/root/ssh \
+		-e "OPAL_AUTH_PRIVATE_KEY=$(OPAL_AUTH_PRIVATE_KEY)" \
+		-e "OPAL_AUTH_PUBLIC_KEY=$(OPAL_AUTH_PUBLIC_KEY)" \
+		-e "OPAL_POLICY_REPO_URL=$(OPAL_POLICY_REPO_URL)" \
+		-p 7002:7002 \
+		authorizon/opal-server
