@@ -7,6 +7,7 @@ from opal_client.utils import tuple_to_dict
 from opal_common.fetcher import FetchingEngine
 from opal_common.fetcher.events import FetcherConfig
 from opal_common.fetcher.providers.http_get_fetch_provider import HttpGetFetcherConfig
+from opal_common.logger import logger
 
 class DataFetcher:
     """
@@ -49,10 +50,15 @@ class DataFetcher:
         """
         Helper function wrapping self._engine.handle_url, returning the fetched result with the url used for it
         """
-        # ask the engine to get our data
-        response = await self._engine.handle_url(url, config=config)
-        # store as part of all results
-        return url, response
+        logger.info("Fetching data from url: {url}", url=url)
+        try:
+            # ask the engine to get our data
+            response = await self._engine.handle_url(url, config=config)
+            # store as part of all results
+            return url, response
+        except asyncio.TimeoutError as e:
+            logger.exception("Timeout while fetching url: {url}", url=url)
+            raise
 
     async def fetch_policy_data(self, urls:Dict[str, FetcherConfig]=None) -> Dict[str, Any]:
         """
@@ -76,9 +82,14 @@ class DataFetcher:
         for url, config in urls.items():
             tasks.append(self._handle_url(url, config))
         # wait for all data fetches to complete
-        results = await asyncio.gather(*tasks)
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+
         # Map results by urls
-        results_by_url = {url: response for url, response in results  }
+        results_by_url = {}
+        for result in results:
+            if not isinstance(result, Exception):
+                url, response = result
+                results_by_url[url] = response
         # return results
         return results_by_url
 

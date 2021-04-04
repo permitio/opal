@@ -11,7 +11,7 @@ import websockets
 from opal_common.logger import logger
 from opal_common.middleware import configure_middleware
 from opal_client.config import PolicyStoreTypes, POLICY_STORE_TYPE, INLINE_OPA_ENABLED, INLINE_OPA_CONFIG, DATA_TOPICS
-from opal_client.data.api import router as data_router
+from opal_client.data.api import init_data_router
 from opal_client.data.updater import DataUpdater
 from opal_client.policy_store.base_policy_store_client import BasePolicyStoreClient
 from opal_client.policy_store.policy_store_client_factory import PolicyStoreClientFactory
@@ -93,6 +93,7 @@ class OpalClient:
         """
         # Init api routers with required dependencies
         policy_router = init_policy_router(policy_store=self.policy_store)
+        data_router = init_data_router(data_updater=self.data_updater)
 
         # mount the api routes on the app object
         app.include_router(policy_router, tags=["Policy Updater"])
