@@ -1,9 +1,13 @@
 
+import inspect
 from typing import Any, Callable, Type
 from decouple import  text_type, undefined
 
 
 class FromStr:
+    """
+    Placeholder for values parsed from strings into more complex objects
+    """
     def __init__(self, type, cast):
         self._type = type
         self.cast = cast
@@ -16,7 +20,10 @@ class FromStr:
 
     @property
     def __name__(self) -> str:
-        return f"<{self._type.__name__}>"
+        if hasattr(self._type,'__name__'):
+            return f"<{self._type.__name__}>"
+        else: 
+            return repr(self._type)
 
 class ConfiEntry:
     key:str
@@ -54,3 +61,19 @@ class ConfiEntry:
         return res
         
         
+class ConfiDelay:
+    """
+    Delay loaded confi entry default values
+    """
+
+    def __init__(self, value) -> None:
+        self._value = value
+
+    def eval(self, config):
+        values = { k:v.value for k,v in config.entries.items()}
+        if isinstance(self._value, str):
+            return self._value.format(**values)
+        if callable(self._value):
+            callargs = inspect.getcallargs(self._value)
+            args = {k: values.get(k, undefined) for k,v in callargs.items()}
+            return self._value(**args)
