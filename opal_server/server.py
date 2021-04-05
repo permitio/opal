@@ -11,7 +11,7 @@ from fastapi import Depends, FastAPI
 from fastapi.staticfiles import StaticFiles
 
 from opal_common.topics.publisher import TopicPublisher, ServerSideTopicPublisher
-from opal_common.logger import logger
+from opal_common.logger import logger, configure_logs
 from opal_common.schemas.data import DataSourceConfig
 from opal_common.synchronization.named_lock import NamedLock
 from opal_common.middleware import configure_middleware
@@ -84,6 +84,7 @@ class OpalServer:
                 topic. upon being triggered, will detect updates to the policy (new commits) and
                 will update the opal client via pubsub.
         """
+        configure_logs()
         self.watcher: Optional[RepoWatcherTask] = None
         self.leadership_lock: Optional[NamedLock] = None
         self.data_sources_config = data_sources_config if data_sources_config is not None else DATA_CONFIG_SOURCES

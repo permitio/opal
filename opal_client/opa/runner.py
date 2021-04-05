@@ -7,12 +7,10 @@ from typing import Callable, Coroutine, Optional, List
 from tenacity import retry, wait_random_exponential
 
 from opal_client.logger import logger
-from opal_client.policy_store.policy_store_client_factory import DEFAULT_POLICY_STORE
 from opal_client.opa.options import OpaServerOptions
 from opal_client.opa.logger import pipe_opa_logs
 
 
-opa = DEFAULT_POLICY_STORE
 AsyncCallback = Callable[[], Coroutine]
 
 async def wait_until_process_is_up(process_pid: int, callback: Optional[AsyncCallback], wait_interval: float=0.1, timeout: Optional[float] = None):

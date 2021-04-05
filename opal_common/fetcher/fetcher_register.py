@@ -3,7 +3,7 @@ from typing import Type, Optional, Dict
 from .fetch_provider import BaseFetchProvider
 from .providers.http_get_fetch_provider import HttpGetFetchProvider
 from .events import FetchEvent
-from ..config import FETCH_PROVIDER_MODULES
+from ..config import opal_common_config
 
 logger = get_logger("opal.fetcher_register")
 
@@ -32,7 +32,7 @@ class FetcherRegister:
             from ..emport import emport_objects_by_class
             # load fetchers
             fetchers = []
-            for module_path in FETCH_PROVIDER_MODULES:
+            for module_path in opal_common_config.FETCH_PROVIDER_MODULES:
                 try:
                     fetchers.extend(emport_objects_by_class(module_path, BaseFetchProvider, ["*"]))
                 except:

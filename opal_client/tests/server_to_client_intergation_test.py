@@ -17,7 +17,7 @@ root_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), os.path.pardi
 sys.path.append(root_dir)
 
 
-from opal_client import OpalClient, config
+from opal_client import OpalClient
 from opal_client.data.rpc import TenantAwareRpcEventClientMethods
 from opal_client.data.updater import DataSourceEntry, DataUpdate, DataUpdater
 from opal_client.policy_store import PolicyStoreClientFactory, PolicyStoreTypes
@@ -25,7 +25,7 @@ from opal_client.policy_store.mock_policy_store_client import \
     MockPolicyStoreClient
 from opal_common.schemas.data import DataSourceConfig
 from opal_common.utils import get_authorization_header
-from opal_server.config import DATA_CONFIG_ROUTE
+from opal_server.config import opal_server_config
 from opal_server.server import OpalServer
 
 
@@ -36,7 +36,7 @@ PORT = int(os.environ.get("PORT") or "9123")
 UPDATES_URL = f"ws://localhost:{PORT}/ws"
 DATA_ROUTE = "/fetchable_data"
 DATA_URL = f"http://localhost:{PORT}{DATA_ROUTE}"
-DATA_CONFIG_URL = f"http://localhost:{PORT}{DATA_CONFIG_ROUTE}"
+DATA_CONFIG_URL = f"http://localhost:{PORT}{opal_server_config.DATA_CONFIG_ROUTE}"
 DATA_TOPICS = ["policy_data"]
 TEST_DATA = {
     "hello": "world"

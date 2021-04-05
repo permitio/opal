@@ -8,7 +8,7 @@ from git import Repo, GitError, GitCommandError
 
 from opal_common.logger import logger
 from opal_common.git.exceptions import GitFailed
-from opal_common.config import GIT_SSH_KEY_FILE
+from opal_common.config import opal_common_config
 
 
 SSH_PREFIX = "ssh://"
@@ -76,7 +76,7 @@ class RepoCloner:
         clone_path: str,
         retry_config = None,
         ssh_key: Optional[str] = None,
-        ssh_key_file_path: Optional[str] = GIT_SSH_KEY_FILE,
+        ssh_key_file_path: Optional[str] = None,
     ):
         """inits the repo cloner.
 
@@ -90,11 +90,12 @@ class RepoCloner:
         """
         if repo_url is None:
             raise ValueError("must provide repo url!")
+        
 
         self.url = repo_url
         self.path = os.path.expanduser(clone_path)
         self._ssh_key = ssh_key
-        self._ssh_key_file_path = ssh_key_file_path
+        self._ssh_key_file_path = ssh_key_file_path or opal_common_config.GIT_SSH_KEY_FILE
         self._retry_config = retry_config if retry_config is not None else self.DEFAULT_RETRY_CONFIG
 
     def clone(self) -> CloneResult:

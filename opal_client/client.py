@@ -8,9 +8,9 @@ from typing import List
 from fastapi import FastAPI
 import websockets
 
-from opal_common.logger import logger
+from opal_common.logger import logger, configure_logs
 from opal_common.middleware import configure_middleware
-from opal_client.config import PolicyStoreTypes, POLICY_STORE_TYPE, INLINE_OPA_ENABLED, INLINE_OPA_CONFIG, DATA_TOPICS
+from opal_client.config import PolicyStoreTypes, opal_client_config
 from opal_client.data.api import router as data_router
 from opal_client.data.updater import DataUpdater
 from opal_client.policy_store.base_policy_store_client import BasePolicyStoreClient
@@ -24,13 +24,13 @@ from opal_client.policy.updater import PolicyUpdater, update_policy
 class OpalClient:
     def __init__(
         self,
-        policy_store_type:PolicyStoreTypes=POLICY_STORE_TYPE,
+        policy_store_type:PolicyStoreTypes=opal_client_config.POLICY_STORE_TYPE,
         policy_store:BasePolicyStoreClient=None,
         data_updater:DataUpdater=None,
         data_topics: List[str] = None,
         policy_updater:PolicyUpdater=None,
-        inline_opa_enabled:bool=INLINE_OPA_ENABLED,
-        inline_opa_options:OpaServerOptions=INLINE_OPA_CONFIG,
+        inline_opa_enabled:bool=opal_client_config.INLINE_OPA_ENABLED,
+        inline_opa_options:OpaServerOptions=opal_client_config.INLINE_OPA_CONFIG,
     ) -> None:
         """
         Args:
@@ -41,6 +41,7 @@ class OpalClient:
                 data_updater (DataUpdater, optional): Defaults to None.
                 policy_updater (PolicyUpdater, optional): Defaults to None.
         """
+        configure_logs()
         # Init policy store client
         self.policy_store_type:PolicyStoreTypes = policy_store_type
         self.policy_store:BasePolicyStoreClient = policy_store or PolicyStoreClientFactory.create(policy_store_type)
@@ -50,7 +51,7 @@ class OpalClient:
         if data_updater is not None:
             self.data_updater = data_updater
         else:
-            data_topics = data_topics if data_topics is not None else DATA_TOPICS
+            data_topics = data_topics if data_topics is not None else opal_client_config.DATA_TOPICS
             self.data_updater = DataUpdater(policy_store=self.policy_store, data_topics=data_topics)
 
         # Internal services

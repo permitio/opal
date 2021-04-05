@@ -8,7 +8,7 @@ from typing import Dict, Any, Optional, List, Set
 from tenacity import retry, stop_after_attempt, wait_fixed
 from pydantic import BaseModel
 
-from opal_client.config import POLICY_STORE_URL
+from opal_client.config import opal_client_config
 from opal_client.logger import logger
 from opal_client.utils import proxy_response
 from opal_common.schemas.policy import DataModule, PolicyBundle
@@ -34,7 +34,7 @@ class OpaClient(BasePolicyStoreClient):
     """
     POLICY_NAME = "rbac"
 
-    def __init__(self, opa_server_url=POLICY_STORE_URL):
+    def __init__(self, opa_server_url=opal_client_config.POLICY_STORE_URL):
         self._opa_url = opa_server_url
         self._policy_data = None
         self._cached_policies: Dict[str, str] = {}

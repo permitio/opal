@@ -1,7 +1,7 @@
 import asyncio
 from typing import Dict, Any
 
-from opal_client.config import DEFAULT_DATA_URL, CLIENT_TOKEN
+from opal_client.config import opal_client_config 
 from opal_common.utils import get_authorization_header
 from opal_client.utils import tuple_to_dict
 from opal_common.fetcher import FetchingEngine
@@ -12,7 +12,7 @@ class DataFetcher:
     """
     fetches policy data from backend
     """
-    def __init__(self, default_data_url:str=DEFAULT_DATA_URL, token:str=CLIENT_TOKEN):
+    def __init__(self, default_data_url:str=opal_client_config.DEFAULT_DATA_URL, token:str=opal_client_config.CLIENT_TOKEN):
         """[summary]
 
         Args:

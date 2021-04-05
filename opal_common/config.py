@@ -1,8 +1,8 @@
 from pathlib import Path
 from .confi import Confi, confi
 
-
 class OpalCommonConfig(Confi):
+    ENV_PREFIX = "OPAL_"
     ALLOWED_ORIGINS = confi.list("ALLOWED_ORIGINS", ["*"])
     PROCESS_NAME = ""
     # Logging
@@ -38,7 +38,8 @@ class OpalCommonConfig(Confi):
 
     GIT_SSH_KEY_FILE = confi.str("GIT_SSH_KEY_FILE", str(Path.home() / ".ssh/opal_repo_ssh_key"))
 
+
+
 opal_common_config = OpalCommonConfig()
 
-import sys
-current_module = sys.modules[__name__]
+

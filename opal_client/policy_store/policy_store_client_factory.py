@@ -1,5 +1,5 @@
 
-from opal_client.config import POLICY_STORE_TYPE, PolicyStoreTypes, POLICY_STORE_URL
+from opal_client.config import opal_client_config, PolicyStoreTypes
 
 
 class PolicyStoreClientFactoryException(Exception):
@@ -13,7 +13,7 @@ class InvalidPolicyStoreTypeException(Exception):
 class PolicyStoreClientFactory:
 
     @staticmethod
-    def create(store_type=POLICY_STORE_TYPE, url=POLICY_STORE_URL):
+    def create(store_type=opal_client_config.POLICY_STORE_TYPE, url=opal_client_config.POLICY_STORE_URL):
         # OPA
         if PolicyStoreTypes.OPA == store_type:
             from opal_client.policy_store.opa_client import OpaClient
@@ -26,4 +26,5 @@ class PolicyStoreClientFactory:
             raise InvalidPolicyStoreTypeException(f"{store_type} is not a valid policy store type")
 
 
-DEFAULT_POLICY_STORE = PolicyStoreClientFactory.create()
+
+DEFAULT_POLICY_STORE_CREATOR = PolicyStoreClientFactory.create
