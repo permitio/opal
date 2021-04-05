@@ -59,7 +59,7 @@ class OpalServerConfig(Confi):
     # Data updates
     ALL_DATA_TOPIC = confi.str("ALL_DATA_TOPIC", "policy_data", description="Top level topic for data")
     ALL_DATA_ROUTE = confi.str("ALL_DATA_ROUTE", "/policy-data")
-    ALL_DATA_URL = confi.str("ALL_DATA_URL", f"http://localhost:7002{ALL_DATA_ROUTE}", description="URL for all data config [If you choose to have it all at one place]")
+    ALL_DATA_URL = confi.str("ALL_DATA_URL", "http://localhost:7002{ALL_DATA_ROUTE}", description="URL for all data config [If you choose to have it all at one place]")
     DATA_CONFIG_ROUTE = confi.str("DATA_CONFIG_ROUTE", "/data/config", description="URL to fetch the full basic configuration of data")
     DATA_CONFIG_SOURCES = confi.model(
         "DATA_CONFIG_SOURCES",
@@ -86,6 +86,20 @@ class OpalServerConfig(Confi):
     OPA_FILE_EXTENSIONS = ('.rego', '.json')
 
     NO_RPC_LOGS = confi.bool("NO_RPC_LOGS", True)
+
+    # client-api server
+    SERVER_WORKER_COUNT = confi.int("SERVER_WORKER_COUNT", None,
+                                     description="(if run via CLI) Worker count for the server [Default calculated to CPU-cores]")
+
+    SERVER_HOST = confi.str("SERVER_HOST", "127.0.0.1",
+                             description="(if run via CLI)  Address for the server to bind")
+
+    SERVER_PORT = confi.int("SERVER_PORT", 7002,
+                            description="(if run via CLI)  Port for the server to bind")
+
+
+    def on_load(self):
+        pass
 
 
 
