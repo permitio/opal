@@ -4,7 +4,7 @@ from fastapi.responses import RedirectResponse
 from opal_common.logger import logger
 
 from opal_common.schemas.data import DataSourceConfig, ServerDataSourceConfig, DataUpdate
-from opal_server.config import DataSourceConfig, opal_server_config
+from opal_server.config import opal_server_config
 from opal_server.data.data_update_publisher import DataUpdatePublisher
 
 
