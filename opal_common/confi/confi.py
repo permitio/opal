@@ -83,6 +83,8 @@ class Confi:
                 # save the value into the entry to be used as default for CLI
                 entry.value = value
 
+        self.on_load()
+
     @property
     def entries(self):
         return self._entries
@@ -135,6 +137,17 @@ class Confi:
             typer_app (Typer, optional): A typer cli app with commands to expose to the CLI. Defaults to None.
         """
         self.get_cli_object(config_objects, typer_app=typer_app, help=help)()
+
+
+    def on_load(self):
+        """
+        Callback called upon configuration load
+        Add dynamic values you want set here (i.e. values which are based on other values)
+        """
+        pass
+
+
+    # -- parser setters --
 
     def str(self, key, default=undefined, description=None, **kwargs) -> str:
         return self._process(key, description=description, default=default, type=str, **kwargs)
