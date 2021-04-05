@@ -209,7 +209,7 @@ class OpalServer:
                     # repo watcher is enabled, but we want only one worker to run it
                     # (otherwise for each new commit, we will publish multiple updates via pub/sub).
                     # leadership is determined by the first worker to obtain a lock
-                    self.leadership_lock = NamedLock(LEADER_LOCK_FILE_PATH)
+                    self.leadership_lock = NamedLock(opal_server_config.LEADER_LOCK_FILE_PATH)
                     async with self.leadership_lock:
                         # only one worker gets here, the others block. in case the leader worker
                         # is terminated, another one will obtain the lock and become leader.
