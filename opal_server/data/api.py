@@ -2,21 +2,22 @@ from fastapi import APIRouter, HTTPException, status
 from fastapi.responses import RedirectResponse
 
 from opal_common.logger import logger
+
 from opal_common.schemas.data import DataSourceConfig, ServerDataSourceConfig, DataUpdate
-from opal_server.config import DATA_CONFIG_ROUTE, ALL_DATA_ROUTE
+from opal_server.config import opal_server_config
 from opal_server.data.data_update_publisher import DataUpdatePublisher
 
 
 def init_data_updates_router(data_update_publisher: DataUpdatePublisher, data_sources_config: ServerDataSourceConfig):
     router = APIRouter()
 
-    @router.get(ALL_DATA_ROUTE)
+    @router.get(opal_server_config.ALL_DATA_ROUTE)
     async def default_all_data():
         logger.warning("Serving default all-data route, meaning DATA_CONFIG_SOURCES was not configured!")
         return {}
 
     @router.get(
-        DATA_CONFIG_ROUTE,
+        opal_server_config.DATA_CONFIG_ROUTE,
         response_model=DataSourceConfig,
         responses={
             307: {"description": "The data source configuration is available at another location (redirect)"},
@@ -37,7 +38,7 @@ def init_data_updates_router(data_update_publisher: DataUpdatePublisher, data_so
                 detail="Did not find a data source configuration!"
             )
 
-    @router.post(DATA_CONFIG_ROUTE)
+    @router.post(opal_server_config.DATA_CONFIG_ROUTE)
     async def publish_data_update_event(update:DataUpdate):
         logger.info("Publishing received update event")
         data_update_publisher.publish_data_updates(update)

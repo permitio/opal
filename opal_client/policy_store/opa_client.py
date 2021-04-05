@@ -8,7 +8,7 @@ from typing import Dict, Any, Optional, List, Set
 from tenacity import retry, stop_after_attempt, wait_fixed
 from pydantic import BaseModel
 
-from opal_client.config import POLICY_STORE_URL
+from opal_client.config import opal_client_config
 from opal_client.logger import logger
 from opal_client.utils import proxy_response
 from opal_common.schemas.policy import DataModule, PolicyBundle
@@ -16,6 +16,7 @@ from opal_common.schemas.policy import DataModule, PolicyBundle
 
 # 2 retries with 2 seconds apart
 RETRY_CONFIG = dict(wait=wait_fixed(2), stop=stop_after_attempt(2))
+
 
 def fail_silently(fallback=None):
     def decorator(func):
@@ -28,14 +29,16 @@ def fail_silently(fallback=None):
         return wrapper
     return decorator
 
+
 class OpaClient(BasePolicyStoreClient):
     """
     communicates with OPA via its REST API.
     """
     POLICY_NAME = "rbac"
 
-    def __init__(self, opa_server_url=POLICY_STORE_URL):
-        self._opa_url = opa_server_url
+    def __init__(self,
+                 opa_server_url=None):
+        self._opa_url = opa_server_url or opal_client_config.POLICY_STORE_URL
         self._policy_data = None
         self._cached_policies: Dict[str, str] = {}
         self._policy_version: Optional[str] = None
@@ -168,7 +171,7 @@ class OpaClient(BasePolicyStoreClient):
 
         return path
 
-    async def _set_policy_data_from_bundle_data_module(self, module: DataModule, hash: Optional[str]=None):
+    async def _set_policy_data_from_bundle_data_module(self, module: DataModule, hash: Optional[str] = None):
         module_path = self._safe_data_module_path(module.path)
         try:
             module_data = json.loads(module.data)

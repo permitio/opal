@@ -9,17 +9,18 @@ from fastapi_websocket_rpc.rpc_channel import RpcChannel
 from fastapi_websocket_pubsub import PubSubClient
 
 from opal_client.logger import logger
-from opal_client.config import DATA_TOPICS, OPAL_SERVER_PUBSUB_URL, CLIENT_TOKEN, DEFAULT_DATA_SOURCES_CONFIG_URL, KEEP_ALIVE_INTERVAL
+from opal_client.config import opal_client_config
 from opal_common.utils import get_authorization_header
-from opal_client.policy_store.policy_store_client_factory import DEFAULT_POLICY_STORE
+from opal_client.policy_store.policy_store_client_factory import DEFAULT_POLICY_STORE_GETTER
 from opal_client.data.fetcher import DataFetcher
 from opal_client.data.rpc import TenantAwareRpcEventClientMethods
 
 
-async def update_policy_data(update: DataUpdate = None, policy_store: BasePolicyStoreClient = DEFAULT_POLICY_STORE, data_fetcher=None):
+async def update_policy_data(update: DataUpdate = None, policy_store: BasePolicyStoreClient = None, data_fetcher=None):
     """
     fetches policy data (policy configuration) from backend and updates it into policy-store (i.e. OPA)
     """
+    policy_store = policy_store or DEFAULT_POLICY_STORE_GETTER()
     if data_fetcher is None:
         data_fetcher = DataFetcher()
     # types
@@ -55,12 +56,12 @@ async def update_policy_data(update: DataUpdate = None, policy_store: BasePolicy
 
 
 class DataUpdater:
-    def __init__(self, token: str = CLIENT_TOKEN,
-                 pubsub_url: str = OPAL_SERVER_PUBSUB_URL,
-                 data_sources_config_url: str = DEFAULT_DATA_SOURCES_CONFIG_URL,
+    def __init__(self, token: str = None,
+                 pubsub_url: str = None,
+                 data_sources_config_url: str = None,
                  fetch_on_connect:bool=True,
                  data_topics: List[str] = None,
-                 policy_store: BasePolicyStoreClient = DEFAULT_POLICY_STORE):
+                 policy_store: BasePolicyStoreClient = None):
         """
         Keeps policy-stores (e.g. OPA) up to date with relevant data
         Obtains data configuration on startup from OPAL-server
@@ -74,12 +75,16 @@ class DataUpdater:
             data_topics (List[str], optional): Topics of data to fetch and subscribe to. Defaults to DATA_TOPICS.
             policy_store (BasePolicyStoreClient, optional): Policy store client to use to store data. Defaults to DEFAULT_POLICY_STORE.
         """
+        # Defaults
+        token: str = token or opal_client_config.CLIENT_TOKEN
+        pubsub_url: str = pubsub_url or opal_client_config.SERVER_PUBSUB_URL
+        data_sources_config_url: str = data_sources_config_url or opal_client_config.DEFAULT_DATA_SOURCES_CONFIG_URL        
         # Should the client use the default data source to fetch on connect
         self._fetch_on_connect = fetch_on_connect
         # The policy store we'll save data updates into
-        self._policy_store = policy_store
+        self._policy_store = policy_store or DEFAULT_POLICY_STORE_GETTER()
         # Pub/Sub topics we subscribe to for data updates
-        self._data_topics = data_topics if data_topics is not None else DATA_TOPICS
+        self._data_topics = data_topics if data_topics is not None else opal_client_config.DATA_TOPICS
         # The pub/sub client for data updates
         self._client = None
         # The task running the Pub/Sub subcribing client
@@ -192,7 +197,7 @@ class DataUpdater:
             methods_class=TenantAwareRpcEventClientMethods,
             on_connect=[self.on_connect],
             extra_headers=self._extra_headers,
-            keep_alive=KEEP_ALIVE_INTERVAL,
+            keep_alive=opal_client_config.KEEP_ALIVE_INTERVAL,
             server_uri=self._server_url
         )
         async with self._client:

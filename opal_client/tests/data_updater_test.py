@@ -12,14 +12,14 @@ from fastapi_websocket_pubsub import PubSubClient
 root_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), os.path.pardir, os.path.pardir))
 sys.path.append(root_dir)
 
-from opal_client import config
+from opal_client.config import opal_client_config
 from opal_client.data.rpc import TenantAwareRpcEventClientMethods
 from opal_client.data.updater import DataSourceEntry, DataUpdate, DataUpdater
 from opal_client.policy_store import (PolicyStoreClientFactory,
                                       PolicyStoreTypes)
 from opal_common.schemas.data import DataSourceConfig, ServerDataSourceConfig
 from opal_common.utils import get_authorization_header
-from opal_server.config import DATA_CONFIG_ROUTE
+from opal_server.config import opal_server_config
 from opal_server.server import OpalServer
 
 
@@ -28,7 +28,7 @@ PORT = int(os.environ.get("PORT") or "9123")
 UPDATES_URL = f"ws://localhost:{PORT}/ws"
 DATA_ROUTE = "/fetchable_data"
 DATA_URL = f"http://localhost:{PORT}{DATA_ROUTE}"
-DATA_CONFIG_URL = f"http://localhost:{PORT}{DATA_CONFIG_ROUTE}"
+DATA_CONFIG_URL = f"http://localhost:{PORT}{opal_server_config.DATA_CONFIG_ROUTE}"
 DATA_TOPICS = ["policy_data"]
 TEST_DATA = {
     "hello": "world"
@@ -80,7 +80,7 @@ def trigger_update():
         async with PubSubClient(
             server_uri=UPDATES_URL,
             methods_class=TenantAwareRpcEventClientMethods,
-            extra_headers=[get_authorization_header(config.CLIENT_TOKEN)]
+            extra_headers=[get_authorization_header(opal_client_config.CLIENT_TOKEN)]
         ) as client:
             # Channel must be ready before we can publish on it
             await asyncio.wait_for(client.wait_until_ready(), 5)

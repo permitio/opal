@@ -7,16 +7,14 @@ from git import Repo
 
 from opal_common.git.commit_viewer import CommitViewer
 from opal_common.schemas.policy import PolicyBundle
-from opal_server.config import (
-    POLICY_REPO_CLONE_PATH,
-    OPA_FILE_EXTENSIONS
-)
+from opal_server.config import opal_server_config
 
 router = APIRouter()
 
 async def get_repo(
-    repo_path: str = POLICY_REPO_CLONE_PATH,
+    repo_path: str = None,
 ) -> Repo:
+    repo_path = repo_path or opal_server_config.POLICY_REPO_CLONE_PATH
     git_path = Path(repo_path) / Path(".git")
     # TODO: fix this by signaling that the repo is ready
     if not git_path.exists():
@@ -65,7 +63,7 @@ async def get_policy(
     maker = BundleMaker(
         repo,
         in_directories=set(input_paths),
-        extensions=OPA_FILE_EXTENSIONS
+        extensions=opal_server_config.OPA_FILE_EXTENSIONS
     )
     if base_hash is None:
         return maker.make_bundle(repo.head.commit)

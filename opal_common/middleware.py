@@ -4,7 +4,7 @@ from fastapi.encoders import jsonable_encoder
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-from opal_common.config import ALLOWED_ORIGINS
+from opal_common.config import opal_common_config
 from opal_common.logger import logger
 
 class ErrorResponse(BaseModel):
@@ -43,7 +43,7 @@ def register_default_server_exception_handler(app: FastAPI):
             # all the config, then update our response headers
             cors = CORSMiddleware(
                 app=app,
-                allow_origins=ALLOWED_ORIGINS,
+                allow_origins=opal_common_config.ALLOWED_ORIGINS,
                 allow_credentials=True,
                 allow_methods=["*"],
                 allow_headers=["*"])
@@ -70,7 +70,7 @@ def register_default_server_exception_handler(app: FastAPI):
 def configure_cors_middleware(app: FastAPI):
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=ALLOWED_ORIGINS,
+        allow_origins=opal_common_config.ALLOWED_ORIGINS,
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],

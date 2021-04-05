@@ -12,10 +12,10 @@ from opal_common.topics.utils import (
     remove_prefix
 )
 from opal_client.logger import logger
-from opal_client.config import POLICY_SUBSCRIPTION_DIRS, OPAL_SERVER_PUBSUB_URL, CLIENT_TOKEN, KEEP_ALIVE_INTERVAL
+from opal_client.config import opal_client_config
 from opal_client.policy.fetcher import policy_fetcher
 from opal_client.policy_store.base_policy_store_client import BasePolicyStoreClient
-from opal_client.policy_store.policy_store_client_factory import DEFAULT_POLICY_STORE
+from opal_client.policy_store.policy_store_client_factory import DEFAULT_POLICY_STORE_GETTER
 from opal_client.policy.topics import default_subscribed_policy_directories
 
 
@@ -69,10 +69,10 @@ class PolicyUpdater:
     """
     def __init__(
         self,
-        token: str = CLIENT_TOKEN,
-        pubsub_url: str = OPAL_SERVER_PUBSUB_URL,
-        subscription_directories: List[str] = POLICY_SUBSCRIPTION_DIRS,
-        policy_store: BasePolicyStoreClient = DEFAULT_POLICY_STORE,
+        token: str = None,
+        pubsub_url: str = None,
+        subscription_directories: List[str] = None,
+        policy_store: BasePolicyStoreClient = None,
     ):
         """inits the policy updater.
 
@@ -85,8 +85,13 @@ class PolicyUpdater:
                 receive one message for each updated file.
             policy_store (BasePolicyStoreClient, optional): Policy store client to use to store policy code. Defaults to DEFAULT_POLICY_STORE.
         """
+        # defaults
+        token: str = token or opal_client_config.CLIENT_TOKEN
+        pubsub_url: str = pubsub_url or opal_client_config.SERVER_PUBSUB_URL
+        subscription_directories: List[str] = subscription_directories or opal_client_config.POLICY_SUBSCRIPTION_DIRS
+
         # The policy store we'll save policy modules into (i.e: OPA)
-        self._policy_store = policy_store
+        self._policy_store = policy_store or DEFAULT_POLICY_STORE_GETTER()
         # pub/sub server url and authentication data
         self._server_url = pubsub_url
         self._token = token
@@ -184,7 +189,7 @@ class PolicyUpdater:
             on_connect=[self._on_connect],
             on_disconnect=[self._on_disconnect],
             extra_headers=self._extra_headers,
-            keep_alive=KEEP_ALIVE_INTERVAL,
+            keep_alive=opal_client_config.KEEP_ALIVE_INTERVAL,
             server_uri=self._server_url
         )
         async with self._client:

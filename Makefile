@@ -30,6 +30,12 @@ publish:
 	$(MAKE) publish-client
 	$(MAKE) publish-server
 
+install-client-from-src:
+	python setup/setup_client.py install
+
+install-server-from-src:
+	python setup/setup_server.py install
+
 # docker
 docker-build-client:
 	@docker build -t authorizon/opal-client -f docker/client.Dockerfile .

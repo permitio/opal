@@ -5,7 +5,7 @@ from typing import Optional
 from enum import Enum
 
 from opal_client.logger import logger
-from opal_client.config import INLINE_OPA_LOG_FORMAT, OpaLogFormat
+from opal_client.config import opal_client_config, OpaLogFormat
 
 def logging_level_from_string(level: str) -> int:
     """
@@ -31,7 +31,7 @@ async def pipe_opa_logs(stream):
     """
     gets a stream of logs from the opa process, and logs it into the main opal log.
     """
-    if INLINE_OPA_LOG_FORMAT == OpaLogFormat.NONE:
+    if opal_client_config.INLINE_OPA_LOG_FORMAT == OpaLogFormat.NONE:
         return
 
     while True:
@@ -44,13 +44,13 @@ async def pipe_opa_logs(stream):
             msg = log_line.pop("msg", None)
 
             logged = False
-            if INLINE_OPA_LOG_FORMAT == OpaLogFormat.MINIMAL:
+            if opal_client_config.INLINE_OPA_LOG_FORMAT == OpaLogFormat.MINIMAL:
                 logged = log_event_name(level, msg)
-            elif INLINE_OPA_LOG_FORMAT == OpaLogFormat.HTTP:
+            elif opal_client_config.INLINE_OPA_LOG_FORMAT == OpaLogFormat.HTTP:
                 logged = log_formatted_http_details(level, msg, log_line)
 
             # always fall back to log the entire line
-            if not logged or INLINE_OPA_LOG_FORMAT == OpaLogFormat.FULL:
+            if not logged or opal_client_config.INLINE_OPA_LOG_FORMAT == OpaLogFormat.FULL:
                 log_entire_dict(level, msg, log_line)
         except json.JSONDecodeError:
             logger.info(line)

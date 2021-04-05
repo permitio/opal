@@ -6,14 +6,17 @@ from setuptools import setup, find_packages
 here = os.path.abspath(os.path.dirname(__file__))
 project_root = os.path.normpath(os.path.join(here, os.pardir))
 
+
 def get_package_metadata():
     package_metadata = {}
     with open(os.path.join(here, '__version__.py')) as f:
         exec(f.read(), package_metadata)
     return package_metadata
 
+
 def get_relative_path(path):
     return os.path.join(here, os.path.pardir, path)
+
 
 def get_requirements(env=""):
     if env:
@@ -22,11 +25,13 @@ def get_requirements(env=""):
     with open(requirements_path) as fp:
         return [x.strip() for x in fp.read().split("\n") if not x.startswith("#")]
 
+
 def get_long_description():
     readme_path = get_relative_path("README.md")
 
     with open(readme_path, "r", encoding="utf-8") as fh:
         return fh.read()
+
 
 about = get_package_metadata()
 version = about.get('__version__')
@@ -42,11 +47,11 @@ setup(
     version=version,
     author='Or Weis, Asaf Cohen',
     author_email="or@authorizon.com",
-    description='OPAL is an administration layer for Open Policy Agent (OPA), detecting changes' + \
-        ' to both policy and data and pushing live updates to your agents. The opal-server creates' + \
-        ' a pub/sub channel clients can subscribe to (i.e: acts as coordinator). The server also' + \
-        ' tracks a git repository (via webhook) for updates to policy (or static data) and accepts' + \
-        ' continuous data update notifications via REST api, which are then pushed to clients.',
+    description='OPAL is an administration layer for Open Policy Agent (OPA), detecting changes' +
+    ' to both policy and data and pushing live updates to your agents. The opal-server creates' +
+    ' a pub/sub channel clients can subscribe to (i.e: acts as coordinator). The server also' +
+    ' tracks a git repository (via webhook) for updates to policy (or static data) and accepts' +
+    ' continuous data update notifications via REST api, which are then pushed to clients.',
     long_description_content_type='text/markdown',
     long_description=get_long_description(),
     url='https://github.com/authorizon/opal',
@@ -65,4 +70,7 @@ setup(
     ],
     python_requires='>=3.7',
     install_requires=requirements,
+    entry_points={
+        'console_scripts': ['opal-server = opal_server.cli:cli'],
+    }
 )

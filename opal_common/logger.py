@@ -5,7 +5,7 @@ from .logging.intercept import InterceptHandler
 from .logging.thirdparty import hijack_uvicorn_logs
 from .logging.formatter import Formatter
 from .logging.filter import ModuleFilter
-from . import config
+from .config import opal_common_config
 
 
 def configure_logs():
@@ -14,9 +14,9 @@ def configure_logs():
     """
     intercept_handler = InterceptHandler()
     formatter = Formatter()
-    filter = ModuleFilter(include_list=config.LOG_MODULE_INCLUDE_LIST, exclude_list=config.LOG_MODULE_EXCLUDE_LIST)
+    filter = ModuleFilter(include_list=opal_common_config.LOG_MODULE_INCLUDE_LIST, exclude_list=opal_common_config.LOG_MODULE_EXCLUDE_LIST)
     logging.basicConfig(handlers=[intercept_handler], level=0, force=True)
-    if config.LOG_PATCH_UVICORN_LOGS:
+    if opal_common_config.LOG_PATCH_UVICORN_LOGS:
         # Monkey patch UVICORN to use our logger
         hijack_uvicorn_logs()
     # Clean slate
@@ -26,20 +26,20 @@ def configure_logs():
         sys.stderr,
         filter=filter.filter,
         format=formatter.format,
-        level=config.LOG_LEVEL,
-        backtrace=config.LOG_TRACEBACK,
-        diagnose=config.LOG_DIAGNOSE,
-        colorize=config.LOG_COLORIZE,
+        level=opal_common_config.LOG_LEVEL,
+        backtrace=opal_common_config.LOG_TRACEBACK,
+        diagnose=opal_common_config.LOG_DIAGNOSE,
+        colorize=opal_common_config.LOG_COLORIZE,
     )
     # log to a file
-    if config.LOG_TO_FILE:
+    if opal_common_config.LOG_TO_FILE:
         logger.add(
-            config.LOG_FILE_PATH,
-            compression=config.LOG_FILE_COMPRESSION,
-            retention=config.LOG_FILE_RETENTION,
-            rotation=config.LOG_FILE_ROTATION,
-            serialize=config.LOG_FILE_SERIALIZE,
-            level=config.LOG_FILE_LEVEL,
+            opal_common_config.LOG_FILE_PATH,
+            compression=opal_common_config.LOG_FILE_COMPRESSION,
+            retention=opal_common_config.LOG_FILE_RETENTION,
+            rotation=opal_common_config.LOG_FILE_ROTATION,
+            serialize=opal_common_config.LOG_FILE_SERIALIZE,
+            level=opal_common_config.LOG_FILE_LEVEL,
         )
 
 
@@ -50,4 +50,3 @@ def get_logger(name=""):
     return logger
 
 
-configure_logs()

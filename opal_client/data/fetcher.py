@@ -1,7 +1,7 @@
 import asyncio
 from typing import Dict, Any
 
-from opal_client.config import DEFAULT_DATA_URL, CLIENT_TOKEN
+from opal_client.config import opal_client_config
 from opal_common.utils import get_authorization_header
 from opal_client.utils import tuple_to_dict
 from opal_common.fetcher import FetchingEngine
@@ -9,17 +9,24 @@ from opal_common.fetcher.events import FetcherConfig
 from opal_common.fetcher.providers.http_get_fetch_provider import HttpGetFetcherConfig
 from opal_common.logger import logger
 
+
 class DataFetcher:
     """
     fetches policy data from backend
     """
-    def __init__(self, default_data_url:str=DEFAULT_DATA_URL, token:str=CLIENT_TOKEN):
-        """[summary]
+
+    def __init__(self,
+                 default_data_url: str = None,
+                 token: str = None):
+        """
 
         Args:
             default_data_url (str, optional): The URL used to fetch data if no specific url is given in a fetch request. Defaults to DEFAULT_DATA_URL.
             token (str, optional): default auth token. Defaults to CLIENT_TOKEN.
         """
+        # defaults 
+        default_data_url: str = default_data_url or opal_client_config.DEFAULT_DATA_URL
+        token: str = token or opal_client_config.CLIENT_TOKEN
         # The underlying fetching engine
         self._engine = FetchingEngine()
         self._data_url = default_data_url
@@ -60,7 +67,7 @@ class DataFetcher:
             logger.exception("Timeout while fetching url: {url}", url=url)
             raise
 
-    async def fetch_policy_data(self, urls:Dict[str, FetcherConfig]=None) -> Dict[str, Any]:
+    async def fetch_policy_data(self, urls: Dict[str, FetcherConfig] = None) -> Dict[str, Any]:
         """
         Fetch data for each given url with the (optional) fetching configuration; return the resulting data mapped to each URL
 
@@ -92,5 +99,3 @@ class DataFetcher:
                 results_by_url[url] = response
         # return results
         return results_by_url
-
-

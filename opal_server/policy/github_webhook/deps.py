@@ -3,7 +3,7 @@ import hmac
 from typing import Optional, List
 
 from fastapi import status, Request, Header, HTTPException, status
-from opal_server.config import POLICY_REPO_WEBHOOK_SECRET
+from opal_server.config import opal_server_config
 
 
 async def validate_github_signature_or_throw(
@@ -14,7 +14,7 @@ async def validate_github_signature_or_throw(
     authenticates a request from github webhook system by checking that the
     request contains a valid signature (i.e: the secret stored on github).
     """
-    if POLICY_REPO_WEBHOOK_SECRET is None:
+    if opal_server_config.POLICY_REPO_WEBHOOK_SECRET is None:
         # webhook can be configured without secret (not recommended but quite possible)
         return True
 
@@ -22,7 +22,7 @@ async def validate_github_signature_or_throw(
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="signature was not provided!")
 
     payload = await request.body()
-    our_signature = hmac.new(POLICY_REPO_WEBHOOK_SECRET.encode("utf-8"), payload, hashlib.sha256).hexdigest()
+    our_signature = hmac.new(opal_server_config.POLICY_REPO_WEBHOOK_SECRET.encode("utf-8"), payload, hashlib.sha256).hexdigest()
 
     # header is of the form `sha256={sig}`, we need only the `{sig}` part
     provided_signature = x_hub_signature_256.split('=')[1]
