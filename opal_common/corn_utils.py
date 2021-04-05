@@ -25,12 +25,13 @@ class GunicornApp(gunicorn.app.base.BaseApplication):
         return self.application
 
 
-def run_gunicorn(app, number_of_workers=None,host=None, port=None):
+def run_gunicorn(app, number_of_workers=None,host=None, port=None, **kwargs):
     options = {
         'bind': '%s:%s' %  (host or '127.0.0.1', port or '8080'),
         'workers': number_of_workers or calc_default_number_of_workers(),
         'worker_class': 'uvicorn.workers.UvicornWorker'
     }
+    options.update(kwargs)
     GunicornApp(app, options).run()
 
 
