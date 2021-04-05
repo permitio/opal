@@ -69,7 +69,7 @@ class OpalServer:
                 will update the opal client via pubsub.
         """
         # load defaults
-        init_git_watcher: bool = init_git_watcher or opal_server_config.REPO_WATCHER_ENABLED,
+        init_git_watcher: bool = init_git_watcher or opal_server_config.REPO_WATCHER_ENABLED
         policy_repo_url: str = policy_repo_url or opal_server_config.POLICY_REPO_URL
         init_publisher: bool = init_publisher or opal_server_config.PUBLISHER_ENABLED
         broadcaster_uri: str = broadcaster_uri or opal_server_config.BROADCAST_URI
