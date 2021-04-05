@@ -63,6 +63,9 @@ Examples:
 \b
 """
 
-if __name__ == "__main__":
+def cli():
     typer.secho(cli_header, bold=True, fg=typer.colors.MAGENTA)
     opal_client_config.cli([opal_common_config], typer_app=app, help=cli_docs)
+
+if __name__ == "__main__":
+    cli()

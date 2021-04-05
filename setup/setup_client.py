@@ -64,4 +64,8 @@ setup(
     ],
     python_requires='>=3.7',
     install_requires=requirements,
+    entry_points='''
+    [console_scripts]
+        opal-client=opal_client.cli:cli
+    ''',    
 )
