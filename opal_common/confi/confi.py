@@ -1,6 +1,6 @@
 """
-Easy Python configuration interface built on rop of python-decouple.
-Adding typing support and parsing with Pydantic and Enum
+Easy Python configuration interface built on top of python-decouple and click / typer.
+Adding typing support and parsing with Pydantic and Enum.
 """
 
 import inspect
