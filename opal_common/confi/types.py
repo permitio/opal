@@ -69,11 +69,17 @@ class ConfiDelay:
     def __init__(self, value) -> None:
         self._value = value
 
-    def eval(self, config):
-        values = { k:v.value for k,v in config.entries.items()}
+    def eval(self, config=None):
+        values = { k:v.value for k,v in config.entries.items()} if config else {}
         if isinstance(self._value, str):
             return self._value.format(**values)
         if callable(self._value):
             callargs = inspect.getcallargs(self._value)
             args = {k: values.get(k, undefined) for k,v in callargs.items()}
             return self._value(**args)
+
+    def __repr__(self) -> str:
+        try:
+            return f"<Delayed {self.eval()}>"
+        except:
+            return f"<Delayed {self._value}>" 

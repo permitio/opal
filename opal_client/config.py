@@ -52,9 +52,11 @@ class OpalClientConfig(Confi):
 
     # opal server url
     SERVER_URL = confi.str("SERVER_URL", "http://localhost:7002")
-
     # opal server pubsub url
     OPAL_WS_ROUTE = "/ws"
+    SERVER_WS_URL = confi.str("SERVER_URL", confi.delay(lambda SERVER_URL="":SERVER_URL.replace("https", "ws").replace("http", "ws")))
+    SERVER_PUBSUB_URL = confi.str("SERVER_URL", confi.delay("{SERVER_WS_URL}" + f"{OPAL_WS_ROUTE}")) 
+
 
     # opal server auth token
     CLIENT_TOKEN = confi.str("CLIENT_TOKEN", "THIS_IS_A_DEV_SECRET",
@@ -80,20 +82,13 @@ class OpalClientConfig(Confi):
     DATA_TOPICS = confi.list("DATA_TOPICS", ["policy_data"],
                              description="Data topics to subscribe to")
 
-    DEFAULT_DATA_SOURCES_CONFIG_URL = confi.str("DEFAULT_DATA_SOURCES_CONFIG_URL", "/data/config",
+    DEFAULT_DATA_SOURCES_CONFIG_URL = confi.str("DEFAULT_DATA_SOURCES_CONFIG_URL", confi.delay("{SERVER_URL}/data/config"),
                                                 description="Default URL to fetch data configuration from")
 
     DEFAULT_DATA_URL = confi.str("DEFAULT_DATA_URL", "http://localhost:8000/policy-config",
                                  description="Default URL to fetch data from")
 
     def on_load(self):
-        # PUB/SUB
-        _opal_server_ws_url = self.SERVER_URL.replace("https", "ws").replace("http", "ws")
-        self.OPAL_SERVER_PUBSUB_URL = f"{_opal_server_ws_url}{self.OPAL_WS_ROUTE}"
-
-        if not self.DEFAULT_DATA_SOURCES_CONFIG_URL.startswith("http"):
-             self.DEFAULT_DATA_SOURCES_CONFIG_URL = f"{self.SERVER_URL}/data/config"
-
         # LOGGER
         if self.INLINE_OPA_LOG_FORMAT == OpaLogFormat.NONE:
             opal_common_config.LOG_MODULE_EXCLUDE_LIST.append("opal_client.opa.logger")

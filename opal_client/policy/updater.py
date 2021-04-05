@@ -87,7 +87,7 @@ class PolicyUpdater:
         """
         # defaults
         token: str = token or opal_client_config.CLIENT_TOKEN
-        pubsub_url: str = pubsub_url or opal_client_config.OPAL_SERVER_PUBSUB_URL
+        pubsub_url: str = pubsub_url or opal_client_config.SERVER_PUBSUB_URL
         subscription_directories: List[str] = subscription_directories or opal_client_config.POLICY_SUBSCRIPTION_DIRS
 
         # The policy store we'll save policy modules into (i.e: OPA)
