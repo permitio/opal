@@ -52,7 +52,7 @@ KEEP_ALIVE_INTERVAL = confi.int("KEEP_ALIVE_INTERVAL", 0)
 
 # opal server url
 OPAL_SERVER_URL = confi.str("SERVER_URL", "http://localhost:7002")
-_opal_server_ws_url = OPAL_SERVER_URL.replace("https", "ws").replace("http", "ws")
+_opal_server_ws_url = OPAL_SERVER_URL.replace("https", "wss").replace("http", "ws")
 
 # opal server pubsub url
 OPAL_WS_ROUTE = "/ws"
