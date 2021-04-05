@@ -54,7 +54,7 @@ class OpalClientConfig(Confi):
     # Opal Server general configuration -------------------------------------------
 
     # opal server url
-    SERVER_URL = confi.str("SERVER_URL", "http://localhost:7002")
+    SERVER_URL = confi.str("SERVER_URL", "http://localhost:7002", flag="-s")
     # opal server pubsub url
     OPAL_WS_ROUTE = "/ws"
     SERVER_WS_URL = confi.str("SERVER_WS_URL", confi.delay(lambda SERVER_URL="":SERVER_URL.replace("https", "ws").replace("http", "ws")))
@@ -63,7 +63,7 @@ class OpalClientConfig(Confi):
 
     # opal server auth token
     CLIENT_TOKEN = confi.str("CLIENT_TOKEN", "THIS_IS_A_DEV_SECRET",
-                             description="opal server auth token")
+                             description="opal server auth token", flag="-t")
 
     # client-api server
     CLIENT_API_SERVER_WORKER_COUNT = confi.int("CLIENT_API_SERVER_WORKER_COUNT", 1,

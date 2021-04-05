@@ -14,9 +14,14 @@ def create_click_cli(confi_entries:Dict[str,ConfiEntry], callback:Callable):
         option_kwargs = entry.get_cli_option_kwargs()
         # make the key fit cmd-style (i.e. kebab-case)
         adjusted_key = entry.key.lower().replace("_","-")
+        keys = [f"--{adjusted_key}", entry.key]
+        # add flag if given (i.e '-t' option)
+        flag =  entry.kwargs.get('flag', None)
+        if flag is not None:
+            keys.append(flag)
         # use lower case as the key, and as is (no prefix, and no case altering) as the name
         # see https://click.palletsprojects.com/en/7.x/options/#name-your-options
-        cli = click.option(f"--{adjusted_key}", entry.key, **option_kwargs)(cli)
+        cli = click.option(*keys, **option_kwargs)(cli)
 
     cli = click.group()(cli)
     return cli
