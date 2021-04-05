@@ -51,10 +51,15 @@ OPAL-CLIENT
 Open-Policy Administration Layer - client\b\f"""
 
 cli_docs = """\b
-Config:
+Config top level options:
  - Use env-vars (same as cmd options) but uppercase and with "_" instead of "-"; all prefixed with "OPAL_"
  - Use command line options as detailed by '--help'
- - Use .env or .ini files                                                                                                                                                                              
+ - Use .env or .ini files    
+
+\b
+Examples:
+ - opal-client run --help                       Help on run command
+ - opal-client run --engine-type gunicorn       Run client with gunicorn
 \b
 """
 

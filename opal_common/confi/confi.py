@@ -146,6 +146,14 @@ class Confi:
         """
         pass
 
+    def __setattr__(self, name: str, value: Any) -> None:
+        """
+            Make sure value updates are saved in internal entries as well 
+        """
+        super().__setattr__(name, value)
+        # update entry as well (to sync with CLI, etc. )
+        if not name.startswith("_") and name in self._entries:
+            self._entries[name].value = value
 
     # -- parser setters --
 

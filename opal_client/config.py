@@ -80,7 +80,7 @@ class OpalClientConfig(Confi):
     DATA_TOPICS = confi.list("DATA_TOPICS", ["policy_data"],
                              description="Data topics to subscribe to")
 
-    DEFAULT_DATA_SOURCES_CONFIG_URL = confi.str("DEFAULT_DATA_SOURCES_CONFIG_URL", f"{SERVER_URL}/data/config",
+    DEFAULT_DATA_SOURCES_CONFIG_URL = confi.str("DEFAULT_DATA_SOURCES_CONFIG_URL", "/data/config",
                                                 description="Default URL to fetch data configuration from")
 
     DEFAULT_DATA_URL = confi.str("DEFAULT_DATA_URL", "http://localhost:8000/policy-config",
@@ -91,9 +91,14 @@ class OpalClientConfig(Confi):
         _opal_server_ws_url = self.SERVER_URL.replace("https", "ws").replace("http", "ws")
         self.OPAL_SERVER_PUBSUB_URL = f"{_opal_server_ws_url}{self.OPAL_WS_ROUTE}"
 
+        if not self.DEFAULT_DATA_SOURCES_CONFIG_URL.startswith("http"):
+             self.DEFAULT_DATA_SOURCES_CONFIG_URL = f"{self.SERVER_URL}/data/config"
+
         # LOGGER
         if self.INLINE_OPA_LOG_FORMAT == OpaLogFormat.NONE:
             opal_common_config.LOG_MODULE_EXCLUDE_LIST.append("opal_client.opa.logger")
+            # re-assign to apply to internal confi-entries as well
+            opal_common_config.LOG_MODULE_EXCLUDE_LIST = opal_common_config.LOG_MODULE_EXCLUDE_LIST
 
 
 opal_client_config = OpalClientConfig(prefix="OPAL_")
