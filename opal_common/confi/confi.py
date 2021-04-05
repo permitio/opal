@@ -4,7 +4,8 @@ Adding typing support and parsing with Pydantic and Enum
 """
 
 import inspect
-from typing import Callable, Dict, List, Type, TypeVar, Optional, Any, Union
+from collections import OrderedDict
+from typing import Callable, Dict, List,  Type, TypeVar, Optional, Any, Union
 from functools import partial
 from click.decorators import command
 from pydantic import BaseModel
@@ -72,27 +73,37 @@ class Confi:
         """
         self._is_model = is_model
         self._prefix = prefix
-        self._entries: Dict[str, ConfiEntry] = {}
-        # entries with delayed defaults
-        self._delayed: Dict[str, ConfiEntry] = {}
+        # entries to be evaluated
+        self._entries: Dict[str, ConfiEntry] = OrderedDict()
+        # delayed entries to be evaluated (instead of being referenced by self._entries)
+        self._delayed_entries: Dict[str, ConfiDelay] = OrderedDict()
+        # entries with delayed defaults (in addition to being referenced by self._entries)
+        self._delayed_defaults: Dict[str, ConfiEntry] = OrderedDict()
  
-        # eval class entries into values
+        # eval class entries into values (by order of defintion - same order as in the config class lines)
         for name, entry in inspect.getmembers(self):
+
+            # unwrap delayed entries
+            if isinstance(entry, ConfiDelay):
+                entry = entry.eval(self)
+
             if isinstance(entry, ConfiEntry):
                 self._entries[name] = entry
                 # save delayed
                 if isinstance(entry.default, ConfiDelay):
-                    self._delayed[name] = entry
+                    self._delayed_defaults[name] = entry
                 # eval, and save the value into the class instance
                 value = self._eval_and_save_entry(name, entry)
                 # save the value into the entry to be used as default for CLI
                 entry.value = value
+
         # load (all calls inside should produce a real value)
         self._is_model = False
+
         # load delayed values:
-        for name, entry in self._delayed.items():
+        for name, entry in self._delayed_defaults.items():
             default: ConfiDelay =  entry.default
-            setattr(self, name, default.eval(self))
+            setattr(self, name, default.eval(self))       
 
         self.on_load()
         self._is_model = is_model

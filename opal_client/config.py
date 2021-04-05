@@ -25,7 +25,10 @@ class OpalClientConfig(Confi):
     # opa client (policy store) configuration
     POLICY_STORE_TYPE = confi.enum("POLICY_STORE_TYPE", PolicyStoreTypes, PolicyStoreTypes.OPA)
     POLICY_STORE_URL = confi.str("POLICY_STORE_URL", f"http://localhost:8181/v1")
-
+    # create an instance of a policy store upon load
+    def load_policy_store():
+        from opal_client.policy_store import PolicyStoreClientFactory
+        return PolicyStoreClientFactory.create()
     # opa runner configuration (OPA can optionally be run by OPAL) ----------------
 
     # whether or not OPAL should run OPA by itself in the same container
@@ -54,8 +57,8 @@ class OpalClientConfig(Confi):
     SERVER_URL = confi.str("SERVER_URL", "http://localhost:7002")
     # opal server pubsub url
     OPAL_WS_ROUTE = "/ws"
-    SERVER_WS_URL = confi.str("SERVER_URL", confi.delay(lambda SERVER_URL="":SERVER_URL.replace("https", "ws").replace("http", "ws")))
-    SERVER_PUBSUB_URL = confi.str("SERVER_URL", confi.delay("{SERVER_WS_URL}" + f"{OPAL_WS_ROUTE}")) 
+    SERVER_WS_URL = confi.str("SERVER_WS_URL", confi.delay(lambda SERVER_URL="":SERVER_URL.replace("https", "ws").replace("http", "ws")))
+    SERVER_PUBSUB_URL = confi.str("SERVER_PUBSUB_URL", confi.delay("{SERVER_WS_URL}" + f"{OPAL_WS_ROUTE}")) 
 
 
     # opal server auth token

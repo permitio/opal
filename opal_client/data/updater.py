@@ -11,7 +11,7 @@ from fastapi_websocket_pubsub import PubSubClient
 from opal_client.logger import logger
 from opal_client.config import opal_client_config
 from opal_common.utils import get_authorization_header
-from opal_client.policy_store.policy_store_client_factory import DEFAULT_POLICY_STORE_CREATOR
+from opal_client.policy_store.policy_store_client_factory import DEFAULT_POLICY_STORE_GETTER
 from opal_client.data.fetcher import DataFetcher
 from opal_client.data.rpc import TenantAwareRpcEventClientMethods
 
@@ -20,7 +20,7 @@ async def update_policy_data(update: DataUpdate = None, policy_store: BasePolicy
     """
     fetches policy data (policy configuration) from backend and updates it into policy-store (i.e. OPA)
     """
-    policy_store = policy_store or DEFAULT_POLICY_STORE_CREATOR()
+    policy_store = policy_store or DEFAULT_POLICY_STORE_GETTER()
     if data_fetcher is None:
         data_fetcher = DataFetcher()
     # types
@@ -82,7 +82,7 @@ class DataUpdater:
         # Should the client use the default data source to fetch on connect
         self._fetch_on_connect = fetch_on_connect
         # The policy store we'll save data updates into
-        self._policy_store = policy_store or DEFAULT_POLICY_STORE_CREATOR()
+        self._policy_store = policy_store or DEFAULT_POLICY_STORE_GETTER()
         # Pub/Sub topics we subscribe to for data updates
         self._data_topics = data_topics if data_topics is not None else opal_client_config.DATA_TOPICS
         # The pub/sub client for data updates

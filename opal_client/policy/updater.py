@@ -15,7 +15,7 @@ from opal_client.logger import logger
 from opal_client.config import opal_client_config
 from opal_client.policy.fetcher import policy_fetcher
 from opal_client.policy_store.base_policy_store_client import BasePolicyStoreClient
-from opal_client.policy_store.policy_store_client_factory import DEFAULT_POLICY_STORE_CREATOR
+from opal_client.policy_store.policy_store_client_factory import DEFAULT_POLICY_STORE_GETTER
 from opal_client.policy.topics import default_subscribed_policy_directories
 
 
@@ -91,7 +91,7 @@ class PolicyUpdater:
         subscription_directories: List[str] = subscription_directories or opal_client_config.POLICY_SUBSCRIPTION_DIRS
 
         # The policy store we'll save policy modules into (i.e: OPA)
-        self._policy_store = policy_store or DEFAULT_POLICY_STORE_CREATOR()
+        self._policy_store = policy_store or DEFAULT_POLICY_STORE_GETTER()
         # pub/sub server url and authentication data
         self._server_url = pubsub_url
         self._token = token
