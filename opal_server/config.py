@@ -1,7 +1,7 @@
 from pathlib import Path
 
 from opal_common.confi import Confi
-from opal_common.schemas.data import DataSourceConfig
+from opal_common.schemas.data import DataSourceConfig, ServerDataSourceConfig
 from opal_common.authentication.types import EncryptionKeyFormat, JWTAlgorithm
 
 confi = Confi(prefix="OPAL_")
@@ -61,11 +61,13 @@ ALL_DATA_URL = confi.str("ALL_DATA_URL", f"http://localhost:7002{ALL_DATA_ROUTE}
 DATA_CONFIG_ROUTE = confi.str("DATA_CONFIG_ROUTE", "/data/config", description="URL to fetch the full basic configuration of data")
 DATA_CONFIG_SOURCES = confi.model(
     "DATA_CONFIG_SOURCES",
-    DataSourceConfig,
+    ServerDataSourceConfig,
     {
-        "entries":[
-            {"url": ALL_DATA_URL, "topics":[ALL_DATA_TOPIC]}
-        ]
+        "config": {
+            "entries":[
+                {"url": ALL_DATA_URL, "topics":[ALL_DATA_TOPIC]}
+            ]
+        }
     },
     description="Configuration of data sources by topics"
 )

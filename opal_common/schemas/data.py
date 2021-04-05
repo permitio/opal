@@ -1,6 +1,6 @@
 from logging import basicConfig
-from typing import List, Dict, Union
-from pydantic import BaseModel, Field
+from typing import List, Optional
+from pydantic import BaseModel, Field, root_validator, AnyHttpUrl
 
 from opal_common.fetcher.events import FetcherConfig
 
@@ -21,9 +21,41 @@ class DataSourceEntry(BaseModel):
 
 class DataSourceConfig(BaseModel):
     """
-    DataSources used as OPAL-server configuration
+    Static list of Data Source Entries returned to client.
+
+    Answers this question for the client:
+    from where should i get the full picture of data i need? (as opposed to incremental data updates)
     """
     entries: List[DataSourceEntry] = Field(..., description="list of data sources and how to fetch from them")
+
+class ServerDataSourceConfig(BaseModel):
+    """
+    As its data source configuration, the server can either hold:
+
+    1) A static DataSourceConfig returned to all clients regardless of identity.
+    If all clients need the same config, this is the way to go.
+
+    2) A redirect url (external_source_url), to which the opal client will be redirected when requesting
+    its DataSourceConfig. The client will issue the same request (with the same headers, including the
+    JWT token identifying it) to the url configured. This option is good if each client must receive a
+    different base data configuration, for example for a multi-tenant deployment.
+
+    By providing the server that serves external_source_url the value of OPAL_AUTH_PUBLIC_KEY, that server
+    can validate the JWT and get it's claims, in order to apply authorization and/or other conditions before
+    returning the data sources relevant to said client.
+    """
+    config: Optional[DataSourceConfig] = Field(None, description="static list of data sources and how to fetch from them")
+    external_source_url: Optional[AnyHttpUrl] = Field(None, description="external url to serve data sources dynamically." + \
+        " if set, the clients will be redirected to this url when requesting to fetch data sources.")
+
+    @root_validator
+    def check_passwords_match(cls, values):
+        config, redirect_url = values.get('config'), values.get('external_source_url')
+        if config is None and redirect_url is None:
+            raise ValueError('you must provide one of these fields: config, external_source_url')
+        if config is not None and redirect_url is not None:
+            raise ValueError('you must provide ONLY ONE of these fields: config, external_source_url')
+        return values
 
 class DataUpdate(BaseModel):
     """
