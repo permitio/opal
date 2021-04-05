@@ -63,6 +63,13 @@ class OpalClientConfig(Confi):
     # opal server auth token
     CLIENT_TOKEN = confi.str("CLIENT_TOKEN", "THIS_IS_A_DEV_SECRET")
 
+    # client-api server
+    CLIENT_API_SERVER_WORKER_COUNT = confi.int("CLIENT_API_SERVER_WORKER_COUNT", 1, description="Worker count for the opal-client's internal server")
+    CLIENT_API_SERVER_HOST = confi.str("CLIENT_API_SERVER_HOST","127.0.0.1", description="Address for the opal-client's internal server to bind")
+    CLIENT_API_SERVER_PORT = confi.int("CLIENT_API_SERVER_PORT",7000, description="port for the opal-client's internal server to bind")
+
+
+
     # Policy updater configuration ------------------------------------------------
 
     # directories in policy repo we should subscribe to for policy code (rego) modules
