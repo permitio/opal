@@ -19,12 +19,21 @@ def init_security_router(signer: JWTSigner, verifier: StaticBearerTokenVerifier)
                 detail="opal server was not configured with security, cannot generate tokens!"
             )
 
+        claims = {'peer_type': req.type.value, **req.claims}
         token = signer.sign(
             sub=req.id,
             token_lifetime=req.ttl,
-            custom_claims={'peer_type': req.type.value}
+            custom_claims=claims
         )
-        return AccessToken(token=token, details=TokenDetails(id=req.id, type=req.type, expired=datetime.utcnow() + req.ttl))
+        return AccessToken(
+            token=token,
+            details=TokenDetails(
+                id=req.id,
+                type=req.type,
+                expired=datetime.utcnow() + req.ttl,
+                claims=claims
+            )
+        )
 
     return router
 
