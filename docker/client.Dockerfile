@@ -35,6 +35,7 @@ RUN chmod +x /start.sh
 # copy app code
 COPY . ./
 # install sidecar package
+RUN python setup/setup_common.py install
 RUN python setup/setup_client.py install
 # Make sure scripts in .local are usable:
 ENV PATH=/:/root/.local/bin:$PATH

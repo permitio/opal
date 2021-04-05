@@ -56,6 +56,7 @@ RUN if [[ "$TRUST_POLICY_REPO_HOST_SSH_FINGERPRINT" == "true" ]] ; then \
 # copy app code
 COPY . ./
 # install sidecar package
+RUN python setup/setup_common.py install
 RUN python setup/setup_server.py install
 
 # Make sure scripts in .local are usable:
