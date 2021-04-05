@@ -25,6 +25,8 @@ class FromStr:
         else: 
             return repr(self._type)
 
+def no_cast(value):
+    return value
 class ConfiEntry:
     key:str
     type: Type
@@ -34,7 +36,7 @@ class ConfiEntry:
     kwargs: dict 
     value: Any
 
-    def __init__(self, key, default=undefined, description=None, cast=text_type, type=str, **kwargs) -> None:
+    def __init__(self, key, default=undefined, description=None, cast=no_cast, type=str, **kwargs) -> None:
         self.key = key
         self.default = default
         self.description = description

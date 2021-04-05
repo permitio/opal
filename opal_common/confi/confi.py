@@ -15,7 +15,7 @@ import json
 from typer import Typer
 import typer
 
-from .types import ConfiDelay, ConfiEntry
+from .types import ConfiDelay, ConfiEntry, no_cast
 from .cli import get_cli_object_for_config_objects
 
 
@@ -115,14 +115,14 @@ class Confi:
         res = self._evaluate(whole_key,entry.default,entry.cast,**entry.kwargs)
         return res
         
-    def _process(self, key, default=undefined, description=None, cast=text_type, type:ValueT=str, **kwargs) -> Union[ValueT, ConfiEntry]:
+    def _process(self, key, default=undefined, description=None, cast=no_cast, type:ValueT=str, **kwargs) -> Union[ValueT, ConfiEntry]:
         if self._is_model:
             return ConfiEntry(key, default,description, cast, type, **kwargs)
         else:
             whole_key = self._prefix_key(key)
             return self._evaluate(whole_key, default, cast, **kwargs)
 
-    def _evaluate(self, key, default=undefined, cast=text_type, **kwargs):
+    def _evaluate(self, key, default=undefined, cast=no_cast, **kwargs):
         try:
             res = config(key, default=default, cast=cast, **kwargs)
         except:
