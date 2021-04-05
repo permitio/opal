@@ -104,7 +104,7 @@ def test_repo_cloner_clone_remote_repo_ssh_url(tmp_path):
     # we could store a real secret in the repo secret, but it's probably
     # not smart/secure enough since the secret is decrypted on the actions runner
     # machine. thus we simply expect the clone to fail when running in ci.
-    confi = Confi()
+    confi = Confi(is_model=False)
     running_in_ci = confi.bool("CI", False) or confi.bool("GITHUB_ACTIONS", False)
 
     if running_in_ci:
