@@ -1,7 +1,7 @@
 from pathlib import Path
 
 from opal_common.confi import Confi
-from opal_common.schemas.data import DataSourceConfig
+from opal_common.schemas.data import ServerDataSourceConfig
 from opal_common.authentication.types import EncryptionKeyFormat, JWTAlgorithm
 
 confi = Confi(prefix="OPAL_")
@@ -17,22 +17,22 @@ class OpalServerConfig(Confi):
     AUTH_PRIVATE_KEY_FORMAT = confi.enum("AUTH_PRIVATE_KEY_FORMAT", EncryptionKeyFormat, EncryptionKeyFormat.pem)
     AUTH_PRIVATE_KEY_PASSPHRASE = confi.str("AUTH_PRIVATE_KEY_PASSPHRASE", None)
     AUTH_PRIVATE_KEY = confi.delay(lambda AUTH_PRIVATE_KEY_FORMAT=None, AUTH_PRIVATE_KEY_PASSPHRASE="":
-        confi.private_key(
-            "AUTH_PRIVATE_KEY",
-            default=None,
-            key_format=AUTH_PRIVATE_KEY_FORMAT,
-            passphrase=AUTH_PRIVATE_KEY_PASSPHRASE
-        )
-    )
+                                   confi.private_key(
+                                       "AUTH_PRIVATE_KEY",
+                                       default=None,
+                                       key_format=AUTH_PRIVATE_KEY_FORMAT,
+                                       passphrase=AUTH_PRIVATE_KEY_PASSPHRASE
+                                   )
+                                   )
 
     AUTH_PUBLIC_KEY_FORMAT = confi.enum("AUTH_PUBLIC_KEY_FORMAT", EncryptionKeyFormat, EncryptionKeyFormat.ssh)
     AUTH_PUBLIC_KEY = confi.delay(lambda AUTH_PUBLIC_KEY_FORMAT=None:
-        confi.public_key(
-            "AUTH_PUBLIC_KEY",
-            default=None,
-            key_format=AUTH_PUBLIC_KEY_FORMAT
-        )
-    )
+                                  confi.public_key(
+                                      "AUTH_PUBLIC_KEY",
+                                      default=None,
+                                      key_format=AUTH_PUBLIC_KEY_FORMAT
+                                  )
+                                  )
     AUTH_JWT_ALGORITHM = confi.enum(
         "AUTH_JWT_ALGORITHM",
         JWTAlgorithm,
@@ -63,28 +63,31 @@ class OpalServerConfig(Confi):
     # Data updates
     ALL_DATA_TOPIC = confi.str("ALL_DATA_TOPIC", "policy_data", description="Top level topic for data")
     ALL_DATA_ROUTE = confi.str("ALL_DATA_ROUTE", "/policy-data")
-    ALL_DATA_URL = confi.str("ALL_DATA_URL", confi.delay("http://localhost:7002{ALL_DATA_ROUTE}"), description="URL for all data config [If you choose to have it all at one place]")
-    DATA_CONFIG_ROUTE = confi.str("DATA_CONFIG_ROUTE", "/data/config", description="URL to fetch the full basic configuration of data")
+    ALL_DATA_URL = confi.str("ALL_DATA_URL", confi.delay(
+        "http://localhost:7002{ALL_DATA_ROUTE}"), description="URL for all data config [If you choose to have it all at one place]")
+    DATA_CONFIG_ROUTE = confi.str("DATA_CONFIG_ROUTE", "/data/config",
+                                  description="URL to fetch the full basic configuration of data")
     DATA_CONFIG_SOURCES = confi.model(
         "DATA_CONFIG_SOURCES",
-        DataSourceConfig,
-        confi.delay(lambda ALL_DATA_URL="",ALL_DATA_TOPIC="": {
-            "entries":[
-                {"url": ALL_DATA_URL, "topics":[ALL_DATA_TOPIC]}
-            ]
+        ServerDataSourceConfig,
+        confi.delay(lambda ALL_DATA_URL="", ALL_DATA_TOPIC="": {
+            "config": {
+                "entries": [
+                    {"url": ALL_DATA_URL, "topics": [ALL_DATA_TOPIC]}
+                ]
+            }
         }),
         description="Configuration of data sources by topics"
     )
 
-    DATA_UPDATE_TRIGGER_ROUTE = confi.str("DATA_CONFIG_ROUTE", "/data/update", description="URL to trigger data update events")
-
+    DATA_UPDATE_TRIGGER_ROUTE = confi.str("DATA_CONFIG_ROUTE", "/data/update",
+                                          description="URL to trigger data update events")
 
     # github webhook
     POLICY_REPO_WEBHOOK_SECRET = confi.str("POLICY_REPO_WEBHOOK_SECRET", None)
     POLICY_REPO_WEBHOOK_TOPIC = "webhook"
 
     POLICY_REPO_POLLING_INTERVAL = confi.int("POLICY_REPO_POLLING_INTERVAL", 0)
-
 
     ALLOWED_ORIGINS = confi.list("ALLOWED_ORIGINS", ["*"])
     OPA_FILE_EXTENSIONS = ('.rego', '.json')
@@ -93,14 +96,13 @@ class OpalServerConfig(Confi):
 
     # client-api server
     SERVER_WORKER_COUNT = confi.int("SERVER_WORKER_COUNT", None,
-                                     description="(if run via CLI) Worker count for the server [Default calculated to CPU-cores]")
+                                    description="(if run via CLI) Worker count for the server [Default calculated to CPU-cores]")
 
     SERVER_HOST = confi.str("SERVER_HOST", "127.0.0.1",
-                             description="(if run via CLI)  Address for the server to bind")
+                            description="(if run via CLI)  Address for the server to bind")
 
     SERVER_PORT = confi.int("SERVER_PORT", 7002,
                             description="(if run via CLI)  Port for the server to bind")
-
 
 
 opal_server_config = OpalServerConfig(prefix="OPAL_")

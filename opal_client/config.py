@@ -57,9 +57,8 @@ class OpalClientConfig(Confi):
     SERVER_URL = confi.str("SERVER_URL", "http://localhost:7002", flag="-s")
     # opal server pubsub url
     OPAL_WS_ROUTE = "/ws"
-    SERVER_WS_URL = confi.str("SERVER_WS_URL", confi.delay(lambda SERVER_URL="":SERVER_URL.replace("https", "ws").replace("http", "ws")))
+    SERVER_WS_URL = confi.str("SERVER_WS_URL", confi.delay(lambda SERVER_URL="":SERVER_URL.replace("https", "wss").replace("http", "ws")))
     SERVER_PUBSUB_URL = confi.str("SERVER_PUBSUB_URL", confi.delay("{SERVER_WS_URL}" + f"{OPAL_WS_ROUTE}")) 
-
 
     # opal server auth token
     CLIENT_TOKEN = confi.str("CLIENT_TOKEN", "THIS_IS_A_DEV_SECRET",

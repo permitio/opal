@@ -1,18 +1,15 @@
-import json
 from opal_server.security.api import init_security_router
 from opal_server.security.jwks import JwksStaticEndpoint
 import os
 import asyncio
 from functools import partial
 from typing import Optional
-from pathlib import Path
 
 from fastapi import Depends, FastAPI
-from fastapi.staticfiles import StaticFiles
 
 from opal_common.topics.publisher import TopicPublisher, ServerSideTopicPublisher
 from opal_common.logger import logger, configure_logs
-from opal_common.schemas.data import DataSourceConfig
+from opal_common.schemas.data import ServerDataSourceConfig
 from opal_common.synchronization.named_lock import NamedLock
 from opal_common.middleware import configure_middleware
 from opal_common.authentication.signer import JWTSigner
@@ -36,7 +33,7 @@ class OpalServer:
         init_git_watcher: bool = None,
         policy_repo_url: str = None,
         init_publisher: bool = None,
-        data_sources_config: Optional[DataSourceConfig] = None,
+        data_sources_config: Optional[ServerDataSourceConfig] = None,
         broadcaster_uri: str = None,
         signer: Optional[JWTSigner] = None,
         jwks_url: str = None,
@@ -49,7 +46,7 @@ class OpalServer:
             policy_repo_url (str, optional): the url of the repo watched by policy repo watcher.
             init_publisher (bool, optional): whether or not to launch a publisher pub/sub client.
                 this publisher is used by the server processes to publish data to the client.
-            data_sources_config (DataSourceConfig, optional): base data configuration. the opal
+            data_sources_config (ServerDataSourceConfig, optional): base data configuration. the opal
             broadcaster_uri (str, optional): Which server/medium should the PubSub use for broadcasting.
                 Defaults to BROADCAST_URI.
 
@@ -77,11 +74,13 @@ class OpalServer:
         jwks_static_dir: str = jwks_static_dir or opal_server_config.AUTH_JWKS_STATIC_DIR
         master_token: str = master_token or opal_server_config.AUTH_MASTER_TOKEN
 
-
         configure_logs()
         self.watcher: Optional[RepoWatcherTask] = None
         self.leadership_lock: Optional[NamedLock] = None
-        self.data_sources_config = data_sources_config if data_sources_config is not None else opal_server_config.DATA_CONFIG_SOURCES
+
+        self.data_sources_config: ServerDataSourceConfig = (
+            data_sources_config if data_sources_config is not None else opal_server_config.DATA_CONFIG_SOURCES)
+
         self.broadcaster_uri = broadcaster_uri
         self.master_token = master_token
 
@@ -123,10 +122,10 @@ class OpalServer:
         """
         app = FastAPI(
             title="Opal Server",
-            description="OPAL is an administration layer for Open Policy Agent (OPA), detecting changes" + \
-            " to both policy and data and pushing live updates to your agents. The opal server creates" + \
-            " a pub/sub channel clients can subscribe to (i.e: acts as coordinator). The server also" + \
-            " tracks a git repository (via webhook) for updates to policy (or static data) and accepts" + \
+            description="OPAL is an administration layer for Open Policy Agent (OPA), detecting changes" +
+            " to both policy and data and pushing live updates to your agents. The opal server creates" +
+            " a pub/sub channel clients can subscribe to (i.e: acts as coordinator). The server also" +
+            " tracks a git repository (via webhook) for updates to policy (or static data) and accepts" +
             " continuous data update notifications via REST api, which are then pushed to clients.",
             version="0.1.0",
         )
@@ -214,7 +213,8 @@ class OpalServer:
                         # only one worker gets here, the others block. in case the leader worker
                         # is terminated, another one will obtain the lock and become leader.
                         logger.info("leadership lock acquired, leader pid: {pid}", pid=os.getpid())
-                        logger.info("listening on webhook topic: '{topic}'", topic=opal_server_config.POLICY_REPO_WEBHOOK_TOPIC)
+                        logger.info("listening on webhook topic: '{topic}'",
+                                    topic=opal_server_config.POLICY_REPO_WEBHOOK_TOPIC)
                         # the leader listens to the webhook topic (webhook api route can be hit randomly in all workers)
                         # and triggers the watcher to check for changes in the tracked upstream remote.
                         await self.pubsub.endpoint.subscribe([opal_server_config.POLICY_REPO_WEBHOOK_TOPIC], partial(trigger_repo_watcher_pull, self.watcher))
