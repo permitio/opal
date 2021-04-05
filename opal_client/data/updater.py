@@ -56,9 +56,9 @@ async def update_policy_data(update: DataUpdate = None, policy_store: BasePolicy
 
 
 class DataUpdater:
-    def __init__(self, token: str = opal_client_config.CLIENT_TOKEN,
-                 pubsub_url: str = opal_client_config.OPAL_SERVER_PUBSUB_URL,
-                 data_sources_config_url: str = opal_client_config.DEFAULT_DATA_SOURCES_CONFIG_URL,
+    def __init__(self, token: str = None,
+                 pubsub_url: str = None,
+                 data_sources_config_url: str = None,
                  fetch_on_connect:bool=True,
                  data_topics: List[str] = None,
                  policy_store: BasePolicyStoreClient = None):
@@ -75,6 +75,10 @@ class DataUpdater:
             data_topics (List[str], optional): Topics of data to fetch and subscribe to. Defaults to DATA_TOPICS.
             policy_store (BasePolicyStoreClient, optional): Policy store client to use to store data. Defaults to DEFAULT_POLICY_STORE.
         """
+        # Defaults
+        token: str = token or opal_client_config.CLIENT_TOKEN
+        pubsub_url: str = pubsub_url or opal_client_config.OPAL_SERVER_PUBSUB_URL
+        data_sources_config_url: str = data_sources_config_url or opal_client_config.DEFAULT_DATA_SOURCES_CONFIG_URL        
         # Should the client use the default data source to fetch on connect
         self._fetch_on_connect = fetch_on_connect
         # The policy store we'll save data updates into

@@ -23,9 +23,14 @@ class PolicyFetcher:
     """
     fetches policy from backend
     """
-    def __init__(self, backend_url=opal_client_config.SERVER_URL, token=opal_client_config.CLIENT_TOKEN):
-        self._backend_url = backend_url
-        self._token = token
+    def __init__(self, backend_url=None, token=None):
+        """
+        Args:
+            backend_url ([type], optional): Defaults to opal_client_config.SERVER_URL.
+            token ([type], optional): [description]. Defaults to opal_client_config.CLIENT_TOKEN.
+        """
+        self._backend_url = backend_url or opal_client_config.SERVER_URL
+        self._token = token or opal_client_config.CLIENT_TOKEN
         self._auth_headers = tuple_to_dict(get_authorization_header(token))
 
     async def fetch_policy_bundle(

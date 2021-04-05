@@ -1,9 +1,10 @@
 from pathlib import Path
+from sys import prefix
 from .confi import Confi, confi
 
 class OpalCommonConfig(Confi):
-    ENV_PREFIX = "OPAL_"
     ALLOWED_ORIGINS = confi.list("ALLOWED_ORIGINS", ["*"])
+    # Process name to show in logs - Not confi-controlable on purpose 
     PROCESS_NAME = ""
     # Logging
     # - Log formatting
@@ -40,6 +41,6 @@ class OpalCommonConfig(Confi):
 
 
 
-opal_common_config = OpalCommonConfig()
+opal_common_config = OpalCommonConfig(prefix="OPAL_")
 
 
