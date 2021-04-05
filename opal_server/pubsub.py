@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, WebSocket
 from fastapi_websocket_pubsub import PubSubEndpoint
 
 from opal_common.logger import logger
-from opal_server.config import BROADCAST_URI
+from opal_server.config import opal_server_config
 from opal_common.authentication.signer import JWTSigner
 from opal_server.deps.authentication import JWTVerifierWebsocket
 
@@ -12,12 +12,13 @@ class PubSub:
     Warpper for the Pub/Sub channel used for both policy and data updates
     """
 
-    def __init__(self, signer: JWTSigner, broadcaster_uri:str=BROADCAST_URI):
+    def __init__(self, signer: JWTSigner, broadcaster_uri:str=None):
         """
         Args:
             broadcaster_uri (str, optional): Which server/medium should the PubSub use for broadcasting. Defaults to BROADCAST_URI.
             None means no broadcasting.
         """
+        broadcaster_uri = broadcaster_uri or opal_server_config.BROADCAST_URI
         self.router = APIRouter()
         self.endpoint = PubSubEndpoint(broadcaster=broadcaster_uri)
         verifier = JWTVerifierWebsocket(signer)

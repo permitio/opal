@@ -16,23 +16,7 @@ from opal_common.schemas.data import DataSourceConfig
 from opal_common.synchronization.named_lock import NamedLock
 from opal_common.middleware import configure_middleware
 from opal_common.authentication.signer import JWTSigner
-from opal_server.config import (
-    REPO_WATCHER_ENABLED,
-    PUBLISHER_ENABLED,
-    DATA_CONFIG_SOURCES,
-    BROADCAST_URI,
-    LEADER_LOCK_FILE_PATH,
-    AUTH_PRIVATE_KEY,
-    AUTH_PUBLIC_KEY,
-    AUTH_MASTER_TOKEN,
-    AUTH_JWT_ALGORITHM,
-    AUTH_JWT_AUDIENCE,
-    AUTH_JWT_ISSUER,
-    AUTH_JWKS_URL,
-    AUTH_JWKS_STATIC_DIR,
-    POLICY_REPO_URL,
-    POLICY_REPO_WEBHOOK_TOPIC
-)
+from opal_server.config import opal_server_config
 from opal_server.data.api import init_data_updates_router
 from opal_server.data.data_update_publisher import DataUpdatePublisher
 from opal_server.deps.authentication import JWTVerifier, StaticBearerTokenVerifier
@@ -49,15 +33,15 @@ class OpalServer:
 
     def __init__(
         self,
-        init_git_watcher: bool = REPO_WATCHER_ENABLED,
-        policy_repo_url: str = POLICY_REPO_URL,
-        init_publisher: bool = PUBLISHER_ENABLED,
+        init_git_watcher: bool = None,
+        policy_repo_url: str = None,
+        init_publisher: bool = None,
         data_sources_config: Optional[DataSourceConfig] = None,
-        broadcaster_uri: str = BROADCAST_URI,
+        broadcaster_uri: str = None,
         signer: Optional[JWTSigner] = None,
-        jwks_url: str = AUTH_JWKS_URL,
-        jwks_static_dir: str = AUTH_JWKS_STATIC_DIR,
-        master_token: str = AUTH_MASTER_TOKEN,
+        jwks_url: str = None,
+        jwks_static_dir: str = None,
+        master_token: str = None,
     ) -> None:
         """
         Args:
@@ -84,10 +68,20 @@ class OpalServer:
                 topic. upon being triggered, will detect updates to the policy (new commits) and
                 will update the opal client via pubsub.
         """
+        # load defaults
+        init_git_watcher: bool = init_git_watcher or opal_server_config.REPO_WATCHER_ENABLED,
+        policy_repo_url: str = policy_repo_url or opal_server_config.POLICY_REPO_URL
+        init_publisher: bool = init_publisher or opal_server_config.PUBLISHER_ENABLED
+        broadcaster_uri: str = broadcaster_uri or opal_server_config.BROADCAST_URI
+        jwks_url: str = jwks_url or opal_server_config.AUTH_JWKS_URL
+        jwks_static_dir: str = jwks_static_dir or opal_server_config.AUTH_JWKS_STATIC_DIR
+        master_token: str = master_token or opal_server_config.AUTH_MASTER_TOKEN
+
+
         configure_logs()
         self.watcher: Optional[RepoWatcherTask] = None
         self.leadership_lock: Optional[NamedLock] = None
-        self.data_sources_config = data_sources_config if data_sources_config is not None else DATA_CONFIG_SOURCES
+        self.data_sources_config = data_sources_config if data_sources_config is not None else opal_server_config.DATA_CONFIG_SOURCES
         self.broadcaster_uri = broadcaster_uri
         self.master_token = master_token
 
@@ -95,11 +89,11 @@ class OpalServer:
             self.signer = signer
         else:
             self.signer = JWTSigner(
-                private_key=AUTH_PRIVATE_KEY,
-                public_key=AUTH_PUBLIC_KEY,
-                algorithm=AUTH_JWT_ALGORITHM,
-                audience=AUTH_JWT_AUDIENCE,
-                issuer=AUTH_JWT_ISSUER,
+                private_key=opal_server_config.AUTH_PRIVATE_KEY,
+                public_key=opal_server_config.AUTH_PUBLIC_KEY,
+                algorithm=opal_server_config.AUTH_JWT_ALGORITHM,
+                audience=opal_server_config.AUTH_JWT_AUDIENCE,
+                issuer=opal_server_config.AUTH_JWT_ISSUER,
             )
 
         self.jwks_endpoint = JwksStaticEndpoint(
@@ -220,10 +214,10 @@ class OpalServer:
                         # only one worker gets here, the others block. in case the leader worker
                         # is terminated, another one will obtain the lock and become leader.
                         logger.info("leadership lock acquired, leader pid: {pid}", pid=os.getpid())
-                        logger.info("listening on webhook topic: '{topic}'", topic=POLICY_REPO_WEBHOOK_TOPIC)
+                        logger.info("listening on webhook topic: '{topic}'", topic=opal_server_config.POLICY_REPO_WEBHOOK_TOPIC)
                         # the leader listens to the webhook topic (webhook api route can be hit randomly in all workers)
                         # and triggers the watcher to check for changes in the tracked upstream remote.
-                        await self.pubsub.endpoint.subscribe([POLICY_REPO_WEBHOOK_TOPIC], partial(trigger_repo_watcher_pull, self.watcher))
+                        await self.pubsub.endpoint.subscribe([opal_server_config.POLICY_REPO_WEBHOOK_TOPIC], partial(trigger_repo_watcher_pull, self.watcher))
                         # running the watcher, and waiting until it stops (until self.watcher.signal_stop() is called)
                         async with self.watcher:
                             await self.watcher.wait_until_should_stop()

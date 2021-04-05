@@ -19,18 +19,18 @@ app = typer.Typer()
 @app.command()
 def run(engine_type: str = typer.Option("uvicron", help="uvicorn or gunicorn")):
     """
-    Run the client as a deamon 
+    Run the server as a deamon 
     """
     typer.echo(f"-- Starting OPAL client (with {engine_type}) --")
 
     if engine_type == 'gunicorn':
         app:FastAPI 
-        from opal_client.main import app
+        from opal_server.main import app
         run_gunicorn(app, opal_server_config.SERVER_WORKER_COUNT,
                      host=opal_server_config.SERVER_HOST,
                      port=opal_server_config.SERVER_PORT)
     else:
-        run_uvicorn("opal_client.main:app",
+        run_uvicorn("opal_server.main:app",
                     workers=opal_server_config.SERVER_WORKER_COUNT,
                     host=opal_server_config.SERVER_HOST,
                     port=opal_server_config.SERVER_PORT)
