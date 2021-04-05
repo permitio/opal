@@ -42,9 +42,9 @@ class OpalClient:
                 policy_updater (PolicyUpdater, optional): Defaults to None.
         """
         # defaults
-        policy_store_type:PolicyStoreTypes=policy_store_type or opal_client_config.POLICY_STORE_TYPE,
-        inline_opa_enabled:bool=inline_opa_enabled or opal_client_config.INLINE_OPA_ENABLED,
-        inline_opa_options:OpaServerOptions=inline_opa_options or opal_client_config.INLINE_OPA_CONFIG,
+        policy_store_type:PolicyStoreTypes=policy_store_type or opal_client_config.POLICY_STORE_TYPE
+        inline_opa_enabled:bool=inline_opa_enabled or opal_client_config.INLINE_OPA_ENABLED
+        inline_opa_options:OpaServerOptions=inline_opa_options or opal_client_config.INLINE_OPA_CONFIG
         # set logs
         configure_logs()
         # Init policy store client

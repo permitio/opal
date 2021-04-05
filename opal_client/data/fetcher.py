@@ -25,7 +25,7 @@ class DataFetcher:
             token (str, optional): default auth token. Defaults to CLIENT_TOKEN.
         """
         # defaults 
-        default_data_url: str = default_data_url or opal_client_config.DEFAULT_DATA_URL,
+        default_data_url: str = default_data_url or opal_client_config.DEFAULT_DATA_URL
         token: str = token or opal_client_config.CLIENT_TOKEN
         # The underlying fetching engine
         self._engine = FetchingEngine()

@@ -86,9 +86,9 @@ class PolicyUpdater:
             policy_store (BasePolicyStoreClient, optional): Policy store client to use to store policy code. Defaults to DEFAULT_POLICY_STORE.
         """
         # defaults
-        token: str = token or opal_client_config.CLIENT_TOKEN,
-        pubsub_url: str = pubsub_url or opal_client_config.OPAL_SERVER_PUBSUB_URL,
-        subscription_directories: List[str] = subscription_directories or opal_client_config.POLICY_SUBSCRIPTION_DIRS,
+        token: str = token or opal_client_config.CLIENT_TOKEN
+        pubsub_url: str = pubsub_url or opal_client_config.OPAL_SERVER_PUBSUB_URL
+        subscription_directories: List[str] = subscription_directories or opal_client_config.POLICY_SUBSCRIPTION_DIRS
 
         # The policy store we'll save policy modules into (i.e: OPA)
         self._policy_store = policy_store or DEFAULT_POLICY_STORE_CREATOR()
