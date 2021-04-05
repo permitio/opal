@@ -16,18 +16,22 @@ class OpalServerConfig(Confi):
     # server security
     AUTH_PRIVATE_KEY_FORMAT = confi.enum("AUTH_PRIVATE_KEY_FORMAT", EncryptionKeyFormat, EncryptionKeyFormat.pem)
     AUTH_PRIVATE_KEY_PASSPHRASE = confi.str("AUTH_PRIVATE_KEY_PASSPHRASE", None)
-    AUTH_PRIVATE_KEY = confi.private_key(
-        "AUTH_PRIVATE_KEY",
-        default=None,
-        key_format=AUTH_PRIVATE_KEY_FORMAT,
-        passphrase=AUTH_PRIVATE_KEY_PASSPHRASE
+    AUTH_PRIVATE_KEY = confi.delay(lambda AUTH_PRIVATE_KEY_FORMAT=None, AUTH_PRIVATE_KEY_PASSPHRASE="":
+        confi.private_key(
+            "AUTH_PRIVATE_KEY",
+            default=None,
+            key_format=AUTH_PRIVATE_KEY_FORMAT,
+            passphrase=AUTH_PRIVATE_KEY_PASSPHRASE
+        )
     )
 
     AUTH_PUBLIC_KEY_FORMAT = confi.enum("AUTH_PUBLIC_KEY_FORMAT", EncryptionKeyFormat, EncryptionKeyFormat.ssh)
-    AUTH_PUBLIC_KEY = confi.public_key(
-        "AUTH_PUBLIC_KEY",
-        default=None,
-        key_format=AUTH_PUBLIC_KEY_FORMAT
+    AUTH_PUBLIC_KEY = confi.delay(lambda AUTH_PUBLIC_KEY_FORMAT=None:
+        confi.public_key(
+            "AUTH_PUBLIC_KEY",
+            default=None,
+            key_format=AUTH_PUBLIC_KEY_FORMAT
+        )
     )
     AUTH_JWT_ALGORITHM = confi.enum(
         "AUTH_JWT_ALGORITHM",
