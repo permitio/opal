@@ -7,20 +7,24 @@ from cryptography.hazmat.primitives import serialization
 from opal_common.authentication.types import EncryptionKeyFormat, PrivateKey, PublicKey
 
 
-def maybe_decode_multiline_key(key: str) -> str:
+def to_bytes(key: str, encoding: str = 'utf-8'):
+    """
+    crypto lib expect 'bytes' keys, convert 'str' keys to 'bytes'
+    """
+    return key.encode(encoding)
+
+def maybe_decode_multiline_key(key: str) -> bytes:
     """
     if key contents are passed via env var, we allow to encode multiline keys
     with a simple replace of each newline (\n) char with underscore (_).
 
     this method detects if the provided key contains such encoding, and if so reverses it.
     """
-    if "\n" in key:
-        return key
-
-    key = key.replace("_", "\n")
-    if not key.endswith("\n"):
-        key = key + "\n"
-    return key
+    if "\n" not in key:
+        key = key.replace("_", "\n")
+        if not key.endswith("\n"):
+            key = key + "\n"
+    return to_bytes(key)
 
 
 def cast_private_key(value: str, key_format: EncryptionKeyFormat, passphrase: Optional[str] = None) -> Optional[PrivateKey]:
@@ -64,7 +68,7 @@ def cast_public_key(value: str, key_format: EncryptionKeyFormat) -> Optional[Pub
     if os.path.isfile(key_path):
         raw_key = open(key_path, "rb").read()
     elif key_format == EncryptionKeyFormat.ssh: # ssh key format is one line
-        raw_key = value
+        raw_key = to_bytes(value)
     else:
         raw_key = maybe_decode_multiline_key(value)
 
