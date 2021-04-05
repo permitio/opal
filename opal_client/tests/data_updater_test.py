@@ -17,7 +17,7 @@ from opal_client.data.rpc import TenantAwareRpcEventClientMethods
 from opal_client.data.updater import DataSourceEntry, DataUpdate, DataUpdater
 from opal_client.policy_store import (PolicyStoreClientFactory,
                                       PolicyStoreTypes)
-from opal_common.schemas.data import DataSourceConfig
+from opal_common.schemas.data import DataSourceConfig, ServerDataSourceConfig
 from opal_common.utils import get_authorization_header
 from opal_server.config import DATA_CONFIG_ROUTE
 from opal_server.server import OpalServer
@@ -34,9 +34,13 @@ TEST_DATA = {
     "hello": "world"
 }
 
-DATA_SOURCES_CONFIG = DataSourceConfig(entries=[
-    {"url": DATA_URL, "topics": DATA_TOPICS}
-])
+DATA_SOURCES_CONFIG = ServerDataSourceConfig(
+    config=DataSourceConfig(
+        entries=[
+            {"url": DATA_URL, "topics": DATA_TOPICS}
+        ]
+    )
+)
 
 
 def setup_server(event):

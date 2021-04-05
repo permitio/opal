@@ -12,7 +12,7 @@ from fastapi.staticfiles import StaticFiles
 
 from opal_common.topics.publisher import TopicPublisher, ServerSideTopicPublisher
 from opal_common.logger import logger
-from opal_common.schemas.data import DataSourceConfig
+from opal_common.schemas.data import ServerDataSourceConfig
 from opal_common.synchronization.named_lock import NamedLock
 from opal_common.middleware import configure_middleware
 from opal_common.authentication.signer import JWTSigner
@@ -52,7 +52,7 @@ class OpalServer:
         init_git_watcher: bool = REPO_WATCHER_ENABLED,
         policy_repo_url: str = POLICY_REPO_URL,
         init_publisher: bool = PUBLISHER_ENABLED,
-        data_sources_config: Optional[DataSourceConfig] = None,
+        data_sources_config: Optional[ServerDataSourceConfig] = None,
         broadcaster_uri: str = BROADCAST_URI,
         signer: Optional[JWTSigner] = None,
         jwks_url: str = AUTH_JWKS_URL,
@@ -65,7 +65,7 @@ class OpalServer:
             policy_repo_url (str, optional): the url of the repo watched by policy repo watcher.
             init_publisher (bool, optional): whether or not to launch a publisher pub/sub client.
                 this publisher is used by the server processes to publish data to the client.
-            data_sources_config (DataSourceConfig, optional): base data configuration. the opal
+            data_sources_config (ServerDataSourceConfig, optional): base data configuration. the opal
             broadcaster_uri (str, optional): Which server/medium should the PubSub use for broadcasting.
                 Defaults to BROADCAST_URI.
 
@@ -86,7 +86,8 @@ class OpalServer:
         """
         self.watcher: Optional[RepoWatcherTask] = None
         self.leadership_lock: Optional[NamedLock] = None
-        self.data_sources_config = data_sources_config if data_sources_config is not None else DATA_CONFIG_SOURCES
+        self.data_sources_config: ServerDataSourceConfig = (
+            data_sources_config if data_sources_config is not None else DATA_CONFIG_SOURCES)
         self.broadcaster_uri = broadcaster_uri
         self.master_token = master_token
 
