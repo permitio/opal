@@ -15,7 +15,7 @@ import json
 from typer import Typer
 import typer
 
-from .types import ConfiEntry
+from .types import ConfiDelay, ConfiEntry
 from .cli import get_cli_object_for_config_objects
 
 
@@ -56,8 +56,8 @@ ValueT = TypeVar("ValueT")
 
 
 
-
-
+        
+             
 class Confi:
     """
     Interface to create typed configuration entries
@@ -73,17 +73,29 @@ class Confi:
         self._is_model = is_model
         self._prefix = prefix
         self._entries: Dict[str, ConfiEntry] = {}
+        # entries with delayed defaults
+        self._delayed: Dict[str, ConfiEntry] = {}
  
         # eval class entries into values
         for name, entry in inspect.getmembers(self):
             if isinstance(entry, ConfiEntry):
                 self._entries[name] = entry
+                # save delayed
+                if isinstance(entry.default, ConfiDelay):
+                    self._delayed[name] = entry
                 # eval, and save the value into the class instance
                 value = self._eval_and_save_entry(name, entry)
                 # save the value into the entry to be used as default for CLI
                 entry.value = value
+        # load (all calls inside should produce a real value)
+        self._is_model = False
+        # load delayed values:
+        for name, entry in self._delayed.items():
+            default: ConfiDelay =  entry.default
+            setattr(self, name, default.eval(self))
 
         self.on_load()
+        self._is_model = is_model
 
     @property
     def entries(self):
@@ -154,6 +166,9 @@ class Confi:
         # update entry as well (to sync with CLI, etc. )
         if not name.startswith("_") and name in self._entries:
             self._entries[name].value = value
+
+    def delay(self, value):
+        return ConfiDelay(value)
 
     # -- parser setters --
 
