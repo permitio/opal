@@ -50,12 +50,14 @@ def print_config():
 
 
 def cli():
-    main_texts = MainTexts("OPAL-SERVER", "server")
+    main_texts = MainTexts("💎 OPAL-SERVER 💎", "server")
     def on_start(ctx:Context, **kwargs):
         if ctx.invoked_subcommand is None or ctx.invoked_subcommand == "run":
             typer.secho(main_texts.header, bold=True, fg=typer.colors.MAGENTA)
         if ctx.invoked_subcommand is None:
-            typer.echo(ctx.get_help())
+            typer.echo(ctx.get_usage())
+            typer.echo(main_texts.docs)
+            
             
     opal_server_config.cli([opal_common_config], typer_app=app, help=main_texts.docs, on_start=on_start)
 
