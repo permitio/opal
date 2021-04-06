@@ -5,16 +5,14 @@ Adding typing support and parsing with Pydantic and Enum.
 
 import inspect
 from collections import OrderedDict
-from typing import Callable, Dict, List, Tuple,  Type, TypeVar, Optional, Any, Union
+from typing import Dict, List, Tuple, TypeVar, Optional, Any, Union
 from functools import partial
-from click.decorators import command
 from pydantic import BaseModel
 from decouple import config, Csv, text_type, undefined, UndefinedValueError
 import string
 import json
 
 from typer import Typer
-import typer
 
 from .types import ConfiDelay, ConfiEntry, no_cast
 from .cli import get_cli_object_for_config_objects
@@ -82,16 +80,12 @@ class Confi:
         # entries with delayed defaults (in addition to being referenced by self._entries)
         self._delayed_defaults: Dict[str, ConfiEntry] = OrderedDict()
 
+        # get all confi entry members (including delayed)
+        unsorted_members = self._unwrap_delayed_entries(inspect.getmembers(self, self._is_entry))
         # get members by creation order    
-        members = sorted(inspect.getmembers(self, self._is_entry), key=self._get_entry_index)
-
+        members = sorted(unsorted_members, key=self._get_entry_index)
         # eval class entries into values (by order of defintion - same order as in the config class lines)
         for name, entry in members:
-
-            # unwrap delayed entries
-            if isinstance(entry, ConfiDelay):
-                entry = entry.eval(self)
-
             if isinstance(entry, ConfiEntry):
                 self._entries[name] = entry
                 # save delayed
@@ -117,11 +111,18 @@ class Confi:
         res = isinstance(entry, (ConfiEntry,ConfiDelay))
         return res
 
-    def _get_entry_index(self, member:Tuple[str,Union[ConfiDelay, ConfiEntry]]):
+    def _unwrap_delayed_entries(self, entries=List[Tuple[str,Any]]):
+        res = []
+        for name, entry in entries:
+            # unwrap delayed entries
+            if isinstance(entry, ConfiDelay):
+                entry = entry.eval(self)
+            res.append((name,entry))
+        return res
+
+
+    def _get_entry_index(self, member:Tuple[str,ConfiEntry]):
         name, entry = member
-        # unwrap delayed entries
-        if isinstance(entry, ConfiDelay):
-            entry = entry
         return entry.index
         
 
@@ -255,7 +256,7 @@ class Confi:
         parse a cryptographic public key from env vars
         """
         cast_key = partial(cast_public_key, key_format=key_format)
-        return self._process(key, description=description, default=default, cast=cast_key,type=PublicKey, **kwargs)
+        return self._process(key, description=description, default=default, cast=cast_key, type=PublicKey, **kwargs)
 
 
 # default parser

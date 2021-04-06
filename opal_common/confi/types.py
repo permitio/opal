@@ -70,8 +70,13 @@ class ConfiDelay:
     Delay loaded confi entry default values
     """
 
-    def __init__(self, value) -> None:
+    def __init__(self, value, index=-1) -> None:
         self._value = value
+        self._index = index
+
+    @property
+    def value(self): 
+        return self._value
 
     def eval(self, config=None):
         values = { k:v.value for k,v in config.entries.items()} if config else {}
