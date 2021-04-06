@@ -5,7 +5,7 @@ Adding typing support and parsing with Pydantic and Enum.
 
 import inspect
 from collections import OrderedDict
-from typing import Dict, List, Tuple, TypeVar, Optional, Any, Union
+from typing import Callable, Dict, List, Tuple, TypeVar, Optional, Any, Union
 from functools import partial
 from pydantic import BaseModel
 from decouple import config, Csv, text_type, undefined, UndefinedValueError
@@ -167,13 +167,14 @@ class Confi:
     def __repr__(self) -> str:
         return json.dumps({k:str(v.value) for k,v in self.entries.items()},indent=2, sort_keys=True)
 
-    def get_cli_object(self, config_objects:List["Confi"]=None, typer_app:Typer=None, help=None):
+    def get_cli_object(self, config_objects:List["Confi"]=None, typer_app:Typer=None, 
+                       help:str=None, on_start:Callable=None):
         if config_objects is None:
             config_objects = []
         config_objects.append(self)
-        return get_cli_object_for_config_objects(config_objects, typer_app=typer_app, help=help)
+        return get_cli_object_for_config_objects(config_objects, typer_app=typer_app, help=help, on_start=on_start)
 
-    def cli(self,config_objects:List["Confi"]=None, typer_app:Typer=None, help=None):
+    def cli(self,config_objects:List["Confi"]=None, typer_app:Typer=None, help:str=None, on_start:Callable=None):
         """
         Run a command-line-interface based on this configuration set, other config sets, and s typer cli app
 
@@ -181,7 +182,7 @@ class Confi:
             config_objects (List[Confi, optional): additional config objects to share the CLI with this one. Defaults to None.
             typer_app (Typer, optional): A typer cli app with commands to expose to the CLI. Defaults to None.
         """
-        self.get_cli_object(config_objects, typer_app=typer_app, help=help)()
+        self.get_cli_object(config_objects, typer_app=typer_app, help=help, on_start=on_start)()
 
 
     def on_load(self):

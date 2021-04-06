@@ -12,8 +12,9 @@ sys.path.append(root_dir)
 from opal_client.config import opal_client_config
 from opal_common.config import opal_common_config
 from opal_common.corn_utils import run_gunicorn, run_uvicorn
+from opal_common.cli.typer_app import get_typer_app
 
-app = typer.Typer()
+app = get_typer_app()
 
 
 @app.command()
@@ -64,8 +65,9 @@ Examples:
 """
 
 def cli():
-    typer.secho(cli_header, bold=True, fg=typer.colors.MAGENTA)
-    opal_client_config.cli([opal_common_config], typer_app=app, help=cli_docs)
+    def on_start(**kwargs):
+        typer.secho(cli_header, bold=True, fg=typer.colors.MAGENTA)
+    opal_client_config.cli([opal_common_config], typer_app=app, help=cli_docs, on_start=on_start)
 
 if __name__ == "__main__":
     cli()

@@ -25,9 +25,12 @@ def create_click_cli(confi_entries:Dict[str,ConfiEntry], callback:Callable):
     cli = click.group()(cli)
     return cli
 
-def get_cli_object_for_config_objects(config_objects:list, typer_app:Typer=None, help=None):  
+def get_cli_object_for_config_objects(config_objects:list, typer_app:Typer=None, help:str=None, on_start:Callable=None):  
     # callback to save CLI results back to objects   
     def callback(**kwargs):
+        if callable(on_start):
+            on_start(**kwargs)
+
         for key, value in kwargs.items():
             # find the confi-object which the key belongs to and ...
             for config_obj in config_objects:
