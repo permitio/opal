@@ -97,10 +97,13 @@ class StaticBearerTokenVerifier:
     def __init__(self, preconfigured_token: Optional[str]):
         self._preconfigured_token = preconfigured_token
 
-    def __call__(self, authorization: str = Header(...)):
+    def __call__(self, authorization: Optional[str] = Header(None)):
         if self._preconfigured_token is None:
             # always allow
             return
+
+        if authorization is None:
+            raise Unauthorized(description="Authorization header is required!")
 
         token = get_token_from_header(authorization)
         if token is None or token != self._preconfigured_token:
