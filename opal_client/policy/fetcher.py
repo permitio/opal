@@ -31,7 +31,7 @@ class PolicyFetcher:
         """
         self._backend_url = backend_url or opal_client_config.SERVER_URL
         self._token = token or opal_client_config.CLIENT_TOKEN
-        self._auth_headers = tuple_to_dict(get_authorization_header(token))
+        self._auth_headers = tuple_to_dict(get_authorization_header(self._token))
 
     async def fetch_policy_bundle(
         self,
