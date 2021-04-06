@@ -35,6 +35,9 @@ def cast_private_key(value: str, key_format: EncryptionKeyFormat, passphrase: Op
     if value is None:
         return None
 
+    if isinstance(value, PrivateKey.__args__):
+        return value
+
     if passphrase is None:
         password = None
     else:
@@ -63,6 +66,9 @@ def cast_public_key(value: str, key_format: EncryptionKeyFormat) -> Optional[Pub
     """
     if value is None:
         return None
+
+    if isinstance(value, PublicKey.__args__):
+        return value
 
     key_path = os.path.expanduser(value)
     if os.path.isfile(key_path):
