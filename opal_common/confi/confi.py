@@ -144,10 +144,10 @@ class Confi:
         res = self._evaluate(whole_key,entry.default,entry.cast,**entry.kwargs)
         return res
         
-    def _process(self, key, default=undefined, description=None, cast=no_cast, type:ValueT=str, **kwargs) -> Union[ValueT, ConfiEntry]:
+    def _process(self, key, default=undefined, description=None, cast=no_cast, type:ValueT=str, flags:List[str]=None, **kwargs) -> Union[ValueT, ConfiEntry]:
         if self._is_model:
             # create new entry
-            res = ConfiEntry(key, default,description, cast, type, index=self._counter , **kwargs)
+            res = ConfiEntry(key, default,description, cast, type, index=self._counter, flags=flags, **kwargs)
             # track count for indexing
             self._counter +=1
             return res

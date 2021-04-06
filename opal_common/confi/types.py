@@ -1,6 +1,6 @@
 
 import inspect
-from typing import Any, Callable, Type
+from typing import Any, Callable, List, Type
 from decouple import  text_type, undefined
 
 
@@ -34,9 +34,10 @@ class ConfiEntry:
     description:str
     cast:Callable
     kwargs: dict 
+    flags:List[str]
     value: Any
 
-    def __init__(self, key, default=undefined, description=None, cast=no_cast, type=str,index=-1, **kwargs) -> None:
+    def __init__(self, key, default=undefined, description=None, cast=no_cast, type=str,index=-1, flags:List[str]=None, **kwargs) -> None:
         self.key = key
         # sorting index
         self.index = index
@@ -45,6 +46,7 @@ class ConfiEntry:
         self.cast = cast
         self.type = type
         self.kwargs = kwargs
+        self.flags = flags
         self.value = undefined
 
     def get_cli_type(self):

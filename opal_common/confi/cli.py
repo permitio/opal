@@ -16,9 +16,8 @@ def create_click_cli(confi_entries:Dict[str,ConfiEntry], callback:Callable):
         adjusted_key = entry.key.lower().replace("_","-")
         keys = [f"--{adjusted_key}", entry.key]
         # add flag if given (i.e '-t' option)
-        flag =  entry.kwargs.get('flag', None)
-        if flag is not None:
-            keys.append(flag)
+        if entry.flags is not None:
+            keys.extend(entry.flags)
         # use lower case as the key, and as is (no prefix, and no case altering) as the name
         # see https://click.palletsprojects.com/en/7.x/options/#name-your-options
         cli = click.option(*keys, **option_kwargs)(cli)
