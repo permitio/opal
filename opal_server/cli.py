@@ -24,7 +24,7 @@ def run(engine_type: str = typer.Option("uvicron", help="uvicorn or gunicorn")):
     """
     Run the server as a deamon 
     """
-    typer.echo(f"-- Starting OPAL client (with {engine_type}) --")
+    typer.echo(f"-- Starting OPAL Server (with {engine_type}) --")
 
     if engine_type == 'gunicorn':
         app:FastAPI 
@@ -54,6 +54,7 @@ def cli():
     def on_start(ctx:Context, **kwargs):
         if ctx.invoked_subcommand is None or ctx.invoked_subcommand == "run":
             typer.secho(main_texts.header, bold=True, fg=typer.colors.MAGENTA)
+        if ctx.invoked_subcommand is None:
             typer.echo(ctx.get_help())
             
     opal_server_config.cli([opal_common_config], typer_app=app, help=main_texts.docs, on_start=on_start)
