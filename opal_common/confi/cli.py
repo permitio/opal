@@ -21,15 +21,17 @@ def create_click_cli(confi_entries:Dict[str,ConfiEntry], callback:Callable):
         # use lower case as the key, and as is (no prefix, and no case altering) as the name
         # see https://click.palletsprojects.com/en/7.x/options/#name-your-options
         cli = click.option(*keys, **option_kwargs)(cli)
-
-    cli = click.group()(cli)
+    # pass context
+    cli = click.pass_context(cli)
+    # wrap in group
+    cli = click.group(invoke_without_command=True)(cli)
     return cli
 
 def get_cli_object_for_config_objects(config_objects:list, typer_app:Typer=None, help:str=None, on_start:Callable=None):  
     # callback to save CLI results back to objects   
-    def callback(**kwargs):
+    def callback(ctx, **kwargs):
         if callable(on_start):
-            on_start(**kwargs)
+            on_start(ctx, **kwargs)
 
         for key, value in kwargs.items():
             # find the confi-object which the key belongs to and ...

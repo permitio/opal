@@ -1,4 +1,5 @@
 
+from click.core import Context
 import os
 import sys
 from fastapi.applications import FastAPI
@@ -12,8 +13,10 @@ sys.path.append(root_dir)
 from opal_server.config import opal_server_config
 from opal_common.config import opal_common_config
 from opal_common.corn_utils import run_gunicorn, run_uvicorn
+from opal_common.cli.docs import MainTexts
+from opal_common.cli.typer_app import get_typer_app
 
-app = typer.Typer()
+app = get_typer_app()
 
 
 @app.command()
@@ -46,26 +49,14 @@ def print_config():
     typer.echo(str(opal_common_config))
 
 
-cli_header = """\b
-OPAL-SERVER
-Open-Policy Administration Layer - server\b\f"""
-
-cli_docs = """\b
-Config top level options:
- - Use env-vars (same as cmd options) but uppercase and with "_" instead of "-"; all prefixed with "OPAL_"
- - Use command line options as detailed by '--help'
- - Use .env or .ini files    
-
-\b
-Examples:
- - opal-server run --help                       Help on run command
- - opal-server run --engine-type gunicorn       Run server with gunicorn
-\b
-"""
-
 def cli():
-    typer.secho(cli_header, bold=True, fg=typer.colors.MAGENTA)
-    opal_server_config.cli([opal_common_config], typer_app=app, help=cli_docs)
+    main_texts = MainTexts("OPAL-SERVER", "server")
+    def on_start(ctx:Context, **kwargs):
+        if ctx.invoked_subcommand is None or ctx.invoked_subcommand == "run":
+            typer.secho(main_texts.header, bold=True, fg=typer.colors.MAGENTA)
+            typer.echo(ctx.get_help())
+            
+    opal_server_config.cli([opal_common_config], typer_app=app, help=main_texts.docs, on_start=on_start)
 
 if __name__ == "__main__":
     cli()

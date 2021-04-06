@@ -4,6 +4,7 @@ import sys
 from fastapi.applications import FastAPI
 import typer
 from typer.main import Typer
+from typer.models import Context
 
 # Add parent path to use local src as package for tests
 root_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), os.path.pardir))
@@ -13,6 +14,7 @@ from opal_client.config import opal_client_config
 from opal_common.config import opal_common_config
 from opal_common.corn_utils import run_gunicorn, run_uvicorn
 from opal_common.cli.typer_app import get_typer_app
+from opal_common.cli.docs import MainTexts
 
 app = get_typer_app()
 
@@ -47,27 +49,16 @@ def print_config():
     typer.echo(str(opal_common_config))
 
 
-cli_header = """\b
-OPAL-CLIENT
-Open-Policy Administration Layer - client\b\f"""
 
-cli_docs = """\b
-Config top level options:
- - Use env-vars (same as cmd options) but uppercase and with "_" instead of "-"; all prefixed with "OPAL_"
- - Use command line options as detailed by '--help'
- - Use .env or .ini files    
-
-\b
-Examples:
- - opal-client run --help                       Help on run command
- - opal-client run --engine-type gunicorn       Run client with gunicorn
-\b
-"""
 
 def cli():
-    def on_start(**kwargs):
-        typer.secho(cli_header, bold=True, fg=typer.colors.MAGENTA)
-    opal_client_config.cli([opal_common_config], typer_app=app, help=cli_docs, on_start=on_start)
+    main_texts = MainTexts("OPAL-CLIENT", "client")
+    def on_start(ctx:Context, **kwargs):
+        if ctx.invoked_subcommand is None or ctx.invoked_subcommand == "run":
+            typer.secho(main_texts.header, bold=True, fg=typer.colors.MAGENTA)
+            typer.echo(ctx.get_help())
+            
+    opal_client_config.cli([opal_common_config], typer_app=app, help=main_texts.docs, on_start=on_start)
 
 if __name__ == "__main__":
     cli()
