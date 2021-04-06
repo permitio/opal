@@ -104,7 +104,9 @@ class Confi:
         # load delayed values:
         for name, entry in self._delayed_defaults.items():
             default: ConfiDelay =  entry.default
-            setattr(self, name, default.eval(self))       
+            # but only if no value is set yet
+            if entry.value == default or entry.value == undefined:
+                setattr(self, name, default.eval(self))
 
         self.on_load()
         self._is_model = is_model
