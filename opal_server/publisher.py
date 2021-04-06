@@ -13,7 +13,7 @@ def setup_publisher_task(
     server_token: str = None,
 ) -> TopicPublisher:
     server_uri = server_uri or opal_server_config.OPAL_WS_LOCAL_URL,
-    server_token = server_uri or opal_server_config.OPAL_WS_TOKEN,
+    server_token = server_token or opal_server_config.OPAL_WS_TOKEN,
     return ClientSideTopicPublisher(
         client=PubSubClient(
             extra_headers=[get_authorization_header(server_token)]
