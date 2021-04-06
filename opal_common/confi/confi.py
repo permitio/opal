@@ -161,6 +161,19 @@ class Confi:
     def __repr__(self) -> str:
         return json.dumps({k:str(v.value) for k,v in self.entries.items()},indent=2, sort_keys=True)
 
+    def debug_repr(self) -> str:
+        """
+        repr() intended for debug purposes, since it runs repr() on each entry.value,
+        it is more accurate than str(entry.value)
+        """
+        repr_string = "{}(Confi):\n".format(self.__class__.__name__)
+        items = list(self.entries.items())
+        items.sort(key = lambda item: item[0])
+        indent = ' ' * 4
+        for key, entry in items:
+            repr_string += f"{indent}{key}: {repr(entry.value)}\n"
+        return repr_string
+
     def get_cli_object(self, config_objects:List["Confi"]=None, typer_app:Typer=None, help=None):
         if config_objects is None:
             config_objects = []
