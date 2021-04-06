@@ -126,7 +126,7 @@ class Confi:
 
     def _prefix_key(self, key):
         prefix = self._prefix
-        return f"{prefix}{key}"
+        return f"{prefix}{key}" if prefix is not None else key
 
     def _eval_and_save_entry(self, name:str, entry:ConfiEntry):
         value = self._eval_entry(entry)
