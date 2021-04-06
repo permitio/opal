@@ -74,7 +74,8 @@ class ConfiDelay:
 
     def __init__(self, value, index=-1) -> None:
         self._value = value
-        self._index = index
+        # sorting index
+        self.index = index
 
     @property
     def value(self): 

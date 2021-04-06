@@ -80,12 +80,14 @@ class Confi:
         # entries with delayed defaults (in addition to being referenced by self._entries)
         self._delayed_defaults: Dict[str, ConfiEntry] = OrderedDict()
 
-        # get all confi entry members (including delayed)
-        unsorted_members = self._unwrap_delayed_entries(inspect.getmembers(self, self._is_entry))
-        # get members by creation order    
-        members = sorted(unsorted_members, key=self._get_entry_index)
+        # get members by creation order
+        members = sorted(inspect.getmembers(self, self._is_entry), key=self._get_entry_index)
         # eval class entries into values (by order of defintion - same order as in the config class lines)
         for name, entry in members:
+            # unwrap delayed entries
+            if isinstance(entry, ConfiDelay):
+                entry = entry.eval(self)
+
             if isinstance(entry, ConfiEntry):
                 self._entries[name] = entry
                 # save delayed
@@ -110,16 +112,6 @@ class Confi:
     def _is_entry(self, entry):
         res = isinstance(entry, (ConfiEntry,ConfiDelay))
         return res
-
-    def _unwrap_delayed_entries(self, entries=List[Tuple[str,Any]]):
-        res = []
-        for name, entry in entries:
-            # unwrap delayed entries
-            if isinstance(entry, ConfiDelay):
-                entry = entry.eval(self)
-            res.append((name,entry))
-        return res
-
 
     def _get_entry_index(self, member:Tuple[str,ConfiEntry]):
         name, entry = member
@@ -202,7 +194,9 @@ class Confi:
             self._entries[name].value = value
 
     def delay(self, value):
-        return ConfiDelay(value)
+        delayed_entry = ConfiDelay(value, index=self._counter)
+        self._counter += 1
+        return delayed_entry
 
     # -- parser setters --
 
