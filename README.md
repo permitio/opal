@@ -77,7 +77,7 @@ OPAL runs in the background - supercharging policy-agents, keeping them in sync 
 ### What OPAL *is not*
 - A Policy Engine:
     - OPAL uses a policy-engine, but isn't one itself
-    - Check out <a href="https://www.openpolicyagent.org/" target="_blank">Open-Policy-Agent</a>
+    - Check out <a href="https://www.openpolicyagent.org/" target="_blank">Open-Policy-Agent</a>, and <a href="https://www.osohq.com/" target="_blank">OSO</a>
     
 - Large scale Global FGA: 
     - Currently OPAL is not meant for managing ridiculous (>100GB) amounts of data  within one layer. Though it can complement a CDN to achieve a similar result - see below.
