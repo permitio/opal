@@ -6,7 +6,7 @@ Adding typing support and parsing with Pydantic and Enum.
 import inspect
 from collections import OrderedDict
 from typing import Callable, Dict, List, Tuple, TypeVar, Optional, Any, Union
-from functools import partial
+from functools import partial, wraps
 from pydantic import BaseModel
 from decouple import config, Csv, text_type, undefined, UndefinedValueError
 import string
@@ -48,15 +48,28 @@ def cast_pydantic(model:BaseModel):
             return model.parse_obj(value)
     return cast_pydantic_by_model
 
+def ignore_confi_delay_cast(cast_func):
+    """
+    when we pass a ConfiDelay as the default to decouple, until
+    this delayed default is evaluated by confi, there is no point in
+    casting it.
+
+    After a ConfiDelay is evaluated, the resulted value should be passed
+    again to the cast method, and this time it will indeed be cast.
+    """
+    @wraps(cast_func)
+    def wrapped_cast(value, *args, **kwargs):
+        if isinstance(value, ConfiDelay):
+            return value
+        return cast_func(value, *args, **kwargs)
+    return wrapped_cast
+
 
 EnumT = TypeVar("EnumT")
 T = TypeVar("T", bound=BaseModel)
 ValueT = TypeVar("ValueT")
 
 
-
-        
-             
 class Confi:
     """
     Interface to create typed configuration entries
@@ -106,7 +119,7 @@ class Confi:
             default: ConfiDelay =  entry.default
             # but only if no value is set yet
             if entry.value == default or entry.value == undefined:
-                setattr(self, name, default.eval(self))
+                setattr(self, name, entry.cast(default.eval(self)))
 
         self.on_load()
         self._is_model = is_model
@@ -150,8 +163,9 @@ class Confi:
             return self._evaluate(whole_key, default, cast, **kwargs)
 
     def _evaluate(self, key, default=undefined, cast=no_cast, **kwargs):
+        safe_cast_func = ignore_confi_delay_cast(cast)
         try:
-            res = config(key, default=default, cast=cast, **kwargs)
+            res = config(key, default=default, cast=safe_cast_func, **kwargs)
         except:
             if default is undefined:
                 raise
