@@ -36,8 +36,10 @@ class ConfiEntry:
     kwargs: dict 
     value: Any
 
-    def __init__(self, key, default=undefined, description=None, cast=no_cast, type=str, **kwargs) -> None:
+    def __init__(self, key, default=undefined, description=None, cast=no_cast, type=str,index=-1, **kwargs) -> None:
         self.key = key
+        # sorting index
+        self.index = index
         self.default = default
         self.description = description
         self.cast = cast

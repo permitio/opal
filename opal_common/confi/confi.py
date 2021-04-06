@@ -5,7 +5,7 @@ Adding typing support and parsing with Pydantic and Enum.
 
 import inspect
 from collections import OrderedDict
-from typing import Callable, Dict, List,  Type, TypeVar, Optional, Any, Union
+from typing import Callable, Dict, List, Tuple,  Type, TypeVar, Optional, Any, Union
 from functools import partial
 from click.decorators import command
 from pydantic import BaseModel
@@ -73,15 +73,20 @@ class Confi:
         """
         self._is_model = is_model
         self._prefix = prefix
+        # counter of created entries (to track order)
+        self._counter = 0
         # entries to be evaluated
         self._entries: Dict[str, ConfiEntry] = OrderedDict()
         # delayed entries to be evaluated (instead of being referenced by self._entries)
         self._delayed_entries: Dict[str, ConfiDelay] = OrderedDict()
         # entries with delayed defaults (in addition to being referenced by self._entries)
         self._delayed_defaults: Dict[str, ConfiEntry] = OrderedDict()
- 
+
+        # get members by creation order    
+        members = sorted(inspect.getmembers(self, self._is_entry), key=self._get_entry_index)
+
         # eval class entries into values (by order of defintion - same order as in the config class lines)
-        for name, entry in inspect.getmembers(self):
+        for name, entry in members:
 
             # unwrap delayed entries
             if isinstance(entry, ConfiDelay):
@@ -108,6 +113,18 @@ class Confi:
         self.on_load()
         self._is_model = is_model
 
+    def _is_entry(self, entry):
+        res = isinstance(entry, (ConfiEntry,ConfiDelay))
+        return res
+
+    def _get_entry_index(self, member:Tuple[str,Union[ConfiDelay, ConfiEntry]]):
+        name, entry = member
+        # unwrap delayed entries
+        if isinstance(entry, ConfiDelay):
+            entry = entry
+        return entry.index
+        
+
     @property
     def entries(self):
         return self._entries
@@ -128,7 +145,11 @@ class Confi:
         
     def _process(self, key, default=undefined, description=None, cast=no_cast, type:ValueT=str, **kwargs) -> Union[ValueT, ConfiEntry]:
         if self._is_model:
-            return ConfiEntry(key, default,description, cast, type, **kwargs)
+            # create new entry
+            res = ConfiEntry(key, default,description, cast, type, index=self._counter , **kwargs)
+            # track count for indexing
+            self._counter +=1
+            return res
         else:
             whole_key = self._prefix_key(key)
             return self._evaluate(whole_key, default, cast, **kwargs)
