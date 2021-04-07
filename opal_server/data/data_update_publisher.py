@@ -1,7 +1,9 @@
+import os
+
 from typing import List
 from opal_common.schemas.data import DataUpdate
 from opal_common.topics.publisher import TopicPublisher
-
+from opal_common.logger import logger
 
 TOPIC_DELIMETER = "/"
 
@@ -49,5 +51,16 @@ class DataUpdatePublisher:
             for topic in entry.topics:
                 topic_combos = self.get_topic_combos(topic)
                 all_topic_combos.extend(topic_combos)
+
+        # a nicer format of entries to the log
+        logged_entries = [(entry.url, entry.save_method, entry.dst_path or "/") for entry in update.entries]
+
         # publish all topics with all their sub combinations
+        logger.info(
+            "[{pid}] Publishing data update to topics: {topics}, reason: {reason}, entries: {entries}",
+            pid=os.getpid(),
+            topics=all_topic_combos,
+            reason=update.reason,
+            entries=logged_entries,
+        )
         self._publisher.publish(all_topic_combos, update)
