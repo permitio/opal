@@ -148,6 +148,7 @@ See a [more detailed diagram](https://i.ibb.co/kGc9nDd/main.png)
 
 ## 👩‍🏫 <a name="how-tos"></a> HOW-TOs
 - [How to get started with OPAL (Packages and CLI)](docs/HOWTO/get_started_with_opal.md)
+- [How to trigger Data Updates via OPAL](docs/HOWTO/trigger_data_updates.md)
 - [How to extend OPAL to fetch data from your sources with FetchProviders](docs/HOWTO/write_your_own_fetch_provider.md)
 
 
@@ -162,9 +163,9 @@ OPAL is built on the shoulders of open-source giants, including:
 ## <a name="design"></a> 🎨 Design choices
 
 - ### Networking
-    - OPAL creates a highly efficient communications channel Using [websocket Pub/Sub connections](https://github.com/authorizon/fastapi_websocket_pubsub) to subscribe to both data and policy updates allows OPAL clients (and the services they support) to be deployed anywhere - in your VPC, at the edge, on-premises, etc.
+    - OPAL creates a highly efficient communications channel Using [websocket Pub/Sub connections](https://github.com/authorizon/fastapi_websocket_pubsub) to subscribe to both data and policy updates. This allows OPAL clients (and the services they support) to be deployed anywhere - in your VPC, at the edge, on-premises, etc.
     - By using  outgoing websocket connections to establish the Pub/Sub channel most routing/firewall concerns are circumnavigated
-    - Using Websocket connections allows network connections to be dormant most fo the time (saving CPU cycles for both clients and servers) - especially when comparing to polling based methods.
+    - Using Websocket connections allows network connections to be dormant most of the time (saving CPU cycles for both clients and servers) - especially when comparing to polling based methods.
 
 - ### Implementation with Python
     - OPAL is written completely in Python3 using FastAPI and Pydantic.
