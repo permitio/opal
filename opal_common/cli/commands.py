@@ -33,7 +33,8 @@ def obtain_token(
         uri: str = typer.Option("http://localhost:7002", help="url of server to obtain the token from"),
         type:PeerType=PeerType("client"),
         ttl: Tuple[int, str] = typer.Option((365, "days"), help="Time-To-Live / experation for the token in `<int> <str>` e.g. `365 days`, or `1000000 milliseconds` "),
-        claims:str=typer.Option("{}", help="claims to to include in the returned signed JWT as a JSON string", callback=lambda x:json.loads(x))
+        claims:str=typer.Option("{}", help="claims to to include in the returned signed JWT as a JSON string", callback=lambda x:json.loads(x)),
+        just_the_token:bool=typer.Option(True, help="Should the command return only the cryptographic token, or the full JSON object"),
         ):
     """
     Obtain a secret JWT (JSON-Web-Token) from the server, to be used by clients or data sources for authentication
@@ -51,7 +52,10 @@ def obtain_token(
             details = AccessTokenRequest(type=type, ttl=ttl, claims=claims).json()
             res = await session.post(url, data=details)
             data = await res.json()
-            return data
+            if just_the_token:
+                return data["token"]
+            else:
+                return data
 
     res = asyncio.run(fetch())
     typer.echo(res)
