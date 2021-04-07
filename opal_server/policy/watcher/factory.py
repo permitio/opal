@@ -25,7 +25,7 @@ def setup_watcher_task(
     clone_path = clone_path or opal_server_config.POLICY_REPO_CLONE_PATH
     branch_name = branch_name or opal_server_config.POLICY_REPO_MAIN_BRANCH
     remote_name = remote_name or opal_server_config.POLICY_REPO_MAIN_REMOTE
-    ssh_key = ssh_key or opal_server_config.POLICY_REPO_SSH_KEY,
+    ssh_key = ssh_key or opal_server_config.POLICY_REPO_SSH_KEY
     polling_interval = polling_interval or opal_server_config.POLICY_REPO_POLLING_INTERVAL
     extensions = extensions if extensions is not None else opal_server_config.OPA_FILE_EXTENSIONS
     watcher = RepoWatcher(
