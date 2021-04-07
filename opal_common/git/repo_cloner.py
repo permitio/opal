@@ -156,7 +156,9 @@ class RepoCloner:
             return None # no ssh config
         git_ssh_identity_file = self._save_ssh_key_to_pem_file(self._ssh_key)
         return {
-            "GIT_SSH_COMMAND": f"ssh -o StrictHostKeyChecking=no -i {git_ssh_identity_file}"
+            "GIT_SSH_COMMAND": f"ssh -o StrictHostKeyChecking=no -o IdentitiesOnly=yes -i {git_ssh_identity_file}",
+            "GIT_TRACE": "1",
+            "GIT_CURL_VERBOSE": "1"
         }
 
     def _save_ssh_key_to_pem_file(self, key: str) -> Path:
