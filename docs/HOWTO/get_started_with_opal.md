@@ -106,14 +106,10 @@ for example `OPAL_SERVER_PORT=1337 opal-server run` is equivalent to `opal-serve
 
 
 
+-----
 
 
-
-#
-#
-#
-#
-#
+## Setup OPAL-Client (work in progress)
 
 - Install OPAL-client
     ```sh
