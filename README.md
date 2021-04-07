@@ -34,30 +34,39 @@ As you push updates to your application's stores (e.g. Git, DBs, S3, SaaS servic
 
 ## <a name="getting-started"></a>🛠️ Getting started
 
-- As containers 
-    
-    - Server
-        ```
-        docker pull authorizon/opal-server
-        ```
-        ```
-        docker run authorizon/opal-server
-        ```
-
-    - Client (prebuilt with OPA inside)
-        ```
-        docker pull authorizon/opal-client
-        ```
-        ```
-        docker run authorizon/opal-client
-        ```
-
-- Or [install as directly as Python packages (python >3.7 )](docs/HOWTO/install_as_python_packages.md) 
+### OPAL Packages and CLI
+- Install
     - ```pip install opal-client``` 
     - ```pip install opal-server``` 
+- Run server (example):
+    ```sh
+    # Run server 
+    #  in secure mode (verifying client JWTs)
+    export OPAL_AUTH_PRIVATE_KEY=~/opal 
+    export OPAL_AUTH_PUBLIC_KEY=~/opal.pub 
+    export OPAL_AUTH_MASTER_TOKEN="RANDOM-SECRET-STRING"
+    #  Watching a GIT repository from a webhook
+    export OPAL_POLICY_REPO_URL=https://github.com/authorizon/opal-example-policy-repo.git
+    export OPAL_POLICY_REPO_WEBHOOK_SECRET="RANDOM-SECRET-STRING-SHARED-WITH-GITHUB"
+    opal-server run
+    ```
+- Run client (example):
+    ```sh
+    # Run client
+    #  authenticating with a JWT
+    export OPAL_CLIENT_TOKEN="{'token': 'CRYPTOGRAPHIC-CONTENT', 'type': 'bearer', 'details': {'id': '453f9a6e-d549-4533-bfb2-f31383d4361e', 'type': 'client', 'expired': '2022-04-07T01:22:34.064067', 'claims': {'peer_type': 'client'}}}"
+    # connect to server
+    export OPAL_SERVER_URL=https://opal.mydomain.com:7002
+    # Subscribe to specific data-topics
+    export OPAL_DATA_TOPICS=tenants/my-org,stripe_billing,tickets
+    opal-client run
+    ```
+- ### Try it yourself - [Read the getting started guide](docs/HOWTO/get_started_with_opal.md)
+
+### OPAL pre-built container images
+- Pull it from docker-hub - [Try the getting started guide for containers](docs/HOWTO/get_started_with_opal_using_docker.md)
 
 #
-
 ## <a name="intro"></a>📖 Introduction to OPAL - data and policy realtime delivery  
 - Modern applications are complex, distributed, multi-tenant and serve at scale - creating (often) overwhelming authorization challenges. OPA (Open-Policy-Agent) brings the power of decoupled policy to the infrastructure layer (especially K8s), and light applications. OPAL supercharges OPA to meet the pace of live applications, where the picture may change with every user click and api call.
 
@@ -138,7 +147,8 @@ See a [more detailed diagram](https://i.ibb.co/kGc9nDd/main.png)
 #
 
 ## 👩‍🏫 <a name="how-tos"></a> HOW-TOs
-- How to extend OPAL to fetch data from your sources with [FetchProviders](docs/HOWTO/write_your_own_fetch_provider.md)
+- [How to get started with OPAL (Packages and CLI)](docs/HOWTO/get_started_with_opal.md)
+- [How to extend OPAL to fetch data from your sources with FetchProviders](docs/HOWTO/write_your_own_fetch_provider.md)
 
 
 
