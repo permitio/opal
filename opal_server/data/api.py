@@ -66,7 +66,6 @@ def init_data_updates_router(data_update_publisher: DataUpdatePublisher, data_so
         - where should OPAL client store the data in OPA document hierarchy
         - what clients should receive the update (through topics, only clients subscribed to provided topics will be notified)
         """
-        logger.info("Publishing received update event")
         data_update_publisher.publish_data_updates(update)
         return {"status": "ok"}
 
