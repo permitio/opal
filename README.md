@@ -41,7 +41,7 @@ As you push updates to your application's stores (e.g. Git, DBs, S3, SaaS servic
 - Run server (example):
     ```sh
     # Run server 
-    #  in secure mode (verifying client JWTs)
+    #  in secure mode -verifying client JWTs (Replace secrets with actual secrets ;-) )
     export OPAL_AUTH_PRIVATE_KEY=~/opal 
     export OPAL_AUTH_PUBLIC_KEY=~/opal.pub 
     export OPAL_AUTH_MASTER_TOKEN="RANDOM-SECRET-STRING"
@@ -53,8 +53,8 @@ As you push updates to your application's stores (e.g. Git, DBs, S3, SaaS servic
 - Run client (example):
     ```sh
     # Run client
-    #  authenticating with a JWT
-    export OPAL_CLIENT_TOKEN="{'token': 'CRYPTOGRAPHIC-CONTENT', 'type': 'bearer', 'details': {'id': '453f9a6e-d549-4533-bfb2-f31383d4361e', 'type': 'client', 'expired': '2022-04-07T01:22:34.064067', 'claims': {'peer_type': 'client'}}}"
+    #  authenticating with a JWT (replace 'JWT-CRYPTOGRAPHIC-CONTENT' with actual token )
+    export OPAL_CLIENT_TOKEN="JWT-CRYPTOGRAPHIC-CONTENT"
     # connect to server
     export OPAL_SERVER_URL=https://opal.mydomain.com:7002
     # Subscribe to specific data-topics
