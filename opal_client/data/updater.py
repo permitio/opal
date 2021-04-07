@@ -98,6 +98,7 @@ class DataUpdater:
             self._extra_headers = None
         else:
             self._extra_headers = [get_authorization_header(self._token)]
+        self._stopping = False
 
     async def __aenter__(self):
         await self.start()
@@ -107,8 +108,8 @@ class DataUpdater:
         """
         Context handler to terminate internal tasks
         """
-        await self.stop()
-
+        if not self._stopping:
+            await self.stop()
 
     async def _update_policy_data_callback(self, data: dict = None, topic=""):
         """
@@ -204,15 +205,28 @@ class DataUpdater:
             await self._client.wait_until_done()
 
     async def stop(self):
+        self._stopping = True
+        logger.info("Stopping data updater")
+
         # disconnect from Pub/Sub
-        await self._client.disconnect()
+        try:
+            await asyncio.wait_for(self._client.disconnect(), timeout=3)
+        except asyncio.TimeoutError:
+            logger.debug("Timeout waiting for DataUpdater pubsub client to disconnect")
+
         # stop subscriber task
         if self._subscriber_task is not None:
-            logger.info("Stopping data updater")
+            logger.debug("Cancelling DataUpdater subscriber task")
             self._subscriber_task.cancel()
-            await self._subscriber_task
+            try:
+                await self._subscriber_task
+            except asyncio.CancelledError as exc:
+                logger.debug("DataUpdater subscriber task was force-cancelled: {e}", exc=exc)
             self._subscriber_task = None
+            logger.debug("DataUpdater subscriber task was cancelled")
+
         # stop the data fetcher
+        logger.debug("Stopping data fetcher")
         await self._data_fetcher.stop()
 
     async def wait_until_done(self):

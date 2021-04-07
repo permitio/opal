@@ -105,13 +105,15 @@ class PolicyUpdater:
         self._client = None
         # The task running the Pub/Sub subcribing client
         self._subscriber_task = None
+        self._stopping = False
 
     async def __aenter__(self):
         await self.start()
         return self
 
     async def __aexit__(self, exc_type, exc, tb):
-        await self.stop()
+        if not self._stopping:
+            await self.stop()
 
     async def _update_policy_callback(self, data: dict = None, topic: str = "", **kwargs):
         """
@@ -162,14 +164,25 @@ class PolicyUpdater:
         """
         stops the policy updater
         """
+        self._stopping = True
+        logger.info("Stopping policy updater")
+
         # disconnect from Pub/Sub
-        await self._client.disconnect()
+        try:
+            await asyncio.wait_for(self._client.disconnect(), timeout=3)
+        except asyncio.TimeoutError:
+            logger.debug("Timeout waiting for PolicyUpdater pubsub client to disconnect")
+
         # stop subscriber task
         if self._subscriber_task is not None:
-            logger.info("Stopping policy updater")
+            logger.debug("Cancelling PolicyUpdater subscriber task")
             self._subscriber_task.cancel()
-            await self._subscriber_task
+            try:
+                await self._subscriber_task
+            except asyncio.CancelledError as exc:
+                logger.debug("PolicyUpdater subscriber task was force-cancelled: {e}", exc=exc)
             self._subscriber_task = None
+            logger.debug("PolicyUpdater subscriber task was cancelled")
 
     async def wait_until_done(self):
         if self._subscriber_task is not None:

@@ -166,12 +166,10 @@ class OpalClient:
         if self.policy_updater:
             tasks.append(asyncio.create_task(self.policy_updater.stop()))
 
-        # disconnect might hang if client is currently in the middle of __connect__
-        # so we put a time limit, and then we let uvicorn kill the worker.
         try:
-            await asyncio.wait_for(asyncio.gather(*tasks, return_exceptions=True), timeout=5)
-        except asyncio.TimeoutError:
-            logger.info("timeout while waiting for DataUpdater and PolicyUpdater to disconnect")
+            await asyncio.gather(*tasks)
+        except Exception:
+            logger.exception("exception while shutting down updaters")
 
     async def launch_policy_store_dependent_tasks(self):
         try:
