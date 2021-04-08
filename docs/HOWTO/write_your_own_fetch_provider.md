@@ -7,12 +7,12 @@ Fetch providers are designed to be extendable, and you can easily create more fe
 ## Writing your own fetch providers
 1. ### The basics
     All FetchProviders are classes that derive from ```BaseFetchProvider```.
-    FetchProviders are loaded into the fetch-register from the Python modules the configuration points to ([OPAL_FETCH_PROVIDER_MODULES](https://github.com/authorizon/opal/blob/master/b1aaa3f9e30e903ca0053cba0a6525bfb4151e78/opal/common/config.py#L36))
+    FetchProviders are loaded into the fetch-register from the Python modules the configuration points to ([OPAL_FETCH_PROVIDER_MODULES](https://github.com/authorizon/opal/blob/66b139d10caf27b590a350b750d988c88a27acca/opal_common/config.py#L38))
     - Providers use the FetcherEvent initialized in ```self._event``` and specifically the ```FetcherConfig``` configuration in ```self._event.config```
     - Providers implement a ```_fetch_``` method to access and fetch data from the data-source (indicated by ```self._event.url```)
     - the FetchingEngine workers invokes a provider's ```.fetch()``` and ```.process()``` which proxy to ```_fetch_``` and ```_process_``` accordingly
 2. ### Deriving from BaseFetchProvider and implementing Fetch & Process
-    - See a core example for an [HTTPFetcher - here](https://github.com/authorizon/opal/blob/master/opal/common/fetcher/providers/http_get_fetch_provider.py)
+    - See a core example for an [HTTPFetcher - here](https://github.com/authorizon/opal/blob/master/opal_common/fetcher/providers/http_get_fetch_provider.py)
     1. Create a new class deriving from ```BaseFetchProvider``` 
     2. Override ```_fetch_`` to implement the fetching itself
     3. Optionally override ```_process_``` to mutate the data before returning it (for example converting a JSON string to an actual object)
