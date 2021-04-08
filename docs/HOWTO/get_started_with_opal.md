@@ -22,6 +22,10 @@ This HOW-TO focuses on setting-up OPAL with its packages and CLI interface, this
 
 - Both opal-server and opal-client can be configured using environment-variables, [.env / .ini](https://pypi.org/project/python-decouple/#env-file) files , and command-line options (later overrides previous).
 
+- Passing lists (e.g. client's `--data-topics`):
+    - pass delimited by "," with env-vars i.e. `OPAL_DATA_TOPICS=topic1,topic2,topic3 opal-client run` 
+    - and as multi-options for cmd options i.e. `opal-client  --data-topics topics1 --data-topics topics2 --data-topics topics3 run`
+
 - Top-level CLI options listed in `--help` are available under the same name as env-vars (simply convert to uppercase and replace "-" with "_", prefix with 'OPAL' )
 for example `OPAL_SERVER_PORT=1337 opal-server run` is equivalent to `opal-server --server-port 1337 run`
 
@@ -166,8 +170,14 @@ for example `OPAL_SERVER_PORT=1337 opal-server run` is equivalent to `opal-serve
     ```
 - Just like the server all top-level options can be configured using environment-variables, [.env / .ini](https://pypi.org/project/python-decouple/#env-file) files , and command-line options (later overrides previous). 
 - Key options: 
-    - options starting with `--client-api-` options to control how the client's API service is running
-- ``
+    - Use options starting with `--server` to control how  the client connects to the server (mainly `--server-url` to point at the server)
+    - Use options starting with `--client-api-` options to control how the client's API service is running
+    - Use `--data-topics` to control which topics for data updates the client would subscribe to.
+    - Use `--policy-subscription-dirs` 
+
+# Production run 
+Unlike the server, the opal-client currently supports working only with a single worker process (so there's no need to run it with Gunicorn).
+This will change in future releases.
 
 ### Client Secure Mode
 - [Run the server in secure mode](#server-secure-mode)
@@ -175,7 +185,11 @@ for example `OPAL_SERVER_PORT=1337 opal-server run` is equivalent to `opal-serve
     ```sh
     opal-client obtain-token $MASTER_TOKEN --server-url=$YOUR_SERVERS_ADDRESS 
     ```
-- run the client 
+- run the client with env-var `OPAL_CLIENT_TOKEN` or cmd-option `--client-token` to pass the JWT obtained from the server 
+    ```sh
+    export OPAL_CLIENT_TOKEN="JWT-TOKEN-VALUE` 
+    opal-client run
+    ```
 
 
 
