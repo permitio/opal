@@ -121,7 +121,7 @@ def publish_data_update(
             return res
 
     typer.echo("Publishing event:")
-    typer.secho(f"\t{update.to_string(True)}", fg="cyan" )
+    typer.secho(f"{str(update)}", fg="cyan" )
     res = asyncio.run(publish_update())
 
     if res.status == 200 :
