@@ -104,7 +104,7 @@ OPAL runs in the background - supercharging policy-agents, keeping them in sync 
 ## <a name="architecture"></a>📡  Architecture
 
 
-<img src="https://i.ibb.co/HqFRfQk/simplified-diagram.png" alt="simplified" border="0">
+<img src="https://i.ibb.co/CvmX8rR/simplified-diagram-highlight.png" alt="simplified" border="0">
 
 See a [more detailed diagram](https://i.ibb.co/kGc9nDd/main.png)
 - ### OPAL consists of two key components that work together:
