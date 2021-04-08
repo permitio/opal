@@ -187,8 +187,8 @@ OPAL is built on the shoulders of open-source giants, including:
     - OPAL was built initially with OPA in mind, and OPA is mostly a first-class citizen in OPAL. That said OPAL can support various and multiple policy agents, even in parallel - allowing developers to choose the best policy and agent for their needs.
 
 - ### FGA, large scale / global authorization (e.g. Google Zanzibar)
-    - OPAL is built for fine grained authorizon (FGA), allowing developers to aggregate all and any the data they need and restructure it for the authorization layer     
-    - By making sure each policy-agent is loaded with only the data it needs (via topic subscriptions) - i.e. data focus and separation.
+    - OPAL is built for fine grained authorizon (FGA), allowing developers to aggregate all and any data they need and restructure it for the authorization layer     
+    - OPAL achieves this by making sure each policy-agent is loaded with only the data it needs (via topic subscriptions) - i.e. data focus and separation.
         - examples of data-separation: the back-office service doesn't need to know about customer users, a tenant specific service doesn't need the user list of other tenants, ...
     - That said OPAL with OPA as it is - is still limited in capacity of authorization data that can be available per policy decision; but after applying said data focus this will only impact applications with truly insane scales (where the data for every decision is larger than ~5GB). 
     - For these larger scale cases, OPAL can potentially become a link between a solution like Google Zanzibar (or equivalent CDN) and local policy-agents. (Allowing both Google like scales, low latency, and high performance)

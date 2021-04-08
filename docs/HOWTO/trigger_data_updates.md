@@ -9,7 +9,7 @@ With the OPAL's data-update-triggers feature the billing-service, another servic
 # How to trigger updates
 There are a few ways to trigger updates:</br>
 
-## The trigger-data-update CLI command
+## The publish-data-update CLI command
  - Can be run both from opal-client and opal-server.
 
 
