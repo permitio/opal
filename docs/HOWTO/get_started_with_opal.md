@@ -148,7 +148,7 @@ for example `OPAL_SERVER_PORT=1337 opal-server run` is equivalent to `opal-serve
 -----
 
 
-## Setup OPAL-Client (work in progress)
+## Setup OPAL-Client
 
 ### Install
 - Install OPAL-client
@@ -161,7 +161,7 @@ for example `OPAL_SERVER_PORT=1337 opal-server run` is equivalent to `opal-serve
     - Note: the client needs network access to this agent to be able to administer updates to it.
 
 
-# Simple run 
+### Simple run 
 - Use the client's `run` command
 - try:
     ```sh
@@ -177,7 +177,7 @@ for example `OPAL_SERVER_PORT=1337 opal-server run` is equivalent to `opal-serve
     - Use `--data-topics` to control which topics for data updates the client would subscribe to.
     - Use `--policy-subscription-dirs` 
 
-# Production run 
+### Production run 
 Unlike the server, the opal-client currently supports working only with a single worker process (so there's no need to run it with Gunicorn).
 This will change in future releases.
 
