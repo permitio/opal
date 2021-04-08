@@ -9,8 +9,6 @@
 Open Policy Administration Layer 
 </h2>
 
-
-#
 <a href="https://github.com/authorizon/opal/actions?query=workflow%3ATests" target="_blank">
     <img src="https://github.com/authorizon/opal/workflows/Tests/badge.svg" alt="Tests">
 </a>
