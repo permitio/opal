@@ -181,7 +181,7 @@ OPAL is built on the shoulders of open-source giants, including:
     - Open-Policy-Agent sets the stage for authorization-data and policy decoupling by providing a separate API to manage each. 
     - OPAL takes this approach a step forward by enabling independent update channels for each into the policy cache.
     - POLICY - Policy as code - is code, and as such is naturally maintained best within version control (e.g. GIT). OPAL allows open-policy agents to get the subset of policy they need directly from repositories (as part of CI/CD or independently)
-    - DATA - OPAL takes a more distributed approach to authorization data - recognizing that there are many potential data sources we'd like to include in the authorization conversion (e.g. billing data, compliance data, usage data, etc. etc. ). OPAL-clients can be configured and extended to aggregate any data-source into whichever service needs it.
+    - DATA - OPAL takes a more distributed approach to authorization data - recognizing that there are many potential data sources we'd like to include in the authorization conversation (e.g. billing data, compliance data, usage data, etc. etc. ). OPAL-clients can be configured and extended to aggregate data from any data-source into whichever service needs it.
 
 - ### Decouple data/policy management from policy agents
     - OPAL was built initially with OPA in mind, and OPA is mostly a first-class citizen in OPAL. That said OPAL can support various and multiple policy agents, even in parallel - allowing developers to choose the best policy and agent for their needs.
