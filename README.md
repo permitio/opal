@@ -19,7 +19,6 @@ Open Policy Administration Layer
     <img src="https://img.shields.io/pypi/v/opal-client?color=%2331C654&label=OPAL%20Client%20%28PyPi%29" alt="Package">
 </a>
 
-# 
 OPAL is an administration layer for Open Policy Agent (OPA), detecting changes to both policy and data and pushing live updates to your agents.
 
 OPAL brings open-policy up to the speed needed by live applications.
