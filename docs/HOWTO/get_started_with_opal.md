@@ -157,7 +157,9 @@ for example `OPAL_SERVER_PORT=1337 opal-server run` is equivalent to `opal-serve
     ```    
 - Install a policy-agent next to the OPAL-client
     - follow [these instructions to install OPA](https://www.openpolicyagent.org/docs/latest/#1-download-opa)
-    - the client needs network access to this agent to be able to administer updates to it.
+    - If you want OPAL to execute OPA for you (and act as  a watchdog for it) make sure it can find the `opa` program, by [adding it to the $PATH](https://unix.stackexchange.com/questions/3809/how-can-i-make-a-program-executable-from-everywhere). 
+    - Note: the client needs network access to this agent to be able to administer updates to it.
+
 
 # Simple run 
 - Use the client's `run` command
@@ -191,5 +193,8 @@ This will change in future releases.
     opal-client run
     ```
 
+### Client install & run recording:
 
+<p><a href="https://asciinema.org/a/oy4nA9E7RbOyiUx6evACUuLNd?t=1" target="_blank"><img src="https://asciinema.org/a/oy4nA9E7RbOyiUx6evACUuLNd.svg"/></a>
+</p>
 
