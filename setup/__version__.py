@@ -7,7 +7,7 @@ changes to your authorization policies and pushes live updates to your policy ag
 Project homepage: https://github.com/authorizon/opal
 """
 
-VERSION = (0, 0, 10)
+VERSION = (0, 0, 19)
 VERSION_STRING = '.'.join(map(str,VERSION))
 
 __version__ = VERSION_STRING
