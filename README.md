@@ -14,6 +14,12 @@ Open Policy Administration Layer
 <a href="https://github.com/authorizon/opal/actions?query=workflow%3ATests" target="_blank">
     <img src="https://github.com/authorizon/opal/workflows/Tests/badge.svg" alt="Tests">
 </a>
+<a href="https://pypi.org/project/opal-server/" target="_blank">
+    <img src="https://img.shields.io/pypi/v/opal-server?color=%2331C654&label=OPAL%20Server%20%28PyPi%29" alt="Package">
+</a>
+<a href="https://pypi.org/project/opal-client/" target="_blank">
+    <img src="https://img.shields.io/pypi/v/opal-client?color=%2331C654&label=OPAL%20Client%20%28PyPi%29" alt="Package">
+</a>
 
 # 
 OPAL is an administration layer for Open Policy Agent (OPA), detecting changes to both policy and data and pushing live updates to your agents.
