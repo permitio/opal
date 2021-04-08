@@ -12,6 +12,19 @@ There are a few ways to trigger updates:</br>
 ## The publish-data-update CLI command
  - Can be run both from opal-client and opal-server.
 
+Example:
+  - With `$token` being a JWT we got from the server
+  - we publish a data-event regarding two topics `users` and `billing` pointing clients to `http://mybillingserver.com/users` to obtain the data they need. we also provide the clients with the credentials they'll need to connect tot he server (as HTTP authorization headers) 
+
+  - 
+    ```sh 
+    opal-client publish-data-update $token --src-url http://mybillingserver.com/users -t users -t billing --src-config '{"headers":{"authorization":"bearer secret-token"}}'
+    ```
+-   (Yes... We did... We put authorization in your authorization 😜 &nbsp;😅 ) 
+
+- See this recording showing the command including getting the JWT for the server with the `obtain-token` command.
+    <p><a href="https://asciinema.org/a/JYBzx1VrqJ17QnvmOnDYylOE6?t=1" target="_blank"><img src="https://asciinema.org/a/JYBzx1VrqJ17QnvmOnDYylOE6.svg"/></a></p>
+
 
 ## Write your own - OpenAPI
 - All the APIs in opal are OpenAPI / Swagger based (via FastAPI).

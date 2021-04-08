@@ -36,7 +36,7 @@ for example `OPAL_SERVER_PORT=1337 opal-server run` is equivalent to `opal-serve
     ```
     - Once installed your shell will have access to the `opal-server` command.
 
-        <p><a href="https://asciinema.org/a/XyDg1ot2Q6UOsWOkiSxGVSJmx?t=1" target="_blank"><img src="https://asciinema.org/a/XyDg1ot2Q6UOsWOkiSxGVSJmx.svg" width="40%"/></a>
+        <p><a href="https://asciinema.org/a/XyDg1ot2Q6UOsWOkiSxGVSJmx?t=1" target="_blank"><img src="https://asciinema.org/a/XyDg1ot2Q6UOsWOkiSxGVSJmx.svg"/></a>
         </p>
     - if the command isn't available try deactivating/activating the virtual-env
     - run `opal-server --help` to see all the options and commands
@@ -56,7 +56,7 @@ for example `OPAL_SERVER_PORT=1337 opal-server run` is equivalent to `opal-serve
             #Have the opal server monitor a repo every 60 seconds
             OPAL_POLICY_REPO_URL=https://github.com/authorizon/opal-example-policy-repo.git  opal-server --policy-repo-polling-interval 60 run 
             ```
-            <p><a href="https://asciinema.org/a/4gkfGDR45IeR0Zx3y2zB1Vg9T?t=1" target="_blank"><img src="https://asciinema.org/a/4gkfGDR45IeR0Zx3y2zB1Vg9T.svg" width="40%"/></a></p>
+            <p><a href="https://asciinema.org/a/4gkfGDR45IeR0Zx3y2zB1Vg9T?t=1" target="_blank"><img src="https://asciinema.org/a/4gkfGDR45IeR0Zx3y2zB1Vg9T.svg"/></a></p>
 
     - ### Policy GIT Webhook: 
         - Better GIT watching can be achieved via configuring a webhook back to the OPAL_SERVER's webhook route. Say your server is hosted on `opal.yourdomain.com` the webhook URL will be `opal.yourdomain.com/webhook` 
