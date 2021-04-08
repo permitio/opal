@@ -1,11 +1,10 @@
-from .commands import generate_secret, obtain_token
+from .commands import all_commands
 import typer
 
 
 def get_typer_app():
     app = typer.Typer()
-    commands = [generate_secret, obtain_token]
-    for cmd in commands:
+    for cmd in all_commands:
         app.command()(cmd)
     return app
 
