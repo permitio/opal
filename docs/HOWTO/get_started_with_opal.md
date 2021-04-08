@@ -73,9 +73,10 @@ for example `OPAL_SERVER_PORT=1337 opal-server run` is equivalent to `opal-serve
 
     ### Simple run with Data source configuration 
     In addition to policy updates (as seen in above section) the OPAL-server can also facilitate data updates, directing OPAL-clients to fetch the needed data from various sources.
-     - 
-        
-
+    see [how to trigger data updates guide](https://github.com/authorizon/opal/blob/master/docs/HOWTO/trigger_data_updates.md)
+    CLI example:
+    <p><a href="https://asciinema.org/a/JYBzx1VrqJ17QnvmOnDYylOE6?t=1" target="_blank"><img src="https://asciinema.org/a/JYBzx1VrqJ17QnvmOnDYylOE6.svg"/></a></p>
+           
     ### Production run
     For production we should set the server to work with a production server ([GUNICORN](https://gunicorn.org/)) and backbone pub/sub.
 
@@ -100,9 +101,43 @@ for example `OPAL_SERVER_PORT=1337 opal-server run` is equivalent to `opal-serve
         OPAL_BROADCAST_URI=postgres://localhost/mydb opal-server run --engine-type gunicorn
         ```
 
+    ### Server Secure Mode
+    OPAL-server can run in secure mode, signing and verifying [Json Web Tokens](https://en.wikipedia.org/wiki/JSON_Web_Token) for the connecting OPAL-clients.
+    To achieve this we need to provide the server with a private and public key pair. 
+    In addition we need to provide the server with a master-token (random secret) that the CLI (or other tools) could use to connect to ask it and generate the aforementioned signed-JWTs.
 
+    - Generating encryption keys
+      - Using a utility like [ssh-keygen](https://linux.die.net/man/1/ssh-keygen) we can easily generate the keys (on Windows try [SSH-keys Windows guide](https://phoenixnap.com/kb/generate-ssh-key-windows-10))
+        ```sh
+        ssh-keygen -t rsa -b 4096 -m pem
+        ```
+        follow the instructions to save the keys to two files.
+      - You can provide the keys to OPAL-server via the `OPAL_AUTH_PRIVATE_KEY` and `OPAL_AUTH_PUBLIC_KEY` options
+      - in these vars You can either provide the path to the keys, or the actual strings of the key's content (with newlines replaced with "_") 
 
+    - Master-secret 
+        - You can choose any secret you'd like, but to make life easier OPAL's CLI include the generate-secret command, which you can use to generate cryptographically strong secrets easily.
+            ```sh
+            opal-server generate-secret
+            ```
+        - provide the master-token via `OPAL_AUTH_MASTER_TOKEN`
 
+    - run the server with both keys and and master-secret
+
+        ```sh
+        # Run server 
+        # in secure mode -verifying client JWTs (Replace secrets with actual secrets ;-) )
+        # (Just to be clear `~` is the user's homedir)
+        export OPAL_AUTH_PRIVATE_KEY=~/opal 
+        export OPAL_AUTH_PUBLIC_KEY=~/opal.pub 
+        export OPAL_AUTH_MASTER_TOKEN="RANDOM-SECRET-STRING"
+        opal-server run
+        ``` 
+
+    - Once the server is running we can obtain a JWT from it with the CLI 
+    ```sh
+    opal-client obtain-token $MASTER_TOKEN --server-url=$YOUR_SERVERS_ADDRESS 
+    ```
 
 
 
@@ -111,6 +146,7 @@ for example `OPAL_SERVER_PORT=1337 opal-server run` is equivalent to `opal-serve
 
 ## Setup OPAL-Client (work in progress)
 
+### Install
 - Install OPAL-client
     ```sh
     pip install opal-client
@@ -118,6 +154,28 @@ for example `OPAL_SERVER_PORT=1337 opal-server run` is equivalent to `opal-serve
 - Install a policy-agent next to the OPAL-client
     - follow [these instructions to install OPA](https://www.openpolicyagent.org/docs/latest/#1-download-opa)
     - the client needs network access to this agent to be able to administer updates to it.
+
+# Simple run 
+- Use the client's `run` command
+- try:
+    ```sh
+    # general help commands and options
+    opal-client --help
+    # help for the run command
+    opal-client run --help
+    ```
+- Just like the server all top-level options can be configured using environment-variables, [.env / .ini](https://pypi.org/project/python-decouple/#env-file) files , and command-line options (later overrides previous). 
+- Key options: 
+    - options starting with `--client-api-` options to control how the client's API service is running
+- ``
+
+### Client Secure Mode
+- [Run the server in secure mode](#server-secure-mode)
+- Using the master-token you assigned to the server obtain a client JWT
+    ```sh
+    opal-client obtain-token $MASTER_TOKEN --server-url=$YOUR_SERVERS_ADDRESS 
+    ```
+- run the client 
 
 
 
