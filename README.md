@@ -27,6 +27,7 @@ As you push updates to your application's stores (e.g. Git, DBs, S3, SaaS servic
 ## Table of contents
  - [Getting started](#getting-started)
  - [Intro to OPAL](#intro)
+    - [Why use OPAL](#why-use-opal)
  - [Architecture](#architecture)
  - [Key-Concepts](#key-concepts)
  - [HOW-TOs](#how-tos)
@@ -77,7 +78,7 @@ As you push updates to your application's stores (e.g. Git, DBs, S3, SaaS servic
 
 - OPAL embraces decoupling of policy and code, and doubles down on decoupling policy (Git driven) and data (distributed data-source fetching engines).
 
-### Why use OPAL
+### <a name="why-use-opal"></a> Why use OPAL
 - OPAL is the easiest why to keep your solution's authorization layer up-to-date in realtime.
     - OPAL aggregates policy and data from across the field and integrates them seamlessly into the authorization layer. 
     - OPAL is microservices and cloud-native (see key concepts below) 
@@ -92,7 +93,7 @@ OPAL runs in the background - supercharging policy-agents, keeping them in sync 
     - Check out <a href="https://www.openpolicyagent.org/" target="_blank">Open-Policy-Agent</a>, and <a href="https://www.osohq.com/" target="_blank">OSO</a>
     
 - Large scale Global FGA: 
-    - Currently OPAL is not meant for managing ridiculous (>100GB) amounts of data  within one layer. Though it can complement a CDN to achieve a similar result - see below.
+    - Currently OPAL is not meant for managing ridiculous (>100GB) amounts of data  within one layer. Though it can complement a CDN to achieve a similar result - [see below](#large-scale-fga).
     - Check out <a href="https://research.google/pubs/pub48190/" target="_blank">Google-Zanzibar</a>
         
 - Fullstack authorization: 
@@ -190,7 +191,7 @@ OPAL is built on the shoulders of open-source giants, including:
 - ### Decouple data/policy management from policy agents
     - OPAL was built initially with OPA in mind, and OPA is mostly a first-class citizen in OPAL. That said OPAL can support various and multiple policy agents, even in parallel - allowing developers to choose the best policy and agent for their needs.
 
-- ### FGA, large scale / global authorization (e.g. Google Zanzibar)
+- ### <a name="large-scale-fga"></a> FGA, large scale / global authorization (e.g. Google Zanzibar)
     - OPAL is built for fine grained authorizon (FGA), allowing developers to aggregate all and any data they need and restructure it for the authorization layer     
     - OPAL achieves this by making sure each policy-agent is loaded with only the data it needs (via topic subscriptions) - i.e. data focus and separation.
         - examples of data-separation: the back-office service doesn't need to know about customer users, a tenant specific service doesn't need the user list of other tenants, ...
