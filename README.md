@@ -83,8 +83,8 @@ As you push updates to your application's stores (e.g. Git, DBs, S3, SaaS servic
     - OPAL aggregates policy and data from across the field and integrates them seamlessly into the authorization layer. 
     - OPAL is microservices and cloud-native (see [key concepts](#key-concepts) below) 
 
-### Why OPA + OPAL == 💪💜
-OPA (OpenPolicyAgent) is great! it decouples policy from code in a highly performant and elegant way. But keeping policy agents up to the date is hard- especially in applications - where each user interaction or API call can affect access-control.
+### Why OPA + OPAL == 💪 💜
+OPA (OpenPolicyAgent) is great! It decouples policy from code in a highly performant and elegant way. But keeping policy agents up-to-date is hard- especially in applications - where each user interaction or API call can affect access-control.
 OPAL runs in the background - supercharging policy-agents, keeping them in sync with events in realtime. 
 
 ### What OPAL *is not*
