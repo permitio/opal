@@ -72,7 +72,7 @@ As you push updates to your application's stores (e.g. Git, DBs, S3, SaaS servic
 
 #
 ## <a name="intro"></a>📖 Introduction to OPAL - data and policy realtime delivery  
-- Modern applications are complex, distributed, multi-tenant and serve at scale - creating (often) overwhelming authorization challenges. OPA (Open-Policy-Agent) brings the power of decoupled policy to the infrastructure layer (especially K8s), and light applications. OPAL supercharges OPA to meet the pace of live applications, where the picture may change with every user click and api call.
+- Modern applications are complex, distributed, multi-tenant and serve at scale - often creating overwhelming authorization challenges. OPA (Open-Policy-Agent) brings the power of decoupled policy to the infrastructure layer (especially K8s), and light applications. OPAL supercharges OPA to meet the pace of live applications, where the picture may change with every user click and api call.
 
 - OPAL builds on top of OPA adding realtime updates (via Websocket Pub/Sub) for both policy and data.
 
@@ -81,7 +81,7 @@ As you push updates to your application's stores (e.g. Git, DBs, S3, SaaS servic
 ### <a name="why-use-opal"></a> Why use OPAL
 - OPAL is the easiest why to keep your solution's authorization layer up-to-date in realtime.
     - OPAL aggregates policy and data from across the field and integrates them seamlessly into the authorization layer. 
-    - OPAL is microservices and cloud-native (see key concepts below) 
+    - OPAL is microservices and cloud-native (see [key concepts](#key-concepts) below) 
 
 ### Why OPA + OPAL == 💪💜
 OPA (OpenPolicyAgent) is great! it decouples policy from code in a highly performant and elegant way. But keeping policy agents up to the date is hard- especially in applications - where each user interaction or API call can affect access-control.
@@ -110,18 +110,18 @@ OPAL runs in the background - supercharging policy-agents, keeping them in sync 
 See a [more detailed diagram](https://i.ibb.co/kGc9nDd/main.png)
 - ### OPAL consists of two key components that work together:
     1. OPAL Server 
-        - Creates a Pub/Sub channel client's subscribe to
-        - Tracks a Git repository (via webhook) for updates to policy (or static data)
+        - Creates a Pub/Sub channel clients subscribe to
+        - Tracks a Git repository (via webhook / polling) for updates to policy (or static data)
             - Additional versioned repositories can be supported (e.g. S3, SVN)
         - Accepts data update notifications via Rest API
         - pushes updates to clients (as diffs)
         - scales with other server instances via a configurable backbone pub/sub (Postgre, Redis, Kafka , (more options to be added) )
             
     2. OPAL Client - 
-        - Deployed alongside a policy-agent keeping it up to date
-        - Subscribes to Pub/Sub updates by topics for data and policy 
-        - Downloads data source configurations from server
-            - Fetches data from multiple sources (DBs, APIs, 3rd party services) 
+        - Deployed alongside a policy-agent, and keeping it up to date
+        - Subscribes to Pub/Sub updates, based on topics for data and policy 
+        - Downloads data-source configurations from server
+            - Fetches data from multiple sources (e.g. DBs, APIs, 3rd party services) 
         - Downloads policy from server
         - Keeps policy agents up to date
 
@@ -141,7 +141,7 @@ See a [more detailed diagram](https://i.ibb.co/kGc9nDd/main.png)
     - Each OPAL-client (and through it each policy agent) subscribes to and receives updates instantly 
 - ### OPAL is stateless
     - OPAL is designed for scale, mainly via scaling out both client and server instances, as such neither are stateful. 
-    - State is retained in the end components (the policy agent) and source components (e.g. GIT, databases, API servers)
+    - State is retained in the end components the policy-agent (as a edge cache) and data-sources (e.g. GIT, databases, API servers)
 
 - ### OPAL is extendable
     - OPAL's Pythonic nature makes extending and embedding it extremely easy.
@@ -169,7 +169,7 @@ OPAL is built on the shoulders of open-source giants, including:
 
 - ### Networking
     - OPAL creates a highly efficient communications channel Using [websocket Pub/Sub connections](https://github.com/authorizon/fastapi_websocket_pubsub) to subscribe to both data and policy updates. This allows OPAL clients (and the services they support) to be deployed anywhere - in your VPC, at the edge, on-premises, etc.
-    - By using  outgoing websocket connections to establish the Pub/Sub channel most routing/firewall concerns are circumnavigated
+    - By using outgoing websocket connections to establish the Pub/Sub channel most routing/firewall concerns are circumnavigated
     - Using Websocket connections allows network connections to be dormant most of the time (saving CPU cycles for both clients and servers) - especially when comparing to polling based methods.
 
 - ### Implementation with Python
