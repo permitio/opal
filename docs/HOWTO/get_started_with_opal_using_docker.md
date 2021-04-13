@@ -66,6 +66,13 @@ The tutorial has two **independent** sections, and you can jump directly to the 
 ## <a name="docker-compose-example"></a> Run OPAL locally with an example configuration
 In this section we show how to run OPAL with an example `docker-compose.yml` file. With a few quick commands you can have OPAL up-and-running on your machine and explore the core features. The example configuration is not suitable for production environments (due to the lack of security configuration), but it will help you to understand **why you need OPAL**.
 
+This entire tutorial is also recorded here:
+<p>
+  <a href="https://asciinema.org/a/5IMzZRPltUiFdsNnZ81t14ERk?t=1" target="_blank">
+    <img src="https://asciinema.org/a/5IMzZRPltUiFdsNnZ81t14ERk.svg"/>
+  </a>
+</p>
+
 ### Step 1: run docker compose to start the opal server and client
 
 This one command will download and run a working configuration of OPAL server and OPAL client on your machine:
