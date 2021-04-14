@@ -13,9 +13,7 @@ psutil==5.8.0
 pydantic[email]
 pyjwt[crypto]
 python-decouple
-python-json-logger
 starlette==0.13.6
-structlog
 tenacity==6.3.1
 typing-extensions
 uvicorn[standard]
