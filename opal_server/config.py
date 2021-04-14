@@ -1,4 +1,4 @@
-from pathlib import Path
+import os
 
 from opal_common.confi import Confi
 from opal_common.schemas.data import ServerDataSourceConfig
@@ -46,13 +46,13 @@ class OpalServerConfig(Confi):
     AUTH_JWT_ISSUER = confi.str("AUTH_JWT_ISSUER", f"https://authorizon.com/")
 
     AUTH_JWKS_URL = confi.str("AUTH_JWKS_URL", "/.well-known/jwks.json")
-    AUTH_JWKS_STATIC_DIR = confi.str("AUTH_JWKS_STATIC_DIR", str(Path.home() / "jwks_dir"))
+    AUTH_JWKS_STATIC_DIR = confi.str("AUTH_JWKS_STATIC_DIR", os.path.join(os.getcwd(), "jwks_dir"))
 
     AUTH_MASTER_TOKEN = confi.str("AUTH_MASTER_TOKEN", None)
 
     # repo watcher
     POLICY_REPO_URL = confi.str("POLICY_REPO_URL", None)
-    POLICY_REPO_CLONE_PATH = confi.str("POLICY_REPO_CLONE_PATH", str(Path.home() / "regoclone"))
+    POLICY_REPO_CLONE_PATH = confi.str("POLICY_REPO_CLONE_PATH", os.path.join(os.getcwd(), "regoclone"))
     POLICY_REPO_MAIN_BRANCH = confi.str("POLICY_REPO_MAIN_BRANCH", "master")
     POLICY_REPO_MAIN_REMOTE = confi.str("POLICY_REPO_MAIN_REMOTE", "origin")
     POLICY_REPO_SSH_KEY = confi.str("POLICY_REPO_SSH_KEY", None)
