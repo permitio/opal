@@ -79,7 +79,7 @@ As your application state changes (whether it's via your APIs, DBs, git, S3 or 3
 - OPAL embraces decoupling of policy and code, and doubles down on decoupling policy (git driven) and data (distributed data-source fetching engines).
 
 ### <a name="why-use-opal"></a> Why use OPAL
-- OPAL is the easiest why to keep your solution's authorization layer up-to-date in realtime.
+- OPAL is the easiest way to keep your solution's authorization layer up-to-date in realtime.
     - OPAL aggregates policy and data from across the field and integrates them seamlessly into the authorization layer. 
     - OPAL is microservices and cloud-native (see [key concepts](#key-concepts) below) 
 
