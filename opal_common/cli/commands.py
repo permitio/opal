@@ -1,7 +1,7 @@
 import asyncio
 import json
 import secrets
-from typing import List, Tuple
+from typing import List, Tuple, Optional
 from uuid import uuid4
 import typer
 from enum import Enum
@@ -65,7 +65,7 @@ def obtain_token(
 
 
 def publish_data_update(
-        token: str = typer.Argument(...,help="the JWT obtained from the server for authentication (see obtain-token command)",
+        token: Optional[str] = typer.Argument(None,help="the JWT obtained from the server for authentication (see obtain-token command)",
                                     envvar="OPAL_CLIENT_TOKEN"),
         server_url: str = typer.Option("http://localhost:7002",
                                         help="url of the OPAL-server to send the update through"),
@@ -97,7 +97,7 @@ def publish_data_update(
         Set DataSourceEntires as JSON (via --entries)
         if you include a single entry as well- it will be merged into the given JSON
     """
-    from aiohttp import ClientSession
+    from aiohttp import ClientSession, ClientResponse
 
     if not isinstance(entries, list):
         typer.secho("Bad input for --entires was ignored", fg="red")
@@ -114,20 +114,27 @@ def publish_data_update(
     update = DataUpdate(entries=entries, reason=reason)
 
     async def publish_update():
-        async with ClientSession(headers={"Authorization": f"bearer {token}"}) as session:
+        headers = {}
+        if token is not None:
+            headers={"Authorization": f"bearer {token}"}
+        async with ClientSession(headers=headers) as session:
             body = update.json()
             res = await session.post(server_url, data=body)
             return res
 
-    typer.echo("Publishing event:")
-    typer.secho(f"{str(update)}", fg="cyan" )
+    async def get_response_text(res: ClientResponse):
+        return await res.text()
+
+    typer.echo(f"Publishing event:")
+    typer.secho(f"{str(update)}", fg="cyan")
     res = asyncio.run(publish_update())
 
-    if res.status == 200 :
+    if res.status == 200:
         typer.secho("Event Published Successfully", fg="green")
     else:
         typer.secho("Event publishing failed with status-code - {res.status}", fg="red")
-        typer.echo(res.text())
+        text = asyncio.run(get_response_text(res))
+        typer.echo(text)
 
 
 
