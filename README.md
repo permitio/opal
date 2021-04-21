@@ -40,7 +40,15 @@ Check out OPAL's main site at <a href="https://opal.ac">OPAL.ac</a>
 
 ## <a name="getting-started"></a>🛠️ Getting started
 
-### OPAL Packages and CLI
+OPAL is available both as **python packages** with a built-in CLI as well as pre-built **docker images** ready-to-go.
+
+### Getting started with the pre-built docker containers
+* [Play with a live playground environment in docker-compose](docs/HOWTO/get_started_with_opal_docker_compose_tutorial.md)
+   <!-- - this tutorial is great for learning about OPAL core features and see what OPAL can do for you. -->
+* [Try the getting started guide for containers](docs/HOWTO/get_started_with_opal_using_docker.md)
+   <!-- - this tutorial will show you how to configure OPAL to your specific needs and run the official docker containers locally or in production. -->
+
+### Getting started with the python packages and CLI
 - Install
     - ```pip install opal-client``` 
     - ```pip install opal-server``` 
@@ -68,9 +76,6 @@ Check out OPAL's main site at <a href="https://opal.ac">OPAL.ac</a>
     opal-client run
     ```
 - ### Try it yourself - [Read the getting started guide](docs/HOWTO/get_started_with_opal.md)
-
-### OPAL pre-built container images
-- Pull it from docker-hub - [Try the getting started guide for containers](docs/HOWTO/get_started_with_opal_using_docker.md)
 
 #
 ## <a name="intro"></a>📖 Introduction to OPAL - data and policy realtime delivery

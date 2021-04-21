@@ -1,75 +1,22 @@
-# Get started with OPAL's official docker images
+# Get started with OPAL playground (docker compose)
 
-This tutorial will teach you how to run OPAL using the official docker images.
+This tutorial will show you what you can do with OPAL, and teach you about OPAL core features.
 
-### How this tutorial is structured
-<!-- three -->
-The tutorial has two **independent** sections, and you can jump directly to the section that interests you.
+We build an example configuration that you can run in **docker compose**. The example was built specifically for you to **explore** OPAL quickly, understand the core features and see what OPAL can do for you.
 
-* The [first section](#download-images) simply shows where you can get the official docker images.
-* The [second section](#docker-compose-example) shows an example configration that you can run in **docker compose**. The example was built specifically for you to **explore** OPAL quickly, understand the core features and see what OPAL can do for you.
-<!-- * The [third section](#deploy-in-prod) is a step-by-step guide to deploy OPAL in production. -->
+You can get a running OPAL environment by running one `docker-compose` command.
 
 ## Table of Contents
-1. [Download OPAL images from Docker Hub](#download-images)
-2. [Run OPAL locally with an example configuration](#docker-compose-example)
-<!-- 3. [Deploy OPAL in production](#deploy-in-prod) -->
+1. [Run the playground and interact with OPAL](#docker-compose-example)
+2. [Understand the docker compose example configuration](#compose-recap)
 
-## <a name="download-images"></a> Download images from Docker Hub
-
-<table>
-  <tbody>
-    <tr>
-      <th align="left">Image Name</th>
-      <th align="left" width="45%">How to Download</th>
-      <th align="left" width="45%">Description</th>
-    </tr>
-    <tr>
-      <td valign="top"><a href="https://hub.docker.com/r/authorizon/opal-server">OPAL Server</a></td>
-      <td valign="top"><code>docker pull authorizon/opal-server</code></td>
-      <td valign="top">
-      <ul>
-        <li>Creates a Pub/Sub channel clients subscribe to</li>
-        <li>Tracks a git repository (via webhook / polling) for updates to policy and static data</li>
-        <li>Accepts data update notifications via Rest API</li>
-        <li>Serves default data source configuration for clients</li>
-        <li>Pushes policy and data updates to clients</li>
-      </ul>
-      </td>
-    </tr>
-    <tr>
-      <td valign="top"><a href="https://hub.docker.com/r/authorizon/opal-client">OPAL Client</a></td>
-      <td valign="top"><code>docker pull authorizon/opal-client</code></td>
-      <td valign="top">
-      <ul>
-        <li>Prebuilt with an OPA agent inside the image</li>
-        <li>Keeps the OPA agent cache up to date with realtime updates pushed from the server</li>
-        <li>Can selectively subscribe to specific topics of policy code (rego) and policy data</li>
-        <li>Fetches data from multiple sources (e.g. DBs, APIs, 3rd party services)</li>
-      </ul>
-      </td>
-    </tr>
-    <tr>
-      <td valign="top"><a href="https://hub.docker.com/r/authorizon/opal-client">OPAL Client (Standalone)</a></td>
-      <td valign="top"><code>docker pull authorizon/opal-client-standalone</code></td>
-      <td valign="top">
-      <ul>
-        <li><strong>Same as OPAL Client, you want only one of them</strong></li>
-        <li>This image does not come with OPA installed</li>
-        <li>Intended to be used when you prefer to deploy OPA separately in its own container</li>
-      </ul>
-      </td>
-    </tr>
-  </tbody>
-</table>
-
-## <a name="docker-compose-example"></a> Run OPAL locally with an example configuration
+## <a name="docker-compose-example"></a> Run the playground and interact with OPAL
 In this section we show how to run OPAL with an example `docker-compose.yml` file. With a few quick commands you can have OPAL up-and-running on your machine and explore the core features. The example configuration is not suitable for production environments (due to the lack of security configuration), but it will help you to understand **why you need OPAL**.
 
 This entire tutorial is also recorded here:
 <p>
-  <a href="https://asciinema.org/a/5IMzZRPltUiFdsNnZ81t14ERk?t=1" target="_blank">
-    <img src="https://asciinema.org/a/5IMzZRPltUiFdsNnZ81t14ERk.svg"/>
+  <a href="https://asciinema.org/a/409288" target="_blank">
+    <img src="https://asciinema.org/a/409288.svg" />
   </a>
 </p>
 
@@ -234,7 +181,7 @@ OPAL data updates are built to support your specific use case.
 * OPAL specifies **from where** to fetch the data that changed. In this example we used a free and open API (`api.country.is`) that anyone can access. But it can be your specific API, or a 3rd-party.
 * OPAL specifies **to where** (destination path) in OPA document hierarchy the data should be saved. In this case we override the `/users/bob/location` document with the fetched data.
 
-### <a name="compose-recap"></a> Recap: Let's review what happened when we launched docker compose
+## <a name="compose-recap"></a> Let's review together the docker compose example configuration
 
 Our example `docker-compose.yml` ([Click here to view its contents](https://github.com/authorizon/opal/blob/master/docker/docker-compose-example.yml)) is running 3 containers.
 
@@ -276,7 +223,3 @@ Let's review what they are and their main functions:
     * Can aggregate data from multiple sources: your APIs, DBs, 3rd party SaaS, etc.
 
 If you skipped here from step 1, you can now [come back to the hands-on tutorial](#eval-query-opa).
-
-<!-- ## <a name="deploy-in-prod"></a> Deploy OPAL in production
-
-TBD -->
