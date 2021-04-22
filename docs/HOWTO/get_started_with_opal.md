@@ -1,4 +1,4 @@
-# How to Get Started with OPAL  
+# Get started with OPAL python packages
 
 This guide will teach you how to setup and use OPAL as Python packages (python 3.7 >) with its CLI 
 
