@@ -5,6 +5,7 @@
 OPAL_SERVER_URL ?= http://host.docker.internal:7002
 OPAL_AUTH_PRIVATE_KEY ?= /root/ssh/opal_rsa
 OPAL_AUTH_PUBLIC_KEY ?= /root/ssh/opal_rsa.pub
+OPAL_POLICY_STORE_URL ?= http://host.docker.internal:8181/v1
 
 # python packages (pypi)
 clean:
@@ -40,8 +41,18 @@ install-server-from-src:
 docker-build-client:
 	@docker build -t authorizon/opal-client -f docker/client.Dockerfile .
 
+docker-build-client-standalone:
+	@docker build -t authorizon/opal-client-standalone -f docker/client-standalone.Dockerfile .
+
 docker-run-client:
 	@docker run -it -e "OPAL_SERVER_URL=$(OPAL_SERVER_URL)" -p 7000:7000 -p 8181:8181 authorizon/opal-client
+
+docker-run-client-standalone:
+	@docker run -it \
+		-e "OPAL_SERVER_URL=$(OPAL_SERVER_URL)" \
+		-e "OPAL_POLICY_STORE_URL=$(OPAL_POLICY_STORE_URL)" \
+		-p 7000:7000 \
+		authorizon/opal-client-standalone
 
 docker-build-server:
 	@docker build -t authorizon/opal-server -f docker/server.Dockerfile .
