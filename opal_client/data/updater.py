@@ -2,7 +2,7 @@ import asyncio
 from aiohttp.client import ClientSession
 
 from opal_client.policy_store.base_policy_store_client import BasePolicyStoreClient
-from opal_common.fetcher.events import FetcherConfig
+from opal_common.fetcher.events import FetchResultReport, FetcherConfig
 from typing import Dict, List
 from opal_common.schemas.data import DataSourceConfig, DataUpdate, DataSourceEntry
 from fastapi_websocket_rpc.rpc_channel import RpcChannel
@@ -15,44 +15,6 @@ from opal_client.policy_store.policy_store_client_factory import DEFAULT_POLICY_
 from opal_client.data.fetcher import DataFetcher
 from opal_client.data.rpc import TenantAwareRpcEventClientMethods
 
-
-async def update_policy_data(update: DataUpdate = None, policy_store: BasePolicyStoreClient = None, data_fetcher=None):
-    """
-    fetches policy data (policy configuration) from backend and updates it into policy-store (i.e. OPA)
-    """
-    policy_store = policy_store or DEFAULT_POLICY_STORE_GETTER()
-    if data_fetcher is None:
-        data_fetcher = DataFetcher()
-    # types
-    urls: Dict[str, FetcherConfig] = None
-    url_to_entry: Dict[str, DataSourceEntry] = None
-    # if we have an actual specification for the update
-    if update is not None:
-        entries: List[DataSourceEntry] = update.entries
-        urls = {entry.url: entry.config for entry in entries}
-        url_to_entry = {entry.url: entry for entry in entries}
-    # get the data for the update
-    logger.info("Fetching policy data", urls=urls)
-    # Urls may be None - fetch_policy_data has a default for None
-    policy_data_by_urls = await data_fetcher.fetch_policy_data(urls)
-    # save the data from the update
-    for url in policy_data_by_urls:
-        # get path to store the URL data (default mode (None) is as "" - i.e. as all the data at root)
-        entry = url_to_entry.get(url, None)
-        policy_store_path = "" if entry is None else entry.dst_path
-        # None is not valid - use "" (protect from missconfig)
-        if policy_store_path is None:
-            policy_store_path = ""
-        # fix opa_path (if not empty must start with "/" to be nested under data)
-        if policy_store_path != "" and not policy_store_path.startswith("/"):
-            policy_store_path = f"/{policy_store_path}"
-        policy_data = policy_data_by_urls[url]
-        logger.info(
-            "Saving fetched data to policy-store: source url='{url}', destination path='{path}'",
-            url=url,
-            path=policy_store_path or '/'
-        )
-        await policy_store.set_policy_data(policy_data, path=policy_store_path)
 
 
 class DataUpdater:
@@ -127,7 +89,7 @@ class DataUpdater:
 
     def trigger_data_update(self, update:DataUpdate):
         logger.info("Triggering data fetch and update", update=update)
-        asyncio.create_task(update_policy_data(update, policy_store=self._policy_store, data_fetcher=self._data_fetcher))
+        asyncio.create_task(self.update_policy_data(update, policy_store=self._policy_store, data_fetcher=self._data_fetcher))
 
     async def get_policy_data_config(self, url:str=None)->DataSourceConfig:
         """
@@ -232,6 +194,48 @@ class DataUpdater:
     async def wait_until_done(self):
         if self._subscriber_task is not None:
             await self._subscriber_task
+
+    @classmethod
+    async def update_policy_data(cls, update: DataUpdate = None, policy_store: BasePolicyStoreClient = None, data_fetcher=None):
+        """
+        fetches policy data (policy configuration) from backend and updates it into policy-store (i.e. OPA)
+        """
+        policy_store = policy_store or DEFAULT_POLICY_STORE_GETTER()
+        if data_fetcher is None:
+            data_fetcher = DataFetcher()
+        # types
+        urls: Dict[str, FetcherConfig] = None
+        url_to_entry: Dict[str, DataSourceEntry] = None
+        # track the result of each url in order to report back
+        update_tracking: Dict[str,FetchResultReport] = {}    
+        # if we have an actual specification for the update
+        if update is not None:
+            entries: List[DataSourceEntry] = update.entries
+            urls = {entry.url: entry.config for entry in entries}
+            url_to_entry = {entry.url: entry for entry in entries}
+        # get the data for the update
+        logger.info("Fetching policy data", urls=urls)
+        # Urls may be None - fetch_policy_data has a default for None
+        policy_data_by_urls = await data_fetcher.fetch_policy_data(urls)
+        # save the data from the update
+        for url in policy_data_by_urls:
+            # get path to store the URL data (default mode (None) is as "" - i.e. as all the data at root)
+            entry = url_to_entry.get(url, None)
+            policy_store_path = "" if entry is None else entry.dst_path
+            # None is not valid - use "" (protect from missconfig)
+            if policy_store_path is None:
+                policy_store_path = ""
+            # fix opa_path (if not empty must start with "/" to be nested under data)
+            if policy_store_path != "" and not policy_store_path.startswith("/"):
+                policy_store_path = f"/{policy_store_path}"
+            policy_data = policy_data_by_urls[url]
+
+            logger.info(
+                "Saving fetched data to policy-store: source url='{url}', destination path='{path}'",
+                url=url,
+                path=policy_store_path or '/'
+            )
+            await policy_store.set_policy_data(policy_data, path=policy_store_path)
 
 
 
