@@ -1,11 +1,13 @@
-from sys import prefix
-import opal_client
+from opal_common.fetcher.providers.http_fetch_provider import HttpFetcherConfig
 import os
 from enum import Enum
+from sys import prefix
 
+import opal_client
+from opal_client.opa.options import OpaServerOptions
 from opal_common.confi import Confi, confi
 from opal_common.config import opal_common_config
-from opal_client.opa.options import OpaServerOptions
+from opal_common.schemas.data import UpdateCallback
 
 
 # Opal Client general configuration -------------------------------------------
@@ -89,6 +91,13 @@ class OpalClientConfig(Confi):
 
     DEFAULT_DATA_URL = confi.str("DEFAULT_DATA_URL", "http://localhost:8000/policy-config",
                                  description="Default URL to fetch data from")
+
+
+    DEFAULT_UPDATE_CALLBACK_CONFIG = confi.model("DEFAULT_UPDATE_CALLBACK_CONFIG", HttpFetcherConfig, {"method":"POST"})
+
+    DEFAULT_UPDATE_CALLBACKS = confi.model("DEFAULT_UPDATE_CALLBACKS", UpdateCallback, confi.delay(lambda SERVER_URL: {
+        "callbacks": [f"{SERVER_URL}/data/callback_report"]
+    }))
 
     def on_load(self):
         # LOGGER
