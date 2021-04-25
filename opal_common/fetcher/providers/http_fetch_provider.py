@@ -21,8 +21,6 @@ class HttpMethods(Enum):
     HEAD="head"
     DELETE="delete"
     
-
-
 class HttpFetcherConfig(FetcherConfig):
     """
     Config for HttpFetchProvider's Adding HTTP headers 

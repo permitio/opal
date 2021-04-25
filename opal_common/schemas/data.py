@@ -94,9 +94,9 @@ class DataEntryReport(BaseModel):
 
     
 
-class DataUpdateReport:
+class DataUpdateReport(BaseModel):
     # the UUID fo the update this report is for
-    update_id: str
+    update_id: Optional[str] = None
     # Each DataSourceEntry and how it was processed
     reports: List[DataEntryReport]
 

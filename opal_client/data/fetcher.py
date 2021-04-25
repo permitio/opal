@@ -78,7 +78,6 @@ class DataFetcher:
             List[Tuple[str,FetcherConfig, Any]]: urls mapped to their resulting fetched data
         """
         
-        
         # tasks
         tasks = []
         # if no url provided - default to the builtin route
