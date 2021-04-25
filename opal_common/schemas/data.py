@@ -1,5 +1,6 @@
 from logging import basicConfig
-from typing import Dict, List, Optional
+from opal_common.fetcher.providers.http_fetch_provider import HttpFetcherConfig
+from typing import Dict, List, Optional, Tuple, Union
 from pydantic import BaseModel, Field, root_validator, AnyHttpUrl
 
 from opal_common.fetcher.events import FetcherConfig
@@ -61,8 +62,10 @@ class UpdateCallback(BaseModel):
     """
     Configuration of callbacks upon completion of a FetchEvent 
     Allows notifying other services on the update flow
+
+    Each callback is either a URL (str) or a tuple of a url and HttpFetcherConfig defining how to approach the URL
     """
-    callback_urls: Optional[List[str]] = None
+    callbacks: List[Union[str, Tuple[str, HttpFetcherConfig] ]]
 
 class DataUpdate(BaseModel):
     """
@@ -81,6 +84,7 @@ class DataEntryReport(BaseModel):
     """
     A report of the processing of a single DataSourceEntry
     """
+    entry: DataSourceEntry = Field(..., description="The entry that was processed")
     # Was the entry successfully fetched
     fetched: Optional[bool] = False
     # Was the entry successfully saved into the policy-data-store
@@ -93,8 +97,8 @@ class DataEntryReport(BaseModel):
 class DataUpdateReport:
     # the UUID fo the update this report is for
     update_id: str
-    # Map of each DataSourceEntry and how it was processed
-    urls: Dict[str, DataEntryReport]
+    # Each DataSourceEntry and how it was processed
+    reports: List[DataEntryReport]
 
 
 

@@ -1,22 +1,27 @@
 import asyncio
 import hashlib
+import itertools
 from os import stat
+from typing import Dict, List, Tuple
+
 from aiohttp.client import ClientSession
-
-from opal_client.policy_store.base_policy_store_client import BasePolicyStoreClient
-from opal_common.fetcher.events import FetcherConfig
-from typing import Dict, List
-from opal_common.schemas.data import DataSourceConfig, DataUpdate, DataSourceEntry, DataEntryReport, DataUpdateReport
-from fastapi_websocket_rpc.rpc_channel import RpcChannel
 from fastapi_websocket_pubsub import PubSubClient
+from fastapi_websocket_rpc.rpc_channel import RpcChannel
 
-from opal_client.logger import logger
 from opal_client.config import opal_client_config
-from opal_common.utils import get_authorization_header
-from opal_client.policy_store.policy_store_client_factory import DEFAULT_POLICY_STORE_GETTER
 from opal_client.data.fetcher import DataFetcher
 from opal_client.data.rpc import TenantAwareRpcEventClientMethods
-
+from opal_client.logger import logger
+from opal_client.policy_store.base_policy_store_client import \
+    BasePolicyStoreClient
+from opal_client.policy_store.policy_store_client_factory import \
+    DEFAULT_POLICY_STORE_GETTER
+from opal_common.fetcher.events import FetcherConfig
+from opal_common.fetcher.providers.http_fetch_provider import HttpFetcherConfig
+from opal_common.schemas.data import (DataEntryReport, DataSourceConfig,
+                                      DataSourceEntry, DataUpdate,
+                                      DataUpdateReport)
+from opal_common.utils import get_authorization_header
 
 
 class DataUpdater:
@@ -203,9 +208,26 @@ class DataUpdater:
 
 
     @staticmethod
-    async def report_update_results(update: DataUpdate, url_reports:Dict[str,DataEntryReport]):
-        report = DataUpdateReport(id=update.id, urls=url_reports)
+    async def report_update_results(update: DataUpdate, reports:List[DataEntryReport], data_fetcher:DataFetcher):
+        try:
+            whole_report = DataUpdateReport(id=update.id, urls=reports)
+            
+            callbacks = update.callback.callbacks or opal_client_config.DEFAULT_UPDATE_CALLBACKS
+            urls = []
+            for callback in callbacks:
+                if isinstance(callback, str):
+                    url = callback
+                    callback_config = opal_client_config.DEFAULT_UPDATE_CALLBACK_CONFIG.copy()
+                else:  
+                    url, callback_config = callback           
+                callback_config.data = whole_report.json()
+                urls.append((url, callback_config))
 
+            logger.info("Reporting the update to requested callbacks", urls=urls)
+            await data_fetcher.handle_urls(urls)
+            # TODO: log failed reports
+        except:
+            logger.exception("Failed to excute report_update_results")
 
     @classmethod
     async def update_policy_data(cls, update: DataUpdate = None, policy_store: BasePolicyStoreClient = None, data_fetcher=None):
@@ -215,44 +237,49 @@ class DataUpdater:
         policy_store = policy_store or DEFAULT_POLICY_STORE_GETTER()
         if data_fetcher is None:
             data_fetcher = DataFetcher()
-        # types
-        urls: Dict[str, FetcherConfig] = None
-        url_to_entry: Dict[str, DataSourceEntry] = None
+        # types / defaults
+        urls: List[Tuple[str, FetcherConfig]] = None
+        entries: List[DataSourceEntry] = []
         # track the result of each url in order to report back
-        url_reports: Dict[str,DataEntryReport] = {}    
+        reports: List[DataEntryReport] = []
         # if we have an actual specification for the update
         if update is not None:
-            entries: List[DataSourceEntry] = update.entries
-            urls = {entry.url: entry.config for entry in entries}
-            url_to_entry = {entry.url: entry for entry in entries}
+            entries = update.entries
+            urls = [(entry.url, entry.config) for entry in entries]
+        
         # get the data for the update
         logger.info("Fetching policy data", urls=urls)
-        # Urls may be None - fetch_policy_data has a default for None
-        # only completed urls would appear here
-        policy_data_by_urls = await data_fetcher.fetch_policy_data(urls)
+        # Urls may be None - handle_urls has a default for None
+        policy_data_with_urls = await data_fetcher.handle_urls(urls)
         # save the data from the update
-        for url in policy_data_by_urls:
-            # get path to store the URL data (default mode (None) is as "" - i.e. as all the data at root)
-            entry = url_to_entry.get(url, None)
-            policy_store_path = "" if entry is None else entry.dst_path
-            # None is not valid - use "" (protect from missconfig)
-            if policy_store_path is None:
-                policy_store_path = ""
-            # fix opa_path (if not empty must start with "/" to be nested under data)
-            if policy_store_path != "" and not policy_store_path.startswith("/"):
-                policy_store_path = f"/{policy_store_path}"
-            policy_data = policy_data_by_urls[url]
-            # TODO include the exceptions for failed to be fetched URLs and report those as well (currently filtered out at fetch_policy_data)
-            # Create a report on the data-fetching
-            url_reports[url] = DataEntryReport(hash=cls.calc_hash(policy_data), fetched=True)
-            logger.info(
-                "Saving fetched data to policy-store: source url='{url}', destination path='{path}'",
-                url=url,
-                path=policy_store_path or '/'
-            )
-            res = await policy_store.set_policy_data(policy_data, path=policy_store_path)
-            # a valuse of None indicates a failure to save to the policy store 
-            url_reports[url].saved = res is not None
+        for (url, fetch_config, result), entry in itertools.zip_longest(policy_data_with_urls, entries) :
+            if not isinstance(result, Exception):
+                # get path to store the URL data (default mode (None) is as "" - i.e. as all the data at root)
+                policy_store_path = "" if entry is None else entry.dst_path
+                # None is not valid - use "" (protect from missconfig)
+                if policy_store_path is None:
+                    policy_store_path = ""
+                # fix opa_path (if not empty must start with "/" to be nested under data)
+                if policy_store_path != "" and not policy_store_path.startswith("/"):
+                    policy_store_path = f"/{policy_store_path}"
+                policy_data = policy_data_with_urls[url]
+                # TODO include the exceptions for failed to be fetched URLs and report those as well (currently filtered out at fetch_policy_data)
+                # Create a report on the data-fetching
+                report = DataEntryReport(entry=entry, hash=cls.calc_hash(policy_data), fetched=True)
+                logger.info(
+                    "Saving fetched data to policy-store: source url='{url}', destination path='{path}'",
+                    url=url,
+                    path=policy_store_path or '/'
+                )
+                res = await policy_store.set_policy_data(policy_data, path=policy_store_path)
+                # a valuse of None indicates a failure to save to the policy store 
+                report.saved = res is not None
+            else:
+                report = DataEntryReport(entry=entry, hash=cls.calc_hash(policy_data), fetched=False, saved=False)
+            # save the report for the entry
+            reports.append(report)
+            # spin off reporting (no need to wait on it)
+            asyncio.create_task(cls.report_update_results(update, reports, data_fetcher))
 
 
 
