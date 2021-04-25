@@ -102,6 +102,8 @@ class OpalServer:
                 jwks_url=jwks_url,
                 jwks_static_dir=jwks_static_dir
             )
+        else:
+            self.jwks_endpoint = None
 
         self.pubsub = PubSub(signer=self.signer, broadcaster_uri=broadcaster_uri)
 
@@ -161,8 +163,9 @@ class OpalServer:
         app.include_router(security_router, tags=["Security"])
         app.include_router(self.pubsub.router, tags=["Pub/Sub"])
 
-        # mount jwts (static) route
-        self.jwks_endpoint.configure_app(app)
+        if self.jwks_endpoint is not None:
+            # mount jwts (static) route
+            self.jwks_endpoint.configure_app(app)
 
         # top level routes (i.e: healthchecks)
         @app.get("/healthcheck", include_in_schema=False)
