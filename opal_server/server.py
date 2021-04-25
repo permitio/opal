@@ -36,6 +36,7 @@ class OpalServer:
         data_sources_config: Optional[ServerDataSourceConfig] = None,
         broadcaster_uri: str = None,
         signer: Optional[JWTSigner] = None,
+        enable_jwks_endpoint = True,
         jwks_url: str = None,
         jwks_static_dir: str = None,
         master_token: str = None,
@@ -95,11 +96,12 @@ class OpalServer:
                 issuer=opal_server_config.AUTH_JWT_ISSUER,
             )
 
-        self.jwks_endpoint = JwksStaticEndpoint(
-            signer=self.signer,
-            jwks_url=jwks_url,
-            jwks_static_dir=jwks_static_dir
-        )
+        if enable_jwks_endpoint:
+            self.jwks_endpoint = JwksStaticEndpoint(
+                signer=self.signer,
+                jwks_url=jwks_url,
+                jwks_static_dir=jwks_static_dir
+            )
 
         self.pubsub = PubSub(signer=self.signer, broadcaster_uri=broadcaster_uri)
 

@@ -48,7 +48,7 @@ DATA_SOURCES_CONFIG = ServerDataSourceConfig(
 
 def setup_server(event):
     # Server without git watcher and with a test specifc url for data, and without broadcasting
-    server = OpalServer(init_git_watcher=False, data_sources_config=DATA_SOURCES_CONFIG, broadcaster_uri=None)
+    server = OpalServer(init_git_watcher=False, data_sources_config=DATA_SOURCES_CONFIG, broadcaster_uri=None, enable_jwks_endpoint=False)
     server_app = server.app
 
     # add a url to fetch data from
