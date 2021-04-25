@@ -7,6 +7,7 @@ from multiprocessing import Event, Process
 import pytest
 import uvicorn
 from fastapi_websocket_pubsub import PubSubClient
+from aiohttp import ClientSession
 
 # Add parent path to use local src as package for tests
 root_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), os.path.pardir, os.path.pardir))
@@ -37,6 +38,9 @@ TEST_DATA = {
 DATA_UPDATE_CALLBACK_ROUTE = "/data/callback_report"
 DATA_UPDATE_CALLBACK_URL = f"http://localhost:{PORT}{DATA_UPDATE_CALLBACK_ROUTE}"
 
+CHECK_DATA_UPDATE_CALLBACK_ROUTE = "/callback_count"
+CHECK_DATA_UPDATE_CALLBACK_URL = f"http://localhost:{PORT}{CHECK_DATA_UPDATE_CALLBACK_ROUTE}"
+
 DATA_SOURCES_CONFIG = ServerDataSourceConfig(
     config=DataSourceConfig(
         entries=[
@@ -51,6 +55,8 @@ def setup_server(event):
     server = OpalServer(init_git_watcher=False, data_sources_config=DATA_SOURCES_CONFIG, broadcaster_uri=None, enable_jwks_endpoint=False)
     server_app = server.app
 
+    callbacks = []
+
     # add a url to fetch data from
     @server_app.get(DATA_ROUTE)
     def fetchable_data():
@@ -61,7 +67,16 @@ def setup_server(event):
     @server_app.post(DATA_UPDATE_CALLBACK_ROUTE)
     def callback(report:DataUpdateReport):
         assert report.reports[0].hash == DataUpdater.calc_hash(TEST_DATA)
+        callbacks.append(report)
         return "OKAY"
+
+
+    # route to report complition to
+    @server_app.get(CHECK_DATA_UPDATE_CALLBACK_ROUTE)
+    def check()->int:
+        return len(callbacks)
+
+
     
 
     @server_app.on_event("startup")
@@ -144,6 +159,15 @@ async def test_data_updater_with_report_callback(server):
         proc.start()
         # wait until new data arrives into the strore via the updater
         await asyncio.wait_for(policy_store.wait_for_data(), 15)
+        # give the callback a chance to arrive
+        await asyncio.sleep(1)
+
+        async with ClientSession() as session:
+            res = await session.get(CHECK_DATA_UPDATE_CALLBACK_URL)
+            count = await res.json()
+            # we got one callback
+            assert count == 1
+
     # cleanup
     finally:
         await updater.stop()
