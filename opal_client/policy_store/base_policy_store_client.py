@@ -8,11 +8,11 @@ class BasePolicyStoreClient:
     """
 
     async def __aenter__(self):
-        self.start_transaction()
+        await self.start_transaction()
         return self
 
     async def __aexit__(self, exc_type, exc, tb):
-        self.end_transcation()
+        await self.end_transcation()
 
     async def start_transaction(self):
         """
