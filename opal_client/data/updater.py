@@ -213,7 +213,7 @@ class DataUpdater:
         try:
             whole_report = DataUpdateReport(update_id=update.id, reports=reports)
 
-            callbacks = update.callback.callbacks or opal_client_config.DEFAULT_UPDATE_CALLBACKS
+            callbacks = update.callback.callbacks or opal_client_config.DEFAULT_UPDATE_CALLBACKS.callbacks
             urls = []
             for callback in callbacks:
                 if isinstance(callback, str):
