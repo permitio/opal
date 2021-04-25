@@ -100,7 +100,7 @@ async def test_data_updater(server):
     # config to use mock OPA
     policy_store = PolicyStoreClientFactory.create(store_type=PolicyStoreTypes.MOCK)
     updater = DataUpdater(pubsub_url=UPDATES_URL, policy_store=policy_store,
-                          fetch_on_connect=False, data_topics=DATA_TOPICS)
+                          fetch_on_connect=False, data_topics=DATA_TOPICS, should_send_reports=False)
     # start the updater (terminate on exit)
     await updater.start()
     try:

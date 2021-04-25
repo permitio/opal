@@ -1,8 +1,8 @@
 import asyncio
 import hashlib
 import itertools
-from os import stat
-from typing import Dict, List, Tuple
+import json
+from typing import List, Tuple
 
 from aiohttp.client import ClientSession
 from fastapi_websocket_pubsub import PubSubClient
@@ -204,8 +204,10 @@ class DataUpdater:
             await self._subscriber_task
 
     @staticmethod
-    async def calc_hash(data):
-        return hashlib.sha256(data).hexdigest()
+    def calc_hash(data):
+        if not isinstance(data, str):
+            data = json.dumps(data)
+        return hashlib.sha256(data.encode('utf-8')).hexdigest()
 
     @staticmethod
     async def report_update_results(update: DataUpdate, reports: List[DataEntryReport], data_fetcher: DataFetcher):
@@ -261,8 +263,7 @@ class DataUpdater:
                 # fix opa_path (if not empty must start with "/" to be nested under data)
                 if policy_store_path != "" and not policy_store_path.startswith("/"):
                     policy_store_path = f"/{policy_store_path}"
-                policy_data = policy_data_with_urls[url]
-                # TODO include the exceptions for failed to be fetched URLs and report those as well (currently filtered out at fetch_policy_data)
+                policy_data = result
                 # Create a report on the data-fetching
                 report = DataEntryReport(entry=entry, hash=self.calc_hash(policy_data), fetched=True)
                 logger.info(
@@ -277,6 +278,7 @@ class DataUpdater:
                 report = DataEntryReport(entry=entry, hash=self.calc_hash(policy_data), fetched=False, saved=False)
             # save the report for the entry
             reports.append(report)
-            if self._should_send_reports:
-                # spin off reporting (no need to wait on it)
-                asyncio.create_task(self.report_update_results(update, reports, data_fetcher))
+        # should we send a report to defined callbackers?
+        if self._should_send_reports:
+            # spin off reporting (no need to wait on it)
+            asyncio.create_task(self.report_update_results(update, reports, data_fetcher))
