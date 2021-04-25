@@ -30,7 +30,8 @@ class DataUpdater:
                  data_sources_config_url: str = None,
                  fetch_on_connect:bool=True,
                  data_topics: List[str] = None,
-                 policy_store: BasePolicyStoreClient = None):
+                 policy_store: BasePolicyStoreClient = None, 
+                 should_send_reports = None):
         """
         Keeps policy-stores (e.g. OPA) up to date with relevant data
         Obtains data configuration on startup from OPAL-server
@@ -54,6 +55,7 @@ class DataUpdater:
         self._policy_store = policy_store or DEFAULT_POLICY_STORE_GETTER()
         # Pub/Sub topics we subscribe to for data updates
         self._data_topics = data_topics if data_topics is not None else opal_client_config.DATA_TOPICS
+        self._should_send_reports = should_send_reports if should_send_reports is not None else opal_client_config.SHOULD_REPORT_ON_DATA_UPDATES
         # The pub/sub client for data updates
         self._client = None
         # The task running the Pub/Sub subcribing client
@@ -229,8 +231,7 @@ class DataUpdater:
         except:
             logger.exception("Failed to excute report_update_results")
 
-    @classmethod
-    async def update_policy_data(cls, update: DataUpdate = None, policy_store: BasePolicyStoreClient = None, data_fetcher=None):
+    async def update_policy_data(self, update: DataUpdate = None, policy_store: BasePolicyStoreClient = None, data_fetcher=None):
         """
         fetches policy data (policy configuration) from backend and updates it into policy-store (i.e. OPA)
         """
@@ -265,7 +266,7 @@ class DataUpdater:
                 policy_data = policy_data_with_urls[url]
                 # TODO include the exceptions for failed to be fetched URLs and report those as well (currently filtered out at fetch_policy_data)
                 # Create a report on the data-fetching
-                report = DataEntryReport(entry=entry, hash=cls.calc_hash(policy_data), fetched=True)
+                report = DataEntryReport(entry=entry, hash=self.calc_hash(policy_data), fetched=True)
                 logger.info(
                     "Saving fetched data to policy-store: source url='{url}', destination path='{path}'",
                     url=url,
@@ -275,11 +276,12 @@ class DataUpdater:
                 # a valuse of None indicates a failure to save to the policy store 
                 report.saved = res is not None
             else:
-                report = DataEntryReport(entry=entry, hash=cls.calc_hash(policy_data), fetched=False, saved=False)
+                report = DataEntryReport(entry=entry, hash=self.calc_hash(policy_data), fetched=False, saved=False)
             # save the report for the entry
             reports.append(report)
-            # spin off reporting (no need to wait on it)
-            asyncio.create_task(cls.report_update_results(update, reports, data_fetcher))
+            if self._should_send_reports:
+                # spin off reporting (no need to wait on it)
+                asyncio.create_task(self.report_update_results(update, reports, data_fetcher))
 
 
 

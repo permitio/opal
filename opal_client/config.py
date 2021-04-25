@@ -28,6 +28,7 @@ class OpalClientConfig(Confi):
     POLICY_STORE_TYPE = confi.enum("POLICY_STORE_TYPE", PolicyStoreTypes, PolicyStoreTypes.OPA)
     POLICY_STORE_URL = confi.str("POLICY_STORE_URL", f"http://localhost:8181/v1")
     # create an instance of a policy store upon load
+
     def load_policy_store():
         from opal_client.policy_store import PolicyStoreClientFactory
         return PolicyStoreClientFactory.create()
@@ -59,8 +60,9 @@ class OpalClientConfig(Confi):
     SERVER_URL = confi.str("SERVER_URL", "http://localhost:7002", flags=["-s"])
     # opal server pubsub url
     OPAL_WS_ROUTE = "/ws"
-    SERVER_WS_URL = confi.str("SERVER_WS_URL", confi.delay(lambda SERVER_URL="":SERVER_URL.replace("https", "wss").replace("http", "ws")))
-    SERVER_PUBSUB_URL = confi.str("SERVER_PUBSUB_URL", confi.delay("{SERVER_WS_URL}" + f"{OPAL_WS_ROUTE}")) 
+    SERVER_WS_URL = confi.str("SERVER_WS_URL", confi.delay(
+        lambda SERVER_URL="": SERVER_URL.replace("https", "wss").replace("http", "ws")))
+    SERVER_PUBSUB_URL = confi.str("SERVER_PUBSUB_URL", confi.delay("{SERVER_WS_URL}" + f"{OPAL_WS_ROUTE}"))
 
     # opal server auth token
     CLIENT_TOKEN = confi.str("CLIENT_TOKEN", "THIS_IS_A_DEV_SECRET",
@@ -92,12 +94,15 @@ class OpalClientConfig(Confi):
     DEFAULT_DATA_URL = confi.str("DEFAULT_DATA_URL", "http://localhost:8000/policy-config",
                                  description="Default URL to fetch data from")
 
-
-    DEFAULT_UPDATE_CALLBACK_CONFIG = confi.model("DEFAULT_UPDATE_CALLBACK_CONFIG", HttpFetcherConfig, {"method":"POST"})
+    SHOULD_REPORT_ON_DATA_UPDATES = confi.bool("SEND_REPORTS_ON_DATA_UPDATES", True,
+                                              description="Should the client report on updates to callbacks defined in DEFAULT_UPDATE_CALLBACKS or within the given updates")
+    DEFAULT_UPDATE_CALLBACK_CONFIG = confi.model(
+        "DEFAULT_UPDATE_CALLBACK_CONFIG", HttpFetcherConfig, {"method": "POST"})
 
     DEFAULT_UPDATE_CALLBACKS = confi.model("DEFAULT_UPDATE_CALLBACKS", UpdateCallback, confi.delay(lambda SERVER_URL: {
         "callbacks": [f"{SERVER_URL}/data/callback_report"]
-    }))
+    }), 
+    description="Where/How the client should report on the completion of data updates")
 
     def on_load(self):
         # LOGGER
