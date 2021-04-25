@@ -1,23 +1,13 @@
 from typing import List, Optional
 from pydantic import BaseModel
 
-
-class FetchCallback(BaseModel):
-    """
-    Configuration of callbacks upon completion of a FetchEvent 
-    Allows notifying other services on the update flow
-    """
-    callback_urls: Optional[List[str]] = None
-
 class FetcherConfig(BaseModel):
     """
     The configuration of a fetcher, used as part of a FetchEvent
     Fetch Provider's have their own uniqueue events and configurations.
     Configurations  
     """
-    # Configuration for how to notify other services on the status of the FetchEvent
-    callback: FetchCallback = None
-
+    pass
 class FetchEvent(BaseModel):
     """
     Event used to describe an queue fetching tasks
@@ -38,15 +28,5 @@ class FetchEvent(BaseModel):
     retry: dict = None
 
 
-
-class FetchResultReport(BaseModel):
-    """
-    A report of the processign of a single FetchEvent
-    """
-    status_code: Optional[int] = None
-    completed: Optional[bool] = False
-    data_hash: Optional[str] = None
-
-    
 
 

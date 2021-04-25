@@ -1,4 +1,4 @@
-from typing import Any, Dict, Optional, List
+from typing import Any, Dict, Optional, List, Union
 from pydantic import BaseModel
 from opal_common.schemas.policy import PolicyBundle
 
@@ -24,7 +24,11 @@ class BasePolicyStoreClient:
     async def get_policy_version(self) -> Optional[str]:
         raise NotImplementedError()
 
-    async def set_policy_data(self, policy_data: Dict[str, Any], path: str = ""):
+    async def set_policy_data(self, policy_data: Dict[str, Any], path: str = "") -> Union[None, Any]:
+        """
+        Returns:
+            Union[None, Any]: returning None indicates a failure to save to the policy-store
+        """
         raise NotImplementedError()
 
     async def delete_policy_data(self, path: str = ""):

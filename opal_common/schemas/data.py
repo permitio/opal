@@ -1,5 +1,5 @@
 from logging import basicConfig
-from typing import List, Optional
+from typing import Dict, List, Optional
 from pydantic import BaseModel, Field, root_validator, AnyHttpUrl
 
 from opal_common.fetcher.events import FetcherConfig
@@ -57,13 +57,44 @@ class ServerDataSourceConfig(BaseModel):
             raise ValueError('you must provide ONLY ONE of these fields: config, external_source_url')
         return values
 
+class UpdateCallback(BaseModel):
+    """
+    Configuration of callbacks upon completion of a FetchEvent 
+    Allows notifying other services on the update flow
+    """
+    callback_urls: Optional[List[str]] = None
+
 class DataUpdate(BaseModel):
     """
     DataSources used as OPAL-server configuration
     Data update sent to clients
     """
+    # a UUID to identify this update (used as part of an updates complition callback)
+    id: Optional[str] = None
     entries: List[DataSourceEntry] = Field(..., description="list of related updates the OPAL client should perform")
     reason: str = Field(None, description="Reason for triggering the update")
+    # Configuration for how to notify other services on the status of Update
+    callback: UpdateCallback = None
+
+
+class DataEntryReport(BaseModel):
+    """
+    A report of the processing of a single DataSourceEntry
+    """
+    # Was the entry successfully fetched
+    fetched: Optional[bool] = False
+    # Was the entry successfully saved into the policy-data-store
+    saved: Optional[bool] = False
+    # Hash of the returned data
+    hash: Optional[str] = None
+
+    
+
+class DataUpdateReport:
+    # the UUID fo the update this report is for
+    update_id: str
+    # Map of each DataSourceEntry and how it was processed
+    urls: Dict[str, DataEntryReport]
 
 
 

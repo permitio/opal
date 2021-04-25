@@ -1,10 +1,12 @@
 import asyncio
+import hashlib
+from os import stat
 from aiohttp.client import ClientSession
 
 from opal_client.policy_store.base_policy_store_client import BasePolicyStoreClient
-from opal_common.fetcher.events import FetchResultReport, FetcherConfig
+from opal_common.fetcher.events import FetcherConfig
 from typing import Dict, List
-from opal_common.schemas.data import DataSourceConfig, DataUpdate, DataSourceEntry
+from opal_common.schemas.data import DataSourceConfig, DataUpdate, DataSourceEntry, DataEntryReport, DataUpdateReport
 from fastapi_websocket_rpc.rpc_channel import RpcChannel
 from fastapi_websocket_pubsub import PubSubClient
 
@@ -195,6 +197,16 @@ class DataUpdater:
         if self._subscriber_task is not None:
             await self._subscriber_task
 
+    @staticmethod
+    async def calc_hash(data):
+        return hashlib.sha256(data).hexdigest()    
+
+
+    @staticmethod
+    async def report_update_results(update: DataUpdate, url_reports:Dict[str,DataEntryReport]):
+        report = DataUpdateReport(id=update.id, urls=url_reports)
+
+
     @classmethod
     async def update_policy_data(cls, update: DataUpdate = None, policy_store: BasePolicyStoreClient = None, data_fetcher=None):
         """
@@ -207,7 +219,7 @@ class DataUpdater:
         urls: Dict[str, FetcherConfig] = None
         url_to_entry: Dict[str, DataSourceEntry] = None
         # track the result of each url in order to report back
-        update_tracking: Dict[str,FetchResultReport] = {}    
+        url_reports: Dict[str,DataEntryReport] = {}    
         # if we have an actual specification for the update
         if update is not None:
             entries: List[DataSourceEntry] = update.entries
@@ -216,6 +228,7 @@ class DataUpdater:
         # get the data for the update
         logger.info("Fetching policy data", urls=urls)
         # Urls may be None - fetch_policy_data has a default for None
+        # only completed urls would appear here
         policy_data_by_urls = await data_fetcher.fetch_policy_data(urls)
         # save the data from the update
         for url in policy_data_by_urls:
@@ -229,13 +242,17 @@ class DataUpdater:
             if policy_store_path != "" and not policy_store_path.startswith("/"):
                 policy_store_path = f"/{policy_store_path}"
             policy_data = policy_data_by_urls[url]
-
+            # TODO include the exceptions for failed to be fetched URLs and report those as well (currently filtered out at fetch_policy_data)
+            # Create a report on the data-fetching
+            url_reports[url] = DataEntryReport(hash=cls.calc_hash(policy_data), fetched=True)
             logger.info(
                 "Saving fetched data to policy-store: source url='{url}', destination path='{path}'",
                 url=url,
                 path=policy_store_path or '/'
             )
-            await policy_store.set_policy_data(policy_data, path=policy_store_path)
+            res = await policy_store.set_policy_data(policy_data, path=policy_store_path)
+            # a valuse of None indicates a failure to save to the policy store 
+            url_reports[url].saved = res is not None
 
 
 
