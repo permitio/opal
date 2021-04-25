@@ -212,7 +212,7 @@ class DataUpdater:
     async def report_update_results(self, update: DataUpdate, reports: List[DataEntryReport], data_fetcher: DataFetcher):
         try:
             whole_report = DataUpdateReport(update_id=update.id, reports=reports)
-            
+
             callbacks = update.callback.callbacks or opal_client_config.DEFAULT_UPDATE_CALLBACKS
             urls = []
             for callback in callbacks:
@@ -276,7 +276,7 @@ class DataUpdater:
                     # a valuse of None indicates a failure to save to the policy store
                     report.saved = res is not None
                 else:
-                    report = DataEntryReport(entry=entry, hash=self.calc_hash(policy_data), fetched=False, saved=False)
+                    report = DataEntryReport(entry=entry, fetched=False, saved=False)
                 # save the report for the entry
                 reports.append(report)
         # should we send a report to defined callbackers?
