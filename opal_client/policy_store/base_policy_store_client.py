@@ -6,6 +6,26 @@ class BasePolicyStoreClient:
     """
     A pure-virtual interface for policy and policy-data store
     """
+
+    async def __aenter__(self):
+        self.start_transaction()
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb):
+        self.end_transcation()
+
+    async def start_transaction(self):
+        """
+        Start a series of operations with the policy store
+        """
+        pass
+
+    async def end_transcation(self):
+        """
+        Complete a series of operations with the policy store
+        """        
+        pass
+
     async def set_policy(self, policy_id: str, policy_code: str):
         raise NotImplementedError()
 

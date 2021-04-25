@@ -251,32 +251,34 @@ class DataUpdater:
         logger.info("Fetching policy data", urls=urls)
         # Urls may be None - handle_urls has a default for None
         policy_data_with_urls = await data_fetcher.handle_urls(urls)
-        # save the data from the update
-        for (url, fetch_config, result), entry in itertools.zip_longest(policy_data_with_urls, entries):
-            if not isinstance(result, Exception):
-                # get path to store the URL data (default mode (None) is as "" - i.e. as all the data at root)
-                policy_store_path = "" if entry is None else entry.dst_path
-                # None is not valid - use "" (protect from missconfig)
-                if policy_store_path is None:
-                    policy_store_path = ""
-                # fix opa_path (if not empty must start with "/" to be nested under data)
-                if policy_store_path != "" and not policy_store_path.startswith("/"):
-                    policy_store_path = f"/{policy_store_path}"
-                policy_data = result
-                # Create a report on the data-fetching
-                report = DataEntryReport(entry=entry, hash=self.calc_hash(policy_data), fetched=True)
-                logger.info(
-                    "Saving fetched data to policy-store: source url='{url}', destination path='{path}'",
-                    url=url,
-                    path=policy_store_path or '/'
-                )
-                res = await policy_store.set_policy_data(policy_data, path=policy_store_path)
-                # a valuse of None indicates a failure to save to the policy store
-                report.saved = res is not None
-            else:
-                report = DataEntryReport(entry=entry, hash=self.calc_hash(policy_data), fetched=False, saved=False)
-            # save the report for the entry
-            reports.append(report)
+        # Save the data from the update
+        # We wrap our interaction with the policy store with a transaction  
+        async with policy_store:
+            for (url, fetch_config, result), entry in itertools.zip_longest(policy_data_with_urls, entries):
+                if not isinstance(result, Exception):
+                    # get path to store the URL data (default mode (None) is as "" - i.e. as all the data at root)
+                    policy_store_path = "" if entry is None else entry.dst_path
+                    # None is not valid - use "" (protect from missconfig)
+                    if policy_store_path is None:
+                        policy_store_path = ""
+                    # fix opa_path (if not empty must start with "/" to be nested under data)
+                    if policy_store_path != "" and not policy_store_path.startswith("/"):
+                        policy_store_path = f"/{policy_store_path}"
+                    policy_data = result
+                    # Create a report on the data-fetching
+                    report = DataEntryReport(entry=entry, hash=self.calc_hash(policy_data), fetched=True)
+                    logger.info(
+                        "Saving fetched data to policy-store: source url='{url}', destination path='{path}'",
+                        url=url,
+                        path=policy_store_path or '/'
+                    )
+                    res = await policy_store.set_policy_data(policy_data, path=policy_store_path)
+                    # a valuse of None indicates a failure to save to the policy store
+                    report.saved = res is not None
+                else:
+                    report = DataEntryReport(entry=entry, hash=self.calc_hash(policy_data), fetched=False, saved=False)
+                # save the report for the entry
+                reports.append(report)
         # should we send a report to defined callbackers?
         if self._should_send_reports:
             # spin off reporting (no need to wait on it)
