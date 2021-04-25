@@ -10,7 +10,7 @@ from ..fetch_provider import BaseFetchProvider
 from ..events import FetcherConfig, FetchEvent
 from ..logger import get_logger
 
-logger = get_logger()
+logger = get_logger("http_fetch_provider")
 
 
 class HttpMethods(Enum):

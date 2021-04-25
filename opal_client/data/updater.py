@@ -28,10 +28,10 @@ class DataUpdater:
     def __init__(self, token: str = None,
                  pubsub_url: str = None,
                  data_sources_config_url: str = None,
-                 fetch_on_connect:bool=True,
+                 fetch_on_connect: bool = True,
                  data_topics: List[str] = None,
-                 policy_store: BasePolicyStoreClient = None, 
-                 should_send_reports = None):
+                 policy_store: BasePolicyStoreClient = None,
+                 should_send_reports=None):
         """
         Keeps policy-stores (e.g. OPA) up to date with relevant data
         Obtains data configuration on startup from OPAL-server
@@ -48,7 +48,7 @@ class DataUpdater:
         # Defaults
         token: str = token or opal_client_config.CLIENT_TOKEN
         pubsub_url: str = pubsub_url or opal_client_config.SERVER_PUBSUB_URL
-        data_sources_config_url: str = data_sources_config_url or opal_client_config.DEFAULT_DATA_SOURCES_CONFIG_URL        
+        data_sources_config_url: str = data_sources_config_url or opal_client_config.DEFAULT_DATA_SOURCES_CONFIG_URL
         # Should the client use the default data source to fetch on connect
         self._fetch_on_connect = fetch_on_connect
         # The policy store we'll save data updates into
@@ -96,11 +96,12 @@ class DataUpdater:
         update = DataUpdate.parse_obj(data)
         self.trigger_data_update(update)
 
-    def trigger_data_update(self, update:DataUpdate):
+    def trigger_data_update(self, update: DataUpdate):
         logger.info("Triggering data fetch and update", update=update)
-        asyncio.create_task(self.update_policy_data(update, policy_store=self._policy_store, data_fetcher=self._data_fetcher))
+        asyncio.create_task(self.update_policy_data(
+            update, policy_store=self._policy_store, data_fetcher=self._data_fetcher))
 
-    async def get_policy_data_config(self, url:str=None)->DataSourceConfig:
+    async def get_policy_data_config(self, url: str = None) -> DataSourceConfig:
         """
         Get the configuration for
         Args:
@@ -119,8 +120,7 @@ class DataUpdater:
             logger.exception(f"Failed to load data sources config")
             raise
 
-
-    async def get_base_policy_data(self, config_url:str=None, data_fetch_reason="Initial load"):
+    async def get_base_policy_data(self, config_url: str = None, data_fetch_reason="Initial load"):
         """
         Load data into the policy store according to the data source's config provided in the config URL
 
@@ -134,7 +134,6 @@ class DataUpdater:
         entries = sources_config.entries
         update = DataUpdate(reason=data_fetch_reason, entries=entries)
         self.trigger_data_update(update)
-
 
     async def on_connect(self, client: PubSubClient, channel: RpcChannel):
         """
@@ -206,22 +205,21 @@ class DataUpdater:
 
     @staticmethod
     async def calc_hash(data):
-        return hashlib.sha256(data).hexdigest()    
-
+        return hashlib.sha256(data).hexdigest()
 
     @staticmethod
-    async def report_update_results(update: DataUpdate, reports:List[DataEntryReport], data_fetcher:DataFetcher):
+    async def report_update_results(update: DataUpdate, reports: List[DataEntryReport], data_fetcher: DataFetcher):
         try:
             whole_report = DataUpdateReport(id=update.id, urls=reports)
-            
+
             callbacks = update.callback.callbacks or opal_client_config.DEFAULT_UPDATE_CALLBACKS
             urls = []
             for callback in callbacks:
                 if isinstance(callback, str):
                     url = callback
                     callback_config = opal_client_config.DEFAULT_UPDATE_CALLBACK_CONFIG.copy()
-                else:  
-                    url, callback_config = callback           
+                else:
+                    url, callback_config = callback
                 callback_config.data = whole_report.json()
                 urls.append((url, callback_config))
 
@@ -247,13 +245,13 @@ class DataUpdater:
         if update is not None:
             entries = update.entries
             urls = [(entry.url, entry.config) for entry in entries]
-        
+
         # get the data for the update
         logger.info("Fetching policy data", urls=urls)
         # Urls may be None - handle_urls has a default for None
         policy_data_with_urls = await data_fetcher.handle_urls(urls)
         # save the data from the update
-        for (url, fetch_config, result), entry in itertools.zip_longest(policy_data_with_urls, entries) :
+        for (url, fetch_config, result), entry in itertools.zip_longest(policy_data_with_urls, entries):
             if not isinstance(result, Exception):
                 # get path to store the URL data (default mode (None) is as "" - i.e. as all the data at root)
                 policy_store_path = "" if entry is None else entry.dst_path
@@ -273,7 +271,7 @@ class DataUpdater:
                     path=policy_store_path or '/'
                 )
                 res = await policy_store.set_policy_data(policy_data, path=policy_store_path)
-                # a valuse of None indicates a failure to save to the policy store 
+                # a valuse of None indicates a failure to save to the policy store
                 report.saved = res is not None
             else:
                 report = DataEntryReport(entry=entry, hash=self.calc_hash(policy_data), fetched=False, saved=False)
@@ -282,6 +280,3 @@ class DataUpdater:
             if self._should_send_reports:
                 # spin off reporting (no need to wait on it)
                 asyncio.create_task(self.report_update_results(update, reports, data_fetcher))
-
-
-

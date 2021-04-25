@@ -99,7 +99,7 @@ class OpalClientConfig(Confi):
     DEFAULT_UPDATE_CALLBACK_CONFIG = confi.model(
         "DEFAULT_UPDATE_CALLBACK_CONFIG", HttpFetcherConfig, {"method": "POST"})
 
-    DEFAULT_UPDATE_CALLBACKS = confi.model("DEFAULT_UPDATE_CALLBACKS", UpdateCallback, confi.delay(lambda SERVER_URL: {
+    DEFAULT_UPDATE_CALLBACKS = confi.model("DEFAULT_UPDATE_CALLBACKS", UpdateCallback, confi.delay(lambda SERVER_URL="": {
         "callbacks": [f"{SERVER_URL}/data/callback_report"]
     }), 
     description="Where/How the client should report on the completion of data updates")

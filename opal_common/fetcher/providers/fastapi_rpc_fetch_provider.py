@@ -12,7 +12,7 @@ from ..logger import get_logger
 from fastapi_websocket_rpc.websocket_rpc_client import WebSocketRpcClient
 from fastapi_websocket_rpc.rpc_methods import RpcMethodsBase
 
-logger = get_logger()
+logger = get_logger("rpc_fetch_provider")
 
 
 class FastApiRpcFetchConfig(FetcherConfig):
