@@ -41,6 +41,7 @@ if not version or not license:
 
 requirements = get_requirements()
 requirements.append('opal-common=={}'.format(version))
+requirements.extend(['asyncio-redis', 'aiokafka']) # broadcaster variants
 
 setup(
     name='opal-server',
