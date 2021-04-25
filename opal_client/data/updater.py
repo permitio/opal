@@ -212,7 +212,7 @@ class DataUpdater:
     async def report_update_results(self, update: DataUpdate, reports: List[DataEntryReport], data_fetcher: DataFetcher):
         try:
             whole_report = DataUpdateReport(update_id=update.id, reports=reports)
-
+            
             callbacks = update.callback.callbacks or opal_client_config.DEFAULT_UPDATE_CALLBACKS
             urls = []
             for callback in callbacks:

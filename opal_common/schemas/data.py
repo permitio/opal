@@ -77,7 +77,7 @@ class DataUpdate(BaseModel):
     entries: List[DataSourceEntry] = Field(..., description="list of related updates the OPAL client should perform")
     reason: str = Field(None, description="Reason for triggering the update")
     # Configuration for how to notify other services on the status of Update
-    callback: UpdateCallback = None
+    callback: UpdateCallback = UpdateCallback(callbacks=[])
 
 
 class DataEntryReport(BaseModel):
