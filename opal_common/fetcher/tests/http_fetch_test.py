@@ -14,7 +14,7 @@ import uvicorn
 from fastapi import FastAPI, Depends, Header, HTTPException
 
 from opal_common.fetcher import FetchingEngine
-from opal_common.fetcher.providers.http_get_fetch_provider import HttpFetcherConfig
+from opal_common.fetcher.providers.http_fetch_provider import HttpFetcherConfig
 
 
 # Configurable

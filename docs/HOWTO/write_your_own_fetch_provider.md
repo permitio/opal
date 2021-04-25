@@ -12,7 +12,7 @@ Fetch providers are designed to be extendable, and you can easily create more fe
     - Providers implement a ```_fetch_``` method to access and fetch data from the data-source (indicated by ```self._event.url```)
     - the FetchingEngine workers invokes a provider's ```.fetch()``` and ```.process()``` which proxy to ```_fetch_``` and ```_process_``` accordingly
 2. ### Deriving from BaseFetchProvider and implementing Fetch & Process
-    - See a core example for an [HTTPFetcher - here](https://github.com/authorizon/opal/blob/master/opal_common/fetcher/providers/http_get_fetch_provider.py)
+    - See a core example for an [HTTPFetcher - here](https://github.com/authorizon/opal/blob/master/opal_common/fetcher/providers/http_fetch_provider.py)
     1. Create a new class deriving from ```BaseFetchProvider``` 
     2. Override ```_fetch_`` to implement the fetching itself
     3. Optionally override ```_process_``` to mutate the data before returning it (for example converting a JSON string to an actual object)

@@ -15,7 +15,7 @@ import pytest
 import uvicorn
 from fastapi import FastAPI
 
-from opal_common.fetcher.providers.http_get_fetch_provider import HttpFetchEvent, HttpFetchProvider
+from opal_common.fetcher.providers.http_fetch_provider import HttpFetchEvent, HttpFetchProvider
 from opal_common.fetcher import FetchingEngine, FetchEvent
 
 # Configurable
