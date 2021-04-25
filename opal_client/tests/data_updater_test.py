@@ -17,7 +17,7 @@ from opal_client.data.rpc import TenantAwareRpcEventClientMethods
 from opal_client.data.updater import DataSourceEntry, DataUpdate, DataUpdater
 from opal_client.policy_store import (PolicyStoreClientFactory,
                                       PolicyStoreTypes)
-from opal_common.schemas.data import DataSourceConfig, ServerDataSourceConfig, UpdateCallback
+from opal_common.schemas.data import DataSourceConfig, DataUpdateReport, ServerDataSourceConfig, UpdateCallback
 from opal_common.utils import get_authorization_header
 from opal_server.config import opal_server_config
 from opal_server.server import OpalServer
@@ -58,9 +58,9 @@ def setup_server(event):
 
     
     # route to report complition to
-    @server_app.post(DATA_ROUTE)
-    def callback(data:UpdateCallback):
-        print (data)
+    @server_app.post(DATA_UPDATE_CALLBACK_ROUTE)
+    def callback(report:DataUpdateReport):
+        assert report.reports[0].hash == DataUpdater.calc_hash(TEST_DATA)
         return "OKAY"
     
 
