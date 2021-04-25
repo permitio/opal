@@ -17,7 +17,7 @@ logger = get_logger("providers.http_get_fetch_provider")
 
 class FastApiRpcFetchConfig(FetcherConfig):
     """
-    Config for HttpGetFetchProvider's Adding HTTP headers 
+    Config for FastApiRpcFetchConfig's Adding HTTP headers 
     """
     rpc_method_name: str
     rpc_arguments: dict

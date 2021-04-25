@@ -14,7 +14,7 @@ import uvicorn
 from fastapi import FastAPI, Depends, Header, HTTPException
 
 from opal_common.fetcher import FetchingEngine
-from opal_common.fetcher.providers.http_get_fetch_provider import HttpGetFetcherConfig
+from opal_common.fetcher.providers.http_get_fetch_provider import HttpFetcherConfig
 
 
 # Configurable
@@ -88,14 +88,14 @@ async def test_authorized_http_get(server):
             assert data[DATA_KEY] == DATA_SECRET_VALUE
             got_data_event.set()
         # fetch with bearer token authorization
-        await engine.queue_url(f"{BASE_URL}{AUTHORIZED_DATA_ROUTE}", callback, HttpGetFetcherConfig(headers={"X-TOKEN": SECRET_TOKEN}))
+        await engine.queue_url(f"{BASE_URL}{AUTHORIZED_DATA_ROUTE}", callback, HttpFetcherConfig(headers={"X-TOKEN": SECRET_TOKEN}))
         await asyncio.wait_for(got_data_event.wait(), 5)
         assert got_data_event.is_set()
 
 @pytest.mark.asyncio
 async def test_authorized_http_get_from_dict(server):
     """
-    Just like test_authorized_http_get, but we also check that the FetcherConfig is adapted from "the wire" (as a dict instead of the explicit HttpGetFetcherConfig)
+    Just like test_authorized_http_get, but we also check that the FetcherConfig is adapted from "the wire" (as a dict instead of the explicit HttpFetcherConfig)
     """
     got_data_event = asyncio.Event()
     async with FetchingEngine() as engine:

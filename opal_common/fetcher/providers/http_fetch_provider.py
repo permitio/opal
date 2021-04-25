@@ -3,6 +3,8 @@ Simple HTTP get data fetcher using requests
 supports 
 """
 
+from enum import Enum
+from typing import Any
 from aiohttp import ClientResponse, ClientSession
 from ..fetch_provider import BaseFetchProvider
 from ..events import FetcherConfig, FetchEvent
@@ -10,29 +12,43 @@ from ..logger import get_logger
 
 logger = get_logger("http_get_fetch_provider")
 
-class HttpGetFetcherConfig(FetcherConfig):
+
+class HttpMethods(Enum):
+    GET="get"
+    POST="post"
+    PUT="put"
+    PATCH="patch"
+    HEAD="head"
+    DELETE="delete"
+    
+
+
+class HttpFetcherConfig(FetcherConfig):
     """
-    Config for HttpGetFetchProvider's Adding HTTP headers 
+    Config for HttpFetchProvider's Adding HTTP headers 
     """
     headers: dict = None
     is_json: bool = True
     process_data: bool = True
+    method:HttpMethods = HttpMethods.GET
+    data:Any = None
 
-class HttpGetFetchEvent(FetchEvent):
-    fetcher: str = "HttpGetFetchProvider"
-    config: HttpGetFetcherConfig = None
 
-class HttpGetFetchProvider(BaseFetchProvider):
+class HttpFetchEvent(FetchEvent):
+    fetcher: str = "HttpFetchProvider"
+    config: HttpFetcherConfig = None
 
-    def __init__(self, event: HttpGetFetchEvent) -> None:
-        self._event: HttpGetFetchEvent
+class HttpFetchProvider(BaseFetchProvider):
+
+    def __init__(self, event: HttpFetchEvent) -> None:
+        self._event: HttpFetchEvent
         if event.config is None:
-            event.config = HttpGetFetcherConfig()
+            event.config = HttpFetcherConfig()
         super().__init__(event)
         self._session = None
 
-    def parse_event(self, event: FetchEvent) -> HttpGetFetchEvent:
-        return HttpGetFetchEvent(**event.dict(exclude={"config"}), config=event.config)   
+    def parse_event(self, event: FetchEvent) -> HttpFetchEvent:
+        return HttpFetchEvent(**event.dict(exclude={"config"}), config=event.config)   
 
     async def __aenter__(self):
         headers = {}
@@ -46,12 +62,19 @@ class HttpGetFetchProvider(BaseFetchProvider):
 
     async def _fetch_(self):
         logger.debug(f"{self.__class__.__name__} fetching from {self._url}")
-        
-        result = await self._session.get(self._url)
+        http_method = self.match_http_method_from_type(self._session, self._event.config.method)
+        if self._event.config.data is not None:
+            result = await http_method(self._url, data=self._event.config.data)
+        else:
+            result = await http_method(self._url)
         return result
 
+    @staticmethod
+    def match_http_method_from_type(session:ClientSession, method_type:HttpMethods):
+        return getattr(session, method_type.value)
+
     async def _process_(self, res: ClientResponse):
-        # if we are asked to process the data before return it
+        # if we are asked to process the data before we return it
         if self._event.config.process_data:
             # if data is JSON
             if self._event.config.is_json:

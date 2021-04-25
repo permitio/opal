@@ -24,7 +24,7 @@ Fetch providers are designed to be extendable, and you can easily create more fe
     - Each FetcherProvider might require specific values that will be passed to it as part of its configuration. For such a case implement a Pydantic model (Deriving from FetcherConfig) to go alongside your new provider.
     - e.g. for HTTP request fetcher 
         ```python
-        class HttpGetFetcherConfig(FetcherConfig):
+        class HttpFetcherConfig(FetcherConfig):
             headers: dict = None
             is_json: bool = True
             process_data: bool = True

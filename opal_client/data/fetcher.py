@@ -6,7 +6,7 @@ from opal_common.utils import get_authorization_header
 from opal_client.utils import tuple_to_dict
 from opal_common.fetcher import FetchingEngine
 from opal_common.fetcher.events import FetcherConfig
-from opal_common.fetcher.providers.http_get_fetch_provider import HttpGetFetcherConfig
+from opal_common.fetcher.providers.http_get_fetch_provider import HttpFetcherConfig
 from opal_common.logger import logger
 
 
@@ -32,7 +32,7 @@ class DataFetcher:
         self._data_url = default_data_url
         self._token = token
         self._auth_headers = tuple_to_dict(get_authorization_header(token))
-        self._default_fetcher_config = HttpGetFetcherConfig(headers=self._auth_headers, is_json=True)
+        self._default_fetcher_config = HttpFetcherConfig(headers=self._auth_headers, is_json=True)
 
     async def __aenter__(self):
         await self.start()
@@ -73,7 +73,7 @@ class DataFetcher:
 
         Args:
             urls (Dict[str, FetcherConfig], optional): Urls (and fetching configuration) to fetch from.
-            Defaults to None - init data_url with HttpGetFetcherConfig (loaded with the provided auth token).
+            Defaults to None - init data_url with HttpFetcherConfig (loaded with the provided auth token).
 
         Returns:
             Dict[str, Any]: urls mapped to their resulting fetched data
