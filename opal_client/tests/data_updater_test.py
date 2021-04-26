@@ -154,6 +154,12 @@ async def test_data_updater_with_report_callback(server):
                           fetch_on_connect=False, data_topics=DATA_TOPICS, should_send_reports=True)
     # start the updater (terminate on exit)
     await updater.start()
+
+    current_callback_count = 0
+    async with ClientSession() as session:
+        res = await session.get(CHECK_DATA_UPDATE_CALLBACK_URL)
+        current_callback_count = await res.json()
+
     try:
         proc = multiprocessing.Process(target=trigger_update, daemon=True)
         proc.start()
@@ -165,8 +171,8 @@ async def test_data_updater_with_report_callback(server):
         async with ClientSession() as session:
             res = await session.get(CHECK_DATA_UPDATE_CALLBACK_URL)
             count = await res.json()
-            # we got one callback
-            assert count == 1
+            # we got one callback in the interim
+            assert count == current_callback_count +1
 
     # cleanup
     finally:
