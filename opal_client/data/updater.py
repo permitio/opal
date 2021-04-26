@@ -3,6 +3,7 @@ import hashlib
 import itertools
 import json
 from typing import List, Tuple
+import uuid
 
 from aiohttp.client import ClientSession
 from fastapi_websocket_pubsub import PubSubClient
@@ -97,7 +98,10 @@ class DataUpdater:
         self.trigger_data_update(update)
 
     def trigger_data_update(self, update: DataUpdate):
-        logger.info("Triggering data fetch and update", update=update)
+        # make sure the id has a unique id for tracking
+        if update.id is None:
+            update.id = uuid.uuid4().hex
+        logger.info("Triggering data update with id: {id}", update=update, id=update.id)
         asyncio.create_task(self.update_policy_data(
             update, policy_store=self._policy_store, data_fetcher=self._data_fetcher))
 
@@ -266,7 +270,7 @@ class DataUpdater:
         policy_data_with_urls = await data_fetcher.handle_urls(urls)
         # Save the data from the update
         # We wrap our interaction with the policy store with a transaction  
-        async with policy_store:
+        async with policy_store.transaction_context(update.id):
             for (url, fetch_config, result), entry in itertools.zip_longest(policy_data_with_urls, entries):
                 if not isinstance(result, Exception):
                     # get path to store the URL data (default mode (None) is as "" - i.e. as all the data at root)

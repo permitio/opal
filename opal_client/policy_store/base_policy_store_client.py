@@ -1,6 +1,8 @@
 from typing import Any, Dict, Optional, List, Union
 from pydantic import BaseModel
 from opal_common.schemas.policy import PolicyBundle
+from contextlib import asynccontextmanager
+
 
 class BasePolicyStoreClient:
     """
@@ -12,15 +14,25 @@ class BasePolicyStoreClient:
         return self
 
     async def __aexit__(self, exc_type, exc, tb):
-        await self.end_transcation()
+        await self.end_transcation(exc_type, exc, tb)
 
-    async def start_transaction(self):
+    @asynccontextmanager
+    async def transaction_context(self, transaction_id):
+         await self.start_transaction(transaction_id)
+         try:
+            yield self
+         except Exception as exc:    
+             await self.end_transcation(exc=exc)
+         else:
+             await self.end_transcation()
+
+    async def start_transaction(self, transaction_id):
         """
         Start a series of operations with the policy store
         """
         pass
 
-    async def end_transcation(self):
+    async def end_transcation(self, exc=None):
         """
         Complete a series of operations with the policy store
         """        
