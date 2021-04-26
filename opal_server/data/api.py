@@ -4,7 +4,7 @@ from fastapi import APIRouter, HTTPException, status, Header
 from fastapi.responses import RedirectResponse
 
 from opal_common.logger import logger
-from opal_common.schemas.data import DataSourceConfig, ServerDataSourceConfig, DataUpdate
+from opal_common.schemas.data import DataSourceConfig, ServerDataSourceConfig, DataUpdate, DataUpdateReport
 from opal_common.urls import set_url_query_param
 from opal_server.deps.authentication import get_token_from_header
 from opal_server.config import opal_server_config
@@ -22,6 +22,17 @@ def init_data_updates_router(data_update_publisher: DataUpdatePublisher, data_so
         will be hitting this route, which will return an empty dataset (empty dict).
         """
         logger.warning("Serving default all-data route, meaning DATA_CONFIG_SOURCES was not configured!")
+        return {}
+
+    @router.post(opal_server_config.DATA_CALLBACK_DEFAULT_ROUTE)
+    async def empty_data_update_callback(report: DataUpdateReport):
+        """
+        A fake data update callback to be called by the OPAL client after completing an update.
+        If the user deploying OPAL-client did not set OPAL_DEFAULT_UPDATE_CALLBACKS properly,
+        OPAL clients will be hitting this route, which will return an empty dataset (empty dict).
+        """
+        logger.warning("Serving empty data update callback, meaning client did not configure OPAL_DEFAULT_UPDATE_CALLBACKS!")
+        logger.info("Empty update callback, received report for update: {update_id}", update_id=report.update_id)
         return {}
 
     @router.get(
