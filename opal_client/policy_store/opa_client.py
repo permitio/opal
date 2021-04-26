@@ -179,6 +179,8 @@ class OpaClient(BasePolicyStoreClient):
                 policy_data=module_data,
                 path=module_path,
             )
+        except aiohttp.ClientError as e:
+                logger.warning("Opa connection error: {err}", err=e)        
         except json.JSONDecodeError as e:
             logger.warning(
                 "bundle contains non-json data module: {module_path}",
@@ -187,7 +189,6 @@ class OpaClient(BasePolicyStoreClient):
                 bundle_hash=hash
             )
 
-    @fail_silently()
     @retry(**RETRY_CONFIG)
     async def set_policy_data(self, policy_data: Dict[str, Any], path: str = ""):
         self._policy_data = policy_data

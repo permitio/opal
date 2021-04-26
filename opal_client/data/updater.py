@@ -285,13 +285,24 @@ class DataUpdater:
                         url=url,
                         path=policy_store_path or '/'
                     )
-                    res = await policy_store.set_policy_data(policy_data, path=policy_store_path)
-                    # a valuse of None indicates a failure to save to the policy store
-                    report.saved = res is not None
+                    try:
+                        await policy_store.set_policy_data(policy_data, path=policy_store_path)
+                        # No exception we we're able to save to the policy-store
+                        report.saved = True
+                        # save the report for the entry
+                        reports.append(report)
+                    except:
+                        logger.exception("Failed to save data update to policy-store")
+                        # we failed to save to policy-store
+                        report.saved = False
+                        # save the report for the entry
+                        reports.append(report)
+                        # re-raise so the context manager will be aware of the failure
+                        raise
                 else:
                     report = DataEntryReport(entry=entry, fetched=False, saved=False)
-                # save the report for the entry
-                reports.append(report)
+                    # save the report for the entry
+                    reports.append(report)
         # should we send a report to defined callbackers?
         if self._should_send_reports:
             # spin off reporting (no need to wait on it)
