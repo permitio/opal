@@ -161,9 +161,9 @@ Running the opal server container is simply a command of [docker run](#example-d
 
 #### 1) Deploying the broadcast channel backbone service (optional)
 
-OPAL servers provide a lightweight websocket pub/sub channel for the OPAL clients. However, in order for all the OPAL servers instances (**workers** of same server, and of course servers on **other nodes**) to be synced with each other (And in turn their clients to be synced) they need to connect through a **shared channel** - which we refer to as the **backbone** pub/sub or broadcast channel.
+When scaling the OPAL Server to **multiple workers** and/or **multiple containers**, we use a **broadcast channel** to sync between all the instances of OPAL Server. In order words, communication on the broadcast channel is **communication between OPAL servers**, and is not related to the OPAL client.
 
-Under the hood, our interface to the broadcast channel backbone service is implemented by [encode/broadcaster](https://github.com/encode/broadcaster).
+Under the hood, our interface to the broadcast channel **backbone service** is implemented by [encode/broadcaster](https://github.com/encode/broadcaster).
 
 At the moment, the supported broadcast channel backbones are:
 * Postgres LISTEN/NOTIFY
