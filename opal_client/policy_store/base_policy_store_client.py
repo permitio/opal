@@ -1,28 +1,29 @@
-from opal_common.confi.confi import T
 from typing import Any, Dict, Optional, List, Union
 import uuid
 from pydantic import BaseModel
 from opal_common.schemas.policy import PolicyBundle
-from contextlib import asynccontextmanager
 from inspect import signature
 from functools import partial
-class PolicyStoreTranscationContextManager:
+class PolicyStoreTransactionContextManager:
 
     def __init__(self, policy_store:"BasePolicyStoreClient", transaction_id=None) -> None:
         self._store = policy_store
         # make sure we have  a transaction id
         self._transaction_id = transaction_id or uuid.uuid4().hex
+        self._actions = []
 
     def __getattribute__(self, name: str) -> Any:
         # internal members are prefixed with '-'
         if name.startswith("_"):
             # return internal members as is
-            return super.__getattribute__(self,name)
+            return super().__getattribute__(name)
         else:
             #proxy to wrapped store
-            value = getattr(self._store)
+            value = getattr(self._store, name)
             # methods that have a transcation id will get it automatically through this proxy
             if callable(value) and "transaction_id" in signature(value).parameters:
+                # record the call as an action in the transaction
+                self._actions.append(name)
                 return partial(value, transaction_id=self._transaction_id)
             # return properties / and regular methods as is
             else:
@@ -33,24 +34,43 @@ class PolicyStoreTranscationContextManager:
         return self
 
     async def __aexit__(self, exc_type, exc, tb):
-        await self._store.end_transcation(exc_type, exc, tb, transaction_id=self._transaction_id)
+        await self._store.end_transcation(exc_type, exc, tb, transaction_id=self._transaction_id, actions=self._actions)
 
 
 class BasePolicyStoreClient:
     """
-    A pure-virtual interface for policy and policy-data store
+    An interface for policy and policy-data store
     """
 
-    async def start_transaction(self, transaction_id=None):
+    def transaction_context(self, transaction_id)-> PolicyStoreTransactionContextManager:
         """
+        Args:
+            transaction_id : the id of the transaction
+
+        Returns:
+            PolicyStoreTranscationContextManager: a context manager for a transaction to be used in a async with statement
+        """
+        return PolicyStoreTransactionContextManager(self, transaction_id=transaction_id)
+        
+    async def start_transaction(self, transaction_id:str=None):
+        """
+        PolicyStoreTranscationContextManager calls here on __aenter__
         Start a series of operations with the policy store
         """
         pass
 
-    async def end_transcation(self, exc=None, transaction_id:str=None):
+    async def end_transcation(self, exc_type=None, exc=None, tb=None, transaction_id:str=None, actions:List[str]=None):
         """
+        PolicyStoreTranscationContextManager calls here on __aexit__
         Complete a series of operations with the policy store
-        """        
+
+        Args:
+            exc_type: The exception type (if raised). Defaults to None.
+            exc: The exception type (if raised). Defaults to None.
+            tb: The traceback (if raised). Defaults to None.
+            transaction_id (str, optional): The transaction id. Defaults to None.
+            actions (List[str], optional): All the methods called in the transaction. Defaults to None.
+        """
         pass
 
     async def set_policy(self, policy_id: str, policy_code: str, transaction_id:Optional[str]=None):

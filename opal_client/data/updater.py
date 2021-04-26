@@ -270,7 +270,9 @@ class DataUpdater:
         policy_data_with_urls = await data_fetcher.handle_urls(urls)
         # Save the data from the update
         # We wrap our interaction with the policy store with a transaction  
-        async with policy_store.transaction_context(update.id):
+        async with policy_store.transaction_context(update.id) as store_transaction:
+            # for intelisense treat store_transaction as a PolicyStoreClient (which it proxies)
+            store_transaction: BasePolicyStoreClient
             for (url, fetch_config, result), entry in itertools.zip_longest(policy_data_with_urls, entries):
                 if not isinstance(result, Exception):
                     # get path to store the URL data (default mode (None) is as "" - i.e. as all the data at root)
@@ -290,7 +292,7 @@ class DataUpdater:
                         path=policy_store_path or '/'
                     )
                     try:
-                        await policy_store.set_policy_data(policy_data, path=policy_store_path)
+                        await store_transaction.set_policy_data(policy_data, path=policy_store_path)
                         # No exception we we're able to save to the policy-store
                         report.saved = True
                         # save the report for the entry
