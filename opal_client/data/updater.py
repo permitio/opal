@@ -205,9 +205,19 @@ class DataUpdater:
 
     @staticmethod
     def calc_hash(data):
-        if not isinstance(data, str):
-            data = json.dumps(data)
-        return hashlib.sha256(data.encode('utf-8')).hexdigest()
+        """
+        Calculate an hash (sah256) on the given data, if data isn't a string, it will be converted to JSON.
+        String are encoded as 'utf-8' prior to hash calculation.
+        Returns: 
+            the hash of the given data (as a a hexdigit string) or '' on failure to process. 
+        """
+        try:
+            if not isinstance(data, str):
+                data = json.dumps(data)
+            return hashlib.sha256(data.encode('utf-8')).hexdigest()
+        except:
+            logger.exception("Failed to calculate hash for data {data}", data=data)
+            return ""
 
     async def report_update_results(self, update: DataUpdate, reports: List[DataEntryReport], data_fetcher: DataFetcher):
         try:
@@ -225,8 +235,11 @@ class DataUpdater:
                 urls.append((url, callback_config))
 
             logger.info("Reporting the update to requested callbacks", urls=urls)
-            await data_fetcher.handle_urls(urls)
-            # TODO: log failed reports
+            report_results = await data_fetcher.handle_urls(urls)
+            # log reports which we failed to send
+            for (url, config), result in zip(urls,report_results):
+                if isinstance(result, Exception):
+                    logger.error("Failed to send report to {url} with config {config}", url=url, config=config, exc_info=result)
         except:
             logger.exception("Failed to excute report_update_results")
 
