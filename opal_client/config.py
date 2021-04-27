@@ -114,6 +114,8 @@ class OpalClientConfig(Confi):
         "system.opal.transactions",
         description="Path to OPA document that stores the OPA write transactions")
 
+    OPA_HEALTH_CHECK_POLICY_PATH = 'opa/healthcheck/opal.rego'
+
     def on_load(self):
         # LOGGER
         if self.INLINE_OPA_LOG_FORMAT == OpaLogFormat.NONE:

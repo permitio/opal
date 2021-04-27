@@ -2,6 +2,7 @@ from logging import disable
 import os
 import signal
 import asyncio
+import aiohttp
 import functools
 from typing import List
 
@@ -172,18 +173,52 @@ class OpalClient:
             logger.exception("exception while shutting down updaters")
 
     async def launch_policy_store_dependent_tasks(self):
+        await self.maybe_init_healthcheck_policy()
         try:
             for task in asyncio.as_completed([self.launch_policy_updater(), self.launch_data_updater()]):
                 await task
         except websockets.exceptions.InvalidStatusCode as err:
             logger.error("Failed to launch background task -- {err}", err=err)
-            logger.info("triggering shutdown with SIGTERM...")
-            # this will send SIGTERM (Keyboard interrupt) to the worker, making uvicorn
-            # send "lifespan.shutdown" event to Starlette via the ASGI lifespan interface.
-            # Starlette will then trigger the @app.on_event("shutdown") callback, which
-            # in our case (self.stop_client_background_tasks()) will gracefully shutdown
-            # the background processes and only then will terminate the worker.
-            os.kill(os.getpid(), signal.SIGTERM)
+            self._trigger_shutdown()
+
+    async def maybe_init_healthcheck_policy(self):
+        """
+        This function only runs if OPA_HEALTH_CHECK_POLICY_ENABLED is true.
+
+        Puts the healthcheck policy in opa cache and inits the transaction log used by the policy.
+        If any action fails, opal client will shutdown.
+        """
+        if not opal_client_config.OPA_HEALTH_CHECK_POLICY_ENABLED:
+            return # skip
+
+        here = os.path.abspath(os.path.dirname(__file__))
+        healthcheck_policy_path = opal_client_config.OPA_HEALTH_CHECK_POLICY_PATH
+        healthcheck_policy_abspath = os.path.join(here, healthcheck_policy_path)
+        if not os.path.exists(healthcheck_policy_abspath):
+            logger.error("Critical: OPA health-check policy is enabled, but cannot find policy at {path}", path=healthcheck_policy_abspath)
+            self._trigger_shutdown()
+
+        try:
+            healthcheck_policy_code = open(healthcheck_policy_path, 'r').read()
+        except IOError as err:
+            logger.error("Critical: Cannot read healthcheck policy: {err}", err=err)
+            self._trigger_shutdown()
+
+        try:
+            await self.policy_store.set_policy(policy_id=healthcheck_policy_path, policy_code=healthcheck_policy_code)
+            await self.policy_store.init_transaction_log()
+        except aiohttp.ClientError as err:
+            logger.error("Failed to connect to OPA agent while init healthcheck policy -- {err}", err=err)
+            self._trigger_shutdown()
+
+    def _trigger_shutdown(self):
+        # this will send SIGTERM (Keyboard interrupt) to the worker, making uvicorn
+        # send "lifespan.shutdown" event to Starlette via the ASGI lifespan interface.
+        # Starlette will then trigger the @app.on_event("shutdown") callback, which
+        # in our case (self.stop_client_background_tasks()) will gracefully shutdown
+        # the background processes and only then will terminate the worker.
+        logger.info("triggering shutdown with SIGTERM...")
+        os.kill(os.getpid(), signal.SIGTERM)
 
     async def launch_policy_updater(self):
         if self.policy_updater:
