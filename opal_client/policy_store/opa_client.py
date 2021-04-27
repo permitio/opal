@@ -204,6 +204,7 @@ class OpaClient(BasePolicyStoreClient):
 
     @retry(**RETRY_CONFIG)
     async def set_policy_data(self, policy_data: JsonableValue, path: str = "", transaction_id:Optional[str]=None):
+        path = self._safe_data_module_path(path)
         self._policy_data = policy_data
         async with aiohttp.ClientSession() as session:
             try:
@@ -221,6 +222,7 @@ class OpaClient(BasePolicyStoreClient):
 
     @retry(**RETRY_CONFIG)
     async def delete_policy_data(self, path: str = "", transaction_id:Optional[str]=None):
+        path = self._safe_data_module_path(path)
         if not path:
             return await self.set_policy_data({})
 
