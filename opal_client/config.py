@@ -111,7 +111,7 @@ class OpalClientConfig(Confi):
 
     OPA_HEALTH_CHECK_TRANSACTION_LOG_PATH = confi.str(
         "OPA_HEALTH_CHECK_TRANSACTION_LOG_PATH",
-        "system.opal.transactions",
+        "system/opal/transactions",
         description="Path to OPA document that stores the OPA write transactions")
 
     OPA_HEALTH_CHECK_POLICY_PATH = 'opa/healthcheck/opal.rego'
