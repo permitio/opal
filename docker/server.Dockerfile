@@ -72,7 +72,13 @@ ENV UVICORN_ASGI_APP=opal_server.main:app
 ENV UVICORN_PORT=7002
 
 # opal configuration --------------------------------------
-# ENV ...
+# if you are not setting OPAL_DATA_CONFIG_SOURCES for some reason,
+# override this env var with the actual public address of the server
+# container (i.e: if you are running in docker compose and the server
+# host is `opalserver`, the value will be: http://opalserver:7002/policy-data)
+# `host.docker.internal` value will work better than `localhost` if you are
+# running dockerized opal server and client on the same machine
+ENV OPAL_ALL_DATA_URL=http://host.docker.internal:7002/policy-data
 
 # expose opal server port
 EXPOSE 7002
