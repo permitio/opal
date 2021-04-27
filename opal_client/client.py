@@ -219,11 +219,13 @@ class OpalClient:
             raise
 
     def _trigger_shutdown(self):
-        # this will send SIGTERM (Keyboard interrupt) to the worker, making uvicorn
-        # send "lifespan.shutdown" event to Starlette via the ASGI lifespan interface.
-        # Starlette will then trigger the @app.on_event("shutdown") callback, which
-        # in our case (self.stop_client_background_tasks()) will gracefully shutdown
-        # the background processes and only then will terminate the worker.
+        """
+        this will send SIGTERM (Keyboard interrupt) to the worker, making uvicorn
+        send "lifespan.shutdown" event to Starlette via the ASGI lifespan interface.
+        Starlette will then trigger the @app.on_event("shutdown") callback, which
+        in our case (self.stop_client_background_tasks()) will gracefully shutdown
+        the background processes and only then will terminate the worker.
+        """
         logger.info("triggering shutdown with SIGTERM...")
         os.kill(os.getpid(), signal.SIGTERM)
 
