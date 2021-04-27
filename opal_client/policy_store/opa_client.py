@@ -6,6 +6,7 @@ from typing import Dict, Any, Optional, List, Set
 
 from tenacity import retry, stop_after_attempt, wait_fixed
 from pydantic import BaseModel
+from fastapi import Response, status
 
 from opal_client.config import opal_client_config
 from opal_client.logger import logger
@@ -28,6 +29,16 @@ def fail_silently(fallback=None):
                 return fallback
         return wrapper
     return decorator
+
+
+async def proxy_response_unless_invalid(raw_response: aiohttp.ClientResponse, accepted_status_codes: List[int]) -> Response:
+    """
+    throws value error if the http response recieved has an unexpected status code
+    """
+    response = await proxy_response(raw_response)
+    if response.status_code not in accepted_status_codes:
+        raise ValueError("OPA Client: unexpected status code: {}".format(response.status_code))
+    return response
 
 
 class OpaClient(BasePolicyStoreClient):
@@ -57,7 +68,7 @@ class OpaClient(BasePolicyStoreClient):
                     data=policy_code,
                     headers={'content-type': 'text/plain'}
                 ) as opa_response:
-                    return await proxy_response(opa_response)
+                    return await proxy_response_unless_invalid(opa_response, accepted_status_codes=[status.HTTP_200_OK])
             except aiohttp.ClientError as e:
                 logger.warning("Opa connection error: {err}", err=e)
                 raise
@@ -83,7 +94,10 @@ class OpaClient(BasePolicyStoreClient):
                 async with session.delete(
                     f"{self._opa_url}/policies/{policy_id}",
                 ) as opa_response:
-                    return await proxy_response(opa_response)
+                    return await proxy_response_unless_invalid(opa_response, accepted_status_codes=[
+                        status.HTTP_200_OK,
+                        status.HTTP_404_NOT_FOUND
+                    ])
             except aiohttp.ClientError as e:
                 logger.warning("Opa connection error: {err}", err=e)
                 raise
@@ -196,7 +210,10 @@ class OpaClient(BasePolicyStoreClient):
                     f"{self._opa_url}/data{path}",
                     data=json.dumps(self._policy_data),
                 ) as opa_response:
-                    return await proxy_response(opa_response)
+                    return await proxy_response_unless_invalid(opa_response, accepted_status_codes=[
+                        status.HTTP_204_NO_CONTENT,
+                        status.HTTP_304_NOT_MODIFIED
+                    ])
             except aiohttp.ClientError as e:
                 logger.warning("Opa connection error: {err}", err=e)
                 raise
@@ -211,7 +228,10 @@ class OpaClient(BasePolicyStoreClient):
                 async with session.delete(
                     f"{self._opa_url}/data{path}",
                 ) as opa_response:
-                    return await proxy_response(opa_response)
+                    return await proxy_response_unless_invalid(opa_response, accepted_status_codes=[
+                        status.HTTP_204_NO_CONTENT,
+                        status.HTTP_404_NOT_FOUND
+                    ])
             except aiohttp.ClientError as e:
                 logger.warning("Opa connection error: {err}", err=e)
                 raise
@@ -224,7 +244,7 @@ class OpaClient(BasePolicyStoreClient):
                     f"{self._opa_url}/data{path}",
                     data=json.dumps(patch_document),
                 ) as opa_response:
-                    return await proxy_response(opa_response)
+                    return await proxy_response_unless_invalid(opa_response, accepted_status_codes=[status.HTTP_204_NO_CONTENT])
             except aiohttp.ClientError as e:
                 logger.warning("Opa connection error: {err}", err=e)
                 raise
