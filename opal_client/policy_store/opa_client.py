@@ -12,9 +12,11 @@ from opal_client.config import opal_client_config
 from opal_client.logger import logger
 from opal_client.utils import proxy_response
 from opal_common.schemas.policy import DataModule, PolicyBundle
-from opal_common.schemas.store import StoreTransaction, ArrayAppendAction
+from opal_common.schemas.store import JSONPatchAction, StoreTransaction, ArrayAppendAction
 from opal_client.policy_store.base_policy_store_client import BasePolicyStoreClient, JsonableValue
 
+
+JSONPatchDocument = List[JSONPatchAction]
 
 # 2 retries with 2 seconds apart
 RETRY_CONFIG = dict(wait=wait_fixed(2), stop=stop_after_attempt(2))
@@ -122,6 +124,9 @@ class OpaClient(BasePolicyStoreClient):
         modules: List[Dict[str, Any]] = result.get("result", [])
         module_ids = [module.get("id", None) for module in modules]
         module_ids = [module_id for module_id in module_ids if module_id is not None]
+        # remove builtin modules from the list
+        builtin_modules = [opal_client_config.OPA_HEALTH_CHECK_POLICY_PATH]
+        module_ids = [module_id for module_id in module_ids if module_id not in builtin_modules]
         return module_ids
 
     async def set_policies(self, bundle: PolicyBundle, transaction_id:Optional[str]=None):
@@ -239,13 +244,17 @@ class OpaClient(BasePolicyStoreClient):
                 logger.warning("Opa connection error: {err}", err=e)
                 raise
 
-    async def patch_data(self, path: str, patch_document: Dict[str, Any], transaction_id:Optional[str]=None):
+    async def patch_data(self, path: str, patch_document: JSONPatchDocument, transaction_id:Optional[str]=None):
         path = self._safe_data_module_path(path)
+        # a patch document is a list of actions
+        # we render each action with pydantic, and then dump the doc into json
+        json_document = json.dumps([action.dict() for action in patch_document])
+
         async with aiohttp.ClientSession() as session:
             try:
                 async with session.patch(
                     f"{self._opa_url}/data{path}",
-                    data=json.dumps(patch_document),
+                    data=json_document,
                 ) as opa_response:
                     return await proxy_response_unless_invalid(opa_response, accepted_status_codes=[status.HTTP_204_NO_CONTENT])
             except aiohttp.ClientError as e:
@@ -314,4 +323,4 @@ class OpaClient(BasePolicyStoreClient):
     async def persist_transaction(self, transaction: StoreTransaction):
         path = opal_client_config.OPA_HEALTH_CHECK_TRANSACTION_LOG_PATH
         patch_action = ArrayAppendAction(value=transaction.dict())
-        return await self.patch_data(path=path, patch_document=patch_action.dict())
+        return await self.patch_data(path=path, patch_document=[patch_action])
