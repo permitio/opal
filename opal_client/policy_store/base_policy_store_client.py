@@ -4,7 +4,43 @@ from pydantic import BaseModel
 from opal_common.schemas.policy import PolicyBundle
 from inspect import signature
 from functools import partial
-class PolicyStoreTransactionContextManager:
+
+
+class AbstractPolicyStore:
+    """
+    holds only the interface of a policy store
+    """
+    async def set_policy(self, policy_id: str, policy_code: str, transaction_id:Optional[str]=None):
+        raise NotImplementedError()
+
+    async def get_policy(self, policy_id: str) -> Optional[str]:
+        raise NotImplementedError()
+
+    async def delete_policy(self, policy_id: str, transaction_id:Optional[str]=None):
+        raise NotImplementedError()
+
+    async def get_policy_module_ids(self) -> List[str]:
+        raise NotImplementedError()
+
+    async def set_policies(self, bundle: PolicyBundle, transaction_id:Optional[str]=None):
+        raise NotImplementedError()
+
+    async def get_policy_version(self) -> Optional[str]:
+        raise NotImplementedError()
+
+    async def set_policy_data(self, policy_data: Dict[str, Any], path: str = "", transaction_id:Optional[str]=None):
+        raise NotImplementedError()
+
+    async def delete_policy_data(self, path: str = "", transaction_id:Optional[str]=None):
+        raise NotImplementedError()
+
+    async def get_data(self, path: str) -> Dict:
+        raise NotImplementedError()
+
+    async def get_data_with_input(self, path: str, input: BaseModel) -> Dict:
+        raise NotImplementedError()
+
+class PolicyStoreTransactionContextManager(AbstractPolicyStore):
 
     def __init__(self, policy_store:"BasePolicyStoreClient", transaction_id=None) -> None:
         self._store = policy_store
@@ -37,12 +73,12 @@ class PolicyStoreTransactionContextManager:
         await self._store.end_transcation(exc_type, exc, tb, transaction_id=self._transaction_id, actions=self._actions)
 
 
-class BasePolicyStoreClient:
+class BasePolicyStoreClient(AbstractPolicyStore):
     """
     An interface for policy and policy-data store
     """
 
-    def transaction_context(self, transaction_id)-> PolicyStoreTransactionContextManager:
+    def transaction_context(self, transaction_id:str)-> PolicyStoreTransactionContextManager:
         """
         Args:
             transaction_id : the id of the transaction
@@ -51,7 +87,7 @@ class BasePolicyStoreClient:
             PolicyStoreTranscationContextManager: a context manager for a transaction to be used in a async with statement
         """
         return PolicyStoreTransactionContextManager(self, transaction_id=transaction_id)
-        
+
     async def start_transaction(self, transaction_id:str=None):
         """
         PolicyStoreTranscationContextManager calls here on __aenter__
@@ -72,33 +108,3 @@ class BasePolicyStoreClient:
             actions (List[str], optional): All the methods called in the transaction. Defaults to None.
         """
         pass
-
-    async def set_policy(self, policy_id: str, policy_code: str, transaction_id:Optional[str]=None):
-        raise NotImplementedError()
-
-    async def get_policy(self, policy_id: str) -> Optional[str]:
-        raise NotImplementedError()
-
-    async def delete_policy(self, policy_id: str, transaction_id:Optional[str]=None):
-        raise NotImplementedError()
-
-    async def get_policy_module_ids(self) -> List[str]:
-        raise NotImplementedError()
-
-    async def set_policies(self, bundle: PolicyBundle, transaction_id:Optional[str]=None):
-        raise NotImplementedError()
-
-    async def get_policy_version(self) -> Optional[str]:
-        raise NotImplementedError()
-
-    async def set_policy_data(self, policy_data: Dict[str, Any], path: str = "", transaction_id:Optional[str]=None):
-        raise NotImplementedError()
-
-    async def delete_policy_data(self, path: str = "", transaction_id:Optional[str]=None):
-        raise NotImplementedError()
-
-    async def get_data(self, path: str) -> Dict:
-        raise NotImplementedError()
-
-    async def get_data_with_input(self, path: str, input: BaseModel) -> Dict:
-        raise NotImplementedError()
