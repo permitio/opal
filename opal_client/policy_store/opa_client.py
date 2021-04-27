@@ -48,7 +48,7 @@ class OpaClient(BasePolicyStoreClient):
         return self._policy_version
 
     @retry(**RETRY_CONFIG)
-    async def set_policy(self, policy_id: str, policy_code: str):
+    async def set_policy(self, policy_id: str, policy_code: str, transaction_id:Optional[str]=None):
         self._cached_policies[policy_id] = policy_code
         async with aiohttp.ClientSession() as session:
             try:
@@ -77,7 +77,7 @@ class OpaClient(BasePolicyStoreClient):
                 raise
 
     @retry(**RETRY_CONFIG)
-    async def delete_policy(self, policy_id: str):
+    async def delete_policy(self, policy_id: str, transaction_id:Optional[str]=None):
         async with aiohttp.ClientSession() as session:
             try:
                 async with session.delete(
@@ -109,7 +109,7 @@ class OpaClient(BasePolicyStoreClient):
         module_ids = [module_id for module_id in module_ids if module_id is not None]
         return module_ids
 
-    async def set_policies(self, bundle: PolicyBundle):
+    async def set_policies(self, bundle: PolicyBundle, transaction_id:Optional[str]=None):
         if bundle.old_hash is None:
             return await self._set_policies_from_complete_bundle(bundle)
         else:
@@ -177,7 +177,7 @@ class OpaClient(BasePolicyStoreClient):
                 path=module_path,
             )
         except aiohttp.ClientError as e:
-                logger.warning("Opa connection error: {err}", err=e)        
+                logger.warning("Opa connection error: {err}", err=e)
         except json.JSONDecodeError as e:
             logger.warning(
                 "bundle contains non-json data module: {module_path}",
@@ -187,7 +187,7 @@ class OpaClient(BasePolicyStoreClient):
             )
 
     @retry(**RETRY_CONFIG)
-    async def set_policy_data(self, policy_data: Dict[str, Any], path: str = ""):
+    async def set_policy_data(self, policy_data: Dict[str, Any], path: str = "", transaction_id:Optional[str]=None):
         self._policy_data = policy_data
         async with aiohttp.ClientSession() as session:
             try:
@@ -201,7 +201,7 @@ class OpaClient(BasePolicyStoreClient):
                 raise
 
     @retry(**RETRY_CONFIG)
-    async def delete_policy_data(self, path: str = ""):
+    async def delete_policy_data(self, path: str = "", transaction_id:Optional[str]=None):
         if not path:
             return await self.set_policy_data({})
 
