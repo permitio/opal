@@ -4,7 +4,7 @@ from pydantic import BaseModel
 
 from opal_common.schemas.policy import PolicyBundle
 
-from .base_policy_store_client import  BasePolicyStoreClient
+from .base_policy_store_client import  BasePolicyStoreClient, JsonableValue
 
 class MockPolicyStoreClient(BasePolicyStoreClient):
     """
@@ -40,7 +40,7 @@ class MockPolicyStoreClient(BasePolicyStoreClient):
     async def get_policy_version(self) -> Optional[str]:
         return None
 
-    async def set_policy_data(self, policy_data: Dict[str, Any], path: str = "", transaction_id:Optional[str]=None):
+    async def set_policy_data(self, policy_data: JsonableValue, path: str = "", transaction_id:Optional[str]=None):
         self._data[path] = policy_data
         self.has_data_event.set()
 

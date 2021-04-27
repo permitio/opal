@@ -5,6 +5,7 @@ from opal_common.schemas.policy import PolicyBundle
 from inspect import signature
 from functools import partial
 
+JsonableValue = Union[Dict[str, Any], List[Any]]
 
 class AbstractPolicyStore:
     """
@@ -28,7 +29,7 @@ class AbstractPolicyStore:
     async def get_policy_version(self) -> Optional[str]:
         raise NotImplementedError()
 
-    async def set_policy_data(self, policy_data: Dict[str, Any], path: str = "", transaction_id:Optional[str]=None):
+    async def set_policy_data(self, policy_data: JsonableValue, path: str = "", transaction_id:Optional[str]=None):
         raise NotImplementedError()
 
     async def delete_policy_data(self, path: str = "", transaction_id:Optional[str]=None):

@@ -1,5 +1,4 @@
 import asyncio
-from opal_client.policy_store.base_policy_store_client import BasePolicyStoreClient
 import aiohttp
 import json
 import functools
@@ -12,6 +11,7 @@ from opal_client.config import opal_client_config
 from opal_client.logger import logger
 from opal_client.utils import proxy_response
 from opal_common.schemas.policy import DataModule, PolicyBundle
+from opal_client.policy_store.base_policy_store_client import BasePolicyStoreClient, JsonableValue
 
 
 # 2 retries with 2 seconds apart
@@ -188,7 +188,7 @@ class OpaClient(BasePolicyStoreClient):
             )
 
     @retry(**RETRY_CONFIG)
-    async def set_policy_data(self, policy_data: Dict[str, Any], path: str = "", transaction_id:Optional[str]=None):
+    async def set_policy_data(self, policy_data: JsonableValue, path: str = "", transaction_id:Optional[str]=None):
         self._policy_data = policy_data
         async with aiohttp.ClientSession() as session:
             try:
