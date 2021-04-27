@@ -56,8 +56,11 @@ async def update_policy(policy_store: BasePolicyStoreClient, directories: List[s
                 manifest=bundle.manifest,
                 deleted=deleted_files
             )
-        await policy_store.set_policies(bundle)
-
+        # store policy bundle in OPA cache
+        # We wrap our interaction with the policy store with a transaction, so that
+        # if the write-op fails, we will mark the transaction as failed.
+        async with policy_store.transaction_context(bundle.hash) as store_transaction:
+            await store_transaction.set_policies(bundle)
 
 class PolicyUpdater:
     """
