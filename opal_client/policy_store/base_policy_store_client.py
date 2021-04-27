@@ -91,11 +91,7 @@ class BasePolicyStoreClient:
     async def get_policy_version(self, transaction_id:Optional[str]=None) -> Optional[str]:
         raise NotImplementedError()
 
-    async def set_policy_data(self, policy_data: Dict[str, Any], path: str = "", transaction_id:Optional[str]=None) -> Union[None, Any]:
-        """
-        Returns:
-            Union[None, Any]: returning None indicates a failure to save to the policy-store
-        """
+    async def set_policy_data(self, policy_data: Dict[str, Any], path: str = "", transaction_id:Optional[str]=None):
         raise NotImplementedError()
 
     async def delete_policy_data(self, path: str = "", transaction_id:Optional[str]=None):
