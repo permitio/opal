@@ -216,6 +216,19 @@ class OpaClient(BasePolicyStoreClient):
                 logger.warning("Opa connection error: {err}", err=e)
                 raise
 
+    async def patch_data(self, path: str, patch_document: Dict[str, Any], transaction_id:Optional[str]=None):
+        path = self._safe_data_module_path(path)
+        async with aiohttp.ClientSession() as session:
+            try:
+                async with session.patch(
+                    f"{self._opa_url}/data{path}",
+                    data=json.dumps(patch_document),
+                ) as opa_response:
+                    return await proxy_response(opa_response)
+            except aiohttp.ClientError as e:
+                logger.warning("Opa connection error: {err}", err=e)
+                raise
+
     @fail_silently()
     @retry(**RETRY_CONFIG)
     async def get_data(self, path: str) -> Dict:

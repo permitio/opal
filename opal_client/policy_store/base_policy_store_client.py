@@ -35,6 +35,9 @@ class AbstractPolicyStore:
     async def delete_policy_data(self, path: str = "", transaction_id:Optional[str]=None):
         raise NotImplementedError()
 
+    async def patch_data(self, path: str, patch_document: Dict[str, Any], transaction_id:Optional[str]=None):
+        raise NotImplementedError()
+
     async def get_data(self, path: str) -> Dict:
         raise NotImplementedError()
 

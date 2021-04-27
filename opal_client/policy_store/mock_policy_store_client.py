@@ -59,6 +59,9 @@ class MockPolicyStoreClient(BasePolicyStoreClient):
         else:
             del self._data[path]
 
+    async def patch_data(self, path: str, patch_document: Dict[str, Any], transaction_id:Optional[str]=None):
+        pass
+
     async def wait_for_data(self):
         """
         Wait until the store has data set in it
