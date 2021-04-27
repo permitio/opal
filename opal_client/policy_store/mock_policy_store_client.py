@@ -3,6 +3,7 @@ from typing import Any, Dict, Optional, List
 from pydantic import BaseModel
 
 from opal_common.schemas.policy import PolicyBundle
+from opal_common.schemas.store import StoreTransaction
 
 from .base_policy_store_client import  BasePolicyStoreClient, JsonableValue
 
@@ -67,3 +68,9 @@ class MockPolicyStoreClient(BasePolicyStoreClient):
         Wait until the store has data set in it
         """
         await self.has_data_event.wait()
+
+    async def init_transaction_log(self):
+        pass
+
+    async def persist_transaction(self, transaction: StoreTransaction):
+        pass

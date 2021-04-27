@@ -277,3 +277,18 @@ class OpaClient(BasePolicyStoreClient):
         except aiohttp.ClientError as e:
             logger.warning("Opa connection error: {err}", err=e)
             raise
+
+    @retry(**RETRY_CONFIG)
+    async def init_transaction_log(self):
+        """
+        We use OPA to store a log of "write" transactions we do against OPA, super meta.
+        We need to create the document in OPA cache before we can actually patch it.
+        """
+        path = opal_client_config.OPA_HEALTH_CHECK_TRANSACTION_LOG_PATH
+        return await self.set_policy_data([], path=path)
+
+    @retry(**RETRY_CONFIG)
+    async def persist_transaction(self, transaction: StoreTransaction):
+        path = opal_client_config.OPA_HEALTH_CHECK_TRANSACTION_LOG_PATH
+        patch_action = ArrayAppendAction(value=transaction.dict())
+        return await self.patch_data(path=path, patch_document=patch_action.dict())

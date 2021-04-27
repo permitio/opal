@@ -2,8 +2,12 @@ from typing import Any, Dict, Optional, List, Union
 import uuid
 from pydantic import BaseModel
 from opal_common.schemas.policy import PolicyBundle
+from opal_common.schemas.store import StoreTransaction
 from inspect import signature
 from functools import partial
+
+from opal_client.logger import logger
+from opal_client.client import opal_client_config
 
 JsonableValue = Union[Dict[str, Any], List[Any]]
 
@@ -43,6 +47,13 @@ class AbstractPolicyStore:
 
     async def get_data_with_input(self, path: str, input: BaseModel) -> Dict:
         raise NotImplementedError()
+
+    async def init_transaction_log(self):
+        raise NotImplementedError()
+
+    async def persist_transaction(self, transaction: StoreTransaction):
+        raise NotImplementedError()
+
 
 class PolicyStoreTransactionContextManager(AbstractPolicyStore):
 
@@ -111,4 +122,32 @@ class BasePolicyStoreClient(AbstractPolicyStore):
             transaction_id (str, optional): The transaction id. Defaults to None.
             actions (List[str], optional): All the methods called in the transaction. Defaults to None.
         """
-        pass
+        if transaction_id is None or not actions:
+            return # skip, nothing to do if we have no data to log
+
+        if exc is not None:
+            try:
+                error_message = repr(exc)
+            except: # maybe repr throws here
+                error_message = None
+            transaction = StoreTransaction(id=transaction_id, actions=actions, success=False, error=error_message)
+            logger.warning("OPA transaction failed, transaction id={id}, actions={actions}, error={err}",
+                id=transaction_id,
+                actions=repr(actions),
+                err=error_message
+            )
+        else:
+            transaction = StoreTransaction(id=transaction_id, actions=actions, success=True)
+
+        if not opal_client_config.OPA_HEALTH_CHECK_POLICY_ENABLED:
+            return # skip persisting the transaction, healthcheck policy is disabled
+
+        try:
+            await self.persist_transaction(transaction)
+        except Exception as e:
+            # The writes to transaction log in OPA cache are not done a protected
+            # transaction context. If they fail, we do nothing special.
+            logger.error("Cannot write to OPAL transaction log, transaction id={id}, error={err}",
+                id=transaction.id,
+                err=e
+            )
