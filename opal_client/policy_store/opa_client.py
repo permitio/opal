@@ -177,7 +177,8 @@ class OpaClient(BasePolicyStoreClient):
                 path=module_path,
             )
         except aiohttp.ClientError as e:
-                logger.warning("Opa connection error: {err}", err=e)
+            logger.warning("Opa connection error: {err}", err=e)
+            raise
         except json.JSONDecodeError as e:
             logger.warning(
                 "bundle contains non-json data module: {module_path}",
