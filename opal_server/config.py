@@ -71,8 +71,7 @@ class OpalServerConfig(Confi):
     DATA_CONFIG_ROUTE = confi.str("DATA_CONFIG_ROUTE", "/data/config",
                                   description="URL to fetch the full basic configuration of data")
     DATA_CALLBACK_DEFAULT_ROUTE = confi.str("DATA_CALLBACK_DEFAULT_ROUTE", "/data/callback_report",
-        description="Exists so that if the client is running with the default value for" + \
-        " OPAL_DEFAULT_UPDATE_CALLBACKS, a warning will be printed instead of a timeout in the client")
+        description="Exists as a sane default in case the user did not set OPAL_DEFAULT_UPDATE_CALLBACKS")
 
     DATA_CONFIG_SOURCES = confi.model(
         "DATA_CONFIG_SOURCES",
