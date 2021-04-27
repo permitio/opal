@@ -19,15 +19,15 @@ class PolicyStoreTransactionContextManager:
             return super().__getattribute__(name)
         else:
             #proxy to wrapped store
-            value = getattr(self._store, name)
+            store_method = getattr(self._store, name)
             # methods that have a transcation id will get it automatically through this proxy
-            if callable(value) and "transaction_id" in signature(value).parameters:
+            if callable(store_method) and "transaction_id" in signature(store_method).parameters:
                 # record the call as an action in the transaction
                 self._actions.append(name)
-                return partial(value, transaction_id=self._transaction_id)
+                return partial(store_method, transaction_id=self._transaction_id)
             # return properties / and regular methods as is
             else:
-                return value
+                return store_method
 
     async def __aenter__(self):
         await self._store.start_transaction(transaction_id=self._transaction_id)
