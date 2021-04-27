@@ -48,7 +48,7 @@ class AbstractPolicyStore:
     async def get_data_with_input(self, path: str, input: BaseModel) -> Dict:
         raise NotImplementedError()
 
-    async def init_transaction_log(self):
+    async def init_healthcheck_policy(self, policy_id: str, policy_code: str):
         raise NotImplementedError()
 
     async def persist_transaction(self, transaction: StoreTransaction):

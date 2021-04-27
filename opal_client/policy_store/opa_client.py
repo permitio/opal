@@ -44,6 +44,74 @@ async def proxy_response_unless_invalid(raw_response: aiohttp.ClientResponse, ac
     return response
 
 
+class OpaTransactionLogState:
+    """
+    holds a mutatable state of the transaction log.
+    can persist to OPA as hardcoded policy
+    """
+    POLICY_ACTIONS = ["set_policies", "set_policy", "delete_policy"]
+    DATA_ACTIONS = ["set_policy_data", "delete_policy_data"]
+
+    def __init__(self, policy_store: BasePolicyStoreClient, policy_id: str, policy_template: str):
+        self._store = policy_store
+        self._policy_id = policy_id
+        self._policy_template = policy_template
+        self._num_successful_policy_transactions = 0
+        self._num_successful_data_transactions = 0
+        self._last_policy_transaction: Optional[StoreTransaction] = None
+        self._last_data_transaction: Optional[StoreTransaction] = None
+
+    @property
+    def ready(self):
+        is_ready: bool = (self._num_successful_policy_transactions > 0
+            and self._num_successful_data_transactions > 0)
+        return json.dumps(is_ready)
+
+    @property
+    def last_policy_transaction(self):
+        if self._last_policy_transaction is None:
+            return json.dumps({})
+        return json.dumps(self._last_policy_transaction.dict())
+
+    @property
+    def last_data_transaction(self):
+        if self._last_data_transaction is None:
+            return json.dumps({})
+        return json.dumps(self._last_data_transaction.dict())
+
+    async def persist(self):
+        """
+        renders the policy template with the current state, and writes it to OPA
+        """
+        policy_code = self._policy_template.format(
+            ready=self.ready,
+            last_policy_transaction=self.last_policy_transaction,
+            last_data_transaction=self.last_data_transaction
+        )
+        return await self._store.set_policy(policy_id=self._policy_id, policy_code=policy_code)
+
+    def _is_policy_transaction(self, transaction: StoreTransaction):
+        return len(set(transaction.actions).intersection(set(self.POLICY_ACTIONS))) > 0
+
+    def _is_data_transaction(self, transaction: StoreTransaction):
+        return len(set(transaction.actions).intersection(set(self.DATA_ACTIONS))) > 0
+
+    def process_transaction(self, transaction: StoreTransaction):
+        """
+        mutates the state into a new state that can be then persisted as hardcoded policy
+        """
+        if self._is_policy_transaction(transaction):
+            self._last_policy_transaction = transaction
+
+            if transaction.success:
+                self._num_successful_policy_transactions += 1
+
+        elif self._is_data_transaction(transaction):
+            self._last_data_transaction = transaction
+
+            if transaction.success:
+                self._num_successful_data_transactions += 1
+
 class OpaClient(BasePolicyStoreClient):
     """
     communicates with OPA via its REST API.
@@ -57,6 +125,9 @@ class OpaClient(BasePolicyStoreClient):
         self._cached_policies: Dict[str, str] = {}
         self._policy_version: Optional[str] = None
         self._lock = asyncio.Lock()
+
+        # as long as this is null, transaction log is disabled
+        self._transaction_state: Optional[OpaTransactionLogState] = None
 
     async def get_policy_version(self) -> Optional[str]:
         return self._policy_version
@@ -311,16 +382,17 @@ class OpaClient(BasePolicyStoreClient):
             raise
 
     @retry(**RETRY_CONFIG)
-    async def init_transaction_log(self):
-        """
-        We use OPA to store a log of "write" transactions we do against OPA, super meta.
-        We need to create the document in OPA cache before we can actually patch it.
-        """
-        path = opal_client_config.OPA_HEALTH_CHECK_TRANSACTION_LOG_PATH
-        return await self.set_policy_data([], path=path)
+    async def init_healthcheck_policy(self, policy_id: str, policy_code: str):
+        self._transaction_state = OpaTransactionLogState(
+            policy_store=self,
+            policy_id=policy_id,
+            policy_template=policy_code
+        )
+        return await self._transaction_state.persist()
 
     @retry(**RETRY_CONFIG)
     async def persist_transaction(self, transaction: StoreTransaction):
-        path = opal_client_config.OPA_HEALTH_CHECK_TRANSACTION_LOG_PATH
-        patch_action = ArrayAppendAction(value=transaction.dict())
-        return await self.patch_data(path=path, patch_document=[patch_action])
+        if self._transaction_state is None:
+            return
+        self._transaction_state.process_transaction(transaction)
+        return await self._transaction_state.persist()
