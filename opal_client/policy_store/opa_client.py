@@ -12,6 +12,7 @@ from opal_client.config import opal_client_config
 from opal_client.logger import logger
 from opal_client.utils import proxy_response
 from opal_common.schemas.policy import DataModule, PolicyBundle
+from opal_common.schemas.store import StoreTransaction, ArrayAppendAction
 from opal_client.policy_store.base_policy_store_client import BasePolicyStoreClient, JsonableValue
 
 
