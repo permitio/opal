@@ -47,7 +47,6 @@ class OpaClient(BasePolicyStoreClient):
     async def get_policy_version(self) -> Optional[str]:
         return self._policy_version
 
-    @fail_silently()
     @retry(**RETRY_CONFIG)
     async def set_policy(self, policy_id: str, policy_code: str):
         self._cached_policies[policy_id] = policy_code
@@ -77,7 +76,6 @@ class OpaClient(BasePolicyStoreClient):
                 logger.warning("Opa connection error: {err}", err=e)
                 raise
 
-    @fail_silently()
     @retry(**RETRY_CONFIG)
     async def delete_policy(self, policy_id: str):
         async with aiohttp.ClientSession() as session:
@@ -111,7 +109,6 @@ class OpaClient(BasePolicyStoreClient):
         module_ids = [module_id for module_id in module_ids if module_id is not None]
         return module_ids
 
-    @fail_silently()
     async def set_policies(self, bundle: PolicyBundle):
         if bundle.old_hash is None:
             return await self._set_policies_from_complete_bundle(bundle)
@@ -203,7 +200,6 @@ class OpaClient(BasePolicyStoreClient):
                 logger.warning("Opa connection error: {err}", err=e)
                 raise
 
-    @fail_silently()
     @retry(**RETRY_CONFIG)
     async def delete_policy_data(self, path: str = ""):
         if not path:
