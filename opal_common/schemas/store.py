@@ -8,7 +8,7 @@ class StoreTransaction(BaseModel):
     id: str = Field(..., description="The id of the transaction")
     actions: List[str] = Field(..., description="The write actions performed as part of the transaction")
     success: bool = Field(False, description="Whether or not the transaction was successful")
-    error: Optional[str] = Field(None, description="Error message in case of failure")
+    error: str = Field("", description="Error message in case of failure, defaults to empty string")
 
 class JSONPatchAction(BaseModel):
     """
