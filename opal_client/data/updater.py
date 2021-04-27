@@ -183,10 +183,11 @@ class DataUpdater:
         logger.info("Stopping data updater")
 
         # disconnect from Pub/Sub
-        try:
-            await asyncio.wait_for(self._client.disconnect(), timeout=3)
-        except asyncio.TimeoutError:
-            logger.debug("Timeout waiting for DataUpdater pubsub client to disconnect")
+        if self._client is not None:
+            try:
+                await asyncio.wait_for(self._client.disconnect(), timeout=3)
+            except asyncio.TimeoutError:
+                logger.debug("Timeout waiting for DataUpdater pubsub client to disconnect")
 
         # stop subscriber task
         if self._subscriber_task is not None:

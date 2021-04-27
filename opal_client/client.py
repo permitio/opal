@@ -173,7 +173,13 @@ class OpalClient:
             logger.exception("exception while shutting down updaters")
 
     async def launch_policy_store_dependent_tasks(self):
-        await self.maybe_init_healthcheck_policy()
+        try:
+            await self.maybe_init_healthcheck_policy()
+        except Exception:
+            logger.critical("healthcheck policy enabled but could not be initialized!")
+            self._trigger_shutdown()
+            return
+
         try:
             for task in asyncio.as_completed([self.launch_policy_updater(), self.launch_data_updater()]):
                 await task
@@ -191,25 +197,26 @@ class OpalClient:
         if not opal_client_config.OPA_HEALTH_CHECK_POLICY_ENABLED:
             return # skip
 
+        healthcheck_policy_relpath = opal_client_config.OPA_HEALTH_CHECK_POLICY_PATH
+
         here = os.path.abspath(os.path.dirname(__file__))
-        healthcheck_policy_path = opal_client_config.OPA_HEALTH_CHECK_POLICY_PATH
-        healthcheck_policy_abspath = os.path.join(here, healthcheck_policy_path)
-        if not os.path.exists(healthcheck_policy_abspath):
-            logger.error("Critical: OPA health-check policy is enabled, but cannot find policy at {path}", path=healthcheck_policy_abspath)
-            self._trigger_shutdown()
+        healthcheck_policy_path = os.path.join(here, healthcheck_policy_relpath)
+        if not os.path.exists(healthcheck_policy_path):
+            logger.error("Critical: OPA health-check policy is enabled, but cannot find policy at {path}", path=healthcheck_policy_path)
+            raise ValueError("OPA health check policy not found!")
 
         try:
             healthcheck_policy_code = open(healthcheck_policy_path, 'r').read()
         except IOError as err:
             logger.error("Critical: Cannot read healthcheck policy: {err}", err=err)
-            self._trigger_shutdown()
+            raise
 
         try:
-            await self.policy_store.set_policy(policy_id=healthcheck_policy_path, policy_code=healthcheck_policy_code)
+            await self.policy_store.set_policy(policy_id=healthcheck_policy_relpath, policy_code=healthcheck_policy_code)
             await self.policy_store.init_transaction_log()
         except aiohttp.ClientError as err:
             logger.error("Failed to connect to OPA agent while init healthcheck policy -- {err}", err=err)
-            self._trigger_shutdown()
+            raise
 
     def _trigger_shutdown(self):
         # this will send SIGTERM (Keyboard interrupt) to the worker, making uvicorn
