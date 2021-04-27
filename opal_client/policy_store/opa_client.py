@@ -33,6 +33,12 @@ def fail_silently(fallback=None):
         return wrapper
     return decorator
 
+def affects_transaction(func):
+    """
+    mark a method as write (affecting state of transaction) for transaction log
+    """
+    setattr(func, 'affects_transaction', True)
+    return func
 
 async def proxy_response_unless_invalid(raw_response: aiohttp.ClientResponse, accepted_status_codes: List[int]) -> Response:
     """
@@ -132,6 +138,7 @@ class OpaClient(BasePolicyStoreClient):
     async def get_policy_version(self) -> Optional[str]:
         return self._policy_version
 
+    @affects_transaction
     @retry(**RETRY_CONFIG)
     async def set_policy(self, policy_id: str, policy_code: str, transaction_id:Optional[str]=None):
         self._cached_policies[policy_id] = policy_code
@@ -161,6 +168,7 @@ class OpaClient(BasePolicyStoreClient):
                 logger.warning("Opa connection error: {err}", err=e)
                 raise
 
+    @affects_transaction
     @retry(**RETRY_CONFIG)
     async def delete_policy(self, policy_id: str, transaction_id:Optional[str]=None):
         async with aiohttp.ClientSession() as session:
@@ -200,6 +208,7 @@ class OpaClient(BasePolicyStoreClient):
         module_ids = [module_id for module_id in module_ids if module_id not in builtin_modules]
         return module_ids
 
+    @affects_transaction
     async def set_policies(self, bundle: PolicyBundle, transaction_id:Optional[str]=None):
         if bundle.old_hash is None:
             return await self._set_policies_from_complete_bundle(bundle)
@@ -278,6 +287,7 @@ class OpaClient(BasePolicyStoreClient):
                 bundle_hash=hash
             )
 
+    @affects_transaction
     @retry(**RETRY_CONFIG)
     async def set_policy_data(self, policy_data: JsonableValue, path: str = "", transaction_id:Optional[str]=None):
         path = self._safe_data_module_path(path)
@@ -296,6 +306,7 @@ class OpaClient(BasePolicyStoreClient):
                 logger.warning("Opa connection error: {err}", err=e)
                 raise
 
+    @affects_transaction
     @retry(**RETRY_CONFIG)
     async def delete_policy_data(self, path: str = "", transaction_id:Optional[str]=None):
         path = self._safe_data_module_path(path)
@@ -315,6 +326,7 @@ class OpaClient(BasePolicyStoreClient):
                 logger.warning("Opa connection error: {err}", err=e)
                 raise
 
+    @affects_transaction
     async def patch_data(self, path: str, patch_document: JSONPatchDocument, transaction_id:Optional[str]=None):
         path = self._safe_data_module_path(path)
         # a patch document is a list of actions

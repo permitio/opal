@@ -72,7 +72,10 @@ class PolicyStoreTransactionContextManager(AbstractPolicyStore):
             #proxy to wrapped store
             store_attr = getattr(self._store, name)
             # methods that have a transcation id will get it automatically through this proxy
-            if callable(store_attr) and "transaction_id" in signature(store_attr).parameters:
+            if callable(store_attr) and (
+                "transaction_id" in signature(store_attr).parameters
+                or hasattr(store_attr, "affects_transaction")
+            ):
                 # record the call as an action in the transaction
                 self._actions.append(name)
                 return partial(store_attr, transaction_id=self._transaction_id)
