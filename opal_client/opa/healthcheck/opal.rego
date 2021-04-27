@@ -40,8 +40,8 @@ healthy {
 
 	# we know there is at least one transaction in the array (otherwise not ready)
 	# get the last transaction of each type
-	last_policy_transaction := policy_transactions[minus(count(policy_transactions), 1)]
-	last_data_transaction := data_transactions[minus(count(data_transactions), 1)]
+	last_policy_transaction := policy_transactions[count(policy_transactions)-1]
+	last_data_transaction := data_transactions[count(data_transactions)-1]
 
 	# make sure the last transaction of each type was successful
 	last_policy_transaction.success
