@@ -1,6 +1,6 @@
-# BUILD STAGE ---------------------------------------------
+# BUILD STAGE ---------------------------------------
 # split this stage to save time and reduce image size
-# ---------------------------------------------------------
+# ---------------------------------------------------
 FROM python:3.8-alpine3.11 as BuildStage
 # update apk cache
 RUN apk update
@@ -14,15 +14,14 @@ WORKDIR /app/
 # Layer dependency install (for caching)
 COPY requirements.txt requirements.txt
 # install python deps
-RUN pip install --upgrade pip && pip install --user -r requirements.txt
+RUN pip install --no-cache-dir --upgrade pip && pip install --no-cache-dir --user -r requirements.txt
 
-# MAIN IMAGE ----------------------------------------------
-# most of the time only this image should be built
-# ---------------------------------------------------------
-FROM python:3.8-alpine3.11
+
+# COMMON IMAGE --------------------------------------
+# ---------------------------------------------------
+FROM python:3.8-alpine3.11 as common
 # bash is needed for ./start/sh script
-# git is needed by opal server (for policy repo tracking)
-RUN apk add --update --no-cache bash git openssh
+RUN apk add --update --no-cache bash
 # copy libraries from build stage
 COPY --from=BuildStage /root/.local /root/.local
 # copy wait-for-it script
@@ -31,8 +30,61 @@ RUN chmod +x /usr/wait-for-it.sh
 # copy startup script
 COPY ./scripts/start.sh /start.sh
 RUN chmod +x /start.sh
+# copy app code
+COPY . ./
+# install sidecar package
+RUN python setup/setup_common.py install
+# Make sure scripts in .local are usable:
+ENV PATH=/:/root/.local/bin:$PATH
+# run gunicorn
+CMD ["/start.sh"]
 
-# Potentially trust POLICY REPO HOST ssh signature --------
+
+# STANDALONE IMAGE ----------------------------------
+# ---------------------------------------------------
+FROM common as client-standalone
+# install sidecar client package
+RUN python setup/setup_client.py install
+# uvicorn config ------------------------------------
+
+# WARNING: do not change the number of workers on the opal client!
+# only one worker is currently supported for the client.
+
+# number of uvicorn workers
+ENV UVICORN_NUM_WORKERS=1
+# uvicorn asgi app
+ENV UVICORN_ASGI_APP=opal_client.main:app
+# uvicorn port
+ENV UVICORN_PORT=7000
+# disable inline OPA
+ENV OPAL_INLINE_OPA_ENABLED=false
+
+# expose opal client port
+EXPOSE 7000
+
+
+# CLIENT IMAGE --------------------------------------
+# Using standalone image as base --------------------
+# ---------------------------------------------------
+FROM client-standalone as client
+# curl is needed for next section
+RUN apk add --update --no-cache curl
+# copy opa from official image (main binary and lib for web assembly)
+RUN curl -L -o /opa https://openpolicyagent.org/downloads/latest/opa_linux_amd64 && chmod 755 /opa
+# enable inline OPA
+ENV OPAL_INLINE_OPA_ENABLED=true
+# expose opa port
+EXPOSE 8181
+
+
+# SERVER IMAGE --------------------------------------
+# ---------------------------------------------------
+FROM common as server
+# bash is needed for ./start/sh script
+# git is needed by opal server (for policy repo tracking)
+RUN apk add --update --no-cache git openssh
+
+# Potentially trust POLICY REPO HOST ssh signature --
 # opal trackes a remote (git) repository and fetches policy (e.g rego) from it.
 # however, if the policy repo uses an ssh url scheme, authentication to said repo
 # is done via ssh, and without adding the repo remote host (i.e: github.com) to
@@ -53,16 +105,10 @@ RUN if [[ "$TRUST_POLICY_REPO_HOST_SSH_FINGERPRINT" == "true" ]] ; then \
     chmod 0700 /root/.ssh && \
     ssh-keyscan -t rsa ${POLICY_REPO_HOST} >> /root/.ssh/known_hosts ; fi
 
-# copy app code
-COPY . ./
-# install sidecar package
-RUN python setup/setup_common.py install
+# install sidecar server package
 RUN python setup/setup_server.py install
 
-# Make sure scripts in .local are usable:
-ENV PATH=/:/root/.local/bin:$PATH
-
-# uvicorn config ------------------------------------------
+# uvicorn config ------------------------------------
 
 # number of uvicorn workers
 ENV UVICORN_NUM_WORKERS=1
@@ -71,7 +117,7 @@ ENV UVICORN_ASGI_APP=opal_server.main:app
 # uvicorn port
 ENV UVICORN_PORT=7002
 
-# opal configuration --------------------------------------
+# opal configuration --------------------------------
 # if you are not setting OPAL_DATA_CONFIG_SOURCES for some reason,
 # override this env var with the actual public address of the server
 # container (i.e: if you are running in docker compose and the server
@@ -82,5 +128,3 @@ ENV OPAL_ALL_DATA_URL=http://host.docker.internal:7002/policy-data
 
 # expose opal server port
 EXPOSE 7002
-# run gunicorn
-CMD ["/start.sh"]
