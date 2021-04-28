@@ -4,7 +4,7 @@ from fastapi import APIRouter, HTTPException, status, Header
 from fastapi.responses import RedirectResponse
 
 from opal_common.logger import logger
-from opal_common.schemas.data import DataSourceConfig, ServerDataSourceConfig, DataUpdate
+from opal_common.schemas.data import DataSourceConfig, ServerDataSourceConfig, DataUpdate, DataUpdateReport
 from opal_common.urls import set_url_query_param
 from opal_server.deps.authentication import get_token_from_header
 from opal_server.config import opal_server_config
@@ -23,6 +23,16 @@ def init_data_updates_router(data_update_publisher: DataUpdatePublisher, data_so
         """
         logger.warning("Serving default all-data route, meaning DATA_CONFIG_SOURCES was not configured!")
         return {}
+
+    @router.post(opal_server_config.DATA_CALLBACK_DEFAULT_ROUTE)
+    async def log_client_update_report(report: DataUpdateReport):
+        """
+        A data update callback to be called by the OPAL client after completing an update.
+        If the user deploying OPAL-client did not set OPAL_DEFAULT_UPDATE_CALLBACKS properly,
+        this method will be called as the default callback (will simply log the report).
+        """
+        logger.info("Recieved update report: {report}", report=report.dict())
+        return {} # simply returns 200
 
     @router.get(
         opal_server_config.DATA_CONFIG_ROUTE,

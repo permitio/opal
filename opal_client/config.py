@@ -101,8 +101,20 @@ class OpalClientConfig(Confi):
 
     DEFAULT_UPDATE_CALLBACKS = confi.model("DEFAULT_UPDATE_CALLBACKS", UpdateCallback, confi.delay(lambda SERVER_URL="": {
         "callbacks": [f"{SERVER_URL}/data/callback_report"]
-    }), 
+    }),
     description="Where/How the client should report on the completion of data updates")
+
+    # OPA transaction log / healthcheck policy ------------------------------------
+    OPA_HEALTH_CHECK_POLICY_ENABLED = confi.bool("OPA_HEALTH_CHECK_POLICY_ENABLED", False,
+        description="Should we load a special healthcheck policy into OPA that checks " + \
+            "that opa was synced correctly and is ready to answer to authorization queries")
+
+    OPA_HEALTH_CHECK_TRANSACTION_LOG_PATH = confi.str(
+        "OPA_HEALTH_CHECK_TRANSACTION_LOG_PATH",
+        "system/opal/transactions",
+        description="Path to OPA document that stores the OPA write transactions")
+
+    OPA_HEALTH_CHECK_POLICY_PATH = 'opa/healthcheck/opal.rego'
 
     def on_load(self):
         # LOGGER

@@ -70,6 +70,9 @@ class OpalServerConfig(Confi):
         "http://localhost:7002{ALL_DATA_ROUTE}"), description="URL for all data config [If you choose to have it all at one place]")
     DATA_CONFIG_ROUTE = confi.str("DATA_CONFIG_ROUTE", "/data/config",
                                   description="URL to fetch the full basic configuration of data")
+    DATA_CALLBACK_DEFAULT_ROUTE = confi.str("DATA_CALLBACK_DEFAULT_ROUTE", "/data/callback_report",
+        description="Exists as a sane default in case the user did not set OPAL_DEFAULT_UPDATE_CALLBACKS")
+
     DATA_CONFIG_SOURCES = confi.model(
         "DATA_CONFIG_SOURCES",
         ServerDataSourceConfig,
