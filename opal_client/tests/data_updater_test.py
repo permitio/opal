@@ -35,7 +35,7 @@ TEST_DATA = {
     "hello": "world"
 }
 
-DATA_UPDATE_CALLBACK_ROUTE = "/data/callback_report"
+DATA_UPDATE_CALLBACK_ROUTE = "/data/callback_report_for_test"
 DATA_UPDATE_CALLBACK_URL = f"http://localhost:{PORT}{DATA_UPDATE_CALLBACK_ROUTE}"
 
 CHECK_DATA_UPDATE_CALLBACK_ROUTE = "/callback_count"
@@ -62,7 +62,7 @@ def setup_server(event):
     def fetchable_data():
         return TEST_DATA
 
-    
+
     # route to report complition to
     @server_app.post(DATA_UPDATE_CALLBACK_ROUTE)
     def callback(report:DataUpdateReport):
@@ -77,7 +77,7 @@ def setup_server(event):
         return len(callbacks)
 
 
-    
+
 
     @server_app.on_event("startup")
     async def startup_event():
