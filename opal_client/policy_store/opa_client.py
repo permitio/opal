@@ -68,10 +68,22 @@ class OpaTransactionLogState:
         self._last_data_transaction: Optional[StoreTransaction] = None
 
     @property
-    def ready(self):
-        is_ready: bool = (self._num_successful_policy_transactions > 0
-            and self._num_successful_data_transactions > 0)
+    def ready(self) -> bool:
+        is_ready: bool = (
+            self._num_successful_policy_transactions > 0 and
+            self._num_successful_data_transactions > 0
+        )
         return json.dumps(is_ready)
+
+    @property
+    def healthy(self) -> bool:
+        is_healthy: bool = (
+            self._last_policy_transaction is not None and
+            self._last_policy_transaction.success and
+            self._last_data_transaction is not None and
+            self._last_data_transaction.success
+        )
+        return json.dumps(is_healthy)
 
     @property
     def last_policy_transaction(self):
@@ -89,6 +101,7 @@ class OpaTransactionLogState:
         """
         renders the policy template with the current state, and writes it to OPA
         """
+        logger.info("persisting health check policy: ready={ready}, healthy={healthy}", ready=self.ready, healthy=self.healthy)
         policy_code = self._policy_template.format(
             ready=self.ready,
             last_policy_transaction=self.last_policy_transaction,
@@ -106,6 +119,7 @@ class OpaTransactionLogState:
         """
         mutates the state into a new state that can be then persisted as hardcoded policy
         """
+        logger.info("processing store transaction: {transaction}", transaction=transaction.dict())
         if self._is_policy_transaction(transaction):
             self._last_policy_transaction = transaction
 
