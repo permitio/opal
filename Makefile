@@ -39,6 +39,7 @@ install-server-from-src:
 
 # docker
 docker-build-client:
+	$(MAKE) docker-build-client-standalone
 	@docker build -t authorizon/opal-client -f docker/client.Dockerfile .
 
 docker-build-client-standalone:
