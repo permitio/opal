@@ -1,11 +1,13 @@
-from sys import prefix
-import opal_client
+from opal_common.fetcher.providers.http_fetch_provider import HttpFetcherConfig
 import os
 from enum import Enum
+from sys import prefix
 
+import opal_client
+from opal_client.opa.options import OpaServerOptions
 from opal_common.confi import Confi, confi
 from opal_common.config import opal_common_config
-from opal_client.opa.options import OpaServerOptions
+from opal_common.schemas.data import UpdateCallback
 
 
 # Opal Client general configuration -------------------------------------------
@@ -26,6 +28,7 @@ class OpalClientConfig(Confi):
     POLICY_STORE_TYPE = confi.enum("POLICY_STORE_TYPE", PolicyStoreTypes, PolicyStoreTypes.OPA)
     POLICY_STORE_URL = confi.str("POLICY_STORE_URL", f"http://localhost:8181/v1")
     # create an instance of a policy store upon load
+
     def load_policy_store():
         from opal_client.policy_store import PolicyStoreClientFactory
         return PolicyStoreClientFactory.create()
@@ -57,8 +60,9 @@ class OpalClientConfig(Confi):
     SERVER_URL = confi.str("SERVER_URL", "http://localhost:7002", flags=["-s"])
     # opal server pubsub url
     OPAL_WS_ROUTE = "/ws"
-    SERVER_WS_URL = confi.str("SERVER_WS_URL", confi.delay(lambda SERVER_URL="":SERVER_URL.replace("https", "wss").replace("http", "ws")))
-    SERVER_PUBSUB_URL = confi.str("SERVER_PUBSUB_URL", confi.delay("{SERVER_WS_URL}" + f"{OPAL_WS_ROUTE}")) 
+    SERVER_WS_URL = confi.str("SERVER_WS_URL", confi.delay(
+        lambda SERVER_URL="": SERVER_URL.replace("https", "wss").replace("http", "ws")))
+    SERVER_PUBSUB_URL = confi.str("SERVER_PUBSUB_URL", confi.delay("{SERVER_WS_URL}" + f"{OPAL_WS_ROUTE}"))
 
     # opal server auth token
     CLIENT_TOKEN = confi.str("CLIENT_TOKEN", "THIS_IS_A_DEV_SECRET",
@@ -89,6 +93,28 @@ class OpalClientConfig(Confi):
 
     DEFAULT_DATA_URL = confi.str("DEFAULT_DATA_URL", "http://localhost:8000/policy-config",
                                  description="Default URL to fetch data from")
+
+    SHOULD_REPORT_ON_DATA_UPDATES = confi.bool("SEND_REPORTS_ON_DATA_UPDATES", False,
+                                              description="Should the client report on updates to callbacks defined in DEFAULT_UPDATE_CALLBACKS or within the given updates")
+    DEFAULT_UPDATE_CALLBACK_CONFIG = confi.model(
+        "DEFAULT_UPDATE_CALLBACK_CONFIG", HttpFetcherConfig, {"method": "post"})
+
+    DEFAULT_UPDATE_CALLBACKS = confi.model("DEFAULT_UPDATE_CALLBACKS", UpdateCallback, confi.delay(lambda SERVER_URL="": {
+        "callbacks": [f"{SERVER_URL}/data/callback_report"]
+    }),
+    description="Where/How the client should report on the completion of data updates")
+
+    # OPA transaction log / healthcheck policy ------------------------------------
+    OPA_HEALTH_CHECK_POLICY_ENABLED = confi.bool("OPA_HEALTH_CHECK_POLICY_ENABLED", False,
+        description="Should we load a special healthcheck policy into OPA that checks " + \
+            "that opa was synced correctly and is ready to answer to authorization queries")
+
+    OPA_HEALTH_CHECK_TRANSACTION_LOG_PATH = confi.str(
+        "OPA_HEALTH_CHECK_TRANSACTION_LOG_PATH",
+        "system/opal/transactions",
+        description="Path to OPA document that stores the OPA write transactions")
+
+    OPA_HEALTH_CHECK_POLICY_PATH = 'opa/healthcheck/opal.rego'
 
     def on_load(self):
         # LOGGER

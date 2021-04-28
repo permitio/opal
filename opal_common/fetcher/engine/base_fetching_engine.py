@@ -33,7 +33,7 @@ class BaseFetchingEngine:
         """
         raise NotImplementedError()
 
-    async def queue_url(self, url: str, callback: Coroutine, config: FetcherConfig = None, fetcher="HttpGetFetchProvider") -> FetchEvent:
+    async def queue_url(self, url: str, callback: Coroutine, config: FetcherConfig = None, fetcher="HttpFetchProvider") -> FetchEvent:
         """
         Simplified default fetching handler for queuing a fetch task
 
@@ -41,7 +41,7 @@ class BaseFetchingEngine:
             url (str): the URL to fetch from
             callback (Coroutine): a callback to call with the fetched result
             config (FetcherConfig, optional): Configuration to be used by the fetcher. Defaults to None.
-            fetcher (str, optional): Which fetcher class to use. Defaults to "HttpGetFetchProvider".
+            fetcher (str, optional): Which fetcher class to use. Defaults to "HttpFetchProvider".
         Returns: 
             the queued event (which will be mutated to at least have an Id)
         """

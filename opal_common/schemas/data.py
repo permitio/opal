@@ -1,5 +1,6 @@
 from logging import basicConfig
-from typing import List, Optional
+from opal_common.fetcher.providers.http_fetch_provider import HttpFetcherConfig
+from typing import Dict, List, Optional, Tuple, Union
 from pydantic import BaseModel, Field, root_validator, AnyHttpUrl
 
 from opal_common.fetcher.events import FetcherConfig
@@ -57,13 +58,47 @@ class ServerDataSourceConfig(BaseModel):
             raise ValueError('you must provide ONLY ONE of these fields: config, external_source_url')
         return values
 
+class UpdateCallback(BaseModel):
+    """
+    Configuration of callbacks upon completion of a FetchEvent 
+    Allows notifying other services on the update flow
+
+    Each callback is either a URL (str) or a tuple of a url and HttpFetcherConfig defining how to approach the URL
+    """
+    callbacks: List[Union[str, Tuple[str, HttpFetcherConfig] ]]
+
 class DataUpdate(BaseModel):
     """
     DataSources used as OPAL-server configuration
     Data update sent to clients
     """
+    # a UUID to identify this update (used as part of an updates complition callback)
+    id: Optional[str] = None
     entries: List[DataSourceEntry] = Field(..., description="list of related updates the OPAL client should perform")
     reason: str = Field(None, description="Reason for triggering the update")
+    # Configuration for how to notify other services on the status of Update
+    callback: UpdateCallback = UpdateCallback(callbacks=[])
+
+
+class DataEntryReport(BaseModel):
+    """
+    A report of the processing of a single DataSourceEntry
+    """
+    entry: DataSourceEntry = Field(..., description="The entry that was processed")
+    # Was the entry successfully fetched
+    fetched: Optional[bool] = False
+    # Was the entry successfully saved into the policy-data-store
+    saved: Optional[bool] = False
+    # Hash of the returned data
+    hash: Optional[str] = None
+
+    
+
+class DataUpdateReport(BaseModel):
+    # the UUID fo the update this report is for
+    update_id: Optional[str] = None
+    # Each DataSourceEntry and how it was processed
+    reports: List[DataEntryReport]
 
 
 

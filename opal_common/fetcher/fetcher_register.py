@@ -1,7 +1,7 @@
 from opal_common.fetcher.logger import get_logger
 from typing import Type, Optional, Dict
 from .fetch_provider import BaseFetchProvider
-from .providers.http_get_fetch_provider import HttpGetFetchProvider
+from .providers.http_fetch_provider import HttpFetchProvider
 from .events import FetchEvent
 from ..config import opal_common_config
 
@@ -22,7 +22,7 @@ class FetcherRegister:
 
     # Builtin fetchers
     BASIC_CONFIG = {
-        "HttpGetFetchProvider": HttpGetFetchProvider,
+        "HttpFetchProvider": HttpFetchProvider,
     }
 
     def __init__(self, config: Optional[Dict[str, BaseFetchProvider]] = None) -> None:

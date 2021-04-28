@@ -15,7 +15,7 @@ import pytest
 import uvicorn
 from fastapi import FastAPI
 
-from opal_common.fetcher.providers.http_get_fetch_provider import HttpGetFetchEvent, HttpGetFetchProvider
+from opal_common.fetcher.providers.http_fetch_provider import HttpFetchEvent, HttpFetchProvider
 from opal_common.fetcher import FetchingEngine, FetchEvent
 
 # Configurable
@@ -46,9 +46,9 @@ async def test_retry_failure():
         async def callback(result):
             got_data_event.set()
         # Use an event on an invalid port - and only to attempts
-        retry_config = HttpGetFetchProvider.DEFAULT_RETRY_CONFIG.copy()
+        retry_config = HttpFetchProvider.DEFAULT_RETRY_CONFIG.copy()
         retry_config["stop"] = tenacity.stop.stop_after_attempt(2)
-        event = HttpGetFetchEvent(url=f"http://localhost:25", retry=retry_config)
+        event = HttpFetchEvent(url=f"http://localhost:25", retry=retry_config)
         # queue the event
         await engine.queue_fetch_event(event, callback)
         # wait for the failure callback

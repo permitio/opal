@@ -1,0 +1,36 @@
+{
+  "system": {
+      "opal": {
+          "transactions": [
+              {
+                  "id": "674bd92f62420242d6fb5b5d1e0c831f29f6fe27",
+                  "actions": [
+                      "set_policies"
+                  ],
+                  "success": false
+              },
+              {
+                  "id": "9a20ca2e08ce379497142310cb8bbf64f9879271",
+                  "actions": [
+                      "set_policies"
+                  ],
+                  "success": true
+              },
+              {
+                  "id": "83e97b8d08f142c294460cf4dd64a544",
+                  "actions": [
+                      "set_policy_data"
+                  ],
+                  "success": true
+              },
+              {
+                  "id": "83e97b8d08f142c294460c555d64a544",
+                  "actions": [
+                      "set_policy_data"
+                  ],
+                  "success": true
+              }
+          ]
+      }
+  }
+}

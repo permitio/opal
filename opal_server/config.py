@@ -11,7 +11,7 @@ class OpalServerConfig(Confi):
     # ws server
     OPAL_WS_LOCAL_URL = confi.str("WS_LOCAL_URL", "ws://localhost:7002/ws")
     OPAL_WS_TOKEN = confi.str("WS_TOKEN", "THIS_IS_A_DEV_SECRET")
-    BROADCAST_URI = confi.str("BROADCAST_URI", "postgres://localhost/acalladb")
+    BROADCAST_URI = confi.str("BROADCAST_URI", None)
 
     # server security
     AUTH_PRIVATE_KEY_FORMAT = confi.enum("AUTH_PRIVATE_KEY_FORMAT", EncryptionKeyFormat, EncryptionKeyFormat.pem)
@@ -70,6 +70,9 @@ class OpalServerConfig(Confi):
         "http://localhost:7002{ALL_DATA_ROUTE}"), description="URL for all data config [If you choose to have it all at one place]")
     DATA_CONFIG_ROUTE = confi.str("DATA_CONFIG_ROUTE", "/data/config",
                                   description="URL to fetch the full basic configuration of data")
+    DATA_CALLBACK_DEFAULT_ROUTE = confi.str("DATA_CALLBACK_DEFAULT_ROUTE", "/data/callback_report",
+        description="Exists as a sane default in case the user did not set OPAL_DEFAULT_UPDATE_CALLBACKS")
+
     DATA_CONFIG_SOURCES = confi.model(
         "DATA_CONFIG_SOURCES",
         ServerDataSourceConfig,

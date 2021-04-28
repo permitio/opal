@@ -1,5 +1,5 @@
+from typing import List, Optional
 from pydantic import BaseModel
-
 
 class FetcherConfig(BaseModel):
     """
@@ -8,8 +8,6 @@ class FetcherConfig(BaseModel):
     Configurations  
     """
     pass
-
-
 class FetchEvent(BaseModel):
     """
     Event used to describe an queue fetching tasks
@@ -28,5 +26,7 @@ class FetchEvent(BaseModel):
     config: dict = None
     # Tenacity.retry - Override default retry configuration for this event     
     retry: dict = None
+
+
 
 

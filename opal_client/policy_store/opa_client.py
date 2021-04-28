@@ -1,5 +1,4 @@
 import asyncio
-from opal_client.policy_store.base_policy_store_client import BasePolicyStoreClient
 import aiohttp
 import json
 import functools
@@ -7,12 +6,17 @@ from typing import Dict, Any, Optional, List, Set
 
 from tenacity import retry, stop_after_attempt, wait_fixed
 from pydantic import BaseModel
+from fastapi import Response, status
 
 from opal_client.config import opal_client_config
 from opal_client.logger import logger
 from opal_client.utils import proxy_response
 from opal_common.schemas.policy import DataModule, PolicyBundle
+from opal_common.schemas.store import JSONPatchAction, StoreTransaction, ArrayAppendAction
+from opal_client.policy_store.base_policy_store_client import BasePolicyStoreClient, JsonableValue
 
+
+JSONPatchDocument = List[JSONPatchAction]
 
 # 2 retries with 2 seconds apart
 RETRY_CONFIG = dict(wait=wait_fixed(2), stop=stop_after_attempt(2))
@@ -29,6 +33,104 @@ def fail_silently(fallback=None):
         return wrapper
     return decorator
 
+def affects_transaction(func):
+    """
+    mark a method as write (affecting state of transaction) for transaction log
+    """
+    setattr(func, 'affects_transaction', True)
+    return func
+
+async def proxy_response_unless_invalid(raw_response: aiohttp.ClientResponse, accepted_status_codes: List[int]) -> Response:
+    """
+    throws value error if the http response recieved has an unexpected status code
+    """
+    response = await proxy_response(raw_response)
+    if response.status_code not in accepted_status_codes:
+        raise ValueError("OPA Client: unexpected status code: {}".format(response.status_code))
+    return response
+
+
+class OpaTransactionLogState:
+    """
+    holds a mutatable state of the transaction log.
+    can persist to OPA as hardcoded policy
+    """
+    POLICY_ACTIONS = ["set_policies", "set_policy", "delete_policy"]
+    DATA_ACTIONS = ["set_policy_data", "delete_policy_data"]
+
+    def __init__(self, policy_store: BasePolicyStoreClient, policy_id: str, policy_template: str):
+        self._store = policy_store
+        self._policy_id = policy_id
+        self._policy_template = policy_template
+        self._num_successful_policy_transactions = 0
+        self._num_successful_data_transactions = 0
+        self._last_policy_transaction: Optional[StoreTransaction] = None
+        self._last_data_transaction: Optional[StoreTransaction] = None
+
+    @property
+    def ready(self) -> bool:
+        is_ready: bool = (
+            self._num_successful_policy_transactions > 0 and
+            self._num_successful_data_transactions > 0
+        )
+        return json.dumps(is_ready)
+
+    @property
+    def healthy(self) -> bool:
+        is_healthy: bool = (
+            self._last_policy_transaction is not None and
+            self._last_policy_transaction.success and
+            self._last_data_transaction is not None and
+            self._last_data_transaction.success
+        )
+        return json.dumps(is_healthy)
+
+    @property
+    def last_policy_transaction(self):
+        if self._last_policy_transaction is None:
+            return json.dumps({})
+        return json.dumps(self._last_policy_transaction.dict())
+
+    @property
+    def last_data_transaction(self):
+        if self._last_data_transaction is None:
+            return json.dumps({})
+        return json.dumps(self._last_data_transaction.dict())
+
+    async def persist(self):
+        """
+        renders the policy template with the current state, and writes it to OPA
+        """
+        logger.info("persisting health check policy: ready={ready}, healthy={healthy}", ready=self.ready, healthy=self.healthy)
+        policy_code = self._policy_template.format(
+            ready=self.ready,
+            last_policy_transaction=self.last_policy_transaction,
+            last_data_transaction=self.last_data_transaction
+        )
+        return await self._store.set_policy(policy_id=self._policy_id, policy_code=policy_code)
+
+    def _is_policy_transaction(self, transaction: StoreTransaction):
+        return len(set(transaction.actions).intersection(set(self.POLICY_ACTIONS))) > 0
+
+    def _is_data_transaction(self, transaction: StoreTransaction):
+        return len(set(transaction.actions).intersection(set(self.DATA_ACTIONS))) > 0
+
+    def process_transaction(self, transaction: StoreTransaction):
+        """
+        mutates the state into a new state that can be then persisted as hardcoded policy
+        """
+        logger.info("processing store transaction: {transaction}", transaction=transaction.dict())
+        if self._is_policy_transaction(transaction):
+            self._last_policy_transaction = transaction
+
+            if transaction.success:
+                self._num_successful_policy_transactions += 1
+
+        elif self._is_data_transaction(transaction):
+            self._last_data_transaction = transaction
+
+            if transaction.success:
+                self._num_successful_data_transactions += 1
 
 class OpaClient(BasePolicyStoreClient):
     """
@@ -44,12 +146,15 @@ class OpaClient(BasePolicyStoreClient):
         self._policy_version: Optional[str] = None
         self._lock = asyncio.Lock()
 
+        # as long as this is null, transaction log is disabled
+        self._transaction_state: Optional[OpaTransactionLogState] = None
+
     async def get_policy_version(self) -> Optional[str]:
         return self._policy_version
 
-    @fail_silently()
+    @affects_transaction
     @retry(**RETRY_CONFIG)
-    async def set_policy(self, policy_id: str, policy_code: str):
+    async def set_policy(self, policy_id: str, policy_code: str, transaction_id:Optional[str]=None):
         self._cached_policies[policy_id] = policy_code
         async with aiohttp.ClientSession() as session:
             try:
@@ -58,7 +163,7 @@ class OpaClient(BasePolicyStoreClient):
                     data=policy_code,
                     headers={'content-type': 'text/plain'}
                 ) as opa_response:
-                    return await proxy_response(opa_response)
+                    return await proxy_response_unless_invalid(opa_response, accepted_status_codes=[status.HTTP_200_OK])
             except aiohttp.ClientError as e:
                 logger.warning("Opa connection error: {err}", err=e)
                 raise
@@ -77,15 +182,18 @@ class OpaClient(BasePolicyStoreClient):
                 logger.warning("Opa connection error: {err}", err=e)
                 raise
 
-    @fail_silently()
+    @affects_transaction
     @retry(**RETRY_CONFIG)
-    async def delete_policy(self, policy_id: str):
+    async def delete_policy(self, policy_id: str, transaction_id:Optional[str]=None):
         async with aiohttp.ClientSession() as session:
             try:
                 async with session.delete(
                     f"{self._opa_url}/policies/{policy_id}",
                 ) as opa_response:
-                    return await proxy_response(opa_response)
+                    return await proxy_response_unless_invalid(opa_response, accepted_status_codes=[
+                        status.HTTP_200_OK,
+                        status.HTTP_404_NOT_FOUND
+                    ])
             except aiohttp.ClientError as e:
                 logger.warning("Opa connection error: {err}", err=e)
                 raise
@@ -109,10 +217,13 @@ class OpaClient(BasePolicyStoreClient):
         modules: List[Dict[str, Any]] = result.get("result", [])
         module_ids = [module.get("id", None) for module in modules]
         module_ids = [module_id for module_id in module_ids if module_id is not None]
+        # remove builtin modules from the list
+        builtin_modules = [opal_client_config.OPA_HEALTH_CHECK_POLICY_PATH]
+        module_ids = [module_id for module_id in module_ids if module_id not in builtin_modules]
         return module_ids
 
-    @fail_silently()
-    async def set_policies(self, bundle: PolicyBundle):
+    @affects_transaction
+    async def set_policies(self, bundle: PolicyBundle, transaction_id:Optional[str]=None):
         if bundle.old_hash is None:
             return await self._set_policies_from_complete_bundle(bundle)
         else:
@@ -179,6 +290,9 @@ class OpaClient(BasePolicyStoreClient):
                 policy_data=module_data,
                 path=module_path,
             )
+        except aiohttp.ClientError as e:
+            logger.warning("Opa connection error: {err}", err=e)
+            raise
         except json.JSONDecodeError as e:
             logger.warning(
                 "bundle contains non-json data module: {module_path}",
@@ -187,9 +301,10 @@ class OpaClient(BasePolicyStoreClient):
                 bundle_hash=hash
             )
 
-    @fail_silently()
+    @affects_transaction
     @retry(**RETRY_CONFIG)
-    async def set_policy_data(self, policy_data: Dict[str, Any], path: str = ""):
+    async def set_policy_data(self, policy_data: JsonableValue, path: str = "", transaction_id:Optional[str]=None):
+        path = self._safe_data_module_path(path)
         self._policy_data = policy_data
         async with aiohttp.ClientSession() as session:
             try:
@@ -197,14 +312,18 @@ class OpaClient(BasePolicyStoreClient):
                     f"{self._opa_url}/data{path}",
                     data=json.dumps(self._policy_data),
                 ) as opa_response:
-                    return await proxy_response(opa_response)
+                    return await proxy_response_unless_invalid(opa_response, accepted_status_codes=[
+                        status.HTTP_204_NO_CONTENT,
+                        status.HTTP_304_NOT_MODIFIED
+                    ])
             except aiohttp.ClientError as e:
                 logger.warning("Opa connection error: {err}", err=e)
                 raise
 
-    @fail_silently()
+    @affects_transaction
     @retry(**RETRY_CONFIG)
-    async def delete_policy_data(self, path: str = ""):
+    async def delete_policy_data(self, path: str = "", transaction_id:Optional[str]=None):
+        path = self._safe_data_module_path(path)
         if not path:
             return await self.set_policy_data({})
 
@@ -213,7 +332,28 @@ class OpaClient(BasePolicyStoreClient):
                 async with session.delete(
                     f"{self._opa_url}/data{path}",
                 ) as opa_response:
-                    return await proxy_response(opa_response)
+                    return await proxy_response_unless_invalid(opa_response, accepted_status_codes=[
+                        status.HTTP_204_NO_CONTENT,
+                        status.HTTP_404_NOT_FOUND
+                    ])
+            except aiohttp.ClientError as e:
+                logger.warning("Opa connection error: {err}", err=e)
+                raise
+
+    @affects_transaction
+    async def patch_data(self, path: str, patch_document: JSONPatchDocument, transaction_id:Optional[str]=None):
+        path = self._safe_data_module_path(path)
+        # a patch document is a list of actions
+        # we render each action with pydantic, and then dump the doc into json
+        json_document = json.dumps([action.dict() for action in patch_document])
+
+        async with aiohttp.ClientSession() as session:
+            try:
+                async with session.patch(
+                    f"{self._opa_url}/data{path}",
+                    data=json_document,
+                ) as opa_response:
+                    return await proxy_response_unless_invalid(opa_response, accepted_status_codes=[status.HTTP_204_NO_CONTENT])
             except aiohttp.ClientError as e:
                 logger.warning("Opa connection error: {err}", err=e)
                 raise
@@ -266,3 +406,19 @@ class OpaClient(BasePolicyStoreClient):
         except aiohttp.ClientError as e:
             logger.warning("Opa connection error: {err}", err=e)
             raise
+
+    @retry(**RETRY_CONFIG)
+    async def init_healthcheck_policy(self, policy_id: str, policy_code: str):
+        self._transaction_state = OpaTransactionLogState(
+            policy_store=self,
+            policy_id=policy_id,
+            policy_template=policy_code
+        )
+        return await self._transaction_state.persist()
+
+    @retry(**RETRY_CONFIG)
+    async def persist_transaction(self, transaction: StoreTransaction):
+        if self._transaction_state is None:
+            return
+        self._transaction_state.process_transaction(transaction)
+        return await self._transaction_state.persist()

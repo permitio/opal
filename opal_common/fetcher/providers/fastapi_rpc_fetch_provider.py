@@ -12,12 +12,12 @@ from ..logger import get_logger
 from fastapi_websocket_rpc.websocket_rpc_client import WebSocketRpcClient
 from fastapi_websocket_rpc.rpc_methods import RpcMethodsBase
 
-logger = get_logger("providers.http_get_fetch_provider")
+logger = get_logger("rpc_fetch_provider")
 
 
 class FastApiRpcFetchConfig(FetcherConfig):
     """
-    Config for HttpGetFetchProvider's Adding HTTP headers 
+    Config for FastApiRpcFetchConfig's Adding HTTP headers 
     """
     rpc_method_name: str
     rpc_arguments: dict
