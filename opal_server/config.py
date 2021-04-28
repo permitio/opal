@@ -11,7 +11,7 @@ class OpalServerConfig(Confi):
     # ws server
     OPAL_WS_LOCAL_URL = confi.str("WS_LOCAL_URL", "ws://localhost:7002/ws")
     OPAL_WS_TOKEN = confi.str("WS_TOKEN", "THIS_IS_A_DEV_SECRET")
-    BROADCAST_URI = confi.str("BROADCAST_URI", "postgres://localhost/acalladb")
+    BROADCAST_URI = confi.str("BROADCAST_URI", None)
 
     # server security
     AUTH_PRIVATE_KEY_FORMAT = confi.enum("AUTH_PRIVATE_KEY_FORMAT", EncryptionKeyFormat, EncryptionKeyFormat.pem)
