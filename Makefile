@@ -39,10 +39,10 @@ install-server-from-src:
 
 # docker
 docker-build-client:
-	@docker build -t authorizon/opal-client -f docker/client.Dockerfile .
+	@docker build -t authorizon/opal-client --target client -f docker/Dockerfile .
 
 docker-build-client-standalone:
-	@docker build -t authorizon/opal-client-standalone -f docker/client-standalone.Dockerfile .
+	@docker build -t authorizon/opal-client-standalone --target client-standalone -f docker/Dockerfile .
 
 docker-run-client:
 	@docker run -it -e "OPAL_SERVER_URL=$(OPAL_SERVER_URL)" -p 7000:7000 -p 8181:8181 authorizon/opal-client
@@ -55,7 +55,7 @@ docker-run-client-standalone:
 		authorizon/opal-client-standalone
 
 docker-build-server:
-	@docker build -t authorizon/opal-server -f docker/server.Dockerfile .
+	@docker build -t authorizon/opal-server --target server -f docker/Dockerfile .
 
 docker-run-server:
 	@if [[ -z "$(OPAL_POLICY_REPO_SSH_KEY)" ]]; then \
