@@ -22,9 +22,9 @@ RUN pip install --no-cache-dir --upgrade pip && pip install --no-cache-dir --use
 FROM python:3.8-alpine3.11 as common
 # copy libraries from build stage
 COPY --from=BuildStage /root/.local /root/.local
-# copy wait-for-it script
-COPY scripts/wait-for-it.sh /usr/wait-for-it.sh
-RUN chmod +x /usr/wait-for-it.sh
+# copy wait-for script
+COPY scripts/wait-for.sh /usr/wait-for.sh
+RUN chmod +x /usr/wait-for.sh
 # copy startup script
 COPY ./scripts/start.sh /start.sh
 RUN chmod +x /start.sh
