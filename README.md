@@ -24,7 +24,7 @@ OPAL is an administration layer for Open Policy Agent (OPA), detecting changes t
 OPAL brings open-policy up to the speed needed by live applications.
 As your application state changes (whether it's via your APIs, DBs, git, S3 or 3rd-party SaaS services), OPAL will make sure your services are always in sync with the authorization data and policy they need (and only those they need).
 
-Check out OPAL's main site at <a href="https://opal.ac">OPAL.ac</a>
+Check out OPAL's main site at <a href="https://opal.ac">OPAL.ac</a> <br/> and this <a href="https://youtu.be/tG8jrdcc7Zo">Microsoft video briefly explaining OPAL and how it works with OPA</a>.
 
 ## Table of contents
  - [Getting Started](#getting-started)
