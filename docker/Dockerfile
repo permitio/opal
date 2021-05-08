@@ -20,13 +20,11 @@ RUN pip install --no-cache-dir --upgrade pip && pip install --no-cache-dir --use
 # COMMON IMAGE --------------------------------------
 # ---------------------------------------------------
 FROM python:3.8-alpine3.11 as common
-# bash is needed for ./start/sh script
-RUN apk add --update --no-cache bash
 # copy libraries from build stage
 COPY --from=BuildStage /root/.local /root/.local
-# copy wait-for-it script
-COPY scripts/wait-for-it.sh /usr/wait-for-it.sh
-RUN chmod +x /usr/wait-for-it.sh
+# copy wait-for script
+COPY scripts/wait-for.sh /usr/wait-for.sh
+RUN chmod +x /usr/wait-for.sh
 # copy startup script
 COPY ./scripts/start.sh /start.sh
 RUN chmod +x /start.sh
@@ -80,7 +78,6 @@ EXPOSE 8181
 # SERVER IMAGE --------------------------------------
 # ---------------------------------------------------
 FROM common as server
-# bash is needed for ./start/sh script
 # git is needed by opal server (for policy repo tracking)
 RUN apk add --update --no-cache git openssh
 
