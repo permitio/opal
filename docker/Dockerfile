@@ -1,9 +1,7 @@
 # BUILD STAGE ---------------------------------------
 # split this stage to save time and reduce image size
 # ---------------------------------------------------
-FROM python:3.8-alpine3.11 as BuildStage
-# update apk cache
-RUN apk update
+FROM python:3.8-alpine as BuildStage
 # TODO: remove this when upgrading to a new alpine version
 # more details: https://github.com/pyca/cryptography/issues/5771
 ENV CRYPTOGRAPHY_DONT_BUILD_RUST=1
@@ -19,7 +17,7 @@ RUN pip install --no-cache-dir --upgrade pip && pip install --no-cache-dir --use
 
 # COMMON IMAGE --------------------------------------
 # ---------------------------------------------------
-FROM python:3.8-alpine3.11 as common
+FROM python:3.8-alpine as common
 # copy libraries from build stage
 COPY --from=BuildStage /root/.local /root/.local
 # copy wait-for script
