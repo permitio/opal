@@ -47,6 +47,7 @@ OPAL is available both as **python packages** with a built-in CLI as well as pre
    <!-- - this tutorial is great for learning about OPAL core features and see what OPAL can do for you. -->
 * [Try the getting started guide for containers](docs/HOWTO/get_started_with_opal_using_docker.md)
    <!-- - this tutorial will show you how to configure OPAL to your specific needs and run the official docker containers locally or in production. -->
+* [Check out the Helm Chart for Kubernetes](https://github.com/authorizon/opal-helm-chart)
 
 ### Getting started with the python packages and CLI
 - Install
