@@ -43,7 +43,13 @@ async def affected_repo_urls(request: Request) -> List[str]:
     git_url = repo_payload.get("git_url", None)
     ssh_url = repo_payload.get("ssh_url", None)
     clone_url = repo_payload.get("clone_url", None)
-    urls = list(set([git_url, ssh_url, clone_url]))
+
+    # additional support for url payload
+    git_http_url = repo_payload.get("git_ssh_url", None)
+    ssh_http_url = repo_payload.get("git_http_url", None)
+    url = repo_payload.get("url", None)
+
+    urls = list(set([git_url, ssh_url, clone_url, git_http_url, ssh_http_url, url]))
     if not urls:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="repo url not found in payload!")
     return urls
