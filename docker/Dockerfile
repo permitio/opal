@@ -1,6 +1,9 @@
 # BUILD STAGE ---------------------------------------
 # split this stage to save time and reduce image size
 # ---------------------------------------------------
+# NOTE: at the moment we use alpine3.11 instead of alpine latest
+# due to https://github.com/gliderlabs/docker-alpine/issues/539
+# which broke alpine dns lookup methods starting at alpine 3.12.
 FROM python:3.8-alpine3.11 as BuildStage
 # update apk cache
 RUN apk update
@@ -19,6 +22,9 @@ RUN pip install --no-cache-dir --upgrade pip && pip install --no-cache-dir --use
 
 # COMMON IMAGE --------------------------------------
 # ---------------------------------------------------
+# NOTE: at the moment we use alpine3.11 instead of alpine latest
+# due to https://github.com/gliderlabs/docker-alpine/issues/539
+# which broke alpine dns lookup methods starting at alpine 3.12.
 FROM python:3.8-alpine3.11 as common
 # copy libraries from build stage
 COPY --from=BuildStage /root/.local /root/.local
