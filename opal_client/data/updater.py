@@ -5,7 +5,7 @@ import json
 from typing import List, Tuple
 import uuid
 
-from aiohttp.client import ClientSession
+from aiohttp.client import ClientSession, ClientError
 from fastapi_websocket_pubsub import PubSubClient
 from fastapi_websocket_rpc.rpc_channel import RpcChannel
 
@@ -118,8 +118,12 @@ class DataUpdater:
         logger.info("Getting data-sources configuration from '{source}'", source=url)
         try:
             async with ClientSession(headers=self._extra_headers) as session:
-                res = await session.get(url)
-            return DataSourceConfig.parse_obj(await res.json())
+                response = await session.get(url)
+                if response.status == 200:
+                    return DataSourceConfig.parse_obj(await response.json())
+                else:
+                    error_details = await response.json()
+                    raise ClientError(f"Fetch data sources failed with status code {response.status}, error: {error_details}")
         except:
             logger.exception(f"Failed to load data sources config")
             raise
