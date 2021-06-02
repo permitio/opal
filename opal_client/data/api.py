@@ -1,6 +1,4 @@
-from opal_common.schemas.data import DataUpdate
 from fastapi import APIRouter, status
-from starlette.status import HTTP_200_OK
 
 from opal_common.logger import logger
 from opal_client.data.updater import DataUpdater

@@ -19,7 +19,7 @@ from opal_client.policy_store.policy_store_client_factory import PolicyStoreClie
 from opal_client.opa.runner import OpaRunner
 from opal_client.opa.options import OpaServerOptions
 from opal_client.policy.api import init_policy_router
-from opal_client.policy.updater import PolicyUpdater, update_policy
+from opal_client.policy.updater import PolicyUpdater
 
 
 class OpalClient:
@@ -67,7 +67,7 @@ class OpalClient:
                 options=inline_opa_options,
                 rehydration_callbacks=[
                     # refetches policy code (e.g: rego) and static data from server
-                    functools.partial(update_policy, policy_store=self.policy_store, force_full_update=True),
+                    functools.partial(self.policy_updater.update_policy, force_full_update=True),
                     functools.partial(self.data_updater.get_base_policy_data, data_fetch_reason="policy store rehydration"),
                 ]
             )
@@ -99,7 +99,7 @@ class OpalClient:
         mounts the api routes on the app object
         """
         # Init api routers with required dependencies
-        policy_router = init_policy_router(policy_store=self.policy_store)
+        policy_router = init_policy_router(policy_updater=self.policy_updater)
         data_router = init_data_router(data_updater=self.data_updater)
 
         # mount the api routes on the app object

@@ -93,5 +93,3 @@ class PolicyFetcher:
                 logger.warning("server connection error: {err}", err=e)
                 raise
 
-
-policy_fetcher = PolicyFetcher()
