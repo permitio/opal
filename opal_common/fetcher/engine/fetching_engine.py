@@ -64,7 +64,7 @@ class FetchingEngine(BaseFetchingEngine):
 
     async def __aexit__(self, exc_type, exc, tb):
         if (exc is not None):
-            logger.error("Error occurred within FetchingEngine context", exc_info=(exc_type, exc, tb))
+            logger.error("Error occurred within FetchingEngine context", exc_info=repr((exc_type, exc, tb)))
         await self.terminate_workers()
 
     async def terminate_workers(self):

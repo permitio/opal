@@ -142,7 +142,7 @@ class PolicyUpdater:
             try:
                 await self._subscriber_task
             except asyncio.CancelledError as exc:
-                logger.debug("PolicyUpdater subscriber task was force-cancelled: {e}", exc=exc)
+                logger.debug("PolicyUpdater subscriber task was force-cancelled: {exc}", exc=repr(exc))
             self._subscriber_task = None
             logger.debug("PolicyUpdater subscriber task was cancelled")
 

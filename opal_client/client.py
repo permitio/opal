@@ -184,7 +184,7 @@ class OpalClient:
             for task in asyncio.as_completed([self.launch_policy_updater(), self.launch_data_updater()]):
                 await task
         except websockets.exceptions.InvalidStatusCode as err:
-            logger.error("Failed to launch background task -- {err}", err=err)
+            logger.error("Failed to launch background task -- {err}", err=repr(err))
             self._trigger_shutdown()
 
     async def maybe_init_healthcheck_policy(self):
@@ -208,13 +208,13 @@ class OpalClient:
         try:
             healthcheck_policy_code = open(healthcheck_policy_path, 'r').read()
         except IOError as err:
-            logger.error("Critical: Cannot read healthcheck policy: {err}", err=err)
+            logger.error("Critical: Cannot read healthcheck policy: {err}", err=repr(err))
             raise
 
         try:
             await self.policy_store.init_healthcheck_policy(policy_id=healthcheck_policy_relpath, policy_code=healthcheck_policy_code)
         except aiohttp.ClientError as err:
-            logger.error("Failed to connect to OPA agent while init healthcheck policy -- {err}", err=err)
+            logger.error("Failed to connect to OPA agent while init healthcheck policy -- {err}", err=repr(err))
             raise
 
     def _trigger_shutdown(self):

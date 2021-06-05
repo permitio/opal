@@ -16,7 +16,7 @@ def force_valid_bundle(bundle) -> PolicyBundle:
     try:
         return PolicyBundle(**bundle)
     except ValidationError as e:
-        logger.warning("server returned invalid bundle: {err}", bundle=bundle, err=e)
+        logger.warning("server returned invalid bundle: {err}", bundle=bundle, err=repr(e))
         raise
 
 async def throw_if_bad_status_code(response: aiohttp.ClientResponse, expected: List[int]) -> aiohttp.ClientResponse:
@@ -58,7 +58,7 @@ class PolicyFetcher:
         try:
             return await attempter(directories=directories, base_hash=base_hash)
         except Exception as err:
-            logger.warning("Failed all attempts to fetch bundle, got error: {err}", err=err)
+            logger.warning("Failed all attempts to fetch bundle, got error: {err}", err=repr(err))
             return None
 
     async def _fetch_policy_bundle(
@@ -90,6 +90,6 @@ class PolicyFetcher:
                     bundle = await response.json()
                     return force_valid_bundle(bundle)
             except aiohttp.ClientError as e:
-                logger.warning("server connection error: {err}", err=e)
+                logger.warning("server connection error: {err}", err=repr(e))
                 raise
 

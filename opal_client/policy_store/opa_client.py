@@ -165,7 +165,7 @@ class OpaClient(BasePolicyStoreClient):
                 ) as opa_response:
                     return await proxy_response_unless_invalid(opa_response, accepted_status_codes=[status.HTTP_200_OK])
             except aiohttp.ClientError as e:
-                logger.warning("Opa connection error: {err}", err=e)
+                logger.warning("Opa connection error: {err}", err=repr(e))
                 raise
 
     @fail_silently()
@@ -179,7 +179,7 @@ class OpaClient(BasePolicyStoreClient):
                     result = await opa_response.json()
                     return result.get("result", {}).get("raw", None)
             except aiohttp.ClientError as e:
-                logger.warning("Opa connection error: {err}", err=e)
+                logger.warning("Opa connection error: {err}", err=repr(e))
                 raise
 
     @affects_transaction
@@ -195,7 +195,7 @@ class OpaClient(BasePolicyStoreClient):
                         status.HTTP_404_NOT_FOUND
                     ])
             except aiohttp.ClientError as e:
-                logger.warning("Opa connection error: {err}", err=e)
+                logger.warning("Opa connection error: {err}", err=repr(e))
                 raise
 
     @fail_silently()
@@ -209,7 +209,7 @@ class OpaClient(BasePolicyStoreClient):
                     result = await opa_response.json()
                     return OpaClient._extract_module_ids_from_policies_json(result)
             except aiohttp.ClientError as e:
-                logger.warning("Opa connection error: {err}", err=e)
+                logger.warning("Opa connection error: {err}", err=repr(e))
                 raise
 
     @staticmethod
@@ -291,12 +291,12 @@ class OpaClient(BasePolicyStoreClient):
                 path=module_path,
             )
         except aiohttp.ClientError as e:
-            logger.warning("Opa connection error: {err}", err=e)
+            logger.warning("Opa connection error: {err}", err=repr(e))
             raise
         except json.JSONDecodeError as e:
             logger.warning(
                 "bundle contains non-json data module: {module_path}",
-                err=e,
+                err=repr(e),
                 module_path=module_path,
                 bundle_hash=hash
             )
@@ -317,7 +317,7 @@ class OpaClient(BasePolicyStoreClient):
                         status.HTTP_304_NOT_MODIFIED
                     ])
             except aiohttp.ClientError as e:
-                logger.warning("Opa connection error: {err}", err=e)
+                logger.warning("Opa connection error: {err}", err=repr(e))
                 raise
 
     @affects_transaction
@@ -337,7 +337,7 @@ class OpaClient(BasePolicyStoreClient):
                         status.HTTP_404_NOT_FOUND
                     ])
             except aiohttp.ClientError as e:
-                logger.warning("Opa connection error: {err}", err=e)
+                logger.warning("Opa connection error: {err}", err=repr(e))
                 raise
 
     @affects_transaction
@@ -355,7 +355,7 @@ class OpaClient(BasePolicyStoreClient):
                 ) as opa_response:
                     return await proxy_response_unless_invalid(opa_response, accepted_status_codes=[status.HTTP_204_NO_CONTENT])
             except aiohttp.ClientError as e:
-                logger.warning("Opa connection error: {err}", err=e)
+                logger.warning("Opa connection error: {err}", err=repr(e))
                 raise
 
     @fail_silently()
@@ -375,7 +375,7 @@ class OpaClient(BasePolicyStoreClient):
                 async with session.get(f"{self._opa_url}/data/{path}") as opa_response:
                     return await opa_response.json()
         except aiohttp.ClientError as e:
-            logger.warning("Opa connection error: {err}", err=e)
+            logger.warning("Opa connection error: {err}", err=repr(e))
             raise
 
     @retry(**RETRY_CONFIG)
@@ -404,7 +404,7 @@ class OpaClient(BasePolicyStoreClient):
                 ) as opa_response:
                     return await proxy_response(opa_response)
         except aiohttp.ClientError as e:
-            logger.warning("Opa connection error: {err}", err=e)
+            logger.warning("Opa connection error: {err}", err=repr(e))
             raise
 
     @retry(**RETRY_CONFIG)

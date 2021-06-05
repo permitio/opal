@@ -152,5 +152,5 @@ class BasePolicyStoreClient(AbstractPolicyStore):
             # transaction context. If they fail, we do nothing special.
             logger.error("Cannot write to OPAL transaction log, transaction id={id}, error={err}",
                 id=transaction.id,
-                err=e
+                err=repr(e)
             )
