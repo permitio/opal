@@ -1,26 +1,60 @@
 name: Build and publish to Docker Hub
 on:
   release:
+    # job will automatically run after a new "release" is create on github.
     types: [created]
 
   # Allows you to run this workflow manually from the Actions tab
   workflow_dispatch:
+    inputs:
+        dry_run:
+          description: 'If true, will not push the built images to docker hub.'
+          required: false
+          default: 'false'
 
 jobs:
-  # this job will build and push the docker images to docker hub
-  # - it will only run after a new "release" is create on github
-  # - it will auto tag the image according to the github release tag
-  docker_release:
+  # this job will build, test and (potentially) push the docker images to docker hub
+  #
+  # BUILD PHASE:
+  # - will auto tag the image according to the release tag / `git describe`.
+  #
+  # TEST PHASE:
+  # - will run an e2e test with a modified docker compose.
+  # - queries OPA data to check its state matches an expected value.
+  # - state will match only if OPAL client successfully synced to OPAL server.
+  # - outputs the docker compose logs to more easily investigate errors.
+  #
+  # PUSH PHASE:
+  # - Runs only if test phase completes with no errors.
+  # - Pushes images (built at BUILD PHASE) to docker hub.
+  docker_build_and_publish:
     runs-on: ubuntu-latest
     steps:
+      # BUILD PHASE
       - name: Checkout
         uses: actions/checkout@v2
+        with:
+          fetch-depth: 0
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v1
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v1
+
+      - name: Get version tag from github release
+        if: github.event_name == 'release' && github.event.action == 'created'
+        run: |
+          echo "opal_version_tag=${{ github.event.release.tag_name }}" >> $GITHUB_ENV
+
+      - name: Get version tag from git history
+        if: ${{ !(github.event_name == 'release' && github.event.action == 'created') }}
+        run: |
+          echo "opal_version_tag=$(git describe --tags --abbrev=0)" >> $GITHUB_ENV
+
+      - name: Echo version tag
+        run: |
+          echo "The version tag that will be published to docker hub is: ${{ env.opal_version_tag }}"
 
       - name: Build client
         id: build_client
@@ -35,7 +69,7 @@ jobs:
           tags: |
             authorizon/opal-client:test
             authorizon/opal-client:latest
-            authorizon/opal-client:${{ github.event.release.tag_name }}
+            authorizon/opal-client:${{ env.opal_version_tag }}
 
       - name: Build client-standalone
         id: build_client_standalone
@@ -50,7 +84,7 @@ jobs:
           tags: |
             authorizon/opal-client-standalone:test
             authorizon/opal-client-standalone:latest
-            authorizon/opal-client-standalone:${{ github.event.release.tag_name }}
+            authorizon/opal-client-standalone:${{ env.opal_version_tag }}
 
       - name: Build server
         id: build_server
@@ -65,8 +99,9 @@ jobs:
           tags: |
             authorizon/opal-server:test
             authorizon/opal-server:latest
-            authorizon/opal-server:${{ github.event.release.tag_name }}
+            authorizon/opal-server:${{ env.opal_version_tag }}
 
+      # TEST PHASE
       - name: Create modified docker compose file
         run: sed 's/:latest/:test/g' docker/docker-compose-example.yml > docker/docker-compose-test.yml
 
@@ -79,47 +114,27 @@ jobs:
       - name: Output container logs
         run: docker-compose -f docker/docker-compose-test.yml logs
 
+      # PUSH PHASE
+      - name: Output local docker images
+        run: docker image ls --digests | grep opal
+
       - name: Login to DockerHub
+        if: ${{ !(github.event_name == 'workflow_dispatch' && github.event.inputs.dry_run == 'true') }}
         uses: docker/login-action@v1
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
+      # pushes the *same* docker images that were previously tested as part of e2e sanity test.
+      # each image is pushed with the versioned tag first, if it succeeds the image is pushed with the latest tag as well.
       - name: Push client
-        id: push_client
-        uses: docker/build-push-action@v2
-        with:
-          file: docker/Dockerfile
-          push: true
-          target: client
-          cache-from: type=registry,ref=authorizon/opal-client:latest
-          cache-to: type=inline
-          tags: |
-            authorizon/opal-client:latest
-            authorizon/opal-client:${{ github.event.release.tag_name }}
+        if: ${{ !(github.event_name == 'workflow_dispatch' && github.event.inputs.dry_run == 'true') }}
+        run: docker push authorizon/opal-client:${{ env.opal_version_tag }} && docker push authorizon/opal-client:latest
 
       - name: Push client-standalone
-        id: push_client_standalone
-        uses: docker/build-push-action@v2
-        with:
-          file: docker/Dockerfile
-          push: true
-          target: client-standalone
-          cache-from: type=registry,ref=authorizon/opal-client-standalone:latest
-          cache-to: type=inline
-          tags: |
-            authorizon/opal-client-standalone:latest
-            authorizon/opal-client-standalone:${{ github.event.release.tag_name }}
+        if: ${{ !(github.event_name == 'workflow_dispatch' && github.event.inputs.dry_run == 'true') }}
+        run: docker push authorizon/opal-client-standalone:${{ env.opal_version_tag }} && docker push authorizon/opal-client-standalone:latest
 
       - name: Push server
-        id: push_server
-        uses: docker/build-push-action@v2
-        with:
-          file: docker/Dockerfile
-          push: true
-          target: server
-          cache-from: type=registry,ref=authorizon/opal-server:latest
-          cache-to: type=inline
-          tags: |
-            authorizon/opal-server:latest
-            authorizon/opal-server:${{ github.event.release.tag_name }}
+        if: ${{ !(github.event_name == 'workflow_dispatch' && github.event.inputs.dry_run == 'true') }}
+        run: docker push authorizon/opal-server:${{ env.opal_version_tag }} && docker push authorizon/opal-server:latest
