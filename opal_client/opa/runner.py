@@ -109,7 +109,8 @@ class OpaRunner:
         self._process = await asyncio.create_subprocess_shell(
             self.command,
             stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE
+            stderr=asyncio.subprocess.PIPE,
+            start_new_session=True,
         )
 
         # waits until the process is up, then runs a callback
