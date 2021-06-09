@@ -1,3 +1,4 @@
+typer
 aiofiles
 aiohttp
 broadcaster[postgres]
@@ -18,4 +19,3 @@ tenacity==6.3.1
 typing-extensions
 uvicorn[standard]
 websockets
-typer

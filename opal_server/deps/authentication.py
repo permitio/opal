@@ -29,7 +29,7 @@ def verify_logged_in(signer: JWTSigner, token: Optional[str]) -> UUID:
     forces bearer token authentication with valid JWT or throws 401.
     """
     if not signer.enabled:
-        logger.debug("signer diabled, cannot verify request!")
+        logger.debug("signer diabled, cannot verify requests!")
         return
     if token is None:
         raise Unauthorized(token=token, description="access token was not provided")

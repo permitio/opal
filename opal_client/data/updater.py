@@ -101,7 +101,7 @@ class DataUpdater:
         # make sure the id has a unique id for tracking
         if update.id is None:
             update.id = uuid.uuid4().hex
-        logger.info("Triggering data update with id: {id}", update=update, id=update.id)
+        logger.info("Triggering data update with id: {id}", id=update.id)
         asyncio.create_task(self.update_policy_data(
             update, policy_store=self._policy_store, data_fetcher=self._data_fetcher))
 
@@ -136,7 +136,7 @@ class DataUpdater:
             config_url (str, optional): URL to retrive data sources config from. Defaults to None ( self._data_sources_config_url).
             data_fetch_reason (str, optional): Reason to log for the update operation. Defaults to "Initial load".
         """
-        logger.info("Performing data configuration, reason: {reason}", reason={data_fetch_reason})
+        logger.info("Performing data configuration, reason: {reason}", reason=data_fetch_reason)
         sources_config = await self.get_policy_data_config(url=config_url)
         # translate config to a data update
         entries = sources_config.entries
@@ -200,7 +200,7 @@ class DataUpdater:
             try:
                 await self._subscriber_task
             except asyncio.CancelledError as exc:
-                logger.debug("DataUpdater subscriber task was force-cancelled: {e}", exc=exc)
+                logger.debug("DataUpdater subscriber task was force-cancelled: {exc}", exc=repr(exc))
             self._subscriber_task = None
             logger.debug("DataUpdater subscriber task was cancelled")
 
@@ -243,7 +243,7 @@ class DataUpdater:
                 callback_config.data = whole_report.json()
                 urls.append((url, callback_config))
 
-            logger.info("Reporting the update to requested callbacks", urls=urls)
+            logger.info("Reporting the update to requested callbacks", urls=repr(urls))
             report_results = await data_fetcher.handle_urls(urls)
             # log reports which we failed to send
             for (url, config), result in zip(urls,report_results):
@@ -270,7 +270,7 @@ class DataUpdater:
             urls = [(entry.url, entry.config) for entry in entries]
 
         # get the data for the update
-        logger.info("Fetching policy data", urls=urls)
+        logger.info("Fetching policy data", urls=repr(urls))
         # Urls may be None - handle_urls has a default for None
         policy_data_with_urls = await data_fetcher.handle_urls(urls)
         # Save the data from the update

@@ -86,7 +86,7 @@ class JWTSigner:
             try:
                 jwt.decode(token, self._public_key, algorithms=[self._algorithm])
             except jwt.PyJWTError as exc:
-                logger.info("JWT Signer key verification failed with error: {err}", err=exc)
+                logger.info("JWT Signer key verification failed with error: {err}", err=repr(exc))
                 raise InvalidJWTCryptoKeysException("private key and public key do not match!") from exc
             # save jwk
             self._jwk: PyJWK = PyJWK.from_json(self.get_jwk(), algorithm=self._algorithm)
