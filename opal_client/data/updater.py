@@ -246,7 +246,7 @@ class DataUpdater:
             logger.info("Reporting the update to requested callbacks", urls=repr(urls))
             report_results = await data_fetcher.handle_urls(urls)
             # log reports which we failed to send
-            for (url, config), result in zip(urls,report_results):
+            for (url, config, result) in report_results:
                 if isinstance(result, Exception):
                     logger.error("Failed to send report to {url} with config {config}", url=url, config=config, exc_info=result)
         except:
