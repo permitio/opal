@@ -97,7 +97,7 @@ class OpalClientConfig(Confi):
     SHOULD_REPORT_ON_DATA_UPDATES = confi.bool("SEND_REPORTS_ON_DATA_UPDATES", False,
                                               description="Should the client report on updates to callbacks defined in DEFAULT_UPDATE_CALLBACKS or within the given updates")
     DEFAULT_UPDATE_CALLBACK_CONFIG = confi.model(
-        "DEFAULT_UPDATE_CALLBACK_CONFIG", HttpFetcherConfig, {"method": "post", "headers": {'content-type': 'application/json'}})
+        "DEFAULT_UPDATE_CALLBACK_CONFIG", HttpFetcherConfig, {"method": "post", "headers": {"content-type": "application/json"}, "process_data": False})
 
     DEFAULT_UPDATE_CALLBACKS = confi.model("DEFAULT_UPDATE_CALLBACKS", UpdateCallback, confi.delay(lambda SERVER_URL="": {
         "callbacks": [f"{SERVER_URL}/data/callback_report"]
