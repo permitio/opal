@@ -1,11 +1,12 @@
+idna<3,>=2.5
 typer
 aiofiles
 aiohttp
 broadcaster[postgres]
 colorama
+fastapi==0.65.2
 fastapi_websocket_pubsub>=0.1.18
 fastapi_websocket_rpc>=0.1.18
-fastapi==0.65.2
 GitPython
 gunicorn
 ipython
