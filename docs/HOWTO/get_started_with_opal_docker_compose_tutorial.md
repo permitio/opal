@@ -223,3 +223,6 @@ Let's review what they are and their main functions:
     * Can aggregate data from multiple sources: your APIs, DBs, 3rd party SaaS, etc.
 
 If you skipped here from step 1, you can now [come back to the hands-on tutorial](#eval-query-opa).
+
+## <a name="troubleshooting"></a> Troubleshooting
+You should troubleshoot the same way as shown in the [getting started with containers tutorial](https://github.com/authorizon/opal/blob/master/docs/HOWTO/get_started_with_opal_using_docker.md#troubleshooting).

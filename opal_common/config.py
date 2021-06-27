@@ -16,8 +16,6 @@ class OpalCommonConfig(Confi):
     LOG_LEVEL = confi.str("LOG_LEVEL", "INFO")
     #  - Which modules should be logged
     LOG_MODULE_EXCLUDE_LIST = confi.list("LOG_MODULE_EXCLUDE_LIST", [
-        "fastapi_websocket_rpc",
-        "fastapi_websocket_pubsub",
         "uvicorn",
         # NOTE: the env var LOG_MODULE_EXCLUDE_OPA affects this list
     ])
