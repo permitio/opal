@@ -2,7 +2,7 @@
 OPAL allows for other components to notify it (and through it all the OPAL clients , and their next-door policy agents) of data updates, triggering each client [subscribed to the published topic] to fetch the data it needs.
 
 ### What is this good for?
-Lets try an example - say your application has a billing service, and you want to allow access only to users who have billing enabled (enforced via a policy agent).
+Let's try an example - say your application has a billing service, and you want to allow access only to users who have billing enabled (enforced via a policy agent).
 You now need changes to the state of the billing service to be propagated to each of the enforcement points/agents (and preferably instantly [Users who've paid - don't like to wait 😅 ]). </br>
 With the OPAL's data-update-triggers feature the billing-service, another service monitoring it, or even a person can trigger updates as they need - knowing OPAL will take it from there to all the points that need it.
 
@@ -29,7 +29,7 @@ Can be run both from opal-client and opal-server.
 
 Example:
   - With `$token` being a JWT we generated in [step 1](#datasource-token).
-  - we publish a data-event regarding two topics `users` and `billing` pointing clients to `http://mybillingserver.com/users` to obtain the data they need. we also provide the clients with the credentials they'll need to connect tot he server (as HTTP authorization headers)
+  - we publish a data-event regarding two topics `users` and `billing` pointing clients to `http://mybillingserver.com/users` to obtain the data they need. we also provide the clients with the credentials they'll need to connect to the server (as HTTP authorization headers)
 
   -
     ```sh
