@@ -14,7 +14,7 @@ Fetch providers are designed to be extendable, and you can easily create more fe
 2. ### Deriving from BaseFetchProvider and implementing Fetch & Process
     - See a core example for an [HTTPFetcher - here](https://github.com/authorizon/opal/blob/master/opal_common/fetcher/providers/http_fetch_provider.py)
     1. Create a new class deriving from ```BaseFetchProvider``` 
-    2. Override ```_fetch_`` to implement the fetching itself
+    2. Override ```_fetch_``` to implement the fetching itself
     3. Optionally override ```_process_``` to mutate the data before returning it (for example converting a JSON string to an actual object)
     4. Manage a context
         - If you require a context for (cleanup or guard)
