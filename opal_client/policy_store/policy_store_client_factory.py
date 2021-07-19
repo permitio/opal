@@ -1,5 +1,5 @@
 
-from typing import Dict
+from typing import Dict, Optional
 from opal_client.policy_store.base_policy_store_client import BasePolicyStoreClient
 from opal_client.config import opal_client_config, PolicyStoreTypes
 
@@ -17,7 +17,7 @@ class PolicyStoreClientFactory:
     CACHE: Dict[str,BasePolicyStoreClient] = {}
 
     @classmethod
-    def get(cls,store_type: PolicyStoreTypes = None, url: str = None, save_to_cache=True) -> BasePolicyStoreClient:
+    def get(cls,store_type: PolicyStoreTypes = None, url: str = None, save_to_cache=True, token:Optional[str]=None) -> BasePolicyStoreClient:
         """Same as self.create() but with caching
 
         Args:
@@ -35,12 +35,12 @@ class PolicyStoreClientFactory:
         key = cls.get_cache_key(store_type,url)
         value = cls.CACHE.get(key, None)
         if value is None:
-            return cls.create(store_type,url)
+            return cls.create(store_type,url, token)
         else:
             return value
 
     @classmethod
-    def create(cls, store_type: PolicyStoreTypes = None, url: str = None, save_to_cache=True) -> BasePolicyStoreClient:
+    def create(cls, store_type: PolicyStoreTypes = None, url: str = None, save_to_cache=True, token:Optional[str]=None) -> BasePolicyStoreClient:
         """
         Factory method - create a new policy store by type.
 
@@ -58,11 +58,12 @@ class PolicyStoreClientFactory:
         # load defaults
         store_type = store_type or opal_client_config.POLICY_STORE_TYPE
         url = url or opal_client_config.POLICY_STORE_URL
+        store_token = token or opal_client_config.POLICY_STORE_AUTH_TOKEN
 
         # OPA
         if PolicyStoreTypes.OPA == store_type:
             from opal_client.policy_store.opa_client import OpaClient
-            res = OpaClient(url)
+            res = OpaClient(url, opa_auth_token=store_token)
         # MOCK
         elif PolicyStoreTypes.MOCK == store_type:
             from opal_client.policy_store.mock_policy_store_client import MockPolicyStoreClient

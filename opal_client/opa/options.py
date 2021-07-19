@@ -1,5 +1,5 @@
 from enum import Enum
-from typing import Optional
+from typing import Optional, List
 from pydantic import BaseModel, Field
 
 class LogLevel(str, Enum):
@@ -37,6 +37,7 @@ class OpaServerOptions(BaseModel):
     tls_cert_file: Optional[str] = Field(None, description="path of TLS certificate file")
     tls_private_key_file: Optional[str] = Field(None, description="path of TLS private key file")
     log_level: LogLevel = Field(LogLevel.info, description="log level for opa logs")
+    files: Optional[List[str]] = Field(None, description="list of built-in rego policies and data.json files that must be loaded into OPA on startup. e.g: system.authz policy when using --authorization=basic, see: https://www.openpolicyagent.org/docs/latest/security/#authentication-and-authorization")
 
     class Config:
         use_enum_values = True
@@ -53,4 +54,11 @@ class OpaServerOptions(BaseModel):
         """
         returns a dict that can be passed to the OPA cli
         """
-        return self.dict(exclude_none=True, by_alias=True)
+        return self.dict(exclude_none=True, by_alias=True, exclude={'files'})
+
+    def get_opa_startup_files(self) -> str:
+        """
+        returns a list of startup policies and data
+        """
+        files = self.files if self.files is not None else []
+        return " ".join(files)
