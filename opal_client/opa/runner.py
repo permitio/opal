@@ -86,7 +86,8 @@ class OpaRunner:
     def command(self):
         opts = self._options.get_cli_options_dict()
         opts_string = ' '.join([f"{k}={v}" for k,v in opts.items()])
-        return f"opa run --server {opts_string}"
+        startup_files = self._options.get_opa_startup_files()
+        return f"opa run --server {opts_string} {startup_files}".strip()
 
     def _terminate_opa(self):
         logger.info("Stopping OPA")

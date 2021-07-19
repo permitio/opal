@@ -13,6 +13,7 @@ from opal_client.logger import logger
 from opal_client.utils import proxy_response
 from opal_common.schemas.policy import DataModule, PolicyBundle
 from opal_common.schemas.store import JSONPatchAction, StoreTransaction, ArrayAppendAction
+from opal_common.opa.parsing import get_rego_package
 from opal_client.policy_store.base_policy_store_client import BasePolicyStoreClient, JsonableValue
 
 
@@ -138,13 +139,16 @@ class OpaClient(BasePolicyStoreClient):
     """
     POLICY_NAME = "rbac"
 
-    def __init__(self,
-                 opa_server_url=None):
+    def __init__(self, opa_server_url=None, opa_auth_token:Optional[str]=None):
         self._opa_url = opa_server_url or opal_client_config.POLICY_STORE_URL
         self._policy_data = None
         self._cached_policies: Dict[str, str] = {}
         self._policy_version: Optional[str] = None
         self._lock = asyncio.Lock()
+        self._token = opa_auth_token
+        self._headers = {}
+        if opa_auth_token is not None:
+            self._headers.update({"Authorization": f"Bearer {opa_auth_token}"})
 
         # as long as this is null, transaction log is disabled
         self._transaction_state: Optional[OpaTransactionLogState] = None
@@ -161,7 +165,7 @@ class OpaClient(BasePolicyStoreClient):
                 async with session.put(
                     f"{self._opa_url}/policies/{policy_id}",
                     data=policy_code,
-                    headers={'content-type': 'text/plain'}
+                    headers={'content-type': 'text/plain', **self._headers}
                 ) as opa_response:
                     return await proxy_response_unless_invalid(opa_response, accepted_status_codes=[status.HTTP_200_OK])
             except aiohttp.ClientError as e:
@@ -175,6 +179,7 @@ class OpaClient(BasePolicyStoreClient):
             try:
                 async with session.get(
                     f"{self._opa_url}/policies/{policy_id}",
+                    headers=self._headers
                 ) as opa_response:
                     result = await opa_response.json()
                     return result.get("result", {}).get("raw", None)
@@ -189,6 +194,7 @@ class OpaClient(BasePolicyStoreClient):
             try:
                 async with session.delete(
                     f"{self._opa_url}/policies/{policy_id}",
+                    headers=self._headers
                 ) as opa_response:
                     return await proxy_response_unless_invalid(opa_response, accepted_status_codes=[
                         status.HTTP_200_OK,
@@ -205,6 +211,7 @@ class OpaClient(BasePolicyStoreClient):
             try:
                 async with session.get(
                     f"{self._opa_url}/policies",
+                    headers=self._headers
                 ) as opa_response:
                     result = await opa_response.json()
                     return OpaClient._extract_module_ids_from_policies_json(result)
@@ -214,12 +221,30 @@ class OpaClient(BasePolicyStoreClient):
 
     @staticmethod
     def _extract_module_ids_from_policies_json(result: Dict[str, Any]) -> List[str]:
+        """
+        return all module ids in OPA cache who are not:
+        - skipped module ids (i.e: our health check policy)
+        - all modules with package name starting with "system" (special OPA policies)
+        """
         modules: List[Dict[str, Any]] = result.get("result", [])
-        module_ids = [module.get("id", None) for module in modules]
-        module_ids = [module_id for module_id in module_ids if module_id is not None]
-        # remove builtin modules from the list
         builtin_modules = [opal_client_config.OPA_HEALTH_CHECK_POLICY_PATH]
-        module_ids = [module_id for module_id in module_ids if module_id not in builtin_modules]
+
+        module_ids = []
+        for module in modules:
+            module_id = module.get("id", None)
+            package_name = get_rego_package(module.get("raw", ""))
+
+            if module_id is None:
+                continue
+
+            if package_name is not None and package_name.startswith("system."):
+                continue
+
+            if module_id in builtin_modules:
+                continue
+
+            module_ids.append(module_id)
+
         return module_ids
 
     @affects_transaction
@@ -311,6 +336,7 @@ class OpaClient(BasePolicyStoreClient):
                 async with session.put(
                     f"{self._opa_url}/data{path}",
                     data=json.dumps(self._policy_data),
+                    headers=self._headers
                 ) as opa_response:
                     return await proxy_response_unless_invalid(opa_response, accepted_status_codes=[
                         status.HTTP_204_NO_CONTENT,
@@ -331,6 +357,7 @@ class OpaClient(BasePolicyStoreClient):
             try:
                 async with session.delete(
                     f"{self._opa_url}/data{path}",
+                    headers=self._headers
                 ) as opa_response:
                     return await proxy_response_unless_invalid(opa_response, accepted_status_codes=[
                         status.HTTP_204_NO_CONTENT,
@@ -352,6 +379,7 @@ class OpaClient(BasePolicyStoreClient):
                 async with session.patch(
                     f"{self._opa_url}/data{path}",
                     data=json_document,
+                    headers=self._headers
                 ) as opa_response:
                     return await proxy_response_unless_invalid(opa_response, accepted_status_codes=[status.HTTP_204_NO_CONTENT])
             except aiohttp.ClientError as e:
@@ -372,7 +400,10 @@ class OpaClient(BasePolicyStoreClient):
             path = path[1:]
         try:
             async with aiohttp.ClientSession() as session:
-                async with session.get(f"{self._opa_url}/data/{path}") as opa_response:
+                async with session.get(
+                    f"{self._opa_url}/data/{path}",
+                    headers=self._headers
+                ) as opa_response:
                     return await opa_response.json()
         except aiohttp.ClientError as e:
             logger.warning("Opa connection error: {err}", err=repr(e))
@@ -400,7 +431,8 @@ class OpaClient(BasePolicyStoreClient):
             async with aiohttp.ClientSession() as session:
                 async with session.post(
                     f"{self._opa_url}/data/{path}",
-                    data=json.dumps(opa_input)
+                    data=json.dumps(opa_input),
+                    headers=self._headers
                 ) as opa_response:
                     return await proxy_response(opa_response)
         except aiohttp.ClientError as e:

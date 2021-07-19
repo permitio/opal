@@ -27,6 +27,7 @@ class OpalClientConfig(Confi):
     # opa client (policy store) configuration
     POLICY_STORE_TYPE = confi.enum("POLICY_STORE_TYPE", PolicyStoreTypes, PolicyStoreTypes.OPA)
     POLICY_STORE_URL = confi.str("POLICY_STORE_URL", f"http://localhost:8181/v1")
+    POLICY_STORE_AUTH_TOKEN = confi.str("POLICY_STORE_AUTH_TOKEN", None, description="the authentication (bearer) token OPAL client will use to authenticate against the policy store (i.e: OPA agent)")
     # create an instance of a policy store upon load
 
     def load_policy_store():
