@@ -37,6 +37,17 @@ class OpalCommonConfig(Confi):
 
     GIT_SSH_KEY_FILE = confi.str("GIT_SSH_KEY_FILE", str(Path.home() / ".ssh/opal_repo_ssh_key"))
 
+    # Trust self signed certificates (Advanced Usage - only affects OPAL client) -----------------------------
+    # DO NOT change these defaults unless you absolutely know what you are doing!
+    # By default, OPAL client only trusts SSL certificates that are signed by a public recognized CA (certificate authority).
+    # However, sometimes (mostly in on-prem setups or in dev environments) users setup their own self-signed certificates.
+    # We allow OPAL client to trust these certificates, by changing the following config vars.
+    CLIENT_SELF_SIGNED_CERTIFICATES_ALLOWED=confi.bool(
+        "CLIENT_SELF_SIGNED_CERTIFICATES_ALLOWED", False,
+        description="Whether or not OPAL Client will trust HTTPs connections protected by self signed certificates. DO NOT USE THIS IN PRODUCTION!")
+    CLIENT_SSL_CONTEXT_TRUSTED_CA_FILE=confi.str(
+        "CLIENT_SSL_CONTEXT_TRUSTED_CA_FILE", None,
+        description="A path to your own CA public certificate file (usually a .crt or a .pem file). Certifcates signed by this issuer will be trusted by OPAL Client. DO NOT USE THIS IN PRODUCTION!")
 
 
 opal_common_config = OpalCommonConfig(prefix="OPAL_")

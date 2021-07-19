@@ -11,6 +11,8 @@ import websockets
 
 from opal_common.logger import logger, configure_logs
 from opal_common.middleware import configure_middleware
+from opal_common.config import opal_common_config
+from opal_common.security.sslcontext import get_custom_ssl_context
 from opal_client.config import PolicyStoreTypes, opal_client_config
 from opal_client.data.api import init_data_router
 from opal_client.data.updater import DataUpdater
@@ -73,6 +75,11 @@ class OpalClient:
             )
         else:
             self.opa_runner = False
+
+
+        custom_ssl_context = get_custom_ssl_context()
+        if opal_common_config.CLIENT_SELF_SIGNED_CERTIFICATES_ALLOWED and custom_ssl_context is not None:
+            logger.warning("OPAL client is configured to trust self-signed certificates")
 
         # init fastapi app
         self.app: FastAPI = self._init_fast_api_app()
