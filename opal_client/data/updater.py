@@ -4,6 +4,7 @@ import itertools
 import json
 from typing import List, Tuple
 import uuid
+import aiohttp
 
 from aiohttp.client import ClientSession, ClientError
 from fastapi_websocket_pubsub import PubSubClient
@@ -246,9 +247,21 @@ class DataUpdater:
             logger.info("Reporting the update to requested callbacks", urls=repr(urls))
             report_results = await data_fetcher.handle_urls(urls)
             # log reports which we failed to send
-            for (url, config), result in zip(urls,report_results):
+            for (url, config, result) in report_results:
                 if isinstance(result, Exception):
                     logger.error("Failed to send report to {url} with config {config}", url=url, config=config, exc_info=result)
+                if isinstance(result, aiohttp.ClientResponse) and result.status >= 400: # error responses
+                    try:
+                        error_content = await result.json()
+                    except json.JSONDecodeError:
+                        error_content = await result.text()
+                    logger.error(
+                        "Failed to send report to {url} with config {config}, got response code {status} with error: {error}",
+                        url=url,
+                        config=config,
+                        status=result.status,
+                        error=error_content
+                    )
         except:
             logger.exception("Failed to excute report_update_results")
 
