@@ -9,6 +9,7 @@ from aiohttp import ClientResponse, ClientSession
 from ..fetch_provider import BaseFetchProvider
 from ..events import FetcherConfig, FetchEvent
 from ..logger import get_logger
+from ...security.sslcontext import get_custom_ssl_context
 
 logger = get_logger("http_fetch_provider")
 
@@ -44,6 +45,8 @@ class HttpFetchProvider(BaseFetchProvider):
             event.config = HttpFetcherConfig()
         super().__init__(event)
         self._session = None
+        self._custom_ssl_context = get_custom_ssl_context()
+        self._ssl_context_kwargs = {'ssl': self._custom_ssl_context} if self._custom_ssl_context is not None else {}
 
     def parse_event(self, event: FetchEvent) -> HttpFetchEvent:
         return HttpFetchEvent(**event.dict(exclude={"config"}), config=event.config)   
@@ -62,9 +65,9 @@ class HttpFetchProvider(BaseFetchProvider):
         logger.debug(f"{self.__class__.__name__} fetching from {self._url}")
         http_method = self.match_http_method_from_type(self._session, self._event.config.method)
         if self._event.config.data is not None:
-            result = await http_method(self._url, data=self._event.config.data)
+            result = await http_method(self._url, data=self._event.config.data, **self._ssl_context_kwargs)
         else:
-            result = await http_method(self._url)
+            result = await http_method(self._url, **self._ssl_context_kwargs)
         return result
 
     @staticmethod

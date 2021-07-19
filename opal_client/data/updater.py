@@ -24,6 +24,7 @@ from opal_common.schemas.data import (DataEntryReport, DataSourceConfig,
                                       DataSourceEntry, DataUpdate,
                                       DataUpdateReport)
 from opal_common.utils import get_authorization_header
+from opal_common.security.sslcontext import get_custom_ssl_context
 
 
 class DataUpdater:
@@ -72,6 +73,8 @@ class DataUpdater:
         else:
             self._extra_headers = [get_authorization_header(self._token)]
         self._stopping = False
+        self._custom_ssl_context = get_custom_ssl_context()
+        self._ssl_context_kwargs = {'ssl': self._custom_ssl_context} if self._custom_ssl_context is not None else {}
 
     async def __aenter__(self):
         await self.start()
@@ -119,7 +122,7 @@ class DataUpdater:
         logger.info("Getting data-sources configuration from '{source}'", source=url)
         try:
             async with ClientSession(headers=self._extra_headers) as session:
-                response = await session.get(url)
+                response = await session.get(url, **self._ssl_context_kwargs)
                 if response.status == 200:
                     return DataSourceConfig.parse_obj(await response.json())
                 else:
