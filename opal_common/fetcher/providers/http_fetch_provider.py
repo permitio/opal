@@ -10,6 +10,7 @@ from ..fetch_provider import BaseFetchProvider
 from ..events import FetcherConfig, FetchEvent
 from ..logger import get_logger
 from ...security.sslcontext import get_custom_ssl_context
+from ...http import is_http_error_response
 
 logger = get_logger("http_fetch_provider")
 
@@ -75,6 +76,10 @@ class HttpFetchProvider(BaseFetchProvider):
         return getattr(session, method_type.value)
 
     async def _process_(self, res: ClientResponse):
+        # do not process data when the http response is an error
+        if is_http_error_response(res):
+            return res
+
         # if we are asked to process the data before we return it
         if self._event.config.process_data:
             # if data is JSON
