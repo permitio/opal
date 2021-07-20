@@ -24,6 +24,7 @@ from opal_common.schemas.data import (DataEntryReport, DataSourceConfig,
                                       DataSourceEntry, DataUpdate,
                                       DataUpdateReport)
 from opal_common.utils import get_authorization_header
+from opal_common.http import is_http_error_response
 from opal_common.security.sslcontext import get_custom_ssl_context
 
 
@@ -253,7 +254,7 @@ class DataUpdater:
             for (url, config, result) in report_results:
                 if isinstance(result, Exception):
                     logger.error("Failed to send report to {url} with config {config}", url=url, config=config, exc_info=result)
-                if isinstance(result, aiohttp.ClientResponse) and result.status >= 400: # error responses
+                if isinstance(result, aiohttp.ClientResponse) and is_http_error_response(result): # error responses
                     try:
                         error_content = await result.json()
                     except json.JSONDecodeError:
@@ -290,12 +291,31 @@ class DataUpdater:
         # Urls may be None - handle_urls has a default for None
         policy_data_with_urls = await data_fetcher.handle_urls(urls)
         # Save the data from the update
-        # We wrap our interaction with the policy store with a transaction  
+        # We wrap our interaction with the policy store with a transaction
         async with policy_store.transaction_context(update.id) as store_transaction:
             # for intelisense treat store_transaction as a PolicyStoreClient (which it proxies)
             store_transaction: BasePolicyStoreClient
             for (url, fetch_config, result), entry in itertools.zip_longest(policy_data_with_urls, entries):
-                if not isinstance(result, Exception):
+                fetched_error_response = False
+
+                if isinstance(result, Exception):
+                    fetched_error_response = True
+                    logger.error("Failed to fetch url {url} with config {config}, got exception: {exc}", url=url, config=fetch_config, exc=result)
+
+                if isinstance(result, aiohttp.ClientResponse) and is_http_error_response(result): # error responses
+                    fetched_error_response = True
+                    try:
+                        error_content = await result.json()
+                    except json.JSONDecodeError:
+                        error_content = await result.text()
+                    logger.error(
+                        "Failed to fetch url {url}, got response code {status} with error: {error}",
+                        url=url,
+                        status=result.status,
+                        error=error_content
+                    )
+
+                if not fetched_error_response:
                     # get path to store the URL data (default mode (None) is as "" - i.e. as all the data at root)
                     policy_store_path = "" if entry is None else entry.dst_path
                     # None is not valid - use "" (protect from missconfig)
