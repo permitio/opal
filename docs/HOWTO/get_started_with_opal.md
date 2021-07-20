@@ -116,6 +116,7 @@ for example `OPAL_SERVER_PORT=1337 opal-server run` is equivalent to `opal-serve
         ssh-keygen -t rsa -b 4096 -m pem
         ```
         follow the instructions to save the keys to two files.
+      - If you created the keys with a passphrase, you can supply the passphrase to the server via the `OPAL_AUTH_PRIVATE_KEY_PASSPHRASE` option
       - You can provide the keys to OPAL-server via the `OPAL_AUTH_PRIVATE_KEY` and `OPAL_AUTH_PUBLIC_KEY` options
       - in these vars You can either provide the path to the keys, or the actual strings of the key's content (with newlines replaced with "_") 
 
