@@ -1,6 +1,6 @@
 import asyncio
 import uuid
-from typing import Coroutine, Dict, List
+from typing import Coroutine, Dict, List, Union
 
 from ..events import FetcherConfig, FetchEvent
 from ..fetch_provider import BaseFetchProvider
@@ -109,7 +109,7 @@ class FetchingEngine(BaseFetchingEngine):
         return data['result']
 
 
-    async def queue_url(self, url: str, callback: Coroutine, config: FetcherConfig = None, fetcher="HttpFetchProvider")->FetchEvent:
+    async def queue_url(self, url: str, callback: Coroutine, config: Union[FetcherConfig,dict] = None, fetcher="HttpFetchProvider")->FetchEvent:
         """
         Simplified default fetching handler for queuing a fetch task
 
@@ -124,6 +124,12 @@ class FetchingEngine(BaseFetchingEngine):
         Raises:
             @see self.queue_fetch_event
         """
+        # override default fetcher with (potential) override value from FetcherConfig
+        if isinstance(config, dict) and config.get("fetcher", None) is not None:
+            fetcher = config["fetcher"]
+        elif isinstance(config, FetcherConfig) and config.fetcher is not None:
+            fetcher = config.fetcher
+
         # init a URL event
         event = FetchEvent(url=url, fetcher=fetcher, config=config)
         return await self.queue_fetch_event(event, callback)

@@ -1,5 +1,5 @@
 from typing import List, Optional
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 class FetcherConfig(BaseModel):
     """
@@ -7,7 +7,8 @@ class FetcherConfig(BaseModel):
     Fetch Provider's have their own uniqueue events and configurations.
     Configurations  
     """
-    pass
+    fetcher: Optional[str] = Field(None, description="indicates to OPAL client that it should use a custom FetcherProvider to fetch the data")
+
 class FetchEvent(BaseModel):
     """
     Event used to describe an queue fetching tasks
