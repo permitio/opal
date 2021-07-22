@@ -47,7 +47,11 @@ async def proxy_response_unless_invalid(raw_response: aiohttp.ClientResponse, ac
     """
     response = await proxy_response(raw_response)
     if response.status_code not in accepted_status_codes:
-        raise ValueError("OPA Client: unexpected status code: {}".format(response.status_code))
+        try:
+            error = await raw_response.json()
+        except json.JSONDecodeError:
+            error = ""
+        raise ValueError("OPA Client: unexpected status code: {}, error: {}".format(response.status_code, error))
     return response
 
 
@@ -141,7 +145,6 @@ class OpaClient(BasePolicyStoreClient):
 
     def __init__(self, opa_server_url=None, opa_auth_token:Optional[str]=None):
         self._opa_url = opa_server_url or opal_client_config.POLICY_STORE_URL
-        self._policy_data = None
         self._cached_policies: Dict[str, str] = {}
         self._policy_version: Optional[str] = None
         self._lock = asyncio.Lock()
@@ -330,12 +333,17 @@ class OpaClient(BasePolicyStoreClient):
     @retry(**RETRY_CONFIG)
     async def set_policy_data(self, policy_data: JsonableValue, path: str = "", transaction_id:Optional[str]=None):
         path = self._safe_data_module_path(path)
-        self._policy_data = policy_data
+
+        # in OPA, the root document must be an object, so we must wrap list values
+        if not path and isinstance(policy_data, list):
+            logger.warning("OPAL client was instructed to put a list on OPA's root document. In OPA the root document must be an object so the original value was wrapped.")
+            policy_data = {"items": policy_data}
+
         async with aiohttp.ClientSession() as session:
             try:
                 async with session.put(
                     f"{self._opa_url}/data{path}",
-                    data=json.dumps(self._policy_data),
+                    data=json.dumps(policy_data, default=str),
                     headers=self._headers
                 ) as opa_response:
                     return await proxy_response_unless_invalid(opa_response, accepted_status_codes=[

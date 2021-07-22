@@ -34,7 +34,10 @@ class FetcherRegister:
             fetchers = []
             for module_path in opal_common_config.FETCH_PROVIDER_MODULES:
                 try:
-                    fetchers.extend(emport_objects_by_class(module_path, BaseFetchProvider, ["*"]))
+                    providers_to_register = emport_objects_by_class(module_path, BaseFetchProvider, ["*"])
+                    for provider_name, provider_class in providers_to_register:
+                        logger.info(f"Loading FetcherProvider '{provider_name}' found at: {repr(provider_class)}")
+                    fetchers.extend(providers_to_register)
                 except:
                     logger.exception("Failed to load FetchingProvider module - {module_path}", module_path=module_path)
             self._config = {name: fetcher for name,fetcher in fetchers}
