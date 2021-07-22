@@ -39,7 +39,7 @@ class FetcherRegister:
                         logger.info(f"Loading FetcherProvider '{provider_name}' found at: {repr(provider_class)}")
                     fetchers.extend(providers_to_register)
                 except:
-                    logger.exception("Failed to load FetchingProvider module - {module_path}", module_path=module_path)
+                    logger.exception(f"Failed to load FetchingProvider module: {module_path}")
             self._config = {name: fetcher for name,fetcher in fetchers}
         logger.info("Fetcher Register loaded", extra={'config': self._config})
 
