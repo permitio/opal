@@ -227,7 +227,7 @@ class DataUpdater:
         """
         try:
             if not isinstance(data, str):
-                data = json.dumps(data)
+                data = json.dumps(data, default=str)
             return hashlib.sha256(data.encode('utf-8')).hexdigest()
         except:
             logger.exception("Failed to calculate hash for data {data}", data=data)
