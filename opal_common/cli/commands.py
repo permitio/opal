@@ -53,7 +53,7 @@ def obtain_token(
     async def fetch():
         async with ClientSession(headers={"Authorization": f"bearer {master_token}"}) as session:
             details = AccessTokenRequest(type=type, ttl=ttl, claims=claims).json()
-            res = await session.post(server_url, data=details)
+            res = await session.post(server_url, data=details, headers={'content-type': 'application/json'})
             data = await res.json()
             if just_the_token:
                 return data["token"]
