@@ -11,22 +11,42 @@ OPAL_POLICY_STORE_URL ?= http://host.docker.internal:8181/v1
 clean:
 	rm -rf *.egg-info build/ dist/
 
-publish-common:
+build-common:
 	$(MAKE) clean
 	python setup/setup_common.py sdist bdist_wheel
-	python -m twine upload dist/*
+	mv dist dist-common
 
-publish-client:
+build-client:
 	$(MAKE) clean
 	python setup/setup_client.py sdist bdist_wheel
-	python -m twine upload dist/*
+	mv dist dist-client
 
-publish-server:
+build-server:
 	$(MAKE) clean
 	python setup/setup_server.py sdist bdist_wheel
-	python -m twine upload dist/*
+	mv dist dist-server
+
+
+publish-common:
+	python -m twine upload --repository pypi dist-common/*
+
+publish-client:
+	python -m twine upload --repository pypi dist-client/*
+
+publish-server:
+	python -m twine upload --repository pypi dist-server/*
+
+# Split the build and publish to ensure all packegs has been built before uploading to PyPI
+build:
+	# build
+	$(MAKE) build-common
+	$(MAKE) build-client
+	$(MAKE) build-server
 
 publish:
+	# build
+	$(MAKE) build
+	# Publish
 	$(MAKE) publish-common
 	$(MAKE) publish-client
 	$(MAKE) publish-server

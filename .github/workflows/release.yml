@@ -1,0 +1,66 @@
+name: Publish to GitHub / Pypi
+on:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: [3.7, 3.8, 3.9]
+
+    steps:
+    - uses: actions/checkout@v2
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v2
+      with:
+        python-version: ${{ matrix.python-version }}
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        python -m pip install flake8 pytest pytest-asyncio
+        if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+        if [ -f ./tests/requirements.txt ]; then pip install -r ./tests/requirements.txt; fi
+    - name: Lint with flake8
+      run: |
+        # stop the build if there are Python syntax errors or undefined names
+        flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
+        # exit-zero treats all errors as warnings. The GitHub editor is 127 chars wide
+        flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
+    - name: Test with pytest
+      run: pytest
+
+  build_and_publish:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v2
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        python -m pip install flake8 pytest pytest-asyncio twine
+        if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+        if [ -f ./tests/requirements.txt ]; then pip install -r ./tests/requirements.txt; fi
+    - name: Create modified .pypirc file
+      # PyPI API token needs to be added to github secrets
+      # added pypi non interactive login 
+      run: |
+        sed 's/#PYPI_TOKEN/${{ secrets.PYPI_TOKEN}}/g' -i .pypirc
+        cp .pypirc ~/
+    - name: Run Make
+      run: make publish
+    - name: Get Release Version
+      run: echo "opal_version_tag=$(python -c "exec(open('setup/__version__.py').read()) ; print(__version__)")" >> $GITHUB_ENV
+    - name: Create Github Release
+      uses: softprops/action-gh-release@v1
+      with:
+        files: |
+            dist-common/*
+            dist-client/*
+            dist-server/*
+        name: "v${{ env.opal_version_tag }}"
+        tag_name: "${{ env.opal_version_tag }}"
+      env:
+        # You should add a personal access token to github secrets for creating the release,
+        # When using the default GITHUB_TOKEN an on-release trigger wll not be fired
+        GITHUB_TOKEN: ${{ secrets.PAT_GITHUB_TOKEN }}

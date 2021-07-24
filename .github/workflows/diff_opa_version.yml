@@ -1,0 +1,30 @@
+name: Check OPA / Opal Versions
+
+on:
+  schedule:
+    # every day at 12:00
+    - cron:  '0 12 * * *'
+  workflow_dispatch:
+
+jobs:
+  check_opa_version:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v2
+    - name: Get Latest OPA Version
+      run: |
+        curl -L -o ./opa https://openpolicyagent.org/downloads/latest/opa_linux_amd64_static && chmod 755 ./opa
+        echo "opa_lts_version=$(./opa version | grep -v Go | grep Version | sed -e 's/Version: //g')" >> $GITHUB_ENV
+    - name: Get OPAL OPA Version
+      run: |
+        echo "opal_opa_current_version=$(docker run authorizon/opal-client:latest /opa version | grep -v Go | grep Version | sed -e 's/Version: //g')" >> $GITHUB_ENV
+    - name: Notifiy On OPA Version Change
+      if: ${{ (env.opa_lts_version != env.opal_opa_current_version) }}
+      id: slack
+      uses: slackapi/slack-github-action@v1.14.0
+      with:
+          payload: "{\"text\":\"OPA version has changed! \\n opa_lts_version: ${{ env.opa_lts_version }} \\n opal_opa_current_version: ${{ env.opal_opa_current_version }} \"}"
+      env:
+        # add slack webhook in secrets
+        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
