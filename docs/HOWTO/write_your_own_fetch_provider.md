@@ -6,6 +6,14 @@ The guide has 3 main parts:
 1) [Background](#background) - explains why we need custom fetch providers, gives examples for use cases and explains what fetch providers are.
 2) [Writing your own fetch provider](#writing-providers) - step-by-step explanation how to write your own fetch provider.
 3) [Using a custom fetch provider](#using-providers) - given a custom fetch provider (either published by someone else or written by you), shows how to use the provider in your own OPAL setup.
+
+## TL;DR
+This tutorial is long and detailed, but the gist of it is:
+* All Fetch Providers are simply python classes that derive from [BaseFetchProvider](https://github.com/authorizon/opal/blob/master/opal_common/fetcher/fetch_provider.py#L9).
+* You need to implement the fetching logic in `_fetch_()` and optionally `_process_()`.
+* Once you finish implementing your provider, you can publish it as a pip package. You can then tell OPAL to use it with the configuration env var `OPAL_FETCH_PROVIDER_MODULES`.
+* We created a well-documented [example fetch provider for Postgres SQL](https://github.com/authorizon/opal-fetcher-postgres). If you prefer to learn from a real code example you can simply clone it and play with it.
+
 ## <a name="background"></a>Background
 
 One of the core features of OPAL (besides realtime syncing of authorization state) is the ability to **aggregate state** from multiple data sources into OPA.
