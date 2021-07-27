@@ -1,5 +1,5 @@
 .PHONY: help
-
+SHELL := /bin/bash
 .DEFAULT_GOAL := help
 
 OPAL_SERVER_URL ?= http://host.docker.internal:7002
@@ -9,20 +9,23 @@ OPAL_POLICY_STORE_URL ?= http://host.docker.internal:8181/v1
 
 # python packages (pypi)
 clean:
+	rm -rf *.egg-info build/ dist/ dist-common/ dist-client/ dist-server/
+
+clean-build-only:
 	rm -rf *.egg-info build/ dist/
 
 build-common:
-	$(MAKE) clean
+	$(MAKE) clean-build-only
 	python setup/setup_common.py sdist bdist_wheel
 	mv dist dist-common
 
 build-client:
-	$(MAKE) clean
+	$(MAKE) clean-build-only
 	python setup/setup_client.py sdist bdist_wheel
 	mv dist dist-client
 
 build-server:
-	$(MAKE) clean
+	$(MAKE) clean-build-only
 	python setup/setup_server.py sdist bdist_wheel
 	mv dist dist-server
 
@@ -42,6 +45,13 @@ build:
 	$(MAKE) build-common
 	$(MAKE) build-client
 	$(MAKE) build-server
+	@if [[ "$(CI)" == "true" ]]; then\
+		rm -rf GithubRelease/; \
+		mkdir GithubRelease; \
+		cp -a dist-common/. GithubRelease/; \
+		cp -a dist-client/. GithubRelease/; \
+		cp -a dist-server/. GithubRelease/; \
+	fi
 
 publish:
 	# build
@@ -50,6 +60,8 @@ publish:
 	$(MAKE) publish-common
 	$(MAKE) publish-client
 	$(MAKE) publish-server
+	$(MAKE) clean
+
 
 install-client-from-src:
 	python setup/setup_client.py install

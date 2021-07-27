@@ -1,7 +1,5 @@
 name: Publish to Docker Hub
 on:
-  release:
-    types: [published]
     # You should add a personal access token to github secrets for creating the release,
     # When using the default GITHUB_TOKEN an on-release trigger wll not be fired
   workflow_dispatch:
