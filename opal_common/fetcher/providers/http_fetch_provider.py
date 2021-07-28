@@ -6,6 +6,7 @@ supports
 from enum import Enum
 from typing import Any
 from aiohttp import ClientResponse, ClientSession
+from pydantic import validator
 from ..fetch_provider import BaseFetchProvider
 from ..events import FetcherConfig, FetchEvent
 from ..logger import get_logger
@@ -33,6 +34,16 @@ class HttpFetcherConfig(FetcherConfig):
     method:HttpMethods = HttpMethods.GET
     data:Any = None
 
+    @validator('method')
+    def force_enum(cls, v):
+        if isinstance(v, str):
+            return HttpMethods(v)
+        if isinstance(v, HttpMethods):
+            return v
+        raise ValueError(f'invalid value: {v}')
+
+    class Config:
+        use_enum_values = True
 
 class HttpFetchEvent(FetchEvent):
     fetcher: str = "HttpFetchProvider"
