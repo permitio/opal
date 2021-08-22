@@ -86,6 +86,11 @@ class OpalClientConfig(Confi):
                                           description="directories in policy repo we should subscribe to")
 
     # Data updater configuration --------------------------------------------------
+    DATA_UPDATER_ENABLED = confi.bool(
+        "DATA_UPDATER_ENABLED",
+        True,
+        description="If set to False, opal client will not listen to dynamic data updates. Dynamic data fetching will be completely disabled.")
+
     DATA_TOPICS = confi.list("DATA_TOPICS", ["policy_data"],
                              description="Data topics to subscribe to")
 
