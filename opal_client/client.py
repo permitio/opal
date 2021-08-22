@@ -56,23 +56,29 @@ class OpalClient:
         # Init policy updater
         self.policy_updater = policy_updater if policy_updater is not None else PolicyUpdater(policy_store=self.policy_store)
         # Data updating service
-        if data_updater is not None:
-            self.data_updater = data_updater
+        if opal_client_config.DATA_UPDATER_ENABLED:
+            if data_updater is not None:
+                self.data_updater = data_updater
+            else:
+                data_topics = data_topics if data_topics is not None else opal_client_config.DATA_TOPICS
+                self.data_updater = DataUpdater(policy_store=self.policy_store, data_topics=data_topics)
         else:
-            data_topics = data_topics if data_topics is not None else opal_client_config.DATA_TOPICS
-            self.data_updater = DataUpdater(policy_store=self.policy_store, data_topics=data_topics)
+            self.data_updater = None
 
         # Internal services
         # Policy store
         if self.policy_store_type == PolicyStoreTypes.OPA and inline_opa_enabled:
-            self.opa_runner = OpaRunner.setup_opa_runner(
-                options=inline_opa_options,
-                rehydration_callbacks=[
-                    # refetches policy code (e.g: rego) and static data from server
-                    functools.partial(self.policy_updater.update_policy, force_full_update=True),
-                    functools.partial(self.data_updater.get_base_policy_data, data_fetch_reason="policy store rehydration"),
-                ]
-            )
+            rehydration_callbacks = [
+                # refetches policy code (e.g: rego) and static data from server
+                functools.partial(self.policy_updater.update_policy, force_full_update=True),
+            ]
+
+            if self.data_updater:
+                rehydration_callbacks.append(
+                    functools.partial(self.data_updater.get_base_policy_data, data_fetch_reason="policy store rehydration")
+                )
+
+            self.opa_runner = OpaRunner.setup_opa_runner(options=inline_opa_options, rehydration_callbacks=rehydration_callbacks)
         else:
             self.opa_runner = False
 
