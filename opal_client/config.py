@@ -100,7 +100,7 @@ class OpalClientConfig(Confi):
     DEFAULT_DATA_URL = confi.str("DEFAULT_DATA_URL", "http://localhost:8000/policy-config",
                                  description="Default URL to fetch data from")
 
-    SHOULD_REPORT_ON_DATA_UPDATES = confi.bool("SEND_REPORTS_ON_DATA_UPDATES", False,
+    SHOULD_REPORT_ON_DATA_UPDATES = confi.bool("SHOULD_REPORT_ON_DATA_UPDATES", False,
                                               description="Should the client report on updates to callbacks defined in DEFAULT_UPDATE_CALLBACKS or within the given updates")
     DEFAULT_UPDATE_CALLBACK_CONFIG = confi.model(
         "DEFAULT_UPDATE_CALLBACK_CONFIG", HttpFetcherConfig, {"method": "post", "headers": {"content-type": "application/json"}, "process_data": False})

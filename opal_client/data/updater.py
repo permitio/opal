@@ -245,6 +245,11 @@ class DataUpdater:
                     callback_config = opal_client_config.DEFAULT_UPDATE_CALLBACK_CONFIG.copy()
                 else:
                     url, callback_config = callback
+
+                # normalize callback_config's type
+                if isinstance(callback_config, dict):
+                    callback_config = HttpFetcherConfig(**callback_config)
+
                 callback_config.data = whole_report.json()
                 urls.append((url, callback_config))
 
