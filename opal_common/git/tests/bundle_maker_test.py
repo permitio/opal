@@ -209,3 +209,61 @@ def test_bundle_maker_diff_bundle(repo_with_diffs: Tuple[Repo, Commit, Commit]):
     assert len(bundle.deleted_files.policy_modules) == 0
     assert len(bundle.deleted_files.data_modules) == 1
     assert bundle.deleted_files.data_modules[0] == Path("other") # other/data.json was deleted
+
+def test_bundle_maker_sorts_according_to_explicit_manifest(local_repo: Repo, helpers):
+    """
+    Test bundle maker filtered on directory only returns opa files from that directory
+    """
+    repo: Repo = local_repo
+    root = Path(repo.working_tree_dir)
+    manifest_path = root / ".manifest"
+
+    # create a manifest with this sorting: abac.rego comes before rbac.rego
+    helpers.create_new_file_commit(
+        repo,
+        manifest_path,
+        contents="\n".join(['other/abac.rego', 'rbac.rego'])
+    )
+
+    commit: Commit = repo.head.commit
+
+    maker = BundleMaker(
+        repo,
+        in_directories=set([Path('.')]),
+        extensions=OPA_FILE_EXTENSIONS
+    )
+    bundle: PolicyBundle = maker.make_bundle(commit)
+    # assert the bundle is a complete bundle (no old hash, etc)
+    assert_is_complete_bundle(bundle)
+    # assert the commit hash is correct
+    assert bundle.hash == commit.hexsha
+
+    # assert only filter directory files are in the manifest
+    assert len(bundle.manifest) == 4
+    assert "other/abac.rego" == bundle.manifest[0]
+    assert "rbac.rego" == bundle.manifest[1]
+    assert "other/data.json" in bundle.manifest
+    assert "some/dir/to/file.rego" in bundle.manifest
+
+    # change the manifest, now sorting will be different
+    helpers.create_delete_file_commit(repo, manifest_path)
+    helpers.create_new_file_commit(
+        repo,
+        manifest_path,
+        contents="\n".join(['some/dir/to/file.rego', 'other/abac.rego'])
+    )
+
+    commit: Commit = repo.head.commit
+
+    bundle: PolicyBundle = maker.make_bundle(commit)
+    # assert the bundle is a complete bundle (no old hash, etc)
+    assert_is_complete_bundle(bundle)
+    # assert the commit hash is correct
+    assert bundle.hash == commit.hexsha
+
+    # assert only filter directory files are in the manifest
+    assert len(bundle.manifest) == 4
+    assert "some/dir/to/file.rego" == bundle.manifest[0]
+    assert "other/abac.rego" == bundle.manifest[1]
+    assert "rbac.rego" in bundle.manifest
+    assert "other/data.json" in bundle.manifest

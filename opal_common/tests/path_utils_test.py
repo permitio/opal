@@ -150,3 +150,46 @@ def test_non_intersecting_directories():
     # parents displace children
     assert PathUtils.non_intersecting_directories(
         to_paths(['/hello', '/hello/world', 'world', 'world/of/tomorrow'])) == set(to_paths(['/hello', 'world']))
+
+def test_sort_paths_according_to_explicit_sorting():
+    sort_func = PathUtils.sort_paths_according_to_explicit_sorting
+
+    # empty list cannot be sorted
+    assert sort_func([], []) == []
+    assert sort_func([], to_paths(['.', 'hello', 'world'])) == []
+
+    # if no sorting is available, returns the original list
+    examples = [
+        to_paths(['.', 'hello', 'world']),
+        to_paths(['world.rego', 'lib.rego', './unrelated.rego']),
+        to_paths(['/', './unrelated.rego']),
+    ]
+    for example in examples:
+        assert sort_func(example, []) == example
+
+    # partial sorting works as expected
+    assert sort_func(
+        to_paths(['.', 'world.rego', 'lib.rego', 'more/path.rego', 'even/more']),
+        # ordering
+        to_paths(['lib.rego', 'world.rego']),
+    # explicitly sorted items move to the beginning of the list
+    # other items remain in the original sorting
+    ) == to_paths(['lib.rego', 'world.rego', '.', 'more/path.rego', 'even/more'])
+
+    # same list, switch the ordering
+    assert sort_func(
+        to_paths(['.', 'world.rego', 'lib.rego', 'more/path.rego', 'even/more']),
+        # ordering
+        to_paths(['world.rego', 'lib.rego']),
+    # explicitly sorted items move to the beginning of the list
+    # other items remain in the original sorting
+    ) == to_paths(['world.rego', 'lib.rego', '.', 'more/path.rego', 'even/more'])
+
+    # some sorting items are not found
+    assert sort_func(
+        to_paths(['.', 'world.rego', 'lib.rego', 'more/path.rego', 'even/more']),
+        # ordering
+        to_paths(['world.rego', 'lib2.rego']),
+    # explicitly sorted items move to the beginning of the list
+    # other items remain in the original sorting
+    ) == to_paths(['world.rego', '.', 'lib.rego', 'more/path.rego', 'even/more'])
