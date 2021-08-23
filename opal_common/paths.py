@@ -48,3 +48,25 @@ class PathUtils:
                     output_paths.remove(out_path)
             output_paths.add(candidate)
         return output_paths
+
+    @staticmethod
+    def sort_paths_according_to_explicit_sorting(unsorted_paths: List[Path], explicit_sorting: List[Path]) -> List[Path]:
+        """
+        the way this sorting works, is assuming that explicit_sorting does NOT necessarily contains all the paths
+        found in the original list. We must ensure that all items in unsorted_paths must also exist in the output list.
+        """
+        unsorted = unsorted_paths.copy()
+
+        sorted_paths: List[Path] = []
+        for path in explicit_sorting:
+            try:
+                # we look for Path objects and not str for normalization of the path
+                found_path: Path = unsorted.pop(unsorted.index(path))
+                sorted_paths.append(found_path)
+            except ValueError:
+                continue # skip, not found in the original list
+
+        # add the remaineder to the end of the sorted list
+        sorted_paths.extend(unsorted)
+
+        return sorted_paths

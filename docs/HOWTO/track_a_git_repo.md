@@ -78,6 +78,25 @@ The client will fetch a new policy bundle upon the following events:
   * After a disconnect from the OPAL server (e.g: if the server crashed, etc)
   * After receiving a [policy update message](#policy-update-message)
 
+
+#### Policy bundle manifest - serving dependant policy modules
+The policy bundle contains a `manifest` list that contains the paths of all the modules (.rego or data.json) that are included in the bundle. The `manifest` list is important! It controls the **order** in which the OPAL client will load the policy modules into OPA.
+
+OPA rego modules can have dependencies if they use the [import statement](https://www.openpolicyagent.org/docs/latest/policy-language/#imports).
+
+You can control the manifest contents and ensure the correct loading of dependent OPA modules. All you have to do is to put a `.manifest` file in the root directory of your policy git repository (like shown in [this example repo](https://github.com/authorizon/opal-example-policy-repo)).
+
+**The `.manifest` file is optional!!!** If there is no manifest file, OPAL will load the policy modules it finds in alphabetical order.
+
+The format of the `.manifest` file you should adhere to:
+* File encoding should be standard (i.e: UTF-8)
+* Lines should be separated with newlines (`\n` character)
+* Each line should contain the relative path to one file in the repo (i.e: a `.rego` file or `data.json` file).
+* File paths should appear in the order you want to load them into OPA.
+* If you want to use a different file name other than `.manifest`, you can set another value to the env var `OPAL_POLICY_REPO_MANIFEST_PATH`.
+
+For example, if you look in the [example repo](https://github.com/authorizon/opal-example-policy-repo), you would see that the `rbac.rego` module imports the `utils.rego` module (the line `import data.utils` imports the `utils` package). Therefore in the manifest, `utils.rego` appears first because it needs to be loaded into OPA before the `rbac.rego` policy is loaded (otherwise OPA will throw an exception due to the import statement failing).
+
 #### Policy bundle API Endpoint
 The [policy bundle endpoint](https://opal.authorizon.com/redoc#operation/get_policy_policy_get) exposes the following params:
 * **path** - path to a directory inside the repo, the server will include only policy files under this directory. You can pass the **path** parameter multiple times (i.e: to include files under several directories).

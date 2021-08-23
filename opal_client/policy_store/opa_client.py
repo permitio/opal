@@ -14,6 +14,7 @@ from opal_client.utils import proxy_response
 from opal_common.schemas.policy import DataModule, PolicyBundle
 from opal_common.schemas.store import JSONPatchAction, StoreTransaction, ArrayAppendAction
 from opal_common.opa.parsing import get_rego_package
+from opal_common.git.bundle_maker import BundleUtils
 from opal_client.policy_store.base_policy_store_client import BasePolicyStoreClient, JsonableValue
 
 
@@ -263,13 +264,13 @@ class OpaClient(BasePolicyStoreClient):
         module_ids_to_delete: Set[str] = module_ids_in_store.difference(module_ids_in_bundle)
 
         async with self._lock:
-            # save bundled policies into store
-            for module in bundle.policy_modules:
-                await self.set_policy(policy_id=module.path, policy_code=module.rego)
-
             # save bundled policy *static* data into store
-            for module in bundle.data_modules:
+            for module in BundleUtils.sorted_data_modules_to_load(bundle):
                 await self._set_policy_data_from_bundle_data_module(module, hash=bundle.hash)
+
+            # save bundled policies into store
+            for module in BundleUtils.sorted_policy_modules_to_load(bundle):
+                await self.set_policy(policy_id=module.path, policy_code=module.rego)
 
             # remove policies from the store that are not in the bundle
             # (because this bundle is "complete", i.e: contains all policy modules for a given hash)
@@ -281,20 +282,20 @@ class OpaClient(BasePolicyStoreClient):
 
     async def _set_policies_from_delta_bundle(self, bundle: PolicyBundle):
         async with self._lock:
-            # save bundled policies into store
-            for module in bundle.policy_modules:
-                await self.set_policy(policy_id=module.path, policy_code=module.rego)
-
             # save bundled policy *static* data into store
-            for module in bundle.data_modules:
+            for module in BundleUtils.sorted_data_modules_to_load(bundle):
                 await self._set_policy_data_from_bundle_data_module(module, hash=bundle.hash)
+
+            # save bundled policies into store
+            for module in BundleUtils.sorted_policy_modules_to_load(bundle):
+                await self.set_policy(policy_id=module.path, policy_code=module.rego)
 
             # remove deleted policies (or static policy data) from store
             if bundle.deleted_files is not None:
-                for module_id in bundle.deleted_files.policy_modules:
+                for module_id in BundleUtils.sorted_policy_modules_to_delete(bundle):
                     await self.delete_policy(policy_id=module_id)
 
-                for module_id in bundle.deleted_files.data_modules:
+                for module_id in BundleUtils.sorted_data_modules_to_delete(bundle):
                     await self.delete_policy_data(path=self._safe_data_module_path(str(module_id)))
 
             # save policy version (hash) into store
