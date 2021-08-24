@@ -31,7 +31,7 @@ class RepoWatcher:
         ssh_key: Optional[str] = None,
         polling_interval: int = 0,
     ):
-        self._cloner = RepoCloner(repo_url, clone_path, ssh_key=ssh_key)
+        self._cloner = RepoCloner(repo_url, clone_path, branch_name=branch_name, ssh_key=ssh_key)
         self._branch_name = branch_name
         self._remote_name = remote_name
         self._tracker = None

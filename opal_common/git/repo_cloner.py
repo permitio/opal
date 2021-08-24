@@ -74,6 +74,7 @@ class RepoCloner:
         self,
         repo_url: str,
         clone_path: str,
+        branch_name: str = "master",
         retry_config = None,
         ssh_key: Optional[str] = None,
         ssh_key_file_path: Optional[str] = None,
@@ -90,10 +91,11 @@ class RepoCloner:
         """
         if repo_url is None:
             raise ValueError("must provide repo url!")
-        
+
 
         self.url = repo_url
         self.path = os.path.expanduser(clone_path)
+        self.branch_name = branch_name
         self._ssh_key = ssh_key
         self._ssh_key_file_path = ssh_key_file_path or opal_common_config.GIT_SSH_KEY_FILE
         self._retry_config = retry_config if retry_config is not None else self.DEFAULT_RETRY_CONFIG
@@ -130,7 +132,7 @@ class RepoCloner:
         clones the repo from url or throws GitFailed
         """
         env = self._provide_git_ssh_environment()
-        _clone_func = partial(Repo.clone_from, url=self.url, to_path=self.path, env=env)
+        _clone_func = partial(Repo.clone_from, url=self.url, to_path=self.path, branch=self.branch_name, env=env)
         _clone_with_retries = retry(**self._retry_config)(_clone_func)
         try:
             repo = _clone_with_retries()
