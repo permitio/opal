@@ -14,7 +14,7 @@ from opal_client.utils import proxy_response
 from opal_common.schemas.policy import DataModule, PolicyBundle
 from opal_common.schemas.store import JSONPatchAction, StoreTransaction, ArrayAppendAction
 from opal_common.opa.parsing import get_rego_package
-from opal_common.git.bundle_maker import BundleUtils
+from opal_common.git.bundle_utils import BundleUtils
 from opal_client.policy_store.base_policy_store_client import BasePolicyStoreClient, JsonableValue
 
 
