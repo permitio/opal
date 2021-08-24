@@ -48,7 +48,8 @@ async def test_repo_watcher_git_failed_callback(tmp_path):
     # configure the watcher to watch an invalid repo
     watcher = RepoWatcher(
         repo_url=INVALID_REPO_REMOTE_URL,
-        clone_path=target_path
+        clone_path=target_path,
+        clone_timeout=3,
     )
     # configure the error callback
     watcher.on_git_failed(failure_callback)
@@ -85,9 +86,9 @@ async def test_repo_watcher_detect_new_commits_with_manual_trigger(
     target_path: Path = Path(repo.working_tree_dir)
 
     # configure the watcher with a valid local repo (our test repo)
-    # the returned repo will track the test remote, not a real remote
+    # the returned repo will track the local remote repo
     watcher = RepoWatcher(
-        repo_url=VALID_REPO_REMOTE_URL_HTTPS,
+        repo_url=remote_repo.working_tree_dir,
         clone_path=target_path
     )
     # configure the error callback
@@ -157,7 +158,7 @@ async def test_repo_watcher_detect_new_commits_with_polling(
     # configure the watcher with a valid local repo (our test repo)
     # the returned repo will track the test remote, not a real remote
     watcher = RepoWatcher(
-        repo_url=VALID_REPO_REMOTE_URL_HTTPS,
+        repo_url=remote_repo.working_tree_dir,
         clone_path=target_path,
         polling_interval=3 # every 3 seconds do a pull to try and detect changes
     )

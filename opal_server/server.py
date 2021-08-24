@@ -3,7 +3,8 @@ from opal_server.security.jwks import JwksStaticEndpoint
 import os
 import asyncio
 from functools import partial
-from typing import Optional
+from typing import Optional, List
+from pathlib import Path
 
 from fastapi import Depends, FastAPI
 
@@ -112,6 +113,7 @@ class OpalServer:
             self.publisher = ServerSideTopicPublisher(self.pubsub.endpoint)
 
             if init_git_watcher:
+                self._fix_policy_repo_clone_path()
                 if policy_repo_url is not None:
                     self.watcher = setup_watcher_task(self.publisher)
                 else:
@@ -190,10 +192,7 @@ class OpalServer:
         @app.on_event("shutdown")
         async def shutdown_event():
             logger.info("triggered shutdown event")
-            if self.watcher is not None:
-                self.watcher.signal_stop()
-            if self.publisher is not None:
-                asyncio.create_task(self.publisher.stop())
+            await self.stop_server_background_tasks()
 
         return app
 
@@ -226,3 +225,26 @@ class OpalServer:
                         # running the watcher, and waiting until it stops (until self.watcher.signal_stop() is called)
                         async with self.watcher:
                             await self.watcher.wait_until_should_stop()
+
+    async def stop_server_background_tasks(self):
+        logger.info("stopping background tasks...")
+
+        tasks: List[asyncio.Task] = []
+
+        if self.watcher is not None:
+            tasks.append(asyncio.create_task(self.watcher.stop()))
+        if self.publisher is not None:
+            tasks.append(asyncio.create_task(self.publisher.stop()))
+
+        try:
+            await asyncio.gather(*tasks)
+        except Exception:
+            logger.exception("exception while shutting down background tasks")
+
+    def _fix_policy_repo_clone_path(self):
+        clone_path = Path(os.path.expanduser(opal_server_config.POLICY_REPO_CLONE_PATH))
+        forbidden_paths = [Path(os.path.expanduser('~')), Path('/')]
+        if clone_path in forbidden_paths:
+            logger.warning("You cannot clone the policy repo directly to the homedir (~) or to the root directory (/)!")
+            opal_server_config.POLICY_REPO_CLONE_PATH = os.path.join(clone_path, "regoclone")
+            logger.warning(f"OPAL_POLICY_REPO_CLONE_PATH was set to: {opal_server_config.POLICY_REPO_CLONE_PATH}")

@@ -30,8 +30,9 @@ class RepoWatcher:
         remote_name: str = "origin",
         ssh_key: Optional[str] = None,
         polling_interval: int = 0,
+        clone_timeout: int = 0,
     ):
-        self._cloner = RepoCloner(repo_url, clone_path, ssh_key=ssh_key)
+        self._cloner = RepoCloner(repo_url, clone_path, branch_name=branch_name, ssh_key=ssh_key, clone_timeout=clone_timeout)
         self._branch_name = branch_name
         self._remote_name = remote_name
         self._tracker = None
@@ -60,7 +61,7 @@ class RepoWatcher:
         clones the repo and potentially starts the polling task
         """
         try:
-            result = self._cloner.clone()
+            result = await self._cloner.clone()
         except GitFailed as e:
             await self._on_git_failed(e)
             return

@@ -1,3 +1,7 @@
+
+import os
+import signal
+
 import asyncio
 from typing import List, Optional, Coroutine
 
@@ -72,4 +76,6 @@ class RepoWatcherTask:
         called when the watcher fails, and stops all tasks gracefully
         """
         logger.error("watcher failed with exception: {err}", err=repr(exc))
-        await self.stop()
+        self.signal_stop()
+        # trigger uvicorn graceful shutdown
+        os.kill(os.getpid(), signal.SIGTERM)

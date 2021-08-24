@@ -18,6 +18,7 @@ def setup_watcher_task(
     remote_name: str = None,
     ssh_key: Optional[str] = None,
     polling_interval: int = None,
+    clone_timeout: int = None,
     extensions: Optional[List[str]] = None,
 ) -> RepoWatcherTask:
     # load defaults
@@ -27,6 +28,7 @@ def setup_watcher_task(
     remote_name = remote_name or opal_server_config.POLICY_REPO_MAIN_REMOTE
     ssh_key = ssh_key or opal_server_config.POLICY_REPO_SSH_KEY
     polling_interval = polling_interval or opal_server_config.POLICY_REPO_POLLING_INTERVAL
+    clone_timeout = clone_timeout or opal_server_config.POLICY_REPO_CLONE_TIMEOUT
     extensions = extensions if extensions is not None else opal_server_config.OPA_FILE_EXTENSIONS
     watcher = RepoWatcher(
         repo_url=repo_url,
@@ -35,6 +37,7 @@ def setup_watcher_task(
         remote_name=remote_name,
         ssh_key=ssh_key,
         polling_interval=polling_interval,
+        clone_timeout=clone_timeout
     )
     watcher.on_new_commits(
         partial(

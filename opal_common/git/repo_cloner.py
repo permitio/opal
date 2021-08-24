@@ -1,9 +1,11 @@
 import os
+import shutil
+import asyncio
 
 from functools import partial
 from typing import Optional
 from pathlib import Path
-from tenacity import retry, wait_fixed, stop_after_attempt, RetryError
+from tenacity import retry, wait, stop, RetryError
 from git import Repo, GitError, GitCommandError
 
 from opal_common.logger import logger
@@ -64,19 +66,20 @@ class RepoCloner:
     the repo already existing on the filesystem.
     """
 
+    # wait indefinitely until successful
     DEFAULT_RETRY_CONFIG = {
-        'wait': wait_fixed(5),
-        'stop': stop_after_attempt(2),
-        'reraise': True,
+        'wait': wait.wait_random_exponential(multiplier=0.5, max=30),
     }
 
     def __init__(
         self,
         repo_url: str,
         clone_path: str,
+        branch_name: str = "master",
         retry_config = None,
         ssh_key: Optional[str] = None,
         ssh_key_file_path: Optional[str] = None,
+        clone_timeout: int = 0,
     ):
         """inits the repo cloner.
 
@@ -90,15 +93,18 @@ class RepoCloner:
         """
         if repo_url is None:
             raise ValueError("must provide repo url!")
-        
+
 
         self.url = repo_url
         self.path = os.path.expanduser(clone_path)
+        self.branch_name = branch_name
         self._ssh_key = ssh_key
         self._ssh_key_file_path = ssh_key_file_path or opal_common_config.GIT_SSH_KEY_FILE
         self._retry_config = retry_config if retry_config is not None else self.DEFAULT_RETRY_CONFIG
+        if clone_timeout > 0:
+            self._retry_config.update({'stop': stop.stop_after_delay(clone_timeout)})
 
-    def clone(self) -> CloneResult:
+    async def clone(self) -> CloneResult:
         """
         initializes a git.Repo and returns the clone result.
         it either:
@@ -106,36 +112,40 @@ class RepoCloner:
             - finds a cloned repo locally and does not clone from remote.
         """
         logger.info("Cloning repo from '{url}' to '{to_path}'", url=self.url, to_path=self.path)
-        git_path = Path(self.path) / Path(".git")
-        if git_path.exists():
-            return self._attempt_init_from_local_repo()
-        else:
-            return self._attempt_clone_from_url()
+        self._discard_previous_local_clone()
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(None, self._attempt_clone_from_url)
 
-    def _attempt_init_from_local_repo(self) -> CloneResult:
+    def _discard_previous_local_clone(self):
         """
         inits the repo from local .git or throws GitFailed
         """
-        logger.info("Repo already exists in '{repo_path}'", repo_path=self.path)
-        try:
-            repo = Repo(self.path)
-        except Exception as e:
-            logger.exception("cannot init local repo: {error}", error=e)
-            raise GitFailed(e)
+        git_path = Path(self.path) / Path(".git")
+        if not git_path.exists():
+            return
 
-        return LocalClone(repo)
+        dst_path = "{}.old".format(str(Path(self.path)))
+        i = 0
+        while Path(dst_path + str(i)).exists():
+            i += 1
+        dst_path = dst_path + str(i)
+
+        logger.info(f"Repo already exists in '{self.path}', moving previous clone to '{dst_path}'")
+        try:
+            shutil.move(self.path, dst_path)
+        except Exception as e:
+            logger.error(f"could not move previous clone, got error: {e}")
 
     def _attempt_clone_from_url(self) -> CloneResult:
         """
         clones the repo from url or throws GitFailed
         """
         env = self._provide_git_ssh_environment()
-        _clone_func = partial(Repo.clone_from, url=self.url, to_path=self.path, env=env)
+        _clone_func = partial(self._clone, env=env)
         _clone_with_retries = retry(**self._retry_config)(_clone_func)
         try:
-            repo = _clone_with_retries()
+            repo: Repo = _clone_with_retries()
         except (GitError, GitCommandError) as e:
-            logger.exception("cannot clone policy repo: {error}", error=e)
             raise GitFailed(e)
         except RetryError as e:
             logger.exception("cannot clone policy repo: {error}", error=e)
@@ -143,6 +153,13 @@ class RepoCloner:
         else:
             logger.info("Clone succeeded", repo_path=self.path)
             return RemoteClone(repo)
+
+    def _clone(self, env) -> Repo:
+        try:
+            return Repo.clone_from(url=self.url, to_path=self.path, branch=self.branch_name, env=env)
+        except (GitError, GitCommandError) as e:
+            logger.error("cannot clone policy repo: {error}", error=e)
+            raise
 
     def _provide_git_ssh_environment(self):
         """
