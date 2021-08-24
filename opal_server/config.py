@@ -57,6 +57,7 @@ class OpalServerConfig(Confi):
     POLICY_REPO_MAIN_REMOTE = confi.str("POLICY_REPO_MAIN_REMOTE", "origin")
     POLICY_REPO_SSH_KEY = confi.str("POLICY_REPO_SSH_KEY", None)
     POLICY_REPO_MANIFEST_PATH = confi.str("POLICY_REPO_MANIFEST_PATH", ".manifest")
+    POLICY_REPO_CLONE_TIMEOUT = confi.int("POLICY_REPO_CLONE_TIMEOUT", 0) # if 0, waits forever until successful clone
     LEADER_LOCK_FILE_PATH = confi.str("LEADER_LOCK_FILE_PATH", "/tmp/opal_server_leader.lock")
 
     REPO_WATCHER_ENABLED = confi.bool("REPO_WATCHER_ENABLED", True)
