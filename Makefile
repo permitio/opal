@@ -57,6 +57,10 @@ docker-run-client-standalone:
 docker-build-server:
 	@docker build -t authorizon/opal-server --target server -f docker/Dockerfile .
 
+docker-build-next:
+	@docker build -t authorizon/opal-client:next --target client -f docker/Dockerfile .
+	@docker build -t authorizon/opal-server:next --target server -f docker/Dockerfile .
+
 docker-run-server:
 	@if [[ -z "$(OPAL_POLICY_REPO_SSH_KEY)" ]]; then \
 		docker run -it \
