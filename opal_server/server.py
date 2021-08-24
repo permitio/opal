@@ -4,6 +4,7 @@ import os
 import asyncio
 from functools import partial
 from typing import Optional
+from pathlib import Path
 
 from fastapi import Depends, FastAPI
 
@@ -112,6 +113,7 @@ class OpalServer:
             self.publisher = ServerSideTopicPublisher(self.pubsub.endpoint)
 
             if init_git_watcher:
+                self._fix_policy_repo_clone_path()
                 if policy_repo_url is not None:
                     self.watcher = setup_watcher_task(self.publisher)
                 else:
@@ -226,3 +228,11 @@ class OpalServer:
                         # running the watcher, and waiting until it stops (until self.watcher.signal_stop() is called)
                         async with self.watcher:
                             await self.watcher.wait_until_should_stop()
+
+    def _fix_policy_repo_clone_path(self):
+        clone_path = Path(os.path.expanduser(opal_server_config.POLICY_REPO_CLONE_PATH))
+        forbidden_paths = [Path(os.path.expanduser('~')), Path('/')]
+        if clone_path in forbidden_paths:
+            logger.warning("You cannot clone the policy repo directly to the homedir (~) or to the root directory (/)!")
+            opal_server_config.POLICY_REPO_CLONE_PATH = os.path.join(clone_path, "regoclone")
+            logger.warning(f"OPAL_POLICY_REPO_CLONE_PATH was set to: {opal_server_config.POLICY_REPO_CLONE_PATH}")
