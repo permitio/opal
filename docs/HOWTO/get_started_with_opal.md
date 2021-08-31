@@ -141,7 +141,7 @@ for example `OPAL_SERVER_PORT=1337 opal-server run` is equivalent to `opal-serve
 
     - Once the server is running we can obtain a JWT from it with the CLI 
     ```sh
-    opal-client obtain-token $MASTER_TOKEN --server-url=$YOUR_SERVERS_ADDRESS 
+    opal-client obtain-token $OPAL_AUTH_MASTER_TOKEN --server-url=$YOUR_SERVERS_ADDRESS 
     ```
 
 
@@ -186,7 +186,7 @@ This will change in future releases.
 - [Run the server in secure mode](#server-secure-mode)
 - Using the master-token you assigned to the server obtain a client JWT
     ```sh
-    opal-client obtain-token $MASTER_TOKEN --server-url=$YOUR_SERVERS_ADDRESS 
+    opal-client obtain-token $OPAL_AUTH_MASTER_TOKEN --server-url=$YOUR_SERVERS_ADDRESS 
     ```
 - run the client with env-var `OPAL_CLIENT_TOKEN` or cmd-option `--client-token` to pass the JWT obtained from the server 
     ```sh
