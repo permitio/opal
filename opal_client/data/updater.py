@@ -258,16 +258,15 @@ class DataUpdater:
             # log reports which we failed to send
             for (url, config, result) in report_results:
                 if isinstance(result, Exception):
-                    logger.error("Failed to send report to {url} with config {config}", url=url, config=config, exc_info=result)
+                    logger.error("Failed to send report to {url}", url=url, exc_info=result)
                 if isinstance(result, aiohttp.ClientResponse) and is_http_error_response(result): # error responses
                     try:
                         error_content = await result.json()
                     except json.JSONDecodeError:
                         error_content = await result.text()
                     logger.error(
-                        "Failed to send report to {url} with config {config}, got response code {status} with error: {error}",
+                        "Failed to send report to {url}, got response code {status} with error: {error}",
                         url=url,
-                        config=config,
                         status=result.status,
                         error=error_content
                     )
@@ -305,7 +304,7 @@ class DataUpdater:
 
                 if isinstance(result, Exception):
                     fetched_error_response = True
-                    logger.error("Failed to fetch url {url} with config {config}, got exception: {exc}", url=url, config=fetch_config, exc=result)
+                    logger.error("Failed to fetch url {url}, got exception: {exc}", url=url, exc=result)
 
                 if isinstance(result, aiohttp.ClientResponse) and is_http_error_response(result): # error responses
                     fetched_error_response = True
