@@ -16,6 +16,17 @@ Obtain a data source token with the cli:
 opal-client obtain-token MY_MASTER_TOKEN --uri=https://opal.yourdomain.com --type datasource
 ```
 
+If you don't want to use the cli, you can obtain the JWT directly from the deployed OPAL server via its REST API:
+```
+curl --request POST 'https://opal.yourdomain.com/token' \
+--header 'Authorization: Bearer MY_MASTER_TOKEN' \
+--header 'Content-Type: application/json' \
+--data-raw '{
+  "type": "datasource",
+}'
+```
+The `/token` API endpoint can receive more parameters, as [documented here](https://opal.authorizon.com/redoc#operation/generate_new_access_token_token_post).
+
 This example assumes that:
 * You deployed OPAL server to `https://opal.yourdomain.com`
 * The master token of your deployment is `MY_MASTER_TOKEN`.
