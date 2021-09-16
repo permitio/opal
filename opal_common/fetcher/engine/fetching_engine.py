@@ -26,15 +26,15 @@ class FetchingEngine(BaseFetchingEngine):
     - Use with 'async with' to terminate tasks (or call self.terminate_tasks() when done)
     """
 
-    DEFAULT_WORKER_COUNT = opal_common_config.FETCHING_WORKER_COUNT
-    DEFAULT_CALLBACK_TIMEOUT = opal_common_config.FETCHING_CALLBACK_TIMEOUT
-    DEFAULT_ENQUEUE_TIMEOUT = opal_common_config.FETCHING_ENQUEUE_TIMEOUT
+    DEFAULT_WORKER_COUNT = 5
+    DEFAULT_CALLBACK_TIMEOUT = 10
+    DEFAULT_ENQUEUE_TIMEOUT = 10
 
     @staticmethod
     def gen_uid():
         return uuid.uuid4().hex
 
-    def __init__(self, register_config: Dict[str, BaseFetchProvider] = None, worker_count: int = DEFAULT_WORKER_COUNT) -> None:
+    def __init__(self, register_config: Dict[str, BaseFetchProvider] = None, worker_count: int = DEFAULT_WORKER_COUNT, callback_timeout: int = DEFAULT_CALLBACK_TIMEOUT) -> None:
         # The internal task queue (created at start_workers)
         self._queue: asyncio.Queue = None
         # Worker working the queue
@@ -45,6 +45,7 @@ class FetchingEngine(BaseFetchingEngine):
         self._failure_handlers: List[OnFetchFailureCallback] = []
         # how many workers to run
         self._worker_count: int = worker_count
+        self._callback_timeout = callback_timeout
 
     def start_workers(self):
         if self._queue is None:
@@ -81,18 +82,19 @@ class FetchingEngine(BaseFetchingEngine):
         # reset queue
         self._queue = None
 
-    async def handle_url(self, url: str, timeout: float = DEFAULT_CALLBACK_TIMEOUT, **kwargs):
+    async def handle_url(self, url: str, timeout: float = None, **kwargs):
         """
         Same as self.queue_url but instead of using a callback, you can wait on this coroutine for the result as a return value
         Args:
             url (str): 
-            timeout (float, optional): time in seconds to wait on the queued fetch task. Defaults to DEFAULT_CALLBACK_TIMEOUT.
+            timeout (float, optional): time in seconds to wait on the queued fetch task. Defaults to self._callback_timeout.
             kwargs: additional args passed to self.queue_url
 
         Raises:
             asyncio.TimeoutError: if the given timeout has expired
             also - @see self.queue_fetch_event            
         """
+        timeout = self._callback_timeout if timeout is None else timeout
         wait_event = asyncio.Event()
         data = {'result': None}
         # Callback to wait and retrive data
