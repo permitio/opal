@@ -32,7 +32,11 @@ class FetchingEngine(BaseFetchingEngine):
     def gen_uid():
         return uuid.uuid4().hex
 
-    def __init__(self, register_config: Dict[str, BaseFetchProvider] = None, worker_count: int = DEFAULT_WORKER_COUNT, callback_timeout: int = DEFAULT_CALLBACK_TIMEOUT) -> None:
+    def __init__(self, register_config: Dict[str, BaseFetchProvider] = None,
+                 worker_count: int = DEFAULT_WORKER_COUNT,
+                 callback_timeout: int = DEFAULT_CALLBACK_TIMEOUT,
+                 enqueue_timeout: int = DEFAULT_ENQUEUE_TIMEOUT
+                 ) -> None:
         # The internal task queue (created at start_workers)
         self._queue: asyncio.Queue = None
         # Worker working the queue
@@ -43,7 +47,10 @@ class FetchingEngine(BaseFetchingEngine):
         self._failure_handlers: List[OnFetchFailureCallback] = []
         # how many workers to run
         self._worker_count: int = worker_count
+        # time in seconds before timeout on a fetch callback
         self._callback_timeout = callback_timeout
+        # time in seconds before time out on adding a task to queue (when full)
+        self._enqueue_timeout = enqueue_timeout
 
     def start_workers(self):
         if self._queue is None:
@@ -136,7 +143,7 @@ class FetchingEngine(BaseFetchingEngine):
         event = FetchEvent(url=url, fetcher=fetcher, config=config)
         return await self.queue_fetch_event(event, callback)
 
-    async def queue_fetch_event(self, event: FetchEvent, callback: Coroutine, enqueue_timeout=DEFAULT_ENQUEUE_TIMEOUT) -> FetchEvent:
+    async def queue_fetch_event(self, event: FetchEvent, callback: Coroutine, enqueue_timeout=None) -> FetchEvent:
         """
         Basic handler to queue a fetch event for a fetcher class.
         Waits if the queue is full until enqueue_timeout seconds; if enqueue_timeout is None returns immediately or raises QueueFull
@@ -153,6 +160,7 @@ class FetchingEngine(BaseFetchingEngine):
             asyncio.QueueFull: if the queue is full and enqueue_timeout is set as None
             asyncio.TimeoutError: if enqueue_timeout is not None, and the queue is full and hasn't cleared by the timeout time
         """
+        enqueue_timeout = enqueue_timeout if enqueue_timeout is not None else self._enqueue_timeout
         # Assign a unique identifier for the event
         event.id = self.gen_uid()
         # add to the queue for handling
