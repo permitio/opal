@@ -2,9 +2,10 @@ from pathlib import Path
 from sys import prefix
 from .confi import Confi, confi
 
+
 class OpalCommonConfig(Confi):
     ALLOWED_ORIGINS = confi.list("ALLOWED_ORIGINS", ["*"])
-    # Process name to show in logs - Not confi-controlable on purpose 
+    # Process name to show in logs - Not confi-controlable on purpose
     PROCESS_NAME = ""
     # Logging
     # - Log formatting
@@ -35,6 +36,14 @@ class OpalCommonConfig(Confi):
     # - where to load providers from
     FETCH_PROVIDER_MODULES = confi.list("FETCH_PROVIDER_MODULES", ["opal_common.fetcher.providers"])
 
+    # Fetching engine
+    # Max number of worker tasks handling fetch events concurrently
+    FETCHING_WORKER_COUNT = confi.int("FETCHING_WORKER_COUNT", 5)
+    # Time in seconds to wait on the queued fetch task.
+    FETCHING_CALLBACK_TIMEOUT = confi.int("FETCHING_CALLBACK_TIMEOUT", 10)
+    # Time in seconds to wait for queuing a new task (if the queue is full)
+    FETCHING_ENQUEUE_TIMEOUT = confi.int("FETCHING_ENQUEUE_TIMEOUT", 10)
+
     GIT_SSH_KEY_FILE = confi.str("GIT_SSH_KEY_FILE", str(Path.home() / ".ssh/opal_repo_ssh_key"))
 
     # Trust self signed certificates (Advanced Usage - only affects OPAL client) -----------------------------
@@ -42,14 +51,12 @@ class OpalCommonConfig(Confi):
     # By default, OPAL client only trusts SSL certificates that are signed by a public recognized CA (certificate authority).
     # However, sometimes (mostly in on-prem setups or in dev environments) users setup their own self-signed certificates.
     # We allow OPAL client to trust these certificates, by changing the following config vars.
-    CLIENT_SELF_SIGNED_CERTIFICATES_ALLOWED=confi.bool(
+    CLIENT_SELF_SIGNED_CERTIFICATES_ALLOWED = confi.bool(
         "CLIENT_SELF_SIGNED_CERTIFICATES_ALLOWED", False,
         description="Whether or not OPAL Client will trust HTTPs connections protected by self signed certificates. DO NOT USE THIS IN PRODUCTION!")
-    CLIENT_SSL_CONTEXT_TRUSTED_CA_FILE=confi.str(
+    CLIENT_SSL_CONTEXT_TRUSTED_CA_FILE = confi.str(
         "CLIENT_SSL_CONTEXT_TRUSTED_CA_FILE", None,
         description="A path to your own CA public certificate file (usually a .crt or a .pem file). Certifcates signed by this issuer will be trusted by OPAL Client. DO NOT USE THIS IN PRODUCTION!")
 
 
 opal_common_config = OpalCommonConfig(prefix="OPAL_")
-
-

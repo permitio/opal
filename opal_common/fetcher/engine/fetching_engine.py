@@ -10,6 +10,9 @@ from .base_fetching_engine import BaseFetchingEngine
 from .fetch_worker import fetch_worker
 from .core_callbacks import OnFetchFailureCallback
 
+from config import opal_common_config
+
+
 logger = get_logger("engine")
 
 
@@ -23,26 +26,25 @@ class FetchingEngine(BaseFetchingEngine):
     - Use with 'async with' to terminate tasks (or call self.terminate_tasks() when done)
     """
 
-    DEFAULT_WORKER_COUNT = 5
-    DEFAULT_CALLBACK_TIMEOUT = 10
-    DEFAULT_ENQUEUE_TIMEOUT = 10
+    DEFAULT_WORKER_COUNT = opal_common_config.FETCHING_WORKER_COUNT
+    DEFAULT_CALLBACK_TIMEOUT = opal_common_config.FETCHING_CALLBACK_TIMEOUT
+    DEFAULT_ENQUEUE_TIMEOUT = opal_common_config.FETCHING_ENQUEUE_TIMEOUT
 
     @staticmethod
     def gen_uid():
         return uuid.uuid4().hex
 
-    def __init__(self, register_config:Dict[str, BaseFetchProvider]=None, worker_count:int=DEFAULT_WORKER_COUNT) -> None:
+    def __init__(self, register_config: Dict[str, BaseFetchProvider] = None, worker_count: int = DEFAULT_WORKER_COUNT) -> None:
         # The internal task queue (created at start_workers)
-        self._queue:asyncio.Queue = None
+        self._queue: asyncio.Queue = None
         # Worker working the queue
-        self._tasks:List[asyncio.Task] = []
+        self._tasks: List[asyncio.Task] = []
         # register of the fetch providers workers can use
         self._fetcher_register = FetcherRegister(register_config)
         # core event callback regsiters
-        self._failure_handlers:List[OnFetchFailureCallback] = []
+        self._failure_handlers: List[OnFetchFailureCallback] = []
         # how many workers to run
-        self._worker_count:int = worker_count
-        
+        self._worker_count: int = worker_count
 
     def start_workers(self):
         if self._queue is None:
@@ -52,7 +54,7 @@ class FetchingEngine(BaseFetchingEngine):
                 self.create_worker()
 
     @property
-    def register(self)->FetcherRegister:
+    def register(self) -> FetcherRegister:
         return self._fetcher_register
 
     async def __aenter__(self):
@@ -76,10 +78,10 @@ class FetchingEngine(BaseFetchingEngine):
             task.cancel()
         # Wait until all worker tasks are cancelled.
         await asyncio.gather(*self._tasks, return_exceptions=True)
-        # reset queue 
+        # reset queue
         self._queue = None
 
-    async def handle_url(self, url:str, timeout: float=DEFAULT_CALLBACK_TIMEOUT, **kwargs ):
+    async def handle_url(self, url: str, timeout: float = DEFAULT_CALLBACK_TIMEOUT, **kwargs):
         """
         Same as self.queue_url but instead of using a callback, you can wait on this coroutine for the result as a return value
         Args:
@@ -94,6 +96,7 @@ class FetchingEngine(BaseFetchingEngine):
         wait_event = asyncio.Event()
         data = {'result': None}
         # Callback to wait and retrive data
+
         async def waiter_callback(answer):
             data['result'] = answer
             # Signal callback is done
@@ -108,8 +111,7 @@ class FetchingEngine(BaseFetchingEngine):
         # return saved result value from callback
         return data['result']
 
-
-    async def queue_url(self, url: str, callback: Coroutine, config: Union[FetcherConfig,dict] = None, fetcher="HttpFetchProvider")->FetchEvent:
+    async def queue_url(self, url: str, callback: Coroutine, config: Union[FetcherConfig, dict] = None, fetcher="HttpFetchProvider") -> FetchEvent:
         """
         Simplified default fetching handler for queuing a fetch task
 
@@ -134,7 +136,7 @@ class FetchingEngine(BaseFetchingEngine):
         event = FetchEvent(url=url, fetcher=fetcher, config=config)
         return await self.queue_fetch_event(event, callback)
 
-    async def queue_fetch_event(self, event: FetchEvent, callback: Coroutine, enqueue_timeout=DEFAULT_ENQUEUE_TIMEOUT)->FetchEvent:
+    async def queue_fetch_event(self, event: FetchEvent, callback: Coroutine, enqueue_timeout=DEFAULT_ENQUEUE_TIMEOUT) -> FetchEvent:
         """
         Basic handler to queue a fetch event for a fetcher class.
         Waits if the queue is full until enqueue_timeout seconds; if enqueue_timeout is None returns immediately or raises QueueFull
@@ -151,7 +153,7 @@ class FetchingEngine(BaseFetchingEngine):
             asyncio.QueueFull: if the queue is full and enqueue_timeout is set as None
             asyncio.TimeoutError: if enqueue_timeout is not None, and the queue is full and hasn't cleared by the timeout time
         """
-        # Assign a unique identifier for the event 
+        # Assign a unique identifier for the event
         event.id = self.gen_uid()
         # add to the queue for handling
         # if no timeout we return immediately or raise QueueFull
@@ -171,8 +173,7 @@ class FetchingEngine(BaseFetchingEngine):
         self._tasks.append(task)
         return task
 
-
-    def register_failure_handler(self, callback : OnFetchFailureCallback):
+    def register_failure_handler(self, callback: OnFetchFailureCallback):
         """
         Register a callback to be called with exception and original event in case of failure
 
@@ -181,15 +182,15 @@ class FetchingEngine(BaseFetchingEngine):
         """
         self._failure_handlers.append(callback)
 
-    async def _management_event_handler(self, handlers:List[Coroutine], *args, **kwargs):
+    async def _management_event_handler(self, handlers: List[Coroutine], *args, **kwargs):
         """
         Generic management event subscriber caller
         Args:
             handlers (List[Coroutine]): callback coroutines
         """
-        await asyncio.gather(*(callback(*args, **kwargs) for callback in handlers)) 
+        await asyncio.gather(*(callback(*args, **kwargs) for callback in handlers))
 
-    async def _on_failure(self, error:Exception, event: FetchEvent):
+    async def _on_failure(self, error: Exception, event: FetchEvent):
         """
         Call event failure subscribers
 
