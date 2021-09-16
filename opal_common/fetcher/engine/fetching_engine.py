@@ -10,8 +10,6 @@ from .base_fetching_engine import BaseFetchingEngine
 from .fetch_worker import fetch_worker
 from .core_callbacks import OnFetchFailureCallback
 
-from config import opal_common_config
-
 
 logger = get_logger("engine")
 
