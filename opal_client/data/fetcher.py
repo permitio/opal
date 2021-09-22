@@ -2,6 +2,7 @@ import asyncio
 from typing import Dict, Any, List, Tuple
 
 from opal_client.config import opal_client_config
+from opal_common.config import opal_common_config
 from opal_common.utils import get_authorization_header
 from opal_client.utils import tuple_to_dict
 from opal_common.fetcher import FetchingEngine
@@ -24,11 +25,15 @@ class DataFetcher:
             default_data_url (str, optional): The URL used to fetch data if no specific url is given in a fetch request. Defaults to DEFAULT_DATA_URL.
             token (str, optional): default auth token. Defaults to CLIENT_TOKEN.
         """
-        # defaults 
+        # defaults
         default_data_url: str = default_data_url or opal_client_config.DEFAULT_DATA_URL
         token: str = token or opal_client_config.CLIENT_TOKEN
         # The underlying fetching engine
-        self._engine = FetchingEngine()
+        self._engine = FetchingEngine(
+            worker_count=opal_common_config.FETCHING_WORKER_COUNT,
+            callback_timeout=opal_common_config.FETCHING_CALLBACK_TIMEOUT,
+            enqueue_timeout=opal_common_config.FETCHING_ENQUEUE_TIMEOUT
+        )
         self._data_url = default_data_url
         self._token = token
         self._auth_headers = tuple_to_dict(get_authorization_header(token))
@@ -77,7 +82,7 @@ class DataFetcher:
         Returns:
             List[Tuple[str,FetcherConfig, Any]]: urls mapped to their resulting fetched data
         """
-        
+
         # tasks
         tasks = []
         # if no url provided - default to the builtin route
@@ -90,7 +95,7 @@ class DataFetcher:
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
         # Map results with their matching urls and config
-        results_with_url_and_config = [ (url, config, result)  for (url, config), result in zip(urls, results)]
-                
+        results_with_url_and_config = [(url, config, result) for (url, config), result in zip(urls, results)]
+
         # return results
         return results_with_url_and_config
