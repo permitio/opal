@@ -29,8 +29,11 @@ class DataFetcher:
         default_data_url: str = default_data_url or opal_client_config.DEFAULT_DATA_URL
         token: str = token or opal_client_config.CLIENT_TOKEN
         # The underlying fetching engine
-        self._engine = FetchingEngine(worker_count=opal_common_config.FETCHING_WORKER_COUNT,
-                                      callback_timeout=opal_common_config.FETCHING_CALLBACK_TIMEOUT)
+        self._engine = FetchingEngine(
+            worker_count=opal_common_config.FETCHING_WORKER_COUNT,
+            callback_timeout=opal_common_config.FETCHING_CALLBACK_TIMEOUT,
+            enqueue_timeout=opal_common_config.FETCHING_ENQUEUE_TIMEOUT
+        )
         self._data_url = default_data_url
         self._token = token
         self._auth_headers = tuple_to_dict(get_authorization_header(token))
