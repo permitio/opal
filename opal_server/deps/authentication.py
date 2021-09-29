@@ -1,11 +1,12 @@
-from typing import DefaultDict, Optional
+from typing import Optional
 from uuid import UUID
 
 from fastapi import Depends, Header
 from fastapi.exceptions import HTTPException
 from fastapi.security.utils import get_authorization_scheme_param
 
-from opal_common.authentication.signer import JWTSigner, JWTClaims, Unauthorized
+from opal_common.authentication.types import JWTClaims
+from opal_common.authentication.verifier import JWTVerifier, Unauthorized
 from opal_common.logger import logger
 
 def get_token_from_header(authorization_header: str) -> Optional[str]:
@@ -24,16 +25,16 @@ def get_token_from_header(authorization_header: str) -> Optional[str]:
 
     return token
 
-def verify_logged_in(signer: JWTSigner, token: Optional[str]) -> UUID:
+def verify_logged_in(verifier: JWTVerifier, token: Optional[str]) -> UUID:
     """
     forces bearer token authentication with valid JWT or throws 401.
     """
-    if not signer.enabled:
-        logger.debug("signer diabled, cannot verify requests!")
+    if not verifier.enabled:
+        logger.debug("JWT verification diabled, cannot verify requests!")
         return
     if token is None:
         raise Unauthorized(token=token, description="access token was not provided")
-    claims: JWTClaims = signer.verify(token)
+    claims: JWTClaims = verifier.verify(token)
     subject = claims.get("sub", "")
 
     invalid = Unauthorized(token=token, description="invalid sub claim")
@@ -50,12 +51,12 @@ class JWTAuthenticator:
     bearer token authentication for http(s) api endpoints.
     throws 401 if a valid jwt is not provided.
     """
-    def __init__(self, signer: JWTSigner):
-        self.signer = signer
+    def __init__(self, verifier: JWTVerifier):
+        self.verifier = verifier
 
     def __call__(self, authorization: Optional[str] = Header(None)) -> UUID:
         token = get_token_from_header(authorization)
-        return verify_logged_in(self.signer, token)
+        return verify_logged_in(self.verifier, token)
 
 
 class WebsocketJWTAuthenticator:
@@ -77,13 +78,13 @@ class WebsocketJWTAuthenticator:
 
     thus we return a boolean and the endpoint can use it to potentially call websocket.close()
     """
-    def __init__(self, signer: JWTSigner):
-        self.signer = signer
+    def __init__(self, verifier: JWTVerifier):
+        self.verifier = verifier
 
     def __call__(self, authorization: Optional[str] = Header(None)) -> bool:
         token = get_token_from_header(authorization)
         try:
-            verify_logged_in(self.signer, token)
+            verify_logged_in(self.verifier, token)
             return True
         except (Unauthorized, HTTPException):
             return False
