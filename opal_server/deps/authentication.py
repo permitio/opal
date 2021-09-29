@@ -26,7 +26,7 @@ def get_token_from_header(authorization_header: str) -> Optional[str]:
     return token
 
 
-def verify_logged_in(verifier: JWTVerifier, token: Optional[str]) -> UUID:
+def verify_logged_in(verifier: JWTVerifier, token: Optional[str]) -> JWTClaims:
     """
     forces bearer token authentication with valid JWT or throws 401.
     """
@@ -43,9 +43,13 @@ def verify_logged_in(verifier: JWTVerifier, token: Optional[str]) -> UUID:
         if not subject:
             raise invalid
         try:
-            return UUID(subject)
+            _ = UUID(subject)
         except ValueError:
             raise invalid
+
+        # returns the entire claims dict so we can do more checks on it if needed
+        return claims
+
     except (Unauthorized, HTTPException) as err:
         # err.details is sometimes string and sometimes dict
         details: dict = {}
@@ -72,7 +76,7 @@ class JWTAuthenticator:
     def __init__(self, verifier: JWTVerifier):
         self.verifier = verifier
 
-    def __call__(self, authorization: Optional[str] = Header(None)) -> UUID:
+    def __call__(self, authorization: Optional[str] = Header(None)) -> JWTClaims:
         token = get_token_from_header(authorization)
         return verify_logged_in(self.verifier, token)
 

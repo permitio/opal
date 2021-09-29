@@ -1,17 +1,31 @@
 from typing import Optional
-
-from fastapi import APIRouter, HTTPException, status, Header
+from fastapi import APIRouter, HTTPException, status, Header, Depends
 from fastapi.responses import RedirectResponse
 
 from opal_common.logger import logger
 from opal_common.schemas.data import DataSourceConfig, ServerDataSourceConfig, DataUpdate, DataUpdateReport
+from opal_common.schemas.security import PeerType
 from opal_common.urls import set_url_query_param
-from opal_server.deps.authentication import get_token_from_header
+from opal_common.authentication.verifier import Unauthorized
+from opal_common.authentication.types import JWTClaims
+from opal_server.deps.authentication import JWTAuthenticator, get_token_from_header
 from opal_server.config import opal_server_config
 from opal_server.data.data_update_publisher import DataUpdatePublisher
 
 
-def init_data_updates_router(data_update_publisher: DataUpdatePublisher, data_sources_config: ServerDataSourceConfig):
+def require_peer_type(claims: JWTClaims, required_type: PeerType):
+    peer_type = claims.get('peer_type', None)
+    if peer_type is None:
+        raise Unauthorized(description="Missing 'peer_type' claim for OPAL jwt token")
+    try:
+        type = PeerType(peer_type)
+    except ValueError:
+        raise Unauthorized(description=f"Invalid 'peer_type' claim for OPAL jwt token: {peer_type}")
+
+    if type != required_type:
+        raise Unauthorized(description=f"Incorrect 'peer_type' claim for OPAL jwt token: {str(type)}, expected: {str(required_type)}")
+
+def init_data_updates_router(data_update_publisher: DataUpdatePublisher, data_sources_config: ServerDataSourceConfig, authenticator: JWTAuthenticator):
     router = APIRouter()
 
     @router.get(opal_server_config.ALL_DATA_ROUTE)
@@ -66,7 +80,7 @@ def init_data_updates_router(data_update_publisher: DataUpdatePublisher, data_so
             )
 
     @router.post(opal_server_config.DATA_CONFIG_ROUTE)
-    async def publish_data_update_event(update:DataUpdate):
+    async def publish_data_update_event(update:DataUpdate, claims: JWTClaims = Depends(authenticator)):
         """
         Provides data providers (i.e: one of the backend services owned by whomever deployed OPAL) with
         the ability to push incremental policy data updates to OPAL clients.
@@ -76,6 +90,12 @@ def init_data_updates_router(data_update_publisher: DataUpdatePublisher, data_so
         - where should OPAL client store the data in OPA document hierarchy
         - what clients should receive the update (through topics, only clients subscribed to provided topics will be notified)
         """
+        try:
+            require_peer_type(claims, PeerType.datasource) # may throw Unauthorized
+        except Unauthorized as e:
+            logger.error(f"Unauthorized to publish update: {repr(e)}")
+            raise
+
         data_update_publisher.publish_data_updates(update)
         return {"status": "ok"}
 

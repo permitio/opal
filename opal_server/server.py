@@ -144,6 +144,8 @@ class OpalServer:
         """
         mounts the api routes on the app object
         """
+        authenticator = JWTAuthenticator(self.signer)
+
         data_update_publisher: Optional[DataUpdatePublisher] = None
         if self.publisher is not None:
             data_update_publisher = DataUpdatePublisher(self.publisher)
@@ -151,12 +153,11 @@ class OpalServer:
         # Init api routers with required dependencies
         data_updates_router = init_data_updates_router(
             data_update_publisher,
-            self.data_sources_config
+            self.data_sources_config,
+            authenticator
         )
         webhook_router = init_git_webhook_router(self.pubsub.endpoint)
         security_router = init_security_router(self.signer, StaticBearerAuthenticator(self.master_token))
-
-        authenticator = JWTAuthenticator(self.signer)
 
         # mount the api routes on the app object
         app.include_router(bundles_router, tags=["Bundle Server"], dependencies=[Depends(authenticator)])
