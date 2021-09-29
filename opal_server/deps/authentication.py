@@ -25,25 +25,43 @@ def get_token_from_header(authorization_header: str) -> Optional[str]:
 
     return token
 
+
 def verify_logged_in(verifier: JWTVerifier, token: Optional[str]) -> UUID:
     """
     forces bearer token authentication with valid JWT or throws 401.
     """
-    if not verifier.enabled:
-        logger.debug("JWT verification diabled, cannot verify requests!")
-        return
-    if token is None:
-        raise Unauthorized(token=token, description="access token was not provided")
-    claims: JWTClaims = verifier.verify(token)
-    subject = claims.get("sub", "")
-
-    invalid = Unauthorized(token=token, description="invalid sub claim")
-    if not subject:
-        raise invalid
     try:
-        return UUID(subject)
-    except ValueError:
-        raise invalid
+        if not verifier.enabled:
+            logger.debug("JWT verification diabled, cannot verify requests!")
+            return
+        if token is None:
+            raise Unauthorized(token=token, description="access token was not provided")
+        claims: JWTClaims = verifier.verify(token)
+        subject = claims.get("sub", "")
+
+        invalid = Unauthorized(token=token, description="invalid sub claim")
+        if not subject:
+            raise invalid
+        try:
+            return UUID(subject)
+        except ValueError:
+            raise invalid
+    except (Unauthorized, HTTPException) as err:
+        # err.details is sometimes string and sometimes dict
+        details: dict = {}
+        if isinstance(err.detail, dict):
+            details = err.detail.copy()
+        elif isinstance(err.detail, str):
+            details = {"msg": err.detail}
+        else:
+            details = {"msg": repr(err.detail)}
+
+        # pop the token before logging - tokens should not appear in logs
+        details.pop("token", None)
+
+        # logs the error and reraises
+        logger.error(f"Authentication failed with {err.status_code} due to error: {details}")
+        raise
 
 
 class JWTAuthenticator:
