@@ -45,7 +45,7 @@ def verify_logged_in(signer: JWTSigner, token: Optional[str]) -> UUID:
         raise invalid
 
 
-class JWTVerifier:
+class JWTAuthenticator:
     """
     bearer token authentication for http(s) api endpoints.
     throws 401 if a valid jwt is not provided.
@@ -58,7 +58,7 @@ class JWTVerifier:
         return verify_logged_in(self.signer, token)
 
 
-class JWTVerifierWebsocket:
+class WebsocketJWTAuthenticator:
     """
     bearer token authentication for websocket endpoints.
 
@@ -89,7 +89,7 @@ class JWTVerifierWebsocket:
             return False
 
 
-class StaticBearerTokenVerifier:
+class StaticBearerAuthenticator:
     """
     bearer token authentication for http(s) api endpoints.
     throws 401 if token does not match a preconfigured value.
