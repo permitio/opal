@@ -39,6 +39,13 @@ async def get_input_paths_or_throw(
     paths = paths or []
     paths = [normalize_path(p) for p in paths]
 
+    # if the repo is currently being cloned - the repo.heads is empty
+    if len(repo.heads) == 0:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="policy repo is not ready"
+        )
+
     # verify all input paths exists under the commit hash
     with CommitViewer(repo.head.commit) as viewer:
         for path in paths:
