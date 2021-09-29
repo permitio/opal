@@ -17,7 +17,7 @@ from opal_common.authentication.signer import JWTSigner
 from opal_server.config import opal_server_config
 from opal_server.data.api import init_data_updates_router
 from opal_server.data.data_update_publisher import DataUpdatePublisher
-from opal_server.deps.authentication import JWTAuthenticator, StaticBearerAuthenticator
+from opal_common.authentication.deps import JWTAuthenticator, StaticBearerAuthenticator
 from opal_server.policy.bundles.api import router as bundles_router
 from opal_server.policy.github_webhook.api import init_git_webhook_router
 from opal_server.policy.watcher import (setup_watcher_task,

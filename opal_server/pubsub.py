@@ -2,9 +2,9 @@ from fastapi import APIRouter, Depends, WebSocket
 from fastapi_websocket_pubsub import PubSubEndpoint
 
 from opal_common.logger import logger
-from opal_server.config import opal_server_config
 from opal_common.authentication.signer import JWTSigner
-from opal_server.deps.authentication import WebsocketJWTAuthenticator
+from opal_common.authentication.deps import WebsocketJWTAuthenticator
+from opal_server.config import opal_server_config
 
 
 class PubSub:

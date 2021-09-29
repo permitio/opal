@@ -8,7 +8,7 @@ from opal_common.schemas.security import PeerType
 from opal_common.urls import set_url_query_param
 from opal_common.authentication.verifier import Unauthorized
 from opal_common.authentication.types import JWTClaims
-from opal_server.deps.authentication import JWTAuthenticator, get_token_from_header
+from opal_common.authentication.deps import JWTAuthenticator, get_token_from_header
 from opal_server.config import opal_server_config
 from opal_server.data.data_update_publisher import DataUpdatePublisher
 

@@ -1,7 +1,7 @@
 from typing import Optional
 from uuid import UUID
 
-from fastapi import Depends, Header
+from fastapi import Header
 from fastapi.exceptions import HTTPException
 from fastapi.security.utils import get_authorization_scheme_param
 
