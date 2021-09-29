@@ -45,7 +45,7 @@ def init_data_updates_router(data_update_publisher: DataUpdatePublisher, data_so
         If the user deploying OPAL-client did not set OPAL_DEFAULT_UPDATE_CALLBACKS properly,
         this method will be called as the default callback (will simply log the report).
         """
-        logger.info("Recieved update report: {report}", report=report.dict())
+        logger.info("Received update report: {report}", report=report.dict())
         return {} # simply returns 200
 
     @router.get(
