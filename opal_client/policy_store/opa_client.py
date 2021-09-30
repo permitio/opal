@@ -145,7 +145,8 @@ class OpaClient(BasePolicyStoreClient):
     POLICY_NAME = "rbac"
 
     def __init__(self, opa_server_url=None, opa_auth_token:Optional[str]=None):
-        self._opa_url = opa_server_url or opal_client_config.POLICY_STORE_URL
+        base_url = opa_server_url or opal_client_config.POLICY_STORE_URL
+        self._opa_url = f"{base_url}/v1"
         self._cached_policies: Dict[str, str] = {}
         self._policy_version: Optional[str] = None
         self._lock = asyncio.Lock()
