@@ -6,24 +6,13 @@ from opal_common.logger import logger
 from opal_common.schemas.data import DataSourceConfig, ServerDataSourceConfig, DataUpdate, DataUpdateReport
 from opal_common.schemas.security import PeerType
 from opal_common.urls import set_url_query_param
+from opal_common.authentication.authz import require_peer_type
 from opal_common.authentication.verifier import Unauthorized
 from opal_common.authentication.types import JWTClaims
 from opal_common.authentication.deps import JWTAuthenticator, get_token_from_header
 from opal_server.config import opal_server_config
 from opal_server.data.data_update_publisher import DataUpdatePublisher
 
-
-def require_peer_type(claims: JWTClaims, required_type: PeerType):
-    peer_type = claims.get('peer_type', None)
-    if peer_type is None:
-        raise Unauthorized(description="Missing 'peer_type' claim for OPAL jwt token")
-    try:
-        type = PeerType(peer_type)
-    except ValueError:
-        raise Unauthorized(description=f"Invalid 'peer_type' claim for OPAL jwt token: {peer_type}")
-
-    if type != required_type:
-        raise Unauthorized(description=f"Incorrect 'peer_type' claim for OPAL jwt token: {str(type)}, expected: {str(required_type)}")
 
 def init_data_updates_router(data_update_publisher: DataUpdatePublisher, data_sources_config: ServerDataSourceConfig, authenticator: JWTAuthenticator):
     router = APIRouter()

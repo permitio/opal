@@ -2,7 +2,7 @@ import os
 
 from opal_common.confi import Confi
 from opal_common.schemas.data import ServerDataSourceConfig
-from opal_common.authentication.types import EncryptionKeyFormat, JWTAlgorithm
+from opal_common.authentication.types import EncryptionKeyFormat
 
 confi = Confi(prefix="OPAL_")
 
@@ -26,24 +26,6 @@ class OpalServerConfig(Confi):
                 passphrase=AUTH_PRIVATE_KEY_PASSPHRASE
             )
     )
-
-    AUTH_PUBLIC_KEY_FORMAT = confi.enum("AUTH_PUBLIC_KEY_FORMAT", EncryptionKeyFormat, EncryptionKeyFormat.ssh)
-    AUTH_PUBLIC_KEY = confi.delay(
-        lambda AUTH_PUBLIC_KEY_FORMAT=None:
-            confi.public_key(
-                "AUTH_PUBLIC_KEY",
-                default=None,
-                key_format=AUTH_PUBLIC_KEY_FORMAT
-            )
-    )
-    AUTH_JWT_ALGORITHM = confi.enum(
-        "AUTH_JWT_ALGORITHM",
-        JWTAlgorithm,
-        getattr(JWTAlgorithm, "RS256"),
-        description="jwt algorithm, possible values: see: https://pyjwt.readthedocs.io/en/stable/algorithms.html"
-    )
-    AUTH_JWT_AUDIENCE = confi.str("AUTH_JWT_AUDIENCE", "https://api.authorizon.com/v1/")
-    AUTH_JWT_ISSUER = confi.str("AUTH_JWT_ISSUER", f"https://authorizon.com/")
 
     AUTH_JWKS_URL = confi.str("AUTH_JWKS_URL", "/.well-known/jwks.json")
     AUTH_JWKS_STATIC_DIR = confi.str("AUTH_JWKS_STATIC_DIR", os.path.join(os.getcwd(), "jwks_dir"))
