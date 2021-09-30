@@ -1,8 +1,12 @@
 from opal_common.schemas.security import PeerType
+from opal_common.authentication.deps import JWTAuthenticator
 from opal_common.authentication.verifier import Unauthorized
 from opal_common.authentication.types import JWTClaims
 
-def require_peer_type(claims: JWTClaims, required_type: PeerType):
+def require_peer_type(authenticator: JWTAuthenticator, claims: JWTClaims, required_type: PeerType):
+    if not authenticator.enabled:
+        return
+
     peer_type = claims.get('peer_type', None)
     if peer_type is None:
         raise Unauthorized(description="Missing 'peer_type' claim for OPAL jwt token")

@@ -80,7 +80,7 @@ def init_data_updates_router(data_update_publisher: DataUpdatePublisher, data_so
         - what clients should receive the update (through topics, only clients subscribed to provided topics will be notified)
         """
         try:
-            require_peer_type(claims, PeerType.datasource) # may throw Unauthorized
+            require_peer_type(authenticator, claims, PeerType.datasource) # may throw Unauthorized
         except Unauthorized as e:
             logger.error(f"Unauthorized to publish update: {repr(e)}")
             raise

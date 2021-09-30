@@ -32,8 +32,8 @@ def verify_logged_in(verifier: JWTVerifier, token: Optional[str]) -> JWTClaims:
     """
     try:
         if not verifier.enabled:
-            logger.debug("JWT verification diabled, cannot verify requests!")
-            return
+            logger.debug("JWT verification disabled, cannot verify requests!")
+            return {}
         if token is None:
             raise Unauthorized(token=token, description="access token was not provided")
         claims: JWTClaims = verifier.verify(token)
@@ -48,7 +48,7 @@ def verify_logged_in(verifier: JWTVerifier, token: Optional[str]) -> JWTClaims:
             raise invalid
 
         # returns the entire claims dict so we can do more checks on it if needed
-        return claims
+        return claims or {}
 
     except (Unauthorized, HTTPException) as err:
         # err.details is sometimes string and sometimes dict
@@ -68,20 +68,29 @@ def verify_logged_in(verifier: JWTVerifier, token: Optional[str]) -> JWTClaims:
         raise
 
 
-class JWTAuthenticator:
+class _JWTAuthenticator:
+    def __init__(self, verifier: JWTVerifier):
+        self._verifier = verifier
+
+    @property
+    def verifier(self) -> JWTVerifier:
+        return self._verifier
+
+    @property
+    def enabled(self) -> JWTVerifier:
+        return self._verifier.enabled
+
+class JWTAuthenticator(_JWTAuthenticator):
     """
     bearer token authentication for http(s) api endpoints.
     throws 401 if a valid jwt is not provided.
     """
-    def __init__(self, verifier: JWTVerifier):
-        self.verifier = verifier
-
     def __call__(self, authorization: Optional[str] = Header(None)) -> JWTClaims:
         token = get_token_from_header(authorization)
-        return verify_logged_in(self.verifier, token)
+        return verify_logged_in(self._verifier, token)
 
 
-class WebsocketJWTAuthenticator:
+class WebsocketJWTAuthenticator(_JWTAuthenticator):
     """
     bearer token authentication for websocket endpoints.
 
@@ -100,13 +109,10 @@ class WebsocketJWTAuthenticator:
 
     thus we return a boolean and the endpoint can use it to potentially call websocket.close()
     """
-    def __init__(self, verifier: JWTVerifier):
-        self.verifier = verifier
-
     def __call__(self, authorization: Optional[str] = Header(None)) -> bool:
         token = get_token_from_header(authorization)
         try:
-            verify_logged_in(self.verifier, token)
+            verify_logged_in(self._verifier, token)
             return True
         except (Unauthorized, HTTPException):
             return False

@@ -12,10 +12,10 @@ from opal_client.config import opal_client_config
 def init_policy_store_router(authenticator: JWTAuthenticator):
     router = APIRouter()
 
-    @router.get("/policy_store/config", response_model=PolicyStoreDetails, response_model_exclude_none=True)
+    @router.get("/policy-store/config", response_model=PolicyStoreDetails, response_model_exclude_none=True)
     async def get_policy_store_details(claims: JWTClaims = Depends(authenticator)):
         try:
-            require_peer_type(claims, PeerType.listener) # may throw Unauthorized
+            require_peer_type(authenticator, claims, PeerType.listener) # may throw Unauthorized
         except Unauthorized as e:
             logger.error(f"Unauthorized to publish update: {repr(e)}")
             raise
