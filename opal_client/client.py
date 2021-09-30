@@ -19,6 +19,7 @@ from opal_client.policy_store.api import init_policy_store_router
 from opal_client.config import PolicyStoreTypes, opal_client_config
 from opal_client.data.api import init_data_router
 from opal_client.data.updater import DataUpdater
+from opal_client.data.fetcher import DataFetcher
 from opal_client.policy_store.base_policy_store_client import BasePolicyStoreClient
 from opal_client.policy_store.policy_store_client_factory import PolicyStoreClientFactory
 from opal_client.opa.runner import OpaRunner
@@ -57,6 +58,9 @@ class OpalClient:
         # Init policy store client
         self.policy_store_type:PolicyStoreTypes = policy_store_type
         self.policy_store:BasePolicyStoreClient = policy_store or PolicyStoreClientFactory.create(policy_store_type)
+        # data fetcher
+        self.data_fetcher = DataFetcher()
+
         # Init policy updater
         self.policy_updater = policy_updater if policy_updater is not None else PolicyUpdater(policy_store=self.policy_store)
         # Data updating service
@@ -65,7 +69,7 @@ class OpalClient:
                 self.data_updater = data_updater
             else:
                 data_topics = data_topics if data_topics is not None else opal_client_config.DATA_TOPICS
-                self.data_updater = DataUpdater(policy_store=self.policy_store, data_topics=data_topics)
+                self.data_updater = DataUpdater(policy_store=self.policy_store, data_topics=data_topics, data_fetcher=self.data_fetcher)
         else:
             self.data_updater = None
 

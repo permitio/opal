@@ -2,7 +2,7 @@ import asyncio
 import hashlib
 import itertools
 import json
-from typing import List, Tuple
+from typing import List, Optional, Tuple
 import uuid
 import aiohttp
 
@@ -35,7 +35,8 @@ class DataUpdater:
                  fetch_on_connect: bool = True,
                  data_topics: List[str] = None,
                  policy_store: BasePolicyStoreClient = None,
-                 should_send_reports=None):
+                 should_send_reports=None,
+                 data_fetcher: Optional[DataFetcher] = None):
         """
         Keeps policy-stores (e.g. OPA) up to date with relevant data
         Obtains data configuration on startup from OPAL-server
@@ -65,7 +66,7 @@ class DataUpdater:
         # The task running the Pub/Sub subcribing client
         self._subscriber_task = None
         # Data fetcher
-        self._data_fetcher = DataFetcher()
+        self._data_fetcher = data_fetcher or DataFetcher()
         self._token = token
         self._server_url = pubsub_url
         self._data_sources_config_url = data_sources_config_url
@@ -222,8 +223,8 @@ class DataUpdater:
         """
         Calculate an hash (sah256) on the given data, if data isn't a string, it will be converted to JSON.
         String are encoded as 'utf-8' prior to hash calculation.
-        Returns: 
-            the hash of the given data (as a a hexdigit string) or '' on failure to process. 
+        Returns:
+            the hash of the given data (as a a hexdigit string) or '' on failure to process.
         """
         try:
             if not isinstance(data, str):
