@@ -14,6 +14,7 @@ CLAIMS_DESCRIPTION = "extra claims to attach to the jwt"
 class PeerType(str, Enum):
     client = 'client'
     datasource = 'datasource'
+    listener = 'listener'
 
 class AccessTokenRequest(BaseModel):
     """

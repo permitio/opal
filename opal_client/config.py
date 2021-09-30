@@ -1,21 +1,14 @@
-from opal_common.fetcher.providers.http_fetch_provider import HttpFetcherConfig
-import os
 from enum import Enum
-from sys import prefix
 
-import opal_client
-from opal_client.opa.options import OpaServerOptions
+from opal_common.fetcher.providers.http_fetch_provider import HttpFetcherConfig
 from opal_common.confi import Confi, confi
 from opal_common.config import opal_common_config
 from opal_common.schemas.data import UpdateCallback
+from opal_client.opa.options import OpaServerOptions
+from opal_client.policy_store.schemas import PolicyStoreTypes
 
 
 # Opal Client general configuration -------------------------------------------
-class PolicyStoreTypes(Enum):
-    OPA = "OPA"
-    MOCK = "MOCK"
-
-
 class OpaLogFormat(str, Enum):
     NONE = "none"  # no opa logs are piped
     MINIMAL = "minimal"  # only the event name is logged
