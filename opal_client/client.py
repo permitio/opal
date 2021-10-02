@@ -62,16 +62,26 @@ class OpalClient:
         self.policy_store:BasePolicyStoreClient = policy_store or PolicyStoreClientFactory.create(policy_store_type)
         # data fetcher
         self.data_fetcher = DataFetcher()
+        # callbacks register
+        if hasattr(opal_client_config.DEFAULT_UPDATE_CALLBACKS, 'callbacks'):
+            default_callbacks = opal_client_config.DEFAULT_UPDATE_CALLBACKS.callbacks
+        else:
+            default_callbacks = []
+
+        self._callbacks_register = CallbacksRegister(default_callbacks)
 
         # Init policy updater
-        self.policy_updater = policy_updater if policy_updater is not None else PolicyUpdater(policy_store=self.policy_store)
+        if policy_updater is not None:
+            self.policy_updater = policy_updater
+        else:
+            self.policy_updater = PolicyUpdater(policy_store=self.policy_store, data_fetcher=self.data_fetcher, callbacks_register=self._callbacks_register)
         # Data updating service
         if opal_client_config.DATA_UPDATER_ENABLED:
             if data_updater is not None:
                 self.data_updater = data_updater
             else:
                 data_topics = data_topics if data_topics is not None else opal_client_config.DATA_TOPICS
-                self.data_updater = DataUpdater(policy_store=self.policy_store, data_topics=data_topics, data_fetcher=self.data_fetcher)
+                self.data_updater = DataUpdater(policy_store=self.policy_store, data_topics=data_topics, data_fetcher=self.data_fetcher, callbacks_register=self._callbacks_register)
         else:
             self.data_updater = None
 
@@ -106,13 +116,6 @@ class OpalClient:
                 audience=opal_common_config.AUTH_JWT_AUDIENCE,
                 issuer=opal_common_config.AUTH_JWT_ISSUER,
             )
-
-        if hasattr(opal_client_config.DEFAULT_UPDATE_CALLBACKS, 'callbacks'):
-            default_callbacks = opal_client_config.DEFAULT_UPDATE_CALLBACKS.callbacks
-        else:
-            default_callbacks = []
-
-        self._callbacks_register = CallbacksRegister(default_callbacks)
 
         # init fastapi app
         self.app: FastAPI = self._init_fast_api_app()

@@ -1,4 +1,8 @@
 import asyncio
+from opal_common.schemas.data import DataUpdateReport
+from opal_client.callbacks.reporter import CallbacksReporter
+from opal_client.callbacks.register import CallbacksRegister
+from opal_client.data.fetcher import DataFetcher
 from typing import List, Optional
 
 from fastapi_websocket_rpc.rpc_channel import RpcChannel
@@ -32,6 +36,8 @@ class PolicyUpdater:
         pubsub_url: str = None,
         subscription_directories: List[str] = None,
         policy_store: BasePolicyStoreClient = None,
+        data_fetcher: Optional[DataFetcher] = None,
+        callbacks_register: Optional[CallbacksRegister] = None,
     ):
         """inits the policy updater.
 
@@ -67,6 +73,11 @@ class PolicyUpdater:
         self._stopping = False
         # policy fetcher - fetches policy bundles
         self._policy_fetcher = PolicyFetcher()
+        # callbacks on policy changes
+        self._data_fetcher = data_fetcher or DataFetcher()
+        self._callbacks_register = callbacks_register or CallbacksRegister()
+        self._callbacks_reporter = CallbacksReporter(self._callbacks_register, self._data_fetcher)
+        self._should_send_reports = opal_client_config.SHOULD_REPORT_ON_DATA_UPDATES or False
 
     async def __aenter__(self):
         await self.start()
@@ -212,3 +223,8 @@ class PolicyUpdater:
             # if the write-op fails, we will mark the transaction as failed.
             async with self._policy_store.transaction_context(bundle.hash) as store_transaction:
                 await store_transaction.set_policies(bundle)
+                # if we got here, we did not throw during the transaction
+                if self._should_send_reports:
+                    # spin off reporting (no need to wait on it)
+                    report = DataUpdateReport(policy_hash=bundle.hash, reports=[])
+                    asyncio.create_task(self._callbacks_reporter.report_update_results(report))

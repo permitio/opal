@@ -17,23 +17,32 @@ class CallbacksRegister:
     Every time OPAL client successfully finishes a transaction to update OPA state,
     all the callbacks in this register will be called.
     """
-    def __init__(self, initial_callbacks: List[Union[str, CallbackConfig]]) -> None:
+    def __init__(self, initial_callbacks: Optional[List[Union[str, CallbackConfig]]] = None) -> None:
         self._callbacks: Dict[str, CallbackConfig] = {}
-        self._load_initial_callbacks(initial_callbacks)
+        if initial_callbacks is not None:
+            self._load_initial_callbacks(initial_callbacks)
         logger.info("Callbacks register loaded")
 
     def _load_initial_callbacks(self, initial_callbacks: List[Union[str, CallbackConfig]]) -> None:
-        for callback in initial_callbacks:
+        normalized_callbacks = self.normalize_callbacks(initial_callbacks)
+        for callback in normalized_callbacks:
+            url, config = callback
+            key = self.calc_hash(url, config)
+            self._register(key, url, config)
+
+    def normalize_callbacks(self, callbacks: List[Union[str, CallbackConfig]]) -> List[CallbackConfig]:
+        normalized_callbacks = []
+        for callback in callbacks:
             if isinstance(callback, str):
                 url = callback
                 config = opal_client_config.DEFAULT_UPDATE_CALLBACK_CONFIG
+                normalized_callbacks.append((url, config))
             elif isinstance(callback, CallbackConfig):
-                url, config = callback
+                normalized_callbacks.append(callback)
             else:
                 logger.warning(f"Unsupported type for callback config: {type(callback).__name__}")
                 continue
-            key = self.calc_hash(url, config)
-            self._register(key, url, config)
+        return normalized_callbacks
 
     def _register(self, key: str, url: str, config: HttpFetcherConfig):
         self._callbacks[key] = (url, config)
@@ -63,7 +72,11 @@ class CallbacksRegister:
         if no config is provided, the default callback config will be used.
         if no key is provided, the key will be calculated by hashing the url and config.
         """
-        callback_config = config or opal_client_config.DEFAULT_UPDATE_CALLBACK_CONFIG
+        default_config = opal_client_config.DEFAULT_UPDATE_CALLBACK_CONFIG
+        if isinstance(default_config, dict):
+            default_config = HttpFetcherConfig(**default_config)
+
+        callback_config = config or default_config
         auto_key = self.calc_hash(url, callback_config)
         callback_key = key or auto_key
         # if the same callback is already registered with another key - remove that callback.
