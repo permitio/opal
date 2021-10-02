@@ -1,11 +1,12 @@
-from typing import DefaultDict, Optional
+from typing import Optional
 from uuid import UUID
 
-from fastapi import Depends, Header
+from fastapi import Header
 from fastapi.exceptions import HTTPException
 from fastapi.security.utils import get_authorization_scheme_param
 
-from opal_common.authentication.signer import JWTSigner, JWTClaims, Unauthorized
+from opal_common.authentication.types import JWTClaims
+from opal_common.authentication.verifier import JWTVerifier, Unauthorized
 from opal_common.logger import logger
 
 def get_token_from_header(authorization_header: str) -> Optional[str]:
@@ -24,41 +25,72 @@ def get_token_from_header(authorization_header: str) -> Optional[str]:
 
     return token
 
-def verify_logged_in(signer: JWTSigner, token: Optional[str]) -> UUID:
+
+def verify_logged_in(verifier: JWTVerifier, token: Optional[str]) -> JWTClaims:
     """
     forces bearer token authentication with valid JWT or throws 401.
     """
-    if not signer.enabled:
-        logger.debug("signer diabled, cannot verify requests!")
-        return
-    if token is None:
-        raise Unauthorized(token=token, description="access token was not provided")
-    claims: JWTClaims = signer.verify(token)
-    subject = claims.get("sub", "")
-
-    invalid = Unauthorized(token=token, description="invalid sub claim")
-    if not subject:
-        raise invalid
     try:
-        return UUID(subject)
-    except ValueError:
-        raise invalid
+        if not verifier.enabled:
+            logger.debug("JWT verification disabled, cannot verify requests!")
+            return {}
+        if token is None:
+            raise Unauthorized(token=token, description="access token was not provided")
+        claims: JWTClaims = verifier.verify(token)
+        subject = claims.get("sub", "")
+
+        invalid = Unauthorized(token=token, description="invalid sub claim")
+        if not subject:
+            raise invalid
+        try:
+            _ = UUID(subject)
+        except ValueError:
+            raise invalid
+
+        # returns the entire claims dict so we can do more checks on it if needed
+        return claims or {}
+
+    except (Unauthorized, HTTPException) as err:
+        # err.details is sometimes string and sometimes dict
+        details: dict = {}
+        if isinstance(err.detail, dict):
+            details = err.detail.copy()
+        elif isinstance(err.detail, str):
+            details = {"msg": err.detail}
+        else:
+            details = {"msg": repr(err.detail)}
+
+        # pop the token before logging - tokens should not appear in logs
+        details.pop("token", None)
+
+        # logs the error and reraises
+        logger.error(f"Authentication failed with {err.status_code} due to error: {details}")
+        raise
 
 
-class JWTVerifier:
+class _JWTAuthenticator:
+    def __init__(self, verifier: JWTVerifier):
+        self._verifier = verifier
+
+    @property
+    def verifier(self) -> JWTVerifier:
+        return self._verifier
+
+    @property
+    def enabled(self) -> JWTVerifier:
+        return self._verifier.enabled
+
+class JWTAuthenticator(_JWTAuthenticator):
     """
     bearer token authentication for http(s) api endpoints.
     throws 401 if a valid jwt is not provided.
     """
-    def __init__(self, signer: JWTSigner):
-        self.signer = signer
-
-    def __call__(self, authorization: Optional[str] = Header(None)) -> UUID:
+    def __call__(self, authorization: Optional[str] = Header(None)) -> JWTClaims:
         token = get_token_from_header(authorization)
-        return verify_logged_in(self.signer, token)
+        return verify_logged_in(self._verifier, token)
 
 
-class JWTVerifierWebsocket:
+class WebsocketJWTAuthenticator(_JWTAuthenticator):
     """
     bearer token authentication for websocket endpoints.
 
@@ -77,19 +109,16 @@ class JWTVerifierWebsocket:
 
     thus we return a boolean and the endpoint can use it to potentially call websocket.close()
     """
-    def __init__(self, signer: JWTSigner):
-        self.signer = signer
-
     def __call__(self, authorization: Optional[str] = Header(None)) -> bool:
         token = get_token_from_header(authorization)
         try:
-            verify_logged_in(self.signer, token)
+            verify_logged_in(self._verifier, token)
             return True
         except (Unauthorized, HTTPException):
             return False
 
 
-class StaticBearerTokenVerifier:
+class StaticBearerAuthenticator:
     """
     bearer token authentication for http(s) api endpoints.
     throws 401 if token does not match a preconfigured value.

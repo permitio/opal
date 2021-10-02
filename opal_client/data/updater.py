@@ -2,7 +2,9 @@ import asyncio
 import hashlib
 import itertools
 import json
-from typing import List, Tuple
+from opal_client.callbacks.reporter import CallbacksReporter
+from opal_client.callbacks.register import CallbackConfig, CallbacksRegister
+from typing import List, Optional, Tuple
 import uuid
 import aiohttp
 
@@ -35,7 +37,10 @@ class DataUpdater:
                  fetch_on_connect: bool = True,
                  data_topics: List[str] = None,
                  policy_store: BasePolicyStoreClient = None,
-                 should_send_reports=None):
+                 should_send_reports=None,
+                 data_fetcher: Optional[DataFetcher] = None,
+                 callbacks_register: Optional[CallbacksRegister] = None
+        ):
         """
         Keeps policy-stores (e.g. OPA) up to date with relevant data
         Obtains data configuration on startup from OPAL-server
@@ -65,7 +70,9 @@ class DataUpdater:
         # The task running the Pub/Sub subcribing client
         self._subscriber_task = None
         # Data fetcher
-        self._data_fetcher = DataFetcher()
+        self._data_fetcher = data_fetcher or DataFetcher()
+        self._callbacks_register = callbacks_register or CallbacksRegister()
+        self._callbacks_reporter = CallbacksReporter(self._callbacks_register, self._data_fetcher)
         self._token = token
         self._server_url = pubsub_url
         self._data_sources_config_url = data_sources_config_url
@@ -222,8 +229,8 @@ class DataUpdater:
         """
         Calculate an hash (sah256) on the given data, if data isn't a string, it will be converted to JSON.
         String are encoded as 'utf-8' prior to hash calculation.
-        Returns: 
-            the hash of the given data (as a a hexdigit string) or '' on failure to process. 
+        Returns:
+            the hash of the given data (as a a hexdigit string) or '' on failure to process.
         """
         try:
             if not isinstance(data, str):
@@ -232,46 +239,6 @@ class DataUpdater:
         except:
             logger.exception("Failed to calculate hash for data {data}", data=data)
             return ""
-
-    async def report_update_results(self, update: DataUpdate, reports: List[DataEntryReport], data_fetcher: DataFetcher):
-        try:
-            whole_report = DataUpdateReport(update_id=update.id, reports=reports)
-
-            callbacks = update.callback.callbacks or opal_client_config.DEFAULT_UPDATE_CALLBACKS.callbacks
-            urls = []
-            for callback in callbacks:
-                if isinstance(callback, str):
-                    url = callback
-                    callback_config = opal_client_config.DEFAULT_UPDATE_CALLBACK_CONFIG.copy()
-                else:
-                    url, callback_config = callback
-
-                # normalize callback_config's type
-                if isinstance(callback_config, dict):
-                    callback_config = HttpFetcherConfig(**callback_config)
-
-                callback_config.data = whole_report.json()
-                urls.append((url, callback_config))
-
-            logger.info("Reporting the update to requested callbacks", urls=repr(urls))
-            report_results = await data_fetcher.handle_urls(urls)
-            # log reports which we failed to send
-            for (url, config, result) in report_results:
-                if isinstance(result, Exception):
-                    logger.error("Failed to send report to {url}", url=url, exc_info=result)
-                if isinstance(result, aiohttp.ClientResponse) and is_http_error_response(result): # error responses
-                    try:
-                        error_content = await result.json()
-                    except json.JSONDecodeError:
-                        error_content = await result.text()
-                    logger.error(
-                        "Failed to send report to {url}, got response code {status} with error: {error}",
-                        url=url,
-                        status=result.status,
-                        error=error_content
-                    )
-        except:
-            logger.exception("Failed to excute report_update_results")
 
     async def update_policy_data(self, update: DataUpdate = None, policy_store: BasePolicyStoreClient = None, data_fetcher=None):
         """
@@ -357,4 +324,6 @@ class DataUpdater:
         # should we send a report to defined callbackers?
         if self._should_send_reports:
             # spin off reporting (no need to wait on it)
-            asyncio.create_task(self.report_update_results(update, reports, data_fetcher))
+            whole_report = DataUpdateReport(update_id=update.id, reports=reports)
+            extra_callbacks = self._callbacks_register.normalize_callbacks(update.callback.callbacks)
+            asyncio.create_task(self._callbacks_reporter.report_update_results(whole_report, extra_callbacks))

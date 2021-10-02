@@ -7,7 +7,7 @@ from inspect import signature
 from functools import partial
 
 from opal_client.logger import logger
-from opal_client.client import opal_client_config
+from opal_client.config import opal_client_config
 
 JsonableValue = Union[Dict[str, Any], List[Any]]
 

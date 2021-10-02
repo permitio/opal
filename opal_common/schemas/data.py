@@ -58,9 +58,19 @@ class ServerDataSourceConfig(BaseModel):
             raise ValueError('you must provide ONLY ONE of these fields: config, external_source_url')
         return values
 
+
+class CallbackEntry(BaseModel):
+    """
+    an entry in the callbacks register.
+    this schema is used by the callbacks api
+    """
+    key: Optional[str] = Field(None, description="unique id to identify this callback (optional)")
+    url: str = Field(..., description="http/https url to call back on update")
+    config: Optional[HttpFetcherConfig] = Field(None, description="optional http config for the target url (i.e: http method, headers, etc)")
+
 class UpdateCallback(BaseModel):
     """
-    Configuration of callbacks upon completion of a FetchEvent 
+    Configuration of callbacks upon completion of a FetchEvent
     Allows notifying other services on the update flow
 
     Each callback is either a URL (str) or a tuple of a url and HttpFetcherConfig defining how to approach the URL
@@ -92,13 +102,15 @@ class DataEntryReport(BaseModel):
     # Hash of the returned data
     hash: Optional[str] = None
 
-    
+
 
 class DataUpdateReport(BaseModel):
     # the UUID fo the update this report is for
     update_id: Optional[str] = None
     # Each DataSourceEntry and how it was processed
     reports: List[DataEntryReport]
+    # in case this is a policy update, the new hash committed the policy store.
+    policy_hash: Optional[str] = None
 
 
 

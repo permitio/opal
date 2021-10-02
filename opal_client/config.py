@@ -1,21 +1,14 @@
-from opal_common.fetcher.providers.http_fetch_provider import HttpFetcherConfig
-import os
 from enum import Enum
-from sys import prefix
 
-import opal_client
-from opal_client.opa.options import OpaServerOptions
+from opal_common.fetcher.providers.http_fetch_provider import HttpFetcherConfig
 from opal_common.confi import Confi, confi
 from opal_common.config import opal_common_config
 from opal_common.schemas.data import UpdateCallback
+from opal_client.opa.options import OpaServerOptions
+from opal_client.policy_store.schemas import PolicyStoreTypes
 
 
 # Opal Client general configuration -------------------------------------------
-class PolicyStoreTypes(Enum):
-    OPA = "OPA"
-    MOCK = "MOCK"
-
-
 class OpaLogFormat(str, Enum):
     NONE = "none"  # no opa logs are piped
     MINIMAL = "minimal"  # only the event name is logged
@@ -26,7 +19,7 @@ class OpaLogFormat(str, Enum):
 class OpalClientConfig(Confi):
     # opa client (policy store) configuration
     POLICY_STORE_TYPE = confi.enum("POLICY_STORE_TYPE", PolicyStoreTypes, PolicyStoreTypes.OPA)
-    POLICY_STORE_URL = confi.str("POLICY_STORE_URL", f"http://localhost:8181/v1")
+    POLICY_STORE_URL = confi.str("POLICY_STORE_URL", f"http://localhost:8181")
     POLICY_STORE_AUTH_TOKEN = confi.str("POLICY_STORE_AUTH_TOKEN", None, description="the authentication (bearer) token OPAL client will use to authenticate against the policy store (i.e: OPA agent)")
     # create an instance of a policy store upon load
 

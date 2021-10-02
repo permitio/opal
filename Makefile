@@ -5,7 +5,7 @@
 OPAL_SERVER_URL ?= http://host.docker.internal:7002
 OPAL_AUTH_PRIVATE_KEY ?= /root/ssh/opal_rsa
 OPAL_AUTH_PUBLIC_KEY ?= /root/ssh/opal_rsa.pub
-OPAL_POLICY_STORE_URL ?= http://host.docker.internal:8181/v1
+OPAL_POLICY_STORE_URL ?= http://host.docker.internal:8181
 
 # python packages (pypi)
 clean:

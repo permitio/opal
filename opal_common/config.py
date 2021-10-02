@@ -2,6 +2,8 @@ from pathlib import Path
 from sys import prefix
 from .confi import Confi, confi
 
+from opal_common.authentication.types import EncryptionKeyFormat, JWTAlgorithm
+
 
 class OpalCommonConfig(Confi):
     ALLOWED_ORIGINS = confi.list("ALLOWED_ORIGINS", ["*"])
@@ -57,6 +59,25 @@ class OpalCommonConfig(Confi):
     CLIENT_SSL_CONTEXT_TRUSTED_CA_FILE = confi.str(
         "CLIENT_SSL_CONTEXT_TRUSTED_CA_FILE", None,
         description="A path to your own CA public certificate file (usually a .crt or a .pem file). Certifcates signed by this issuer will be trusted by OPAL Client. DO NOT USE THIS IN PRODUCTION!")
+
+    # security
+    AUTH_PUBLIC_KEY_FORMAT = confi.enum("AUTH_PUBLIC_KEY_FORMAT", EncryptionKeyFormat, EncryptionKeyFormat.ssh)
+    AUTH_PUBLIC_KEY = confi.delay(
+        lambda AUTH_PUBLIC_KEY_FORMAT=None:
+            confi.public_key(
+                "AUTH_PUBLIC_KEY",
+                default=None,
+                key_format=AUTH_PUBLIC_KEY_FORMAT
+            )
+    )
+    AUTH_JWT_ALGORITHM = confi.enum(
+        "AUTH_JWT_ALGORITHM",
+        JWTAlgorithm,
+        getattr(JWTAlgorithm, "RS256"),
+        description="jwt algorithm, possible values: see: https://pyjwt.readthedocs.io/en/stable/algorithms.html"
+    )
+    AUTH_JWT_AUDIENCE = confi.str("AUTH_JWT_AUDIENCE", "https://api.authorizon.com/v1/")
+    AUTH_JWT_ISSUER = confi.str("AUTH_JWT_ISSUER", f"https://authorizon.com/")
 
 
 opal_common_config = OpalCommonConfig(prefix="OPAL_")

@@ -2,9 +2,9 @@ from fastapi import APIRouter, Depends, WebSocket
 from fastapi_websocket_pubsub import PubSubEndpoint
 
 from opal_common.logger import logger
-from opal_server.config import opal_server_config
 from opal_common.authentication.signer import JWTSigner
-from opal_server.deps.authentication import JWTVerifierWebsocket
+from opal_common.authentication.deps import WebsocketJWTAuthenticator
+from opal_server.config import opal_server_config
 
 
 class PubSub:
@@ -21,10 +21,10 @@ class PubSub:
         broadcaster_uri = broadcaster_uri or opal_server_config.BROADCAST_URI
         self.router = APIRouter()
         self.endpoint = PubSubEndpoint(broadcaster=broadcaster_uri)
-        verifier = JWTVerifierWebsocket(signer)
+        authenticator = WebsocketJWTAuthenticator(signer)
 
         @self.router.websocket("/ws")
-        async def websocket_rpc_endpoint(websocket: WebSocket, logged_in: bool = Depends(verifier)):
+        async def websocket_rpc_endpoint(websocket: WebSocket, logged_in: bool = Depends(authenticator)):
             """
             this is the main websocket endpoint the sidecar uses to register on policy updates.
             as you can see, this endpoint is protected by an HTTP Authorization Bearer token.
