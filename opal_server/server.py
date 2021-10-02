@@ -97,6 +97,8 @@ class OpalServer:
                 audience=opal_common_config.AUTH_JWT_AUDIENCE,
                 issuer=opal_common_config.AUTH_JWT_ISSUER,
             )
+        if not self.signer.enabled:
+            logger.info("OPAL was not provided with JWT encryption keys, cannot verify api requests!")
 
         if enable_jwks_endpoint:
             self.jwks_endpoint = JwksStaticEndpoint(

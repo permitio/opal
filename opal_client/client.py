@@ -116,6 +116,8 @@ class OpalClient:
                 audience=opal_common_config.AUTH_JWT_AUDIENCE,
                 issuer=opal_common_config.AUTH_JWT_ISSUER,
             )
+        if not self.verifier.enabled:
+            logger.info("API authentication disabled (public encryption key was not provided)")
 
         # init fastapi app
         self.app: FastAPI = self._init_fast_api_app()

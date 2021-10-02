@@ -84,7 +84,6 @@ class JWTVerifier:
 
     def _disable(self):
         self._enabled = False
-        logger.info("OPAL was not provided with JWT encryption keys, cannot verify api requests!")
 
     @property
     def enabled(self):
