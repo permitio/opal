@@ -26,6 +26,8 @@ from opal_client.opa.runner import OpaRunner
 from opal_client.opa.options import OpaServerOptions
 from opal_client.policy.api import init_policy_router
 from opal_client.policy.updater import PolicyUpdater
+from opal_client.callbacks.register import CallbacksRegister
+from opal_client.callbacks.api import init_callbacks_api
 
 
 class OpalClient:
@@ -105,6 +107,13 @@ class OpalClient:
                 issuer=opal_common_config.AUTH_JWT_ISSUER,
             )
 
+        if hasattr(opal_client_config.DEFAULT_UPDATE_CALLBACKS, 'callbacks'):
+            default_callbacks = opal_client_config.DEFAULT_UPDATE_CALLBACKS.callbacks
+        else:
+            default_callbacks = []
+
+        self._callbacks_register = CallbacksRegister(default_callbacks)
+
         # init fastapi app
         self.app: FastAPI = self._init_fast_api_app()
 
@@ -136,11 +145,13 @@ class OpalClient:
         policy_router = init_policy_router(policy_updater=self.policy_updater)
         data_router = init_data_router(data_updater=self.data_updater)
         policy_store_router = init_policy_store_router(authenticator)
+        callbacks_router = init_callbacks_api(authenticator, self._callbacks_register)
 
         # mount the api routes on the app object
         app.include_router(policy_router, tags=["Policy Updater"])
         app.include_router(data_router, tags=["Data Updater"])
         app.include_router(policy_store_router, tags=["Policy Store"])
+        app.include_router(callbacks_router, tags=["Callbacks"])
 
         # top level routes (i.e: healthchecks)
         @app.get("/healthcheck", include_in_schema=False)

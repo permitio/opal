@@ -43,7 +43,7 @@ class CallbacksRegister:
         gets a unique hash key from a callback url and config.
         """
         m = hashlib.sha256()
-        m.update(url)
+        m.update(url.encode())
         m.update(config.json().encode())
         return m.hexdigest()
 
@@ -57,15 +57,28 @@ class CallbacksRegister:
         (url, config) = callback
         return CallbackEntry(key=key, url=url, config=config)
 
-    def put(self, url: str, config: Optional[HttpFetcherConfig] = None, key: Optional[str] = None):
+    def put(self, url: str, config: Optional[HttpFetcherConfig] = None, key: Optional[str] = None) -> str:
         """
         puts a callback in the register.
         if no config is provided, the default callback config will be used.
         if no key is provided, the key will be calculated by hashing the url and config.
         """
         callback_config = config or opal_client_config.DEFAULT_UPDATE_CALLBACK_CONFIG
-        callback_key = key or self.calc_hash(url, callback_config)
+        auto_key = self.calc_hash(url, callback_config)
+        callback_key = key or auto_key
+        # if the same callback is already registered with another key - remove that callback.
+        # there is no point in calling the same callback twice.
+        self.remove(auto_key)
+        # register the callback under the intended key (auto-generated or provided)
         self._register(callback_key, url, callback_config)
+        return callback_key
+
+    def remove(self, key: str):
+        """
+        removes a callback from the register, if exists.
+        """
+        if key in self._callbacks:
+            del self._callbacks[key]
 
     def all(self) -> Generator[CallbackEntry, None, None]:
         """
