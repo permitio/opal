@@ -13,7 +13,7 @@ def configure_logs():
     Takeover process logs and create a logger with Loguru according to the configuration
     """
     intercept_handler = InterceptHandler()
-    formatter = Formatter()
+    formatter = Formatter(opal_common_config.LOG_FORMAT)
     filter = ModuleFilter(include_list=opal_common_config.LOG_MODULE_INCLUDE_LIST, exclude_list=opal_common_config.LOG_MODULE_EXCLUDE_LIST)
     logging.basicConfig(handlers=[intercept_handler], level=0, force=True)
     if opal_common_config.LOG_PATCH_UVICORN_LOGS:
