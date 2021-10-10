@@ -18,7 +18,7 @@ def configure_logs():
     logging.basicConfig(handlers=[intercept_handler], level=0, force=True)
     if opal_common_config.LOG_PATCH_UVICORN_LOGS:
         # Monkey patch UVICORN to use our logger
-        hijack_uvicorn_logs()
+        hijack_uvicorn_logs(intercept_handler)
     # Clean slate
     logger.remove()
     # Logger configuration
