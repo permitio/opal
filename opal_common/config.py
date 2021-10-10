@@ -4,6 +4,8 @@ from .confi import Confi, confi
 
 from opal_common.authentication.types import EncryptionKeyFormat, JWTAlgorithm
 
+_LOG_FORMAT_WITHOUT_PID = "<green>{time}</green> | <blue>{name: <40}</blue>|<level>{level:^6} | {message}</level>\n{exception}"
+_LOG_FORMAT_WITH_PID = "<green>{time}</green> | {process} | <blue>{name: <40}</blue>|<level>{level:^6} | {message}</level>\n{exception}"
 
 class OpalCommonConfig(Confi):
     ALLOWED_ORIGINS = confi.list("ALLOWED_ORIGINS", ["*"])
@@ -11,6 +13,14 @@ class OpalCommonConfig(Confi):
     PROCESS_NAME = ""
     # Logging
     # - Log formatting
+    LOG_FORMAT_INCLUDE_PID = confi.bool("LOG_FORMAT_INCLUDE_PID", False)
+    LOG_FORMAT = confi.str(
+        "LOG_FORMAT",
+        confi.delay(
+            lambda LOG_FORMAT_INCLUDE_PID=False:
+            _LOG_FORMAT_WITH_PID if LOG_FORMAT_INCLUDE_PID else _LOG_FORMAT_WITHOUT_PID
+        )
+    )
     LOG_TRACEBACK = confi.bool("LOG_TRACEBACK", True)
     LOG_DIAGNOSE = confi.bool("LOG_DIAGNOSE", True)
     LOG_COLORIZE = confi.bool("LOG_COLORIZE", True)
