@@ -1,3 +1,4 @@
+from enum import Enum
 import os
 
 from opal_common.confi import Confi
@@ -5,6 +6,11 @@ from opal_common.schemas.data import ServerDataSourceConfig
 from opal_common.authentication.types import EncryptionKeyFormat
 
 confi = Confi(prefix="OPAL_")
+
+
+class PolicySourceTypes(Enum):
+    Git = 'GIT'
+    Api = 'API'
 
 
 class OpalServerConfig(Confi):
@@ -32,15 +38,18 @@ class OpalServerConfig(Confi):
 
     AUTH_MASTER_TOKEN = confi.str("AUTH_MASTER_TOKEN", None)
 
-    # repo watcher
+    # policy source watcher
+    POLICY_SOURCE_TYPE = confi.str("POLICY_SOURCE_TYPE", PolicySourceTypes.Git.value)
     POLICY_REPO_URL = confi.str("POLICY_REPO_URL", None)
     POLICY_REPO_CLONE_PATH = confi.str("POLICY_REPO_CLONE_PATH", os.path.join(os.getcwd(), "regoclone"))
     POLICY_REPO_MAIN_BRANCH = confi.str("POLICY_REPO_MAIN_BRANCH", "master")
     POLICY_REPO_MAIN_REMOTE = confi.str("POLICY_REPO_MAIN_REMOTE", "origin")
     POLICY_REPO_SSH_KEY = confi.str("POLICY_REPO_SSH_KEY", None)
     POLICY_REPO_MANIFEST_PATH = confi.str("POLICY_REPO_MANIFEST_PATH", ".manifest")
+    POLICY_BUNDLE_SERVER_TOKEN = confi.str("POLICY_BUNDLE_SERVER_TOKEN", None)
     POLICY_REPO_CLONE_TIMEOUT = confi.int("POLICY_REPO_CLONE_TIMEOUT", 0) # if 0, waits forever until successful clone
     LEADER_LOCK_FILE_PATH = confi.str("LEADER_LOCK_FILE_PATH", "/tmp/opal_server_leader.lock")
+    POLICY_BUNDLE_TMP_PATH = confi.str("POLICY_BUNDLE_TMP_PATH", "/tmp/bundle.tar.gz")
 
     REPO_WATCHER_ENABLED = confi.bool("REPO_WATCHER_ENABLED", True)
 

@@ -112,7 +112,7 @@ class BranchTracker:
     def tracked_remote(self) -> Remote:
         """
         returns the tracked remote object (of type git.Remote)
-        or throws if such branch does not exist on the repo
+        or throws if such remote does not exist on the repo
         """
         try:
             return getattr(self._repo.remotes, self._remote_name)

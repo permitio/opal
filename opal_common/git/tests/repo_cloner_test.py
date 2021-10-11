@@ -44,7 +44,6 @@ async def test_repo_cloner_clone_local_repo(local_repo: Repo):
         clone_path=target_path
     ).clone()
 
-    assert result.cloned_from_remote == True
     assert Path(result.repo.working_tree_dir) == target_path
 
 @pytest.mark.asyncio
@@ -60,7 +59,6 @@ async def test_repo_cloner_when_local_repo_already_exist(local_repo: Repo):
         repo_url=VALID_REPO_REMOTE_URL_HTTPS,
         clone_path=target_path,
     ).clone()
-    assert result.cloned_from_remote == True
     assert Path(result.repo.working_tree_dir) == target_path
     assert result.repo == repo
 
@@ -80,7 +78,6 @@ async def test_repo_cloner_discards_existing_local_repo(tmp_path):
         clone_path=target_path
     ).clone()
 
-    assert result.cloned_from_remote == True
     assert Path(result.repo.working_tree_dir) == target_path
     assert Path(str(target_path) + ".old0").exists()
 
@@ -94,7 +91,6 @@ async def test_repo_cloner_clone_remote_repo_https_url(tmp_path):
         repo_url=VALID_REPO_REMOTE_URL_HTTPS,
         clone_path=target_path
     ).clone()
-    assert result.cloned_from_remote == True
     assert Path(result.repo.working_tree_dir) == target_path
 
 @pytest.mark.asyncio
@@ -128,7 +124,6 @@ async def test_repo_cloner_clone_remote_repo_ssh_url(tmp_path):
             repo_url=VALID_REPO_REMOTE_URL_SSH,
             clone_path=target_path
         ).clone()
-        assert result.cloned_from_remote == True
         assert Path(result.repo.working_tree_dir) == target_path
 
 @pytest.mark.asyncio
