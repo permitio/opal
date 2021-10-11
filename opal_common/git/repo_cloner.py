@@ -29,9 +29,8 @@ class CloneResult:
     wraps a git.Repo instance but knows if the repo was initialized with a url
     and cloned from a remote repo, or was initialed from a local `.git` repo.
     """
-    def __init__(self, repo: Repo, cloned_from_remote: bool):
+    def __init__(self, repo: Repo):
         self._repo = repo
-        self._cloned_from_remote = cloned_from_remote
 
     @property
     def repo(self) -> Repo:
@@ -40,22 +39,6 @@ class CloneResult:
         """
         return self._repo
 
-    @property
-    def cloned_from_remote(self) -> bool:
-        """
-        whether the repo was cloned from remote, or we found a local matching .git repo
-        """
-        return self._cloned_from_remote
-
-
-class RemoteClone(CloneResult):
-    def __init__(self, repo: Repo):
-        super().__init__(repo=repo, cloned_from_remote=True)
-
-
-class LocalClone(CloneResult):
-    def __init__(self, repo: Repo):
-        super().__init__(repo=repo, cloned_from_remote=False)
 
 
 class RepoCloner:
@@ -120,7 +103,7 @@ class RepoCloner:
         """
         inits the repo from local .git or throws GitFailed
         """
-        git_path = Path(self.path) / Path(".git")
+        git_path = Path(os.path.join(Path(self.path), Path(".git")))
         if not git_path.exists():
             return
 
@@ -152,7 +135,7 @@ class RepoCloner:
             raise GitFailed(e)
         else:
             logger.info("Clone succeeded", repo_path=self.path)
-            return RemoteClone(repo)
+            return CloneResult(repo)
 
     def _clone(self, env) -> Repo:
         try:

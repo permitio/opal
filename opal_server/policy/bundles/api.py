@@ -1,3 +1,4 @@
+import os
 from opal_common.git.bundle_maker import BundleMaker
 from typing import Optional, List
 from fastapi import APIRouter, Depends, Query, HTTPException, status
@@ -11,11 +12,12 @@ from opal_server.config import opal_server_config
 
 router = APIRouter()
 
+
 async def get_repo(
     repo_path: str = None,
 ) -> Repo:
     repo_path = repo_path or opal_server_config.POLICY_REPO_CLONE_PATH
-    git_path = Path(repo_path) / Path(".git")
+    git_path = Path(os.path.join(os.path.expanduser(repo_path), Path(".git")))
     # TODO: fix this by signaling that the repo is ready
     if not git_path.exists():
         raise HTTPException(
@@ -77,7 +79,7 @@ async def get_policy(
         return maker.make_bundle(repo.head.commit)
 
     try:
-        old_commit = repo.commit(base_hash)
+        old_commit = repo.index.commit(base_hash)
         return maker.make_diff_bundle(old_commit, repo.head.commit)
     except ValueError:
         raise HTTPException(

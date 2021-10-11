@@ -6,15 +6,15 @@ import asyncio
 from typing import List, Optional, Coroutine
 
 from opal_common.logger import logger
-from opal_common.git.repo_watcher import RepoWatcher
+from opal_common.sources.base_policy_source import BasePolicySource
 
 
-class RepoWatcherTask:
+class PolicyWatcherTask:
     """
     Manages the asyncio tasks of the repo watcher
     """
-    def __init__(self, repo_watcher: RepoWatcher):
-        self._watcher = repo_watcher
+    def __init__(self, policy_source: BasePolicySource):
+        self._watcher = policy_source
         self._tasks: List[asyncio.Task] = []
         self._should_stop: Optional[asyncio.Event] = None
 
@@ -30,7 +30,7 @@ class RepoWatcherTask:
         starts the repo watcher and registers a failure callback to terminate gracefully
         """
         logger.info("Launching repo watcher")
-        self._watcher.on_git_failed(self._fail)
+        self._watcher.add_on_failure_callback(self._fail)
         self._tasks.append(asyncio.create_task(self._watcher.run()))
         self._init_should_stop()
 

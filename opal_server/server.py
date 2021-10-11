@@ -23,7 +23,7 @@ from opal_server.policy.bundles.api import router as bundles_router
 from opal_server.policy.github_webhook.api import init_git_webhook_router
 from opal_server.policy.watcher import (setup_watcher_task,
                                         trigger_repo_watcher_pull)
-from opal_server.policy.watcher.task import RepoWatcherTask
+from opal_server.policy.watcher.task import PolicyWatcherTask
 from opal_server.publisher import setup_publisher_task
 from opal_server.pubsub import PubSub
 
@@ -38,7 +38,7 @@ class OpalServer:
         data_sources_config: Optional[ServerDataSourceConfig] = None,
         broadcaster_uri: str = None,
         signer: Optional[JWTSigner] = None,
-        enable_jwks_endpoint = True,
+        enable_jwks_endpoint=True,
         jwks_url: str = None,
         jwks_static_dir: str = None,
         master_token: str = None,
@@ -49,7 +49,8 @@ class OpalServer:
             policy_repo_url (str, optional): the url of the repo watched by policy repo watcher.
             init_publisher (bool, optional): whether or not to launch a publisher pub/sub client.
                 this publisher is used by the server processes to publish data to the client.
-            data_sources_config (ServerDataSourceConfig, optional): base data configuration. the opal
+            data_sources_config (ServerDataSourceConfig, optional): base data configuration, that opal
+                clients should get the data from.
             broadcaster_uri (str, optional): Which server/medium should the PubSub use for broadcasting.
                 Defaults to BROADCAST_URI.
 
@@ -63,7 +64,7 @@ class OpalServer:
             on a *leader* worker (the first worker to obtain a file-lock) that also
             launches the following internal components:
 
-                watcher (RepoWatcherTask): run by the leader, monitors the policy git repository
+                watcher (PolicyWatcherTask): run by the leader, monitors the policy git repository
                 by polling on it or by being triggered by the callback subscribed on the "webhook"
                 topic. upon being triggered, will detect updates to the policy (new commits) and
                 will update the opal client via pubsub.
@@ -78,7 +79,7 @@ class OpalServer:
         master_token: str = master_token or opal_server_config.AUTH_MASTER_TOKEN
 
         configure_logs()
-        self.watcher: Optional[RepoWatcherTask] = None
+        self.watcher: Optional[PolicyWatcherTask] = None
         self.leadership_lock: Optional[NamedLock] = None
 
         self.data_sources_config: ServerDataSourceConfig = (
