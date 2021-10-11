@@ -3,7 +3,6 @@ class Formatter:
     MAX_FIELD_LEN = 25
 
     def __init__(self, format_string: str):
-        print(format_string)
         self.fmt = format_string
 
     def limit_len(self, record, field, length=MAX_FIELD_LEN):
