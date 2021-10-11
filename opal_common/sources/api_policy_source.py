@@ -40,7 +40,7 @@ class ApiPolicySource(BasePolicySource):
         token: Optional[str] = None,
     ):
         super().__init__(remote_source_url=remote_source_url, local_clone_path=local_clone_path,
-                         polling_interval=5, request_timeout=request_timeout)
+                         polling_interval=polling_interval, request_timeout=request_timeout)
         self.token = token
         self.bundle_hash = None
         self.etag = None
