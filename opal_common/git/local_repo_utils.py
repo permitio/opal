@@ -7,20 +7,35 @@ from pydantic.error_wrappers import ValidationError
 from opal_common.security.tarsafe import TarSafe
 
 
-def create_local_git(tmp_bundle_path: Path, local_clone_path: str):
-    extract_bundle_tar(tmp_bundle_path, local_clone_path)
-    local_git = commit_local_git(local_clone_path)
-    return local_git
-
-
-def commit_local_git(local_clone_path: str, init_commit_msg: str = "Init"):
-    local_git = git.Repo.init(local_clone_path)  #  loads git if exist
+def commit_local_git(local_clone_path: str, init_commit_msg: str = "Init", should_init: bool = False):
+    if should_init:
+        local_git = git.Repo.init(local_clone_path)  #  loads git if exist
+    else:
+        local_git = git.Repo(local_clone_path)
     prev_commit = None
     if len(local_git.index.repo.heads):
         prev_commit = local_git.index.repo.head.commit
     local_git.index.add('*')  # maybe only the supported files
     new_commit = local_git.index.commit(init_commit_msg)
     return local_git, prev_commit, new_commit
+
+
+def is_git_repo(path):
+    local_git = False
+    try:
+        local_git = git.Repo(path)
+        _ = local_git.git_dir
+        return local_git
+    except Exception:
+        return False
+
+
+def create_local_git(tmp_bundle_path: Path, local_clone_path: str):
+    extract_bundle_tar(tmp_bundle_path, local_clone_path)
+    local_git = is_git_repo(local_clone_path)
+    if not local_git:
+        local_git = commit_local_git(local_clone_path, should_init=True)
+    return local_git
 
 
 def update_local_git(local_clone_path: str, tmp_bundle_path: Path, commit_msg: str):

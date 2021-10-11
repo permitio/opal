@@ -79,7 +79,7 @@ async def get_policy(
         return maker.make_bundle(repo.head.commit)
 
     try:
-        old_commit = repo.index.commit(base_hash)
+        old_commit = repo.commit(base_hash)
         return maker.make_diff_bundle(old_commit, repo.head.commit)
     except ValueError:
         raise HTTPException(
