@@ -28,12 +28,16 @@ RUN pip install --no-cache-dir --upgrade pip && pip install --no-cache-dir --use
 FROM python:3.8-alpine3.11 as common
 # copy libraries from build stage
 COPY --from=BuildStage /root/.local /root/.local
+# needed for rookout
+RUN apk add g++ python3-dev linux-headers
 # copy wait-for script
 COPY scripts/wait-for.sh /usr/wait-for.sh
 RUN chmod +x /usr/wait-for.sh
 # copy startup script
 COPY ./scripts/start.sh /start.sh
 RUN chmod +x /start.sh
+# copy gunicorn_config
+COPY ./scripts/gunicorn_conf.py /gunicorn_conf.py
 # copy app code
 COPY . ./
 # install sidecar package
