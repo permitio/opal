@@ -19,16 +19,27 @@ from opal_server.config import opal_server_config
 OnNewCommitsCallback = Callable[[Commit, Commit], Coroutine]
 OnGitFailureCallback = Callable[[Exception], Coroutine]
 
+BundleHash = str
+
 
 class ApiPolicySource(BasePolicySource):
     """
-    Watches a git repository for changes and can trigger callbacks
-    when detecting new commits on the tracked branch.
+    Watches OPA like bundle server for changes and can trigger callbacks
+    when detecting new bundle.
 
-    Checking for changes is done following a git pull from a tracked
-    remote. The pull can be either triggered by a method (i.e: you can
+    Checking for changes is done by sending request to the remote bundle server.
+    The pull can be either triggered by a method (i.e: you can
     call it from a webhook) or can be triggered periodically by a polling
     task.
+
+    You can read more on OPA bundles here:
+    https://www.openpolicyagent.org/docs/latest/management-bundles/
+
+    Args:
+        remote_source_url(str): the base address to request the policy from
+        local_clone_path(str):  path for the local git to manage policies
+        polling_interval(int):  how much seconds need to wait between polling
+        token (str, optional):  auth token to include in connections to OPAL server. Defaults to POLICY_BUNDLE_SERVER_TOKEN.
     """
 
     def __init__(
@@ -36,11 +47,10 @@ class ApiPolicySource(BasePolicySource):
         remote_source_url: str,
         local_clone_path: str,
         polling_interval: int = 0,
-        request_timeout: int = 0,
         token: Optional[str] = None,
     ):
         super().__init__(remote_source_url=remote_source_url, local_clone_path=local_clone_path,
-                         polling_interval=polling_interval, request_timeout=request_timeout)
+                         polling_interval=polling_interval)
         self.token = token
         self.bundle_hash = None
         self.etag = None
@@ -77,22 +87,36 @@ class ApiPolicySource(BasePolicySource):
     @staticmethod
     def hash_file(tmp_file_path):
         BUF_SIZE = 65536  # lets read stuff in 64kb chunks!
-        md5_hash = hashlib.md5()
+        sha256_hash = hashlib.sha256()
         with open(tmp_file_path, "rb") as file:
             while True:
                 data = file.read(BUF_SIZE)
                 if not data:
                     break
-                md5_hash.update(data)
-        return md5_hash.hexdigest()
+                sha256_hash.update(data)
+        return sha256_hash.hexdigest()
 
     async def _fetch_policy_bundle(
         self,
         url: str,
         token: Optional[str]
-    ) -> Tuple[Path, str, str]:
+    ) -> Tuple[Path, BundleHash, BundleHash]:
         """
         Fetches the bundle. May throw, in which case we retry again.
+        Checks that the bundle file isn't the same with Etag, if server
+        don't have Etag it checks it with hash on the bundle file
+
+        Read more on Etag here:
+        https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/ETag
+
+        Args:
+            url(str): the base address to request the bundle.tar.gz file from
+            token (str, optional): Auth token to include in connections to OPAL server. Defaults to POLICY_BUNDLE_SERVER_TOKEN.
+        Returns:
+            Path: bundle file path
+            BundleHash: previous bundle hash on None
+            BundleHash: current bundle hash
+
         """
         auth_headers = tuple_to_dict(
             get_authorization_header(token)) if token else {}
@@ -147,9 +171,9 @@ class ApiPolicySource(BasePolicySource):
 
     async def check_for_changes(self):
         """
-        calling this method will trigger a api check from the remote.
-        if after the pull the watcher detects new bundle, it will call the
-        callbacks registered with on_new_commits().
+        Calling this method will trigger a api check to the remote.
+        If after the request the watcher detects new bundle, it will call the
+        callbacks registered with _on_new_policy().
         """
         logger.info(
             "Fetching changes from remote: '{remote}'", remote=self.remote_source_url)

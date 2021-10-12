@@ -8,7 +8,7 @@ from opal_common.authentication.types import EncryptionKeyFormat
 confi = Confi(prefix="OPAL_")
 
 
-class PolicySourceTypes(Enum):
+class PolicySourceTypes(str, Enum):
     Git = 'GIT'
     Api = 'API'
 
@@ -39,17 +39,18 @@ class OpalServerConfig(Confi):
     AUTH_MASTER_TOKEN = confi.str("AUTH_MASTER_TOKEN", None)
 
     # policy source watcher
-    POLICY_SOURCE_TYPE = confi.str("POLICY_SOURCE_TYPE", PolicySourceTypes.Git.value)
-    POLICY_REPO_URL = confi.str("POLICY_REPO_URL", None)
-    POLICY_REPO_CLONE_PATH = confi.str("POLICY_REPO_CLONE_PATH", os.path.join(os.getcwd(), "regoclone"))
+    POLICY_SOURCE_TYPE = confi.enum("POLICY_SOURCE_TYPE", PolicySourceTypes, PolicySourceTypes.Git, description="Set your policy source can be GIT / API")
+    POLICY_REPO_URL = confi.str("POLICY_REPO_URL", None, description="Set your remote repo URL e.g:https://github.com/authorizon/opal-example-policy-repo.git\
+        , relevant only on GIT source type")
+    POLICY_BUNDLE_URL = confi.str("POLICY_BUNDLE_URL", None, description="Set your API bundle URL, relevant only on API source type")
+    POLICY_REPO_CLONE_PATH = confi.str("POLICY_REPO_CLONE_PATH", os.path.join(os.getcwd(), "regoclone"), description="Path for local git to manage policy change")
     POLICY_REPO_MAIN_BRANCH = confi.str("POLICY_REPO_MAIN_BRANCH", "master")
-    POLICY_REPO_MAIN_REMOTE = confi.str("POLICY_REPO_MAIN_REMOTE", "origin")
     POLICY_REPO_SSH_KEY = confi.str("POLICY_REPO_SSH_KEY", None)
     POLICY_REPO_MANIFEST_PATH = confi.str("POLICY_REPO_MANIFEST_PATH", ".manifest")
-    POLICY_BUNDLE_SERVER_TOKEN = confi.str("POLICY_BUNDLE_SERVER_TOKEN", None)
+    POLICY_BUNDLE_SERVER_TOKEN = confi.str("POLICY_BUNDLE_SERVER_TOKEN", None, description="Bearer token to sent to API bundle server")
     POLICY_REPO_CLONE_TIMEOUT = confi.int("POLICY_REPO_CLONE_TIMEOUT", 0) # if 0, waits forever until successful clone
     LEADER_LOCK_FILE_PATH = confi.str("LEADER_LOCK_FILE_PATH", "/tmp/opal_server_leader.lock")
-    POLICY_BUNDLE_TMP_PATH = confi.str("POLICY_BUNDLE_TMP_PATH", "/tmp/bundle.tar.gz")
+    POLICY_BUNDLE_TMP_PATH = confi.str("POLICY_BUNDLE_TMP_PATH", "/tmp/bundle.tar.gz", description="Path for temp policy file, need to be writeable")
 
     REPO_WATCHER_ENABLED = confi.bool("REPO_WATCHER_ENABLED", True)
 
