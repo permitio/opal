@@ -65,6 +65,13 @@ def ignore_confi_delay_cast(cast_func):
     return wrapped_cast
 
 
+def load_conf_if_none(variable, conf):
+    if variable is None:
+        return conf
+    else:
+        return variable
+
+
 EnumT = TypeVar("EnumT")
 T = TypeVar("T", bound=BaseModel)
 ValueT = TypeVar("ValueT")
