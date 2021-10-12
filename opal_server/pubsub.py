@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, WebSocket
 from fastapi_websocket_pubsub import PubSubEndpoint
-from opal_common.confi.utils import load_conf_if_none
+from opal_common.confi.confi import load_conf_if_none
 
 from opal_common.logger import logger
 from opal_common.authentication.signer import JWTSigner

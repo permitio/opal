@@ -1,5 +1,5 @@
 import os
-from opal_common.confi.utils import load_conf_if_none
+from opal_common.confi.confi import load_conf_if_none
 from opal_common.git.bundle_maker import BundleMaker
 from typing import Optional, List
 from fastapi import APIRouter, Depends, Query, HTTPException, status

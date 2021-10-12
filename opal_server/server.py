@@ -5,7 +5,7 @@ from typing import Optional, List
 from pathlib import Path
 
 from fastapi import Depends, FastAPI
-from opal_common.confi.utils import load_conf_if_none
+from opal_common.confi.confi import load_conf_if_none
 
 from opal_common.topics.publisher import TopicPublisher, ServerSideTopicPublisher
 from opal_common.logger import logger, configure_logs

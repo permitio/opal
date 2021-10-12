@@ -2,7 +2,7 @@ from typing import Any, Optional, List
 from functools import partial
 
 from fastapi_websocket_pubsub import Topic
-from opal_common.confi.utils import load_conf_if_none
+from opal_common.confi.confi import load_conf_if_none
 from opal_common.logger import logger
 from opal_common.sources.api_policy_source import ApiPolicySource
 from opal_common.sources.git_policy_source import GitPolicySource
