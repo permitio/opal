@@ -33,7 +33,7 @@ class OpalServer:
     def __init__(
         self,
         init_policy_watcher: bool = None,
-        policy_repo_url: str = None,
+        policy_remote_url: str = None,
         init_publisher: bool = None,
         data_sources_config: Optional[ServerDataSourceConfig] = None,
         broadcaster_uri: str = None,
@@ -46,7 +46,7 @@ class OpalServer:
         """
         Args:
             init_git_watcher (bool, optional): whether or not to launch the policy repo watcher.
-            policy_repo_url (str, optional): the url of the repo watched by policy repo watcher.
+            policy_remote_url (str, optional): the url of the repo watched by policy watcher.
             init_publisher (bool, optional): whether or not to launch a publisher pub/sub client.
                 this publisher is used by the server processes to publish data to the client.
             data_sources_config (ServerDataSourceConfig, optional): base data configuration, that opal
@@ -71,7 +71,6 @@ class OpalServer:
         """
         # load defaults
         init_policy_watcher: bool = init_policy_watcher or opal_server_config.REPO_WATCHER_ENABLED
-        policy_repo_url: str = policy_repo_url or opal_server_config.POLICY_REPO_URL
         init_publisher: bool = init_publisher or opal_server_config.PUBLISHER_ENABLED
         broadcaster_uri: str = broadcaster_uri or opal_server_config.BROADCAST_URI
         jwks_url: str = jwks_url or opal_server_config.AUTH_JWKS_URL
@@ -118,10 +117,7 @@ class OpalServer:
 
             if init_policy_watcher:
                 self._fix_policy_repo_clone_path()
-                if policy_repo_url is not None:
-                    self.watcher = setup_watcher_task(self.publisher)
-                else:
-                    logger.warning("POLICY_REPO_URL is unset but repo watcher is enabled! disabling watcher.")
+                self.watcher = setup_watcher_task(self.publisher, remote_source_url=policy_remote_url)
 
         # init fastapi app
         self.app: FastAPI = self._init_fast_api_app()
