@@ -20,8 +20,7 @@ from git.objects import Commit
 from typing import Optional, Dict
 from functools import partial
 
-from opal_common.git.repo_watcher import RepoWatcher
-from opal_common.git.exceptions import GitFailed
+from opal_common.sources.git_policy_source import GitPolicySource
 
 try:
     from asyncio.exceptions import TimeoutError
@@ -46,13 +45,13 @@ async def test_repo_watcher_git_failed_callback(tmp_path):
     target_path: Path = tmp_path / "target"
 
     # configure the watcher to watch an invalid repo
-    watcher = RepoWatcher(
-        repo_url=INVALID_REPO_REMOTE_URL,
-        clone_path=target_path,
-        clone_timeout=3,
+    watcher = GitPolicySource(
+        remote_source_url=INVALID_REPO_REMOTE_URL,
+        local_clone_path=target_path,
+        request_timeout=3,
     )
     # configure the error callback
-    watcher.on_git_failed(failure_callback)
+    watcher.add_on_failure_callback(failure_callback)
 
     # run the watcher
     await watcher.run()
@@ -69,7 +68,7 @@ async def test_repo_watcher_detect_new_commits_with_manual_trigger(
 ):
     """
     Test watcher can detect new commits on a manual trigger
-    to check for changes, and it calls the on_new_commits() callback.
+    to check for changes, and it calls the add_on_new_policy_callback() callback.
     """
     # start with preconfigured repos
     remote_repo: Repo = local_repo # the 'origin' repo (also a local test repo)
@@ -87,12 +86,12 @@ async def test_repo_watcher_detect_new_commits_with_manual_trigger(
 
     # configure the watcher with a valid local repo (our test repo)
     # the returned repo will track the local remote repo
-    watcher = RepoWatcher(
-        repo_url=remote_repo.working_tree_dir,
-        clone_path=target_path
+    watcher = GitPolicySource(
+        remote_source_url=remote_repo.working_tree_dir,
+        local_clone_path=target_path
     )
     # configure the error callback
-    watcher.on_new_commits(partial(new_commits_callback, detected_commits))
+    watcher.add_on_new_policy_callback(partial(new_commits_callback, detected_commits))
 
     # run the watcher (without polling)
     await watcher.run()
@@ -139,7 +138,7 @@ async def test_repo_watcher_detect_new_commits_with_polling(
 ):
     """
     Test watcher can detect new commits on a manual trigger
-    to check for changes, and it calls the on_new_commits() callback.
+    to check for changes, and it calls the add_on_new_policy_callback() callback.
     """
     # start with preconfigured repos
     remote_repo: Repo = local_repo # the 'origin' repo (also a local test repo)
@@ -157,13 +156,13 @@ async def test_repo_watcher_detect_new_commits_with_polling(
 
     # configure the watcher with a valid local repo (our test repo)
     # the returned repo will track the test remote, not a real remote
-    watcher = RepoWatcher(
-        repo_url=remote_repo.working_tree_dir,
-        clone_path=target_path,
+    watcher = GitPolicySource(
+        remote_source_url=remote_repo.working_tree_dir,
+        local_clone_path=target_path,
         polling_interval=3 # every 3 seconds do a pull to try and detect changes
     )
     # configure the error callback
-    watcher.on_new_commits(partial(new_commits_callback, detected_commits))
+    watcher.add_on_new_policy_callback(partial(new_commits_callback, detected_commits))
 
     # run the watcher (without polling)
     await watcher.run()

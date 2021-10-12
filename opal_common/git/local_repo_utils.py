@@ -16,7 +16,7 @@ def commit_local_git(local_clone_path: str, init_commit_msg: str = "Init", shoul
     prev_commit = None
     if len(local_git.index.repo.heads):
         prev_commit = local_git.index.repo.head.commit
-    local_git.index.add(OpalServerConfig.POLICY_BUNDLE_TMP_PATH)  # maybe only the supported files
+    local_git.index.add(OpalServerConfig.POLICY_BUNDLE_GIT_ADD_PATTERN)
     new_commit = local_git.index.commit(init_commit_msg)
     return local_git, prev_commit, new_commit
 
