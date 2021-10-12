@@ -279,10 +279,6 @@ For these config vars, in most cases you are good with the default values:
       <td valign="top">OPAL_POLICY_REPO_MAIN_BRANCH</td>
       <td>Name of the git branch to track for policy files (default: `master`)</td>
     </tr>
-    <tr>
-      <td valign="top">OPAL_POLICY_REPO_MAIN_REMOTE</td>
-      <td>Name of the git remote to fetch new commits from  (default: `origin`)</td>
-    </tr>
   </tbody>
 </table>
 

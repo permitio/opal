@@ -1,4 +1,4 @@
-# uses tarsafe by Andrew Scott MIT license https://github.com/beatsbears/tarsafe
+# This file is a copy of tarsafe by Andrew Scott MIT license https://github.com/beatsbears/tarsafe
 import os
 import pathlib
 import tarfile

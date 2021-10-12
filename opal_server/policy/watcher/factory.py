@@ -14,43 +14,56 @@ from opal_server.policy.watcher.callbacks import publish_changed_directories
 def setup_watcher_task(
     publisher: TopicPublisher,
     source_type: str = None,
-    repo_url: str = None,
+    remote_source_url: str = None,
     clone_path: str = None,
     branch_name: str = None,
-    remote_name: str = None,
     ssh_key: Optional[str] = None,
     polling_interval: int = None,
-    clone_timeout: int = None,
+    request_timeout: int = None,
     policy_bundle_token: str = None,
     extensions: Optional[List[str]] = None,
 ) -> PolicyWatcherTask:
+    """
+        Create a PolicyWatcherTask with Git / API policy source defined by env vars
+        Load all the defaults from config if called without params
+
+        Args:
+            publisher(TopicPublisher): server side publisher to publish changes in policy
+            source_type(str): policy source type, can be Git / Api to opa bundle server
+            remote_source_url(str): the base address to request the policy from
+            clone_path(str):  path for the local git to manage policies
+            branch_name(str):  name of remote branch in git to pull
+            ssh_key (str, optional): private ssh key used to gain access to the cloned repo
+            polling_interval(int):  how much seconds need to wait between polling
+            request_timeout(int):  how much seconds need to wait until timout
+            policy_bundle_token(int):  auth token to include in connections to OPAL server. Defaults to POLICY_BUNDLE_SERVER_TOKEN.
+            extensions(list(str), optional):  list of extantions to check when new policy arrive default is OPA_FILE_EXTENSIONS
+
+    """
     # load defaults
     source_type = source_type or opal_server_config.POLICY_SOURCE_TYPE
-    repo_url = repo_url or opal_server_config.POLICY_REPO_URL
+    remote_source_url = remote_source_url or opal_server_config.POLICY_REPO_URL
     clone_path = clone_path or opal_server_config.POLICY_REPO_CLONE_PATH
     branch_name = branch_name or opal_server_config.POLICY_REPO_MAIN_BRANCH
-    remote_name = remote_name or opal_server_config.POLICY_REPO_MAIN_REMOTE
     ssh_key = ssh_key or opal_server_config.POLICY_REPO_SSH_KEY
     polling_interval = polling_interval or opal_server_config.POLICY_REPO_POLLING_INTERVAL
-    clone_timeout = clone_timeout or opal_server_config.POLICY_REPO_CLONE_TIMEOUT
+    request_timeout = request_timeout or opal_server_config.POLICY_REPO_CLONE_TIMEOUT
     policy_bundle_token = policy_bundle_token or opal_server_config.POLICY_BUNDLE_SERVER_TOKEN
     extensions = extensions if extensions is not None else opal_server_config.OPA_FILE_EXTENSIONS
     if source_type == PolicySourceTypes.Git.value:
         watcher = GitPolicySource(
-            remote_source_url=repo_url,
+            remote_source_url=remote_source_url,
             local_clone_path=clone_path,
             branch_name=branch_name,
-            remote_name=remote_name,
             ssh_key=ssh_key,
             polling_interval=polling_interval,
-            request_timeout=clone_timeout
+            request_timeout=request_timeout
         )
     elif source_type == PolicySourceTypes.Api.value:
         watcher = ApiPolicySource(
-            remote_source_url=repo_url,
+            remote_source_url=remote_source_url,
             local_clone_path=clone_path,
             polling_interval=polling_interval,
-            request_timeout=clone_timeout,
             token=policy_bundle_token
         )
     else:

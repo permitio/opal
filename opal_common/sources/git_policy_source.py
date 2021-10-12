@@ -22,23 +22,30 @@ class GitPolicySource(BasePolicySource):
     remote. The pull can be either triggered by a method (i.e: you can
     call it from a webhook) or can be triggered periodically by a polling
     task.
+
+    Args:
+        remote_source_url(str): the base address to request the policy from
+        local_clone_path(str):  path for the local git to manage policies
+        branch_name(str):  name of remote branch in git to pull, default to master
+        ssh_key (str, optional): private ssh key used to gain access to the cloned repo
+        polling_interval(int):  how much seconds need to wait between polling
+        request_timeout(int):  how much seconds need to wait until timout
+
     """
     def __init__(
         self,
         remote_source_url: str,
         local_clone_path: str,
         branch_name: str = "master",
-        remote_name: str = "origin",
         ssh_key: Optional[str] = None,
         polling_interval: int = 0,
         request_timeout: int = 0,
     ):
         super().__init__(remote_source_url=remote_source_url, local_clone_path=local_clone_path,
-                         polling_interval=polling_interval, request_timeout=request_timeout)
+                         polling_interval=polling_interval)
 
         self._cloner = RepoCloner(remote_source_url, local_clone_path, branch_name=branch_name, ssh_key=ssh_key, clone_timeout=request_timeout)
         self._branch_name = branch_name
-        self._remote_name = remote_name
         self._tracker = None
 
     async def config(self):
@@ -54,7 +61,6 @@ class GitPolicySource(BasePolicySource):
         self._tracker = BranchTracker(
             repo=result.repo,
             branch_name=self._branch_name,
-            remote_name=self._remote_name
         )
 
     async def run(self):
@@ -70,9 +76,9 @@ class GitPolicySource(BasePolicySource):
 
     async def check_for_changes(self):
         """
-        calling this method will trigger a git pull from the tracked remote.
-        if after the pull the watcher detects new commits, it will call the
-        callbacks registered with on_new_commits().
+        Calling this method will trigger a git pull from the tracked remote.
+        If after the pull the watcher detects new commits, it will call the
+        callbacks registered with _on_new_policy().
         """
         logger.info("Pulling changes from remote: '{remote}'", remote=self._tracker.tracked_remote.name)
         has_changes, prev, latest = self._tracker.pull()

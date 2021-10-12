@@ -13,7 +13,12 @@ OnGitFailureCallback = Callable[[Exception], Coroutine]
 
 class BasePolicySource:
     """
-    Base class to support our watchers
+    Base class to support git and api policy source
+
+    Args:
+        remote_source_url(str): the base address to request the policy from
+        local_clone_path(str):  path for the local git to manage policies
+        polling_interval(int):  how much seconds need to wait between polling
     """
 
     def __init__(
@@ -21,7 +26,6 @@ class BasePolicySource:
         remote_source_url: str,
         local_clone_path: str,
         polling_interval: int = 0,
-        request_timeout: int = 0,
     ):
         self._on_failure_callbacks: List[OnNewPolicyCallback] = []
         self._on_new_policy_callbacks: List[OnGitFailureCallback] = []
@@ -29,7 +33,6 @@ class BasePolicySource:
         self._polling_task = None
         self.remote_source_url = remote_source_url
         self.local_clone_path = os.path.expanduser(local_clone_path)
-        self.request_timeout = request_timeout
 
     def add_on_new_policy_callback(self, callback: OnNewPolicyCallback):
         """
