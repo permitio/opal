@@ -5,7 +5,7 @@ import git
 from pydantic.error_wrappers import ValidationError
 
 from opal_common.security.tarsafe import TarSafe
-from opal_server.config import OpalServerConfig
+from opal_server.config import opal_server_config
 
 
 def commit_local_git(local_clone_path: str, init_commit_msg: str = "Init", should_init: bool = False):
@@ -16,7 +16,7 @@ def commit_local_git(local_clone_path: str, init_commit_msg: str = "Init", shoul
     prev_commit = None
     if len(local_git.index.repo.heads):
         prev_commit = local_git.index.repo.head.commit
-    local_git.index.add(OpalServerConfig.POLICY_BUNDLE_GIT_ADD_PATTERN)
+    local_git.index.add(opal_server_config.POLICY_BUNDLE_GIT_ADD_PATTERN)
     new_commit = local_git.index.commit(init_commit_msg)
     return local_git, prev_commit, new_commit
 
@@ -34,7 +34,7 @@ def is_git_repo(path):
 def create_local_git(tmp_bundle_path: Path, local_clone_path: str):
     extract_bundle_tar(tmp_bundle_path, local_clone_path)
     local_git = is_git_repo(local_clone_path)
-    if not local_git:
+    if not local_git or len(local_git.heads) == 0:
         local_git = commit_local_git(local_clone_path, should_init=True)
     return local_git
 
