@@ -42,7 +42,6 @@ def setup_watcher_task(
     """
     # load defaults
     source_type = source_type or opal_server_config.POLICY_SOURCE_TYPE
-    remote_source_url = remote_source_url or opal_server_config.POLICY_REPO_URL
     clone_path = clone_path or opal_server_config.POLICY_REPO_CLONE_PATH
     branch_name = branch_name or opal_server_config.POLICY_REPO_MAIN_BRANCH
     ssh_key = ssh_key or opal_server_config.POLICY_REPO_SSH_KEY
@@ -50,7 +49,10 @@ def setup_watcher_task(
     request_timeout = request_timeout or opal_server_config.POLICY_REPO_CLONE_TIMEOUT
     policy_bundle_token = policy_bundle_token or opal_server_config.POLICY_BUNDLE_SERVER_TOKEN
     extensions = extensions if extensions is not None else opal_server_config.OPA_FILE_EXTENSIONS
-    if source_type == PolicySourceTypes.Git.value:
+    if source_type == PolicySourceTypes.Git:
+        remote_source_url = remote_source_url or opal_server_config.POLICY_REPO_URL
+        if remote_source_url is None:
+            logger.warning("POLICY_REPO_URL is unset but repo watcher is enabled! disabling watcher.")
         watcher = GitPolicySource(
             remote_source_url=remote_source_url,
             local_clone_path=clone_path,
@@ -59,7 +61,10 @@ def setup_watcher_task(
             polling_interval=polling_interval,
             request_timeout=request_timeout
         )
-    elif source_type == PolicySourceTypes.Api.value:
+    elif source_type == PolicySourceTypes.Api:
+        remote_source_url = remote_source_url or opal_server_config.POLICY_BUNDLE_URL
+        if remote_source_url is None:
+            logger.warning("POLICY_REPO_URL is unset but repo watcher is enabled! disabling watcher.")
         watcher = ApiPolicySource(
             remote_source_url=remote_source_url,
             local_clone_path=clone_path,

@@ -47,10 +47,11 @@ class OpalServerConfig(Confi):
     POLICY_REPO_MAIN_BRANCH = confi.str("POLICY_REPO_MAIN_BRANCH", "master")
     POLICY_REPO_SSH_KEY = confi.str("POLICY_REPO_SSH_KEY", None)
     POLICY_REPO_MANIFEST_PATH = confi.str("POLICY_REPO_MANIFEST_PATH", ".manifest")
-    POLICY_BUNDLE_SERVER_TOKEN = confi.str("POLICY_BUNDLE_SERVER_TOKEN", None, description="Bearer token to sent to API bundle server")
     POLICY_REPO_CLONE_TIMEOUT = confi.int("POLICY_REPO_CLONE_TIMEOUT", 0) # if 0, waits forever until successful clone
     LEADER_LOCK_FILE_PATH = confi.str("LEADER_LOCK_FILE_PATH", "/tmp/opal_server_leader.lock")
+    POLICY_BUNDLE_SERVER_TOKEN = confi.str("POLICY_BUNDLE_SERVER_TOKEN", None, description="Bearer token to sent to API bundle server")
     POLICY_BUNDLE_TMP_PATH = confi.str("POLICY_BUNDLE_TMP_PATH", "/tmp/bundle.tar.gz", description="Path for temp policy file, need to be writeable")
+    POLICY_BUNDLE_GIT_ADD_PATTERN = confi.str("POLICY_BUNDLE_GIT_ADD_PATTERN", "*", description="File pattern to add files to git default to all the files (*)")
 
     REPO_WATCHER_ENABLED = confi.bool("REPO_WATCHER_ENABLED", True)
 
