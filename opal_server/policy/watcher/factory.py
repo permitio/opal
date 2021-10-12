@@ -2,6 +2,7 @@ from typing import Any, Optional, List
 from functools import partial
 
 from fastapi_websocket_pubsub import Topic
+from opal_common.confi.utils import load_conf_if_none
 from opal_common.logger import logger
 from opal_common.sources.api_policy_source import ApiPolicySource
 from opal_common.sources.git_policy_source import GitPolicySource
@@ -41,16 +42,16 @@ def setup_watcher_task(
 
     """
     # load defaults
-    source_type = source_type or opal_server_config.POLICY_SOURCE_TYPE
-    clone_path = clone_path or opal_server_config.POLICY_REPO_CLONE_PATH
-    branch_name = branch_name or opal_server_config.POLICY_REPO_MAIN_BRANCH
-    ssh_key = ssh_key or opal_server_config.POLICY_REPO_SSH_KEY
-    polling_interval = polling_interval or opal_server_config.POLICY_REPO_POLLING_INTERVAL
-    request_timeout = request_timeout or opal_server_config.POLICY_REPO_CLONE_TIMEOUT
-    policy_bundle_token = policy_bundle_token or opal_server_config.POLICY_BUNDLE_SERVER_TOKEN
-    extensions = extensions if extensions is not None else opal_server_config.OPA_FILE_EXTENSIONS
+    source_type = load_conf_if_none(source_type, opal_server_config.POLICY_SOURCE_TYPE)
+    clone_path = load_conf_if_none(clone_path, opal_server_config.POLICY_REPO_CLONE_PATH)
+    branch_name = load_conf_if_none(branch_name, opal_server_config.POLICY_REPO_MAIN_BRANCH)
+    ssh_key = load_conf_if_none(ssh_key, opal_server_config.POLICY_REPO_SSH_KEY)
+    polling_interval = load_conf_if_none(polling_interval, opal_server_config.POLICY_REPO_POLLING_INTERVAL)
+    request_timeout = load_conf_if_none(request_timeout, opal_server_config.POLICY_REPO_CLONE_TIMEOUT)
+    policy_bundle_token = load_conf_if_none(policy_bundle_token, opal_server_config.POLICY_BUNDLE_SERVER_TOKEN)
+    extensions = load_conf_if_none(extensions, opal_server_config.OPA_FILE_EXTENSIONS)
     if source_type == PolicySourceTypes.Git:
-        remote_source_url = remote_source_url or opal_server_config.POLICY_REPO_URL
+        remote_source_url = load_conf_if_none(remote_source_url, opal_server_config.POLICY_REPO_URL)
         if remote_source_url is None:
             logger.warning("POLICY_REPO_URL is unset but repo watcher is enabled! disabling watcher.")
         watcher = GitPolicySource(
@@ -62,9 +63,9 @@ def setup_watcher_task(
             request_timeout=request_timeout
         )
     elif source_type == PolicySourceTypes.Api:
-        remote_source_url = remote_source_url or opal_server_config.POLICY_BUNDLE_URL
+        remote_source_url = load_conf_if_none(remote_source_url, opal_server_config.POLICY_BUNDLE_URL)
         if remote_source_url is None:
-            logger.warning("POLICY_REPO_URL is unset but repo watcher is enabled! disabling watcher.")
+            logger.warning("POLICY_BUNDLE_URL is unset but policy watcher is enabled! disabling watcher.")
         watcher = ApiPolicySource(
             remote_source_url=remote_source_url,
             local_clone_path=clone_path,

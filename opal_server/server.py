@@ -5,6 +5,7 @@ from typing import Optional, List
 from pathlib import Path
 
 from fastapi import Depends, FastAPI
+from opal_common.confi.utils import load_conf_if_none
 
 from opal_common.topics.publisher import TopicPublisher, ServerSideTopicPublisher
 from opal_common.logger import logger, configure_logs
@@ -70,12 +71,12 @@ class OpalServer:
                 will update the opal client via pubsub.
         """
         # load defaults
-        init_policy_watcher: bool = init_policy_watcher or opal_server_config.REPO_WATCHER_ENABLED
-        init_publisher: bool = init_publisher or opal_server_config.PUBLISHER_ENABLED
-        broadcaster_uri: str = broadcaster_uri or opal_server_config.BROADCAST_URI
-        jwks_url: str = jwks_url or opal_server_config.AUTH_JWKS_URL
-        jwks_static_dir: str = jwks_static_dir or opal_server_config.AUTH_JWKS_STATIC_DIR
-        master_token: str = master_token or opal_server_config.AUTH_MASTER_TOKEN
+        init_policy_watcher: bool = load_conf_if_none(init_policy_watcher, opal_server_config.REPO_WATCHER_ENABLED)
+        init_publisher: bool = load_conf_if_none(init_publisher, opal_server_config.PUBLISHER_ENABLED)
+        broadcaster_uri: str = load_conf_if_none(broadcaster_uri, opal_server_config.BROADCAST_URI)
+        jwks_url: str = load_conf_if_none(jwks_url, opal_server_config.AUTH_JWKS_URL)
+        jwks_static_dir: str = load_conf_if_none(jwks_static_dir, opal_server_config.AUTH_JWKS_STATIC_DIR)
+        master_token: str = load_conf_if_none(master_token, opal_server_config.AUTH_MASTER_TOKEN)
 
         configure_logs()
         self.watcher: Optional[PolicyWatcherTask] = None
@@ -114,7 +115,6 @@ class OpalServer:
         self.publisher: Optional[TopicPublisher] = None
         if init_publisher:
             self.publisher = ServerSideTopicPublisher(self.pubsub.endpoint)
-
             if init_policy_watcher:
                 self._fix_policy_repo_clone_path()
                 self.watcher = setup_watcher_task(self.publisher, remote_source_url=policy_remote_url)
