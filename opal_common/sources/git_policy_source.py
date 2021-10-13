@@ -9,10 +9,6 @@ from opal_common.logger import logger
 from opal_common.sources.base_policy_source import BasePolicySource
 
 
-OnNewCommitsCallback = Callable[[Commit, Commit], Coroutine]
-OnGitFailureCallback = Callable[[Exception], Coroutine]
-
-
 class GitPolicySource(BasePolicySource):
     """
     Watches a git repository for changes and can trigger callbacks
@@ -28,8 +24,8 @@ class GitPolicySource(BasePolicySource):
         local_clone_path(str):  path for the local git to manage policies
         branch_name(str):  name of remote branch in git to pull, default to master
         ssh_key (str, optional): private ssh key used to gain access to the cloned repo
-        polling_interval(int):  how much seconds need to wait between polling
-        request_timeout(int):  how much seconds need to wait until timout
+        polling_interval(int):  how many seconds need to wait between polling
+        request_timeout(int):  how many seconds need to wait until timout
 
     """
     def __init__(
@@ -48,7 +44,7 @@ class GitPolicySource(BasePolicySource):
         self._branch_name = branch_name
         self._tracker = None
 
-    async def config(self):
+    async def get_initial_policy_state_from_remote(self):
         """
         init remote data to local repo
         """
@@ -62,17 +58,6 @@ class GitPolicySource(BasePolicySource):
             repo=result.repo,
             branch_name=self._branch_name,
         )
-
-    async def run(self):
-        """
-        potentially starts the polling task
-        """
-        await self.config()
-        if (self._polling_interval > 0):
-            logger.info("Launching polling task, interval: {interval} seconds", interval=self._polling_interval)
-            self._start_polling_task(self.check_for_changes)
-        else:
-            logger.info("Polling task is off")
 
     async def check_for_changes(self):
         """

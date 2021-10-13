@@ -8,7 +8,7 @@ from opal_common.logger import logger
 
 OnNewPolicyCallback = Callable[[
     Commit, Commit], Coroutine]
-OnGitFailureCallback = Callable[[Exception], Coroutine]
+OnPolicyFailureCallback = Callable[[Exception], Coroutine]
 
 
 class BasePolicySource:
@@ -18,7 +18,7 @@ class BasePolicySource:
     Args:
         remote_source_url(str): the base address to request the policy from
         local_clone_path(str):  path for the local git to manage policies
-        polling_interval(int):  how much seconds need to wait between polling
+        polling_interval(int):  how many seconds need to wait between polling
     """
 
     def __init__(
@@ -28,7 +28,7 @@ class BasePolicySource:
         polling_interval: int = 0,
     ):
         self._on_failure_callbacks: List[OnNewPolicyCallback] = []
-        self._on_new_policy_callbacks: List[OnGitFailureCallback] = []
+        self._on_new_policy_callbacks: List[OnPolicyFailureCallback] = []
         self._polling_interval = polling_interval
         self._polling_task = None
         self.remote_source_url = remote_source_url
@@ -41,19 +41,13 @@ class BasePolicySource:
         """
         self._on_new_policy_callbacks.append(callback)
 
-    def add_on_failure_callback(self, callback: OnGitFailureCallback):
+    def add_on_failure_callback(self, callback: OnPolicyFailureCallback):
         """
         Register a callback that will be called when failure occurred.
         """
         self._on_failure_callbacks.append(callback)
 
-    async def get_init_state(self):
-        """
-        get initial state from remote and returns local git object
-        """
-        raise NotImplementedError()
-
-    async def config(self):
+    async def get_initial_policy_state_from_remote(self):
         """
         init remote data to local repo
         """
@@ -69,11 +63,12 @@ class BasePolicySource:
         """
         potentially starts the polling task
         """
+        await self.get_initial_policy_state_from_remote()
 
         if (self._polling_interval > 0):
             logger.info(
                 "Launching polling task, interval: {interval} seconds", interval=self._polling_interval)
-            self._start_polling_task()
+            self._start_polling_task(self.check_for_changes)
         else:
             logger.info("Polling task is off")
 

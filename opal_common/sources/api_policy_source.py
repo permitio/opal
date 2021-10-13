@@ -1,12 +1,12 @@
 import hashlib
-import io
 from pathlib import Path
-
+from tenacity import AsyncRetrying
 from typing import Callable, Coroutine, List, Optional, Tuple
 import aiohttp
 from datetime import datetime
 from fastapi import status
 from git.objects import Commit
+from tenacity.wait import wait_fixed
 from opal_client.policy.fetcher import throw_if_bad_status_code
 from opal_client.utils import tuple_to_dict
 
@@ -15,9 +15,6 @@ from opal_common.logger import logger
 from opal_common.sources.base_policy_source import BasePolicySource
 from opal_common.utils import get_authorization_header
 from opal_server.config import opal_server_config
-
-OnNewCommitsCallback = Callable[[Commit, Commit], Coroutine]
-OnGitFailureCallback = Callable[[Exception], Coroutine]
 
 BundleHash = str
 
@@ -38,7 +35,7 @@ class ApiPolicySource(BasePolicySource):
     Args:
         remote_source_url(str): the base address to request the policy from
         local_clone_path(str):  path for the local git to manage policies
-        polling_interval(int):  how much seconds need to wait between polling
+        polling_interval(int):  how many seconds need to wait between polling
         token (str, optional):  auth token to include in connections to OPAL server. Defaults to POLICY_BUNDLE_SERVER_TOKEN.
     """
 
@@ -55,28 +52,17 @@ class ApiPolicySource(BasePolicySource):
         self.bundle_hash = None
         self.etag = None
 
-    async def config(self):
+    async def get_initial_policy_state_from_remote(self):
         """
         init remote data to local repo
         """
-        tmp_bundle_path, _, _ = await self._fetch_policy_bundle(self.remote_source_url, self.token)
-        self.local_git = create_local_git(tmp_bundle_path=tmp_bundle_path, local_clone_path=self.local_clone_path)
-
-    async def run(self):
-        """
-        clones the repo and potentially starts the polling task
-        """
-        await self.config()
-
-        if (self._polling_interval > 0):
-            logger.info(
-                "Launching polling task, interval: {interval} seconds", interval=self._polling_interval)
-            self._start_polling_task(self.check_for_changes)
-        else:
-            logger.info("Polling task is off")
+        async for attempt in AsyncRetrying(wait=wait_fixed(5)):
+            with attempt:
+                tmp_bundle_path, _, _ = await self.fetch_policy_bundle_from_api_source(self.remote_source_url, self.token)
+                self.local_git = create_local_git(tmp_bundle_path=tmp_bundle_path, local_clone_path=self.local_clone_path)
 
     async def api_update_policy(self) -> Tuple[bool, str, str]:
-        tmp_bundle_path, prev_version, current_hash = await self._fetch_policy_bundle(self.remote_source_url, self.token)
+        tmp_bundle_path, prev_version, current_hash = await self.fetch_policy_bundle_from_api_source(self.remote_source_url, self.token)
         if tmp_bundle_path and prev_version and current_hash:
             commit_msg = f"new version {current_hash}"
             self.local_git, prev_commit, new_commit = update_local_git(local_clone_path=self.local_clone_path, tmp_bundle_path=tmp_bundle_path, commit_msg=commit_msg)
@@ -96,7 +82,7 @@ class ApiPolicySource(BasePolicySource):
                 sha256_hash.update(data)
         return sha256_hash.hexdigest()
 
-    async def _fetch_policy_bundle(
+    async def fetch_policy_bundle_from_api_source(
         self,
         url: str,
         token: Optional[str]
@@ -104,7 +90,7 @@ class ApiPolicySource(BasePolicySource):
         """
         Fetches the bundle. May throw, in which case we retry again.
         Checks that the bundle file isn't the same with Etag, if server
-        don't have Etag it checks it with hash on the bundle file
+        doesn't have Etag it checks it with hash on the bundle file
 
         Read more on Etag here:
         https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/ETag
@@ -171,7 +157,7 @@ class ApiPolicySource(BasePolicySource):
 
     async def check_for_changes(self):
         """
-        Calling this method will trigger a api check to the remote.
+        Calling this method will trigger an api check to the remote.
         If after the request the watcher detects new bundle, it will call the
         callbacks registered with _on_new_policy().
         """

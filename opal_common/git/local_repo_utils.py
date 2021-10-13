@@ -1,6 +1,7 @@
 import os
 from pathlib import Path
 import shutil
+from typing import List, Optional
 import git
 from pydantic.error_wrappers import ValidationError
 
@@ -21,14 +22,14 @@ def commit_local_git(local_clone_path: str, init_commit_msg: str = "Init", shoul
     return local_git, prev_commit, new_commit
 
 
-def is_git_repo(path):
+def is_git_repo(path) -> Optional[git.Repo]:
     local_git = False
     try:
         local_git = git.Repo(path)
         _ = local_git.git_dir
         return local_git
     except Exception:
-        return False
+        return None
 
 
 def create_local_git(tmp_bundle_path: Path, local_clone_path: str):
@@ -51,14 +52,16 @@ def update_local_git(local_clone_path: str, tmp_bundle_path: Path, commit_msg: s
     return local_git, prev_commit, new_commit
 
 
-def extract_bundle_tar(tmp_bundle_path, path: str, mode: str = "r:gz", forbidden_filename: str = '.git') -> bool:
-    with TarSafe.open(tmp_bundle_path, mode=mode) as tar_file:
+def extract_bundle_tar(bundle_path: Path, extract_path: str, mode: str = "r:gz") -> bool:
+    with TarSafe.open(bundle_path, mode=mode) as tar_file:
         tar_file_names = tar_file.getnames()
-        if len(tar_file_names) == 0:
-            raise ValidationError("No files in bundle")
-        if forbidden_filename and forbidden_filename in tar_file_names:
-            raise ValidationError("No {forbidden_filename} files are allowed in OPAL api bundle".format(
-                forbidden_filename=forbidden_filename))
-        else:
-            tar_file.extractall(path=path)
-    return True
+        validate_tar_or_throw(tar_file_names)
+        tar_file.extractall(path=extract_path)
+
+
+def validate_tar_or_throw(tar_file_names: List[str], forbidden_filename: str = '.git'):
+    if len(tar_file_names) == 0:
+        raise ValidationError("No files in bundle")
+    if forbidden_filename and forbidden_filename in tar_file_names:
+        raise ValidationError("No {forbidden_filename} files are allowed in OPAL api bundle".format(
+            forbidden_filename=forbidden_filename))
