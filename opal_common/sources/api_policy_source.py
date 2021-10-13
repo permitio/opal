@@ -1,19 +1,17 @@
-import hashlib
 from pathlib import Path
 from tenacity import AsyncRetrying
-from typing import Callable, Coroutine, List, Optional, Tuple
+from typing import Optional, Tuple
 import aiohttp
 from datetime import datetime
 from fastapi import status
-from git.objects import Commit
 from tenacity.wait import wait_fixed
 from opal_client.policy.fetcher import throw_if_bad_status_code
 from opal_client.utils import tuple_to_dict
+from opal_common.git.tar_file_to_local_git_extractor import TarFileToLocalGitExtractor
 
-from opal_common.git.local_repo_utils import create_local_git, update_local_git
 from opal_common.logger import logger
 from opal_common.sources.base_policy_source import BasePolicySource
-from opal_common.utils import get_authorization_header
+from opal_common.utils import get_authorization_header, hash_file
 from opal_server.config import opal_server_config
 
 BundleHash = str
@@ -51,6 +49,8 @@ class ApiPolicySource(BasePolicySource):
         self.token = token
         self.bundle_hash = None
         self.etag = None
+        self.tmp_bundle_path = Path(opal_server_config.POLICY_BUNDLE_TMP_PATH)
+        self.tar_to_git = TarFileToLocalGitExtractor(self.local_clone_path, self.tmp_bundle_path)
 
     async def get_initial_policy_state_from_remote(self):
         """
@@ -58,29 +58,17 @@ class ApiPolicySource(BasePolicySource):
         """
         async for attempt in AsyncRetrying(wait=wait_fixed(5)):
             with attempt:
-                tmp_bundle_path, _, _ = await self.fetch_policy_bundle_from_api_source(self.remote_source_url, self.token)
-                self.local_git = create_local_git(tmp_bundle_path=tmp_bundle_path, local_clone_path=self.local_clone_path)
+                await self.fetch_policy_bundle_from_api_source(self.remote_source_url, self.token)
+                self.local_git = self.tar_to_git.create_local_git()
 
     async def api_update_policy(self) -> Tuple[bool, str, str]:
         tmp_bundle_path, prev_version, current_hash = await self.fetch_policy_bundle_from_api_source(self.remote_source_url, self.token)
         if tmp_bundle_path and prev_version and current_hash:
             commit_msg = f"new version {current_hash}"
-            self.local_git, prev_commit, new_commit = update_local_git(local_clone_path=self.local_clone_path, tmp_bundle_path=tmp_bundle_path, commit_msg=commit_msg)
+            self.local_git, prev_commit, new_commit = self.tar_to_git.extract_bundle_to_local_git(commit_msg=commit_msg)
             return True, prev_version, current_hash, prev_commit, new_commit
         else:
             return False, None, current_hash, None, None
-
-    @staticmethod
-    def hash_file(tmp_file_path):
-        BUF_SIZE = 65536  # lets read stuff in 64kb chunks!
-        sha256_hash = hashlib.sha256()
-        with open(tmp_file_path, "rb") as file:
-            while True:
-                data = file.read(BUF_SIZE)
-                if not data:
-                    break
-                sha256_hash.update(data)
-        return sha256_hash.hexdigest()
 
     async def fetch_policy_bundle_from_api_source(
         self,
@@ -99,8 +87,8 @@ class ApiPolicySource(BasePolicySource):
             url(str): the base address to request the bundle.tar.gz file from
             token (str, optional): Auth token to include in connections to OPAL server. Defaults to POLICY_BUNDLE_SERVER_TOKEN.
         Returns:
-            Path: bundle file path
-            BundleHash: previous bundle hash on None
+            Path: path to the bundle file that we just downloaded from the remote API source
+            BundleHash: previous bundle hash on None if this is the initial bundle file
             BundleHash: current bundle hash
 
         """
@@ -136,7 +124,7 @@ class ApiPolicySource(BasePolicySource):
 
                     if not current_etag:
                         logger.info('Etag is turnned off, you may want to turn it on at your bundle server')
-                        current_bundle_hash = ApiPolicySource.hash_file(tmp_file_path)
+                        current_bundle_hash = hash_file(tmp_file_path)
                         logger.info('Bundle hash is {hash}', hash=current_bundle_hash)
                         if self.bundle_hash == current_bundle_hash:
                             logger.info("No new bundle, hash is: {hash}", hash=current_bundle_hash)
