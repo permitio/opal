@@ -9,6 +9,7 @@
 Open Policy Administration Layer 
 </h2>
 
+[![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg "Apache 2.0 License")](https://www.apache.org/licenses/LICENSE-2.0.html)
 <a href="https://github.com/authorizon/opal/actions?query=workflow%3ATests" target="_blank">
     <img src="https://github.com/authorizon/opal/workflows/Tests/badge.svg" alt="Tests">
 </a>
@@ -18,6 +19,9 @@ Open Policy Administration Layer
 <a href="https://pypi.org/project/opal-client/" target="_blank">
     <img src="https://img.shields.io/pypi/v/opal-client?color=%2331C654&label=OPAL%20Client%20%28PyPi%29" alt="Package">
 </a>
+[![Downloads](https://static.pepy.tech/personalized-badge/opal-server?period=total&units=international_system&left_color=black&right_color=blue&left_text=Downloads)](https://pepy.tech/project/opal-server)
+[![Docker Pulls](https://img.shields.io/docker/pulls/authorizon/opal-server?label=Docker%20pulls)](https://hub.docker.com/r/authorizon/opal-server)
+[![Join Our Slack](https://img.shields.io/badge/Slack%20Community-4A154B?logo=slack&logoColor=white)](https://opal-access.slack.com/)
 
 OPAL is an administration layer for Open Policy Agent (OPA), detecting changes to both policy and policy data in realtime and pushing live updates to your agents.
 
