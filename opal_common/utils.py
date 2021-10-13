@@ -1,8 +1,21 @@
 import asyncio
+import hashlib
 import threading
 import logging
 
 from typing import Tuple, Coroutine
+
+
+def hash_file(tmp_file_path):
+    BUF_SIZE = 65536  # lets read stuff in 64kb chunks!
+    sha256_hash = hashlib.sha256()
+    with open(tmp_file_path, "rb") as file:
+        while True:
+            data = file.read(BUF_SIZE)
+            if not data:
+                break
+            sha256_hash.update(data)
+    return sha256_hash.hexdigest()
 
 
 def get_authorization_header(token: str) -> Tuple[str, str]:
@@ -138,5 +151,6 @@ class AsyncioEventLoopThread(threading.Thread):
         result is returned. calling run_coro() is thread-safe.
         """
         return asyncio.run_coroutine_threadsafe(coro, loop=self.loop).result()
+
 
 
