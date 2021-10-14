@@ -108,11 +108,11 @@ class ApiPolicySource(BasePolicySource):
                     if response.status == status.HTTP_404_NOT_FOUND:
                         logger.warning(
                             "requested url not found: {full_url}", full_url=full_url)
-                        return None, None, None
+                        raise RuntimeError(f"requested url not found: {full_url}")
                     if response.status == status.HTTP_304_NOT_MODIFIED:
                         logger.info(
                             "Not modified at: {now}", now=datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
-                        return False, None, None
+                        return False, None, self.etag
 
                     # may throw ValueError
                     await throw_if_bad_status_code(response, expected=[status.HTTP_200_OK])
@@ -135,11 +135,17 @@ class ApiPolicySource(BasePolicySource):
                             self.bundle_hash = current_bundle_hash
                             return tmp_file_path, prev_bundle_hash, current_bundle_hash
                     else:
+                        if self.etag == current_etag: # validate against bad etag implementation
+                            logger.info("No new bundle, hash is: {hash}", hash=current_etag)
+                            return False, None, current_etag
                         prev_etag = self.etag
                         self.etag = current_etag
                         return tmp_file_path, prev_etag, current_etag
 
             except aiohttp.ClientError as e:
+                logger.warning("server connection error: {err}", err=repr(e))
+                raise
+            except Exception as e:
                 logger.warning("server connection error: {err}", err=repr(e))
                 raise
 
