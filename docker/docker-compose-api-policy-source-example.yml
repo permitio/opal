@@ -67,5 +67,6 @@ services:
     ports:
         - 8000:80
     volumes:
-        - ./bundle_files:/usr/share/nginx/html
+        - ./docker_files/bundle_files:/usr/share/nginx/html
+        - ./docker_files/nginx.conf:/etc/nginx/nginx.conf
 

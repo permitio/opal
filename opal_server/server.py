@@ -156,7 +156,7 @@ class OpalServer:
             self.data_sources_config,
             authenticator
         )
-        webhook_router = init_git_webhook_router(self.pubsub.endpoint)
+        webhook_router = init_git_webhook_router(self.pubsub.endpoint, authenticator)
         security_router = init_security_router(self.signer, StaticBearerAuthenticator(self.master_token))
 
         # mount the api routes on the app object
