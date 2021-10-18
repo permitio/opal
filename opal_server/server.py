@@ -1,9 +1,9 @@
 import os
 import asyncio
 import uuid
+import shutil
 from functools import partial
 from typing import Optional, List
-from pathlib import Path
 
 from fastapi import Depends, FastAPI
 from opal_common.confi.confi import load_conf_if_none
@@ -251,17 +251,15 @@ class OpalServer:
             The folder name is looks like /<base-path>/<folder-prefix>-<uuid>
             If such folder exist we will use it
         """
-        policy_repo_clone_base_path = opal_server_config.POLICY_REPO_CLONE_PATH
+        policy_repo_clone_base_path = os.path.expanduser(opal_server_config.POLICY_REPO_CLONE_PATH)
         repo_folder_prefix = opal_server_config.POLICY_REPO_CLONE_FOLDER_PREFIX
         folders_with_pattern = get_filepaths_with_glob(policy_repo_clone_base_path, f"{repo_folder_prefix}*")
-        if len(folders_with_pattern):
-            folder_name = sorted(folders_with_pattern)[0]
-            logger.info("Found existing folder with repo pattern at: {folder_name} using it", folder_name=folder_name)
-            full_local_repo_path = os.path.join(policy_repo_clone_base_path, folder_name)
-        else:
-            folder_name = f"{repo_folder_prefix}-{uuid.uuid4().hex}"
-            full_local_repo_path = os.path.join(policy_repo_clone_base_path, folder_name)
-            os.makedirs(full_local_repo_path, exist_ok=True)
-            logger.info("Created new local repo folder at: {fullpath}", fullpath=full_local_repo_path)
+        for folder in folders_with_pattern:
+            logger.warning("Found existing folder with repo pattern at: {folder_name} removing it to avoid conflicts", folder_name=folder)
+            shutil.rmtree(folder)
+        folder_name = f"{repo_folder_prefix}-{uuid.uuid4().hex}"
+        full_local_repo_path = os.path.join(policy_repo_clone_base_path, folder_name)
+        os.makedirs(full_local_repo_path, exist_ok=True)
+        logger.info("Created new local repo folder at: {fullpath}", fullpath=full_local_repo_path)
         opal_server_config.POLICY_REPO_FULL_CLONE_PATH = full_local_repo_path
         logger.info(f"POLICY_REPO_FULL_CLONE_PATH was set to: {opal_server_config.POLICY_REPO_FULL_CLONE_PATH}")
