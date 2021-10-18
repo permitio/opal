@@ -1,5 +1,6 @@
 import os
 import asyncio
+import uuid
 from functools import partial
 from typing import Optional, List
 from pathlib import Path
@@ -15,6 +16,7 @@ from opal_common.middleware import configure_middleware
 from opal_common.authentication.signer import JWTSigner
 from opal_common.authentication.deps import JWTAuthenticator, StaticBearerAuthenticator
 from opal_common.config import opal_common_config
+from opal_common.utils import get_filepaths_with_glob
 from opal_server.config import opal_server_config
 from opal_server.security.api import init_security_router
 from opal_server.security.jwks import JwksStaticEndpoint
@@ -116,7 +118,7 @@ class OpalServer:
         if init_publisher:
             self.publisher = ServerSideTopicPublisher(self.pubsub.endpoint)
             if init_policy_watcher:
-                self._fix_policy_repo_clone_path()
+                self.config_local_clone_full_path()
                 self.watcher = setup_watcher_task(self.publisher, remote_source_url=policy_remote_url)
 
         # init fastapi app
@@ -242,10 +244,24 @@ class OpalServer:
         except Exception:
             logger.exception("exception while shutting down background tasks")
 
-    def _fix_policy_repo_clone_path(self):
-        clone_path = Path(os.path.expanduser(opal_server_config.POLICY_REPO_CLONE_PATH))
-        forbidden_paths = [Path(os.path.expanduser('~')), Path('/')]
-        if clone_path in forbidden_paths:
-            logger.warning("You cannot clone the policy repo directly to the homedir (~) or to the root directory (/)!")
-            opal_server_config.POLICY_REPO_CLONE_PATH = os.path.join(clone_path, "regoclone")
-            logger.warning(f"OPAL_POLICY_REPO_CLONE_PATH was set to: {opal_server_config.POLICY_REPO_CLONE_PATH}")
+    def config_local_clone_full_path(self):
+        """
+            Takes the base path from server config and create new folder with uniq
+            name for the local clone.
+            The folder name is looks like /<base-path>/<folder-prefix>-<uuid>
+            If such folder exist we will use it
+        """
+        policy_repo_clone_base_path = opal_server_config.POLICY_REPO_CLONE_PATH
+        repo_folder_prefix = opal_server_config.POLICY_REPO_CLONE_FOLDER_PREFIX
+        folders_with_pattern = get_filepaths_with_glob(policy_repo_clone_base_path, f"{repo_folder_prefix}*")
+        if len(folders_with_pattern):
+            folder_name = sorted(folders_with_pattern)[0]
+            logger.info("Found existing folder with repo pattern at: {folder_name} using it", folder_name=folder_name)
+            full_local_repo_path = os.path.join(policy_repo_clone_base_path, folder_name)
+        else:
+            folder_name = f"{repo_folder_prefix}-{uuid.uuid4().hex}"
+            full_local_repo_path = os.path.join(policy_repo_clone_base_path, folder_name)
+            os.makedirs(full_local_repo_path, exist_ok=True)
+            logger.info("Created new local repo folder at: {fullpath}", fullpath=full_local_repo_path)
+        opal_server_config.POLICY_REPO_FULL_CLONE_PATH = full_local_repo_path
+        logger.info(f"POLICY_REPO_FULL_CLONE_PATH was set to: {opal_server_config.POLICY_REPO_FULL_CLONE_PATH}")

@@ -29,7 +29,7 @@ services:
       # - for more info, see: hthttps://www.openpolicyagent.org/docs/latest/management-bundles/
       - OPAL_POLICY_BUNDLE_URL=http://api_policy_source_server
       - OPAL_POLICY_SOURCE_TYPE=API
-      # - the path for the local clone in Opal server
+      # - the base path for the local git in Opal server
       - OPAL_POLICY_REPO_CLONE_PATH=~/opal
       # in this example we will use a polling interval of 30 seconds to check for new policy updates (new bundle files).
       # however, it is better to utilize a api *webhook* to trigger the server to check for changes only when the bundle server has new bundle.

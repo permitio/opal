@@ -1,9 +1,15 @@
 import asyncio
+import glob
 import hashlib
+import os
 import threading
 import logging
 
 from typing import Tuple, Coroutine
+
+
+def get_filepaths_with_glob(root_path: str, file_regex: str):
+    return glob.glob(os.path.join(root_path, file_regex))
 
 
 def hash_file(tmp_file_path):
