@@ -273,7 +273,7 @@ For these config vars, in most cases you are good with the default values:
     </tr>
     <tr>
       <td valign="top">OPAL_POLICY_REPO_CLONE_PATH</td>
-      <td>Where (i.e: target path) to clone the repo in your docker filesystem (not important unless you mount a docker volume)</td>
+      <td>Where (i.e: base target path) to clone the repo in your docker filesystem (not important unless you mount a docker volume)</td>
     </tr>
     <tr>
       <td valign="top">OPAL_POLICY_REPO_MAIN_BRANCH</td>
