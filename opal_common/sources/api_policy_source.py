@@ -1,4 +1,5 @@
 from pathlib import Path
+from fastapi.exceptions import HTTPException
 from tenacity import AsyncRetrying
 from typing import Optional, Tuple
 import aiohttp
@@ -110,7 +111,7 @@ class ApiPolicySource(BasePolicySource):
                     if response.status == status.HTTP_404_NOT_FOUND:
                         logger.warning(
                             "requested url not found: {full_url}", full_url=full_url)
-                        raise RuntimeError(f"requested url not found: {full_url}")
+                        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"requested url not found: {full_url}")
                     if response.status == status.HTTP_304_NOT_MODIFIED:
                         logger.info(
                             "Not modified at: {now}", now=datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
