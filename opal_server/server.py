@@ -21,7 +21,7 @@ from opal_server.security.jwks import JwksStaticEndpoint
 from opal_server.data.api import init_data_updates_router
 from opal_server.data.data_update_publisher import DataUpdatePublisher
 from opal_server.policy.bundles.api import router as bundles_router
-from opal_server.policy.github_webhook.api import init_git_webhook_router
+from opal_server.policy.webhook.api import init_git_webhook_router
 from opal_server.policy.watcher import (setup_watcher_task,
                                         trigger_repo_watcher_pull)
 from opal_server.policy.watcher.task import PolicyWatcherTask
