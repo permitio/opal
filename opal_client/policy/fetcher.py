@@ -14,10 +14,7 @@ from opal_client.config import opal_client_config
 
 def force_valid_bundle(bundle) -> PolicyBundle:
     try:
-        policy_bundle = PolicyBundle(**bundle)
-        logger.info('Got new policy bundle with {rego_files} rego files, {data_files} data files',
-                    rego_files=len(policy_bundle.policy_modules), data_files=len(policy_bundle.data_modules))
-        return policy_bundle
+        return PolicyBundle(**bundle)
     except ValidationError as e:
         logger.warning("server returned invalid bundle: {err}", bundle=bundle, err=repr(e))
         raise
