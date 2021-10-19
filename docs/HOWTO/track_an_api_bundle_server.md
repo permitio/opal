@@ -1,10 +1,10 @@
-# Policy syncing with api bundle repo
+# Policy syncing from API
 
-This document describes how to change policy syncing feature of OPAL (policy-code and static data) from the default git to API bundle server.
+This document describes how to change policy syncing feature of OPAL (policy-code and static data) from the default git to an API server that exposes tar bundles.
 
-## How policy syncing works
+We have a [docker compose example file](https://github.com/authorizon/opal/blob/master/docker/docker-compose-api-policy-source-example.yml) configured with an api policy source that we will explore in detail [later in this guide](#compose-example).
 
-### 1) OPAL Server takes its bundle from the API bundle server
+## How policy syncing from an API server works
 
 The OPAL server is configured to get its data from API bundle server, extract the bundle, and sync it to the clients. The API server must have a `bundle.tar.gz` file and be able to serve it to the OPAL server. The OPAL server will always aspire to keep the most up-to-date "state" of the bundle supplied by the bundle server.
 
@@ -24,230 +24,157 @@ Currently OPAL server supports two ways to detect changes in the tracked repo / 
 
 - **Webhook** - By issuing an HTTP REST request to OPAL server `<opal-server-url>/webhook` with your auth access token upon each update bundle file event, you can trigger the OPAL server to fetch a new bundle.
 
-### 2) OPAL Client subscribes to policy update notifications
+The rest of the policy syncing process is the same as with a [git policy source](https://github.com/authorizon/opal/blob/master/docs/HOWTO/track_a_git_repo.md).
 
-Each OPAL-client can subscribe to multiple policy topics, each policy topic is formatted as `policy:{path}` where `path` is a **directory** in the policy git repository (**relative path** to the root of the repository).
+## <a name="compose-example"></a>Docker compose example
 
-The policy directories the client will subscribe to are specified by the environment variable `OPAL_POLICY_SUBSCRIPTION_DIRS` passed to the client. The default is `"."` meaning the root directory in the branch (i.e: essentially all `.rego` and `data.json` files in the branch).
+In this section we show how to configure an **API bundle server as OPAL's policy source**. We made an example [docker-compose.yml](https://github.com/authorizon/opal/blob/master/docker/docker-compose-api-policy-source-example.yml) file with all the necessary configuration.
+### Step 1: run docker compose to start the opal server and client
 
-Let's look at at a more complex example: Let's say we have a multi-tenant application in the cloud with an on-prem component at each customer site. We want to apply the same base policy to all tenants, but also to allow special rules (different policy) per tenant.
-
-Assume our policy repository looks like this:
-
-```
-
-.
-
-├── default
-
-│   ├── data.json
-
-│   └── rbac.rego
-
-└── tenants
-
-    ├── tenant1
-
-    │   ├── data.json
-
-    │   └── location.rego
-
-    ├── tenant2
-
-    │   ├── billing.rego
-
-    │   └── data.json
-
-    └── tenant3
-
-    │ ├── ...
-
-    ...
+Clone the opal repository and run the example compose file from your local clone:
 
 ```
-
-We can see that tenant 1 has a special policy for user location (e.g: special rules for users interacting with the application from outside the US), while tenant 2 has special rules around billing (i.e: allow some access only to paying users, etc).
-
-We'll deploy a different OPAL client as part of our on-prem/edge container in each customer vpc, for simplicity let's call them `edge1`, `edge2` and `edge3`:
-
-- `edge1` will set `OPAL_POLICY_SUBSCRIPTION_DIRS=default:tenants/tenant1` meaning its policy bundles will include both policy files found under the `default` directory as well policy files under `tenants/tenant1`, but not policy files under `tenant2`, etc.
-
-- Similarly:
-
-- `edge2` will set `OPAL_POLICY_SUBSCRIPTION_DIRS=default:tenants/tenant2`.
-
-- `edge3` will set `OPAL_POLICY_SUBSCRIPTION_DIRS=default:tenants/tenant3`.
-
-### 3) <a name="policy-update-message"></a>OPAL Server notifies his OPAL clients about policy updates
-
-Upon learning about **new commits** in the tracked branch, and assuming these new commits include changes **that affect rego or data files**, OPAL server will push an update message via pub/sub to the OPAL clients.
-
-- The update message will include the most recent (i.e: top-most) commit hash in the tracked branch.
-
-- Each OPAL client will only be notified about changes in the directories it has subscribed to.
-
-i.e: example **policy update message** assuming a commit changed the `billing.rego` file:
-
+git clone https://github.com/authorizon/opal.git
+cd opal
+docker-compose -f docker/docker-compose-api-policy-source-example.yml up
 ```
 
+The `docker-compose.yml` we just downloaded ([Click here to view its contents](https://github.com/authorizon/opal/blob/master/docker/docker-compose-api-policy-source-example.yml)) is running 4 containers: Broadcast, OPAL Server, OPAL Client, and API bundle server.
+
+OPAL (and also OPA) are now running on your machine, the following ports are exposed on `localhost`:
+
+- OPAL Server (port `:7002`) - the OPAL client (and potentially the cli) can connect to this port.
+- OPAL Client (port `:7000`) - the OPAL client has its own API, but it's irrelevant to this tutorial :)
+- OPA (port `:8181`) - the port of the OPA agent (running in server mode).
+  - OPA is being run by OPAL client in its container as a managed process.
+- Nginx server that serves a static bundle file (bundle.tar.gz) on port 8000
+
+### <a name="eval-query-opa"></a> Step 2: Send some authorization queries to OPA
+
+As mentioned before, the OPA REST API is running on port `:8181` - you can issue any requests you'd like to it directly.
+
+Let's explore the current state and send some authorization queries to the agent.
+
+The default policy in the [example repo](https://github.com/authorizon/opal-example-policy-repo) is a simple [RBAC](https://en.wikipedia.org/wiki/Role-based_access_control) policy, we can issue this request to get the user's role assignment and metadata:
+
+```
+curl --request GET 'http://localhost:8181/v1/data/users' --header 'Content-Type: application/json' | python -m json.tool
+```
+
+The expected result is:
+
+```
 {
+    "result": {
+        "alice": {
+            "location": {
+                "country": "US",
+                "ip": "8.8.8.8"
+            },
+            "roles": [
+                "admin"
+            ]
+        },
 
-"topic": "policy:tenant2",
-
-"data": "5cdf36a7510f6ecc9e89cceb0ae0672c67ddb34c"
-
-}
-
-```
-
-Notice that the update message **does not** include any actual policy files, the OPAL client is responsible to fetch a new policy bundle upon being notified about relevant updates.
-
-### 4) OPAL Client fetches policy bundles from OPAL Server
-
-OPAL clients fetch policy bundles by calling the `/policy` endpoint on the OPAL server.
-
-The client may present a **base hash** - meaning the client already has the policy files up until the **base hash** commit. If the server is presented with the base hash, the server will return a **delta bundle**, meaning only changes (new, modified, renamed and deleted files) will be included in the bundle.
-
-The client will fetch a new policy bundle upon the following events:
-
-- When first starting up, the client will fetch a **complete** policy bundle.
-
-- After the initial bundle, the client will ask **delta** policy bundles (only changes):
-
-- After a disconnect from the OPAL server (e.g: if the server crashed, etc)
-
-- After receiving a [policy update message](#policy-update-message)
-
-#### Policy bundle manifest - serving dependant policy modules
-
-The policy bundle contains a `manifest` list that contains the paths of all the modules (.rego or data.json) that are included in the bundle. The `manifest` list is important! It controls the **order** in which the OPAL client will load the policy modules into OPA.
-
-OPA rego modules can have dependencies if they use the [import statement](https://www.openpolicyagent.org/docs/latest/policy-language/#imports).
-
-You can control the manifest contents and ensure the correct loading of dependent OPA modules. All you have to do is to put a `.manifest` file in the root directory of your policy git repository (like shown in [this example repo](https://github.com/authorizon/opal-example-policy-repo)).
-
-**The `.manifest` file is optional!!!** If there is no manifest file, OPAL will load the policy modules it finds in alphabetical order.
-
-The format of the `.manifest` file you should adhere to:
-
-- File encoding should be standard (i.e: UTF-8)
-
-- Lines should be separated with newlines (`\n` character)
-
-- Each line should contain the relative path to one file in the repo (i.e: a `.rego` file or `data.json` file).
-
-- File paths should appear in the order you want to load them into OPA.
-
-- If you want to use a different file name other than `.manifest`, you can set another value to the env var `OPAL_POLICY_REPO_MANIFEST_PATH`.
-
-For example, if you look in the [example repo](https://github.com/authorizon/opal-example-policy-repo), you would see that the `rbac.rego` module imports the `utils.rego` module (the line `import data.utils` imports the `utils` package). Therefore in the manifest, `utils.rego` appears first because it needs to be loaded into OPA before the `rbac.rego` policy is loaded (otherwise OPA will throw an exception due to the import statement failing).
-
-#### Policy bundle API Endpoint
-
-The [policy bundle endpoint](https://opal.authorizon.com/redoc#operation/get_policy_policy_get) exposes the following params:
-
-- **path** - path to a directory inside the repo. The server will include only policy files under this directory. You can pass the **path** parameter multiple times (i.e: to include files under several directories).
-
-- **base_hash** - include only policy files that were changed (added, updated, deleted or renamed) after the commit with the **base hash**. If this parameter is included, the server will return a **delta bundle**, otherwise the server will return a **complete bundle**.
-
-Let's look at some real API call examples. The opal server in these example track [our example repo](https://github.com/authorizon/opal-example-policy-repo).
-
-Example fetching a complete bundle:
-
-```sh
-
-curl --request GET 'https://opal.authorizon.com/policy?path=.'
-
-```
-
-Response (a complete bundle is returned):
-
-```json
-{
-  "manifest": ["data.json", "rbac.rego"],
-
-  "hash": "ac16d91b84f578954ccd1c322b1f8f99d44248c0",
-
-  "old_hash": null,
-
-  "data_modules": [
-    {
-      "path": ".",
-
-      "data": "<CONTENTS OF data.json>"
+        ...
     }
-  ],
-
-  "policy_modules": [
-    {
-      "path": "rbac.rego",
-
-      "package_name": "app.rbac",
-
-      "rego": "<CONTENTS OF rbac.rego>"
-    }
-  ],
-
-  "deleted_files": null
 }
 ```
 
-Example fetching a delta bundle:
+Cool, let's issue an **authorization** query. In OPA, an authorization query is a query **with input**.
 
-```sh
-
-curl --request GET 'https://opal.authorizon.com/policy?base_hash=503e6f9821eb036ce6a4207a45ddbe147f1a0a7b&path=.'
+This query asks whether the user `bob` can `read` the `finance` resource (whose id is `id123`):
 
 ```
-
-This time the response is a delta bundle, the `envoy.rego` file was deleted and `rbac.rego` and `data.json` were added:
-
-```json
-{
-  "manifest": ["data.json", "rbac.rego"],
-
-  "hash": "ac16d91b84f578954ccd1c322b1f8f99d44248c0",
-
-  "old_hash": "503e6f9821eb036ce6a4207a45ddbe147f1a0a7b",
-
-  "data_modules": [
-    {
-      "path": ".",
-
-      "data": "<CONTENTS OF data.json>"
-    }
-  ],
-
-  "policy_modules": [
-    {
-      "path": "rbac.rego",
-
-      "package_name": "app.rbac",
-
-      "rego": "<CONTENTS OF rbac.rego>"
-    }
-  ],
-
-  "deleted_files": {
-    "data_modules": [],
-
-    "policy_modules": ["envoy.rego"]
-  }
-}
+curl -w '\n' --request POST 'http://localhost:8181/v1/data/app/rbac/allow' \
+--header 'Content-Type: application/json' \
+--data-raw '{"input": {"user": "bob","action": "read","object": "id123","type": "finance"}}'
 ```
 
-## Setting up the OPAL Server - options for policy change detection
+The expected result is `true`, meaning the access is granted:
 
-### Option 1: Using polling (less recommended)
+```
+{"result":true}
+```
 
-You may use polling by defining the following environment variable to a value different than `0`:
+### Step 3: Change the policy, and see it being updated in realtime
 
-Env Var Name | Function
+Since the example `docker-compose-api-policy-source-example.yml` makes OPAL track the API bundle server (which serves the files from `/docker/docker_files/bundle files`). In order to see how a bundle update can affect the policy in realtime, we can run the following commands to trigger a policy update:
 
-:--- | :---
+```bash
+cd docker/docker_files/bundle_files
+mv bundle.tar.gz{,.bak1}; mv bundle.tar.gz{.bak,}; mv bundle.tar.gz.bak{1,} # this command swaps the two bundle files you have, to trigger a policy change
+```
 
-OPAL_POLICY_REPO_POLLING_INTERVAL | the interval in seconds to use for polling the policy repo
+- You can now run the same query as before (the curl command above) to see that the user's data has changed
 
-### Option 2: Using a webhook
+### Step 4: Publish a data update via the OPAL Server
 
-Create a service that send POST request to `opal-server-url/webhook` with your access token, and it will trigger a check of the bundle file
+The default policy in the [example repo](https://github.com/authorizon/opal-example-policy-repo) is a simple RBAC policy with a twist.
+
+A user is granted access if:
+
+- One of his/her role has a permission for the requested `action` and `resource type`.
+- Only users from the USA can access the resource (location == `US`).
+
+The reason we added the location policy is we want to show you how **pushing an update** via opal with a different "user location" can **immediately affect access**, demonstrating realtime updates needed by most modern applications.
+
+Remember this authorization query?
+
+```
+curl -w '\n' --request POST 'http://localhost:8181/v1/data/app/rbac/allow' \
+--header 'Content-Type: application/json' \
+--data-raw '{"input": {"user": "bob","action": "read","object": "id123","type": "finance"}}'
+```
+
+Bob is granted access because the initial `data.json` location is `US` ([link](https://github.com/authorizon/opal-example-policy-repo/blob/master/data.json#L18)):
+
+```
+{"result":true}
+```
+
+Let's push an update via OPAL and see how poor Bob is denied access.
+
+We can push an update via the opal-client **cli**. Let's install the cli to a new python virtualenv:
+
+```
+pyenv virtualenv opaldemo
+pyenv activate opaldemo
+pip install opal-client
+```
+
+Now let's use the cli to push an update to override the user location (we'll come back and explain what we do here in a moment):
+
+```
+opal-client publish-data-update --src-url https://api.country.is/23.54.6.78 -t policy_data --dst-path /users/bob/location
+```
+
+We expect to receive this output from the cli:
+
+```
+Publishing event:
+entries=[DataSourceEntry(url='https://api.country.is/23.54.6.78', config={}, topics=['policy_data'], dst_path='/users/bob/location', save_method='PUT')] reason=''
+Event Published Successfully
+```
+
+Now let's issue the same authorization query again:
+
+```
+curl -w '\n' --request POST 'http://localhost:8181/v1/data/app/rbac/allow' \
+--header 'Content-Type: application/json' \
+--data-raw '{"input": {"user": "bob","action": "read","object": "id123","type": "finance"}}'
+```
+
+And..... no dice. Bob is denied access:
+
+```
+{"result":false}
+```
+
+Now, what happened when we published our update with the cli? Let's analyze the components of this update.
+
+OPAL data updates are built to support your specific use case.
+
+- You can specify a topic (in the example: `policy_data`) to target only specific opal clients (and by extension specific OPA agents). This is only logical if each microservice you have has an OPA sidecar of its own (and different policy/data needs).
+- OPAL specifies **from where** to fetch the data that changed. In this example we used a free and open API (`api.country.is`) that anyone can access. But it can be your specific API, or a 3rd-party.
+- OPAL specifies **to where** (destination path) in OPA document hierarchy the data should be saved. In this case we override the `/users/bob/location` document with the fetched data.
