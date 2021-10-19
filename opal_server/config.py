@@ -1,3 +1,4 @@
+from enum import Enum
 import os
 
 from opal_common.confi import Confi
@@ -5,6 +6,11 @@ from opal_common.schemas.data import ServerDataSourceConfig
 from opal_common.authentication.types import EncryptionKeyFormat
 
 confi = Confi(prefix="OPAL_")
+
+
+class PolicySourceTypes(str, Enum):
+    Git = 'GIT'
+    Api = 'API'
 
 
 class OpalServerConfig(Confi):
@@ -32,15 +38,21 @@ class OpalServerConfig(Confi):
 
     AUTH_MASTER_TOKEN = confi.str("AUTH_MASTER_TOKEN", None)
 
-    # repo watcher
-    POLICY_REPO_URL = confi.str("POLICY_REPO_URL", None)
-    POLICY_REPO_CLONE_PATH = confi.str("POLICY_REPO_CLONE_PATH", os.path.join(os.getcwd(), "regoclone"))
+    # policy source watcher
+    POLICY_SOURCE_TYPE = confi.enum("POLICY_SOURCE_TYPE", PolicySourceTypes, PolicySourceTypes.Git, description="Set your policy source can be GIT / API")
+    POLICY_REPO_URL = confi.str("POLICY_REPO_URL", None, description="Set your remote repo URL e.g:https://github.com/authorizon/opal-example-policy-repo.git\
+        , relevant only on GIT source type")
+    POLICY_BUNDLE_URL = confi.str("POLICY_BUNDLE_URL", None, description="Set your API bundle URL, relevant only on API source type")
+    POLICY_REPO_CLONE_PATH = confi.str("POLICY_REPO_CLONE_PATH", os.path.join(os.getcwd(), "regoclone"), description="Base path to create local git folder inside it that manage policy change")
+    POLICY_REPO_CLONE_FOLDER_PREFIX = confi.str("POLICY_REPO_CLONE_FOLDER_PREFIX", "opal_repo_clone", description="Prefix for the local git folder")
     POLICY_REPO_MAIN_BRANCH = confi.str("POLICY_REPO_MAIN_BRANCH", "master")
-    POLICY_REPO_MAIN_REMOTE = confi.str("POLICY_REPO_MAIN_REMOTE", "origin")
     POLICY_REPO_SSH_KEY = confi.str("POLICY_REPO_SSH_KEY", None)
     POLICY_REPO_MANIFEST_PATH = confi.str("POLICY_REPO_MANIFEST_PATH", ".manifest")
     POLICY_REPO_CLONE_TIMEOUT = confi.int("POLICY_REPO_CLONE_TIMEOUT", 0) # if 0, waits forever until successful clone
     LEADER_LOCK_FILE_PATH = confi.str("LEADER_LOCK_FILE_PATH", "/tmp/opal_server_leader.lock")
+    POLICY_BUNDLE_SERVER_TOKEN = confi.str("POLICY_BUNDLE_SERVER_TOKEN", None, description="Bearer token to sent to API bundle server")
+    POLICY_BUNDLE_TMP_PATH = confi.str("POLICY_BUNDLE_TMP_PATH", "/tmp/bundle.tar.gz", description="Path for temp policy file, need to be writeable")
+    POLICY_BUNDLE_GIT_ADD_PATTERN = confi.str("POLICY_BUNDLE_GIT_ADD_PATTERN", "*", description="File pattern to add files to git default to all the files (*)")
 
     REPO_WATCHER_ENABLED = confi.bool("REPO_WATCHER_ENABLED", True)
 
