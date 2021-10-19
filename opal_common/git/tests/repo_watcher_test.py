@@ -63,7 +63,7 @@ async def test_repo_watcher_git_failed_callback(tmp_path):
 @pytest.mark.asyncio
 async def test_repo_watcher_detect_new_commits_with_manual_trigger(
     local_repo: Repo,
-    local_repo_clone: Repo,
+    tmp_path,
     helpers,
 ):
     """
@@ -72,7 +72,6 @@ async def test_repo_watcher_detect_new_commits_with_manual_trigger(
     """
     # start with preconfigured repos
     remote_repo: Repo = local_repo # the 'origin' repo (also a local test repo)
-    repo: Repo = local_repo_clone # the local clone
 
     detected_new_commits = asyncio.Event()
     detected_commits: Dict[str, Optional[Commit]] = dict(old=None, new=None)
@@ -82,7 +81,7 @@ async def test_repo_watcher_detect_new_commits_with_manual_trigger(
         commits['new'] = new
         detected_new_commits.set()
 
-    target_path: Path = Path(repo.working_tree_dir)
+    target_path: Path = tmp_path / "target_manual_trigger"
 
     # configure the watcher with a valid local repo (our test repo)
     # the returned repo will track the local remote repo
@@ -105,6 +104,7 @@ async def test_repo_watcher_detect_new_commits_with_manual_trigger(
     assert detected_commits['new'] is None
 
     # make sure tracked repo and remote repo have the same head
+    repo: Repo = watcher._tracker.repo
     assert repo.head.commit == remote_repo.head.commit
 
     prev_head: Commit = repo.head.commit
@@ -133,7 +133,7 @@ async def test_repo_watcher_detect_new_commits_with_manual_trigger(
 @pytest.mark.asyncio
 async def test_repo_watcher_detect_new_commits_with_polling(
     local_repo: Repo,
-    local_repo_clone: Repo,
+    tmp_path,
     helpers,
 ):
     """
@@ -142,7 +142,6 @@ async def test_repo_watcher_detect_new_commits_with_polling(
     """
     # start with preconfigured repos
     remote_repo: Repo = local_repo # the 'origin' repo (also a local test repo)
-    repo: Repo = local_repo_clone # the local clone
 
     detected_new_commits = asyncio.Event()
     detected_commits: Dict[str, Optional[Commit]] = dict(old=None, new=None)
@@ -152,7 +151,7 @@ async def test_repo_watcher_detect_new_commits_with_polling(
         commits['new'] = new
         detected_new_commits.set()
 
-    target_path: Path = Path(repo.working_tree_dir)
+    target_path: Path = tmp_path / "target_polling"
 
     # configure the watcher with a valid local repo (our test repo)
     # the returned repo will track the test remote, not a real remote
@@ -175,6 +174,7 @@ async def test_repo_watcher_detect_new_commits_with_polling(
     assert detected_commits['new'] is None
 
     # make sure tracked repo and remote repo have the same head
+    repo: Repo = watcher._tracker.repo
     assert repo.head.commit == remote_repo.head.commit
 
     prev_head: Commit = repo.head.commit
