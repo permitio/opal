@@ -1,9 +1,10 @@
 import os
+import uuid
 import shutil
 import asyncio
 
 from functools import partial
-from typing import Optional
+from typing import Optional, Generator
 from pathlib import Path
 from tenacity import retry, wait, stop, RetryError
 from git import Repo, GitError, GitCommandError
@@ -11,6 +12,7 @@ from git import Repo, GitError, GitCommandError
 from opal_common.logger import logger
 from opal_common.git.exceptions import GitFailed
 from opal_common.config import opal_common_config
+from opal_common.utils import get_filepaths_with_glob
 
 
 SSH_PREFIX = "ssh://"
@@ -40,6 +42,53 @@ class CloneResult:
         return self._repo
 
 
+class RepoClonePathFinder:
+    """
+    We are cloning the policy repo into a unique random subdirectory of a base path.
+
+    This class knows how to such clones, so we can discard previous ones, but also so
+    that siblings workers (who are not the master who decided where to clone) can also
+    find the current clone by globing the base dir.
+    """
+    def __init__(self, base_clone_path: str, clone_subdirectory_prefix: str):
+        if not base_clone_path:
+            raise ValueError("base_clone_path cannot be empty!")
+
+        if not clone_subdirectory_prefix:
+            raise ValueError("clone_subdirectory_prefix cannot be empty!")
+
+        self._base_clone_path = os.path.expanduser(base_clone_path)
+        self._clone_subdirectory_prefix = clone_subdirectory_prefix
+
+    def get_clone_subdirectories(self) -> Generator[str, None, None]:
+        """
+        a generator yielding all the subdirectories of the base clone path
+        that are matching the clone pattern.
+
+        Yields:
+            the next subdirectory matching the pattern
+        """
+        folders_with_pattern = get_filepaths_with_glob(self._base_clone_path, f"{self._clone_subdirectory_prefix}*")
+        for folder in folders_with_pattern:
+            yield folder
+
+    def get_single_clone_path(self) -> Optional[str]:
+        """
+        searches for the single clone subdirectory in existance.
+
+        If found no such subdirectory or if found more than one (multiple matching subdirectories) - will return None.
+        otherwise: will return the single and only clone.
+        """
+        subdirectories = list(self.get_clone_subdirectories())
+        if len(subdirectories) != 1:
+            return None
+        return subdirectories[0]
+
+    def create_new_clone_path(self) -> str:
+        folder_name = f"{self._clone_subdirectory_prefix}-{uuid.uuid4().hex}"
+        full_local_repo_path = os.path.join(self._base_clone_path, folder_name)
+        os.makedirs(full_local_repo_path, exist_ok=True)
+        return full_local_repo_path
 
 class RepoCloner:
     """
@@ -95,29 +144,8 @@ class RepoCloner:
             - finds a cloned repo locally and does not clone from remote.
         """
         logger.info("Cloning repo from '{url}' to '{to_path}'", url=self.url, to_path=self.path)
-        self._discard_previous_local_clone()
         loop = asyncio.get_running_loop()
         return await loop.run_in_executor(None, self._attempt_clone_from_url)
-
-    def _discard_previous_local_clone(self):
-        """
-        inits the repo from local .git or throws GitFailed
-        """
-        git_path = Path(os.path.join(Path(self.path), Path(".git")))
-        if not git_path.exists():
-            return
-
-        dst_path = "{}.old".format(str(Path(self.path)))
-        i = 0
-        while Path(dst_path + str(i)).exists():
-            i += 1
-        dst_path = dst_path + str(i)
-
-        logger.info(f"Repo already exists in '{self.path}', moving previous clone to '{dst_path}'")
-        try:
-            shutil.move(self.path, dst_path)
-        except Exception as e:
-            logger.error(f"could not move previous clone, got error: {e}")
 
     def _attempt_clone_from_url(self) -> CloneResult:
         """

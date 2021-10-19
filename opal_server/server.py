@@ -7,6 +7,7 @@ from typing import Optional, List
 
 from fastapi import Depends, FastAPI
 from opal_common.confi.confi import load_conf_if_none
+from opal_common.git.repo_cloner import RepoClonePathFinder
 
 from opal_common.topics.publisher import TopicPublisher, ServerSideTopicPublisher
 from opal_common.logger import logger, configure_logs
@@ -73,12 +74,13 @@ class OpalServer:
                 will update the opal client via pubsub.
         """
         # load defaults
-        init_policy_watcher: bool = load_conf_if_none(init_policy_watcher, opal_server_config.REPO_WATCHER_ENABLED)
         init_publisher: bool = load_conf_if_none(init_publisher, opal_server_config.PUBLISHER_ENABLED)
         broadcaster_uri: str = load_conf_if_none(broadcaster_uri, opal_server_config.BROADCAST_URI)
         jwks_url: str = load_conf_if_none(jwks_url, opal_server_config.AUTH_JWKS_URL)
         jwks_static_dir: str = load_conf_if_none(jwks_static_dir, opal_server_config.AUTH_JWKS_STATIC_DIR)
         master_token: str = load_conf_if_none(master_token, opal_server_config.AUTH_MASTER_TOKEN)
+        self._init_policy_watcher: bool = load_conf_if_none(init_policy_watcher, opal_server_config.REPO_WATCHER_ENABLED)
+        self._policy_remote_url = policy_remote_url
 
         configure_logs()
         self.watcher: Optional[PolicyWatcherTask] = None
@@ -117,9 +119,8 @@ class OpalServer:
         self.publisher: Optional[TopicPublisher] = None
         if init_publisher:
             self.publisher = ServerSideTopicPublisher(self.pubsub.endpoint)
-            if init_policy_watcher:
-                self.config_local_clone_full_path()
-                self.watcher = setup_watcher_task(self.publisher, remote_source_url=policy_remote_url)
+
+        self.watcher: Optional[PolicyWatcherTask] = None
 
         # init fastapi app
         self.app: FastAPI = self._init_fast_api_app()
@@ -211,7 +212,7 @@ class OpalServer:
         """
         if self.publisher is not None:
             async with self.publisher:
-                if self.watcher is not None:
+                if self._init_policy_watcher:
                     # repo watcher is enabled, but we want only one worker to run it
                     # (otherwise for each new commit, we will publish multiple updates via pub/sub).
                     # leadership is determined by the first worker to obtain a lock
@@ -222,6 +223,11 @@ class OpalServer:
                         logger.info("leadership lock acquired, leader pid: {pid}", pid=os.getpid())
                         logger.info("listening on webhook topic: '{topic}'",
                                     topic=opal_server_config.POLICY_REPO_WEBHOOK_TOPIC)
+                        # init policy watcher
+                        if self.watcher is None:
+                            # only the leader should discard previous clones
+                            self.create_local_clone_path_and_discard_previous_clones()
+                            self.watcher = setup_watcher_task(self.publisher, remote_source_url=self._policy_remote_url)
                         # the leader listens to the webhook topic (webhook api route can be hit randomly in all workers)
                         # and triggers the watcher to check for changes in the tracked upstream remote.
                         await self.pubsub.endpoint.subscribe([opal_server_config.POLICY_REPO_WEBHOOK_TOPIC], partial(trigger_repo_watcher_pull, self.watcher))
@@ -244,22 +250,19 @@ class OpalServer:
         except Exception:
             logger.exception("exception while shutting down background tasks")
 
-    def config_local_clone_full_path(self):
+    def create_local_clone_path_and_discard_previous_clones(self):
         """
-            Takes the base path from server config and create new folder with uniq
+            Takes the base path from server config and create new folder with unique
             name for the local clone.
             The folder name is looks like /<base-path>/<folder-prefix>-<uuid>
             If such folder exist we will use it
         """
-        policy_repo_clone_base_path = os.path.expanduser(opal_server_config.POLICY_REPO_CLONE_PATH)
-        repo_folder_prefix = opal_server_config.POLICY_REPO_CLONE_FOLDER_PREFIX
-        folders_with_pattern = get_filepaths_with_glob(policy_repo_clone_base_path, f"{repo_folder_prefix}*")
-        for folder in folders_with_pattern:
-            logger.warning("Found existing folder with repo pattern at: {folder_name} removing it to avoid conflicts", folder_name=folder)
+        clone_path_finder = RepoClonePathFinder(
+            base_clone_path=opal_server_config.POLICY_REPO_CLONE_PATH,
+            clone_subdirectory_prefix=opal_server_config.POLICY_REPO_CLONE_FOLDER_PREFIX
+        )
+        for folder in clone_path_finder.get_clone_subdirectories():
+            logger.warning("Found previous policy repo clone: {folder_name}, removing it to avoid conflicts.", folder_name=folder)
             shutil.rmtree(folder)
-        folder_name = f"{repo_folder_prefix}-{uuid.uuid4().hex}"
-        full_local_repo_path = os.path.join(policy_repo_clone_base_path, folder_name)
-        os.makedirs(full_local_repo_path, exist_ok=True)
-        logger.info("Created new local repo folder at: {fullpath}", fullpath=full_local_repo_path)
-        opal_server_config.POLICY_REPO_FULL_CLONE_PATH = full_local_repo_path
-        logger.info(f"POLICY_REPO_FULL_CLONE_PATH was set to: {opal_server_config.POLICY_REPO_FULL_CLONE_PATH}")
+        full_local_repo_path = clone_path_finder.create_new_clone_path()
+        logger.info(f"Policy repo will be cloned to: {full_local_repo_path}")

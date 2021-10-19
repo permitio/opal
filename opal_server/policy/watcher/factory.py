@@ -1,3 +1,4 @@
+import os
 from typing import Any, Optional, List
 from functools import partial
 
@@ -7,6 +8,7 @@ from opal_common.logger import logger
 from opal_common.sources.api_policy_source import ApiPolicySource
 from opal_common.sources.git_policy_source import GitPolicySource
 from opal_common.topics.publisher import TopicPublisher
+from opal_common.git.repo_cloner import RepoClonePathFinder
 from opal_server.config import PolicySourceTypes, opal_server_config
 from opal_server.policy.watcher.task import PolicyWatcherTask
 from opal_server.policy.watcher.callbacks import publish_changed_directories
@@ -16,7 +18,8 @@ def setup_watcher_task(
     publisher: TopicPublisher,
     source_type: str = None,
     remote_source_url: str = None,
-    clone_path: str = None,
+    base_clone_path: str = None,
+    clone_subdirectory_prefix: str = None,
     branch_name: str = None,
     ssh_key: Optional[str] = None,
     polling_interval: int = None,
@@ -32,7 +35,8 @@ def setup_watcher_task(
             publisher(TopicPublisher): server side publisher to publish changes in policy
             source_type(str): policy source type, can be Git / Api to opa bundle server
             remote_source_url(str): the base address to request the policy from
-            clone_path(str):  path for the local git to manage policies
+            base_clone_path(str): base path for the local git to manage policies
+            clone_subdirectory_prefix(str): subdirectory prefix for the local git to manage policies
             branch_name(str):  name of remote branch in git to pull
             ssh_key (str, optional): private ssh key used to gain access to the cloned repo
             polling_interval(int):  how many seconds need to wait between polling
@@ -43,7 +47,14 @@ def setup_watcher_task(
     """
     # load defaults
     source_type = load_conf_if_none(source_type, opal_server_config.POLICY_SOURCE_TYPE)
-    clone_path = load_conf_if_none(clone_path, opal_server_config.POLICY_REPO_CLONE_PATH)
+    base_clone_path = load_conf_if_none(base_clone_path, opal_server_config.POLICY_REPO_CLONE_PATH)
+    clone_subdirectory_prefix = load_conf_if_none(clone_subdirectory_prefix, opal_server_config.POLICY_REPO_CLONE_FOLDER_PREFIX)
+    clone_path_finder = RepoClonePathFinder(base_clone_path=base_clone_path, clone_subdirectory_prefix=clone_subdirectory_prefix)
+    clone_path = clone_path_finder.get_single_clone_path()
+    if not clone_path:
+        # we should never see this warning
+        logger.warning("Policy repo clone path was not found when setting up policy source!! recreating clone path...")
+        clone_path = clone_path_finder.create_new_clone_path()
     branch_name = load_conf_if_none(branch_name, opal_server_config.POLICY_REPO_MAIN_BRANCH)
     ssh_key = load_conf_if_none(ssh_key, opal_server_config.POLICY_REPO_SSH_KEY)
     polling_interval = load_conf_if_none(polling_interval, opal_server_config.POLICY_REPO_POLLING_INTERVAL)
