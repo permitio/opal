@@ -162,7 +162,7 @@ class ApiPolicySource(BasePolicySource):
         has_changes, prev, latest, prev_commit, new_commit = await self.api_update_policy()
         if not has_changes:
             logger.info(
-                "No new version: current hash is: '{head}'", head=latest)
+                "No new version: current hash is: {head}", head=latest)
         else:
             logger.info(
                 "Found new version: old version hash was '{prev_head}', new version hash is '{new_head}'",

@@ -11,7 +11,7 @@ from opal_common.sources.base_policy_source import BasePolicySource
 
 class PolicyWatcherTask:
     """
-    Manages the asyncio tasks of the repo watcher
+    Manages the asyncio tasks of the policy watcher
     """
     def __init__(self, policy_source: BasePolicySource):
         self._watcher = policy_source
@@ -27,18 +27,18 @@ class PolicyWatcherTask:
 
     def start(self):
         """
-        starts the repo watcher and registers a failure callback to terminate gracefully
+        starts the policy watcher and registers a failure callback to terminate gracefully
         """
-        logger.info("Launching repo watcher")
+        logger.info("Launching policy watcher")
         self._watcher.add_on_failure_callback(self._fail)
         self._tasks.append(asyncio.create_task(self._watcher.run()))
         self._init_should_stop()
 
     async def stop(self):
         """
-        stops all repo watcher tasks
+        stops all policy watcher tasks
         """
-        logger.info("Stopping repo watcher")
+        logger.info("Stopping policy watcher")
         await self._watcher.stop()
         for task in self._tasks:
             if not task.done():
@@ -47,7 +47,7 @@ class PolicyWatcherTask:
 
     def trigger(self):
         """
-        triggers the repo watcher from outside to check for changes (git pull)
+        triggers the policy watcher from outside to check for changes (git pull)
         """
         self._tasks.append(asyncio.create_task(self._watcher.check_for_changes()))
 
@@ -75,7 +75,7 @@ class PolicyWatcherTask:
         """
         called when the watcher fails, and stops all tasks gracefully
         """
-        logger.error("watcher failed with exception: {err}", err=repr(exc))
+        logger.error("policy watcher failed with exception: {err}", err=repr(exc))
         self.signal_stop()
         # trigger uvicorn graceful shutdown
         os.kill(os.getpid(), signal.SIGTERM)
