@@ -20,13 +20,12 @@ BundleHash = str
 
 class ApiPolicySource(BasePolicySource):
     """
-    Watches OPA like bundle server for changes and can trigger callbacks
-    when detecting new bundle.
+    Watches an OPA-like bundle server for changes and can trigger callbacks
+    when detecting a new bundle.
 
-    Checking for changes is done by sending request to the remote bundle server.
-    The pull can be either triggered by a method (i.e: you can
-    call it from a webhook) or can be triggered periodically by a polling
-    task.
+    Checking for changes is done by sending an HTTP GET request to the remote bundle server.
+    OPAL will check for changes either when triggered a webhook or periodically if configured
+    to run a polling task.
 
     You can read more on OPA bundles here:
     https://www.openpolicyagent.org/docs/latest/management-bundles/
@@ -145,11 +144,11 @@ class ApiPolicySource(BasePolicySource):
                         self.etag = current_etag
                         return tmp_file_path, prev_etag, current_etag
 
-            except aiohttp.ClientError as e:
+            except (aiohttp.ClientError, HTTPException) as e:
                 logger.warning("server connection error: {err}", err=repr(e))
                 raise
             except Exception as e:
-                logger.warning("server connection error: {err}", err=repr(e))
+                logger.error("unexpected server connection error: {err}", err=repr(e))
                 raise
 
     async def check_for_changes(self):
