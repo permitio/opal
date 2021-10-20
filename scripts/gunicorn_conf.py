@@ -9,7 +9,6 @@ def post_fork(server, worker):
     """
     rookout_token = os.getenv("ROOKOUT_TOKEN", None)
     if not rookout_token:
-        logger.info("No rookout token found, skipping.")
         return
 
     service = os.getenv("ROOKOUT_SERVICE", "opal_server")
