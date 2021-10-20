@@ -143,7 +143,7 @@ class RepoCloner:
             - does not found a cloned repo locally and clones from remote url
             - finds a cloned repo locally and does not clone from remote.
         """
-        logger.info("Cloning repo from '{url}' to '{to_path}'", url=self.url, to_path=self.path)
+        logger.info("Cloning repo from '{url}' to '{to_path}' (branch: '{branch}')", url=self.url, to_path=self.path, branch=self.branch_name)
         loop = asyncio.get_running_loop()
         return await loop.run_in_executor(None, self._attempt_clone_from_url)
 
