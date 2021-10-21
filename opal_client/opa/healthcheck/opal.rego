@@ -16,6 +16,8 @@ default healthy = false
 
 last_policy_transaction := {last_policy_transaction}
 last_data_transaction := {last_data_transaction}
+last_failed_policy_transaction := {last_failed_policy_transaction}
+last_failed_data_transaction := {last_failed_data_transaction}
 
 healthy {{
 	# makes sure at least one successful transaction of each type exists - precondition

@@ -7,6 +7,7 @@ from typing import List, Optional
 
 from fastapi_websocket_rpc.rpc_channel import RpcChannel
 from fastapi_websocket_pubsub import PubSubClient
+from opal_common.schemas.store import TransactionType
 
 from opal_common.utils import get_authorization_header
 from opal_common.schemas.policy import PolicyBundle
@@ -38,6 +39,7 @@ class PolicyUpdater:
         policy_store: BasePolicyStoreClient = None,
         data_fetcher: Optional[DataFetcher] = None,
         callbacks_register: Optional[CallbacksRegister] = None,
+        backend_url: Optional[str] = None
     ):
         """inits the policy updater.
 
@@ -72,7 +74,8 @@ class PolicyUpdater:
         self._subscriber_task = None
         self._stopping = False
         # policy fetcher - fetches policy bundles
-        self._policy_fetcher = PolicyFetcher()
+        self._backend_url = backend_url or opal_client_config.SERVER_URL
+        self._policy_fetcher = PolicyFetcher(backend_url=self._backend_url)
         # callbacks on policy changes
         self._data_fetcher = data_fetcher or DataFetcher()
         self._callbacks_register = callbacks_register or CallbacksRegister()
@@ -201,27 +204,40 @@ class PolicyUpdater:
             logger.info("Refetching policy code (full bundle)")
         else:
             logger.info("Refetching policy code (delta bundle), base hash: '{base_hash}'", base_hash=base_hash)
-        bundle: Optional[PolicyBundle] = await self._policy_fetcher.fetch_policy_bundle(directories, base_hash=base_hash)
+        bundle_exception_type = None
+        bundle = None
+        bundle_succeed = True
+        try:
+            bundle: Optional[PolicyBundle] = await self._policy_fetcher.fetch_policy_bundle(directories, base_hash=base_hash)
+            if bundle:
+                if bundle.old_hash is None:
+                    logger.info(
+                        "got policy bundle, commit hash: '{commit_hash}'",
+                        commit_hash=bundle.hash,
+                        manifest=bundle.manifest
+                    )
+                else:
+                    deleted_files = None if bundle.deleted_files is None else bundle.deleted_files.dict()
+                    logger.info(
+                        "got policy bundle (delta): '{diff_against_hash}' -> '{commit_hash}'",
+                        commit_hash=bundle.hash,
+                        diff_against_hash=bundle.old_hash,
+                        manifest=bundle.manifest,
+                        deleted=deleted_files
+                    )
+        except Exception as err:
+            bundle_exception_type = repr(err)
+            bundle_succeed = False
+        bundle_hash = None
         if bundle:
-            if bundle.old_hash is None:
-                logger.info(
-                    "got policy bundle, commit hash: '{commit_hash}'",
-                    commit_hash=bundle.hash,
-                    manifest=bundle.manifest
-                )
-            else:
-                deleted_files = None if bundle.deleted_files is None else bundle.deleted_files.dict()
-                logger.info(
-                    "got policy bundle (delta): '{diff_against_hash}' -> '{commit_hash}'",
-                    commit_hash=bundle.hash,
-                    diff_against_hash=bundle.old_hash,
-                    manifest=bundle.manifest,
-                    deleted=deleted_files
-                )
-            # store policy bundle in OPA cache
-            # We wrap our interaction with the policy store with a transaction, so that
-            # if the write-op fails, we will mark the transaction as failed.
-            async with self._policy_store.transaction_context(bundle.hash) as store_transaction:
+            bundle_hash = bundle.hash
+
+        # store policy bundle in OPA cache
+        # We wrap our interaction with the policy store with a transaction, so that
+        # if the write-op fails, we will mark the transaction as failed.
+        async with self._policy_store.transaction_context(bundle_hash, transaction_type=TransactionType.policy) as store_transaction:
+            store_transaction._update_remote_status(url=self._backend_url, status=bundle_succeed, exception_type=bundle_exception_type)
+            if bundle:
                 await store_transaction.set_policies(bundle)
                 # if we got here, we did not throw during the transaction
                 if self._should_send_reports:

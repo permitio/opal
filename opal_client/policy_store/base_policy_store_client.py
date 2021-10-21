@@ -1,8 +1,10 @@
+import json
+from datetime import datetime
 from typing import Any, Dict, Optional, List, Union
 import uuid
 from pydantic import BaseModel
 from opal_common.schemas.policy import PolicyBundle
-from opal_common.schemas.store import StoreTransaction
+from opal_common.schemas.store import RemoteStatus, StoreTransaction
 from inspect import signature
 from functools import partial
 
@@ -57,11 +59,13 @@ class AbstractPolicyStore:
 
 class PolicyStoreTransactionContextManager(AbstractPolicyStore):
 
-    def __init__(self, policy_store:"BasePolicyStoreClient", transaction_id=None) -> None:
+    def __init__(self, policy_store:"BasePolicyStoreClient", transaction_id=None, transaction_type=None) -> None:
         self._store = policy_store
         # make sure we have  a transaction id
         self._transaction_id = transaction_id or uuid.uuid4().hex
         self._actions = []
+        self._remotes_status = []
+        self._transaction_type = transaction_type
 
     def __getattribute__(self, name: str) -> Any:
         # internal members are prefixed with '-'
@@ -83,12 +87,16 @@ class PolicyStoreTransactionContextManager(AbstractPolicyStore):
             else:
                 return store_attr
 
+    def _update_remote_status(self, url: str, status: bool, exception_type: str):
+        self._remotes_status.append({'remote_url': url, 'succeed': status, 'exception_type': exception_type})
+
     async def __aenter__(self):
         await self._store.start_transaction(transaction_id=self._transaction_id)
         return self
 
     async def __aexit__(self, exc_type, exc, tb):
-        await self._store.end_transcation(exc_type, exc, tb, transaction_id=self._transaction_id, actions=self._actions)
+        await self._store.end_transcation(exc_type, exc, tb, transaction_id=self._transaction_id, actions=self._actions,
+            transaction_type=self._transaction_type, remotes_status=self._remotes_status)
 
 
 class BasePolicyStoreClient(AbstractPolicyStore):
@@ -96,7 +104,7 @@ class BasePolicyStoreClient(AbstractPolicyStore):
     An interface for policy and policy-data store
     """
 
-    def transaction_context(self, transaction_id:str)-> PolicyStoreTransactionContextManager:
+    def transaction_context(self, transaction_id: str, transaction_type: str) -> PolicyStoreTransactionContextManager:
         """
         Args:
             transaction_id : the id of the transaction
@@ -104,7 +112,7 @@ class BasePolicyStoreClient(AbstractPolicyStore):
         Returns:
             PolicyStoreTranscationContextManager: a context manager for a transaction to be used in a async with statement
         """
-        return PolicyStoreTransactionContextManager(self, transaction_id=transaction_id)
+        return PolicyStoreTransactionContextManager(self, transaction_id=transaction_id, transaction_type=transaction_type)
 
     async def start_transaction(self, transaction_id:str=None):
         """
@@ -113,7 +121,8 @@ class BasePolicyStoreClient(AbstractPolicyStore):
         """
         pass
 
-    async def end_transcation(self, exc_type=None, exc=None, tb=None, transaction_id:str=None, actions:List[str]=None):
+    async def end_transcation(self, exc_type=None, exc=None, tb=None, transaction_id: str = None, actions: List[str] = None,
+                            transaction_type: str = None, remotes_status: RemoteStatus = None):
         """
         PolicyStoreTranscationContextManager calls here on __aexit__
         Complete a series of operations with the policy store
@@ -125,22 +134,28 @@ class BasePolicyStoreClient(AbstractPolicyStore):
             transaction_id (str, optional): The transaction id. Defaults to None.
             actions (List[str], optional): All the methods called in the transaction. Defaults to None.
         """
-        if transaction_id is None or not actions:
+        exception_fetching_transaction = []
+        if remotes_status and len(remotes_status):
+            exception_fetching_transaction = [remote for remote in remotes_status if not remote['succeed']]
+        elif transaction_id is None or not actions:
             return # skip, nothing to do if we have no data to log
 
-        if exc is not None:
+        transaction_time = datetime.utcnow().isoformat()
+        if exc is not None or len(exception_fetching_transaction):
             try:
                 error_message = repr(exc)
             except: # maybe repr throws here
                 error_message = None
-            transaction = StoreTransaction(id=transaction_id, actions=actions, success=False, error=error_message)
-            logger.warning("OPA transaction failed, transaction id={id}, actions={actions}, error={err}",
+            transaction = StoreTransaction(id=transaction_id, actions=actions, success=False, error=error_message,
+                                            creation_time=transaction_time, transaction_type=transaction_type, remotes_status=remotes_status)
+            logger.warning("OxPA transaction failed, transaction id={id}, actions={actions}, error={err}",
                 id=transaction_id,
                 actions=repr(actions),
                 err=error_message
             )
         else:
-            transaction = StoreTransaction(id=transaction_id, actions=actions, success=True)
+            transaction = StoreTransaction(id=transaction_id, actions=actions, success=True, creation_time=transaction_time,
+                                            transaction_type=transaction_type, remotes_status=remotes_status)
 
         if not opal_client_config.OPA_HEALTH_CHECK_POLICY_ENABLED:
             return # skip persisting the transaction, healthcheck policy is disabled
@@ -150,7 +165,9 @@ class BasePolicyStoreClient(AbstractPolicyStore):
         except Exception as e:
             # The writes to transaction log in OPA cache are not done a protected
             # transaction context. If they fail, we do nothing special.
-            logger.error("Cannot write to OPAL transaction log, transaction id={id}, error={err}",
+            transaction_data = json.dumps(transaction, indent=4, sort_keys=True, default=str)
+            logger.error("Cannot write to OPAL transaction log, transaction id={id}, error={err} with data={data}",
                 id=transaction.id,
-                err=repr(e)
+                err=repr(e),
+                data=transaction_data
             )

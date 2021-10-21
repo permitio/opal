@@ -25,6 +25,7 @@ from opal_common.fetcher.providers.http_fetch_provider import HttpFetcherConfig
 from opal_common.schemas.data import (DataEntryReport, DataSourceConfig,
                                       DataSourceEntry, DataUpdate,
                                       DataUpdateReport)
+from opal_common.schemas.store import TransactionType
 from opal_common.utils import get_authorization_header
 from opal_common.http import is_http_error_response
 from opal_common.security.sslcontext import get_custom_ssl_context
@@ -263,30 +264,31 @@ class DataUpdater:
         policy_data_with_urls = await data_fetcher.handle_urls(urls)
         # Save the data from the update
         # We wrap our interaction with the policy store with a transaction
-        async with policy_store.transaction_context(update.id) as store_transaction:
+        async with policy_store.transaction_context(update.id, transaction_type=TransactionType.data) as store_transaction:
             # for intelisense treat store_transaction as a PolicyStoreClient (which it proxies)
             store_transaction: BasePolicyStoreClient
             for (url, fetch_config, result), entry in itertools.zip_longest(policy_data_with_urls, entries):
-                fetched_error_response = False
+                fetched_transaction_successfully = True
 
                 if isinstance(result, Exception):
-                    fetched_error_response = True
+                    fetched_transaction_successfully = False
                     logger.error("Failed to fetch url {url}, got exception: {exc}", url=url, exc=result)
 
                 if isinstance(result, aiohttp.ClientResponse) and is_http_error_response(result): # error responses
-                    fetched_error_response = True
+                    fetched_transaction_successfully = False
                     try:
                         error_content = await result.json()
                     except json.JSONDecodeError:
                         error_content = await result.text()
                     logger.error(
-                        "Failed to fetch url {url}, got response code {status} with error: {error}",
+                        "Failed to decode response from url:{url}, got response code {status} with response: {error}",
                         url=url,
                         status=result.status,
                         error=error_content
                     )
+                store_transaction._update_remote_status(url=url, status=not fetched_transaction_successfully, exception_type=repr(result))
 
-                if not fetched_error_response:
+                if fetched_transaction_successfully:
                     # get path to store the URL data (default mode (None) is as "" - i.e. as all the data at root)
                     policy_store_path = "" if entry is None else entry.dst_path
                     # None is not valid - use "" (protect from missconfig)
@@ -309,7 +311,7 @@ class DataUpdater:
                         report.saved = True
                         # save the report for the entry
                         reports.append(report)
-                    except:
+                    except Exception:
                         logger.exception("Failed to save data update to policy-store")
                         # we failed to save to policy-store
                         report.saved = False
