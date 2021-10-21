@@ -212,7 +212,9 @@ class PolicyUpdater:
             if bundle:
                 if bundle.old_hash is None:
                     logger.info(
-                        "got policy bundle, commit hash: '{commit_hash}'",
+                    "Got policy bundle with {rego_files} rego files, {data_files} data files, commit hash: '{commit_hash}'",
+                    rego_files=len(bundle.policy_modules),
+                    data_files=len(bundle.data_modules),
                         commit_hash=bundle.hash,
                         manifest=bundle.manifest
                     )

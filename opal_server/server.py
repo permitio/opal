@@ -1,10 +1,13 @@
 import os
 import asyncio
+import uuid
+import shutil
 from functools import partial
 from typing import Optional, List
-from pathlib import Path
 
 from fastapi import Depends, FastAPI
+from opal_common.confi.confi import load_conf_if_none
+from opal_common.git.repo_cloner import RepoClonePathFinder
 
 from opal_common.topics.publisher import TopicPublisher, ServerSideTopicPublisher
 from opal_common.logger import logger, configure_logs
@@ -14,16 +17,17 @@ from opal_common.middleware import configure_middleware
 from opal_common.authentication.signer import JWTSigner
 from opal_common.authentication.deps import JWTAuthenticator, StaticBearerAuthenticator
 from opal_common.config import opal_common_config
+from opal_common.utils import get_filepaths_with_glob
 from opal_server.config import opal_server_config
 from opal_server.security.api import init_security_router
 from opal_server.security.jwks import JwksStaticEndpoint
 from opal_server.data.api import init_data_updates_router
 from opal_server.data.data_update_publisher import DataUpdatePublisher
 from opal_server.policy.bundles.api import router as bundles_router
-from opal_server.policy.github_webhook.api import init_git_webhook_router
+from opal_server.policy.webhook.api import init_git_webhook_router
 from opal_server.policy.watcher import (setup_watcher_task,
                                         trigger_repo_watcher_pull)
-from opal_server.policy.watcher.task import RepoWatcherTask
+from opal_server.policy.watcher.task import PolicyWatcherTask
 from opal_server.publisher import setup_publisher_task
 from opal_server.pubsub import PubSub
 
@@ -32,13 +36,13 @@ class OpalServer:
 
     def __init__(
         self,
-        init_git_watcher: bool = None,
-        policy_repo_url: str = None,
+        init_policy_watcher: bool = None,
+        policy_remote_url: str = None,
         init_publisher: bool = None,
         data_sources_config: Optional[ServerDataSourceConfig] = None,
         broadcaster_uri: str = None,
         signer: Optional[JWTSigner] = None,
-        enable_jwks_endpoint = True,
+        enable_jwks_endpoint=True,
         jwks_url: str = None,
         jwks_static_dir: str = None,
         master_token: str = None,
@@ -46,10 +50,11 @@ class OpalServer:
         """
         Args:
             init_git_watcher (bool, optional): whether or not to launch the policy repo watcher.
-            policy_repo_url (str, optional): the url of the repo watched by policy repo watcher.
+            policy_remote_url (str, optional): the url of the repo watched by policy watcher.
             init_publisher (bool, optional): whether or not to launch a publisher pub/sub client.
                 this publisher is used by the server processes to publish data to the client.
-            data_sources_config (ServerDataSourceConfig, optional): base data configuration. the opal
+            data_sources_config (ServerDataSourceConfig, optional): base data configuration, that opal
+                clients should get the data from.
             broadcaster_uri (str, optional): Which server/medium should the PubSub use for broadcasting.
                 Defaults to BROADCAST_URI.
 
@@ -63,22 +68,22 @@ class OpalServer:
             on a *leader* worker (the first worker to obtain a file-lock) that also
             launches the following internal components:
 
-                watcher (RepoWatcherTask): run by the leader, monitors the policy git repository
+                watcher (PolicyWatcherTask): run by the leader, monitors the policy git repository
                 by polling on it or by being triggered by the callback subscribed on the "webhook"
                 topic. upon being triggered, will detect updates to the policy (new commits) and
                 will update the opal client via pubsub.
         """
         # load defaults
-        init_git_watcher: bool = init_git_watcher or opal_server_config.REPO_WATCHER_ENABLED
-        policy_repo_url: str = policy_repo_url or opal_server_config.POLICY_REPO_URL
-        init_publisher: bool = init_publisher or opal_server_config.PUBLISHER_ENABLED
-        broadcaster_uri: str = broadcaster_uri or opal_server_config.BROADCAST_URI
-        jwks_url: str = jwks_url or opal_server_config.AUTH_JWKS_URL
-        jwks_static_dir: str = jwks_static_dir or opal_server_config.AUTH_JWKS_STATIC_DIR
-        master_token: str = master_token or opal_server_config.AUTH_MASTER_TOKEN
+        init_publisher: bool = load_conf_if_none(init_publisher, opal_server_config.PUBLISHER_ENABLED)
+        broadcaster_uri: str = load_conf_if_none(broadcaster_uri, opal_server_config.BROADCAST_URI)
+        jwks_url: str = load_conf_if_none(jwks_url, opal_server_config.AUTH_JWKS_URL)
+        jwks_static_dir: str = load_conf_if_none(jwks_static_dir, opal_server_config.AUTH_JWKS_STATIC_DIR)
+        master_token: str = load_conf_if_none(master_token, opal_server_config.AUTH_MASTER_TOKEN)
+        self._init_policy_watcher: bool = load_conf_if_none(init_policy_watcher, opal_server_config.REPO_WATCHER_ENABLED)
+        self._policy_remote_url = policy_remote_url
 
         configure_logs()
-        self.watcher: Optional[RepoWatcherTask] = None
+        self.watcher: Optional[PolicyWatcherTask] = None
         self.leadership_lock: Optional[NamedLock] = None
 
         self.data_sources_config: ServerDataSourceConfig = (
@@ -115,12 +120,7 @@ class OpalServer:
         if init_publisher:
             self.publisher = ServerSideTopicPublisher(self.pubsub.endpoint)
 
-            if init_git_watcher:
-                self._fix_policy_repo_clone_path()
-                if policy_repo_url is not None:
-                    self.watcher = setup_watcher_task(self.publisher)
-                else:
-                    logger.warning("POLICY_REPO_URL is unset but repo watcher is enabled! disabling watcher.")
+        self.watcher: Optional[PolicyWatcherTask] = None
 
         # init fastapi app
         self.app: FastAPI = self._init_fast_api_app()
@@ -159,7 +159,7 @@ class OpalServer:
             self.data_sources_config,
             authenticator
         )
-        webhook_router = init_git_webhook_router(self.pubsub.endpoint)
+        webhook_router = init_git_webhook_router(self.pubsub.endpoint, authenticator)
         security_router = init_security_router(self.signer, StaticBearerAuthenticator(self.master_token))
 
         # mount the api routes on the app object
@@ -212,7 +212,7 @@ class OpalServer:
         """
         if self.publisher is not None:
             async with self.publisher:
-                if self.watcher is not None:
+                if self._init_policy_watcher:
                     # repo watcher is enabled, but we want only one worker to run it
                     # (otherwise for each new commit, we will publish multiple updates via pub/sub).
                     # leadership is determined by the first worker to obtain a lock
@@ -223,6 +223,11 @@ class OpalServer:
                         logger.info("leadership lock acquired, leader pid: {pid}", pid=os.getpid())
                         logger.info("listening on webhook topic: '{topic}'",
                                     topic=opal_server_config.POLICY_REPO_WEBHOOK_TOPIC)
+                        # init policy watcher
+                        if self.watcher is None:
+                            # only the leader should discard previous clones
+                            self.create_local_clone_path_and_discard_previous_clones()
+                            self.watcher = setup_watcher_task(self.publisher, remote_source_url=self._policy_remote_url)
                         # the leader listens to the webhook topic (webhook api route can be hit randomly in all workers)
                         # and triggers the watcher to check for changes in the tracked upstream remote.
                         await self.pubsub.endpoint.subscribe([opal_server_config.POLICY_REPO_WEBHOOK_TOPIC], partial(trigger_repo_watcher_pull, self.watcher))
@@ -245,10 +250,19 @@ class OpalServer:
         except Exception:
             logger.exception("exception while shutting down background tasks")
 
-    def _fix_policy_repo_clone_path(self):
-        clone_path = Path(os.path.expanduser(opal_server_config.POLICY_REPO_CLONE_PATH))
-        forbidden_paths = [Path(os.path.expanduser('~')), Path('/')]
-        if clone_path in forbidden_paths:
-            logger.warning("You cannot clone the policy repo directly to the homedir (~) or to the root directory (/)!")
-            opal_server_config.POLICY_REPO_CLONE_PATH = os.path.join(clone_path, "regoclone")
-            logger.warning(f"OPAL_POLICY_REPO_CLONE_PATH was set to: {opal_server_config.POLICY_REPO_CLONE_PATH}")
+    def create_local_clone_path_and_discard_previous_clones(self):
+        """
+            Takes the base path from server config and create new folder with unique
+            name for the local clone.
+            The folder name is looks like /<base-path>/<folder-prefix>-<uuid>
+            If such folder exist we will use it
+        """
+        clone_path_finder = RepoClonePathFinder(
+            base_clone_path=opal_server_config.POLICY_REPO_CLONE_PATH,
+            clone_subdirectory_prefix=opal_server_config.POLICY_REPO_CLONE_FOLDER_PREFIX
+        )
+        for folder in clone_path_finder.get_clone_subdirectories():
+            logger.warning("Found previous policy repo clone: {folder_name}, removing it to avoid conflicts.", folder_name=folder)
+            shutil.rmtree(folder)
+        full_local_repo_path = clone_path_finder.create_new_clone_path()
+        logger.info(f"Policy repo will be cloned to: {full_local_repo_path}")

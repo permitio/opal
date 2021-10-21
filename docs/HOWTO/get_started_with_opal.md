@@ -71,7 +71,7 @@ for example `OPAL_SERVER_PORT=1337 opal-server run` is equivalent to `opal-serve
     - ### Additional GIT repository settings
         - Use `POLICY_REPO_SSH_KEY` to authenticate to a **private repository** (see Git hosts for hot to configure the key - for example- [Github SSH Key](https://docs.github.com/en/github/authenticating-to-github/adding-a-new-ssh-key-to-your-github-account))
             - The passed value for key can either be a file path, or the contents of the SSH-key (with newlines replaced with '_')
-        - Use `OPAL_POLICY_REPO_CLONE_PATH`, `OPAL_POLICY_REPO_MAIN_BRANCH`, `OPAL_POLICY_REPO_MAIN_REMOTE`, etc. to control how the repo is cloned
+        - Use `OPAL_POLICY_REPO_CLONE_PATH`, `OPAL_POLICY_REPO_MAIN_BRANCH`, etc. to control how the repo is cloned
 
 
 

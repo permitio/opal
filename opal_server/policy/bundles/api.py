@@ -1,3 +1,5 @@
+import os
+from opal_common.confi.confi import load_conf_if_none
 from opal_common.git.bundle_maker import BundleMaker
 from typing import Optional, List
 from fastapi import APIRouter, Depends, Query, HTTPException, status
@@ -6,22 +8,35 @@ from pathlib import Path
 from git import Repo
 
 from opal_common.git.commit_viewer import CommitViewer
+from opal_common.git.repo_cloner import RepoClonePathFinder
 from opal_common.schemas.policy import PolicyBundle
 from opal_server.config import opal_server_config
 
 router = APIRouter()
 
+
 async def get_repo(
-    repo_path: str = None,
+    base_clone_path: str = None,
+    clone_subdirectory_prefix: str = None,
 ) -> Repo:
-    repo_path = repo_path or opal_server_config.POLICY_REPO_CLONE_PATH
-    git_path = Path(repo_path) / Path(".git")
-    # TODO: fix this by signaling that the repo is ready
+    base_clone_path = load_conf_if_none(base_clone_path, opal_server_config.POLICY_REPO_CLONE_PATH)
+    clone_subdirectory_prefix = load_conf_if_none(clone_subdirectory_prefix, opal_server_config.POLICY_REPO_CLONE_FOLDER_PREFIX)
+    clone_path_finder = RepoClonePathFinder(base_clone_path=base_clone_path, clone_subdirectory_prefix=clone_subdirectory_prefix)
+    repo_path = clone_path_finder.get_single_clone_path()
+
+    policy_repo_not_found_error = HTTPException(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        detail="policy repo was not found"
+    )
+
+    if not repo_path:
+        raise policy_repo_not_found_error
+
+    git_path = Path(os.path.join(repo_path, Path(".git")))
+    # TODO: at the moment opal server will 503 until it finishes cloning the policy repo
+    # we might fix this in the future by signaling to the client that the repo is ready
     if not git_path.exists():
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="policy repo was not found"
-        )
+        raise policy_repo_not_found_error
     return Repo(repo_path)
 
 

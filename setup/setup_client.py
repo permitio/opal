@@ -51,6 +51,9 @@ setup(
     url='https://github.com/authorizon/opal',
     license=license,
     packages=find_packages(where=project_root, include=('opal_client*', )),
+    package_data={
+        "": ["opa/healthcheck/opal.rego"],
+    },
     classifiers=[
         'Operating System :: OS Independent',
         'License :: OSI Approved :: Apache Software License',

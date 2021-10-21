@@ -65,6 +65,13 @@ def ignore_confi_delay_cast(cast_func):
     return wrapped_cast
 
 
+def load_conf_if_none(variable, conf):
+    if variable is None:
+        return conf
+    else:
+        return variable
+
+
 EnumT = TypeVar("EnumT")
 T = TypeVar("T", bound=BaseModel)
 ValueT = TypeVar("ValueT")
@@ -131,7 +138,7 @@ class Confi:
     def _get_entry_index(self, member:Tuple[str,ConfiEntry]):
         name, entry = member
         return entry.index
-        
+
 
     @property
     def entries(self):
@@ -150,7 +157,7 @@ class Confi:
         whole_key = self._prefix_key(entry.key)
         res = self._evaluate(whole_key,entry.default,entry.cast,**entry.kwargs)
         return res
-        
+
     def _process(self, key, default=undefined, description=None, cast=no_cast, type:ValueT=str, flags:List[str]=None, **kwargs) -> Union[ValueT, ConfiEntry]:
         if self._is_model:
             # create new entry
@@ -188,7 +195,7 @@ class Confi:
             repr_string += f"{indent}{key}: {repr(entry.value)}\n"
         return repr_string
 
-    def get_cli_object(self, config_objects:List["Confi"]=None, typer_app:Typer=None, 
+    def get_cli_object(self, config_objects:List["Confi"]=None, typer_app:Typer=None,
                        help:str=None, on_start:Callable=None):
 
         if config_objects is None:
@@ -216,7 +223,7 @@ class Confi:
 
     def __setattr__(self, name: str, value: Any) -> None:
         """
-            Make sure value updates are saved in internal entries as well 
+            Make sure value updates are saved in internal entries as well
         """
         super().__setattr__(name, value)
         # update entry as well (to sync with CLI, etc. )
