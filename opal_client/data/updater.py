@@ -267,28 +267,35 @@ class DataUpdater:
         async with policy_store.transaction_context(update.id, transaction_type=TransactionType.data) as store_transaction:
             # for intelisense treat store_transaction as a PolicyStoreClient (which it proxies)
             store_transaction: BasePolicyStoreClient
+            error_content = None
             for (url, fetch_config, result), entry in itertools.zip_longest(policy_data_with_urls, entries):
-                fetched_transaction_successfully = True
+                fetched_data_successfully = True
 
                 if isinstance(result, Exception):
-                    fetched_transaction_successfully = False
+                    fetched_data_successfully = False
                     logger.error("Failed to fetch url {url}, got exception: {exc}", url=url, exc=result)
 
                 if isinstance(result, aiohttp.ClientResponse) and is_http_error_response(result): # error responses
-                    fetched_transaction_successfully = False
+                    fetched_data_successfully = False
                     try:
                         error_content = await result.json()
+                        logger.error(
+                            "Failed to fetch url {url}, got response code {status} with error: {error}",
+                            url=url,
+                            status=result.status,
+                            error=error_content
+                        )
                     except json.JSONDecodeError:
                         error_content = await result.text()
-                    logger.error(
-                        "Failed to decode response from url:{url}, got response code {status} with response: {error}",
-                        url=url,
-                        status=result.status,
-                        error=error_content
-                    )
-                store_transaction._update_remote_status(url=url, status=not fetched_transaction_successfully, exception_type=repr(result))
+                        logger.error(
+                            "Failed to decode response from url:{url}, got response code {status} with response: {error}",
+                            url=url,
+                            status=result.status,
+                            error=error_content
+                        )
+                store_transaction._update_remote_status(url=url, status=not fetched_data_successfully, exception_type=error_content)
 
-                if fetched_transaction_successfully:
+                if fetched_data_successfully:
                     # get path to store the URL data (default mode (None) is as "" - i.e. as all the data at root)
                     policy_store_path = "" if entry is None else entry.dst_path
                     # None is not valid - use "" (protect from missconfig)
