@@ -74,7 +74,7 @@ class PolicyUpdater:
         self._subscriber_task = None
         self._stopping = False
         # policy fetcher - fetches policy bundles
-        self._policy_fetcher = PolicyFetcher(backend_url=self._backend_url)
+        self._policy_fetcher = PolicyFetcher()
         # callbacks on policy changes
         self._data_fetcher = data_fetcher or DataFetcher()
         self._callbacks_register = callbacks_register or CallbacksRegister()
