@@ -59,13 +59,14 @@ class AbstractPolicyStore:
 
 class PolicyStoreTransactionContextManager(AbstractPolicyStore):
 
-    def __init__(self, policy_store:"BasePolicyStoreClient", transaction_id=None, transaction_type=None) -> None:
+    def __init__(self, policy_store:"BasePolicyStoreClient", transaction_id=None, transaction_type=None, creation_time=None) -> None:
         self._store = policy_store
         # make sure we have  a transaction id
         self._transaction_id = transaction_id or uuid.uuid4().hex
         self._actions = []
         self._remotes_status = []
         self._transaction_type = transaction_type
+        self._creation_time = datetime.utcnow().isoformat()
 
     def __getattribute__(self, name: str) -> Any:
         # internal members are prefixed with '-'
@@ -96,7 +97,7 @@ class PolicyStoreTransactionContextManager(AbstractPolicyStore):
 
     async def __aexit__(self, exc_type, exc, tb):
         await self._store.end_transcation(exc_type, exc, tb, transaction_id=self._transaction_id, actions=self._actions,
-            transaction_type=self._transaction_type, remotes_status=self._remotes_status)
+            transaction_type=self._transaction_type, remotes_status=self._remotes_status, creation_time=self._creation_time)
 
 
 class BasePolicyStoreClient(AbstractPolicyStore):
@@ -122,7 +123,7 @@ class BasePolicyStoreClient(AbstractPolicyStore):
         pass
 
     async def end_transcation(self, exc_type=None, exc=None, tb=None, transaction_id: str = None, actions: List[str] = None,
-                            transaction_type: str = None, remotes_status: RemoteStatus = None):
+                            transaction_type: str = None, remotes_status: RemoteStatus = None, creation_time=None):
         """
         PolicyStoreTranscationContextManager calls here on __aexit__
         Complete a series of operations with the policy store
@@ -140,22 +141,22 @@ class BasePolicyStoreClient(AbstractPolicyStore):
         elif transaction_id is None or not actions:
             return # skip, nothing to do if we have no data to log
 
-        transaction_time = datetime.utcnow().isoformat()
+        end_time = datetime.utcnow().isoformat()
         if exc is not None or len(exception_fetching_transaction):
             try:
                 error_message = repr(exc)
             except: # maybe repr throws here
                 error_message = None
             transaction = StoreTransaction(id=transaction_id, actions=actions, success=False, error=error_message,
-                                            creation_time=transaction_time, transaction_type=transaction_type, remotes_status=remotes_status)
+                                            creation_time=creation_time, end_time=end_time, transaction_type=transaction_type, remotes_status=remotes_status)
             logger.warning("OxPA transaction failed, transaction id={id}, actions={actions}, error={err}",
                 id=transaction_id,
                 actions=repr(actions),
                 err=error_message
             )
         else:
-            transaction = StoreTransaction(id=transaction_id, actions=actions, success=True, creation_time=transaction_time,
-                                            transaction_type=transaction_type, remotes_status=remotes_status)
+            transaction = StoreTransaction(id=transaction_id, actions=actions, success=True, creation_time=end_time,
+                                            creation_time=creation_time, end_time=end_time, remotes_status=remotes_status)
 
         if not opal_client_config.OPA_HEALTH_CHECK_POLICY_ENABLED:
             return # skip persisting the transaction, healthcheck policy is disabled

@@ -24,7 +24,8 @@ class StoreTransaction(BaseModel):
     transaction_type: TransactionType = Field(None, description="Type of transaction,is it data/policy transaction")
     success: bool = Field(False, description="Whether or not the transaction was successful")
     error: str = Field("", description="Error message in case of failure, defaults to empty string")
-    creation_time: str = Field(datetime.utcnow().isoformat(), description="Creation time for this store transaction")
+    creation_time: str = Field(None, description="Creation time for this store transaction")
+    end_time: str = Field(None, description="Finish time for this store transaction")
     remotes_status: List[RemoteStatus] = Field(None, description="List of the remote sources for this transaction and their status")
 
 
