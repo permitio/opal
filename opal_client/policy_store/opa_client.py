@@ -120,6 +120,14 @@ class OpaTransactionLogState:
             return json.dumps({})
         return json.dumps(self._last_failed_data_transaction.dict())
 
+    @property
+    def transaction_policy_statistics(self):
+        json.dumps({"successful": self._num_successful_policy_transactions, "failed": self._num_failed_policy_transactions})
+
+    @property
+    def transaction_data_statistics(self):
+        json.dumps({"successful": self._num_successful_data_transactions, "failed": self._num_failed_data_transactions})
+
     async def persist(self):
         """
         renders the policy template with the current state, and writes it to OPA
@@ -135,6 +143,9 @@ class OpaTransactionLogState:
             last_failed_policy_transaction=self.last_failed_policy_transaction,
             last_data_transaction=self.last_data_transaction,
             last_failed_data_transaction=self.last_failed_data_transaction,
+            transaction_data_statistics=self.transaction_data_statistics,
+            transaction_policy_statistics=self.transaction_policy_statistics,
+
         )
         return await self._store.set_policy(policy_id=self._policy_id, policy_code=policy_code)
 
