@@ -85,7 +85,7 @@ class PolicyFetcher:
                         logger.warning("requested paths not found: {paths}", paths=directories)
                         raise HTTPException(
                             status_code=status.HTTP_404_NOT_FOUND,
-                            detail=f"requested path {url} was not found in the policy repo!"
+                            detail=f"requested path {self.policy_endpoint_url} was not found in the policy repo!"
                         )
 
 
