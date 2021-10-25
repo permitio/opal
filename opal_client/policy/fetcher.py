@@ -2,7 +2,7 @@ import aiohttp
 
 from typing import List, Optional
 from pydantic import ValidationError
-from fastapi import status
+from fastapi import status, HTTPException
 from tenacity import retry, wait, stop
 
 from opal_common.utils import get_authorization_header
@@ -38,16 +38,21 @@ class PolicyFetcher:
         'reraise': True,
     }
 
-    def __init__(self, backend_url=None, token=None, retry_config = None):
+    def __init__(self, backend_url=None, token=None, retry_config=None):
         """
         Args:
-            backend_url ([type], optional): Defaults to opal_client_config.SERVER_URL.
+            backend_url (str): Defaults to opal_client_config.SERVER_URL.
             token ([type], optional): [description]. Defaults to opal_client_config.CLIENT_TOKEN.
         """
-        self._backend_url = backend_url or opal_client_config.SERVER_URL
         self._token = token or opal_client_config.CLIENT_TOKEN
+        self._backend_url = backend_url or opal_client_config.SERVER_URL
         self._auth_headers = tuple_to_dict(get_authorization_header(self._token))
         self._retry_config = retry_config if retry_config is not None else self.DEFAULT_RETRY_CONFIG
+        self._policy_endpoint_url = f"{self._backend_url}/policy"
+
+    @property
+    def policy_endpoint_url(self):
+        return self._policy_endpoint_url
 
     async def fetch_policy_bundle(
         self,
@@ -59,7 +64,7 @@ class PolicyFetcher:
             return await attempter(directories=directories, base_hash=base_hash)
         except Exception as err:
             logger.warning("Failed all attempts to fetch bundle, got error: {err}", err=repr(err))
-            return None
+            raise
 
     async def _fetch_policy_bundle(
         self,
@@ -75,13 +80,17 @@ class PolicyFetcher:
         async with aiohttp.ClientSession() as session:
             try:
                 async with session.get(
-                    f"{self._backend_url}/policy",
+                    self._policy_endpoint_url,
                     headers={'content-type': 'text/plain', **self._auth_headers},
                     params=params
                 ) as response:
                     if response.status == status.HTTP_404_NOT_FOUND:
                         logger.warning("requested paths not found: {paths}", paths=directories)
-                        return None
+                        raise HTTPException(
+                            status_code=status.HTTP_404_NOT_FOUND,
+                            detail=f"requested path {self._policy_endpoint_url} was not found in the policy repo!"
+                        )
+
 
                     # may throw ValueError
                     await throw_if_bad_status_code(response, expected=[status.HTTP_200_OK])

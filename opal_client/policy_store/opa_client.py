@@ -2,6 +2,7 @@ import asyncio
 import aiohttp
 import json
 import functools
+import time
 from typing import Dict, Any, Optional, List, Set
 
 from tenacity import retry, stop_after_attempt, wait_fixed
@@ -12,7 +13,7 @@ from opal_client.config import opal_client_config
 from opal_client.logger import logger
 from opal_client.utils import proxy_response
 from opal_common.schemas.policy import DataModule, PolicyBundle
-from opal_common.schemas.store import JSONPatchAction, StoreTransaction, ArrayAppendAction
+from opal_common.schemas.store import JSONPatchAction, StoreTransaction, ArrayAppendAction, TransactionType
 from opal_common.opa.parsing import get_rego_package
 from opal_common.git.bundle_utils import BundleUtils
 from opal_client.policy_store.base_policy_store_client import BasePolicyStoreClient, JsonableValue
@@ -69,9 +70,13 @@ class OpaTransactionLogState:
         self._policy_id = policy_id
         self._policy_template = policy_template
         self._num_successful_policy_transactions = 0
+        self._num_failed_policy_transactions = 0
         self._num_successful_data_transactions = 0
+        self._num_failed_data_transactions = 0
         self._last_policy_transaction: Optional[StoreTransaction] = None
+        self._last_failed_policy_transaction: Optional[StoreTransaction] = None
         self._last_data_transaction: Optional[StoreTransaction] = None
+        self._last_failed_data_transaction: Optional[StoreTransaction] = None
 
     @property
     def ready(self) -> bool:
@@ -103,23 +108,51 @@ class OpaTransactionLogState:
             return json.dumps({})
         return json.dumps(self._last_data_transaction.dict())
 
+    @property
+    def last_failed_policy_transaction(self):
+        if self._last_failed_policy_transaction is None:
+            return json.dumps({})
+        return json.dumps(self._last_failed_policy_transaction.dict())
+
+    @property
+    def last_failed_data_transaction(self):
+        if self._last_failed_data_transaction is None:
+            return json.dumps({})
+        return json.dumps(self._last_failed_data_transaction.dict())
+
+    @property
+    def transaction_policy_statistics(self):
+        return json.dumps({"successful": self._num_successful_policy_transactions, "failed": self._num_failed_policy_transactions})
+
+    @property
+    def transaction_data_statistics(self):
+        return json.dumps({"successful": self._num_successful_data_transactions, "failed": self._num_failed_data_transactions})
+
     async def persist(self):
         """
         renders the policy template with the current state, and writes it to OPA
         """
         logger.info("persisting health check policy: ready={ready}, healthy={healthy}", ready=self.ready, healthy=self.healthy)
+        logger.info("Policies and data statistics: policies: successful {success_policy}, failed {failed_policy}; \
+                    data: successful {success_data}, failed {failed_data}",
+                success_policy=self._num_successful_policy_transactions, failed_policy=self._num_failed_policy_transactions,
+                success_data=self._num_successful_data_transactions, failed_data=self._num_failed_data_transactions)
         policy_code = self._policy_template.format(
             ready=self.ready,
             last_policy_transaction=self.last_policy_transaction,
-            last_data_transaction=self.last_data_transaction
+            last_failed_policy_transaction=self.last_failed_policy_transaction,
+            last_data_transaction=self.last_data_transaction,
+            last_failed_data_transaction=self.last_failed_data_transaction,
+            transaction_data_statistics=self.transaction_data_statistics,
+            transaction_policy_statistics=self.transaction_policy_statistics,
         )
         return await self._store.set_policy(policy_id=self._policy_id, policy_code=policy_code)
 
     def _is_policy_transaction(self, transaction: StoreTransaction):
-        return len(set(transaction.actions).intersection(set(self.POLICY_ACTIONS))) > 0
+        return transaction.transaction_type == TransactionType.policy
 
     def _is_data_transaction(self, transaction: StoreTransaction):
-        return len(set(transaction.actions).intersection(set(self.DATA_ACTIONS))) > 0
+        return transaction.transaction_type == TransactionType.data
 
     def process_transaction(self, transaction: StoreTransaction):
         """
@@ -127,16 +160,22 @@ class OpaTransactionLogState:
         """
         logger.info("processing store transaction: {transaction}", transaction=transaction.dict())
         if self._is_policy_transaction(transaction):
-            self._last_policy_transaction = transaction
 
             if transaction.success:
+                self._last_policy_transaction = transaction
                 self._num_successful_policy_transactions += 1
+            else:
+                self._last_failed_policy_transaction = transaction
+                self._num_failed_policy_transactions += 1
 
         elif self._is_data_transaction(transaction):
-            self._last_data_transaction = transaction
 
             if transaction.success:
+                self._last_data_transaction = transaction
                 self._num_successful_data_transactions += 1
+            else:
+                self._last_failed_data_transaction = transaction
+                self._num_failed_data_transactions += 1
 
 class OpaClient(BasePolicyStoreClient):
     """
