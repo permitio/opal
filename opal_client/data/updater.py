@@ -193,6 +193,8 @@ class DataUpdater:
             server_uri=self._server_url
         )
         async with self._client:
+            await self._client.wait_until_ready()
+            await self._client.publish(['stats'], data={'topics': self._data_topics, 'uID': opal_client_config.OPAL_CLIENT_STAT_ID})
             await self._client.wait_until_done()
 
     async def stop(self):
