@@ -74,7 +74,6 @@ class PolicyUpdater:
         self._subscriber_task = None
         self._stopping = False
         # policy fetcher - fetches policy bundles
-        self._backend_url = backend_url or opal_client_config.SERVER_URL
         self._policy_fetcher = PolicyFetcher(backend_url=self._backend_url)
         # callbacks on policy changes
         self._data_fetcher = data_fetcher or DataFetcher()
@@ -206,7 +205,7 @@ class PolicyUpdater:
             logger.info("Refetching policy code (delta bundle), base hash: '{base_hash}'", base_hash=base_hash)
         bundle_exception_type = None
         bundle = None
-        bundle_succeed = True
+        bundle_succeeded = True
         try:
             bundle: Optional[PolicyBundle] = await self._policy_fetcher.fetch_policy_bundle(directories, base_hash=base_hash)
             if bundle:
@@ -229,16 +228,14 @@ class PolicyUpdater:
                     )
         except Exception as err:
             bundle_exception_type = repr(err)
-            bundle_succeed = False
-        bundle_hash = None
-        if bundle:
-            bundle_hash = bundle.hash
+            bundle_succeeded = False
+        bundle_hash = None if bundle is None else bundle.hash
 
         # store policy bundle in OPA cache
         # We wrap our interaction with the policy store with a transaction, so that
         # if the write-op fails, we will mark the transaction as failed.
         async with self._policy_store.transaction_context(bundle_hash, transaction_type=TransactionType.policy) as store_transaction:
-            store_transaction._update_remote_status(url=self._backend_url, status=bundle_succeed, exception_type=bundle_exception_type)
+            store_transaction._update_remote_status(url=self._policy_fetcher.policy_endpoint_url, status=bundle_succeeded, exception_type=bundle_exception_type)
             if bundle:
                 await store_transaction.set_policies(bundle)
                 # if we got here, we did not throw during the transaction

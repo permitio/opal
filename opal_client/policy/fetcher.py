@@ -38,7 +38,7 @@ class PolicyFetcher:
         'reraise': True,
     }
 
-    def __init__(self, backend_url, token=None, retry_config=None):
+    def __init__(self, backend_url=None, token=None, retry_config=None):
         """
         Args:
             backend_url (str): Defaults to opal_client_config.SERVER_URL.
@@ -48,6 +48,8 @@ class PolicyFetcher:
         self._backend_url = backend_url
         self._auth_headers = tuple_to_dict(get_authorization_header(self._token))
         self._retry_config = retry_config if retry_config is not None else self.DEFAULT_RETRY_CONFIG
+        self._backend_url = backend_url or opal_client_config.SERVER_URL
+        self.policy_endpoint_url = f"{self._backend_url}/policy"
 
     async def fetch_policy_bundle(
         self,
@@ -74,9 +76,8 @@ class PolicyFetcher:
             params["base_hash"] = base_hash
         async with aiohttp.ClientSession() as session:
             try:
-                url = f"{self._backend_url}/policy"
                 async with session.get(
-                    url,
+                    self.policy_endpoint_url,
                     headers={'content-type': 'text/plain', **self._auth_headers},
                     params=params
                 ) as response:
