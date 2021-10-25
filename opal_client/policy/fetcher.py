@@ -45,11 +45,14 @@ class PolicyFetcher:
             token ([type], optional): [description]. Defaults to opal_client_config.CLIENT_TOKEN.
         """
         self._token = token or opal_client_config.CLIENT_TOKEN
-        self._backend_url = backend_url
+        self._backend_url = backend_url or opal_client_config.SERVER_URL
         self._auth_headers = tuple_to_dict(get_authorization_header(self._token))
         self._retry_config = retry_config if retry_config is not None else self.DEFAULT_RETRY_CONFIG
-        self._backend_url = backend_url or opal_client_config.SERVER_URL
-        self.policy_endpoint_url = f"{self._backend_url}/policy"
+        self._policy_endpoint_url = f"{self._backend_url}/policy"
+
+    @property
+    def policy_endpoint_url(self):
+        return self._policy_endpoint_url
 
     async def fetch_policy_bundle(
         self,
@@ -77,7 +80,7 @@ class PolicyFetcher:
         async with aiohttp.ClientSession() as session:
             try:
                 async with session.get(
-                    self.policy_endpoint_url,
+                    self._policy_endpoint_url,
                     headers={'content-type': 'text/plain', **self._auth_headers},
                     params=params
                 ) as response:
@@ -85,7 +88,7 @@ class PolicyFetcher:
                         logger.warning("requested paths not found: {paths}", paths=directories)
                         raise HTTPException(
                             status_code=status.HTTP_404_NOT_FOUND,
-                            detail=f"requested path {self.policy_endpoint_url} was not found in the policy repo!"
+                            detail=f"requested path {self._policy_endpoint_url} was not found in the policy repo!"
                         )
 
 

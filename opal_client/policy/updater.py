@@ -203,7 +203,7 @@ class PolicyUpdater:
             logger.info("Refetching policy code (full bundle)")
         else:
             logger.info("Refetching policy code (delta bundle), base hash: '{base_hash}'", base_hash=base_hash)
-        error = None
+        bundle_error = None
         bundle = None
         bundle_succeeded = True
         try:
@@ -227,7 +227,7 @@ class PolicyUpdater:
                         deleted=deleted_files
                     )
         except Exception as err:
-            error = repr(err)
+            bundle_error = repr(err)
             bundle_succeeded = False
         bundle_hash = None if bundle is None else bundle.hash
 
@@ -235,7 +235,7 @@ class PolicyUpdater:
         # We wrap our interaction with the policy store with a transaction, so that
         # if the write-op fails, we will mark the transaction as failed.
         async with self._policy_store.transaction_context(bundle_hash, transaction_type=TransactionType.policy) as store_transaction:
-            store_transaction._update_remote_status(url=self._policy_fetcher.policy_endpoint_url, status=bundle_succeeded, error=error)
+            store_transaction._update_remote_status(url=self._policy_fetcher.policy_endpoint_url, status=bundle_succeeded, error=bundle_error)
             if bundle:
                 await store_transaction.set_policies(bundle)
                 # if we got here, we did not throw during the transaction
