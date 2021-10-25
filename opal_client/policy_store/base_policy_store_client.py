@@ -123,7 +123,7 @@ class BasePolicyStoreClient(AbstractPolicyStore):
         pass
 
     async def end_transcation(self, exc_type=None, exc=None, tb=None, transaction_id: str = None, actions: List[str] = None,
-                            transaction_type: str = None, remotes_status: RemoteStatus = None, creation_time=None):
+                            transaction_type: str = None, remotes_status: RemoteStatus = None, creation_time = None):
         """
         PolicyStoreTranscationContextManager calls here on __aexit__
         Complete a series of operations with the policy store
@@ -155,8 +155,8 @@ class BasePolicyStoreClient(AbstractPolicyStore):
                 err=error_message
             )
         else:
-            transaction = StoreTransaction(id=transaction_id, actions=actions, success=True, creation_time=end_time,
-                                            creation_time=creation_time, end_time=end_time, remotes_status=remotes_status)
+            transaction = StoreTransaction(id=transaction_id, actions=actions, success=True, creation_time=creation_time, end_time=end_time,
+                                            transaction_type=transaction_type, remotes_status=remotes_status)
 
         if not opal_client_config.OPA_HEALTH_CHECK_POLICY_ENABLED:
             return # skip persisting the transaction, healthcheck policy is disabled
