@@ -12,7 +12,7 @@ class TransactionType(str, Enum):
 class RemoteStatus(BaseModel):
     remote_url: str = Field(None, description="Url of remote data/policy source")
     succeed: bool = Field(True, description="Is request succeed")
-    exception_type: str = Field(None, description="If failed contains the type of exception")
+    error: str = Field(None, description="If failed contains the type of exception")
 
 
 class StoreTransaction(BaseModel):

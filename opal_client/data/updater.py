@@ -293,7 +293,7 @@ class DataUpdater:
                             status=result.status,
                             error=error_content
                         )
-                store_transaction._update_remote_status(url=url, status=not fetched_data_successfully, exception_type=error_content)
+                store_transaction._update_remote_status(url=url, status=not fetched_data_successfully, error=error_content)
 
                 if fetched_data_successfully:
                     # get path to store the URL data (default mode (None) is as "" - i.e. as all the data at root)

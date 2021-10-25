@@ -87,8 +87,8 @@ class PolicyStoreTransactionContextManager(AbstractPolicyStore):
             else:
                 return store_attr
 
-    def _update_remote_status(self, url: str, status: bool, exception_type: str):
-        self._remotes_status.append({'remote_url': url, 'succeed': status, 'exception_type': exception_type})
+    def _update_remote_status(self, url: str, status: bool, error: str):
+        self._remotes_status.append({'remote_url': url, 'succeed': status, 'error': error})
 
     async def __aenter__(self):
         await self._store.start_transaction(transaction_id=self._transaction_id)
