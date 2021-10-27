@@ -44,6 +44,11 @@ class OpalCommonConfig(Confi):
     LOG_FILE_SERIALIZE = confi.str("LOG_FILE_SERIALIZE", True)
     LOG_FILE_LEVEL = confi.str("LOG_FILE_LEVEL", "INFO")
 
+    STATISTICS_ENABLED = confi.bool("STATISTICS_ENABLED", False)
+    STATISTICS_ADD_CLIENT_CHANNEL = confi.str("STATISTICS_ADD_CLIENT_CHANNEL", "__opal_stats_add")
+    STATISTICS_REMOVE_CLIENT_CHANNEL = confi.str("STATISTICS_REMOVE_CLIENT_CHANNEL", "__opal_stats_rm")
+
+
     # Fetching Providers
     # - where to load providers from
     FETCH_PROVIDER_MODULES = confi.list("FETCH_PROVIDER_MODULES", ["opal_common.fetcher.providers"])

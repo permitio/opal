@@ -12,6 +12,7 @@ from aiohttp.client import ClientSession, ClientError
 from fastapi_websocket_pubsub import PubSubClient
 from fastapi_websocket_rpc.rpc_channel import RpcChannel
 
+from opal_common.config import opal_common_config
 from opal_client.config import opal_client_config
 from opal_client.data.fetcher import DataFetcher
 from opal_client.data.rpc import TenantAwareRpcEventClientMethods
@@ -167,8 +168,10 @@ class DataUpdater:
         logger.info("Connected to server")
         if self._fetch_on_connect:
             await self.get_base_policy_data()
-        await self._client.wait_until_ready()
-        await self._client.publish(['__opal_stats_add'], data={'topics': self._data_topics, 'client_id': opal_client_config.OPAL_CLIENT_STAT_ID, 'rpc_id': channel.id})
+        if opal_common_config.STATISTICS_ENABLED:
+            await self._client.wait_until_ready()
+            await self._client.publish([opal_common_config.STATISTICS_REMOVE_CLIENT_CHANNEL], data={'topics': self._data_topics, 'client_id': opal_client_config.OPAL_CLIENT_STAT_ID, 'rpc_id': channel.id})
+
 
     async def on_disconnect(self, channel: RpcChannel):
         logger.info("Disconnected from server")

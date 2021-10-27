@@ -220,10 +220,10 @@ class OpalServer:
         if self.publisher is not None:
             async with self.publisher:
                 if self._init_policy_watcher:
-                    self.opal_statistics = OpalStatistics(self.pubsub.endpoint)
-                    await self.opal_statistics.run()
-                    self.pubsub.endpoint.notifier.register_unsubscribe_event(self.opal_statistics.remove_client)
-
+                    if opal_common_config.STATISTICS_ENABLED:
+                        self.opal_statistics = OpalStatistics(self.pubsub.endpoint)
+                        await self.opal_statistics.run()
+                        self.pubsub.endpoint.notifier.register_unsubscribe_event(self.opal_statistics.remove_client)
 
                     # repo watcher is enabled, but we want only one worker to run it
                     # (otherwise for each new commit, we will publish multiple updates via pub/sub).
