@@ -21,7 +21,7 @@ class PubSub:
         """
         broadcaster_uri = load_conf_if_none(broadcaster_uri, opal_server_config.BROADCAST_URI)
         self.router = APIRouter()
-        self.endpoint = PubSubEndpoint(broadcaster=broadcaster_uri)
+        self.endpoint = PubSubEndpoint(broadcaster=broadcaster_uri, rpc_channel_get_remote_id=True)
         authenticator = WebsocketJWTAuthenticator(signer)
 
         @self.router.websocket("/ws")
