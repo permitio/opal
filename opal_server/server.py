@@ -222,7 +222,7 @@ class OpalServer:
                 if self._init_policy_watcher:
                     self.opal_statistics = OpalStatistics(self.pubsub.endpoint)
                     await self.opal_statistics.run()
-                    self.pubsub.endpoint.notifier.add_on_unsubscribe_callback(self.opal_statistics.remove_client)
+                    self.pubsub.endpoint.notifier.register_unsubscribe_event(self.opal_statistics.remove_client)
 
 
                     # repo watcher is enabled, but we want only one worker to run it
