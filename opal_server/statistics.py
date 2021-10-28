@@ -1,10 +1,14 @@
 import asyncio
 import logging
+import json
 from typing import Dict, List
+from fastapi.routing import APIRoute
 from fastapi_websocket_pubsub.event_notifier import Subscription, TopicList
 from fastapi_websocket_pubsub.pub_sub_server import PubSubEndpoint
 from pydantic.main import BaseModel
+from opal_common.authentication.deps import JWTAuthenticator
 from opal_common.config import opal_common_config
+from opal_server.config import opal_server_config
 
 
 class Statistics(BaseModel):
@@ -40,8 +44,9 @@ class OpalStatistics():
         await self.endpoint.subscribe([opal_common_config.STATISTICS_REMOVE_CLIENT_CHANNEL], self.add_client)
         await self.endpoint.subscribe([opal_common_config.STATISTICS_REMOVE_CLIENT_CHANNEL], self.sync_remove_client)
 
-    async def sync_remove_client(self, subscription: Subscription, stat_msg: Statistics):
-        print(subscription, stat_msg)
+    async def sync_remove_client(self, subscription: Subscription, rpc_id: str):
+        print(subscription, rpc_id)
+        self.remove_client(rpc_id=rpc_id, topics=[], publish=False)
 
     async def add_client(self, subscription: Subscription, stat_msg: Statistics):
         client_id = stat_msg['client_id']
@@ -53,7 +58,7 @@ class OpalStatistics():
             else:
                 self.state[client_id] = [stat_msg]
 
-    async def remove_client(self, rpc_id: str, topics: TopicList):
+    async def remove_client(self, rpc_id: str, topics: TopicList, publish=True):
         logger.info("Trying to remove {rpc_id} from statistics", rpc_id=rpc_id)
         if rpc_id in self.rpc_id_to_client_id:
             for idx, stats in enumerate(self.state[self.rpc_id_to_client_id[rpc_id]]):
@@ -62,3 +67,18 @@ class OpalStatistics():
                     if not len(self.state[self.rpc_id_to_client_id[rpc_id]]):
                         del self.state[self.rpc_id_to_client_id[rpc_id]]
                         del self.rpc_id_to_client_id[rpc_id]
+        if publish:
+            await self.endpoint.publish(['__opal_stats_rm'], rpc_id)
+
+    def init_statistics_router(self, authenticator: JWTAuthenticator):
+        router = APIRoute()
+
+        @router.get('/statistics', dependencies=authenticator)
+        async def get_statistics(self):
+            """
+            DOCS
+            """
+            logger.warning("Serving default all-data route, meaning DATA_CONFIG_SOURCES was not configured!")
+            return json.dumps(self.state)
+
+        return router

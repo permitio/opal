@@ -145,16 +145,16 @@ class OpalServer:
             " continuous data update notifications via REST api, which are then pushed to clients.",
             version="0.1.0",
         )
+        authenticator = JWTAuthenticator(self.signer)
         configure_middleware(app)
-        self._configure_api_routes(app)
-        self._configure_lifecycle_callbacks(app)
+        self._configure_api_routes(app, authenticator)
+        self._configure_lifecycle_callbacks(app, authenticator)
         return app
 
-    def _configure_api_routes(self, app: FastAPI):
+    def _configure_api_routes(self, app: FastAPI, authenticator: JWTAuthenticator):
         """
         mounts the api routes on the app object
         """
-        authenticator = JWTAuthenticator(self.signer)
 
         data_update_publisher: Optional[DataUpdatePublisher] = None
         if self.publisher is not None:
@@ -188,7 +188,7 @@ class OpalServer:
 
         return app
 
-    def _configure_lifecycle_callbacks(self, app: FastAPI):
+    def _configure_lifecycle_callbacks(self, app: FastAPI, authenticator: JWTAuthenticator):
         """
         registers callbacks on app startup and shutdown.
 
@@ -198,7 +198,7 @@ class OpalServer:
         @app.on_event("startup")
         async def startup_event():
             logger.info("triggered startup event")
-            asyncio.create_task(self.start_server_background_tasks())
+            asyncio.create_task(self.start_server_background_tasks(app, authenticator))
 
         @app.on_event("shutdown")
         async def shutdown_event():
@@ -207,7 +207,7 @@ class OpalServer:
 
         return app
 
-    async def start_server_background_tasks(self):
+    async def start_server_background_tasks(self, app: FastAPI, authenticator: JWTAuthenticator):
         """
         starts the background processes (as asyncio tasks) if such are configured.
 
@@ -224,6 +224,8 @@ class OpalServer:
                         self.opal_statistics = OpalStatistics(self.pubsub.endpoint)
                         await self.opal_statistics.run()
                         self.pubsub.endpoint.notifier.register_unsubscribe_event(self.opal_statistics.remove_client)
+                        statistics_route = self.opal_statistics.init_statistics_router(authenticator=authenticator)
+                        app.include_router(statistics_route, tags=['Server Statistics'])
 
                     # repo watcher is enabled, but we want only one worker to run it
                     # (otherwise for each new commit, we will publish multiple updates via pub/sub).
