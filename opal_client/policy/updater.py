@@ -122,7 +122,7 @@ class PolicyUpdater:
         await self.update_policy()
         if opal_common_config.STATISTICS_ENABLED:
             await self._client.wait_until_ready()
-            await self._client.publish([opal_common_config.STATISTICS_REMOVE_CLIENT_CHANNEL], data={'topics': self._topics, 'client_id': opal_client_config.OPAL_CLIENT_STAT_ID, 'rpc_id': channel.id})
+            await self._client.publish([opal_common_config.STATISTICS_ADD_CLIENT_CHANNEL], data={'topics': self._topics, 'client_id': opal_client_config.OPAL_CLIENT_STAT_ID, 'rpc_id': channel.id})
 
     async def _on_disconnect(self, channel: RpcChannel):
         """

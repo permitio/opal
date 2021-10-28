@@ -117,7 +117,7 @@ class OpalClientConfig(Confi):
     OPAL_CLIENT_STAT_ID = confi.str(
         "OPAL_CLIENT_STAT_ID",
         f"CLIENT_{uuid.uuid4().hex}",
-        description="Uniq client statistics identifier")
+        description="Unique client statistics identifier")
 
     OPA_HEALTH_CHECK_POLICY_PATH = 'opa/healthcheck/opal.rego'
 
