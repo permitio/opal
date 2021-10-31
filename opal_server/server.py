@@ -228,7 +228,6 @@ class OpalServer:
         if self.publisher is not None:
             async with self.publisher:
                 if self.opal_statistics is not None:
-                    self.opal_statistics = OpalStatistics(self.pubsub.endpoint)
                     asyncio.create_task(self.opal_statistics.run())
                     self.pubsub.endpoint.notifier.register_unsubscribe_event(self.opal_statistics.remove_client)
                 if self._init_policy_watcher:

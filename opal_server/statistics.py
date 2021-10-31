@@ -134,7 +134,7 @@ class OpalStatistics():
         router = APIRouter()
 
         @router.get('/statistics')
-        async def get_statistics(self):
+        async def get_statistics():
             """
             Route to serve server statistics
             """
