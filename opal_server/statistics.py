@@ -1,5 +1,4 @@
 import asyncio
-import json
 from typing import Dict, List
 from fastapi import APIRouter
 from fastapi.params import Depends
@@ -42,16 +41,35 @@ class OpalStatistics():
         self._lock = asyncio.Lock()
 
     async def run(self):
+        '''
+        subscribe to two channels to be able to sync add and delete of clients
+        '''
+
         await self.endpoint.subscribe([opal_common_config.STATISTICS_ADD_CLIENT_CHANNEL], self.add_client)
         await self.endpoint.subscribe([opal_common_config.STATISTICS_REMOVE_CLIENT_CHANNEL], self.sync_remove_client)
 
     async def sync_remove_client(self, subscription: Subscription, rpc_id: str):
+        '''
+        helper function to recall remove client in all servers
+
+        Args:
+            subscription (Subscription): not used, we get it from callbacks.
+            rpc_id (str): channel id of rpc channel used as identifier to client id
+        '''
+
         await self.remove_client(rpc_id=rpc_id, topics=[], publish=False)
 
     async def add_client(self, subscription: Subscription, stat_msg: Statistics):
+        '''
+        add client record to statistics state
+
+        Args:
+            subscription (Subscription): not used, we get it from callbacks.
+            stat_msg (Statistics): statistics data, rpc_id - channel identifier; client_id - client identifier
+        '''
         try:
             client_id = stat_msg['client_id']
-            logger.info("Set client statistics {client_id} with {topics}", client_id=stat_msg['client_id'], topics=', '.join(stat_msg['topics']))
+            logger.info("Set client statistics {client_id} on channel {rpc_id} with {topics}", client_id=stat_msg['client_id'], rpc_id=stat_msg['rpc_id'], topics=', '.join(stat_msg['topics']))
             async with self._lock:
                 self.rpc_id_to_client_id[stat_msg['rpc_id']] = client_id
                 if client_id in self.state:
@@ -66,17 +84,31 @@ class OpalStatistics():
             logger.exception("Add client to server statistics failed")
 
     async def remove_client(self, rpc_id: str, topics: TopicList, publish=True):
+        '''
+        remove client record from statistics state
+
+        Args:
+            rpc_id (str): channel id of rpc channel used as identifier to client id
+            topics (TopicList): not used, we get it from callbacks.
+            publish (bool): used to stop republish cycle
+        '''
         try:
             logger.info("Trying to remove {rpc_id} from statistics", rpc_id=rpc_id)
             if rpc_id in self.rpc_id_to_client_id:
                 for idx, stats in enumerate(self.state[self.rpc_id_to_client_id[rpc_id]]):
                     if stats['rpc_id'] == rpc_id:
-                        del self.state[self.rpc_id_to_client_id[rpc_id]][idx]
-                        if not len(self.state[self.rpc_id_to_client_id[rpc_id]]):
+                        async with self._lock:
+                            del self.state[self.rpc_id_to_client_id[rpc_id]][idx]
+                            # save the client id if we will need it to delete client record from self.state
+                            tmp_client_from_rpc_id = self.rpc_id_to_client_id[rpc_id]
+                            # remove the connection between rpc and client, once we removed it from state
                             del self.rpc_id_to_client_id[rpc_id]
-                            del self.state[self.rpc_id_to_client_id[rpc_id]]
+                            # if no client records left in state remove the client entry
+                            if not len(self.state[self.rpc_id_to_client_id[rpc_id]]):
+                                del self.state[tmp_client_from_rpc_id]
         except Exception as err:
             logger.exception("Remove client from server statistics failed")
+        # publish removed client so each server worker and server instance would get it
         if publish:
             logger.info("Publish rpc_id={rpc_id} to be removed from statistics", rpc_id=rpc_id)
             asyncio.create_task(self.endpoint.publish([opal_common_config.STATISTICS_REMOVE_CLIENT_CHANNEL], rpc_id))
@@ -84,8 +116,9 @@ class OpalStatistics():
     def init_statistics_router(self, authenticator: JWTAuthenticator):
         router = APIRouter()
 
-        @router.get('/statistics') #bsd check auth
-        async def get_statistics():
+        # @router.get('/statistics', dependencies=[Depends(authenticator)])
+        @router.get('/statistics')
+        async def get_statistics(self):
             """
             Route to serve server statistics
             """
