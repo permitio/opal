@@ -105,21 +105,24 @@ class OpalStatistics():
             topics (TopicList): not used, we get it from callbacks.
             publish (bool): used to stop republish cycle
         """
+        if rpc_id not in self._rpc_id_to_client_id:
+            logger.debug(f"Statictics.remove_client() got unknown rpc id: {rpc_id} (probably broadcaster)")
+            return
+
         try:
             logger.info("Trying to remove {rpc_id} from statistics", rpc_id=rpc_id)
-            if rpc_id in self._rpc_id_to_client_id:
-                client_id = self._rpc_id_to_client_id[rpc_id]
-                for index, stats in enumerate(self._state[client_id]):
-                    if stats.rpc_id == rpc_id:
-                        async with self._lock:
-                            # remove the stats record matching the removed rpc id
-                            del self._state[client_id][index]
-                            # remove the connection between rpc and client, once we removed it from state
-                            del self._rpc_id_to_client_id[rpc_id]
-                            # if no client records left in state remove the client entry
-                            if not len(self._state[client_id]):
-                                del self._state[client_id]
-                        break
+            client_id = self._rpc_id_to_client_id[rpc_id]
+            for index, stats in enumerate(self._state[client_id]):
+                if stats.rpc_id == rpc_id:
+                    async with self._lock:
+                        # remove the stats record matching the removed rpc id
+                        del self._state[client_id][index]
+                        # remove the connection between rpc and client, once we removed it from state
+                        del self._rpc_id_to_client_id[rpc_id]
+                        # if no client records left in state remove the client entry
+                        if not len(self._state[client_id]):
+                            del self._state[client_id]
+                    break
         except Exception as err:
             logger.warning(f"Remove client from server statistics failed: {repr(err)}")
         # publish removed client so each server worker and server instance would get it
