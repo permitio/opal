@@ -56,7 +56,7 @@ class OpalClient:
         policy_store_type: PolicyStoreTypes = policy_store_type or opal_client_config.POLICY_STORE_TYPE
         inline_opa_enabled: bool = inline_opa_enabled or opal_client_config.INLINE_OPA_ENABLED
         inline_opa_options: OpaServerOptions = inline_opa_options or opal_client_config.INLINE_OPA_CONFIG
-        opal_client_identifier: str = f"CLIENT_{uuid.uuid4().hex}" or opal_client_config.OPAL_CLIENT_STAT_ID
+        opal_client_identifier: str = opal_client_config.OPAL_CLIENT_STAT_ID or f"CLIENT_{uuid.uuid4().hex}"
         # set logs
         configure_logs()
         # Init policy store client

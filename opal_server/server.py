@@ -126,6 +126,10 @@ class OpalServer:
                     time_interval=opal_server_config.BROADCAST_KEEPALIVE_INTERVAL,
                     topic=opal_server_config.BROADCAST_KEEPALIVE_TOPIC
                 )
+        if opal_common_config.STATISTICS_ENABLED:
+            self.opal_statistics = OpalStatistics(self.pubsub.endpoint)
+        else:
+            self.opal_statistics = None
 
         self.watcher: Optional[PolicyWatcherTask] = None
 
@@ -145,16 +149,16 @@ class OpalServer:
             " continuous data update notifications via REST api, which are then pushed to clients.",
             version="0.1.0",
         )
-        authenticator = JWTAuthenticator(self.signer)
         configure_middleware(app)
-        self._configure_api_routes(app, authenticator)
-        self._configure_lifecycle_callbacks(app, authenticator)
+        self._configure_api_routes(app)
+        self._configure_lifecycle_callbacks(app)
         return app
 
-    def _configure_api_routes(self, app: FastAPI, authenticator: JWTAuthenticator):
+    def _configure_api_routes(self, app: FastAPI):
         """
         mounts the api routes on the app object
         """
+        authenticator = JWTAuthenticator(self.signer)
 
         data_update_publisher: Optional[DataUpdatePublisher] = None
         if self.publisher is not None:
@@ -170,6 +174,10 @@ class OpalServer:
         security_router = init_security_router(self.signer, StaticBearerAuthenticator(self.master_token))
 
         # mount the api routes on the app object
+        if self.opal_statistics is not None:
+            statistics_router = self.opal_statistics.init_statistics_router()
+            app.include_router(statistics_router, tags=['Server Statistics'], dependencies=[Depends(authenticator)])
+
         app.include_router(bundles_router, tags=["Bundle Server"], dependencies=[Depends(authenticator)])
         app.include_router(data_updates_router, tags=["Data Updates"], dependencies=[Depends(authenticator)])
         app.include_router(webhook_router, tags=["Github Webhook"])
@@ -188,7 +196,7 @@ class OpalServer:
 
         return app
 
-    def _configure_lifecycle_callbacks(self, app: FastAPI, authenticator: JWTAuthenticator):
+    def _configure_lifecycle_callbacks(self, app: FastAPI):
         """
         registers callbacks on app startup and shutdown.
 
@@ -198,7 +206,7 @@ class OpalServer:
         @app.on_event("startup")
         async def startup_event():
             logger.info("triggered startup event")
-            asyncio.create_task(self.start_server_background_tasks(app, authenticator))
+            asyncio.create_task(self.start_server_background_tasks(app))
 
         @app.on_event("shutdown")
         async def shutdown_event():
@@ -207,7 +215,7 @@ class OpalServer:
 
         return app
 
-    async def start_server_background_tasks(self, app: FastAPI, authenticator: JWTAuthenticator):
+    async def start_server_background_tasks(self, app: FastAPI):
         """
         starts the background processes (as asyncio tasks) if such are configured.
 
@@ -219,12 +227,10 @@ class OpalServer:
         """
         if self.publisher is not None:
             async with self.publisher:
-                if opal_common_config.STATISTICS_ENABLED:
+                if self.opal_statistics is not None:
                     self.opal_statistics = OpalStatistics(self.pubsub.endpoint)
                     await self.opal_statistics.run()
                     self.pubsub.endpoint.notifier.register_unsubscribe_event(self.opal_statistics.remove_client)
-                    statistics_route = self.opal_statistics.init_statistics_router(authenticator=authenticator)
-                    app.include_router(statistics_route, tags=['Server Statistics'])
                 if self._init_policy_watcher:
 
                     # repo watcher is enabled, but we want only one worker to run it
