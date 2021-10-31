@@ -63,6 +63,9 @@ class OpalServerConfig(Confi):
     BROADCAST_KEEPALIVE_INTERVAL = confi.int("BROADCAST_KEEPALIVE_INTERVAL", 3600, description="the time to wait between sending two consecutive broadcaster keepalive messages")
     BROADCAST_KEEPALIVE_TOPIC = confi.str("BROADCAST_KEEPALIVE_TOPIC", "__broadcast_session_keepalive__", description="the topic on which we should send broadcaster keepalive messages")
 
+    # statistics
+    MAX_CHANNELS_PER_CLIENT = confi.int("MAX_CHANNELS_PER_CLIENT", 15)
+
     # Data updates
     ALL_DATA_TOPIC = confi.str("ALL_DATA_TOPIC", "policy_data", description="Top level topic for data")
     ALL_DATA_ROUTE = confi.str("ALL_DATA_ROUTE", "/policy-data")

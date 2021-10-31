@@ -55,7 +55,11 @@ class OpalStatistics():
             async with self._lock:
                 self.rpc_id_to_client_id[stat_msg['rpc_id']] = client_id
                 if client_id in self.state:
-                    self.state[client_id].append(stat_msg)
+                    # Limiting the number of channels per client to avoid memory issues if client opens to many channels
+                    if len(self.state[client_id]) < opal_server_config.MAX_CHANNELS_PER_CLIENT:
+                        self.state[client_id].append(stat_msg)
+                    else:
+                        logger.error("Client {client_id} reached the max of channels, might be a issue", client_id=client_id)
                 else:
                     self.state[client_id] = [stat_msg]
         except Exception as err:
