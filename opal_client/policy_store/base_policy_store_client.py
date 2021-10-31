@@ -64,7 +64,7 @@ class PolicyStoreTransactionContextManager(AbstractPolicyStore):
         # make sure we have  a transaction id
         self._transaction_id = transaction_id or uuid.uuid4().hex
         self._actions = []
-        self._remotes_status = []
+        self._remotes_status: List[RemoteStatus] = []
         self._transaction_type = transaction_type
         self._creation_time = datetime.utcnow().isoformat()
 
@@ -123,7 +123,7 @@ class BasePolicyStoreClient(AbstractPolicyStore):
         pass
 
     async def end_transcation(self, exc_type=None, exc=None, tb=None, transaction_id: str = None, actions: List[str] = None,
-                            transaction_type: str = None, remotes_status: RemoteStatus = None, creation_time = None):
+                            transaction_type: str = None, remotes_status: Optional[List[RemoteStatus]] = None, creation_time = None):
         """
         PolicyStoreTranscationContextManager calls here on __aexit__
         Complete a series of operations with the policy store
@@ -144,12 +144,29 @@ class BasePolicyStoreClient(AbstractPolicyStore):
         end_time = datetime.utcnow().isoformat()
         if exc is not None or len(exception_fetching_transaction):
             try:
-                error_message = repr(exc)
+                if exc is not None:
+                    error_message = repr(exc)
+                elif len(exception_fetching_transaction) > 0:
+                    network_errors = [remote.get("error", None) for remote in exception_fetching_transaction]
+                    network_errors = [str(err) for err in network_errors if err is not None]
+                    error_message = ";".join(network_errors) if network_errors else None
+                else:
+                    error_message = None
             except: # maybe repr throws here
                 error_message = None
-            transaction = StoreTransaction(id=transaction_id, actions=actions, success=False, error=error_message,
-                                            creation_time=creation_time, end_time=end_time, transaction_type=transaction_type, remotes_status=remotes_status)
-            logger.warning("OxPA transaction failed, transaction id={id}, actions={actions}, error={err}",
+
+            transaction = StoreTransaction(
+                id=transaction_id,
+                actions=actions,
+                success=False,
+                error=error_message or "",
+                creation_time=creation_time,
+                end_time=end_time,
+                transaction_type=transaction_type,
+                remotes_status=remotes_status
+            )
+
+            logger.error("OPA transaction failed, transaction id={id}, actions={actions}, error={err}",
                 id=transaction_id,
                 actions=repr(actions),
                 err=error_message

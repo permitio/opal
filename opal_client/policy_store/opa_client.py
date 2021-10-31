@@ -133,8 +133,7 @@ class OpaTransactionLogState:
         renders the policy template with the current state, and writes it to OPA
         """
         logger.info("persisting health check policy: ready={ready}, healthy={healthy}", ready=self.ready, healthy=self.healthy)
-        logger.info("Policies and data statistics: policies: successful {success_policy}, failed {failed_policy}; \
-                    data: successful {success_data}, failed {failed_data}",
+        logger.info("Policy and data statistics: policy: (successful {success_policy}, failed {failed_policy});\tdata: (successful {success_data}, failed {failed_data})",
                 success_policy=self._num_successful_policy_transactions, failed_policy=self._num_failed_policy_transactions,
                 success_data=self._num_successful_data_transactions, failed_data=self._num_failed_data_transactions)
         policy_code = self._policy_template.format(
