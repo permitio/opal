@@ -227,8 +227,11 @@ class OpalServer:
         """
         if self.publisher is not None:
             async with self.publisher:
+                if self.opal_statistics is not None:
+                    self.opal_statistics = OpalStatistics(self.pubsub.endpoint)
+                    asyncio.create_task(self.opal_statistics.run())
+                    self.pubsub.endpoint.notifier.register_unsubscribe_event(self.opal_statistics.remove_client)
                 if self._init_policy_watcher:
-
                     # repo watcher is enabled, but we want only one worker to run it
                     # (otherwise for each new commit, we will publish multiple updates via pub/sub).
                     # leadership is determined by the first worker to obtain a lock
@@ -252,10 +255,7 @@ class OpalServer:
                             if self.broadcast_keepalive is not None:
                                 self.broadcast_keepalive.start()
                             await self.watcher.wait_until_should_stop()
-                if self.opal_statistics is not None:
-                    self.opal_statistics = OpalStatistics(self.pubsub.endpoint)
-                    await self.opal_statistics.run()
-                    self.pubsub.endpoint.notifier.register_unsubscribe_event(self.opal_statistics.remove_client)
+
 
 
     async def stop_server_background_tasks(self):
