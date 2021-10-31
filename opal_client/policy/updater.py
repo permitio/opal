@@ -40,7 +40,7 @@ class PolicyUpdater:
         policy_store: BasePolicyStoreClient = None,
         data_fetcher: Optional[DataFetcher] = None,
         callbacks_register: Optional[CallbacksRegister] = None,
-        backend_url: Optional[str] = None
+        opal_client_id: str = None
     ):
         """inits the policy updater.
 
@@ -57,6 +57,7 @@ class PolicyUpdater:
         token: str = token or opal_client_config.CLIENT_TOKEN
         pubsub_url: str = pubsub_url or opal_client_config.SERVER_PUBSUB_URL
         subscription_directories: List[str] = subscription_directories or opal_client_config.POLICY_SUBSCRIPTION_DIRS
+        self._opal_client_id = opal_client_id
 
         # The policy store we'll save policy modules into (i.e: OPA)
         self._policy_store = policy_store or DEFAULT_POLICY_STORE_GETTER()
@@ -123,7 +124,7 @@ class PolicyUpdater:
         if opal_common_config.STATISTICS_ENABLED:
             await self._client.wait_until_ready()
             # publish statistics to the server about new connection from client (only if STATISTICS_ENABLED is True, default to False)
-            await self._client.publish([opal_common_config.STATISTICS_ADD_CLIENT_CHANNEL], data={'topics': self._topics, 'client_id': opal_client_config.OPAL_CLIENT_STAT_ID, 'rpc_id': channel.id})
+            await self._client.publish([opal_common_config.STATISTICS_ADD_CLIENT_CHANNEL], data={'topics': self._topics, 'client_id': self._opal_client_id, 'rpc_id': channel.id})
 
     async def _on_disconnect(self, channel: RpcChannel):
         """

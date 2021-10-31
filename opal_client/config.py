@@ -1,5 +1,4 @@
 from enum import Enum
-import uuid
 
 from opal_common.fetcher.providers.http_fetch_provider import HttpFetcherConfig
 from opal_common.confi import Confi, confi
@@ -116,7 +115,7 @@ class OpalClientConfig(Confi):
 
     OPAL_CLIENT_STAT_ID = confi.str(
         "OPAL_CLIENT_STAT_ID",
-        f"CLIENT_{uuid.uuid4().hex}",
+        None,
         description="Unique client statistics identifier")
 
     OPA_HEALTH_CHECK_POLICY_PATH = 'opa/healthcheck/opal.rego'
