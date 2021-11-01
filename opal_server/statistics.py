@@ -7,6 +7,7 @@ from fastapi_websocket_pubsub.event_notifier import Subscription, TopicList
 from fastapi_websocket_pubsub.pub_sub_server import PubSubEndpoint
 import pydantic
 from pydantic.main import BaseModel
+from random import uniform
 
 from opal_common.config import opal_common_config
 from opal_common.logger import get_logger
@@ -20,6 +21,8 @@ class Statistics(BaseModel):
 
 
 logger = get_logger("opal.statistics")
+
+TIME_RANGE_TO_WAIT = (0.001, 2)
 
 
 class OpalStatistics():
@@ -46,12 +49,18 @@ class OpalStatistics():
         self._uptime = datetime.utcnow()
         # uptime for this statistics instance
         self._state['uptime'] = self._uptime
+        # Event to help sync with other server wokers so not every worker will send the statistics state
+        self._should_publish = asyncio.Event()
+        # Let all the other opal servers know that new opal server started
+        asyncio.create_task(self._endpoint.publish([opal_server_config.STATISTICS_WAKEUP_CALL_CHANNEL], ""))
 
     async def run(self):
         """
         subscribe to two channels to be able to sync add and delete of clients
         """
 
+        await self._endpoint.subscribe([opal_server_config.STATISTICS_WAKEUP_CALL_CHANNEL], self._should_sync_server_statistics)
+        await self._endpoint.subscribe([opal_server_config.STATISTICS_WAKEUP_SYNC_CHANNEL], self._sync_server_statistics)
         await self._endpoint.subscribe([opal_common_config.STATISTICS_ADD_CLIENT_CHANNEL], self._add_client)
         await self._endpoint.subscribe([opal_common_config.STATISTICS_REMOVE_CLIENT_CHANNEL], self._sync_remove_client)
 
@@ -65,6 +74,38 @@ class OpalStatistics():
         """
 
         await self.remove_client(rpc_id=rpc_id, topics=[], publish=False)
+
+    async def _should_sync_server_statistics(self, subscription: Subscription, empty_msg: str):
+        """
+        Callback when new server request state
+        Sends state only if we have state of our own
+
+        Args:
+        not in use
+        """
+        if len(self._state):
+            # wait random time in order to reduce the number of messages sent by all the other opal servers
+            asyncio.sleep(uniform(TIME_RANGE_TO_WAIT[0], TIME_RANGE_TO_WAIT[1]))
+            # if didn't got any other message it means that this server is the first one to pass the sleep
+            if not self._should_publish.is_set():
+                asyncio.create_task(self._endpoint.publish([opal_server_config.STATISTICS_WAKEUP_SYNC_CHANNEL], self._state))
+
+    async def _sync_server_statistics(self, subscription: Subscription, remote_state: Dict[str, List[Statistics]]):
+        """
+        helper function to update server statistics in case of reboot
+
+        Args:
+            subscription (Subscription): not used, we get it from callbacks.
+            rpc_id (Dict[str, List[Statistics]]): state from remote server
+        """
+        # update asyncio event that we got sever sync message, no need to send another one
+        self._should_publish.set()
+        # update my state only if this server don't have a state
+        if not len(self._state):
+            self._state = remote_state
+        # wait the max time to wait before state publish and clear the asyncio event
+        asyncio.sleep(TIME_RANGE_TO_WAIT[1])
+        self._should_publish.clear()
 
     async def _add_client(self, subscription: Subscription, stats_message: dict):
         """
