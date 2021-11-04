@@ -1,13 +1,14 @@
-from typing import Optional, Any
-
-from fastapi_websocket_pubsub.pub_sub_client import PubSubClient
+from fastapi_websocket_pubsub import Topic, PubSubClient
 from opal_common.confi.confi import load_conf_if_none
 from opal_common.utils import get_authorization_header
-from opal_common.topics.publisher import TopicPublisher, ClientSideTopicPublisher
+from opal_common.topics.publisher import (
+    TopicPublisher,
+    PeriodicPublisher,
+    ServerSideTopicPublisher,
+    ClientSideTopicPublisher
+)
 from opal_server.config import opal_server_config
 
-
-publisher = None
 
 def setup_publisher_task(
     server_uri: str = None,
@@ -21,3 +22,15 @@ def setup_publisher_task(
         ),
         server_uri=server_uri,
     )
+
+
+def setup_broadcaster_keepalive_task(
+    publisher: ServerSideTopicPublisher,
+    time_interval: int,
+    topic: Topic = '__broadcast_session_keepalive__'
+) -> PeriodicPublisher:
+    """
+    a periodic publisher with the intent to trigger messages on the broadcast channel,
+    so that the session to the backbone won't become idle and close on the backbone end.
+    """
+    return PeriodicPublisher(publisher, time_interval, topic, task_name='broadcaster keepalive task')
