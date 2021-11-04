@@ -1,6 +1,5 @@
 import os
 import asyncio
-import uuid
 import shutil
 from functools import partial
 from typing import Optional, List
@@ -9,7 +8,7 @@ from fastapi import Depends, FastAPI
 from opal_common.confi.confi import load_conf_if_none
 from opal_common.git.repo_cloner import RepoClonePathFinder
 
-from opal_common.topics.publisher import TopicPublisher, ServerSideTopicPublisher
+from opal_common.topics.publisher import PeriodicPublisher, TopicPublisher, ServerSideTopicPublisher
 from opal_common.logger import logger, configure_logs
 from opal_common.schemas.data import ServerDataSourceConfig
 from opal_common.synchronization.named_lock import NamedLock
@@ -17,8 +16,8 @@ from opal_common.middleware import configure_middleware
 from opal_common.authentication.signer import JWTSigner
 from opal_common.authentication.deps import JWTAuthenticator, StaticBearerAuthenticator
 from opal_common.config import opal_common_config
-from opal_common.utils import get_filepaths_with_glob
 from opal_server.config import opal_server_config
+from opal_server.publisher import setup_broadcaster_keepalive_task
 from opal_server.security.api import init_security_router
 from opal_server.security.jwks import JwksStaticEndpoint
 from opal_server.data.api import init_data_updates_router
@@ -28,7 +27,6 @@ from opal_server.policy.webhook.api import init_git_webhook_router
 from opal_server.policy.watcher import (setup_watcher_task,
                                         trigger_repo_watcher_pull)
 from opal_server.policy.watcher.task import PolicyWatcherTask
-from opal_server.publisher import setup_publisher_task
 from opal_server.pubsub import PubSub
 
 
@@ -117,8 +115,16 @@ class OpalServer:
         self.pubsub = PubSub(signer=self.signer, broadcaster_uri=broadcaster_uri)
 
         self.publisher: Optional[TopicPublisher] = None
+        self.broadcast_keepalive: Optional[PeriodicPublisher] = None
         if init_publisher:
             self.publisher = ServerSideTopicPublisher(self.pubsub.endpoint)
+
+            if opal_server_config.BROADCAST_KEEPALIVE_INTERVAL > 0 and self.broadcaster_uri is not None:
+                self.broadcast_keepalive = setup_broadcaster_keepalive_task(
+                    self.publisher,
+                    time_interval=opal_server_config.BROADCAST_KEEPALIVE_INTERVAL,
+                    topic=opal_server_config.BROADCAST_KEEPALIVE_TOPIC
+                )
 
         self.watcher: Optional[PolicyWatcherTask] = None
 
@@ -233,6 +239,8 @@ class OpalServer:
                         await self.pubsub.endpoint.subscribe([opal_server_config.POLICY_REPO_WEBHOOK_TOPIC], partial(trigger_repo_watcher_pull, self.watcher))
                         # running the watcher, and waiting until it stops (until self.watcher.signal_stop() is called)
                         async with self.watcher:
+                            if self.broadcast_keepalive is not None:
+                                self.broadcast_keepalive.start()
                             await self.watcher.wait_until_should_stop()
 
     async def stop_server_background_tasks(self):
@@ -244,6 +252,8 @@ class OpalServer:
             tasks.append(asyncio.create_task(self.watcher.stop()))
         if self.publisher is not None:
             tasks.append(asyncio.create_task(self.publisher.stop()))
+        if self.broadcast_keepalive is not None:
+            tasks.append(asyncio.create_task(self.broadcast_keepalive.stop()))
 
         try:
             await asyncio.gather(*tasks)
