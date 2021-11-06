@@ -28,7 +28,7 @@ from opal_server.policy.watcher import (setup_watcher_task,
                                         trigger_repo_watcher_pull)
 from opal_server.policy.watcher.task import PolicyWatcherTask
 from opal_server.pubsub import PubSub
-from opal_server.statistics import OpalStatistics
+from opal_server.statistics import OpalStatistics, init_statistics_router
 
 
 class OpalServer:
@@ -172,17 +172,15 @@ class OpalServer:
         )
         webhook_router = init_git_webhook_router(self.pubsub.endpoint, authenticator)
         security_router = init_security_router(self.signer, StaticBearerAuthenticator(self.master_token))
+        statistics_router = init_statistics_router(self.opal_statistics)
 
         # mount the api routes on the app object
-        if self.opal_statistics is not None:
-            statistics_router = self.opal_statistics.init_statistics_router()
-            app.include_router(statistics_router, tags=['Server Statistics'], dependencies=[Depends(authenticator)])
-
         app.include_router(bundles_router, tags=["Bundle Server"], dependencies=[Depends(authenticator)])
         app.include_router(data_updates_router, tags=["Data Updates"], dependencies=[Depends(authenticator)])
         app.include_router(webhook_router, tags=["Github Webhook"])
         app.include_router(security_router, tags=["Security"])
         app.include_router(self.pubsub.router, tags=["Pub/Sub"])
+        app.include_router(statistics_router, tags=['Server Statistics'], dependencies=[Depends(authenticator)])
 
         if self.jwks_endpoint is not None:
             # mount jwts (static) route

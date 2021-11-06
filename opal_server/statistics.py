@@ -1,23 +1,28 @@
 import asyncio
 from datetime import datetime
-from typing import Dict, List
-from fastapi import APIRouter
-from fastapi.params import Depends
-from fastapi_websocket_pubsub.event_notifier import Subscription, TopicList
-from fastapi_websocket_pubsub.pub_sub_server import PubSubEndpoint
-import pydantic
-from pydantic.main import BaseModel
+from typing import Dict, List, Optional
 from random import uniform
 
-from opal_common.config import opal_common_config
+import pydantic
+from pydantic import BaseModel, Field
+from fastapi import APIRouter, HTTPException, status
+from fastapi_websocket_pubsub.event_notifier import Subscription, TopicList
+from fastapi_websocket_pubsub.pub_sub_server import PubSubEndpoint
+
 from opal_common.logger import get_logger
+from opal_common.config import opal_common_config
 from opal_server.config import opal_server_config
 
 
-class Statistics(BaseModel):
+class ChannelStats(BaseModel):
     rpc_id: str
     client_id: str
     topics: TopicList
+
+
+class ServerStats(BaseModel):
+    uptime: datetime = Field(..., description="uptime for this opal server worker")
+    clients: Dict[str, List[ChannelStats]] = Field(..., description="connected opal clients, each client can have multiple subscriptions")
 
 
 logger = get_logger("opal.statistics")
@@ -25,7 +30,7 @@ logger = get_logger("opal.statistics")
 TIME_RANGE_TO_WAIT = (0.001, 2)
 
 
-class OpalStatistics():
+class OpalStatistics:
     """
     manage opal server statistics
 
@@ -35,24 +40,27 @@ class OpalStatistics():
     """
     def __init__(self, endpoint):
         self._endpoint: PubSubEndpoint = endpoint
+        self._uptime = datetime.utcnow()
 
-        # state: Dict[str, List[Statistics]]
+        # state: Dict[str, List[ChannelStats]]
         # The state is built in this way so it will be easy to understand how much OPAL clients (vs. rpc clients)
         # you have connected to your OPAL server and to help merge client lists between servers.
         # The state is keyed by unique client id (A unique id that each opal client can set in env var `OPAL_CLIENT_STAT_ID`)
-        self._state: Dict[str, List[Statistics]] = {}
+        self._state: ServerStats = ServerStats(uptime=self._uptime, clients={})
 
         # rpc_id_to_client_id:
         # dict to help us get client id without another loop
         self._rpc_id_to_client_id: Dict[str, str] = {}
         self._lock = asyncio.Lock()
-        self._uptime = datetime.utcnow()
-        # uptime for this statistics instance
-        self._state['uptime'] = self._uptime
+
         # Event to help sync with other server wokers so not every worker will send the statistics state
         self._should_publish = asyncio.Event()
         # Let all the other opal servers know that new opal server started
         asyncio.create_task(self._endpoint.publish([opal_server_config.STATISTICS_WAKEUP_CALL_CHANNEL], ""))
+
+    @property
+    def state(self) -> ServerStats:
+        return self._state
 
     async def run(self):
         """
@@ -83,26 +91,26 @@ class OpalStatistics():
         Args:
         not in use
         """
-        if len(self._state):
+        if len(self._state.clients):
             # wait random time in order to reduce the number of messages sent by all the other opal servers
             asyncio.sleep(uniform(TIME_RANGE_TO_WAIT[0], TIME_RANGE_TO_WAIT[1]))
             # if didn't got any other message it means that this server is the first one to pass the sleep
             if not self._should_publish.is_set():
-                asyncio.create_task(self._endpoint.publish([opal_server_config.STATISTICS_WAKEUP_SYNC_CHANNEL], self._state))
+                asyncio.create_task(self._endpoint.publish([opal_server_config.STATISTICS_WAKEUP_SYNC_CHANNEL], self._state.clients))
 
-    async def _sync_server_statistics(self, subscription: Subscription, remote_state: Dict[str, List[Statistics]]):
+    async def _sync_server_statistics(self, subscription: Subscription, remote_connections: Dict[str, List[ChannelStats]]):
         """
         helper function to update server statistics in case of reboot
 
         Args:
             subscription (Subscription): not used, we get it from callbacks.
-            rpc_id (Dict[str, List[Statistics]]): state from remote server
+            rpc_id (Dict[str, List[ChannelStats]]): state from remote server
         """
         # update asyncio event that we got sever sync message, no need to send another one
         self._should_publish.set()
         # update my state only if this server don't have a state
-        if not len(self._state):
-            self._state = remote_state
+        if not len(self._state.clients):
+            self._state.clients = remote_connections
         # wait the max time to wait before state publish and clear the asyncio event
         asyncio.sleep(TIME_RANGE_TO_WAIT[1])
         self._should_publish.clear()
@@ -113,10 +121,10 @@ class OpalStatistics():
 
         Args:
             subscription (Subscription): not used, we get it from callbacks.
-            stat_msg (Statistics): statistics data, rpc_id - channel identifier; client_id - client identifier
+            stat_msg (ChannelStats): statistics data for channel, rpc_id - channel identifier; client_id - client identifier
         """
         try:
-            stats = Statistics(**stats_message)
+            stats = ChannelStats(**stats_message)
         except pydantic.ValidationError as e:
             logger.warning(f"Got invalid statistics message from client, error: {repr(e)}")
             return
@@ -126,14 +134,14 @@ class OpalStatistics():
             logger.info("Set client statistics {client_id} on channel {rpc_id} with {topics}", client_id=client_id, rpc_id=rpc_id, topics=', '.join(stats.topics))
             async with self._lock:
                 self._rpc_id_to_client_id[rpc_id] = client_id
-                if client_id in self._state:
+                if client_id in self._state.clients:
                     # Limiting the number of channels per client to avoid memory issues if client opens too many channels
-                    if len(self._state[client_id]) < opal_server_config.MAX_CHANNELS_PER_CLIENT:
-                        self._state[client_id].append(stats)
+                    if len(self._state.clients[client_id]) < opal_server_config.MAX_CHANNELS_PER_CLIENT:
+                        self._state.clients[client_id].append(stats)
                     else:
                         logger.warning(f"Client '{client_id}' reached the maximum number of open RPC channels")
                 else:
-                    self._state[client_id] = [stats]
+                    self._state.clients[client_id] = [stats]
         except Exception as err:
             logger.exception("Add client to server statistics failed")
 
@@ -153,16 +161,16 @@ class OpalStatistics():
         try:
             logger.info("Trying to remove {rpc_id} from statistics", rpc_id=rpc_id)
             client_id = self._rpc_id_to_client_id[rpc_id]
-            for index, stats in enumerate(self._state[client_id]):
+            for index, stats in enumerate(self._state.clients[client_id]):
                 if stats.rpc_id == rpc_id:
                     async with self._lock:
                         # remove the stats record matching the removed rpc id
-                        del self._state[client_id][index]
+                        del self._state.clients[client_id][index]
                         # remove the connection between rpc and client, once we removed it from state
                         del self._rpc_id_to_client_id[rpc_id]
                         # if no client records left in state remove the client entry
-                        if not len(self._state[client_id]):
-                            del self._state[client_id]
+                        if not len(self._state.clients[client_id]):
+                            del self._state.clients[client_id]
                     break
         except Exception as err:
             logger.warning(f"Remove client from server statistics failed: {repr(err)}")
@@ -171,15 +179,27 @@ class OpalStatistics():
             logger.info("Publish rpc_id={rpc_id} to be removed from statistics", rpc_id=rpc_id)
             asyncio.create_task(self._endpoint.publish([opal_common_config.STATISTICS_REMOVE_CLIENT_CHANNEL], rpc_id))
 
-    def init_statistics_router(self):
-        router = APIRouter()
+def init_statistics_router(stats: Optional[OpalStatistics] = None):
+    """
+    initializes a route where a client (or any other network peer) can inquire what opal
+    clients are currently connected to the server and on what topics are they registered.
 
-        @router.get('/statistics')
-        async def get_statistics():
-            """
-            Route to serve server statistics
-            """
-            logger.info("Serving statistics")
-            return self.state
+    If the OPAL server does not have statistics enabled, the route will return 501 Not Implemented
+    """
+    router = APIRouter()
 
-        return router
+    @router.get('/statistics', response_model=ServerStats)
+    async def get_statistics():
+        """
+        Route to serve server statistics
+        """
+        if stats is None:
+            raise HTTPException(
+                status_code=status.HTTP_501_NOT_IMPLEMENTED,
+                detail={"error": "This OPAL server does not have statistics turned on." + \
+                    " To turn on, set this config var: OPAL_STATISTICS_ENABLED=true"}
+            )
+        logger.info("Serving statistics")
+        return stats.state
+
+    return router
