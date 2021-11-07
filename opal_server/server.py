@@ -5,6 +5,7 @@ from functools import partial
 from typing import Optional, List
 
 from fastapi import Depends, FastAPI
+from fastapi_websocket_pubsub.event_broadcaster import EventBroadcasterContextManager
 from opal_common.confi.confi import load_conf_if_none
 from opal_common.git.repo_cloner import RepoClonePathFinder
 
@@ -28,6 +29,7 @@ from opal_server.policy.watcher import (setup_watcher_task,
                                         trigger_repo_watcher_pull)
 from opal_server.policy.watcher.task import PolicyWatcherTask
 from opal_server.pubsub import PubSub
+from opal_server.statistics import OpalStatistics, init_statistics_router
 
 
 class OpalServer:
@@ -126,6 +128,18 @@ class OpalServer:
                     topic=opal_server_config.BROADCAST_KEEPALIVE_TOPIC
                 )
 
+        if opal_common_config.STATISTICS_ENABLED:
+            self.opal_statistics = OpalStatistics(self.pubsub.endpoint)
+        else:
+            self.opal_statistics = None
+
+        # if stats are enabled, the server workers must be listening on the broadcast
+        # channel for their own syncronization, not just for their clients. therefore
+        # we need a "global" listening context
+        self.broadcast_listening_context: Optional[EventBroadcasterContextManager] = None
+        if self.broadcaster_uri is not None and opal_common_config.STATISTICS_ENABLED:
+            self.broadcast_listening_context = self.pubsub.endpoint.broadcaster.get_listening_context()
+
         self.watcher: Optional[PolicyWatcherTask] = None
 
         # init fastapi app
@@ -167,6 +181,7 @@ class OpalServer:
         )
         webhook_router = init_git_webhook_router(self.pubsub.endpoint, authenticator)
         security_router = init_security_router(self.signer, StaticBearerAuthenticator(self.master_token))
+        statistics_router = init_statistics_router(self.opal_statistics)
 
         # mount the api routes on the app object
         app.include_router(bundles_router, tags=["Bundle Server"], dependencies=[Depends(authenticator)])
@@ -174,6 +189,7 @@ class OpalServer:
         app.include_router(webhook_router, tags=["Github Webhook"])
         app.include_router(security_router, tags=["Security"])
         app.include_router(self.pubsub.router, tags=["Pub/Sub"])
+        app.include_router(statistics_router, tags=['Server Statistics'], dependencies=[Depends(authenticator)])
 
         if self.jwks_endpoint is not None:
             # mount jwts (static) route
@@ -218,6 +234,12 @@ class OpalServer:
         """
         if self.publisher is not None:
             async with self.publisher:
+                if self.opal_statistics is not None:
+                    if self.broadcast_listening_context is not None:
+                        logger.info("listening on broadcast channel for statistics events...")
+                        await self.broadcast_listening_context.__aenter__()
+                    asyncio.create_task(self.opal_statistics.run())
+                    self.pubsub.endpoint.notifier.register_unsubscribe_event(self.opal_statistics.remove_client)
                 if self._init_policy_watcher:
                     # repo watcher is enabled, but we want only one worker to run it
                     # (otherwise for each new commit, we will publish multiple updates via pub/sub).
@@ -242,6 +264,10 @@ class OpalServer:
                             if self.broadcast_keepalive is not None:
                                 self.broadcast_keepalive.start()
                             await self.watcher.wait_until_should_stop()
+                if self.opal_statistics is not None and self.broadcast_listening_context is not None:
+                    await self.broadcast_listening_context.__aexit__()
+                    logger.info("stopped listening for statistics events on the broadcast channel")
+
 
     async def stop_server_background_tasks(self):
         logger.info("stopping background tasks...")

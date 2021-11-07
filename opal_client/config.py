@@ -113,6 +113,11 @@ class OpalClientConfig(Confi):
         "system/opal/transactions",
         description="Path to OPA document that stores the OPA write transactions")
 
+    OPAL_CLIENT_STAT_ID = confi.str(
+        "OPAL_CLIENT_STAT_ID",
+        None,
+        description="Unique client statistics identifier")
+
     OPA_HEALTH_CHECK_POLICY_PATH = 'opa/healthcheck/opal.rego'
 
     def on_load(self):

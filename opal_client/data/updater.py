@@ -12,6 +12,7 @@ from aiohttp.client import ClientSession, ClientError
 from fastapi_websocket_pubsub import PubSubClient
 from fastapi_websocket_rpc.rpc_channel import RpcChannel
 
+from opal_common.config import opal_common_config
 from opal_client.config import opal_client_config
 from opal_client.data.fetcher import DataFetcher
 from opal_client.data.rpc import TenantAwareRpcEventClientMethods
@@ -40,7 +41,8 @@ class DataUpdater:
                  policy_store: BasePolicyStoreClient = None,
                  should_send_reports=None,
                  data_fetcher: Optional[DataFetcher] = None,
-                 callbacks_register: Optional[CallbacksRegister] = None
+                 callbacks_register: Optional[CallbacksRegister] = None,
+                 opal_client_id: str = None
         ):
         """
         Keeps policy-stores (e.g. OPA) up to date with relevant data
@@ -77,6 +79,7 @@ class DataUpdater:
         self._token = token
         self._server_url = pubsub_url
         self._data_sources_config_url = data_sources_config_url
+        self._opal_client_id = opal_client_id
         if self._token is None:
             self._extra_headers = None
         else:
@@ -167,6 +170,11 @@ class DataUpdater:
         logger.info("Connected to server")
         if self._fetch_on_connect:
             await self.get_base_policy_data()
+        if opal_common_config.STATISTICS_ENABLED:
+            await self._client.wait_until_ready()
+            # publish statistics to the server about new connection from client (only if STATISTICS_ENABLED is True, default to False)
+            await self._client.publish([opal_common_config.STATISTICS_ADD_CLIENT_CHANNEL], data={'topics': self._data_topics, 'client_id': self._opal_client_id, 'rpc_id': channel.id})
+
 
     async def on_disconnect(self, channel: RpcChannel):
         logger.info("Disconnected from server")

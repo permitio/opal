@@ -63,6 +63,11 @@ class OpalServerConfig(Confi):
     BROADCAST_KEEPALIVE_INTERVAL = confi.int("BROADCAST_KEEPALIVE_INTERVAL", 3600, description="the time to wait between sending two consecutive broadcaster keepalive messages")
     BROADCAST_KEEPALIVE_TOPIC = confi.str("BROADCAST_KEEPALIVE_TOPIC", "__broadcast_session_keepalive__", description="the topic on which we should send broadcaster keepalive messages")
 
+    # statistics
+    MAX_CHANNELS_PER_CLIENT = confi.int("MAX_CHANNELS_PER_CLIENT", 15, description="max number of records per client, after this number it will not be added to statistics, relevant only if STATISTICS_ENABLED")
+    STATISTICS_WAKEUP_CHANNEL = confi.str("STATISTICS_WAKEUP_CHANNEL", "__opal_stats_wakeup", description="The topic a waking-up OPAL server uses to notify others he needs their statistics data")
+    STATISTICS_STATE_SYNC_CHANNEL = confi.str("STATISTICS_STATE_SYNC_CHANNEL", "__opal_stats_state_sync", description="The topic other servers with statistics provide their state to a waking-up server")
+
     # Data updates
     ALL_DATA_TOPIC = confi.str("ALL_DATA_TOPIC", "policy_data", description="Top level topic for data")
     ALL_DATA_ROUTE = confi.str("ALL_DATA_ROUTE", "/policy-data")

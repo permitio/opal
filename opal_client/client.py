@@ -2,6 +2,7 @@ from logging import disable
 import os
 import signal
 import asyncio
+import uuid
 import aiohttp
 import functools
 from typing import List, Optional
@@ -52,14 +53,15 @@ class OpalClient:
                 policy_updater (PolicyUpdater, optional): Defaults to None.
         """
         # defaults
-        policy_store_type:PolicyStoreTypes=policy_store_type or opal_client_config.POLICY_STORE_TYPE
-        inline_opa_enabled:bool=inline_opa_enabled or opal_client_config.INLINE_OPA_ENABLED
-        inline_opa_options:OpaServerOptions=inline_opa_options or opal_client_config.INLINE_OPA_CONFIG
+        policy_store_type: PolicyStoreTypes = policy_store_type or opal_client_config.POLICY_STORE_TYPE
+        inline_opa_enabled: bool = inline_opa_enabled or opal_client_config.INLINE_OPA_ENABLED
+        inline_opa_options: OpaServerOptions = inline_opa_options or opal_client_config.INLINE_OPA_CONFIG
+        opal_client_identifier: str = opal_client_config.OPAL_CLIENT_STAT_ID or f"CLIENT_{uuid.uuid4().hex}"
         # set logs
         configure_logs()
         # Init policy store client
-        self.policy_store_type:PolicyStoreTypes = policy_store_type
-        self.policy_store:BasePolicyStoreClient = policy_store or PolicyStoreClientFactory.create(policy_store_type)
+        self.policy_store_type: PolicyStoreTypes = policy_store_type
+        self.policy_store: BasePolicyStoreClient = policy_store or PolicyStoreClientFactory.create(policy_store_type)
         # data fetcher
         self.data_fetcher = DataFetcher()
         # callbacks register
@@ -74,14 +76,14 @@ class OpalClient:
         if policy_updater is not None:
             self.policy_updater = policy_updater
         else:
-            self.policy_updater = PolicyUpdater(policy_store=self.policy_store, data_fetcher=self.data_fetcher, callbacks_register=self._callbacks_register)
+            self.policy_updater = PolicyUpdater(policy_store=self.policy_store, data_fetcher=self.data_fetcher, callbacks_register=self._callbacks_register, opal_client_id=opal_client_identifier)
         # Data updating service
         if opal_client_config.DATA_UPDATER_ENABLED:
             if data_updater is not None:
                 self.data_updater = data_updater
             else:
                 data_topics = data_topics if data_topics is not None else opal_client_config.DATA_TOPICS
-                self.data_updater = DataUpdater(policy_store=self.policy_store, data_topics=data_topics, data_fetcher=self.data_fetcher, callbacks_register=self._callbacks_register)
+                self.data_updater = DataUpdater(policy_store=self.policy_store, data_topics=data_topics, data_fetcher=self.data_fetcher, callbacks_register=self._callbacks_register, opal_client_id=opal_client_identifier)
         else:
             self.data_updater = None
 

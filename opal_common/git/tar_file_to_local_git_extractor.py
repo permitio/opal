@@ -9,7 +9,7 @@ from opal_common.security.tarsafe import TarSafe
 from opal_server.config import opal_server_config
 
 
-class TarFileToLocalGitExtractor():
+class TarFileToLocalGitExtractor:
     """
     This class takes tar file from remote api source and extract it to local
     git, so we could manage update to opal clients
