@@ -41,6 +41,7 @@ logger = get_logger("opal.statistics")
 # time to wait before sending statistics
 MIN_TIME_TO_WAIT = 0.001
 MAX_TIME_TO_WAIT = 5
+SLEEP_TIME_FOR_BROADCASTER_READER_TO_START = 2
 
 class OpalStatistics:
     """
@@ -83,8 +84,13 @@ class OpalStatistics:
         await self._endpoint.subscribe([opal_common_config.STATISTICS_ADD_CLIENT_CHANNEL], self._add_client)
         await self._endpoint.subscribe([opal_common_config.STATISTICS_REMOVE_CLIENT_CHANNEL], self._sync_remove_client)
 
+        # wait before publishing the wakeup message, due to the fact we are
+        # counting on the broadcaster to listen and to replicate the message
+        # to the other workers / server nodes in the networks.
+        # However, since broadcaster is using asyncio.create_task(), there is a
+        # race condition that is mitigate by this asyncio.sleep() call.
+        await asyncio.sleep(SLEEP_TIME_FOR_BROADCASTER_READER_TO_START)
         # Let all the other opal servers know that new opal server started
-        await asyncio.sleep(2)
         logger.info(f"sending stats wakeup message: {self._worker_id}")
         asyncio.create_task(self._endpoint.publish([opal_server_config.STATISTICS_WAKEUP_CHANNEL], SyncRequest(requesting_worker_id=self._worker_id).dict()))
 
