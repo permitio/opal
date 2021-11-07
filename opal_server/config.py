@@ -65,8 +65,8 @@ class OpalServerConfig(Confi):
 
     # statistics
     MAX_CHANNELS_PER_CLIENT = confi.int("MAX_CHANNELS_PER_CLIENT", 15, description="max number of records per client, after this number it will not be added to statistics, relevant only if STATISTICS_ENABLED")
-    STATISTICS_WAKEUP_SYNC_CHANNEL = confi.str("STATISTICS_WAKEUP_SYNC_CHANNEL", "__opal_stats_server_wakeup_sync", description="The topic to update about OPAL server turn on and need to sync statistics")
-    STATISTICS_WAKEUP_CALL_CHANNEL = confi.str("STATISTICS_WAKEUP_CALL_CHANNEL", "__opal_stats_server_wakeup_call", description="The topic to update about OPAL server turn on and need to sync statistics")
+    STATISTICS_WAKEUP_CHANNEL = confi.str("STATISTICS_WAKEUP_CHANNEL", "__opal_stats_wakeup", description="The topic a waking-up OPAL server uses to notify others he needs their statistics data")
+    STATISTICS_STATE_SYNC_CHANNEL = confi.str("STATISTICS_STATE_SYNC_CHANNEL", "__opal_stats_state_sync", description="The topic other servers with statistics provide their state to a waking-up server")
 
     # Data updates
     ALL_DATA_TOPIC = confi.str("ALL_DATA_TOPIC", "policy_data", description="Top level topic for data")

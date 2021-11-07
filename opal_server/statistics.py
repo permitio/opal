@@ -1,6 +1,7 @@
 import asyncio
+from uuid import uuid4
 from datetime import datetime
-from typing import Dict, List, Optional
+from typing import Dict, List, Set, Optional
 from random import uniform
 
 import pydantic
@@ -25,10 +26,20 @@ class ServerStats(BaseModel):
     clients: Dict[str, List[ChannelStats]] = Field(..., description="connected opal clients, each client can have multiple subscriptions")
 
 
+class SyncRequest(BaseModel):
+    requesting_worker_id: str
+
+
+class SyncResponse(BaseModel):
+    requesting_worker_id: str
+    clients: Dict[str, List[ChannelStats]]
+
+
 logger = get_logger("opal.statistics")
 
-TIME_RANGE_TO_WAIT = (0.001, 2)
-
+# time to wait before sending statistics
+MIN_TIME_TO_WAIT = 0.001
+MAX_TIME_TO_WAIT = 5
 
 class OpalStatistics:
     """
@@ -53,10 +64,10 @@ class OpalStatistics:
         self._rpc_id_to_client_id: Dict[str, str] = {}
         self._lock = asyncio.Lock()
 
-        # Event to help sync with other server wokers so not every worker will send the statistics state
-        self._should_publish = asyncio.Event()
-        # Let all the other opal servers know that new opal server started
-        asyncio.create_task(self._endpoint.publish([opal_server_config.STATISTICS_WAKEUP_CALL_CHANNEL], ""))
+        # helps us realize when another server already responded to a sync request
+        self._worker_id = uuid4().hex
+        self._synced_after_wakeup = asyncio.Event()
+        self._received_sync_messages: Set[str] = set()
 
     @property
     def state(self) -> ServerStats:
@@ -66,11 +77,15 @@ class OpalStatistics:
         """
         subscribe to two channels to be able to sync add and delete of clients
         """
-
-        await self._endpoint.subscribe([opal_server_config.STATISTICS_WAKEUP_CALL_CHANNEL], self._should_sync_server_statistics)
-        await self._endpoint.subscribe([opal_server_config.STATISTICS_WAKEUP_SYNC_CHANNEL], self._sync_server_statistics)
+        await self._endpoint.subscribe([opal_server_config.STATISTICS_WAKEUP_CHANNEL], self._receive_other_worker_wakeup_message)
+        await self._endpoint.subscribe([opal_server_config.STATISTICS_STATE_SYNC_CHANNEL], self._receive_other_worker_synced_state)
         await self._endpoint.subscribe([opal_common_config.STATISTICS_ADD_CLIENT_CHANNEL], self._add_client)
         await self._endpoint.subscribe([opal_common_config.STATISTICS_REMOVE_CLIENT_CHANNEL], self._sync_remove_client)
+
+        # Let all the other opal servers know that new opal server started
+        await asyncio.sleep(2)
+        logger.info(f"sending stats wakeup message: {self._worker_id}")
+        asyncio.create_task(self._endpoint.publish([opal_server_config.STATISTICS_WAKEUP_CHANNEL], SyncRequest(requesting_worker_id=self._worker_id).dict()))
 
     async def _sync_remove_client(self, subscription: Subscription, rpc_id: str):
         """
@@ -83,37 +98,54 @@ class OpalStatistics:
 
         await self.remove_client(rpc_id=rpc_id, topics=[], publish=False)
 
-    async def _should_sync_server_statistics(self, subscription: Subscription, empty_msg: str):
+    async def _receive_other_worker_wakeup_message(self, subscription: Subscription, sync_request: dict):
         """
-        Callback when new server request state
-        Sends state only if we have state of our own
+        Callback when new server wakes up and requests our statistics state.
 
-        Args:
-        not in use
+        Sends state only if we have state of our own and another response to that request was not already received.
         """
+        try:
+            request = SyncRequest(**sync_request)
+        except pydantic.ValidationError as e:
+            logger.warning(f"Got invalid statistics sync request from another server, error: {repr(e)}")
+            return
+
+        if self._worker_id == request.requesting_worker_id:
+            # skip my own requests
+            logger.debug(f"IGNORING my own stats wakeup message: {request.requesting_worker_id}")
+            return
+
+        logger.debug(f"received stats wakeup message: {request.requesting_worker_id}")
         if len(self._state.clients):
             # wait random time in order to reduce the number of messages sent by all the other opal servers
-            asyncio.sleep(uniform(TIME_RANGE_TO_WAIT[0], TIME_RANGE_TO_WAIT[1]))
+            await asyncio.sleep(uniform(MIN_TIME_TO_WAIT, MAX_TIME_TO_WAIT))
             # if didn't got any other message it means that this server is the first one to pass the sleep
-            if not self._should_publish.is_set():
-                asyncio.create_task(self._endpoint.publish([opal_server_config.STATISTICS_WAKEUP_SYNC_CHANNEL], self._state.clients))
+            if not request.requesting_worker_id in self._received_sync_messages:
+                logger.info(f"[{request.requesting_worker_id}] respond with my own stats")
+                asyncio.create_task(self._endpoint.publish([opal_server_config.STATISTICS_STATE_SYNC_CHANNEL], SyncResponse(requesting_worker_id=request.requesting_worker_id, clients=self._state.clients).dict()))
 
-    async def _sync_server_statistics(self, subscription: Subscription, remote_connections: Dict[str, List[ChannelStats]]):
+    async def _receive_other_worker_synced_state(self, subscription: Subscription, sync_response: dict):
         """
-        helper function to update server statistics in case of reboot
+        Callback when another server sends us it's statistics data as a response to a sync request.
 
         Args:
             subscription (Subscription): not used, we get it from callbacks.
             rpc_id (Dict[str, List[ChannelStats]]): state from remote server
         """
-        # update asyncio event that we got sever sync message, no need to send another one
-        self._should_publish.set()
-        # update my state only if this server don't have a state
-        if not len(self._state.clients):
-            self._state.clients = remote_connections
-        # wait the max time to wait before state publish and clear the asyncio event
-        asyncio.sleep(TIME_RANGE_TO_WAIT[1])
-        self._should_publish.clear()
+        try:
+            response = SyncResponse(**sync_response)
+        except pydantic.ValidationError as e:
+            logger.warning(f"Got invalid statistics sync response from another server, error: {repr(e)}")
+            return
+
+        async with self._lock:
+            self._received_sync_messages.add(response.requesting_worker_id)
+
+            # update my state only if this server don't have a state
+            if not len(self._state.clients) and not self._synced_after_wakeup.is_set():
+                logger.info(f"[{response.requesting_worker_id}] applying server stats")
+                self._state.clients = response.clients
+                self._synced_after_wakeup.set()
 
     async def _add_client(self, subscription: Subscription, stats_message: dict):
         """
