@@ -33,6 +33,7 @@ class SyncRequest(BaseModel):
 class SyncResponse(BaseModel):
     requesting_worker_id: str
     clients: Dict[str, List[ChannelStats]]
+    rpc_id_to_client_id: Dict[str, str]
 
 
 logger = get_logger("opal.statistics")
@@ -122,7 +123,9 @@ class OpalStatistics:
             # if didn't got any other message it means that this server is the first one to pass the sleep
             if not request.requesting_worker_id in self._received_sync_messages:
                 logger.info(f"[{request.requesting_worker_id}] respond with my own stats")
-                asyncio.create_task(self._endpoint.publish([opal_server_config.STATISTICS_STATE_SYNC_CHANNEL], SyncResponse(requesting_worker_id=request.requesting_worker_id, clients=self._state.clients).dict()))
+                asyncio.create_task(self._endpoint.publish(
+                    [opal_server_config.STATISTICS_STATE_SYNC_CHANNEL],
+                    SyncResponse(requesting_worker_id=request.requesting_worker_id, clients=self._state.clients, rpc_id_to_client_id=self._rpc_id_to_client_id).dict()))
 
     async def _receive_other_worker_synced_state(self, subscription: Subscription, sync_response: dict):
         """
@@ -145,6 +148,7 @@ class OpalStatistics:
             if not len(self._state.clients) and not self._synced_after_wakeup.is_set():
                 logger.info(f"[{response.requesting_worker_id}] applying server stats")
                 self._state.clients = response.clients
+                self._rpc_id_to_client_id = response.rpc_id_to_client_id
                 self._synced_after_wakeup.set()
 
     async def _add_client(self, subscription: Subscription, stats_message: dict):
