@@ -30,6 +30,7 @@ def configure_logs():
         backtrace=opal_common_config.LOG_TRACEBACK,
         diagnose=opal_common_config.LOG_DIAGNOSE,
         colorize=opal_common_config.LOG_COLORIZE,
+        serialize=opal_common_config.LOG_FILE_SERIALIZE,
     )
     # log to a file
     if opal_common_config.LOG_TO_FILE:

@@ -1,4 +1,3 @@
-from logging import disable
 import os
 import signal
 import asyncio
@@ -6,6 +5,7 @@ import uuid
 import aiohttp
 import functools
 from typing import List, Optional
+from ddtrace import patch, config
 
 from fastapi import FastAPI
 import websockets
@@ -128,6 +128,11 @@ class OpalClient:
         """
         inits the fastapi app object
         """
+        # Datadog APM
+        patch(fastapi=True)
+        # Override service name
+        config.fastapi['service_name'] = 'opal-client'
+        config.fastapi['request_span_name'] = 'opal-client'
         app = FastAPI(
             title="OPAL Client",
             description="OPAL is an administration layer for Open Policy Agent (OPA), detecting changes" + \

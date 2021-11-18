@@ -3,6 +3,7 @@ import asyncio
 import shutil
 from functools import partial
 from typing import Optional, List
+from ddtrace import patch, config
 
 from fastapi import Depends, FastAPI
 from fastapi_websocket_pubsub.event_broadcaster import EventBroadcasterContextManager
@@ -149,6 +150,12 @@ class OpalServer:
         """
         inits the fastapi app object
         """
+        # Datadog APM
+        patch(fastapi=True)
+        # Override service name
+        config.fastapi['service_name'] = 'opal-server'
+        config.fastapi['request_span_name'] = 'opal-server'
+
         app = FastAPI(
             title="Opal Server",
             description="OPAL is an administration layer for Open Policy Agent (OPA), detecting changes" +
