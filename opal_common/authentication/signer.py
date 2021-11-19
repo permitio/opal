@@ -74,8 +74,10 @@ class JWTSigner(JWTVerifier):
                 raise InvalidJWTCryptoKeysException("private key and public key do not match!") from exc
             # save jwk
             self._jwk: PyJWK = PyJWK.from_json(self.get_jwk(), algorithm=self._algorithm)
-        elif (self._private_key != self._public_key) and (self._private_key is None or self._public_key is None):
-            raise ValueError("JWT Signer not valid, only one of private key / public key pair was provided!")
+        elif self._private_key is None and self._public_key is not None:
+            raise ValueError("JWT Signer not valid, you provided a public key without a private key!")
+        elif self._private_key is not None and self._public_key is None:
+            raise ValueError("JWT Signer not valid, you provided a private key without a public key!")
         elif self._private_key is None and self._public_key is None:
             # valid situation, running in dev mode and api security is off
             self._disable()
