@@ -266,7 +266,11 @@ class OpalClient:
             raise
 
         try:
-            await self.policy_store.init_healthcheck_policy(policy_id=healthcheck_policy_relpath, policy_code=healthcheck_policy_code)
+            await self.policy_store.init_healthcheck_policy(
+                policy_id=healthcheck_policy_relpath,
+                policy_code=healthcheck_policy_code,
+                data_updater_enabled=opal_client_config.DATA_UPDATER_ENABLED
+            )
         except aiohttp.ClientError as err:
             logger.error("Failed to connect to OPA agent while init healthcheck policy -- {err}", err=repr(err))
             raise

@@ -13,7 +13,7 @@ from opal_client.config import opal_client_config
 from opal_client.logger import logger
 from opal_client.utils import proxy_response
 from opal_common.schemas.policy import DataModule, PolicyBundle
-from opal_common.schemas.store import JSONPatchAction, StoreTransaction, ArrayAppendAction, TransactionType
+from opal_common.schemas.store import JSONPatchAction, StoreTransaction, TransactionType
 from opal_common.opa.parsing import get_rego_package
 from opal_common.git.bundle_utils import BundleUtils
 from opal_client.policy_store.base_policy_store_client import BasePolicyStoreClient, JsonableValue
@@ -65,10 +65,11 @@ class OpaTransactionLogState:
     POLICY_ACTIONS = ["set_policies", "set_policy", "delete_policy"]
     DATA_ACTIONS = ["set_policy_data", "delete_policy_data"]
 
-    def __init__(self, policy_store: BasePolicyStoreClient, policy_id: str, policy_template: str):
+    def __init__(self, policy_store: BasePolicyStoreClient, policy_id: str, policy_template: str, data_updater_enabled: bool = True):
         self._store = policy_store
         self._policy_id = policy_id
         self._policy_template = policy_template
+        self._data_updater_disabled = not data_updater_enabled
         self._num_successful_policy_transactions = 0
         self._num_failed_policy_transactions = 0
         self._num_successful_data_transactions = 0
@@ -82,18 +83,21 @@ class OpaTransactionLogState:
     def ready(self) -> bool:
         is_ready: bool = (
             self._num_successful_policy_transactions > 0 and
-            self._num_successful_data_transactions > 0
+            (self._data_updater_disabled or self._num_successful_data_transactions > 0)
         )
         return json.dumps(is_ready)
 
     @property
     def healthy(self) -> bool:
-        is_healthy: bool = (
+        policy_updater_is_healthy: bool = (
             self._last_policy_transaction is not None and
-            self._last_policy_transaction.success and
+            self._last_policy_transaction.success
+        )
+        data_updater_is_healthy: bool = (
             self._last_data_transaction is not None and
             self._last_data_transaction.success
         )
+        is_healthy: bool = policy_updater_is_healthy and (self._data_updater_disabled or data_updater_is_healthy)
         return json.dumps(is_healthy)
 
     @property
@@ -138,6 +142,7 @@ class OpaTransactionLogState:
                 success_data=self._num_successful_data_transactions, failed_data=self._num_failed_data_transactions)
         policy_code = self._policy_template.format(
             ready=self.ready,
+            healthy=self.healthy,
             last_policy_transaction=self.last_policy_transaction,
             last_failed_policy_transaction=self.last_failed_policy_transaction,
             last_data_transaction=self.last_data_transaction,
@@ -488,11 +493,12 @@ class OpaClient(BasePolicyStoreClient):
             raise
 
     @retry(**RETRY_CONFIG)
-    async def init_healthcheck_policy(self, policy_id: str, policy_code: str):
+    async def init_healthcheck_policy(self, policy_id: str, policy_code: str, data_updater_enabled: bool = True):
         self._transaction_state = OpaTransactionLogState(
             policy_store=self,
             policy_id=policy_id,
-            policy_template=policy_code
+            policy_template=policy_code,
+            data_updater_enabled=data_updater_enabled
         )
         return await self._transaction_state.persist()
 
