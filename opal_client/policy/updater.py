@@ -139,6 +139,7 @@ class PolicyUpdater:
         logger.info("Launching policy updater")
         if self._subscriber_task is None:
             self._subscriber_task = asyncio.create_task(self._subscriber())
+            await self._data_fetcher.start()
 
     async def stop(self):
         """
@@ -164,6 +165,8 @@ class PolicyUpdater:
                 logger.debug("PolicyUpdater subscriber task was force-cancelled: {exc}", exc=repr(exc))
             self._subscriber_task = None
             logger.debug("PolicyUpdater subscriber task was cancelled")
+
+        await self._data_fetcher.stop()
 
     async def wait_until_done(self):
         if self._subscriber_task is not None:
