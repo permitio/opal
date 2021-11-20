@@ -41,7 +41,7 @@ class CallbacksReporter:
             # log reports which we failed to send
             for (url, config, result) in report_results:
                 if isinstance(result, Exception):
-                    logger.error("Failed to send report to {url}", url=url, exc_info=result)
+                    logger.error("Failed to send report to {url}, info={exc_info}", url=url, exc_info=repr(result))
                 if isinstance(result, aiohttp.ClientResponse) and is_http_error_response(result): # error responses
                     try:
                         error_content = await result.json()
