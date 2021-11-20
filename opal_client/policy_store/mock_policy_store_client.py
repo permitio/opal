@@ -69,7 +69,7 @@ class MockPolicyStoreClient(BasePolicyStoreClient):
         """
         await self.has_data_event.wait()
 
-    async def init_healthcheck_policy(self, policy_id: str, policy_code: str):
+    async def init_healthcheck_policy(self, policy_id: str, policy_code: str, data_updater_enabled: bool = True):
         pass
 
     async def persist_transaction(self, transaction: StoreTransaction):
