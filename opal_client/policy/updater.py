@@ -5,13 +5,14 @@ from opal_client.callbacks.register import CallbacksRegister
 from opal_client.data.fetcher import DataFetcher
 from typing import List, Optional
 
+import pydantic
 from fastapi_websocket_rpc.rpc_channel import RpcChannel
 from fastapi_websocket_pubsub import PubSubClient
 from opal_common.schemas.store import TransactionType
 
 from opal_common.config import opal_common_config
 from opal_common.utils import get_authorization_header
-from opal_common.schemas.policy import PolicyBundle
+from opal_common.schemas.policy import PolicyBundle, PolicyUpdateMessage
 from opal_common.topics.utils import (
     pubsub_topics_from_directories,
     POLICY_PREFIX,
@@ -56,7 +57,7 @@ class PolicyUpdater:
         # defaults
         token: str = token or opal_client_config.CLIENT_TOKEN
         pubsub_url: str = pubsub_url or opal_client_config.SERVER_PUBSUB_URL
-        subscription_directories: List[str] = subscription_directories or opal_client_config.POLICY_SUBSCRIPTION_DIRS
+        self._subscription_directories: List[str] = subscription_directories or opal_client_config.POLICY_SUBSCRIPTION_DIRS
         self._opal_client_id = opal_client_id
 
         # The policy store we'll save policy modules into (i.e: OPA)
@@ -69,7 +70,7 @@ class PolicyUpdater:
         else:
             self._extra_headers = [get_authorization_header(self._token)]
         # Pub/Sub topics we subscribe to for policy updates
-        self._topics = pubsub_topics_from_directories(subscription_directories)
+        self._topics = pubsub_topics_from_directories(self._subscription_directories)
         # The pub/sub client for data updates
         self._client = None
         # The task running the Pub/Sub subcribing client
@@ -97,18 +98,23 @@ class PolicyUpdater:
         will run when we get notifications on the policy topic.
         i.e: when the source repository changes (new commits)
         """
-        if topic.startswith(POLICY_PREFIX):
-            directories = [remove_prefix(topic, prefix=POLICY_PREFIX)]
-            logger.info(
-                "Received policy update: affected directories={directories}, new commit hash='{new_hash}'",
-                directories=directories,
-                topic=topic,
-                new_hash=data
-            )
-        else:
-            directories = default_subscribed_policy_directories()
-            logger.warning("Received policy updated (invalid topic): {topic}", topic=topic)
+        if data is None:
+            logger.warning("got policy update message without data, skipping policy update!")
+            return
 
+        try:
+            message = PolicyUpdateMessage(**data)
+        except pydantic.ValidationError as e:
+            logger.warning(f"Got invalid policy update message from server: {repr(e)}")
+            return
+
+        logger.info(
+            "Received policy update: topic={topic}, message={message}",
+            topic=topic,
+            message=message.dict()
+        )
+
+        directories = list(set(message.changed_directories).intersection(set(self._subscription_directories)))
         await self.update_policy(directories)
 
     async def _on_connect(self, client: PubSubClient, channel: RpcChannel):
