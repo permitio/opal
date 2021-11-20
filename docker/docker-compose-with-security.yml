@@ -1,5 +1,5 @@
-# this docker compose file is relying on external environment variables
-# run it using the script file
+# this docker compose file is relying on external environment variables!
+# run it by running the script: ./run-example-with-security.sh
 version: "3.8"
 services:
   # When scaling the opal-server to multiple nodes and/or multiple workers, we use
