@@ -102,7 +102,9 @@ class OpalServer:
                 audience=opal_common_config.AUTH_JWT_AUDIENCE,
                 issuer=opal_common_config.AUTH_JWT_ISSUER,
             )
-        if not self.signer.enabled:
+        if self.signer.enabled:
+            logger.info("OPAL is running in secure mode - will verify API requests with JWT tokens.")
+        else:
             logger.info("OPAL was not provided with JWT encryption keys, cannot verify api requests!")
 
         if enable_jwks_endpoint:
