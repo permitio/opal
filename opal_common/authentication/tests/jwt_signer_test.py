@@ -24,6 +24,7 @@ from opal_common.authentication.types import EncryptionKeyFormat, JWTAlgorithm, 
 from opal_common.authentication.casting import cast_private_key, cast_public_key
 from opal_common.authentication.signer import JWTSigner
 from opal_common.authentication.verifier import JWTVerifier
+from opal_common.logger import logger
 
 KEY_FILENAME = "opal_test_crypto_key"
 PASSPHRASE = "whiterabbit"
@@ -46,6 +47,7 @@ async def run_subprocess(command: str):
 async def run_commands(commands: List[str]):
     # the await inside the for-loop is intentional, these commands should not run in parallel
     for command in commands:
+        logger.info(f"running command: {command}")
         await run_subprocess(command)
 
 async def verify_crypto_keys(
@@ -60,25 +62,34 @@ async def verify_crypto_keys(
     assert private_key_filename.exists()
     assert public_key_filename.exists()
 
+    logger.info("trying to cast private key from string...")
     private_key: Optional[PrivateKey] = cast_private_key(private_key_filename, private_key_format, passphrase)
     assert private_key is not None
 
+    logger.info("trying to cast public key from string...")
     public_key: Optional[PublicKey] = cast_public_key(public_key_filename, public_key_format)
     assert public_key is not None
 
+    logger.info("trying to init JWT Verifier...")
     verifier = JWTVerifier(public_key, algorithm, AUTH_JWT_AUDIENCE, AUTH_JWT_ISSUER)
     assert verifier.enabled
 
+    logger.info("trying to init JWT Signer...")
     signer = JWTSigner(private_key, public_key, algorithm, AUTH_JWT_AUDIENCE, AUTH_JWT_ISSUER)
     assert signer.enabled
 
+    logger.info("trying to sign a token...")
     token: str = signer.sign(uuid4(), timedelta(days=1), CUSTOM_CLAIMS)
+
+    logger.info("trying to verify the signed token...")
     claims: JWTClaims = verifier.verify(token)
 
+    logger.info("trying to verify all the claims on the token...")
     for k in CUSTOM_CLAIMS:
         assert k in claims.keys()
         assert CUSTOM_CLAIMS[k] == claims[k]
 
+    logger.info("done.")
 
 @pytest.mark.asyncio
 async def test_encryption_keys_RFC_4253_ssh_format_with_passphrase(tmp_path):
@@ -92,6 +103,7 @@ async def test_encryption_keys_RFC_4253_ssh_format_with_passphrase(tmp_path):
     the private key is in PEM format
     the public key in in ssh format
     """
+    logger.info("TEST: test_encryption_keys_RFC_4253_ssh_format_with_passphrase")
     # creates the keys under temp paths that are auto-deleted after the test
     private_key_filename = Path(os.path.join(tmp_path, KEY_FILENAME))
     public_key_filename = Path(f"{private_key_filename}.pub")
@@ -112,13 +124,15 @@ async def test_encryption_keys_RFC_4253_ssh_format_with_passphrase(tmp_path):
 
 @pytest.mark.asyncio
 async def test_encryption_keys_RFC_4253_ssh_format_no_passphrase(tmp_path):
+    logger.info("TEST: test_encryption_keys_RFC_4253_ssh_format_no_passphrase")
+
     # creates the keys under temp paths that are auto-deleted after the test
     private_key_filename = Path(os.path.join(tmp_path, KEY_FILENAME))
     public_key_filename = Path(f"{private_key_filename}.pub")
 
     # commands to generate crypto keys
     await run_commands([
-        f"ssh-keygen -t rsa -b 4096 -m pem -f {private_key_filename}",
+        f"ssh-keygen -t rsa -b 4096 -m pem -f {private_key_filename} -N ''",
     ])
 
     await verify_crypto_keys(
@@ -132,6 +146,8 @@ async def test_encryption_keys_RFC_4253_ssh_format_no_passphrase(tmp_path):
 
 @pytest.mark.asyncio
 async def test_encryption_keys_PKCS1_format_with_passphrase(tmp_path):
+    logger.info("TEST: test_encryption_keys_PKCS1_format_with_passphrase")
+
     # creates the keys under temp paths that are auto-deleted after the test
     private_key_filename = Path(os.path.join(tmp_path, KEY_FILENAME))
     public_key_filename = Path(f"{private_key_filename}.pub")
@@ -153,6 +169,8 @@ async def test_encryption_keys_PKCS1_format_with_passphrase(tmp_path):
 
 @pytest.mark.asyncio
 async def test_encryption_keys_X509_SPKI_format_with_passphrase(tmp_path):
+    logger.info("TEST: test_encryption_keys_X509_SPKI_format_with_passphrase")
+
     # creates the keys under temp paths that are auto-deleted after the test
     private_key_filename = Path(os.path.join(tmp_path, KEY_FILENAME))
     public_key_filename = Path(f"{private_key_filename}.pub")
@@ -177,6 +195,8 @@ async def test_encryption_keys_PKCS1_format_with_passphrase_hardcoded_keys(tmp_p
     """
     these hardcoded keys are for test purposes only - NEVER use them!!!!
     """
+    logger.info("TEST: test_encryption_keys_PKCS1_format_with_passphrase_hardcoded_keys")
+
     # creates the keys under temp paths that are auto-deleted after the test
     private_key_filename = Path(os.path.join(tmp_path, KEY_FILENAME))
     public_key_filename = Path(f"{private_key_filename}.pub")
@@ -268,6 +288,8 @@ async def test_encryption_keys_X509_SPKI_format_with_passphrase_hardcoded_keys(t
     """
     these hardcoded keys are for test purposes only - NEVER use them!!!!
     """
+    logger.info("TEST: test_encryption_keys_X509_SPKI_format_with_passphrase_hardcoded_keys")
+
     # creates the keys under temp paths that are auto-deleted after the test
     private_key_filename = Path(os.path.join(tmp_path, KEY_FILENAME))
     public_key_filename = Path(f"{private_key_filename}.pub")
