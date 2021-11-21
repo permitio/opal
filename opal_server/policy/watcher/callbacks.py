@@ -7,6 +7,7 @@ from opal_common.paths import PathUtils
 from opal_common.logger import logger
 from opal_common.git.commit_viewer import CommitViewer, has_extension
 from opal_common.git.diff_viewer import DiffViewer
+from opal_common.schemas.policy import PolicyUpdateMessage
 from opal_common.topics.publisher import TopicPublisher
 from opal_common.topics.utils import policy_topics
 
@@ -27,7 +28,12 @@ async def publish_all_directories_in_repo(
         directories = PathUtils.intermediate_directories(all_paths)
         logger.info("Publishing policy update, directories: {directories}", directories=[str(d) for d in directories])
         topics = policy_topics(directories)
-        publisher.publish(topics=topics, data=new_commit.hexsha)
+        message = PolicyUpdateMessage(
+            old_policy_hash=old_commit.hexsha,
+            new_policy_hash=new_commit.hexsha,
+            changed_directories=[str(path) for path in directories]
+        )
+        publisher.publish(topics=topics, data=message.dict())
 
 
 async def publish_changed_directories(
@@ -64,4 +70,9 @@ async def publish_changed_directories(
         directories = PathUtils.intermediate_directories(all_paths)
         logger.info("Publishing policy update, directories: {directories}", directories=[str(d) for d in directories])
         topics = policy_topics(directories)
-        publisher.publish(topics=topics, data=new_commit.hexsha)
+        message = PolicyUpdateMessage(
+            old_policy_hash=old_commit.hexsha,
+            new_policy_hash=new_commit.hexsha,
+            changed_directories=[str(path) for path in directories]
+        )
+        publisher.publish(topics=topics, data=message.dict())

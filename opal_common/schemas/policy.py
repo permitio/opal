@@ -27,3 +27,8 @@ class PolicyBundle(BaseSchema):
     data_modules: List[DataModule]
     policy_modules: List[RegoModule]
     deleted_files: Optional[DeletedFiles]
+
+class PolicyUpdateMessage(BaseModel):
+    old_policy_hash: str
+    new_policy_hash: str
+    changed_directories: List[str]
