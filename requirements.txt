@@ -20,3 +20,4 @@ typing-extensions
 uvicorn[standard]
 websockets==9.1
 rook
+ddtrace

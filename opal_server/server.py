@@ -151,6 +151,14 @@ class OpalServer:
         """
         inits the fastapi app object
         """
+        if "ENABLE_MONITORING" in os.environ and os.environ["ENABLE_MONITORING"].lower() != "false":
+            from ddtrace import patch, config
+            # Datadog APM
+            patch(fastapi=True)
+            # Override service name
+            config.fastapi["service_name"] = "opal-client"
+            config.fastapi["request_span_name"] = "opal-client"
+
         app = FastAPI(
             title="Opal Server",
             description="OPAL is an administration layer for Open Policy Agent (OPA), detecting changes" +
