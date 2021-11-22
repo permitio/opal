@@ -151,13 +151,8 @@ class OpalServer:
         """
         inits the fastapi app object
         """
-        if "ENABLE_MONITORING" in os.environ and os.environ["ENABLE_MONITORING"].lower() != "false":
-            from ddtrace import patch, config
-            # Datadog APM
-            patch(fastapi=True)
-            # Override service name
-            config.fastapi["service_name"] = "opal-client"
-            config.fastapi["request_span_name"] = "opal-client"
+        if opal_common_config.ENABLE_MONITORING:
+            self._configure_monitoring()
 
         app = FastAPI(
             title="Opal Server",
@@ -172,6 +167,18 @@ class OpalServer:
         self._configure_api_routes(app)
         self._configure_lifecycle_callbacks(app)
         return app
+
+    def _configure_monitoring(self):
+        """
+        patch fastapi to enable tracing and monitoring
+        """
+        from ddtrace import patch, config
+        # Datadog APM
+        patch(fastapi=True)
+        # Override service name
+        config.fastapi["service_name"] = "opal-client"
+        config.fastapi["request_span_name"] = "opal-client"
+
 
     def _configure_api_routes(self, app: FastAPI):
         """
