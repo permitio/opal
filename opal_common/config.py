@@ -24,6 +24,7 @@ class OpalCommonConfig(Confi):
     LOG_TRACEBACK = confi.bool("LOG_TRACEBACK", True)
     LOG_DIAGNOSE = confi.bool("LOG_DIAGNOSE", True)
     LOG_COLORIZE = confi.bool("LOG_COLORIZE", True)
+    LOG_SERIALIZE = confi.str("LOG_SERIALIZE", False)
     LOG_SHOW_CODE_LINE = confi.bool("LOG_SHOW_CODE_LINE", True)
     #  - log level
     LOG_LEVEL = confi.str("LOG_LEVEL", "INFO")
