@@ -170,14 +170,14 @@ class OpalServer:
 
     def _configure_monitoring(self):
         """
-        patch fastapi to enable tracing and monitoring
+        patch fastapi to enable tracing and monitoring with datadog APM
         """
         from ddtrace import patch, config
         # Datadog APM
         patch(fastapi=True)
         # Override service name
-        config.fastapi["service_name"] = "opal-client"
-        config.fastapi["request_span_name"] = "opal-client"
+        config.fastapi["service_name"] = "opal-server"
+        config.fastapi["request_span_name"] = "opal-server"
 
 
     def _configure_api_routes(self, app: FastAPI):
