@@ -151,6 +151,9 @@ class OpalServer:
         """
         inits the fastapi app object
         """
+        if opal_server_config.ENABLE_DATADOG_APM:
+            self._configure_monitoring()
+
         app = FastAPI(
             title="Opal Server",
             description="OPAL is an administration layer for Open Policy Agent (OPA), detecting changes" +
@@ -164,6 +167,18 @@ class OpalServer:
         self._configure_api_routes(app)
         self._configure_lifecycle_callbacks(app)
         return app
+
+    def _configure_monitoring(self):
+        """
+        patch fastapi to enable tracing and monitoring with datadog APM
+        """
+        from ddtrace import patch, config
+        # Datadog APM
+        patch(fastapi=True)
+        # Override service name
+        config.fastapi["service_name"] = "opal-server"
+        config.fastapi["request_span_name"] = "opal-server"
+
 
     def _configure_api_routes(self, app: FastAPI):
         """

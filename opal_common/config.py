@@ -24,6 +24,7 @@ class OpalCommonConfig(Confi):
     LOG_TRACEBACK = confi.bool("LOG_TRACEBACK", True)
     LOG_DIAGNOSE = confi.bool("LOG_DIAGNOSE", True)
     LOG_COLORIZE = confi.bool("LOG_COLORIZE", True)
+    LOG_SERIALIZE = confi.str("LOG_SERIALIZE", False)
     LOG_SHOW_CODE_LINE = confi.bool("LOG_SHOW_CODE_LINE", True)
     #  - log level
     LOG_LEVEL = confi.str("LOG_LEVEL", "INFO")
@@ -47,7 +48,6 @@ class OpalCommonConfig(Confi):
     STATISTICS_ENABLED = confi.bool("STATISTICS_ENABLED", False, description="Set if OPAL server will collect statistics about OPAL clients may cause a small performance hit")
     STATISTICS_ADD_CLIENT_CHANNEL = confi.str("STATISTICS_ADD_CLIENT_CHANNEL", "__opal_stats_add", description="The topic to update about new OPAL clients connection")
     STATISTICS_REMOVE_CLIENT_CHANNEL = confi.str("STATISTICS_REMOVE_CLIENT_CHANNEL", "__opal_stats_rm", description="The topic to update about OPAL clients disconnection")
-
 
     # Fetching Providers
     # - where to load providers from
