@@ -115,5 +115,8 @@ class OpalServerConfig(Confi):
     SERVER_PORT = confi.int("SERVER_PORT", 7002,
                             description="(if run via CLI)  Port for the server to bind")
 
+    # optional APM tracing with datadog
+    ENABLE_DATADOG_APM = confi.bool("ENABLE_DATADOG_APM", False, description="Set if OPAL server should enable tracing with datadog APM")
+
 
 opal_server_config = OpalServerConfig(prefix="OPAL_")

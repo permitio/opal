@@ -151,7 +151,7 @@ class OpalServer:
         """
         inits the fastapi app object
         """
-        if opal_common_config.ENABLE_MONITORING:
+        if opal_server_config.ENABLE_DATADOG_APM:
             self._configure_monitoring()
 
         app = FastAPI(

@@ -49,8 +49,6 @@ class OpalCommonConfig(Confi):
     STATISTICS_ADD_CLIENT_CHANNEL = confi.str("STATISTICS_ADD_CLIENT_CHANNEL", "__opal_stats_add", description="The topic to update about new OPAL clients connection")
     STATISTICS_REMOVE_CLIENT_CHANNEL = confi.str("STATISTICS_REMOVE_CLIENT_CHANNEL", "__opal_stats_rm", description="The topic to update about OPAL clients disconnection")
 
-    ENABLE_MONITORING = confi.bool("ENABLE_MONITORING", False, description="Set if OPAL should enable monitoring")
-
     # Fetching Providers
     # - where to load providers from
     FETCH_PROVIDER_MODULES = confi.list("FETCH_PROVIDER_MODULES", ["opal_common.fetcher.providers"])
