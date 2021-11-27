@@ -55,13 +55,15 @@ export OPAL_CLIENT_TOKEN=`opal-client obtain-token $OPAL_AUTH_MASTER_TOKEN --typ
 echo "killing opal server..."
 ps -ef | grep opal | grep -v grep | awk '{print $2}' | xargs kill
 
-sleep 2;
+sleep 5;
 
 echo "Saving your config to .env file..."
 rm -f .env
-echo "OPAL_AUTH_PUBLIC_KEY=$OPAL_AUTH_PUBLIC_KEY" >> .env
-echo "OPAL_AUTH_PRIVATE_KEY=$OPAL_AUTH_PRIVATE_KEY" >> .env
-echo "ACALLA_MASTER_TOKEN=$ACALLA_MASTER_TOKEN" >> .env
+echo "OPAL_AUTH_PUBLIC_KEY=\"$OPAL_AUTH_PUBLIC_KEY\"" >> .env
+echo "OPAL_AUTH_PRIVATE_KEY=\"$OPAL_AUTH_PRIVATE_KEY\"" >> .env
+echo "ACALLA_MASTER_TOKEN=\"$ACALLA_MASTER_TOKEN\"" >> .env
+echo "OPAL_CLIENT_TOKEN=\"$OPAL_CLIENT_TOKEN\"" >> .env
+echo "OPAL_AUTH_PRIVATE_KEY_PASSPHRASE=\"$OPAL_AUTH_PRIVATE_KEY_PASSPHRASE\"" >> .env
 
 echo "--------"
 echo "ready to run..."
