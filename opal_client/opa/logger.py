@@ -83,5 +83,10 @@ def log_entire_dict(level: str, msg: Optional[str], log_line: dict):
         format = "<fg #999>{log_line}</>"
     else:
         format = "{msg: <20} <fg #bfbfbf>{log_line}</>"
+
+    try:
+        log_line = json.dumps(log_line) # should be ok, originated in json
+    except:
+        pass # fallback to dict
     logger.opt(colors=True).log(level, format, msg=msg, log_line=log_line)
     return True
