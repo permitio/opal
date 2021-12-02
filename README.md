@@ -46,10 +46,10 @@ This is especially true in applications, where each user interaction or API call
 OPAL runs in the background, supercharging policy-agents, keeping them in sync with events in realtime.
 
 ## Documentation 
-- To get started with OPAL, check out our [Getting Started guide](docs/HOWTO/get_started_with_opal.md).
-- Full documentation is available at (link)
-- For further tutorials check out [our blog](link)
-- For an explanation on OPAL architecture see [Architecture deep-dive](docs/architecture.md) 
+- For a more detailed description of OPAL check out [this Introduction](docs/introduction.md)
+- To get started with OPAL, check out our [Getting Started Guide](docs/HOWTO/get_started_with_opal.md)
+- Full documentation is available [here](docs/index.md)
+- For further tutorials check out [Our Blog](https://www.authorizon.com/blog)
 
 </br> 
 
