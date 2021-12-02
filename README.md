@@ -70,3 +70,6 @@ and join our Slack community to chat about authorization, open-source, realtime 
 ## Contributing to OPAL
 - Pull requests are welcome! (please make sure to include *passing* tests and docs)
 - Prior to submitting a PR - open an issue on GitHub, or make sure your PR addresses an existing issue well.  
+
+[join-slack-link]: https://user-images.githubusercontent.com/282595/128394344-1bd9e5b2-e83d-4666-b446-2e4f431ffcea.png
+[badge-slack-link]: https://bit.ly/opal-slack
