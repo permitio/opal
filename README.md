@@ -49,7 +49,7 @@ OPAL runs in the background, supercharging policy-agents, keeping them in sync w
 
 - 📃 &nbsp; [Full documentation is available here](docs/index.md) 
 - 💡 &nbsp; [Intro to OPAL](docs/intro.md) 
-- 🚀 &nbsp; [Getting Started](docs/HOWTO/get_started_with_opal_python_packages.md)
+- 🚀 &nbsp; [Getting Started](docs/HOWTO/get_started_with_opal_docker_compose_tutorial.md)
 
    OPAL is available both as **python packages** with a built-in CLI as well as pre-built **docker images** ready-to-go.
  
@@ -58,6 +58,7 @@ OPAL runs in the background, supercharging policy-agents, keeping them in sync w
    - [Try the getting started guide for containers](docs/HOWTO/get_started_with_opal_using_docker.md)
    <!-- - this tutorial will show you how to configure OPAL to your specific needs and run the official docker containers locally or in production. -->
    - [Check out the Helm Chart for Kubernetes](https://github.com/authorizon/opal-helm-chart)
+   - [Try the getting started guide with python packages](docs/HOWTO/get_started_with_opal_python_packages.md)
 
    <br>
 - 💪 &nbsp; TL;DR - This one command will download and run a working configuration of OPAL server and OPAL client on your machine:
