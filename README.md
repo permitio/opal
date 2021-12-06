@@ -49,19 +49,17 @@ OPAL runs in the background, supercharging policy-agents, keeping them in sync w
 
 - 📃 &nbsp; [Full documentation is available here](docs/index.md) 
 - 💡 &nbsp; [Intro to OPAL](docs/intro.md) 
-- 💪 &nbsp; [Getting Started](docs/HOWTO/get_started_with_opal_python_packages.md) -
-OPAL is available both as **python packages** with a built-in CLI as well as pre-built **docker images** ready-to-go.
+- 💪 &nbsp; [Getting Started](docs/HOWTO/get_started_with_opal_python_packages.md)
 
-    Getting started with the pre-built docker containers:
-   
+   OPAL is available both as **python packages** with a built-in CLI as well as pre-built **docker images** ready-to-go.
+ 
    [Play with a live playground environment in docker-compose](docs/HOWTO/get_started_with_opal_docker_compose_tutorial.md)
    <!-- - this tutorial is great for learning about OPAL core features and see what OPAL can do for you. -->
    [Try the getting started guide for containers](docs/HOWTO/get_started_with_opal_using_docker.md)
    <!-- - this tutorial will show you how to configure OPAL to your specific needs and run the official docker containers locally or in production. -->
    [Check out the Helm Chart for Kubernetes](https://github.com/authorizon/opal-helm-chart)
-
-<br>
-This one command will download and run a working configuration of OPAL server and OPAL client on your machine:
+   
+   TD;DR - This one command will download and run a working configuration of OPAL server and OPAL client on your machine:
 
 <br>
 
@@ -75,24 +73,24 @@ curl -L https://raw.githubusercontent.com/authorizon/opal/master/docker/docker-c
   </a>
 </p>
 
+- 🧠 &nbsp; "How-To"s
+
+    [How to get started with OPAL (Packages and CLI)](docs/HOWTO/get_started_with_opal.md)
+
+    [How to get started with OPAL (Container Images)](docs/HOWTO/get_started_with_opal_using_docker.md)
+
+    [How to trigger Data Updates via OPAL](docs/HOWTO/trigger_data_updates.md)
+
+    [How to extend OPAL to fetch data from your sources with FetchProviders](docs/HOWTO/write_your_own_fetch_provider.md)
+
+    [How to configure OPAL (basic concepts)](docs/HOWTO/configure_opal.md)
+
+
+
 - 🎨 &nbsp; [Key concepts and design](docs/design.md) 
-- 🏗️ &nbsp; [Architecture](docs/architecture.md) - OPAL consists of two key components that work together: 
+- 🏗️ &nbsp; [Architecture](docs/architecture.md) 
 
-    1. OPAL Server 
-        - Creates a Pub/Sub channel clients subscribe to
-        - Tracks a git repository (via webhook / polling) for updates to policy (or static data)
-            - Additional versioned repositories can be supported (e.g. S3, SVN)
-        - Accepts data update notifications via Rest API
-        - pushes updates to clients (as diffs)
-        - scales with other server instances via a configurable backbone pub/sub (Currently supported: Postgres, Redis, Kafka; more options will be added in the future)
-
-    2. OPAL Client
-        - Deployed alongside a policy-agent, and keeping it up to date
-        - Subscribes to Pub/Sub updates, based on topics for data and policy 
-        - Downloads data-source configurations from server
-            - Fetches data from multiple sources (e.g. DBs, APIs, 3rd party services) 
-        - Downloads policy from server
-        - Keeps policy agents up to date
+    OPAL  uses a client-server stateless architecture. OPAL-Servers publish policy and data updates over a lightweight (websocket) PubSub Channel, which OPAL-clients subscribe to via topics. Upon updates each client fetches data directly (from source) to load it in to its managed OPA instance.
 <br>
 <br>
 
