@@ -47,9 +47,9 @@ OPAL runs in the background, supercharging policy-agents, keeping them in sync w
 
 ## Documentation 
 
-- [Full documentation is available here](docs/index.md) 📃
-- [Intro to OPAL](docs/intro.md) 💡
-- [Getting Started 💪  ](docs/HOWTO/get_started_with_opal.md) -
+- 📃 &nbsp; [Full documentation is available here](docs/index.md) 
+- 💡 &nbsp; [Intro to OPAL](docs/intro.md) 
+- 💪 &nbsp; [Getting Started](docs/HOWTO/get_started_with_opal_python_packages.md) -
 OPAL is available both as **python packages** with a built-in CLI as well as pre-built **docker images** ready-to-go.
 
     Getting started with the pre-built docker containers:
@@ -75,8 +75,8 @@ curl -L https://raw.githubusercontent.com/authorizon/opal/master/docker/docker-c
   </a>
 </p>
 
-- [Key concepts and design](docs/design.md) 🎨
-- [Architecture](docs/architecture.md) 🏗️  - OPAL consists of two key components that work together: 
+- 🎨 &nbsp; [Key concepts and design](docs/design.md) 
+- 🏗️ &nbsp; [Architecture](docs/architecture.md) - OPAL consists of two key components that work together: 
 
     1. OPAL Server 
         - Creates a Pub/Sub channel clients subscribe to
@@ -102,7 +102,7 @@ curl -L https://raw.githubusercontent.com/authorizon/opal/master/docker/docker-c
 <br>
 
 
-- For further reading check out our [Blog](https://www.authorizon.com/blog) 📖
+- 📖 &nbsp; For further reading check out our [Blog](https://www.authorizon.com/blog).
 
 ## Community
 
