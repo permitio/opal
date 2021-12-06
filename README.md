@@ -41,7 +41,7 @@ Check out our main site at <a href="https://opal.ac">OPAL.ac</a> and <a href="ht
 OPAL is the easiest way to keep your solution's authorization layer up-to-date in realtime. It aggregates policy and data from across the field and integrates them seamlessly into the authorization layer, and  is microservices and cloud-native. 
 
 ## OPA + OPAL = 💜
-While OPA (Open Policy Agent) decouples policy from code in a highly-performant and elegant way, the challege of keeping policy agents up-to-date remains. 
+While OPA (Open Policy Agent) decouples policy from code in a highly-performant and elegant way, the challenge of keeping policy agents up-to-date remains. 
 This is especially true in applications, where each user interaction or API call may affect access-control decisions.
 OPAL runs in the background, supercharging policy-agents, keeping them in sync with events in realtime.
 
@@ -49,19 +49,18 @@ OPAL runs in the background, supercharging policy-agents, keeping them in sync w
 
 - 📃 &nbsp; [Full documentation is available here](docs/index.md) 
 - 💡 &nbsp; [Intro to OPAL](docs/intro.md) 
-- 💪 &nbsp; [Getting Started](docs/HOWTO/get_started_with_opal_python_packages.md)
+- 🚀 &nbsp; [Getting Started](docs/HOWTO/get_started_with_opal_python_packages.md)
 
    OPAL is available both as **python packages** with a built-in CLI as well as pre-built **docker images** ready-to-go.
  
-   [Play with a live playground environment in docker-compose](docs/HOWTO/get_started_with_opal_docker_compose_tutorial.md)
+   - [Play with a live playground environment in docker-compose](docs/HOWTO/get_started_with_opal_docker_compose_tutorial.md)
    <!-- - this tutorial is great for learning about OPAL core features and see what OPAL can do for you. -->
-   [Try the getting started guide for containers](docs/HOWTO/get_started_with_opal_using_docker.md)
+   - [Try the getting started guide for containers](docs/HOWTO/get_started_with_opal_using_docker.md)
    <!-- - this tutorial will show you how to configure OPAL to your specific needs and run the official docker containers locally or in production. -->
-   [Check out the Helm Chart for Kubernetes](https://github.com/authorizon/opal-helm-chart)
-   
-   TD;DR - This one command will download and run a working configuration of OPAL server and OPAL client on your machine:
+   - [Check out the Helm Chart for Kubernetes](https://github.com/authorizon/opal-helm-chart)
 
-<br>
+   <br>
+- 💪 &nbsp; TL;DR - This one command will download and run a working configuration of OPAL server and OPAL client on your machine:
 
 ```
 curl -L https://raw.githubusercontent.com/authorizon/opal/master/docker/docker-compose-example.yml \
@@ -75,15 +74,15 @@ curl -L https://raw.githubusercontent.com/authorizon/opal/master/docker/docker-c
 
 - 🧠 &nbsp; "How-To"s
 
-    [How to get started with OPAL (Packages and CLI)](docs/HOWTO/get_started_with_opal.md)
+    - [How to get started with OPAL (Packages and CLI)](docs/HOWTO/get_started_with_opal.md)
 
-    [How to get started with OPAL (Container Images)](docs/HOWTO/get_started_with_opal_using_docker.md)
+    - [How to get started with OPAL (Container Images)](docs/HOWTO/get_started_with_opal_using_docker.md)
 
-    [How to trigger Data Updates via OPAL](docs/HOWTO/trigger_data_updates.md)
+    - [How to trigger Data Updates via OPAL](docs/HOWTO/trigger_data_updates.md)
 
-    [How to extend OPAL to fetch data from your sources with FetchProviders](docs/HOWTO/write_your_own_fetch_provider.md)
+    - [How to extend OPAL to fetch data from your sources with FetchProviders](docs/HOWTO/write_your_own_fetch_provider.md)
 
-    [How to configure OPAL (basic concepts)](docs/HOWTO/configure_opal.md)
+    - [How to configure OPAL (basic concepts)](docs/HOWTO/configure_opal.md)
 
 
 
