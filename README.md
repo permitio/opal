@@ -46,16 +46,63 @@ This is especially true in applications, where each user interaction or API call
 OPAL runs in the background, supercharging policy-agents, keeping them in sync with events in realtime.
 
 ## Documentation 
-- For a more detailed description of OPAL check out [this Introduction](docs/introduction.md)
-- To get started with OPAL, check out our [Getting Started Guide](docs/HOWTO/get_started_with_opal.md)
-- Full documentation is available [here](docs/index.md)
-- For further tutorials check out [Our Blog](https://www.authorizon.com/blog)
 
-</br> 
+- [Full documentation is available here](docs/index.md) 📃
+- [Intro to OPAL](docs/intro.md) 💡
+- [Getting Started 💪  ](docs/HOWTO/get_started_with_opal.md) -
+OPAL is available both as **python packages** with a built-in CLI as well as pre-built **docker images** ready-to-go.
+
+    Getting started with the pre-built docker containers:
+   
+   [Play with a live playground environment in docker-compose](docs/HOWTO/get_started_with_opal_docker_compose_tutorial.md)
+   <!-- - this tutorial is great for learning about OPAL core features and see what OPAL can do for you. -->
+   [Try the getting started guide for containers](docs/HOWTO/get_started_with_opal_using_docker.md)
+   <!-- - this tutorial will show you how to configure OPAL to your specific needs and run the official docker containers locally or in production. -->
+   [Check out the Helm Chart for Kubernetes](https://github.com/authorizon/opal-helm-chart)
+
+<br>
+This one command will download and run a working configuration of OPAL server and OPAL client on your machine:
+
+<br>
+
+```
+curl -L https://raw.githubusercontent.com/authorizon/opal/master/docker/docker-compose-example.yml \
+> docker-compose.yml && docker-compose up
+```
+<p>
+  <a href="https://asciinema.org/a/409288" target="_blank">
+    <img src="https://asciinema.org/a/409288.svg" />
+  </a>
+</p>
+
+- [Key concepts and design](docs/design.md) 🎨
+- [Architecture](docs/architecture.md) 🏗️  - OPAL consists of two key components that work together: 
+
+    1. OPAL Server 
+        - Creates a Pub/Sub channel clients subscribe to
+        - Tracks a git repository (via webhook / polling) for updates to policy (or static data)
+            - Additional versioned repositories can be supported (e.g. S3, SVN)
+        - Accepts data update notifications via Rest API
+        - pushes updates to clients (as diffs)
+        - scales with other server instances via a configurable backbone pub/sub (Currently supported: Postgres, Redis, Kafka; more options will be added in the future)
+
+    2. OPAL Client
+        - Deployed alongside a policy-agent, and keeping it up to date
+        - Subscribes to Pub/Sub updates, based on topics for data and policy 
+        - Downloads data-source configurations from server
+            - Fetches data from multiple sources (e.g. DBs, APIs, 3rd party services) 
+        - Downloads policy from server
+        - Keeps policy agents up to date
+<br>
+<br>
 
 <img src="https://i.ibb.co/CvmX8rR/simplified-diagram-highlight.png" alt="simplified" border="0">
 
-</br> 
+
+<br>
+
+
+- For further reading check out our [Blog](https://www.authorizon.com/blog) 📖
 
 ## Community
 
@@ -65,6 +112,10 @@ You can raise questions and ask for features to be added to the road-map in our 
 and join our Slack community to chat about authorization, open-source, realtime communication, tech any anything else!
 </br>
 </br>
+If you are using our project, please consider giving us a ⭐️
+</br>
+</br>
+
 [![Button][join-slack-link]][badge-slack-link]
 
 ## Contributing to OPAL
@@ -73,3 +124,4 @@ and join our Slack community to chat about authorization, open-source, realtime 
 
 [join-slack-link]: https://user-images.githubusercontent.com/282595/128394344-1bd9e5b2-e83d-4666-b446-2e4f431ffcea.png
 [badge-slack-link]: https://bit.ly/opal-slack
+

@@ -1,4 +1,4 @@
-# OPAL Architecture
+# 🏗️ Architecture
 
 
 ## Components diagram
