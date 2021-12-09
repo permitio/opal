@@ -106,20 +106,20 @@ curl -L https://raw.githubusercontent.com/authorizon/opal/master/docker/docker-c
 
 Come talk to us about OPAL, or authorization in general - we would love to hear from you ❤️
 
-You can raise questions and ask for features to be added to the road-map in our [Github discussions](https://github.com/authorizon/opal/discussions), report issues in [Github issues](https://github.com/authorizon/opal/issues), 
-and join our Slack community to chat about authorization, open-source, realtime communication, tech any anything else!
+You can raise questions and ask for features to be added to the road-map in our [Github discussions](https://github.com/authorizon/opal/discussions), report issues in [Github issues](https://github.com/authorizon/opal/issues), follow us on Twitter to get the latest OPAL updates, and join our Slack community to chat about authorization, open-source, realtime communication, tech any anything else!
 </br>
 </br>
 If you are using our project, please consider giving us a ⭐️
 </br>
 </br>
 
-[![Button][join-slack-link]][badge-slack-link]
+[![Button][join-slack-link]][badge-slack-link] </br> [![Button][follow-twitter-link]][badge-twitter-link]
 
 ## Contributing to OPAL
 - Pull requests are welcome! (please make sure to include *passing* tests and docs)
 - Prior to submitting a PR - open an issue on GitHub, or make sure your PR addresses an existing issue well.  
 
-[join-slack-link]: https://user-images.githubusercontent.com/282595/128394344-1bd9e5b2-e83d-4666-b446-2e4f431ffcea.png
+[join-slack-link]: https://i.ibb.co/wzrGHQL/Group-749.png
 [badge-slack-link]: https://bit.ly/opal-slack
-
+[follow-twitter-link]: https://i.ibb.co/k4x55Lr/Group-750.png
+[badge-twitter-link]: https://twitter.com/opal_ac
