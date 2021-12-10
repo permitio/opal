@@ -15,7 +15,7 @@ You can get a running OPAL environment by running one `docker-compose` command.
 
 In this section we show how to run OPAL with an example `docker-compose.yml` file. With a few quick commands you can have OPAL up-and-running on your machine and explore the core features. The example configuration is not suitable for production environments (due to the lack of security configuration), but it will help you to understand **why you need OPAL**.
 
-Alternatively, check out this [tutorial if you'd prefer to run OPAL with an API Bundle server](https://github.com/authorizon/opal/blob/master/docs/HOWTO/get_started_with_opal_api_source_docker_compose_tutorial.md) as its policy source.
+Alternatively, check out this [tutorial if you'd prefer to run OPAL with an API Bundle server](https://github.com/permitio/opal/blob/master/docs/HOWTO/get_started_with_opal_api_source_docker_compose_tutorial.md) as its policy source.
 
 This entire tutorial is also recorded here:
 
@@ -37,12 +37,12 @@ curl -L https://raw.githubusercontent.com/authorizon/opal/master/docker/docker-c
 You can alternatively clone the opal repository and run the example compose file from your local clone:
 
 ```
-git clone https://github.com/authorizon/opal.git
+git clone https://github.com/permitio/opal.git
 cd opal
 docker-compose -f docker/docker-compose-example.yml up
 ```
 
-The `docker-compose.yml` we just downloaded ([Click here to view its contents](https://github.com/authorizon/opal/blob/master/docker/docker-compose-example.yml)) is running 3 containers: Broadcast, OPAL Server, OPAL Client.
+The `docker-compose.yml` we just downloaded ([Click here to view its contents](https://github.com/permitio/opal/blob/master/docker/docker-compose-example.yml)) is running 3 containers: Broadcast, OPAL Server, OPAL Client.
 
 We provide a detailed review of exactly **what is running and why** later in this tutorial. You can [jump there by clicking this link](#compose-recap) to gain a deeper understanding, and then come back here, or you can continue with the hands-on tutorial.
 
@@ -59,7 +59,7 @@ As said, OPA REST API is running at port `:8181` and you can issue any requests 
 
 Let's explore the current state and send some authorization queries to the agent.
 
-The default policy in the [example repo](https://github.com/authorizon/opal-example-policy-repo) is a simple [RBAC](https://en.wikipedia.org/wiki/Role-based_access_control) policy, we can issue this request to get the user's role assignment and metadata:
+The default policy in the [example repo](https://github.com/permitio/opal-example-policy-repo) is a simple [RBAC](https://en.wikipedia.org/wiki/Role-based_access_control) policy, we can issue this request to get the user's role assignment and metadata:
 
 ```
 curl --request GET 'http://localhost:8181/v1/data/users' --header 'Content-Type: application/json' | python -m json.tool
@@ -103,7 +103,7 @@ The expected result is `true`, meaning the access is granted:
 
 ### Step 3: Change the policy, and see it being updated in realtime
 
-Due to the fact the example `docker-compose.yml` makes OPAL track [this repository](https://github.com/authorizon/opal-example-policy-repo) which regretfully you can not edit yourself, you can follow along this video to see how a git commit can affect the policy in realtime:
+Due to the fact the example `docker-compose.yml` makes OPAL track [this repository](https://github.com/permitio/opal-example-policy-repo) which regretfully you can not edit yourself, you can follow along this video to see how a git commit can affect the policy in realtime:
 
 ```
 TBD: video
@@ -129,11 +129,11 @@ services:
 
 You can then issue a commit affecting the policy and see that OPA state is indeed changing.
 
-For more info, check out this tutorial: [How to track a git repo](https://github.com/authorizon/opal/blob/master/docs/HOWTO/track_a_git_repo.md).
+For more info, check out this tutorial: [How to track a git repo](https://github.com/permitio/opal/blob/master/docs/HOWTO/track_a_git_repo.md).
 
 ### Step 4: Publish a data update via the OPAL Server
 
-The default policy in the [example repo](https://github.com/authorizon/opal-example-policy-repo) is a simple RBAC policy with a twist.
+The default policy in the [example repo](https://github.com/permitio/opal-example-policy-repo) is a simple RBAC policy with a twist.
 
 A user is granted access if:
 
@@ -150,7 +150,7 @@ curl -w '\n' --request POST 'http://localhost:8181/v1/data/app/rbac/allow' \
 --data-raw '{"input": {"user": "bob","action": "read","object": "id123","type": "finance"}}'
 ```
 
-Bob is granted access because the initial `data.json` location is `US` ([link](https://github.com/authorizon/opal-example-policy-repo/blob/master/data.json#L18)):
+Bob is granted access because the initial `data.json` location is `US` ([link](https://github.com/permitio/opal-example-policy-repo/blob/master/data.json#L18)):
 
 ```
 {"result":true}
@@ -204,7 +204,7 @@ OPAL data updates are built to support your specific use case.
 
 ## <a name="compose-recap"></a> Let's review together the docker compose example configuration
 
-Our example `docker-compose.yml` ([Click here to view its contents](https://github.com/authorizon/opal/blob/master/docker/docker-compose-example.yml)) is running 3 containers.
+Our example `docker-compose.yml` ([Click here to view its contents](https://github.com/permitio/opal/blob/master/docker/docker-compose-example.yml)) is running 3 containers.
 
 Let's review what they are and their main functions:
 
@@ -216,7 +216,7 @@ Let's review what they are and their main functions:
 #### (2) OPAL Server
 
 - **Policy-code realtime updates**
-  - Tracks a git repository (in our case - [this repository](https://github.com/authorizon/opal-example-policy-repo)) and feeds the policy code (`.rego` files) and static data files (`data.json` files) to OPA as policy.
+  - Tracks a git repository (in our case - [this repository](https://github.com/permitio/opal-example-policy-repo)) and feeds the policy code (`.rego` files) and static data files (`data.json` files) to OPA as policy.
   - If new commits will be pushed to this repository that affect rego or data files, the updated policy will be pushed to OPA automatically in realtime by OPAL.
   - The `docker-compose.yml` file declares a polling interval to check if new commits are pushed to the repo. In production we recommend you setup a git webhook from your repo to OPAL server. The only reason we are using polling here is because we want the example `docker-compose.yml` file to work for you as well, and webhooks can only hit a public internet address (but during development you can use something like [ngrok](https://ngrok.com/)).
 - **Policy-data basic configuration**
@@ -227,7 +227,7 @@ Let's review what they are and their main functions:
     - Fetch the `/policy-data` route on the OPAL Server (returns: `{}`) and assign it to the root data document on OPA (i.e: `/`).
 - **Policy-data realtime updates**
   - The server can push realtime data updates to the client, it offers a REST API that allows you to push an updates via the server via pub/sub to your OPAL clients (and by extension OPA).
-  - We have a guide for that: [how to trigger realtime data updates using OPAL](https://github.com/authorizon/opal/blob/master/docs/HOWTO/trigger_data_updates.md).
+  - We have a guide for that: [how to trigger realtime data updates using OPAL](https://github.com/permitio/opal/blob/master/docs/HOWTO/trigger_data_updates.md).
   - Example why you need live updates:
     - Alice just invited Bob to a google drive document.
     - Bob expects to be able to view the document immediately.
@@ -250,4 +250,4 @@ If you skipped here from step 1, you can now [come back to the hands-on tutorial
 
 ## <a name="troubleshooting"></a> Troubleshooting
 
-You should troubleshoot the same way as shown in the [getting started with containers tutorial](https://github.com/authorizon/opal/blob/master/docs/HOWTO/get_started_with_opal_using_docker.md#troubleshooting).
+You should troubleshoot the same way as shown in the [getting started with containers tutorial](https://github.com/permitio/opal/blob/master/docs/HOWTO/get_started_with_opal_using_docker.md#troubleshooting).

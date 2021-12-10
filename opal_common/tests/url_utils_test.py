@@ -17,7 +17,7 @@ from typing import List
 from opal_common.urls import set_url_query_param
 
 def test_set_url_query_param():
-    base_url = 'api.authorizon.com/opal/data/config'
+    base_url = 'api.permit.io/opal/data/config'
 
     # https scheme, query string not empty
     assert set_url_query_param(

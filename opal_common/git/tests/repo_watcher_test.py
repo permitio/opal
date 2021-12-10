@@ -28,9 +28,9 @@ except ImportError:
     from asyncio import TimeoutError
 
 VALID_REPO_REMOTE_URL_HTTPS = \
-    "https://github.com/authorizon/fastapi_websocket_pubsub.git"
+    "https://github.com/permitio/fastapi_websocket_pubsub.git"
 
-INVALID_REPO_REMOTE_URL = "git@github.com:authorizon/no_such_repo.git"
+INVALID_REPO_REMOTE_URL = "git@github.com:permitio/no_such_repo.git"
 
 @pytest.mark.asyncio
 async def test_repo_watcher_git_failed_callback(tmp_path):
