@@ -22,12 +22,12 @@ from opal_common.git.exceptions import GitFailed
 from opal_common.confi import Confi
 
 VALID_REPO_REMOTE_URL_HTTPS = \
-    "https://github.com/authorizon/fastapi_websocket_pubsub.git"
+    "https://github.com/permitio/fastapi_websocket_pubsub.git"
 
 VALID_REPO_REMOTE_URL_SSH = \
-    "git@github.com:authorizon/fastapi_websocket_pubsub.git"
+    "git@github.com:permitio/fastapi_websocket_pubsub.git"
 
-INVALID_REPO_REMOTE_URL = "git@github.com:authorizon/no_such_repo.git"
+INVALID_REPO_REMOTE_URL = "git@github.com:permitio/no_such_repo.git"
 
 @pytest.mark.asyncio
 async def test_repo_cloner_clone_local_repo(local_repo: Repo):

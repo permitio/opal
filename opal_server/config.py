@@ -40,7 +40,7 @@ class OpalServerConfig(Confi):
 
     # policy source watcher
     POLICY_SOURCE_TYPE = confi.enum("POLICY_SOURCE_TYPE", PolicySourceTypes, PolicySourceTypes.Git, description="Set your policy source can be GIT / API")
-    POLICY_REPO_URL = confi.str("POLICY_REPO_URL", None, description="Set your remote repo URL e.g:https://github.com/authorizon/opal-example-policy-repo.git\
+    POLICY_REPO_URL = confi.str("POLICY_REPO_URL", None, description="Set your remote repo URL e.g:https://github.com/permitio/opal-example-policy-repo.git\
         , relevant only on GIT source type")
     POLICY_BUNDLE_URL = confi.str("POLICY_BUNDLE_URL", None, description="Set your API bundle URL, relevant only on API source type")
     POLICY_REPO_CLONE_PATH = confi.str("POLICY_REPO_CLONE_PATH", os.path.join(os.getcwd(), "regoclone"), description="Base path to create local git folder inside it that manage policy change")

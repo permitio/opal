@@ -2,7 +2,7 @@
 This document explains how to use two features that are separate yet closely related: [OPA healthcheck policy](#healthcheck) and [Data update callbacks](#callbacks).
 
 ## Working example configuration:
-You can run the example docker compose configuration [found here](https://github.com/authorizon/opal/blob/master/docker/docker-compose-with-callbacks.yml) to run OPAL with callbacks and healthcheck policy already configured correctly.
+You can run the example docker compose configuration [found here](https://github.com/permitio/opal/blob/master/docker/docker-compose-with-callbacks.yml) to run OPAL with callbacks and healthcheck policy already configured correctly.
 
 Run this one command on your machine:
 ```
@@ -25,7 +25,7 @@ Set the following env var:
 ```
 OPAL_OPA_HEALTH_CHECK_POLICY_ENABLED=True
 ```
-You can check out a complete docker-compose configuration that uses this feature [here](https://github.com/authorizon/opal/blob/master/docker/docker-compose-with-callbacks.yml).
+You can check out a complete docker-compose configuration that uses this feature [here](https://github.com/permitio/opal/blob/master/docker/docker-compose-with-callbacks.yml).
 
 #### How to query the healthcheck policy?
 The healthcheck policy defines two main OPA rules:
@@ -89,7 +89,7 @@ You'll get something like this as output:
 #### Advanced: How does the healthcheck feature work?
 Please note: you don't need to understand this section to use the healthcheck policy. It goes into internal implementation of the feature, to the benefit of the interested reader.
 
-OPAL has an internal OpaClient class (code [here](https://github.com/authorizon/opal/blob/master/opal_client/policy_store/opa_client.py#L140)) that is used to communicate with the OPA agent via its [REST API](https://www.openpolicyagent.org/docs/latest/rest-api/). The `OpaClient` class holds a `OpaTransactionLogState` object (code [here](https://github.com/authorizon/opal/blob/master/opal_client/policy_store/opa_client.py#L58)) that represents (a **very** simplified version of) the state of synchronization between OPAL client and OPA.
+OPAL has an internal OpaClient class (code [here](https://github.com/permitio/opal/blob/master/opal_client/policy_store/opa_client.py#L140)) that is used to communicate with the OPA agent via its [REST API](https://www.openpolicyagent.org/docs/latest/rest-api/). The `OpaClient` class holds a `OpaTransactionLogState` object (code [here](https://github.com/permitio/opal/blob/master/opal_client/policy_store/opa_client.py#L58)) that represents (a **very** simplified version of) the state of synchronization between OPAL client and OPA.
 
 A transaction is initialized in the code using context managers:
 ```python
@@ -98,12 +98,12 @@ async with policy_store.transaction_context(update.id) as store_transaction:
   await store_transaction.set_policy_data(policy_data, path=policy_store_path)
 ```
 
-Every time a transaction [is ended](https://github.com/authorizon/opal/blob/master/opal_client/policy_store/base_policy_store_client.py#L116) it is saved into OPA, by rendering the state of `OpaTransactionLogState` using the [healthcheck policy template](https://github.com/authorizon/opal/blob/master/opal_client/opa/healthcheck/opal.rego).
+Every time a transaction [is ended](https://github.com/permitio/opal/blob/master/opal_client/policy_store/base_policy_store_client.py#L116) it is saved into OPA, by rendering the state of `OpaTransactionLogState` using the [healthcheck policy template](https://github.com/permitio/opal/blob/master/opal_client/opa/healthcheck/opal.rego).
 
 ## <a name="callbacks"></a> Data update callbacks
 
 #### What is the update callback feature?
-This feature, if activated, will trigger a callback (HTTP call to a configurable url) after every successful [data update](https://github.com/authorizon/opal/blob/master/docs/HOWTO/trigger_data_updates.md). It allows you to track which data updates completed successfully and were correctly saved to OPA cache.
+This feature, if activated, will trigger a callback (HTTP call to a configurable url) after every successful [data update](https://github.com/permitio/opal/blob/master/docs/HOWTO/trigger_data_updates.md). It allows you to track which data updates completed successfully and were correctly saved to OPA cache.
 
 #### When should I use update callbacks?
 If you are using OPAL to sync your policy agents, you typically have a service (let's call it the **update source** service) that pushes updates via OPAL server, and OPAL server propagates this update to your fleet of agents.
@@ -120,7 +120,7 @@ Set a default callback (will be called after each successful data update):
 ```
 OPAL_DEFAULT_UPDATE_CALLBACKS={"callbacks":["http://opal_server:7002/data/callback_report"]}
 ```
-You can check out a complete docker-compose configuration that uses this feature [here](https://github.com/authorizon/opal/blob/master/docker/docker-compose-with-callbacks.yml).
+You can check out a complete docker-compose configuration that uses this feature [here](https://github.com/permitio/opal/blob/master/docker/docker-compose-with-callbacks.yml).
 
 #### What are the values I can set inside `callbacks`?
 
@@ -166,7 +166,7 @@ opal_client.data.fetcher                | INFO  | Fetching data from url: http:/
 ```
 
 The called-back server will then receive the update:
-(in the example you see here, the OPAL server is the one receiving the callback payload, as was configured in the [example config](https://github.com/authorizon/opal/blob/master/docker/docker-compose-with-callbacks.yml).)
+(in the example you see here, the OPAL server is the one receiving the callback payload, as was configured in the [example config](https://github.com/permitio/opal/blob/master/docker/docker-compose-with-callbacks.yml).)
 
 ```
 opal_server.data.api                    | INFO  | Recieved update report: {'update_id': 'c83b6862aa354d338d1a9e23794e3efc', 'reports': [{'entry': {'url': 'https://api.country.is/23.54.6.78', 'config': {}, 'topics': ['policy_data'], 'dst_path': '/users/bob/location', 'save_method': 'PUT'}, 'fetched': True, 'saved': True, 'hash': '3eb2f338beb6691bbeeeca60dc3f4afad74ec8c5881f8abe3aa23d57ffa48424'}]}
@@ -174,7 +174,7 @@ uvicorn.protocols.http.httptools_impl   | INFO  | 172.27.0.4:49720 - "POST /data
 ```
 
 #### Setting up a one-time callback in the update message
-When [triggering an update](https://github.com/authorizon/opal/blob/master/docs/HOWTO/trigger_data_updates.md) using the OPAL server REST API, you can pass a callback definition inside the update message, like this:
+When [triggering an update](https://github.com/permitio/opal/blob/master/docs/HOWTO/trigger_data_updates.md) using the OPAL server REST API, you can pass a callback definition inside the update message, like this:
 
 Assuming your opal server is deployed at `http://my-opal-server.com:7002`, you will send a POST request to the `/data/config` route:
 

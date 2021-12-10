@@ -2,7 +2,7 @@
 
 This document describes how to change policy syncing feature of OPAL (policy-code and static data) from the default git to an API server that exposes tar bundles.
 
-We have a [docker compose example file](https://github.com/authorizon/opal/blob/master/docker/docker-compose-api-policy-source-example.yml) configured with an api policy source that we will explore in detail [later in this guide](#compose-example).
+We have a [docker compose example file](https://github.com/permitio/opal/blob/master/docker/docker-compose-api-policy-source-example.yml) configured with an api policy source that we will explore in detail [later in this guide](#compose-example).
 
 ## How policy syncing from an API server works
 
@@ -24,22 +24,22 @@ Currently OPAL server supports two ways to detect changes in the tracked repo / 
 
 - **Webhook** - By issuing an HTTP REST request to OPAL server `<opal-server-url>/webhook` with your auth access token upon each update bundle file event, you can trigger the OPAL server to fetch a new bundle.
 
-The rest of the policy syncing process is the same as with a [git policy source](https://github.com/authorizon/opal/blob/master/docs/HOWTO/track_a_git_repo.md).
+The rest of the policy syncing process is the same as with a [git policy source](https://github.com/permitio/opal/blob/master/docs/HOWTO/track_a_git_repo.md).
 
 ## <a name="compose-example"></a>Docker compose example
 
-In this section we show how to configure an **API bundle server as OPAL's policy source**. We made an example [docker-compose.yml](https://github.com/authorizon/opal/blob/master/docker/docker-compose-api-policy-source-example.yml) file with all the necessary configuration.
+In this section we show how to configure an **API bundle server as OPAL's policy source**. We made an example [docker-compose.yml](https://github.com/permitio/opal/blob/master/docker/docker-compose-api-policy-source-example.yml) file with all the necessary configuration.
 ### Step 1: run docker compose to start the opal server and client
 
 Clone the opal repository and run the example compose file from your local clone:
 
 ```
-git clone https://github.com/authorizon/opal.git
+git clone https://github.com/permitio/opal.git
 cd opal
 docker-compose -f docker/docker-compose-api-policy-source-example.yml up
 ```
 
-The `docker-compose.yml` we just downloaded ([Click here to view its contents](https://github.com/authorizon/opal/blob/master/docker/docker-compose-api-policy-source-example.yml)) is running 4 containers: Broadcast, OPAL Server, OPAL Client, and API bundle server.
+The `docker-compose.yml` we just downloaded ([Click here to view its contents](https://github.com/permitio/opal/blob/master/docker/docker-compose-api-policy-source-example.yml)) is running 4 containers: Broadcast, OPAL Server, OPAL Client, and API bundle server.
 
 OPAL (and also OPA) are now running on your machine, the following ports are exposed on `localhost`:
 
@@ -55,7 +55,7 @@ As mentioned before, the OPA REST API is running on port `:8181` - you can issue
 
 Let's explore the current state and send some authorization queries to the agent.
 
-The default policy in the [example repo](https://github.com/authorizon/opal-example-policy-repo) is a simple [RBAC](https://en.wikipedia.org/wiki/Role-based_access_control) policy, we can issue this request to get the user's role assignment and metadata:
+The default policy in the [example repo](https://github.com/permitio/opal-example-policy-repo) is a simple [RBAC](https://en.wikipedia.org/wiki/Role-based_access_control) policy, we can issue this request to get the user's role assignment and metadata:
 
 ```
 curl --request GET 'http://localhost:8181/v1/data/users' --header 'Content-Type: application/json' | python -m json.tool
@@ -110,7 +110,7 @@ mv bundle.tar.gz{,.bak1}; mv bundle.tar.gz{.bak,}; mv bundle.tar.gz.bak{1,} # th
 
 ### Step 4: Publish a data update via the OPAL Server
 
-The default policy in the [example repo](https://github.com/authorizon/opal-example-policy-repo) is a simple RBAC policy with a twist.
+The default policy in the [example repo](https://github.com/permitio/opal-example-policy-repo) is a simple RBAC policy with a twist.
 
 A user is granted access if:
 
@@ -127,7 +127,7 @@ curl -w '\n' --request POST 'http://localhost:8181/v1/data/app/rbac/allow' \
 --data-raw '{"input": {"user": "bob","action": "read","object": "id123","type": "finance"}}'
 ```
 
-Bob is granted access because the initial `data.json` location is `US` ([link](https://github.com/authorizon/opal-example-policy-repo/blob/master/data.json#L18)):
+Bob is granted access because the initial `data.json` location is `US` ([link](https://github.com/permitio/opal-example-policy-repo/blob/master/data.json#L18)):
 
 ```
 {"result":true}
