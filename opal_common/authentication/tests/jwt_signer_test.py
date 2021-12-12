@@ -29,8 +29,8 @@ from opal_common.logger import logger
 KEY_FILENAME = "opal_test_crypto_key"
 PASSPHRASE = "whiterabbit"
 
-AUTH_JWT_AUDIENCE = "https://api.permit.io/v1/"
-AUTH_JWT_ISSUER = "https://permit.io/"
+AUTH_JWT_AUDIENCE = "https://api.opal.ac/v1/"
+AUTH_JWT_ISSUER = "https://opal.ac/"
 CUSTOM_CLAIMS = {"color": "red"}
 
 

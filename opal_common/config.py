@@ -91,8 +91,8 @@ class OpalCommonConfig(Confi):
         getattr(JWTAlgorithm, "RS256"),
         description="jwt algorithm, possible values: see: https://pyjwt.readthedocs.io/en/stable/algorithms.html"
     )
-    AUTH_JWT_AUDIENCE = confi.str("AUTH_JWT_AUDIENCE", "https://api.permit.io/v1/")
-    AUTH_JWT_ISSUER = confi.str("AUTH_JWT_ISSUER", f"https://permit.io/")
+    AUTH_JWT_AUDIENCE = confi.str("AUTH_JWT_AUDIENCE", "https://api.opal.ac/v1/")
+    AUTH_JWT_ISSUER = confi.str("AUTH_JWT_ISSUER", f"https://opal.ac/")
 
 
 opal_common_config = OpalCommonConfig(prefix="OPAL_")
