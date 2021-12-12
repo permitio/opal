@@ -45,7 +45,7 @@ then
 fi
 
 echo "running OPAL server so we can sign on JWT tokens..."
-OPAL_REPO_WATCHER_ENABLED=0 opal-server run &
+OPAL_AUTH_JWT_AUDIENCE=https://api.opal.ac/v1/ OPAL_AUTH_JWT_ISSUER=https://opal.ac/ OPAL_REPO_WATCHER_ENABLED=0 opal-server run &
 
 sleep 2;
 
