@@ -87,7 +87,6 @@ curl -L https://raw.githubusercontent.com/permitio/opal/master/docker/docker-com
 
     - [How to configure OPAL (basic concepts)](docs/HOWTO/configure_opal.md)
 
-    - [Check out the Helm Chart for Kubernetes](https://github.com/permitio/opal-helm-chart)
 
 - 🎨 &nbsp; [Key concepts and design](docs/design.md) 
 - 🏗️ &nbsp; [Architecture](docs/architecture.md) 
