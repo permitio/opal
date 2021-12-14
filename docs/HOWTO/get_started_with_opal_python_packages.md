@@ -12,7 +12,7 @@ This guide will teach you how to setup and use OPAL as Python packages (python 3
     export OPAL_AUTH_PUBLIC_KEY=~/opal.pub 
     export OPAL_AUTH_MASTER_TOKEN="RANDOM-SECRET-STRING"
     #  Watching a GIT repository from a webhook
-    export OPAL_POLICY_REPO_URL=https://github.com/authorizon/opal-example-policy-repo.git
+    export OPAL_POLICY_REPO_URL=https://github.com/permitio/opal-example-policy-repo.git
     export OPAL_POLICY_REPO_WEBHOOK_SECRET="RANDOM-SECRET-STRING-SHARED-WITH-GITHUB"
     opal-server run
     ```
@@ -60,6 +60,7 @@ for example `OPAL_SERVER_PORT=1337 opal-server run` is equivalent to `opal-serve
 
 
 ----------------------------
+</br>
 
 ## Setup OPAL-server
 

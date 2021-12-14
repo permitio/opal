@@ -1,4 +1,4 @@
-# Get started with OPAL docker containers
+# 🚀  Get started with OPAL docker containers
 
 This tutorial will teach you how to run OPAL using the official docker images.
 
@@ -49,7 +49,7 @@ Our recommendation is to start with the [docker-compose playground](https://gith
       <th align="left" width="45%">Description</th>
     </tr>
     <tr>
-      <td valign="top"><a href="https://hub.docker.com/r/authorizon/opal-server">OPAL Server</a></td>
+      <td valign="top"><a href="https://hub.docker.com/r/permitio/opal-server">OPAL Server</a></td>
       <td valign="top"><code>docker pull authorizon/opal-server</code></td>
       <td valign="top">
       <ul>
@@ -62,7 +62,7 @@ Our recommendation is to start with the [docker-compose playground](https://gith
       </td>
     </tr>
     <tr>
-      <td valign="top"><a href="https://hub.docker.com/r/authorizon/opal-client">OPAL Client</a></td>
+      <td valign="top"><a href="https://hub.docker.com/r/permitio/opal-client">OPAL Client</a></td>
       <td valign="top"><code>docker pull authorizon/opal-client</code></td>
       <td valign="top">
       <ul>

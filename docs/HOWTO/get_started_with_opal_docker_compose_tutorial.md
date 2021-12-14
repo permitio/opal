@@ -1,4 +1,4 @@
-# Get started with OPAL (a docker-compose playground)
+# 🚀  Get started with OPAL (a docker-compose playground)
 
 This tutorial will show you what you can do with OPAL, and teach you about OPAL core features.
 
