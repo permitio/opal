@@ -84,7 +84,7 @@ The policy bundle contains a `manifest` list that contains the paths of all the 
 
 OPA rego modules can have dependencies if they use the [import statement](https://www.openpolicyagent.org/docs/latest/policy-language/#imports).
 
-You can control the manifest contents and ensure the correct loading of dependent OPA modules. All you have to do is to put a `.manifest` file in the root directory of your policy git repository (like shown in [this example repo](https://github.com/authorizon/opal-example-policy-repo)).
+You can control the manifest contents and ensure the correct loading of dependent OPA modules. All you have to do is to put a `.manifest` file in the root directory of your policy git repository (like shown in [this example repo](https://github.com/permitio/opal-example-policy-repo)).
 
 **The `.manifest` file is optional!!!** If there is no manifest file, OPAL will load the policy modules it finds in alphabetical order.
 
@@ -95,18 +95,18 @@ The format of the `.manifest` file you should adhere to:
 * File paths should appear in the order you want to load them into OPA.
 * If you want to use a different file name other than `.manifest`, you can set another value to the env var `OPAL_POLICY_REPO_MANIFEST_PATH`.
 
-For example, if you look in the [example repo](https://github.com/authorizon/opal-example-policy-repo), you would see that the `rbac.rego` module imports the `utils.rego` module (the line `import data.utils` imports the `utils` package). Therefore in the manifest, `utils.rego` appears first because it needs to be loaded into OPA before the `rbac.rego` policy is loaded (otherwise OPA will throw an exception due to the import statement failing).
+For example, if you look in the [example repo](https://github.com/permitio/opal-example-policy-repo), you would see that the `rbac.rego` module imports the `utils.rego` module (the line `import data.utils` imports the `utils` package). Therefore in the manifest, `utils.rego` appears first because it needs to be loaded into OPA before the `rbac.rego` policy is loaded (otherwise OPA will throw an exception due to the import statement failing).
 
 #### Policy bundle API Endpoint
-The [policy bundle endpoint](https://opal.authorizon.com/redoc#operation/get_policy_policy_get) exposes the following params:
+The [policy bundle endpoint](https://opal.permit.io/redoc#operation/get_policy_policy_get) exposes the following params:
 * **path** - path to a directory inside the repo, the server will include only policy files under this directory. You can pass the **path** parameter multiple times (i.e: to include files under several directories).
 * **base_hash** - include only policy files that were changed (added, updated, deleted or renamed) after the commit with the **base hash**. If this parameter is included, the server will return a **delta bundle**, otherwise the server will return a **complete bundle**.
 
-Let's look at some real API call examples. The opal server in these example track [our example repo](https://github.com/authorizon/opal-example-policy-repo).
+Let's look at some real API call examples. The opal server in these example track [our example repo](https://github.com/permitio/opal-example-policy-repo).
 
 Example fetching a complete bundle:
 ```sh
-curl --request GET 'https://opal.authorizon.com/policy?path=.'
+curl --request GET 'https://opal.permit.io/policy?path=.'
 ```
 
 Response (a complete bundle is returned):
@@ -137,7 +137,7 @@ Response (a complete bundle is returned):
 
 Example fetching a delta bundle:
 ```sh
-curl --request GET 'https://opal.authorizon.com/policy?base_hash=503e6f9821eb036ce6a4207a45ddbe147f1a0a7b&path=.'
+curl --request GET 'https://opal.permit.io/policy?base_hash=503e6f9821eb036ce6a4207a45ddbe147f1a0a7b&path=.'
 ```
 
 This time the response is a delta bundle, the `envoy.rego` file was deleted and `rbac.rego` and `data.json` were added:
@@ -210,7 +210,7 @@ Generate a secret:
 OQ3M81ECbeJEIka4MhgPalSbxVLLe91GBZyiVtPEUsM
 ```
 
-Pass the secret as config when [running OPAL Server](https://github.com/authorizon/opal/blob/master/docs/HOWTO/get_started_with_opal_using_docker.md#step-7-putting-it-all-together---running-the-server):
+Pass the secret as config when [running OPAL Server](https://github.com/permitio/opal/blob/master/docs/HOWTO/get_started_with_opal_using_docker.md#step-7-putting-it-all-together---running-the-server):
 ```sh
 export OPAL_POLICY_REPO_WEBHOOK_SECRET=OQ3M81ECbeJEIka4MhgPalSbxVLLe91GBZyiVtPEUsM
 docker run -it \

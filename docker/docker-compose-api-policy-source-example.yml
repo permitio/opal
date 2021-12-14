@@ -13,7 +13,6 @@ services:
       - POSTGRES_USER=postgres
       - POSTGRES_PASSWORD=postgres
 
-
   opal_server:
     # by default we run opal-server from latest official image
     image: authorizon/opal-server:latest
@@ -33,7 +32,7 @@ services:
       - OPAL_POLICY_REPO_CLONE_PATH=~/opal
       # in this example we will use a polling interval of 30 seconds to check for new policy updates (new bundle files).
       # however, it is better to utilize a api *webhook* to trigger the server to check for changes only when the bundle server has new bundle.
-      # for more info see: https://github.com/authorizon/opal/blob/master/docs/HOWTO/track_an_api_bundle_server.md
+      # for more info see: https://github.com/permitio/opal/blob/master/docs/HOWTO/track_an_api_bundle_server.md
       - OPAL_POLICY_REPO_POLLING_INTERVAL=30
       # configures from where the opal client should initially fetch data (when it first goes up, after disconnection, etc).
       # the data sources represents from where the opal clients should get a "complete picture" of the data they need.
@@ -45,7 +44,6 @@ services:
       - "7002:7002"
     depends_on:
       - broadcast_channel
-
 
   opal_client:
     # by default we run opal-client from latest official image
@@ -73,9 +71,8 @@ services:
     image: nginx
     # expose internal port 80 to localhost 8000
     ports:
-        - 8000:80
+      - 8000:80
     # map files into the docker to edit nginx conf and put the bundle files into the container
     volumes:
-        - ./docker_files/bundle_files:/usr/share/nginx/html
-        - ./docker_files/nginx.conf:/etc/nginx/nginx.conf
-
+      - ./docker_files/bundle_files:/usr/share/nginx/html
+      - ./docker_files/nginx.conf:/etc/nginx/nginx.conf

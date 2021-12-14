@@ -12,7 +12,7 @@ This guide will teach you how to setup and use OPAL as Python packages (python 3
     export OPAL_AUTH_PUBLIC_KEY=~/opal.pub 
     export OPAL_AUTH_MASTER_TOKEN="RANDOM-SECRET-STRING"
     #  Watching a GIT repository from a webhook
-    export OPAL_POLICY_REPO_URL=https://github.com/authorizon/opal-example-policy-repo.git
+    export OPAL_POLICY_REPO_URL=https://github.com/permitio/opal-example-policy-repo.git
     export OPAL_POLICY_REPO_WEBHOOK_SECRET="RANDOM-SECRET-STRING-SHARED-WITH-GITHUB"
     opal-server run
     ```
@@ -42,7 +42,7 @@ This guide will teach you how to setup and use OPAL as Python packages (python 3
 Getting Started with OPAL is easy - we'll install our OPAL-server to manage all the OPAL-client's we deploy.
 We'll deploy OPAL-clients (along side policy agents).
 
-This HOW-TO focuses on setting-up OPAL with its packages and CLI interface, this guide is better to understand the main configurations of OPAL. There's also a separate guide for [setting-up OPAL from pre-built docker images](https://github.com/authorizon/opal/blob/master/docs/HOWTO/get_started_with_opal_using_docker.md).
+This HOW-TO focuses on setting-up OPAL with its packages and CLI interface, this guide is better to understand the main configurations of OPAL. There's also a separate guide for [setting-up OPAL from pre-built docker images](https://github.com/permitio/opal/blob/master/docs/HOWTO/get_started_with_opal_using_docker.md).
 
 ### NOTES:
 - Make sure your system is running Python 3.7 or higher
@@ -60,6 +60,7 @@ for example `OPAL_SERVER_PORT=1337 opal-server run` is equivalent to `opal-serve
 
 
 ----------------------------
+</br>
 
 ## Setup OPAL-server
 
@@ -87,7 +88,7 @@ for example `OPAL_SERVER_PORT=1337 opal-server run` is equivalent to `opal-serve
         - Simplest of those is using a public repository, and simply polling on it (with `OPAL_POLICY_REPO_URL` and `OPAL_POLICY_REPO_POLLING_INTERVAL`)
             ```sh
             #Have the opal server monitor a repo every 60 seconds
-            OPAL_POLICY_REPO_URL=https://github.com/authorizon/opal-example-policy-repo.git  opal-server --policy-repo-polling-interval 60 run
+            OPAL_POLICY_REPO_URL=https://github.com/permitio/opal-example-policy-repo.git  opal-server --policy-repo-polling-interval 60 run
             ```
             <p><a href="https://asciinema.org/a/4gkfGDR45IeR0Zx3y2zB1Vg9T?t=1" target="_blank"><img src="https://asciinema.org/a/4gkfGDR45IeR0Zx3y2zB1Vg9T.svg"/></a></p>
 
@@ -106,7 +107,7 @@ for example `OPAL_SERVER_PORT=1337 opal-server run` is equivalent to `opal-serve
 
     ### Simple run with Data source configuration
     In addition to policy updates (as seen in above section) the OPAL-server can also facilitate data updates, directing OPAL-clients to fetch the needed data from various sources.
-    see [how to trigger data updates guide](https://github.com/authorizon/opal/blob/master/docs/HOWTO/trigger_data_updates.md)
+    see [how to trigger data updates guide](https://github.com/permitio/opal/blob/master/docs/HOWTO/trigger_data_updates.md)
     CLI example:
     <p><a href="https://asciinema.org/a/JYBzx1VrqJ17QnvmOnDYylOE6?t=1" target="_blank"><img src="https://asciinema.org/a/JYBzx1VrqJ17QnvmOnDYylOE6.svg"/></a></p>
 
@@ -182,7 +183,7 @@ for example `OPAL_SERVER_PORT=1337 opal-server run` is equivalent to `opal-serve
           "type": "client",
         }'
         ```
-        This code example assumes your opal server is at https://opal.yourdomain.com and that your master token is `MY_MASTER_TOKEN`. The `/token` API endpoint can receive more parameters, as [documented here](https://opal.authorizon.com/redoc#operation/generate_new_access_token_token_post).
+        This code example assumes your opal server is at https://opal.yourdomain.com and that your master token is `MY_MASTER_TOKEN`. The `/token` API endpoint can receive more parameters, as [documented here](https://opal.permit.io/redoc#operation/generate_new_access_token_token_post).
 
 
 
