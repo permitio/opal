@@ -6,11 +6,11 @@
 </h1>
 
 <h2 align="center">
-Open Policy Administration Layer 
+Open Policy Administration Layer
 </h2>
 
-<a href="https://github.com/authorizon/opal/actions?query=workflow%3ATests" target="_blank">
-    <img src="https://github.com/authorizon/opal/workflows/Tests/badge.svg" alt="Tests">
+<a href="https://github.com/permitio/opal/actions?query=workflow%3ATests" target="_blank">
+    <img src="https://github.com/permitio/opal/workflows/Tests/badge.svg" alt="Tests">
 </a>
 <a href="https://pypi.org/project/opal-server/" target="_blank">
     <img src="https://img.shields.io/pypi/v/opal-server?color=%2331C654&label=OPAL%20Server%20%28PyPi%29" alt="Package">
@@ -49,7 +49,7 @@ OPAL runs in the background, supercharging policy-agents, keeping them in sync w
 
 - 📃 &nbsp; [Full documentation is available here](docs/index.md) 
 - 💡 &nbsp; [Intro to OPAL](docs/intro.md) 
-- 🚀 &nbsp; [Getting Started](docs/HOWTO/get_started_with_opal_docker_compose_tutorial.md)
+- 🚀 &nbsp; Getting Started
 
    OPAL is available both as **python packages** with a built-in CLI as well as pre-built **docker images** ready-to-go.
  
@@ -57,14 +57,16 @@ OPAL runs in the background, supercharging policy-agents, keeping them in sync w
    <!-- - this tutorial is great for learning about OPAL core features and see what OPAL can do for you. -->
    - [Try the getting started guide for containers](docs/HOWTO/get_started_with_opal_using_docker.md)
    <!-- - this tutorial will show you how to configure OPAL to your specific needs and run the official docker containers locally or in production. -->
-   - [Check out the Helm Chart for Kubernetes](https://github.com/authorizon/opal-helm-chart)
-   - [Try the getting started guide with python packages](docs/HOWTO/get_started_with_opal_python_packages.md)
+
+   - [Check out the Helm Chart for Kubernetes](https://github.com/permitio/opal-helm-chart)
+
 
    <br>
+
 - 💪 &nbsp; TL;DR - This one command will download and run a working configuration of OPAL server and OPAL client on your machine:
 
 ```
-curl -L https://raw.githubusercontent.com/authorizon/opal/master/docker/docker-compose-example.yml \
+curl -L https://raw.githubusercontent.com/permitio/opal/master/docker/docker-compose-example.yml \
 > docker-compose.yml && docker-compose up
 ```
 <p>
@@ -75,7 +77,7 @@ curl -L https://raw.githubusercontent.com/authorizon/opal/master/docker/docker-c
 
 - 🧠 &nbsp; "How-To"s
 
-    - [How to get started with OPAL (Packages and CLI)](docs/HOWTO/get_started_with_opal.md)
+    - [How to get started with OPAL (Packages and CLI)](docs/HOWTO/get_started_with_opal_python_packages.md)
 
     - [How to get started with OPAL (Container Images)](docs/HOWTO/get_started_with_opal_using_docker.md)
 
@@ -85,7 +87,7 @@ curl -L https://raw.githubusercontent.com/authorizon/opal/master/docker/docker-c
 
     - [How to configure OPAL (basic concepts)](docs/HOWTO/configure_opal.md)
 
-
+    - [Check out the Helm Chart for Kubernetes](https://github.com/permitio/opal-helm-chart)
 
 - 🎨 &nbsp; [Key concepts and design](docs/design.md) 
 - 🏗️ &nbsp; [Architecture](docs/architecture.md) 
@@ -97,16 +99,17 @@ curl -L https://raw.githubusercontent.com/authorizon/opal/master/docker/docker-c
 <img src="https://i.ibb.co/CvmX8rR/simplified-diagram-highlight.png" alt="simplified" border="0">
 
 
+
 <br>
 
 
-- 📖 &nbsp; For further reading check out our [Blog](https://www.authorizon.com/blog).
+- 📖 &nbsp; For further reading check out our [Blog](https://www.Permit.io/blog).
 
 ## Community
 
 Come talk to us about OPAL, or authorization in general - we would love to hear from you ❤️
 
-You can raise questions and ask for features to be added to the road-map in our [Github discussions](https://github.com/authorizon/opal/discussions), report issues in [Github issues](https://github.com/authorizon/opal/issues), follow us on Twitter to get the latest OPAL updates, and join our Slack community to chat about authorization, open-source, realtime communication, tech any anything else!
+You can raise questions and ask for features to be added to the road-map in our [Github discussions](https://github.com/permitio/opal/discussions), report issues in [Github issues](https://github.com/permitio/opal/issues), follow us on Twitter to get the latest OPAL updates, and join our Slack community to chat about authorization, open-source, realtime communication, tech any anything else!
 </br>
 </br>
 If you are using our project, please consider giving us a ⭐️

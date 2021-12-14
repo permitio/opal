@@ -38,13 +38,13 @@ setup(
     name='opal-common',
     version=version,
     author='Or Weis, Asaf Cohen',
-    author_email="or@authorizon.com",
+    author_email="or@permit.io",
     description='OPAL is an administration layer for Open Policy Agent (OPA), detecting changes' + \
         ' to both policy and data and pushing live updates to your agents. opal-common contains' + \
         ' common code used by both opal-client and opal-server.',
     long_description_content_type='text/markdown',
     long_description=get_long_description(),
-    url='https://github.com/authorizon/opal',
+    url='https://github.com/permitio/opal',
     license=license,
     packages=find_packages(where=project_root, include=('opal_common*', )),
     classifiers=[

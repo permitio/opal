@@ -9,10 +9,10 @@ The guide has 3 main parts:
 
 ## TL;DR
 This tutorial is long and detailed, but the gist of it is:
-* All Fetch Providers are simply python classes that derive from [BaseFetchProvider](https://github.com/authorizon/opal/blob/master/opal_common/fetcher/fetch_provider.py#L9).
+* All Fetch Providers are simply python classes that derive from [BaseFetchProvider](https://github.com/permitio/opal/blob/master/opal_common/fetcher/fetch_provider.py#L9).
 * You need to implement the fetching logic in `_fetch_()` and optionally `_process_()`.
 * Once you finish implementing your provider, you can publish it as a pip package. You can then tell OPAL to use it with the configuration env var `OPAL_FETCH_PROVIDER_MODULES`.
-* We created a well-documented [example fetch provider for Postgres SQL](https://github.com/authorizon/opal-fetcher-postgres). If you prefer to learn from a real code example you can simply clone it and play with it.
+* We created a well-documented [example fetch provider for Postgres SQL](https://github.com/permitio/opal-fetcher-postgres). If you prefer to learn from a real code example you can simply clone it and play with it.
 
 ## <a name="background"></a>Background
 
@@ -31,12 +31,12 @@ OPAL was designed to be extensible, and you can easily create more fetch provide
 ## <a name="writing-providers"></a>Writing your own fetch provider
 In this section we will show a step-by-step tutorial how to write an OPAL fetch provider.
 
-We already created a [fully-functional fetch provider for Postgres SQL](https://github.com/authorizon/opal-fetcher-postgres), that you may use if you need to fetch data from postgres. This fetcher is well documented and you can learn from it how to write your own fetch providers. We will also reference code examples from this fetch provider in our tutorial.
+We already created a [fully-functional fetch provider for Postgres SQL](https://github.com/permitio/opal-fetcher-postgres), that you may use if you need to fetch data from postgres. This fetcher is well documented and you can learn from it how to write your own fetch providers. We will also reference code examples from this fetch provider in our tutorial.
 
 ### Step 1 - creating your project file hierarchy
-All Fetch Providers are simply python classes that derive from [BaseFetchProvider](https://github.com/authorizon/opal/blob/master/opal_common/fetcher/fetch_provider.py#L9).
+All Fetch Providers are simply python classes that derive from [BaseFetchProvider](https://github.com/permitio/opal/blob/master/opal_common/fetcher/fetch_provider.py#L9).
 
-Fetch Providers are loaded into the [fetcher-register](https://github.com/authorizon/opal/blob/master/opal_common/fetcher/fetcher_register.py) from a list of python modules specified by the OPAL configuration env var `OPAL_FETCH_PROVIDER_MODULES`.
+Fetch Providers are loaded into the [fetcher-register](https://github.com/permitio/opal/blob/master/opal_common/fetcher/fetcher_register.py) from a list of python modules specified by the OPAL configuration env var `OPAL_FETCH_PROVIDER_MODULES`.
 
 In order for OPAL to be able to load your fetch-provider python module (by *load* we mean *import inside python*), the module must be installed on your machine. The best way to install python modules is to publish them as a [pip package](https://pypi.org/).
 
@@ -55,7 +55,7 @@ It's pretty basic but we'll go through it anyways:
 * `README.md` - a readme that describes your package, typically includes instructions how to install and use your fetch provider (recommended).
 * `opal_fetcher_postgres` - will be probably have a different name in your own fetch-provider, this is the name of the package after it is installed by pip. (In other words, the import inside python will look like this: `import opal_fetcher_postgres`).
 * `requirements.txt` - other pip packages required by your fetch-provider. At minimum, you will need the following packages: `opal-common` and `pydantic`.
-* `setup.py` - This file includes instructions how to install your fetch-provider package. [You can copy from us](https://github.com/authorizon/opal-fetcher-postgres/blob/master/setup.py).
+* `setup.py` - This file includes instructions how to install your fetch-provider package. [You can copy from us](https://github.com/permitio/opal-fetcher-postgres/blob/master/setup.py).
 
 ### Step 2 - your provider module (general structure)
 
@@ -106,13 +106,13 @@ class PostgresFetchProvider(BaseFetchProvider):
     ...
 ```
 
-You may also reference the [provider module from the postgres fetcher](https://github.com/authorizon/opal-fetcher-postgres/blob/master/opal_fetcher_postgres/provider.py).
+You may also reference the [provider module from the postgres fetcher](https://github.com/permitio/opal-fetcher-postgres/blob/master/opal_fetcher_postgres/provider.py).
 
 ### Step 3 - implementing your FetcherConfig and FetchEvent
 
 Each fetch-provider might require specific values that will be passed to it as part of its configuration. The configuration is simply a [Pydantic](https://github.com/samuelcolvin/pydantic/) model that must derive from the `FetcherConfig` class.
 
-Let's analyze the real code of the [PostgresFetcherConfig](https://github.com/authorizon/opal-fetcher-postgres/blob/master/opal_fetcher_postgres/provider.py#L31) class from the postgres fetcher.
+Let's analyze the real code of the [PostgresFetcherConfig](https://github.com/permitio/opal-fetcher-postgres/blob/master/opal_fetcher_postgres/provider.py#L31) class from the postgres fetcher.
 
 ```python
 class PostgresConnectionParams(BaseModel):
@@ -203,7 +203,7 @@ class PostgresFetchProvider(BaseFetchProvider):
         """
 ```
 
-Let's reimplement the [postgres provider](https://github.com/authorizon/opal-fetcher-postgres/blob/master/opal_fetcher_postgres/provider.py#L61) step-by-step.
+Let's reimplement the [postgres provider](https://github.com/permitio/opal-fetcher-postgres/blob/master/opal_fetcher_postgres/provider.py#L61) step-by-step.
 
 #### The constructor
 The constructor must be initializd with the specific FetchEvent type you defined in the previous step, and should be propagated with `super()`. You may also initialize class members.
@@ -269,7 +269,7 @@ async def __aexit__(self, exc_type=None, exc_val=None, tb=None):
 #### Implementing `_fetch_` and `_process_`
 Providers implement a `_fetch_()` method to access and fetch data from the data-source. They akso optionally implement a `_process_()` method to mutate the data before returning it (for example converting a JSON string to an actual object).
 
-The `_fetch_()` and `_process_()` method can access the fields available from `self._event` (the [FetchEvent](https://github.com/authorizon/opal/blob/master/opal_common/fetcher/events.py#L12)):
+The `_fetch_()` and `_process_()` method can access the fields available from `self._event` (the [FetchEvent](https://github.com/permitio/opal/blob/master/opal_common/fetcher/events.py#L12)):
 * The url we should fetch data from is available at `self._event.url`.
 * The custom `FetcherConfig` (custom configuration) is available at `self._event.config`.
 
@@ -309,14 +309,14 @@ async def _process_(self, records: List[asyncpg.Record]):
 ```
 
 #### Bonus: How the process of calling your fetch provider works:
-* The fetch provider is called by the [FetchingEngine](https://github.com/authorizon/opal/blob/master/opal_common/fetcher/engine/fetching_engine.py)'s `fetch_worker`.
-* The [fetch_worker](https://github.com/authorizon/opal/blob/master/opal_common/fetcher/engine/fetch_worker.py#L33-L34) invokes a provider's `.fetch()` and `.process()` methods which are simply proxies to its `_fetch_()` and `_process_()` methods.
-* The [fetcher-register](https://github.com/authorizon/opal/blob/master/opal/common/fetcher/fetcher_register.py) loads the providers when OPAL client first loads and makes them available for fetch-workers.
+* The fetch provider is called by the [FetchingEngine](https://github.com/permitio/opal/blob/master/opal_common/fetcher/engine/fetching_engine.py)'s `fetch_worker`.
+* The [fetch_worker](https://github.com/permitio/opal/blob/master/opal_common/fetcher/engine/fetch_worker.py#L33-L34) invokes a provider's `.fetch()` and `.process()` methods which are simply proxies to its `_fetch_()` and `_process_()` methods.
+* The [fetcher-register](https://github.com/permitio/opal/blob/master/opal/common/fetcher/fetcher_register.py) loads the providers when OPAL client first loads and makes them available for fetch-workers.
 
 ## <a name="using-providers"></a>Using a custom fetch provider
 This section explains how to use a custom OPAL fetch provider in your OPAL setup.
 ### Before we begin - How does OPAL find custom fetch providers?
-As mentioned before, all FetchProviders are simply python classes that derive (inherit) from [BaseFetchProvider](https://github.com/authorizon/opal/blob/master/opal_common/fetcher/fetch_provider.py#L9). OPAL searches for fetch providers based on the env var `OPAL_FETCH_PROVIDER_MODULES`, defined [here](https://github.com/authorizon/opal/blob/master/opal_common/config.py#L36).
+As mentioned before, all FetchProviders are simply python classes that derive (inherit) from [BaseFetchProvider](https://github.com/permitio/opal/blob/master/opal_common/fetcher/fetch_provider.py#L9). OPAL searches for fetch providers based on the env var `OPAL_FETCH_PROVIDER_MODULES`, defined [here](https://github.com/permitio/opal/blob/master/opal_common/config.py#L36).
 
 For example, if the env var is:
 ```
@@ -326,15 +326,15 @@ OPAL_FETCH_PROVIDER_MODULES=opal_common.fetcher.providers,opal_fetcher_postgres.
 OPAL will parse this var as a comma-separated list, and for each item in the list OPAL will find that python module, import it and then look inside the imported module for subclasses of `BaseFetchProvider`.
 
 In our example, OPAL will import two python modules:
-1) `opal_common.fetcher.providers`: there's a trick in the [\_\_init\_\_.py](https://github.com/authorizon/opal/blob/master/opal_common/fetcher/providers/__init__.py) file of the module that causes all classes in the directory to be added to `__all__` and thus to be available directly under the module. Since both `HttpFetchProvider` and `FastApiRpcFetchProvider` inherit from `BaseFetchProvider` - both of them will be found by OPAL and added to the fetcher register.
-2) `opal_fetcher_postgres.provider`: no special tricks here. if you look inside [that module](https://github.com/authorizon/opal-fetcher-postgres/blob/master/opal_fetcher_postgres/provider.py), you will see that the class `PostgresFetchProvider` inherits from `BaseFetchProvider`.
+1) `opal_common.fetcher.providers`: there's a trick in the [\_\_init\_\_.py](https://github.com/permitio/opal/blob/master/opal_common/fetcher/providers/__init__.py) file of the module that causes all classes in the directory to be added to `__all__` and thus to be available directly under the module. Since both `HttpFetchProvider` and `FastApiRpcFetchProvider` inherit from `BaseFetchProvider` - both of them will be found by OPAL and added to the fetcher register.
+2) `opal_fetcher_postgres.provider`: no special tricks here. if you look inside [that module](https://github.com/permitio/opal-fetcher-postgres/blob/master/opal_fetcher_postgres/provider.py), you will see that the class `PostgresFetchProvider` inherits from `BaseFetchProvider`.
 
 ### 1) Create a custom docker image containing your fetch provider
 In the [official docker images](https://hub.docker.com/r/authorizon/opal-client) of OPAL, **no custom providers are installed**. In order for OPAL to be able to load a custom provider's python module, the python module need to be available on the docker image.
 
 Therefore the first step is to create and build a custom OPAL-client `Dockerfile`.
 
-Example `Dockerfile` (taken from the [example fetcher repo](https://github.com/authorizon/opal-fetcher-postgres)) - of a non-published python package:
+Example `Dockerfile` (taken from the [example fetcher repo](https://github.com/permitio/opal-fetcher-postgres)) - of a non-published python package:
 ```Dockerfile
 # inherits all behavior defined in the official OPAL-client image
 FROM authorizon/opal-client:latest
@@ -372,7 +372,7 @@ The list in our case includes the built-in providers (`opal_common.fetcher.provi
 
 Fetchers are triggered when OPAL client is instructed to fetch **Data Source Entries**. Each entry is a directive what data to fetch, from where, how it should be fetched and how it should be saved into the policy store (i.e: OPA).
 
-Your [DataSourceEntry](https://github.com/authorizon/opal/blob/master/opal_common/schemas/data.py#L9) objects can be used either in `OPAL_DATA_CONFIG_SOURCES` as initial data sources fetched when OPAL client first loads, or in dynamic (realtime) updates sent via the [OPAL publish API](http://localhost:7002/docs#/Data%20Updates/publish_data_update_event_data_config_post). There's a guide on hwo to trigger data updates [here](https://github.com/authorizon/opal/blob/master/docs/HOWTO/trigger_data_updates.md).
+Your [DataSourceEntry](https://github.com/permitio/opal/blob/master/opal_common/schemas/data.py#L9) objects can be used either in `OPAL_DATA_CONFIG_SOURCES` as initial data sources fetched when OPAL client first loads, or in dynamic (realtime) updates sent via the [OPAL publish API](http://localhost:7002/docs#/Data%20Updates/publish_data_update_event_data_config_post). There's a guide on hwo to trigger data updates [here](https://github.com/permitio/opal/blob/master/docs/HOWTO/trigger_data_updates.md).
 
 Each DataSourceEntry object has a `config` attribute which is a dict that matches the schema of `FetcherConfig`.
 
@@ -409,21 +409,21 @@ In the example `OPAL_DATA_CONFIG_SOURCES` we just shown:
 * The `query` and `connection_params` attributes are specific to the `PostgresFetchProvider` provider, and are defined by the config type `PostgresFetcherConfig`.
 
 ### Wrapping this up - check out a docker compose example
-This [docker compose](https://github.com/authorizon/opal-fetcher-postgres/blob/master/docker-compose.yml) file contains:
-* **A custom opal client** based on [this Dockerfile](https://github.com/authorizon/opal-fetcher-postgres/blob/master/Dockerfile). Only difference is that we install the custom fetch-provider python module into the container.
+This [docker compose](https://github.com/permitio/opal-fetcher-postgres/blob/master/docker-compose.yml) file contains:
+* **A custom opal client** based on [this Dockerfile](https://github.com/permitio/opal-fetcher-postgres/blob/master/Dockerfile). Only difference is that we install the custom fetch-provider python module into the container.
 * **The configuration** necessary to use the custom fetch provider:
   * `OPAL_FETCH_PROVIDER_MODULES` is defined for the OPAL-client and tells OPAL to load `opal_fetcher_postgres.provider` to the fetcher register.
   * `OPAL_DATA_CONFIG_SOURCES` is defined for the OPAL-server with a DataSourceEntry that contains a `fetcher` override. The value of the `fetcher` key tell OPAL to use `PostgresFetchProvider` to fetch the entry.
 
-you may run this compose file by cloning the [example repo](https://github.com/authorizon/opal-fetcher-postgres) and running
+you may run this compose file by cloning the [example repo](https://github.com/permitio/opal-fetcher-postgres) and running
 ```
 docker compose up
 ```
 
 ## Reference - important classes and modules
-- [FetchingEngine](https://github.com/authorizon/opal/blob/master/opal_common/fetcher/engine/fetching_engine.py)
-    - [fetch_worker](https://github.com/authorizon/opal/blob/master/opal_common/fetcher/engine/fetch_worker.py)
-- [BaseFetchProvider](https://github.com/authorizon/opal/blob/master/opal_common/fetcher/fetch_provider.py)
-- [FetcherRegister](https://github.com/authorizon/opal/blob/master/opal_common/fetcher/fetcher_register.py)
-- [FetcherConfig](https://github.com/authorizon/opal/blob/master/opal_common/fetcher/events.py)
+- [FetchingEngine](https://github.com/permitio/opal/blob/master/opal_common/fetcher/engine/fetching_engine.py)
+    - [fetch_worker](https://github.com/permitio/opal/blob/master/opal_common/fetcher/engine/fetch_worker.py)
+- [BaseFetchProvider](https://github.com/permitio/opal/blob/master/opal_common/fetcher/fetch_provider.py)
+- [FetcherRegister](https://github.com/permitio/opal/blob/master/opal_common/fetcher/fetcher_register.py)
+- [FetcherConfig](https://github.com/permitio/opal/blob/master/opal_common/fetcher/events.py)
 

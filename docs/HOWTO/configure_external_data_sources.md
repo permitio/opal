@@ -30,20 +30,20 @@ If each of your OPAL clients needs a **slightly different** configuration, you c
 **Yes!! And they should!!**
 
 Each of your opal clients should use a unique JWT token issued to it by the OPAL server.
-[You can learn how to generate your OPAL client token here](https://github.com/authorizon/opal/blob/master/docs/HOWTO/get_started_with_opal_using_docker.md#step-2-obtain-client-jwt-token-optional).
+[You can learn how to generate your OPAL client token here](https://github.com/permitio/opal/blob/master/docs/HOWTO/get_started_with_opal_using_docker.md#step-2-obtain-client-jwt-token-optional).
 
-When [issued via the API](https://opal.authorizon.com/redoc#operation/generate_new_access_token_token_post), each OPAL client token (JWT) supports custom claims (the `claims` attribute).
+When [issued via the API](https://opal.permit.io/redoc#operation/generate_new_access_token_token_post), each OPAL client token (JWT) supports custom claims (the `claims` attribute).
 
 ### How to configure an external data source?
 OPAL server supports redirecting to an **external API server** that can serve different `DataSourceEntries` based on the JWT token identifying the OPAL client. This external API server should have access to OPAL's public key so that it can validate OPAL JWTs correctly and make sure the OPAL identity passed in a Bearer token is valid.
 
-This is how a typical configuration of `OPAL_DATA_CONFIG_SOURCES` looks like: ([a breakdown of this config can be found here](https://github.com/authorizon/opal/blob/master/docs/HOWTO/get_started_with_opal_using_docker.md#step-5-server-config---data-sources))
+This is how a typical configuration of `OPAL_DATA_CONFIG_SOURCES` looks like: ([a breakdown of this config can be found here](https://github.com/permitio/opal/blob/master/docs/HOWTO/get_started_with_opal_using_docker.md#step-5-server-config---data-sources))
 ```
 {
     "config": {
         "entries": [
             {
-                "url": "https://api.authorizon.com/v1/policy-config",
+                "url": "https://api.permit.io/v1/policy-config",
                 "topics": [
                     "policy_data"
                 ],
@@ -109,14 +109,14 @@ async with aiohttp.ClientSession(headers={"Authorization": f"bearer {OPAL_MASTER
     token_params = AccessTokenRequest(
          type=PeerType.client,
          ttl=timedelta(days=CLIENT_TOKEN_TTL_IN_DAYS),
-         claims={'authorizon_client_id': pdp.client_id},
+         claims={'permit_client_id': pdp.client_id},
     ).json()
     async with session.post(f"{OPAL_SERVER_URL}/token", data=token_params) as response:
          data: dict = await response.json()
          token = data.get("token", None)
 ```
 
-This function hits opal server's `/token` endpoint (see: [API reference](https://opal.authorizon.com/redoc#operation/generate_new_access_token_token_post)), generates a client token (peer type == client) and adds a custom claim that identifies the `authorizon_client_id` - which is unique for each of our SaaS clients.
+This function hits opal server's `/token` endpoint (see: [API reference](https://opal.permit.io/redoc#operation/generate_new_access_token_token_post)), generates a client token (peer type == client) and adds a custom claim that identifies the `permit_client_id` - which is unique for each of our SaaS clients.
 
 **Since OPAL JWTs are cryptographically signed - this cannot be forged.**
 
@@ -182,9 +182,9 @@ def init_dynamic_data_sources_router():
     authenticator = RedirectJWTAuthenticator(verifier)
 
     async def extract_pdp_from_jwt_claims_or_throw(db: Session, claims: JWTClaims) -> PDP:
-        claim_client_id = claims.get('authorizon_client_id', None)
+        claim_client_id = claims.get('permit_client_id', None)
         if claim_client_id is None:
-            raise Unauthorized(description="provided JWT does not have an authorizon_client_id claim!")
+            raise Unauthorized(description="provided JWT does not have an permit_client_id claim!")
 
         return await PDP.from_id_or_throw_401(db, claim_client_id)
 

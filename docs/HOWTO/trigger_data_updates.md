@@ -25,7 +25,7 @@ curl --request POST 'https://opal.yourdomain.com/token' \
   "type": "datasource",
 }'
 ```
-The `/token` API endpoint can receive more parameters, as [documented here](https://opal.authorizon.com/redoc#operation/generate_new_access_token_token_post).
+The `/token` API endpoint can receive more parameters, as [documented here](https://opal.permit.io/redoc#operation/generate_new_access_token_token_post).
 
 This example assumes that:
 * You deployed OPAL server to `https://opal.yourdomain.com`
@@ -58,7 +58,7 @@ Example:
 
 ### Option 3: Write your own - import code from the OPAL's packages
 - One of the great things about OPAL being written in Python is that you can easily reuse its code.
-See the code for the `DataUpdate` model at [opal_common/schemas/data.py](https://github.com/authorizon/opal/blob/master/opal_common/schemas/data.py) and use it within your own code to send an update to the server
+See the code for the `DataUpdate` model at [opal_common/schemas/data.py](https://github.com/permitio/opal/blob/master/opal_common/schemas/data.py) and use it within your own code to send an update to the server
 
 
 
