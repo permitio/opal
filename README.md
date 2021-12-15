@@ -49,7 +49,7 @@ OPAL runs in the background, supercharging policy-agents, keeping them in sync w
 
 - 📃 &nbsp; [Full documentation is available here](docs/index.md) 
 - 💡 &nbsp; [Intro to OPAL](docs/intro.md) 
-- 🚀 &nbsp; Getting Started
+- 🚀 &nbsp; Getting Started:
 
    OPAL is available both as **python packages** with a built-in CLI as well as pre-built **docker images** ready-to-go.
  
@@ -108,7 +108,7 @@ curl -L https://raw.githubusercontent.com/permitio/opal/master/docker/docker-com
 
 Come talk to us about OPAL, or authorization in general - we would love to hear from you ❤️
 
-You can raise questions and ask for features to be added to the road-map in our [Github discussions](https://github.com/permitio/opal/discussions), report issues in [Github issues](https://github.com/permitio/opal/issues), follow us on Twitter to get the latest OPAL updates, and join our Slack community to chat about authorization, open-source, realtime communication, tech any anything else!
+You can raise questions and ask for features to be added to the road-map in our [**Github discussions**](https://github.com/permitio/opal/discussions), report issues in [**Github issues**](https://github.com/permitio/opal/issues), follow us on Twitter to get the latest OPAL updates, and join our Slack community to chat about authorization, open-source, realtime communication, tech any anything else!
 </br>
 </br>
 If you are using our project, please consider giving us a ⭐️
