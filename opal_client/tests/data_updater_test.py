@@ -134,7 +134,7 @@ async def test_data_updater(server):
         proc = multiprocessing.Process(target=trigger_update, daemon=True)
         proc.start()
         # wait until new data arrives into the strore via the updater
-        await asyncio.wait_for(policy_store.wait_for_data(), 15)
+        await asyncio.wait_for(policy_store.wait_for_data(), 60)
     # cleanup
     finally:
         await updater.stop()
