@@ -108,7 +108,7 @@ curl -L https://raw.githubusercontent.com/permitio/opal/master/docker/docker-com
 
 Come talk to us about OPAL, or authorization in general - we would love to hear from you ❤️
 
-You can raise questions and ask for features to be added to the road-map in our [**Github discussions**](https://github.com/permitio/opal/discussions), report issues in [**Github issues**](https://github.com/permitio/opal/issues), follow us on Twitter to get the latest OPAL updates, and join our Slack community to chat about authorization, open-source, realtime communication, tech any anything else!
+You can raise questions and ask for features to be added to the road-map in our [**Github discussions**](https://github.com/permitio/opal/discussions), report issues in [**Github issues**](https://github.com/permitio/opal/issues), follow us on Twitter to get the latest OPAL updates, and join our Slack community to chat about authorization, open-source, realtime communication, tech, or anything else!
 </br>
 </br>
 If you are using our project, please consider giving us a ⭐️
