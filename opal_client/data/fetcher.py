@@ -1,6 +1,6 @@
 import asyncio
 from typing import Dict, Any, List, Tuple
-from opal.opal_common.utils import tuple_to_dict
+from opal_common.utils import tuple_to_dict
 
 from opal_client.config import opal_client_config
 from opal_common.config import opal_common_config

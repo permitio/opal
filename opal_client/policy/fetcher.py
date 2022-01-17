@@ -4,7 +4,7 @@ from typing import List, Optional
 from pydantic import ValidationError
 from fastapi import status, HTTPException
 from tenacity import retry, wait, stop
-from opal.opal_common.utils import throw_if_bad_status_code, tuple_to_dict
+from opal_common.utils import throw_if_bad_status_code, tuple_to_dict
 
 from opal_common.utils import get_authorization_header
 from opal_common.schemas.policy import PolicyBundle
