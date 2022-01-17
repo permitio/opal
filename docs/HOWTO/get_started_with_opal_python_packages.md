@@ -1,6 +1,35 @@
-# Get started with OPAL python packages
-
+# 🚀 Get started with OPAL python packages
 This guide will teach you how to setup and use OPAL as Python packages (python 3.7 >) with its CLI
+## TL;DR
+- Install
+    - ```pip install opal-client``` 
+    - ```pip install opal-server``` 
+- Run server (example):
+    ```sh
+    # Run server 
+    #  in secure mode -verifying client JWTs (Replace secrets with actual secrets ;-) )
+    export OPAL_AUTH_PRIVATE_KEY=~/opal 
+    export OPAL_AUTH_PUBLIC_KEY=~/opal.pub 
+    export OPAL_AUTH_MASTER_TOKEN="RANDOM-SECRET-STRING"
+    #  Watching a GIT repository from a webhook
+    export OPAL_POLICY_REPO_URL=https://github.com/permitio/opal-example-policy-repo.git
+    export OPAL_POLICY_REPO_WEBHOOK_SECRET="RANDOM-SECRET-STRING-SHARED-WITH-GITHUB"
+    opal-server run
+    ```
+- Run client (example):
+    ```sh
+    # Run client
+    #  authenticating with a JWT (replace 'JWT-CRYPTOGRAPHIC-CONTENT' with actual token )
+    export OPAL_CLIENT_TOKEN="JWT-CRYPTOGRAPHIC-CONTENT"
+    # connect to server
+    export OPAL_SERVER_URL=https://opal.mydomain.com:7002
+    # Subscribe to specific data-topics
+    export OPAL_DATA_TOPICS=tenants/my-org,stripe_billing,tickets
+    opal-client run
+    ```
+
+
+
 
 ## Table of Contents
 1. Setup OPAL-server
@@ -31,6 +60,7 @@ for example `OPAL_SERVER_PORT=1337 opal-server run` is equivalent to `opal-serve
 
 
 ----------------------------
+</br>
 
 ## Setup OPAL-server
 

@@ -22,7 +22,7 @@ Check out OPAL's main site at <a href="https://opal.ac">OPAL.ac</a>
   - [Code modules](modules.md) review
 
 ## 👩‍🏫 <a name="how-tos"></a> HOW-TOs
-- [How to get started with OPAL (Packages and CLI)](HOWTO/get_started_with_opal.md)
+- [How to get started with OPAL (Packages and CLI)](HOWTO/get_started_with_opal_python_packages.md)
 - [How to get started with OPAL (Container Images)](HOWTO/get_started_with_opal_using_docker.md)
 - [How to trigger Data Updates via OPAL](HOWTO/trigger_data_updates.md)
 - [How to extend OPAL to fetch data from your sources with FetchProviders](HOWTO/write_your_own_fetch_provider.md)
