@@ -81,7 +81,9 @@ def setup_watcher_task(
             remote_source_url=remote_source_url,
             local_clone_path=clone_path,
             polling_interval=polling_interval,
-            token=policy_bundle_token
+            token=policy_bundle_token,
+            policy_bundle_path=opal_server_config.POLICY_BUNDLE_TMP_PATH,
+            policy_bundle_git_add_pattern=opal_server_config.POLICY_BUNDLE_GIT_ADD_PATTERN
         )
     else:
         raise ValueError("Unknown value for OPAL_POLICY_SOURCE_TYPE")

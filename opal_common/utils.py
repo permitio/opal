@@ -5,7 +5,8 @@ import os
 import threading
 import logging
 
-from typing import Tuple, Coroutine
+from typing import Tuple, Coroutine, Dict, List
+import aiohttp
 
 
 def get_filepaths_with_glob(root_path: str, file_regex: str):
@@ -22,6 +23,20 @@ def hash_file(tmp_file_path):
                 break
             sha256_hash.update(data)
     return sha256_hash.hexdigest()
+
+async def throw_if_bad_status_code(response: aiohttp.ClientResponse, expected: List[int], logger=None) -> aiohttp.ClientResponse:
+    if response.status in expected:
+        return response
+
+    # else, bad status code
+    details = await response.json()
+    if logger:
+        logger.warning("Unexpected response code {status}: {details}", status=response.status, details=details)
+    raise ValueError(f"unexpected response code while fetching bundle: {response.status}")
+
+
+def tuple_to_dict(tup: Tuple[str, str]) -> Dict[str, str]:
+    return dict([tup])
 
 
 def get_authorization_header(token: str) -> Tuple[str, str]:

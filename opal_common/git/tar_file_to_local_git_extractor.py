@@ -6,7 +6,6 @@ import git
 from pydantic.error_wrappers import ValidationError
 
 from opal_common.security.tarsafe import TarSafe
-from opal_server.config import opal_server_config
 
 
 class TarFileToLocalGitExtractor:
@@ -18,9 +17,10 @@ class TarFileToLocalGitExtractor:
         local_clone_path(str):  path for the local git to manage policies
         tmp_bundle_path(Path):  path to download bundle from api source
     """
-    def __init__(self, local_clone_path: str, tmp_bundle_path: Path):
+    def __init__(self, local_clone_path: str, tmp_bundle_path: Path, policy_bundle_git_add_pattern = '*'):
         self.local_clone_path = local_clone_path
         self.tmp_bundle_path = tmp_bundle_path
+        self.policy_bundle_git_add_pattern = policy_bundle_git_add_pattern
 
     def commit_local_git(self, init_commit_msg: str = "Init", should_init: bool = False):
         """
@@ -36,7 +36,7 @@ class TarFileToLocalGitExtractor:
         prev_commit = None
         if len(local_git.index.repo.heads):
             prev_commit = local_git.index.repo.head.commit
-        local_git.index.add(opal_server_config.POLICY_BUNDLE_GIT_ADD_PATTERN)
+        local_git.index.add(self.policy_bundle_git_add_pattern)
         new_commit = local_git.index.commit(init_commit_msg)
         return local_git, prev_commit, new_commit
 

@@ -1,10 +1,10 @@
 import asyncio
 from typing import Dict, Any, List, Tuple
+from opal_common.utils import tuple_to_dict
 
 from opal_client.config import opal_client_config
 from opal_common.config import opal_common_config
 from opal_common.utils import get_authorization_header
-from opal_client.utils import tuple_to_dict
 from opal_common.fetcher import FetchingEngine
 from opal_common.fetcher.events import FetcherConfig
 from opal_common.fetcher.providers.http_fetch_provider import HttpFetcherConfig

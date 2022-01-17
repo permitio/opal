@@ -4,10 +4,10 @@ from typing import List, Optional
 from pydantic import ValidationError
 from fastapi import status, HTTPException
 from tenacity import retry, wait, stop
+from opal_common.utils import throw_if_bad_status_code, tuple_to_dict
 
 from opal_common.utils import get_authorization_header
 from opal_common.schemas.policy import PolicyBundle
-from opal_client.utils import tuple_to_dict
 from opal_client.logger import logger
 from opal_client.config import opal_client_config
 
@@ -19,14 +19,6 @@ def force_valid_bundle(bundle) -> PolicyBundle:
         logger.warning("server returned invalid bundle: {err}", bundle=bundle, err=repr(e))
         raise
 
-async def throw_if_bad_status_code(response: aiohttp.ClientResponse, expected: List[int]) -> aiohttp.ClientResponse:
-        if response.status in expected:
-            return response
-
-        # else, bad status code
-        details = await response.json()
-        logger.warning("Unexpected response code {status}: {details}", status=response.status, details=details)
-        raise ValueError(f"unexpected response code while fetching bundle: {response.status}")
 
 class PolicyFetcher:
     """
@@ -93,7 +85,7 @@ class PolicyFetcher:
 
 
                     # may throw ValueError
-                    await throw_if_bad_status_code(response, expected=[status.HTTP_200_OK])
+                    await throw_if_bad_status_code(response, expected=[status.HTTP_200_OK], logger=logger)
 
                     # may throw Validation Error
                     bundle = await response.json()

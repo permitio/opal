@@ -6,14 +6,12 @@ import aiohttp
 from datetime import datetime
 from fastapi import status
 from tenacity.wait import wait_fixed
-from opal_client.policy.fetcher import throw_if_bad_status_code
-from opal_client.utils import tuple_to_dict
+from opal_common.utils import throw_if_bad_status_code, tuple_to_dict
 from opal_common.git.tar_file_to_local_git_extractor import TarFileToLocalGitExtractor
 
 from opal_common.logger import logger
 from opal_common.sources.base_policy_source import BasePolicySource
 from opal_common.utils import get_authorization_header, hash_file
-from opal_server.config import opal_server_config
 
 BundleHash = str
 
@@ -43,14 +41,17 @@ class ApiPolicySource(BasePolicySource):
         local_clone_path: str,
         polling_interval: int = 0,
         token: Optional[str] = None,
+        policy_bundle_path = '.',
+        policy_bundle_git_add_pattern = '*'
     ):
         super().__init__(remote_source_url=remote_source_url, local_clone_path=local_clone_path,
                          polling_interval=polling_interval)
         self.token = token
         self.bundle_hash = None
         self.etag = None
-        self.tmp_bundle_path = Path(opal_server_config.POLICY_BUNDLE_TMP_PATH)
-        self.tar_to_git = TarFileToLocalGitExtractor(self.local_clone_path, self.tmp_bundle_path)
+        self.tmp_bundle_path = policy_bundle_path
+        self.tar_to_git = TarFileToLocalGitExtractor(self.local_clone_path, self.tmp_bundle_path, self.policy_bundle_git_add_pattern)
+        self.policy_bundle_git_add_pattern = policy_bundle_git_add_pattern
 
     async def get_initial_policy_state_from_remote(self):
         """
@@ -117,10 +118,10 @@ class ApiPolicySource(BasePolicySource):
                         return False, None, self.etag
 
                     # may throw ValueError
-                    await throw_if_bad_status_code(response, expected=[status.HTTP_200_OK])
+                    await throw_if_bad_status_code(response, expected=[status.HTTP_200_OK], logger=logger)
                     current_etag = response.headers.get("ETag", None)
                     response_bytes = await response.read()
-                    tmp_file_path = Path(opal_server_config.POLICY_BUNDLE_TMP_PATH)
+                    tmp_file_path = self.tmp_bundle_path
                     with open(tmp_file_path, "wb") as file:
                         file.write(response_bytes)
 
