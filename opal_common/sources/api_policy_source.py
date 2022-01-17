@@ -6,7 +6,7 @@ import aiohttp
 from datetime import datetime
 from fastapi import status
 from tenacity.wait import wait_fixed
-from opal.opal_common.utils import throw_if_bad_status_code, tuple_to_dict
+from opal_common.utils import throw_if_bad_status_code, tuple_to_dict
 from opal_common.git.tar_file_to_local_git_extractor import TarFileToLocalGitExtractor
 
 from opal_common.logger import logger
