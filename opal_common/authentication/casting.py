@@ -1,10 +1,14 @@
 import os
+import logging
 from typing import Optional
 
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import serialization
 
 from opal_common.authentication.types import EncryptionKeyFormat, PrivateKey, PublicKey
+from opal_common.logging.decorators import log_exception
+
+logger = logging.getLogger('opal.authentication')
 
 
 def to_bytes(key: str, encoding: str = 'utf-8'):
@@ -27,6 +31,7 @@ def maybe_decode_multiline_key(key: str) -> bytes:
     return to_bytes(key)
 
 
+@log_exception(logger=logger)
 def cast_private_key(value: str, key_format: EncryptionKeyFormat, passphrase: Optional[str] = None) -> Optional[PrivateKey]:
     """
     Parse a string into a valid cryptographic private key.
@@ -59,6 +64,7 @@ def cast_private_key(value: str, key_format: EncryptionKeyFormat, passphrase: Op
         return serialization.load_der_private_key(raw_key, password=password, backend=default_backend())
 
 
+@log_exception(logger=logger)
 def cast_public_key(value: str, key_format: EncryptionKeyFormat) -> Optional[PublicKey]:
     """
     Parse a string into a valid cryptographic public key.
