@@ -594,7 +594,7 @@ pip install opal-client
 
 You can obtain a client token with this cli command:
 ```
-opal-client obtain-token MY_MASTER_TOKEN --uri=https://opal.yourdomain.com --type client
+opal-client obtain-token MY_MASTER_TOKEN --server-url=https://opal.yourdomain.com --type client
 ```
 
 If you don't want to use the cli, you can obtain the JWT directly from the deployed OPAL server via its REST API:
