@@ -50,7 +50,7 @@ Our recommendation is to start with the [docker-compose playground](https://gith
     </tr>
     <tr>
       <td valign="top"><a href="https://hub.docker.com/r/permitio/opal-server">OPAL Server</a></td>
-      <td valign="top"><code>docker pull authorizon/opal-server</code></td>
+      <td valign="top"><code>docker pull permitio/opal-server</code></td>
       <td valign="top">
       <ul>
         <li>Creates a Pub/Sub channel clients subscribe to</li>
@@ -63,7 +63,7 @@ Our recommendation is to start with the [docker-compose playground](https://gith
     </tr>
     <tr>
       <td valign="top"><a href="https://hub.docker.com/r/permitio/opal-client">OPAL Client</a></td>
-      <td valign="top"><code>docker pull authorizon/opal-client</code></td>
+      <td valign="top"><code>docker pull permitio/opal-client</code></td>
       <td valign="top">
       <ul>
         <li>Prebuilt with an OPA agent inside the image</li>
@@ -74,8 +74,8 @@ Our recommendation is to start with the [docker-compose playground](https://gith
       </td>
     </tr>
     <tr>
-      <td valign="top"><a href="https://hub.docker.com/r/authorizon/opal-client">OPAL Client (Standalone)</a></td>
-      <td valign="top"><code>docker pull authorizon/opal-client-standalone</code></td>
+      <td valign="top"><a href="https://hub.docker.com/r/permitio/opal-client">OPAL Client (Standalone)</a></td>
+      <td valign="top"><code>docker pull permitio/opal-client-standalone</code></td>
       <td valign="top">
       <ul>
         <li><strong>Same as OPAL Client, you want only one of them</strong></li>
@@ -110,7 +110,7 @@ docker run -it \
   -e "OPAL_AUTH_PUBLIC_KEY=$(OPAL_AUTH_PUBLIC_KEY)" \
   -e "OPAL_POLICY_REPO_URL=$(OPAL_POLICY_REPO_URL)" \
   -p 7002:7002 \
-  authorizon/opal-server
+  permitio/opal-server
 ```
 This command | In production environments
 :--- | :---
@@ -152,9 +152,9 @@ If you run the docker image locally, you need docker installed on your machine.
 
 Run this command to get the image:
 ```
-docker pull authorizon/opal-server
+docker pull permitio/opal-server
 ```
-If you run in a cloud environment (e.g: AWS ECS), specify `authorizon/opal-server` in your task definition or equivalent.
+If you run in a cloud environment (e.g: AWS ECS), specify `permitio/opal-server` in your task definition or equivalent.
 
 Running the opal server container is simply a command of [docker run](#example-docker-run), but we need to pipe to the OPAL server container the neccessary configration it needs via **environment variables**. The following sections will explain each class of configuration variables and how to set their values, after which we will demonstrate real examples.
 
@@ -498,7 +498,7 @@ We will now recap with a real example.
 
 #### 1) Pull the server container image
 ```
-docker pull authorizon/opal-server
+docker pull permitio/opal-server
 ```
 
 #### 2) Define the environment variables you need
@@ -543,7 +543,7 @@ docker run -it \
   --env OPAL_AUTH_PUBLIC_KEY \
   --env OPAL_AUTH_MASTER_TOKEN \
   -p 7002:7002 \
-  authorizon/opal-server
+  permitio/opal-server
 ```
 
 #### 4) <a name="run-docker-prod"></a> Run the container in production
@@ -565,14 +565,14 @@ Great! we have OPAL Server up and running. Let's continue and explains how to ru
 #### Running with inline OPA (default / recommended)
 Run this command to get the image that comes with built-in OPA (recommended if you don't already have OPA installed in your environment):
 ```
-docker pull authorizon/opal-client
+docker pull permitio/opal-client
 ```
-If you run in a cloud environment (e.g: AWS ECS), specify `authorizon/opal-client` in your task definition or equivalent.
+If you run in a cloud environment (e.g: AWS ECS), specify `permitio/opal-client` in your task definition or equivalent.
 
 #### Running with standalone OPA
 Otherwise, if you are already running OPA in your environment, run this command to get the standalone client image instead:
 ```
-docker pull authorizon/opal-client-standalone
+docker pull permitio/opal-client-standalone
 ```
 
 ### Step 2: Obtain client JWT token (Optional)
@@ -691,7 +691,7 @@ Let's recap the previous steps with example values:
 #### 1) Get the client image
 First, download opal client docker image:
 ```sh
-docker pull authorizon/opal-client
+docker pull permitio/opal-client
 ```
 
 #### 2) Set configuration
@@ -716,7 +716,7 @@ docker run -it \
   --env OPAL_DATA_TOPICS \
   -p 7000:7000 \
   -p 8181:8181 \
-  authorizon/opal-client
+  permitio/opal-client
 ```
 
 Please notice opal client exposes two ports when running opa inline:

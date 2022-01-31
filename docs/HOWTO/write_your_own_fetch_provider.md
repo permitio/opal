@@ -330,14 +330,14 @@ In our example, OPAL will import two python modules:
 2) `opal_fetcher_postgres.provider`: no special tricks here. if you look inside [that module](https://github.com/permitio/opal-fetcher-postgres/blob/master/opal_fetcher_postgres/provider.py), you will see that the class `PostgresFetchProvider` inherits from `BaseFetchProvider`.
 
 ### 1) Create a custom docker image containing your fetch provider
-In the [official docker images](https://hub.docker.com/r/authorizon/opal-client) of OPAL, **no custom providers are installed**. In order for OPAL to be able to load a custom provider's python module, the python module need to be available on the docker image.
+In the [official docker images](https://hub.docker.com/r/permitio/opal-client) of OPAL, **no custom providers are installed**. In order for OPAL to be able to load a custom provider's python module, the python module need to be available on the docker image.
 
 Therefore the first step is to create and build a custom OPAL-client `Dockerfile`.
 
 Example `Dockerfile` (taken from the [example fetcher repo](https://github.com/permitio/opal-fetcher-postgres)) - of a non-published python package:
 ```Dockerfile
 # inherits all behavior defined in the official OPAL-client image
-FROM authorizon/opal-client:latest
+FROM permitio/opal-client:latest
 WORKDIR /app/
 # These two commands installs the python package from source
 COPY . ./
@@ -347,7 +347,7 @@ RUN python setup.py install
 If your custom provider is published to [PyPI](https://pypi.org/) (assuming its name is `opal-fetcher-postgres`), the docker image can be even simpler:
 ```Dockerfile
 # inherits all behavior defined in the official OPAL-client image
-FROM authorizon/opal-client:latest
+FROM permitio/opal-client:latest
 # installs the python package inside the container (from pip / PyPI)
 RUN pip install --user opal-fetcher-postgres
 ```
