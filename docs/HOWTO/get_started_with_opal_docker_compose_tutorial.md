@@ -30,7 +30,7 @@ This entire tutorial is also recorded here:
 This one command will download and run a working configuration of OPAL server and OPAL client on your machine:
 
 ```
-curl -L https://raw.githubusercontent.com/authorizon/opal/master/docker/docker-compose-example.yml \
+curl -L https://raw.githubusercontent.com/permitio/opal/master/docker/docker-compose-example.yml \
 > docker-compose.yml && docker-compose up
 ```
 
@@ -237,7 +237,7 @@ Let's review what they are and their main functions:
 #### (3) OPAL Client
 
 - **Can run OPA for you (inline process)**
-  - The OPAL-Client [docker image](https://hub.docker.com/r/authorizon/opal-client) contains a built-in OPA agent, and can serve as fully-functional **authorization microservice**. OPA is solely responsible for enforcement (evaluates authorization queries) and OPAL is solely responsible for state-management (keeps the policy and data needed to evaluate queries up-to-date).
+  - The OPAL-Client [docker image](https://hub.docker.com/r/permitio/opal-client) contains a built-in OPA agent, and can serve as fully-functional **authorization microservice**. OPA is solely responsible for enforcement (evaluates authorization queries) and OPAL is solely responsible for state-management (keeps the policy and data needed to evaluate queries up-to-date).
   - In our example `docker-compose.yml` OPA is enabled and runs on port `:8181`, exposed on the host machine.
   - OPAL will manage the OPA process. If the OPA process fails for some reason (unlikely :)), OPAL will restart OPA and rehydrate the OPA cache with valid and up-to-date state (i.e: will re-download policies and data).
 - **Syncs OPA with latest policy code**

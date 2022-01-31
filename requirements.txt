@@ -11,7 +11,7 @@ fastapi_websocket_rpc>=0.1.21
 GitPython
 gunicorn
 ipython
-loguru==0.5.3
+loguru==0.6.0
 psutil==5.8.0
 pydantic[email]
 pyjwt[crypto]==2.1.0

@@ -218,7 +218,7 @@ docker run -it \
   --env OPAL_POLICY_REPO_WEBHOOK_SECRET \
   # more params ...
   -p 7002:7002 \
-  authorizon/opal-server
+  permitio/opal-server
 ```
 On your GitHub project page, go to Settings -> Webhooks:
 

@@ -63,13 +63,13 @@ jobs:
           file: docker/Dockerfile
           push: false
           target: client
-          cache-from: type=registry,ref=authorizon/opal-client:latest
+          cache-from: type=registry,ref=permitio/opal-client:latest
           cache-to: type=inline
           load: true
           tags: |
-            authorizon/opal-client:test
-            authorizon/opal-client:latest
-            authorizon/opal-client:${{ env.opal_version_tag }}
+            permitio/opal-client:test
+            permitio/opal-client:latest
+            permitio/opal-client:${{ env.opal_version_tag }}
 
       - name: Build client-standalone
         id: build_client_standalone
@@ -78,13 +78,13 @@ jobs:
           file: docker/Dockerfile
           push: false
           target: client-standalone
-          cache-from: type=registry,ref=authorizon/opal-client-standalone:latest
+          cache-from: type=registry,ref=permitio/opal-client-standalone:latest
           cache-to: type=inline
           load: true
           tags: |
-            authorizon/opal-client-standalone:test
-            authorizon/opal-client-standalone:latest
-            authorizon/opal-client-standalone:${{ env.opal_version_tag }}
+            permitio/opal-client-standalone:test
+            permitio/opal-client-standalone:latest
+            permitio/opal-client-standalone:${{ env.opal_version_tag }}
 
       - name: Build server
         id: build_server
@@ -93,13 +93,13 @@ jobs:
           file: docker/Dockerfile
           push: false
           target: server
-          cache-from: type=registry,ref=authorizon/opal-server:latest
+          cache-from: type=registry,ref=permitio/opal-server:latest
           cache-to: type=inline
           load: true
           tags: |
-            authorizon/opal-server:test
-            authorizon/opal-server:latest
-            authorizon/opal-server:${{ env.opal_version_tag }}
+            permitio/opal-server:test
+            permitio/opal-server:latest
+            permitio/opal-server:${{ env.opal_version_tag }}
 
       # TEST PHASE
       - name: Create modified docker compose file
@@ -129,12 +129,12 @@ jobs:
       # each image is pushed with the versioned tag first, if it succeeds the image is pushed with the latest tag as well.
       - name: Push client
         if: ${{ !(github.event_name == 'workflow_dispatch' && github.event.inputs.dry_run == 'true') }}
-        run: docker push authorizon/opal-client:${{ env.opal_version_tag }} && docker push authorizon/opal-client:latest
+        run: docker push permitio/opal-client:${{ env.opal_version_tag }} && docker push permitio/opal-client:latest
 
       - name: Push client-standalone
         if: ${{ !(github.event_name == 'workflow_dispatch' && github.event.inputs.dry_run == 'true') }}
-        run: docker push authorizon/opal-client-standalone:${{ env.opal_version_tag }} && docker push authorizon/opal-client-standalone:latest
+        run: docker push permitio/opal-client-standalone:${{ env.opal_version_tag }} && docker push permitio/opal-client-standalone:latest
 
       - name: Push server
         if: ${{ !(github.event_name == 'workflow_dispatch' && github.event.inputs.dry_run == 'true') }}
-        run: docker push authorizon/opal-server:${{ env.opal_version_tag }} && docker push authorizon/opal-server:latest
+        run: docker push permitio/opal-server:${{ env.opal_version_tag }} && docker push permitio/opal-server:latest

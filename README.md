@@ -22,8 +22,8 @@ Open Policy Administration Layer
     <img src="https://static.pepy.tech/personalized-badge/opal-server?period=total&units=international_system&left_color=black&right_color=blue&left_text=Downloads" alt="Downloads">
 </a>
 
-<a href="https://hub.docker.com/r/authorizon/opal-server" target="_blank">
-    <img src="https://img.shields.io/docker/pulls/authorizon/opal-server?label=Docker%20pulls" alt="Docker pulls">
+<a href="https://hub.docker.com/r/permitio/opal-server" target="_blank">
+    <img src="https://img.shields.io/docker/pulls/permitio/opal-server?label=Docker%20pulls" alt="Docker pulls">
 </a>
 
 <a href="https://opal-access.slack.com/" target="_blank">
@@ -38,21 +38,21 @@ As your application state changes (whether it's via your APIs, DBs, git, S3 or 3
 Check out our main site at <a href="https://opal.ac">OPAL.ac</a> and <a href="https://youtu.be/tG8jrdcc7Zo">this video</a> briefly explaining OPAL and how it works with OPA.
 
 ## Why use OPAL?
-OPAL is the easiest way to keep your solution's authorization layer up-to-date in realtime. It aggregates policy and data from across the field and integrates them seamlessly into the authorization layer, and  is microservices and cloud-native. 
+OPAL is the easiest way to keep your solution's authorization layer up-to-date in realtime. It aggregates policy and data from across the field and integrates them seamlessly into the authorization layer, and  is microservices and cloud-native.
 
 ## OPA + OPAL = 💜
-While OPA (Open Policy Agent) decouples policy from code in a highly-performant and elegant way, the challenge of keeping policy agents up-to-date remains. 
+While OPA (Open Policy Agent) decouples policy from code in a highly-performant and elegant way, the challenge of keeping policy agents up-to-date remains.
 This is especially true in applications, where each user interaction or API call may affect access-control decisions.
 OPAL runs in the background, supercharging policy-agents, keeping them in sync with events in realtime.
 
-## Documentation 
+## Documentation
 
-- 📃 &nbsp; [Full documentation is available here](docs/index.md) 
-- 💡 &nbsp; [Intro to OPAL](docs/intro.md) 
+- 📃 &nbsp; [Full documentation is available here](docs/index.md)
+- 💡 &nbsp; [Intro to OPAL](docs/intro.md)
 - 🚀 &nbsp; Getting Started:
 
    OPAL is available both as **python packages** with a built-in CLI as well as pre-built **docker images** ready-to-go.
- 
+
    - [Play with a live playground environment in docker-compose](docs/HOWTO/get_started_with_opal_docker_compose_tutorial.md)
    <!-- - this tutorial is great for learning about OPAL core features and see what OPAL can do for you. -->
    - [Try the getting started guide for containers](docs/HOWTO/get_started_with_opal_using_docker.md)
@@ -88,8 +88,8 @@ curl -L https://raw.githubusercontent.com/permitio/opal/master/docker/docker-com
     - [How to configure OPAL (basic concepts)](docs/HOWTO/configure_opal.md)
 
 
-- 🎨 &nbsp; [Key concepts and design](docs/design.md) 
-- 🏗️ &nbsp; [Architecture](docs/architecture.md) 
+- 🎨 &nbsp; [Key concepts and design](docs/design.md)
+- 🏗️ &nbsp; [Architecture](docs/architecture.md)
 
     OPAL  uses a client-server stateless architecture. OPAL-Servers publish policy and data updates over a lightweight (websocket) PubSub Channel, which OPAL-clients subscribe to via topics. Upon updates each client fetches data directly (from source) to load it in to its managed OPA instance.
 <br>
@@ -119,7 +119,7 @@ If you are using our project, please consider giving us a ⭐️
 
 ## Contributing to OPAL
 - Pull requests are welcome! (please make sure to include *passing* tests and docs)
-- Prior to submitting a PR - open an issue on GitHub, or make sure your PR addresses an existing issue well.  
+- Prior to submitting a PR - open an issue on GitHub, or make sure your PR addresses an existing issue well.
 
 [join-slack-link]: https://i.ibb.co/wzrGHQL/Group-749.png
 [badge-slack-link]: https://bit.ly/opal-slack

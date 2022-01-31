@@ -6,7 +6,7 @@ You can run the example docker compose configuration [found here](https://github
 
 Run this one command on your machine:
 ```
-curl -L https://raw.githubusercontent.com/authorizon/opal/master/docker/docker-compose-with-callbacks.yml \
+curl -L https://raw.githubusercontent.com/permitio/opal/master/docker/docker-compose-with-callbacks.yml \
 > docker-compose.yml && docker-compose up
 ```
 
