@@ -2,8 +2,6 @@ import asyncio
 import hashlib
 import itertools
 import json
-from opal_client.callbacks.reporter import CallbacksReporter
-from opal_client.callbacks.register import CallbackConfig, CallbacksRegister
 from typing import List, Optional, Tuple
 import uuid
 import aiohttp
@@ -13,6 +11,16 @@ from fastapi_websocket_pubsub import PubSubClient
 from fastapi_websocket_rpc.rpc_channel import RpcChannel
 
 from opal_common.config import opal_common_config
+from opal_common.fetcher.events import FetcherConfig
+from opal_common.schemas.data import (DataEntryReport, DataSourceConfig,
+                                      DataSourceEntry, DataUpdate,
+                                      DataUpdateReport)
+from opal_common.schemas.store import TransactionType
+from opal_common.utils import get_authorization_header
+from opal_common.http import is_http_error_response
+from opal_common.security.sslcontext import get_custom_ssl_context
+from opal_client.callbacks.reporter import CallbacksReporter
+from opal_client.callbacks.register import CallbacksRegister
 from opal_client.config import opal_client_config
 from opal_client.data.fetcher import DataFetcher
 from opal_client.data.rpc import TenantAwareRpcEventClientMethods
@@ -21,15 +29,6 @@ from opal_client.policy_store.base_policy_store_client import \
     BasePolicyStoreClient
 from opal_client.policy_store.policy_store_client_factory import \
     DEFAULT_POLICY_STORE_GETTER
-from opal_common.fetcher.events import FetcherConfig
-from opal_common.fetcher.providers.http_fetch_provider import HttpFetcherConfig
-from opal_common.schemas.data import (DataEntryReport, DataSourceConfig,
-                                      DataSourceEntry, DataUpdate,
-                                      DataUpdateReport)
-from opal_common.schemas.store import TransactionType
-from opal_common.utils import get_authorization_header
-from opal_common.http import is_http_error_response
-from opal_common.security.sslcontext import get_custom_ssl_context
 
 
 class DataUpdater:
@@ -85,6 +84,7 @@ class DataUpdater:
         else:
             self._extra_headers = [get_authorization_header(self._token)]
         self._stopping = False
+        # custom SSL context (for self-signed certificates)
         self._custom_ssl_context = get_custom_ssl_context()
         self._ssl_context_kwargs = {'ssl': self._custom_ssl_context} if self._custom_ssl_context is not None else {}
 
@@ -198,7 +198,8 @@ class DataUpdater:
             on_connect=[self.on_connect],
             extra_headers=self._extra_headers,
             keep_alive=opal_client_config.KEEP_ALIVE_INTERVAL,
-            server_uri=self._server_url
+            server_uri=self._server_url,
+            **self._ssl_context_kwargs
         )
         async with self._client:
             await self._client.wait_until_done()
