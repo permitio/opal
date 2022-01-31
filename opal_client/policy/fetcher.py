@@ -4,9 +4,10 @@ from typing import List, Optional
 from pydantic import ValidationError
 from fastapi import status, HTTPException
 from tenacity import retry, wait, stop
-from opal_common.utils import throw_if_bad_status_code, tuple_to_dict
 
+from opal_common.utils import throw_if_bad_status_code, tuple_to_dict
 from opal_common.utils import get_authorization_header
+from opal_common.security.sslcontext import get_custom_ssl_context
 from opal_common.schemas.policy import PolicyBundle
 from opal_client.logger import logger
 from opal_client.config import opal_client_config
@@ -41,6 +42,9 @@ class PolicyFetcher:
         self._auth_headers = tuple_to_dict(get_authorization_header(self._token))
         self._retry_config = retry_config if retry_config is not None else self.DEFAULT_RETRY_CONFIG
         self._policy_endpoint_url = f"{self._backend_url}/policy"
+        # custom SSL context (for self-signed certificates)
+        self._custom_ssl_context = get_custom_ssl_context()
+        self._ssl_context_kwargs = {'ssl': self._custom_ssl_context} if self._custom_ssl_context is not None else {}
 
     @property
     def policy_endpoint_url(self):
@@ -74,7 +78,8 @@ class PolicyFetcher:
                 async with session.get(
                     self._policy_endpoint_url,
                     headers={'content-type': 'text/plain', **self._auth_headers},
-                    params=params
+                    params=params,
+                    **self._ssl_context_kwargs
                 ) as response:
                     if response.status == status.HTTP_404_NOT_FOUND:
                         logger.warning("requested paths not found: {paths}", paths=directories)
