@@ -13,11 +13,8 @@ from opal_common.schemas.store import TransactionType
 from opal_common.config import opal_common_config
 from opal_common.utils import get_authorization_header
 from opal_common.schemas.policy import PolicyBundle, PolicyUpdateMessage
-from opal_common.topics.utils import (
-    pubsub_topics_from_directories,
-    POLICY_PREFIX,
-    remove_prefix
-)
+from opal_common.security.sslcontext import get_custom_ssl_context
+from opal_common.topics.utils import pubsub_topics_from_directories
 from opal_client.logger import logger
 from opal_client.config import opal_client_config
 from opal_client.policy.fetcher import PolicyFetcher
@@ -83,6 +80,9 @@ class PolicyUpdater:
         self._callbacks_register = callbacks_register or CallbacksRegister()
         self._callbacks_reporter = CallbacksReporter(self._callbacks_register, self._data_fetcher)
         self._should_send_reports = opal_client_config.SHOULD_REPORT_ON_DATA_UPDATES or False
+        # custom SSL context (for self-signed certificates)
+        self._custom_ssl_context = get_custom_ssl_context()
+        self._ssl_context_kwargs = {'ssl': self._custom_ssl_context} if self._custom_ssl_context is not None else {}
 
     async def __aenter__(self):
         await self.start()
@@ -193,7 +193,8 @@ class PolicyUpdater:
             on_disconnect=[self._on_disconnect],
             extra_headers=self._extra_headers,
             keep_alive=opal_client_config.KEEP_ALIVE_INTERVAL,
-            server_uri=self._server_url
+            server_uri=self._server_url,
+            **self._ssl_context_kwargs
         )
         async with self._client:
             await self._client.wait_until_done()
