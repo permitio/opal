@@ -113,7 +113,6 @@ You can raise questions and ask for features to be added to the road-map in our 
 </br>
 If you are using our project, please consider giving us a ⭐️
 </br>
-</br>
 
 [![Button][join-slack-link]][badge-slack-link] </br> [![Button][follow-twitter-link]][badge-twitter-link]
 
@@ -125,3 +124,6 @@ If you are using our project, please consider giving us a ⭐️
 [badge-slack-link]: https://bit.ly/opal-slack
 [follow-twitter-link]: https://i.ibb.co/k4x55Lr/Group-750.png
 [badge-twitter-link]: https://twitter.com/opal_ac
+
+## There's more!
+- Check out [OPToggles](https://github.com/permitio/OPToggles), which enables you to create user targeted feature flags/toggles based on Open Policy managed authorization rules!
