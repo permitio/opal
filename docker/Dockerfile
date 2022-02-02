@@ -17,8 +17,7 @@ WORKDIR /app/
 # Layer dependency install (for caching)
 COPY requirements.txt requirements.txt
 # install python deps
-RUN pip install --no-cache-dir --upgrade pip && pip install --no-cache-dir --user -r requirements.txt
-
+RUN pip install --no-cache-dir --upgrade pip && pip install --no-cache-dir -r requirements.txt
 
 # COMMON IMAGE --------------------------------------
 # ---------------------------------------------------
@@ -26,26 +25,34 @@ RUN pip install --no-cache-dir --upgrade pip && pip install --no-cache-dir --use
 # due to https://github.com/gliderlabs/docker-alpine/issues/539
 # which broke alpine dns lookup methods starting at alpine 3.12.
 FROM python:3.8-alpine3.11 as common
-# copy libraries from build stage
-COPY --from=BuildStage /root/.local /root/.local
+
+# copy libraries from build stage (This won't copy redundant libraries we used in BuildStage)
+COPY --from=BuildStage /usr/local /usr/local
 # needed for rookout
 RUN apk add g++ python3-dev linux-headers
-# copy wait-for script
-COPY scripts/wait-for.sh /usr/wait-for.sh
-RUN chmod +x /usr/wait-for.sh
-# copy startup script
-COPY ./scripts/start.sh /start.sh
-RUN chmod +x /start.sh
+
+# Add non-root user
+RUN addgroup -S opal && adduser -S opal -G opal -h /opal
+WORKDIR /opal
+
+# copy wait-for script (create link at old path to maintain backward compatibility)
+COPY scripts/wait-for.sh .
+RUN chmod +x ./wait-for.sh
+RUN ln -s /opal/wait-for.sh /usr/wait-for.sh
+# copy startup script (create link at old path to maintain backward compatibility)
+COPY ./scripts/start.sh .
+RUN chmod +x ./start.sh
+RUN ln -s /opal/start.sh /start.sh
 # copy gunicorn_config
-COPY ./scripts/gunicorn_conf.py /gunicorn_conf.py
+COPY ./scripts/gunicorn_conf.py .
 # copy app code
 COPY . ./
 # install sidecar package
 RUN python setup/setup_common.py install
 # Make sure scripts in .local are usable:
-ENV PATH=/:/root/.local/bin:$PATH
+ENV PATH=/opal:/root/.local/bin:$PATH
 # run gunicorn
-CMD ["/start.sh"]
+CMD ["./start.sh"]
 
 
 # STANDALONE IMAGE ----------------------------------
@@ -69,20 +76,24 @@ ENV OPAL_INLINE_OPA_ENABLED=false
 
 # expose opal client port
 EXPOSE 7000
-
+USER opal
 
 # CLIENT IMAGE --------------------------------------
 # Using standalone image as base --------------------
 # ---------------------------------------------------
 FROM client-standalone as client
+
+# Temporarily move back to root for additional setup
+USER root 
 # curl is needed for next section
 RUN apk add --update --no-cache curl
 # copy opa from official image (main binary and lib for web assembly)
-RUN curl -L -o /opa https://openpolicyagent.org/downloads/latest/opa_linux_amd64_static && chmod 755 /opa
+RUN curl -L -o ./opa https://openpolicyagent.org/downloads/latest/opa_linux_amd64_static && chmod 755 ./opa
 # enable inline OPA
 ENV OPAL_INLINE_OPA_ENABLED=true
 # expose opa port
 EXPOSE 8181
+USER opal
 
 
 # SERVER IMAGE --------------------------------------
@@ -135,3 +146,4 @@ ENV OPAL_ALL_DATA_URL=http://host.docker.internal:7002/policy-data
 
 # expose opal server port
 EXPOSE 7002
+USER opal
