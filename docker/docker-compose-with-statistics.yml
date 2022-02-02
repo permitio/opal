@@ -61,4 +61,4 @@ services:
       - opal_server
     # this command is not necessary when deploying OPAL for real, it is simply a trick for dev environments
     # to make sure that opal-server is already up before starting the client.
-    command: sh -c "/usr/wait-for.sh opal_server:7002 --timeout=20 -- /start.sh"
+    command: sh -c "./wait-for.sh opal_server:7002 --timeout=20 -- ./start.sh"
