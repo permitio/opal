@@ -18,8 +18,7 @@ def setup_watcher_task(
     publisher: TopicPublisher,
     source_type: str = None,
     remote_source_url: str = None,
-    base_clone_path: str = None,
-    clone_subdirectory_prefix: str = None,
+    clone_path_finder: RepoClonePathFinder = None,
     branch_name: str = None,
     ssh_key: Optional[str] = None,
     polling_interval: int = None,
@@ -35,8 +34,7 @@ def setup_watcher_task(
             publisher(TopicPublisher): server side publisher to publish changes in policy
             source_type(str): policy source type, can be Git / Api to opa bundle server
             remote_source_url(str): the base address to request the policy from
-            base_clone_path(str): base path for the local git to manage policies
-            clone_subdirectory_prefix(str): subdirectory prefix for the local git to manage policies
+            clone_path_finder(RepoClonePathFinder): from which the local dir path for the repo clone would be retrieved
             branch_name(str):  name of remote branch in git to pull
             ssh_key (str, optional): private ssh key used to gain access to the cloned repo
             polling_interval(int):  how many seconds need to wait between polling
@@ -47,10 +45,13 @@ def setup_watcher_task(
     """
     # load defaults
     source_type = load_conf_if_none(source_type, opal_server_config.POLICY_SOURCE_TYPE)
-    base_clone_path = load_conf_if_none(base_clone_path, opal_server_config.POLICY_REPO_CLONE_PATH)
-    clone_subdirectory_prefix = load_conf_if_none(clone_subdirectory_prefix, opal_server_config.POLICY_REPO_CLONE_FOLDER_PREFIX)
-    clone_path_finder = RepoClonePathFinder(base_clone_path=base_clone_path, clone_subdirectory_prefix=clone_subdirectory_prefix)
-    clone_path = clone_path_finder.get_single_clone_path()
+    clone_path_finder = load_conf_if_none(clone_path_finder, RepoClonePathFinder(
+        base_clone_path=opal_server_config.POLICY_REPO_CLONE_PATH, 
+        clone_subdirectory_prefix=opal_server_config.POLICY_REPO_CLONE_FOLDER_PREFIX, 
+        use_fixed_path=opal_server_config.POLICY_REPO_REUSE_CLONE_PATH
+        )
+    )
+    clone_path = clone_path_finder.get_clone_path()
     if not clone_path:
         # we should never see this warning
         logger.warning("Policy repo clone path was not found when setting up policy source!! recreating clone path...")

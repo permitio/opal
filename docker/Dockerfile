@@ -143,6 +143,7 @@ ENV UVICORN_PORT=7002
 # `host.docker.internal` value will work better than `localhost` if you are
 # running dockerized opal server and client on the same machine
 ENV OPAL_ALL_DATA_URL=http://host.docker.internal:7002/policy-data
+ENV OPAL_POLICY_REPO_REUSE_CLONE_PATH=true
 
 # expose opal server port
 EXPOSE 7002

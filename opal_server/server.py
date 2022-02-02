@@ -270,9 +270,15 @@ class OpalServer:
                                     topic=opal_server_config.POLICY_REPO_WEBHOOK_TOPIC)
                         # init policy watcher
                         if self.watcher is None:
-                            # only the leader should discard previous clones
-                            self.create_local_clone_path_and_discard_previous_clones()
-                            self.watcher = setup_watcher_task(self.publisher, remote_source_url=self._policy_remote_url)
+                            clone_path_finder = RepoClonePathFinder(
+                                base_clone_path=opal_server_config.POLICY_REPO_CLONE_PATH,
+                                clone_subdirectory_prefix=opal_server_config.POLICY_REPO_CLONE_FOLDER_PREFIX,
+                                use_fixed_path=opal_server_config.POLICY_REPO_REUSE_CLONE_PATH
+                            )
+                            # only the leader should create new clone path and discard previous ones
+                            full_local_repo_path = clone_path_finder.create_new_clone_path()
+                            logger.info(f"Policy repo will be cloned to: {full_local_repo_path}")
+                            self.watcher = setup_watcher_task(self.publisher, remote_source_url=self._policy_remote_url, clone_path_finder=clone_path_finder)
                         # the leader listens to the webhook topic (webhook api route can be hit randomly in all workers)
                         # and triggers the watcher to check for changes in the tracked upstream remote.
                         await self.pubsub.endpoint.subscribe([opal_server_config.POLICY_REPO_WEBHOOK_TOPIC], partial(trigger_repo_watcher_pull, self.watcher))
@@ -303,19 +309,3 @@ class OpalServer:
         except Exception:
             logger.exception("exception while shutting down background tasks")
 
-    def create_local_clone_path_and_discard_previous_clones(self):
-        """
-            Takes the base path from server config and create new folder with unique
-            name for the local clone.
-            The folder name is looks like /<base-path>/<folder-prefix>-<uuid>
-            If such folder exist we will use it
-        """
-        clone_path_finder = RepoClonePathFinder(
-            base_clone_path=opal_server_config.POLICY_REPO_CLONE_PATH,
-            clone_subdirectory_prefix=opal_server_config.POLICY_REPO_CLONE_FOLDER_PREFIX
-        )
-        for folder in clone_path_finder.get_clone_subdirectories():
-            logger.warning("Found previous policy repo clone: {folder_name}, removing it to avoid conflicts.", folder_name=folder)
-            shutil.rmtree(folder)
-        full_local_repo_path = clone_path_finder.create_new_clone_path()
-        logger.info(f"Policy repo will be cloned to: {full_local_repo_path}")

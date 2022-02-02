@@ -18,11 +18,13 @@ router = APIRouter()
 async def get_repo(
     base_clone_path: str = None,
     clone_subdirectory_prefix: str = None,
+    use_fixed_path: bool = None,
 ) -> Repo:
     base_clone_path = load_conf_if_none(base_clone_path, opal_server_config.POLICY_REPO_CLONE_PATH)
     clone_subdirectory_prefix = load_conf_if_none(clone_subdirectory_prefix, opal_server_config.POLICY_REPO_CLONE_FOLDER_PREFIX)
-    clone_path_finder = RepoClonePathFinder(base_clone_path=base_clone_path, clone_subdirectory_prefix=clone_subdirectory_prefix)
-    repo_path = clone_path_finder.get_single_clone_path()
+    use_fixed_path = load_conf_if_none(use_fixed_path, opal_server_config.POLICY_REPO_REUSE_CLONE_PATH)
+    clone_path_finder = RepoClonePathFinder(base_clone_path=base_clone_path, clone_subdirectory_prefix=clone_subdirectory_prefix, use_fixed_path=use_fixed_path)
+    repo_path = clone_path_finder.get_clone_path()
 
     policy_repo_not_found_error = HTTPException(
         status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
