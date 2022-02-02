@@ -1,6 +1,7 @@
 import asyncio
 from typing import Callable, Coroutine, List, Optional
 from git.objects import Commit
+from git import Repo, remote
 
 from opal_common.git.branch_tracker import BranchTracker
 from opal_common.git.repo_cloner import RepoCloner
@@ -49,13 +50,25 @@ class GitPolicySource(BasePolicySource):
         init remote data to local repo
         """
         try:
-            result = await self._cloner.clone()
+            try:
+                # Check if path already contains valid repo
+                repo = Repo(self._cloner.path)
+            except:
+                # If it doesn't - clone it
+                result = await self._cloner.clone()
+                repo = result.repo
+            else:
+                # If it does - validate remote url is correct and checkout required branch
+                remote_urls = list(repo.remote().urls)
+                if not self._cloner.url in remote_urls:
+                    # Don't bother with remove and reclone because this case shouldn't happen on reasobable usage
+                    raise GitFailed(RuntimeError(f"Existing repo has wrong remote url: {remote_urls}"))
         except GitFailed as e:
             await self._on_git_failed(e)
             return
 
         self._tracker = BranchTracker(
-            repo=result.repo,
+            repo=repo,
             branch_name=self._branch_name,
         )
 

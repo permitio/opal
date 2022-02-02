@@ -3,6 +3,7 @@ from typing import Tuple
 from git import Repo, Head, Remote
 from git.objects.commit import Commit
 from tenacity import retry, wait_fixed, stop_after_attempt
+from functools import partial
 
 from opal_common.logger import logger
 from opal_common.git.exceptions import GitFailed
@@ -39,6 +40,7 @@ class BranchTracker:
         self._remote_name = remote_name
         self._retry_config = retry_config if retry_config is not None else self.DEFAULT_RETRY_CONFIG
 
+        self.checkout()
         self._save_latest_commit_as_prev_commit()
 
     @property
@@ -73,6 +75,14 @@ class BranchTracker:
         """
         attempt_pull = retry(**self._retry_config)(self.tracked_remote.pull)
         return attempt_pull()
+
+    def checkout(self):
+        """
+        checkouts the desired branch
+        """
+        checkout_func = partial(self._repo.git.checkout, self._branch_name)
+        attempt_checkout = retry(**self._retry_config)(checkout_func)
+        return attempt_checkout()
 
     def _save_latest_commit_as_prev_commit(self):
         """
