@@ -45,6 +45,10 @@ class CloneResult:
 class RepoClonePathFinder:
     """
     We are cloning the policy repo into a unique random subdirectory of a base path.
+    Args:
+        base_clone_path (str): parent directory for the repoistory clone
+        clone_subdirectory_prefix (str): the prefix for the randomized repository dir, or the dir name itself when `use_fixes_path=true`
+        use_fixed_path (bool): if set, random suffix won't be added to `clone_subdirectory_prefix` (if the path already exists, it would be reused)
 
     This class knows how to such clones, so we can discard previous ones, but also so
     that siblings workers (who are not the master who decided where to clone) can also
@@ -61,7 +65,7 @@ class RepoClonePathFinder:
         self._clone_subdirectory_prefix = clone_subdirectory_prefix
         self._use_fixed_path = use_fixed_path
 
-    def _get_random_clone_subdirectories(self) -> Generator[str, None, None]:
+    def _get_randomized_clone_subdirectories(self) -> Generator[str, None, None]:
         """
         a generator yielding all the randomized subdirectories of the base clone path
         that are matching the clone pattern.
@@ -80,7 +84,7 @@ class RepoClonePathFinder:
         If found no such subdirectory or if found more than one (multiple matching subdirectories) - will return None.
         otherwise: will return the single and only clone.
         """
-        subdirectories = list(self._get_random_clone_subdirectories())
+        subdirectories = list(self._get_randomized_clone_subdirectories())
         if len(subdirectories) != 1:
             return None
         return subdirectories[0]
@@ -101,12 +105,14 @@ class RepoClonePathFinder:
             fixed_path = self._get_fixed_clone_path()
             if os.path.exists(fixed_path):
                 return fixed_path
+            else:
+                return None
         else:
             return self._get_single_existing_random_clone_path()
 
     def create_new_clone_path(self) -> str:
         """
-        If using a fixed path - simple creates it.
+        If using a fixed path - simply creates it.
         If using a randomized suffix - 
             takes the base path from server config and create new folder with unique name for the local clone.
             The folder name is looks like /<base-path>/<folder-prefix>-<uuid>
@@ -117,7 +123,7 @@ class RepoClonePathFinder:
             full_local_repo_path = self._get_fixed_clone_path()
         else:
             # Remove old randomized subdirectories
-            for folder in self._get_random_clone_subdirectories():
+            for folder in self._get_randomized_clone_subdirectories():
                 logger.warning("Found previous policy repo clone: {folder_name}, removing it to avoid conflicts.", folder_name=folder)
                 shutil.rmtree(folder)
             full_local_repo_path = self._generate_randomized_clone_path()

@@ -143,6 +143,8 @@ ENV UVICORN_PORT=7002
 # `host.docker.internal` value will work better than `localhost` if you are
 # running dockerized opal server and client on the same machine
 ENV OPAL_ALL_DATA_URL=http://host.docker.internal:7002/policy-data
+# Use fixed path for the policy repo - so new leader would use the same directory without re-cloning it.
+# That's ok when running in docker and fs is ephemeral (repo in a bad state would be fixed by restarting container).
 ENV OPAL_POLICY_REPO_REUSE_CLONE_PATH=true
 
 # expose opal server port
