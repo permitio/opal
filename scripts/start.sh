@@ -1,7 +1,7 @@
 #! /usr/bin/env sh
 set -e
 
-export GUNICORN_CONF=${GUNICORN_CONF:-/gunicorn_conf.py}
+export GUNICORN_CONF=${GUNICORN_CONF:-./gunicorn_conf.py}
 
 if [[ -z "${OPAL_BROADCAST_URI}" && "${UVICORN_NUM_WORKERS}" != "1" ]]; then
   echo "OPAL_BROADCAST_URI must be set when having multiple workers"
