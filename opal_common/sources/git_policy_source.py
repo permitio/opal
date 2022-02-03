@@ -63,6 +63,8 @@ class GitPolicySource(BasePolicySource):
                 if not self._cloner.url in remote_urls:
                     # Don't bother with remove and reclone because this case shouldn't happen on reasobable usage
                     raise GitFailed(RuntimeError(f"Existing repo has wrong remote url: {remote_urls}"))
+                else:
+                    logger.info("SKIPPED cloning policy repo, found existing repo at '{path}' with remotes: {remote_urls})", path=self._cloner.path, remote_urls=remote_urls)
         except GitFailed as e:
             await self._on_git_failed(e)
             return
