@@ -84,7 +84,7 @@ USER opal
 FROM client-standalone as client
 
 # Temporarily move back to root for additional setup
-USER root 
+USER root
 # curl is needed for next section
 RUN apk add --update --no-cache curl
 # copy opa from official image (main binary and lib for web assembly)
@@ -102,6 +102,7 @@ FROM common as server
 # git is needed by opal server (for policy repo tracking)
 RUN apk add --update --no-cache git openssh
 
+USER opal
 # Potentially trust POLICY REPO HOST ssh signature --
 # opal trackes a remote (git) repository and fetches policy (e.g rego) from it.
 # however, if the policy repo uses an ssh url scheme, authentication to said repo
@@ -119,11 +120,12 @@ ARG TRUST_POLICY_REPO_HOST_SSH_FINGERPRINT="true"
 ARG POLICY_REPO_HOST="github.com"
 
 RUN if [[ "$TRUST_POLICY_REPO_HOST_SSH_FINGERPRINT" == "true" ]] ; then \
-    mkdir -p /root/.ssh && \
-    chmod 0700 /root/.ssh && \
-    ssh-keyscan -t rsa ${POLICY_REPO_HOST} >> /root/.ssh/known_hosts ; fi
+    mkdir -p ~/.ssh && \
+    chmod 0700 ~/.ssh && \
+    ssh-keyscan -t rsa ${POLICY_REPO_HOST} >> ~/.ssh/known_hosts ; fi
 
-# install sidecar server package
+USER root
+# install opal server package
 RUN python setup/setup_server.py install
 
 # uvicorn config ------------------------------------
