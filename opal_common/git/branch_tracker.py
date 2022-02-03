@@ -1,6 +1,6 @@
 from typing import Tuple
 
-from git import Repo, Head, Remote
+from git import GitCommandError, Repo, Head, Remote
 from git.objects.commit import Commit
 from tenacity import retry, wait_fixed, stop_after_attempt
 from functools import partial
@@ -17,7 +17,8 @@ class BranchTracker:
 
     DEFAULT_RETRY_CONFIG = {
         'wait': wait_fixed(3),
-        'stop': stop_after_attempt(2)
+        'stop': stop_after_attempt(2),
+        'reraise': True
     }
 
     def __init__(
@@ -82,7 +83,16 @@ class BranchTracker:
         """
         checkout_func = partial(self._repo.git.checkout, self._branch_name)
         attempt_checkout = retry(**self._retry_config)(checkout_func)
-        return attempt_checkout()
+        try:
+            return attempt_checkout()
+        except GitCommandError as e:
+            branches = [{'name': head.name, 'path': head.path} for head in self._repo.heads]
+            logger.error(
+                "did not find main branch: {branch_name}, instead found: {branches_found}, got error: {error}",
+                branch_name=self._branch_name,
+                branches_found=branches,
+                error=str(e))
+            raise GitFailed(e)
 
     def _save_latest_commit_as_prev_commit(self):
         """
