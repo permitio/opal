@@ -45,12 +45,16 @@ class CloneResult:
 class RepoClonePathFinder:
     """
     We are cloning the policy repo into a unique random subdirectory of a base path.
+    Args:
+        base_clone_path (str): parent directory for the repoistory clone
+        clone_subdirectory_prefix (str): the prefix for the randomized repository dir, or the dir name itself when `use_fixes_path=true`
+        use_fixed_path (bool): if set, random suffix won't be added to `clone_subdirectory_prefix` (if the path already exists, it would be reused)
 
     This class knows how to such clones, so we can discard previous ones, but also so
     that siblings workers (who are not the master who decided where to clone) can also
     find the current clone by globing the base dir.
     """
-    def __init__(self, base_clone_path: str, clone_subdirectory_prefix: str):
+    def __init__(self, base_clone_path: str, clone_subdirectory_prefix: str, use_fixed_path: bool):
         if not base_clone_path:
             raise ValueError("base_clone_path cannot be empty!")
 
@@ -59,34 +63,71 @@ class RepoClonePathFinder:
 
         self._base_clone_path = os.path.expanduser(base_clone_path)
         self._clone_subdirectory_prefix = clone_subdirectory_prefix
+        self._use_fixed_path = use_fixed_path
 
-    def get_clone_subdirectories(self) -> Generator[str, None, None]:
+    def _get_randomized_clone_subdirectories(self) -> Generator[str, None, None]:
         """
-        a generator yielding all the subdirectories of the base clone path
+        a generator yielding all the randomized subdirectories of the base clone path
         that are matching the clone pattern.
 
         Yields:
             the next subdirectory matching the pattern
         """
-        folders_with_pattern = get_filepaths_with_glob(self._base_clone_path, f"{self._clone_subdirectory_prefix}*")
+        folders_with_pattern = get_filepaths_with_glob(self._base_clone_path, f"{self._clone_subdirectory_prefix}-*")
         for folder in folders_with_pattern:
             yield folder
 
-    def get_single_clone_path(self) -> Optional[str]:
+    def _get_single_existing_random_clone_path(self) -> Optional[str]:
         """
-        searches for the single clone subdirectory in existance.
+        searches for the single randomly-suffixed clone subdirectory in existance.
 
         If found no such subdirectory or if found more than one (multiple matching subdirectories) - will return None.
         otherwise: will return the single and only clone.
         """
-        subdirectories = list(self.get_clone_subdirectories())
+        subdirectories = list(self._get_randomized_clone_subdirectories())
         if len(subdirectories) != 1:
             return None
         return subdirectories[0]
 
-    def create_new_clone_path(self) -> str:
+    def _generate_randomized_clone_path(self) -> str:
         folder_name = f"{self._clone_subdirectory_prefix}-{uuid.uuid4().hex}"
         full_local_repo_path = os.path.join(self._base_clone_path, folder_name)
+        return full_local_repo_path
+
+    def _get_fixed_clone_path(self) -> str:
+        return os.path.join(self._base_clone_path, self._clone_subdirectory_prefix)
+    
+    def get_clone_path(self) -> Optional[str]:
+        """
+        Get the clone path (fixed or randomized) if it exists
+        """
+        if self._use_fixed_path:
+            fixed_path = self._get_fixed_clone_path()
+            if os.path.exists(fixed_path):
+                return fixed_path
+            else:
+                return None
+        else:
+            return self._get_single_existing_random_clone_path()
+
+    def create_new_clone_path(self) -> str:
+        """
+        If using a fixed path - simply creates it.
+        If using a randomized suffix - 
+            takes the base path from server config and create new folder with unique name for the local clone.
+            The folder name is looks like /<base-path>/<folder-prefix>-<uuid>
+            If such folders already exist they would be removed.
+        """
+        if self._use_fixed_path:
+            # When using fixed path - just use old path without cleanup
+            full_local_repo_path = self._get_fixed_clone_path()
+        else:
+            # Remove old randomized subdirectories
+            for folder in self._get_randomized_clone_subdirectories():
+                logger.warning("Found previous policy repo clone: {folder_name}, removing it to avoid conflicts.", folder_name=folder)
+                shutil.rmtree(folder)
+            full_local_repo_path = self._generate_randomized_clone_path()
+
         os.makedirs(full_local_repo_path, exist_ok=True)
         return full_local_repo_path
 

@@ -45,6 +45,7 @@ class OpalServerConfig(Confi):
     POLICY_BUNDLE_URL = confi.str("POLICY_BUNDLE_URL", None, description="Set your API bundle URL, relevant only on API source type")
     POLICY_REPO_CLONE_PATH = confi.str("POLICY_REPO_CLONE_PATH", os.path.join(os.getcwd(), "regoclone"), description="Base path to create local git folder inside it that manage policy change")
     POLICY_REPO_CLONE_FOLDER_PREFIX = confi.str("POLICY_REPO_CLONE_FOLDER_PREFIX", "opal_repo_clone", description="Prefix for the local git folder")
+    POLICY_REPO_REUSE_CLONE_PATH = confi.bool("POLICY_REPO_REUSE_CLONE_PATH", False, "Set if OPAL server should use a fixed clone path (and reuse if it already exists) instead of randomizing its suffix on each run")
     POLICY_REPO_MAIN_BRANCH = confi.str("POLICY_REPO_MAIN_BRANCH", "master")
     POLICY_REPO_SSH_KEY = confi.str("POLICY_REPO_SSH_KEY", None)
     POLICY_REPO_MANIFEST_PATH = confi.str("POLICY_REPO_MANIFEST_PATH", ".manifest")

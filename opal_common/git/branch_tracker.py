@@ -1,8 +1,9 @@
 from typing import Tuple
 
-from git import Repo, Head, Remote
+from git import GitCommandError, Repo, Head, Remote
 from git.objects.commit import Commit
 from tenacity import retry, wait_fixed, stop_after_attempt
+from functools import partial
 
 from opal_common.logger import logger
 from opal_common.git.exceptions import GitFailed
@@ -16,7 +17,8 @@ class BranchTracker:
 
     DEFAULT_RETRY_CONFIG = {
         'wait': wait_fixed(3),
-        'stop': stop_after_attempt(2)
+        'stop': stop_after_attempt(2),
+        'reraise': True
     }
 
     def __init__(
@@ -39,6 +41,7 @@ class BranchTracker:
         self._remote_name = remote_name
         self._retry_config = retry_config if retry_config is not None else self.DEFAULT_RETRY_CONFIG
 
+        self.checkout()
         self._save_latest_commit_as_prev_commit()
 
     @property
@@ -73,6 +76,23 @@ class BranchTracker:
         """
         attempt_pull = retry(**self._retry_config)(self.tracked_remote.pull)
         return attempt_pull()
+
+    def checkout(self):
+        """
+        checkouts the desired branch
+        """
+        checkout_func = partial(self._repo.git.checkout, self._branch_name)
+        attempt_checkout = retry(**self._retry_config)(checkout_func)
+        try:
+            return attempt_checkout()
+        except GitCommandError as e:
+            branches = [{'name': head.name, 'path': head.path} for head in self._repo.heads]
+            logger.error(
+                "did not find main branch: {branch_name}, instead found: {branches_found}, got error: {error}",
+                branch_name=self._branch_name,
+                branches_found=branches,
+                error=str(e))
+            raise GitFailed(e)
 
     def _save_latest_commit_as_prev_commit(self):
         """
