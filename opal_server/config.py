@@ -17,7 +17,10 @@ class OpalServerConfig(Confi):
     # ws server
     OPAL_WS_LOCAL_URL = confi.str("WS_LOCAL_URL", "ws://localhost:7002/ws")
     OPAL_WS_TOKEN = confi.str("WS_TOKEN", "THIS_IS_A_DEV_SECRET")
+    # The URL for the backbone pub/sub server (e.g. Postgres, Kfaka, Redis) @see
     BROADCAST_URI = confi.str("BROADCAST_URI", None)
+    # The name to be used for segmentation in the backbone pub/sub (e.g. the Kafka topic)
+    BROADCAST_CHANNEL_NAME = confi.str("BROADCAST_CHANNEL_NAME", "EventNotifier")
 
     # server security
     AUTH_PRIVATE_KEY_FORMAT = confi.enum("AUTH_PRIVATE_KEY_FORMAT", EncryptionKeyFormat, EncryptionKeyFormat.pem)
@@ -49,11 +52,14 @@ class OpalServerConfig(Confi):
     POLICY_REPO_MAIN_BRANCH = confi.str("POLICY_REPO_MAIN_BRANCH", "master")
     POLICY_REPO_SSH_KEY = confi.str("POLICY_REPO_SSH_KEY", None)
     POLICY_REPO_MANIFEST_PATH = confi.str("POLICY_REPO_MANIFEST_PATH", ".manifest")
-    POLICY_REPO_CLONE_TIMEOUT = confi.int("POLICY_REPO_CLONE_TIMEOUT", 0) # if 0, waits forever until successful clone
+    POLICY_REPO_CLONE_TIMEOUT = confi.int("POLICY_REPO_CLONE_TIMEOUT", 0)  # if 0, waits forever until successful clone
     LEADER_LOCK_FILE_PATH = confi.str("LEADER_LOCK_FILE_PATH", "/tmp/opal_server_leader.lock")
-    POLICY_BUNDLE_SERVER_TOKEN = confi.str("POLICY_BUNDLE_SERVER_TOKEN", None, description="Bearer token to sent to API bundle server")
-    POLICY_BUNDLE_TMP_PATH = confi.str("POLICY_BUNDLE_TMP_PATH", "/tmp/bundle.tar.gz", description="Path for temp policy file, need to be writeable")
-    POLICY_BUNDLE_GIT_ADD_PATTERN = confi.str("POLICY_BUNDLE_GIT_ADD_PATTERN", "*", description="File pattern to add files to git default to all the files (*)")
+    POLICY_BUNDLE_SERVER_TOKEN = confi.str("POLICY_BUNDLE_SERVER_TOKEN", None,
+                                           description="Bearer token to sent to API bundle server")
+    POLICY_BUNDLE_TMP_PATH = confi.str("POLICY_BUNDLE_TMP_PATH", "/tmp/bundle.tar.gz",
+                                       description="Path for temp policy file, need to be writeable")
+    POLICY_BUNDLE_GIT_ADD_PATTERN = confi.str(
+        "POLICY_BUNDLE_GIT_ADD_PATTERN", "*", description="File pattern to add files to git default to all the files (*)")
 
     REPO_WATCHER_ENABLED = confi.bool("REPO_WATCHER_ENABLED", True)
 
@@ -61,13 +67,18 @@ class OpalServerConfig(Confi):
     PUBLISHER_ENABLED = confi.bool("PUBLISHER_ENABLED", True)
 
     # broadcaster keepalive
-    BROADCAST_KEEPALIVE_INTERVAL = confi.int("BROADCAST_KEEPALIVE_INTERVAL", 3600, description="the time to wait between sending two consecutive broadcaster keepalive messages")
-    BROADCAST_KEEPALIVE_TOPIC = confi.str("BROADCAST_KEEPALIVE_TOPIC", "__broadcast_session_keepalive__", description="the topic on which we should send broadcaster keepalive messages")
+    BROADCAST_KEEPALIVE_INTERVAL = confi.int(
+        "BROADCAST_KEEPALIVE_INTERVAL", 3600, description="the time to wait between sending two consecutive broadcaster keepalive messages")
+    BROADCAST_KEEPALIVE_TOPIC = confi.str("BROADCAST_KEEPALIVE_TOPIC", "__broadcast_session_keepalive__",
+                                          description="the topic on which we should send broadcaster keepalive messages")
 
     # statistics
-    MAX_CHANNELS_PER_CLIENT = confi.int("MAX_CHANNELS_PER_CLIENT", 15, description="max number of records per client, after this number it will not be added to statistics, relevant only if STATISTICS_ENABLED")
-    STATISTICS_WAKEUP_CHANNEL = confi.str("STATISTICS_WAKEUP_CHANNEL", "__opal_stats_wakeup", description="The topic a waking-up OPAL server uses to notify others he needs their statistics data")
-    STATISTICS_STATE_SYNC_CHANNEL = confi.str("STATISTICS_STATE_SYNC_CHANNEL", "__opal_stats_state_sync", description="The topic other servers with statistics provide their state to a waking-up server")
+    MAX_CHANNELS_PER_CLIENT = confi.int(
+        "MAX_CHANNELS_PER_CLIENT", 15, description="max number of records per client, after this number it will not be added to statistics, relevant only if STATISTICS_ENABLED")
+    STATISTICS_WAKEUP_CHANNEL = confi.str("STATISTICS_WAKEUP_CHANNEL", "__opal_stats_wakeup",
+                                          description="The topic a waking-up OPAL server uses to notify others he needs their statistics data")
+    STATISTICS_STATE_SYNC_CHANNEL = confi.str("STATISTICS_STATE_SYNC_CHANNEL", "__opal_stats_state_sync",
+                                              description="The topic other servers with statistics provide their state to a waking-up server")
 
     # Data updates
     ALL_DATA_TOPIC = confi.str("ALL_DATA_TOPIC", "policy_data", description="Top level topic for data")
@@ -77,7 +88,7 @@ class OpalServerConfig(Confi):
     DATA_CONFIG_ROUTE = confi.str("DATA_CONFIG_ROUTE", "/data/config",
                                   description="URL to fetch the full basic configuration of data")
     DATA_CALLBACK_DEFAULT_ROUTE = confi.str("DATA_CALLBACK_DEFAULT_ROUTE", "/data/callback_report",
-        description="Exists as a sane default in case the user did not set OPAL_DEFAULT_UPDATE_CALLBACKS")
+                                            description="Exists as a sane default in case the user did not set OPAL_DEFAULT_UPDATE_CALLBACKS")
 
     DATA_CONFIG_SOURCES = confi.model(
         "DATA_CONFIG_SOURCES",
@@ -117,7 +128,8 @@ class OpalServerConfig(Confi):
                             description="(if run via CLI)  Port for the server to bind")
 
     # optional APM tracing with datadog
-    ENABLE_DATADOG_APM = confi.bool("ENABLE_DATADOG_APM", False, description="Set if OPAL server should enable tracing with datadog APM")
+    ENABLE_DATADOG_APM = confi.bool("ENABLE_DATADOG_APM", False,
+                                    description="Set if OPAL server should enable tracing with datadog APM")
 
 
 opal_server_config = OpalServerConfig(prefix="OPAL_")
