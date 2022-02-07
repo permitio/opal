@@ -102,7 +102,7 @@ curl -L https://raw.githubusercontent.com/permitio/opal/master/docker/docker-com
 <br>
 
 
-- 📖 &nbsp; For further reading check out our [Blog](https://www.Permit.io/blog).
+- 📖 &nbsp; For further reading check out our [Blog](https://bit.ly/opal_blog).
 
 ## Community
 
@@ -121,7 +121,7 @@ If you are using our project, please consider giving us a ⭐️
 - Prior to submitting a PR - open an issue on GitHub, or make sure your PR addresses an existing issue well.
 
 [join-slack-link]: https://i.ibb.co/wzrGHQL/Group-749.png
-[badge-slack-link]: https://bit.ly/opal-slack
+[badge-slack-link]: https://bit.ly/opalslack
 [follow-twitter-link]: https://i.ibb.co/k4x55Lr/Group-750.png
 [badge-twitter-link]: https://twitter.com/opal_ac
 
