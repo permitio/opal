@@ -13,6 +13,8 @@ Support for multiple backbone is provided by the [Python Broadcaster package](ht
 To use it with Kafka we need to install the `broadcaster[kafka]` module - with:
 `pip install broadcaster[kafka]`
 
+Starting with OPAL 0.1.21, it is no longer needed to install the `broadcaster[kafka]` package - it already comes installed with OPAL.
+
 ## Running with Kafka
 
 When you run the OPAL-server you can choose which backend it should use with the `OPAL_BROADCAST_URI` option default is Postgres but running with Kafka is as simple as `OPAL_BROADCAST_URI=kafka://kafka-host-name:9092`
@@ -31,17 +33,14 @@ But (in version OPAL 0.1.21 and later) you can also use the `OPAL_BROADCAST_CHAN
 
 Check out `docker/docker-compose-with-kafka-example.yml` for running docker compose with OPAL-server, OPAL-client, Zookeeper, and Kafka.
 
-You'll need to run it with `docker-compose build` to create which will use the dockerfile to build an image of OPAL-server with the Kafka module.
-e.g. when in the repository root run -
-
+Run this example docker config with this command:
 ```
-docker-compose -f ./docker/docker-compose-with-kafka-example.yml build
-docker-compose -f ./docker/docker-compose-with-kafka-example.yml up
+docker compose -f docker/docker-compose-with-kafka-example.yml up --force-recreate
 ```
 
-Give KafKa a few seconds to start up and then run and event update ([see triggering updates](https://github.com/permitio/opal/blob/master/docs/HOWTO/get_started_with_opal_docker_compose_tutorial.md#step-4-publish-a-data-update-via-the-opal-server)) to check for connectivity.
+Give KafKa and OPAL a few seconds to start up and then run and event update ([see triggering updates](https://github.com/permitio/opal/blob/master/docs/HOWTO/get_started_with_opal_docker_compose_tutorial.md#step-4-publish-a-data-update-via-the-opal-server)) to check for connectivity.
 
-for example run an update with the OPAL cli:
+For example run an update with the OPAL cli:
 
 ```
 opal-client publish-data-update --src-url https://api.country.is/23.54.6.78 -t policy_data --dst-path /users/bob/location
@@ -60,6 +59,8 @@ You should see the effect in:
   Value:
   {"notifier_id": "9a9a97df1da64486a1a56a070f1c3db3", "topics": ["policy_data"], "data": {"id": null, "entries": [{"url": "https://api.country.is/23.54.6.78", "config": {}, "topics": ["policy_data"], "dst_path": "/users/bob/location", "save_method": "PUT"}], "reason": "", "callback": {"callbacks": []}}}
   ```
+
+The example docker compose also runs Kafka UI on http://localhost:8080 and you can see the message sent on the kafka topic `EventNotifier`.
 
 ## Triggering events directly from Kafka
 
