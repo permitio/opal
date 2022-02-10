@@ -17,7 +17,10 @@ class OpalServerConfig(Confi):
     # ws server
     OPAL_WS_LOCAL_URL = confi.str("WS_LOCAL_URL", "ws://localhost:7002/ws")
     OPAL_WS_TOKEN = confi.str("WS_TOKEN", "THIS_IS_A_DEV_SECRET")
+    # The URL for the backbone pub/sub server (e.g. Postgres, Kfaka, Redis) @see
     BROADCAST_URI = confi.str("BROADCAST_URI", None)
+    # The name to be used for segmentation in the backbone pub/sub (e.g. the Kafka topic)
+    BROADCAST_CHANNEL_NAME = confi.str("BROADCAST_CHANNEL_NAME", "EventNotifier")
 
     # server security
     AUTH_PRIVATE_KEY_FORMAT = confi.enum("AUTH_PRIVATE_KEY_FORMAT", EncryptionKeyFormat, EncryptionKeyFormat.pem)
@@ -49,7 +52,7 @@ class OpalServerConfig(Confi):
     POLICY_REPO_MAIN_BRANCH = confi.str("POLICY_REPO_MAIN_BRANCH", "master")
     POLICY_REPO_SSH_KEY = confi.str("POLICY_REPO_SSH_KEY", None)
     POLICY_REPO_MANIFEST_PATH = confi.str("POLICY_REPO_MANIFEST_PATH", ".manifest")
-    POLICY_REPO_CLONE_TIMEOUT = confi.int("POLICY_REPO_CLONE_TIMEOUT", 0) # if 0, waits forever until successful clone
+    POLICY_REPO_CLONE_TIMEOUT = confi.int("POLICY_REPO_CLONE_TIMEOUT", 0)  # if 0, waits forever until successful clone
     LEADER_LOCK_FILE_PATH = confi.str("LEADER_LOCK_FILE_PATH", "/tmp/opal_server_leader.lock")
     POLICY_BUNDLE_SERVER_TOKEN = confi.str("POLICY_BUNDLE_SERVER_TOKEN", None, description="Bearer token to sent to API bundle server")
     POLICY_BUNDLE_TMP_PATH = confi.str("POLICY_BUNDLE_TMP_PATH", "/tmp/bundle.tar.gz", description="Path for temp policy file, need to be writeable")
@@ -77,7 +80,7 @@ class OpalServerConfig(Confi):
     DATA_CONFIG_ROUTE = confi.str("DATA_CONFIG_ROUTE", "/data/config",
                                   description="URL to fetch the full basic configuration of data")
     DATA_CALLBACK_DEFAULT_ROUTE = confi.str("DATA_CALLBACK_DEFAULT_ROUTE", "/data/callback_report",
-        description="Exists as a sane default in case the user did not set OPAL_DEFAULT_UPDATE_CALLBACKS")
+                                            description="Exists as a sane default in case the user did not set OPAL_DEFAULT_UPDATE_CALLBACKS")
 
     DATA_CONFIG_SOURCES = confi.model(
         "DATA_CONFIG_SOURCES",

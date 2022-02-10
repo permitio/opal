@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, WebSocket
-from fastapi_websocket_pubsub import PubSubEndpoint
+from fastapi_websocket_pubsub import PubSubEndpoint, EventBroadcaster
+from fastapi_websocket_pubsub.websocket_rpc_event_notifier import WebSocketRpcEventNotifier
 from opal_common.confi.confi import load_conf_if_none
 
 from opal_common.config import opal_common_config
@@ -14,7 +15,7 @@ class PubSub:
     Warpper for the Pub/Sub channel used for both policy and data updates
     """
 
-    def __init__(self, signer: JWTSigner, broadcaster_uri:str=None):
+    def __init__(self, signer: JWTSigner, broadcaster_uri: str = None):
         """
         Args:
             broadcaster_uri (str, optional): Which server/medium should the PubSub use for broadcasting. Defaults to BROADCAST_URI.
@@ -22,7 +23,15 @@ class PubSub:
         """
         broadcaster_uri = load_conf_if_none(broadcaster_uri, opal_server_config.BROADCAST_URI)
         self.router = APIRouter()
-        self.endpoint = PubSubEndpoint(broadcaster=broadcaster_uri, rpc_channel_get_remote_id=opal_common_config.STATISTICS_ENABLED)
+        # Pub/Sub Internals
+        self.notifier = WebSocketRpcEventNotifier()
+        self.broadcaster = EventBroadcaster(broadcaster_uri,
+                                            notifier=self.notifier,
+                                            channel=opal_server_config.BROADCAST_CHANNEL_NAME)
+        # The server endpoint
+        self.endpoint = PubSubEndpoint(broadcaster=self.broadcaster,
+                                       notifier=self.notifier,
+                                       rpc_channel_get_remote_id=opal_common_config.STATISTICS_ENABLED)
         authenticator = WebsocketJWTAuthenticator(signer)
 
         @self.router.websocket("/ws")
@@ -32,7 +41,8 @@ class PubSub:
             as you can see, this endpoint is protected by an HTTP Authorization Bearer token.
             """
             if not logged_in:
-                logger.info("Closing connection, remote address: {remote_address}", remote_address=websocket.client, reason="Authentication failed")
+                logger.info("Closing connection, remote address: {remote_address}",
+                            remote_address=websocket.client, reason="Authentication failed")
                 await websocket.close()
                 return
             # Init PubSub main-loop with or without broadcasting
