@@ -3,7 +3,7 @@ idna<3,>=2.5
 typer
 aiofiles
 aiohttp
-broadcaster[postgres]
+broadcaster[postgres,redis,kafka]
 colorama
 fastapi==0.65.2
 fastapi_websocket_pubsub>=0.1.21

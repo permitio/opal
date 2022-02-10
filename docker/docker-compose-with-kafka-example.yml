@@ -33,13 +33,11 @@ services:
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
       KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
 
-  
+
   opal_server:
     # build an image from the exmple Dockerfile in the current directory
     # which uses the opal-server image from Docker Hub while adding the brodcaster Kafka module
-    build:
-      context: .
-      dockerfile: opal-server-with-kafka.dockerfile
+    image: permitio/opal-server:latest
     environment:
       # the broadcast backbone uri used by opal server workers (see comments above for: broadcast_channel)
       - OPAL_BROADCAST_URI=kafka://kafka:9092

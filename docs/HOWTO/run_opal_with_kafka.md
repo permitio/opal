@@ -29,7 +29,7 @@ But (in version OPAL 0.1.21 and later) you can also use the `OPAL_BROADCAST_CHAN
 
 ## Docker-compose Example
 
-Checkout `docker/docker-compose-with-kafka-example.yml` and the matching `docker/opal-server-with-kafka.dockerfile` for running docker compose with OPAL-server, OPAL-client, Zookeeper, and Kafka.
+Check out `docker/docker-compose-with-kafka-example.yml` for running docker compose with OPAL-server, OPAL-client, Zookeeper, and Kafka.
 
 You'll need to run it with `docker-compose build` to create which will use the dockerfile to build an image of OPAL-server with the Kafka module.
 e.g. when in the repository root run -
