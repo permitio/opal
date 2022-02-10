@@ -4,10 +4,13 @@ services:
   # Based on: https://developer.confluent.io/quickstart/kafka-docker/
   zookeeper:
     image: confluentinc/cp-zookeeper:6.2.0
-    container_name: zookeeper
+    hostname: zookeeper
+    ports:
+      - 2181:2181
     environment:
-      ZOOKEEPER_CLIENT_PORT: 2181
-      ZOOKEEPER_TICK_TIME: 2000
+      - ZOOKEEPER_CLIENT_PORT=2181
+      - ZOOKEEPER_TICK_TIME=2000
+      - ALLOW_ANONYMOUS_LOGIN=yes
 
   # When scaling the opal-server to multiple nodes and/or multiple workers, we use
   # a *broadcast* channel to sync between all the instances of opal-server.
@@ -17,23 +20,35 @@ services:
   # https://github.com/encode/broadcaster#available-backends
   kafka_broadcast_channel:
     image: confluentinc/cp-kafka:6.2.0
-    container_name: kafka
+    hostname: kafka
     ports:
     # To learn about configuring Kafka for access across networks see
     # https://www.confluent.io/blog/kafka-client-cannot-connect-to-broker-on-aws-on-docker-etc/
-      - "9092:9092"
+      - 9092:9092
+      - 29092:29092
     depends_on:
       - zookeeper
     environment:
-      KAFKA_BROKER_ID: 1
-      KAFKA_ZOOKEEPER_CONNECT: 'zookeeper:2181'
-      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_INTERNAL:PLAINTEXT
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092,PLAINTEXT_INTERNAL://kafka:29092
-      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
-      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
-      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      - KAFKA_BROKER_ID=1
+      - KAFKA_ZOOKEEPER_CONNECT=zookeeper:2181
+      - KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR=1
+      - KAFKA_LISTENER_SECURITY_PROTOCOL_MAP=PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      - KAFKA_ADVERTISED_LISTENERS=PLAINTEXT_HOST://localhost:29092,PLAINTEXT://kafka:9092
+      - ALLOW_PLAINTEXT_LISTENER=yes
+      - KAFKA_TOPIC_AUTO_CREATE=true
+      - KAFKA_TRANSACTION_STATE_LOG_MIN_ISR=1
+      - KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR=1
 
-
+  kafka-ui:
+    container_name: kafka-ui
+    image: provectuslabs/kafka-ui:latest
+    ports:
+      - 8080:8080
+    depends_on:
+      - kafka_broadcast_channel
+    environment:
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9092
+      # KAFKA_CLUSTERS_0_NAME: local
   opal_server:
     # build an image from the exmple Dockerfile in the current directory
     # which uses the opal-server image from Docker Hub while adding the brodcaster Kafka module
@@ -62,6 +77,7 @@ services:
       - "7002:7002"
     depends_on:
       - kafka_broadcast_channel
+    command: sh -c "/usr/wait-for.sh kafka:9092 --timeout=30 -- /start.sh"
 
 
   opal_client:
