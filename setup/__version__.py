@@ -7,7 +7,7 @@ changes to your authorization policies and pushes live updates to your policy ag
 Project homepage: https://github.com/permitio/opal
 """
 
-VERSION = (0, 1, 20)
+VERSION = (0, 1, 21)
 VERSION_STRING = '.'.join(map(str,VERSION))
 
 __version__ = VERSION_STRING
