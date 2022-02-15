@@ -6,7 +6,7 @@ from opal_common.logger import logger
 from opal_common.schemas.data import DataSourceConfig, ServerDataSourceConfig, DataUpdate, DataUpdateReport
 from opal_common.schemas.security import PeerType
 from opal_common.urls import set_url_query_param
-from opal_common.authentication.authz import require_peer_type
+from opal_common.authentication.authz import require_peer_type, restrict_optional_topics_to_publish
 from opal_common.authentication.verifier import Unauthorized
 from opal_common.authentication.types import JWTClaims
 from opal_common.authentication.deps import JWTAuthenticator, get_token_from_header
@@ -81,6 +81,7 @@ def init_data_updates_router(data_update_publisher: DataUpdatePublisher, data_so
         """
         try:
             require_peer_type(authenticator, claims, PeerType.datasource) # may throw Unauthorized
+            restrict_optional_topics_to_publish(authenticator, claims, update) # may throw Unauthorized
         except Unauthorized as e:
             logger.error(f"Unauthorized to publish update: {repr(e)}")
             raise
