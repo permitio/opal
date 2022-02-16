@@ -27,5 +27,7 @@ def restrict_optional_topics_to_publish(authenticator: JWTAuthenticator, claims:
     if not "permitted_topics" in claims:
         return
     
-    if any(set(entry.topics).difference(claims["permitted_topics"]) for entry in update.entries):
-        raise Unauthorized(description=f"Invalid 'topics' to publish")
+    for entry in update.entries:
+        unauthorized_topics = set(entry.topics).difference(claims["permitted_topics"])
+        if unauthorized_topics:
+            raise Unauthorized(description=f"Invalid 'topics' to publish {unauthorized_topics}")

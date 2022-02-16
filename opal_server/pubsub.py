@@ -1,4 +1,4 @@
-from typing import Union
+from typing import Union, Optional
 from fastapi import APIRouter, Depends, WebSocket
 from fastapi_websocket_rpc import RpcChannel
 from fastapi_websocket_pubsub import PubSubEndpoint, EventBroadcaster, TopicList, ALL_TOPICS
@@ -41,7 +41,7 @@ class PubSub:
         authenticator = WebsocketJWTAuthenticator(signer)
 
         @self.router.websocket("/ws")
-        async def websocket_rpc_endpoint(websocket: WebSocket, claims: JWTClaims = Depends(authenticator)):
+        async def websocket_rpc_endpoint(websocket: WebSocket, claims: Optional[JWTClaims] = Depends(authenticator)):
             """
             this is the main websocket endpoint the sidecar uses to register on policy updates.
             as you can see, this endpoint is protected by an HTTP Authorization Bearer token.
@@ -61,5 +61,6 @@ class PubSub:
     def _verify_permitted_topics(self, topics: Union[TopicList, ALL_TOPICS], channel: RpcChannel):
         if "permitted_topics" not in channel.context.get("claims", {}):
             return
-        if set(topics).difference(channel.context["claims"]["permitted_topics"]):
-            raise Unauthorized(description=f"Invalid 'topics' to subscribe")
+        unauthorized_topics = set(topics).difference(channel.context["claims"]["permitted_topics"])
+        if unauthorized_topics:
+            raise Unauthorized(description=f"Invalid 'topics' to subscribe {unauthorized_topics}")
