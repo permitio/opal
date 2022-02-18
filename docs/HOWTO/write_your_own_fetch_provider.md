@@ -298,7 +298,7 @@ async def _process_(self, records: List[asyncpg.Record]):
 
     # when fetch_one is true, we want to return a dict (and not a list)
     if self._event.config.fetch_one:
-        if records and len(records) > 0:
+        if records:
             # we transform the asyncpg record to a dict that we can be later serialized to json
             return dict(records[0])
         else:

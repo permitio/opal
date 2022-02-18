@@ -18,7 +18,7 @@ def get_custom_ssl_context() -> Optional[ssl.SSLContext]:
     if ca_file is None:
         return None
 
-    if len(ca_file) == 0:
+    if ca_file:
         return None
 
     ca_file_path = os.path.expanduser(ca_file)

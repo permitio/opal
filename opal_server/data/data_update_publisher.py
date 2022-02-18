@@ -26,7 +26,7 @@ class DataUpdatePublisher:
             List[str]: The combinations of sub topics for the given topic
         """
         sub_topics = topic.split(delimeter)
-        if len(sub_topics) > 0:
+        if sub_topics:
             topic_combos = []
             current_topic = sub_topics[0]
             topic_combos.append(current_topic)
