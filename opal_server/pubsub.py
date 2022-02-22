@@ -29,7 +29,7 @@ class PubSub:
         self.router = APIRouter()
         # Pub/Sub Internals
         self.notifier = WebSocketRpcEventNotifier()
-        self.notifier.add_subscription_restriction(self._verify_permitted_topics)
+        self.notifier.add_channel_restriction(type(self)._verify_permitted_topics)
 
         self.broadcaster = EventBroadcaster(broadcaster_uri,
                                             notifier=self.notifier,
@@ -58,7 +58,8 @@ class PubSub:
             else:
                 await self.endpoint.main_loop(websocket, claims=claims)
 
-    def _verify_permitted_topics(self, topics: Union[TopicList, ALL_TOPICS], channel: RpcChannel):
+    @staticmethod
+    async def _verify_permitted_topics(topics: Union[TopicList, ALL_TOPICS], channel: RpcChannel):
         if "permitted_topics" not in channel.context.get("claims", {}):
             return
         unauthorized_topics = set(topics).difference(channel.context["claims"]["permitted_topics"])
