@@ -1,3 +1,4 @@
+from opal_common.schemas.data import DataUpdate
 from opal_common.schemas.security import PeerType
 from opal_common.authentication.deps import JWTAuthenticator
 from opal_common.authentication.verifier import Unauthorized
@@ -17,3 +18,16 @@ def require_peer_type(authenticator: JWTAuthenticator, claims: JWTClaims, requir
 
     if type != required_type:
         raise Unauthorized(description=f"Incorrect 'peer_type' claim for OPAL jwt token: {str(type)}, expected: {str(required_type)}")
+
+
+def restrict_optional_topics_to_publish(authenticator: JWTAuthenticator, claims: JWTClaims, update:DataUpdate):
+    if not authenticator.enabled:
+        return
+
+    if not "permitted_topics" in claims:
+        return
+    
+    for entry in update.entries:
+        unauthorized_topics = set(entry.topics).difference(claims["permitted_topics"])
+        if unauthorized_topics:
+            raise Unauthorized(description=f"Invalid 'topics' to publish {unauthorized_topics}")

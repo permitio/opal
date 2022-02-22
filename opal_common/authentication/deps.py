@@ -98,7 +98,7 @@ class WebsocketJWTAuthenticator(_JWTAuthenticator):
     because no matter the http status code, uvicorn will treat it as http 500.
     see: https://github.com/encode/uvicorn/blob/master/uvicorn/protocols/websockets/websockets_impl.py#L168
 
-    Instead we return a boolean to the endpoint, in order for it to gracefully
+    Instead we return the claims or None to the endpoint, in order for it to gracefully
     close the connection in case authentication was unsuccessful.
 
     In this case uvicorn's hardcoded behavior suits us:
@@ -107,15 +107,14 @@ class WebsocketJWTAuthenticator(_JWTAuthenticator):
     no other status code are supported.
     see: https://github.com/encode/uvicorn/blob/master/uvicorn/protocols/websockets/websockets_impl.py#L189-L207
 
-    thus we return a boolean and the endpoint can use it to potentially call websocket.close()
+    thus we return a the claims or None and the endpoint can use it to potentially call websocket.close()
     """
     def __call__(self, authorization: Optional[str] = Header(None)) -> bool:
         token = get_token_from_header(authorization)
         try:
-            verify_logged_in(self._verifier, token)
-            return True
+            return verify_logged_in(self._verifier, token)
         except (Unauthorized, HTTPException):
-            return False
+            return None
 
 
 class StaticBearerAuthenticator:
