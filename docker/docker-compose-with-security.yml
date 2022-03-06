@@ -46,7 +46,7 @@ services:
       # after the initial sources are fetched, the client will subscribe only to update notifications sent by the server.
       # please notice - since we fetch data entries from the OPAL server itself, we need to authenticate to that endpoint
       # with the client's token (JWT).
-      - OPAL_DATA_CONFIG_SOURCES={"config":{"entries":[{"url":"http://host.docker.internal:7002/policy-data","config":{"headers":{"Authorization":"Bearer ${OPAL_CLIENT_TOKEN}"}},"topics":["policy_data"]}]}}
+      - OPAL_DATA_CONFIG_SOURCES={"config":{"entries":[{"url":"http://host.docker.internal:7002/policy-data","config":{"headers":{"Authorization":"Bearer ${OPAL_CLIENT_TOKEN}"}},"topics":["policy_data"],"dst_path":"/static"}]}}
       - OPAL_LOG_FORMAT_INCLUDE_PID=true
       # --------------------------------------------------------------------------------
       # the jwt audience and jwt issuer are not typically necessary in real setups
