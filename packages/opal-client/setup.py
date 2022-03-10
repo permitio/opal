@@ -56,6 +56,7 @@ setup(
     install_requires=[
         'typer',
         'aiohttp',
+        'aiofiles',
         'fastapi==0.65.2',
         'fastapi_websocket_pubsub>=0.2.0',
         'fastapi_websocket_rpc>=0.1.21',
