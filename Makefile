@@ -37,6 +37,9 @@ install-client-from-src:
 install-server-from-src:
 	pip install packages/opal-server
 
+install-develop:
+	pip install -r requirements.txt
+
 # docker
 docker-build-client:
 	@docker build -t permitio/opal-client --target client -f docker/Dockerfile .

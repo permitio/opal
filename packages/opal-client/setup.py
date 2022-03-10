@@ -29,10 +29,10 @@ setup(
     version=about.__version__,
     author='Or Weis, Asaf Cohen',
     author_email="or@permit.io",
-    description='OPAL is an administration layer for Open Policy Agent (OPA), detecting changes' + \
-        ' to both policy and data and pushing live updates to your agents. The opal-client is' + \
-        ' deployed alongside a policy-store (e.g: OPA), keeping it up-to-date, by connecting to' + \
-        ' an opal-server and subscribing to pub/sub updates for policy and policy data changes.',
+    description='OPAL is an administration layer for Open Policy Agent (OPA), detecting changes'
+                ' to both policy and data and pushing live updates to your agents. The opal-client is'
+                ' deployed alongside a policy-store (e.g: OPA), keeping it up-to-date, by connecting to'
+                ' an opal-server and subscribing to pub/sub updates for policy and policy data changes.',
     long_description_content_type='text/markdown',
     long_description=get_long_description(),
     url='https://github.com/permitio/opal',
@@ -54,21 +54,13 @@ setup(
     ],
     python_requires='>=3.7',
     install_requires=[
-        'typer',
-        'aiohttp',
         'aiofiles',
-        'fastapi==0.65.2',
-        'fastapi_websocket_pubsub>=0.2.0',
-        'fastapi_websocket_rpc>=0.1.21',
-        'gunicorn',
+        'aiohttp',
+        'opal-common=={}'.format(about.__version__),
         'psutil==5.8.0',
-        'pydantic[email]',
         'tenacity==6.3.1',
-        'typing-extensions',
-        'uvicorn[standard]',
         'websockets==9.1',
-        'opal-common=={}'.format(about.__version__)
-    ],
+    ] + about.install_requires,
     entry_points='''
     [console_scripts]
         opal-client=opal_client.cli:cli

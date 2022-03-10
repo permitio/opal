@@ -1,7 +1,7 @@
 import os
 from types import SimpleNamespace
 
-from setuptools import setup, find_packages
+from setuptools import setup
 
 here = os.path.abspath(os.path.dirname(__file__))
 root = os.path.abspath(os.path.join(here, '../../'))
@@ -56,21 +56,13 @@ setup(
     ],
     python_requires='>=3.7',
     install_requires=[
-        'typer',
-        'fastapi==0.65.2',
-        'fastapi_websocket_pubsub>=0.2.0',
-        'fastapi_websocket_rpc>=0.1.21',
-        'GitPython',
-        'gunicorn',
-        'pydantic[email]',
+        'click',
+        'ddtrace',
+        'gitpython',
+        'opal-common=={}'.format(about.__version__),
         'pyjwt[crypto]==2.1.0',
-        'typing-extensions',
-        'uvicorn[standard]',
         'websockets==9.1',
-        'asyncio-redis',
-        'aiokafka',
-        'opal-common=={}'.format(about.__version__)
-    ],
+    ] + about.install_requires,
     entry_points={
         'console_scripts': ['opal-server = opal_server.cli:cli'],
     }

@@ -16,6 +16,13 @@ __author_email__ = 'or@permit.io'
 __license__ = 'Apache 2.0'
 __copyright__ = 'Copyright 2021 Or Weis and Asaf Cohen'
 
-common_requires = [
-
+install_requires = [
+    'fastapi==0.65.2',
+    'fastapi_websocket_pubsub>=0.2.0',
+    'fastapi_websocket_rpc>=0.1.21',
+    'gunicorn',
+    'pydantic[email]',
+    'typer',
+    'typing-extensions',
+    'uvicorn[standard]',
 ]

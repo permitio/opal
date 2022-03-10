@@ -15,9 +15,9 @@ RUN apk add --update --no-cache --virtual .build-deps gcc git build-base alpine-
 # from now on, work in the /app directory
 WORKDIR /app/
 # Layer dependency install (for caching)
-COPY requirements.txt requirements.txt
+COPY . ./
 # install python deps
-RUN pip install --no-cache-dir --upgrade pip && pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir --upgrade pip && pip install --no-cache-dir ./packages/opal-common ./packages/opal-client ./packages/opal-server
 
 # COMMON IMAGE --------------------------------------
 # ---------------------------------------------------
@@ -46,9 +46,7 @@ RUN ln -s /opal/start.sh /start.sh
 # copy gunicorn_config
 COPY ./scripts/gunicorn_conf.py .
 # copy app code
-COPY . ./
-# install sidecar package
-RUN python setup/setup_common.py install
+#COPY . ./
 # Make sure scripts in .local are usable:
 ENV PATH=/opal:/root/.local/bin:$PATH
 # run gunicorn
@@ -58,8 +56,6 @@ CMD ["./start.sh"]
 # STANDALONE IMAGE ----------------------------------
 # ---------------------------------------------------
 FROM common as client-standalone
-# install sidecar client package
-RUN python setup/setup_client.py install
 # uvicorn config ------------------------------------
 
 # WARNING: do not change the number of workers on the opal client!
@@ -125,8 +121,6 @@ RUN if [[ "$TRUST_POLICY_REPO_HOST_SSH_FINGERPRINT" == "true" ]] ; then \
     ssh-keyscan -t rsa ${POLICY_REPO_HOST} >> ~/.ssh/known_hosts ; fi
 
 USER root
-# install opal server package
-RUN python setup/setup_server.py install
 
 # uvicorn config ------------------------------------
 
