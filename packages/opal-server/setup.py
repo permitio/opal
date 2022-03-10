@@ -1,51 +1,36 @@
 import os
-import sys
+from types import SimpleNamespace
 
 from setuptools import setup, find_packages
 
 here = os.path.abspath(os.path.dirname(__file__))
+root = os.path.abspath(os.path.join(here, '../../'))
 project_root = os.path.normpath(os.path.join(here, os.pardir))
 
 
 def get_package_metadata():
     package_metadata = {}
-    with open(os.path.join(here, '__version__.py')) as f:
+    with open(os.path.join(here, '../__packaging__.py')) as f:
         exec(f.read(), package_metadata)
-    return package_metadata
+    return SimpleNamespace(**package_metadata)
 
 
 def get_relative_path(path):
     return os.path.join(here, os.path.pardir, path)
 
 
-def get_requirements(env=""):
-    if env:
-        env = "-{}".format(env)
-    requirements_path = get_relative_path("requirements{}.txt".format(env))
-    with open(requirements_path) as fp:
-        return [x.strip() for x in fp.read().split("\n") if not x.startswith("#")]
-
-
 def get_long_description():
-    readme_path = get_relative_path("README.md")
+    readme_path = os.path.join(root, "README.md")
 
     with open(readme_path, "r", encoding="utf-8") as fh:
         return fh.read()
 
 
 about = get_package_metadata()
-version = about.get('__version__')
-license = about.get('__license__')
-if not version or not license:
-    raise ValueError('could not find project metadata!')
-
-requirements = get_requirements()
-requirements.append('opal-common=={}'.format(version))
-requirements.extend(['asyncio-redis', 'aiokafka']) # broadcaster variants
 
 setup(
     name='opal-server',
-    version=version,
+    version=about.__version__,
     author='Or Weis, Asaf Cohen',
     author_email="or@permit.io",
     description='OPAL is an administration layer for Open Policy Agent (OPA), detecting changes' +
@@ -56,8 +41,8 @@ setup(
     long_description_content_type='text/markdown',
     long_description=get_long_description(),
     url='https://github.com/permitio/opal',
-    license=license,
-    packages=find_packages(where=project_root, include=('opal_server*', )),
+    license=about.__license__,
+    packages=['opal_server'],
     classifiers=[
         'Operating System :: OS Independent',
         'License :: OSI Approved :: Apache Software License',
@@ -70,7 +55,22 @@ setup(
         'Topic :: Internet :: WWW/HTTP :: WSGI'
     ],
     python_requires='>=3.7',
-    install_requires=requirements,
+    install_requires=[
+        'typer',
+        'fastapi==0.65.2',
+        'fastapi_websocket_pubsub>=0.2.0',
+        'fastapi_websocket_rpc>=0.1.21',
+        'GitPython',
+        'gunicorn',
+        'pydantic[email]',
+        'pyjwt[crypto]==2.1.0',
+        'typing-extensions',
+        'uvicorn[standard]',
+        'websockets==9.1',
+        'asyncio-redis',
+        'aiokafka',
+        'opal-common=={}'.format(about.__version__)
+    ],
     entry_points={
         'console_scripts': ['opal-server = opal_server.cli:cli'],
     }

@@ -15,3 +15,7 @@ __author__ = 'Or Weis, Asaf Cohen'
 __author_email__ = 'or@permit.io'
 __license__ = 'Apache 2.0'
 __copyright__ = 'Copyright 2021 Or Weis and Asaf Cohen'
+
+common_requires = [
+
+]

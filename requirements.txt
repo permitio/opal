@@ -1,24 +1,4 @@
-charset-normalizer==2.0.7
-idna<3,>=2.5
-typer
-aiofiles
-aiohttp
-broadcaster[postgres,redis,kafka]
-colorama
-fastapi==0.65.2
-fastapi_websocket_pubsub>=0.2.0
-fastapi_websocket_rpc>=0.1.21
-GitPython
-gunicorn
+-e ./packages/opal-common
+-e ./packages/opal-client
+-e ./packages/opal-server
 ipython
-loguru==0.6.0
-psutil==5.8.0
-pydantic[email]
-pyjwt[crypto]==2.1.0
-python-decouple
-tenacity==6.3.1
-typing-extensions
-uvicorn[standard]
-websockets==9.1
-rook
-ddtrace
