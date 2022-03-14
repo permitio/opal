@@ -136,17 +136,17 @@ class BasePolicyStoreClient(AbstractPolicyStore):
             actions (List[str], optional): All the methods called in the transaction. Defaults to None.
         """
         exception_fetching_transaction = []
-        if remotes_status and len(remotes_status):
+        if remotes_status:
             exception_fetching_transaction = [remote for remote in remotes_status if not remote['succeed']]
         elif transaction_id is None or not actions:
             return # skip, nothing to do if we have no data to log
 
         end_time = datetime.utcnow().isoformat()
-        if exc is not None or len(exception_fetching_transaction):
+        if exc is not None or exception_fetching_transaction:
             try:
                 if exc is not None:
                     error_message = repr(exc)
-                elif len(exception_fetching_transaction) > 0:
+                elif exception_fetching_transaction:
                     network_errors = [remote.get("error", None) for remote in exception_fetching_transaction]
                     network_errors = [str(err) for err in network_errors if err is not None]
                     error_message = ";".join(network_errors) if network_errors else None
