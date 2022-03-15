@@ -4,5 +4,6 @@
 ipython
 pytest
 pytest-asyncio
+flaky
 wheel
 twine
