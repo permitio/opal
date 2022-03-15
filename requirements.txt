@@ -2,3 +2,7 @@
 -e ./packages/opal-client
 -e ./packages/opal-server
 ipython
+pytest
+pytest-asyncio
+wheel
+twine
