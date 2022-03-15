@@ -26,7 +26,23 @@ def get_long_description():
         return fh.read()
 
 
+def get_install_requires():
+    """
+    Gets the contents of install_requires from text file.
+
+    Getting the minimum requirements from a text file allows us to pre-install
+    them in docker, speeding up our docker builds and better utilizing the docker layer cache.
+
+    The requirements in requires.txt are in fact the minimum set of packages
+    you need to run OPAL (and are thus different from a "requirements.txt" file).
+    """
+    with open(os.path.join(here, "requires.txt")) as fp:
+        return [line.strip() for line in fp.read().splitlines() if not line.startswith("#")]
+
+
 about = get_package_metadata()
+server_install_requires = get_install_requires() + ['opal-common=={}'.format(about.__version__)]
+
 
 setup(
     name='opal-server',
@@ -55,14 +71,7 @@ setup(
         'Topic :: Internet :: WWW/HTTP :: WSGI'
     ],
     python_requires='>=3.7',
-    install_requires=[
-        'click',
-        'ddtrace',
-        'gitpython',
-        'opal-common=={}'.format(about.__version__),
-        'pyjwt[crypto]==2.1.0',
-        'websockets==9.1',
-    ] + about.install_requires,
+    install_requires=server_install_requires + about.get_install_requires(project_root),
     entry_points={
         'console_scripts': ['opal-server = opal_server.cli:cli'],
     }

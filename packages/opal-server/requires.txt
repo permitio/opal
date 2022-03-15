@@ -1,0 +1,5 @@
+click
+ddtrace
+gitpython
+pyjwt[crypto]==2.1.0
+websockets==9.1
