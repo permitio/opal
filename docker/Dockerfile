@@ -15,9 +15,12 @@ RUN apk add --update --no-cache --virtual .build-deps gcc git build-base alpine-
 # from now on, work in the /app directory
 WORKDIR /app/
 # Layer dependency install (for caching)
-COPY requirements.txt requirements.txt
+COPY ./packages/requires.txt ./base_requires.txt
+COPY ./packages/opal-common/requires.txt ./common_requires.txt
+COPY ./packages/opal-client/requires.txt ./client_requires.txt
+COPY ./packages/opal-server/requires.txt ./server_requires.txt
 # install python deps
-RUN pip install --no-cache-dir --upgrade pip && pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir --upgrade pip && pip install --no-cache-dir -r ./base_requires.txt -r ./common_requires.txt -r ./client_requires.txt -r ./server_requires.txt
 
 # COMMON IMAGE --------------------------------------
 # ---------------------------------------------------
@@ -47,8 +50,8 @@ RUN ln -s /opal/start.sh /start.sh
 COPY ./scripts/gunicorn_conf.py .
 # copy app code
 COPY . ./
-# install sidecar package
-RUN python setup/setup_common.py install
+# install the opal-common package
+RUN cd ./packages/opal-common && python setup.py install
 # Make sure scripts in .local are usable:
 ENV PATH=/opal:/root/.local/bin:$PATH
 # run gunicorn
@@ -58,9 +61,9 @@ CMD ["./start.sh"]
 # STANDALONE IMAGE ----------------------------------
 # ---------------------------------------------------
 FROM common as client-standalone
-# install sidecar client package
-RUN python setup/setup_client.py install
 # uvicorn config ------------------------------------
+# install the opal-client package
+RUN cd ./packages/opal-client && python setup.py install
 
 # WARNING: do not change the number of workers on the opal client!
 # only one worker is currently supported for the client.
@@ -120,13 +123,14 @@ ARG TRUST_POLICY_REPO_HOST_SSH_FINGERPRINT="true"
 ARG POLICY_REPO_HOST="github.com"
 
 RUN if [[ "$TRUST_POLICY_REPO_HOST_SSH_FINGERPRINT" == "true" ]] ; then \
-    mkdir -p ~/.ssh && \
-    chmod 0700 ~/.ssh && \
-    ssh-keyscan -t rsa ${POLICY_REPO_HOST} >> ~/.ssh/known_hosts ; fi
+  mkdir -p ~/.ssh && \
+  chmod 0700 ~/.ssh && \
+  ssh-keyscan -t rsa ${POLICY_REPO_HOST} >> ~/.ssh/known_hosts ; fi
 
 USER root
-# install opal server package
-RUN python setup/setup_server.py install
+
+# install the opal-server package
+RUN cd ./packages/opal-server && python setup.py install
 
 # uvicorn config ------------------------------------
 

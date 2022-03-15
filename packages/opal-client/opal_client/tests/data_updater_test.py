@@ -8,6 +8,7 @@ import pytest
 import uvicorn
 from fastapi_websocket_pubsub import PubSubClient
 from aiohttp import ClientSession
+from flaky import flaky
 
 # Add parent path to use local src as package for tests
 root_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), os.path.pardir, os.path.pardir))
@@ -116,6 +117,7 @@ def trigger_update():
     asyncio.run(run())
 
 
+@flaky
 @pytest.mark.asyncio
 async def test_data_updater(server):
     """

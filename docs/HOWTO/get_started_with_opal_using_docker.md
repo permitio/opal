@@ -337,7 +337,7 @@ Env Var Name | Function
 OPAL_DATA_CONFIG_SOURCES | Directives on **how to fetch** the data configuration we load into OPA cache when OPAL client starts, and **where to put it**.
 
 #### <a name="encode-data-sources"></a>Data sources config schema
-The **value** of the data sources config variable is a json encoding of the [ServerDataSourceConfig](https://github.com/permitio/opal/blob/master/opal_common/schemas/data.py#L31) pydantic model.
+The **value** of the data sources config variable is a json encoding of the [ServerDataSourceConfig](https://github.com/permitio/opal/blob/master/packages/opal-common/opal_common/schemas/data.py#L31) pydantic model.
 
 #### Example value
 ```
@@ -360,12 +360,12 @@ The **value** of the data sources config variable is a json encoding of the [Ser
 }
 ```
 
-Let's break down this example value (check the [schema](https://github.com/permitio/opal/blob/master/opal_common/schemas/data.py#L31) for more options):
+Let's break down this example value (check the [schema](https://github.com/permitio/opal/blob/master/packages/opal-common/opal_common/schemas/data.py#L31) for more options):
 
-Each object in `entries` (schema: [DataSourceEntry](https://github.com/permitio/opal/blob/master/opal_common/schemas/data.py#L8)) is a **directive** that tells OPAL client to fetch the data and place it in OPA cache using the [Data API](https://www.openpolicyagent.org/docs/latest/rest-api/#data-api).
+Each object in `entries` (schema: [DataSourceEntry](https://github.com/permitio/opal/blob/master/packages/opal-common/opal_common/schemas/data.py#L8)) is a **directive** that tells OPAL client to fetch the data and place it in OPA cache using the [Data API](https://www.openpolicyagent.org/docs/latest/rest-api/#data-api).
 * **From where to fetch:** we tell OPAL client to fetch data from the [Permit.io API](https://api.permit.io/redoc) (specifically, from the `policy-config` endpoint).
 * **how to fetch (optional):** we can direct the client to use a specific configuration when fetching the data, for example here we tell the client to use a specific HTTP Authorization header with a bearer token in order to authenticate to the API.
-* **Where to place the data in OPA cache:** although not specified, this entry uses the default of `/` which means at the root of OPA document hierarchy. You can specify another path with `dst_path` (check the [schema](https://github.com/permitio/opal/blob/master/opal_common/schemas/data.py#L8)).
+* **Where to place the data in OPA cache:** although not specified, this entry uses the default of `/` which means at the root of OPA document hierarchy. You can specify another path with `dst_path` (check the [schema](https://github.com/permitio/opal/blob/master/packages/opal-common/opal_common/schemas/data.py#L8)).
 
 #### Encoding this value in an environment variable:
 You can use the python method of `json.dumps()` to get a one line string:
@@ -669,7 +669,7 @@ If you are running with inline OPA (meaning OPAL client runs OPA for you in the 
 In order to override default configuration, you'll need to set this env var:
 Env Var Name | Function
 :--- | :---
-OPAL_INLINE_OPA_CONFIG | The value of this var should be an [OpaServerOptions](https://github.com/permitio/opal/blob/master/opal_client/opa/options.py#L19) pydantic model encoded into json string. The process is similar to the one we showed on how to encode the value of [OPAL_DATA_CONFIG_SOURCES](#encode-data-sources).
+OPAL_INLINE_OPA_CONFIG | The value of this var should be an [OpaServerOptions](https://github.com/permitio/opal/blob/master/packages/opal-client/opal_client/opa/options.py#L19) pydantic model encoded into json string. The process is similar to the one we showed on how to encode the value of [OPAL_DATA_CONFIG_SOURCES](#encode-data-sources).
 
 ### Step 6: Client config - Standalone OPA uri (Optional)
 

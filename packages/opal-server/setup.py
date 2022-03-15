@@ -1,51 +1,52 @@
 import os
-import sys
+from types import SimpleNamespace
 
 from setuptools import setup, find_packages
 
 here = os.path.abspath(os.path.dirname(__file__))
+root = os.path.abspath(os.path.join(here, '../../'))
 project_root = os.path.normpath(os.path.join(here, os.pardir))
 
 
 def get_package_metadata():
     package_metadata = {}
-    with open(os.path.join(here, '__version__.py')) as f:
+    with open(os.path.join(here, '../__packaging__.py')) as f:
         exec(f.read(), package_metadata)
-    return package_metadata
+    return SimpleNamespace(**package_metadata)
 
 
 def get_relative_path(path):
     return os.path.join(here, os.path.pardir, path)
 
 
-def get_requirements(env=""):
-    if env:
-        env = "-{}".format(env)
-    requirements_path = get_relative_path("requirements{}.txt".format(env))
-    with open(requirements_path) as fp:
-        return [x.strip() for x in fp.read().split("\n") if not x.startswith("#")]
-
-
 def get_long_description():
-    readme_path = get_relative_path("README.md")
+    readme_path = os.path.join(root, "README.md")
 
     with open(readme_path, "r", encoding="utf-8") as fh:
         return fh.read()
 
 
-about = get_package_metadata()
-version = about.get('__version__')
-license = about.get('__license__')
-if not version or not license:
-    raise ValueError('could not find project metadata!')
+def get_install_requires():
+    """
+    Gets the contents of install_requires from text file.
 
-requirements = get_requirements()
-requirements.append('opal-common=={}'.format(version))
-requirements.extend(['asyncio-redis', 'aiokafka']) # broadcaster variants
+    Getting the minimum requirements from a text file allows us to pre-install
+    them in docker, speeding up our docker builds and better utilizing the docker layer cache.
+
+    The requirements in requires.txt are in fact the minimum set of packages
+    you need to run OPAL (and are thus different from a "requirements.txt" file).
+    """
+    with open(os.path.join(here, "requires.txt")) as fp:
+        return [line.strip() for line in fp.read().splitlines() if not line.startswith("#")]
+
+
+about = get_package_metadata()
+server_install_requires = get_install_requires() + ['opal-common=={}'.format(about.__version__)]
+
 
 setup(
     name='opal-server',
-    version=version,
+    version=about.__version__,
     author='Or Weis, Asaf Cohen',
     author_email="or@permit.io",
     description='OPAL is an administration layer for Open Policy Agent (OPA), detecting changes' +
@@ -56,8 +57,8 @@ setup(
     long_description_content_type='text/markdown',
     long_description=get_long_description(),
     url='https://github.com/permitio/opal',
-    license=license,
-    packages=find_packages(where=project_root, include=('opal_server*', )),
+    license=about.__license__,
+    packages=find_packages(include=('opal_server*', )),
     classifiers=[
         'Operating System :: OS Independent',
         'License :: OSI Approved :: Apache Software License',
@@ -70,7 +71,7 @@ setup(
         'Topic :: Internet :: WWW/HTTP :: WSGI'
     ],
     python_requires='>=3.7',
-    install_requires=requirements,
+    install_requires=server_install_requires + about.get_install_requires(project_root),
     entry_points={
         'console_scripts': ['opal-server = opal_server.cli:cli'],
     }

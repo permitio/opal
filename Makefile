@@ -13,17 +13,17 @@ clean:
 
 publish-common:
 	$(MAKE) clean
-	python setup/setup_common.py sdist bdist_wheel
+	python packages/opal-common/setup.py sdist bdist_wheel
 	python -m twine upload dist/*
 
 publish-client:
 	$(MAKE) clean
-	python setup/setup_client.py sdist bdist_wheel
+	python packages/opal-common/setup_client.py sdist bdist_wheel
 	python -m twine upload dist/*
 
 publish-server:
 	$(MAKE) clean
-	python setup/setup_server.py sdist bdist_wheel
+	python packages/opal-common/setup_server.py sdist bdist_wheel
 	python -m twine upload dist/*
 
 publish:
@@ -32,10 +32,13 @@ publish:
 	$(MAKE) publish-server
 
 install-client-from-src:
-	python setup/setup_client.py install
+	pip install packages/opal-client
 
 install-server-from-src:
-	python setup/setup_server.py install
+	pip install packages/opal-server
+
+install-develop:
+	pip install -r requirements.txt
 
 # docker
 docker-build-client:

@@ -13,9 +13,9 @@ To view the configuration settings for both OPAL-SERVER and OPAL-CLIENT you can 
   - Run the server or client as a CLI - and use the '--help' command.
    - using the '--help' on specific commands such as 'run' will provide more information
   - Look at the configuration code itself:
-    - [Common config](https://github.com/permitio/opal/blob/master/opal_common/config.py) : values available for both server and client
-    - [Server config](https://github.com/permitio/opal/blob/master/opal_server/config.py) : values available only for the server
-    - [Client config](https://github.com/permitio/opal/blob/master/opal_client/config.py) : values available only for the client
+    - [Common config](https://github.com/permitio/opal/blob/master/packages/opal-common/opal_common/config.py) : values available for both server and client
+    - [Server config](https://github.com/permitio/opal/blob/master/packages/opal-server/opal_server/config.py) : values available only for the server
+    - [Client config](https://github.com/permitio/opal/blob/master/packages/opal-client/opal_client/config.py) : values available only for the client
 
 ## Configuration architecture
 OPAL's configuration is based on our very own `Confi` module, which in turn is based on [Decouple](https://pypi.org/project/python-decouple/), and adds complex value parsing with Pydantic, and command line arguments via Typer/Click.
