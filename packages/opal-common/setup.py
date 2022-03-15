@@ -1,7 +1,7 @@
 import os
 from types import SimpleNamespace
 
-from setuptools import setup
+from setuptools import setup, find_packages
 
 here = os.path.abspath(os.path.dirname(__file__))
 root = os.path.abspath(os.path.join(here, '../../'))
@@ -57,7 +57,7 @@ setup(
     long_description=get_long_description(),
     url='https://github.com/permitio/opal',
     license=about.__license__,
-    packages=['opal_common'],
+    packages=find_packages(include=('opal_common*', )),
     classifiers=[
         'Operating System :: OS Independent',
         'License :: OSI Approved :: Apache Software License',
