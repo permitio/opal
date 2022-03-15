@@ -89,7 +89,7 @@ You'll get something like this as output:
 #### Advanced: How does the healthcheck feature work?
 Please note: you don't need to understand this section to use the healthcheck policy. It goes into internal implementation of the feature, to the benefit of the interested reader.
 
-OPAL has an internal OpaClient class (code [here](https://github.com/permitio/opal/blob/master/opal_client/policy_store/opa_client.py#L140)) that is used to communicate with the OPA agent via its [REST API](https://www.openpolicyagent.org/docs/latest/rest-api/). The `OpaClient` class holds a `OpaTransactionLogState` object (code [here](https://github.com/permitio/opal/blob/master/opal_client/policy_store/opa_client.py#L58)) that represents (a **very** simplified version of) the state of synchronization between OPAL client and OPA.
+OPAL has an internal OpaClient class (code [here](https://github.com/permitio/opal/blob/master/packages/opal-client/opal_client/policy_store/opa_client.py#L140)) that is used to communicate with the OPA agent via its [REST API](https://www.openpolicyagent.org/docs/latest/rest-api/). The `OpaClient` class holds a `OpaTransactionLogState` object (code [here](https://github.com/permitio/opal/blob/master/packages/opal-client/opal_client/policy_store/opa_client.py#L58)) that represents (a **very** simplified version of) the state of synchronization between OPAL client and OPA.
 
 A transaction is initialized in the code using context managers:
 ```python
@@ -98,7 +98,7 @@ async with policy_store.transaction_context(update.id) as store_transaction:
   await store_transaction.set_policy_data(policy_data, path=policy_store_path)
 ```
 
-Every time a transaction [is ended](https://github.com/permitio/opal/blob/master/opal_client/policy_store/base_policy_store_client.py#L116) it is saved into OPA, by rendering the state of `OpaTransactionLogState` using the [healthcheck policy template](https://github.com/permitio/opal/blob/master/opal_client/opa/healthcheck/opal.rego).
+Every time a transaction [is ended](https://github.com/permitio/opal/blob/master/packages/opal-client/opal_client/policy_store/base_policy_store_client.py#L116) it is saved into OPA, by rendering the state of `OpaTransactionLogState` using the [healthcheck policy template](https://github.com/permitio/opal/blob/master/packages/opal-client/opal_client/opa/healthcheck/opal.rego).
 
 ## <a name="callbacks"></a> Data update callbacks
 
