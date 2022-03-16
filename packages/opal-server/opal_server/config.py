@@ -17,6 +17,7 @@ class OpalServerConfig(Confi):
     # ws server
     OPAL_WS_LOCAL_URL = confi.str("WS_LOCAL_URL", "ws://localhost:7002/ws")
     OPAL_WS_TOKEN = confi.str("WS_TOKEN", "THIS_IS_A_DEV_SECRET")
+    CLIENT_LOAD_LIMIT_NOTATION = confi.str("CLIENT_LOAD_LIMIT_NOTATION", None, "If supplied, rate limit would be enforced on server's websocket endpoint. format is `limits`-style notation (e.g '10 per second')")
     # The URL for the backbone pub/sub server (e.g. Postgres, Kfaka, Redis) @see
     BROADCAST_URI = confi.str("BROADCAST_URI", None)
     # The name to be used for segmentation in the backbone pub/sub (e.g. the Kafka topic)
