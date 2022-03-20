@@ -1,6 +1,8 @@
 from slowapi import Limiter
 from fastapi import APIRouter, Request
 
+from opal_common.logger import logger
+
 def init_loadlimit_router(loadlimit_notation: str = None):
     """
     initializes a route where a client (or any other network peer) can inquire what opal
@@ -14,6 +16,7 @@ def init_loadlimit_router(loadlimit_notation: str = None):
     limiter = Limiter(key_func=lambda: "global")
 
     if loadlimit_notation:
+        logger.info(f"rate limiting is on, configured limit: {loadlimit_notation}")
         @router.get('/loadlimit')
         @limiter.limit(loadlimit_notation)
         async def loadlimit(request: Request):
