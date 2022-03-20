@@ -23,6 +23,7 @@ from opal_client.data.updater import DataUpdater
 from opal_client.data.fetcher import DataFetcher
 from opal_client.policy_store.base_policy_store_client import BasePolicyStoreClient
 from opal_client.policy_store.policy_store_client_factory import PolicyStoreClientFactory
+from opal_client.limiter import StartupLoadLimiter
 from opal_client.opa.runner import OpaRunner
 from opal_client.opa.options import OpaServerOptions
 from opal_client.policy.api import init_policy_router
@@ -71,6 +72,10 @@ class OpalClient:
             default_callbacks = []
 
         self._callbacks_register = CallbacksRegister(default_callbacks)
+
+        self._startup_wait = None
+        if opal_client_config.WAIT_ON_SERVER_LOAD:
+            self._startup_wait = StartupLoadLimiter()
 
         # Init policy updater
         if policy_updater is not None:
@@ -193,6 +198,9 @@ class OpalClient:
 
         If there is a policy store to run, we wait until its up before launching dependent tasks.
         """
+        if self._startup_wait:
+            await self._startup_wait()
+
         if self.opa_runner:
             # runs the policy store dependent tasks after policy store is up
             self.opa_runner.register_opa_initial_start_callbacks([self.launch_policy_store_dependent_tasks])

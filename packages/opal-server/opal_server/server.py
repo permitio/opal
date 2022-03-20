@@ -1,3 +1,4 @@
+from opal_server.loadlimiting import init_loadlimit_router
 import os
 import asyncio
 import shutil
@@ -46,6 +47,7 @@ class OpalServer:
         jwks_url: str = None,
         jwks_static_dir: str = None,
         master_token: str = None,
+        loadlimit_notation: str = None,
     ) -> None:
         """
         Args:
@@ -57,6 +59,8 @@ class OpalServer:
                 clients should get the data from.
             broadcaster_uri (str, optional): Which server/medium should the PubSub use for broadcasting.
                 Defaults to BROADCAST_URI.
+            loadlimit_notation (str, optional): Rate limit configuration for opal client connections.
+                Defaults to None, in that case no rate limit is enforced
 
             The server can run in multiple workers (by gunicorn or uvicorn).
 
@@ -80,6 +84,7 @@ class OpalServer:
         jwks_static_dir: str = load_conf_if_none(jwks_static_dir, opal_server_config.AUTH_JWKS_STATIC_DIR)
         master_token: str = load_conf_if_none(master_token, opal_server_config.AUTH_MASTER_TOKEN)
         self._init_policy_watcher: bool = load_conf_if_none(init_policy_watcher, opal_server_config.REPO_WATCHER_ENABLED)
+        self.loadlimit_notation: str = load_conf_if_none(loadlimit_notation, opal_server_config.CLIENT_LOAD_LIMIT_NOTATION)
         self._policy_remote_url = policy_remote_url
 
         configure_logs()
@@ -199,6 +204,7 @@ class OpalServer:
         webhook_router = init_git_webhook_router(self.pubsub.endpoint, authenticator)
         security_router = init_security_router(self.signer, StaticBearerAuthenticator(self.master_token))
         statistics_router = init_statistics_router(self.opal_statistics)
+        loadlimit_router = init_loadlimit_router(self.loadlimit_notation)
 
         # mount the api routes on the app object
         app.include_router(bundles_router, tags=["Bundle Server"], dependencies=[Depends(authenticator)])
@@ -207,6 +213,7 @@ class OpalServer:
         app.include_router(security_router, tags=["Security"])
         app.include_router(self.pubsub.router, tags=["Pub/Sub"])
         app.include_router(statistics_router, tags=['Server Statistics'], dependencies=[Depends(authenticator)])
+        app.include_router(loadlimit_router, tags=["Client Load Limiting"], dependencies=[Depends(authenticator)])
 
         if self.jwks_endpoint is not None:
             # mount jwts (static) route
