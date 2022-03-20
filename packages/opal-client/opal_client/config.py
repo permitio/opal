@@ -72,8 +72,8 @@ class OpalClientConfig(Confi):
     CLIENT_API_SERVER_PORT = confi.int("CLIENT_API_SERVER_PORT", 7000,
                                        description="(if run via CLI)  Port for the opal-client's internal server to bind")
 
-    WAIT_ON_SERVER_LOAD = confi.bool("WAIT_ON_SERVER_LOAD", False, 
-                                           description="If set, client would wait for 200 from server's loadlomit endpoint before starting background tasks")
+    WAIT_ON_SERVER_LOAD = confi.bool("WAIT_ON_SERVER_LOAD", False,
+                                           description="If set, client would wait for 200 from server's loadlimit endpoint before starting background tasks")
 
     # Policy updater configuration ------------------------------------------------
 
