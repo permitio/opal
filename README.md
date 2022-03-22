@@ -60,7 +60,9 @@ OPAL runs in the background, supercharging policy-agents, keeping them in sync w
 
    - [Check out the Helm Chart for Kubernetes](https://github.com/permitio/opal-helm-chart)
 
-- Check out this webinar and Q&A about OPAL [on our YouTube channel](https://www.youtube.com/watch?v=A5adHlkmdC0&t=1s)
+- A video demo of OPAL is available [here](https://www.youtube.com/watch?v=IkR6EGY3QfM)
+
+- You can also check out this webinar and Q&A about OPAL [on our YouTube channel](https://www.youtube.com/watch?v=A5adHlkmdC0&t=1s)
    <br>
 
 - 💪 &nbsp; TL;DR - This one command will download and run a working configuration of OPAL server and OPAL client on your machine:
