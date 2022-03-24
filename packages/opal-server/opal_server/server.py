@@ -1,3 +1,4 @@
+from opal_server.api import build_api
 from opal_server.loadlimiting import init_loadlimit_router
 import os
 import asyncio
@@ -141,7 +142,7 @@ class OpalServer:
             self.opal_statistics = None
 
         # if stats are enabled, the server workers must be listening on the broadcast
-        # channel for their own syncronization, not just for their clients. therefore
+        # channel for their own synchronization, not just for their clients. Therefore,
         # we need a "global" listening context
         self.broadcast_listening_context: Optional[EventBroadcasterContextManager] = None
         if self.broadcaster_uri is not None and opal_common_config.STATISTICS_ENABLED:
@@ -224,6 +225,9 @@ class OpalServer:
         @app.get("/", include_in_schema=False)
         def healthcheck():
             return {"status": "ok"}
+
+        # new API
+        app.mount("/api", build_api())
 
         return app
 

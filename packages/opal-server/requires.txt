@@ -5,3 +5,4 @@ pyjwt[crypto]==2.1.0
 websockets==9.1
 ddtrace
 slowapi
+pygit2

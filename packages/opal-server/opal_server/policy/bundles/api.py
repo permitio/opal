@@ -21,9 +21,12 @@ async def get_repo(
     use_fixed_path: bool = None,
 ) -> Repo:
     base_clone_path = load_conf_if_none(base_clone_path, opal_server_config.POLICY_REPO_CLONE_PATH)
-    clone_subdirectory_prefix = load_conf_if_none(clone_subdirectory_prefix, opal_server_config.POLICY_REPO_CLONE_FOLDER_PREFIX)
+    clone_subdirectory_prefix = load_conf_if_none(clone_subdirectory_prefix,
+                                                  opal_server_config.POLICY_REPO_CLONE_FOLDER_PREFIX)
     use_fixed_path = load_conf_if_none(use_fixed_path, opal_server_config.POLICY_REPO_REUSE_CLONE_PATH)
-    clone_path_finder = RepoClonePathFinder(base_clone_path=base_clone_path, clone_subdirectory_prefix=clone_subdirectory_prefix, use_fixed_path=use_fixed_path)
+    clone_path_finder = RepoClonePathFinder(base_clone_path=base_clone_path,
+                                            clone_subdirectory_prefix=clone_subdirectory_prefix,
+                                            use_fixed_path=use_fixed_path)
     repo_path = clone_path_finder.get_clone_path()
 
     policy_repo_not_found_error = HTTPException(
@@ -44,6 +47,7 @@ async def get_repo(
 
 def normalize_path(path: str) -> Path:
     return Path(path[1:]) if path.startswith('/') else Path(path)
+
 
 async def get_input_paths_or_throw(
     repo: Repo = Depends(get_repo),
@@ -77,6 +81,7 @@ async def get_input_paths_or_throw(
     paths = paths or [Path(".")]
     return paths
 
+
 @router.get("/policy", response_model=PolicyBundle)
 async def get_policy(
     repo: Repo = Depends(get_repo),
@@ -90,6 +95,11 @@ async def get_policy(
         extensions=opal_server_config.OPA_FILE_EXTENSIONS,
         manifest_filename=opal_server_config.POLICY_REPO_MANIFEST_PATH,
     )
+
+    return make_bundle(maker, repo, base_hash)
+
+
+def make_bundle(maker: BundleMaker, repo: Repo, base_hash: Optional[str] = None):
     if base_hash is None:
         return maker.make_bundle(repo.head.commit)
 
