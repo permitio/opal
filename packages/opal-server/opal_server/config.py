@@ -63,6 +63,7 @@ class OpalServerConfig(Confi):
     POLICY_BUNDLE_SERVER_TOKEN = confi.str("POLICY_BUNDLE_SERVER_TOKEN", None, description="Bearer token to sent to API bundle server")
     POLICY_BUNDLE_TMP_PATH = confi.str("POLICY_BUNDLE_TMP_PATH", "/tmp/bundle.tar.gz", description="Path for temp policy file, need to be writeable")
     POLICY_BUNDLE_GIT_ADD_PATTERN = confi.str("POLICY_BUNDLE_GIT_ADD_PATTERN", "*", description="File pattern to add files to git default to all the files (*)")
+    SCOPE_BASE_DIR = confi.str("SCOPE_BASE_DIR", "/tmp/scopes")
 
     REPO_WATCHER_ENABLED = confi.bool("REPO_WATCHER_ENABLED", True)
 

@@ -1,19 +1,24 @@
 import pathlib
 from typing import Optional
 
-from fastapi import APIRouter, Path, Depends, Response, status, Query
+from fastapi import APIRouter, Path, Depends, Response, status, Query, HTTPException
 from git import Repo
 
 from opal_server.policy.bundles.api import make_bundle
-from opal_server.scopes.scope_store import ScopeStore, ScopeConfig
+from opal_server.scopes.pull_engine import CeleryPullEngine
+from opal_server.scopes.pullers import InvalidScopeSourceType, create_puller
+from opal_server.scopes.scope_store import ScopeStore
 from opal_common.git.bundle_maker import BundleMaker
 from opal_server.config import opal_server_config
 from opal_common.schemas.policy import PolicyBundle
+from opal_server.scopes.scopes import ScopeConfig
 
 
 def setup_scopes_api():
     router = APIRouter()
-    scopes = ScopeStore(base_dir="/Users/orishavit/scopes", writer=True)
+    scopes = ScopeStore(
+        base_dir=opal_server_config.SCOPE_BASE_DIR,
+        fetch_engine=CeleryPullEngine())
 
     def get_scopes():
         return scopes
@@ -31,11 +36,19 @@ def setup_scopes_api():
 
     @router.post("/scopes", status_code=status.HTTP_201_CREATED)
     async def add_scope(
-        response: Response,
         scope_config: ScopeConfig,
         scopes: ScopeStore = Depends(get_scopes)
     ):
-        scopes.add_scope(scope_config)
+        try:
+            scope = scopes.add_scope(scope_config)
+            return {
+                "task_id": str(scope.task_id)
+            }
+        except InvalidScopeSourceType as e:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f'Invalid scope source type: {e.invalid_type}'
+            )
 
     @router.delete("/scopes/{scope_id}")
     async def delete_scope(
@@ -56,15 +69,29 @@ def setup_scopes_api():
             None, description="hash of previous bundle already downloaded, server will return a diff bundle.")
     ):
         scope = scopes.get_scope(scope_id)
-        repository = scope.repository
+        repo = Repo(scope.location)
 
         bundle_maker = BundleMaker(
-            Repo(repository.path),
+            repo,
             {pathlib.Path(".")},
             extensions=opal_server_config.OPA_FILE_EXTENSIONS,
             manifest_filename=opal_server_config.POLICY_REPO_MANIFEST_PATH,
         )
 
-        return make_bundle(bundle_maker, Repo(repository.path), base_hash)
+        return make_bundle(bundle_maker, repo, base_hash)
+
+    @router.post("/scopes/periodic-check")
+    async def periodic_check(
+        scopes: ScopeStore = Depends(get_scopes)
+    ):
+        for scope_id, scope in scopes.scopes.items():
+            if not scope.config.source.polling:
+                continue
+
+            puller = create_puller(scopes.base_dir, scope.config)
+
+            if puller.check():
+                puller.pull()
+                ### PUBSUB
 
     return router
