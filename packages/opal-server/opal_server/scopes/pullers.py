@@ -66,8 +66,7 @@ class GitSourcePuller(SourcePuller):
         else:
             repo = Repository(repo_path)
             repo.remotes['origin'].fetch(callbacks=callbacks)
-            repo.create_reference('refs/remotes/origin/master', 'refs/heads/master')
-            repo.checkout_head()
+            repo.checkout(repo.references['refs/remotes/origin/master'].resolve().name)
 
     def _get_repo_path(self):
         return self.base_dir / self.scope_id

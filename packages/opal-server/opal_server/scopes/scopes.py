@@ -1,4 +1,4 @@
-from pathlib import Path
+from typing import Optional
 
 from pydantic import BaseModel
 
@@ -14,7 +14,7 @@ class ReadOnlyScopeStore(Exception):
     pass
 
 
-class Scope:
+class Scope(BaseModel):
     config: ScopeConfig
-    location: Path
-    task_id: str
+    location: str
+    task_id: Optional[str]
