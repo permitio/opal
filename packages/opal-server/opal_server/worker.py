@@ -2,7 +2,6 @@
 OPAL background worker process
 """
 import json
-import os
 from pathlib import Path
 
 import requests
@@ -10,23 +9,18 @@ from celery import Celery, current_app, current_task
 
 from opal_server.scopes.pullers import create_puller
 from opal_server.scopes.scope_store import ScopeConfig
-
-REDIS_URL = os.environ.get("OPAL_REDIS_URL", 'redis://localhost')
+from opal_server.config import opal_server_config
 
 app = Celery('opal-worker',
-             broker=REDIS_URL,
-             backend=REDIS_URL)
+             broker=opal_server_config.REDIS_URL,
+             backend=opal_server_config.REDIS_URL)
 
 
 @app.on_after_configure.connect
 def setup_periodic_tasks(sender, **kwargs):
-    opal_url = os.environ.get("OPAL_URL")
-
-    if opal_url is None:
-        raise Exception("Missing OPAL_URL")
     sender.add_periodic_task(
         10 * 60.0,  # 10 minutes
-        periodic_check.s(opal_url)
+        periodic_check.s(opal_server_config.PRIMARY_URL)
     )
 
 
@@ -43,7 +37,7 @@ def fetch_source(base_dir: str, scope_json: str):
 def setup_periodic_check():
     origin = current_task.request.hostname
     current_app.add_periodic_task(
-        1 * 60.0, # 10 minutes
+        1 * 60.0,  # 10 minutes
         periodic_check.s(origin)
     )
 

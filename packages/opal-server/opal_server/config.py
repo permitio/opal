@@ -131,7 +131,9 @@ class OpalServerConfig(Confi):
 
     # OPAL role: primary or secondary
     SERVER_ROLE = confi.str("SERVER_ROLE", "primary")
-    PRIMARY_URL = confi.str("PRIMARY_URL", "http://localohst:7003")
+    PRIMARY_URL = confi.str("PRIMARY_URL", "http://localhost:7003")
+
+    REDIS_URL = confi.str("REDIS_URL", "redis://localhost")
 
 
 opal_server_config = OpalServerConfig(prefix="OPAL_")

@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
 from pathlib import Path
+from typing import List, Dict
 
 import aiohttp
 from fastapi import status
@@ -17,11 +18,15 @@ class ScopeStore(ABC):
         self.base_dir = base_dir
 
     @abstractmethod
-    def add_scope(self, scope_config: ScopeConfig) -> Scope:
+    async def add_scope(self, scope_config: ScopeConfig) -> Scope:
         pass
 
     @abstractmethod
     async def get_scope(self, scope_id: str) -> Scope:
+        pass
+
+    @abstractmethod
+    async def all_scopes(self) -> dict[str, Scope]:
         pass
 
 
@@ -31,7 +36,10 @@ class LocalScopeStore(ScopeStore):
         self.engine = fetch_engine
         self.scopes: dict[str, Scope] = {}
 
-    def add_scope(self, scope_config: ScopeConfig) -> Scope:
+    async def all_scopes(self) -> dict[str, Scope]:
+        return self.scopes
+
+    async def add_scope(self, scope_config: ScopeConfig) -> Scope:
         task_id = self._fetch_scope_from_source(scope_config)
 
         scope = Scope(
@@ -61,7 +69,7 @@ class RemoteScopeStore(ScopeStore):
         super().__init__(base_dir)
         self.primary_url = primary_url
 
-    def add_scope(self, scope_config: ScopeConfig) -> Scope:
+    async def add_scope(self, scope_config: ScopeConfig) -> Scope:
         raise ReadOnlyScopeStore()
 
     async def get_scope(self, scope_id: str) -> Scope:
@@ -76,3 +84,6 @@ class RemoteScopeStore(ScopeStore):
                     )
                 else:
                     raise ScopeNotFound()
+
+    async def all_scopes(self) -> dict[str, Scope]:
+        raise ReadOnlyScopeStore()
