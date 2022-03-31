@@ -1,5 +1,3 @@
-from typing import Optional
-
 from pydantic import BaseModel
 
 from opal_server.scopes.sources import ScopeSource
@@ -17,4 +15,3 @@ class ReadOnlyScopeStore(Exception):
 class Scope(BaseModel):
     config: ScopeConfig
     location: str
-    task_id: Optional[str]

@@ -14,11 +14,9 @@ class PullEngine(ABC):
 class CeleryPullEngine(PullEngine):
     def fetch_source(self, base_dir: Path, scope: ScopeConfig):
         from opal_server import worker
-        result = worker.fetch_source.delay(str(base_dir), scope.json())
-        return result.task_id
+        worker.fetch_source.delay(str(base_dir), scope.json())
 
 
 class LocalPullEngine(PullEngine):
     def fetch_source(self, base_dir: Path, scope: ScopeConfig):
         create_puller(base_dir, scope).pull()
-        return "{local}"
