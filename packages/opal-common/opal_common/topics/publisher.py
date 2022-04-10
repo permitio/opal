@@ -105,17 +105,19 @@ class ServerSideTopicPublisher(TopicPublisher):
     """
     A simple wrapper around a PubSubEndpoint that exposes publish().
     """
-    def __init__(self, endpoint: PubSubEndpoint):
+    def __init__(self, endpoint: PubSubEndpoint, prefix=""):
         """inits the publisher.
 
         Args:
             endpoint (PubSubEndpoint): a pub/sub endpoint
         """
         self._endpoint = endpoint
+        self._prefix = prefix
         super().__init__()
 
     def publish(self, topics: TopicList, data: Any = None):
-        self._tasks.append(asyncio.create_task(self._endpoint.publish(topics=topics, data=data)))
+        prefixed_topics = [f'{self._prefix}/{topic}' for topic in topics]
+        self._tasks.append(asyncio.create_task(self._endpoint.publish(topics=prefixed_topics, data=data)))
 
 
 class ClientSideTopicPublisher(TopicPublisher):
@@ -124,7 +126,7 @@ class ClientSideTopicPublisher(TopicPublisher):
     Provides start() and stop() shortcuts that helps treat this client
     as a separate "process" or task that runs in the background.
     """
-    def __init__(self, client: PubSubClient, server_uri: str):
+    def __init__(self, client: PubSubClient, server_uri: str, prefix=''):
         """inits the publisher.
 
         Args:
@@ -133,6 +135,7 @@ class ClientSideTopicPublisher(TopicPublisher):
         """
         self._client = client
         self._server_uri = server_uri
+        self._prefix = prefix
         super().__init__()
 
     def start(self):
@@ -165,7 +168,8 @@ class ClientSideTopicPublisher(TopicPublisher):
             topics (TopicList): a list of topics to publish the message to
             data (Any): optional data to publish as part of the message
         """
-        self._tasks.append(asyncio.create_task(self._publish(topics=topics, data=data)))
+        prefixed_topics = [f'{self._prefix}/{topic}' for topic in topics]
+        self._tasks.append(asyncio.create_task(self._publish(topics=prefixed_topics, data=data)))
 
     async def _publish(self, topics: TopicList, data: Any = None) -> bool:
         """

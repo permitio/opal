@@ -19,6 +19,9 @@ class SourcePuller(ABC):
     def pull(self):
         pass
 
+    def diff(self) -> (str, str):
+        return None, None
+
 
 @dataclasses.dataclass
 class InvalidScopeSourceType(Exception):
@@ -56,6 +59,10 @@ class GitSourcePuller(SourcePuller):
             self._pull()
         except pygit2.GitError as e:
             raise GitError(str(e))
+
+    def diff(self) -> (str, str):
+        repo = Repository(self._get_repo_path())
+        return repo.head.target, repo.references['refs/remotes/origin/master'].target
 
     def _pull(self):
         repo_path = self._get_repo_path()

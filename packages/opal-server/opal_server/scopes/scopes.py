@@ -1,11 +1,11 @@
 from pydantic import BaseModel
 
-from opal_server.scopes.sources import ScopeSource
+from opal_server.scopes.sources import PolicySource
 
 
 class ScopeConfig(BaseModel):
     scope_id: str
-    source: ScopeSource
+    policy: PolicySource
 
 
 class ReadOnlyScopeStore(Exception):

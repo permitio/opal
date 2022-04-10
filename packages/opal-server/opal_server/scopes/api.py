@@ -3,20 +3,23 @@ import pathlib
 from typing import Optional
 
 from fastapi import APIRouter, Path, status, Query, HTTPException
+from fastapi_websocket_pubsub import PubSubEndpoint
 from git import Repo
 
+from opal_common.topics.publisher import ServerSideTopicPublisher
 from opal_server.policy.bundles.api import make_bundle
+from opal_server.policy.watcher.callbacks import publish_changed_directories
 from opal_server.scopes.pull_engine import CeleryPullEngine
 from opal_server.scopes.pullers import InvalidScopeSourceType, create_puller
 from opal_server.scopes.scope_store import RemoteScopeStore, LocalScopeStore, ScopeStore, ScopeNotFound, \
     ReadOnlyScopeStore
 from opal_common.git.bundle_maker import BundleMaker
 from opal_server.config import opal_server_config
-from opal_common.schemas.policy import PolicyBundle
+from opal_common.schemas.policy import PolicyBundle, PolicyUpdateMessage
 from opal_server.scopes.scopes import ScopeConfig
 
 
-def setup_scopes_api():
+def setup_scopes_api(pubsub_endpoint: PubSubEndpoint):
     router = APIRouter()
 
     scope_store: ScopeStore
@@ -24,7 +27,8 @@ def setup_scopes_api():
     if opal_server_config.SERVER_ROLE == 'primary':
         scope_store = LocalScopeStore(
             base_dir=opal_server_config.SCOPE_BASE_DIR,
-            fetch_engine=CeleryPullEngine())
+            fetch_engine=CeleryPullEngine()
+        )
     else:
         scope_store = RemoteScopeStore(
             primary_url=opal_server_config.PRIMARY_URL,
@@ -68,7 +72,7 @@ def setup_scopes_api():
 
         bundle_maker = BundleMaker(
             repo,
-            {pathlib.Path(".")},
+            {pathlib.Path(p) for p in scope.config.policy.directories},
             extensions=opal_server_config.OPA_FILE_EXTENSIONS,
             manifest_filename=opal_server_config.POLICY_REPO_MANIFEST_PATH,
         )
@@ -81,13 +85,23 @@ def setup_scopes_api():
         scopes = await scope_store.all_scopes()
 
         for scope_id, scope in scopes.items():
-            if not scope.config.source.polling:
+            if not scope.config.policy.polling:
                 continue
 
             puller = create_puller(Path(scope_store.base_dir), scope.config)
 
             if puller.check():
+                old_commit, new_commit = puller.diff()
                 puller.pull()
-                ### PUBSUB
+
+                publisher = ServerSideTopicPublisher(
+                    endpoint=pubsub_endpoint,
+                    prefix=scope.config.scope_id
+                )
+
+                await publish_changed_directories(
+                    old_commit=old_commit, new_commit=new_commit,
+                    publisher=publisher
+                )
 
     return router

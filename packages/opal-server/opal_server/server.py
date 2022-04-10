@@ -227,7 +227,7 @@ class OpalServer:
             return {"status": "ok"}
 
         # new API
-        app.mount("/api", build_api())
+        app.mount("/api", build_api(self.pubsub.endpoint))
 
         return app
 

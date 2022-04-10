@@ -1,4 +1,4 @@
-from typing import Optional, Union
+from typing import Optional, Union, List
 
 from pydantic import BaseModel
 
@@ -22,12 +22,13 @@ class UserPassAuthData(ScopeSourceAuthData):
     password: str
 
 
-class ScopeSource(BaseModel):
+class PolicySource(BaseModel):
     source_type: str
     url: str
     polling: bool = False
     auth_data: Optional[Union[SSHAuthData, GitHubTokenAuthData]]
+    directories: List[str] = ['.']
 
 
-class GitScopeSource(ScopeSource):
+class GitScopeSource(PolicySource):
     SOURCE_TYPE = 'git'
