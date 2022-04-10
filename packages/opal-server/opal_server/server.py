@@ -208,7 +208,7 @@ class OpalServer:
 
         # mount the api routes on the app object
         app.include_router(bundles_router, tags=["Bundle Server"], dependencies=[Depends(authenticator)])
-        app.include_router(data_updates_router, tags=["Data Updates"], dependencies=[Depends(authenticator)])
+        app.include_router(data_updates_router, tags=["Data Updates"])
         app.include_router(webhook_router, tags=["Github Webhook"])
         app.include_router(security_router, tags=["Security"])
         app.include_router(self.pubsub.router, tags=["Pub/Sub"])
