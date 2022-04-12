@@ -7,8 +7,8 @@ import pygit2
 from pygit2 import discover_repository, clone_repository, Repository, RemoteCallbacks, KeypairFromMemory, Username, \
     UserPass
 
-from opal_server.scopes.scopes import ScopeConfig
-from opal_server.scopes.sources import GitScopeSource, ScopeSourceAuthData, SSHAuthData, GitHubTokenAuthData
+from opal_common.scopes.scopes import ScopeConfig
+from opal_common.scopes.sources import GitScopeSource, ScopeSourceAuthData, SSHAuthData, GitHubTokenAuthData
 
 
 class SourcePuller(ABC):

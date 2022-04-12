@@ -11,29 +11,34 @@ from opal_server.policy.bundles.api import make_bundle
 from opal_server.policy.watcher.callbacks import publish_changed_directories
 from opal_server.scopes.pull_engine import CeleryPullEngine
 from opal_server.scopes.pullers import InvalidScopeSourceType, create_puller
-from opal_server.scopes.scope_store import RemoteScopeStore, LocalScopeStore, ScopeStore, ScopeNotFound, \
-    ReadOnlyScopeStore
+from opal_server.scopes.scope_store import LocalScopeStore, ScopeNotFound, \
+    ReadOnlyScopeStore, ScopeStore, PermitScopeStore
 from opal_common.git.bundle_maker import BundleMaker
 from opal_server.config import opal_server_config
-from opal_common.schemas.policy import PolicyBundle, PolicyUpdateMessage
-from opal_server.scopes.scopes import ScopeConfig
+from opal_common.schemas.policy import PolicyBundle
+from opal_common.scopes.scopes import ScopeConfig
+
+
+def _get_scope_store() -> ScopeStore:
+    if opal_server_config.SCOPE_STORE_TYPE == "local":
+        return LocalScopeStore(
+            base_dir=opal_server_config.SCOPE_BASE_DIR,
+            pull_engine=CeleryPullEngine()
+        )
+    elif opal_server_config.SCOPE_STORE_TYPE == "permit":
+        return PermitScopeStore(
+            base_dir=opal_server_config.SCOPE_BASE_DIR,
+            permit_url=opal_server_config.PERMIT_API_URL,
+            redis=opal_server_config.REDIS_URL,
+            puller=CeleryPullEngine()
+        )
+    else:
+        raise Exception("Invalid scope store type")
 
 
 def setup_scopes_api(pubsub_endpoint: PubSubEndpoint):
     router = APIRouter()
-
-    scope_store: ScopeStore
-
-    if opal_server_config.SERVER_ROLE == 'primary':
-        scope_store = LocalScopeStore(
-            base_dir=opal_server_config.SCOPE_BASE_DIR,
-            fetch_engine=CeleryPullEngine()
-        )
-    else:
-        scope_store = RemoteScopeStore(
-            primary_url=opal_server_config.PRIMARY_URL,
-            base_dir=opal_server_config.SCOPE_BASE_DIR
-        )
+    scope_store = _get_scope_store()
 
     @router.get("/scopes/{scope_id}", response_model=ScopeConfig)
     async def get_scope(
@@ -84,7 +89,7 @@ def setup_scopes_api(pubsub_endpoint: PubSubEndpoint):
     ):
         scopes = await scope_store.all_scopes()
 
-        for scope_id, scope in scopes.items():
+        for scope_id, scope in scopes:
             if not scope.config.policy.polling:
                 continue
 

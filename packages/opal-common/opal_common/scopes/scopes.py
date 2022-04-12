@@ -1,6 +1,6 @@
 from pydantic import BaseModel
 
-from opal_server.scopes.sources import PolicySource
+from opal_common.scopes.sources import PolicySource
 
 
 class ScopeConfig(BaseModel):

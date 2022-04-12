@@ -8,3 +8,4 @@ slowapi
 pygit2
 celery[redis]
 requests
+aioredis

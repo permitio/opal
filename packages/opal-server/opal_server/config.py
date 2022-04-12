@@ -129,11 +129,9 @@ class OpalServerConfig(Confi):
     # optional APM tracing with datadog
     ENABLE_DATADOG_APM = confi.bool("ENABLE_DATADOG_APM", False, description="Set if OPAL server should enable tracing with datadog APM")
 
-    # OPAL role: primary or secondary
-    SERVER_ROLE = confi.str("SERVER_ROLE", "primary")
-    PRIMARY_URL = confi.str("PRIMARY_URL", "http://localhost:7003")
-
     REDIS_URL = confi.str("REDIS_URL", "redis://localhost")
+    SCOPE_STORE_TYPE = confi.str("SCOPE_STORE_TYPE", "local")
+    PERMIT_API_URL = confi.str("PERMIT_API_URL", "https://permit.io")
 
 
 opal_server_config = OpalServerConfig(prefix="OPAL_")

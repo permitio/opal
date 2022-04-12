@@ -26,7 +26,7 @@ class PolicySource(BaseModel):
     source_type: str
     url: str
     polling: bool = False
-    auth_data: Optional[Union[SSHAuthData, GitHubTokenAuthData]]
+    settings: Optional[Union[SSHAuthData, GitHubTokenAuthData]]
     directories: List[str] = ['.']
 
 
