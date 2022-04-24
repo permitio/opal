@@ -131,7 +131,7 @@ class OpalServerConfig(Confi):
 
     REDIS_URL = confi.str("REDIS_URL", "redis://localhost")
     BACKEND_URL = confi.str("BACKEND_URL", "http://localhost:8000")
-    SCOPE_API_KEY = confi.str("SCOPE_API_KEY")
+    SCOPE_API_KEY = confi.str("SCOPE_API_KEY", "")
 
 
 opal_server_config = OpalServerConfig(prefix="OPAL_")

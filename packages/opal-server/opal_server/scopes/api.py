@@ -30,6 +30,9 @@ async def preload_scopes():
         redis=RedisDB(opal_server_config.REDIS_URL)
     )
 
+    if opal_server_config.SCOPE_API_KEY == "":
+        return
+
     headers = {
         'Authorization': f'Bearer {opal_server_config.SCOPE_API_KEY}'
     }
