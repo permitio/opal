@@ -8,7 +8,7 @@ from pygit2 import discover_repository, clone_repository, Repository, RemoteCall
     UserPass
 
 from opal_common.scopes.scopes import ScopeConfig
-from opal_common.scopes.sources import GitScopeSource, ScopeSourceAuthData, SSHAuthData, GitHubTokenAuthData
+from opal_common.scopes.sources import SourceAuthData, SSHAuthData, GitHubTokenAuthData, GitPolicySource
 
 
 class SourcePuller(ABC):
@@ -34,7 +34,7 @@ class GitError(Exception):
 
 
 class GitSourcePuller(SourcePuller):
-    def __init__(self, scope_id: str, base_dir: Path, source: GitScopeSource):
+    def __init__(self, scope_id: str, base_dir: Path, source: GitPolicySource):
         self.scope_id = scope_id
         self.base_dir = base_dir
         self.source = source
@@ -79,11 +79,11 @@ class GitSourcePuller(SourcePuller):
         return self.base_dir / self.scope_id
 
     def _get_callbacks(self):
-        return GitCallbacks(self.source.auth_data)
+        return GitCallbacks(self.source.auth)
 
 
 class GitCallbacks(RemoteCallbacks):
-    def __init__(self, auth_data: ScopeSourceAuthData):
+    def __init__(self, auth_data: SourceAuthData):
         super().__init__()
         self._auth_data = auth_data
 
@@ -109,7 +109,17 @@ class GitCallbacks(RemoteCallbacks):
 
 
 def create_puller(base_dir: Path, scope: ScopeConfig):
-    if scope.source.source_type == 'git':
-        return GitSourcePuller(scope.scope_id, base_dir, cast(GitScopeSource, scope.source))
+    if scope.policy.source_type == 'git':
+        auth_props = scope.policy.settings.get('auth', {})
+        auth = SourceAuthData(**auth_props)
+
+        if auth.auth_type == 'github_token':
+            auth = GitHubTokenAuthData(**auth_props)
+
+        policy_source = GitPolicySource(
+            auth=auth
+        )
+
+        return GitSourcePuller(scope.scope_id, base_dir, policy_source)
     else:
-        raise InvalidScopeSourceType(scope.source.source_type)
+        raise InvalidScopeSourceType(scope.policy.source_type)

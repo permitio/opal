@@ -14,4 +14,3 @@ class ReadOnlyScopeStore(Exception):
 
 class Scope(BaseModel):
     config: ScopeConfig
-    location: str

@@ -21,6 +21,7 @@ from opal_common.authentication.deps import JWTAuthenticator, StaticBearerAuthen
 from opal_common.config import opal_common_config
 from opal_server.config import opal_server_config
 from opal_server.publisher import setup_broadcaster_keepalive_task
+from opal_server.scopes.api import preload_scopes
 from opal_server.security.api import init_security_router
 from opal_server.security.jwks import JwksStaticEndpoint
 from opal_server.data.api import init_data_updates_router
@@ -185,7 +186,6 @@ class OpalServer:
         config.fastapi["service_name"] = "opal-server"
         config.fastapi["request_span_name"] = "opal-server"
 
-
     def _configure_api_routes(self, app: FastAPI):
         """
         mounts the api routes on the app object
@@ -242,6 +242,7 @@ class OpalServer:
         async def startup_event():
             logger.info("triggered startup event")
             asyncio.create_task(self.start_server_background_tasks())
+            await preload_scopes()
 
         @app.on_event("shutdown")
         async def shutdown_event():

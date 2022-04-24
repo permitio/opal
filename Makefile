@@ -89,7 +89,7 @@ docker-run-server-secure:
 		permitio/opal-server
 
 run-local-opal-server:
-	python -m uvicorn opal_server.main:app --reload --port 7002
+	OPAL_SCOPE_API_KEY=test python -m uvicorn opal_server.main:app --reload --port 7002
 
 run-local-worker:
-	OPAL_URL=http://localhost:7002 celery -A opal_server.worker worker --loglevel=DEBUG -B
+	OPAL_SCOPE_API_KEY=test OPAL_URL=http://localhost:7002 celery -A opal_server.worker worker --loglevel=DEBUG -B

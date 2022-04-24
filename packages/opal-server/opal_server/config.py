@@ -130,8 +130,8 @@ class OpalServerConfig(Confi):
     ENABLE_DATADOG_APM = confi.bool("ENABLE_DATADOG_APM", False, description="Set if OPAL server should enable tracing with datadog APM")
 
     REDIS_URL = confi.str("REDIS_URL", "redis://localhost")
-    SCOPE_STORE_TYPE = confi.str("SCOPE_STORE_TYPE", "local")
-    PERMIT_API_URL = confi.str("PERMIT_API_URL", "https://permit.io")
+    BACKEND_URL = confi.str("BACKEND_URL", "http://localhost:8000")
+    SCOPE_API_KEY = confi.str("SCOPE_API_KEY")
 
 
 opal_server_config = OpalServerConfig(prefix="OPAL_")

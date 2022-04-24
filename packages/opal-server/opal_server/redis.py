@@ -1,14 +1,11 @@
-from typing import TypeVar, Generic
-
 import aioredis
 from pydantic import BaseModel
-
-T = TypeVar('T')
 
 
 class RedisDB:
     def __init__(self, redis_url):
-        self._redis = aioredis.from_url(redis_url)
+        self._url = redis_url
+        self._redis = aioredis.from_url(self._url)
 
     async def set(self, key: str, value: BaseModel, ex_in_secs=None):
         await self._redis.set(key, self._serialize(value), ex=ex_in_secs)
@@ -18,7 +15,7 @@ class RedisDB:
         :param key:
         :param value:
         :param ex_in_secs:
-        :return: True if created, False if key already exists
+        :return: True if created, False if key already exist                    s
         '''
         return await self._redis.set(key, self._serialize(value), nx=True, ex=ex_in_secs)
 
@@ -33,6 +30,9 @@ class RedisDB:
             for key in keys:
                 value = await self._redis.get(key)
                 yield value
+
+    async def delete(self, key: str):
+        await self._redis.delete(key)
 
     def _serialize(self, value: BaseModel) -> str:
         return value.json()
