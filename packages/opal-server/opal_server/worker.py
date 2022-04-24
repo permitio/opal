@@ -8,7 +8,7 @@ import requests
 from celery import Celery, current_app, current_task
 
 from opal_server.scopes.pullers import create_puller
-from opal_server.scopes.scope_store import ScopeConfig
+from opal_server.scopes.scope_store import Scope
 from opal_server.config import opal_server_config
 
 app = Celery('opal-worker',
@@ -20,17 +20,16 @@ app = Celery('opal-worker',
 def setup_periodic_tasks(sender, **kwargs):
     sender.add_periodic_task(
         10 * 60.0,  # 10 minutes
-        periodic_check.s(opal_server_config.PRIMARY_URL)
+        periodic_check.s(opal_server_config.BACKEND_URL)
     )
 
 
 @app.task
 def fetch_source(base_dir: str, scope_json: str):
-    scope = ScopeConfig.parse_obj(json.loads(scope_json))
+    scope = Scope.parse_obj(json.loads(scope_json))
     puller = create_puller(Path(base_dir), scope)
 
     puller.pull()
-    return scope.scope_id
 
 
 @app.task

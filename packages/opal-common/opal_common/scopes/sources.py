@@ -1,6 +1,6 @@
-from typing import Optional, Union, List, Any
+from typing import List, Any
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class SourceAuthData(BaseModel):
@@ -25,9 +25,11 @@ class UserPassAuthData(SourceAuthData):
 class PolicySource(BaseModel):
     source_type: str
     url: str
-    settings: Any
     directories: List[str] = ['.']
+    manifest: str = Field('.manifest', description='path to manifest file')
+    settings: Any = Field({}, description="source type-specific configuration")
 
 
 class GitPolicySource(PolicySource):
     auth: SourceAuthData
+    branch: str = Field('main', description='Git branch to track')

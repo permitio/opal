@@ -3,7 +3,7 @@ from typing import Dict, List
 
 from opal_server.redis import RedisDB
 from opal_server.scopes.pull_engine import CeleryPullEngine
-from opal_common.scopes.scopes import ScopeConfig, Scope
+from opal_common.scopes.scopes import Scope
 
 
 class ScopeNotFound(Exception):
@@ -35,20 +35,13 @@ class ScopeStore:
         else:
             raise ScopeNotFound()
 
-    async def add_scope(self, config: ScopeConfig) -> Scope:
-        scope_id = config.scope_id
-        scope = Scope(
-            scope_id=scope_id,
-            config=config
-        )
-
-        created = await self._redis.set_if_not_exists(
-            self._redis_key(scope_id),
+    async def add_scope(self, scope: Scope) -> Scope:
+        await self._redis.set_if_not_exists(
+            self._redis_key(scope.scope_id),
             scope
         )
 
-        if created:
-            self._puller.fetch_source(Path(self._base_dir), scope.config)
+        self._puller.fetch_source(Path(self._base_dir), scope)
 
         return scope
 

@@ -7,7 +7,7 @@ import pygit2
 from pygit2 import discover_repository, clone_repository, Repository, RemoteCallbacks, KeypairFromMemory, Username, \
     UserPass
 
-from opal_common.scopes.scopes import ScopeConfig
+from opal_common.scopes.scopes import Scope
 from opal_common.scopes.sources import SourceAuthData, SSHAuthData, GitHubTokenAuthData, GitPolicySource
 
 
@@ -101,14 +101,14 @@ class GitCallbacks(RemoteCallbacks):
             github_token_data = cast(GitHubTokenAuthData, self._auth_data)
 
             return UserPass(
-                username="github",
+                username="x-access-token",
                 password=github_token_data.token
             )
 
         return Username(username_from_url)
 
 
-def create_puller(base_dir: Path, scope: ScopeConfig):
+def create_puller(base_dir: Path, scope: Scope):
     if scope.policy.source_type == 'git':
         auth_props = scope.policy.settings.get('auth', {})
         auth = SourceAuthData(**auth_props)
@@ -117,6 +117,9 @@ def create_puller(base_dir: Path, scope: ScopeConfig):
             auth = GitHubTokenAuthData(**auth_props)
 
         policy_source = GitPolicySource(
+            source_type=scope.policy.source_type,
+            url=scope.policy.url,
+            directories=scope.policy.directories,
             auth=auth
         )
 

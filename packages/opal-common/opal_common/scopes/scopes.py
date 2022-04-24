@@ -1,11 +1,7 @@
 from pydantic import BaseModel
 
+from opal_common.schemas.data import DataSourceConfig
 from opal_common.scopes.sources import PolicySource
-
-
-class ScopeConfig(BaseModel):
-    scope_id: str
-    policy: PolicySource
 
 
 class ReadOnlyScopeStore(Exception):
@@ -13,4 +9,6 @@ class ReadOnlyScopeStore(Exception):
 
 
 class Scope(BaseModel):
-    config: ScopeConfig
+    scope_id: str
+    policy: PolicySource
+    data: DataSourceConfig
