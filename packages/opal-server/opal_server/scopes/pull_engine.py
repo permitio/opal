@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from opal_common.scopes.scopes import Scope
+from opal_common.schemas.scopes import Scope
 
 
 class CeleryPullEngine:

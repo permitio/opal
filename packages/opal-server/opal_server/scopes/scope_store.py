@@ -1,9 +1,9 @@
 from pathlib import Path
-from typing import Dict, List
+from typing import List
 
 from opal_server.redis import RedisDB
 from opal_server.scopes.pull_engine import CeleryPullEngine
-from opal_common.scopes.scopes import Scope
+from opal_common.schemas.scopes import Scope
 
 
 class ScopeNotFound(Exception):

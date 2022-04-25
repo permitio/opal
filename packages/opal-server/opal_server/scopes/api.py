@@ -1,4 +1,3 @@
-import json
 import os
 import pathlib
 from typing import Optional, List
@@ -10,12 +9,11 @@ from fastapi_websocket_pubsub import PubSubEndpoint
 from git import Repo
 from pydantic import parse_obj_as
 
-from opal_common.scopes.scopes import Scope
+from opal_common.schemas.scopes import Scope
 from opal_common.topics.publisher import ServerSideTopicPublisher
 from opal_server.policy.bundles.api import make_bundle
 from opal_server.policy.watcher.callbacks import publish_changed_directories
 from opal_server.redis import RedisDB
-from opal_server.scopes.pull_engine import CeleryPullEngine
 from opal_server.scopes.pullers import InvalidScopeSourceType, create_puller
 from opal_server.scopes.scope_store import ScopeStore, ScopeNotFound, \
     ReadOnlyScopeStore
