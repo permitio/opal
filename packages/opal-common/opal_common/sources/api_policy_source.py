@@ -49,9 +49,9 @@ class ApiPolicySource(BasePolicySource):
         self.token = token
         self.bundle_hash = None
         self.etag = None
-        self.tmp_bundle_path = policy_bundle_path
-        self.tar_to_git = TarFileToLocalGitExtractor(self.local_clone_path, self.tmp_bundle_path, self.policy_bundle_git_add_pattern)
+        self.tmp_bundle_path = Path(policy_bundle_path)
         self.policy_bundle_git_add_pattern = policy_bundle_git_add_pattern
+        self.tar_to_git = TarFileToLocalGitExtractor(self.local_clone_path, self.tmp_bundle_path, self.policy_bundle_git_add_pattern)
 
     async def get_initial_policy_state_from_remote(self):
         """
