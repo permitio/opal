@@ -9,6 +9,7 @@ from fastapi_websocket_pubsub import PubSubEndpoint
 from git import Repo
 from pydantic import parse_obj_as
 
+from opal_common.schemas.data import DataSourceConfig
 from opal_common.schemas.scopes import Scope
 from opal_common.topics.publisher import ServerSideTopicPublisher
 from opal_server.policy.bundles.api import make_bundle
@@ -87,9 +88,9 @@ def setup_scopes_api(pubsub_endpoint: PubSubEndpoint):
                 status_code=status.HTTP_404_NOT_FOUND
             )
 
-    @router.get("/scopes/{scope_id}/bundle", response_model=PolicyBundle)
-    async def get_bundle(
-        scope_id: str = Path(..., title="Scope ID to be deleted"),
+    @router.get("/scopes/{scope_id}/policy", response_model=PolicyBundle)
+    async def get_scope_policy(
+        scope_id: str = Path(..., title="Scope ID"),
         base_hash: Optional[str] = Query(
             None, description="hash of previous bundle already downloaded, server will return a diff bundle.")
     ):
@@ -99,11 +100,18 @@ def setup_scopes_api(pubsub_endpoint: PubSubEndpoint):
         bundle_maker = BundleMaker(
             repo,
             {pathlib.Path(p) for p in scope.policy.directories},
-            extensions=opal_server_config.OPA_FILE_EXTENSIONS,
-            manifest_filename=opal_server_config.POLICY_REPO_MANIFEST_PATH,
+            extensions=scope.policy.extensions,
+            manifest_filename=scope.policy.manifest,
         )
 
         return make_bundle(bundle_maker, repo, base_hash)
+
+    @router.get('/scopes/{scope_id}/data', response_model=DataSourceConfig)
+    async def get_scope_data(
+        scope_id: str = Path(..., title='Scope ID')
+    ):
+        scope = await scope_store.get_scope(scope_id)
+        return scope.data
 
     @router.post("/scopes/periodic-check", dependencies=[Depends(_check_scope_api_key)])
     async def periodic_check(

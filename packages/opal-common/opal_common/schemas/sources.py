@@ -26,6 +26,7 @@ class PolicySource(BaseModel):
     source_type: str = Field(..., description='Policy source type (e.g. git)')
     url: str = Field(..., description='Policy source URL')
     directories: List[str] = Field(['.'], description='Directories to include')
+    extensions: List[str] = Field(['.rego', '.json'], description='File extensions to use')
     manifest: str = Field('.manifest', description='path to manifest file')
     settings: Any = Field({}, description="source type-specific configuration")
 
