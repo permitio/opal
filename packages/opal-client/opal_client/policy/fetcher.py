@@ -31,7 +31,7 @@ class PolicyFetcher:
         'reraise': True,
     }
 
-    def __init__(self, backend_url=None, token=None, retry_config=None):
+    def __init__(self, backend_url=None, token=None, retry_config=None, scope_id='default'):
         """
         Args:
             backend_url (str): Defaults to opal_client_config.SERVER_URL.
@@ -39,9 +39,10 @@ class PolicyFetcher:
         """
         self._token = token or opal_client_config.CLIENT_TOKEN
         self._backend_url = backend_url or opal_client_config.SERVER_URL
+        self._scope_id = scope_id
         self._auth_headers = tuple_to_dict(get_authorization_header(self._token))
         self._retry_config = retry_config if retry_config is not None else self.DEFAULT_RETRY_CONFIG
-        self._policy_endpoint_url = f"{self._backend_url}/policy"
+        self._policy_endpoint_url = f"{self._backend_url}/api/v1/scopes/{self._scope_id}/policy"
         # custom SSL context (for self-signed certificates)
         self._custom_ssl_context = get_custom_ssl_context()
         self._ssl_context_kwargs = {'ssl': self._custom_ssl_context} if self._custom_ssl_context is not None else {}

@@ -41,8 +41,8 @@ class DataUpdater:
                  should_send_reports=None,
                  data_fetcher: Optional[DataFetcher] = None,
                  callbacks_register: Optional[CallbacksRegister] = None,
-                 opal_client_id: str = None
-        ):
+                 opal_client_id: str = None,
+                 scope_id: str = 'default'):
         """
         Keeps policy-stores (e.g. OPA) up to date with relevant data
         Obtains data configuration on startup from OPAL-server
@@ -77,7 +77,7 @@ class DataUpdater:
         self._callbacks_reporter = CallbacksReporter(self._callbacks_register, self._data_fetcher)
         self._token = token
         self._server_url = pubsub_url
-        self._data_sources_config_url = data_sources_config_url
+        self._data_sources_config_url = f'{opal_client_config.SERVER_URL}/api/v1/{scope_id}/data'
         self._opal_client_id = opal_client_id
         if self._token is None:
             self._extra_headers = None

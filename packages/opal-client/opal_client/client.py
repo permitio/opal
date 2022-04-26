@@ -81,14 +81,25 @@ class OpalClient:
         if policy_updater is not None:
             self.policy_updater = policy_updater
         else:
-            self.policy_updater = PolicyUpdater(policy_store=self.policy_store, data_fetcher=self.data_fetcher, callbacks_register=self._callbacks_register, opal_client_id=opal_client_identifier)
+            self.policy_updater = PolicyUpdater(
+                policy_store=self.policy_store,
+                data_fetcher=self.data_fetcher,
+                callbacks_register=self._callbacks_register,
+                opal_client_id=opal_client_identifier,
+                scope_id=opal_client_config.OPAL_CLIENT_SCOPE_ID)
         # Data updating service
         if opal_client_config.DATA_UPDATER_ENABLED:
             if data_updater is not None:
                 self.data_updater = data_updater
             else:
                 data_topics = data_topics if data_topics is not None else opal_client_config.DATA_TOPICS
-                self.data_updater = DataUpdater(policy_store=self.policy_store, data_topics=data_topics, data_fetcher=self.data_fetcher, callbacks_register=self._callbacks_register, opal_client_id=opal_client_identifier)
+                self.data_updater = DataUpdater(
+                    policy_store=self.policy_store,
+                    data_topics=data_topics,
+                    data_fetcher=self.data_fetcher,
+                    callbacks_register=self._callbacks_register,
+                    opal_client_id=opal_client_identifier,
+                    scope_id=opal_client_config.OPAL_CLIENT_SCOPE_ID)
         else:
             self.data_updater = None
 

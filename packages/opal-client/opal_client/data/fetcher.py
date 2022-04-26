@@ -18,7 +18,8 @@ class DataFetcher:
 
     def __init__(self,
                  default_data_url: str = None,
-                 token: str = None):
+                 token: str = None,
+                 ):
         """
 
         Args:

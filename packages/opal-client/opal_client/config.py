@@ -123,6 +123,8 @@ class OpalClientConfig(Confi):
 
     OPA_HEALTH_CHECK_POLICY_PATH = 'opa/healthcheck/opal.rego'
 
+    OPAL_CLIENT_SCOPE_ID = confi.str('OPAL_CLIENT_SCOPE_ID', 'default')
+
     def on_load(self):
         # LOGGER
         if self.INLINE_OPA_LOG_FORMAT == OpaLogFormat.NONE:

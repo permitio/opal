@@ -34,6 +34,7 @@ class PolicyUpdater:
         self,
         token: str = None,
         pubsub_url: str = None,
+        scope_id: str = 'default',
         subscription_directories: List[str] = None,
         policy_store: BasePolicyStoreClient = None,
         data_fetcher: Optional[DataFetcher] = None,
@@ -62,6 +63,7 @@ class PolicyUpdater:
         # pub/sub server url and authentication data
         self._server_url = pubsub_url
         self._token = token
+        self._scope_id = scope_id
         if self._token is None:
             self._extra_headers = None
         else:
@@ -74,7 +76,7 @@ class PolicyUpdater:
         self._subscriber_task = None
         self._stopping = False
         # policy fetcher - fetches policy bundles
-        self._policy_fetcher = PolicyFetcher()
+        self._policy_fetcher = PolicyFetcher(scope_id=scope_id)
         # callbacks on policy changes
         self._data_fetcher = data_fetcher or DataFetcher()
         self._callbacks_register = callbacks_register or CallbacksRegister()
