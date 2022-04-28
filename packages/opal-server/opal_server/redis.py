@@ -1,8 +1,13 @@
+from typing import Generator
+
 import aioredis
 from pydantic import BaseModel
 
 
 class RedisDB:
+    """
+    Small utility class to persist objects in Redis
+    """
     def __init__(self, redis_url):
         self._url = redis_url
         self._redis = aioredis.from_url(self._url)
@@ -22,7 +27,7 @@ class RedisDB:
     async def get(self, key: str) -> bytes:
         return await self._redis.get(key)
 
-    async def scan(self, pattern: str):
+    async def scan(self, pattern: str) -> Generator[bytes]:
         cur = b'0'
         while cur:
             cur, keys = self._redis.scan(cur, match=pattern)

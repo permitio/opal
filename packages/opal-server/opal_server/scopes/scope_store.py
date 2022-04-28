@@ -1,8 +1,8 @@
 from pathlib import Path
 from typing import List
 
+from opal_server import worker
 from opal_server.redis import RedisDB
-from opal_server.scopes.pull_engine import CeleryPullEngine
 from opal_common.schemas.scopes import Scope
 
 
@@ -11,17 +11,16 @@ class ScopeNotFound(Exception):
 
 
 class ScopeStore:
-    PREFIX = 'io.permit.scope'
+    PREFIX = 'opal.scope'
 
     def __init__(self, base_dir: str, redis: RedisDB):
         self._base_dir = base_dir
         self._redis = redis
-        self._puller = CeleryPullEngine()
 
     async def all_scopes(self) -> List[Scope]:
         scopes = []
 
-        for value in self._redis.scan(f'{self.PREFIX}:*'):
+        async for value in self._redis.scan(f'{self.PREFIX}:*'):
             scope = Scope.parse_raw(value)
             scopes.append(scope)
 
@@ -41,12 +40,15 @@ class ScopeStore:
             scope
         )
 
-        self._puller.fetch_source(Path(self._base_dir), scope)
+        await self._fetch_source(scope)
 
         return scope
 
     async def delete_scope(self, scope_id: str):
         await self._redis.delete(self._redis_key(scope_id))
+
+    async def _fetch_source(self, scope: Scope):
+        worker.fetch_source.delay(self._base_dir, scope.json())
 
     def _redis_key(self, scope_id: str):
         return f'{self.PREFIX}:{scope_id}'

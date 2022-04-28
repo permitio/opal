@@ -130,9 +130,11 @@ class OpalServerConfig(Confi):
     # optional APM tracing with datadog
     ENABLE_DATADOG_APM = confi.bool("ENABLE_DATADOG_APM", False, description="Set if OPAL server should enable tracing with datadog APM")
 
-    REDIS_URL = confi.str("REDIS_URL", "redis://localhost")
-    BACKEND_URL = confi.str("BACKEND_URL", "http://localhost:8000")
+    REDIS_URL = confi.str("REDIS_URL", "redis://localhost", description="Redis host for OPAL server")
+    PROVISIONING_SERVER_URL = confi.str("PROVISIONING_SERVER_URL", "http://localhost:8000")
+    OPAL_URL = confi.str("OPAL_URL", "http://localhost:7002")
     SCOPE_API_KEY = confi.str("SCOPE_API_KEY", "")
+    FETCHER_CHECK_INTERVAL = confi.int("FETCHER_CHECK_INTERVAL", 60 * 10, description="Interval between checking for updates to policy")
 
 
 opal_server_config = OpalServerConfig(prefix="OPAL_")

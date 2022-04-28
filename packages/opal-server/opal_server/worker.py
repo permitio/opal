@@ -19,8 +19,11 @@ app = Celery('opal-worker',
 @app.on_after_configure.connect
 def setup_periodic_tasks(sender, **kwargs):
     sender.add_periodic_task(
-        10 * 60.0,  # 10 minutes
-        periodic_check.s(opal_server_config.BACKEND_URL)
+        opal_server_config.FETCHER_CHECK_INTERVAL,  # 10 minutes
+        periodic_check.s(
+            opal_server_config.OPAL_URL,
+            opal_server_config.SCOPE_API_KEY
+        )
     )
 
 
@@ -33,5 +36,9 @@ def fetch_source(base_dir: str, scope_json: str):
 
 
 @app.task
-def periodic_check(opal_url: str):
-    requests.post(f'{opal_url}/api/v1/scopes/periodic-check')
+def periodic_check(opal_url: str, token: str):
+    requests.post(
+        f'{opal_url}/api/v1/scopes/periodic-check',
+        headers={
+            'Authorization': f'Bearer: {token}'
+        })

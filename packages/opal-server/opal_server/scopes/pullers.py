@@ -12,15 +12,28 @@ from opal_common.schemas.sources import SourceAuthData, SSHAuthData, GitHubToken
 
 
 class SourcePuller(ABC):
+    @abstractmethod
     def check(self) -> bool:
-        return False
+        """
+        Checks source for new version
+        :return: True if a new version exists, False otherwise
+        """
+        pass
 
     @abstractmethod
     def pull(self):
+        """
+        Fetches the latest version from source
+        """
         pass
 
+    @abstractmethod
     def diff(self) -> (str, str):
-        return None, None
+        """
+        Gets version information
+        :return: (current version, latest available version)
+        """
+        pass
 
 
 @dataclasses.dataclass
@@ -43,16 +56,14 @@ class GitSourcePuller(SourcePuller):
         """
         returns True if new commits are available, false if up-to-date
         """
-        if discover_repository(str(self._get_repo_path())) is None:
+        diff = self.diff()
+
+        if diff == (None, None):
             return True
 
-        repo = Repository(self._get_repo_path())
-        callbacks = self._get_callbacks()
+        current, latest = diff
 
-        repo.remotes['origin'].fetch(callbacks=callbacks)
-        latest_hash = repo.references['refs/remotes/origin/master'].target
-
-        return latest_hash != repo.head.target
+        return current != latest
 
     def pull(self):
         try:
@@ -61,8 +72,16 @@ class GitSourcePuller(SourcePuller):
             raise GitError(str(e))
 
     def diff(self) -> (str, str):
+        if discover_repository(str(self._get_repo_path())) is None:
+            return None, None
+
         repo = Repository(self._get_repo_path())
-        return repo.head.target, repo.references['refs/remotes/origin/master'].target
+        callbacks = self._get_callbacks()
+
+        repo.remotes['origin'].fetch(callbacks=callbacks)
+        latest_hash = repo.references['refs/remotes/origin/master'].target
+
+        return repo.head.target, latest_hash
 
     def _pull(self):
         repo_path = self._get_repo_path()

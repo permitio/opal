@@ -9,6 +9,7 @@ from fastapi_websocket_pubsub import PubSubEndpoint
 from git import Repo
 from pydantic import parse_obj_as
 
+from opal_common.logger import logger
 from opal_common.schemas.data import DataSourceConfig
 from opal_common.schemas.scopes import Scope
 from opal_common.topics.publisher import ServerSideTopicPublisher
@@ -22,6 +23,7 @@ from opal_server.config import opal_server_config
 from opal_common.schemas.policy import PolicyBundle
 
 
+@logger.catch
 async def preload_scopes():
     """
     Pre-loads all scope data from backend (and clone git sources)
@@ -106,7 +108,7 @@ def setup_scopes_api(pubsub_endpoint: PubSubEndpoint):
         return make_bundle(bundle_maker, repo, base_hash)
 
     @router.get('/scopes/{scope_id}/data', response_model=DataSourceConfig)
-    async def get_scope_data(
+    async def get_scope_data_config(
         scope_id: str = Path(..., title='Scope ID')
     ):
         scope = await scope_store.get_scope(scope_id)
