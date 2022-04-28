@@ -20,14 +20,14 @@ class RedisDB:
         :param key:
         :param value:
         :param ex_in_secs:
-        :return: True if created, False if key already exist                    s
+        :return: True if created, False if key already exists
         '''
         return await self._redis.set(key, self._serialize(value), nx=True, ex=ex_in_secs)
 
     async def get(self, key: str) -> bytes:
         return await self._redis.get(key)
 
-    async def scan(self, pattern: str) -> Generator[bytes]:
+    async def scan(self, pattern: str) -> Generator[bytes, None, None]:
         cur = b'0'
         while cur:
             cur, keys = self._redis.scan(cur, match=pattern)
