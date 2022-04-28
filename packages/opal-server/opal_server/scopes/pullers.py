@@ -79,7 +79,7 @@ class GitSourcePuller(SourcePuller):
         callbacks = self._get_callbacks()
 
         repo.remotes['origin'].fetch(callbacks=callbacks)
-        latest_hash = repo.references['refs/remotes/origin/master'].target
+        latest_hash = repo.references[f'refs/remotes/origin/{self.source.branch}'].target
 
         return repo.head.target, latest_hash
 
@@ -92,7 +92,7 @@ class GitSourcePuller(SourcePuller):
         else:
             repo = Repository(repo_path)
             repo.remotes['origin'].fetch(callbacks=callbacks)
-            repo.checkout(repo.references['refs/remotes/origin/master'].resolve().name)
+            repo.checkout(repo.references[f'refs/remotes/origin/{self.source.branch}'].resolve().name)
 
     def _get_repo_path(self):
         return self.base_dir / self.scope_id
@@ -138,6 +138,7 @@ def create_puller(base_dir: Path, scope: Scope):
         policy_source = GitPolicySource(
             source_type=scope.policy.source_type,
             url=scope.policy.url,
+            branch=scope.policy.settings.get('branch', 'main'),
             directories=scope.policy.directories,
             auth=auth
         )
