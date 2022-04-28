@@ -42,7 +42,7 @@ class DataUpdater:
                  data_fetcher: Optional[DataFetcher] = None,
                  callbacks_register: Optional[CallbacksRegister] = None,
                  opal_client_id: str = None,
-                 scope_id: str = 'default'):
+                 scope_id: str = 'none'):
         """
         Keeps policy-stores (e.g. OPA) up to date with relevant data
         Obtains data configuration on startup from OPAL-server
@@ -59,7 +59,6 @@ class DataUpdater:
         # Defaults
         token: str = token or opal_client_config.CLIENT_TOKEN
         pubsub_url: str = pubsub_url or opal_client_config.SERVER_PUBSUB_URL
-        data_sources_config_url: str = data_sources_config_url or opal_client_config.DEFAULT_DATA_SOURCES_CONFIG_URL
         # Should the client use the default data source to fetch on connect
         self._fetch_on_connect = fetch_on_connect
         # The policy store we'll save data updates into
@@ -77,7 +76,11 @@ class DataUpdater:
         self._callbacks_reporter = CallbacksReporter(self._callbacks_register, self._data_fetcher)
         self._token = token
         self._server_url = pubsub_url
-        self._data_sources_config_url = f'{opal_client_config.SERVER_URL}/api/v1/{scope_id}/data'
+        if scope_id == 'none':
+            self._data_sources_config_url = data_sources_config_url or \
+                                            opal_client_config.DEFAULT_DATA_SOURCES_CONFIG_URL
+        else:
+            self._data_sources_config_url = f'{opal_client_config.SERVER_URL}/api/v1/{scope_id}/data'
         self._opal_client_id = opal_client_id
         if self._token is None:
             self._extra_headers = None

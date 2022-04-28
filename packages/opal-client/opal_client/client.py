@@ -86,7 +86,7 @@ class OpalClient:
                 data_fetcher=self.data_fetcher,
                 callbacks_register=self._callbacks_register,
                 opal_client_id=opal_client_identifier,
-                scope_id=opal_client_config.OPAL_CLIENT_SCOPE_ID)
+                scope_id=opal_client_config.SCOPE_ID)
         # Data updating service
         if opal_client_config.DATA_UPDATER_ENABLED:
             if data_updater is not None:
@@ -99,7 +99,7 @@ class OpalClient:
                     data_fetcher=self.data_fetcher,
                     callbacks_register=self._callbacks_register,
                     opal_client_id=opal_client_identifier,
-                    scope_id=opal_client_config.OPAL_CLIENT_SCOPE_ID)
+                    scope_id=opal_client_config.SCOPE_ID)
         else:
             self.data_updater = None
 

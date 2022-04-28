@@ -36,7 +36,7 @@ class ScopeStore:
             raise ScopeNotFound()
 
     async def add_scope(self, scope: Scope) -> Scope:
-        await self._redis.set_if_not_exists(
+        await self._redis.set(
             self._redis_key(scope.scope_id),
             scope
         )

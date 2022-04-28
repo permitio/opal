@@ -123,7 +123,10 @@ class OpalClientConfig(Confi):
 
     OPA_HEALTH_CHECK_POLICY_PATH = 'opa/healthcheck/opal.rego'
 
-    OPAL_CLIENT_SCOPE_ID = confi.str('OPAL_CLIENT_SCOPE_ID', 'default')
+    # OPAL Scopes:
+    # none - compatibility mode to use old API
+    # default - no scope defined, but use new API (dev mode etc)
+    SCOPE_ID = confi.str('SCOPE_ID', 'none', description="OPAL scope ID to use")
 
     def on_load(self):
         # LOGGER
