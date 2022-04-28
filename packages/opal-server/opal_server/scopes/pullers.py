@@ -110,6 +110,7 @@ class GitCallbacks(RemoteCallbacks):
         if self._auth_data.auth_type == 'ssh':
             ssh_auth_data = cast(SSHAuthData, self._auth_data)
 
+            # TODO: check if pubkey is needed
             return KeypairFromMemory(
                 username=username_from_url,
                 pubkey=ssh_auth_data.public_key,

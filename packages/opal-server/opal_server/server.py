@@ -2,11 +2,10 @@ from opal_server.api import build_api
 from opal_server.loadlimiting import init_loadlimit_router
 import os
 import asyncio
-import shutil
 from functools import partial
 from typing import Optional, List
 
-from fastapi import Depends, FastAPI
+from fastapi import Depends, FastAPI, HTTPException, status
 from fastapi_websocket_pubsub.event_broadcaster import EventBroadcasterContextManager
 from opal_common.confi.confi import load_conf_if_none
 from opal_common.git.repo_cloner import RepoClonePathFinder
@@ -36,7 +35,6 @@ from opal_server.statistics import OpalStatistics, init_statistics_router
 
 
 class OpalServer:
-
     def __init__(
         self,
         init_policy_watcher: bool = None,
@@ -88,6 +86,7 @@ class OpalServer:
         self._init_policy_watcher: bool = load_conf_if_none(init_policy_watcher, opal_server_config.REPO_WATCHER_ENABLED)
         self.loadlimit_notation: str = load_conf_if_none(loadlimit_notation, opal_server_config.CLIENT_LOAD_LIMIT_NOTATION)
         self._policy_remote_url = policy_remote_url
+        self._ready = False
 
         configure_logs()
         self.watcher: Optional[PolicyWatcherTask] = None
@@ -226,6 +225,13 @@ class OpalServer:
         def healthcheck():
             return {"status": "ok"}
 
+        @app.get("/readycheck", include_in_schema=False)
+        def readycheck():
+            if self._ready:
+                return {"status": "ok"}
+            else:
+                raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE)
+
         # new API
         app.mount("/api", build_api(self.pubsub.endpoint))
 
@@ -242,7 +248,6 @@ class OpalServer:
         async def startup_event():
             logger.info("triggered startup event")
             asyncio.create_task(self.start_server_background_tasks())
-            await preload_scopes()
 
         @app.on_event("shutdown")
         async def shutdown_event():
@@ -261,6 +266,13 @@ class OpalServer:
         only the leader worker (first to obtain leadership lock) will start these tasks:
         - (repo) watcher: monitors the policy git repository for changes.
         """
+        try:
+            await preload_scopes()
+        except Exception:
+            pass
+        finally:
+            self._ready = True
+
         if self.publisher is not None:
             async with self.publisher:
                 if self.opal_statistics is not None:
@@ -302,7 +314,6 @@ class OpalServer:
                 if self.opal_statistics is not None and self.broadcast_listening_context is not None:
                     await self.broadcast_listening_context.__aexit__()
                     logger.info("stopped listening for statistics events on the broadcast channel")
-
 
     async def stop_server_background_tasks(self):
         logger.info("stopping background tasks...")

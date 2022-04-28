@@ -4,7 +4,7 @@ from pydantic import BaseModel, Field
 
 
 class SourceAuthData(BaseModel):
-    auth_type: str = Field(..., description='Authentication type (user/pass, ssh keys, etc)')
+    auth_type: str = Field("none", description='Authentication type (user/pass, ssh keys, etc)')
 
 
 class SSHAuthData(SourceAuthData):
