@@ -16,14 +16,17 @@ from opal_server.policy.bundles.api import make_bundle
 from opal_server.policy.watcher.callbacks import publish_changed_directories
 from opal_server.redis import RedisDB
 from opal_server.scopes.pullers import InvalidScopeSourceType, create_puller
-from opal_server.scopes.scope_store import ScopeStore, ScopeNotFound, \
-    ReadOnlyScopeStore
+from opal_server.scopes.scope_store import ScopeStore, ScopeNotFound
 from opal_common.git.bundle_maker import BundleMaker
 from opal_server.config import opal_server_config
 from opal_common.schemas.policy import PolicyBundle
 
 
 async def preload_scopes():
+    """
+    Pre-loads all scope data from backend (and clone git sources)
+    before OPAL starts
+    """
     scope_store = ScopeStore(
         base_dir=opal_server_config.SCOPE_BASE_DIR,
         redis=RedisDB(opal_server_config.REDIS_URL)
@@ -82,10 +85,6 @@ def setup_scopes_api(pubsub_endpoint: PubSubEndpoint):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f'Invalid scope source type: {e.invalid_type}'
-            )
-        except ReadOnlyScopeStore:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND
             )
 
     @router.get("/scopes/{scope_id}/policy", response_model=PolicyBundle)

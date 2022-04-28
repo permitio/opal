@@ -5,7 +5,7 @@ import json
 from pathlib import Path
 
 import requests
-from celery import Celery, current_app, current_task
+from celery import Celery
 
 from opal_server.scopes.pullers import create_puller
 from opal_server.scopes.scope_store import Scope
@@ -30,15 +30,6 @@ def fetch_source(base_dir: str, scope_json: str):
     puller = create_puller(Path(base_dir), scope)
 
     puller.pull()
-
-
-@app.task
-def setup_periodic_check():
-    origin = current_task.request.hostname
-    current_app.add_periodic_task(
-        1 * 60.0,  # 10 minutes
-        periodic_check.s(origin)
-    )
 
 
 @app.task

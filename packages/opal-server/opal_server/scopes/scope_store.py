@@ -50,7 +50,3 @@ class ScopeStore:
 
     def _redis_key(self, scope_id: str):
         return f'{self.PREFIX}:{scope_id}'
-
-
-class ReadOnlyScopeStore(Exception):
-    pass
