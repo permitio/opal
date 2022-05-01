@@ -13,6 +13,7 @@ from opal_server.config import opal_server_config
 def setup_publisher_task(
     server_uri: str = None,
     server_token: str = None,
+    prefix='',
 ) -> TopicPublisher:
     server_uri = load_conf_if_none(server_uri, opal_server_config.OPAL_WS_LOCAL_URL,)
     server_token = load_conf_if_none(server_token, opal_server_config.OPAL_WS_TOKEN,)
@@ -21,6 +22,7 @@ def setup_publisher_task(
             extra_headers=[get_authorization_header(server_token)]
         ),
         server_uri=server_uri,
+        prefix=prefix
     )
 
 

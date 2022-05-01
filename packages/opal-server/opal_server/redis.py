@@ -30,7 +30,7 @@ class RedisDB:
     async def scan(self, pattern: str) -> Generator[bytes, None, None]:
         cur = b'0'
         while cur:
-            cur, keys = self._redis.scan(cur, match=pattern)
+            cur, keys = await self._redis.scan(cur, match=pattern)
 
             for key in keys:
                 value = await self._redis.get(key)
