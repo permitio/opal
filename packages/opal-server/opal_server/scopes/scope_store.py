@@ -1,7 +1,6 @@
 from pathlib import Path
 from typing import List
 
-from opal_server import worker
 from opal_server.redis import RedisDB
 from opal_common.schemas.scopes import Scope
 
@@ -48,6 +47,7 @@ class ScopeStore:
         await self._redis.delete(self._redis_key(scope_id))
 
     async def _fetch_source(self, scope: Scope):
+        from opal_server import worker
         worker.fetch_source.delay(self._base_dir, scope.json())
 
     def _redis_key(self, scope_id: str):

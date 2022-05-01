@@ -1,6 +1,6 @@
+import os
 import dataclasses
 from abc import ABC, abstractmethod
-from pathlib import Path
 from typing import cast
 
 import pygit2
@@ -47,7 +47,7 @@ class GitError(Exception):
 
 
 class GitSourcePuller(SourcePuller):
-    def __init__(self, scope_id: str, base_dir: Path, source: GitPolicySource):
+    def __init__(self, scope_id: str, base_dir: str, source: GitPolicySource):
         self.scope_id = scope_id
         self.base_dir = base_dir
         self.source = source
@@ -88,14 +88,14 @@ class GitSourcePuller(SourcePuller):
         callbacks = self._get_callbacks()
 
         if discover_repository(str(repo_path)) is None:
-            clone_repository(self.source.url, str(self.base_dir/self.scope_id), callbacks=callbacks)
+            clone_repository(self.source.url, os.path.join(self.base_dir, self.scope_id), callbacks=callbacks)
         else:
             repo = Repository(repo_path)
             repo.remotes['origin'].fetch(callbacks=callbacks)
             repo.checkout(repo.references[f'refs/remotes/origin/{self.source.branch}'].resolve().name)
 
     def _get_repo_path(self):
-        return self.base_dir / self.scope_id
+        return os.path.join(self.base_dir, self.scope_id)
 
     def _get_callbacks(self):
         return GitCallbacks(self.source.auth)
@@ -128,7 +128,7 @@ class GitCallbacks(RemoteCallbacks):
         return Username(username_from_url)
 
 
-def create_puller(base_dir: Path, scope: Scope):
+def create_puller(base_dir: str, scope: Scope):
     if scope.policy.source_type == 'git':
         auth_props = scope.policy.settings.get('auth', {})
         auth = SourceAuthData(**auth_props)

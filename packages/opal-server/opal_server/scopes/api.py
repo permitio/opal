@@ -23,6 +23,9 @@ from opal_server.config import opal_server_config
 from opal_common.schemas.policy import PolicyBundle
 
 
+def _get_base_dir():
+    return str(opal_server_config.BASE_DIR / "scopes")
+
 @logger.catch
 async def preload_scopes():
     """
@@ -30,7 +33,7 @@ async def preload_scopes():
     before OPAL starts
     """
     scope_store = ScopeStore(
-        base_dir=opal_server_config.SCOPE_BASE_DIR,
+        base_dir=_get_base_dir(),
         redis=RedisDB(opal_server_config.REDIS_URL)
     )
 
@@ -52,7 +55,7 @@ async def preload_scopes():
 
 def setup_scopes_api(pubsub_endpoint: PubSubEndpoint):
     scope_store = ScopeStore(
-        base_dir=opal_server_config.SCOPE_BASE_DIR,
+        base_dir=_get_base_dir(),
         redis=RedisDB(opal_server_config.REDIS_URL)
     )
 
@@ -96,7 +99,7 @@ def setup_scopes_api(pubsub_endpoint: PubSubEndpoint):
             None, description="hash of previous bundle already downloaded, server will return a diff bundle.")
     ):
         scope = await scope_store.get_scope(scope_id)
-        repo = Repo(os.path.join(opal_server_config.SCOPE_BASE_DIR, scope.scope_id))
+        repo = Repo(os.path.join(_get_base_dir(), scope.scope_id))
 
         bundle_maker = BundleMaker(
             repo,
@@ -123,7 +126,7 @@ def setup_scopes_api(pubsub_endpoint: PubSubEndpoint):
             if not scope.policy.polling:
                 continue
 
-            puller = create_puller(Path(opal_server_config.SCOPE_BASE_DIR), scope)
+            puller = create_puller(_get_base_dir(), scope)
 
             if puller.check():
                 old_commit, new_commit = puller.diff()
