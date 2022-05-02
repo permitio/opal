@@ -76,7 +76,7 @@ class GitSourcePuller(SourcePuller):
             return None, None
 
         repo = Repository(self._get_repo_path())
-        callbacks = self._get_callbacks()
+        callbacks = self._get_auth_callbacks()
 
         repo.remotes['origin'].fetch(callbacks=callbacks)
         latest_hash = repo.references[f'refs/remotes/origin/{self.source.branch}'].target
@@ -85,7 +85,7 @@ class GitSourcePuller(SourcePuller):
 
     def _pull(self):
         repo_path = self._get_repo_path()
-        callbacks = self._get_callbacks()
+        callbacks = self._get_auth_callbacks()
 
         if discover_repository(str(repo_path)) is None:
             clone_repository(self.source.url, os.path.join(self.base_dir, self.scope_id), callbacks=callbacks)
@@ -97,7 +97,10 @@ class GitSourcePuller(SourcePuller):
     def _get_repo_path(self):
         return os.path.join(self.base_dir, self.scope_id)
 
-    def _get_callbacks(self):
+    def _get_auth_callbacks(self):
+        if self.source.auth.auth_type == 'none':
+            return None
+
         return GitCallbacks(self.source.auth)
 
 

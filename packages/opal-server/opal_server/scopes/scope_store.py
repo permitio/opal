@@ -43,6 +43,9 @@ class ScopeStore:
 
         return scope
 
+    async def pull_scope(self, scope_id):
+        await self._fetch_source(await self.get_scope(scope_id))
+
     async def delete_scope(self, scope_id: str):
         await self._redis.delete(self._redis_key(scope_id))
 

@@ -1,9 +1,11 @@
+import hashlib
 import os
 import pathlib
 from typing import Optional, List
 
 import aiohttp
-from fastapi import APIRouter, Path, status, Query, HTTPException, Header, Depends
+import git
+from fastapi import APIRouter, Path, status, Query, HTTPException, Header, Depends, Request
 from fastapi.security.utils import get_authorization_scheme_param
 from fastapi_websocket_pubsub import PubSubEndpoint
 from git import Repo
@@ -15,12 +17,15 @@ from opal_common.schemas.scopes import Scope
 from opal_common.topics.publisher import ServerSideTopicPublisher
 from opal_server.policy.bundles.api import make_bundle
 from opal_server.policy.watcher.callbacks import publish_changed_directories
+from opal_server.policy.webhook.deps import validate_github_signature_or_throw
+from opal_server.publisher import setup_publisher_task
 from opal_server.redis import RedisDB
 from opal_server.scopes.pullers import InvalidScopeSourceType, create_puller
 from opal_server.scopes.scope_store import ScopeStore, ScopeNotFound
 from opal_common.git.bundle_maker import BundleMaker
 from opal_server.config import opal_server_config
 from opal_common.schemas.policy import PolicyBundle
+from opal_server.scopes.webhook import PushWebHook
 
 
 def _get_base_dir():
@@ -51,6 +56,7 @@ async def preload_scopes():
 
             for scope in scopes:
                 await scope_store.add_scope(scope)
+
 
 
 def setup_scopes_api(pubsub_endpoint: PubSubEndpoint):
@@ -139,6 +145,44 @@ def setup_scopes_api(pubsub_endpoint: PubSubEndpoint):
 
                 await publish_changed_directories(
                     old_commit=old_commit, new_commit=new_commit,
+                    publisher=publisher
+                )
+
+    @router.post("/scopes/webhook/github/push")
+    async def webhook_github(
+        x_github_event: Header(None),
+        x_hub_signature_256: Header(None),
+        push: PushWebHook,
+        request: Request,
+    ):
+        if x_github_event != 'push':
+            return {'status': 'ok'}
+
+        await validate_github_signature_or_throw(request, x_hub_signature_256)
+
+        scopes = await scope_store.all_scopes()
+        urls = (
+            push.repository.clone_url,
+            push.repository.git_url,
+            push.repository.ssh_url
+        )
+
+        for scope in scopes:
+            if any([scope.policy.url == url for url in urls]):
+                await scope_store.pull_scope(scope.scope_id)
+
+                repository = git.Repo(
+                    os.path.join(opal_server_config.BASE_DIR, 'scopes', scope.scope_id)
+                )
+
+                publisher = setup_publisher_task(
+                            server_uri=opal_server_config.OPAL_WS_LOCAL_URL,
+                            server_token=opal_server_config.OPAL_WS_TOKEN,
+                            prefix=scope.scope_id)
+
+                await publish_changed_directories(
+                    old_commit=git.Commit(repository, bytes.fromhex(push.before)),
+                    new_commit=git.Commit(repository, bytes.fromhex(push.after)),
                     publisher=publisher
                 )
 
