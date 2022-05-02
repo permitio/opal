@@ -10,7 +10,7 @@ class ScopeNotFound(Exception):
 
 
 class ScopeStore:
-    PREFIX = 'opal.scope'
+    PREFIX = 'io.permit.scope'
 
     def __init__(self, base_dir: str, redis: RedisDB):
         self._base_dir = base_dir
