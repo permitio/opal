@@ -177,9 +177,9 @@ class OpalServer:
         """
         patch fastapi to enable tracing and monitoring with datadog APM
         """
-        from ddtrace import patch, config
+        from ddtrace import patch_all, config
         # Datadog APM
-        patch(fastapi=True)
+        patch_all()
         # Override service name
         config.fastapi["service_name"] = "opal-server"
         config.fastapi["request_span_name"] = "opal-server"
