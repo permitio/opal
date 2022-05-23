@@ -222,6 +222,33 @@ class OpaClient(BasePolicyStoreClient):
 
     @fail_silently()
     @retry(**RETRY_CONFIG)
+    async def all_policies(self) -> Optional[Dict[str, str]]:
+        async with aiohttp.ClientSession() as session:
+            try:
+                async with session.get(
+                    f"{self._opa_url}/policies",
+                    headers=self._headers
+                ) as response:
+                    j = await response.json()
+                    result = j.get("result", [])
+                    policies = {}
+
+                    for policy in result:
+                        id = policy.get("id")
+                        raw = policy.get("raw")
+
+                        if not id or not raw:
+                            continue
+
+                        policies[id] = raw
+
+                    return policies
+            except aiohttp.ClientError as e:
+                logger.warning("Opa connection error: {err}", err=repr(e))
+                raise
+
+    @fail_silently()
+    @retry(**RETRY_CONFIG)
     async def get_policy(self, policy_id: str) -> Optional[str]:
         async with aiohttp.ClientSession() as session:
             try:

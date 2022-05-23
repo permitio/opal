@@ -1,5 +1,6 @@
+import os
+
 from pathlib import Path
-from sys import prefix
 from .confi import Confi, confi
 
 from opal_common.authentication.types import EncryptionKeyFormat, JWTAlgorithm
@@ -93,6 +94,9 @@ class OpalCommonConfig(Confi):
     )
     AUTH_JWT_AUDIENCE = confi.str("AUTH_JWT_AUDIENCE", "https://api.opal.ac/v1/")
     AUTH_JWT_ISSUER = confi.str("AUTH_JWT_ISSUER", f"https://opal.ac/")
+
+    STATE_DIR = confi.str("STATE_DIR", os.path.join(Path.home(), ".local", "state", "opal"),
+                          description="OPAL state dir")
 
 
 opal_common_config = OpalCommonConfig(prefix="OPAL_")

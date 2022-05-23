@@ -23,6 +23,9 @@ class AbstractPolicyStore:
     async def get_policy(self, policy_id: str) -> Optional[str]:
         raise NotImplementedError()
 
+    async def all_policies(self) -> Optional[Dict[str, str]]:
+        raise NotImplementedError()
+
     async def delete_policy(self, policy_id: str, transaction_id:Optional[str]=None):
         raise NotImplementedError()
 

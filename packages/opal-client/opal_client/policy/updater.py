@@ -1,4 +1,9 @@
+import json
+import os
 import asyncio
+
+import aiofiles
+
 from opal_common.schemas.data import DataUpdateReport
 from opal_client.callbacks.reporter import CallbacksReporter
 from opal_client.callbacks.register import CallbacksRegister
@@ -21,6 +26,7 @@ from opal_client.policy.fetcher import PolicyFetcher
 from opal_client.policy_store.base_policy_store_client import BasePolicyStoreClient
 from opal_client.policy_store.policy_store_client_factory import DEFAULT_POLICY_STORE_GETTER
 from opal_client.policy.topics import default_subscribed_policy_directories
+
 
 class PolicyUpdater:
     """
@@ -83,6 +89,7 @@ class PolicyUpdater:
         # custom SSL context (for self-signed certificates)
         self._custom_ssl_context = get_custom_ssl_context()
         self._ssl_context_kwargs = {'ssl': self._custom_ssl_context} if self._custom_ssl_context is not None else {}
+        self._last_known_policy_path = os.path.join(opal_common_config.STATE_DIR, "last_policy.json")
 
     async def __aenter__(self):
         await self.start()
@@ -146,6 +153,7 @@ class PolicyUpdater:
         if self._subscriber_task is None:
             self._subscriber_task = asyncio.create_task(self._subscriber())
             await self._data_fetcher.start()
+        await self._load_last_policy()
 
     async def stop(self):
         """
@@ -247,15 +255,45 @@ class PolicyUpdater:
             bundle_succeeded = False
         bundle_hash = None if bundle is None else bundle.hash
 
+        await self._store_policy(bundle_hash, bundle, bundle_succeeded, bundle_error)
+        await self._save_last_policy()
+
+    async def _store_policy(self, bundle_hash: str, bundle: PolicyBundle, bundle_succeeded: bool, bundle_error: str):
         # store policy bundle in OPA cache
         # We wrap our interaction with the policy store with a transaction, so that
         # if the write-op fails, we will mark the transaction as failed.
-        async with self._policy_store.transaction_context(bundle_hash, transaction_type=TransactionType.policy) as store_transaction:
-            store_transaction._update_remote_status(url=self._policy_fetcher.policy_endpoint_url, status=bundle_succeeded, error=bundle_error)
+        async with self._policy_store.transaction_context(bundle_hash, transaction_type=TransactionType.policy) as tx:
+            tx._update_remote_status(
+                url=self._policy_fetcher.policy_endpoint_url,
+                status=bundle_succeeded,
+                error=bundle_error)
+
             if bundle:
-                await store_transaction.set_policies(bundle)
+                await tx.set_policies(bundle)
                 # if we got here, we did not throw during the transaction
                 if self._should_send_reports:
                     # spin off reporting (no need to wait on it)
                     report = DataUpdateReport(policy_hash=bundle.hash, reports=[])
                     asyncio.create_task(self._callbacks_reporter.report_update_results(report))
+
+    async def _save_last_policy(self):
+        try:
+            policies = await self._policy_store.all_policies()
+
+            os.makedirs(os.path.dirname(self._last_known_policy_path), exist_ok=True)
+
+            async with aiofiles.open(self._last_known_policy_path, "w") as f:
+                await f.write(json.dumps(policies))
+        except Exception as e:
+            logger.warning("Failed writing policies: {err}", err=e)
+
+    async def _load_last_policy(self):
+        try:
+            async with aiofiles.open(self._last_known_policy_path, "r") as f:
+                policies = json.loads(await f.read())
+
+            async with self._policy_store.transaction_context("0" * 32, transaction_type=TransactionType.policy) as tx:
+                for id, policy in policies.items():
+                    await tx.set_policy(policy_id=id, policy_code=policy)
+        except Exception as e:
+            logger.warning("Failed loading last good policy: {err}", err=e)
