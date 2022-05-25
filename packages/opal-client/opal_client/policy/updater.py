@@ -89,7 +89,7 @@ class PolicyUpdater:
         # custom SSL context (for self-signed certificates)
         self._custom_ssl_context = get_custom_ssl_context()
         self._ssl_context_kwargs = {'ssl': self._custom_ssl_context} if self._custom_ssl_context is not None else {}
-        self._last_known_policy_path = os.path.join(opal_common_config.STATE_DIR, "last_policy.json")
+        self._last_policy_path = os.path.join(opal_common_config.STATE_DIR, "last_policy.json")
 
     async def __aenter__(self):
         await self.start()
@@ -150,10 +150,12 @@ class PolicyUpdater:
         launches the policy updater
         """
         logger.info("Launching policy updater")
+
+        await self._load_last_policy()
+
         if self._subscriber_task is None:
             self._subscriber_task = asyncio.create_task(self._subscriber())
             await self._data_fetcher.start()
-        await self._load_last_policy()
 
     async def stop(self):
         """
@@ -280,20 +282,21 @@ class PolicyUpdater:
         try:
             policies = await self._policy_store.all_policies()
 
-            os.makedirs(os.path.dirname(self._last_known_policy_path), exist_ok=True)
+            os.makedirs(os.path.dirname(self._last_policy_path), exist_ok=True)
 
-            async with aiofiles.open(self._last_known_policy_path, "w") as f:
+            async with aiofiles.open(self._last_policy_path, "w") as f:
                 await f.write(json.dumps(policies))
         except Exception as e:
             logger.warning("Failed writing policies: {err}", err=e)
 
     async def _load_last_policy(self):
         try:
-            async with aiofiles.open(self._last_known_policy_path, "r") as f:
+            async with aiofiles.open(self._last_policy_path, "r") as f:
                 policies = json.loads(await f.read())
 
-            async with self._policy_store.transaction_context("0" * 32, transaction_type=TransactionType.policy) as tx:
+            async with self._policy_store.transaction_context("1" * 32, transaction_type=TransactionType.policy) as tx:
                 for id, policy in policies.items():
                     await tx.set_policy(policy_id=id, policy_code=policy)
+
         except Exception as e:
             logger.warning("Failed loading last good policy: {err}", err=e)

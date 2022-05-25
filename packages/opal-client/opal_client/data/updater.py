@@ -1,9 +1,12 @@
+import os
 import asyncio
 import hashlib
 import itertools
 import json
 from typing import List, Optional, Tuple
 import uuid
+
+import aiofiles
 import aiohttp
 
 from aiohttp.client import ClientSession, ClientError
@@ -87,6 +90,7 @@ class DataUpdater:
         # custom SSL context (for self-signed certificates)
         self._custom_ssl_context = get_custom_ssl_context()
         self._ssl_context_kwargs = {'ssl': self._custom_ssl_context} if self._custom_ssl_context is not None else {}
+        self._last_data_path = os.path.join(opal_common_config.STATE_DIR, "last_data.json")
 
     async def __aenter__(self):
         await self.start()
@@ -181,9 +185,39 @@ class DataUpdater:
 
     async def start(self):
         logger.info("Launching data updater")
+
+        await self._load_last_data()
+
         if self._subscriber_task is None:
             self._subscriber_task = asyncio.create_task(self._subscriber())
             await self._data_fetcher.start()
+
+    async def _load_last_data(self):
+        if not os.path.exists(self._last_data_path):
+            return
+
+        try:
+            async with aiofiles.open(self._last_data_path, "r") as f:
+                data = await f.read()
+                data = json.loads(data)
+
+                async with self._policy_store.transaction_context("0" * 32, transaction_type=TransactionType.data) as tx:
+                    await tx.set_policy_data(data)
+
+        except Exception as e:
+            logger.warning("Failed to load data backup: {err}", err=e)
+
+    async def _save_last_data(self):
+        try:
+            data = await self._policy_store.get_data("")
+            result = data.get("result", {})
+
+            os.makedirs(os.path.dirname(self._last_data_path), exist_ok=True)
+
+            async with aiofiles.open(self._last_data_path, "w") as f:
+                await f.write(json.dumps(result))
+        except Exception as e:
+            logger.warning("Failed to write data backup: {err}", err=e)
 
     async def _subscriber(self):
         """
@@ -345,3 +379,5 @@ class DataUpdater:
             whole_report = DataUpdateReport(update_id=update.id, reports=reports)
             extra_callbacks = self._callbacks_register.normalize_callbacks(update.callback.callbacks)
             asyncio.create_task(self._callbacks_reporter.report_update_results(whole_report, extra_callbacks))
+
+        await self._save_last_data()
