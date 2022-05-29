@@ -5,4 +5,4 @@ gitpython
 loguru==0.6.0
 pyjwt[crypto]==2.1.0
 python-decouple
-tenacity==6.3.1
+tenacity>=8.0.1
