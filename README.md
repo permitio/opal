@@ -1,14 +1,3 @@
-
-# This is a fork
-
-This repo is fork, but we didn't go anywhere :)
-
-To the official OPAL repo, go here: [https://github.com/permitio/opal](https://github.com/permitio/opal)
-
-
-----
-
-
 <p  align="center">
  <img src="https://i.ibb.co/BGVBmMK/opal.png" height=170 alt="opal" border="0" />
 </p>
