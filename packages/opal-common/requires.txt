@@ -2,7 +2,7 @@ aiohttp
 click
 cryptography
 gitpython
-loguru==0.6.0
-pyjwt[crypto]==2.1.0
+loguru
+pyjwt[crypto]>=2.1.0
 python-decouple
-tenacity==6.3.1
+tenacity>=6.3.1
