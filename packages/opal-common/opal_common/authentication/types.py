@@ -2,14 +2,14 @@ from enum import Enum
 from typing import Dict, Any
 
 from jwt.algorithms import get_default_algorithms
-from cryptography.hazmat._types import (
-    _PRIVATE_KEY_TYPES,
-    _PUBLIC_KEY_TYPES,
+from cryptography.hazmat.primitives.asymmetric.types import (
+    PRIVATE_KEY_TYPES,
+    PUBLIC_KEY_TYPES,
 )
 
 # custom types
-PrivateKey = _PRIVATE_KEY_TYPES
-PublicKey = _PUBLIC_KEY_TYPES
+PrivateKey = PRIVATE_KEY_TYPES
+PublicKey = PUBLIC_KEY_TYPES
 JWTClaims = Dict[str, Any]
 
 

@@ -1,6 +1,6 @@
 aiohttp
 click
-cryptography
+cryptography>=35.0.0
 gitpython
 loguru
 pyjwt[crypto]>=2.1.0
