@@ -1,7 +1,7 @@
-click
-broadcaster[postgres,redis,kafka]
-gitpython
-pyjwt[crypto]>=2.1.0
-websockets>=9.1
-ddtrace
-slowapi
+click>=8.1.3,<9
+broadcaster[postgres,redis,kafka]>=0.2.0,<1
+gitpython>=3.1.27,<4
+pyjwt[crypto]>=2.1.0,<3
+websockets>=10.3,<11
+ddtrace>=1.1.4,<2
+slowapi>=0.1.5,<2
