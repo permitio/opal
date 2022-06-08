@@ -1,7 +1,6 @@
 import asyncio
 import functools
 import json
-import time
 from typing import Any, Dict, List, Optional, Set
 
 import aiohttp

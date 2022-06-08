@@ -13,12 +13,9 @@ print(root_dir)
 sys.path.append(root_dir)
 
 import asyncio
-from multiprocessing import Process
 
 import pytest
 import tenacity
-import uvicorn
-from fastapi import FastAPI
 from opal_common.fetcher import FetchEvent, FetchingEngine
 from opal_common.fetcher.providers.http_fetch_provider import (
     HttpFetchEvent,

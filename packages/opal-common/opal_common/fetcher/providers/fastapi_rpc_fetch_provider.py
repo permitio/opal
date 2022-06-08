@@ -1,6 +1,5 @@
 """Simple HTTP get data fetcher using requests supports."""
 
-import requests
 from fastapi_websocket_rpc.rpc_methods import RpcMethodsBase
 from fastapi_websocket_rpc.websocket_rpc_client import WebSocketRpcClient
 
