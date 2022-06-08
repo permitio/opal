@@ -1,3 +1,14 @@
+import os
+
+# we cannot use the opal server config (will create circular dependency)
+ENABLE_DATADOG_APM = bool(os.environ.get("OPAL_ENABLE_DATADOG_APM", "").lower() == "true")
+# To ensure that the supported libraries are instrumented properly in the application, they must be patched prior to being imported.
+if ENABLE_DATADOG_APM:
+    from ddtrace import patch_all
+
+    # Datadog APM
+    patch_all()
+
 from opal_server.loadlimiting import init_loadlimit_router
 import os
 import asyncio
@@ -156,9 +167,6 @@ class OpalServer:
         """
         inits the fastapi app object
         """
-        if opal_server_config.ENABLE_DATADOG_APM:
-            self._configure_monitoring()
-
         app = FastAPI(
             title="Opal Server",
             description="OPAL is an administration layer for Open Policy Agent (OPA), detecting changes" +
@@ -172,17 +180,6 @@ class OpalServer:
         self._configure_api_routes(app)
         self._configure_lifecycle_callbacks(app)
         return app
-
-    def _configure_monitoring(self):
-        """
-        patch fastapi to enable tracing and monitoring with datadog APM
-        """
-        from ddtrace import patch, config
-        # Datadog APM
-        patch(fastapi=True)
-        # Override service name
-        config.fastapi["service_name"] = "opal-server"
-        config.fastapi["request_span_name"] = "opal-server"
 
 
     def _configure_api_routes(self, app: FastAPI):
