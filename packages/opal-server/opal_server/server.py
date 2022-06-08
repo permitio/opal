@@ -1,6 +1,9 @@
-from opal_server.config import opal_server_config
+import os
+
+# we cannot use the opal server config (will create circular dependency)
+ENABLE_DATADOG_APM = bool(os.environ.get("OPAL_ENABLE_DATADOG_APM", "").lower() == "true")
 # To ensure that the supported libraries are instrumented properly in the application, they must be patched prior to being imported.
-if opal_server_config.ENABLE_DATADOG_APM:
+if ENABLE_DATADOG_APM:
     from ddtrace import patch_all
 
     # Datadog APM
@@ -26,6 +29,7 @@ from opal_common.middleware import configure_middleware
 from opal_common.authentication.signer import JWTSigner
 from opal_common.authentication.deps import JWTAuthenticator, StaticBearerAuthenticator
 from opal_common.config import opal_common_config
+from opal_server.config import opal_server_config
 from opal_server.publisher import setup_broadcaster_keepalive_task
 from opal_server.security.api import init_security_router
 from opal_server.security.jwks import JwksStaticEndpoint
