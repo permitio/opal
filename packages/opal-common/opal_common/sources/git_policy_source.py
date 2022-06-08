@@ -1,7 +1,5 @@
-import asyncio
-from typing import Callable, Coroutine, List, Optional
-from git.objects import Commit
-from git import Repo, remote
+from typing import Optional
+from git import Repo
 
 from opal_common.git.branch_tracker import BranchTracker
 from opal_common.git.repo_cloner import RepoCloner

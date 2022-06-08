@@ -3,8 +3,6 @@ Simple HTTP get data fetcher using requests
 supports 
 """
 
-import requests
-
 from ..fetch_provider import BaseFetchProvider
 from ..events import FetcherConfig, FetchEvent
 from ..logger import get_logger
