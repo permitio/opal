@@ -1,7 +1,8 @@
 from typing import Dict, Optional
 
-from opal_client.config import PolicyStoreTypes, opal_client_config
+from opal_client.config import opal_client_config
 from opal_client.policy_store.base_policy_store_client import BasePolicyStoreClient
+from opal_client.policy_store.schemas import PolicyStoreTypes
 
 
 class PolicyStoreClientFactoryException(Exception):

@@ -30,7 +30,9 @@ class OpalClientConfig(Confi):
     # create an instance of a policy store upon load
 
     def load_policy_store():
-        from opal_client.policy_store import PolicyStoreClientFactory
+        from opal_client.policy_store.policy_store_client_factory import (
+            PolicyStoreClientFactory,
+        )
 
         return PolicyStoreClientFactory.create()
 

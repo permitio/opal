@@ -20,7 +20,10 @@ sys.path.append(root_dir)
 from opal_client.config import opal_client_config
 from opal_client.data.rpc import TenantAwareRpcEventClientMethods
 from opal_client.data.updater import DataSourceEntry, DataUpdate, DataUpdater
-from opal_client.policy_store import PolicyStoreClientFactory, PolicyStoreTypes
+from opal_client.policy_store.policy_store_client_factory import (
+    PolicyStoreClientFactory,
+)
+from opal_client.policy_store.schemas import PolicyStoreTypes
 from opal_common.schemas.data import (
     DataSourceConfig,
     DataUpdateReport,
