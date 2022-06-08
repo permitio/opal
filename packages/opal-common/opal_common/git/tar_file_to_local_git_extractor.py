@@ -1,28 +1,35 @@
 import os
-from pathlib import Path
 import shutil
+from pathlib import Path
 from typing import List, Optional
-import git
-from pydantic.error_wrappers import ValidationError
 
+import git
 from opal_common.security.tarsafe import TarSafe
+from pydantic.error_wrappers import ValidationError
 
 
 class TarFileToLocalGitExtractor:
-    """
-    This class takes tar file from remote api source and extract it to local
-    git, so we could manage update to opal clients
+    """This class takes tar file from remote api source and extract it to local
+    git, so we could manage update to opal clients.
 
     Args:
         local_clone_path(str):  path for the local git to manage policies
         tmp_bundle_path(Path):  path to download bundle from api source
     """
-    def __init__(self, local_clone_path: str, tmp_bundle_path: Path, policy_bundle_git_add_pattern = '*'):
+
+    def __init__(
+        self,
+        local_clone_path: str,
+        tmp_bundle_path: Path,
+        policy_bundle_git_add_pattern="*",
+    ):
         self.local_clone_path = local_clone_path
         self.tmp_bundle_path = tmp_bundle_path
         self.policy_bundle_git_add_pattern = policy_bundle_git_add_pattern
 
-    def commit_local_git(self, init_commit_msg: str = "Init", should_init: bool = False):
+    def commit_local_git(
+        self, init_commit_msg: str = "Init", should_init: bool = False
+    ):
         """
         Commit first version of bundle or the updates that come after
         Args:
@@ -41,9 +48,7 @@ class TarFileToLocalGitExtractor:
         return local_git, prev_commit, new_commit
 
     def create_local_git(self):
-        """
-        Extract bundle create local git and commit this initial state
-        """
+        """Extract bundle create local git and commit this initial state."""
 
         self.extract_bundle_tar()
         local_git = TarFileToLocalGitExtractor.is_git_repo(self.local_clone_path)
@@ -61,7 +66,10 @@ class TarFileToLocalGitExtractor:
         os.rename(self.local_clone_path, tmp_path)
         try:
             self.extract_bundle_tar()
-            shutil.move(os.path.join(tmp_path, ".git"), os.path.join(self.local_clone_path, ".git"))
+            shutil.move(
+                os.path.join(tmp_path, ".git"),
+                os.path.join(self.local_clone_path, ".git"),
+            )
         finally:
             shutil.rmtree(tmp_path)
         local_git, prev_commit, new_commit = self.commit_local_git(commit_msg)
@@ -95,9 +103,14 @@ class TarFileToLocalGitExtractor:
             return None
 
     @staticmethod
-    def validate_tar_or_throw(tar_file_names: List[str], forbidden_filename: str = '.git'):
+    def validate_tar_or_throw(
+        tar_file_names: List[str], forbidden_filename: str = ".git"
+    ):
         if len(tar_file_names) == 0:
             raise ValidationError("No files in bundle")
         if forbidden_filename and forbidden_filename in tar_file_names:
-            raise ValidationError("No {forbidden_filename} files are allowed in OPAL api bundle".format(
-                forbidden_filename=forbidden_filename))
+            raise ValidationError(
+                "No {forbidden_filename} files are allowed in OPAL api bundle".format(
+                    forbidden_filename=forbidden_filename
+                )
+            )

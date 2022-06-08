@@ -1,6 +1,7 @@
-import pytest
 import os
 import sys
+
+import pytest
 
 # Add root opal dir to use local src as package for tests (i.e, no need for python -m pytest)
 root_dir = os.path.abspath(
@@ -17,10 +18,9 @@ from pathlib import Path
 
 from opal_common.opa.paths import is_data_module, is_rego_module
 
+
 def test_is_data_module():
-    """
-    Test is_data_module() on different paths
-    """
+    """Test is_data_module() on different paths."""
     # files that are named data.json are data modules
     assert is_data_module(Path("data.json")) == True
     assert is_data_module(Path("some/dir/to/data.json")) == True
@@ -36,10 +36,9 @@ def test_is_data_module():
     assert is_data_module(Path(".")) == False
     assert is_data_module(Path("some/dir/to")) == False
 
+
 def test_is_rego_module():
-    """
-    Test is_rego_module() on different paths
-    """
+    """Test is_rego_module() on different paths."""
     # files with rego extension are rego modules
     assert is_rego_module(Path("some/dir/to/file.rego")) == True
     assert is_rego_module(Path("rbac.rego")) == True
@@ -50,4 +49,3 @@ def test_is_rego_module():
     # directories are not data modules
     assert is_rego_module(Path(".")) == False
     assert is_rego_module(Path("some/dir/to")) == False
-

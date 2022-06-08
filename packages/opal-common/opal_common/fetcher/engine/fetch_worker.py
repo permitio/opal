@@ -1,19 +1,19 @@
 import asyncio
 from typing import Coroutine
 
-from ..events import  FetchEvent
+from ..events import FetchEvent
 from ..fetcher_register import FetcherRegister
 from ..logger import get_logger
 from .base_fetching_engine import BaseFetchingEngine
 
 logger = get_logger("fetch_worker")
 
+
 async def fetch_worker(queue: asyncio.Queue, engine):
-    """
-    The worker task performing items added to the Engine's Queue
+    """The worker task performing items added to the Engine's Queue.
 
     Args:
-        queue (asyncio.Queue): The Queue 
+        queue (asyncio.Queue): The Queue
         engine (BaseFetchingEngine): The engine itself
     """
     engine: BaseFetchingEngine
@@ -37,7 +37,7 @@ async def fetch_worker(queue: asyncio.Queue, engine):
                 await callback(data)
             except Exception as err:
                 logger.exception(f"Fetcher callback - {callback} failed")
-                await engine._on_failure(err, event)        
+                await engine._on_failure(err, event)
         except Exception as err:
             logger.exception("Failed to process fetch event")
             await engine._on_failure(err, event)

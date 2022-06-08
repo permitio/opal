@@ -1,6 +1,7 @@
-import pytest
 import os
 import sys
+
+import pytest
 
 # Add root opal dir to use local src as package for tests (i.e, no need for python -m pytest)
 root_dir = os.path.abspath(
@@ -14,13 +15,14 @@ root_dir = os.path.abspath(
 sys.path.append(root_dir)
 
 from functools import partial
-from typing import List, Tuple
 from pathlib import Path
-from git import Repo, Diff
-from git.objects import Commit
+from typing import List, Tuple
 
+from git import Diff, Repo
+from git.objects import Commit
 from opal_common.git.commit_viewer import VersionedFile
 from opal_common.git.diff_viewer import DiffViewer, diffed_file_is_under_directories
+
 
 def diff_paths(diffs: List[Diff]) -> List[Path]:
     paths = set()
@@ -30,19 +32,19 @@ def diff_paths(diffs: List[Diff]) -> List[Path]:
                 paths.add(Path(path))
     return list(paths)
 
+
 def file_paths(files: List[VersionedFile]) -> List[Path]:
     return [file.path for file in files]
 
+
 def test_diff_viewer_filter_changes(repo_with_diffs: Tuple[Repo, Commit, Commit]):
-    """
-    Test returning changes() only in a certain directory
-    """
+    """Test returning changes() only in a certain directory."""
     repo, previous_head, new_head = repo_with_diffs
 
     # now we can test what changes are returned
     with DiffViewer(previous_head, new_head) as viewer:
         diffs = list(viewer.changes())
-        assert len(diffs) == 4 # we touched (made any type of change) to 4 files
+        assert len(diffs) == 4  # we touched (made any type of change) to 4 files
 
         paths = diff_paths(diffs)
         assert Path("other/gbac.rego") in paths
@@ -53,9 +55,11 @@ def test_diff_viewer_filter_changes(repo_with_diffs: Tuple[Repo, Commit, Commit]
         assert Path("ignored2.json") in paths
 
         # now lets apply a filter
-        diffs = list(viewer.changes(
-            partial(diffed_file_is_under_directories, directories={Path('other')})
-        ))
+        diffs = list(
+            viewer.changes(
+                partial(diffed_file_is_under_directories, directories={Path("other")})
+            )
+        )
         # only diffs under 'other' directory is returned
         # matching diffs:
         # (A) other/gbac.rego
@@ -68,10 +72,12 @@ def test_diff_viewer_filter_changes(repo_with_diffs: Tuple[Repo, Commit, Commit]
         assert Path("mylist.txt") not in paths
         assert Path("ignored2.json") not in paths
 
-def test_diff_viewer_filter_by_change_type(repo_with_diffs: Tuple[Repo, Commit, Commit]):
-    """
-    Test added(), deleted(), renamed(), modified() return only appropriate diffs
-    """
+
+def test_diff_viewer_filter_by_change_type(
+    repo_with_diffs: Tuple[Repo, Commit, Commit]
+):
+    """Test added(), deleted(), renamed(), modified() return only appropriate
+    diffs."""
     repo, previous_head, new_head = repo_with_diffs
     with DiffViewer(previous_head, new_head) as viewer:
         # we added 1 file, we expect the added() generator to return only 1 diff
@@ -96,18 +102,17 @@ def test_diff_viewer_filter_by_change_type(repo_with_diffs: Tuple[Repo, Commit, 
         diffs = list(viewer.renamed())
         assert len(diffs) == 1
         paths = diff_paths(diffs)
-        assert len(paths) == 2 # both old and new file name
+        assert len(paths) == 2  # both old and new file name
         assert Path("ignored.json") in paths
         assert Path("ignored2.json") in paths
 
+
 def test_diff_viewer_affected_paths(repo_with_diffs: Tuple[Repo, Commit, Commit]):
-    """
-    Test affected_path() returns only file paths of changed files.
-    """
+    """Test affected_path() returns only file paths of changed files."""
     repo, previous_head, new_head = repo_with_diffs
     with DiffViewer(previous_head, new_head) as viewer:
         paths = viewer.affected_paths()
-         # we touched 4 files, 1 is a rename so it has two paths (old and new)
+        # we touched 4 files, 1 is a rename so it has two paths (old and new)
         assert len(paths) == 5
         assert Path("other/gbac.rego") in paths
         assert Path("mylist.txt") in paths
@@ -115,10 +120,12 @@ def test_diff_viewer_affected_paths(repo_with_diffs: Tuple[Repo, Commit, Commit]
         assert Path("ignored.json") in paths
         assert Path("ignored2.json") in paths
 
-def test_diff_viewer_returns_blob_for_added_file(repo_with_diffs: Tuple[Repo, Commit, Commit]):
-    """
-    If we added a file, we expect the blob of the new version to be returned
-    """
+
+def test_diff_viewer_returns_blob_for_added_file(
+    repo_with_diffs: Tuple[Repo, Commit, Commit]
+):
+    """If we added a file, we expect the blob of the new version to be
+    returned."""
     repo, previous_head, new_head = repo_with_diffs
     with DiffViewer(previous_head, new_head) as viewer:
         # added files return a VersionedFile with the blob
@@ -131,10 +138,12 @@ def test_diff_viewer_returns_blob_for_added_file(repo_with_diffs: Tuple[Repo, Co
         assert Path("other/gbac.rego") in paths
         assert Path("ignored2.json") in paths
 
-def test_diff_viewer_returns_blob_for_modified_file(repo_with_diffs: Tuple[Repo, Commit, Commit]):
-    """
-    If we modified a file, we expect the blob of the new version to be returned
-    """
+
+def test_diff_viewer_returns_blob_for_modified_file(
+    repo_with_diffs: Tuple[Repo, Commit, Commit]
+):
+    """If we modified a file, we expect the blob of the new version to be
+    returned."""
     repo, previous_head, new_head = repo_with_diffs
     with DiffViewer(previous_head, new_head) as viewer:
         files: List[VersionedFile] = list(viewer.modified_files())
@@ -142,10 +151,12 @@ def test_diff_viewer_returns_blob_for_modified_file(repo_with_diffs: Tuple[Repo,
         paths = file_paths(files)
         assert Path("mylist.txt") in paths
 
-def test_diff_viewer_returns_blob_for_deleted_file(repo_with_diffs: Tuple[Repo, Commit, Commit]):
-    """
-    If we deleted a file, we expect the blob of the *old* version to be returned
-    """
+
+def test_diff_viewer_returns_blob_for_deleted_file(
+    repo_with_diffs: Tuple[Repo, Commit, Commit]
+):
+    """If we deleted a file, we expect the blob of the *old* version to be
+    returned."""
     repo, previous_head, new_head = repo_with_diffs
     with DiffViewer(previous_head, new_head) as viewer:
         # deleted files return a VersionedFile with the blob

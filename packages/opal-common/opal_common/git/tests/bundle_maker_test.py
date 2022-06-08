@@ -1,6 +1,7 @@
-import pytest
 import os
 import sys
+
+import pytest
 
 # Add root opal dir to use local src as package for tests (i.e, no need for python -m pytest)
 root_dir = os.path.abspath(
@@ -13,30 +14,28 @@ root_dir = os.path.abspath(
 )
 sys.path.append(root_dir)
 
-from typing import List, Tuple
 from pathlib import Path
+from typing import List, Tuple
+
 from git import Repo
 from git.objects import Commit
-
 from opal_common.git.bundle_maker import BundleMaker
 from opal_common.schemas.policy import PolicyBundle, RegoModule
 
-OPA_FILE_EXTENSIONS = ('.rego', '.json')
+OPA_FILE_EXTENSIONS = (".rego", ".json")
+
 
 def assert_is_complete_bundle(bundle: PolicyBundle):
     assert bundle.old_hash is None
     assert bundle.deleted_files is None
 
+
 def test_bundle_maker_only_includes_opa_files(local_repo: Repo, helpers):
-    """
-    Test bundle maker on a repo with non-opa files
-    """
+    """Test bundle maker on a repo with non-opa files."""
     repo: Repo = local_repo
 
     maker = BundleMaker(
-        repo,
-        in_directories=set([Path('.')]),
-        extensions=OPA_FILE_EXTENSIONS
+        repo, in_directories=set([Path(".")]), extensions=OPA_FILE_EXTENSIONS
     )
     commit: Commit = repo.head.commit
     bundle: PolicyBundle = maker.make_bundle(commit)
@@ -75,17 +74,15 @@ def test_bundle_maker_only_includes_opa_files(local_repo: Repo, helpers):
     for module in policy_modules:
         assert "Role-based Access Control (RBAC)" in module.rego
 
+
 def test_bundle_maker_can_filter_on_directories(local_repo: Repo, helpers):
-    """
-    Test bundle maker filtered on directory only returns opa files from that directory
-    """
+    """Test bundle maker filtered on directory only returns opa files from that
+    directory."""
     repo: Repo = local_repo
     commit: Commit = repo.head.commit
 
     maker = BundleMaker(
-        repo,
-        in_directories=set([Path('other')]),
-        extensions=OPA_FILE_EXTENSIONS
+        repo, in_directories=set([Path("other")]), extensions=OPA_FILE_EXTENSIONS
     )
     bundle: PolicyBundle = maker.make_bundle(commit)
     # assert the bundle is a complete bundle (no old hash, etc)
@@ -111,9 +108,7 @@ def test_bundle_maker_can_filter_on_directories(local_repo: Repo, helpers):
     assert bundle.policy_modules[0].package_name == "app.abac"
 
     maker = BundleMaker(
-        repo,
-        in_directories=set([Path('some')]),
-        extensions=OPA_FILE_EXTENSIONS
+        repo, in_directories=set([Path("some")]), extensions=OPA_FILE_EXTENSIONS
     )
     bundle: PolicyBundle = maker.make_bundle(commit)
     # assert the bundle is a complete bundle (no old hash, etc)
@@ -134,15 +129,14 @@ def test_bundle_maker_can_filter_on_directories(local_repo: Repo, helpers):
     assert bundle.policy_modules[0].path == "some/dir/to/file.rego"
     assert bundle.policy_modules[0].package_name == "envoy.http.public"
 
-def test_bundle_maker_detects_changes_in_source_files(repo_with_diffs: Tuple[Repo, Commit, Commit]):
-    """
-    See that making changes to the repo results in different bundles
-    """
+
+def test_bundle_maker_detects_changes_in_source_files(
+    repo_with_diffs: Tuple[Repo, Commit, Commit]
+):
+    """See that making changes to the repo results in different bundles."""
     repo, previous_head, new_head = repo_with_diffs
     maker = BundleMaker(
-        repo,
-        in_directories=set([Path('.')]),
-        extensions=OPA_FILE_EXTENSIONS
+        repo, in_directories=set([Path(".")]), extensions=OPA_FILE_EXTENSIONS
     )
     bundle: PolicyBundle = maker.make_bundle(previous_head)
     assert_is_complete_bundle(bundle)
@@ -177,15 +171,12 @@ def test_bundle_maker_detects_changes_in_source_files(repo_with_diffs: Tuple[Rep
     # assert on the contents of policy modules
     assert len(bundle.policy_modules) == 4
 
+
 def test_bundle_maker_diff_bundle(repo_with_diffs: Tuple[Repo, Commit, Commit]):
-    """
-    See that only changes to the repo are returned in a diff bundle
-    """
+    """See that only changes to the repo are returned in a diff bundle."""
     repo, previous_head, new_head = repo_with_diffs
     maker = BundleMaker(
-        repo,
-        in_directories=set([Path('.')]),
-        extensions=OPA_FILE_EXTENSIONS
+        repo, in_directories=set([Path(".")]), extensions=OPA_FILE_EXTENSIONS
     )
     bundle: PolicyBundle = maker.make_diff_bundle(previous_head, new_head)
     # assert both hashes are included
@@ -208,29 +199,27 @@ def test_bundle_maker_diff_bundle(repo_with_diffs: Tuple[Repo, Commit, Commit]):
     assert bundle.deleted_files is not None
     assert len(bundle.deleted_files.policy_modules) == 0
     assert len(bundle.deleted_files.data_modules) == 1
-    assert bundle.deleted_files.data_modules[0] == Path("other") # other/data.json was deleted
+    assert bundle.deleted_files.data_modules[0] == Path(
+        "other"
+    )  # other/data.json was deleted
+
 
 def test_bundle_maker_sorts_according_to_explicit_manifest(local_repo: Repo, helpers):
-    """
-    Test bundle maker filtered on directory only returns opa files from that directory
-    """
+    """Test bundle maker filtered on directory only returns opa files from that
+    directory."""
     repo: Repo = local_repo
     root = Path(repo.working_tree_dir)
     manifest_path = root / ".manifest"
 
     # create a manifest with this sorting: abac.rego comes before rbac.rego
     helpers.create_new_file_commit(
-        repo,
-        manifest_path,
-        contents="\n".join(['other/abac.rego', 'rbac.rego'])
+        repo, manifest_path, contents="\n".join(["other/abac.rego", "rbac.rego"])
     )
 
     commit: Commit = repo.head.commit
 
     maker = BundleMaker(
-        repo,
-        in_directories=set([Path('.')]),
-        extensions=OPA_FILE_EXTENSIONS
+        repo, in_directories=set([Path(".")]), extensions=OPA_FILE_EXTENSIONS
     )
     bundle: PolicyBundle = maker.make_bundle(commit)
     # assert the bundle is a complete bundle (no old hash, etc)
@@ -250,7 +239,7 @@ def test_bundle_maker_sorts_according_to_explicit_manifest(local_repo: Repo, hel
     helpers.create_new_file_commit(
         repo,
         manifest_path,
-        contents="\n".join(['some/dir/to/file.rego', 'other/abac.rego'])
+        contents="\n".join(["some/dir/to/file.rego", "other/abac.rego"]),
     )
 
     commit: Commit = repo.head.commit

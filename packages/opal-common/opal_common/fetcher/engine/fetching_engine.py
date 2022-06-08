@@ -7,16 +7,14 @@ from ..fetch_provider import BaseFetchProvider
 from ..fetcher_register import FetcherRegister
 from ..logger import get_logger
 from .base_fetching_engine import BaseFetchingEngine
-from .fetch_worker import fetch_worker
 from .core_callbacks import OnFetchFailureCallback
-
+from .fetch_worker import fetch_worker
 
 logger = get_logger("engine")
 
 
 class FetchingEngine(BaseFetchingEngine):
-    """
-    A Task queue manager for fetching events.
+    """A Task queue manager for fetching events.
 
     - Configure with different fetcher providers - via __init__'s register_config or via self.register.register_fetcher()
     - Use queue_url() to fetch a given URL with the default FetchProvider
@@ -32,11 +30,13 @@ class FetchingEngine(BaseFetchingEngine):
     def gen_uid():
         return uuid.uuid4().hex
 
-    def __init__(self, register_config: Dict[str, BaseFetchProvider] = None,
-                 worker_count: int = DEFAULT_WORKER_COUNT,
-                 callback_timeout: int = DEFAULT_CALLBACK_TIMEOUT,
-                 enqueue_timeout: int = DEFAULT_ENQUEUE_TIMEOUT
-                 ) -> None:
+    def __init__(
+        self,
+        register_config: Dict[str, BaseFetchProvider] = None,
+        worker_count: int = DEFAULT_WORKER_COUNT,
+        callback_timeout: int = DEFAULT_CALLBACK_TIMEOUT,
+        enqueue_timeout: int = DEFAULT_ENQUEUE_TIMEOUT,
+    ) -> None:
         # The internal task queue (created at start_workers)
         self._queue: asyncio.Queue = None
         # Worker working the queue
@@ -64,21 +64,20 @@ class FetchingEngine(BaseFetchingEngine):
         return self._fetcher_register
 
     async def __aenter__(self):
-        """
-        Async Context manager to cancel tasks on exit 
-        """
+        """Async Context manager to cancel tasks on exit."""
         self.start_workers()
         return self
 
     async def __aexit__(self, exc_type, exc, tb):
-        if (exc is not None):
-            logger.error("Error occurred within FetchingEngine context", exc_info=repr((exc_type, exc, tb)))
+        if exc is not None:
+            logger.error(
+                "Error occurred within FetchingEngine context",
+                exc_info=repr((exc_type, exc, tb)),
+            )
         await self.terminate_workers()
 
     async def terminate_workers(self):
-        """
-        Cancel and wait on the internal worker tasks
-        """
+        """Cancel and wait on the internal worker tasks."""
         # Cancel our worker tasks.
         for task in self._tasks:
             task.cancel()
@@ -91,23 +90,24 @@ class FetchingEngine(BaseFetchingEngine):
         """
         Same as self.queue_url but instead of using a callback, you can wait on this coroutine for the result as a return value
         Args:
-            url (str): 
+            url (str):
             timeout (float, optional): time in seconds to wait on the queued fetch task. Defaults to self._callback_timeout.
             kwargs: additional args passed to self.queue_url
 
         Raises:
             asyncio.TimeoutError: if the given timeout has expired
-            also - @see self.queue_fetch_event            
+            also - @see self.queue_fetch_event
         """
         timeout = self._callback_timeout if timeout is None else timeout
         wait_event = asyncio.Event()
-        data = {'result': None}
+        data = {"result": None}
         # Callback to wait and retrive data
 
         async def waiter_callback(answer):
-            data['result'] = answer
+            data["result"] = answer
             # Signal callback is done
             wait_event.set()
+
         await self.queue_url(url, waiter_callback, **kwargs)
         # Wait with timeout
         if timeout is not None:
@@ -116,18 +116,23 @@ class FetchingEngine(BaseFetchingEngine):
         else:
             await wait_event.wait()
         # return saved result value from callback
-        return data['result']
+        return data["result"]
 
-    async def queue_url(self, url: str, callback: Coroutine, config: Union[FetcherConfig, dict] = None, fetcher="HttpFetchProvider") -> FetchEvent:
-        """
-        Simplified default fetching handler for queuing a fetch task
+    async def queue_url(
+        self,
+        url: str,
+        callback: Coroutine,
+        config: Union[FetcherConfig, dict] = None,
+        fetcher="HttpFetchProvider",
+    ) -> FetchEvent:
+        """Simplified default fetching handler for queuing a fetch task.
 
         Args:
             url (str): the URL to fetch from
             callback (Coroutine): a callback to call with the fetched result
             config (FetcherConfig, optional): Configuration to be used by the fetcher. Defaults to None.
             fetcher (str, optional): Which fetcher class to use. Defaults to "HttpFetchProvider".
-        Returns: 
+        Returns:
             the queued event (which will be mutated to at least have an Id)
 
         Raises:
@@ -143,24 +148,28 @@ class FetchingEngine(BaseFetchingEngine):
         event = FetchEvent(url=url, fetcher=fetcher, config=config)
         return await self.queue_fetch_event(event, callback)
 
-    async def queue_fetch_event(self, event: FetchEvent, callback: Coroutine, enqueue_timeout=None) -> FetchEvent:
-        """
-        Basic handler to queue a fetch event for a fetcher class.
-        Waits if the queue is full until enqueue_timeout seconds; if enqueue_timeout is None returns immediately or raises QueueFull
+    async def queue_fetch_event(
+        self, event: FetchEvent, callback: Coroutine, enqueue_timeout=None
+    ) -> FetchEvent:
+        """Basic handler to queue a fetch event for a fetcher class. Waits if
+        the queue is full until enqueue_timeout seconds; if enqueue_timeout is
+        None returns immediately or raises QueueFull.
 
         Args:
             event (FetchEvent): the fetch event to queue as a task
             callback (Coroutine): a callback to call with the fetched result
             enqueue_timeout (float): timeout in seconds or None for no timeout, Defaults to self.DEFAULT_ENQUEUE_TIMEOUT
 
-        Returns: 
-            the queued event (which will be mutated to at least have an Id)  
+        Returns:
+            the queued event (which will be mutated to at least have an Id)
 
         Raises:
             asyncio.QueueFull: if the queue is full and enqueue_timeout is set as None
             asyncio.TimeoutError: if enqueue_timeout is not None, and the queue is full and hasn't cleared by the timeout time
         """
-        enqueue_timeout = enqueue_timeout if enqueue_timeout is not None else self._enqueue_timeout
+        enqueue_timeout = (
+            enqueue_timeout if enqueue_timeout is not None else self._enqueue_timeout
+        )
         # Assign a unique identifier for the event
         event.id = self.gen_uid()
         # add to the queue for handling
@@ -173,24 +182,24 @@ class FetchingEngine(BaseFetchingEngine):
         return event
 
     def create_worker(self) -> asyncio.Task:
-        """
-        Create an asyncio worker to work the engine's queue
-        Engine init starts several workers according to given configuration
-        """
+        """Create an asyncio worker to work the engine's queue Engine init
+        starts several workers according to given configuration."""
         task = asyncio.create_task(fetch_worker(self._queue, self))
         self._tasks.append(task)
         return task
 
     def register_failure_handler(self, callback: OnFetchFailureCallback):
-        """
-        Register a callback to be called with exception and original event in case of failure
+        """Register a callback to be called with exception and original event
+        in case of failure.
 
         Args:
             callback (OnFetchFailureCallback): callback to register
         """
         self._failure_handlers.append(callback)
 
-    async def _management_event_handler(self, handlers: List[Coroutine], *args, **kwargs):
+    async def _management_event_handler(
+        self, handlers: List[Coroutine], *args, **kwargs
+    ):
         """
         Generic management event subscriber caller
         Args:
@@ -199,8 +208,7 @@ class FetchingEngine(BaseFetchingEngine):
         await asyncio.gather(*(callback(*args, **kwargs) for callback in handlers))
 
     async def _on_failure(self, error: Exception, event: FetchEvent):
-        """
-        Call event failure subscribers
+        """Call event failure subscribers.
 
         Args:
             error (Exception): thrown exception

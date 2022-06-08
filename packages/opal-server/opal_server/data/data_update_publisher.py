@@ -1,22 +1,23 @@
 import os
-
 from typing import List
+
+from opal_common.logger import logger
 from opal_common.schemas.data import DataUpdate
 from opal_common.topics.publisher import TopicPublisher
-from opal_common.logger import logger
 
 TOPIC_DELIMETER = "/"
 
-class DataUpdatePublisher:
 
-    def __init__(self, publisher:TopicPublisher) -> None:
+class DataUpdatePublisher:
+    def __init__(self, publisher: TopicPublisher) -> None:
         self._publisher = publisher
 
-
-    def get_topic_combos(self, topic:str, delimeter:str=TOPIC_DELIMETER)->List[str]:
-        """
-        Get the The combinations of sub topics for the given topic
-        e.g.  "policy_data/users/keys" -> ["policy_data", "policy_data/users", "policy_data/users/keys"]
+    def get_topic_combos(
+        self, topic: str, delimeter: str = TOPIC_DELIMETER
+    ) -> List[str]:
+        """Get the The combinations of sub topics for the given topic e.g.
+        "policy_data/users/keys" -> ["policy_data", "policy_data/users",
+        "policy_data/users/keys"]
 
         Args:
             topic (str): topic string with sub topics delimited by delimiter
@@ -36,10 +37,8 @@ class DataUpdatePublisher:
                     topic_combos.append(current_topic)
         return topic_combos
 
-
-    def publish_data_updates(self, update:DataUpdate):
-        """
-        Notify OPAL subscribers of a new data update by topic
+    def publish_data_updates(self, update: DataUpdate):
+        """Notify OPAL subscribers of a new data update by topic.
 
         Args:
             topics (List[str]): topics (with hierarchy) to notify subscribers of
@@ -53,7 +52,10 @@ class DataUpdatePublisher:
                 all_topic_combos.extend(topic_combos)
 
         # a nicer format of entries to the log
-        logged_entries = [(entry.url, entry.save_method, entry.dst_path or "/") for entry in update.entries]
+        logged_entries = [
+            (entry.url, entry.save_method, entry.dst_path or "/")
+            for entry in update.entries
+        ]
 
         # publish all topics with all their sub combinations
         logger.info(

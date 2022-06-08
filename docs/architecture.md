@@ -1,9 +1,9 @@
 # 🏗️ Architecture
 
 ## Simplified (TL;DR)
-OPAL consists of two key components that work together: 
+OPAL consists of two key components that work together:
 
-1. OPAL Server 
+1. OPAL Server
     - Creates a Pub/Sub channel clients subscribe to
     - Tracks a git repository (via webhook / polling) for updates to policy (or static data)
         - Additional versioned repositories can be supported (e.g. S3, SVN)
@@ -13,9 +13,9 @@ OPAL consists of two key components that work together:
 
 2. OPAL Client
     - Deployed alongside a policy-agent, and keeping it up to date
-    - Subscribes to Pub/Sub updates, based on topics for data and policy 
+    - Subscribes to Pub/Sub updates, based on topics for data and policy
     - Downloads data-source configurations from server
-        - Fetches data from multiple sources (e.g. DBs, APIs, 3rd party services) 
+        - Fetches data from multiple sources (e.g. DBs, APIs, 3rd party services)
     - Downloads policy from server
     - Keeps policy agents up to date
 <br>

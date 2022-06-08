@@ -4,17 +4,16 @@ from uuid import UUID
 from fastapi import Header
 from fastapi.exceptions import HTTPException
 from fastapi.security.utils import get_authorization_scheme_param
-
 from opal_common.authentication.types import JWTClaims
 from opal_common.authentication.verifier import JWTVerifier, Unauthorized
 from opal_common.logger import logger
 
-def get_token_from_header(authorization_header: str) -> Optional[str]:
-    """
-    extracts a bearer token from an HTTP Authorization header.
 
-    when provided bearer token via websocket,
-    we cannot use the fastapi built-in: oauth2_scheme.
+def get_token_from_header(authorization_header: str) -> Optional[str]:
+    """extracts a bearer token from an HTTP Authorization header.
+
+    when provided bearer token via websocket, we cannot use the fastapi
+    built-in: oauth2_scheme.
     """
     if not authorization_header:
         return None
@@ -27,9 +26,7 @@ def get_token_from_header(authorization_header: str) -> Optional[str]:
 
 
 def verify_logged_in(verifier: JWTVerifier, token: Optional[str]) -> JWTClaims:
-    """
-    forces bearer token authentication with valid JWT or throws 401.
-    """
+    """forces bearer token authentication with valid JWT or throws 401."""
     try:
         if not verifier.enabled:
             logger.debug("JWT verification disabled, cannot verify requests!")
@@ -64,7 +61,9 @@ def verify_logged_in(verifier: JWTVerifier, token: Optional[str]) -> JWTClaims:
         details.pop("token", None)
 
         # logs the error and reraises
-        logger.error(f"Authentication failed with {err.status_code} due to error: {details}")
+        logger.error(
+            f"Authentication failed with {err.status_code} due to error: {details}"
+        )
         raise
 
 
@@ -80,19 +79,20 @@ class _JWTAuthenticator:
     def enabled(self) -> JWTVerifier:
         return self._verifier.enabled
 
+
 class JWTAuthenticator(_JWTAuthenticator):
-    """
-    bearer token authentication for http(s) api endpoints.
+    """bearer token authentication for http(s) api endpoints.
+
     throws 401 if a valid jwt is not provided.
     """
+
     def __call__(self, authorization: Optional[str] = Header(None)) -> JWTClaims:
         token = get_token_from_header(authorization)
         return verify_logged_in(self._verifier, token)
 
 
 class WebsocketJWTAuthenticator(_JWTAuthenticator):
-    """
-    bearer token authentication for websocket endpoints.
+    """bearer token authentication for websocket endpoints.
 
     with fastapi ws endpoint, we cannot throw http exceptions inside dependencies,
     because no matter the http status code, uvicorn will treat it as http 500.
@@ -109,6 +109,7 @@ class WebsocketJWTAuthenticator(_JWTAuthenticator):
 
     thus we return a the claims or None and the endpoint can use it to potentially call websocket.close()
     """
+
     def __call__(self, authorization: Optional[str] = Header(None)) -> bool:
         token = get_token_from_header(authorization)
         try:
@@ -118,10 +119,11 @@ class WebsocketJWTAuthenticator(_JWTAuthenticator):
 
 
 class StaticBearerAuthenticator:
-    """
-    bearer token authentication for http(s) api endpoints.
+    """bearer token authentication for http(s) api endpoints.
+
     throws 401 if token does not match a preconfigured value.
     """
+
     def __init__(self, preconfigured_token: Optional[str]):
         self._preconfigured_token = preconfigured_token
 
@@ -135,4 +137,6 @@ class StaticBearerAuthenticator:
 
         token = get_token_from_header(authorization)
         if token is None or token != self._preconfigured_token:
-            raise Unauthorized(token=token, description="unauthorized to access this endpoint!")
+            raise Unauthorized(
+                token=token, description="unauthorized to access this endpoint!"
+            )

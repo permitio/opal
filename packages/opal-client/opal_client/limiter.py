@@ -1,18 +1,14 @@
 import aiohttp
-
-from fastapi import status, HTTPException
-from tenacity import retry, wait_random_exponential, stop
-
-from opal_common.utils import tuple_to_dict, get_authorization_header
-from opal_common.security.sslcontext import get_custom_ssl_context
-
-from opal_client.logger import logger
+from fastapi import HTTPException, status
 from opal_client.config import opal_client_config
+from opal_client.logger import logger
+from opal_common.security.sslcontext import get_custom_ssl_context
+from opal_common.utils import get_authorization_header, tuple_to_dict
+from tenacity import retry, stop, wait_random_exponential
+
 
 class StartupLoadLimiter:
-    """
-    Validates OPAL server is not too loaded before starting up
-    """
+    """Validates OPAL server is not too loaded before starting up."""
 
     def __init__(self, backend_url=None, token=None):
         """
@@ -26,8 +22,11 @@ class StartupLoadLimiter:
         self._token = token or opal_client_config.CLIENT_TOKEN
         self._auth_headers = tuple_to_dict(get_authorization_header(self._token))
         self._custom_ssl_context = get_custom_ssl_context()
-        self._ssl_context_kwargs = {'ssl': self._custom_ssl_context} if self._custom_ssl_context is not None else {}
-
+        self._ssl_context_kwargs = (
+            {"ssl": self._custom_ssl_context}
+            if self._custom_ssl_context is not None
+            else {}
+        )
 
     @retry(wait=wait_random_exponential(max=10), stop=stop.stop_never, reraise=True)
     async def wait_for_server_ready(self):
@@ -36,11 +35,13 @@ class StartupLoadLimiter:
             try:
                 async with session.get(
                     self._loadlimit_endpoint_url,
-                    headers={'content-type': 'text/plain', **self._auth_headers},
-                    **self._ssl_context_kwargs
+                    headers={"content-type": "text/plain", **self._auth_headers},
+                    **self._ssl_context_kwargs,
                 ) as response:
                     if response.status != status.HTTP_200_OK:
-                        logger.warning(f"loadlimit endpoint returned status {response.status}")
+                        logger.warning(
+                            f"loadlimit endpoint returned status {response.status}"
+                        )
                         raise HTTPException(response.status)
             except aiohttp.ClientError as e:
                 logger.warning("server connection error: {err}", err=repr(e))

@@ -1,5 +1,6 @@
-from .commands import all_commands
 import typer
+
+from .commands import all_commands
 
 
 def get_typer_app():
@@ -7,5 +8,3 @@ def get_typer_app():
     for cmd in all_commands:
         app.command()(cmd)
     return app
-
-

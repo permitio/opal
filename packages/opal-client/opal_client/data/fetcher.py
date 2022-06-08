@@ -1,24 +1,19 @@
 import asyncio
-from typing import Dict, Any, List, Tuple
-from opal_common.utils import tuple_to_dict
+from typing import Any, Dict, List, Tuple
 
 from opal_client.config import opal_client_config
 from opal_common.config import opal_common_config
-from opal_common.utils import get_authorization_header
 from opal_common.fetcher import FetchingEngine
 from opal_common.fetcher.events import FetcherConfig
 from opal_common.fetcher.providers.http_fetch_provider import HttpFetcherConfig
 from opal_common.logger import logger
+from opal_common.utils import get_authorization_header, tuple_to_dict
 
 
 class DataFetcher:
-    """
-    fetches policy data from backend
-    """
+    """fetches policy data from backend."""
 
-    def __init__(self,
-                 default_data_url: str = None,
-                 token: str = None):
+    def __init__(self, default_data_url: str = None, token: str = None):
         """
 
         Args:
@@ -32,36 +27,32 @@ class DataFetcher:
         self._engine = FetchingEngine(
             worker_count=opal_common_config.FETCHING_WORKER_COUNT,
             callback_timeout=opal_common_config.FETCHING_CALLBACK_TIMEOUT,
-            enqueue_timeout=opal_common_config.FETCHING_ENQUEUE_TIMEOUT
+            enqueue_timeout=opal_common_config.FETCHING_ENQUEUE_TIMEOUT,
         )
         self._data_url = default_data_url
         self._token = token
         self._auth_headers = tuple_to_dict(get_authorization_header(token))
-        self._default_fetcher_config = HttpFetcherConfig(headers=self._auth_headers, is_json=True)
+        self._default_fetcher_config = HttpFetcherConfig(
+            headers=self._auth_headers, is_json=True
+        )
 
     async def __aenter__(self):
         await self.start()
         return self
 
     async def __aexit__(self, exc_type, exc, tb):
-        """
-        Context handler to terminate internal tasks
-        """
+        """Context handler to terminate internal tasks."""
         await self.stop()
 
     async def start(self):
         self._engine.start_workers()
 
     async def stop(self):
-        """
-        Release internal tasks and resources
-        """
+        """Release internal tasks and resources."""
         await self._engine.terminate_workers()
 
     async def handle_url(self, url, config):
-        """
-        Helper function wrapping self._engine.handle_url
-        """
+        """Helper function wrapping self._engine.handle_url."""
         logger.info("Fetching data from url: {url}", url=url)
         try:
             # ask the engine to get our data
@@ -71,9 +62,11 @@ class DataFetcher:
             logger.exception("Timeout while fetching url: {url}", url=url)
             raise
 
-    async def handle_urls(self, urls: List[Tuple[str, FetcherConfig]] = None) -> List[Tuple[str, FetcherConfig, Any]]:
-        """
-        Fetch data for each given url with the (optional) fetching configuration; return the resulting data mapped to each URL
+    async def handle_urls(
+        self, urls: List[Tuple[str, FetcherConfig]] = None
+    ) -> List[Tuple[str, FetcherConfig, Any]]:
+        """Fetch data for each given url with the (optional) fetching
+        configuration; return the resulting data mapped to each URL.
 
         Args:
             urls (List[Tuple[str, FetcherConfig]], optional): Urls (and fetching configuration) to fetch from.
@@ -95,7 +88,9 @@ class DataFetcher:
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
         # Map results with their matching urls and config
-        results_with_url_and_config = [(url, config, result) for (url, config), result in zip(urls, results)]
+        results_with_url_and_config = [
+            (url, config, result) for (url, config), result in zip(urls, results)
+        ]
 
         # return results
         return results_with_url_and_config

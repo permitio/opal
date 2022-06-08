@@ -1,8 +1,8 @@
 import logging
 
+
 def hijack_uvicorn_logs(intercept_handler: logging.Handler):
-    """
-    Uvicorn loggers are configured to use special handlers.
+    """Uvicorn loggers are configured to use special handlers.
 
     Adding an intercept handler to the root logger manages to intercept logs from uvicorn, however, the log messages are duplicated.
     This is happening because uvicorn loggers are propagated by default - we get a log message once for the "uvicorn" / "uvicorn.error"
@@ -14,7 +14,12 @@ def hijack_uvicorn_logs(intercept_handler: logging.Handler):
     """
     # get loggers directly from uvicorn config - if they will change something - we will know.
     from uvicorn.config import LOGGING_CONFIG
-    uvicorn_logger_names = list(LOGGING_CONFIG.get("loggers", {}).keys()) or ["uvicorn", "uvicorn.access", "uvicorn.error"]
+
+    uvicorn_logger_names = list(LOGGING_CONFIG.get("loggers", {}).keys()) or [
+        "uvicorn",
+        "uvicorn.access",
+        "uvicorn.error",
+    ]
     for logger_name in uvicorn_logger_names:
         logger = logging.getLogger(logger_name)
         logger.handlers = [intercept_handler]

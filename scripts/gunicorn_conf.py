@@ -4,9 +4,7 @@ from opal_common.logger import logger
 
 
 def post_fork(server, worker):
-    """
-    this hook takes effect if we are using gunicorn to run OPAL.
-    """
+    """this hook takes effect if we are using gunicorn to run OPAL."""
     rookout_token = os.getenv("ROOKOUT_TOKEN", None)
     if not rookout_token:
         return
@@ -21,4 +19,5 @@ def post_fork(server, worker):
         labels.update({"user": user})
 
     import rook
+
     rook.start(token=rookout_token, labels=labels)

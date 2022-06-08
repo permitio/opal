@@ -1,12 +1,11 @@
 import os
+from pathlib import Path
+from typing import List, Optional
+
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from git import Repo
 from opal_common.confi.confi import load_conf_if_none
 from opal_common.git.bundle_maker import BundleMaker
-from typing import Optional, List
-from fastapi import APIRouter, Depends, Query, HTTPException, status
-from pathlib import Path
-
-from git import Repo
-
 from opal_common.git.commit_viewer import CommitViewer
 from opal_common.git.repo_cloner import RepoClonePathFinder
 from opal_common.schemas.policy import PolicyBundle
@@ -20,15 +19,25 @@ async def get_repo(
     clone_subdirectory_prefix: str = None,
     use_fixed_path: bool = None,
 ) -> Repo:
-    base_clone_path = load_conf_if_none(base_clone_path, opal_server_config.POLICY_REPO_CLONE_PATH)
-    clone_subdirectory_prefix = load_conf_if_none(clone_subdirectory_prefix, opal_server_config.POLICY_REPO_CLONE_FOLDER_PREFIX)
-    use_fixed_path = load_conf_if_none(use_fixed_path, opal_server_config.POLICY_REPO_REUSE_CLONE_PATH)
-    clone_path_finder = RepoClonePathFinder(base_clone_path=base_clone_path, clone_subdirectory_prefix=clone_subdirectory_prefix, use_fixed_path=use_fixed_path)
+    base_clone_path = load_conf_if_none(
+        base_clone_path, opal_server_config.POLICY_REPO_CLONE_PATH
+    )
+    clone_subdirectory_prefix = load_conf_if_none(
+        clone_subdirectory_prefix, opal_server_config.POLICY_REPO_CLONE_FOLDER_PREFIX
+    )
+    use_fixed_path = load_conf_if_none(
+        use_fixed_path, opal_server_config.POLICY_REPO_REUSE_CLONE_PATH
+    )
+    clone_path_finder = RepoClonePathFinder(
+        base_clone_path=base_clone_path,
+        clone_subdirectory_prefix=clone_subdirectory_prefix,
+        use_fixed_path=use_fixed_path,
+    )
     repo_path = clone_path_finder.get_clone_path()
 
     policy_repo_not_found_error = HTTPException(
         status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-        detail="policy repo was not found"
+        detail="policy repo was not found",
     )
 
     if not repo_path:
@@ -43,14 +52,15 @@ async def get_repo(
 
 
 def normalize_path(path: str) -> Path:
-    return Path(path[1:]) if path.startswith('/') else Path(path)
+    return Path(path[1:]) if path.startswith("/") else Path(path)
+
 
 async def get_input_paths_or_throw(
     repo: Repo = Depends(get_repo),
-    paths: Optional[List[str]] = Query(None, alias="path")
+    paths: Optional[List[str]] = Query(None, alias="path"),
 ) -> List[Path]:
-    """
-    validates the :path query param, and return valid paths.
+    """validates the :path query param, and return valid paths.
+
     if an invalid path is provided, will throw 404.
     """
     paths = paths or []
@@ -60,7 +70,7 @@ async def get_input_paths_or_throw(
     if len(repo.heads) == 0:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="policy repo is not ready"
+            detail="policy repo is not ready",
         )
 
     # verify all input paths exists under the commit hash
@@ -69,7 +79,7 @@ async def get_input_paths_or_throw(
             if not viewer.exists(path):
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND,
-                    detail=f"requested path {path} was not found in the policy repo!"
+                    detail=f"requested path {path} was not found in the policy repo!",
                 )
 
     # the default of GET /policy (without path params) is to return all
@@ -77,12 +87,15 @@ async def get_input_paths_or_throw(
     paths = paths or [Path(".")]
     return paths
 
+
 @router.get("/policy", response_model=PolicyBundle)
 async def get_policy(
     repo: Repo = Depends(get_repo),
     input_paths: List[Path] = Depends(get_input_paths_or_throw),
     base_hash: Optional[str] = Query(
-        None, description="hash of previous bundle already downloaded, server will return a diff bundle.")
+        None,
+        description="hash of previous bundle already downloaded, server will return a diff bundle.",
+    ),
 ):
     maker = BundleMaker(
         repo,
@@ -99,5 +112,5 @@ async def get_policy(
     except ValueError:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"commit with hash {base_hash} was not found in the policy repo!"
+            detail=f"commit with hash {base_hash} was not found in the policy repo!",
         )
