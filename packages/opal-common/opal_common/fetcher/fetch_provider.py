@@ -1,4 +1,3 @@
-import tenacity
 from tenacity import retry, stop, wait
 
 from .events import FetchEvent

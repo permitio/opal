@@ -1,6 +1,5 @@
 import asyncio
 import os
-import shutil
 from functools import partial
 from typing import List, Optional
 
