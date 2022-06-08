@@ -4,17 +4,30 @@ from typing import List, Optional, Set
 
 from git import Repo
 from git.objects import Commit
-
-from opal_common.paths import PathUtils
-from opal_common.git.commit_viewer import CommitViewer, VersionedFile, has_extension, is_under_directories
-from opal_common.git.diff_viewer import DiffViewer, diffed_file_has_extension, diffed_file_is_under_directories
+from opal_common.git.commit_viewer import (
+    CommitViewer,
+    VersionedFile,
+    has_extension,
+    is_under_directories,
+)
+from opal_common.git.diff_viewer import (
+    DiffViewer,
+    diffed_file_has_extension,
+    diffed_file_is_under_directories,
+)
 from opal_common.opa import get_rego_package, is_data_module, is_rego_module
-from opal_common.schemas.policy import DataModule, PolicyBundle, RegoModule, DeletedFiles
+from opal_common.paths import PathUtils
+from opal_common.schemas.policy import (
+    DataModule,
+    DeletedFiles,
+    PolicyBundle,
+    RegoModule,
+)
 
 
 class BundleMaker:
-    """
-    creates a policy bundle based on:
+    """creates a policy bundle based on:
+
     - the current state of the policy git repo
     - filtering criteria on the policy git repo (specific directories, specific file types, etc)
 
@@ -22,7 +35,14 @@ class BundleMaker:
     - a full/complete bundle, representing the state of the repo at one commit
     - a diff bundle, representing only the *changes* made to the policy between two commits (the diff).
     """
-    def __init__(self, repo: Repo, in_directories: Set[Path], extensions: Optional[List[str]] = None, manifest_filename: str = ".manifest"):
+
+    def __init__(
+        self,
+        repo: Repo,
+        in_directories: Set[Path],
+        extensions: Optional[List[str]] = None,
+        manifest_filename: str = ".manifest",
+    ):
         """[summary]
 
         Args:
@@ -35,16 +55,22 @@ class BundleMaker:
         self._repo = repo
         self._directories = in_directories
         self._has_extension = partial(has_extension, extensions=extensions)
-        self._is_under_directories = partial(is_under_directories, directories=in_directories)
-        self._diffed_file_has_extension = partial(diffed_file_has_extension, extensions=extensions)
-        self._diffed_file_is_under_directories = partial(diffed_file_is_under_directories, directories=in_directories)
+        self._is_under_directories = partial(
+            is_under_directories, directories=in_directories
+        )
+        self._diffed_file_has_extension = partial(
+            diffed_file_has_extension, extensions=extensions
+        )
+        self._diffed_file_is_under_directories = partial(
+            diffed_file_is_under_directories, directories=in_directories
+        )
         self._manifest_filename = manifest_filename
 
     def _get_explicit_manifest(self, viewer: CommitViewer) -> Optional[List[str]]:
-        """
-        Rego policies often have dependencies (import statements) between policies.
-        Since the OPAL client is limited by the OPA REST api and this api currently does not allow
-        to load bundles (multiple policies together), OPAL client can only load one policy at a time.
+        """Rego policies often have dependencies (import statements) between
+        policies. Since the OPAL client is limited by the OPA REST api and this
+        api currently does not allow to load bundles (multiple policies
+        together), OPAL client can only load one policy at a time.
 
         If policies with dependencies between them are loaded out-of-order, OPA will throw an exception.
 
@@ -54,6 +80,7 @@ class BundleMaker:
 
         This method searches for an explicit manifest file, reads it and returns the list of paths, or None if not found.
         """
+
         def is_manifest_file(f: VersionedFile) -> bool:
             return f.path == Path(self._manifest_filename)
 
@@ -62,16 +89,23 @@ class BundleMaker:
             return None
 
         try:
-            manifest_paths = [Path(path) for path in manifest_files[0].read().splitlines()]
+            manifest_paths = [
+                Path(path) for path in manifest_files[0].read().splitlines()
+            ]
             return [str(path) for path in manifest_paths if viewer.exists(path)]
         except:
             return None
 
-    def _sort_manifest(self, unsorted_manifest: List[str], explicit_sorting: Optional[List[str]]) -> List[str]:
-        """
-        the way this sorting works, is assuming that explicit_sorting does NOT necessarily contains all the policies
-        found in the manifest, or that even "policies" mentioned in it actually exists in the actual generated manifest.
-        We must ensure that all items in unsorted_manifest must also exist in the output list.
+    def _sort_manifest(
+        self, unsorted_manifest: List[str], explicit_sorting: Optional[List[str]]
+    ) -> List[str]:
+        """the way this sorting works, is assuming that explicit_sorting does
+        NOT necessarily contains all the policies found in the manifest, or
+        that even "policies" mentioned in it actually exists in the actual
+        generated manifest.
+
+        We must ensure that all items in unsorted_manifest must also
+        exist in the output list.
         """
         if not explicit_sorting:
             return unsorted_manifest
@@ -81,14 +115,15 @@ class BundleMaker:
         sorting = [Path(path) for path in explicit_sorting]
 
         # sorting the list
-        sorted_paths = PathUtils.sort_paths_according_to_explicit_sorting(unsorted_paths, sorting)
+        sorted_paths = PathUtils.sort_paths_according_to_explicit_sorting(
+            unsorted_paths, sorting
+        )
 
         # cast back to string paths
         return [str(path) for path in sorted_paths]
 
     def make_bundle(self, commit: Commit) -> PolicyBundle:
-        """
-        creates a *complete* bundle of all the policy and data modules found
+        """creates a *complete* bundle of all the policy and data modules found
         in the policy repo, when the repo HEAD is at the given `commit`.
 
         Args:
@@ -123,7 +158,7 @@ class BundleMaker:
                 else:
                     continue
 
-                manifest.append(str(path)) # only returns the relative path
+                manifest.append(str(path))  # only returns the relative path
 
             return PolicyBundle(
                 manifest=self._sort_manifest(manifest, explicit_manifest),
@@ -133,10 +168,10 @@ class BundleMaker:
             )
 
     def make_diff_bundle(self, old_commit: Commit, new_commit: Commit) -> PolicyBundle:
-        """
-        creates a *diff* bundle of all the policy and data modules that were changed
-        (either added, renamed, modified or deleted) between the `old_commit` and `new_commit`.
-        essentially all the relevant files when running `git diff old_commit..new_commit`.
+        """creates a *diff* bundle of all the policy and data modules that were
+        changed (either added, renamed, modified or deleted) between the
+        `old_commit` and `new_commit`. essentially all the relevant files when
+        running `git diff old_commit..new_commit`.
 
         Note that we still filter only directories and file types given in the constructor.
 
@@ -164,9 +199,9 @@ class BundleMaker:
 
         with DiffViewer(old_commit, new_commit) as viewer:
             filter = lambda diff: (
-                self._diffed_file_has_extension(diff) and \
-                    self._diffed_file_is_under_directories(diff)
-                )
+                self._diffed_file_has_extension(diff)
+                and self._diffed_file_is_under_directories(diff)
+            )
             for source_file in viewer.added_or_modified_files(filter):
                 contents = source_file.read()
                 path = source_file.path
@@ -188,7 +223,7 @@ class BundleMaker:
                 else:
                     continue
 
-                manifest.append(str(path)) # only returns the relative path
+                manifest.append(str(path))  # only returns the relative path
 
             for source_file in viewer.deleted_files(filter):
                 path = source_file.path
@@ -200,8 +235,10 @@ class BundleMaker:
                     deleted_policy_modules.append(path)
 
             if deleted_data_modules or deleted_policy_modules:
-                deleted_policies = self._sort_manifest(deleted_policy_modules, explicit_manifest)
-                deleted_policies.reverse() # when removed, dependent policies should be removed first
+                deleted_policies = self._sort_manifest(
+                    deleted_policy_modules, explicit_manifest
+                )
+                deleted_policies.reverse()  # when removed, dependent policies should be removed first
 
                 deleted_files = DeletedFiles(
                     data_modules=deleted_data_modules,
@@ -216,5 +253,5 @@ class BundleMaker:
                 old_hash=old_commit.hexsha,
                 data_modules=data_modules,
                 policy_modules=policy_modules,
-                deleted_files=deleted_files
+                deleted_files=deleted_files,
             )

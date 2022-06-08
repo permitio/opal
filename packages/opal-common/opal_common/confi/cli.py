@@ -1,19 +1,18 @@
-
-
 from typing import Callable, Dict, List
-import typer
 
-from typer.main import Typer
-from .types import ConfiEntry
 import click
+import typer
+from typer.main import Typer
+
+from .types import ConfiEntry
 
 
-def create_click_cli(confi_entries:Dict[str,ConfiEntry], callback:Callable):
+def create_click_cli(confi_entries: Dict[str, ConfiEntry], callback: Callable):
     cli = callback
     for key, entry in confi_entries.items():
         option_kwargs = entry.get_cli_option_kwargs()
         # make the key fit cmd-style (i.e. kebab-case)
-        adjusted_key = entry.key.lower().replace("_","-")
+        adjusted_key = entry.key.lower().replace("_", "-")
         keys = [f"--{adjusted_key}", entry.key]
         # add flag if given (i.e '-t' option)
         if entry.flags is not None:
@@ -27,8 +26,14 @@ def create_click_cli(confi_entries:Dict[str,ConfiEntry], callback:Callable):
     cli = click.group(invoke_without_command=True)(cli)
     return cli
 
-def get_cli_object_for_config_objects(config_objects:list, typer_app:Typer=None, help:str=None, on_start:Callable=None):  
-    # callback to save CLI results back to objects   
+
+def get_cli_object_for_config_objects(
+    config_objects: list,
+    typer_app: Typer = None,
+    help: str = None,
+    on_start: Callable = None,
+):
+    # callback to save CLI results back to objects
     def callback(ctx, **kwargs):
         if callable(on_start):
             on_start(ctx, **kwargs)
@@ -38,7 +43,7 @@ def get_cli_object_for_config_objects(config_objects:list, typer_app:Typer=None,
             for config_obj in config_objects:
                 if key in config_obj.entries:
                     # ... update that object with the new value
-                    setattr(config_obj,key, value) 
+                    setattr(config_obj, key, value)
                     config_obj._entries[key].value = value
 
     if help is not None:
@@ -47,7 +52,7 @@ def get_cli_object_for_config_objects(config_objects:list, typer_app:Typer=None,
     entries = {}
     for config_obj in config_objects:
         entries.update(config_obj.entries)
-    # convert to a click-cli group 
+    # convert to a click-cli group
     click_group = create_click_cli(entries, callback)
     # add the typer app into our click group
     if typer_app is not None:
@@ -55,4 +60,4 @@ def get_cli_object_for_config_objects(config_objects:list, typer_app:Typer=None,
         # add the app commands directly to out click app
         for name, cmd in typer_click_object.commands.items():
             click_group.add_command(cmd, name)
-    return click_group    
+    return click_group

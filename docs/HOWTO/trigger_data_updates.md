@@ -59,8 +59,3 @@ Example:
 ### Option 3: Write your own - import code from the OPAL's packages
 - One of the great things about OPAL being written in Python is that you can easily reuse its code.
 See the code for the `DataUpdate` model at [opal_common/schemas/data.py](https://github.com/permitio/opal/blob/master/packages/opal-common/opal_common/schemas/data.py) and use it within your own code to send an update to the server
-
-
-
-
-

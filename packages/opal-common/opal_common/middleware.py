@@ -1,11 +1,11 @@
-from fastapi import FastAPI, status, Request
-from fastapi.responses import JSONResponse
+from fastapi import FastAPI, Request, status
 from fastapi.encoders import jsonable_encoder
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
-
+from fastapi.responses import JSONResponse
 from opal_common.config import opal_common_config
 from opal_common.logger import logger
+from pydantic import BaseModel
+
 
 class ErrorResponse(BaseModel):
     error: str
@@ -14,15 +14,19 @@ class ErrorResponse(BaseModel):
 def get_response() -> JSONResponse:
     error = ErrorResponse(error="Uncaught server exception")
     json_error = jsonable_encoder(error.dict())
-    return JSONResponse(content=json_error, status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    return JSONResponse(
+        content=json_error, status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
+    )
 
 
 def register_default_server_exception_handler(app: FastAPI):
+    """Registers a default exception handler for HTTP 500 exceptions.
+
+    Since fastapi does not include CORS headers by default in 500
+    exceptions, we need to include them manually. Otherwise the frontend
+    cries on the wrong issue.
     """
-    Registers a default exception handler for HTTP 500 exceptions.
-    Since fastapi does not include CORS headers by default in 500 exceptions,
-    we need to include them manually. Otherwise the frontend cries on the wrong issue.
-    """
+
     @app.exception_handler(status.HTTP_500_INTERNAL_SERVER_ERROR)
     async def default_server_exception_handler(request: Request, exception: Exception):
         response = get_response()
@@ -36,7 +40,7 @@ def register_default_server_exception_handler(app: FastAPI):
         # See dotnet core for a recent discussion, where ultimately it was
         # decided to return CORS headers on server failures:
         # https://github.com/dotnet/aspnetcore/issues/2378
-        origin = request.headers.get('origin')
+        origin = request.headers.get("origin")
 
         if origin:
             # Have the middleware do the heavy lifting for us to parse
@@ -46,7 +50,8 @@ def register_default_server_exception_handler(app: FastAPI):
                 allow_origins=opal_common_config.ALLOWED_ORIGINS,
                 allow_credentials=True,
                 allow_methods=["*"],
-                allow_headers=["*"])
+                allow_headers=["*"],
+            )
 
             # Logic directly from Starlette's CORSMiddleware:
             # https://github.com/encode/starlette/blob/master/starlette/middleware/cors.py#L152
@@ -67,6 +72,7 @@ def register_default_server_exception_handler(app: FastAPI):
 
         return response
 
+
 def configure_cors_middleware(app: FastAPI):
     app.add_middleware(
         CORSMiddleware,
@@ -75,6 +81,7 @@ def configure_cors_middleware(app: FastAPI):
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
 
 def configure_middleware(app: FastAPI):
     register_default_server_exception_handler(app)

@@ -1,6 +1,7 @@
-import pytest
 import os
 import sys
+
+import pytest
 
 # Add root opal dir to use local src as package for tests (i.e, no need for python -m pytest)
 root_dir = os.path.abspath(
@@ -14,12 +15,12 @@ root_dir = os.path.abspath(
 sys.path.append(root_dir)
 
 import asyncio
+from functools import partial
 from pathlib import Path
+from typing import Dict, Optional
+
 from git import Repo
 from git.objects import Commit
-from typing import Optional, Dict
-from functools import partial
-
 from opal_common.sources.git_policy_source import GitPolicySource
 
 try:
@@ -27,16 +28,14 @@ try:
 except ImportError:
     from asyncio import TimeoutError
 
-VALID_REPO_REMOTE_URL_HTTPS = \
-    "https://github.com/permitio/fastapi_websocket_pubsub.git"
+VALID_REPO_REMOTE_URL_HTTPS = "https://github.com/permitio/fastapi_websocket_pubsub.git"
 
 INVALID_REPO_REMOTE_URL = "git@github.com:permitio/no_such_repo.git"
 
+
 @pytest.mark.asyncio
 async def test_repo_watcher_git_failed_callback(tmp_path):
-    """
-    checks that on failure to clone, the failure callback is called
-    """
+    """checks that on failure to clone, the failure callback is called."""
     got_error = asyncio.Event()
 
     async def failure_callback(e: Exception):
@@ -60,25 +59,26 @@ async def test_repo_watcher_git_failed_callback(tmp_path):
     await asyncio.wait_for(got_error.wait(), 25)
     assert got_error.is_set()
 
+
 @pytest.mark.asyncio
 async def test_repo_watcher_detect_new_commits_with_manual_trigger(
     local_repo: Repo,
     tmp_path,
     helpers,
 ):
-    """
-    Test watcher can detect new commits on a manual trigger
-    to check for changes, and it calls the add_on_new_policy_callback() callback.
-    """
+    """Test watcher can detect new commits on a manual trigger to check for
+    changes, and it calls the add_on_new_policy_callback() callback."""
     # start with preconfigured repos
-    remote_repo: Repo = local_repo # the 'origin' repo (also a local test repo)
+    remote_repo: Repo = local_repo  # the 'origin' repo (also a local test repo)
 
     detected_new_commits = asyncio.Event()
     detected_commits: Dict[str, Optional[Commit]] = dict(old=None, new=None)
 
-    async def new_commits_callback(commits: Dict[str, Optional[Commit]], old: Commit, new: Commit):
-        commits['old'] = old
-        commits['new'] = new
+    async def new_commits_callback(
+        commits: Dict[str, Optional[Commit]], old: Commit, new: Commit
+    ):
+        commits["old"] = old
+        commits["new"] = new
         detected_new_commits.set()
 
     target_path: Path = tmp_path / "target_manual_trigger"
@@ -86,8 +86,7 @@ async def test_repo_watcher_detect_new_commits_with_manual_trigger(
     # configure the watcher with a valid local repo (our test repo)
     # the returned repo will track the local remote repo
     watcher = GitPolicySource(
-        remote_source_url=remote_repo.working_tree_dir,
-        local_clone_path=target_path
+        remote_source_url=remote_repo.working_tree_dir, local_clone_path=target_path
     )
     # configure the error callback
     watcher.add_on_new_policy_callback(partial(new_commits_callback, detected_commits))
@@ -100,8 +99,8 @@ async def test_repo_watcher_detect_new_commits_with_manual_trigger(
     with pytest.raises(TimeoutError):
         await asyncio.wait_for(detected_new_commits.wait(), 5)
     assert not detected_new_commits.is_set()
-    assert detected_commits['old'] is None
-    assert detected_commits['new'] is None
+    assert detected_commits["old"] is None
+    assert detected_commits["new"] is None
 
     # make sure tracked repo and remote repo have the same head
     repo: Repo = watcher._tracker.repo
@@ -111,8 +110,7 @@ async def test_repo_watcher_detect_new_commits_with_manual_trigger(
 
     # create new file commit on the remote repo
     helpers.create_new_file_commit(
-        remote_repo,
-        Path(remote_repo.working_tree_dir) / "2.txt"
+        remote_repo, Path(remote_repo.working_tree_dir) / "2.txt"
     )
     # now the remote repo head is different
     assert remote_repo.head.commit != repo.head.commit
@@ -124,11 +122,12 @@ async def test_repo_watcher_detect_new_commits_with_manual_trigger(
     await asyncio.wait_for(detected_new_commits.wait(), 5)
     assert detected_new_commits.is_set()
     # assert the expected commits are detected and passed to the callback
-    assert detected_commits['old'] == prev_head
-    assert detected_commits['new'] == new_expected_head
+    assert detected_commits["old"] == prev_head
+    assert detected_commits["new"] == new_expected_head
 
     # assert local repo was updated and again matches the state of remote repo
     assert repo.head.commit == remote_repo.head.commit == new_expected_head
+
 
 @pytest.mark.asyncio
 async def test_repo_watcher_detect_new_commits_with_polling(
@@ -136,19 +135,19 @@ async def test_repo_watcher_detect_new_commits_with_polling(
     tmp_path,
     helpers,
 ):
-    """
-    Test watcher can detect new commits on a manual trigger
-    to check for changes, and it calls the add_on_new_policy_callback() callback.
-    """
+    """Test watcher can detect new commits on a manual trigger to check for
+    changes, and it calls the add_on_new_policy_callback() callback."""
     # start with preconfigured repos
-    remote_repo: Repo = local_repo # the 'origin' repo (also a local test repo)
+    remote_repo: Repo = local_repo  # the 'origin' repo (also a local test repo)
 
     detected_new_commits = asyncio.Event()
     detected_commits: Dict[str, Optional[Commit]] = dict(old=None, new=None)
 
-    async def new_commits_callback(commits: Dict[str, Optional[Commit]], old: Commit, new: Commit):
-        commits['old'] = old
-        commits['new'] = new
+    async def new_commits_callback(
+        commits: Dict[str, Optional[Commit]], old: Commit, new: Commit
+    ):
+        commits["old"] = old
+        commits["new"] = new
         detected_new_commits.set()
 
     target_path: Path = tmp_path / "target_polling"
@@ -158,7 +157,7 @@ async def test_repo_watcher_detect_new_commits_with_polling(
     watcher = GitPolicySource(
         remote_source_url=remote_repo.working_tree_dir,
         local_clone_path=target_path,
-        polling_interval=3 # every 3 seconds do a pull to try and detect changes
+        polling_interval=3,  # every 3 seconds do a pull to try and detect changes
     )
     # configure the error callback
     watcher.add_on_new_policy_callback(partial(new_commits_callback, detected_commits))
@@ -170,8 +169,8 @@ async def test_repo_watcher_detect_new_commits_with_polling(
     with pytest.raises(TimeoutError):
         await asyncio.wait_for(detected_new_commits.wait(), 6)
     assert not detected_new_commits.is_set()
-    assert detected_commits['old'] is None
-    assert detected_commits['new'] is None
+    assert detected_commits["old"] is None
+    assert detected_commits["new"] is None
 
     # make sure tracked repo and remote repo have the same head
     repo: Repo = watcher._tracker.repo
@@ -181,8 +180,7 @@ async def test_repo_watcher_detect_new_commits_with_polling(
 
     # create new file commit on the remote repo
     helpers.create_new_file_commit(
-        remote_repo,
-        Path(remote_repo.working_tree_dir) / "2.txt"
+        remote_repo, Path(remote_repo.working_tree_dir) / "2.txt"
     )
     # now the remote repo head is different
     assert remote_repo.head.commit != repo.head.commit
@@ -193,8 +191,8 @@ async def test_repo_watcher_detect_new_commits_with_polling(
     await asyncio.wait_for(detected_new_commits.wait(), 6)
     assert detected_new_commits.is_set()
     # assert the expected commits are detected and passed to the callback
-    assert detected_commits['old'] == prev_head
-    assert detected_commits['new'] == new_expected_head
+    assert detected_commits["old"] == prev_head
+    assert detected_commits["new"] == new_expected_head
 
     # assert local repo was updated and again matches the state of remote repo
     assert repo.head.commit == remote_repo.head.commit == new_expected_head

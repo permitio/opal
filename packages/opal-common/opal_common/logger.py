@@ -1,20 +1,24 @@
-from loguru import logger
 import logging
 import sys
+
+from loguru import logger
+
+from .config import opal_common_config
+from .logging.filter import ModuleFilter
+from .logging.formatter import Formatter
 from .logging.intercept import InterceptHandler
 from .logging.thirdparty import hijack_uvicorn_logs
-from .logging.formatter import Formatter
-from .logging.filter import ModuleFilter
-from .config import opal_common_config
 
 
 def configure_logs():
-    """
-    Takeover process logs and create a logger with Loguru according to the configuration
-    """
+    """Takeover process logs and create a logger with Loguru according to the
+    configuration."""
     intercept_handler = InterceptHandler()
     formatter = Formatter(opal_common_config.LOG_FORMAT)
-    filter = ModuleFilter(include_list=opal_common_config.LOG_MODULE_INCLUDE_LIST, exclude_list=opal_common_config.LOG_MODULE_EXCLUDE_LIST)
+    filter = ModuleFilter(
+        include_list=opal_common_config.LOG_MODULE_INCLUDE_LIST,
+        exclude_list=opal_common_config.LOG_MODULE_EXCLUDE_LIST,
+    )
     logging.basicConfig(handlers=[intercept_handler], level=0, force=True)
     if opal_common_config.LOG_PATCH_UVICORN_LOGS:
         # Monkey patch UVICORN to use our logger
@@ -45,9 +49,5 @@ def configure_logs():
 
 
 def get_logger(name=""):
-    """
-    backward comptability to old get_logger
-    """
+    """backward comptability to old get_logger."""
     return logger
-
-

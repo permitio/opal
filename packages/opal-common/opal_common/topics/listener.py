@@ -1,4 +1,5 @@
-from typing import Coroutine, Any
+from typing import Any, Coroutine
+
 try:
     from typing import Protocol
 except ImportError:
@@ -9,16 +10,18 @@ from opal_common.logger import logger
 
 
 class TopicCallback(Protocol):
-    def __call__(self, topic: Topic, data: Any) -> Coroutine: ...
+    def __call__(self, topic: Topic, data: Any) -> Coroutine:
+        ...
 
 
 class TopicListener:
-    """
-    A simple wrapper around a PubSubClient that listens on a topic
-    and runs a callback when messages arrive for that topic.
+    """A simple wrapper around a PubSubClient that listens on a topic and runs
+    a callback when messages arrive for that topic.
+
     Provides start() and stop() shortcuts that helps treat this client
     as a separate "process" or task that runs in the background.
     """
+
     def __init__(
         self,
         client: PubSubClient,
@@ -48,9 +51,10 @@ class TopicListener:
         await self.stop()
 
     def start(self):
-        """
-        starts the pub/sub client and subscribes to the predefined topic.
-        the client will attempt to connect to the pubsub server until successful.
+        """starts the pub/sub client and subscribes to the predefined topic.
+
+        the client will attempt to connect to the pubsub server until
+        successful.
         """
         logger.info("started topic listener, topics={topics}", topics=self._topics)
         for topic in self._topics:
@@ -58,15 +62,12 @@ class TopicListener:
         self._client.start_client(f"{self._server_uri}")
 
     async def stop(self):
-        """
-        stops the pubsub client
-        """
+        """stops the pubsub client."""
         await self._client.disconnect()
         logger.info("stopped topic listener", topics=self._topics)
 
     async def wait_until_done(self):
-        """
-        When the listener is a used as a context manager, this method waits until
-        the client is done (i.e: terminated) to prevent exiting the context.
-        """
+        """When the listener is a used as a context manager, this method waits
+        until the client is done (i.e: terminated) to prevent exiting the
+        context."""
         return await self._client.wait_until_done()

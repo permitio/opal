@@ -1,6 +1,7 @@
-import pytest
 import os
 import sys
+
+import pytest
 
 # Add root opal dir to use local src as package for tests (i.e, no need for python -m pytest)
 root_dir = os.path.abspath(
@@ -15,14 +16,20 @@ sys.path.append(root_dir)
 
 # -----------------------------------------------------------------------------
 import asyncio
-from typing import List, Optional
-from pathlib import Path
-from uuid import uuid4
 from datetime import timedelta
+from pathlib import Path
+from typing import List, Optional
+from uuid import uuid4
 
-from opal_common.authentication.types import EncryptionKeyFormat, JWTAlgorithm, JWTClaims, PrivateKey, PublicKey
 from opal_common.authentication.casting import cast_private_key, cast_public_key
 from opal_common.authentication.signer import JWTSigner
+from opal_common.authentication.types import (
+    EncryptionKeyFormat,
+    JWTAlgorithm,
+    JWTClaims,
+    PrivateKey,
+    PublicKey,
+)
 from opal_common.authentication.verifier import JWTVerifier
 from opal_common.logger import logger
 
@@ -44,11 +51,13 @@ async def run_subprocess(command: str):
     return_code = await process.wait()
     assert return_code == 0
 
+
 async def run_commands(commands: List[str]):
     # the await inside the for-loop is intentional, these commands should not run in parallel
     for command in commands:
         logger.info(f"running command: {command}")
         await run_subprocess(command)
+
 
 async def verify_crypto_keys(
     private_key_filename: Path,
@@ -56,18 +65,22 @@ async def verify_crypto_keys(
     private_key_format: EncryptionKeyFormat,
     public_key_format: EncryptionKeyFormat,
     algorithm: JWTAlgorithm,
-    passphrase: Optional[str] = None
-    ):
+    passphrase: Optional[str] = None,
+):
     # assert keys created
     assert private_key_filename.exists()
     assert public_key_filename.exists()
 
     logger.info("trying to cast private key from string...")
-    private_key: Optional[PrivateKey] = cast_private_key(private_key_filename, private_key_format, passphrase)
+    private_key: Optional[PrivateKey] = cast_private_key(
+        private_key_filename, private_key_format, passphrase
+    )
     assert private_key is not None
 
     logger.info("trying to cast public key from string...")
-    public_key: Optional[PublicKey] = cast_public_key(public_key_filename, public_key_format)
+    public_key: Optional[PublicKey] = cast_public_key(
+        public_key_filename, public_key_format
+    )
     assert public_key is not None
 
     logger.info("trying to init JWT Verifier...")
@@ -75,7 +88,9 @@ async def verify_crypto_keys(
     assert verifier.enabled
 
     logger.info("trying to init JWT Signer...")
-    signer = JWTSigner(private_key, public_key, algorithm, AUTH_JWT_AUDIENCE, AUTH_JWT_ISSUER)
+    signer = JWTSigner(
+        private_key, public_key, algorithm, AUTH_JWT_AUDIENCE, AUTH_JWT_ISSUER
+    )
     assert signer.enabled
 
     logger.info("trying to sign a token...")
@@ -91,17 +106,14 @@ async def verify_crypto_keys(
 
     logger.info("done.")
 
+
 @pytest.mark.asyncio
 async def test_encryption_keys_RFC_4253_ssh_format_with_passphrase(tmp_path):
-    """
-    Test key encryption format: RFC_4253
+    """Test key encryption format: RFC_4253.
 
-    such keys can be generate by this command:
-    ```
-    ssh-keygen -t rsa -b 4096 -m pem
-    ```
-    the private key is in PEM format
-    the public key in in ssh format
+    such keys can be generate by this command: ``` ssh-keygen -t rsa -b
+    4096 -m pem ``` the private key is in PEM format the public key in
+    in ssh format
     """
     logger.info("TEST: test_encryption_keys_RFC_4253_ssh_format_with_passphrase")
     # creates the keys under temp paths that are auto-deleted after the test
@@ -109,18 +121,21 @@ async def test_encryption_keys_RFC_4253_ssh_format_with_passphrase(tmp_path):
     public_key_filename = Path(f"{private_key_filename}.pub")
 
     # commands to generate crypto keys
-    await run_commands([
-        f"ssh-keygen -t rsa -b 4096 -m pem -f {private_key_filename} -N {PASSPHRASE}",
-    ])
+    await run_commands(
+        [
+            f"ssh-keygen -t rsa -b 4096 -m pem -f {private_key_filename} -N {PASSPHRASE}",
+        ]
+    )
 
     await verify_crypto_keys(
-        private_key_filename = private_key_filename,
-        public_key_filename = public_key_filename,
-        private_key_format = EncryptionKeyFormat.pem,
-        public_key_format = EncryptionKeyFormat.ssh,
-        algorithm = getattr(JWTAlgorithm, "RS256"),
-        passphrase= PASSPHRASE
+        private_key_filename=private_key_filename,
+        public_key_filename=public_key_filename,
+        private_key_format=EncryptionKeyFormat.pem,
+        public_key_format=EncryptionKeyFormat.ssh,
+        algorithm=getattr(JWTAlgorithm, "RS256"),
+        passphrase=PASSPHRASE,
     )
+
 
 @pytest.mark.asyncio
 async def test_encryption_keys_RFC_4253_ssh_format_no_passphrase(tmp_path):
@@ -131,18 +146,21 @@ async def test_encryption_keys_RFC_4253_ssh_format_no_passphrase(tmp_path):
     public_key_filename = Path(f"{private_key_filename}.pub")
 
     # commands to generate crypto keys
-    await run_commands([
-        f"ssh-keygen -t rsa -b 4096 -m pem -f {private_key_filename} -N ''",
-    ])
+    await run_commands(
+        [
+            f"ssh-keygen -t rsa -b 4096 -m pem -f {private_key_filename} -N ''",
+        ]
+    )
 
     await verify_crypto_keys(
-        private_key_filename = private_key_filename,
-        public_key_filename = public_key_filename,
-        private_key_format = EncryptionKeyFormat.pem,
-        public_key_format = EncryptionKeyFormat.ssh,
-        algorithm = getattr(JWTAlgorithm, "RS256"),
-        passphrase = None
+        private_key_filename=private_key_filename,
+        public_key_filename=public_key_filename,
+        private_key_format=EncryptionKeyFormat.pem,
+        public_key_format=EncryptionKeyFormat.ssh,
+        algorithm=getattr(JWTAlgorithm, "RS256"),
+        passphrase=None,
     )
+
 
 @pytest.mark.asyncio
 async def test_encryption_keys_PKCS1_format_with_passphrase(tmp_path):
@@ -153,19 +171,22 @@ async def test_encryption_keys_PKCS1_format_with_passphrase(tmp_path):
     public_key_filename = Path(f"{private_key_filename}.pub")
 
     # commands to generate crypto keys
-    await run_commands([
-        f"ssh-keygen -t rsa -b 4096 -m pem -f {private_key_filename} -N {PASSPHRASE}",
-        f"ssh-keygen -e -m pem -f {private_key_filename} -P {PASSPHRASE} > {public_key_filename}"
-    ])
+    await run_commands(
+        [
+            f"ssh-keygen -t rsa -b 4096 -m pem -f {private_key_filename} -N {PASSPHRASE}",
+            f"ssh-keygen -e -m pem -f {private_key_filename} -P {PASSPHRASE} > {public_key_filename}",
+        ]
+    )
 
     await verify_crypto_keys(
-        private_key_filename = private_key_filename,
-        public_key_filename = public_key_filename,
-        private_key_format = EncryptionKeyFormat.pem,
-        public_key_format = EncryptionKeyFormat.pem,
-        algorithm = getattr(JWTAlgorithm, "RS256"),
-        passphrase = PASSPHRASE
+        private_key_filename=private_key_filename,
+        public_key_filename=public_key_filename,
+        private_key_format=EncryptionKeyFormat.pem,
+        public_key_format=EncryptionKeyFormat.pem,
+        algorithm=getattr(JWTAlgorithm, "RS256"),
+        passphrase=PASSPHRASE,
     )
+
 
 @pytest.mark.asyncio
 async def test_encryption_keys_X509_SPKI_format_with_passphrase(tmp_path):
@@ -176,32 +197,38 @@ async def test_encryption_keys_X509_SPKI_format_with_passphrase(tmp_path):
     public_key_filename = Path(f"{private_key_filename}.pub")
 
     # commands to generate crypto keys
-    await run_commands([
-        f"ssh-keygen -t rsa -b 4096 -m pem -f {private_key_filename} -N {PASSPHRASE}",
-        f"ssh-keygen -e -m pkcs8 -f {private_key_filename} -P {PASSPHRASE} > {public_key_filename}"
-    ])
+    await run_commands(
+        [
+            f"ssh-keygen -t rsa -b 4096 -m pem -f {private_key_filename} -N {PASSPHRASE}",
+            f"ssh-keygen -e -m pkcs8 -f {private_key_filename} -P {PASSPHRASE} > {public_key_filename}",
+        ]
+    )
 
     await verify_crypto_keys(
-        private_key_filename = private_key_filename,
-        public_key_filename = public_key_filename,
-        private_key_format = EncryptionKeyFormat.pem,
-        public_key_format = EncryptionKeyFormat.pem,
-        algorithm = getattr(JWTAlgorithm, "RS256"),
-        passphrase = PASSPHRASE
+        private_key_filename=private_key_filename,
+        public_key_filename=public_key_filename,
+        private_key_format=EncryptionKeyFormat.pem,
+        public_key_format=EncryptionKeyFormat.pem,
+        algorithm=getattr(JWTAlgorithm, "RS256"),
+        passphrase=PASSPHRASE,
     )
+
 
 @pytest.mark.asyncio
 async def test_encryption_keys_PKCS1_format_with_passphrase_hardcoded_keys(tmp_path):
     """
     these hardcoded keys are for test purposes only - NEVER use them!!!!
     """
-    logger.info("TEST: test_encryption_keys_PKCS1_format_with_passphrase_hardcoded_keys")
+    logger.info(
+        "TEST: test_encryption_keys_PKCS1_format_with_passphrase_hardcoded_keys"
+    )
 
     # creates the keys under temp paths that are auto-deleted after the test
     private_key_filename = Path(os.path.join(tmp_path, KEY_FILENAME))
     public_key_filename = Path(f"{private_key_filename}.pub")
 
-    open(private_key_filename, 'w').write("""
+    open(private_key_filename, "w").write(
+        """
 -----BEGIN RSA PRIVATE KEY-----
 Proc-Type: 4,ENCRYPTED
 DEK-Info: AES-128-CBC,76065A0C88ABA1D6B5B812ED6BE346B5
@@ -258,7 +285,8 @@ czAmf7lN7G5Qii/Z3q9Msp+r+elmf5hOcBxrBKo+K0J7bWJHb+rT7T+ywQe2veu/
 -----END RSA PRIVATE KEY-----"""
     )
 
-    open(public_key_filename, 'w').write("""
+    open(public_key_filename, "w").write(
+        """
 -----BEGIN RSA PUBLIC KEY-----
 MIICCgKCAgEAoTtleKwCPQ4kUGAAk4uDnjZStr/LbzFaYTPrfFWbRmEFzVoWREST
 STesIuoTgdLLiDY0wksC6IZ/wlvVvxbuRG4PljUPiOvfHTDI2giC7JoH40b0HNI+
@@ -272,29 +300,36 @@ JgN5LRWeo+H17t7bnO/Ot6qmmp7ZN3dc3QBlsy09cCdQ4l4YWEa3VO6dXnIdoe/c
 THdYobue6ft5E7d7Eez4is6++d8SuboxJMmzbDK9U++GoJVARk2FqUpXTqHSIqKt
 y8eFhYJfV0a59E5TasHlIT/HLcdlvISQ0/lBoPOwtKDbFuZvqQwWKEsCAwEAAQ==
 -----END RSA PUBLIC KEY-----
-    """)
-
-    await verify_crypto_keys(
-        private_key_filename = private_key_filename,
-        public_key_filename = public_key_filename,
-        private_key_format = EncryptionKeyFormat.pem,
-        public_key_format = EncryptionKeyFormat.pem,
-        algorithm = getattr(JWTAlgorithm, "RS256"),
-        passphrase = PASSPHRASE
+    """
     )
 
+    await verify_crypto_keys(
+        private_key_filename=private_key_filename,
+        public_key_filename=public_key_filename,
+        private_key_format=EncryptionKeyFormat.pem,
+        public_key_format=EncryptionKeyFormat.pem,
+        algorithm=getattr(JWTAlgorithm, "RS256"),
+        passphrase=PASSPHRASE,
+    )
+
+
 @pytest.mark.asyncio
-async def test_encryption_keys_X509_SPKI_format_with_passphrase_hardcoded_keys(tmp_path):
+async def test_encryption_keys_X509_SPKI_format_with_passphrase_hardcoded_keys(
+    tmp_path,
+):
     """
     these hardcoded keys are for test purposes only - NEVER use them!!!!
     """
-    logger.info("TEST: test_encryption_keys_X509_SPKI_format_with_passphrase_hardcoded_keys")
+    logger.info(
+        "TEST: test_encryption_keys_X509_SPKI_format_with_passphrase_hardcoded_keys"
+    )
 
     # creates the keys under temp paths that are auto-deleted after the test
     private_key_filename = Path(os.path.join(tmp_path, KEY_FILENAME))
     public_key_filename = Path(f"{private_key_filename}.pub")
 
-    open(private_key_filename, 'w').write("""
+    open(private_key_filename, "w").write(
+        """
 -----BEGIN RSA PRIVATE KEY-----
 Proc-Type: 4,ENCRYPTED
 DEK-Info: AES-128-CBC,B0E9701EF36B6D18081BE93E446F7DAC
@@ -351,7 +386,8 @@ xTZJsCm2wH919tCVsuoXLUIuRzSWu/F8bRv6l7z5mMTYnWzyqP1+lWBs20A766WV
 -----END RSA PRIVATE KEY-----"""
     )
 
-    open(public_key_filename, 'w').write("""
+    open(public_key_filename, "w").write(
+        """
 -----BEGIN PUBLIC KEY-----
 MIICIjANBgkqhkiG9w0BAQEFAAOCAg8AMIICCgKCAgEA3dPvy1zGdxMRf06+KYbk
 /OW73J8t1eX4Nb3E5w5GV6gdt1KKFMD7WOy9wPFNUS1k9o7WhW1giQGSIE1NuShH
@@ -366,13 +402,14 @@ GKe4LpzupEUoDz4UnfgPUsOORe4p49NHm07S3KCouZOAslMAJDqe2qyyPhDnUaTG
 0OAmlqa412uGUhmxYbKgyPNALED/9WksFEWDDqt+bq6zwYActCW2203gCRsTbSX9
 wo0Src+YUGAdjomgzrt/6CECAwEAAQ==
 -----END PUBLIC KEY-----
-    """)
+    """
+    )
 
     await verify_crypto_keys(
-        private_key_filename = private_key_filename,
-        public_key_filename = public_key_filename,
-        private_key_format = EncryptionKeyFormat.pem,
-        public_key_format = EncryptionKeyFormat.pem,
-        algorithm = getattr(JWTAlgorithm, "RS256"),
-        passphrase = PASSPHRASE
+        private_key_filename=private_key_filename,
+        public_key_filename=public_key_filename,
+        private_key_format=EncryptionKeyFormat.pem,
+        public_key_format=EncryptionKeyFormat.pem,
+        algorithm=getattr(JWTAlgorithm, "RS256"),
+        passphrase=PASSPHRASE,
     )

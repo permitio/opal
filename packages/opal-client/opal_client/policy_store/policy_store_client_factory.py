@@ -1,7 +1,8 @@
-
 from typing import Dict, Optional
+
+from opal_client.config import opal_client_config
 from opal_client.policy_store.base_policy_store_client import BasePolicyStoreClient
-from opal_client.config import opal_client_config, PolicyStoreTypes
+from opal_client.policy_store.schemas import PolicyStoreTypes
 
 
 class PolicyStoreClientFactoryException(Exception):
@@ -14,11 +15,17 @@ class InvalidPolicyStoreTypeException(Exception):
 
 class PolicyStoreClientFactory:
 
-    CACHE: Dict[str,BasePolicyStoreClient] = {}
+    CACHE: Dict[str, BasePolicyStoreClient] = {}
 
     @classmethod
-    def get(cls,store_type: PolicyStoreTypes = None, url: str = None, save_to_cache=True, token:Optional[str]=None) -> BasePolicyStoreClient:
-        """Same as self.create() but with caching
+    def get(
+        cls,
+        store_type: PolicyStoreTypes = None,
+        url: str = None,
+        save_to_cache=True,
+        token: Optional[str] = None,
+    ) -> BasePolicyStoreClient:
+        """Same as self.create() but with caching.
 
         Args:
             store_type (PolicyStoreTypes, optional): The type of policy-store to use. Defaults to opal_client_config.POLICY_STORE_TYPE.
@@ -32,15 +39,21 @@ class PolicyStoreClientFactory:
             BasePolicyStoreClient: the policy store client interface
         """
         # get from cache if available - else create anew
-        key = cls.get_cache_key(store_type,url)
+        key = cls.get_cache_key(store_type, url)
         value = cls.CACHE.get(key, None)
         if value is None:
-            return cls.create(store_type,url, token)
+            return cls.create(store_type, url, token)
         else:
             return value
 
     @classmethod
-    def create(cls, store_type: PolicyStoreTypes = None, url: str = None, save_to_cache=True, token:Optional[str]=None) -> BasePolicyStoreClient:
+    def create(
+        cls,
+        store_type: PolicyStoreTypes = None,
+        url: str = None,
+        save_to_cache=True,
+        token: Optional[str] = None,
+    ) -> BasePolicyStoreClient:
         """
         Factory method - create a new policy store by type.
 
@@ -63,13 +76,19 @@ class PolicyStoreClientFactory:
         # OPA
         if PolicyStoreTypes.OPA == store_type:
             from opal_client.policy_store.opa_client import OpaClient
+
             res = OpaClient(url, opa_auth_token=store_token)
         # MOCK
         elif PolicyStoreTypes.MOCK == store_type:
-            from opal_client.policy_store.mock_policy_store_client import MockPolicyStoreClient
+            from opal_client.policy_store.mock_policy_store_client import (
+                MockPolicyStoreClient,
+            )
+
             res = MockPolicyStoreClient()
         else:
-            raise InvalidPolicyStoreTypeException(f"{store_type} is not a valid policy store type")
+            raise InvalidPolicyStoreTypeException(
+                f"{store_type} is not a valid policy store type"
+            )
         # save to cache
         if save_to_cache:
             cls.CACHE[cls.get_cache_key(store_type, url)] = res

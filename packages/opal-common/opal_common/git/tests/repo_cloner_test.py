@@ -1,6 +1,8 @@
-import pytest
+import asyncio
 import os
 import sys
+
+import pytest
 
 # Add root opal dir to use local src as package for tests (i.e, no need for python -m pytest)
 root_dir = os.path.abspath(
@@ -14,54 +16,45 @@ root_dir = os.path.abspath(
 sys.path.append(root_dir)
 
 from pathlib import Path
+
 from git import Repo
-
-from opal_common.git.repo_cloner import RepoCloner
-from opal_common.git.exceptions import GitFailed
 from opal_common.confi import Confi
+from opal_common.git.exceptions import GitFailed
+from opal_common.git.repo_cloner import RepoCloner
 
-VALID_REPO_REMOTE_URL_HTTPS = \
-    "https://github.com/permitio/fastapi_websocket_pubsub.git"
+VALID_REPO_REMOTE_URL_HTTPS = "https://github.com/permitio/fastapi_websocket_pubsub.git"
 
-VALID_REPO_REMOTE_URL_SSH = \
-    "git@github.com:permitio/fastapi_websocket_pubsub.git"
+VALID_REPO_REMOTE_URL_SSH = "git@github.com:permitio/fastapi_websocket_pubsub.git"
 
 INVALID_REPO_REMOTE_URL = "git@github.com:permitio/no_such_repo.git"
 
+
 @pytest.mark.asyncio
 async def test_repo_cloner_clone_local_repo(local_repo: Repo):
-    """
-    checks that the cloner can handle a local repo url
-    """
+    """checks that the cloner can handle a local repo url."""
     repo: Repo = local_repo
 
     root: str = repo.working_tree_dir
     target_path: str = Path(root).parent / "target"
 
-    result = await RepoCloner(
-        repo_url=root,
-        clone_path=target_path
-    ).clone()
+    result = await RepoCloner(repo_url=root, clone_path=target_path).clone()
 
     assert Path(result.repo.working_tree_dir) == target_path
+
 
 @pytest.mark.asyncio
 async def test_repo_cloner_clone_remote_repo_https_url(tmp_path):
-    """
-    Cloner can handle a valid remote git url (https:// scheme)
-    """
+    """Cloner can handle a valid remote git url (https:// scheme)"""
     target_path: Path = tmp_path / "target"
     result = await RepoCloner(
-        repo_url=VALID_REPO_REMOTE_URL_HTTPS,
-        clone_path=target_path
+        repo_url=VALID_REPO_REMOTE_URL_HTTPS, clone_path=target_path
     ).clone()
     assert Path(result.repo.working_tree_dir) == target_path
 
+
 @pytest.mark.asyncio
 async def test_repo_cloner_clone_remote_repo_ssh_url(tmp_path):
-    """
-    Cloner can handle a valid remote git url (ssh scheme)
-    """
+    """Cloner can handle a valid remote git url (ssh scheme)"""
     target_path: Path = tmp_path / "target"
 
     # fastapi_websocket_pubsub is a *public* repository, however
@@ -81,25 +74,21 @@ async def test_repo_cloner_clone_remote_repo_ssh_url(tmp_path):
             await RepoCloner(
                 repo_url=VALID_REPO_REMOTE_URL_SSH,
                 clone_path=target_path,
-                clone_timeout=5
+                clone_timeout=5,
             ).clone()
     else:
         result = await RepoCloner(
-            repo_url=VALID_REPO_REMOTE_URL_SSH,
-            clone_path=target_path
+            repo_url=VALID_REPO_REMOTE_URL_SSH, clone_path=target_path
         ).clone()
         assert Path(result.repo.working_tree_dir) == target_path
 
+
 @pytest.mark.asyncio
 async def test_repo_cloner_clone_fail_on_invalid_remote_url(tmp_path):
-    """
-    if remote url is invalid, cloner will retry with tenacity
-    until the last attempt is failed, and then throw GitFailed
-    """
+    """if remote url is invalid, cloner will retry with tenacity until the last
+    attempt is failed, and then throw GitFailed."""
     target_path: Path = tmp_path / "target"
     with pytest.raises(GitFailed):
         await RepoCloner(
-            repo_url=INVALID_REPO_REMOTE_URL,
-            clone_path=target_path,
-            clone_timeout=5
+            repo_url=INVALID_REPO_REMOTE_URL, clone_path=target_path, clone_timeout=5
         ).clone()

@@ -1,5 +1,4 @@
 import aiohttp
-
 from fastapi import Response
 
 
@@ -11,4 +10,3 @@ async def proxy_response(response: aiohttp.ClientResponse) -> Response:
         headers=dict(response.headers),
         media_type="application/json",
     )
-

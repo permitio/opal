@@ -9,17 +9,17 @@ Project homepage: https://github.com/permitio/opal
 import os
 
 VERSION = (0, 1, 21)
-VERSION_STRING = '.'.join(map(str,VERSION))
+VERSION_STRING = ".".join(map(str, VERSION))
 
 __version__ = VERSION_STRING
-__author__ = 'Or Weis, Asaf Cohen'
-__author_email__ = 'or@permit.io'
-__license__ = 'Apache 2.0'
-__copyright__ = 'Copyright 2021 Or Weis and Asaf Cohen'
+__author__ = "Or Weis, Asaf Cohen"
+__author_email__ = "or@permit.io"
+__license__ = "Apache 2.0"
+__copyright__ = "Copyright 2021 Or Weis and Asaf Cohen"
+
 
 def get_install_requires(here):
-    """
-    Gets the contents of install_requires from text file.
+    """Gets the contents of install_requires from text file.
 
     Getting the minimum requirements from a text file allows us to pre-install
     them in docker, speeding up our docker builds and better utilizing the docker layer cache.
@@ -28,4 +28,6 @@ def get_install_requires(here):
     you need to run OPAL (and are thus different from a "requirements.txt" file).
     """
     with open(os.path.join(here, "requires.txt")) as fp:
-        return [line.strip() for line in fp.read().splitlines() if not line.startswith("#")]
+        return [
+            line.strip() for line in fp.read().splitlines() if not line.startswith("#")
+        ]

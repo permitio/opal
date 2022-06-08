@@ -28,5 +28,3 @@
     ```
 ### General CLI details
 Both OPAL's CLI
- 
-    

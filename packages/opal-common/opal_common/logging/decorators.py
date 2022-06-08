@@ -1,5 +1,5 @@
-import logging
 import functools
+import logging
 
 
 def log_exception(logger=logging.getLogger(), rethrow=True):
@@ -12,5 +12,7 @@ def log_exception(logger=logging.getLogger(), rethrow=True):
                 logger.exception(e)
                 if rethrow:
                     raise
-        return wrapper    
+
+        return wrapper
+
     return deco

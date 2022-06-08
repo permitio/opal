@@ -1,6 +1,7 @@
-import pytest
 import os
 import sys
+
+import pytest
 
 # Add root opal dir to use local src as package for tests (i.e, no need for python -m pytest)
 root_dir = os.path.abspath(
@@ -13,20 +14,20 @@ root_dir = os.path.abspath(
 )
 sys.path.append(root_dir)
 
-from typing import List
 from pathlib import Path
+from typing import List
+
 from git import Repo
 from git.objects import Commit
-
 from opal_common.git.commit_viewer import CommitViewer, VersionedNode
+
 
 def node_paths(nodes: List[VersionedNode]) -> List[Path]:
     return [node.path for node in nodes]
 
+
 def test_commit_viewer_node_filters(local_repo: Repo):
-    """
-    Test nodes() generator with and without filters
-    """
+    """Test nodes() generator with and without filters."""
     repo: Repo = local_repo
 
     with CommitViewer(repo.head.commit) as viewer:
@@ -50,7 +51,7 @@ def test_commit_viewer_node_filters(local_repo: Repo):
         assert Path("some/dir/to/file.rego") in paths
 
         # test extension filter
-        nodes = list(viewer.nodes(lambda node: node.path.suffix == '.rego'))
+        nodes = list(viewer.nodes(lambda node: node.path.suffix == ".rego"))
         # this time, the filter only matches file nodes (we have 3 rego files in the dummy repo)
         assert len(nodes) == 3
         paths = node_paths(nodes)
@@ -60,9 +61,8 @@ def test_commit_viewer_node_filters(local_repo: Repo):
 
 
 def test_commit_viewer_file_filters(local_repo: Repo):
-    """
-    Check files() returns only the file paths we expect (and no directory paths)
-    """
+    """Check files() returns only the file paths we expect (and no directory
+    paths)"""
     repo: Repo = local_repo
 
     with CommitViewer(repo.head.commit) as viewer:
@@ -90,7 +90,7 @@ def test_commit_viewer_file_filters(local_repo: Repo):
         assert Path("some/dir/to/file.rego") in paths
 
         # test extension filter
-        nodes = list(viewer.files(lambda node: node.path.suffix == '.rego'))
+        nodes = list(viewer.files(lambda node: node.path.suffix == ".rego"))
         assert len(nodes) == 3
         paths = node_paths(nodes)
         assert Path("rbac.rego") in paths
@@ -98,16 +98,15 @@ def test_commit_viewer_file_filters(local_repo: Repo):
         assert Path("some/dir/to/file.rego") in paths
 
         # test file name filter
-        nodes = list(viewer.files(lambda node: node.path.name == 'data.json'))
+        nodes = list(viewer.files(lambda node: node.path.name == "data.json"))
         assert len(nodes) == 1
         paths = node_paths(nodes)
         assert Path("other/data.json") in paths
 
 
 def test_commit_viewer_directory_filters(local_repo: Repo):
-    """
-    Check directories() returns only the directory paths we expect (and no file paths)
-    """
+    """Check directories() returns only the directory paths we expect (and no
+    file paths)"""
     repo: Repo = local_repo
 
     with CommitViewer(repo.head.commit) as viewer:
@@ -135,31 +134,35 @@ def test_commit_viewer_directory_filters(local_repo: Repo):
         paths = node_paths(nodes)
         assert Path("some") in paths
 
+
 def test_file_removed_file_does_not_exist(local_repo: Repo, helpers):
-    """
-    Check that viewing the repository from the perspective of two
-    different commits yields different results. More specifically,
-    if in the 2nd commit we removed a file from the repo, we will
-    see the file when viewing from the 1st commit perspective, and
-    won't see the file from the 2nd commit perspective.
+    """Check that viewing the repository from the perspective of two different
+    commits yields different results.
+
+    More specifically, if in the 2nd commit we removed a file from the
+    repo, we will see the file when viewing from the 1st commit
+    perspective, and won't see the file from the 2nd commit perspective.
     """
     repo: Repo = local_repo
     previous_head: Commit = repo.head.commit
 
     with CommitViewer(previous_head) as viewer:
-        paths = node_paths(list(viewer.files(lambda node: str(node.path).startswith("some"))))
+        paths = node_paths(
+            list(viewer.files(lambda node: str(node.path).startswith("some")))
+        )
         assert len(paths) == 1
         assert Path("some/dir/to/file.rego") in paths
 
     helpers.create_delete_file_commit(
-        local_repo,
-        Path(local_repo.working_tree_dir) / "some/dir/to/file.rego"
+        local_repo, Path(local_repo.working_tree_dir) / "some/dir/to/file.rego"
     )
 
     new_head: Commit = repo.head.commit
     assert previous_head != new_head
 
     with CommitViewer(new_head) as viewer:
-        paths = node_paths(list(viewer.files(lambda node: str(node.path).startswith("some"))))
+        paths = node_paths(
+            list(viewer.files(lambda node: str(node.path).startswith("some")))
+        )
         assert len(paths) == 0
         assert Path("some/dir/to/file.rego") not in paths

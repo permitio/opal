@@ -1,5 +1,5 @@
 
-# Confi 
+# Confi
 
 Easy Python configuration interface built on top of python-decouple and click / typer.
 Adding typing support and parsing with Pydantic and Enum.
@@ -26,7 +26,7 @@ POWER_LEVEL = confi.int("POWER_LEVEL", 9001, description="The scouter power read
 # parse a pydantic model
 # you can pass a valid JSON to the envvar
 
-# define model 
+# define model
 from pydantic import BaseModel
 class MyPydantic(BaseModel):
     entries: List[int] = Field(..., description="list of integers")
@@ -87,7 +87,7 @@ class MyModel(Confi):
     # delay loaded default-value function
     EVENTS = confi.list("EVENTS", confi.delay(lambda MY_HERO="", SHOUT="": [MY_HERO, SHOUT]) )
     # delay loaded whole entry
-    HAS_LONG_SHOUT = confi.delay(lambda SHOUT="": 
+    HAS_LONG_SHOUT = confi.delay(lambda SHOUT="":
         confi.bool("HAS_LONG_SHOUT", len(SHOUT) > 12 )
     )
 ```

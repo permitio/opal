@@ -1,19 +1,29 @@
-import aiohttp
 import os
 import sys
 
+import aiohttp
+
 # Add parent path to use local src as package for tests
-root_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), os.path.pardir, os.path.pardir, os.path.pardir ))
+root_dir = os.path.abspath(
+    os.path.join(
+        os.path.dirname(__file__), os.path.pardir, os.path.pardir, os.path.pardir
+    )
+)
 print(root_dir)
 sys.path.append(root_dir)
 
 import asyncio
-import tenacity
+from multiprocessing import Process
 
 import pytest
-
-from opal_common.fetcher.providers.http_fetch_provider import HttpFetchEvent, HttpFetchProvider
-from opal_common.fetcher import FetchingEngine, FetchEvent
+import tenacity
+import uvicorn
+from fastapi import FastAPI
+from opal_common.fetcher import FetchEvent, FetchingEngine
+from opal_common.fetcher.providers.http_fetch_provider import (
+    HttpFetchEvent,
+    HttpFetchProvider,
+)
 
 # Configurable
 PORT = int(os.environ.get("PORT") or "9110")
@@ -23,25 +33,26 @@ DATA_KEY = "Hello"
 DATA_VALUE = "World"
 DATA_SECRET_VALUE = "SecretWorld"
 
+
 @pytest.mark.asyncio
 async def test_retry_failure():
-    """
-    Test callback on failure
-    """
+    """Test callback on failure."""
     got_data_event = asyncio.Event()
     got_error = asyncio.Event()
 
     async with FetchingEngine() as engine:
         # callback to handle failure
-        async def error_callback(error:Exception, event:FetchEvent):
+        async def error_callback(error: Exception, event: FetchEvent):
             # check we got the expection we expected
             assert isinstance(error, aiohttp.client_exceptions.ClientConnectorError)
             got_error.set()
+
         # register the callback
         engine.register_failure_handler(error_callback)
         # callback for success - shouldn't eb called in this test
         async def callback(result):
             got_data_event.set()
+
         # Use an event on an invalid port - and only to attempts
         retry_config = HttpFetchProvider.DEFAULT_RETRY_CONFIG.copy()
         retry_config["stop"] = tenacity.stop.stop_after_attempt(2)

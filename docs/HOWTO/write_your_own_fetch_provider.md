@@ -426,4 +426,3 @@ docker compose up
 - [BaseFetchProvider](https://github.com/permitio/opal/blob/master/packages/opal-common/opal_common/fetcher/fetch_provider.py)
 - [FetcherRegister](https://github.com/permitio/opal/blob/master/packages/opal-common/opal_common/fetcher/fetcher_register.py)
 - [FetcherConfig](https://github.com/permitio/opal/blob/master/packages/opal-common/opal_common/fetcher/events.py)
-

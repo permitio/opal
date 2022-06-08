@@ -1,17 +1,14 @@
 import json
-
 from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
-
 from opal_common.authentication.signer import JWTSigner
 
 
 class JwksStaticEndpoint:
-    """
-    configure a static files endpoint on a fastapi app, exposing JWKs.
-    """
+    """configure a static files endpoint on a fastapi app, exposing JWKs."""
+
     def __init__(
         self,
         signer: JWTSigner,
@@ -30,9 +27,7 @@ class JwksStaticEndpoint:
         jwks_contents = {}
         if self._signer.enabled:
             jwk = json.loads(self._signer.get_jwk())
-            jwks_contents = {
-                "keys": [jwk]
-            }
+            jwks_contents = {"keys": [jwk]}
 
         # write the jwks.json file
         filename = self._jwks_static_dir / self._jwks_url.name
@@ -40,4 +35,8 @@ class JwksStaticEndpoint:
             f.write(json.dumps(jwks_contents))
 
         route_url = str(self._jwks_url.parent)
-        app.mount(route_url, StaticFiles(directory=str(self._jwks_static_dir)), name="jwks_dir")
+        app.mount(
+            route_url,
+            StaticFiles(directory=str(self._jwks_static_dir)),
+            name="jwks_dir",
+        )
