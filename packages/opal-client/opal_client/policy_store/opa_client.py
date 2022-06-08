@@ -2,7 +2,6 @@ import asyncio
 import aiohttp
 import json
 import functools
-import time
 from typing import Dict, Any, Optional, List, Set
 
 from tenacity import retry, stop_after_attempt, wait_fixed

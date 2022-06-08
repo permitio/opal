@@ -1,7 +1,6 @@
 import pytest
 import os
 import sys
-import asyncio
 
 # Add root opal dir to use local src as package for tests (i.e, no need for python -m pytest)
 root_dir = os.path.abspath(

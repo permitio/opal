@@ -12,7 +12,6 @@ if ENABLE_DATADOG_APM:
 from opal_server.loadlimiting import init_loadlimit_router
 import os
 import asyncio
-import shutil
 from functools import partial
 from typing import Optional, List
 
