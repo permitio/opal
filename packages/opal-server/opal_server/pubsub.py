@@ -70,12 +70,8 @@ class PubSub:
                 )
                 await websocket.close()
                 return
-            # Init PubSub main-loop with or without broadcasting
-            if broadcaster_uri is not None:
-                async with self.endpoint.broadcaster:
-                    await self.endpoint.main_loop(websocket, claims=claims)
-            else:
-                await self.endpoint.main_loop(websocket, claims=claims)
+
+            await self.endpoint.main_loop(websocket, claims=claims)
 
     @staticmethod
     async def _verify_permitted_topics(
