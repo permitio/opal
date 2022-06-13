@@ -2,6 +2,7 @@ import asyncio
 import os
 import shutil
 import uuid
+import stat
 from functools import partial
 from pathlib import Path
 from typing import Generator, Optional
@@ -15,6 +16,7 @@ from tenacity import RetryError, retry, stop, wait
 
 SSH_PREFIX = "ssh://"
 GIT_SSH_USER_PREFIX = "git@"
+SSH_AGENT_ENV_VAR = "SSH_AUTH_SOCK"
 
 
 def is_ssh_repo_url(repo_url: str):
@@ -153,6 +155,7 @@ class RepoCloner:
         retry_config=None,
         ssh_key: Optional[str] = None,
         ssh_key_file_path: Optional[str] = None,
+        ssh_use_agent: bool = False,
         clone_timeout: int = 0,
     ):
         """inits the repo cloner.
@@ -163,7 +166,9 @@ class RepoCloner:
                 repo to be cloned to
             retry_config (dict): Tenacity.retry config (@see https://tenacity.readthedocs.io/en/latest/api.html#retry-main-api)
             ssh_key (str, optional): private ssh key used to gain access to the cloned repo
-            ssh_key_file_path (str, optional): local path to save the private ssh key contents
+            ssh_key_file_path (str, optional): local path of existing key, or path to save the
+                private ssh key contents if ssh_key specified too and the path doesn't already exist
+            ssh_use_agent (bool, optional): use an ssh-agent from the environment if available
         """
         if repo_url is None:
             raise ValueError("must provide repo url!")
@@ -175,6 +180,9 @@ class RepoCloner:
         self._ssh_key_file_path = (
             ssh_key_file_path or opal_common_config.GIT_SSH_KEY_FILE
         )
+        self._ssh_key_file_provided = (ssh_key_file_path is not None and
+                os.path.exists(ssh_key_file_path))
+        self._ssh_use_agent = ssh_use_agent
         self._retry_config = (
             retry_config if retry_config is not None else self.DEFAULT_RETRY_CONFIG
         )
@@ -226,22 +234,52 @@ class RepoCloner:
 
         the git ssh config will be provided only if the following conditions are met:
         - the repo url is a git ssh url
-        - an ssh private key is provided in Repo Cloner __init__
+        - an ssh private key or key file is provided in Repo Cloner __init__, or ssh_use_agent is
+          True and an agent is available
         """
-        if not is_ssh_repo_url(self.url) or self._ssh_key is None:
+        if not self._have_ssh_config():
             return None  # no ssh config
-        git_ssh_identity_file = self._save_ssh_key_to_pem_file(self._ssh_key)
         return {
-            "GIT_SSH_COMMAND": f"ssh -o StrictHostKeyChecking=no -o IdentitiesOnly=yes -i {git_ssh_identity_file}",
+            "GIT_SSH_COMMAND": self._get_ssh_command(),
             "GIT_TRACE": "1",
             "GIT_CURL_VERBOSE": "1",
         }
 
-    def _save_ssh_key_to_pem_file(self, key: str) -> Path:
+    def _have_ssh_config(self) -> bool:
+        if not is_ssh_repo_url(self.url):
+            return False
+        if (self._ssh_key is None and not self._ssh_key_file_provided
+                and not self._have_ssh_agent()):
+            return False
+        return True
+
+    def _have_ssh_agent(self) -> bool:
+        if not self._ssh_use_agent:
+            return False
+        if not SSH_AGENT_ENV_VAR in os.environ:
+            return False
+        sock_path = os.environ[SSH_AGENT_ENV_VAR]
+        if not os.path.exists(sock_path):
+            return False
+        if not stat.S_ISSOCK(os.stat(sock_path).st_mode):
+            return False
+        return True
+
+    def _get_ssh_command(self) -> str:
+        # Explicit keys and key files take precedence over an agent
+        if self._ssh_key is not None or self._ssh_key_file_provided:
+            git_ssh_identity_file = self._ensure_ssh_key_in_pem_file(self._ssh_key)
+            return f"ssh -o StrictHostKeyChecking=no -o IdentitiesOnly=yes -i {git_ssh_identity_file}"
+        elif self._have_ssh_agent():
+            return f"ssh -o StrictHostKeyChecking=no -o IdentitiesOnly=yes -o IdentityAgent={SSH_AGENT_ENV_VAR}"
+
+    def _ensure_ssh_key_in_pem_file(self, key: str) -> Optional[Path]:
+        key_path = os.path.expanduser(self._ssh_key_file_path)
+        if self._ssh_key_file_provided:
+            return Path(key_path)
         key = key.replace("_", "\n")
         if not key.endswith("\n"):
             key = key + "\n"  # pem file must end with newline
-        key_path = os.path.expanduser(self._ssh_key_file_path)
         parent_directory = os.path.dirname(key_path)
         if not os.path.exists(parent_directory):
             os.makedirs(parent_directory, exist_ok=True)

@@ -86,6 +86,8 @@ class OpalServerConfig(Confi):
     )
     POLICY_REPO_MAIN_BRANCH = confi.str("POLICY_REPO_MAIN_BRANCH", "master")
     POLICY_REPO_SSH_KEY = confi.str("POLICY_REPO_SSH_KEY", None)
+    POLICY_REPO_SSH_KEY_FILE = confi.str("POLICY_REPO_SSH_KEY_FILE", None)
+    POLICY_REPO_SSH_USE_AGENT = confi.bool("POLICY_REPO_SSH_USE_AGENT", False)
     POLICY_REPO_MANIFEST_PATH = confi.str("POLICY_REPO_MANIFEST_PATH", ".manifest")
     POLICY_REPO_CLONE_TIMEOUT = confi.int(
         "POLICY_REPO_CLONE_TIMEOUT", 0

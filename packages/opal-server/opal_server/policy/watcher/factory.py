@@ -20,6 +20,8 @@ def setup_watcher_task(
     clone_path_finder: RepoClonePathFinder = None,
     branch_name: str = None,
     ssh_key: Optional[str] = None,
+    ssh_key_file_path: Optional[str] = None,
+    ssh_use_agent: Optional[bool] = None,
     polling_interval: int = None,
     request_timeout: int = None,
     policy_bundle_token: str = None,
@@ -35,6 +37,9 @@ def setup_watcher_task(
         clone_path_finder(RepoClonePathFinder): from which the local dir path for the repo clone would be retrieved
         branch_name(str):  name of remote branch in git to pull
         ssh_key (str, optional): private ssh key used to gain access to the cloned repo
+        ssh_key_file_path (str, optional): local path of existing key, or path to save the
+            private ssh key contents if ssh_key specified too and the path doesn't already exist
+        ssh_use_agent (bool, optional): use an ssh-agent from the environment if available
         polling_interval(int):  how many seconds need to wait between polling
         request_timeout(int):  how many seconds need to wait until timout
         policy_bundle_token(int):  auth token to include in connections to OPAL server. Defaults to POLICY_BUNDLE_SERVER_TOKEN.
@@ -61,6 +66,8 @@ def setup_watcher_task(
         branch_name, opal_server_config.POLICY_REPO_MAIN_BRANCH
     )
     ssh_key = load_conf_if_none(ssh_key, opal_server_config.POLICY_REPO_SSH_KEY)
+    ssh_key_file_path = load_conf_if_none(ssh_key_file_path, opal_server_config.POLICY_REPO_SSH_KEY_FILE)
+    ssh_use_agent = load_conf_if_none(ssh_use_agent, opal_server_config.POLICY_REPO_SSH_USE_AGENT)
     polling_interval = load_conf_if_none(
         polling_interval, opal_server_config.POLICY_REPO_POLLING_INTERVAL
     )
@@ -84,6 +91,8 @@ def setup_watcher_task(
             local_clone_path=clone_path,
             branch_name=branch_name,
             ssh_key=ssh_key,
+            ssh_key_file_path=ssh_key_file_path,
+            ssh_use_agent=ssh_use_agent,
             polling_interval=polling_interval,
             request_timeout=request_timeout,
         )

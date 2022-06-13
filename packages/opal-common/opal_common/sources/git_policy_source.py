@@ -22,6 +22,9 @@ class GitPolicySource(BasePolicySource):
         local_clone_path(str):  path for the local git to manage policies
         branch_name(str):  name of remote branch in git to pull, default to master
         ssh_key (str, optional): private ssh key used to gain access to the cloned repo
+        ssh_key_file_path (str, optional): local path of existing key, or path to save the
+            private ssh key contents if ssh_key specified too and the path doesn't already exist
+        ssh_use_agent (bool, optional): use an ssh-agent from the environment if available
         polling_interval(int):  how many seconds need to wait between polling
         request_timeout(int):  how many seconds need to wait until timout
     """
@@ -32,6 +35,8 @@ class GitPolicySource(BasePolicySource):
         local_clone_path: str,
         branch_name: str = "master",
         ssh_key: Optional[str] = None,
+        ssh_key_file_path: Optional[str] = None,
+        ssh_use_agent: Optional[bool] = None,
         polling_interval: int = 0,
         request_timeout: int = 0,
     ):
@@ -46,6 +51,8 @@ class GitPolicySource(BasePolicySource):
             local_clone_path,
             branch_name=branch_name,
             ssh_key=ssh_key,
+            ssh_key_file_path=ssh_key_file_path,
+            ssh_use_agent=ssh_use_agent,
             clone_timeout=request_timeout,
         )
         self._branch_name = branch_name
