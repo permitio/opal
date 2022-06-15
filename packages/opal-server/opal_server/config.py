@@ -1,3 +1,5 @@
+import pathlib
+
 import os
 from enum import Enum
 
@@ -11,6 +13,11 @@ confi = Confi(prefix="OPAL_")
 class PolicySourceTypes(str, Enum):
     Git = "GIT"
     Api = "API"
+
+
+class ServerRole(str, Enum):
+    Leader = "leader"
+    Follower = "follower"
 
 
 class OpalServerConfig(Confi):
@@ -217,6 +224,15 @@ class OpalServerConfig(Confi):
         False,
         description="Set if OPAL server should enable tracing with datadog APM",
     )
+
+    SERVER_ROLE = confi.enum("SERVER_ROLE",
+                             ServerRole,
+                             default=ServerRole.Follower,
+                             description="Server is leader or follower")
+
+    REDIS_URL = confi.str("REDIS_URL", default="redis://localhost")
+
+    BASE_DIR = confi.str("BASE_DIR", default=pathlib.Path.home() / ".local/state/opal")
 
 
 opal_server_config = OpalServerConfig(prefix="OPAL_")

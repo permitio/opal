@@ -5,3 +5,7 @@ pyjwt[crypto]>=2.1.0,<3
 websockets>=10.3,<11
 ddtrace>=1.1.4,<2
 slowapi>=0.1.5,<2
+# slowapi is stuck on and old `redis`, so fix that and switch from aioredis to redis
+aioredis
+celery
+asgiref

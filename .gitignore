@@ -132,3 +132,5 @@ dmypy.json
 .vscode/
 .idea
 *.iml
+
+.DS_Store
