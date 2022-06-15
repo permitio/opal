@@ -1,12 +1,38 @@
 from pydantic import Field
-from typing import List
+from typing import List, Union, Optional, Literal
 
 from opal_common.schemas.policy import BaseSchema
 
 
-class PolicySource(BaseSchema):
+class NoAuthData(BaseSchema):
+    auth_type: Literal['none'] = 'none'
+
+
+class SSHAuthData(BaseSchema):
+    auth_type: Literal['ssh'] = 'ssh'
+    username: str = Field(..., description='SSH username')
+    public_key: Optional[str] = Field(None, description='SSH public key')
+    private_key: str = Field(..., description='SSH private key')
+
+
+class GitHubTokenAuthData(BaseSchema):
+    auth_type: Literal['github_token'] = 'github_token'
+    token: str = Field(..., description='Github Personal Access Token (PAI)')
+
+
+class UserPassAuthData(BaseSchema):
+    auth_type: Literal['userpass']
+    username: str = Field(..., description='Username')
+    password: str = Field(..., description='Password')
+
+
+class BasePolicySource(BaseSchema):
     source_type: str
     url: str
+    auth: Union[NoAuthData, SSHAuthData, GitHubTokenAuthData, UserPassAuthData] = Field(..., discriminator='auth_type')
     directories: List[str] = Field(['.'], description='Directories to include')
     manifest: str = Field('.manifest', description='path to manifest file')
 
+
+class GitPolicySource(BasePolicySource):
+    branch: str = Field('main', description='Git branch to track')

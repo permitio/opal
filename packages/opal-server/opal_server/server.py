@@ -35,7 +35,7 @@ from opal_server.publisher import setup_broadcaster_keepalive_task
 from opal_server.pubsub import PubSub
 from opal_server.redis import RedisDB
 from opal_server.scopes.loader import load_scopes
-from opal_server.scopes.scope_repository import ScopeRepository
+from opal_server.scopes.scope_repository import ScopeRepository, ScopeNotFoundError
 from opal_server.security.api import init_security_router
 from opal_server.security.jwks import JwksStaticEndpoint
 from opal_server.statistics import OpalStatistics, init_statistics_router
@@ -355,13 +355,21 @@ class OpalServer:
                                 f"Policy repo will be cloned to: {full_local_repo_path}"
                             )
 
-                            scope = await self._scopes.get('env')
+                            scope = None
 
-                            self.watcher = setup_watcher_task(
-                                self.publisher,
-                                remote_source_url=scope.policy.url,
-                                clone_path_finder=clone_path_finder,
-                            )
+                            try:
+                                scope = await self._scopes.get('env')
+                            except ScopeNotFoundError:
+                                pass
+
+                            if scope is not None:
+                                self.watcher = setup_watcher_task(
+                                    self.publisher,
+                                    remote_source_url=scope.policy.url,
+                                    ssh_key=scope.policy.auth.private_key,
+                                    branch_name=scope.policy.branch,
+                                    clone_path_finder=clone_path_finder,
+                                )
                         # the leader listens to the webhook topic (webhook api route can be hit randomly in all workers)
                         # and triggers the watcher to check for changes in the tracked upstream remote.
                         await self.pubsub.endpoint.subscribe(

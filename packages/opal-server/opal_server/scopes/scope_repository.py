@@ -1,5 +1,3 @@
-from uuid import UUID
-
 from opal_common.schemas.scopes import Scope
 from opal_server.redis import RedisDB
 
@@ -28,6 +26,10 @@ class ScopeRepository:
     async def put(self, scope: Scope):
         key = self._redis_key(scope.scope_id)
         await self._redis_db.set(key, scope)
+
+    async def delete(self, scope_id: str):
+        key = self._redis_key(scope_id)
+        await self._redis_db.delete(key)
 
     def _redis_key(self, scope_id: str):
         return f"permit.io/Scope:{scope_id}"
