@@ -8,3 +8,4 @@ slowapi>=0.1.5,<2
 # slowapi is stuck on and old `redis`, so fix that and switch from aioredis to redis
 aioredis
 celery
+pygit2
