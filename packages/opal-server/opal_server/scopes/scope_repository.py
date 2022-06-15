@@ -20,7 +20,7 @@ class ScopeRepository:
     async def all(self) -> List[Scope]:
         scopes = []
 
-        async for value in self._redis_db.scan(f'{self._prefix}:*'):
+        async for value in self._redis_db.scan(f"{self._prefix}:*"):
             scope = Scope.parse_raw(value)
             scopes.append(scope)
 

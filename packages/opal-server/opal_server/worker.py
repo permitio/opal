@@ -43,7 +43,11 @@ worker = Worker(
     base_dir=opal_base_dir,
     scopes=ScopeRepository(RedisDB(opal_server_config.REDIS_URL)),
 )
-app = Celery("opal-worker", broker=opal_server_config.REDIS_URL, backend=opal_server_config.REDIS_URL)
+app = Celery(
+    "opal-worker",
+    broker=opal_server_config.REDIS_URL,
+    backend=opal_server_config.REDIS_URL,
+)
 
 
 @app.task
