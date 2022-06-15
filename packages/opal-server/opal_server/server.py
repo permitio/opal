@@ -2,6 +2,7 @@ import asyncio
 import os
 import sys
 import traceback
+from celery import group
 from functools import partial
 from typing import List, Optional
 
@@ -297,6 +298,14 @@ class OpalServer:
 
     async def start(self):
         await load_scopes(self._scopes)
+        await self.sync_all_scopes()
+
+    async def sync_all_scopes(self):
+        from opal_server.worker import sync_scope
+
+        scopes = await self._scopes.all()
+        job = group([sync_scope.s(scope.scope_id) for scope in scopes])
+        job.apply_async().join()
 
     async def start_server_background_tasks(self):
         """starts the background processes (as asyncio tasks) if such are

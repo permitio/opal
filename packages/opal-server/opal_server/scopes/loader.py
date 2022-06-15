@@ -37,6 +37,3 @@ async def _load_env_scope(repo: ScopeRepository):
         scope.policy.auth = auth
 
         await repo.put(scope)
-
-        from opal_server.worker import sync_scope
-        sync_scope.delay(scope.scope_id)
