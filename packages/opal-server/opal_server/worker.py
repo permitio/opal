@@ -42,6 +42,13 @@ class Worker:
         scope_dir = self._base_dir / "scopes" / scope_id
         shutil.rmtree(scope_dir, ignore_errors=True)
 
+    async def periodic_check(self):
+        scopes = await self._scopes.all()
+
+        for scope in scopes:
+            if scope.policy.poll_updates:
+                sync_scope.delay(scope.scope_id)
+
 
 opal_base_dir = Path(opal_server_config.BASE_DIR)
 worker = Worker(
@@ -55,6 +62,13 @@ app = Celery(
 )
 
 
+@app.on_after_configure.connect
+def setup_periodic_tasks(sender, **kwargs):
+    sender.add_periodic_task(
+        opal_server_config.POLICY_REFRESH_INTERVAL, periodic_check.s()
+    )
+
+
 @app.task
 def sync_scope(scope_id: str):
     return async_to_sync(worker.sync_scope, scope_id)
@@ -63,3 +77,8 @@ def sync_scope(scope_id: str):
 @app.task
 def delete_scope(scope_id: str):
     return async_to_sync(worker.delete_scope, scope_id)
+
+
+@app.task
+def periodic_check():
+    return async_to_sync(worker.periodic_check)

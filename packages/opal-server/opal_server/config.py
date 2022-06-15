@@ -235,5 +235,11 @@ class OpalServerConfig(Confi):
 
     BASE_DIR = confi.str("BASE_DIR", default=pathlib.Path.home() / ".local/state/opal")
 
+    POLICY_REFRESH_INTERVAL = confi.int(
+        "POLICY_REFRESH_INTERVAL",
+        default=10 * 60,
+        description="Policy polling refresh interval",
+    )
+
 
 opal_server_config = OpalServerConfig(prefix="OPAL_")
