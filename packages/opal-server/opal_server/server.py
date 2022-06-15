@@ -1,9 +1,7 @@
-import sys
-
-import traceback
-
 import asyncio
 import os
+import sys
+import traceback
 from functools import partial
 from typing import List, Optional
 
@@ -35,7 +33,7 @@ from opal_server.publisher import setup_broadcaster_keepalive_task
 from opal_server.pubsub import PubSub
 from opal_server.redis import RedisDB
 from opal_server.scopes.loader import load_scopes
-from opal_server.scopes.scope_repository import ScopeRepository, ScopeNotFoundError
+from opal_server.scopes.scope_repository import ScopeNotFoundError, ScopeRepository
 from opal_server.security.api import init_security_router
 from opal_server.security.jwks import JwksStaticEndpoint
 from opal_server.statistics import OpalStatistics, init_statistics_router
@@ -358,7 +356,7 @@ class OpalServer:
                             scope = None
 
                             try:
-                                scope = await self._scopes.get('env')
+                                scope = await self._scopes.get("env")
                             except ScopeNotFoundError:
                                 pass
 

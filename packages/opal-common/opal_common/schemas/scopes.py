@@ -1,9 +1,8 @@
 from typing import Union
 
-from pydantic import Field
-
 from opal_common.schemas.policy import BaseSchema
 from opal_common.schemas.policy_source import GitPolicySource
+from pydantic import Field
 
 
 class Scope(BaseSchema):

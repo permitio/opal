@@ -1,6 +1,5 @@
-import pathlib
-
 import os
+import pathlib
 from enum import Enum
 
 from opal_common.authentication.types import EncryptionKeyFormat
@@ -225,10 +224,12 @@ class OpalServerConfig(Confi):
         description="Set if OPAL server should enable tracing with datadog APM",
     )
 
-    SERVER_ROLE = confi.enum("SERVER_ROLE",
-                             ServerRole,
-                             default=ServerRole.Follower,
-                             description="Server is leader or follower")
+    SERVER_ROLE = confi.enum(
+        "SERVER_ROLE",
+        ServerRole,
+        default=ServerRole.Follower,
+        description="Server is leader or follower",
+    )
 
     REDIS_URL = confi.str("REDIS_URL", default="redis://localhost")
 

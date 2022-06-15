@@ -1,7 +1,6 @@
 import asyncio
 
 from celery import Celery
-
 from opal_server.config import opal_server_config
 from opal_server.redis import RedisDB
 from opal_server.scopes.scope_repository import ScopeRepository
@@ -24,9 +23,7 @@ class Worker:
         scope = await self._scopes.get(scope_id)
 
 
-worker = Worker(
-    scopes=ScopeRepository(RedisDB(opal_server_config.REDIS_URL))
-)
+worker = Worker(scopes=ScopeRepository(RedisDB(opal_server_config.REDIS_URL)))
 app = Celery("opal-worker", broker=opal_server_config.REDIS_URL)
 
 

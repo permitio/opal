@@ -5,9 +5,8 @@ from pydantic import BaseModel
 
 
 class RedisDB:
-    """
-    Small utility class to persist objects in Redis
-    """
+    """Small utility class to persist objects in Redis."""
+
     def __init__(self, redis_url):
         self._url = redis_url
         self._redis = aioredis.from_url(self._url)
@@ -27,7 +26,7 @@ class RedisDB:
         return await self._redis.get(key)
 
     async def scan(self, pattern: str) -> Generator[bytes, None, None]:
-        cur = b'0'
+        cur = b"0"
         while cur:
             cur, keys = await self._redis.scan(cur, match=pattern)
 
