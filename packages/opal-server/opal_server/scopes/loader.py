@@ -21,9 +21,13 @@ async def _load_env_scope(repo: ScopeRepository):
         auth = NoAuthData()
 
         if opal_server_config.POLICY_REPO_SSH_KEY is not None:
-            auth = SSHAuthData(
-                username="git", private_key=opal_server_config.POLICY_REPO_SSH_KEY
-            )
+            private_ssh_key = opal_server_config.POLICY_REPO_SSH_KEY
+            private_ssh_key = private_ssh_key.replace("_", "\n")
+
+            if not private_ssh_key.endswith("\n"):
+                private_ssh_key += "\n"
+
+            auth = SSHAuthData(username="git", private_key=private_ssh_key)
 
         scope = Scope(
             scope_id=DEFAULT_SCOPE_ID,
@@ -37,3 +41,6 @@ async def _load_env_scope(repo: ScopeRepository):
         )
 
         await repo.put(scope)
+
+        from opal_server.worker import sync_scope
+        sync_scope.delay(scope.scope_id)
