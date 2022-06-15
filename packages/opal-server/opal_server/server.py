@@ -2,10 +2,10 @@ import asyncio
 import os
 import sys
 import traceback
-from celery import group
 from functools import partial
 from typing import List, Optional
 
+from celery import group
 from fastapi import Depends, FastAPI
 from fastapi_websocket_pubsub.event_broadcaster import EventBroadcasterContextManager
 from opal_common.authentication.deps import JWTAuthenticator, StaticBearerAuthenticator
