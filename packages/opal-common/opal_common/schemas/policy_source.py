@@ -1,4 +1,10 @@
-from typing import List, Literal, Optional, Union
+from typing import List, Optional, Union
+
+try:
+    from typing import Literal
+except ImportError:
+    # Py<3.8
+    from typing_extensions import Literal
 
 from opal_common.schemas.policy import BaseSchema
 from pydantic import Field
@@ -21,7 +27,7 @@ class GitHubTokenAuthData(BaseSchema):
 
 
 class UserPassAuthData(BaseSchema):
-    auth_type: Literal["userpass"]
+    auth_type: Literal["userpass"] = "userpass"
     username: str = Field(..., description="Username")
     password: str = Field(..., description="Password")
 
