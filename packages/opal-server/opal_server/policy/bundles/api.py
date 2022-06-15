@@ -2,7 +2,8 @@ import os
 from pathlib import Path
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+import fastapi.responses
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response, status
 from git import Repo
 from opal_common.confi.confi import load_conf_if_none
 from opal_common.git.bundle_maker import BundleMaker
@@ -10,6 +11,7 @@ from opal_common.git.commit_viewer import CommitViewer
 from opal_common.git.repo_cloner import RepoClonePathFinder
 from opal_common.schemas.policy import PolicyBundle
 from opal_server.config import opal_server_config
+from starlette.responses import RedirectResponse
 
 router = APIRouter()
 
@@ -90,27 +92,15 @@ async def get_input_paths_or_throw(
 
 @router.get("/policy", response_model=PolicyBundle)
 async def get_policy(
-    repo: Repo = Depends(get_repo),
-    input_paths: List[Path] = Depends(get_input_paths_or_throw),
+    *,
     base_hash: Optional[str] = Query(
         None,
         description="hash of previous bundle already downloaded, server will return a diff bundle.",
     ),
 ):
-    maker = BundleMaker(
-        repo,
-        in_directories=set(input_paths),
-        extensions=opal_server_config.OPA_FILE_EXTENSIONS,
-        manifest_filename=opal_server_config.POLICY_REPO_MANIFEST_PATH,
-    )
-    if base_hash is None:
-        return maker.make_bundle(repo.head.commit)
+    url = f"/scopes/env/policy"
 
-    try:
-        old_commit = repo.commit(base_hash)
-        return maker.make_diff_bundle(old_commit, repo.head.commit)
-    except ValueError:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"commit with hash {base_hash} was not found in the policy repo!",
-        )
+    if base_hash:
+        url += f"?base_hash={base_hash}"
+
+    return RedirectResponse(url)

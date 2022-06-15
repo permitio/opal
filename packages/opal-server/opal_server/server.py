@@ -22,7 +22,6 @@ from opal_common.topics.publisher import (
     ServerSideTopicPublisher,
     TopicPublisher,
 )
-from opal_server.api import init_scope_router
 from opal_server.config import opal_server_config
 from opal_server.data.api import init_data_updates_router
 from opal_server.data.data_update_publisher import DataUpdatePublisher
@@ -34,6 +33,7 @@ from opal_server.policy.webhook.api import init_git_webhook_router
 from opal_server.publisher import setup_broadcaster_keepalive_task
 from opal_server.pubsub import PubSub
 from opal_server.redis import RedisDB
+from opal_server.scopes.api import init_scope_router
 from opal_server.scopes.loader import load_scopes
 from opal_server.scopes.scope_repository import ScopeNotFoundError, ScopeRepository
 from opal_server.security.api import init_security_router
