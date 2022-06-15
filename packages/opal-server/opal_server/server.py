@@ -22,6 +22,7 @@ from opal_common.topics.publisher import (
     ServerSideTopicPublisher,
     TopicPublisher,
 )
+from opal_server.api import init_scope_router
 from opal_server.config import opal_server_config
 from opal_server.data.api import init_data_updates_router
 from opal_server.data.data_update_publisher import DataUpdatePublisher
@@ -254,6 +255,9 @@ class OpalServer:
             loadlimit_router,
             tags=["Client Load Limiting"],
             dependencies=[Depends(authenticator)],
+        )
+        app.include_router(
+            init_scope_router(self._scopes), tags=["Scopes"], prefix="/scopes"
         )
 
         if self.jwks_endpoint is not None:

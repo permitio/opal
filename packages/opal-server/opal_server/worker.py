@@ -1,4 +1,5 @@
 import asyncio
+import shutil
 from pathlib import Path
 from typing import cast
 
@@ -37,6 +38,10 @@ class Worker:
         if fetcher:
             await fetcher.fetch()
 
+    async def delete_scope(self, scope_id: str):
+        scope_dir = self._base_dir / "scopes" / scope_id
+        shutil.rmtree(scope_dir, ignore_errors=True)
+
 
 opal_base_dir = Path(opal_server_config.BASE_DIR)
 worker = Worker(
@@ -53,3 +58,8 @@ app = Celery(
 @app.task
 def sync_scope(scope_id: str):
     return async_to_sync(worker.sync_scope, scope_id)
+
+
+@app.task
+def delete_scope(scope_id: str):
+    return async_to_sync(worker.delete_scope, scope_id)
