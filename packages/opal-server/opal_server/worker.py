@@ -1,5 +1,6 @@
 import asyncio
 from pathlib import Path
+from typing import cast
 
 from celery import Celery
 from opal_common.schemas.policy_source import GitPolicySource
@@ -29,7 +30,9 @@ class Worker:
         fetcher = None
 
         if isinstance(scope.policy, GitPolicySource):
-            fetcher = GitPolicyFetcher(self._base_dir, scope)
+            fetcher = GitPolicyFetcher(
+                self._base_dir, scope_id, cast(GitPolicySource, scope.policy)
+            )
 
         if fetcher:
             await fetcher.fetch()
@@ -40,7 +43,7 @@ worker = Worker(
     base_dir=opal_base_dir,
     scopes=ScopeRepository(RedisDB(opal_server_config.REDIS_URL)),
 )
-app = Celery("opal-worker", broker=opal_server_config.REDIS_URL)
+app = Celery("opal-worker", broker=opal_server_config.REDIS_URL, backend=opal_server_config.REDIS_URL)
 
 
 @app.task
