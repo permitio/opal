@@ -92,15 +92,27 @@ async def get_input_paths_or_throw(
 
 @router.get("/policy", response_model=PolicyBundle)
 async def get_policy(
-    *,
+    repo: Repo = Depends(get_repo),
+    input_paths: List[Path] = Depends(get_input_paths_or_throw),
     base_hash: Optional[str] = Query(
         None,
         description="hash of previous bundle already downloaded, server will return a diff bundle.",
     ),
 ):
-    url = f"/scopes/env/policy"
+    maker = BundleMaker(
+        repo,
+        in_directories=set(input_paths),
+        extensions=opal_server_config.OPA_FILE_EXTENSIONS,
+        manifest_filename=opal_server_config.POLICY_REPO_MANIFEST_PATH,
+    )
+    if base_hash is None:
+        return maker.make_bundle(repo.head.commit)
 
-    if base_hash:
-        url += f"?base_hash={base_hash}"
-
-    return RedirectResponse(url)
+    try:
+        old_commit = repo.commit(base_hash)
+        return maker.make_diff_bundle(old_commit, repo.head.commit)
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"commit with hash {base_hash} was not found in the policy repo!",
+        )

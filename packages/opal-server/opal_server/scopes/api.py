@@ -6,7 +6,7 @@ from opal_common.schemas.policy import PolicyBundle
 from opal_common.schemas.policy_source import GitPolicyScopeSource
 from opal_common.schemas.scopes import Scope
 from opal_server.config import opal_server_config
-from opal_server.git_fetcher import BadCommitError, GitPolicyFetcher
+from opal_server.git_fetcher import GitPolicyFetcher
 from opal_server.scopes.scope_repository import ScopeNotFoundError, ScopeRepository
 
 
@@ -67,13 +67,7 @@ def init_scope_router(scopes: ScopeRepository):
                 cast(GitPolicyScopeSource, scope.policy),
             )
 
-            try:
-                bundle = fetcher.make_bundle(base_hash)
-                return bundle
-            except BadCommitError as ex:
-                raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    detail=f"commit with hash {ex.commit} was not found in the policy repo!",
-                )
+            bundle = fetcher.make_bundle(base_hash)
+            return bundle
 
     return router

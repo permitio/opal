@@ -17,14 +17,6 @@ from pygit2 import (
 )
 
 
-class BadCommitError(Exception):
-    def __init__(self, commit: str):
-        self.commit = commit
-
-    def __str__(self) -> str:
-        return f"Bad commit supplied: {self.commit}"
-
-
 class GitPolicyFetcher:
     def __init__(self, base_dir: Path, scope_id: str, source: GitPolicyScopeSource):
         self._base_dir = opal_scopes_dest_dir(base_dir)
