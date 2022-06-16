@@ -32,7 +32,7 @@ from opal_server.policy.webhook.api import init_git_webhook_router
 from opal_server.publisher import setup_broadcaster_keepalive_task
 from opal_server.pubsub import PubSub
 from opal_server.redis import RedisDB
-from opal_server.scopes.loader import load_scopes
+from opal_server.scopes.loader import DEFAULT_SCOPE_ID, load_scopes
 from opal_server.scopes.scope_repository import ScopeNotFoundError, ScopeRepository
 from opal_server.security.api import init_security_router
 from opal_server.security.jwks import JwksStaticEndpoint
@@ -356,7 +356,7 @@ class OpalServer:
                             scope = None
 
                             try:
-                                scope = await self._scopes.get("env")
+                                scope = await self._scopes.get(DEFAULT_SCOPE_ID)
                             except ScopeNotFoundError:
                                 pass
 

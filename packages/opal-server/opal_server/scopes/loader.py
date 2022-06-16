@@ -1,7 +1,13 @@
-from opal_common.schemas.policy_source import GitPolicySource, NoAuthData, SSHAuthData
+from opal_common.schemas.policy_source import (
+    GitPolicyScopeSource,
+    NoAuthData,
+    SSHAuthData,
+)
 from opal_common.schemas.scopes import Scope
 from opal_server.config import ServerRole, opal_server_config
 from opal_server.scopes.scope_repository import ScopeRepository
+
+DEFAULT_SCOPE_ID = "default"
 
 
 async def load_scopes(repo: ScopeRepository):
@@ -14,9 +20,14 @@ async def _load_env_scope(repo: ScopeRepository):
     if opal_server_config.POLICY_REPO_URL is not None:
         auth = NoAuthData()
 
+        if opal_server_config.POLICY_REPO_SSH_KEY is not None:
+            auth = SSHAuthData(
+                username="git", private_key=opal_server_config.POLICY_REPO_SSH_KEY
+            )
+
         scope = Scope(
-            scope_id="env",
-            policy=GitPolicySource(
+            scope_id=DEFAULT_SCOPE_ID,
+            policy=GitPolicyScopeSource(
                 source_type=opal_server_config.POLICY_SOURCE_TYPE.lower(),
                 url=opal_server_config.POLICY_REPO_URL,
                 manifest=opal_server_config.POLICY_REPO_MANIFEST_PATH,
@@ -24,12 +35,5 @@ async def _load_env_scope(repo: ScopeRepository):
                 auth=auth,
             ),
         )
-
-        if opal_server_config.POLICY_REPO_SSH_KEY is not None:
-            auth = SSHAuthData(
-                username="git", private_key=opal_server_config.POLICY_REPO_SSH_KEY
-            )
-
-        scope.policy.auth = auth
 
         await repo.put(scope)
