@@ -2,7 +2,8 @@ import os
 from pathlib import Path
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+import fastapi.responses
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response, status
 from git import Repo
 from opal_common.confi.confi import load_conf_if_none
 from opal_common.git.bundle_maker import BundleMaker
@@ -10,6 +11,7 @@ from opal_common.git.commit_viewer import CommitViewer
 from opal_common.git.repo_cloner import RepoClonePathFinder
 from opal_common.schemas.policy import PolicyBundle
 from opal_server.config import opal_server_config
+from starlette.responses import RedirectResponse
 
 router = APIRouter()
 

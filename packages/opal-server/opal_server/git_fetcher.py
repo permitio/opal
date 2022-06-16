@@ -1,7 +1,9 @@
 from pathlib import Path
-from typing import cast
+from typing import Optional, cast
 
 import aiofiles.os
+from git import Repo
+from opal_common.git.bundle_maker import BundleMaker
 from opal_common.logger import logger
 from opal_common.schemas.policy import PolicyBundle
 from opal_common.schemas.policy_source import GitPolicyScopeSource, SSHAuthData
@@ -47,8 +49,24 @@ class GitPolicyFetcher:
             repo.references[f"refs/remotes/origin/{self._source.branch}"].resolve().name
         )
 
-    async def make_bundle(self) -> PolicyBundle:
-        pass
+    def make_bundle(self, base_hash: Optional[str] = None) -> PolicyBundle:
+        repo = Repo(str(self._repo_path))
+
+        bundle_maker = BundleMaker(
+            repo,
+            {Path(p) for p in self._source.directories},
+            extensions=self._source.extensions,
+            manifest_filename=self._source.manifest,
+        )
+
+        if not base_hash:
+            return bundle_maker.make_bundle(repo.head.commit)
+        else:
+            try:
+                old_commit = repo.commit(base_hash)
+                return bundle_maker.make_diff_bundle(old_commit, repo.head.commit)
+            except ValueError:
+                return bundle_maker.make_bundle(repo.head.commit)
 
 
 class GitCallback(RemoteCallbacks):

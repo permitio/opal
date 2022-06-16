@@ -39,6 +39,9 @@ class BasePolicyScopeSource(BaseSchema):
         ..., discriminator="auth_type"
     )
     directories: List[str] = Field(["."], description="Directories to include")
+    extensions: List[str] = Field(
+        [".rego", ".json"], description="File extensions to use"
+    )
     manifest: str = Field(".manifest", description="path to manifest file")
 
 
