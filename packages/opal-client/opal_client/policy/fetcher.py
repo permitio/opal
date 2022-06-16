@@ -46,7 +46,14 @@ class PolicyFetcher:
         self._retry_config = (
             retry_config if retry_config is not None else self.DEFAULT_RETRY_CONFIG
         )
-        self._policy_endpoint_url = f"{self._backend_url}/policy"
+
+        scope_id = opal_client_config.SCOPE_ID
+
+        if scope_id:
+            self._policy_endpoint_url = f"{self._backend_url}/scopes/{scope_id}/policy"
+        else:
+            self._policy_endpoint_url = f"{self._backend_url}/policy"
+
         # custom SSL context (for self-signed certificates)
         self._custom_ssl_context = get_custom_ssl_context()
         self._ssl_context_kwargs = (
