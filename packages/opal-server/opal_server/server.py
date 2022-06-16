@@ -256,7 +256,9 @@ class OpalServer:
             dependencies=[Depends(authenticator)],
         )
         app.include_router(
-            init_scope_router(self._scopes), tags=["Scopes"], prefix="/scopes"
+            init_scope_router(self._scopes, authenticator),
+            tags=["Scopes"],
+            prefix="/scopes",
         )
 
         if self.jwks_endpoint is not None:
