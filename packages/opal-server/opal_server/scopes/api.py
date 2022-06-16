@@ -45,6 +45,22 @@ def init_scope_router(scopes: ScopeRepository):
 
         return Response(status_code=status.HTTP_204_NO_CONTENT)
 
+    @router.post("/{scope_id}", status_code=status.HTTP_200_OK)
+    async def refresh_scope(scope_id: str):
+        try:
+            _ = await scopes.get(scope_id)
+
+            from opal_server.worker import sync_scope
+
+            sync_scope.delay(scope_id)
+
+            return Response(status_code=status.HTTP_200_OK)
+
+        except ScopeNotFoundError:
+            raise HTTPException(
+                status.HTTP_404_NOT_FOUND, detail=f"No such scope: {scope_id}"
+            )
+
     @router.get(
         "/{scope_id}/policy",
         response_model=PolicyBundle,

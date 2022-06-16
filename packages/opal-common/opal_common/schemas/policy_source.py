@@ -43,6 +43,9 @@ class BasePolicyScopeSource(BaseSchema):
         [".rego", ".json"], description="File extensions to use"
     )
     manifest: str = Field(".manifest", description="path to manifest file")
+    poll_updates: bool = Field(
+        False, description="Whether OPAL should check for updates periodically"
+    )
 
 
 class GitPolicyScopeSource(BasePolicyScopeSource):
