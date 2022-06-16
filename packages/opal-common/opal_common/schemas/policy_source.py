@@ -32,7 +32,7 @@ class UserPassAuthData(BaseSchema):
     password: str = Field(..., description="Password")
 
 
-class BasePolicySource(BaseSchema):
+class BasePolicyScopeSource(BaseSchema):
     source_type: str
     url: str
     auth: Union[NoAuthData, SSHAuthData, GitHubTokenAuthData, UserPassAuthData] = Field(
@@ -45,5 +45,5 @@ class BasePolicySource(BaseSchema):
     manifest: str = Field(".manifest", description="path to manifest file")
 
 
-class GitPolicySource(BasePolicySource):
+class GitPolicyScopeSource(BasePolicyScopeSource):
     branch: str = Field("main", description="Git branch to track")

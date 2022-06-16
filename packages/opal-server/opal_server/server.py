@@ -5,7 +5,6 @@ import traceback
 from functools import partial
 from typing import List, Optional
 
-from celery import group
 from fastapi import Depends, FastAPI
 from fastapi_websocket_pubsub.event_broadcaster import EventBroadcasterContextManager
 from opal_common.authentication.deps import JWTAuthenticator, StaticBearerAuthenticator
@@ -35,6 +34,7 @@ from opal_server.pubsub import PubSub
 from opal_server.redis import RedisDB
 from opal_server.scopes.api import init_scope_router
 from opal_server.scopes.loader import load_scopes
+from opal_server.scopes.loader import DEFAULT_SCOPE_ID, load_scopes
 from opal_server.scopes.scope_repository import ScopeNotFoundError, ScopeRepository
 from opal_server.security.api import init_security_router
 from opal_server.security.jwks import JwksStaticEndpoint
@@ -308,8 +308,9 @@ class OpalServer:
         from opal_server.worker import sync_scope
 
         scopes = await self._scopes.all()
-        job = group([sync_scope.s(scope.scope_id) for scope in scopes])
-        job.apply_async().join()
+
+        for scope in scopes:
+            sync_scope.delay(scope.scope_id)
 
     async def start_server_background_tasks(self):
         """starts the background processes (as asyncio tasks) if such are
@@ -369,7 +370,7 @@ class OpalServer:
                             scope = None
 
                             try:
-                                scope = await self._scopes.get("env")
+                                scope = await self._scopes.get(DEFAULT_SCOPE_ID)
                             except ScopeNotFoundError:
                                 pass
 
