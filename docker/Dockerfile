@@ -31,8 +31,10 @@ FROM python:3.8-alpine3.11 as common
 
 # copy libraries from build stage (This won't copy redundant libraries we used in BuildStage)
 COPY --from=BuildStage /usr/local /usr/local
+
+ARG rookout
 # needed for rookout
-RUN apk add g++ python3-dev linux-headers
+RUN if [ "$rookout" = "" ]; then echo "Skipping rookout deps"; else apk add --update --no-cache g++ python3-dev linux-headers; fi
 
 # Add non-root user
 RUN addgroup -S opal && adduser -S opal -G opal -h /opal
