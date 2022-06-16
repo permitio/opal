@@ -297,6 +297,15 @@ class OpalServer:
 
     async def start(self):
         await load_scopes(self._scopes)
+        await self.sync_all_scopes()
+
+    async def sync_all_scopes(self):
+        from opal_server.worker import sync_scope
+
+        scopes = await self._scopes.all()
+
+        for scope in scopes:
+            sync_scope.delay(scope.scope_id)
 
     async def start_server_background_tasks(self):
         """starts the background processes (as asyncio tasks) if such are
