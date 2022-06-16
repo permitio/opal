@@ -2,10 +2,11 @@ import asyncio
 from pathlib import Path
 from typing import cast
 
-from celery import Celery
 from opal_common.schemas.policy_source import GitPolicyScopeSource
-from opal_server.config import opal_server_config
 from opal_server.git_fetcher import GitPolicyFetcher
+
+from celery import Celery
+from opal_server.config import opal_server_config
 from opal_server.redis import RedisDB
 from opal_server.scopes.scope_repository import ScopeRepository
 
@@ -48,7 +49,6 @@ app = Celery(
     broker=opal_server_config.REDIS_URL,
     backend=opal_server_config.REDIS_URL,
 )
-
 
 @app.task
 def sync_scope(scope_id: str):
