@@ -3,7 +3,7 @@ from pathlib import Path
 from typing import cast
 
 from celery import Celery
-from opal_common.schemas.policy_source import GitPolicySource
+from opal_common.schemas.policy_source import GitPolicyScopeSource
 from opal_server.config import opal_server_config
 from opal_server.git_fetcher import GitPolicyFetcher
 from opal_server.redis import RedisDB
@@ -29,9 +29,9 @@ class Worker:
 
         fetcher = None
 
-        if isinstance(scope.policy, GitPolicySource):
+        if isinstance(scope.policy, GitPolicyScopeSource):
             fetcher = GitPolicyFetcher(
-                self._base_dir, scope_id, cast(GitPolicySource, scope.policy)
+                self._base_dir, scope_id, cast(GitPolicyScopeSource, scope.policy)
             )
 
         if fetcher:

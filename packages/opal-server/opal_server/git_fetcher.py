@@ -4,7 +4,7 @@ from typing import cast
 import aiofiles.os
 from opal_common.logger import logger
 from opal_common.schemas.policy import PolicyBundle
-from opal_common.schemas.policy_source import GitPolicySource, SSHAuthData
+from opal_common.schemas.policy_source import GitPolicyScopeSource, SSHAuthData
 from pygit2 import (
     KeypairFromMemory,
     RemoteCallbacks,
@@ -16,10 +16,10 @@ from pygit2 import (
 
 
 class GitPolicyFetcher:
-    def __init__(self, base_dir: Path, scope_id: str, source: GitPolicySource):
-        self._base_dir = _get_scope_dir(base_dir)
+    def __init__(self, base_dir: Path, scope_id: str, source: GitPolicyScopeSource):
+        self._base_dir = opal_scopes_dest_dir(base_dir)
         self._source = source
-        self._auth_callbacks = _GitCallback(self._source)
+        self._auth_callbacks = GitCallback(self._source)
         self._repo_path = self._base_dir / scope_id
 
     async def fetch(self):
@@ -51,8 +51,8 @@ class GitPolicyFetcher:
         pass
 
 
-class _GitCallback(RemoteCallbacks):
-    def __init__(self, source: GitPolicySource):
+class GitCallback(RemoteCallbacks):
+    def __init__(self, source: GitPolicyScopeSource):
         super().__init__()
         self._source = source
 
@@ -70,5 +70,5 @@ class _GitCallback(RemoteCallbacks):
         return Username(username_from_url)
 
 
-def _get_scope_dir(base_dir: Path):
+def opal_scopes_dest_dir(base_dir: Path):
     return base_dir / "scopes"
