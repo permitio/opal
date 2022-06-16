@@ -1,4 +1,3 @@
-from opal_common.schemas.policy_source import GitPolicyScopeSource, NoAuthData, SSHAuthData
 from opal_common.schemas.policy_source import (
     GitPolicyScopeSource,
     NoAuthData,

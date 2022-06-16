@@ -7,12 +7,6 @@ from opal_common.git.bundle_maker import BundleMaker
 from opal_common.logger import logger
 from opal_common.schemas.policy import PolicyBundle
 from opal_common.schemas.policy_source import GitPolicyScopeSource, SSHAuthData
-from typing import cast
-
-import aiofiles.os
-from opal_common.logger import logger
-from opal_common.schemas.policy import PolicyBundle
-from opal_common.schemas.policy_source import GitPolicyScopeSource, SSHAuthData
 from pygit2 import (
     KeypairFromMemory,
     RemoteCallbacks,

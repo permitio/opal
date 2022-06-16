@@ -33,7 +33,6 @@ from opal_server.publisher import setup_broadcaster_keepalive_task
 from opal_server.pubsub import PubSub
 from opal_server.redis import RedisDB
 from opal_server.scopes.api import init_scope_router
-from opal_server.scopes.loader import load_scopes
 from opal_server.scopes.loader import DEFAULT_SCOPE_ID, load_scopes
 from opal_server.scopes.scope_repository import ScopeNotFoundError, ScopeRepository
 from opal_server.security.api import init_security_router

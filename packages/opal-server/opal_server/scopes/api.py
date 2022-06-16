@@ -3,7 +3,7 @@ from typing import Optional, cast
 from fastapi import APIRouter, HTTPException, Path, Query, Response, status
 from opal_common.schemas.data import DataSourceConfig
 from opal_common.schemas.policy import PolicyBundle
-from opal_common.schemas.policy_source import GitPolicySource
+from opal_common.schemas.policy_source import GitPolicyScopeSource
 from opal_common.schemas.scopes import Scope
 from opal_server.config import opal_server_config
 from opal_server.git_fetcher import BadCommitError, GitPolicyFetcher
@@ -60,11 +60,11 @@ def init_scope_router(scopes: ScopeRepository):
     ):
         scope = await scopes.get(scope_id)
 
-        if isinstance(scope.policy, GitPolicySource):
+        if isinstance(scope.policy, GitPolicyScopeSource):
             fetcher = GitPolicyFetcher(
                 opal_server_config.BASE_DIR,
                 scope.scope_id,
-                cast(GitPolicySource, scope.policy),
+                cast(GitPolicyScopeSource, scope.policy),
             )
 
             try:
