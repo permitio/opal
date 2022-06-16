@@ -1,7 +1,8 @@
 from typing import Optional, cast
 
-from fastapi import APIRouter, HTTPException, Path, Query, Response, status
-from opal_common.schemas.data import DataSourceConfig
+from fastapi import APIRouter, Depends, HTTPException, Path, Query, Response, status
+from opal_common.authentication.deps import JWTAuthenticator
+from opal_common.authentication.types import JWTClaims
 from opal_common.schemas.policy import PolicyBundle
 from opal_common.schemas.policy_source import GitPolicyScopeSource
 from opal_common.schemas.scopes import Scope
@@ -10,8 +11,16 @@ from opal_server.git_fetcher import GitPolicyFetcher
 from opal_server.scopes.scope_repository import ScopeNotFoundError, ScopeRepository
 
 
-def init_scope_router(scopes: ScopeRepository):
-    router = APIRouter()
+def init_scope_router(scopes: ScopeRepository, authenticator: JWTAuthenticator):
+    router = APIRouter(dependencies=[Depends(authenticator)])
+
+    def _allowed_scoped_authenticator(
+        claims: JWTClaims = Depends(authenticator), scope_id: str = Path(...)
+    ):
+        allowed_scopes = claims.get("opal_scopes")
+
+        if not allowed_scopes or scope_id not in allowed_scopes:
+            raise HTTPException(status.HTTP_403_FORBIDDEN)
 
     @router.put("", status_code=status.HTTP_201_CREATED)
     async def put_scope(*, scope_in: Scope):
@@ -65,6 +74,7 @@ def init_scope_router(scopes: ScopeRepository):
         "/{scope_id}/policy",
         response_model=PolicyBundle,
         status_code=status.HTTP_200_OK,
+        dependencies=[Depends(_allowed_scoped_authenticator)],
     )
     async def get_scope_policy(
         *,
