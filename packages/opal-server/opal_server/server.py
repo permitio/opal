@@ -1,5 +1,7 @@
 import asyncio
 import os
+import sys
+import traceback
 from functools import partial
 from typing import List, Optional
 
@@ -29,6 +31,9 @@ from opal_server.policy.watcher.task import PolicyWatcherTask
 from opal_server.policy.webhook.api import init_git_webhook_router
 from opal_server.publisher import setup_broadcaster_keepalive_task
 from opal_server.pubsub import PubSub
+from opal_server.redis import RedisDB
+from opal_server.scopes.loader import DEFAULT_SCOPE_ID, load_scopes
+from opal_server.scopes.scope_repository import ScopeNotFoundError, ScopeRepository
 from opal_server.security.api import init_security_router
 from opal_server.security.jwks import JwksStaticEndpoint
 from opal_server.statistics import OpalStatistics, init_statistics_router
@@ -173,6 +178,9 @@ class OpalServer:
 
         self.watcher: Optional[PolicyWatcherTask] = None
 
+        self._redis_db = RedisDB(opal_server_config.REDIS_URL)
+        self._scopes = ScopeRepository(self._redis_db)
+
         # init fastapi app
         self.app: FastAPI = self._init_fast_api_app()
 
@@ -190,9 +198,11 @@ class OpalServer:
             + " continuous data update notifications via REST api, which are then pushed to clients.",
             version="0.1.0",
         )
+
         configure_middleware(app)
         self._configure_api_routes(app)
         self._configure_lifecycle_callbacks(app)
+
         return app
 
     def _configure_monitoring(self):
@@ -267,8 +277,16 @@ class OpalServer:
 
         @app.on_event("startup")
         async def startup_event():
-            logger.info("triggered startup event")
-            asyncio.create_task(self.start_server_background_tasks())
+            logger.info("*** OPAL Server Startup ***")
+
+            try:
+                await self.start()
+                asyncio.create_task(self.start_server_background_tasks())
+            except Exception:
+                logger.critical("Exception while starting OPAL")
+                traceback.print_exc()
+
+                sys.exit(1)
 
         @app.on_event("shutdown")
         async def shutdown_event():
@@ -276,6 +294,9 @@ class OpalServer:
             await self.stop_server_background_tasks()
 
         return app
+
+    async def start(self):
+        await load_scopes(self._scopes)
 
     async def start_server_background_tasks(self):
         """starts the background processes (as asyncio tasks) if such are
@@ -331,11 +352,22 @@ class OpalServer:
                             logger.info(
                                 f"Policy repo will be cloned to: {full_local_repo_path}"
                             )
-                            self.watcher = setup_watcher_task(
-                                self.publisher,
-                                remote_source_url=self._policy_remote_url,
-                                clone_path_finder=clone_path_finder,
-                            )
+
+                            scope = None
+
+                            try:
+                                scope = await self._scopes.get(DEFAULT_SCOPE_ID)
+                            except ScopeNotFoundError:
+                                pass
+
+                            if scope is not None:
+                                self.watcher = setup_watcher_task(
+                                    self.publisher,
+                                    remote_source_url=scope.policy.url,
+                                    ssh_key=scope.policy.auth.private_key,
+                                    branch_name=scope.policy.branch,
+                                    clone_path_finder=clone_path_finder,
+                                )
                         # the leader listens to the webhook topic (webhook api route can be hit randomly in all workers)
                         # and triggers the watcher to check for changes in the tracked upstream remote.
                         await self.pubsub.endpoint.subscribe(
