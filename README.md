@@ -9,9 +9,9 @@
 Open Policy Administration Layer
 </h2>
 
-<a href="https://github.com/permitio/opal/actions?query=workflow%3ATests" target="_blank">
+<!--a href="https://github.com/permitio/opal/actions?query=workflow%3ATests" target="_blank">
     <img src="https://github.com/permitio/opal/workflows/Tests/badge.svg" alt="Tests">
-</a>
+</a-->
 <a href="https://pypi.org/project/opal-server/" target="_blank">
     <img src="https://img.shields.io/pypi/v/opal-server?color=%2331C654&label=OPAL%20Server%20%28PyPi%29" alt="Package">
 </a>
