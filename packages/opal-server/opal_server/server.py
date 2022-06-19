@@ -287,7 +287,7 @@ class OpalServer:
 
             try:
                 await self.start()
-                asyncio.create_task(self.start_server_background_tasks())
+                self._task = asyncio.create_task(self.start_server_background_tasks())
             except Exception:
                 logger.critical("Exception while starting OPAL")
                 traceback.print_exc()

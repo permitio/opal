@@ -15,8 +15,8 @@ class PolicySourceTypes(str, Enum):
 
 
 class ServerRole(str, Enum):
-    Leader = "leader"
-    Follower = "follower"
+    Primary = "primary"
+    Secondary = "secondary"
 
 
 class OpalServerConfig(Confi):
@@ -227,7 +227,7 @@ class OpalServerConfig(Confi):
     SERVER_ROLE = confi.enum(
         "SERVER_ROLE",
         ServerRole,
-        default=ServerRole.Follower,
+        default=ServerRole.Primary,
         description="Server is leader or follower",
     )
 
