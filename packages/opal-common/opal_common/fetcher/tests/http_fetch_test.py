@@ -129,11 +129,12 @@ async def test_external_http_get():
     we get a JSON with the data we expected (the IP we queried)"""
     got_data_event = asyncio.Event()
     async with FetchingEngine() as engine:
+        url = "https://httpbin.org/anything"
 
         async def callback(data):
-            assert data["ip"] == "8.8.8.8"
+            assert data["url"] == url
             got_data_event.set()
 
-        await engine.queue_url(f"https://freegeoip.app/json/8.8.8.8", callback)
+        await engine.queue_url(url, callback)
         await asyncio.wait_for(got_data_event.wait(), 5)
         assert got_data_event.is_set()
