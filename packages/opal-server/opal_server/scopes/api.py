@@ -3,6 +3,8 @@ from typing import Optional, cast
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, Response, status
 from opal_common.authentication.deps import JWTAuthenticator
 from opal_common.authentication.types import JWTClaims
+from opal_common.logger import logger
+from opal_common.schemas.data import DataSourceConfig
 from opal_common.schemas.policy import PolicyBundle
 from opal_common.schemas.policy_source import GitPolicyScopeSource
 from opal_common.schemas.scopes import Scope
@@ -95,5 +97,20 @@ def init_scope_router(scopes: ScopeRepository, authenticator: JWTAuthenticator):
 
             bundle = fetcher.make_bundle(base_hash)
             return bundle
+
+    @router.get(
+        "/{scope_id}/data",
+        response_model=DataSourceConfig,
+        dependencies=[Depends(_allowed_scoped_authenticator)],
+    )
+    async def get_scope_data(
+        *,
+        scope_id: str = Path(..., title="Scope ID"),
+    ):
+        logger.info("Serving source configuration for scope {scope_id}", scope_id)
+
+        scope = await scopes.get(scope_id)
+
+        return scope.data
 
     return router
