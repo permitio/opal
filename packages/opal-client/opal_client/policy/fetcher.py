@@ -89,6 +89,9 @@ class PolicyFetcher:
         if base_hash is not None:
             params["base_hash"] = base_hash
         async with aiohttp.ClientSession() as session:
+            logger.info(
+                "Fetching policy bundle from {url}", url=self._policy_endpoint_url
+            )
             try:
                 async with session.get(
                     self._policy_endpoint_url,
@@ -112,7 +115,10 @@ class PolicyFetcher:
 
                     # may throw Validation Error
                     bundle = await response.json()
-                    return force_valid_bundle(bundle)
+                    bundle = force_valid_bundle(bundle)
+                    logger.info("Fetched valid bundle, id: {id}", id=bundle.hash)
+
+                    return bundle
             except aiohttp.ClientError as e:
                 logger.warning("server connection error: {err}", err=repr(e))
                 raise

@@ -41,7 +41,12 @@ class PolicyBundle(BaseSchema):
     deleted_files: Optional[DeletedFiles]
 
 
-class PolicyUpdateMessage(BaseModel):
+class PolicyUpdateMessage(BaseSchema):
     old_policy_hash: str
     new_policy_hash: str
     changed_directories: List[str]
+
+
+class PolicyUpdateMessageNotification(BaseSchema):
+    update: PolicyUpdateMessage
+    topics: List[str]

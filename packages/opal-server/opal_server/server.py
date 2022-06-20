@@ -256,7 +256,7 @@ class OpalServer:
             dependencies=[Depends(authenticator)],
         )
         app.include_router(
-            init_scope_router(self._scopes, authenticator),
+            init_scope_router(self._scopes, authenticator, self.pubsub.endpoint),
             tags=["Scopes"],
             prefix="/scopes",
         )

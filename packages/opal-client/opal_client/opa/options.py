@@ -57,7 +57,7 @@ class OpaServerOptions(BaseModel):
     tls_private_key_file: Optional[str] = Field(
         None, description="path of TLS private key file"
     )
-    log_level: LogLevel = Field(LogLevel.info, description="log level for opa logs")
+    log_level: LogLevel = Field(LogLevel.debug, description="log level for opa logs")
     files: Optional[List[str]] = Field(
         None,
         description="list of built-in rego policies and data.json files that must be loaded into OPA on startup. e.g: system.authz policy when using --authorization=basic, see: https://www.openpolicyagent.org/docs/latest/security/#authentication-and-authorization",

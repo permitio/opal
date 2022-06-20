@@ -1,18 +1,22 @@
 from typing import Optional, cast
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, Response, status
+from fastapi_websocket_pubsub import PubSubEndpoint
+
 from opal_common.authentication.deps import JWTAuthenticator
 from opal_common.authentication.types import JWTClaims
-from opal_common.schemas.policy import PolicyBundle
+from opal_common.schemas.policy import PolicyBundle, PolicyUpdateMessageNotification
 from opal_common.schemas.policy_source import GitPolicyScopeSource
 from opal_common.schemas.scopes import Scope
+from opal_common.topics.publisher import ScopedServerSideTopicPublisher
 from opal_server.config import opal_server_config
 from opal_server.git_fetcher import GitPolicyFetcher
 from opal_server.scopes.scope_repository import ScopeNotFoundError, ScopeRepository
 
 
-def init_scope_router(scopes: ScopeRepository, authenticator: JWTAuthenticator):
-    router = APIRouter(dependencies=[Depends(authenticator)])
+def init_scope_router(scopes: ScopeRepository, authenticator: JWTAuthenticator, pubsub: PubSubEndpoint):
+    router = APIRouter()
+    # router = APIRouter(dependencies=[Depends(authenticator)])
 
     def _allowed_scoped_authenticator(
         claims: JWTClaims = Depends(authenticator), scope_id: str = Path(...)
@@ -95,5 +99,14 @@ def init_scope_router(scopes: ScopeRepository, authenticator: JWTAuthenticator):
 
             bundle = fetcher.make_bundle(base_hash)
             return bundle
+
+    @router.post("/{scope_id}/policy_update")
+    async def notify_new_policy(
+        *,
+        scope_id: str = Path(..., description="Scope ID"),
+        notification: PolicyUpdateMessageNotification,
+    ):
+        async with ScopedServerSideTopicPublisher(pubsub, scope_id) as publisher:
+            publisher.publish(notification.topics)
 
     return router

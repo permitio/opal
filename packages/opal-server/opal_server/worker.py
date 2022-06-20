@@ -1,20 +1,41 @@
+import json
 import shutil
 from pathlib import Path
+from types import SimpleNamespace
 from typing import cast
 
+import git
+from aiohttp import ClientSession
 from asgiref.sync import async_to_sync
 from celery import Celery
+from fastapi_websocket_pubsub import PubSubClient
+from opal_client.config import opal_client_config
+from opal_common.schemas.policy import PolicyUpdateMessageNotification
 from opal_common.schemas.policy_source import GitPolicyScopeSource
+from opal_common.topics.publisher import ScopedClientSideTopicPublisher
+from opal_common.utils import get_authorization_header
 from opal_server.config import opal_server_config
-from opal_server.git_fetcher import GitPolicyFetcher
+from opal_server.git_fetcher import GitPolicyFetcher, PolicyFetcherCallbacks
+from opal_server.policy.watcher.callbacks import (
+    create_policy_update,
+    publish_changed_directories,
+)
 from opal_server.redis import RedisDB
 from opal_server.scopes.scope_repository import ScopeRepository
 
 
 class Worker:
-    def __init__(self, base_dir: Path, scopes: ScopeRepository):
+    def __init__(
+        self,
+        base_dir: Path,
+        scopes: ScopeRepository,
+        pubsub_client: PubSubClient,
+        http_session: ClientSession,
+    ):
         self._base_dir = base_dir
         self._scopes = scopes
+        self._pubsub_client = pubsub_client
+        self._http_session = http_session
 
     async def sync_scope(self, scope_id: str):
         scope = await self._scopes.get(scope_id)
@@ -22,8 +43,32 @@ class Worker:
         fetcher = None
 
         if isinstance(scope.policy, GitPolicyScopeSource):
+            source = cast(GitPolicyScopeSource, scope.policy)
+            scope_dir = self._base_dir / "scopes" / scope_id
+
+            async def on_update(old_revision: str, new_revision: str):
+                # if old_revision == new_revision:
+                #     return
+
+                repo = git.Repo(scope_dir)
+                notification = await create_policy_update(
+                    repo.commit(old_revision),
+                    repo.commit(new_revision),
+                    source.extensions,
+                )
+
+                url = f"{opal_client_config.SERVER_URL}/scopes/{scope_id}/policy_update"
+
+                await self._http_session.post(
+                    url,
+                    data=notification.json()
+                )
+
             fetcher = GitPolicyFetcher(
-                self._base_dir, scope_id, cast(GitPolicyScopeSource, scope.policy)
+                self._base_dir,
+                scope_id,
+                source,
+                callbacks=SimpleNamespace(on_update=on_update),
             )
 
         if fetcher:
@@ -46,6 +91,11 @@ def create_worker() -> Worker:
     worker = Worker(
         base_dir=opal_base_dir,
         scopes=ScopeRepository(RedisDB(opal_server_config.REDIS_URL)),
+        pubsub_client=PubSubClient(
+            server_uri=opal_client_config.SERVER_PUBSUB_URL,
+            extra_headers=[get_authorization_header(opal_server_config.OPAL_WS_TOKEN)],
+        ),
+        http_session=ClientSession()
     )
 
     return worker
