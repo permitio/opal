@@ -7,7 +7,10 @@ from opal_common.git.commit_viewer import CommitViewer, has_extension
 from opal_common.git.diff_viewer import DiffViewer
 from opal_common.logger import logger
 from opal_common.paths import PathUtils
-from opal_common.schemas.policy import PolicyUpdateMessage, PolicyUpdateMessageNotification
+from opal_common.schemas.policy import (
+    PolicyUpdateMessage,
+    PolicyUpdateMessageNotification,
+)
 from opal_common.topics.publisher import TopicPublisher
 from opal_common.topics.utils import policy_topics
 
@@ -47,6 +50,7 @@ async def create_policy_update(
         )
 
     with DiffViewer(old_commit, new_commit) as viewer:
+
         def has_extension(path: Path) -> bool:
             if not file_extensions:
                 return True

@@ -2,7 +2,6 @@ from typing import Optional, cast
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, Response, status
 from fastapi_websocket_pubsub import PubSubEndpoint
-
 from opal_common.authentication.deps import JWTAuthenticator
 from opal_common.authentication.types import JWTClaims
 from opal_common.schemas.policy import PolicyBundle, PolicyUpdateMessageNotification
@@ -14,7 +13,9 @@ from opal_server.git_fetcher import GitPolicyFetcher
 from opal_server.scopes.scope_repository import ScopeNotFoundError, ScopeRepository
 
 
-def init_scope_router(scopes: ScopeRepository, authenticator: JWTAuthenticator, pubsub: PubSubEndpoint):
+def init_scope_router(
+    scopes: ScopeRepository, authenticator: JWTAuthenticator, pubsub: PubSubEndpoint
+):
     router = APIRouter()
     # router = APIRouter(dependencies=[Depends(authenticator)])
 

@@ -1,4 +1,3 @@
-import json
 import shutil
 from pathlib import Path
 from types import SimpleNamespace
@@ -10,15 +9,12 @@ from asgiref.sync import async_to_sync
 from celery import Celery
 from fastapi_websocket_pubsub import PubSubClient
 from opal_client.config import opal_client_config
-from opal_common.schemas.policy import PolicyUpdateMessageNotification
 from opal_common.schemas.policy_source import GitPolicyScopeSource
-from opal_common.topics.publisher import ScopedClientSideTopicPublisher
 from opal_common.utils import get_authorization_header
 from opal_server.config import opal_server_config
-from opal_server.git_fetcher import GitPolicyFetcher, PolicyFetcherCallbacks
+from opal_server.git_fetcher import GitPolicyFetcher
 from opal_server.policy.watcher.callbacks import (
-    create_policy_update,
-    publish_changed_directories,
+    create_policy_update
 )
 from opal_server.redis import RedisDB
 from opal_server.scopes.scope_repository import ScopeRepository
@@ -26,10 +22,7 @@ from opal_server.scopes.scope_repository import ScopeRepository
 
 class Worker:
     def __init__(
-        self,
-        base_dir: Path,
-        scopes: ScopeRepository,
-        pubsub_client: PubSubClient
+        self, base_dir: Path, scopes: ScopeRepository, pubsub_client: PubSubClient
     ):
         self._base_dir = base_dir
         self._scopes = scopes
@@ -58,10 +51,7 @@ class Worker:
                 url = f"{opal_client_config.SERVER_URL}/scopes/{scope_id}/policy_update"
 
                 async with ClientSession():
-                    async with self._http_session.post(
-                        url,
-                        json=notification.dict()
-                    ):
+                    async with self._http_session.post(url, json=notification.dict()):
                         pass
 
             fetcher = GitPolicyFetcher(
@@ -94,7 +84,7 @@ def create_worker() -> Worker:
         pubsub_client=PubSubClient(
             server_uri=opal_client_config.SERVER_PUBSUB_URL,
             extra_headers=[get_authorization_header(opal_server_config.OPAL_WS_TOKEN)],
-        )
+        ),
     )
 
     return worker
