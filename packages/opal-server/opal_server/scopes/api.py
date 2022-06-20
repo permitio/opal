@@ -17,7 +17,7 @@ def init_scope_router(scopes: ScopeRepository, authenticator: JWTAuthenticator):
     def _allowed_scoped_authenticator(
         claims: JWTClaims = Depends(authenticator), scope_id: str = Path(...)
     ):
-        allowed_scopes = claims.get("opal_scopes")
+        allowed_scopes = claims.get("allowed_scopes")
 
         if not allowed_scopes or scope_id not in allowed_scopes:
             raise HTTPException(status.HTTP_403_FORBIDDEN)
