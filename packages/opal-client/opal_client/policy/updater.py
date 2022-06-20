@@ -119,7 +119,6 @@ class PolicyUpdater:
         will run when we get notifications on the policy topic.
         i.e: when the source repository changes (new commits)
         """
-        logger.warning("updateee")
         if data is None:
             logger.warning(
                 "got policy update message without data, skipping policy update!"

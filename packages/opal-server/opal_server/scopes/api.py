@@ -107,6 +107,7 @@ def init_scope_router(scopes: ScopeRepository, authenticator: JWTAuthenticator, 
         notification: PolicyUpdateMessageNotification,
     ):
         async with ScopedServerSideTopicPublisher(pubsub, scope_id) as publisher:
-            publisher.publish(notification.topics)
+            publisher.publish(notification.topics, notification.update)
+            await publisher.wait()
 
     return router

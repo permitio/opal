@@ -27,6 +27,9 @@ class TopicPublisher:
         """starts the publisher."""
         logger.info("started topic publisher")
 
+    async def wait(self):
+        await asyncio.gather(*self._tasks, return_exceptions=True)
+
     async def stop(self):
         """stops the publisher (cancels any running publishing tasks)"""
         logger.info("stopping topic publisher")

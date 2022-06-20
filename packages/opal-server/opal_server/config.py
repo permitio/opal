@@ -31,7 +31,7 @@ class OpalServerConfig(Confi):
         + "see link: https://limits.readthedocs.io/en/stable/quickstart.html#rate-limit-string-notation",
     )
     # The URL for the backbone pub/sub server (e.g. Postgres, Kfaka, Redis) @see
-    BROADCAST_URI = confi.str("BROADCAST_URI", None)
+    BROADCAST_URI = confi.str("BROADCAST_URI", "redis://localhost")
     # The name to be used for segmentation in the backbone pub/sub (e.g. the Kafka topic)
     BROADCAST_CHANNEL_NAME = confi.str("BROADCAST_CHANNEL_NAME", "EventNotifier")
 

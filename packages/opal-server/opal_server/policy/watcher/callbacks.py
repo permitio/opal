@@ -35,7 +35,7 @@ async def create_update_all_directories_in_repo(
             changed_directories=[str(path) for path in directories],
         )
 
-        return PolicyUpdateMessageNotification(topics=topics, message=message)
+        return PolicyUpdateMessageNotification(topics=topics, update=message)
 
 
 async def create_policy_update(
@@ -72,7 +72,7 @@ async def create_policy_update(
             changed_directories=[str(path) for path in directories],
         )
 
-        return PolicyUpdateMessageNotification(topics=topics, message=message)
+        return PolicyUpdateMessageNotification(topics=topics, update=message)
 
 
 async def publish_changed_directories(

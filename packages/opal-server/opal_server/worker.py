@@ -29,13 +29,11 @@ class Worker:
         self,
         base_dir: Path,
         scopes: ScopeRepository,
-        pubsub_client: PubSubClient,
-        http_session: ClientSession,
+        pubsub_client: PubSubClient
     ):
         self._base_dir = base_dir
         self._scopes = scopes
         self._pubsub_client = pubsub_client
-        self._http_session = http_session
 
     async def sync_scope(self, scope_id: str):
         scope = await self._scopes.get(scope_id)
@@ -59,10 +57,12 @@ class Worker:
 
                 url = f"{opal_client_config.SERVER_URL}/scopes/{scope_id}/policy_update"
 
-                await self._http_session.post(
-                    url,
-                    data=notification.json()
-                )
+                async with ClientSession():
+                    async with self._http_session.post(
+                        url,
+                        json=notification.dict()
+                    ):
+                        pass
 
             fetcher = GitPolicyFetcher(
                 self._base_dir,
@@ -94,8 +94,7 @@ def create_worker() -> Worker:
         pubsub_client=PubSubClient(
             server_uri=opal_client_config.SERVER_PUBSUB_URL,
             extra_headers=[get_authorization_header(opal_server_config.OPAL_WS_TOKEN)],
-        ),
-        http_session=ClientSession()
+        )
     )
 
     return worker
