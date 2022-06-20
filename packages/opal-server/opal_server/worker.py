@@ -1,23 +1,14 @@
-import asyncio
 import shutil
 from pathlib import Path
 from typing import cast
 
+from asgiref.sync import async_to_sync
 from celery import Celery
 from opal_common.schemas.policy_source import GitPolicyScopeSource
 from opal_server.config import opal_server_config
 from opal_server.git_fetcher import GitPolicyFetcher
 from opal_server.redis import RedisDB
 from opal_server.scopes.scope_repository import ScopeRepository
-
-
-def async_to_sync(callable, *args, **kwargs):
-    loop = asyncio.get_event_loop()
-
-    async def f():
-        return await callable(*args, **kwargs)
-
-    return loop.run_until_complete(f())
 
 
 class Worker:
@@ -50,16 +41,22 @@ class Worker:
                 sync_scope.delay(scope.scope_id)
 
 
-opal_base_dir = Path(opal_server_config.BASE_DIR)
-worker = Worker(
-    base_dir=opal_base_dir,
-    scopes=ScopeRepository(RedisDB(opal_server_config.REDIS_URL)),
-)
+def create_worker() -> Worker:
+    opal_base_dir = Path(opal_server_config.BASE_DIR)
+    worker = Worker(
+        base_dir=opal_base_dir,
+        scopes=ScopeRepository(RedisDB(opal_server_config.REDIS_URL)),
+    )
+
+    return worker
+
+
 app = Celery(
     "opal-worker",
     broker=opal_server_config.REDIS_URL,
     backend=opal_server_config.REDIS_URL,
 )
+app.conf.task_default_queue = "opal-worker"
 
 
 @app.on_after_configure.connect
@@ -71,14 +68,17 @@ def setup_periodic_tasks(sender, **kwargs):
 
 @app.task
 def sync_scope(scope_id: str):
-    return async_to_sync(worker.sync_scope, scope_id)
+    worker = create_worker()
+    return async_to_sync(worker.sync_scope)(scope_id)
 
 
 @app.task
 def delete_scope(scope_id: str):
-    return async_to_sync(worker.delete_scope, scope_id)
+    worker = create_worker()
+    return async_to_sync(worker.delete_scope)(scope_id)
 
 
 @app.task
 def periodic_check():
-    return async_to_sync(worker.periodic_check)
+    worker = create_worker()
+    return async_to_sync(worker.periodic_check)()
