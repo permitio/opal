@@ -13,9 +13,7 @@ from opal_common.schemas.policy_source import GitPolicyScopeSource
 from opal_common.utils import get_authorization_header
 from opal_server.config import opal_server_config
 from opal_server.git_fetcher import GitPolicyFetcher
-from opal_server.policy.watcher.callbacks import (
-    create_policy_update
-)
+from opal_server.policy.watcher.callbacks import create_policy_update
 from opal_server.redis import RedisDB
 from opal_server.scopes.scope_repository import ScopeRepository
 
