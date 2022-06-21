@@ -1,7 +1,7 @@
 import shutil
 from pathlib import Path
 from types import SimpleNamespace
-from typing import cast
+from typing import Optional, cast
 
 import git
 from aiohttp import ClientSession
@@ -25,6 +25,20 @@ class Worker:
         self._base_dir = base_dir
         self._scopes = scopes
         self._pubsub_client = pubsub_client
+        self._http: Optional[ClientSession] = None
+
+    async def __aenter__(self):
+        await self.start()
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        await self.stop()
+
+    async def start(self):
+        self._http = ClientSession()
+
+    async def stop(self):
+        await self._http.close()
 
     async def sync_scope(self, scope_id: str):
         scope = await self._scopes.get(scope_id)
@@ -48,9 +62,8 @@ class Worker:
 
                 url = f"{opal_client_config.SERVER_URL}/scopes/{scope_id}/policy_update"
 
-                async with ClientSession():
-                    async with self._http_session.post(url, json=notification.dict()):
-                        pass
+                async with self._http.post(url, json=notification.dict()):
+                    pass
 
             fetcher = GitPolicyFetcher(
                 self._base_dir,
@@ -88,6 +101,14 @@ def create_worker() -> Worker:
     return worker
 
 
+def with_worker(f):
+    async def _inner(*args, **kwargs):
+        async with create_worker() as worker:
+            await f(worker, *args, **kwargs)
+
+    return _inner
+
+
 app = Celery(
     "opal-worker",
     broker=opal_server_config.REDIS_URL,
@@ -105,17 +126,14 @@ def setup_periodic_tasks(sender, **kwargs):
 
 @app.task
 def sync_scope(scope_id: str):
-    worker = create_worker()
-    return async_to_sync(worker.sync_scope)(scope_id)
+    return async_to_sync(with_worker(Worker.sync_scope))(scope_id)
 
 
 @app.task
 def delete_scope(scope_id: str):
-    worker = create_worker()
-    return async_to_sync(worker.delete_scope)(scope_id)
+    return async_to_sync(with_worker(Worker.delete_scope))(scope_id)
 
 
 @app.task
 def periodic_check():
-    worker = create_worker()
-    return async_to_sync(worker.periodic_check)()
+    return async_to_sync(with_worker(Worker.periodic_check))()
