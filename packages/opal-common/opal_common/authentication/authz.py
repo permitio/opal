@@ -33,7 +33,7 @@ def restrict_optional_topics_to_publish(
     if not authenticator.enabled:
         return
 
-    if not "permitted_topics" in claims:
+    if "permitted_topics" not in claims:
         return
 
     for entry in update.entries:

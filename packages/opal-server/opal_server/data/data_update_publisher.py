@@ -45,6 +45,7 @@ class DataUpdatePublisher:
             update (DataUpdate): update data-source configuration for subscribers to fetch data from
         """
         all_topic_combos = []
+
         # Expand the topics for each event to include sub topic combos (e.g. publish 'a/b/c' as 'a' , 'a/b', and 'a/b/c')
         for entry in update.entries:
             for topic in entry.topics:

@@ -60,7 +60,7 @@ class Worker:
                     source.extensions,
                 )
 
-                url = f"{opal_client_config.SERVER_URL}/scopes/{scope_id}/policy_update"
+                url = f"{opal_client_config.SERVER_URL}/scopes/{scope_id}/policy"
 
                 async with self._http.post(url, json=notification.dict()):
                     pass

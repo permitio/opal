@@ -2,13 +2,20 @@ from typing import Optional, cast
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, Response, status
 from fastapi_websocket_pubsub import PubSubEndpoint
+from opal_common.authentication.authz import (
+    require_peer_type,
+    restrict_optional_topics_to_publish,
+)
 from opal_common.authentication.deps import JWTAuthenticator
 from opal_common.authentication.types import JWTClaims
+from opal_common.schemas.data import DataSourceConfig, DataUpdate
 from opal_common.schemas.policy import PolicyBundle, PolicyUpdateMessageNotification
 from opal_common.schemas.policy_source import GitPolicyScopeSource
 from opal_common.schemas.scopes import Scope
+from opal_common.schemas.security import PeerType
 from opal_common.topics.publisher import ScopedServerSideTopicPublisher
 from opal_server.config import opal_server_config
+from opal_server.data.data_update_publisher import DataUpdatePublisher
 from opal_server.git_fetcher import GitPolicyFetcher
 from opal_server.scopes.scope_repository import ScopeNotFoundError, ScopeRepository
 
@@ -101,7 +108,17 @@ def init_scope_router(
             bundle = fetcher.make_bundle(base_hash)
             return bundle
 
-    @router.post("/{scope_id}/policy_update")
+    @router.get(
+        "/{scope_id}/data",
+        response_model=DataSourceConfig,
+        status_code=status.HTTP_200_OK,
+        dependencies=[Depends(_allowed_scoped_authenticator)],
+    )
+    async def get_scope_data_source(*, scope_id: str = Path(..., title="Scope ID")):
+        scope = await scopes.get(scope_id)
+        return scope.data
+
+    @router.post("/{scope_id}/policy")
     async def notify_new_policy(
         *,
         scope_id: str = Path(..., description="Scope ID"),
@@ -110,5 +127,18 @@ def init_scope_router(
         async with ScopedServerSideTopicPublisher(pubsub, scope_id) as publisher:
             publisher.publish(notification.topics, notification.update)
             await publisher.wait()
+
+    @router.post("/{scope_id}/data")
+    async def publish_data_update_event(
+        update: DataUpdate,
+        claims: JWTClaims = Depends(authenticator),
+        scope_id: str = Path(..., description="Scope ID"),
+    ):
+        require_peer_type(authenticator, claims, PeerType.datasource)
+
+        restrict_optional_topics_to_publish(authenticator, claims, update)
+
+        async with ScopedServerSideTopicPublisher(pubsub, scope_id) as publisher:
+            DataUpdatePublisher(publisher).publish_data_updates(update)
 
     return router

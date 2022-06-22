@@ -64,10 +64,18 @@ class DataUpdater:
         # Defaults
         token: str = token or opal_client_config.CLIENT_TOKEN
         pubsub_url: str = pubsub_url or opal_client_config.SERVER_PUBSUB_URL
-        data_sources_config_url: str = (
-            data_sources_config_url
-            or opal_client_config.DEFAULT_DATA_SOURCES_CONFIG_URL
-        )
+        self._scope_id = opal_client_config.SCOPE_ID
+
+        if self._scope_id == "default":
+            data_sources_config_url: str = (
+                data_sources_config_url
+                or opal_client_config.DEFAULT_DATA_SOURCES_CONFIG_URL
+            )
+        else:
+            data_sources_config_url = (
+                f"{opal_client_config.SERVER_URL}/scopes/{self._scope_id}/data"
+            )
+
         # Should the client use the default data source to fetch on connect
         self._fetch_on_connect = fetch_on_connect
         # The policy store we'll save data updates into

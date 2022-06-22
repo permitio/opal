@@ -188,7 +188,7 @@ class OpalClientConfig(Confi):
 
     OPA_HEALTH_CHECK_POLICY_PATH = "opa/healthcheck/opal.rego"
 
-    SCOPE_ID = confi.str("SCOPE_ID", None, description="OPAL Scope ID")
+    SCOPE_ID = confi.str("SCOPE_ID", "default", description="OPAL Scope ID")
 
     def on_load(self):
         # LOGGER

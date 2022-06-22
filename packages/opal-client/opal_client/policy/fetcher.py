@@ -49,7 +49,7 @@ class PolicyFetcher:
 
         scope_id = opal_client_config.SCOPE_ID
 
-        if scope_id:
+        if scope_id != "default":
             self._policy_endpoint_url = f"{self._backend_url}/scopes/{scope_id}/policy"
         else:
             self._policy_endpoint_url = f"{self._backend_url}/policy"
