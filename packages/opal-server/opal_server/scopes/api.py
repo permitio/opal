@@ -16,8 +16,7 @@ from opal_server.scopes.scope_repository import ScopeNotFoundError, ScopeReposit
 def init_scope_router(
     scopes: ScopeRepository, authenticator: JWTAuthenticator, pubsub: PubSubEndpoint
 ):
-    router = APIRouter()
-    # router = APIRouter(dependencies=[Depends(authenticator)])
+    router = APIRouter(dependencies=[Depends(authenticator)])
 
     def _allowed_scoped_authenticator(
         claims: JWTClaims = Depends(authenticator), scope_id: str = Path(...)
@@ -101,7 +100,7 @@ def init_scope_router(
             bundle = fetcher.make_bundle(base_hash)
             return bundle
 
-    @router.post("/{scope_id}/policy_update")
+    @router.post("/{scope_id}/policy_update", status_code=status.HTTP_204_NO_CONTENT)
     async def notify_new_policy(
         *,
         scope_id: str = Path(..., description="Scope ID"),

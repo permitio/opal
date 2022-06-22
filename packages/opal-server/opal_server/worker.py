@@ -7,10 +7,8 @@ import git
 from aiohttp import ClientSession
 from asgiref.sync import async_to_sync
 from celery import Celery
-from fastapi_websocket_pubsub import PubSubClient
 from opal_client.config import opal_client_config
 from opal_common.schemas.policy_source import GitPolicyScopeSource
-from opal_common.utils import get_authorization_header
 from opal_server.config import opal_server_config
 from opal_server.git_fetcher import GitPolicyFetcher
 from opal_server.policy.watcher.callbacks import create_policy_update
@@ -19,12 +17,9 @@ from opal_server.scopes.scope_repository import ScopeRepository
 
 
 class Worker:
-    def __init__(
-        self, base_dir: Path, scopes: ScopeRepository, pubsub_client: PubSubClient
-    ):
+    def __init__(self, base_dir: Path, scopes: ScopeRepository):
         self._base_dir = base_dir
         self._scopes = scopes
-        self._pubsub_client = pubsub_client
         self._http: Optional[ClientSession] = None
 
     async def __aenter__(self):
@@ -50,8 +45,8 @@ class Worker:
             scope_dir = self._base_dir / "scopes" / scope_id
 
             async def on_update(old_revision: str, new_revision: str):
-                # if old_revision == new_revision:
-                #     return
+                if old_revision == new_revision:
+                    return
 
                 repo = git.Repo(scope_dir)
                 notification = await create_policy_update(
@@ -92,10 +87,6 @@ def create_worker() -> Worker:
     worker = Worker(
         base_dir=opal_base_dir,
         scopes=ScopeRepository(RedisDB(opal_server_config.REDIS_URL)),
-        pubsub_client=PubSubClient(
-            server_uri=opal_client_config.SERVER_PUBSUB_URL,
-            extra_headers=[get_authorization_header(opal_server_config.OPAL_WS_TOKEN)],
-        ),
     )
 
     return worker
