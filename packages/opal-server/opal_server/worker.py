@@ -7,7 +7,6 @@ import git
 from aiohttp import ClientSession
 from asgiref.sync import async_to_sync
 from celery import Celery
-from fastapi_websocket_pubsub import PubSubClient
 from opal_common.schemas.policy_source import GitPolicyScopeSource
 from opal_server.config import opal_server_config
 from opal_server.git_fetcher import GitPolicyFetcher
@@ -84,11 +83,6 @@ class Worker:
 
 def create_worker() -> Worker:
     opal_base_dir = Path(opal_server_config.BASE_DIR)
-
-    pubsub_url = opal_server_config.SERVER_URL.replace("http://", "ws://").replace(
-        "https://", "wss://"
-    )
-    pubsub_url += "/ws"
 
     worker = Worker(
         base_dir=opal_base_dir,

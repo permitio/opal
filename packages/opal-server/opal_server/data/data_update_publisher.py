@@ -49,10 +49,11 @@ class DataUpdatePublisher:
                 for sub in sub_topics[1:]:
                     current_topic = f"{current_topic}{TOPIC_DELIMITER}{sub}"
                     if prefix:
-                        topic_combos.append(f"{prefix}{PREFIX_DELIMITER}{current_topic}")
+                        topic_combos.append(
+                            f"{prefix}{PREFIX_DELIMITER}{current_topic}"
+                        )
                     else:
                         topic_combos.append(current_topic)
-
 
         return topic_combos
 

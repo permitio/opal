@@ -8,6 +8,7 @@ from opal_common.authentication.authz import (
 )
 from opal_common.authentication.deps import JWTAuthenticator
 from opal_common.authentication.types import JWTClaims
+from opal_common.authentication.verifier import Unauthorized
 from opal_common.logger import logger
 from opal_common.schemas.data import DataSourceConfig, DataUpdate
 from opal_common.schemas.policy import PolicyBundle, PolicyUpdateMessageNotification
@@ -135,14 +136,18 @@ def init_scope_router(
         claims: JWTClaims = Depends(authenticator),
         scope_id: str = Path(..., description="Scope ID"),
     ):
-        require_peer_type(authenticator, claims, PeerType.datasource)
+        try:
+            require_peer_type(authenticator, claims, PeerType.datasource)
 
-        restrict_optional_topics_to_publish(authenticator, claims, update)
+            restrict_optional_topics_to_publish(authenticator, claims, update)
 
-        for entry in update.entries:
-            entry.topics = [f"data:{topic}" for topic in entry.topics]
+            for entry in update.entries:
+                entry.topics = [f"data:{topic}" for topic in entry.topics]
 
-        async with ScopedServerSideTopicPublisher(pubsub, scope_id) as publisher:
-            DataUpdatePublisher(publisher).publish_data_updates(update)
+            async with ScopedServerSideTopicPublisher(pubsub, scope_id) as publisher:
+                DataUpdatePublisher(publisher).publish_data_updates(update)
+        except Unauthorized as ex:
+            logger.error(f"Unauthorized to publish update: {repr(ex)}")
+            raise
 
     return router
