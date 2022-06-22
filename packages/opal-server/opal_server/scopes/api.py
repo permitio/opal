@@ -1,6 +1,15 @@
 from typing import Optional, cast
 
-from fastapi import APIRouter, Depends, HTTPException, Path, Query, Response, status
+from fastapi import (
+    APIRouter,
+    Depends,
+    Header,
+    HTTPException,
+    Path,
+    Query,
+    Response,
+    status,
+)
 from fastapi_websocket_pubsub import PubSubEndpoint
 from opal_common.authentication.authz import (
     require_peer_type,
@@ -25,7 +34,7 @@ from opal_server.scopes.scope_repository import ScopeNotFoundError, ScopeReposit
 def init_scope_router(
     scopes: ScopeRepository, authenticator: JWTAuthenticator, pubsub: PubSubEndpoint
 ):
-    router = APIRouter(dependencies=[Depends(authenticator)])
+    router = APIRouter()
 
     def _allowed_scoped_authenticator(
         claims: JWTClaims = Depends(authenticator), scope_id: str = Path(...)
@@ -35,7 +44,18 @@ def init_scope_router(
         if not allowed_scopes or scope_id not in allowed_scopes:
             raise HTTPException(status.HTTP_403_FORBIDDEN)
 
-    @router.put("", status_code=status.HTTP_201_CREATED)
+    def _check_worker_token(authorization: str = Header()):
+        if authorization is None:
+            raise Unauthorized()
+
+        scheme, token = authorization.split(" ")
+
+        if scheme.lower() != "bearer" or token != opal_server_config.WORKER_TOKEN:
+            raise Unauthorized()
+
+    @router.put(
+        "", status_code=status.HTTP_201_CREATED, dependencies=[Depends(authenticator)]
+    )
     async def put_scope(*, scope_in: Scope):
         await scopes.put(scope_in)
 
@@ -46,7 +66,10 @@ def init_scope_router(
         return Response(status_code=status.HTTP_201_CREATED)
 
     @router.get(
-        "/{scope_id}", response_model=Scope, response_model_exclude={"policy": {"auth"}}
+        "/{scope_id}",
+        response_model=Scope,
+        response_model_exclude={"policy": {"auth"}},
+        dependencies=[Depends(authenticator)],
     )
     async def get_scope(*, scope_id: str):
         try:
@@ -57,7 +80,11 @@ def init_scope_router(
                 status.HTTP_404_NOT_FOUND, detail=f"No such scope: {scope_id}"
             )
 
-    @router.delete("/{scope_id}", status_code=status.HTTP_204_NO_CONTENT)
+    @router.delete(
+        "/{scope_id}",
+        status_code=status.HTTP_204_NO_CONTENT,
+        dependencies=[Depends(authenticator)],
+    )
     async def delete_scope(*, scope_id: str):
         await scopes.delete(scope_id)
 
@@ -67,7 +94,11 @@ def init_scope_router(
 
         return Response(status_code=status.HTTP_204_NO_CONTENT)
 
-    @router.post("/{scope_id}/refresh", status_code=status.HTTP_200_OK)
+    @router.post(
+        "/{scope_id}/refresh",
+        status_code=status.HTTP_200_OK,
+        dependencies=[Depends(authenticator)],
+    )
     async def refresh_scope(scope_id: str):
         try:
             _ = await scopes.get(scope_id)
@@ -120,7 +151,11 @@ def init_scope_router(
         scope = await scopes.get(scope_id)
         return scope.data
 
-    @router.post("/{scope_id}/policy/update", status_code=status.HTTP_204_NO_CONTENT)
+    @router.post(
+        "/{scope_id}/policy/update",
+        status_code=status.HTTP_204_NO_CONTENT,
+        dependencies=[Depends(_check_worker_token)],
+    )
     async def notify_new_policy(
         *,
         scope_id: str = Path(..., description="Scope ID"),
