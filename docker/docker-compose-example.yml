@@ -12,6 +12,10 @@ services:
       - POSTGRES_DB=postgres
       - POSTGRES_USER=postgres
       - POSTGRES_PASSWORD=postgres
+  redis:
+    image: redis
+    ports:
+      - "6379:6379"
   opal_server:
     # by default we run opal-server from latest official image
     image: permitio/opal-server:latest

@@ -241,5 +241,9 @@ class OpalServerConfig(Confi):
         description="Policy polling refresh interval",
     )
 
+    SERVER_URL = confi.str(
+        "SERVER_URL", default="http://localhost:7002", description="OPAL Server URL"
+    )
+
 
 opal_server_config = OpalServerConfig(prefix="OPAL_")

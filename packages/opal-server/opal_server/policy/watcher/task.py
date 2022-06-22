@@ -26,6 +26,7 @@ class PolicyWatcherTask:
         """starts the policy watcher and registers a failure callback to
         terminate gracefully."""
         logger.info("Launching policy watcher")
+
         self._watcher.add_on_failure_callback(self._fail)
         self._tasks.append(asyncio.create_task(self._watcher.run()))
         self._init_should_stop()

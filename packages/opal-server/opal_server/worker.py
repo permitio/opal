@@ -8,7 +8,6 @@ from aiohttp import ClientSession
 from asgiref.sync import async_to_sync
 from celery import Celery
 from fastapi_websocket_pubsub import PubSubClient
-from opal_client.config import opal_client_config
 from opal_common.schemas.policy_source import GitPolicyScopeSource
 from opal_common.utils import get_authorization_header
 from opal_server.config import opal_server_config
@@ -60,7 +59,7 @@ class Worker:
                     source.extensions,
                 )
 
-                url = f"{opal_client_config.SERVER_URL}/scopes/{scope_id}/policy"
+                url = f"{opal_server_config.SERVER_URL}/scopes/{scope_id}/policy"
 
                 async with self._http.post(url, json=notification.dict()):
                     pass
@@ -89,11 +88,17 @@ class Worker:
 
 def create_worker() -> Worker:
     opal_base_dir = Path(opal_server_config.BASE_DIR)
+
+    pubsub_url = opal_server_config.SERVER_URL.replace("http://", "ws://").replace(
+        "https://", "wss://"
+    )
+    pubsub_url += "/ws"
+
     worker = Worker(
         base_dir=opal_base_dir,
         scopes=ScopeRepository(RedisDB(opal_server_config.REDIS_URL)),
         pubsub_client=PubSubClient(
-            server_uri=opal_client_config.SERVER_PUBSUB_URL,
+            server_uri=pubsub_url,
             extra_headers=[get_authorization_header(opal_server_config.OPAL_WS_TOKEN)],
         ),
     )

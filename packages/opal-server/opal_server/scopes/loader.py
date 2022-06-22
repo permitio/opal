@@ -1,3 +1,4 @@
+from opal_common.logger import logger
 from opal_common.schemas.policy_source import (
     GitPolicyScopeSource,
     NoAuthData,
@@ -18,6 +19,11 @@ async def load_scopes(repo: ScopeRepository):
 async def _load_env_scope(repo: ScopeRepository):
     # backwards compatible opal scope
     if opal_server_config.POLICY_REPO_URL is not None:
+        logger.debug(
+            "Adding default scope from env: {url}",
+            url=opal_server_config.POLICY_REPO_URL,
+        )
+
         auth = NoAuthData()
 
         if opal_server_config.POLICY_REPO_SSH_KEY is not None:
