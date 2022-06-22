@@ -13,14 +13,19 @@ class DataUpdatePublisher:
     def __init__(self, publisher: TopicPublisher) -> None:
         self._publisher = publisher
 
-    def get_topic_combos(self, topic: str) -> List[str]:
+    @staticmethod
+    def get_topic_combos(topic: str) -> List[str]:
         """Get the The combinations of sub topics for the given topic e.g.
         "policy_data/users/keys" -> ["policy_data", "policy_data/users",
         "policy_data/users/keys"]
 
+        If a colon (':') is present, only split after the right-most one,
+        and prepend the prefix before it to every topic, e.g.
+        "data:policy_data/users/keys" -> ["data:policy_data", "data:policy_data/users",
+        "data:policy_data/users/keys"]
+
         Args:
             topic (str): topic string with sub topics delimited by delimiter
-            delimeter (str, optional): delimiter of sub topics within topic. Defaults to TOPIC_DELIMETER (i.e. '/').
 
         Returns:
             List[str]: The combinations of sub topics for the given topic
@@ -35,14 +40,19 @@ class DataUpdatePublisher:
 
         if sub_topics:
             current_topic = sub_topics[0]
-            topic_combos.append(current_topic)
+
+            if prefix:
+                topic_combos.append(f"{prefix}{PREFIX_DELIMITER}{current_topic}")
+            else:
+                topic_combos.append(current_topic)
             if len(sub_topics) > 1:
                 for sub in sub_topics[1:]:
+                    current_topic = f"{current_topic}{TOPIC_DELIMITER}{sub}"
                     if prefix:
-                        current_topic = f"{prefix}{PREFIX_DELIMITER}{current_topic}{TOPIC_DELIMITER}{sub}"
+                        topic_combos.append(f"{prefix}{PREFIX_DELIMITER}{current_topic}")
                     else:
-                        current_topic = f"{current_topic}{TOPIC_DELIMITER}{sub}"
-                    topic_combos.append(current_topic)
+                        topic_combos.append(current_topic)
+
 
         return topic_combos
 
@@ -58,7 +68,7 @@ class DataUpdatePublisher:
         # Expand the topics for each event to include sub topic combos (e.g. publish 'a/b/c' as 'a' , 'a/b', and 'a/b/c')
         for entry in update.entries:
             for topic in entry.topics:
-                topic_combos = self.get_topic_combos(topic)
+                topic_combos = DataUpdatePublisher.get_topic_combos(topic)
                 all_topic_combos.extend(topic_combos)
 
         # a nicer format of entries to the log
