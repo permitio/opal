@@ -24,8 +24,7 @@ from opal_server.scopes.scope_repository import ScopeNotFoundError, ScopeReposit
 def init_scope_router(
     scopes: ScopeRepository, authenticator: JWTAuthenticator, pubsub: PubSubEndpoint
 ):
-    router = APIRouter()
-    # router = APIRouter(dependencies=[Depends(authenticator)])
+    router = APIRouter(dependencies=[Depends(authenticator)])
 
     def _allowed_scoped_authenticator(
         claims: JWTClaims = Depends(authenticator), scope_id: str = Path(...)
@@ -67,7 +66,7 @@ def init_scope_router(
 
         return Response(status_code=status.HTTP_204_NO_CONTENT)
 
-    @router.post("/{scope_id}", status_code=status.HTTP_200_OK)
+    @router.post("/{scope_id}/refresh", status_code=status.HTTP_200_OK)
     async def refresh_scope(scope_id: str):
         try:
             _ = await scopes.get(scope_id)
@@ -120,7 +119,7 @@ def init_scope_router(
         scope = await scopes.get(scope_id)
         return scope.data
 
-    @router.post("/{scope_id}/policy")
+    @router.post("/{scope_id}/policy/update", status_code=status.HTTP_204_NO_CONTENT)
     async def notify_new_policy(
         *,
         scope_id: str = Path(..., description="Scope ID"),
@@ -130,7 +129,7 @@ def init_scope_router(
             publisher.publish(notification.topics, notification.update)
             await publisher.wait()
 
-    @router.post("/{scope_id}/data")
+    @router.post("/{scope_id}/data/update")
     async def publish_data_update_event(
         update: DataUpdate,
         claims: JWTClaims = Depends(authenticator),
