@@ -8,6 +8,7 @@ from opal_common.authentication.authz import (
 )
 from opal_common.authentication.deps import JWTAuthenticator
 from opal_common.authentication.types import JWTClaims
+from opal_common.logger import logger
 from opal_common.schemas.data import DataSourceConfig, DataUpdate
 from opal_common.schemas.policy import PolicyBundle, PolicyUpdateMessageNotification
 from opal_common.schemas.policy_source import GitPolicyScopeSource
@@ -115,6 +116,7 @@ def init_scope_router(
         dependencies=[Depends(_allowed_scoped_authenticator)],
     )
     async def get_scope_data_source(*, scope_id: str = Path(..., title="Scope ID")):
+        logger.info("Serving source configuration for scope {scope_id}", scope_id)
         scope = await scopes.get(scope_id)
         return scope.data
 
