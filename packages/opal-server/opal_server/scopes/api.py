@@ -58,7 +58,7 @@ def init_scope_router(
 
         return Response(status_code=status.HTTP_204_NO_CONTENT)
 
-    @router.post("/{scope_id}", status_code=status.HTTP_200_OK)
+    @router.post("/{scope_id}/refresh", status_code=status.HTTP_200_OK)
     async def refresh_scope(scope_id: str):
         try:
             _ = await scopes.get(scope_id)
