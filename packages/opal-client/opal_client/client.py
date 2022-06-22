@@ -109,10 +109,6 @@ class OpalClient:
                     else opal_client_config.DATA_TOPICS
                 )
 
-                scope_id = opal_client_config.SCOPE_ID
-                if scope_id != "default":
-                    data_topics = [f"{scope_id}:data:{topic}" for topic in data_topics]
-
                 self.data_updater = DataUpdater(
                     policy_store=self.policy_store,
                     data_topics=data_topics,

@@ -115,7 +115,7 @@ def init_scope_router(
         status_code=status.HTTP_200_OK,
         dependencies=[Depends(_allowed_scoped_authenticator)],
     )
-    async def get_scope_data_source(*, scope_id: str = Path(..., title="Scope ID")):
+    async def get_scope_data_config(*, scope_id: str = Path(..., title="Scope ID")):
         logger.info("Serving source configuration for scope {scope_id}", scope_id)
         scope = await scopes.get(scope_id)
         return scope.data
@@ -139,6 +139,9 @@ def init_scope_router(
         require_peer_type(authenticator, claims, PeerType.datasource)
 
         restrict_optional_topics_to_publish(authenticator, claims, update)
+
+        for entry in update.entries:
+            entry.topics = [f"data:{topic}" for topic in entry.topics]
 
         async with ScopedServerSideTopicPublisher(pubsub, scope_id) as publisher:
             DataUpdatePublisher(publisher).publish_data_updates(update)

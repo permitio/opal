@@ -5,16 +5,15 @@ from opal_common.logger import logger
 from opal_common.schemas.data import DataUpdate
 from opal_common.topics.publisher import TopicPublisher
 
-TOPIC_DELIMETER = "/"
+TOPIC_DELIMITER = "/"
+PREFIX_DELIMITER = ":"
 
 
 class DataUpdatePublisher:
     def __init__(self, publisher: TopicPublisher) -> None:
         self._publisher = publisher
 
-    def get_topic_combos(
-        self, topic: str, delimeter: str = TOPIC_DELIMETER
-    ) -> List[str]:
+    def get_topic_combos(self, topic: str) -> List[str]:
         """Get the The combinations of sub topics for the given topic e.g.
         "policy_data/users/keys" -> ["policy_data", "policy_data/users",
         "policy_data/users/keys"]
@@ -26,15 +25,25 @@ class DataUpdatePublisher:
         Returns:
             List[str]: The combinations of sub topics for the given topic
         """
-        sub_topics = topic.split(delimeter)
+        topic_combos = []
+
+        prefix = None
+        if PREFIX_DELIMITER in topic:
+            prefix, topic = topic.rsplit(":", 1)
+
+        sub_topics = topic.split(TOPIC_DELIMITER)
+
         if sub_topics:
-            topic_combos = []
             current_topic = sub_topics[0]
             topic_combos.append(current_topic)
             if len(sub_topics) > 1:
                 for sub in sub_topics[1:]:
-                    current_topic = f"{current_topic}{delimeter}{sub}"
+                    if prefix:
+                        current_topic = f"{prefix}{PREFIX_DELIMITER}{current_topic}{TOPIC_DELIMITER}{sub}"
+                    else:
+                        current_topic = f"{current_topic}{TOPIC_DELIMITER}{sub}"
                     topic_combos.append(current_topic)
+
         return topic_combos
 
     def publish_data_updates(self, update: DataUpdate):
