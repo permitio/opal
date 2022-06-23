@@ -1,4 +1,4 @@
-#! /usr/bin/env sh
+#! /usr/bin/env bash
 set -e
 
 export GUNICORN_CONF=${GUNICORN_CONF:-./gunicorn_conf.py}

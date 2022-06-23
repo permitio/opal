@@ -1,17 +1,7 @@
 # BUILD STAGE ---------------------------------------
 # split this stage to save time and reduce image size
 # ---------------------------------------------------
-# NOTE: at the moment we use alpine3.11 instead of alpine latest
-# due to https://github.com/gliderlabs/docker-alpine/issues/539
-# which broke alpine dns lookup methods starting at alpine 3.12.
-FROM python:3.8-alpine3.11 as BuildStage
-# update apk cache
-RUN apk update
-# TODO: remove this when upgrading to a new alpine version
-# more details: https://github.com/pyca/cryptography/issues/5771
-ENV CRYPTOGRAPHY_DONT_BUILD_RUST=1
-# install linux libraries necessary to compile some python packages
-RUN apk add --update --no-cache --virtual .build-deps gcc git build-base alpine-sdk python3-dev musl-dev postgresql-dev libffi-dev libressl-dev
+FROM python:3.10 as BuildStage
 # from now on, work in the /app directory
 WORKDIR /app/
 # Layer dependency install (for caching)
@@ -24,20 +14,13 @@ RUN pip install --no-cache-dir --upgrade pip && pip install --no-cache-dir -r ./
 
 # COMMON IMAGE --------------------------------------
 # ---------------------------------------------------
-# NOTE: at the moment we use alpine3.11 instead of alpine latest
-# due to https://github.com/gliderlabs/docker-alpine/issues/539
-# which broke alpine dns lookup methods starting at alpine 3.12.
-FROM python:3.8-alpine3.11 as common
+FROM python:3.10-slim as common
 
 # copy libraries from build stage (This won't copy redundant libraries we used in BuildStage)
 COPY --from=BuildStage /usr/local /usr/local
 
-ARG rookout
-# needed for rookout
-RUN if [ "$rookout" = "" ]; then echo "Skipping rookout deps"; else apk add --update --no-cache g++ python3-dev linux-headers; fi
-
-# Add non-root user
-RUN addgroup -S opal && adduser -S opal -G opal -h /opal
+# Add non-root user (with home dir at /opal)
+RUN useradd -m -b / -s /bin/bash opal
 WORKDIR /opal
 
 # copy wait-for script (create link at old path to maintain backward compatibility)
@@ -90,8 +73,9 @@ FROM client-standalone as client
 
 # Temporarily move back to root for additional setup
 USER root
-# curl is needed for next section
-RUN apk add --update --no-cache curl
+
+RUN apt-get update && apt-get install -y curl && apt-get clean
+
 # copy opa from official image (main binary and lib for web assembly)
 RUN curl -L -o ./opa https://openpolicyagent.org/downloads/latest/opa_linux_amd64_static && chmod 755 ./opa
 # enable inline OPA
@@ -104,10 +88,11 @@ USER opal
 # SERVER IMAGE --------------------------------------
 # ---------------------------------------------------
 FROM common as server
-# git is needed by opal server (for policy repo tracking)
-RUN apk add --update --no-cache git openssh
+
+RUN apt-get update && apt-get install -y openssh-client git && apt-get clean
 
 USER opal
+
 # Potentially trust POLICY REPO HOST ssh signature --
 # opal trackes a remote (git) repository and fetches policy (e.g rego) from it.
 # however, if the policy repo uses an ssh url scheme, authentication to said repo
@@ -124,7 +109,7 @@ USER opal
 ARG TRUST_POLICY_REPO_HOST_SSH_FINGERPRINT="true"
 ARG POLICY_REPO_HOST="github.com"
 
-RUN if [[ "$TRUST_POLICY_REPO_HOST_SSH_FINGERPRINT" == "true" ]] ; then \
+RUN if [ "$TRUST_POLICY_REPO_HOST_SSH_FINGERPRINT" = "true" ] ; then \
   mkdir -p ~/.ssh && \
   chmod 0700 ~/.ssh && \
   ssh-keyscan -t rsa ${POLICY_REPO_HOST} >> ~/.ssh/known_hosts ; fi
