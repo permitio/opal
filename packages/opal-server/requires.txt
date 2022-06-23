@@ -9,3 +9,4 @@ slowapi>=0.1.5,<1
 aioredis>=2.0.1,<3
 celery>=5.2.7,<6
 pygit2>=1.9.2,<2
+asgiref>=3.5.2,<4
