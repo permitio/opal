@@ -49,7 +49,7 @@ def tuple_to_dict(tup: Tuple[str, str]) -> Dict[str, str]:
 
 
 def get_authorization_header(token: str) -> Tuple[str, str]:
-    return ("Authorization", f"Bearer {token}")
+    return "Authorization", f"Bearer {token}"
 
 
 def sorted_list_from_set(s: set) -> list:

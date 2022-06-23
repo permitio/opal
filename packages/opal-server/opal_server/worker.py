@@ -8,6 +8,7 @@ from aiohttp import ClientSession
 from asgiref.sync import async_to_sync
 from celery import Celery
 from opal_common.schemas.policy_source import GitPolicyScopeSource
+from opal_common.utils import get_authorization_header, tuple_to_dict
 from opal_server.config import opal_server_config
 from opal_server.git_fetcher import GitPolicyFetcher
 from opal_server.policy.watcher.callbacks import create_policy_update
@@ -56,7 +57,13 @@ class Worker:
 
                 url = f"{opal_server_config.SERVER_URL}/scopes/{scope_id}/policy/update"
 
-                async with self._http.post(url, json=notification.dict()):
+                async with self._http.post(
+                    url,
+                    json=notification.dict(),
+                    headers=tuple_to_dict(
+                        get_authorization_header(opal_server_config.WORKER_TOKEN)
+                    ),
+                ):
                     pass
 
             fetcher = GitPolicyFetcher(
