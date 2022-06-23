@@ -231,6 +231,8 @@ class OpalServerConfig(Confi):
         description="Server is leader or follower",
     )
 
+    SCOPES = confi.bool("SCOPES", default=False)
+
     REDIS_URL = confi.str("REDIS_URL", default="redis://localhost")
 
     BASE_DIR = confi.str("BASE_DIR", default=pathlib.Path.home() / ".local/state/opal")
