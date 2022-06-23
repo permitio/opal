@@ -245,7 +245,9 @@ class OpalServerConfig(Confi):
         "SERVER_URL", default="http://localhost:7002", description="OPAL Server URL"
     )
 
-    WORKER_TOKEN = confi.str("WORKER_TOKEN", "", description="Server/Worker access token")
+    WORKER_TOKEN = confi.str(
+        "WORKER_TOKEN", "", description="Server/Worker access token"
+    )
 
 
 opal_server_config = OpalServerConfig(prefix="OPAL_")
