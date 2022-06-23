@@ -4,14 +4,14 @@
 # NOTE: at the moment we use alpine3.11 instead of alpine latest
 # due to https://github.com/gliderlabs/docker-alpine/issues/539
 # which broke alpine dns lookup methods starting at alpine 3.12.
-FROM python:3.8-alpine3.16 as BuildStage
+FROM python:3.8-alpine3.11 as BuildStage
 # update apk cache
 RUN apk update
 # TODO: remove this when upgrading to a new alpine version
 # more details: https://github.com/pyca/cryptography/issues/5771
 ENV CRYPTOGRAPHY_DONT_BUILD_RUST=1
 # install linux libraries necessary to compile some python packages
-RUN apk add --update --no-cache --virtual .build-deps gcc git build-base alpine-sdk python3-dev musl-dev postgresql-dev libffi-dev libressl-dev libgit2-dev py3-pygit2
+RUN apk add --update --no-cache --virtual .build-deps gcc git build-base alpine-sdk python3-dev musl-dev postgresql-dev libffi-dev libressl-dev
 # from now on, work in the /app directory
 WORKDIR /app/
 # Layer dependency install (for caching)
@@ -27,12 +27,12 @@ RUN pip install --no-cache-dir --upgrade pip && pip install --no-cache-dir -r ./
 # NOTE: at the moment we use alpine3.11 instead of alpine latest
 # due to https://github.com/gliderlabs/docker-alpine/issues/539
 # which broke alpine dns lookup methods starting at alpine 3.12.
-FROM python:3.8-alpine3.16 as common
+FROM python:3.8-alpine3.11 as common
 
 # copy libraries from build stage (This won't copy redundant libraries we used in BuildStage)
 COPY --from=BuildStage /usr/local /usr/local
 # needed for rookout
-RUN apk add g++ python3-dev linux-headers libgit2-dev py3-pygit2
+RUN apk add g++ python3-dev linux-headers
 
 # Add non-root user
 RUN addgroup -S opal && adduser -S opal -G opal -h /opal
