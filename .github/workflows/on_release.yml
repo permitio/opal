@@ -28,10 +28,6 @@ jobs:
   # - Runs only if test phase completes with no errors.
   # - Pushes images (built at BUILD PHASE) to docker hub.
   docker_build_and_publish:
-    strategy:
-      matrix:
-        suffix: ["","-rookout"]
-
     runs-on: ubuntu-latest
     steps:
       # BUILD PHASE
@@ -46,19 +42,15 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v1
 
-      - name: Set latest tag
-        run: |
-          echo "opal_latest_tag=latest${{ matrix.suffix }}" >> $GITHUB_ENV
-
       - name: Get version tag from github release
         if: github.event_name == 'release' && github.event.action == 'created'
         run: |
-          echo "opal_version_tag=${{ github.event.release.tag_name }}${{ matrix.suffix }}" >> $GITHUB_ENV
+          echo "opal_version_tag=${{ github.event.release.tag_name }}" >> $GITHUB_ENV
 
       - name: Get version tag from git history
         if: ${{ !(github.event_name == 'release' && github.event.action == 'created') }}
         run: |
-          echo "opal_version_tag=$(git describe --tags --abbrev=0)${{ matrix.suffix }}" >> $GITHUB_ENV
+          echo "opal_version_tag=$(git describe --tags --abbrev=0)" >> $GITHUB_ENV
 
       - name: Echo version tag
         run: |
@@ -71,14 +63,12 @@ jobs:
           file: docker/Dockerfile
           push: false
           target: client
-          cache-from: type=registry,ref=permitio/opal-client:${{ env.opal_latest_tag }}
+          cache-from: type=registry,ref=permitio/opal-client:latest
           cache-to: type=inline
           load: true
-          build-args: |
-            rookout=${{ matrix.suffix }}
           tags: |
             permitio/opal-client:test
-            permitio/opal-client:${{ env.opal_latest_tag }}
+            permitio/opal-client:latest
             permitio/opal-client:${{ env.opal_version_tag }}
 
       - name: Build client-standalone
@@ -88,12 +78,12 @@ jobs:
           file: docker/Dockerfile
           push: false
           target: client-standalone
-          cache-from: type=registry,ref=permitio/opal-client-standalone:${{ env.opal_latest_tag }}
+          cache-from: type=registry,ref=permitio/opal-client-standalone:latest
           cache-to: type=inline
           load: true
           tags: |
             permitio/opal-client-standalone:test
-            permitio/opal-client-standalone:${{ env.opal_latest_tag }}
+            permitio/opal-client-standalone:latest
             permitio/opal-client-standalone:${{ env.opal_version_tag }}
 
       - name: Build server
@@ -103,12 +93,12 @@ jobs:
           file: docker/Dockerfile
           push: false
           target: server
-          cache-from: type=registry,ref=permitio/opal-server:${{ env.opal_latest_tag }}
+          cache-from: type=registry,ref=permitio/opal-server:latest
           cache-to: type=inline
           load: true
           tags: |
             permitio/opal-server:test
-            permitio/opal-server:${{ env.opal_latest_tag }}
+            permitio/opal-server:latest
             permitio/opal-server:${{ env.opal_version_tag }}
 
       # TEST PHASE
@@ -139,12 +129,12 @@ jobs:
       # each image is pushed with the versioned tag first, if it succeeds the image is pushed with the latest tag as well.
       - name: Push client
         if: ${{ !(github.event_name == 'workflow_dispatch' && github.event.inputs.dry_run == 'true') }}
-        run: docker push permitio/opal-client:${{ env.opal_version_tag }} && docker push permitio/opal-client:${{ env.opal_latest_tag }}
+        run: docker push permitio/opal-client:${{ env.opal_version_tag }} && docker push permitio/opal-client:latest
 
       - name: Push client-standalone
         if: ${{ !(github.event_name == 'workflow_dispatch' && github.event.inputs.dry_run == 'true') }}
-        run: docker push permitio/opal-client-standalone:${{ env.opal_version_tag }} && docker push permitio/opal-client-standalone:${{ env.opal_latest_tag }}
+        run: docker push permitio/opal-client-standalone:${{ env.opal_version_tag }} && docker push permitio/opal-client-standalone:latest
 
       - name: Push server
         if: ${{ !(github.event_name == 'workflow_dispatch' && github.event.inputs.dry_run == 'true') }}
-        run: docker push permitio/opal-server:${{ env.opal_version_tag }} && docker push permitio/opal-server:${{ env.opal_latest_tag }}
+        run: docker push permitio/opal-server:${{ env.opal_version_tag }} && docker push permitio/opal-server:latest

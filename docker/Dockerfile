@@ -19,10 +19,6 @@ FROM python:3.10-slim as common
 # copy libraries from build stage (This won't copy redundant libraries we used in BuildStage)
 COPY --from=BuildStage /usr/local /usr/local
 
-# ARG rookout
-# needed for rookout
-# RUN if [ "$rookout" = "" ]; then echo "Skipping rookout deps"; else apk add --update --no-cache g++ python3-dev linux-headers; fi
-
 # Add non-root user (with home dir at /opal)
 RUN useradd -m -b / -s /bin/bash opal
 WORKDIR /opal
