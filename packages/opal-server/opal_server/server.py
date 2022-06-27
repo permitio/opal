@@ -179,8 +179,9 @@ class OpalServer:
 
         self.watcher: Optional[PolicyWatcherTask] = None
 
-        self._redis_db = RedisDB(opal_server_config.REDIS_URL)
-        self._scopes = ScopeRepository(self._redis_db)
+        if opal_server_config.SCOPES:
+            self._redis_db = RedisDB(opal_server_config.REDIS_URL)
+            self._scopes = ScopeRepository(self._redis_db)
 
         # init fastapi app
         self.app: FastAPI = self._init_fast_api_app()
@@ -255,11 +256,13 @@ class OpalServer:
             tags=["Client Load Limiting"],
             dependencies=[Depends(authenticator)],
         )
-        app.include_router(
-            init_scope_router(self._scopes, authenticator, self.pubsub.endpoint),
-            tags=["Scopes"],
-            prefix="/scopes",
-        )
+
+        if opal_server_config.SCOPES:
+            app.include_router(
+                init_scope_router(self._scopes, authenticator, self.pubsub.endpoint),
+                tags=["Scopes"],
+                prefix="/scopes",
+            )
 
         if self.jwks_endpoint is not None:
             # mount jwts (static) route
@@ -302,8 +305,9 @@ class OpalServer:
         return app
 
     async def start(self):
-        await load_scopes(self._scopes)
-        await self.sync_all_scopes()
+        if opal_server_config.SCOPES:
+            await load_scopes(self._scopes)
+            await self.sync_all_scopes()
 
     async def sync_all_scopes(self):
         from opal_server.worker import sync_scope
@@ -368,21 +372,13 @@ class OpalServer:
                                 f"Policy repo will be cloned to: {full_local_repo_path}"
                             )
 
-                            scope = None
-
-                            try:
-                                scope = await self._scopes.get(DEFAULT_SCOPE_ID)
-                            except ScopeNotFoundError:
-                                pass
-
-                            if scope is not None:
-                                self.watcher = setup_watcher_task(
-                                    self.publisher,
-                                    remote_source_url=scope.policy.url,
-                                    ssh_key=scope.policy.auth.private_key,
-                                    branch_name=scope.policy.branch,
-                                    clone_path_finder=clone_path_finder,
-                                )
+                            self.watcher = setup_watcher_task(
+                                self.publisher,
+                                remote_source_url=opal_server_config.POLICY_REPO_URL,
+                                ssh_key=opal_server_config.POLICY_REPO_SSH_KEY,
+                                branch_name=opal_server_config.POLICY_REPO_MAIN_BRANCH,
+                                clone_path_finder=clone_path_finder,
+                            )
                         # the leader listens to the webhook topic (webhook api route can be hit randomly in all workers)
                         # and triggers the watcher to check for changes in the tracked upstream remote.
                         await self.pubsub.endpoint.subscribe(
