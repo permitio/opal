@@ -74,7 +74,7 @@ FROM client-standalone as client
 # Temporarily move back to root for additional setup
 USER root
 
-RUN apt-get update && apt-get install -y curl && apt-get clean
+RUN apt-get update && apt-get install -y curl netcat && apt-get clean
 
 # copy opa from official image (main binary and lib for web assembly)
 RUN curl -L -o ./opa https://openpolicyagent.org/downloads/latest/opa_linux_amd64_static && chmod 755 ./opa
