@@ -104,6 +104,6 @@ jobs:
 
       - name: Output container logs
         run: docker-compose -f docker/docker-compose-test.yml logs
-      
+
       - name: check if opal-client was brought up
         run: docker-compose -f docker/docker-compose-test.yml logs opal-client | grep "Connected to PubSub server"
