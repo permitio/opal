@@ -116,7 +116,7 @@ def init_scope_router(
 
     @router.post(
         "/{scope_id}/refresh",
-        status_code=status.HTTP_200_OK,
+        status_code=status.HTTP_200_OK
     )
     async def refresh_scope(scope_id: str, claims: JWTClaims = Depends(authenticator)):
         try:
