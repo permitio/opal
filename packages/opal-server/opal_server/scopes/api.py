@@ -1,3 +1,4 @@
+import pathlib
 from typing import Optional, cast
 
 from fastapi import (
@@ -39,6 +40,9 @@ def init_scope_router(
     def _allowed_scoped_authenticator(
         claims: JWTClaims = Depends(authenticator), scope_id: str = Path(...)
     ):
+        if not authenticator.enabled:
+            return
+
         allowed_scopes = claims.get("allowed_scopes")
 
         if not allowed_scopes or scope_id not in allowed_scopes:
@@ -53,10 +57,14 @@ def init_scope_router(
         if scheme.lower() != "bearer" or token != opal_server_config.WORKER_TOKEN:
             raise Unauthorized()
 
-    @router.put(
-        "", status_code=status.HTTP_201_CREATED, dependencies=[Depends(authenticator)]
-    )
-    async def put_scope(*, scope_in: Scope):
+    @router.put("", status_code=status.HTTP_201_CREATED)
+    async def put_scope(*, scope_in: Scope, claims: JWTClaims = Depends(authenticator)):
+        try:
+            require_peer_type(authenticator, claims, PeerType.datasource)
+        except Unauthorized as ex:
+            logger.error(f"Unauthorized to PUT scope: {repr(ex)}")
+            raise
+
         await scopes.put(scope_in)
 
         from opal_server.worker import sync_scope
@@ -69,9 +77,14 @@ def init_scope_router(
         "/{scope_id}",
         response_model=Scope,
         response_model_exclude={"policy": {"auth"}},
-        dependencies=[Depends(authenticator)],
     )
-    async def get_scope(*, scope_id: str):
+    async def get_scope(*, scope_id: str, claims: JWTClaims = Depends(authenticator)):
+        try:
+            require_peer_type(authenticator, claims, PeerType.datasource)
+        except Unauthorized as ex:
+            logger.error(f"Unauthorized to get scope: {repr(ex)}")
+            raise
+
         try:
             scope = await scopes.get(scope_id)
             return scope
@@ -83,9 +96,16 @@ def init_scope_router(
     @router.delete(
         "/{scope_id}",
         status_code=status.HTTP_204_NO_CONTENT,
-        dependencies=[Depends(authenticator)],
     )
-    async def delete_scope(*, scope_id: str):
+    async def delete_scope(
+        *, scope_id: str, claims: JWTClaims = Depends(authenticator)
+    ):
+        try:
+            require_peer_type(authenticator, claims, PeerType.datasource)
+        except Unauthorized as ex:
+            logger.error(f"Unauthorized to delete scope: {repr(ex)}")
+            raise
+
         await scopes.delete(scope_id)
 
         from opal_server.worker import delete_scope
@@ -94,12 +114,14 @@ def init_scope_router(
 
         return Response(status_code=status.HTTP_204_NO_CONTENT)
 
-    @router.post(
-        "/{scope_id}/refresh",
-        status_code=status.HTTP_200_OK,
-        dependencies=[Depends(authenticator)],
-    )
-    async def refresh_scope(scope_id: str):
+    @router.post("/{scope_id}/refresh", status_code=status.HTTP_200_OK)
+    async def refresh_scope(scope_id: str, claims: JWTClaims = Depends(authenticator)):
+        try:
+            require_peer_type(authenticator, claims, PeerType.datasource)
+        except Unauthorized as ex:
+            logger.error(f"Unauthorized to delete scope: {repr(ex)}")
+            raise
+
         try:
             _ = await scopes.get(scope_id)
 
@@ -132,7 +154,7 @@ def init_scope_router(
 
         if isinstance(scope.policy, GitPolicyScopeSource):
             fetcher = GitPolicyFetcher(
-                opal_server_config.BASE_DIR,
+                pathlib.Path(opal_server_config.BASE_DIR),
                 scope.scope_id,
                 cast(GitPolicyScopeSource, scope.policy),
             )
@@ -147,7 +169,9 @@ def init_scope_router(
         dependencies=[Depends(_allowed_scoped_authenticator)],
     )
     async def get_scope_data_config(*, scope_id: str = Path(..., title="Scope ID")):
-        logger.info("Serving source configuration for scope {scope_id}", scope_id)
+        logger.info(
+            "Serving source configuration for scope {scope_id}", scope_id=scope_id
+        )
         scope = await scopes.get(scope_id)
         return scope.data
 
