@@ -1,17 +1,21 @@
 from typing import Optional, cast
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, Response, status
+from fastapi_websocket_pubsub import PubSubEndpoint
 from opal_common.authentication.deps import JWTAuthenticator
 from opal_common.authentication.types import JWTClaims
-from opal_common.schemas.policy import PolicyBundle
+from opal_common.schemas.policy import PolicyBundle, PolicyUpdateMessageNotification
 from opal_common.schemas.policy_source import GitPolicyScopeSource
 from opal_common.schemas.scopes import Scope
+from opal_common.topics.publisher import ScopedServerSideTopicPublisher
 from opal_server.config import opal_server_config
 from opal_server.git_fetcher import GitPolicyFetcher
 from opal_server.scopes.scope_repository import ScopeNotFoundError, ScopeRepository
 
 
-def init_scope_router(scopes: ScopeRepository, authenticator: JWTAuthenticator):
+def init_scope_router(
+    scopes: ScopeRepository, authenticator: JWTAuthenticator, pubsub: PubSubEndpoint
+):
     router = APIRouter(dependencies=[Depends(authenticator)])
 
     def _allowed_scoped_authenticator(
@@ -54,7 +58,7 @@ def init_scope_router(scopes: ScopeRepository, authenticator: JWTAuthenticator):
 
         return Response(status_code=status.HTTP_204_NO_CONTENT)
 
-    @router.post("/{scope_id}", status_code=status.HTTP_200_OK)
+    @router.post("/{scope_id}/refresh", status_code=status.HTTP_200_OK)
     async def refresh_scope(scope_id: str):
         try:
             _ = await scopes.get(scope_id)
@@ -95,5 +99,15 @@ def init_scope_router(scopes: ScopeRepository, authenticator: JWTAuthenticator):
 
             bundle = fetcher.make_bundle(base_hash)
             return bundle
+
+    @router.post("/{scope_id}/policy_update", status_code=status.HTTP_204_NO_CONTENT)
+    async def notify_new_policy(
+        *,
+        scope_id: str = Path(..., description="Scope ID"),
+        notification: PolicyUpdateMessageNotification,
+    ):
+        async with ScopedServerSideTopicPublisher(pubsub, scope_id) as publisher:
+            publisher.publish(notification.topics, notification.update)
+            await publisher.wait()
 
     return router

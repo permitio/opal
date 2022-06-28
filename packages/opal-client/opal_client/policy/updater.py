@@ -61,6 +61,7 @@ class PolicyUpdater:
             subscription_directories or opal_client_config.POLICY_SUBSCRIPTION_DIRS
         )
         self._opal_client_id = opal_client_id
+        self._scope_id = opal_client_config.SCOPE_ID
 
         # The policy store we'll save policy modules into (i.e: OPA)
         self._policy_store = policy_store or DEFAULT_POLICY_STORE_GETTER()
@@ -72,7 +73,12 @@ class PolicyUpdater:
         else:
             self._extra_headers = [get_authorization_header(self._token)]
         # Pub/Sub topics we subscribe to for policy updates
-        self._topics = pubsub_topics_from_directories(self._subscription_directories)
+        if self._scope_id == "default":
+            self._topics = pubsub_topics_from_directories(
+                self._subscription_directories
+            )
+        else:
+            self._topics = [f"{self._scope_id}:policy:."]
         # The pub/sub client for data updates
         self._client = None
         # The task running the Pub/Sub subcribing client

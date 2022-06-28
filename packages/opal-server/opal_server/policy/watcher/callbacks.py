@@ -7,23 +7,25 @@ from opal_common.git.commit_viewer import CommitViewer, has_extension
 from opal_common.git.diff_viewer import DiffViewer
 from opal_common.logger import logger
 from opal_common.paths import PathUtils
-from opal_common.schemas.policy import PolicyUpdateMessage
+from opal_common.schemas.policy import (
+    PolicyUpdateMessage,
+    PolicyUpdateMessageNotification,
+)
 from opal_common.topics.publisher import TopicPublisher
 from opal_common.topics.utils import policy_topics
 
 
-async def publish_all_directories_in_repo(
+async def create_update_all_directories_in_repo(
     old_commit: Commit,
     new_commit: Commit,
-    publisher: TopicPublisher,
     file_extensions: Optional[List[str]] = None,
-):
+) -> PolicyUpdateMessageNotification:
     """publishes policy topics matching all relevant directories in tracked
     repo, prompting the client to ask for *all* contents of these directories
     (and not just diffs)."""
     with CommitViewer(new_commit) as viewer:
         filter = partial(has_extension, extensions=file_extensions)
-        all_paths = list(viewer.files(filter))
+        all_paths = [p.path for p in list(viewer.files(filter))]
         directories = PathUtils.intermediate_directories(all_paths)
         logger.info(
             "Publishing policy update, directories: {directories}",
@@ -35,21 +37,16 @@ async def publish_all_directories_in_repo(
             new_policy_hash=new_commit.hexsha,
             changed_directories=[str(path) for path in directories],
         )
-        publisher.publish(topics=topics, data=message.dict())
+
+        return PolicyUpdateMessageNotification(topics=topics, update=message)
 
 
-async def publish_changed_directories(
-    old_commit: Commit,
-    new_commit: Commit,
-    publisher: TopicPublisher,
-    file_extensions: Optional[List[str]] = None,
-):
-    """publishes policy topics matching all relevant directories in tracked
-    repo, prompting the client to ask for *all* contents of these directories
-    (and not just diffs)."""
+async def create_policy_update(
+    old_commit: Commit, new_commit: Commit, file_extensions: Optional[List[str]] = None
+) -> Optional[PolicyUpdateMessageNotification]:
     if new_commit == old_commit:
-        return await publish_all_directories_in_repo(
-            old_commit, new_commit, publisher=publisher, file_extensions=file_extensions
+        return await create_update_all_directories_in_repo(
+            old_commit, new_commit, file_extensions
         )
 
     with DiffViewer(old_commit, new_commit) as viewer:
@@ -66,7 +63,7 @@ async def publish_changed_directories(
                 old_commit=old_commit,
                 new_commit=new_commit,
             )
-            return
+            return None
         directories = PathUtils.intermediate_directories(all_paths)
         logger.info(
             "Publishing policy update, directories: {directories}",
@@ -78,4 +75,18 @@ async def publish_changed_directories(
             new_policy_hash=new_commit.hexsha,
             changed_directories=[str(path) for path in directories],
         )
-        publisher.publish(topics=topics, data=message.dict())
+
+        return PolicyUpdateMessageNotification(topics=topics, update=message)
+
+
+async def publish_changed_directories(
+    old_commit: Commit,
+    new_commit: Commit,
+    publisher: TopicPublisher,
+    file_extensions: Optional[List[str]] = None,
+):
+    """publishes policy topics matching all relevant directories in tracked
+    repo, prompting the client to ask for *all* contents of these directories
+    (and not just diffs)."""
+    notification = await create_policy_update(old_commit, new_commit, file_extensions)
+    publisher.publish(topics=notification.topics, data=notification.update.dict())

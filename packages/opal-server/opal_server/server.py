@@ -259,7 +259,7 @@ class OpalServer:
 
         if opal_server_config.SCOPES:
             app.include_router(
-                init_scope_router(self._scopes, authenticator),
+                init_scope_router(self._scopes, authenticator, self.pubsub.endpoint),
                 tags=["Scopes"],
                 prefix="/scopes",
             )

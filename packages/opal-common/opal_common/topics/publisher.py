@@ -27,6 +27,9 @@ class TopicPublisher:
         """starts the publisher."""
         logger.info("started topic publisher")
 
+    async def wait(self):
+        await asyncio.gather(*self._tasks, return_exceptions=True)
+
     async def stop(self):
         """stops the publisher (cancels any running publishing tasks)"""
         logger.info("stopping topic publisher")
@@ -170,4 +173,15 @@ class ClientSideTopicPublisher(TopicPublisher):
         """Do not trigger directly, must be triggered via publish() in order to
         run as a monitored background asyncio task."""
         await self._client.wait_until_ready()
+        logger.info("Publishing to topics: {topics}", topics=topics)
         return await self._client.publish(topics, data)
+
+
+class ScopedServerSideTopicPublisher(ServerSideTopicPublisher):
+    def __init__(self, endpoint: PubSubEndpoint, scope_id: str):
+        super().__init__(endpoint)
+        self._scope_id = scope_id
+
+    def publish(self, topics: TopicList, data: Any = None):
+        scoped_topics = [f"{self._scope_id}:{topic}" for topic in topics]
+        super().publish(scoped_topics, data)

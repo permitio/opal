@@ -17,8 +17,28 @@ from pygit2 import (
 )
 
 
-class GitPolicyFetcher:
-    def __init__(self, base_dir: Path, scope_id: str, source: GitPolicyScopeSource):
+class PolicyFetcherCallbacks:
+    async def on_update(self, old_revision: str, new_revision: str):
+        pass
+
+
+class PolicyFetcher:
+    def __init__(self, callbacks):
+        self.callbacks = callbacks
+
+    def fetch(self):
+        pass
+
+
+class GitPolicyFetcher(PolicyFetcher):
+    def __init__(
+        self,
+        base_dir: Path,
+        scope_id: str,
+        source: GitPolicyScopeSource,
+        callbacks=PolicyFetcherCallbacks(),
+    ):
+        super().__init__(callbacks)
         self._base_dir = opal_scopes_dest_dir(base_dir)
         self._source = source
         self._auth_callbacks = GitCallback(self._source)
@@ -44,10 +64,13 @@ class GitPolicyFetcher:
     async def _pull(self):
         logger.info("Checking for new commits in {path}", path=self._repo_path)
         repo = Repository(self._repo_path)
+        old_revision = repo.head.target.hex
         repo.remotes["origin"].fetch(callbacks=self._auth_callbacks)
         repo.checkout(
             repo.references[f"refs/remotes/origin/{self._source.branch}"].resolve().name
         )
+
+        await self.callbacks.on_update(old_revision, repo.head.target.hex)
 
     def make_bundle(self, base_hash: Optional[str] = None) -> PolicyBundle:
         repo = Repo(str(self._repo_path))
