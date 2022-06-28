@@ -1,6 +1,7 @@
 from typing import Generator
 
 import aioredis
+from opal_common.logger import logger
 from pydantic import BaseModel
 
 
@@ -9,6 +10,8 @@ class RedisDB:
 
     def __init__(self, redis_url):
         self._url = redis_url
+        logger.debug("Connecting to Redis: {url}", url=self._url)
+
         self._redis = aioredis.from_url(self._url)
 
     async def set(self, key: str, value: BaseModel):

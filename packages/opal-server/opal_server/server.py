@@ -15,6 +15,7 @@ from opal_common.git.repo_cloner import RepoClonePathFinder
 from opal_common.logger import configure_logs, logger
 from opal_common.middleware import configure_middleware
 from opal_common.schemas.data import ServerDataSourceConfig
+from opal_common.schemas.policy_source import SSHAuthData
 from opal_common.synchronization.named_lock import NamedLock
 from opal_common.topics.publisher import (
     PeriodicPublisher,
@@ -357,6 +358,7 @@ class OpalServer:
                             "listening on webhook topic: '{topic}'",
                             topic=opal_server_config.POLICY_REPO_WEBHOOK_TOPIC,
                         )
+
                         # init policy watcher
                         if self.watcher is None:
                             clone_path_finder = RepoClonePathFinder(
@@ -379,6 +381,7 @@ class OpalServer:
                                 branch_name=opal_server_config.POLICY_REPO_MAIN_BRANCH,
                                 clone_path_finder=clone_path_finder,
                             )
+
                         # the leader listens to the webhook topic (webhook api route can be hit randomly in all workers)
                         # and triggers the watcher to check for changes in the tracked upstream remote.
                         await self.pubsub.endpoint.subscribe(

@@ -64,18 +64,29 @@ class DataUpdater:
         # Defaults
         token: str = token or opal_client_config.CLIENT_TOKEN
         pubsub_url: str = pubsub_url or opal_client_config.SERVER_PUBSUB_URL
-        data_sources_config_url: str = (
-            data_sources_config_url
-            or opal_client_config.DEFAULT_DATA_SOURCES_CONFIG_URL
+        self._scope_id = opal_client_config.SCOPE_ID
+        self._data_topics = (
+            data_topics if data_topics is not None else opal_client_config.DATA_TOPICS
         )
+
+        if self._scope_id == "default":
+            data_sources_config_url: str = (
+                data_sources_config_url
+                or opal_client_config.DEFAULT_DATA_SOURCES_CONFIG_URL
+            )
+        else:
+            data_sources_config_url = (
+                f"{opal_client_config.SERVER_URL}/scopes/{self._scope_id}/data"
+            )
+            self._data_topics = [
+                f"{self._scope_id}:data:{topic}" for topic in self._data_topics
+            ]
+
         # Should the client use the default data source to fetch on connect
         self._fetch_on_connect = fetch_on_connect
         # The policy store we'll save data updates into
         self._policy_store = policy_store or DEFAULT_POLICY_STORE_GETTER()
-        # Pub/Sub topics we subscribe to for data updates
-        self._data_topics = (
-            data_topics if data_topics is not None else opal_client_config.DATA_TOPICS
-        )
+
         self._should_send_reports = (
             should_send_reports
             if should_send_reports is not None
@@ -83,7 +94,7 @@ class DataUpdater:
         )
         # The pub/sub client for data updates
         self._client = None
-        # The task running the Pub/Sub subcribing client
+        # The task running the Pub/Sub subscribing client
         self._subscriber_task = None
         # Data fetcher
         self._data_fetcher = data_fetcher or DataFetcher()

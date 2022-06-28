@@ -108,6 +108,7 @@ class OpalClient:
                     if data_topics is not None
                     else opal_client_config.DATA_TOPICS
                 )
+
                 self.data_updater = DataUpdater(
                     policy_store=self.policy_store,
                     data_topics=data_topics,

@@ -243,5 +243,13 @@ class OpalServerConfig(Confi):
         description="Policy polling refresh interval",
     )
 
+    SERVER_URL = confi.str(
+        "SERVER_URL", default="http://localhost:7002", description="OPAL Server URL"
+    )
+
+    WORKER_TOKEN = confi.str(
+        "WORKER_TOKEN", "", description="Server/Worker access token"
+    )
+
 
 opal_server_config = OpalServerConfig(prefix="OPAL_")
