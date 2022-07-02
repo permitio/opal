@@ -50,10 +50,7 @@ async def pipe_opa_logs(stream, logs_format: OpaLogFormat):
                 logged = log_formatted_http_details(level, msg, log_line)
 
             # always fall back to log the entire line
-            if (
-                not logged
-                or logs_format == OpaLogFormat.FULL
-            ):
+            if not logged or logs_format == OpaLogFormat.FULL:
                 log_entire_dict(level, msg, log_line)
         except json.JSONDecodeError:
             logger.info(line)

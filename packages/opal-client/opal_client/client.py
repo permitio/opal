@@ -140,7 +140,7 @@ class OpalClient:
             self.opa_runner = OpaRunner.setup_opa_runner(
                 options=inline_opa_options,
                 piped_logs_format=opal_client_config.INLINE_OPA_LOG_FORMAT,
-                rehydration_callbacks=rehydration_callbacks
+                rehydration_callbacks=rehydration_callbacks,
             )
         else:
             self.opa_runner = False
