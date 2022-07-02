@@ -3,6 +3,7 @@ import time
 from typing import Callable, Coroutine, List, Optional
 
 import psutil
+from opal_client.config import OpaLogFormat
 from opal_client.logger import logger
 from opal_client.opa.logger import pipe_opa_logs
 from opal_client.opa.options import OpaServerOptions
@@ -40,7 +41,11 @@ class OpaRunner:
     - OPA runner can pipe the logs of the OPA process into OPAL logger.
     """
 
-    def __init__(self, options: Optional[OpaServerOptions] = None):
+    def __init__(
+        self,
+        options: Optional[OpaServerOptions] = None,
+        piped_logs_format: OpaLogFormat = OpaLogFormat.NONE,
+    ):
         self._options = options or OpaServerOptions()
         self._stopped = False
         self._process = None
@@ -49,6 +54,7 @@ class OpaRunner:
         self._on_opa_initial_start_callbacks: List[AsyncCallback] = []
         self._on_opa_restart_callbacks: List[AsyncCallback] = []
         self._process_was_never_up_before = True
+        self._piped_logs_format = piped_logs_format
 
     async def __aenter__(self):
         self.start()
@@ -110,10 +116,17 @@ class OpaRunner:
         it returns only when the process terminates.
         """
         logger.info("Running OPA inline: {command}", command=self.command)
+
+        logs_sink = (
+            asyncio.subprocess.DEVNULL
+            if self._piped_logs_format == OpaLogFormat.NONE
+            else asyncio.subprocess.PIPE
+        )
+
         self._process = await asyncio.create_subprocess_shell(
             self.command,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
+            stdout=logs_sink,
+            stderr=logs_sink,
             start_new_session=True,
         )
 
@@ -124,9 +137,13 @@ class OpaRunner:
             )
         )
 
-        await asyncio.wait(
-            [pipe_opa_logs(self._process.stdout), pipe_opa_logs(self._process.stderr)]
-        )
+        if self._piped_logs_format != OpaLogFormat.NONE:
+            await asyncio.wait(
+                [
+                    pipe_opa_logs(self._process.stdout, self._piped_logs_format),
+                    pipe_opa_logs(self._process.stderr, self._piped_logs_format),
+                ]
+            )
 
         return_code = await self._process.wait()
         logger.info(
@@ -177,6 +194,7 @@ class OpaRunner:
     @staticmethod
     def setup_opa_runner(
         options: Optional[OpaServerOptions] = None,
+        piped_logs_format: OpaLogFormat = OpaLogFormat.NONE,
         initial_start_callbacks: Optional[List[AsyncCallback]] = None,
         rehydration_callbacks: Optional[List[AsyncCallback]] = None,
     ):
@@ -192,7 +210,7 @@ class OpaRunner:
             to handle authorization queries. therefore it is necessary that we rehydrate the
             cache with fresh state fetched from the server.
         """
-        opa_runner = OpaRunner(options=options)
+        opa_runner = OpaRunner(options=options, piped_logs_format=piped_logs_format)
         if initial_start_callbacks:
             opa_runner.register_opa_initial_start_callbacks(initial_start_callbacks)
         if rehydration_callbacks:
