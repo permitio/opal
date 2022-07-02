@@ -112,10 +112,13 @@ class OpaRunner:
         it returns only when the process terminates.
         """
         logger.info("Running OPA inline: {command}", command=self.command)
+
+        logs_sink = asyncio.subprocess.DEVNULL if self._piped_logs_format == OpaLogFormat.NONE else asyncio.subprocess.PIPE
+
         self._process = await asyncio.create_subprocess_shell(
             self.command,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
+            stdout=logs_sink,
+            stderr=logs_sink,
             start_new_session=True,
         )
 
@@ -126,10 +129,11 @@ class OpaRunner:
             )
         )
 
-        await asyncio.wait([
-            pipe_opa_logs(self._process.stdout, self._piped_logs_format),
-            pipe_opa_logs(self._process.stderr, self._piped_logs_format)
-        ])
+        if self._piped_logs_format != OpaLogFormat.NONE:
+            await asyncio.wait([
+                pipe_opa_logs(self._process.stdout, self._piped_logs_format),
+                pipe_opa_logs(self._process.stderr, self._piped_logs_format)
+            ])
 
         return_code = await self._process.wait()
         logger.info(
