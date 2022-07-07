@@ -49,6 +49,9 @@ class PubSub:
             broadcaster=self.broadcaster,
             notifier=self.notifier,
             rpc_channel_get_remote_id=opal_common_config.STATISTICS_ENABLED,
+            ignore_broadcaster_disconnected=(
+                not opal_server_config.BROADCAST_CONN_LOSS_BUGFIX_EXPERIMENT_ENABLED
+            ),
         )
         authenticator = WebsocketJWTAuthenticator(signer)
 

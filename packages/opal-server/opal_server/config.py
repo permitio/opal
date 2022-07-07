@@ -34,6 +34,9 @@ class OpalServerConfig(Confi):
     BROADCAST_URI = confi.str("BROADCAST_URI", None)
     # The name to be used for segmentation in the backbone pub/sub (e.g. the Kafka topic)
     BROADCAST_CHANNEL_NAME = confi.str("BROADCAST_CHANNEL_NAME", "EventNotifier")
+    BROADCAST_CONN_LOSS_BUGFIX_EXPERIMENT_ENABLED = confi.bool(
+        "BROADCAST_CONN_LOSS_BUGFIX_EXPERIMENT_ENABLED", False
+    )
 
     # server security
     AUTH_PRIVATE_KEY_FORMAT = confi.enum(
