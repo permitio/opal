@@ -3,7 +3,7 @@ import hashlib
 import itertools
 import json
 import uuid
-from typing import List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, Union, Any
 
 import aiohttp
 from aiohttp.client import ClientError, ClientSession
@@ -298,6 +298,55 @@ class DataUpdater:
         except:
             logger.exception("Failed to calculate hash for data {data}", data=data)
             return ""
+
+    async def _fetch_source_entries(self, data_fetcher, entries):
+        """
+        Iterator that tries to fetch all urls,
+        Then yields results as tuples of: (entry, fetched_data_successfully, result / error_content)
+        """
+        results : List[Tuple[DataSourceEntry, bool, Any]] = []
+        urls = [(entry.url, entry.config) for entry in entries if entry.data is None] # Fetch data for entries that don't include it
+
+        if len(urls) == 0:
+            logger.info("Not fetching policy data (update contains only embedded data)")
+            return []
+        
+        logger.info("Fetching policy data", urls=repr(urls))
+    
+        # Urls may be None - handle_urls has a default for None
+        policy_data_with_urls = await data_fetcher.handle_urls(urls)
+        for (url, _, result), entry in itertools.zip_longest(policy_data_with_urls, entries):
+            fetched_data_successfully = True
+            error_content = None
+
+            if isinstance(result, Exception):
+                fetched_data_successfully = False
+                logger.error(
+                    "Failed to fetch url {url}, got exception: {exc}",
+                    url=url,
+                    exc=result,
+                )
+
+            if isinstance(result, aiohttp.ClientResponse) and is_http_error_response(result):  # error responses
+                fetched_data_successfully = False
+                try:
+                    error_content = await result.json()
+                    logger.error(
+                        "Failed to fetch url {url}, got response code {status} with error: {error}",
+                        url=url,
+                        status=result.status,
+                        error=error_content,
+                    )
+                except json.JSONDecodeError:
+                    error_content = await result.text()
+                    logger.error(
+                        "Failed to decode response from url:{url}, got response code {status} with response: {error}",
+                        url=url,
+                        status=result.status,
+                        error=error_content,
+                    )
+            results.append((entry, fetched_data_successfully, error_content or result))
+        return results
     
     async def update_policy_data(
         self,
@@ -310,8 +359,6 @@ class DataUpdater:
         policy_store = policy_store or DEFAULT_POLICY_STORE_GETTER()
         if data_fetcher is None:
             data_fetcher = DataFetcher()
-        # types / defaults
-        urls: List[Tuple[str, FetcherConfig]] = None
         entries: List[DataSourceEntry] = []
         # track the result of each url in order to report back
         reports: List[DataEntryReport] = []
@@ -319,12 +366,10 @@ class DataUpdater:
         if update is not None:
             # Check each entry's topics to only process entries designated to us
             entries = [entry for entry in update.entries if not set(entry.topics).isdisjoint(set(self._data_topics))]
-            urls = [(entry.url, entry.config) for entry in entries]
+        
+        entry_results = [(entry, True, entry.data) for entry in entries if entry.data is not None]
+        entry_results.extend(await self._fetch_source_entries(data_fetcher, entries))
 
-        # get the data for the update
-        logger.info("Fetching policy data", urls=repr(urls))
-        # Urls may be None - handle_urls has a default for None
-        policy_data_with_urls = await data_fetcher.handle_urls(urls)
         # Save the data from the update
         # We wrap our interaction with the policy store with a transaction
         async with policy_store.transaction_context(
@@ -332,70 +377,36 @@ class DataUpdater:
         ) as store_transaction:
             # for intelisense treat store_transaction as a PolicyStoreClient (which it proxies)
             store_transaction: BasePolicyStoreClient
-            error_content = None
-            for (url, fetch_config, result), entry in itertools.zip_longest(
-                policy_data_with_urls, entries
-            ):
-                fetched_data_successfully = True
 
-                if isinstance(result, Exception):
-                    fetched_data_successfully = False
-                    logger.error(
-                        "Failed to fetch url {url}, got exception: {exc}",
-                        url=url,
-                        exc=result,
+            for (entry, fetched, data) in entry_results:
+                if entry.data is None:
+                    # Update on fetch results (not for embedded entries)
+                    store_transaction._update_remote_status(
+                        url=entry.url, status=fetched, error=str(data)
                     )
 
-                if isinstance(
-                    result, aiohttp.ClientResponse
-                ) and is_http_error_response(
-                    result
-                ):  # error responses
-                    fetched_data_successfully = False
-                    try:
-                        error_content = await result.json()
-                        logger.error(
-                            "Failed to fetch url {url}, got response code {status} with error: {error}",
-                            url=url,
-                            status=result.status,
-                            error=error_content,
-                        )
-                    except json.JSONDecodeError:
-                        error_content = await result.text()
-                        logger.error(
-                            "Failed to decode response from url:{url}, got response code {status} with response: {error}",
-                            url=url,
-                            status=result.status,
-                            error=error_content,
-                        )
-                store_transaction._update_remote_status(
-                    url=url, status=fetched_data_successfully, error=str(error_content)
-                )
-
-                if fetched_data_successfully:
+                if fetched:
                     # get path to store the URL data (default mode (None) is as "" - i.e. as all the data at root)
                     policy_store_path = "" if entry is None else entry.dst_path
                     # None is not valid - use "" (protect from missconfig)
                     if policy_store_path is None:
                         policy_store_path = ""
                     # fix opa_path (if not empty must start with "/" to be nested under data)
-                    if policy_store_path != "" and not policy_store_path.startswith(
-                        "/"
-                    ):
+                    if policy_store_path != "" and not policy_store_path.startswith("/"):
                         policy_store_path = f"/{policy_store_path}"
-                    policy_data = result
+
                     # Create a report on the data-fetching
                     report = DataEntryReport(
-                        entry=entry, hash=self.calc_hash(policy_data), fetched=True
+                        entry=entry, hash=self.calc_hash(data), fetched=True
                     )
                     logger.info(
-                        "Saving fetched data to policy-store: source url='{url}', destination path='{path}'",
-                        url=url,
+                        "Saving new data to policy-store: source url='{url}', destination path='{path}'",
+                        url=entry.url,
                         path=policy_store_path or "/",
                     )
                     try:
                         await store_transaction.set_policy_data(
-                            policy_data, path=policy_store_path
+                            data, path=policy_store_path
                         )
                         # No exception we we're able to save to the policy-store
                         report.saved = True
@@ -413,6 +424,7 @@ class DataUpdater:
                     report = DataEntryReport(entry=entry, fetched=False, saved=False)
                     # save the report for the entry
                     reports.append(report)
+        
         # should we send a report to defined callbackers?
         if self._should_send_reports:
             # spin off reporting (no need to wait on it)

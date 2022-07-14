@@ -3,9 +3,10 @@ from typing import Any, Dict, List, Optional
 
 from opal_common.schemas.policy import PolicyBundle
 from opal_common.schemas.store import StoreTransaction
+from opal_common.schemas.data import JsonableValue
 from pydantic import BaseModel
 
-from .base_policy_store_client import BasePolicyStoreClient, JsonableValue
+from .base_policy_store_client import BasePolicyStoreClient
 
 
 class MockPolicyStoreClient(BasePolicyStoreClient):

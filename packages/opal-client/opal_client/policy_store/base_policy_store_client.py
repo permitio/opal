@@ -9,10 +9,8 @@ from opal_client.config import opal_client_config
 from opal_client.logger import logger
 from opal_common.schemas.policy import PolicyBundle
 from opal_common.schemas.store import RemoteStatus, StoreTransaction
+from opal_common.schemas.data import JsonableValue
 from pydantic import BaseModel
-
-JsonableValue = Union[Dict[str, Any], List[Any]]
-
 
 class AbstractPolicyStore:
     """holds only the interface of a policy store."""

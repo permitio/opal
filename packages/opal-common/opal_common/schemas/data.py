@@ -1,22 +1,23 @@
 from logging import basicConfig
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Dict, List, Optional, Tuple, Union, Any
 
 from opal_common.fetcher.events import FetcherConfig
 from opal_common.fetcher.providers.http_fetch_provider import HttpFetcherConfig
 from pydantic import AnyHttpUrl, BaseModel, Field, root_validator
 
+JsonableValue = Union[Dict[str, Any], List[Any]]
 
 class DataSourceEntry(BaseModel):
     """
     Data source configuration - where client's should retrive data from and how they should store it
     """
-
     # How to obtain the data
-    url: str = Field(..., description="Url source to query for data")
+    url: str = Field(None, description="Url source to query for data")
     config: dict = Field(
         None,
         description="Suggested fetcher configuration (e.g. auth or method) to fetch data with",
     )
+    data: JsonableValue = Field(None, description="Data payload to embed within the data update (instead of having the client fetch it from url)")
     # How to catalog data
     topics: List[str] = Field(None, description="topics the data applies to")
     # How to save the data

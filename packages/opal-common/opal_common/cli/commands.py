@@ -3,7 +3,7 @@ import json
 import secrets
 from datetime import timedelta
 from enum import Enum
-from typing import List, Optional, Tuple
+from typing import List, Optional, Tuple, Union
 from uuid import uuid4
 
 import typer
@@ -104,15 +104,19 @@ def publish_data_update(
         help="Pass in the the DataUpdate entries as JSON",
         callback=lambda x: json.loads(x),
     ),
-    src_url: str = typer.Option(
-        None,
-        help="[SINGLE-ENTRY-UPDATE] url of the data-source this update relates to, which the clients should approach",
-    ),
     topics: List[str] = typer.Option(
         None,
         "--topic",
         "-t",
         help="[SINGLE-ENTRY-UPDATE] [List] topic (can several) for the published update (to be matched to client subscriptions)",
+    ),
+    data: str = typer.Option(
+        None,
+        help="[SINGLE-ENTRY-UPDATE] actual data to include in the update (if src_url is also supplied, it would be sent but not used)",
+    ),
+    src_url: str = typer.Option(
+        None,
+        help="[SINGLE-ENTRY-UPDATE] url of the data-source this update relates to, which the clients should approach 111",
     ),
     src_config: str = typer.Option(
         "{}",
@@ -145,15 +149,15 @@ def publish_data_update(
     entries: List[DataSourceEntry]
 
     # single entry update
-    if src_url is not None:
-        entry = DataSourceEntry(
+    if src_url is not None or data is not None:
+        entries.append(DataSourceEntry(
             url=src_url,
+            config=src_config,
+            data=json.loads(data),
             topics=topics,
             dst_path=dst_path,
             save_method=save_method,
-            config=src_config,
-        )
-        entries.append(entry)
+        ))
 
     server_url = f"{server_url}{server_route}"
     update = DataUpdate(entries=entries, reason=reason)
