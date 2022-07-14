@@ -66,17 +66,19 @@ class DataUpdatePublisher:
         """
         all_topic_combos = []
 
-        # Expand the topics for each event to include sub topic combos (e.g. publish 'a/b/c' as 'a' , 'a/b', and 'a/b/c')
-        for entry in update.entries:
-            for topic in entry.topics:
-                topic_combos = DataUpdatePublisher.get_topic_combos(topic)
-                all_topic_combos.extend(topic_combos)
-
         # a nicer format of entries to the log
         logged_entries = [
-            (entry.url, entry.save_method, entry.dst_path or "/")
+            (entry.url, entry.save_method, entry.dst_path or "/", entry.topics)
             for entry in update.entries
         ]
+
+        # Expand the topics for each event to include sub topic combos (e.g. publish 'a/b/c' as 'a' , 'a/b', and 'a/b/c')
+        for entry in update.entries:
+            topic_combos = []
+            for topic in entry.topics:
+                topic_combos.extend(DataUpdatePublisher.get_topic_combos(topic))
+            entry.topics = topic_combos # Update entry with the exaustive list, so client won't have to expand it again
+            all_topic_combos.extend(topic_combos)
 
         # publish all topics with all their sub combinations
         logger.info(
