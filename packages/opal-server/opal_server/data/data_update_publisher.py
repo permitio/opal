@@ -64,7 +64,7 @@ class DataUpdatePublisher:
             topics (List[str]): topics (with hierarchy) to notify subscribers of
             update (DataUpdate): update data-source configuration for subscribers to fetch data from
         """
-        all_topic_combos = []
+        all_topic_combos = set() # Use set to avoid updating the same topic twice
 
         # a nicer format of entries to the log
         logged_entries = [
@@ -78,7 +78,7 @@ class DataUpdatePublisher:
             for topic in entry.topics:
                 topic_combos.extend(DataUpdatePublisher.get_topic_combos(topic))
             entry.topics = topic_combos # Update entry with the exaustive list, so client won't have to expand it again
-            all_topic_combos.extend(topic_combos)
+            all_topic_combos.update(topic_combos)
 
         # publish all topics with all their sub combinations
         logger.info(
@@ -88,4 +88,4 @@ class DataUpdatePublisher:
             reason=update.reason,
             entries=logged_entries,
         )
-        self._publisher.publish(all_topic_combos, update)
+        self._publisher.publish(list(all_topic_combos), update)
