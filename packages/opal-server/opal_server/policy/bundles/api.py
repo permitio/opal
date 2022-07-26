@@ -103,7 +103,7 @@ async def get_policy(
         repo,
         in_directories=set(input_paths),
         extensions=opal_server_config.OPA_FILE_EXTENSIONS,
-        manifest_filename=opal_server_config.POLICY_REPO_MANIFEST_PATH,
+        root_manifest_path=opal_server_config.POLICY_REPO_MANIFEST_PATH,
     )
     if base_hash is None:
         return maker.make_bundle(repo.head.commit)

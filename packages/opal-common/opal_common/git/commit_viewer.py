@@ -146,27 +146,25 @@ class CommitViewer:
         pass
 
     def nodes(
-        self, filter: Optional[NodeFilter] = None
+        self, predicate: Optional[NodeFilter] = None
     ) -> Generator[VersionedNode, None, None]:
         """a generator yielding all the nodes (files and directories) found in
         the repository for the current commit, after applying the filter.
 
         Args:
-            filter (Optional[NodeFilter]): an optional predicate to filter only specific nodes.
+            predicate (Optional[NodeFilter]): an optional predicate to filter only specific nodes.
 
         Yields:
             the next node found (only for nodes passing the filter).
         """
         nodes_generator = self._nodes_in_tree(self._root)
-        if filter is None:
-            yield from nodes_generator
+        if predicate is None:
+            return nodes_generator
         else:
-            for node in nodes_generator:
-                if filter(node):
-                    yield node
+            return filter(predicate, nodes_generator)
 
     def files(
-        self, filter: Optional[FileFilter] = None
+        self, predicate: Optional[FileFilter] = None
     ) -> Generator[VersionedFile, None, None]:
         """a generator yielding all the files found in the repository for the
         current commit, after applying the filter.
@@ -177,16 +175,12 @@ class CommitViewer:
         Yields:
             the next file found (only for files passing the filter).
         """
-        files_generator = self.nodes(lambda node: isinstance(node, VersionedFile))
-        if filter is None:
-            yield from files_generator
-        else:
-            for f in files_generator:
-                if filter(f):
-                    yield f
+        return (
+            node for node in self.nodes(predicate) if isinstance(node, VersionedFile)
+        )
 
     def directories(
-        self, filter: Optional[DirectoryFilter] = None
+        self, predicate: Optional[DirectoryFilter] = None
     ) -> Generator[VersionedDirectory, None, None]:
         """a generator yielding all the directories found in the repository for
         the current commit, after applying the filter.
@@ -197,13 +191,24 @@ class CommitViewer:
         Yields:
             the next directory found (only for directories passing the filter).
         """
-        dir_generator = self.nodes(lambda node: isinstance(node, VersionedDirectory))
-        if filter is None:
-            yield from dir_generator
-        else:
-            for directory in dir_generator:
-                if filter(directory):
-                    yield directory
+        return filter(
+            lambda node: isinstance(node, VersionedDirectory), self.nodes(predicate)
+        )
+
+    def get_node(
+        self, path: Path, filterable_gen: Optional[Callable] = None
+    ) -> Optional[VersionedNode]:
+        """Returns the node in the given path, None if it doesn't exist."""
+        return next(self.nodes(lambda n: n.path == path), None)
+
+    def get_directory(self, path: Path) -> Optional[VersionedDirectory]:
+        """Returns the directory in the given path, None if it doesn't
+        exist."""
+        return next(self.directories(lambda n: n.path == path), None)
+
+    def get_file(self, path: Path) -> Optional[VersionedFile]:
+        """Returns the file in the given path, None if it doesn't exist."""
+        return next(self.files(lambda n: n.path == path), None)
 
     @property
     def paths(self) -> List[Path]:

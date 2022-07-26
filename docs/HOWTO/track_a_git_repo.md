@@ -91,9 +91,11 @@ You can control the manifest contents and ensure the correct loading of dependen
 The format of the `.manifest` file you should adhere to:
 * File encoding should be standard (i.e: UTF-8)
 * Lines should be separated with newlines (`\n` character)
-* Each line should contain the relative path to one file in the repo (i.e: a `.rego` file or `data.json` file).
+* Each line should contain a path, relative to the `.manifest` file, which could be one of the following:
+    * A policy / data file (i.e: a `.rego` file or `data.json` file).
+    * A folder, containing another `.manifest` file to be loaded recursively.
 * File paths should appear in the order you want to load them into OPA.
-* If you want to use a different file name other than `.manifest`, you can set another value to the env var `OPAL_POLICY_REPO_MANIFEST_PATH`.
+* If your root `.manifest` file is at another path, you can set another value to the env var `OPAL_POLICY_REPO_MANIFEST_PATH` (either a file path, or a folder path containing a `.manifest` file).
 
 For example, if you look in the [example repo](https://github.com/permitio/opal-example-policy-repo), you would see that the `rbac.rego` module imports the `utils.rego` module (the line `import data.utils` imports the `utils` package). Therefore in the manifest, `utils.rego` appears first because it needs to be loaded into OPA before the `rbac.rego` policy is loaded (otherwise OPA will throw an exception due to the import statement failing).
 
