@@ -92,7 +92,11 @@ class OpalServerConfig(Confi):
     )
     POLICY_REPO_MAIN_BRANCH = confi.str("POLICY_REPO_MAIN_BRANCH", "master")
     POLICY_REPO_SSH_KEY = confi.str("POLICY_REPO_SSH_KEY", None)
-    POLICY_REPO_MANIFEST_PATH = confi.str("POLICY_REPO_MANIFEST_PATH", ".manifest")
+    POLICY_REPO_MANIFEST_PATH = confi.str(
+        "POLICY_REPO_MANIFEST_PATH",
+        "",
+        "Path of the directory holding the '.manifest' file (new fashion), or of the manifest file itself (old fashion). Repo's root is used by default",
+    )
     POLICY_REPO_CLONE_TIMEOUT = confi.int(
         "POLICY_REPO_CLONE_TIMEOUT", 0
     )  # if 0, waits forever until successful clone

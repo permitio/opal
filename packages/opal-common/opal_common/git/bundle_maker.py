@@ -6,6 +6,7 @@ from git import Repo
 from git.objects import Commit
 from opal_common.git.commit_viewer import (
     CommitViewer,
+    VersionedDirectory,
     VersionedFile,
     has_extension,
     is_under_directories,
@@ -15,6 +16,7 @@ from opal_common.git.diff_viewer import (
     diffed_file_has_extension,
     diffed_file_is_under_directories,
 )
+from opal_common.logger import logger
 from opal_common.opa import get_rego_package, is_data_module, is_rego_module
 from opal_common.paths import PathUtils
 from opal_common.schemas.policy import (
@@ -41,7 +43,7 @@ class BundleMaker:
         repo: Repo,
         in_directories: Set[Path],
         extensions: Optional[List[str]] = None,
-        manifest_filename: str = ".manifest",
+        root_manifest_path: str = ".manifest",
     ):
         """[summary]
 
@@ -64,7 +66,7 @@ class BundleMaker:
         self._diffed_file_is_under_directories = partial(
             diffed_file_is_under_directories, directories=in_directories
         )
-        self._manifest_filename = manifest_filename
+        self._root_manifest_path = Path(root_manifest_path)
 
     def _get_explicit_manifest(self, viewer: CommitViewer) -> Optional[List[str]]:
         """Rego policies often have dependencies (import statements) between
@@ -79,22 +81,100 @@ class BundleMaker:
         loaded into OPA.
 
         This method searches for an explicit manifest file, reads it and returns the list of paths, or None if not found.
+
+        The manifest file can include references to other directories containing a ".manifest" file,
+        those would be recursively expanded to compile the final manifest list.
         """
+        visited_paths = []
 
-        def is_manifest_file(f: VersionedFile) -> bool:
-            return f.path == Path(self._manifest_filename)
+        def _compile_manifest_file(
+            dir: VersionedDirectory,
+            manifest_file_name: str = ".manifest",
+            _branch: List[str] = [],
+        ) -> List[str]:
+            explicit_manifest: List[Path] = []
+            manifest_file_path = dir.path / manifest_file_name
+            _branch.append(str(manifest_file_path))
 
-        manifest_files = list(viewer.files(is_manifest_file))
-        if not manifest_files:
-            return None
+            logger.info(f"Compiling manifest file { ' -> '.join(_branch)}")
+            try:
+                manifest_file = viewer.get_file(dir.path / manifest_file_name)
+                if manifest_file is None:
+                    logger.warning(
+                        f"  Manifest file {manifest_file_path} not found, assuming empty"
+                    )
+                else:
+                    for path_entry in manifest_file.read().splitlines():
+                        # Path is relative to current directory, make it absolute
+                        path_entry = dir.path / path_entry
 
-        try:
-            manifest_paths = [
-                Path(path) for path in manifest_files[0].read().splitlines()
-            ]
-            return [str(path) for path in manifest_paths if viewer.exists(path)]
-        except:
-            return None
+                        if (
+                            path_entry.is_absolute()
+                            or dir.path.resolve() not in path_entry.resolve().parents
+                        ):
+                            # Block absolute paths or paths with ".." (CommitViewer ignores those anyway, but be explicit)
+                            logger.warning(
+                                f"  Path '{path_entry}' is outside current .manifest directory"
+                            )
+                            continue
+
+                        if not viewer.exists(path_entry):
+                            logger.warning(f"  Path '{path_entry}' does not exist")
+                            continue
+
+                        if path_entry in visited_paths:
+                            logger.warning(
+                                f"  Path '{path_entry}' has redundant references"
+                            )
+                            continue
+
+                        visited_paths.append(path_entry)
+
+                        dir_entry = viewer.get_directory(path_entry)
+                        if dir_entry is not None:
+                            # Reference to another directory, try to recursively load its manifest file
+                            explicit_manifest += _compile_manifest_file(
+                                dir_entry, _branch=list(_branch)
+                            )
+                            continue
+
+                        # This is an existing file
+                        explicit_manifest.append(str(path_entry))
+                        logger.debug(
+                            f"  Path '{path_entry}' was added to explicit manifest"
+                        )
+
+            except Exception as e:
+                logger.exception(
+                    f"   Failed to compile manifest file '{manifest_file_path}'"
+                )
+                return []
+
+            return explicit_manifest
+
+        root_manifest = viewer.get_node(self._root_manifest_path)
+        if isinstance(root_manifest, VersionedFile):
+            # Root manifest is supplied in old-fashioned way (as file path) - support for backward compatibility
+            logger.info(
+                f"Using root manifest file path (old-fashioned): '{root_manifest.path}'"
+            )
+            return _compile_manifest_file(
+                viewer.get_directory(root_manifest.path.parent),
+                manifest_file_name=root_manifest.path.name,
+            )
+
+        elif isinstance(root_manifest, VersionedDirectory):
+            # Root manifest is supplied in new-fashioned way (as a directory path containing ".manifest" file)
+            logger.info(
+                f"Using root manifest dir path (new-fashioned): '{root_manifest.path}'"
+            )
+            return _compile_manifest_file(root_manifest)
+
+        else:
+            logger.info(
+                f"Root manifest path doesn't exist, no explicit order would be imposed on policy bundle"
+            )
+            return list()
 
     def _sort_manifest(
         self, unsorted_manifest: List[str], explicit_sorting: Optional[List[str]]
@@ -139,6 +219,8 @@ class BundleMaker:
         with CommitViewer(commit) as viewer:
             filter = lambda f: self._has_extension(f) and self._is_under_directories(f)
             explicit_manifest = self._get_explicit_manifest(viewer)
+            logger.debug(f"Explicit manifest to be used: {explicit_manifest}")
+
             for source_file in viewer.files(filter):
                 contents = source_file.read()
                 path = source_file.path

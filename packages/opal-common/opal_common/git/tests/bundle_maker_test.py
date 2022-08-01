@@ -20,6 +20,7 @@ from typing import List, Tuple
 from git import Repo
 from git.objects import Commit
 from opal_common.git.bundle_maker import BundleMaker
+from opal_common.git.commit_viewer import CommitViewer
 from opal_common.schemas.policy import PolicyBundle, RegoModule
 
 OPA_FILE_EXTENSIONS = (".rego", ".json")
@@ -256,3 +257,101 @@ def test_bundle_maker_sorts_according_to_explicit_manifest(local_repo: Repo, hel
     assert "other/abac.rego" == bundle.manifest[1]
     assert "rbac.rego" in bundle.manifest
     assert "other/data.json" in bundle.manifest
+
+
+def test_bundle_maker_sorts_according_to_explicit_manifest_nested(
+    local_repo: Repo, helpers
+):
+    """Test bundle maker filtered on directory only returns opa files from that
+    directory."""
+    repo: Repo = local_repo
+    root = Path(repo.working_tree_dir)
+
+    # Create multiple recursive .manifest files
+    helpers.create_new_file_commit(
+        repo,
+        root / ".manifest",
+        contents="\n".join(
+            ["other/data.json", "some/dir", "other", "rbac.rego", "some"]
+        ),
+    )
+    helpers.create_new_file_commit(
+        repo, root / "other/.manifest", contents="\n".join(["data.json", "abac.rego"])
+    )
+    helpers.create_new_file_commit(
+        repo, root / "some/dir/.manifest", contents="\n".join(["to"])
+    )
+    helpers.create_new_file_commit(
+        repo, root / "some/dir/to/.manifest", contents="\n".join(["file.rego"])
+    )
+
+    commit: Commit = repo.head.commit
+
+    maker = BundleMaker(
+        repo, in_directories=set([Path(".")]), extensions=OPA_FILE_EXTENSIONS
+    )
+    bundle: PolicyBundle = maker.make_bundle(commit)
+    # assert the bundle is a complete bundle (no old hash, etc)
+    assert_is_complete_bundle(bundle)
+    # assert the commit hash is correct
+    assert bundle.hash == commit.hexsha
+
+    # assert manifest compiled in right order, redundant references skipped ('other/data.json'), and empty directories ignored ('some')
+    assert bundle.manifest == [
+        "other/data.json",
+        "some/dir/to/file.rego",
+        "other/abac.rego",
+        "rbac.rego",
+    ]
+
+
+def test_bundle_maker_nested_manifest_cycle(local_repo: Repo, helpers):
+    repo: Repo = local_repo
+    root = Path(repo.working_tree_dir)
+
+    # Create recursive .manifest files with some error cases
+    helpers.create_new_file_commit(
+        repo,
+        root / ".manifest",
+        contents="\n".join(
+            ["other/data.json", "other", "some"]
+        ),  # 'some' doesn't have a ".manifest" file
+    )
+    helpers.create_new_file_commit(
+        repo,
+        root / "other/.manifest",
+        contents="\n".join(
+            [
+                # Those aren't safe (could include infinite recursion) and unsecure
+                "../",
+                "..",
+                "./",
+                ".",
+                # Paths are always relative so those should not be found
+                str(root),
+                str(root / "some/dir/to/.manifest"),
+                str(Path().absolute() / "some/dir/to/.manifest"),
+                str(Path().absolute() / "other"),
+                "some/dir/to/.manifest",
+                "other",
+                "data.json",  # Already visited, should be ignored
+                "abac.rego",
+            ]
+        ),
+    )
+    helpers.create_new_file_commit(
+        repo, root / "some/dir/to/.manifest", contents="\n".join(["file.rego"])
+    )
+
+    commit: Commit = repo.head.commit
+
+    maker = BundleMaker(
+        repo, in_directories=set([Path(".")]), extensions=OPA_FILE_EXTENSIONS
+    )
+    # Here we check the explicit manifest directly, rather than checking the final result is sorted
+    # Make sure:
+    #   1. we don't have '../' in list, or getting infinite recursion error
+    #   2. 'other/data.json' appears once
+    #   3. referncing non existing 'some/.manifest' doesn't cause an error
+    explicit_manifest = maker._get_explicit_manifest(CommitViewer(commit))
+    assert explicit_manifest == ["other/data.json", "other/abac.rego"]
