@@ -191,6 +191,7 @@ Declaring the broadcast uri is optional, depending on whether you deployed a bro
         <ul>
           <li>Broadcast channel backend.</li>
           <li>The format of the broadcaster URI string is specified <a href="https://github.com/encode/broadcaster#available-backends">here</a>.</li>
+          <li>Note that password authentication is not supported in the broadcaster URI when using redis, see <a href="https://github.com/encode/broadcaster/blob/master/broadcaster/_backends/redis.py">source</a>.</li>
           <li>Example value: <code>OPAL_BROADCAST_URI=postgres://localhost/mydb</code></li>
         </ul>
       </td>
