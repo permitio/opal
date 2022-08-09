@@ -11,31 +11,18 @@ from opal_client.policy_store.base_policy_store_client import (
     BasePolicyStoreClient,
     JsonableValue,
 )
-from opal_client.policy_store.options import WaitStrategy
 from opal_client.utils import proxy_response
 from opal_common.git.bundle_utils import BundleUtils
 from opal_common.opa.parsing import get_rego_package
 from opal_common.schemas.policy import DataModule, PolicyBundle
 from opal_common.schemas.store import JSONPatchAction, StoreTransaction, TransactionType
 from pydantic import BaseModel
-from tenacity import retry, stop_after_attempt, wait_exponential, wait_fixed
+from tenacity import retry
 
 JSONPatchDocument = List[JSONPatchAction]
 
 
-def fetchRetryConfig():
-    config = opal_client_config.POLICY_STORE_CONN_RETRY
-    wait_strategy = config.wait_strategy
-    wait_time = config.wait_time
-    attempts = config.attempts
-    if wait_strategy == WaitStrategy.exponential:
-        wait = wait_exponential(multiplier=wait_time)
-    else:
-        wait = wait_fixed(wait_time)
-    return dict(wait=wait, stop=stop_after_attempt(attempts))
-
-
-RETRY_CONFIG = fetchRetryConfig()
+RETRY_CONFIG = opal_client_config.POLICY_STORE_CONN_RETRY.toTenacityConfig()
 
 
 def fail_silently(fallback=None):
