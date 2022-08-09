@@ -1,6 +1,7 @@
 from enum import Enum
 
 from opal_client.opa.options import OpaServerOptions
+from opal_client.policy_store.options import PolicyStoreConnRetryOptions
 from opal_client.policy_store.schemas import PolicyStoreTypes
 from opal_common.confi import Confi, confi
 from opal_common.config import opal_common_config
@@ -26,6 +27,12 @@ class OpalClientConfig(Confi):
         "POLICY_STORE_AUTH_TOKEN",
         None,
         description="the authentication (bearer) token OPAL client will use to authenticate against the policy store (i.e: OPA agent)",
+    )
+    POLICY_STORE_CONN_RETRY = confi.model(
+        "POLICY_STORE_CONN_RETRY",
+        PolicyStoreConnRetryOptions,
+        {},  # defaults are being set according to PolicyStoreConnRetryOptions pydantic definitions (see class)
+        description="retry options when connecting to the policy store",
     )
     # create an instance of a policy store upon load
 

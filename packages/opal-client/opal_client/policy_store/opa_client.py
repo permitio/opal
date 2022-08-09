@@ -17,12 +17,12 @@ from opal_common.opa.parsing import get_rego_package
 from opal_common.schemas.policy import DataModule, PolicyBundle
 from opal_common.schemas.store import JSONPatchAction, StoreTransaction, TransactionType
 from pydantic import BaseModel
-from tenacity import retry, stop_after_attempt, wait_fixed
+from tenacity import retry
 
 JSONPatchDocument = List[JSONPatchAction]
 
-# 2 retries with 2 seconds apart
-RETRY_CONFIG = dict(wait=wait_fixed(2), stop=stop_after_attempt(2))
+
+RETRY_CONFIG = opal_client_config.POLICY_STORE_CONN_RETRY.toTenacityConfig()
 
 
 def fail_silently(fallback=None):
