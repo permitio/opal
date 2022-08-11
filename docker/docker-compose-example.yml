@@ -53,7 +53,7 @@ services:
     #  - opa_backup:/opal/backup:rw
 
     ports:
-      # exposes opal client on the host machine, you can access the client at: http://localhost:7000
+      # exposes opal client on the host machine, you can access the client at: http://localhost:7766
       - "7766:7000"
       # exposes the OPA agent (being run by OPAL) on the host machine
       # you can access the OPA api that you know and love at: http://localhost:8181

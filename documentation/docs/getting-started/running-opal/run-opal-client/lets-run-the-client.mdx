@@ -34,14 +34,14 @@ docker run -it \
   --env OPAL_CLIENT_TOKEN \
   --env OPAL_SERVER_URL \
   --env OPAL_DATA_TOPICS \
-  -p 7000:7000 \
+  -p 7766:7000 \
   -p 8181:8181 \
   permitio/opal-client
 ```
 
 Please notice opal client exposes two ports when running opa inline:
 
-- OPAL Client (port `:7000`) - the OPAL client API (i.e: healthcheck, etc).
+- OPAL Client (port `:7766`) - the OPAL client API (i.e: healthcheck, etc).
 - OPA (port `:8181`) - the port of the OPA agent (OPA is running in server mode).
 
 #### 4) Run the container in production

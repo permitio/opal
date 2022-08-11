@@ -285,7 +285,7 @@ class PolicyUpdater:
                         else bundle.deleted_files.dict()
                     )
                     logger.info(
-                        "got policy bundle (delta): '{diff_against_hash}' -> '{commit_hash}'",
+                        "got policy bundle (delta): '{diff_against_hash}' -> '{commit_hash}', manifest: {manifest}, deleted: {deleted}",
                         commit_hash=bundle.hash,
                         diff_against_hash=bundle.old_hash,
                         manifest=bundle.manifest,
