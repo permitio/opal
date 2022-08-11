@@ -37,7 +37,7 @@ services:
       # configures from where the opal client should initially fetch data (when it first goes up, after disconnection, etc).
       # the data sources represents from where the opal clients should get a "complete picture" of the data they need.
       # after the initial sources are fetched, the client will subscribe only to update notifications sent by the server.
-      - OPAL_DATA_CONFIG_SOURCES={"config":{"entries":[{"url":"http://host.docker.internal:7002/policy-data","topics":["policy_data"]}]}}
+      - OPAL_DATA_CONFIG_SOURCES={"config":{"entries":[{"url":"http://host.docker.internal:7002/policy-data","topics":["policy_data"],"dst_path":"/static"}]}}
       - OPAL_LOG_FORMAT_INCLUDE_PID=true
     ports:
       # exposes opal server on the host machine, you can access the server at: http://localhost:7002
