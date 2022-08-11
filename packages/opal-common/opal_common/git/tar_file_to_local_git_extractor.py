@@ -6,8 +6,6 @@ from typing import List, Optional
 import git
 from opal_common.security.tarsafe import TarSafe
 from pydantic.error_wrappers import ValidationError
-from opal_common.config import opal_common_config
-import tarfile
 
 
 class TarFileToLocalGitExtractor:
@@ -84,14 +82,10 @@ class TarFileToLocalGitExtractor:
         Args:
             mode(str): mode for TarSafe default to r:gz that can open tar.gz files
         """
-        if opal_common_config.TRUSTED_TAR == True:
-            with tarfile.open(self.tmp_bundle_path, mode) as tar:
-                tar.extractall(self.local_clone_path)
-        else:
-            with TarSafe.open(self.tmp_bundle_path, mode=mode) as tar_file:
-                tar_file_names = tar_file.getnames()
-                TarFileToLocalGitExtractor.validate_tar_or_throw(tar_file_names)
-                tar_file.extractall(path=self.local_clone_path)
+        with TarSafe.open(self.tmp_bundle_path, mode=mode) as tar_file:
+            tar_file_names = tar_file.getnames()
+            TarFileToLocalGitExtractor.validate_tar_or_throw(tar_file_names)
+            tar_file.extractall(path=self.local_clone_path)
 
     @staticmethod
     def is_git_repo(path) -> Optional[git.Repo]:

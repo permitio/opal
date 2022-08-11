@@ -111,8 +111,6 @@ class OpalCommonConfig(Confi):
         None,
         description="A path to your own CA public certificate file (usually a .crt or a .pem file). Certifcates signed by this issuer will be trusted by OPAL Client. DO NOT USE THIS IN PRODUCTION!",
     )
-    
-    TRUSTED_TAR = confi.bool("TRUSTED_TAR", False)
 
     # security
     AUTH_PUBLIC_KEY_FORMAT = confi.enum(
