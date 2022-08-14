@@ -12,6 +12,7 @@ from opal_common.git.repo_cloner import RepoClonePathFinder
 from opal_common.schemas.policy import PolicyBundle
 from opal_server.config import opal_server_config
 from starlette.responses import RedirectResponse
+from opal_common.logger import logger
 
 router = APIRouter()
 
@@ -105,9 +106,16 @@ async def get_policy(
         extensions=opal_server_config.OPA_FILE_EXTENSIONS,
         root_manifest_path=opal_server_config.POLICY_REPO_MANIFEST_PATH,
     )
-    if base_hash is None:
-        return maker.make_bundle(repo.head.commit)
+    # check if commit exist in the repo
+    revision = None
+    if base_hash:
+        try:
+            revision = repo.rev_parse(base_hash)
+        except ValueError:
+            logger.warning(f"base_hash {base_hash} not exist in the repo")
 
+    if revision is None:
+        return maker.make_bundle(repo.head.commit)
     try:
         old_commit = repo.commit(base_hash)
         return maker.make_diff_bundle(old_commit, repo.head.commit)
