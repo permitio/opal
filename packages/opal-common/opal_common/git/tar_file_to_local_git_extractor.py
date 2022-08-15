@@ -1,4 +1,5 @@
 import os
+import re
 import shutil
 from pathlib import Path
 from typing import List, Optional
@@ -24,7 +25,9 @@ class TarFileToLocalGitExtractor:
         local_clone_path: str,
         tmp_bundle_path: Path,
         policy_bundle_git_add_pattern="*",
+        remote_source_url: str = None,
     ):
+        self.remote_source_url = remote_source_url
         self.local_clone_path = local_clone_path
         self.tmp_bundle_path = tmp_bundle_path
         self.policy_bundle_git_add_pattern = policy_bundle_git_add_pattern
@@ -53,7 +56,7 @@ class TarFileToLocalGitExtractor:
         """Extract bundle create local git and commit this initial state."""
 
         self.extract_bundle_tar()
-        local_git = TarFileToLocalGitExtractor.is_git_repo(self.local_clone_path)
+        local_git = TarFileToLocalGitExtractor.is_git_repo(self.local_clone_path, remote_url=self.remote_url)
         if not local_git or len(local_git.heads) == 0:
             local_git = self.commit_local_git(should_init=True)
         return local_git
@@ -84,7 +87,7 @@ class TarFileToLocalGitExtractor:
         Args:
             mode(str): mode for TarSafe default to r:gz that can open tar.gz files
         """
-        if opal_common_config.TRUSTED_TAR == True:
+        if opal_common_config.SAFE_RMOTE_URL and re.match(opal_common_config.SAFE_RMOTE_URL, self.remote_source_url):
             with tarfile.open(self.tmp_bundle_path, mode) as tar:
                 tar.extractall(self.local_clone_path)
         else:
