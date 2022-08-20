@@ -9,10 +9,10 @@ from opal_common.confi.confi import load_conf_if_none
 from opal_common.git.bundle_maker import BundleMaker
 from opal_common.git.commit_viewer import CommitViewer
 from opal_common.git.repo_cloner import RepoClonePathFinder
+from opal_common.logger import logger
 from opal_common.schemas.policy import PolicyBundle
 from opal_server.config import opal_server_config
 from starlette.responses import RedirectResponse
-from opal_common.logger import logger
 
 router = APIRouter()
 
