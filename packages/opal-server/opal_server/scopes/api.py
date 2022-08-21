@@ -99,6 +99,20 @@ def init_scope_router(
         return Response(status_code=status.HTTP_201_CREATED)
 
     @router.get(
+        "",
+        response_model=List[Scope],
+        response_model_exclude={"policy": {"auth"}},
+    )
+    async def get_all_scopes(*, claims: JWTClaims = Depends(authenticator)):
+        try:
+            require_peer_type(authenticator, claims, PeerType.datasource)
+        except Unauthorized as ex:
+            logger.error(f"Unauthorized to get scopes: {repr(ex)}")
+            raise
+
+        return await scopes.all()
+
+    @router.get(
         "/{scope_id}",
         response_model=Scope,
         response_model_exclude={"policy": {"auth"}},
