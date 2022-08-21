@@ -183,6 +183,9 @@ class OpalServer:
         if opal_server_config.SCOPES:
             self._redis_db = RedisDB(opal_server_config.REDIS_URL)
             self._scopes = ScopeRepository(self._redis_db)
+            logger.info(
+                "OPAL Scopes: server is connected to scopes repository"
+            )
 
         # init fastapi app
         self.app: FastAPI = self._init_fast_api_app()
@@ -314,6 +317,7 @@ class OpalServer:
         from opal_server.worker import sync_scope
 
         scopes = await self._scopes.all()
+        logger.info(f"OPAL Scopes: syncing {len(scopes)} scopes in the background")
 
         for scope in scopes:
             sync_scope.delay(scope.scope_id)

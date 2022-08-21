@@ -9,6 +9,7 @@ from asgiref.sync import async_to_sync
 from celery import Celery
 from opal_common.schemas.policy_source import GitPolicyScopeSource
 from opal_common.utils import get_authorization_header, tuple_to_dict
+from opal_common.logger import logger, configure_logs
 from opal_server.config import opal_server_config
 from opal_server.git_fetcher import GitPolicyFetcher
 from opal_server.policy.watcher.callbacks import create_policy_update
@@ -36,6 +37,7 @@ class Worker:
         await self._http.close()
 
     async def sync_scope(self, scope_id: str):
+        logger.debug(f"Sync scope: {scope_id}")
         scope = await self._scopes.get(scope_id)
 
         fetcher = None
@@ -57,6 +59,7 @@ class Worker:
 
                 url = f"{opal_server_config.SERVER_URL}/scopes/{scope_id}/policy/update"
 
+                logger.info(f"Triggering policy update for scope {scope_id}: {notification.dict()}")
                 async with self._http.post(
                     url,
                     json=notification.dict(),
@@ -66,6 +69,7 @@ class Worker:
                 ):
                     pass
 
+            logger.info(f"Initializing git fetcher: scope_id={scope_id} and url={source.url}")
             fetcher = GitPolicyFetcher(
                 self._base_dir,
                 scope_id,
@@ -74,7 +78,12 @@ class Worker:
             )
 
         if fetcher:
-            await fetcher.fetch()
+            try:
+                await fetcher.fetch()
+                logger.info(f"Successfully fetched policy for scope {scope_id}")
+            except Exception as e:
+                logger.exception(f"Could not fetch policy for scope {scope_id}, got error: {e}")
+
 
     async def delete_scope(self, scope_id: str):
         scope_dir = self._base_dir / "scopes" / scope_id
@@ -106,7 +115,7 @@ def with_worker(f):
 
     return _inner
 
-
+configure_logs()
 app = Celery(
     "opal-worker",
     broker=opal_server_config.REDIS_URL,
