@@ -79,7 +79,7 @@ class GitPolicyFetcher(PolicyFetcher):
             repo,
             {Path(p) for p in self._source.directories},
             extensions=self._source.extensions,
-            manifest_filename=self._source.manifest,
+            root_manifest_path=self._source.manifest,
         )
 
         if not base_hash:
