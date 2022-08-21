@@ -7,7 +7,6 @@ import git
 from aiohttp import ClientSession
 from asgiref.sync import async_to_sync
 from celery import Celery
-from opal_client.config import opal_client_config
 from opal_common.schemas.policy_source import GitPolicyScopeSource
 from opal_common.utils import get_authorization_header, tuple_to_dict
 from opal_server.config import opal_server_config
@@ -114,6 +113,7 @@ app = Celery(
     backend=opal_server_config.REDIS_URL,
 )
 app.conf.task_default_queue = "opal-worker"
+app.conf.task_serializer = "json"
 
 
 @app.on_after_configure.connect
