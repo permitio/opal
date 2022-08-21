@@ -101,12 +101,13 @@ class GitCallback(RemoteCallbacks):
         if isinstance(self._source.auth, SSHAuthData):
             auth = cast(SSHAuthData, self._source.auth)
 
-            return KeypairFromMemory(
+            ssh_key = dict(
                 username=username_from_url,
                 pubkey=auth.public_key or "",
                 privkey=auth.private_key,
                 passphrase="",
             )
+            return KeypairFromMemory(**ssh_key)
 
         return Username(username_from_url)
 

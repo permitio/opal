@@ -1,5 +1,5 @@
 import pathlib
-from typing import Optional, cast
+from typing import List, Optional, cast
 
 from fastapi import (
     APIRouter,
@@ -16,13 +16,14 @@ from opal_common.authentication.authz import (
     require_peer_type,
     restrict_optional_topics_to_publish,
 )
+from opal_common.authentication.casting import cast_private_key
 from opal_common.authentication.deps import JWTAuthenticator
-from opal_common.authentication.types import JWTClaims
+from opal_common.authentication.types import EncryptionKeyFormat, JWTClaims
 from opal_common.authentication.verifier import Unauthorized
 from opal_common.logger import logger
 from opal_common.schemas.data import DataSourceConfig, DataUpdate
 from opal_common.schemas.policy import PolicyBundle, PolicyUpdateMessageNotification
-from opal_common.schemas.policy_source import GitPolicyScopeSource
+from opal_common.schemas.policy_source import GitPolicyScopeSource, SSHAuthData
 from opal_common.schemas.scopes import Scope
 from opal_common.schemas.security import PeerType
 from opal_common.topics.publisher import ScopedServerSideTopicPublisher
@@ -31,6 +32,29 @@ from opal_server.data.data_update_publisher import DataUpdatePublisher
 from opal_server.git_fetcher import GitPolicyFetcher
 from opal_server.scopes.scope_repository import ScopeNotFoundError, ScopeRepository
 
+
+def verify_private_key(private_key: str, key_format: EncryptionKeyFormat) -> bool:
+    try:
+        key = cast_private_key(private_key, key_format=key_format)
+        return key is not None
+    except Exception as e:
+        return False
+
+
+def verify_private_key_or_throw(scope_in: Scope):
+    if isinstance(scope_in.policy.auth, SSHAuthData):
+        auth = cast(SSHAuthData, scope_in.policy.auth)
+        if not "\n" in auth.private_key:
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail={
+                "error": "private key is expected to contain newlines!"
+            })
+
+        is_pem_key = verify_private_key(auth.private_key, key_format=EncryptionKeyFormat.pem)
+        is_ssh_key = verify_private_key(auth.private_key, key_format=EncryptionKeyFormat.ssh)
+        if not (is_pem_key or is_ssh_key):
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail={
+                "error": "private key is invalid"
+            })
 
 def init_scope_router(
     scopes: ScopeRepository, authenticator: JWTAuthenticator, pubsub: PubSubEndpoint
@@ -65,6 +89,7 @@ def init_scope_router(
             logger.error(f"Unauthorized to PUT scope: {repr(ex)}")
             raise
 
+        verify_private_key_or_throw(scope_in)
         await scopes.put(scope_in)
 
         from opal_server.worker import sync_scope
