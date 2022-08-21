@@ -131,9 +131,14 @@ app.conf.task_serializer = "json"
 
 @app.on_after_configure.connect
 def setup_periodic_tasks(sender, **kwargs):
-    sender.add_periodic_task(
-        opal_server_config.POLICY_REFRESH_INTERVAL, periodic_check.s()
-    )
+    polling_interval = opal_server_config.POLICY_REFRESH_INTERVAL
+    if polling_interval == 0:
+        logger.info("OPAL scopes: polling task is off.")
+    else:
+        logger.info(f"OPAL scopes: started polling task, interval is {polling_interval} seconds.")
+        sender.add_periodic_task(
+            polling_interval, periodic_check.s()
+        )
 
 
 @app.task
