@@ -37,7 +37,7 @@ class Worker:
         await self._http.close()
 
     async def sync_scope(self, scope_id: str):
-        logger.debug(f"Sync scope: {scope_id}")
+        logger.info(f"Sync scope: {scope_id}")
         scope = await self._scopes.get(scope_id)
 
         fetcher = None
@@ -48,8 +48,12 @@ class Worker:
 
             async def on_update(old_revision: str, new_revision: str):
                 if old_revision == new_revision:
+                    logger.info(f"scope '{scope_id}': No new commits, HEAD is at '{new_revision}'")
                     return
 
+                logger.info(
+                    f"scope '{scope_id}': Found new commits: old HEAD was '{old_revision}', new HEAD is '{new_revision}'"
+                )
                 repo = git.Repo(scope_dir)
                 notification = await create_policy_update(
                     repo.commit(old_revision),
@@ -80,7 +84,6 @@ class Worker:
         if fetcher:
             try:
                 await fetcher.fetch()
-                logger.info(f"Successfully fetched policy for scope {scope_id}")
             except Exception as e:
                 logger.exception(f"Could not fetch policy for scope {scope_id}, got error: {e}")
 
@@ -90,6 +93,7 @@ class Worker:
         shutil.rmtree(scope_dir, ignore_errors=True)
 
     async def periodic_check(self):
+        logger.info("Polling OPAL scopes for policy changes")
         scopes = await self._scopes.all()
 
         for scope in scopes:
