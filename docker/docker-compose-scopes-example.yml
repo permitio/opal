@@ -51,7 +51,7 @@ services:
       # exposes opal server on the host machine, you can access the server at: http://localhost:7002
       - "7002:7002"
     depends_on:
-      - broadcast_channel
+      - redis
     volumes:
       - opal:/opal:rw
   opal_client:
@@ -61,7 +61,7 @@ services:
       - OPAL_SERVER_URL=http://opal_server:7002
       - OPAL_LOG_FORMAT_INCLUDE_PID=true
       - OPAL_INLINE_OPA_LOG_FORMAT=http
-      - OPAL_SCOPE_ID=default
+      - OPAL_SCOPE_ID=scope
     ports:
       # exposes opal client on the host machine, you can access the client at: http://localhost:7000
       - "7001:7000"
