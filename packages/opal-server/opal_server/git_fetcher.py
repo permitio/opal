@@ -79,7 +79,7 @@ class GitPolicyFetcher(PolicyFetcher):
             repo,
             {Path(p) for p in self._source.directories},
             extensions=self._source.extensions,
-            manifest_filename=self._source.manifest,
+            root_manifest_path=self._source.manifest,
         )
 
         if not base_hash:
@@ -101,12 +101,13 @@ class GitCallback(RemoteCallbacks):
         if isinstance(self._source.auth, SSHAuthData):
             auth = cast(SSHAuthData, self._source.auth)
 
-            return KeypairFromMemory(
+            ssh_key = dict(
                 username=username_from_url,
                 pubkey=auth.public_key or "",
                 privkey=auth.private_key,
                 passphrase="",
             )
+            return KeypairFromMemory(**ssh_key)
 
         return Username(username_from_url)
 

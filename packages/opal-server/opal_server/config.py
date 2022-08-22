@@ -246,7 +246,7 @@ class OpalServerConfig(Confi):
 
     POLICY_REFRESH_INTERVAL = confi.int(
         "POLICY_REFRESH_INTERVAL",
-        default=10 * 60,
+        default=0,
         description="Policy polling refresh interval",
     )
 
