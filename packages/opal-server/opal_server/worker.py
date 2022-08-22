@@ -15,6 +15,7 @@ from opal_server.git_fetcher import GitPolicyFetcher
 from opal_server.policy.watcher.callbacks import create_policy_update
 from opal_server.redis import RedisDB
 from opal_server.scopes.scope_repository import ScopeRepository
+from opal_server.scopes.scope_utils import is_same_scope
 
 
 class Worker:
@@ -39,14 +40,20 @@ class Worker:
     async def sync_scope(self, scope_id: str):
         logger.info(f"Sync scope: {scope_id}")
         scope = await self._scopes.get(scope_id)
+        scope_dir = self._base_dir / "scopes" / scope_id
+
+        if not is_same_scope(scope.policy, scope_dir):
+            logger.info(
+                "Scope source information differs from on-disk scope, resetting scope"
+            )
+            await self.delete_scope(scope_id)
 
         fetcher = None
 
         if isinstance(scope.policy, GitPolicyScopeSource):
             source = cast(GitPolicyScopeSource, scope.policy)
-            scope_dir = self._base_dir / "scopes" / scope_id
 
-            async def on_update(old_revision: str, new_revision: str):
+            async def on_update(old_revision: Optional[str], new_revision: str):
                 if old_revision == new_revision:
                     logger.info(
                         f"scope '{scope_id}': No new commits, HEAD is at '{new_revision}'"
@@ -58,7 +65,7 @@ class Worker:
                 )
                 repo = git.Repo(scope_dir)
                 notification = await create_policy_update(
-                    repo.commit(old_revision),
+                    repo.commit(old_revision or new_revision),
                     repo.commit(new_revision),
                     source.extensions,
                 )
