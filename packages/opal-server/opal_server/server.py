@@ -183,9 +183,7 @@ class OpalServer:
         if opal_server_config.SCOPES:
             self._redis_db = RedisDB(opal_server_config.REDIS_URL)
             self._scopes = ScopeRepository(self._redis_db)
-            logger.info(
-                "OPAL Scopes: server is connected to scopes repository"
-            )
+            logger.info("OPAL Scopes: server is connected to scopes repository")
 
         # init fastapi app
         self.app: FastAPI = self._init_fast_api_app()

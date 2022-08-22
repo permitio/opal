@@ -45,16 +45,23 @@ def verify_private_key_or_throw(scope_in: Scope):
     if isinstance(scope_in.policy.auth, SSHAuthData):
         auth = cast(SSHAuthData, scope_in.policy.auth)
         if not "\n" in auth.private_key:
-            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail={
-                "error": "private key is expected to contain newlines!"
-            })
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail={"error": "private key is expected to contain newlines!"},
+            )
 
-        is_pem_key = verify_private_key(auth.private_key, key_format=EncryptionKeyFormat.pem)
-        is_ssh_key = verify_private_key(auth.private_key, key_format=EncryptionKeyFormat.ssh)
+        is_pem_key = verify_private_key(
+            auth.private_key, key_format=EncryptionKeyFormat.pem
+        )
+        is_ssh_key = verify_private_key(
+            auth.private_key, key_format=EncryptionKeyFormat.ssh
+        )
         if not (is_pem_key or is_ssh_key):
-            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail={
-                "error": "private key is invalid"
-            })
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail={"error": "private key is invalid"},
+            )
+
 
 def init_scope_router(
     scopes: ScopeRepository, authenticator: JWTAuthenticator, pubsub: PubSubEndpoint
