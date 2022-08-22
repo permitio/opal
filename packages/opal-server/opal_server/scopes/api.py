@@ -165,7 +165,7 @@ def init_scope_router(
         try:
             require_peer_type(authenticator, claims, PeerType.datasource)
         except Unauthorized as ex:
-            logger.error(f"Unauthorized to delete scope: {repr(ex)}")
+            logger.error(f"Unauthorized to refresh scope: {repr(ex)}")
             raise
 
         try:

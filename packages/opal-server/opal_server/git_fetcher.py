@@ -116,6 +116,10 @@ class GitCallback(RemoteCallbacks):
                 passphrase="",
             )
             return KeypairFromMemory(**ssh_key)
+        elif isinstance(self._source.auth, GitHubTokenAuthData):
+            auth = cast(GitHubTokenAuthData, self._source.auth)
+
+            return UserPass("github", auth.token)
 
         return Username(username_from_url)
 
