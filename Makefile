@@ -18,12 +18,12 @@ publish-common:
 
 publish-client:
 	$(MAKE) clean
-	python packages/opal-common/setup_client.py sdist bdist_wheel
+	python packages/opal-client/setup.py sdist bdist_wheel
 	python -m twine upload dist/*
 
 publish-server:
 	$(MAKE) clean
-	python packages/opal-common/setup_server.py sdist bdist_wheel
+	python packages/opal-server/setup.py sdist bdist_wheel
 	python -m twine upload dist/*
 
 publish:
