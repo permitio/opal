@@ -65,8 +65,8 @@ async def create_policy_update(
             )
             return None
         directories = PathUtils.intermediate_directories(all_paths)
-        logger.info(
-            "Publishing policy update, directories: {directories}",
+        logger.debug(
+            "Generating policy update notification, directories: {directories}",
             directories=[str(d) for d in directories],
         )
         topics = policy_topics(directories)

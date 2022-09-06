@@ -73,7 +73,14 @@ class BasePolicySource:
         """optional task to periodically check the remote for changes (git pull
         and compare hash)."""
         while True:
-            await polling_task()
+            try:
+                await polling_task()
+            except Exception as ex:
+                logger.error(
+                    "Error occured during polling task {task}: {err}",
+                    task=polling_task.__name__,
+                    err=ex,
+                )
             await asyncio.sleep(self._polling_interval)
 
     async def _stop_polling_task(self):

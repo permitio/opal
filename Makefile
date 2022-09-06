@@ -9,27 +9,24 @@ OPAL_POLICY_STORE_URL ?= http://host.docker.internal:8181
 
 # python packages (pypi)
 clean:
-	rm -rf *.egg-info build/ dist/
+	cd packages/opal-common/ ; rm -rf *.egg-info build/ dist/
+	cd packages/opal-client/ ; rm -rf *.egg-info build/ dist/
+	cd packages/opal-server/ ; rm -rf *.egg-info build/ dist/
 
-publish-common:
-	$(MAKE) clean
-	python packages/opal-common/setup.py sdist bdist_wheel
-	python -m twine upload dist/*
+build-packages:
+	cd packages/opal-common/ ; python setup.py sdist bdist_wheel
+	cd packages/opal-client/ ; python setup.py sdist bdist_wheel
+	cd packages/opal-server/ ; python setup.py sdist bdist_wheel
 
-publish-client:
-	$(MAKE) clean
-	python packages/opal-common/setup_client.py sdist bdist_wheel
-	python -m twine upload dist/*
-
-publish-server:
-	$(MAKE) clean
-	python packages/opal-common/setup_server.py sdist bdist_wheel
-	python -m twine upload dist/*
+publish-to-pypi:
+	cd packages/opal-common/ ; python -m twine upload dist/*
+	cd packages/opal-client/ ; python -m twine upload dist/*
+	cd packages/opal-server/ ; python -m twine upload dist/*
 
 publish:
-	$(MAKE) publish-common
-	$(MAKE) publish-client
-	$(MAKE) publish-server
+	$(MAKE) clean
+	$(MAKE) build-packages
+	$(MAKE) publish-to-pypi
 
 install-client-from-src:
 	pip install packages/opal-client

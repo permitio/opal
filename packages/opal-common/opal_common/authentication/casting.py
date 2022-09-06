@@ -29,7 +29,6 @@ def maybe_decode_multiline_key(key: str) -> bytes:
     return to_bytes(key)
 
 
-@log_exception(logger=logger)
 def cast_private_key(
     value: str, key_format: EncryptionKeyFormat, passphrase: Optional[str] = None
 ) -> Optional[PrivateKey]:
@@ -71,7 +70,6 @@ def cast_private_key(
         )
 
 
-@log_exception(logger=logger)
 def cast_public_key(value: str, key_format: EncryptionKeyFormat) -> Optional[PublicKey]:
     """Parse a string into a valid cryptographic public key.
 

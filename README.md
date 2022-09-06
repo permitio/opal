@@ -26,8 +26,10 @@ Open Policy Administration Layer
     <img src="https://img.shields.io/docker/pulls/permitio/opal-server?label=Docker%20pulls" alt="Docker pulls">
 </a>
 
-<a href="https://opal-access.slack.com/" target="_blank">
+<a href="https://bit.ly/permit-slack" target="_blank">
     <img src="https://img.shields.io/badge/Slack%20Community-4A154B?logo=slack&logoColor=white" alt="Join our Slack!">
+</a>
+<a href="https://twitter.com/intent/follow?original_referer=https%3A%2F%2Fpublish.twitter.com%2F%3FbuttonType%3DFollowButton%26query%3Dhttps%253A%252F%252Ftwitter.com%252Fpermit_io%26widget%3DButton&ref_src=twsrc%5Etfw&region=follow_link&screen_name=permit_io&tw_p=followbutton"><img src="https://img.shields.io/twitter/follow/permit_io?label=Follow%20%40permit_io&style=social">
 </a>
 
 ## What is OPAL?
