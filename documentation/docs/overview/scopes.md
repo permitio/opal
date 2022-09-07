@@ -101,7 +101,7 @@ curl --request PUT 'http://opal_server/scopes'
 docker run -it \
   --env OPAL_CLIENT_TOKEN \
   --env OPAL_SERVER_URL \
-  --env OPAL_DATA_TOPICS \u
+  --env OPAL_DATA_TOPICS \
   --env OPAL_SCOPE_ID=internal \
   -p 7000:7000 \
   -p 8181:8181 \
