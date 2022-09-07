@@ -3,7 +3,7 @@ sidebar_position: 1
 title: Docker-Compose Playground
 ---
 
-# 🚀  Get started with OPAL (a docker-compose playground)
+# 🚀 Get started with OPAL (a docker-compose playground)
 
 This tutorial will show you what you can do with OPAL, and teach you about OPAL core features.
 
@@ -20,7 +20,7 @@ You can get a running OPAL environment by running one `docker-compose` command.
 
 In this section we show how to run OPAL with an example `docker-compose.yml` file. With a few quick commands you can have OPAL up-and-running on your machine and explore the core features. The example configuration is not suitable for production environments (due to the lack of security configuration), but it will help you to understand **why you need OPAL**.
 
-Alternatively, check out this [tutorial if you'd prefer to run OPAL with an API Bundle server](https://github.com/permitio/opal/blob/master/docs/HOWTO/get_started_with_opal_api_source_docker_compose_tutorial.md) as its policy source.
+<!-- Alternatively, check out this [tutorial if you'd prefer to run OPAL with an API Bundle server](get_started_with_opal_api_source_docker_compose_tutorial) as its policy source. -->
 
 This entire tutorial is also recorded here:
 
@@ -232,7 +232,7 @@ Let's review what they are and their main functions:
     - Fetch the `/policy-data` route on the OPAL Server (returns: `{}`) and assign it to the root data document on OPA (i.e: `/`).
 - **Policy-data realtime updates**
   - The server can push realtime data updates to the client, it offers a REST API that allows you to push an updates via the server via pub/sub to your OPAL clients (and by extension OPA).
-  - We have a guide for that: [how to trigger realtime data updates using OPAL](https://github.com/permitio/opal/blob/master/docs/HOWTO/trigger_data_updates.md).
+  - We have a guide for that: [how to trigger realtime data updates using OPAL](/tutorials/trigger_data_updates).
   - Example why you need live updates:
     - Alice just invited Bob to a google drive document.
     - Bob expects to be able to view the document immediately.
@@ -255,4 +255,4 @@ If you skipped here from step 1, you can now [come back to the hands-on tutorial
 
 ## <a name="troubleshooting"></a> Troubleshooting
 
-You should troubleshoot the same way as shown in the [getting started with containers tutorial](https://github.com/permitio/opal/blob/master/docs/HOWTO/get_started_with_opal_using_docker.md#troubleshooting).
+You should troubleshoot the same way as shown in the [getting started with containers tutorial](get_started_with_opal_using_docker#troubleshooting).

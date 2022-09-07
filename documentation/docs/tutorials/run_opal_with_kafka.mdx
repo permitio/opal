@@ -3,7 +3,6 @@ sidebar_position: 6
 title: Run OPAL with Kafka
 ---
 
-
 # Run OPAL-server with a Kafka backbone pub/sub
 
 ## Introduction
@@ -40,11 +39,12 @@ But (in version OPAL 0.1.21 and later) you can also use the `OPAL_BROADCAST_CHAN
 Check out `docker/docker-compose-with-kafka-example.yml` for running docker compose with OPAL-server, OPAL-client, Zookeeper, and Kafka.
 
 Run this example docker config with this command:
+
 ```
 docker compose -f docker/docker-compose-with-kafka-example.yml up --force-recreate
 ```
 
-Give KafKa and OPAL a few seconds to start up and then run and event update ([see triggering updates](https://github.com/permitio/opal/blob/master/docs/HOWTO/get_started_with_opal_docker_compose_tutorial.md#step-4-publish-a-data-update-via-the-opal-server)) to check for connectivity.
+Give KafKa and OPAL a few seconds to start up and then run the event update ([see triggering updates](/getting-started/get_started_with_opal_docker_compose_tutorial#step-4-publish-a-data-update-via-the-opal-server)) to check for connectivity.
 
 For example run an update with the OPAL cli:
 

@@ -13,7 +13,9 @@ Scopes are dynamic, and can be created on the fly through the scopes
 API (`/scopes`)
 
 ## Setting up scopes
+
 > #### Prerequisites
+>
 > Scopes are supported in OPAL 0.2.0 and above. Use the
 > [provided docker-compose example](https://github.com/permitio/opal/blob/master/docker/docker-compose-scopes-example.yml)
 > to quickly get started.
@@ -32,7 +34,6 @@ other setting.
 
 The authorization used in this example are GitHub Personal Access Tokens that
 can be [generated here](https://github.com/settings/tokens).
-
 
 ```shell
 curl --request PUT 'http://opal_server/scopes'
@@ -95,11 +96,12 @@ curl --request PUT 'http://opal_server/scopes'
 ```
 
 ### Launch OPAL Client with a scope
+
 ```shell
 docker run -it \
   --env OPAL_CLIENT_TOKEN \
   --env OPAL_SERVER_URL \
-  --env OPAL_DATA_TOPICS \
+  --env OPAL_DATA_TOPICS \u
   --env OPAL_SCOPE_ID=internal \
   -p 7000:7000 \
   -p 8181:8181 \

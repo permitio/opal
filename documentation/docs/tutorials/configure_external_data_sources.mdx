@@ -1,6 +1,6 @@
 ---
 sidebar_position: 2
-title: Configure Extrernal Data Sources
+title: Configure External Data Sources
 ---
 
 # How to configure external data sources
@@ -10,39 +10,46 @@ This document instructs you how to serve a different (dynamic) value of `OPAL_DA
 OPAL server can **redirect to an external API** that will serve a different value based on the client identity.
 
 The document has 3 parts:
-1) General background about `OPAL_DATA_CONFIG_SOURCES`
-2) External data sources - architecture and flows - explains how external data sources work
-3) Real code samples of an External Data Source API server in python
+
+1. General background about `OPAL_DATA_CONFIG_SOURCES`
+2. External data sources - architecture and flows - explains how external data sources work
+3. Real code samples of an External Data Source API server in python
 
 ## General background about `OPAL_DATA_CONFIG_SOURCES`
+
 OPAL clients have two **distinct** types of data sources:
 
-Data Source Type | Format of data | Function | Source of data
---- | --- | --- | ---
-**Policies (and static data)** | **Policy bundle** - data format is very similar to OPA native bundles. | Each bundle contains the policies (rego) and static data that is usually included as part of the policy. By "static", we mean the data rarely changes, same as declaring the data *inside* the rego file. | Git repository (we are thinking about expanding this to more sources in the near future).
-**Dynamic Data** | **DataSourceEntry** - think about it as a "directive" how to fetch the data and where to put it in OPA document tree - i will give an example below. | Realtime updates about data that changes in the rate of the application (i.e: as a result of user action), for example - we invited a user to a document in google drive. If we implement this internally as the user now having a `Viewer` role on the document, we can send a data update containing the new role, with instructions to put it inside the roles document in OPA cache. | Can be anything - a database, a 3rd party API, your APIs, etc - extensible by fetch providers. We support http apis out of the box.
+| Data Source Type               | Format of data                                                                                                                                       | Function                                                                                                                                                                                                                                                                                                                                                                                 | Source of data                                                                                                                      |
+| ------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| **Policies (and static data)** | **Policy bundle** - data format is very similar to OPA native bundles.                                                                               | Each bundle contains the policies (rego) and static data that is usually included as part of the policy. By "static", we mean the data rarely changes, same as declaring the data _inside_ the rego file.                                                                                                                                                                                | Git repository (we are thinking about expanding this to more sources in the near future).                                           |
+| **Dynamic Data**               | **DataSourceEntry** - think about it as a "directive" how to fetch the data and where to put it in OPA document tree - i will give an example below. | Realtime updates about data that changes in the rate of the application (i.e: as a result of user action), for example - we invited a user to a document in google drive. If we implement this internally as the user now having a `Viewer` role on the document, we can send a data update containing the new role, with instructions to put it inside the roles document in OPA cache. | Can be anything - a database, a 3rd party API, your APIs, etc - extensible by fetch providers. We support http apis out of the box. |
 
 ### Q: What are `OPAL_DATA_CONFIG_SOURCES`?
-* They are **dynamic data** sources, so they are **directives** how to fetch the data and where to put it in OPA.
-* `OPAL_DATA_CONFIG_SOURCES` are statically configured because they contain the list of "complete picture" data sources - which are fetched after OPAL client loads, and after every disconnect between OPAL client and OPAL server. Think of it as directives how to get the up-to-date "clean slate" data.
+
+- They are **dynamic data** sources, so they are **directives** how to fetch the data and where to put it in OPA.
+- `OPAL_DATA_CONFIG_SOURCES` are statically configured because they contain the list of "complete picture" data sources - which are fetched after OPAL client loads, and after every disconnect between OPAL client and OPAL server. Think of it as directives how to get the up-to-date "clean slate" data.
 
 ## External data sources - architecture and flows
 
 ### When do you need to configure an external data source?
+
 If each of your OPAL clients needs a **slightly different** configuration, you cannot use a static config var like `OPAL_DATA_CONFIG_SOURCES` to store your configuration. In such case, you want OPAL server to return a different `DataSourceEntry` configuration **based on the identity** of the OPAL client asking for the config.
 
 ### Can different OPAL client have different "identities"?
+
 **Yes!! And they should!!**
 
 Each of your opal clients should use a unique JWT token issued to it by the OPAL server.
-[You can learn how to generate your OPAL client token here](https://github.com/permitio/opal/blob/master/docs/HOWTO/get_started_with_opal_using_docker.md#step-2-obtain-client-jwt-token-optional).
+[You can learn how to generate your OPAL client token here](/getting-started/get_started_with_opal_using_docker#step-2-obtain-client-jwt-token-optional).
 
 When [issued via the API](https://opal.permit.io/redoc#operation/generate_new_access_token_token_post), each OPAL client token (JWT) supports custom claims (the `claims` attribute).
 
 ### How to configure an external data source?
+
 OPAL server supports redirecting to an **external API server** that can serve different `DataSourceEntries` based on the JWT token identifying the OPAL client. This external API server should have access to OPAL's public key so that it can validate OPAL JWTs correctly and make sure the OPAL identity passed in a Bearer token is valid.
 
-This is how a typical configuration of `OPAL_DATA_CONFIG_SOURCES` looks like: ([a breakdown of this config can be found here](https://github.com/permitio/opal/blob/master/docs/HOWTO/get_started_with_opal_using_docker.md#step-5-server-config---data-sources))
+This is how a typical configuration of `OPAL_DATA_CONFIG_SOURCES` looks like: ([a breakdown of this config can be found here](/getting-started/get_started_with_opal_using_docker#step-5-server-config---data-sources))
+
 ```
 {
     "config": {
@@ -64,6 +71,7 @@ This is how a typical configuration of `OPAL_DATA_CONFIG_SOURCES` looks like: ([
 ```
 
 A `OPAL_DATA_CONFIG_SOURCES` configuration that redirects to an external data source looks slightly different:
+
 ```
 {
     "external_source_url": "https://your-api.com/path/to/api/endpoint"
@@ -73,14 +81,17 @@ A `OPAL_DATA_CONFIG_SOURCES` configuration that redirects to an external data so
 As you see, the config is now much simpler. **OPAL server will simply redirect the query.**
 
 ### How the redirect actually works?
+
 Upon being asked for data source entries, OPAL server will simply redirect to the `external_source_url`, but will also concat a [url query param](https://en.wikipedia.org/wiki/Query_string) containing the OPAL CLIENT JWT.
 
 Request by OPAL client:
+
 ```
 GET https://opal-server.com/data/config
 ```
 
 Response by OPAL server:
+
 ```
 HTTP 307 Temporary Redirect
 https://your-api.com/path/to/api/endpoint?token=<OPAL_CLIENT_JWT>
@@ -90,20 +101,25 @@ https://your-api.com/path/to/api/endpoint?token=<OPAL_CLIENT_JWT>
 OPAL relies on the TLS/SSL encryption so it can pass the JWT as a query param, knowing it will be encrypted.
 
 ### Actions that should be taken by the external API
+
 The external API should do the following:
-* Expose an http GET endpoint with same path as in OPAL config: i.e: `/path/to/api/endpoint`
-* When hit, this endpoint should extract the OPAL client JWT from the `token` query param.
-* The endpoint should validate that the token is a valid OPAL JWT (by using the OPAL public key to verify) and use the custom claims in the JWT to determine what data sources to return.
-* The endpoint should return a JSON, containing the unique value (to that OPAL client) of `OPAL_DATA_CONFIG_SOURCES` (i.e: the actual Data Source Entries).
+
+- Expose an http GET endpoint with same path as in OPAL config: i.e: `/path/to/api/endpoint`
+- When hit, this endpoint should extract the OPAL client JWT from the `token` query param.
+- The endpoint should validate that the token is a valid OPAL JWT (by using the OPAL public key to verify) and use the custom claims in the JWT to determine what data sources to return.
+- The endpoint should return a JSON, containing the unique value (to that OPAL client) of `OPAL_DATA_CONFIG_SOURCES` (i.e: the actual Data Source Entries).
 
 ## Real code samples of an External Data Source API server in python
+
 You can use the following code samples in your **external API server** that serves data sources.
 These are taken from our fastapi python service.
 
 ### Step 0: when issuing OPAL client token use custom claims
+
 These custom claims will identify one OPAL client from another.
 
 For example, this is how we assign OPAL client tokens to our customers' OPAL clients:
+
 ```python
 from opal_common.schemas.security import AccessTokenRequest, PeerType
 from acalla.config import OPAL_SERVER_URL, OPAL_MASTER_TOKEN
@@ -156,7 +172,9 @@ class RedirectJWTAuthenticator(_JWTAuthenticator):
 ```
 
 ### Step 2: in your external api server, expose the endpoint to serve dynamic data sources
+
 You dynamic data sources endpoints should read your custom claim and understand how to fetch the correct config based on these claims.
+
 ```python
 from typing import Optional
 from fastapi import APIRouter, Depends, status, HTTPException

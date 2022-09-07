@@ -3,7 +3,6 @@ sidebar_position: 8
 title: Track an API Budle Server
 ---
 
-
 # Policy syncing from API
 
 This document describes how to change policy syncing feature of OPAL (policy-code and static data) from the default git to an API server that exposes tar bundles.
@@ -30,11 +29,12 @@ Currently OPAL server supports two ways to detect changes in the tracked repo / 
 
 - **Webhook** - By issuing an HTTP REST request to OPAL server `<opal-server-url>/webhook` with your auth access token upon each update bundle file event, you can trigger the OPAL server to fetch a new bundle.
 
-The rest of the policy syncing process is the same as with a [git policy source](https://github.com/permitio/opal/blob/master/docs/HOWTO/track_a_git_repo.md).
+The rest of the policy syncing process is the same as with a [git policy source](track_a_git_repo).
 
 ## <a name="compose-example"></a>Docker compose example
 
 In this section we show how to configure an **API bundle server as OPAL's policy source**. We made an example [docker-compose.yml](https://github.com/permitio/opal/blob/master/docker/docker-compose-api-policy-source-example.yml) file with all the necessary configuration.
+
 ### Step 1: run docker compose to start the opal server and client
 
 Clone the opal repository and run the example compose file from your local clone:

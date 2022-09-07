@@ -2,42 +2,42 @@
 // Note: type annotations allow type checking and IDEs autocompletion
 
 const lightCodeTheme = require("./src/css/prism-theme");
-const darkCodeTheme = require('prism-react-renderer/themes/dracula');
+const darkCodeTheme = require("prism-react-renderer/themes/dracula");
 
 /** @type {import('@docusaurus/types').Config} */
 const config = {
-  title: 'OPAL',
-  tagline: 'Administration layer for the Open Policy Agent',
-  url: 'localhost:3000',
-  baseUrl: '/',
-  onBrokenLinks: 'throw',
-  onBrokenMarkdownLinks: 'warn',
-  favicon: 'img/favicon.ico',
-  organizationName: 'permitio', // Usually your GitHub org/user name.
-  projectName: 'opal', // Usually your repo name.
+  title: "OPAL",
+  tagline: "Administration layer for the Open Policy Agent",
+  url: "https://docs.opal.ac",
+  baseUrl: "/",
+  onBrokenLinks: "throw",
+  onBrokenMarkdownLinks: "warn",
+  favicon: "img/favicon.ico",
+  organizationName: "permitio", // Usually your GitHub org/user name.
+  projectName: "opal", // Usually your repo name.
 
   // Even if you don't use internalization, you can use this field to set useful
   // metadata like html lang. For example, if your site is Chinese, you may want
   // to replace "en" with "zh-Hans".
   i18n: {
-    defaultLocale: 'en',
-    locales: ['en'],
+    defaultLocale: "en",
+    locales: ["en"],
   },
 
   presets: [
     [
-      'classic',
+      "classic",
       /** @type {import('@docusaurus/preset-classic').Options} */
       ({
         docs: {
-          sidebarPath: require.resolve('./sidebars.js'),
+          sidebarPath: require.resolve("./sidebars.js"),
+          routeBasePath: "/",
           // Please change this to your repo.
           // Remove this to remove the "edit this page" links.
-          
         },
         blog: false, // disabled docusaurus default blog
         theme: {
-          customCss: require.resolve('./src/css/custom.scss'),
+          customCss: require.resolve("./src/css/custom.scss"),
         },
       }),
     ],
@@ -51,25 +51,19 @@ const config = {
       navbar: {
         title: "OPAL",
         logo: {
-          alt: 'My Site Logo',
-          src: 'img/logo.svg',
+          alt: "My Site Logo",
+          src: "img/opal.png",
         },
         items: [
           {
-            type: 'doc',
-            docId: 'welcome',
-            position: 'left',
-            label: 'Docs',
-          },
-          {
-            href: 'https://github.com/facebook/docusaurus',
-            label: 'GitHub',
-            position: 'right',
+            href: "https://github.com/permitio/opal",
+            label: "GitHub",
+            position: "right",
           },
         ],
       },
       footer: {
-        style: 'dark',
+        style: "dark",
         links: [],
         copyright: `Copyright © ${new Date().getFullYear()} Permit, Inc.`,
       },
