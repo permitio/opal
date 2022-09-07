@@ -22,7 +22,7 @@ const sidebars = {
     },
     {
       type: "category",
-      label: "Overview",
+      label: "OPAL Basics",
       collapsible: false,
       collapsed: false,
       items: [
