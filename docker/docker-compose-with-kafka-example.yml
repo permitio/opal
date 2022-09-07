@@ -22,8 +22,8 @@ services:
     image: confluentinc/cp-kafka:6.2.0
     hostname: kafka
     ports:
-    # To learn about configuring Kafka for access across networks see
-    # https://www.confluent.io/blog/kafka-client-cannot-connect-to-broker-on-aws-on-docker-etc/
+      # To learn about configuring Kafka for access across networks see
+      # https://www.confluent.io/blog/kafka-client-cannot-connect-to-broker-on-aws-on-docker-etc/
       - 9092:9092
       - 29092:29092
     depends_on:
@@ -61,11 +61,11 @@ services:
       # the git repo hosting our policy
       # - if this repo is not public, you can pass an ssh key via `OPAL_POLICY_REPO_SSH_KEY`)
       # - the repo we pass in this example is *public* and acts as an example repo with dummy rego policy
-      # - for more info, see: https://github.com/permitio/opal/blob/master/docs/HOWTO/track_a_git_repo.md
+      # - for more info, see: https://docs.opal.ac/tutorials/track_a_git_repo
       - OPAL_POLICY_REPO_URL=https://github.com/permitio/opal-example-policy-repo
       # in this example we will use a polling interval of 30 seconds to check for new policy updates (git commits affecting the rego policy).
       # however, it is better to utilize a git *webhook* to trigger the server to check for changes only when the repo has new commits.
-      # for more info see: https://github.com/permitio/opal/blob/master/docs/HOWTO/track_a_git_repo.md
+      # for more info see: https://docs.opal.ac/tutorials/track_a_git_repo
       - OPAL_POLICY_REPO_POLLING_INTERVAL=30000
       # configures from where the opal client should initially fetch data (when it first goes up, after disconnection, etc).
       # the data sources represents from where the opal clients should get a "complete picture" of the data they need.
@@ -78,7 +78,6 @@ services:
     depends_on:
       - kafka_broadcast_channel
     command: sh -c "/usr/wait-for.sh kafka:9092 --timeout=30 -- /start.sh"
-
 
   opal_client:
     # by default we run opal-client from latest official image
