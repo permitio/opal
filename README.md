@@ -32,8 +32,6 @@ Open Policy Administration Layer
 <a href="https://twitter.com/intent/follow?original_referer=https%3A%2F%2Fpublish.twitter.com%2F%3FbuttonType%3DFollowButton%26query%3Dhttps%253A%252F%252Ftwitter.com%252Fpermit_io%26widget%3DButton&ref_src=twsrc%5Etfw&region=follow_link&screen_name=permit_io&tw_p=followbutton"><img src="https://img.shields.io/twitter/follow/permit_io?label=Follow%20%40permit_io&style=social">
 </a>
 
-[![Docs site](https://api.netlify.com/api/v1/badges/7d571bc8-fa17-46e6-a174-d2df067b1d66/deploy-status)](https://docs.opal.ac)
-
 
 
 ## What is OPAL?
