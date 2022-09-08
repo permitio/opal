@@ -39,7 +39,7 @@ class CallbacksReporter:
             if extra_callbacks is not None:
                 for url, config in extra_callbacks:
                     config.data = report_data
-                    urls.append((url, config))
+                    urls.append((url, config, None))
 
             logger.info("Reporting the update to requested callbacks", urls=repr(urls))
             report_results = await self._fetcher.handle_urls(urls)

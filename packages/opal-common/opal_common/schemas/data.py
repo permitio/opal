@@ -1,9 +1,11 @@
 from logging import basicConfig
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 from opal_common.fetcher.events import FetcherConfig
 from opal_common.fetcher.providers.http_fetch_provider import HttpFetcherConfig
 from pydantic import AnyHttpUrl, BaseModel, Field, root_validator
+
+JsonableValue = Union[Dict[str, Any], List[Any]]
 
 
 class DataSourceEntry(BaseModel):
@@ -12,7 +14,12 @@ class DataSourceEntry(BaseModel):
     """
 
     # How to obtain the data
-    url: str = Field(..., description="Url source to query for data")
+    url: str = Field(None, description="Url source to query for data")
+    data: JsonableValue = Field(
+        None,
+        description="Data payload to embed within the data update (instead of having "
+        "the client fetch it from url)",
+    )
     config: dict = Field(
         None,
         description="Suggested fetcher configuration (e.g. auth or method) to fetch data with",

@@ -1,7 +1,8 @@
 import asyncio
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from opal_client.config import opal_client_config
+from opal_client.policy_store.base_policy_store_client import JsonableValue
 from opal_common.config import opal_common_config
 from opal_common.fetcher import FetchingEngine
 from opal_common.fetcher.events import FetcherConfig
@@ -51,8 +52,11 @@ class DataFetcher:
         """Release internal tasks and resources."""
         await self._engine.terminate_workers()
 
-    async def handle_url(self, url, config):
+    async def handle_url(self, url, config, data):
         """Helper function wrapping self._engine.handle_url."""
+        if data is not None:
+            return data
+
         logger.info("Fetching data from url: {url}", url=url)
         try:
             # ask the engine to get our data
@@ -63,7 +67,7 @@ class DataFetcher:
             raise
 
     async def handle_urls(
-        self, urls: List[Tuple[str, FetcherConfig]] = None
+        self, urls: List[Tuple[str, FetcherConfig, Optional[JsonableValue]]] = None
     ) -> List[Tuple[str, FetcherConfig, Any]]:
         """Fetch data for each given url with the (optional) fetching
         configuration; return the resulting data mapped to each URL.
@@ -82,14 +86,14 @@ class DataFetcher:
         if urls is None:
             urls = [(self._data_url, self._default_fetcher_config)]
         # create a task for each url
-        for url, config in urls:
-            tasks.append(self.handle_url(url, config))
+        for url, config, data in urls:
+            tasks.append(self.handle_url(url, config, data))
         # wait for all data fetches to complete
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
         # Map results with their matching urls and config
         results_with_url_and_config = [
-            (url, config, result) for (url, config), result in zip(urls, results)
+            (url, config, result) for (url, config, data), result in zip(urls, results)
         ]
 
         # return results
