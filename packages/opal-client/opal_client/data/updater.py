@@ -15,7 +15,10 @@ from opal_client.config import opal_client_config
 from opal_client.data.fetcher import DataFetcher
 from opal_client.data.rpc import TenantAwareRpcEventClientMethods
 from opal_client.logger import logger
-from opal_client.policy_store.base_policy_store_client import BasePolicyStoreClient
+from opal_client.policy_store.base_policy_store_client import (
+    BasePolicyStoreClient,
+    JsonableValue,
+)
 from opal_client.policy_store.policy_store_client_factory import (
     DEFAULT_POLICY_STORE_GETTER,
 )
@@ -311,14 +314,14 @@ class DataUpdater:
         if data_fetcher is None:
             data_fetcher = DataFetcher()
         # types / defaults
-        urls: List[Tuple[str, FetcherConfig]] = None
+        urls: List[Tuple[str, FetcherConfig, JsonableValue]] = None
         entries: List[DataSourceEntry] = []
         # track the result of each url in order to report back
         reports: List[DataEntryReport] = []
         # if we have an actual specification for the update
         if update is not None:
             entries = update.entries
-            urls = [(entry.url, entry.config) for entry in entries]
+            urls = [(entry.url, entry.config, entry.data) for entry in entries]
 
         # get the data for the update
         logger.info("Fetching policy data", urls=repr(urls))

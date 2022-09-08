@@ -114,6 +114,10 @@ def publish_data_update(
         "-t",
         help="[SINGLE-ENTRY-UPDATE] [List] topic (can several) for the published update (to be matched to client subscriptions)",
     ),
+    data: str = typer.Option(
+        None,
+        help="[SINGLE-ENTRY-UPDATE] actual data to include in the update (if src_url is also supplied, it would be sent but not used)",
+    ),
     src_config: str = typer.Option(
         "{}",
         help="[SINGLE-ENTRY-UPDATE] Fetching Config as JSON",
@@ -145,9 +149,10 @@ def publish_data_update(
     entries: List[DataSourceEntry]
 
     # single entry update
-    if src_url is not None:
+    if src_url is not None or data is not None:
         entry = DataSourceEntry(
             url=src_url,
+            data=json.loads(data),
             topics=topics,
             dst_path=dst_path,
             save_method=save_method,
