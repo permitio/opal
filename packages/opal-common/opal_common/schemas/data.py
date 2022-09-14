@@ -14,8 +14,8 @@ class DataSourceEntry(BaseModel):
     """
 
     # How to obtain the data
-    url: str = Field(None, description="Url source to query for data")
-    data: JsonableValue = Field(
+    url: Optional[str] = Field(None, description="Url source to query for data")
+    data: Optional[JsonableValue] = Field(
         None,
         description="Data payload to embed within the data update (instead of having "
         "the client fetch it from url)",

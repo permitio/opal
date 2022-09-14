@@ -52,10 +52,14 @@ class DataFetcher:
         """Release internal tasks and resources."""
         await self._engine.terminate_workers()
 
-    async def handle_url(self, url, config, data):
+    async def handle_url(self, url: Optional[str], config: FetcherConfig, data: Optional[JsonableValue]):
         """Helper function wrapping self._engine.handle_url."""
         if data is not None:
             return data
+
+        if url is None:
+            logger.error("Invalid data update: no embedded data or URL")
+            return None
 
         logger.info("Fetching data from url: {url}", url=url)
         try:
@@ -67,7 +71,7 @@ class DataFetcher:
             raise
 
     async def handle_urls(
-        self, urls: List[Tuple[str, FetcherConfig, Optional[JsonableValue]]] = None
+        self, urls: List[Tuple[Optional[str], FetcherConfig, Optional[JsonableValue]]] = None
     ) -> List[Tuple[str, FetcherConfig, Any]]:
         """Fetch data for each given url with the (optional) fetching
         configuration; return the resulting data mapped to each URL.
@@ -93,7 +97,7 @@ class DataFetcher:
 
         # Map results with their matching urls and config
         results_with_url_and_config = [
-            (url, config, result) for (url, config, data), result in zip(urls, results)
+            (url, config, result) for (url, config, data), result in zip(urls, results) if result is not None
         ]
 
         # return results
