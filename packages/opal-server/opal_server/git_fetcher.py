@@ -6,19 +6,24 @@ from git import Repo
 from opal_common.git.bundle_maker import BundleMaker
 from opal_common.logger import logger
 from opal_common.schemas.policy import PolicyBundle
-from opal_common.schemas.policy_source import GitPolicyScopeSource, SSHAuthData
+from opal_common.schemas.policy_source import (
+    GitHubTokenAuthData,
+    GitPolicyScopeSource,
+    SSHAuthData,
+)
 from pygit2 import (
     KeypairFromMemory,
     RemoteCallbacks,
     Repository,
     Username,
+    UserPass,
     clone_repository,
     discover_repository,
 )
 
 
 class PolicyFetcherCallbacks:
-    async def on_update(self, old_revision: str, new_revision: str):
+    async def on_update(self, old_head: Optional[str], head: str):
         pass
 
 
@@ -60,6 +65,9 @@ class GitPolicyFetcher(PolicyFetcher):
             callbacks=self._auth_callbacks,
             checkout_branch=self._source.branch,
         )
+
+        repo = Repository(self._repo_path)
+        await self.callbacks.on_update(None, repo.head.target.hex)
 
     async def _pull(self):
         logger.info("Checking for new commits in {path}", path=self._repo_path)
