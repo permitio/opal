@@ -11,8 +11,11 @@ from opal_common.logger import configure_logs, logger
 from opal_common.schemas.policy_source import GitPolicyScopeSource
 from opal_common.utils import get_authorization_header, tuple_to_dict
 from opal_server.config import opal_server_config
-from opal_server.git_fetcher import GitPolicyFetcher
-from opal_server.policy.watcher.callbacks import create_policy_update
+from opal_server.git_fetcher import GitPolicyFetcher, PolicyFetcherCallbacks
+from opal_server.policy.watcher.callbacks import (
+    create_policy_update,
+    create_update_all_directories_in_repo,
+)
 from opal_server.redis import RedisDB
 from opal_server.scopes.scope_repository import ScopeRepository
 
@@ -46,36 +49,45 @@ class Worker:
             source = cast(GitPolicyScopeSource, scope.policy)
             scope_dir = self._base_dir / "scopes" / scope_id
 
-            async def on_update(old_revision: str, new_revision: str):
-                if old_revision == new_revision:
+            class Callbacks(PolicyFetcherCallbacks):
+                def __init__(self, http: ClientSession):
+                    self._http = http
+
+                async def on_update(self, previous_head: str, head: str):
+                    if previous_head == head:
+                        logger.info(
+                            f"scope '{scope_id}': No new commits, HEAD is at '{head}'"
+                        )
+                        return
+
                     logger.info(
-                        f"scope '{scope_id}': No new commits, HEAD is at '{new_revision}'"
+                        f"scope '{scope_id}': Found new commits: old HEAD was '{previous_head}', new HEAD is '{head}'"
                     )
-                    return
+                    repo = git.Repo(scope_dir)
+                    if previous_head is None:
+                        notification = await create_update_all_directories_in_repo(
+                            repo.commit(head), repo.commit(head)
+                        )
+                    else:
+                        notification = await create_policy_update(
+                            repo.commit(previous_head),
+                            repo.commit(head),
+                            source.extensions,
+                        )
 
-                logger.info(
-                    f"scope '{scope_id}': Found new commits: old HEAD was '{old_revision}', new HEAD is '{new_revision}'"
-                )
-                repo = git.Repo(scope_dir)
-                notification = await create_policy_update(
-                    repo.commit(old_revision),
-                    repo.commit(new_revision),
-                    source.extensions,
-                )
+                    url = f"{opal_server_config.SERVER_URL}/scopes/{scope_id}/policy/update"
 
-                url = f"{opal_server_config.SERVER_URL}/scopes/{scope_id}/policy/update"
-
-                logger.info(
-                    f"Triggering policy update for scope {scope_id}: {notification.dict()}"
-                )
-                async with self._http.post(
-                    url,
-                    json=notification.dict(),
-                    headers=tuple_to_dict(
-                        get_authorization_header(opal_server_config.WORKER_TOKEN)
-                    ),
-                ):
-                    pass
+                    logger.info(
+                        f"Triggering policy update for scope {scope_id}: {notification.dict()}"
+                    )
+                    async with self._http.post(
+                        url,
+                        json=notification.dict(),
+                        headers=tuple_to_dict(
+                            get_authorization_header(opal_server_config.WORKER_TOKEN)
+                        ),
+                    ):
+                        pass
 
             logger.info(
                 f"Initializing git fetcher: scope_id={scope_id} and url={source.url}"
@@ -84,7 +96,7 @@ class Worker:
                 self._base_dir,
                 scope_id,
                 source,
-                callbacks=SimpleNamespace(on_update=on_update),
+                callbacks=Callbacks(self._http),
             )
 
         if fetcher:
