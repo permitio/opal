@@ -39,11 +39,14 @@ class PubSub:
         self.notifier = WebSocketRpcEventNotifier()
         self.notifier.add_channel_restriction(type(self)._verify_permitted_topics)
 
-        self.broadcaster = EventBroadcaster(
-            broadcaster_uri,
-            notifier=self.notifier,
-            channel=opal_server_config.BROADCAST_CHANNEL_NAME,
-        )
+        self.broadcaster = None
+        if broadcaster_uri is not None:
+            self.broadcaster = EventBroadcaster(
+                broadcaster_uri,
+                notifier=self.notifier,
+                channel=opal_server_config.BROADCAST_CHANNEL_NAME,
+            )
+
         # The server endpoint
         self.endpoint = PubSubEndpoint(
             broadcaster=self.broadcaster,
