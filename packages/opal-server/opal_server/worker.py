@@ -146,7 +146,8 @@ app = Celery(
 )
 app.conf.task_default_queue = "opal-worker"
 app.conf.task_serializer = "json"
-
+app.conf.task_default_exchange = opal_server_config.AMQP_EXCHANGE_NAME
+app.conf.task_default_exchange_type = 'topic'
 
 @app.on_after_configure.connect
 def setup_periodic_tasks(sender, **kwargs):

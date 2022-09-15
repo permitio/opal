@@ -243,6 +243,7 @@ class OpalServerConfig(Confi):
     REDIS_URL = confi.str("REDIS_URL", default="redis://localhost")
 
     WORKER_BROKER_URL = confi.str("WORKER_BROKER_URL", default="redis://localhost")
+    AMQP_EXCHANGE_NAME = confi.str("AMQP_EXCHANGE_NAME", default="permit-exchange")
 
     BASE_DIR = confi.str("BASE_DIR", default=pathlib.Path.home() / ".local/state/opal")
 
@@ -261,4 +262,5 @@ class OpalServerConfig(Confi):
     )
 
 
+opal_server_config = OpalServerConfig(prefix="OPAL_")
 opal_server_config = OpalServerConfig(prefix="OPAL_")
