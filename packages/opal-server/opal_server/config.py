@@ -242,6 +242,8 @@ class OpalServerConfig(Confi):
 
     REDIS_URL = confi.str("REDIS_URL", default="redis://localhost")
 
+    WORKER_BROKER_URL = confi.str("WORKER_BROKER_URL", default="redis://localhost")
+
     BASE_DIR = confi.str("BASE_DIR", default=pathlib.Path.home() / ".local/state/opal")
 
     POLICY_REFRESH_INTERVAL = confi.int(
