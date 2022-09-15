@@ -8,6 +8,7 @@ from aiohttp import ClientSession
 from asgiref.sync import async_to_sync
 from celery import Celery
 from opal_common.logger import configure_logs, logger
+from opal_common.schemas.policy import PolicyUpdateMessageNotification
 from opal_common.schemas.policy_source import GitPolicyScopeSource
 from opal_common.utils import get_authorization_header, tuple_to_dict
 from opal_server.config import opal_server_config
@@ -64,6 +65,7 @@ class Worker:
                         f"scope '{scope_id}': Found new commits: old HEAD was '{previous_head}', new HEAD is '{head}'"
                     )
                     repo = git.Repo(scope_dir)
+                    notification: Optional[PolicyUpdateMessageNotification] = None
                     if previous_head is None:
                         notification = await create_update_all_directories_in_repo(
                             repo.commit(head), repo.commit(head)
@@ -75,19 +77,22 @@ class Worker:
                             source.extensions,
                         )
 
-                    url = f"{opal_server_config.SERVER_URL}/scopes/{scope_id}/policy/update"
+                    if notification is not None:
+                        logger.info(
+                            f"Triggering policy update for scope {scope_id}: {notification.dict()}"
+                        )
 
-                    logger.info(
-                        f"Triggering policy update for scope {scope_id}: {notification.dict()}"
-                    )
-                    async with self._http.post(
-                        url,
-                        json=notification.dict(),
-                        headers=tuple_to_dict(
-                            get_authorization_header(opal_server_config.WORKER_TOKEN)
-                        ),
-                    ):
-                        pass
+                        url = f"{opal_server_config.SERVER_URL}/scopes/{scope_id}/policy/update"
+                        async with self._http.post(
+                            url,
+                            json=notification.dict(),
+                            headers=tuple_to_dict(
+                                get_authorization_header(
+                                    opal_server_config.WORKER_TOKEN
+                                )
+                            ),
+                        ):
+                            pass
 
             logger.info(
                 f"Initializing git fetcher: scope_id={scope_id} and url={source.url}"
