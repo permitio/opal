@@ -143,7 +143,6 @@ configure_logs()
 app = Celery(
     "opal-worker",
     broker=opal_server_config.WORKER_BROKER_URL,
-    backend=opal_server_config.WORKER_BROKER_URL,
 )
 app.conf.task_default_queue = "opal-worker"
 app.conf.task_serializer = "json"
