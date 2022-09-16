@@ -35,8 +35,8 @@ class PolicyFetcher:
     def __init__(self, callbacks):
         self.callbacks = callbacks
 
-    def fetch(self):
-        pass
+    def fetch(self, hinted_hash: Optional[str] = None):
+        raise NotImplementedError()
 
 
 class RepoInterface:
@@ -69,6 +69,14 @@ class RepoInterface:
                 f"No need to create local branch '{branch_name}': already exists!"
             )
             return repo.references[f"refs/heads/{branch_name}"]
+
+    @staticmethod
+    def has_remote_branch(repo: Repository, branch: str, remote: str) -> bool:
+        try:
+            repo.lookup_reference(f"refs/remotes/{remote}/{branch}")
+            return True
+        except KeyError:
+            return False
 
     @staticmethod
     def get_commit_hash(repo: Repository, branch: str, remote: str) -> Optional[str]:
@@ -124,21 +132,36 @@ class GitPolicyFetcher(PolicyFetcher):
             f"Initializing git fetcher: scope_id={scope_id}, url={source.url}, clone path={self._repo_path}"
         )
 
-    async def fetch(self):
+    async def fetch(self, hinted_hash: Optional[str] = None, force_fetch: bool = False):
+        """makes sure the repo is already fetched and is up to date.
+
+        - if no repo is found, the repo will be cloned.
+        - if the repo is found and it is deemed out-of-date, the configured remote will be fetched.
+        - if after a fetch new commits are detected, a callback will be triggered.
+        - if the hinted commit hash is provided and is already found in the local clone
+        we use this hint to avoid an necessary fetch.
+        """
         await aiofiles.os.makedirs(str(self._base_dir), exist_ok=True)
 
         if self._discover_repository(self._repo_path):
             logger.info("repo found at {path}", path=self._repo_path)
             repo = self._get_valid_repo_at(str(self._repo_path))
             if repo is not None:
-                return await self._pull(repo)
+                if not (
+                    await self._should_fetch(
+                        repo, hinted_hash=hinted_hash, force_fetch=force_fetch
+                    )
+                ):
+                    logger.debug("skipping fetch")
+                    return
+                await self._fetch_and_notify_on_changes(repo)
             else:
                 # repo dir exists but invalid -> we must delete the directory
                 logger.info("deleting repo at: {path}", path=self._repo_path)
                 shutil.rmtree(self._repo_path)
 
         # fallthrough to clean clone
-        return await self._clone()
+        await self._clone()
 
     def _discover_repository(self, path: Path) -> bool:
         git_path: Path = path / ".git"
@@ -164,16 +187,39 @@ class GitPolicyFetcher(PolicyFetcher):
             logger.warning("invalid repo at: {path}", path=path)
             return None
 
-    async def _should_fetch(self, repo: Repository) -> bool:
-        return True
+    async def _should_fetch(
+        self,
+        repo: Repository,
+        hinted_hash: Optional[str] = None,
+        force_fetch: bool = False,
+    ) -> bool:
+        if force_fetch:
+            return True  # must fetch
 
-    async def _pull(self, repo: Repository):
-        if not (await self._should_fetch(repo)):
-            return
+        if not RepoInterface.has_remote_branch(repo, self._source.branch, self._remote):
+            logger.debug(
+                "target branch was not found in local clone, re-fetching the remote"
+            )
+            return True  # missing branch
 
+        if hinted_hash is not None:
+            try:
+                _ = repo.revparse_single(hinted_hash)
+                return False  # hinted commit was found, no need to fetch
+            except KeyError:
+                logger.debug(
+                    "hinted commit hash was not found in local clone, re-fetching the remote"
+                )
+                return True  # hinted commit was not found
+
+        # by default, we try to avoid re-fetching the repo for performance
+        return False
+
+    async def _fetch_and_notify_on_changes(self, repo: Repository):
         old_revision = RepoInterface.get_commit_hash(
             repo, self._source.branch, self._remote
         )
+        logger.info("fetching remote {remote}", remote=self._remote)
         await run_sync(repo.remotes[self._remote].fetch, callbacks=self._auth_callbacks)
         new_revision = RepoInterface.get_commit_hash(
             repo, self._source.branch, self._remote

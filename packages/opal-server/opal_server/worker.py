@@ -1,6 +1,6 @@
 import shutil
 from pathlib import Path
-from typing import Optional, cast
+from typing import Optional, Set, cast
 
 import git
 from aiohttp import ClientError, ClientSession
@@ -118,7 +118,12 @@ class Worker:
     async def stop(self):
         await self._http.close()
 
-    async def sync_scope(self, scope_id: str):
+    async def sync_scope(
+        self,
+        scope_id: str,
+        hinted_hash: Optional[str] = None,
+        force_fetch: bool = False,
+    ):
         logger.info(f"Sync scope: {scope_id}")
         scope = await self._scopes.get(scope_id)
 
@@ -140,7 +145,7 @@ class Worker:
         )
 
         try:
-            await fetcher.fetch()
+            await fetcher.fetch(hinted_hash=hinted_hash, force_fetch=force_fetch)
         except Exception as e:
             logger.exception(
                 f"Could not fetch policy for scope {scope_id}, got error: {e}"
@@ -154,9 +159,14 @@ class Worker:
         logger.info("Polling OPAL scopes for policy changes")
         scopes = await self._scopes.all()
 
+        already_fetched = set()
         for scope in scopes:
-            if scope.policy.poll_updates:
-                sync_scope.delay(scope.scope_id)
+            if scope.policy.poll_updates and scope.policy.url not in already_fetched:
+                logger.info(
+                    f"triggering sync_scope for scope {scope.scope_id} (remote: {scope.policy.url})"
+                )
+                sync_scope.delay(scope.scope_id, force_fetch=True)
+                already_fetched.add(scope.policy.url)
 
 
 def create_worker() -> Worker:
@@ -201,8 +211,12 @@ def setup_periodic_tasks(sender, **kwargs):
 
 
 @app.task
-def sync_scope(scope_id: str):
-    return async_to_sync(with_worker(Worker.sync_scope))(scope_id)
+def sync_scope(
+    scope_id: str, hinted_hash: Optional[str] = None, force_fetch: bool = False
+):
+    return async_to_sync(with_worker(Worker.sync_scope))(
+        scope_id, hinted_hash=hinted_hash, force_fetch=force_fetch
+    )
 
 
 @app.task
