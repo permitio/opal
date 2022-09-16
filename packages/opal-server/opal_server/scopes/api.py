@@ -1,6 +1,7 @@
 import pathlib
 from typing import List, Optional, cast
 
+import pygit2
 from fastapi import (
     APIRouter,
     Depends,
@@ -12,6 +13,7 @@ from fastapi import (
     status,
 )
 from fastapi_websocket_pubsub import PubSubEndpoint
+from git import InvalidGitRepositoryError
 from opal_common.authentication.authz import (
     require_peer_type,
     restrict_optional_topics_to_publish,
@@ -196,17 +198,32 @@ def init_scope_router(
             description="hash of previous bundle already downloaded, server will return a diff bundle.",
         ),
     ):
-        scope = await scopes.get(scope_id)
-
-        if isinstance(scope.policy, GitPolicyScopeSource):
-            fetcher = GitPolicyFetcher(
-                pathlib.Path(opal_server_config.BASE_DIR),
-                scope.scope_id,
-                cast(GitPolicyScopeSource, scope.policy),
+        try:
+            scope = await scopes.get(scope_id)
+        except ScopeNotFoundError:
+            raise HTTPException(
+                status.HTTP_404_NOT_FOUND, detail=f"No such scope: {scope_id}"
             )
 
-            bundle = fetcher.make_bundle(base_hash)
-            return bundle
+        if not isinstance(scope.policy, GitPolicyScopeSource):
+            raise HTTPException(
+                status.HTTP_501_NOT_IMPLEMENTED,
+                detail=f"policy source is not yet implemented: {scope_id}",
+            )
+
+        fetcher = GitPolicyFetcher(
+            pathlib.Path(opal_server_config.BASE_DIR),
+            scope.scope_id,
+            cast(GitPolicyScopeSource, scope.policy),
+        )
+
+        try:
+            return fetcher.make_bundle(base_hash)
+        except (InvalidGitRepositoryError, pygit2.GitError, ValueError):
+            raise HTTPException(
+                status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=f"scope is not yet cloned: {scope_id}",
+            )
 
     @router.get(
         "/{scope_id}/data",

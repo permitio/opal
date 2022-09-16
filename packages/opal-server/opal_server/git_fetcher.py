@@ -145,6 +145,9 @@ class GitPolicyFetcher(PolicyFetcher):
 
         if self._discover_repository(self._repo_path):
             logger.info("repo found at {path}", path=self._repo_path)
+            RepoInterface.verify_found_repo_matches_remote(
+                self._source.url, str(self._repo_path)
+            )
             repo = self._get_valid_repo_at(str(self._repo_path))
             if repo is not None:
                 if not (
@@ -179,8 +182,6 @@ class GitPolicyFetcher(PolicyFetcher):
         await self.callbacks.on_update(None, repo.head.target.hex)
 
     def _get_valid_repo_at(self, path: str) -> Optional[Repository]:
-        RepoInterface.verify_found_repo_matches_remote(self._source.url, path)
-        logger.info("Checking for new commits in {path}", path=path)
         try:
             return Repository(path)
         except pygit2.GitError:
@@ -219,7 +220,9 @@ class GitPolicyFetcher(PolicyFetcher):
         old_revision = RepoInterface.get_commit_hash(
             repo, self._source.branch, self._remote
         )
-        logger.info("fetching remote {remote}", remote=self._remote)
+        logger.info(
+            "checking for new commits, fetching remote: {remote}", remote=self._remote
+        )
         await run_sync(repo.remotes[self._remote].fetch, callbacks=self._auth_callbacks)
         new_revision = RepoInterface.get_commit_hash(
             repo, self._source.branch, self._remote
@@ -229,24 +232,34 @@ class GitPolicyFetcher(PolicyFetcher):
             return
         await self.callbacks.on_update(old_revision, new_revision)
 
+    def _get_current_branch_head(self) -> str:
+        repo = Repository(str(self._repo_path))
+        head_commit_hash = RepoInterface.get_commit_hash(
+            repo, self._source.branch, self._remote
+        )
+        if not head_commit_hash:
+            logger.error("could not find current branch head")
+            raise ValueError("could not find current branch head")
+        return head_commit_hash
+
     def make_bundle(self, base_hash: Optional[str] = None) -> PolicyBundle:
         repo = Repo(str(self._repo_path))
-
         bundle_maker = BundleMaker(
             repo,
             {Path(p) for p in self._source.directories},
             extensions=self._source.extensions,
             root_manifest_path=self._source.manifest,
         )
+        current_head_commit = repo.commit(self._get_current_branch_head())
 
         if not base_hash:
-            return bundle_maker.make_bundle(repo.head.commit)
+            return bundle_maker.make_bundle(current_head_commit)
         else:
             try:
-                old_commit = repo.commit(base_hash)
-                return bundle_maker.make_diff_bundle(old_commit, repo.head.commit)
+                base_commit = repo.commit(base_hash)
+                return bundle_maker.make_diff_bundle(base_commit, current_head_commit)
             except ValueError:
-                return bundle_maker.make_bundle(repo.head.commit)
+                return bundle_maker.make_bundle(current_head_commit)
 
     @staticmethod
     def source_id(source: GitPolicyScopeSource) -> str:
