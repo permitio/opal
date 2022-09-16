@@ -1,3 +1,4 @@
+import hashlib
 import shutil
 from pathlib import Path
 from typing import Optional, cast
@@ -70,6 +71,14 @@ class RepoInterface:
             return repo.references[f"refs/heads/{branch_name}"]
 
     @staticmethod
+    def get_commit_hash(repo: Repository, branch: str, remote: str) -> Optional[str]:
+        try:
+            (commit, _) = repo.resolve_refish(f"{remote}/{branch}")
+            return commit.hex
+        except pygit2.GitError:
+            return None
+
+    @staticmethod
     def checkout_local_branch_from_remote(
         repo: Repository,
         branch_name: str,
@@ -79,19 +88,19 @@ class RepoInterface:
         repo.checkout(ref)
 
     @staticmethod
-    def verify_found_repo_matches_origin(
-        origin_url: str, clone_path: str
+    def verify_found_repo_matches_remote(
+        expected_remote_url: str, clone_path: str
     ) -> Repository:
         """verifies that the repo we found in the directory matches the repo we
         are wishing to clone."""
         repo = Repository(clone_path)
         for remote in repo.remotes:
-            if remote.url == origin_url:
+            if remote.url == expected_remote_url:
                 logger.debug(
                     f"found target repo url is referred by remote: {remote.name}, url={remote.url}"
                 )
                 return
-        error: str = f"Repo mismatch! No remote matches target url: {origin_url}, found urls: {[remote.url for remote in repo.remotes]}"
+        error: str = f"Repo mismatch! No remote matches target url: {expected_remote_url}, found urls: {[remote.url for remote in repo.remotes]}"
         logger.error(error)
         raise ValueError(error)
 
@@ -103,23 +112,29 @@ class GitPolicyFetcher(PolicyFetcher):
         scope_id: str,
         source: GitPolicyScopeSource,
         callbacks=PolicyFetcherCallbacks(),
+        remote_name: str = "origin",
     ):
         super().__init__(callbacks)
-        self._base_dir = opal_scopes_dest_dir(base_dir)
+        self._base_dir = GitPolicyFetcher.base_dir(base_dir)
         self._source = source
         self._auth_callbacks = GitCallback(self._source)
-        self._repo_path = self._base_dir / scope_id
+        self._repo_path = GitPolicyFetcher.repo_clone_path(self._base_dir, self._source)
+        self._remote = remote_name
+        logger.info(
+            f"Initializing git fetcher: scope_id={scope_id}, url={source.url}, clone path={self._repo_path}"
+        )
 
     async def fetch(self):
         await aiofiles.os.makedirs(str(self._base_dir), exist_ok=True)
 
         if self._discover_repository(self._repo_path):
-            logger.debug(f"repo found at {self._repo_path}")
+            logger.info("repo found at {path}", path=self._repo_path)
             repo = self._get_valid_repo_at(str(self._repo_path))
             if repo is not None:
                 return await self._pull(repo)
             else:
                 # repo dir exists but invalid -> we must delete the directory
+                logger.info("deleting repo at: {path}", path=self._repo_path)
                 shutil.rmtree(self._repo_path)
 
         # fallthrough to clean clone
@@ -141,21 +156,32 @@ class GitPolicyFetcher(PolicyFetcher):
         await self.callbacks.on_update(None, repo.head.target.hex)
 
     def _get_valid_repo_at(self, path: str) -> Optional[Repository]:
-        RepoInterface.verify_found_repo_matches_origin(self._source.url, path)
+        RepoInterface.verify_found_repo_matches_remote(self._source.url, path)
         logger.info("Checking for new commits in {path}", path=path)
         try:
             return Repository(path)
         except pygit2.GitError:
-            logger.error("invalid repo at: {path}", path=path)
+            logger.warning("invalid repo at: {path}", path=path)
             return None
 
+    async def _should_fetch(self, repo: Repository) -> bool:
+        return True
+
     async def _pull(self, repo: Repository):
-        old_revision = repo.head.target.hex
-        await run_sync(repo.remotes["origin"].fetch, callbacks=self._auth_callbacks)
-        repo.checkout(
-            repo.references[f"refs/remotes/origin/{self._source.branch}"].resolve().name
+        if not (await self._should_fetch(repo)):
+            return
+
+        old_revision = RepoInterface.get_commit_hash(
+            repo, self._source.branch, self._remote
         )
-        await self.callbacks.on_update(old_revision, repo.head.target.hex)
+        await run_sync(repo.remotes[self._remote].fetch, callbacks=self._auth_callbacks)
+        new_revision = RepoInterface.get_commit_hash(
+            repo, self._source.branch, self._remote
+        )
+        if new_revision is None:
+            logger.error(f"did not find target branch on remote: {self._source.branch}")
+            return
+        await self.callbacks.on_update(old_revision, new_revision)
 
     def make_bundle(self, base_hash: Optional[str] = None) -> PolicyBundle:
         repo = Repo(str(self._repo_path))
@@ -175,6 +201,18 @@ class GitPolicyFetcher(PolicyFetcher):
                 return bundle_maker.make_diff_bundle(old_commit, repo.head.commit)
             except ValueError:
                 return bundle_maker.make_bundle(repo.head.commit)
+
+    @staticmethod
+    def source_id(source: GitPolicyScopeSource) -> str:
+        return hashlib.sha256(source.url.encode("utf-8")).hexdigest()
+
+    @staticmethod
+    def base_dir(base_dir: Path) -> Path:
+        return base_dir / "git_sources"
+
+    @staticmethod
+    def repo_clone_path(base_dir: Path, source: GitPolicyScopeSource) -> Path:
+        return GitPolicyFetcher.base_dir(base_dir) / GitPolicyFetcher.source_id(source)
 
 
 class GitCallback(RemoteCallbacks):
@@ -199,7 +237,3 @@ class GitCallback(RemoteCallbacks):
             return UserPass(username="git", password=auth.token)
 
         return Username(username_from_url)
-
-
-def opal_scopes_dest_dir(base_dir: Path):
-    return base_dir / "scopes"

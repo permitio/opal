@@ -1,12 +1,12 @@
 import shutil
 from pathlib import Path
-from types import SimpleNamespace
 from typing import Optional, cast
 
 import git
-from aiohttp import ClientSession
+from aiohttp import ClientError, ClientSession
 from asgiref.sync import async_to_sync
 from celery import Celery
+from fastapi import status
 from opal_common.logger import configure_logs, logger
 from opal_common.schemas.policy import PolicyUpdateMessageNotification
 from opal_common.schemas.policy_source import GitPolicyScopeSource
@@ -19,6 +19,84 @@ from opal_server.policy.watcher.callbacks import (
 )
 from opal_server.redis import RedisDB
 from opal_server.scopes.scope_repository import ScopeRepository
+
+
+class NewCommitsCallbacks(PolicyFetcherCallbacks):
+    def __init__(
+        self,
+        base_dir: Path,
+        scope_id: str,
+        source: GitPolicyScopeSource,
+        http: ClientSession,
+    ):
+        self._scope_repo_dir = GitPolicyFetcher.repo_clone_path(base_dir, source)
+        self._scope_id = scope_id
+        self._source = source
+        self._http = http
+
+    async def on_update(self, previous_head: str, head: str):
+        if previous_head == head:
+            logger.info(
+                f"scope '{self._scope_id}': No new commits, HEAD is at '{head}'"
+            )
+            return
+
+        logger.info(
+            f"scope '{self._scope_id}': Found new commits: old HEAD was '{previous_head}', new HEAD is '{head}'"
+        )
+        if not self._scope_repo_dir.exists():
+            logger.error(
+                f"on_update({self._scope_id}) was triggered, but repo path is not found: {self._scope_repo_dir}"
+            )
+            return
+
+        try:
+            repo = git.Repo(self._scope_repo_dir)
+        except git.GitError as exc:
+            logger.error(
+                f"Got exception for repo in path: {self._scope_repo_dir}, scope_id: {self._scope_id}, error: {exc}"
+            )
+            return
+
+        notification: Optional[PolicyUpdateMessageNotification] = None
+        if previous_head is None:
+            notification = await create_update_all_directories_in_repo(
+                repo.commit(head), repo.commit(head)
+            )
+        else:
+            notification = await create_policy_update(
+                repo.commit(previous_head),
+                repo.commit(head),
+                self._source.extensions,
+            )
+
+        if notification is not None:
+            await self.trigger_notification(notification)
+
+    async def trigger_notification(self, notification: PolicyUpdateMessageNotification):
+        logger.info(
+            f"Triggering policy update for scope {self._scope_id}: {notification.dict()}"
+        )
+
+        url = f"{opal_server_config.SERVER_URL}/scopes/{self._scope_id}/policy/update"
+        try:
+            async with self._http.post(
+                url,
+                json=notification.dict(),
+                headers=tuple_to_dict(
+                    get_authorization_header(opal_server_config.WORKER_TOKEN)
+                ),
+            ) as response:
+                if response.status == status.HTTP_204_NO_CONTENT:
+                    logger.debug(
+                        f"triggered policy notification for {self._scope_id} via the api"
+                    )
+                else:
+                    logger.error(
+                        f"could not trigger policy notification for {self._scope_id} via the api, got status={response.status}"
+                    )
+        except ClientError as e:
+            logger.error("opal server connection error: {err}", err=repr(e))
 
 
 class Worker:
@@ -44,73 +122,29 @@ class Worker:
         logger.info(f"Sync scope: {scope_id}")
         scope = await self._scopes.get(scope_id)
 
-        fetcher = None
+        if not isinstance(scope.policy, GitPolicyScopeSource):
+            logger.warning("Non-git scopes are currently not supported!")
+            return
 
-        if isinstance(scope.policy, GitPolicyScopeSource):
-            source = cast(GitPolicyScopeSource, scope.policy)
-            scope_dir = self._base_dir / "scopes" / scope_id
+        source = cast(GitPolicyScopeSource, scope.policy)
+        fetcher = GitPolicyFetcher(
+            self._base_dir,
+            scope_id,
+            source,
+            callbacks=NewCommitsCallbacks(
+                base_dir=self._base_dir,
+                scope_id=scope_id,
+                source=source,
+                http=self._http,
+            ),
+        )
 
-            class Callbacks(PolicyFetcherCallbacks):
-                def __init__(self, http: ClientSession):
-                    self._http = http
-
-                async def on_update(self, previous_head: str, head: str):
-                    if previous_head == head:
-                        logger.info(
-                            f"scope '{scope_id}': No new commits, HEAD is at '{head}'"
-                        )
-                        return
-
-                    logger.info(
-                        f"scope '{scope_id}': Found new commits: old HEAD was '{previous_head}', new HEAD is '{head}'"
-                    )
-                    repo = git.Repo(scope_dir)
-                    notification: Optional[PolicyUpdateMessageNotification] = None
-                    if previous_head is None:
-                        notification = await create_update_all_directories_in_repo(
-                            repo.commit(head), repo.commit(head)
-                        )
-                    else:
-                        notification = await create_policy_update(
-                            repo.commit(previous_head),
-                            repo.commit(head),
-                            source.extensions,
-                        )
-
-                    if notification is not None:
-                        logger.info(
-                            f"Triggering policy update for scope {scope_id}: {notification.dict()}"
-                        )
-
-                        url = f"{opal_server_config.SERVER_URL}/scopes/{scope_id}/policy/update"
-                        async with self._http.post(
-                            url,
-                            json=notification.dict(),
-                            headers=tuple_to_dict(
-                                get_authorization_header(
-                                    opal_server_config.WORKER_TOKEN
-                                )
-                            ),
-                        ):
-                            pass
-
-            logger.info(
-                f"Initializing git fetcher: scope_id={scope_id} and url={source.url}"
+        try:
+            await fetcher.fetch()
+        except Exception as e:
+            logger.exception(
+                f"Could not fetch policy for scope {scope_id}, got error: {e}"
             )
-            fetcher = GitPolicyFetcher(
-                self._base_dir,
-                scope_id,
-                source,
-                callbacks=Callbacks(self._http),
-            )
-
-        if fetcher:
-            try:
-                await fetcher.fetch()
-            except Exception as e:
-                logger.exception(
-                    f"Could not fetch policy for scope {scope_id}, got error: {e}"
-                )
 
     async def delete_scope(self, scope_id: str):
         scope_dir = self._base_dir / "scopes" / scope_id
