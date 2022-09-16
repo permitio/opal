@@ -126,7 +126,7 @@ class GitPolicyFetcher(PolicyFetcher):
         self._base_dir = GitPolicyFetcher.base_dir(base_dir)
         self._source = source
         self._auth_callbacks = GitCallback(self._source)
-        self._repo_path = GitPolicyFetcher.repo_clone_path(self._base_dir, self._source)
+        self._repo_path = GitPolicyFetcher.repo_clone_path(base_dir, self._source)
         self._remote = remote_name
         logger.info(
             f"Initializing git fetcher: scope_id={scope_id}, url={source.url}, clone path={self._repo_path}"

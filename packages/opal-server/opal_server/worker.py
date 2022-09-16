@@ -61,7 +61,7 @@ class NewCommitsCallbacks(PolicyFetcherCallbacks):
         notification: Optional[PolicyUpdateMessageNotification] = None
         if previous_head is None:
             notification = await create_update_all_directories_in_repo(
-                repo.commit(head), repo.commit(head)
+                repo.commit(head), repo.commit(head), self._source.extensions
             )
         else:
             notification = await create_policy_update(
@@ -152,7 +152,22 @@ class Worker:
             )
 
     async def delete_scope(self, scope_id: str):
-        scope_dir = self._base_dir / "scopes" / scope_id
+        logger.info(f"Delete scope: {scope_id}")
+        scope = await self._scopes.get(scope_id)
+        url = scope.policy.url
+
+        scopes = await self._scopes.all()
+
+        for scope in scopes:
+            if scope.scope_id != scope_id and scope.policy.url == url:
+                logger.info(
+                    f"found another scope with same remote url: {scope.scope_id}"
+                )
+                return
+
+        scope_dir = GitPolicyFetcher.repo_clone_path(
+            self._base_dir, cast(GitPolicyScopeSource, scope.policy)
+        )
         shutil.rmtree(scope_dir, ignore_errors=True)
 
     async def periodic_check(self):
