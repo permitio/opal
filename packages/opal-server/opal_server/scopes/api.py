@@ -209,6 +209,21 @@ def init_scope_router(
                 status.HTTP_404_NOT_FOUND, detail=f"No such scope: {scope_id}"
             )
 
+    @router.post("/refresh", status_code=status.HTTP_200_OK)
+    async def sync_all_scopes(claims: JWTClaims = Depends(authenticator)):
+        """sync all scopes."""
+        try:
+            require_peer_type(authenticator, claims, PeerType.datasource)
+        except Unauthorized as ex:
+            logger.error(f"Unauthorized to refresh all scopes: {repr(ex)}")
+            raise
+
+        from opal_server.worker import schedule_sync_all_scopes
+
+        await schedule_sync_all_scopes(scopes)
+
+        return Response(status_code=status.HTTP_200_OK)
+
     @router.get(
         "/{scope_id}/policy",
         response_model=PolicyBundle,
