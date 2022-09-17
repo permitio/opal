@@ -12,6 +12,7 @@ from opal_common.git.commit_viewer import VersionedFile
 from opal_common.logger import configure_logs, logger
 from opal_common.schemas.policy import PolicyUpdateMessageNotification
 from opal_common.schemas.policy_source import GitPolicyScopeSource
+from opal_common.schemas.scopes import Scope
 from opal_common.utils import get_authorization_header, tuple_to_dict
 from opal_server.config import opal_server_config
 from opal_server.git_fetcher import GitPolicyFetcher, PolicyFetcherCallbacks
@@ -267,3 +268,34 @@ def delete_scope(scope_id: str):
 @app.task
 def periodic_check():
     return async_to_sync(with_worker(Worker.periodic_check))()
+
+
+async def schedule_sync_all_scopes(scopes: ScopeRepository):
+    """Syncing all scopes found in redis.
+
+    Schedules separate sync scope tasks in celery. Git fetches are done
+    only for unique remotes.
+    """
+    all_scopes = await scopes.all()
+    logger.info(f"OPAL Scopes: syncing {len(all_scopes)} scopes in the background")
+
+    already_fetched = set()
+    already_synced_scope_ids: List[str] = []
+
+    # first we sync with git fetch all the unique repositories
+    for scope in all_scopes:
+        if scope.policy.url not in already_fetched:
+            logger.info(
+                f"Sync scope {scope.scope_id} (force fetch, remote: {scope.policy.url})"
+            )
+            sync_scope.delay(scope.scope_id, force_fetch=True)
+            already_fetched.add(scope.policy.url)
+            already_synced_scope_ids.append(scope.scope_id)
+
+    # then we sync other "same repo" scopes without git fetch to be more efficient
+    for scope in all_scopes:
+        if scope.scope_id not in already_synced_scope_ids:
+            logger.info(
+                f"Sync scope {scope.scope_id} (SKIP fetch, remote: {scope.policy.url})"
+            )
+            sync_scope.delay(scope.scope_id)
