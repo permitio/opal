@@ -195,7 +195,11 @@ class GitPolicyFetcher(PolicyFetcher):
         return discover_repository(str(path)) and git_path.exists()
 
     async def _clone(self):
-        logger.info("Cloning repo at '{url}' to '{path}'", url=self._source.url, path=self._repo_path)
+        logger.info(
+            "Cloning repo at '{url}' to '{path}'",
+            url=self._source.url,
+            path=self._repo_path,
+        )
         repo: Repository = await run_sync(
             clone_repository,
             self._source.url,
