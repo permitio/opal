@@ -25,14 +25,14 @@ class TopicPublisher:
 
     def start(self):
         """starts the publisher."""
-        logger.info("started topic publisher")
+        logger.debug("started topic publisher")
 
     async def wait(self):
         await asyncio.gather(*self._tasks, return_exceptions=True)
 
     async def stop(self):
         """stops the publisher (cancels any running publishing tasks)"""
-        logger.info("stopping topic publisher")
+        logger.debug("stopping topic publisher")
         for task in self._tasks:
             if not task.done():
                 task.cancel()
@@ -184,4 +184,5 @@ class ScopedServerSideTopicPublisher(ServerSideTopicPublisher):
 
     def publish(self, topics: TopicList, data: Any = None):
         scoped_topics = [f"{self._scope_id}:{topic}" for topic in topics]
+        logger.info("Publishing to topics: {topics}", topics=scoped_topics)
         super().publish(scoped_topics, data)

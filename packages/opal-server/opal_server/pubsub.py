@@ -41,11 +41,14 @@ class PubSub:
 
         self.broadcaster = None
         if broadcaster_uri is not None:
+            logger.info(f"Initializing broadcaster for server<->server communication")
             self.broadcaster = EventBroadcaster(
                 broadcaster_uri,
                 notifier=self.notifier,
                 channel=opal_server_config.BROADCAST_CHANNEL_NAME,
             )
+        else:
+            logger.info("Pub/Sub broadcaster is off")
 
         # The server endpoint
         self.endpoint = PubSubEndpoint(

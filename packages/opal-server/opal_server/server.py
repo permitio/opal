@@ -39,6 +39,7 @@ from opal_server.scopes.scope_repository import ScopeNotFoundError, ScopeReposit
 from opal_server.security.api import init_security_router
 from opal_server.security.jwks import JwksStaticEndpoint
 from opal_server.statistics import OpalStatistics, init_statistics_router
+from opal_server.worker import schedule_sync_all_scopes
 
 
 class OpalServer:
@@ -309,16 +310,7 @@ class OpalServer:
     async def start(self):
         if opal_server_config.SCOPES:
             await load_scopes(self._scopes)
-            await self.sync_all_scopes()
-
-    async def sync_all_scopes(self):
-        from opal_server.worker import sync_scope
-
-        scopes = await self._scopes.all()
-        logger.info(f"OPAL Scopes: syncing {len(scopes)} scopes in the background")
-
-        for scope in scopes:
-            sync_scope.delay(scope.scope_id)
+            await schedule_sync_all_scopes(self._scopes)
 
     async def start_server_background_tasks(self):
         """starts the background processes (as asyncio tasks) if such are

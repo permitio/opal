@@ -14,6 +14,10 @@ class RedisDB:
 
         self._redis = aioredis.from_url(self._url)
 
+    @property
+    def redis_connection(self) -> aioredis.Redis:
+        return self._redis
+
     async def set(self, key: str, value: BaseModel):
         await self._redis.set(key, self._serialize(value))
 

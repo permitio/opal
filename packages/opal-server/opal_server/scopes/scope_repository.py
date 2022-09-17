@@ -17,6 +17,10 @@ class ScopeRepository:
         self._redis_db = redis_db
         self._prefix = "permit.io/Scope"
 
+    @property
+    def db(self) -> RedisDB:
+        return self._redis_db
+
     async def all(self) -> List[Scope]:
         scopes = []
 

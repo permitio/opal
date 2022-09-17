@@ -1,6 +1,7 @@
 import pathlib
 from typing import List, Optional, cast
 
+import pygit2
 from fastapi import (
     APIRouter,
     Depends,
@@ -12,6 +13,7 @@ from fastapi import (
     status,
 )
 from fastapi_websocket_pubsub import PubSubEndpoint
+from git import InvalidGitRepositoryError
 from opal_common.authentication.authz import (
     require_peer_type,
     restrict_optional_topics_to_publish,
@@ -89,7 +91,15 @@ def init_scope_router(
             raise Unauthorized()
 
     @router.put("", status_code=status.HTTP_201_CREATED)
-    async def put_scope(*, scope_in: Scope, claims: JWTClaims = Depends(authenticator)):
+    async def put_scope(
+        *,
+        force_fetch: bool = Query(
+            False,
+            description="Whether the policy repo must be fetched from remote",
+        ),
+        scope_in: Scope,
+        claims: JWTClaims = Depends(authenticator),
+    ):
         try:
             require_peer_type(authenticator, claims, PeerType.datasource)
         except Unauthorized as ex:
@@ -99,9 +109,12 @@ def init_scope_router(
         verify_private_key_or_throw(scope_in)
         await scopes.put(scope_in)
 
+        force_fetch_str = " (force fetch)" if force_fetch else ""
+        logger.info(f"Sync scope: {scope_in.scope_id}{force_fetch_str}")
+
         from opal_server.worker import sync_scope
 
-        sync_scope.delay(scope_in.scope_id)
+        sync_scope.delay(scope_in.scope_id, force_fetch=force_fetch)
 
         return Response(status_code=status.HTTP_201_CREATED)
 
@@ -161,7 +174,16 @@ def init_scope_router(
         return Response(status_code=status.HTTP_204_NO_CONTENT)
 
     @router.post("/{scope_id}/refresh", status_code=status.HTTP_200_OK)
-    async def refresh_scope(scope_id: str, claims: JWTClaims = Depends(authenticator)):
+    async def refresh_scope(
+        scope_id: str,
+        hinted_hash: Optional[str] = Query(
+            None,
+            description="Commit hash that should exist in the repo. "
+            + "If the commit is missing from the local clone, OPAL "
+            + "understands it as a hint that the repo should be fetched from remote.",
+        ),
+        claims: JWTClaims = Depends(authenticator),
+    ):
         try:
             require_peer_type(authenticator, claims, PeerType.datasource)
         except Unauthorized as ex:
@@ -171,9 +193,14 @@ def init_scope_router(
         try:
             _ = await scopes.get(scope_id)
 
+            logger.info(f"Refresh scope: {scope_id}")
+
             from opal_server.worker import sync_scope
 
-            sync_scope.delay(scope_id)
+            # If the hinted hash is None, we have no way to know whether we should
+            # re-fetch the remote, so we force fetch, just in case.
+            force_fetch = hinted_hash is None
+            sync_scope.delay(scope_id, hinted_hash=hinted_hash, force_fetch=force_fetch)
 
             return Response(status_code=status.HTTP_200_OK)
 
@@ -181,6 +208,21 @@ def init_scope_router(
             raise HTTPException(
                 status.HTTP_404_NOT_FOUND, detail=f"No such scope: {scope_id}"
             )
+
+    @router.post("/refresh", status_code=status.HTTP_200_OK)
+    async def sync_all_scopes(claims: JWTClaims = Depends(authenticator)):
+        """sync all scopes."""
+        try:
+            require_peer_type(authenticator, claims, PeerType.datasource)
+        except Unauthorized as ex:
+            logger.error(f"Unauthorized to refresh all scopes: {repr(ex)}")
+            raise
+
+        from opal_server.worker import schedule_sync_all_scopes
+
+        await schedule_sync_all_scopes(scopes)
+
+        return Response(status_code=status.HTTP_200_OK)
 
     @router.get(
         "/{scope_id}/policy",
@@ -196,17 +238,32 @@ def init_scope_router(
             description="hash of previous bundle already downloaded, server will return a diff bundle.",
         ),
     ):
-        scope = await scopes.get(scope_id)
-
-        if isinstance(scope.policy, GitPolicyScopeSource):
-            fetcher = GitPolicyFetcher(
-                pathlib.Path(opal_server_config.BASE_DIR),
-                scope.scope_id,
-                cast(GitPolicyScopeSource, scope.policy),
+        try:
+            scope = await scopes.get(scope_id)
+        except ScopeNotFoundError:
+            raise HTTPException(
+                status.HTTP_404_NOT_FOUND, detail=f"No such scope: {scope_id}"
             )
 
-            bundle = fetcher.make_bundle(base_hash)
-            return bundle
+        if not isinstance(scope.policy, GitPolicyScopeSource):
+            raise HTTPException(
+                status.HTTP_501_NOT_IMPLEMENTED,
+                detail=f"policy source is not yet implemented: {scope_id}",
+            )
+
+        fetcher = GitPolicyFetcher(
+            pathlib.Path(opal_server_config.BASE_DIR),
+            scope.scope_id,
+            cast(GitPolicyScopeSource, scope.policy),
+        )
+
+        try:
+            return fetcher.make_bundle(base_hash)
+        except (InvalidGitRepositoryError, pygit2.GitError, ValueError):
+            raise HTTPException(
+                status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=f"scope is not yet cloned: {scope_id}",
+            )
 
     @router.get(
         "/{scope_id}/data",
