@@ -1,12 +1,14 @@
 import shutil
+from functools import partial
 from pathlib import Path
-from typing import Optional, Set, cast
+from typing import List, Optional, Set, cast
 
 import git
 from aiohttp import ClientError, ClientSession
 from asgiref.sync import async_to_sync
 from celery import Celery
 from fastapi import status
+from opal_common.git.commit_viewer import VersionedFile
 from opal_common.logger import configure_logs, logger
 from opal_common.schemas.policy import PolicyUpdateMessageNotification
 from opal_common.schemas.policy_source import GitPolicyScopeSource
@@ -19,6 +21,21 @@ from opal_server.policy.watcher.callbacks import (
 )
 from opal_server.redis import RedisDB
 from opal_server.scopes.scope_repository import ScopeRepository
+
+
+def is_rego_source_file(
+    f: VersionedFile, extensions: Optional[List[str]] = None
+) -> bool:
+    """filters only rego files or data.json files."""
+    REGO = ".rego"
+    JSON = ".json"
+    OPA_JSON = "data.json"
+
+    if extensions is None:
+        extensions = [REGO, JSON]
+    if JSON in extensions and f.path.suffix == JSON:
+        return f.path.name == OPA_JSON
+    return f.path.suffix in extensions
 
 
 class NewCommitsCallbacks(PolicyFetcherCallbacks):
@@ -59,15 +76,17 @@ class NewCommitsCallbacks(PolicyFetcherCallbacks):
             return
 
         notification: Optional[PolicyUpdateMessageNotification] = None
+        predicate = partial(is_rego_source_file, extensions=self._source.extensions)
         if previous_head is None:
             notification = await create_update_all_directories_in_repo(
-                repo.commit(head), repo.commit(head), self._source.extensions
+                repo.commit(head), repo.commit(head), predicate=predicate
             )
         else:
             notification = await create_policy_update(
                 repo.commit(previous_head),
                 repo.commit(head),
                 self._source.extensions,
+                predicate=predicate,
             )
 
         if notification is not None:
