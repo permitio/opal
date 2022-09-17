@@ -233,7 +233,8 @@ configure_logs()
 app = Celery(
     "opal-worker",
     broker=opal_server_config.REDIS_URL,
-    backend=opal_server_config.REDIS_URL,
+    # if none, no results backend is used
+    backend=opal_server_config.CELERY_BACKEND,
 )
 app.conf.task_default_queue = "opal-worker"
 app.conf.task_serializer = "json"
@@ -251,7 +252,7 @@ def setup_periodic_tasks(sender, **kwargs):
         sender.add_periodic_task(polling_interval, periodic_check.s())
 
 
-@app.task
+@app.task(ignore_result=True)
 def sync_scope(
     scope_id: str, hinted_hash: Optional[str] = None, force_fetch: bool = False
 ):
@@ -260,12 +261,12 @@ def sync_scope(
     )
 
 
-@app.task
+@app.task(ignore_result=True)
 def delete_scope(scope_id: str):
     return async_to_sync(with_worker(Worker.delete_scope))(scope_id)
 
 
-@app.task
+@app.task(ignore_result=True)
 def periodic_check():
     return async_to_sync(with_worker(Worker.periodic_check))()
 
