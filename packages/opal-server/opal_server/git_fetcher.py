@@ -195,7 +195,7 @@ class GitPolicyFetcher(PolicyFetcher):
         return discover_repository(str(path)) and git_path.exists()
 
     async def _clone(self):
-        logger.info("Cloning scope to {path}", path=self._repo_path)
+        logger.info("Cloning repo at '{url}' to '{path}'", url=self._source.url, path=self._repo_path)
         repo: Repository = await run_sync(
             clone_repository,
             self._source.url,
@@ -203,7 +203,7 @@ class GitPolicyFetcher(PolicyFetcher):
             callbacks=self._auth_callbacks,
             checkout_branch=self._source.branch,
         )
-        logger.info("Clone completed")
+        logger.info(f"Clone completed: {self._source.url}")
         await self.callbacks.on_update(None, repo.head.target.hex)
 
     def _get_valid_repo_at(self, path: str) -> Optional[Repository]:
@@ -246,9 +246,9 @@ class GitPolicyFetcher(PolicyFetcher):
         old_revision = RepoInterface.get_commit_hash(
             repo, self._source.branch, self._remote
         )
-        logger.info(f"Fetching remote: {self._remote}")
+        logger.info(f"Fetching remote: {self._remote} ({self._source.url})")
         await run_sync(repo.remotes[self._remote].fetch, callbacks=self._auth_callbacks)
-        logger.info("Fetch completed")
+        logger.info(f"Fetch completed: {self._source.url}")
         new_revision = RepoInterface.get_commit_hash(
             repo, self._source.branch, self._remote
         )
