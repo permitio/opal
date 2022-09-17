@@ -83,7 +83,7 @@ class RepoInterface:
         try:
             (commit, _) = repo.resolve_refish(f"{remote}/{branch}")
             return commit.hex
-        except pygit2.GitError:
+        except (pygit2.GitError, KeyError):
             return None
 
     @staticmethod
@@ -128,8 +128,9 @@ class GitPolicyFetcher(PolicyFetcher):
         self._auth_callbacks = GitCallback(self._source)
         self._repo_path = GitPolicyFetcher.repo_clone_path(base_dir, self._source)
         self._remote = remote_name
+        self._scope_id = scope_id
         logger.info(
-            f"Initializing git fetcher: scope_id={scope_id}, url={source.url}, clone path={self._repo_path}"
+            f"Initializing git fetcher: scope_id={scope_id}, url={source.url}, branch={self._source.branch}, path={GitPolicyFetcher.source_id(source)}"
         )
 
     async def fetch(self, hinted_hash: Optional[str] = None, force_fetch: bool = False):
@@ -144,7 +145,7 @@ class GitPolicyFetcher(PolicyFetcher):
         await aiofiles.os.makedirs(str(self._base_dir), exist_ok=True)
 
         if self._discover_repository(self._repo_path):
-            logger.info("repo found at {path}", path=self._repo_path)
+            logger.info("Repo found at {path}", path=self._repo_path)
             RepoInterface.verify_found_repo_matches_remote(
                 self._source.url, str(self._repo_path)
             )
@@ -155,13 +156,16 @@ class GitPolicyFetcher(PolicyFetcher):
                         repo, hinted_hash=hinted_hash, force_fetch=force_fetch
                     )
                 ):
-                    logger.debug("skipping fetch")
+                    logger.info("Skipping fetch")
                     return
                 await self._fetch_and_notify_on_changes(repo)
+                return
             else:
                 # repo dir exists but invalid -> we must delete the directory
-                logger.info("deleting repo at: {path}", path=self._repo_path)
+                logger.info("Deleting invalid repo: {path}", path=self._repo_path)
                 shutil.rmtree(self._repo_path)
+        else:
+            logger.info("Repo not found at {path}", path=self._repo_path)
 
         # fallthrough to clean clone
         await self._clone()
@@ -185,7 +189,7 @@ class GitPolicyFetcher(PolicyFetcher):
         try:
             return Repository(path)
         except pygit2.GitError:
-            logger.warning("invalid repo at: {path}", path=path)
+            logger.warning("Invalid repo at: {path}", path=path)
             return None
 
     async def _should_fetch(
@@ -195,11 +199,12 @@ class GitPolicyFetcher(PolicyFetcher):
         force_fetch: bool = False,
     ) -> bool:
         if force_fetch:
+            logger.info("Force-fetch was requested")
             return True  # must fetch
 
         if not RepoInterface.has_remote_branch(repo, self._source.branch, self._remote):
-            logger.debug(
-                "target branch was not found in local clone, re-fetching the remote"
+            logger.info(
+                "Target branch was not found in local clone, re-fetching the remote"
             )
             return True  # missing branch
 
@@ -208,8 +213,8 @@ class GitPolicyFetcher(PolicyFetcher):
                 _ = repo.revparse_single(hinted_hash)
                 return False  # hinted commit was found, no need to fetch
             except KeyError:
-                logger.debug(
-                    "hinted commit hash was not found in local clone, re-fetching the remote"
+                logger.info(
+                    "Hinted commit hash was not found in local clone, re-fetching the remote"
                 )
                 return True  # hinted commit was not found
 
@@ -221,14 +226,14 @@ class GitPolicyFetcher(PolicyFetcher):
             repo, self._source.branch, self._remote
         )
         logger.info(
-            "checking for new commits, fetching remote: {remote}", remote=self._remote
+            "Fetching remote (checking for new commits): {remote}", remote=self._remote
         )
         await run_sync(repo.remotes[self._remote].fetch, callbacks=self._auth_callbacks)
         new_revision = RepoInterface.get_commit_hash(
             repo, self._source.branch, self._remote
         )
         if new_revision is None:
-            logger.error(f"did not find target branch on remote: {self._source.branch}")
+            logger.error(f"Did not find target branch on remote: {self._source.branch}")
             return
         await self.callbacks.on_update(old_revision, new_revision)
 
@@ -238,8 +243,8 @@ class GitPolicyFetcher(PolicyFetcher):
             repo, self._source.branch, self._remote
         )
         if not head_commit_hash:
-            logger.error("could not find current branch head")
-            raise ValueError("could not find current branch head")
+            logger.error("Could not find current branch head")
+            raise ValueError("Could not find current branch head")
         return head_commit_hash
 
     def make_bundle(self, base_hash: Optional[str] = None) -> PolicyBundle:
