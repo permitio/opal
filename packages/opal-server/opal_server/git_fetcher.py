@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Optional, cast
 
 import aiofiles.os
+import aioredis
 import pygit2
 from git import Repo
 from opal_common.async_utils import run_sync
@@ -132,6 +133,25 @@ class GitPolicyFetcher(PolicyFetcher):
         logger.info(
             f"Initializing git fetcher: scope_id={scope_id}, url={source.url}, branch={self._source.branch}, path={GitPolicyFetcher.source_id(source)}"
         )
+
+    async def concurrent_fetch(self, redis: aioredis.Redis, *args, **kwargs):
+        """makes sure the repo is already fetched and is up to date.
+
+        A wrapper around fetch() to ensure that there are no concurrency
+        issues when trying to fetch multiple scopes that are cloned to
+        the same file system directory. We obtain safety with redis
+        locks.
+        """
+        lock_name = GitPolicyFetcher.source_id(self._source)
+        lock = redis.lock(lock_name)
+        try:
+            logger.info(f"Trying to acquire redis lock: {lock_name}")
+            await lock.acquire()
+            logger.info(f"Acquired lock: {lock_name}")
+            await self.fetch(*args, **kwargs)
+        finally:
+            await lock.release()
+            logger.info(f"Released lock: {lock_name}")
 
     async def fetch(self, hinted_hash: Optional[str] = None, force_fetch: bool = False):
         """makes sure the repo is already fetched and is up to date.
