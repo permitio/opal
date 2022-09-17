@@ -200,15 +200,21 @@ class GitPolicyFetcher(PolicyFetcher):
             url=self._source.url,
             path=self._repo_path,
         )
-        repo: Repository = await run_sync(
-            clone_repository,
-            self._source.url,
-            str(self._repo_path),
-            callbacks=self._auth_callbacks,
-            checkout_branch=self._source.branch,
-        )
-        logger.info(f"Clone completed: {self._source.url}")
-        await self.callbacks.on_update(None, repo.head.target.hex)
+        try:
+            repo: Repository = await run_sync(
+                clone_repository,
+                self._source.url,
+                str(self._repo_path),
+                callbacks=self._auth_callbacks,
+                checkout_branch=self._source.branch,
+            )
+        except pygit2.GitError:
+            logger.exception(
+                f"Could not clone repo at {self._source.url}, checkout branch={self._source.branch}"
+            )
+        else:
+            logger.info(f"Clone completed: {self._source.url}")
+            await self.callbacks.on_update(None, repo.head.target.hex)
 
     def _get_valid_repo_at(self, path: str) -> Optional[Repository]:
         try:
