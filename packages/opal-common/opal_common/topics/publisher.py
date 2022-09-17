@@ -184,4 +184,5 @@ class ScopedServerSideTopicPublisher(ServerSideTopicPublisher):
 
     def publish(self, topics: TopicList, data: Any = None):
         scoped_topics = [f"{self._scope_id}:{topic}" for topic in topics]
+        logger.info("Publishing to topics: {topics}", topics=scoped_topics)
         super().publish(scoped_topics, data)

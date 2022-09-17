@@ -3,7 +3,7 @@ from pathlib import Path
 from typing import List, Optional
 
 from git.objects import Commit
-from opal_common.git.commit_viewer import CommitViewer, has_extension
+from opal_common.git.commit_viewer import CommitViewer, FileFilter, has_extension
 from opal_common.git.diff_viewer import DiffViewer
 from opal_common.logger import logger
 from opal_common.paths import PathUtils
@@ -19,12 +19,16 @@ async def create_update_all_directories_in_repo(
     old_commit: Commit,
     new_commit: Commit,
     file_extensions: Optional[List[str]] = None,
+    predicate: Optional[FileFilter] = None,
 ) -> PolicyUpdateMessageNotification:
     """publishes policy topics matching all relevant directories in tracked
     repo, prompting the client to ask for *all* contents of these directories
     (and not just diffs)."""
     with CommitViewer(new_commit) as viewer:
-        filter = partial(has_extension, extensions=file_extensions)
+        if predicate is None:
+            filter = partial(has_extension, extensions=file_extensions)
+        else:
+            filter = predicate
         all_paths = [p.path for p in list(viewer.files(filter))]
         directories = PathUtils.intermediate_directories(all_paths)
         logger.info(
@@ -42,11 +46,17 @@ async def create_update_all_directories_in_repo(
 
 
 async def create_policy_update(
-    old_commit: Commit, new_commit: Commit, file_extensions: Optional[List[str]] = None
+    old_commit: Commit,
+    new_commit: Commit,
+    file_extensions: Optional[List[str]] = None,
+    predicate: Optional[FileFilter] = None,
 ) -> Optional[PolicyUpdateMessageNotification]:
     if new_commit == old_commit:
         return await create_update_all_directories_in_repo(
-            old_commit, new_commit, file_extensions
+            old_commit,
+            new_commit,
+            file_extensions=file_extensions,
+            predicate=predicate,
         )
 
     with DiffViewer(old_commit, new_commit) as viewer:
