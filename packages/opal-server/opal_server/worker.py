@@ -164,7 +164,13 @@ class Worker:
         )
 
         try:
-            await fetcher.fetch(hinted_hash=hinted_hash, force_fetch=force_fetch)
+            # using concurrent fetch so that if the celery worker is spawn with concurrency > 1,
+            # the competing processes will not modify the same dir on the filesystem at the same time
+            await fetcher.concurrent_fetch(
+                redis=self._scopes.db.redis_connection,
+                hinted_hash=hinted_hash,
+                force_fetch=force_fetch,
+            )
         except Exception as e:
             logger.exception(
                 f"Could not fetch policy for scope {scope_id}, got error: {e}"

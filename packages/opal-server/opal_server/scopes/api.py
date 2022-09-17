@@ -101,6 +101,8 @@ def init_scope_router(
         verify_private_key_or_throw(scope_in)
         await scopes.put(scope_in)
 
+        logger.info(f"Sync scope: {scope_in.scope_id}")
+
         from opal_server.worker import sync_scope
 
         sync_scope.delay(scope_in.scope_id)
