@@ -312,13 +312,27 @@ class OpalServer:
             await self.sync_all_scopes()
 
     async def sync_all_scopes(self):
+        """Syncing all scopes found in redis when OPAL first starts.
+
+        Git fetches are done only for unique remotes.
+        """
         from opal_server.worker import sync_scope
 
         scopes = await self._scopes.all()
         logger.info(f"OPAL Scopes: syncing {len(scopes)} scopes in the background")
 
+        already_fetched = set()
         for scope in scopes:
-            sync_scope.delay(scope.scope_id)
+            if scope.policy.url not in already_fetched:
+                logger.info(
+                    f"Sync scope {scope.scope_id} (remote: {scope.policy.url}, force fetch)"
+                )
+                sync_scope.delay(scope.scope_id, force_fetch=True)
+                already_fetched.add(scope.policy.url)
+            else:
+                logger.info(
+                    f"Sync scope {scope.scope_id} is SKIPPED (remote: {scope.policy.url})"
+                )
 
     async def start_server_background_tasks(self):
         """starts the background processes (as asyncio tasks) if such are
