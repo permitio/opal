@@ -1,10 +1,9 @@
 from datetime import datetime
-from typing import List
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
-from fastapi_websocket_pubsub.pub_sub_server import PubSubEndpoint
+from fastapi import APIRouter, Depends, HTTPException, status
 from opal_common.authentication.deps import StaticBearerAuthenticator
 from opal_common.authentication.signer import JWTSigner
+from opal_common.logger import logger
 from opal_common.schemas.security import AccessToken, AccessTokenRequest, TokenDetails
 
 
@@ -26,6 +25,7 @@ def init_security_router(signer: JWTSigner, authenticator: StaticBearerAuthentic
 
         claims = {"peer_type": req.type.value, **req.claims}
         token = signer.sign(sub=req.id, token_lifetime=req.ttl, custom_claims=claims)
+        logger.info(f"Generated opal token: peer_type={req.type.value}")
         return AccessToken(
             token=token,
             details=TokenDetails(
