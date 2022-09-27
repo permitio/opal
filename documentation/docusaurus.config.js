@@ -64,7 +64,12 @@ const config = {
       },
       footer: {
         style: "dark",
-        links: [],
+        links: [
+          {
+            label: "Visit Permit.io",
+            to: "https://permit.io",
+          },
+        ],
         copyright: `Copyright © ${new Date().getFullYear()} Permit, Inc.`,
       },
       prism: {
