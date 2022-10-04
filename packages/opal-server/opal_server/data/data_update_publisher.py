@@ -1,9 +1,12 @@
 import os
+from timeit import repeat
 from typing import List
 
 from opal_common.logger import logger
-from opal_common.schemas.data import DataUpdate
+from opal_common.schemas.data import DataUpdate, DataSourceConfig, ServerDataSourceConfig
 from opal_common.topics.publisher import TopicPublisher
+from fastapi_utils.tasks import repeat_every
+
 
 TOPIC_DELIMITER = "/"
 PREFIX_DELIMITER = ":"
@@ -92,3 +95,16 @@ class DataUpdatePublisher:
             entries=logged_entries,
         )
         self._publisher.publish(all_topic_combos, update)
+
+    def create_polling_updates(self, sources: ServerDataSourceConfig):
+        #For every entry with a non zero period update interval, bind an inverval to it
+        updaters = []
+        if hasattr(sources, "entries"):
+            for source in filter(lambda s: s.periodic_update_interval > 0, sources.entries):
+                # force PUT
+                source.save_method = "PUT"
+                updater = repeat_every(lambda :
+                    self.publish_data_updates(self, source)
+                , source.periodic_update_interval)
+                updaters.append(updater)
+            return updaters
