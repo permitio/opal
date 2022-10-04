@@ -273,6 +273,8 @@ class OpalServer:
         # top level routes (i.e: healthchecks)
         @app.get("/healthcheck", include_in_schema=False)
         @app.get("/", include_in_schema=False)
+
+
         def healthcheck():
             return {"status": "ok"}
 
@@ -293,6 +295,8 @@ class OpalServer:
             try:
                 await self.start()
                 self._task = asyncio.create_task(self.start_server_background_tasks())
+                #start pulling tasks
+                DataUpdatePublisher.create_polling_updates(self.publisher, opal_server_config.DATA_CONFIG_SOURCES)
             except Exception:
                 logger.critical("Exception while starting OPAL")
                 traceback.print_exc()
