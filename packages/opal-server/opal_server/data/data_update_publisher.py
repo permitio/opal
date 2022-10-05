@@ -98,13 +98,10 @@ class DataUpdatePublisher:
 
     def create_polling_updates(self, sources: ServerDataSourceConfig):
         #For every entry with a non zero period update interval, bind an inverval to it
-        updaters = []
         if hasattr(sources, "entries"):
-            for source in filter(lambda s: s.periodic_update_interval > 0, sources.entries):
-                # force PUT
-                source.save_method = "PUT"
-                updater = repeat_every(lambda :
-                    self.publish_data_updates(self, source)
-                , source.periodic_update_interval)
-                updaters.append(updater)
+            updaters = [
+                repeat_every(lambda :
+                    self.publish_data_updates(self, source),
+                source.periodic_update_interval, True, logger) for source in sources if hasattr(source, 'periodic_update_interval')
+            ]
             return updaters

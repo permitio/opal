@@ -274,7 +274,6 @@ class OpalServer:
         @app.get("/healthcheck", include_in_schema=False)
         @app.get("/", include_in_schema=False)
 
-
         def healthcheck():
             return {"status": "ok"}
 

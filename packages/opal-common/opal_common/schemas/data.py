@@ -39,7 +39,7 @@ class DataSourceEntryWithPollingInterval(DataSourceEntry):
     # Periodic Update Interval
     # If set, tells OPAL server how frequently to send message to clients that they need to refresh their data store from a data source
     # Time in Seconds
-    periodic_update_interval: int = Field(
+    periodic_update_interval: Optional[int] = Field(
         None,
         description="Polling interval to refresh data from data source"
     )
