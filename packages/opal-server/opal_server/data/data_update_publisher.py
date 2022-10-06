@@ -3,7 +3,7 @@ from timeit import repeat
 from typing import List
 
 from opal_common.logger import logger
-from opal_common.schemas.data import DataUpdate, DataSourceConfig, ServerDataSourceConfig
+from opal_common.schemas.data import DataSourceEntryWithPollingInterval, DataUpdate, DataSourceConfig, ServerDataSourceConfig
 from opal_common.topics.publisher import TopicPublisher
 from fastapi_utils.tasks import repeat_every
 
@@ -96,16 +96,30 @@ class DataUpdatePublisher:
         )
         self._publisher.publish(all_topic_combos, update)
 
-    def _periodic_update_callback(self, update: DataUpdate):
+    def _periodic_update_callback(self, update: DataSourceEntryWithPollingInterval):
         """Called for every periodic update based on repeat_every
         """
-        self.publish_data_updates(update)
-
+        logger.info(
+            "[{pid}] Binding periodic update for following update: {source}",
+            pid=os.getpid(),
+            source=update)
+        #Create new publish entry
+        return self.publish_data_updates(DataUpdate(reason="Periodic Update", entries=[update]))
     def create_polling_updates(self, sources: ServerDataSourceConfig):
         #For every entry with a non zero period update interval, bind an inverval to it
-        if hasattr(sources, "entries"):
-            updaters = [
-                repeat_every(self._periodic_update_callback(self, source),
-                source.periodic_update_interval, True, logger) for source in sources if hasattr(source, 'periodic_update_interval')
-            ]
+        logger.info(
+            "[{pid}] Binding Polling Updates",
+            pid=os.getpid()
+        )
+
+        if hasattr(sources, 'config') and hasattr(sources.config, "entries"):
+            updaters = []
+            for source in sources.config.entries:
+                if hasattr(source, 'periodic_update_interval') and isinstance(source.periodic_update_interval, float):
+                    logger.info(
+                        "[{pid}] Establishing Period Updates for the following source: {source}",
+                        pid=os.getpid(),
+                        source=source)
+                    updaters.append(repeat_every(seconds=source.periodic_update_interval, wait_first=True, logger=logger)(lambda: self._periodic_update_callback(source)))
+
             return updaters
