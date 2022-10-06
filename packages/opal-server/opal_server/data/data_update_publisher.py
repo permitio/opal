@@ -96,12 +96,16 @@ class DataUpdatePublisher:
         )
         self._publisher.publish(all_topic_combos, update)
 
+    def _periodic_update_callback(self, update: DataUpdate):
+        """Called for every periodic update based on repeat_every
+        """
+        self.publish_data_updates(update)
+
     def create_polling_updates(self, sources: ServerDataSourceConfig):
         #For every entry with a non zero period update interval, bind an inverval to it
         if hasattr(sources, "entries"):
             updaters = [
-                repeat_every(lambda :
-                    self.publish_data_updates(self, source),
+                repeat_every(self._periodic_update_callback(self, source),
                 source.periodic_update_interval, True, logger) for source in sources if hasattr(source, 'periodic_update_interval')
             ]
             return updaters
