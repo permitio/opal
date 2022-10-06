@@ -361,7 +361,9 @@ class OpalServer:
                             pid=os.getpid(),
                         )
                         #bind data updater publishers to lead worker
-                        [await fn() for fn in DataUpdatePublisher(self.publisher).create_polling_updates(opal_server_config.DATA_CONFIG_SOURCES)]
+                        data_publisher = DataUpdatePublisher(self.publisher)
+                        for polling_update in data_publisher.create_polling_updates(opal_server_config.DATA_CONFIG_SOURCES):
+                            await polling_update()
 
                         # init policy watcher
                         if self.watcher is None:

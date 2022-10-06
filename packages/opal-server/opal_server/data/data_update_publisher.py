@@ -96,14 +96,15 @@ class DataUpdatePublisher:
         )
         self._publisher.publish(all_topic_combos, update)
 
-    def _periodic_update_callback(self, update: DataSourceEntryWithPollingInterval):
+    async def _periodic_update_callback(self, update: DataSourceEntryWithPollingInterval):
         """Called for every periodic update based on repeat_every
         """
         logger.info(
-            "[{pid}] Binding periodic update for following update: {source}",
+            "[{pid}] Sending Periodic update: {source}",
             pid=os.getpid(),
             source=update)
         #Create new publish entry
+
         return self.publish_data_updates(DataUpdate(reason="Periodic Update", entries=[update]))
     def create_polling_updates(self, sources: ServerDataSourceConfig):
         #For every entry with a non zero period update interval, bind an inverval to it
@@ -120,6 +121,9 @@ class DataUpdatePublisher:
                         "[{pid}] Establishing Period Updates for the following source: {source}",
                         pid=os.getpid(),
                         source=source)
-                    updaters.append(repeat_every(seconds=source.periodic_update_interval, wait_first=True, logger=logger)(lambda: self._periodic_update_callback(source)))
+                    async def bind_for_repeat():
+                        await self._periodic_update_callback(source)
+
+                    updaters.append(repeat_every(seconds=source.periodic_update_interval, wait_first=True, logger=logger)(bind_for_repeat))
 
             return updaters
