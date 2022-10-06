@@ -40,6 +40,8 @@ from opal_server.security.api import init_security_router
 from opal_server.security.jwks import JwksStaticEndpoint
 from opal_server.statistics import OpalStatistics, init_statistics_router
 from opal_server.worker import schedule_sync_all_scopes
+from fastapi_utils.tasks import repeat_every
+
 
 
 class OpalServer:
@@ -294,8 +296,7 @@ class OpalServer:
             try:
                 await self.start()
                 self._task = asyncio.create_task(self.start_server_background_tasks())
-                #start pulling tasks
-                DataUpdatePublisher.create_polling_updates(self.publisher, opal_server_config.DATA_CONFIG_SOURCES)
+
             except Exception:
                 logger.critical("Exception while starting OPAL")
                 traceback.print_exc()
@@ -354,6 +355,13 @@ class OpalServer:
                             "listening on webhook topic: '{topic}'",
                             topic=opal_server_config.POLICY_REPO_WEBHOOK_TOPIC,
                         )
+                          #the leader should be the only one to constantly push data config pushes to clients
+                        logger.info(
+                            "Binding data update publisher to: {pid}",
+                            pid=os.getpid(),
+                        )
+                        #bind data updater publishers to lead worker
+                        [await fn() for fn in DataUpdatePublisher(self.publisher).create_polling_updates(opal_server_config.DATA_CONFIG_SOURCES)]
 
                         # init policy watcher
                         if self.watcher is None:
@@ -389,6 +397,7 @@ class OpalServer:
                             if self.broadcast_keepalive is not None:
                                 self.broadcast_keepalive.start()
                             await self.watcher.wait_until_should_stop()
+
                 if (
                     self.opal_statistics is not None
                     and self.broadcast_listening_context is not None
