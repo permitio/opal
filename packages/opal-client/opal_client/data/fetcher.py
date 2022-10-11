@@ -52,7 +52,9 @@ class DataFetcher:
         """Release internal tasks and resources."""
         await self._engine.terminate_workers()
 
-    async def handle_url(self, url: str, config: FetcherConfig, data: Optional[JsonableValue]):
+    async def handle_url(
+        self, url: str, config: FetcherConfig, data: Optional[JsonableValue]
+    ):
         """Helper function wrapping self._engine.handle_url."""
         if data is not None:
             logger.info("Data provided inline for url: {url}", url=url)
@@ -98,7 +100,9 @@ class DataFetcher:
 
         # Map results with their matching urls and config
         results_with_url_and_config = [
-            (url, config, result) for (url, config, data), result in zip(urls, results) if result is not None
+            (url, config, result)
+            for (url, config, data), result in zip(urls, results)
+            if result is not None
         ]
 
         # return results
