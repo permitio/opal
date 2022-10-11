@@ -74,7 +74,7 @@ class DataUpdatePublisher:
 
         # a nicer format of entries to the log
         logged_entries = [
-            (entry.url, entry.save_method, entry.dst_path or "/")
+            dict(url=entry.url, method=entry.save_method, path=entry.dst_path or "/", inline_data=(entry.data is not None))
             for entry in update.entries
         ]
 
