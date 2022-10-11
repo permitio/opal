@@ -91,7 +91,7 @@ class DataFetcher:
         tasks = []
         # if no url provided - default to the builtin route
         if urls is None:
-            urls = [(self._data_url, self._default_fetcher_config)]
+            urls = [(self._data_url, self._default_fetcher_config, None)]
         # create a task for each url
         for url, config, data in urls:
             tasks.append(self.handle_url(url, config, data))
