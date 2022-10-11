@@ -314,7 +314,7 @@ class DataUpdater:
         if data_fetcher is None:
             data_fetcher = DataFetcher()
         # types / defaults
-        urls: List[Tuple[str, FetcherConfig, JsonableValue]] = None
+        urls: List[Tuple[str, FetcherConfig, Optional[JsonableValue]]] = None
         entries: List[DataSourceEntry] = []
         # track the result of each url in order to report back
         reports: List[DataEntryReport] = []
