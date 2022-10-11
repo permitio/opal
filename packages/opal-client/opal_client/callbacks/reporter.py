@@ -33,7 +33,7 @@ class CallbacksReporter:
                     entry.config or HttpFetcherConfig()
                 )  # should not be None if we got it from the register
                 config.data = report_data
-                urls.append((entry.url, config))
+                urls.append((entry.url, config, None))
 
             # next we add the "one time" callbacks from extra_callbacks (i.e: callbacks sent as part of a DataUpdate message)
             if extra_callbacks is not None:
