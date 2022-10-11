@@ -52,7 +52,7 @@ class DataFetcher:
         """Release internal tasks and resources."""
         await self._engine.terminate_workers()
 
-    async def handle_url(self, url: Optional[str], config: FetcherConfig, data: Optional[JsonableValue]):
+    async def handle_url(self, url: str, config: FetcherConfig, data: Optional[JsonableValue]):
         """Helper function wrapping self._engine.handle_url."""
         if data is not None:
             return data
@@ -71,7 +71,7 @@ class DataFetcher:
             raise
 
     async def handle_urls(
-        self, urls: List[Tuple[Optional[str], FetcherConfig, Optional[JsonableValue]]] = None
+        self, urls: List[Tuple[str, FetcherConfig, Optional[JsonableValue]]] = None
     ) -> List[Tuple[str, FetcherConfig, Any]]:
         """Fetch data for each given url with the (optional) fetching
         configuration; return the resulting data mapped to each URL.
