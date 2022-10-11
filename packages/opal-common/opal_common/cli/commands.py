@@ -114,6 +114,10 @@ def publish_data_update(
         "-t",
         help="[SINGLE-ENTRY-UPDATE] [List] topic (can several) for the published update (to be matched to client subscriptions)",
     ),
+    data: str = typer.Option(
+        None,
+        help="[SINGLE-ENTRY-UPDATE] actual data to include in the update (if src_url is also supplied, it would be sent but not used)",
+    ),
     src_config: str = typer.Option(
         "{}",
         help="[SINGLE-ENTRY-UPDATE] Fetching Config as JSON",
@@ -138,22 +142,31 @@ def publish_data_update(
     """
     from aiohttp import ClientResponse, ClientSession
 
+    if not entries and not src_url:
+        typer.secho(
+            "You must provide either multiple entries (-e / --entries) or a single entry update (--src_url)",
+            fg="red",
+        )
+        return
+
     if not isinstance(entries, list):
         typer.secho("Bad input for --entires was ignored", fg="red")
         entries = []
 
     entries: List[DataSourceEntry]
 
-    # single entry update
+    # single entry update (if used, we ignore the value of "entries")
     if src_url is not None:
-        entry = DataSourceEntry(
-            url=src_url,
-            topics=topics,
-            dst_path=dst_path,
-            save_method=save_method,
-            config=src_config,
-        )
-        entries.append(entry)
+        entries = [
+            DataSourceEntry(
+                url=src_url,
+                data=(None if data is None else json.loads(data)),
+                topics=topics,
+                dst_path=dst_path,
+                save_method=save_method,
+                config=src_config,
+            )
+        ]
 
     server_url = f"{server_url}{server_route}"
     update = DataUpdate(entries=entries, reason=reason)
