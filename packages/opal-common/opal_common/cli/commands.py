@@ -148,17 +148,18 @@ def publish_data_update(
 
     entries: List[DataSourceEntry]
 
-    # single entry update
-    if src_url is not None or data is not None:
-        entry = DataSourceEntry(
-            url=src_url,
-            data=json.loads(data),
-            topics=topics,
-            dst_path=dst_path,
-            save_method=save_method,
-            config=src_config,
-        )
-        entries.append(entry)
+    # single entry update (if used, we ignore the value of "entries")
+    if src_url is not None:
+        entries = [
+            DataSourceEntry(
+                url=src_url,
+                data=(None if data is None else json.loads(data)),
+                topics=topics,
+                dst_path=dst_path,
+                save_method=save_method,
+                config=src_config,
+            )
+        ]
 
     server_url = f"{server_url}{server_route}"
     update = DataUpdate(entries=entries, reason=reason)
