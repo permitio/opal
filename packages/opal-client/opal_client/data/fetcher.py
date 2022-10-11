@@ -55,6 +55,7 @@ class DataFetcher:
     async def handle_url(self, url: str, config: FetcherConfig, data: Optional[JsonableValue]):
         """Helper function wrapping self._engine.handle_url."""
         if data is not None:
+            logger.info("Data provided inline for url: {url}", url=url)
             return data
 
         if url is None:
