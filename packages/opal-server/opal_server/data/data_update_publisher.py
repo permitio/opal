@@ -127,3 +127,13 @@ class DataUpdatePublisher:
                     updaters.append(repeat_every(seconds=source.periodic_update_interval, wait_first=True, logger=logger)(bind_for_repeat))
 
             return updaters
+
+    @staticmethod
+    async def mount_and_start_polling_updates(publisher: TopicPublisher, sources: ServerDataSourceConfig):
+        logger.info(
+            "[{pid}] Starting Polling Updates",
+            pid=os.getpid()
+        )
+        data_publisher = DataUpdatePublisher(publisher)
+        for polling_update in data_publisher.create_polling_updates(sources):
+            await polling_update()
