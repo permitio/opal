@@ -142,6 +142,10 @@ def publish_data_update(
     """
     from aiohttp import ClientResponse, ClientSession
 
+    if not entries and not src_url:
+        typer.secho("You must provide either multiple entries (-e / --entries) or a single entry update (--src_url)", fg="red")
+        return
+
     if not isinstance(entries, list):
         typer.secho("Bad input for --entires was ignored", fg="red")
         entries = []
