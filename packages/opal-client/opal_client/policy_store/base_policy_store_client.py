@@ -44,6 +44,7 @@ class AbstractPolicyStore:
         policy_data: JsonableValue,
         path: str = "",
         transaction_id: Optional[str] = None,
+        save_method: str = "PUT",
     ):
         raise NotImplementedError()
 

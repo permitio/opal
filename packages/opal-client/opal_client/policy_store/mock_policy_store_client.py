@@ -49,6 +49,7 @@ class MockPolicyStoreClient(BasePolicyStoreClient):
         policy_data: JsonableValue,
         path: str = "",
         transaction_id: Optional[str] = None,
+        save_method: str = "PUT",
     ):
         self._data[path] = policy_data
         self.has_data_event.set()

@@ -21,7 +21,6 @@ from tenacity import retry
 
 JSONPatchDocument = List[JSONPatchAction]
 
-
 RETRY_CONFIG = opal_client_config.POLICY_STORE_CONN_RETRY.toTenacityConfig()
 
 
@@ -436,6 +435,7 @@ class OpaClient(BasePolicyStoreClient):
         policy_data: JsonableValue,
         path: str = "",
         transaction_id: Optional[str] = None,
+        save_method: str = "PUT",
     ):
         path = self._safe_data_module_path(path)
 
@@ -448,7 +448,8 @@ class OpaClient(BasePolicyStoreClient):
 
         async with aiohttp.ClientSession() as session:
             try:
-                async with session.put(
+                async with session.request(
+                    save_method,
                     f"{self._opa_url}/data{path}",
                     data=json.dumps(policy_data, default=str),
                     headers=self._headers,

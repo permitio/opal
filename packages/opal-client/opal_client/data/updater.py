@@ -394,9 +394,11 @@ class DataUpdater:
                     )
                     try:
                         await store_transaction.set_policy_data(
-                            policy_data, path=policy_store_path
+                            policy_data,
+                            path=policy_store_path,
+                            save_method=entry.save_method,
                         )
-                        # No exception we we're able to save to the policy-store
+                        # No exception - we're able to save to the policy-store
                         report.saved = True
                         # save the report for the entry
                         reports.append(report)
