@@ -59,7 +59,6 @@ class OpalServer:
     ) -> None:
         """
         Args:
-            init_git_watcher (bool, optional): whether or not to launch the policy repo watcher.
             policy_remote_url (str, optional): the url of the repo watched by policy watcher.
             init_publisher (bool, optional): whether or not to launch a publisher pub/sub client.
                 this publisher is used by the server processes to publish data to the client.
