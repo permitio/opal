@@ -6,6 +6,7 @@ from functools import partial
 from typing import List, Optional
 
 from fastapi import Depends, FastAPI
+from fastapi_utils.tasks import repeat_every
 from fastapi_websocket_pubsub.event_broadcaster import EventBroadcasterContextManager
 from opal_common.authentication.deps import JWTAuthenticator, StaticBearerAuthenticator
 from opal_common.authentication.signer import JWTSigner
@@ -40,8 +41,6 @@ from opal_server.security.api import init_security_router
 from opal_server.security.jwks import JwksStaticEndpoint
 from opal_server.statistics import OpalStatistics, init_statistics_router
 from opal_server.worker import schedule_sync_all_scopes
-from fastapi_utils.tasks import repeat_every
-
 
 
 class OpalServer:
@@ -275,7 +274,6 @@ class OpalServer:
         # top level routes (i.e: healthchecks)
         @app.get("/healthcheck", include_in_schema=False)
         @app.get("/", include_in_schema=False)
-
         def healthcheck():
             return {"status": "ok"}
 
@@ -355,13 +353,15 @@ class OpalServer:
                             "listening on webhook topic: '{topic}'",
                             topic=opal_server_config.POLICY_REPO_WEBHOOK_TOPIC,
                         )
-                          #the leader should be the only one to constantly push data config pushes to clients
+                        # the leader should be the only one to constantly push data config pushes to clients
                         logger.info(
                             "Binding data update publisher to: {pid}",
                             pid=os.getpid(),
                         )
-                        #bind data updater publishers to lead worker
-                        await DataUpdatePublisher.mount_and_start_polling_updates(self.publisher, opal_server_config.DATA_CONFIG_SOURCES)
+                        # bind data updater publishers to lead worker
+                        await DataUpdatePublisher.mount_and_start_polling_updates(
+                            self.publisher, opal_server_config.DATA_CONFIG_SOURCES
+                        )
 
                         # init policy watcher
                         if self.watcher is None:
