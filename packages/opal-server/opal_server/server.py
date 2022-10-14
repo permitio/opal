@@ -6,6 +6,7 @@ from functools import partial
 from typing import List, Optional
 
 from fastapi import Depends, FastAPI
+from fastapi_utils.tasks import repeat_every
 from fastapi_websocket_pubsub.event_broadcaster import EventBroadcasterContextManager
 from opal_common.authentication.deps import JWTAuthenticator, StaticBearerAuthenticator
 from opal_common.authentication.signer import JWTSigner
@@ -293,6 +294,7 @@ class OpalServer:
             try:
                 await self.start()
                 self._task = asyncio.create_task(self.start_server_background_tasks())
+
             except Exception:
                 logger.critical("Exception while starting OPAL")
                 traceback.print_exc()
@@ -351,6 +353,12 @@ class OpalServer:
                             "listening on webhook topic: '{topic}'",
                             topic=opal_server_config.POLICY_REPO_WEBHOOK_TOPIC,
                         )
+                        # bind data updater publishers to the leader worker
+                        asyncio.create_task(
+                            DataUpdatePublisher.mount_and_start_polling_updates(
+                                self.publisher, opal_server_config.DATA_CONFIG_SOURCES
+                            )
+                        )
 
                         # init policy watcher
                         if self.watcher is None:
@@ -386,6 +394,7 @@ class OpalServer:
                             if self.broadcast_keepalive is not None:
                                 self.broadcast_keepalive.start()
                             await self.watcher.wait_until_should_stop()
+
                 if (
                     self.opal_statistics is not None
                     and self.broadcast_listening_context is not None

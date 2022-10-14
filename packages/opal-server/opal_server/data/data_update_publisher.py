@@ -1,8 +1,14 @@
+import asyncio
 import os
 from typing import List
 
+from fastapi_utils.tasks import repeat_every
 from opal_common.logger import logger
-from opal_common.schemas.data import DataUpdate
+from opal_common.schemas.data import (
+    DataSourceEntryWithPollingInterval,
+    DataUpdate,
+    ServerDataSourceConfig,
+)
 from opal_common.topics.publisher import TopicPublisher
 
 TOPIC_DELIMITER = "/"
@@ -92,3 +98,57 @@ class DataUpdatePublisher:
             entries=logged_entries,
         )
         self._publisher.publish(all_topic_combos, update)
+
+    async def _periodic_update_callback(
+        self, update: DataSourceEntryWithPollingInterval
+    ):
+        """Called for every periodic update based on repeat_every."""
+        logger.info(
+            "[{pid}] Sending Periodic update: {source}", pid=os.getpid(), source=update
+        )
+        # Create new publish entry
+
+        return self.publish_data_updates(
+            DataUpdate(reason="Periodic Update", entries=[update])
+        )
+
+    def create_polling_updates(self, sources: ServerDataSourceConfig):
+        # For every entry with a non zero period update interval, bind an inverval to it
+        updaters = []
+        if hasattr(sources, "config") and hasattr(sources.config, "entries"):
+            for source in sources.config.entries:
+                if (
+                    hasattr(source, "periodic_update_interval")
+                    and isinstance(source.periodic_update_interval, float)
+                    and source.periodic_update_interval is not None
+                ):
+                    logger.info(
+                        "[{pid}] Establishing Period Updates for the following source: {source}",
+                        pid=os.getpid(),
+                        source=source,
+                    )
+
+                    async def bind_for_repeat():
+                        await self._periodic_update_callback(source)
+
+                    updaters.append(
+                        repeat_every(
+                            seconds=source.periodic_update_interval,
+                            wait_first=True,
+                            logger=logger,
+                        )(bind_for_repeat)
+                    )
+        return updaters
+
+    @staticmethod
+    async def mount_and_start_polling_updates(
+        publisher: TopicPublisher, sources: ServerDataSourceConfig
+    ):
+        logger.info("[{pid}] Starting Polling Updates", pid=os.getpid())
+        data_publisher = DataUpdatePublisher(publisher)
+        await asyncio.gather(
+            *(
+                polling_update()
+                for polling_update in data_publisher.create_polling_updates(sources)
+            )
+        )

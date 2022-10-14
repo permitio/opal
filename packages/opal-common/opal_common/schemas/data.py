@@ -1,4 +1,5 @@
 from logging import basicConfig
+from pydoc import describe
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 from opal_common.fetcher.events import FetcherConfig
@@ -34,6 +35,16 @@ class DataSourceEntry(BaseModel):
     )
 
 
+class DataSourceEntryWithPollingInterval(DataSourceEntry):
+
+    # Periodic Update Interval
+    # If set, tells OPAL server how frequently to send message to clients that they need to refresh their data store from a data source
+    # Time in Seconds
+    periodic_update_interval: Optional[float] = Field(
+        None, description="Polling interval to refresh data from data source"
+    )
+
+
 class DataSourceConfig(BaseModel):
     """Static list of Data Source Entries returned to client.
 
@@ -42,7 +53,7 @@ class DataSourceConfig(BaseModel):
     updates)
     """
 
-    entries: List[DataSourceEntry] = Field(
+    entries: List[DataSourceEntryWithPollingInterval] = Field(
         ..., description="list of data sources and how to fetch from them"
     )
 
