@@ -1,11 +1,10 @@
+import asyncio
 import os
-from timeit import repeat
 from typing import List
 
 from fastapi_utils.tasks import repeat_every
 from opal_common.logger import logger
 from opal_common.schemas.data import (
-    DataSourceConfig,
     DataSourceEntryWithPollingInterval,
     DataUpdate,
     ServerDataSourceConfig,
@@ -115,13 +114,13 @@ class DataUpdatePublisher:
 
     def create_polling_updates(self, sources: ServerDataSourceConfig):
         # For every entry with a non zero period update interval, bind an inverval to it
-        logger.info("[{pid}] Binding Polling Updates", pid=os.getpid())
-
+        updaters = []
         if hasattr(sources, "config") and hasattr(sources.config, "entries"):
-            updaters = []
             for source in sources.config.entries:
-                if hasattr(source, "periodic_update_interval") and isinstance(
-                    source.periodic_update_interval, float
+                if (
+                    hasattr(source, "periodic_update_interval")
+                    and isinstance(source.periodic_update_interval, float)
+                    and source.periodic_update_interval is not None
                 ):
                     logger.info(
                         "[{pid}] Establishing Period Updates for the following source: {source}",
@@ -139,8 +138,7 @@ class DataUpdatePublisher:
                             logger=logger,
                         )(bind_for_repeat)
                     )
-
-            return updaters
+        return updaters
 
     @staticmethod
     async def mount_and_start_polling_updates(
@@ -148,5 +146,9 @@ class DataUpdatePublisher:
     ):
         logger.info("[{pid}] Starting Polling Updates", pid=os.getpid())
         data_publisher = DataUpdatePublisher(publisher)
-        for polling_update in data_publisher.create_polling_updates(sources):
-            await polling_update()
+        await asyncio.gather(
+            *(
+                polling_update()
+                for polling_update in data_publisher.create_polling_updates(sources)
+            )
+        )
