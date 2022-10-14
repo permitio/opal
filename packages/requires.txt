@@ -8,4 +8,4 @@ gunicorn>=20.1.0,<21
 pydantic[email]>=1.9.1,<2
 typing-extensions;python_version<'3.8'
 uvicorn[standard]>=0.17.6,<1
-fastapi-utils>=0.2.1
+fastapi-utils>=0.2.1,<1
