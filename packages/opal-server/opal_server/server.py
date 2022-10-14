@@ -353,14 +353,11 @@ class OpalServer:
                             "listening on webhook topic: '{topic}'",
                             topic=opal_server_config.POLICY_REPO_WEBHOOK_TOPIC,
                         )
-                        # the leader should be the only one to constantly push data config pushes to clients
-                        logger.info(
-                            "Binding data update publisher to: {pid}",
-                            pid=os.getpid(),
-                        )
-                        # bind data updater publishers to lead worker
-                        await DataUpdatePublisher.mount_and_start_polling_updates(
-                            self.publisher, opal_server_config.DATA_CONFIG_SOURCES
+                        # bind data updater publishers to the leader worker
+                        asyncio.create_task(
+                            DataUpdatePublisher.mount_and_start_polling_updates(
+                                self.publisher, opal_server_config.DATA_CONFIG_SOURCES
+                            )
                         )
 
                         # init policy watcher
