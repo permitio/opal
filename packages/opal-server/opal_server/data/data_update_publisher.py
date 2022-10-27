@@ -128,8 +128,8 @@ class DataUpdatePublisher:
                         source=source,
                     )
 
-                    async def bind_for_repeat():
-                        await self._periodic_update_callback(source)
+                    async def bind_for_repeat(bind_source=source):
+                        await self._periodic_update_callback(bind_source)
 
                     updaters.append(
                         repeat_every(
