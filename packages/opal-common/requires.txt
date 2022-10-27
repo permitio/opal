@@ -6,3 +6,4 @@ loguru>=0.6.0,<1
 pyjwt[crypto]>=2.4.0,<3
 python-decouple>=3.6,<4
 tenacity>=8.0.1,<9
+asgi-correlation-id>=3.2.0,<3.3.0

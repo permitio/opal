@@ -1,18 +1,19 @@
 import shutil
 from functools import partial
 from pathlib import Path
-from typing import List, Optional, Set, cast
+from typing import cast, List, Optional
 
 import git
 from aiohttp import ClientError, ClientSession
+from asgi_correlation_id.extensions.celery import load_correlation_ids
 from asgiref.sync import async_to_sync
 from celery import Celery
 from fastapi import status
+
 from opal_common.git.commit_viewer import VersionedFile
 from opal_common.logger import configure_logs, logger
 from opal_common.schemas.policy import PolicyUpdateMessageNotification
 from opal_common.schemas.policy_source import GitPolicyScopeSource
-from opal_common.schemas.scopes import Scope
 from opal_common.utils import get_authorization_header, tuple_to_dict
 from opal_server.config import opal_server_config
 from opal_server.git_fetcher import GitPolicyFetcher, PolicyFetcherCallbacks
@@ -22,6 +23,9 @@ from opal_server.policy.watcher.callbacks import (
 )
 from opal_server.redis import RedisDB
 from opal_server.scopes.scope_repository import ScopeRepository
+
+# this method will make the api inject the correlation id into the celery task as a correlation id
+load_correlation_ids()
 
 
 def is_rego_source_file(

@@ -1,3 +1,4 @@
+from asgi_correlation_id import CorrelationIdMiddleware
 from fastapi import FastAPI, Request, status
 from fastapi.encoders import jsonable_encoder
 from fastapi.middleware.cors import CORSMiddleware
@@ -86,3 +87,4 @@ def configure_cors_middleware(app: FastAPI):
 def configure_middleware(app: FastAPI):
     register_default_server_exception_handler(app)
     configure_cors_middleware(app)
+    app.add_middleware(CorrelationIdMiddleware)
