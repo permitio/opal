@@ -31,8 +31,9 @@ from opal_common.schemas.data import (
     DataSourceEntry,
     DataUpdate,
     DataUpdateReport,
+    HttpMethodsAllowed,
 )
-from opal_common.schemas.store import TransactionType
+from opal_common.schemas.store import TransactionType, JSONPatchAction
 from opal_common.security.sslcontext import get_custom_ssl_context
 from opal_common.utils import get_authorization_header
 
@@ -396,9 +397,19 @@ class DataUpdater:
                         path=policy_store_path or "/",
                     )
                     try:
-                        await store_transaction.set_policy_data(
-                            policy_data, path=policy_store_path
-                        )
+                        if entry.save_method == HttpMethodsAllowed.PATCH:
+                            patch_data = [JSONPatchAction(**action) for action in policy_data]
+                            await store_transaction.patch_policy_data(
+                                patch_data, path=policy_store_path
+                            )
+                        elif entry.save_method == HttpMethodsAllowed.PUT:
+                            await store_transaction.set_policy_data(
+                                policy_data, path=policy_store_path
+                            )
+                        elif entry.save_method == HttpMethodsAllowed.DELETE:
+                            await store_transaction.delete_policy_data(
+                                path=policy_store_path
+                            )
                         # No exception we we're able to save to the policy-store
                         report.saved = True
                         # save the report for the entry

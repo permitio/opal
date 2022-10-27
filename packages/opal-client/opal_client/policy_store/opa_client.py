@@ -490,10 +490,10 @@ class OpaClient(BasePolicyStoreClient):
                 raise
 
     @affects_transaction
-    async def patch_data(
+    async def patch_policy_data(
         self,
-        path: str,
         patch_document: JSONPatchDocument,
+        path: str,
         transaction_id: Optional[str] = None,
     ):
         path = self._safe_data_module_path(path)

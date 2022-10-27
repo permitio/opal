@@ -51,10 +51,10 @@ class AbstractPolicyStore:
     ):
         raise NotImplementedError()
 
-    async def patch_data(
+    async def patch_policy_data(
         self,
-        path: str,
         patch_document: Dict[str, Any],
+        path: str,
         transaction_id: Optional[str] = None,
     ):
         raise NotImplementedError()

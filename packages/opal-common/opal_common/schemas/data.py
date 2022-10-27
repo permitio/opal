@@ -1,3 +1,4 @@
+from enum import Enum
 from logging import basicConfig
 from pydoc import describe
 from typing import Any, Dict, List, Optional, Tuple, Union
@@ -8,6 +9,11 @@ from pydantic import AnyHttpUrl, BaseModel, Field, root_validator
 
 JsonableValue = Union[Dict[str, Any], List[Any]]
 
+
+class HttpMethodsAllowed(Enum):
+    PUT = "put"
+    PATCH = "patch"
+    DELETE= "delete"
 
 class DataSourceEntry(BaseModel):
     """
@@ -30,8 +36,8 @@ class DataSourceEntry(BaseModel):
     # How to save the data
     # see https://www.openpolicyagent.org/docs/latest/rest-api/#data-api path is the path nested under <OPA_SERVER>/<version>/data
     dst_path: str = Field("", description="OPA data api path to store the document at")
-    save_method: str = Field(
-        "PUT", description="Method used to write into OPA - PUT/PATCH"
+    save_method: HttpMethodsAllowed = Field(
+        HttpMethodsAllowed.PUT, description="Method used to write into OPA - PUT/PATCH"
     )
 
 
