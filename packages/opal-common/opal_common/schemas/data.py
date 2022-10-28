@@ -13,7 +13,7 @@ JsonableValue = Union[Dict[str, Any], List[Any]]
 class HttpMethodsAllowed(Enum):
     PUT = "put"
     PATCH = "patch"
-    DELETE= "delete"
+    DELETE = "delete"
 
 class DataSourceEntry(BaseModel):
     """

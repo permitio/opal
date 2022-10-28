@@ -33,7 +33,7 @@ from opal_common.schemas.data import (
     DataUpdateReport,
     HttpMethodsAllowed,
 )
-from opal_common.schemas.store import TransactionType, JSONPatchAction
+from opal_common.schemas.store import JSONPatchAction, TransactionType
 from opal_common.security.sslcontext import get_custom_ssl_context
 from opal_common.utils import get_authorization_header
 
@@ -398,7 +398,9 @@ class DataUpdater:
                     )
                     try:
                         if entry.save_method == HttpMethodsAllowed.PATCH:
-                            patch_data = [JSONPatchAction(**action) for action in policy_data]
+                            patch_data = [
+                                JSONPatchAction(**action) for action in policy_data
+                            ]
                             await store_transaction.patch_policy_data(
                                 patch_data, path=policy_store_path
                             )
