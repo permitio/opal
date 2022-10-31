@@ -303,6 +303,47 @@ class DataUpdater:
             logger.exception("Failed to calculate hash for data {data}", data=data)
             return ""
 
+    async def _send_data_to_store(
+        self, entry: DataSourceEntry, policy_data, tx: BasePolicyStoreClient
+    ) -> Tuple[DataEntryReport, Optional[Exception]]:
+        # get path to store the URL data (default mode (None) is as "" - i.e. as all the data at root)
+        policy_store_path = "" if entry is None else entry.dst_path
+        # None is not valid - use "" (protect from missconfig)
+        if policy_store_path is None:
+            policy_store_path = ""
+        # fix opa_path (if not empty must start with "/" to be nested under data)
+        if policy_store_path != "" and not policy_store_path.startswith("/"):
+            policy_store_path = f"/{policy_store_path}"
+
+        report = DataEntryReport(
+            entry=entry, hash=self.calc_hash(policy_data), fetched=True
+        )
+        logger.info(
+            "Saving fetched data to policy-store: source url='{url}', destination path='{path}' method='{method}'",
+            url=entry.url,
+            path=policy_store_path or "/",
+            method=entry.save_method,
+        )
+
+        try:
+            if entry.save_method == HttpMethodsAllowed.PATCH:
+                patch_data = [JSONPatchAction(**action) for action in policy_data]
+                await tx.patch_data(patch_data, path=policy_store_path)
+            elif entry.save_method == HttpMethodsAllowed.PUT:
+                await tx.set_policy_data(policy_data, path=policy_store_path)
+            elif entry.save_method == HttpMethodsAllowed.DELETE:
+                await tx.delete_policy_data(path=policy_store_path)
+            # No exception we're able to save to the policy-store
+            report.saved = True
+            # save the report for the entry
+            return report, None
+        except Exception as ex:
+            logger.exception("Failed to save data update to policy-store")
+            # we failed to save to policy-store
+            report.saved = False
+            # save the report for the entry
+            return report, ex
+
     async def update_policy_data(
         self,
         update: DataUpdate = None,
@@ -333,7 +374,7 @@ class DataUpdater:
         async with policy_store.transaction_context(
             update.id, transaction_type=TransactionType.data
         ) as store_transaction:
-            # for intelisense treat store_transaction as a PolicyStoreClient (which it proxies)
+            # for intellisense treat store_transaction as a PolicyStoreClient (which it proxies)
             store_transaction: BasePolicyStoreClient
             error_content = None
             for (url, fetch_config, result), entry in itertools.zip_longest(
@@ -371,59 +412,22 @@ class DataUpdater:
                             status=result.status,
                             error=error_content,
                         )
+
                 store_transaction._update_remote_status(
                     url=url, status=fetched_data_successfully, error=str(error_content)
                 )
 
                 if fetched_data_successfully:
-                    # get path to store the URL data (default mode (None) is as "" - i.e. as all the data at root)
-                    policy_store_path = "" if entry is None else entry.dst_path
-                    # None is not valid - use "" (protect from missconfig)
-                    if policy_store_path is None:
-                        policy_store_path = ""
-                    # fix opa_path (if not empty must start with "/" to be nested under data)
-                    if policy_store_path != "" and not policy_store_path.startswith(
-                        "/"
-                    ):
-                        policy_store_path = f"/{policy_store_path}"
+                    print("****")
                     policy_data = result
-                    # Create a report on the data-fetching
-                    report = DataEntryReport(
-                        entry=entry, hash=self.calc_hash(policy_data), fetched=True
+
+                    report, ex = await self._send_data_to_store(
+                        entry, policy_data, store_transaction
                     )
-                    logger.info(
-                        "Saving fetched data to policy-store: source url='{url}', destination path='{path}'",
-                        url=url,
-                        path=policy_store_path or "/",
-                    )
-                    try:
-                        if entry.save_method == HttpMethodsAllowed.PATCH:
-                            patch_data = [
-                                JSONPatchAction(**action) for action in policy_data
-                            ]
-                            await store_transaction.patch_policy_data(
-                                patch_data, path=policy_store_path
-                            )
-                        elif entry.save_method == HttpMethodsAllowed.PUT:
-                            await store_transaction.set_policy_data(
-                                policy_data, path=policy_store_path
-                            )
-                        elif entry.save_method == HttpMethodsAllowed.DELETE:
-                            await store_transaction.delete_policy_data(
-                                path=policy_store_path
-                            )
-                        # No exception we we're able to save to the policy-store
-                        report.saved = True
-                        # save the report for the entry
-                        reports.append(report)
-                    except Exception:
-                        logger.exception("Failed to save data update to policy-store")
-                        # we failed to save to policy-store
-                        report.saved = False
-                        # save the report for the entry
-                        reports.append(report)
-                        # re-raise so the context manager will be aware of the failure
-                        raise
+                    reports.append(report)
+
+                    if ex is not None:
+                        raise ex
                 else:
                     report = DataEntryReport(entry=entry, fetched=False, saved=False)
                     # save the report for the entry

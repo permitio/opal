@@ -51,7 +51,7 @@ class AbstractPolicyStore:
     ):
         raise NotImplementedError()
 
-    async def patch_policy_data(
+    async def patch_data(
         self,
         patch_document: Dict[str, Any],
         path: str,

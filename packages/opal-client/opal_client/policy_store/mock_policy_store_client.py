@@ -70,7 +70,7 @@ class MockPolicyStoreClient(BasePolicyStoreClient):
         else:
             del self._data[path]
 
-    async def patch_policy_data(
+    async def patch_data(
         self,
         patch_document: Dict[str, Any],
         path: str,

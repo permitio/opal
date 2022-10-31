@@ -10,10 +10,11 @@ from pydantic import AnyHttpUrl, BaseModel, Field, root_validator
 JsonableValue = Union[Dict[str, Any], List[Any]]
 
 
-class HttpMethodsAllowed(Enum):
-    PUT = "put"
-    PATCH = "patch"
-    DELETE = "delete"
+class HttpMethodsAllowed(str, Enum):
+    PUT = "PUT"
+    PATCH = "PATCH"
+    DELETE = "DELETE"
+
 
 class DataSourceEntry(BaseModel):
     """
