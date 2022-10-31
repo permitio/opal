@@ -14,7 +14,7 @@ RUN pip install --no-cache-dir --upgrade pip && pip install --no-cache-dir -r ./
 
 # COMMON IMAGE --------------------------------------
 # ---------------------------------------------------
-FROM python:3.10-slim as common
+FROM python:3.12-rc-slim-buster as common
 
 # copy libraries from build stage (This won't copy redundant libraries we used in BuildStage)
 COPY --from=BuildStage /usr/local /usr/local
