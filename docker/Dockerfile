@@ -74,7 +74,7 @@ FROM client-standalone as client
 # Temporarily move back to root for additional setup
 USER root
 
-RUN apt-get update && apt-get install -y skopeo && apt-get clean
+RUN apt-get update && apt-get install -y skopeo netcat && apt-get clean
 
 # copy opa from official docker image
 ARG opa_tag=latest-static
