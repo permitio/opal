@@ -74,10 +74,15 @@ FROM client-standalone as client
 # Temporarily move back to root for additional setup
 USER root
 
-RUN apt-get update && apt-get install -y curl netcat && apt-get clean
+RUN apt-get update && apt-get install -y skopeo && apt-get clean
 
-# copy opa from official image (main binary and lib for web assembly)
-RUN curl -L -o ./opa https://openpolicyagent.org/downloads/latest/opa_linux_amd64_static && chmod 755 ./opa
+# copy opa from official docker image
+ARG opa_tag=latest-static
+RUN skopeo copy "docker://openpolicyagent/opa:${opa_tag}" docker-archive:./image.tar
+RUN mkdir image && tar xf image.tar -C ./image && cd image && cat *.tar | tar xf - -i
+RUN find image/ -name "opa*" -type f -executable -print0 | xargs -0 -I "{}" cp {} ./opa && chmod 755 ./opa
+RUN rm -r -d image image.tar
+
 # enable inline OPA
 ENV OPAL_INLINE_OPA_ENABLED=true
 # expose opa port
