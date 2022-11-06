@@ -53,6 +53,10 @@ jobs:
 
   test-docker:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        opa_latest_tag_suffix: ["", "-static", "-istio", "-istio-static"]
     steps:
       # BUILD PHASE
       - name: Checkout
@@ -73,9 +77,11 @@ jobs:
           file: docker/Dockerfile
           push: false
           target: client
-          cache-from: type=registry,ref=permitio/opal-client:latest
+          cache-from: type=registry,ref=permitio/opal-client:latest${{ matrix.opa_latest_tag_suffix }}
           cache-to: type=inline
           load: true
+          build-args: |
+            opa_tag=latest${{ matrix.opa_latest_tag_suffix }}
           tags: |
             permitio/opal-client:test
 
