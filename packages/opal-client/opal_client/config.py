@@ -1,20 +1,12 @@
 from enum import Enum
 
-from opal_client.opa.options import OpaServerOptions
+from opal_client.opa.options import OpaLogFormat, OpaLogLevel, OpaServerOptions
 from opal_client.policy_store.options import PolicyStoreConnRetryOptions
 from opal_client.policy_store.schemas import PolicyStoreTypes
 from opal_common.confi import Confi, confi
 from opal_common.config import opal_common_config
 from opal_common.fetcher.providers.http_fetch_provider import HttpFetcherConfig
 from opal_common.schemas.data import UpdateCallback
-
-
-# Opal Client general configuration -------------------------------------------
-class OpaLogFormat(str, Enum):
-    NONE = "none"  # no opa logs are piped
-    MINIMAL = "minimal"  # only the event name is logged
-    HTTP = "http"  # tries to extract http method, path and response status code
-    FULL = "full"  # logs the entire data dict returned
 
 
 class OpalClientConfig(Confi):
@@ -59,6 +51,10 @@ class OpalClientConfig(Confi):
 
     INLINE_OPA_LOG_FORMAT: OpaLogFormat = confi.enum(
         "INLINE_OPA_LOG_FORMAT", OpaLogFormat, OpaLogFormat.NONE
+    )
+
+    INLINE_OPA_LOG_LEVEL: OpaLogLevel = confi.enum(
+        "INLINE_OPA_LOG_LEVEL", OpaLogLevel, OpaLogLevel.info
     )
 
     # configuration for fastapi routes

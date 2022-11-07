@@ -3,10 +3,10 @@ import time
 from typing import Callable, Coroutine, List, Optional
 
 import psutil
-from opal_client.config import OpaLogFormat
+from opal_client.config import opal_client_config
 from opal_client.logger import logger
 from opal_client.opa.logger import pipe_opa_logs
-from opal_client.opa.options import OpaServerOptions
+from opal_client.opa.options import OpaLogFormat, OpaServerOptions
 from tenacity import retry, wait_random_exponential
 
 AsyncCallback = Callable[[], Coroutine]
@@ -47,6 +47,8 @@ class OpaRunner:
         piped_logs_format: OpaLogFormat = OpaLogFormat.NONE,
     ):
         self._options = options or OpaServerOptions()
+        self._options.log_level = opal_client_config.INLINE_OPA_LOG_LEVEL
+
         self._stopped = False
         self._process = None
         self._should_stop: Optional[asyncio.Event] = None

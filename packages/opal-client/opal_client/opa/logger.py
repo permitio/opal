@@ -34,8 +34,10 @@ async def pipe_opa_logs(stream, logs_format: OpaLogFormat):
 
     while True:
         line = await stream.readline()
+
         if not line:
             break
+
         try:
             log_line = json.loads(line)
             level = logging.getLevelName(
@@ -44,6 +46,7 @@ async def pipe_opa_logs(stream, logs_format: OpaLogFormat):
             msg = log_line.pop("msg", None)
 
             logged = False
+
             if logs_format == OpaLogFormat.MINIMAL:
                 logged = log_event_name(level, msg)
             elif logs_format == OpaLogFormat.HTTP:
