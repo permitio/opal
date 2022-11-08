@@ -66,6 +66,21 @@ ENV OPAL_INLINE_OPA_ENABLED=false
 EXPOSE 7000
 USER opal
 
+
+FROM alpine:latest as opa-extractor
+USER root
+
+RUN apk update && apk add skopeo tar
+WORKDIR /opal
+
+# copy opa from official docker image
+ARG opa_tag=latest-static
+RUN skopeo copy "docker://openpolicyagent/opa:${opa_tag}" docker-archive:./image.tar && \
+  mkdir image && tar xf image.tar -C ./image && cat image/*.tar | tar xf - -C ./image -i && \
+  find image/ -name "opa*" -type f -executable -print0 | xargs -0 -I "{}" cp {} ./opa && chmod 755 ./opa && \
+  rm -r image image.tar
+
+
 # CLIENT IMAGE --------------------------------------
 # Using standalone image as base --------------------
 # ---------------------------------------------------
@@ -74,10 +89,11 @@ FROM client-standalone as client
 # Temporarily move back to root for additional setup
 USER root
 
-RUN apt-get update && apt-get install -y curl netcat && apt-get clean
+RUN apt-get update && apt-get install -y netcat && apt-get clean
 
-# copy opa from official image (main binary and lib for web assembly)
-RUN curl -L -o ./opa https://openpolicyagent.org/downloads/latest/opa_linux_amd64_static && chmod 755 ./opa
+# copy opa from opa-extractor
+COPY --from=opa-extractor /opal/opa ./opa
+
 # enable inline OPA
 ENV OPAL_INLINE_OPA_ENABLED=true
 # expose opa port
