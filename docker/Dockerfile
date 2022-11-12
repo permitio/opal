@@ -74,8 +74,8 @@ RUN apk update && apk add skopeo tar
 WORKDIR /opal
 
 # copy opa from official docker image
-ARG opa_tag=latest-static
-RUN skopeo copy "docker://openpolicyagent/opa:${opa_tag}" docker-archive:./image.tar && \
+ARG opa_image=openpolicyagent/opa:latest-static
+RUN skopeo copy "docker://${opa_image}" docker-archive:./image.tar && \
   mkdir image && tar xf image.tar -C ./image && cat image/*.tar | tar xf - -C ./image -i && \
   find image/ -name "opa*" -type f -executable -print0 | xargs -0 -I "{}" cp {} ./opa && chmod 755 ./opa && \
   rm -r image image.tar
