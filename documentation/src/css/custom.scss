@@ -198,7 +198,7 @@ aside[class^="theme-doc-sidebar-container"] {
   > a {
     font-weight: bold;
     text-transform: uppercase;
-    font-size: 0.9rem;
+    font-size: 0.8rem;
   }
 
   margin-top: 1.5rem;
@@ -215,9 +215,9 @@ aside[class^="theme-doc-sidebar-container"] {
 //   }
 // }
 
-.theme-doc-sidebar-item-category-level-3 {
-    padding-right: 1rem;
-}
+// .theme-doc-sidebar-item-category-level-3 {
+//     padding-right: 1rem;
+// }
 
 .theme-doc-sidebar-item-link-level-1.menu__list-item {
   > .menu__link {
@@ -225,15 +225,21 @@ aside[class^="theme-doc-sidebar-container"] {
   }
 }
 
-.menu {
-  margin-right: 0.8rem;
-}
+// .menu {
+//   margin-right: 0.8rem;
+// }
 
 .menu__list {
-  margin: 0 0 0 0.8rem;
+  margin: 0 0 0 0.5rem;
 }
 
 // sidebar menu links appearance
 .menu__link {
-  font-size: 0.9rem;
+  font-size: 0.8rem;
+}
+
+// Adjust the side navbar to be spaced evenly.
+.menu_node_modules-\@docusaurus-theme-classic-lib-theme-DocSidebar-Desktop-Content-styles-module {
+  padding-right: 0.5rem !important;
+  padding-bottom: 2rem !important;
 }
