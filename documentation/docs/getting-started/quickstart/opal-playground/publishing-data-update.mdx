@@ -77,7 +77,7 @@ Let's analyze the components of this update. **OPAL data updates** are built to 
 - You can specify a topic (in our example it was `policy_data`) to **target only specific OPAL clients**; and by extension **specific OPA agents**.
   This is only logical if each microservice you have has an OPA sidecar of its own and thus different policy/data needs.
 
-- OPAL specifies **from where** to fetch the data that changed. In this example we used a free and open API ([`api.country.is`](api.country.is))
+- OPAL specifies **from where** to fetch the data that changed. In this example we used a free and open API ([`api.country.is`](https://api.country.is))
   that anyone can access, however, it can be **your specific API**, or a **3rd-party API**.
 
 - OPAL specifies **to where** in the OPA document hierarchy the data should be saved - by **where**, we mean the **destination path**.

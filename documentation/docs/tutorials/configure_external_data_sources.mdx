@@ -40,7 +40,7 @@ If each of your OPAL clients needs a **slightly different** configuration, you c
 **Yes!! And they should!!**
 
 Each of your opal clients should use a unique JWT token issued to it by the OPAL server.
-[You can learn how to generate your OPAL client token here](/getting-started/get_started_with_opal_using_docker#step-2-obtain-client-jwt-token-optional).
+[You can learn how to generate your OPAL client token here](/getting-started/running-opal/as-docker-image/run-opal#step-2-obtain-client-jwt-token-optional).
 
 When [issued via the API](https://opal.permit.io/redoc#operation/generate_new_access_token_token_post), each OPAL client token (JWT) supports custom claims (the `claims` attribute).
 
@@ -48,7 +48,7 @@ When [issued via the API](https://opal.permit.io/redoc#operation/generate_new_ac
 
 OPAL server supports redirecting to an **external API server** that can serve different `DataSourceEntries` based on the JWT token identifying the OPAL client. This external API server should have access to OPAL's public key so that it can validate OPAL JWTs correctly and make sure the OPAL identity passed in a Bearer token is valid.
 
-This is how a typical configuration of `OPAL_DATA_CONFIG_SOURCES` looks like: ([a breakdown of this config can be found here](/getting-started/get_started_with_opal_using_docker#step-5-server-config---data-sources))
+This is how a typical configuration of `OPAL_DATA_CONFIG_SOURCES` looks like: ([a breakdown of this config can be found here](/getting-started/running-opal/as-docker-image/run-opal#step-5-server-config---data-sources))
 
 ```
 {
