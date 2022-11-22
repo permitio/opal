@@ -26,16 +26,6 @@ const sidebars = {
           collapsed: false,
           items: [
             {
-              type: "doc",
-              id: "getting-started/get_started_with_opal_docker_compose_tutorial",
-              label: "start",
-            },
-            // {
-            //   type: "doc",
-            //   id: "getting-started/get_started_with_opal_using_docker",
-            //   label: "official docker images",
-            // },
-            {
               type: "category",
               label: "OPAL Playground",
               collapsible: true,
@@ -64,14 +54,82 @@ const sidebars = {
                 {
                   type: "doc",
                   id: "getting-started/quickstart/opal-playground/publishing-data-update",
-                  label: "Publishing Data Update",
+                  label: "Publishing Data Updates",
                 },
               ],
             },
             {
-              type: "doc",
-              id: "getting-started/quickstart/understanding-config",
-              label: "Understanding Config",
+              type: "category",
+              collapsible: true,
+              label: "Docker Compose Config",
+              items: [
+                {
+                  type: "doc",
+                  id: "getting-started/quickstart/docker-compose-config/overview",
+                  label: "Overview",
+                },
+                {
+                  type: "doc",
+                  id: "getting-started/quickstart/docker-compose-config/postgres-database",
+                  label: "Broadcast Channel",
+                },
+                {
+                  type: "doc",
+                  id: "getting-started/quickstart/docker-compose-config/opal-server",
+                  label: "OPAL Client",
+                },
+                {
+                  type: "doc",
+                  id: "getting-started/quickstart/docker-compose-config/opal-client",
+                  label: "OPAL Server",
+                },
+              ],
+            },
+          ],
+        },
+        {
+          type: "category",
+          collapsible: true,
+          label: "Running OPAL",
+          items: [
+            {
+              type: "category",
+              collapsible: true,
+              label: "as Python Packages",
+              items: [
+                {
+                  type: "doc",
+                  id: "getting-started/running-opal/as-python-package/overview",
+                  label: "Overview",
+                },
+                {
+                  type: "doc",
+                  id: "getting-started/running-opal/as-python-package/opal-server-setup",
+                  label: "OPAL Server Setup",
+                },
+                {
+                  type: "doc",
+                  id: "getting-started/running-opal/as-python-package/opal-client-setup",
+                  label: "OPAL Client Setup",
+                },
+                {
+                  type: "doc",
+                  id: "getting-started/running-opal/as-python-package/secure-mode-setup",
+                  label: "Secure Mode Setup",
+                },
+              ],
+            },
+            {
+              type: "category",
+              collapsible: true,
+              label: "as Docker Images",
+              items: [
+                {
+                  type: "doc",
+                  id: "getting-started/running-opal/as-docker-image/overview",
+                  label: "Overview",
+                },
+              ],
             },
           ],
         },
