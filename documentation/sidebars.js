@@ -129,6 +129,11 @@ const sidebars = {
                   id: "getting-started/running-opal/as-docker-image/overview",
                   label: "Overview",
                 },
+                {
+                  type: "doc",
+                  id: "getting-started/running-opal/as-docker-image/run-opal",
+                  label: "Full Guide",
+                },
               ],
             },
           ],

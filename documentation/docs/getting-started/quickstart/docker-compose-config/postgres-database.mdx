@@ -5,7 +5,7 @@ One of the containers that is handled inside the `docker-compose.yml` config is 
 When **scaling** the OPAL Server to **multiple nodes and/or multiple workers**, we use a broadcast channel to **sync
 between all the instances** of the OPAL Server.
 
-```yml
+```yml showLineNumbers
 services:
   broadcast_channel:
     image: postgres:alpine

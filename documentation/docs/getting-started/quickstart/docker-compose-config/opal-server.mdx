@@ -2,7 +2,7 @@
 
 There are three important concepts in the configuration of the OPAL Server that should be understood.
 
-```yml
+```yml showLineNumbers
 services:
   opal_server:
     image: permitio/opal-server:latest
@@ -19,37 +19,74 @@ services:
       - broadcast_channel
 ```
 
-### The OPAL Server provides Policy-code realtime updates
+### 1. Policy-data basic configuration
 
-- Tracks a git repository (in our case - [this repository](https://github.com/permitio/opal-example-policy-repo))
-  and feeds the policy code (`.rego` files) and static data files (`data.json` files) to OPA as policy.
-- If new commits will be pushed to this repository that affect rego or data files, the updated policy will be pushed
-  to OPA automatically in realtime by OPAL.
-- The `docker-compose.yml` file declares a polling interval to check if new commits are pushed to the repo.
-  In production we recommend you setup a git webhook from your repo to OPAL server. The only reason we are using polling
-  here is because we want the example `docker-compose.yml` file to work for you as well, and webhooks can only hit a
-  public internet address (but during development you can use something like [ngrok](https://ngrok.com/)).
+The OPAL server provides the **base data source configuration** for the OPAL client. The configuration is structured
+as **directives** for the client.
 
-### Policy-data basic configuration
+Each directive specifies:
 
-- The OPAL server serves the **base data source configuration** for OPAL client. The configuration is structured
-  as **directives** for the client, each directive specifies **what to fetch** (url), and **where to put it** in
-  OPA data document hierarchy (destination path).
-- The data sources configured on the server will be fetched **by the client** every time it decides it needs
-  to fetch the entire data configuration (e.g: when the client first loads, after a period of disconnection from the server, etc).
-- The data sources specified in the server configuration must always return a complete and up-to-date picture.
-- In our example `docker-compose.yml` file, the server is configured to return these data sources directives to the client:
+1. **what to fetch** - the URL
+2. **where to put it in the OPA data document hierarchy** - the destination path
 
-  - Fetch the `/policy-data` route on the OPAL Server (returns: `{}`) and assign it to the root data document on OPA (i.e: `/`).
+The data sources configured on the server will be fetched **by the client** every time it decides it needs
+to fetch the entire data configuration. This could be when the client **first loads**, after a **period of
+disconnection** from the server etc.
 
-### Policy-data realtime updates
+The data sources specified in the server configuration must always return a complete and up-to-date picture.
+In our example `docker-compose.yml` file, the server is configured to return these data sources directives to the client.
 
-- The server can push realtime data updates to the client, it offers a REST API that allows you to push an updates
-  via the server via pub/sub to your OPAL clients (and by extension OPA).
-- We have a guide for that: [how to trigger realtime data updates using OPAL](/tutorials/trigger_data_updates).
-- Example why you need live updates:
-  - Alice just invited Bob to a google drive document.
-  - Bob expects to be able to view the document immediately.
-  - If your authorization layer is implemented with OPA, you cannot wait for the OPA agent to download a new bundle,
-    it's too slow for live application.
-  - Instead you push an update via OPAL and the state of the OPA agent changes immediately.
+This is what it looks like:
+
+```yml
+OPAL_DATA_CONFIG_SOURCES={"config":{"entries":[{"url":"http://opal_server:7002/policy-data","topics":["policy_data"],"dst_path":"/static"}]}}
+```
+
+We fetch the `/policy-data` route on the OPAL server and **assign it to the root data document on OPA** - `i.e: /`.
+
+### 2. Policy-code realtime updates
+
+The **OPAL server tracks a git repository** and feeds the policy code, or more accuratelly,
+`.rego` files along with static data files like `data.json` directly to OPA as a policy.
+
+```yml
+OPAL_POLICY_REPO_URL=https://github.com/permitio/opal-example-policy-repo
+```
+
+If new commits will be pushed to this repository that affect `.rego` or data files, the updated policy will be pushed
+to OPA automatically in realtime by OPAL.
+
+The `docker-compose.yml` file declares a **polling interval** to check if new commits are pushed to the repo.
+
+```yml
+OPAL_POLICY_REPO_POLLING_INTERVAL=30
+```
+
+:::tip
+When working in a **production environment**, we recommend you setup a **git webhook** from your repo to the OPAL server.
+
+The only reason we are using polling here is because we want the example `docker-compose.yml` file to work for you as well,
+and webhooks can only hit a public internet address.
+
+If you are working in a **development environment**, you can use a reverse proxy like [ngrok](https://ngrok.com/).
+:::
+
+### 3. Policy-data realtime updates
+
+The **OPAL server can push realtime data updates to the client**. It offers a **REST API** that allows you to push updates
+via the server using a pub/sub channel.
+
+Below is an example why realtime updates are important.
+
+:::info EXAMPLE
+
+- Alice just **invited** Bob to a google drive document.
+- Bob expects to be able to **view the document immediately**.
+- If your authorization layer is implemented with OPA, **you cannot wait for the OPA agent to download a new bundle**,
+  it's too slow for live application.
+- Instead you **push an update via OPAL** and the state of the OPA agent changes immediately.
+
+:::
+
+If you want to learn more about triggering realtime updates via OPAL - please refer
+to [**this**](/tutorials/trigger_data_updates) guide.

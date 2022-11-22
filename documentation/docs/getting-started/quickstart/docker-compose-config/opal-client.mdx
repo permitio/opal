@@ -2,51 +2,50 @@
 
 The OPAL Client has three main functionalities that need to be highlighted.
 
-```yml
+```yml showLineNumbers
 service:
   opal_client:
-  # by default we run opal-client from latest official image
   image: permitio/opal-client:latest
   environment:
     - OPAL_SERVER_URL=http://opal_server:7002
     - OPAL_LOG_FORMAT_INCLUDE_PID=true
     - OPAL_INLINE_OPA_LOG_FORMAT=http
   ports:
-    # exposes opal client on the host machine, you can access the client at: http://localhost:7000
     - "7000:7000"
-    # exposes the OPA agent (being run by OPAL) on the host machine
-    # you can access the OPA api that you know and love at: http://localhost:8181
-    # OPA api docs are at: https://www.openpolicyagent.org/docs/latest/rest-api/
     - "8181:8181"
   depends_on:
     - opal_server
-  # this command is not necessary when deploying OPAL for real, it is simply a trick for dev environments
-  # to make sure that opal-server is already up before starting the client.
   command: sh -c "./wait-for.sh opal_server:7002 --timeout=20 -- ./start.sh"
 ```
 
-### Can run OPA for you (inline process)
+### 1. The OPAL client can run OPA for you as an inline process
 
-- The OPAL-Client [docker image](https://hub.docker.com/r/permitio/opal-client) contains a built-in OPA agent,
-  and can serve as fully-functional **authorization microservice**. OPA is solely responsible for enforcement
-  (evaluates authorization queries) and OPAL is solely responsible for state-management (keeps the policy and data
-  needed to evaluate queries up-to-date).
-- In our example `docker-compose.yml` OPA is enabled and runs on port `:8181`, exposed on the host machine.
-- OPAL will manage the OPA process. If the OPA process fails for some reason (unlikely :)), OPAL will restart OPA and
-  rehydrate the OPA cache with valid and up-to-date state (i.e: will re-download policies and data).
+The OPAL client [docker image](https://hub.docker.com/r/permitio/opal-client) contains a built-in OPA agent,
+and can serve as fully-functional **authorization microservice**. OPA is solely responsible for **enforcing** and
+**evaluating authorization queries**.
 
-### Syncs OPA with latest policy code
+:::tip FACT
+**OPAL** is solely responsible for state-management, meaning it will keep the **policy** and **data** needed to evaluate queries
+**up-to-date**.
+:::
 
-- Listens to policy code update notifications and downloads up-to-date policy bundles from the server.
+In our example `docker-compose.yml` file, OPA is enabled and runs on port `:8181` which is exposed on the host machine.
 
-### Syncs OPA with latest policy data
+```yml showLineNumbers {3}
+ports:
+  - "7000:7000"
+  - "8181:8181"
+```
 
-- Listens to policy data update notifications and fetches the data from the sources specified by the directives
-  sent from the server.
-- Can aggregate data from multiple sources: your APIs, DBs, 3rd party SaaS, etc.
+**OPAL will manage the OPA process**. If the OPA process fails for some reason, OPAL will restart OPA and
+rehydrate the OPA cache with valid and up-to-date state. By rehydration, we mean that the policies and data
+will be **re-downloaded**.
 
-If you skipped here from step 1, you can now [come back to the hands-on tutorial](#eval-query-opa).
+### 2. The OPAL client syncs OPA with latest policy code
 
-## <a name="troubleshooting"></a> Troubleshooting
+OPAL **listens** to policy code update notifications and **downloads up-to-date policy bundles** from the server.
 
-You should troubleshoot the same way as shown in the [getting started with containers tutorial](get_started_with_opal_using_docker#troubleshooting).
+### 3. The OPAL client syncs OPA with latest policy data
+
+OPAL **listens** to policy data update notifications and **fetches the data from the sources** specified by the instructions
+sent from the server. OPAL can aggregate data from multiple sources. This may include your **APIs**, **databases** and **3rd party SaaS**.
