@@ -73,8 +73,8 @@ const config = {
         copyright: `Copyright © ${new Date().getFullYear()} Permit, Inc.`,
       },
       prism: {
-        theme: lightCodeTheme,
-        darkTheme: darkCodeTheme,
+        theme: require("prism-react-renderer/themes/nightOwl"),
+        // darkTheme: require("prism-react-renderer/themes/nightOwlLight"),
       },
       announcementBar: {
         id: "support_us",

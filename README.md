@@ -87,9 +87,9 @@ curl -L https://raw.githubusercontent.com/permitio/opal/master/docker/docker-com
 
 - 🧠 &nbsp; "How-To"s
 
-  - [How to get started with OPAL (Packages and CLI)](https://docs.opal.ac/getting-started/get_started_with_opal_python_packages)
+  - [How to get started with OPAL (Packages and CLI)](https://docs.opal.ac/getting-started/running-opal/as-python-package/overview)
 
-  - [How to get started with OPAL (Container Images)](https://docs.opal.ac/getting-started/get_started_with_opal_using_docker)
+  - [How to get started with OPAL (Container Images)](https://docs.opal.ac/getting-started/running-opal/as-docker-image/overview)
 
   - [How to trigger Data Updates via OPAL](https://docs.opal.ac/tutorials/trigger_data_updates)
 
