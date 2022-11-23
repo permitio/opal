@@ -100,8 +100,8 @@ class BundleMaker:
             try:
                 manifest_file = viewer.get_file(dir.path / manifest_file_name)
                 if manifest_file is None:
-                    logger.warning(
-                        f"  Manifest file {manifest_file_path} not found, assuming empty"
+                    logger.info(
+                        f"Manifest file {manifest_file_path} not found, assuming empty"
                     )
                 else:
                     for path_entry in manifest_file.read().splitlines():

@@ -1,0 +1,55 @@
+# Step 3: Changing and updating the policy in realtime
+
+<!-- Due to the fact the example `docker-compose.yml` makes OPAL track [this repository](https://github.com/permitio/opal-example-policy-repo)
+which regretfully you can not edit yourself, you can follow along this video to see how a git commit can affect the policy in realtime:
+
+```
+TBD: video
+``` -->
+
+In the `docker-compose.yml` example file that we have mentioned earlier, it is defined that OPAL should
+track [this repository](https://github.com/permitio/opal-example-policy-repo).
+
+Here is a snippet of code from that repo:
+
+```yml {13} showLineNumbers
+opal_server:
+  # by default we run opal-server from latest official image
+  image: permitio/opal-server:latest
+  environment:
+    # the broadcast backbone uri used by opal server workers (see comments above for: broadcast_channel)
+    - OPAL_BROADCAST_URI=postgres://postgres:postgres@broadcast_channel:5432/postgres
+    # number of uvicorn workers to run inside the opal-server container
+    - UVICORN_NUM_WORKERS=4
+    # the git repo hosting our policy
+    # - if this repo is not public, you can pass an ssh key via `OPAL_POLICY_REPO_SSH_KEY`)
+    # - the repo we pass in this example is *public* and acts as an example repo with dummy rego policy
+    # - for more info, see: https://docs.opal.ac/tutorials/track_a_git_repo
+    - OPAL_POLICY_REPO_URL=https://github.com/permitio/opal-example-policy-repo
+    # in this example we will use a polling interval of 30 seconds to check for new policy updates (git commits affecting the rego policy).
+    # however, it is better to utilize a git *webhook* to trigger the server to check for changes only when the repo has new commits.
+    # for more info see: https://docs.opal.ac/tutorials/track_a_git_repo
+    - OPAL_POLICY_REPO_POLLING_INTERVAL=30
+```
+
+You can also simply change the tracked repo in the example `docker-compose.yml` file by editing these variables:
+
+```yml {7,9,11} showLineNumbers
+version: "3.8"
+services:
+  ...
+  opal_server:
+    environment:
+      ...
+      - OPAL_POLICY_REPO_URL=<YOUR REPO URL>
+      # use this if you want to setup policy updates via git webhook (recommended)
+      - OPAL_POLICY_REPO_WEBHOOK_SECRET=<your webhook secret>
+      # use this if you want to setup policy updates via polling (not recommended)
+      - POLICY_REPO_POLLING_INTERVAL=<interval in seconds>
+```
+
+You can then issue a commit affecting the policy and see that OPA state is indeed changing.
+
+:::info
+If you would like more information on managing and tracking a git repo, check out this [tutorial](/tutorials/track_a_git_repo).
+:::

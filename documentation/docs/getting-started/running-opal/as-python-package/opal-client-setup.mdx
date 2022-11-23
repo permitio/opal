@@ -1,0 +1,45 @@
+# Setup OPAL Client
+
+### Install
+
+- Install OPAL-client
+  ```sh
+  pip install opal-client
+  ```
+- Install a policy-agent next to the OPAL-client
+  - follow [these instructions to install OPA](https://www.openpolicyagent.org/docs/latest/#1-download-opa)
+  - If you want OPAL to execute OPA for you (and act as a watchdog for it) make sure it can find the `opa` program, by [adding it to the $PATH](https://unix.stackexchange.com/questions/3809/how-can-i-make-a-program-executable-from-everywhere).
+  - Note: the client needs network access to this agent to be able to administer updates to it.
+
+### Simple run
+
+- Use the client's `run` command
+- try:
+  ```sh
+  # general help commands and options
+  opal-client --help
+  # help for the run command
+  opal-client run --help
+  ```
+- Just like the server all top-level options can be configured using environment-variables, [.env / .ini](https://pypi.org/project/python-decouple/#env-file) files , and command-line options (later overrides previous).
+- Key options:
+  - Use options starting with `--server` to control how the client connects to the server (mainly `--server-url` to point at the server)
+  - Use options starting with `--client-api-` options to control how the client's API service is running
+  - Use `--data-topics` to control which topics for data updates the client would subscribe to.
+  - Use `--policy-subscription-dirs`
+
+### Production run
+
+Unlike the server, the opal-client currently supports working only with a single worker process (so there's no need to run it with Gunicorn).
+This will change in future releases.
+
+### Client install & run recording:
+
+<p>
+  <a
+    href="https://asciinema.org/a/oy4nA9E7RbOyiUx6evACUuLNd?t=1"
+    target="_blank"
+  >
+    <img src="https://asciinema.org/a/oy4nA9E7RbOyiUx6evACUuLNd.svg" />
+  </a>
+</p>
