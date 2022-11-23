@@ -1,10 +1,3 @@
-/**
- * Any CSS included here will be global. The classic template
- * bundles Infima by default. Infima is a CSS framework designed to
- * work well for content-centric websites.
- */
-
-/* You can override the default Infima variables here. */
 :root {
   --ifm-font-size-base: 100%;
   --ifm-code-font-size: 95%;
@@ -110,29 +103,31 @@ html[data-theme="dark"] .docusaurus-highlight-code-line {
 // make padding at the top of the document larger
 main > div.container:first-child {
   &.padding-top--md {
-    padding-top: 2.2rem !important;
+    padding-top: 2rem !important;
   }
 
+  // Gives padding to left and right of main content
   & article {
     padding: 0 1rem;
   }
 }
 
-// centered layout - centers the main section (below header)
+// centered layout - centers the main section (below header) LEFT AND RIGHT PADDING FOR NAV
 .main-wrapper {
   max-width: 90rem;
   width: 90rem;
   margin: 0 auto;
-  align-self: center;
+//   align-self: center;
 
-  h1[class^="docTitle"] {
-    font-size: 2.8rem;
-  }
+//   h1[class^="docTitle"] {
+//     font-size: 2.8rem;
+//   }
 }
 
-// main[class^="theme-doc-sidebar-container"] {
-//   padding-top: 2rem !important;
-// }
+.container {
+  max-width: inherit;
+}
+
 
 @media (max-width: 1416px) {
   .main-wrapper {
@@ -242,4 +237,8 @@ aside[class^="theme-doc-sidebar-container"] {
 .menu_node_modules-\@docusaurus-theme-classic-lib-theme-DocSidebar-Desktop-Content-styles-module {
   padding-right: 0.5rem !important;
   padding-bottom: 2rem !important;
+}
+
+.docsWrapper_node_modules-\@docusaurus-theme-classic-lib-theme-DocPage-Layout-styles-module {
+  max-width: 100vw !important;
 }
