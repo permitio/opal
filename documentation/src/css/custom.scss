@@ -242,3 +242,17 @@ aside[class^="theme-doc-sidebar-container"] {
 .docsWrapper_node_modules-\@docusaurus-theme-classic-lib-theme-DocPage-Layout-styles-module {
   max-width: 100vw !important;
 }
+
+// navigation scrollbar width
+.menu::-webkit-scrollbar {
+  width: 3px;
+}
+
+// navigation scrollbar base color
+.menu::-webkit-scrollbar-track {
+  // background-color: #00907e;
+}
+
+.menu::-webkit-scrollbar-thumb {
+  background: var(--ifm-color-primary-lighter);
+}
