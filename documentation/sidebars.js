@@ -230,8 +230,8 @@ const sidebars = {
                 },
                 {
                   type: "doc",
-                  id: "getting-started/running-opal/as-docker-image/run-opal",
-                  label: "Full Guide",
+                  id: "getting-started/running-opal/as-docker-image/troubleshooting",
+                  label: "Troubleshooting",
                 },
               ],
             },
