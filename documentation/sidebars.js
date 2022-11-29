@@ -90,6 +90,7 @@ const sidebars = {
         {
           type: "category",
           collapsible: true,
+          collapsed: false,
           label: "Running OPAL",
           items: [
             {
