@@ -8,7 +8,8 @@ from typing import List, Optional
 
 import aiohttp
 import websockets
-from fastapi import FastAPI
+from fastapi import FastAPI, status
+from fastapi.responses import JSONResponse
 from opal_client.callbacks.api import init_callbacks_api
 from opal_client.callbacks.register import CallbacksRegister
 from opal_client.config import PolicyStoreTypes, opal_client_config
@@ -206,8 +207,19 @@ class OpalClient:
         # top level routes (i.e: healthchecks)
         @app.get("/healthcheck", include_in_schema=False)
         @app.get("/", include_in_schema=False)
-        def healthcheck():
-            return {"status": "ok"}
+        async def healthcheck():
+            resp = await self.policy_store.get_data("/system/opal/healthy")
+            healthy = resp["result"]
+
+            if healthy:
+                return JSONResponse(
+                    status_code=status.HTTP_200_OK, content={"status": "ok"}
+                )
+            else:
+                return JSONResponse(
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    content={"status": "unavailable"},
+                )
 
         return app
 
