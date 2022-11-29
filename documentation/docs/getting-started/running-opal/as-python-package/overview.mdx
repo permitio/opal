@@ -1,61 +1,13 @@
 # Setup OPAL as Python Packages using the CLI
 
-This guide will teach you how to setup and use OPAL as Python packages (python 3.7 >) with its CLI
+This guide will teach you how to setup the OPAL Server & Client as a series of python packages using the CLI.
 
-- Install
-  - `pip install opal-client`
-  - `pip install opal-server`
-- Run server (example):
-  ```sh
-  # Run server
-  #  in secure mode -verifying client JWTs (Replace secrets with actual secrets ;-) )
-  export OPAL_AUTH_PRIVATE_KEY=~/opal
-  export OPAL_AUTH_PUBLIC_KEY=~/opal.pub
-  export OPAL_AUTH_MASTER_TOKEN="RANDOM-SECRET-STRING"
-  #  Watching a GIT repository from a webhook
-  export OPAL_POLICY_REPO_URL=https://github.com/permitio/opal-example-policy-repo.git
-  export OPAL_POLICY_REPO_WEBHOOK_SECRET="RANDOM-SECRET-STRING-SHARED-WITH-GITHUB"
-  opal-server run
-  ```
-- Run client (example):
-  ```sh
-  # Run client
-  #  authenticating with a JWT (replace 'JWT-CRYPTOGRAPHIC-CONTENT' with actual token )
-  export OPAL_CLIENT_TOKEN="JWT-CRYPTOGRAPHIC-CONTENT"
-  # connect to server
-  export OPAL_SERVER_URL=https://opal.mydomain.com:7002
-  # Subscribe to specific data-topics
-  export OPAL_DATA_TOPICS=tenants/my-org,stripe_billing,tickets
-  opal-client run
-  ```
+This guide will give you a great insight into understanding the main configurations of OPAL. If you prefer to run OPAL with
+pre-built docker images, please follow the guide **[here](/getting-started/running-opal/as-docker-image/overview)**.
 
-## Table of Contents
+:::warning IMPORTANT
+This guide requires that you have **python 3.7 or greater** installed.
 
-1. Setup OPAL-server
-2. Setup OPAL-client
-3. Setup server and client in secure Mode
-
-- General Points
-
-## Intro
-
-Getting Started with OPAL is easy - we'll install our OPAL-server to manage all the OPAL-client's we deploy.
-We'll deploy OPAL-clients (along side policy agents).
-
-This HOW-TO focuses on setting-up OPAL with its packages and CLI interface, this guide is better to understand the main configurations of OPAL. There's also a separate guide for [setting-up OPAL from pre-built docker images](/getting-started/running-opal/as-docker-image/overview).
-
-### NOTES:
-
-- Make sure your system is running Python 3.7 or higher
-
-- Ideally install OPAL into a clean [virtual-env](https://packaging.python.org/guides/installing-using-pip-and-virtual-environments/)
-
-- Both opal-server and opal-client can be configured using environment-variables, [.env / .ini](https://pypi.org/project/python-decouple/#env-file) files , and command-line options (later overrides previous).
-
-- Passing lists (e.g. client's `--data-topics`):
-
-  - pass delimited by "," with env-vars i.e. `OPAL_DATA_TOPICS=topic1,topic2,topic3 opal-client run`
-  - and as multi-options for cmd options i.e. `opal-client --data-topics topics1 --data-topics topics2 --data-topics topics3 run`
-
-- Top-level CLI options listed in `--help` are available under the same name as env-vars (simply convert to uppercase and replace "-" with "\_", prefix with 'OPAL' )
-  for example `OPAL_SERVER_PORT=1337 opal-server run` is equivalent to `opal-server --server-port 1337 run`
+Ideally, install OPAL into a **clean [virtual-env](https://packaging.python.org/guides/installing-using-pip-and-virtual-environments/)**
+would make the workflow easier.
+:::
