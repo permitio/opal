@@ -1,0 +1,59 @@
+load("ext://helm_resource", "helm_resource", "helm_repo")
+permitio = load_dynamic("../Tiltfile")
+
+SERVICE_NAME = "opal-server-chart"
+NAMESPACE = "default"
+HELM_RESOURCE_DEPS = ["load-opal-image-to-kind"] if not permitio["CI"] else []
+HELM_FLAGS = ["-f", "./values-tilt.yaml"]
+if not permitio["CI"]:
+    HELM_FLAGS += ["--set", "image.registry=local"]
+else:
+    HELM_FLAGS += ["-f", "./values-tilt-ci.yaml"]
+
+
+def install_opal_server():
+    local_resource(
+        name="helm-update-opal-server",
+        cmd="helm dependency update",
+        resource_deps=permitio["DEPS_HELM_INIT"],
+        labels=permitio["LABELS_INIT"]
+    )
+
+    helm_resource(
+        name="opal-server",
+        chart="./",
+        flags=HELM_FLAGS,
+        port_forwards=[port_forward(7002, 7002)] if not permitio["CI"] else [],
+        labels=permitio["LABELS_BACKEND"],
+        resource_deps=["helm-update-opal-server"] + HELM_RESOURCE_DEPS
+    )
+
+
+def setup_local_env():
+    local_resource(
+        name="redis-portforward",
+        serve_cmd="kubectl port-forward --namespace {namespace} svc/redis-master 6379:6379".format(namespace=NAMESPACE),
+        labels=permitio["LABELS_INFRA"],
+        deps=["redis"]
+    )
+
+
+def main():
+    is_main = permitio["is_main"](SERVICE_NAME)
+    if is_main:
+        permitio["create_namespace"]()
+        permitio["check_flags"]()
+
+    install_opal_server()
+
+    if is_main and permitio["ALL_SERVICES"]:
+        permitio["install_external_services"]()
+    if is_main and not permitio["ALL_SERVICES"]:
+        permitio["install_redis"]()
+        # This is here since port forward will happen via backend if all services are deployed
+        setup_local_env()
+    if not permitio["CI"]:
+        permitio["load_opal_to_kind"]()
+
+
+main()

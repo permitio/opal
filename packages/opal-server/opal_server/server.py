@@ -108,6 +108,8 @@ class OpalServer:
         self._policy_remote_url = policy_remote_url
 
         configure_logs()
+        logger.info("Attention: this is the private OPAL codebase !")
+
         self.watcher: Optional[PolicyWatcherTask] = None
         self.leadership_lock: Optional[NamedLock] = None
 

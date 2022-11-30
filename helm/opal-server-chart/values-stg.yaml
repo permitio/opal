@@ -1,0 +1,66 @@
+raw_docker_image: 076477451822.dkr.ecr.us-east-2.amazonaws.com/tf-prod-permit-opal:latest
+name: opal-server
+config:
+  envSecrets:
+    OPAL_AUTH_MASTER_TOKEN:
+      name: opal-server-secret
+      key: OPAL_AUTH_MASTER_TOKEN
+    OPAL_AUTH_PRIVATE_KEY:
+      name: opal-server-secret
+      key: OPAL_AUTH_PRIVATE_KEY
+    OPAL_AUTH_PUBLIC_KEY:
+      name: opal-server-secret
+      key: OPAL_AUTH_PUBLIC_KEY
+    OPAL_POLICY_REPO_SSH_KEY:
+      name: opal-server-secret
+      key: OPAL_POLICY_REPO_SSH_KEY
+    OPAL_POLICY_REPO_WEBHOOK_SECRET:
+      name: opal-server-secret
+      key: OPAL_POLICY_REPO_WEBHOOK_SECRET
+    OPAL_BROADCAST_URI:
+      name: opal-server-secret
+      key: OPAL_BROADCAST_URI
+    ROOKOUT_USER:
+      name: opal-server-secret
+      key: ROOKOUT_USER
+    ROOKOUT_TOKEN:
+      name: opal-server-secret
+      key: ROOKOUT_TOKEN
+  env:
+    OPAL_DATA_CONFIG_SOURCES: '{"external_source_url":"https://api.stg.permit.io/opal/data/config"}'
+    OPAL_POLICY_REPO_POLLING_INTERVAL: "60"
+    OPAL_POLICY_REPO_URL: "git@github.com:permitio/permit-backend.git"
+    ROOKOUT_SERVICE: "opalserver"
+    OPAL_ENABLE_DATADOG_APM: "true"
+    UVICORN_NUM_WORKERS: "1"
+    OPAL_LOG_FORMAT_INCLUDE_PID: "true"
+    OPAL_LOG_MODULE_EXCLUDE_LIST: "[]"
+    OPAL_LOG_SERIALIZE: "true"
+    OPAL_LOG_DIAGNOSE: "false"
+    OPAL_LOG_COLORIZE: "false"
+
+  envRef:
+    DD_ENV:
+      name: metadata.labels['tags.datadoghq.com/env']
+    DD_SERVICE:
+      name: metadata.labels['tags.datadoghq.com/service']
+    DD_VERSION:
+      name: metadata.labels['tags.datadoghq.com/version']
+
+expose:
+  type: external
+  dnsHostName: opal.stg.permit.io
+  tlsHostName: "*.stg.permit.io"
+  port: 7002
+  http_paths:
+    - path: /
+      port: 80
+      pathType: Prefix
+
+labels_all:
+  tags.datadoghq.com/env: "k8s-stg"
+  tags.datadoghq.com/service: "{{ .Chart.Name }}"
+  tags.datadoghq.com/version: "{{ .Release.Name }}"
+
+annotations_template:
+  ad.datadoghq.com/opal-server.logs: '[{"source":"{{ .Chart.Name }}-stg-k8s"}]'

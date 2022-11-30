@@ -1,0 +1,9 @@
+expose:
+  type: external
+  dnsHostName: "{{ .Release.Namespace }}.opal.dev.permit.io"
+  tlsHostName: "*.dev.permit.io"
+  port: 7002
+  http_paths:
+    - path: /
+      port: 80
+      pathType: Prefix

@@ -1,0 +1,106 @@
+name: Deploy Private OPAL to Staging
+on: workflow_dispatch
+env:
+  AWS_REGION: "us-east-2"
+
+permissions:
+  id-token: write
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    name: Build Push
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+
+      - name: AWS Auth - Assume OIDC Github Role
+        uses: aws-actions/configure-aws-credentials@v1.6.1
+        with:
+          role-to-assume: ${{ secrets.ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-session-name: githubactions
+
+      - name: Amazon ECR Login - Root Account
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v1
+
+      - name: OPAL - Build Tag Push to ECR - Root Account
+        id: build-opal-image
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          ECR_REPOSITORY: opal-server-v2
+          DOCKER_FILE_PATH: "./docker/Dockerfile"
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+
+          docker buildx build -f $DOCKER_FILE_PATH --target server -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+          echo "::set-output name=image::$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
+
+      - name: OPAL Worker - Build Tag Push to ECR - Root Account
+        id: build-opal-worker-image
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          ECR_REPOSITORY: permit-opal-worker-v2
+          DOCKER_FILE_PATH: "./docker/Dockerfile"
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+
+          docker buildx build -f $DOCKER_FILE_PATH --target server -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+          echo "::set-output name=image::$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
+
+
+  deploy:
+    needs:
+      build
+    runs-on: ubuntu-latest
+    name: Deploy Helm Chart V2 to Stg EKS
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+
+      - name: AWS Auth - Get OIDC Github Role
+        uses: aws-actions/configure-aws-credentials@v1.6.1
+        with:
+          role-to-assume: ${{ secrets.ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-session-name: githubactions
+
+      - name: Amazon ECR Login - Root Account
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v1
+
+      - uses: azure/k8s-set-context@v2
+        with:
+          method: kubeconfig
+          kubeconfig: ${{ secrets.KUBE_CONFIG }}
+          context: stg
+
+      - name: Helm Dependency Build
+        shell: bash
+        env:
+          NAMESPACE: o-permitio
+          CHART_DIR_OPAL:  ./helm/opal-server-chart
+          CHART_DIR_WORKER:  ./helm/opal-worker-chart
+        run:
+          helm dependency build  ${{ env.CHART_DIR_OPAL }};
+          helm dependency build  ${{ env.CHART_DIR_WORKER }};
+
+      - name: OPAL - Helm Install
+        shell: bash
+        env:
+          NAMESPACE: permitio
+          CHART_DIR:  ./helm/opal-server-chart
+        run:
+          helm upgrade --install --create-namespace -f ${{ env.CHART_DIR }}/values-stg-v2.yaml opal-server-v2 ${{ env.CHART_DIR }} -n ${{ env.NAMESPACE }} --wait --set "image.tag=${{ github.sha }}" --set "image.registry=${{ steps.login-ecr.outputs.registry }}"
+
+      - name: OPAL Worker - Helm Install
+        shell: bash
+        env:
+          NAMESPACE: permitio
+          CHART_DIR: ./helm/opal-worker-chart
+        run:
+          helm upgrade --install --create-namespace -f ${{ env.CHART_DIR }}/values-stg-v2.yaml opal-worker-v2 ${{ env.CHART_DIR }} -n ${{ env.NAMESPACE }} --wait --set "image.tag=${{ github.sha }}" --set "image.registry=${{ steps.login-ecr.outputs.registry }}"

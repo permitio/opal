@@ -53,7 +53,7 @@ class OpalCommonConfig(Confi):
     )
     LOG_FILE_PATH = confi.str(
         "LOG_FILE_PATH",
-        f"opal_{PROCESS_NAME}{{time}}.log",
+        "output.log",
         description="path to save log file",
     )
     LOG_FILE_ROTATION = confi.str("LOG_FILE_ROTATION", "250 MB")

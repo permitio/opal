@@ -1,0 +1,9 @@
+apiVersion: v2 # helm 3
+type: application
+name: opal-server
+description: A Helm chart for Permit.io Main Opal-Server
+version: 0.0.1
+dependencies:
+  - name: permit-io-chart
+    version: ^0.17.13
+    repository: "oci://076477451822.dkr.ecr.us-east-2.amazonaws.com"

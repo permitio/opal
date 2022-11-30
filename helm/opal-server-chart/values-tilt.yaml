@@ -1,0 +1,58 @@
+raw_docker_image: permitio/opal-server:latest
+name: opal-server
+
+mounts:
+    - name: opal-data
+      path: "/opal"
+      mountPath: "/opal/git_sources"
+      type: "hostPath"
+
+config:
+  env:
+    OPAL_AUTH_MASTER_TOKEN: "token"
+    OPAL_AUTH_PRIVATE_KEY: "-----BEGIN RSA PRIVATE KEY-----_MIIJJwIBAAKCAgEAwUUApxQcfH3jaD1dvjqrFGLGgQKmEzkDUbvrAj3/XJQE0Bju_k+R7wLujYybLTo8SlyvJDDipfxjb1jtqXlTJd/B0b8dG9d5mfNLnzi2HCnfUYcCE_I2j+ttxEtBU6av+wX4jDZsdjUkdEQmRqtzrhsUxMqmyly6indLIDyldSMtSHabjd_/P2vMbhoWNSTrxubJO0n2QF5irdr6S2Dy26LIFkZSLJvsLmVFZ7nFyvi8nqsZZl2_G9LsB513rqjKVEZXq7JGa0LBUfna5GSM5X7E2N5M8WUCGCTahSoEmL0qi61zNEGg_24m3OBi0AWCnt0nKKPo0rI6ChJq/XcCsl/3c5MgT5LXeMdC6nQOza8uvE+LXCm9J_xJOqcdZ/Jh91T+013F7XgEMEiXmWzx9NEjCvOiY7wHbYIb9uItVfBMHcoe9gUN7h_HD4AJ9HQ4veX0AxayiR6h6Glp8MvVs1ttcZQmp9ZuUyS2zyIkzbaneeXL9q+vQZg_ShGjyqvG7QT7sSrNjhzqoz7yOu9iJ7DhsulC14M4sp3yQZnhIlUXCnxndQoYwywx_3j/OTsRCyizwK3UEe03zwpbf8NWnpPRb5+StKegz8uzaaatNWmOC+l65KHCCfu6I_ZXZHjLX3nC/zZ4zlJDzNKlGfrIKS1BS2wmzS6tyNRytkbeg7Zf/PILwySncCAwEA_AQKCAgB+yvkho5UIq0Ismc3NRgoEpsSZ0JYJmGawEXudDfVg1A7QQvsJ9WSmzbLk_EohgsoY8vNH5/ZZdNn7K7lHbLv65e/u3dWH9XXmZPHgtEDs+x9yCgN1vqaspZhqA_lkir97DLDBs9a2Oij/SdJenI6Y01VtwZFowyryOk8ECCV4Uqqblox4qDNh7gnJ2A_YX297Ht830U8HbaSJcFayaxkItKNV0a6Ja4Wn7nJ5GSxE+6gq5A8W1Bb8qU8Xbct_07hhT4CmuJ9wMOxJDoTnP3wb923G5RhPabfVBSCDKky3s6qc1h71UnToclHMMJCv_Mqz1FyjUd0llR10jB66yH/xa/oYSQHfKoyLmqgCdDP5PdNdvflTHsDpyLiu7DxCP_eEiHIVGvNIQlFwSkq0qI7FJTBe5Yoelfm2ivuBcWin3BkEKRUlskGbQR5UDeGMnn_kV3HJ9juX9x8vOoEA5rrjyj3Qtro0SJzvtYrBIUt3f4RsVv//E6s1fohB766SvCp_L/lnqj13ElEGX6x6CvCWsFYSa5QnpwHJ8osNApk2+JPxhgMnwWIWvfJ6MrEuoE9f_6GYSL3gSspvJYJR9Sc9E/A379uUXEd5LjwfIxzM+rfSK3T7VaAGHqTWI5WWWUg/X_gpZWK2UpvrPgRmCRVxCC4U6QxNztp8HT7/xHiB79Dgs/PGEcYQKCAQEA9FRNUFgN_9sMgLyWz/Bqu0jicr0PnFh8DjQBbvkYw1ZtSHu1N1CLaNokA2pPkaIuSCuphQeuA_uiDAu8dL0Mio+OibE/2F2bQ9oH6z0d+WLg0I2e35uTBu/AHR4zWx8BVmGWt5woaP_Hlci9iR6GqJDNDd4M6y4hKqiizjvjMQYv//snAF8L+VHebBin+/B/A1V345ykz8j_WxmMvZ8mRY6wxAGnrUM4vLTkwahMhMoGHIlX4wWK6qW2m14eL+aheVy5QlN7brlU_apF80erjA0HWL1xUIMShb4ZrPPfv4zZEDp0S1BK9T8qmxLqgrhg/9wm0mtqpF1xA_EecFT4SxiHz8sQKCAQEAyoBVY5LiGBK6SSVtiBOZEG08Mwh2+T5H95qOwudy0iAc_7gHNPajy96GQO5H/jtcKdlhoGoQLBLO50ciR+LRc3lCQi0qY4PLfuKdSJPekE0iU_XLjWhFJrhxx4rbig9PKnyjYrYfP+RNWnCUK1QLOusgcm4a0pbLoT808hjdnkAG5Y_IalBD/+JtgUF+qdwGqFJoJuggOVo6anMUuBtrDer+Lj6HdF215xTp74gFRAhOmMV_HJgt/TSBmsiGPdQMMy8PpIds53r/jMrb3VkLInZrGKYtmQuUFvV1MMYG96wff+ev_1TEcUg9HofrXsI++J3dsFxrGmn/316LsmAUMdEFjpwKCAQB+tv4F7jUHxnj5mr82_v4vtYQj56Oh/U4Re61GpY/PNxKkZew9DNvQfFnzH3620/rW2TYo1SvNPFM+AU8Mh_PABOXyyWeISjvNO9Whjefuv/ZCk0BTTfc5wLvNHi2aU4E5EJG/FhDrJJFP3/1Dkz_ePYLrbz8Z9amj2yPce7i/Yysfwlye16x5GJmXTE5K3paw3vG3rTTYwpuI9kXOuP5_bSCF9ynENTnGvLZrLWLJ95Cl2iEnj2dVfK4w8+YKB721GH7IRE2exiVew6eNoxkr_RkjT9Tl4aSIkmf0h+KCEIU+4mIP8Ut+18y78lqHgyJjcAT+WlFLf16su3bamX/ZH_CDNxAoIBAGUEchRTMLCbnwxgPGy2ghPcujwnC9q4RARzuKXn+bJyzJu6kF0jC9mW_YjIlWdwy0AhLf9tCZZC564eIS7FKoE1S2VhzJSKKZipiZasFUndALKq4lmK6DuP+_wwC+aqTm6+cG8MtTgVNrVYFcIrkdKZer06yeylxv0wX8QpvVx1SjtxlLqqZFbrg7_d0kb/+N49BbHq+DBEH4H82KgjHVt7D8OX89CL8vNMzopsS1wt3K9/Mkf7UkzyTei_srzjLBbYcjA8UoqDJDpi9B1Ojyxo8HICbBq92Ok/F2/2SYGB/tC6jk+GyT7yWmSm_krSEcHKVs3kvJUXrcoLCxs3rLtRLzl8CggEAePTFej/88Qx0RS7HMmD/qJm8lKg7_8PvMilCkAE1znlQBIxUBDLZl+cW7+EGT3nO9L4buvnFZq2ugkkwEzAtuAPJYmiup_xjojLQuj5fsZjMBelbnbASuZcyReB3m2Ic9SWbhHmbsuItODvuXZjwrPwJVyEiDv_2FsuGM4XJye5/8afRi/mLjMxxVeTrsAZY6xyLc74QwvRWCBBIgMRzapclD04gt3S_TJiBP4kEgk+kt9dhzX3Q/75cEANYO/K0LSsABkzdvrLWCEmmFYA8lSWvpNXH+8I5_3eavmvFfW5ymyJbdnymmaxpKkn0q3SvZk7/oWfkxC/xHUdKeXXeVzbPnpQ==_-----END RSA PRIVATE KEY-----_"
+    OPAL_AUTH_PUBLIC_KEY: "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAACAQDBRQCnFBx8feNoPV2+OqsUYsaBAqYTOQNRu+sCPf9clATQGO6T5HvAu6NjJstOjxKXK8kMOKl/GNvWO2peVMl38HRvx0b13mZ80ufOLYcKd9RhwIQjaP623ES0FTpq/7BfiMNmx2NSR0RCZGq3OuGxTEyqbKXLqKd0sgPKV1Iy1IdpuN38/a8xuGhY1JOvG5sk7SfZAXmKt2vpLYPLbosgWRlIsm+wuZUVnucXK+LyeqxlmXYb0uwHnXeuqMpURlerskZrQsFR+drkZIzlfsTY3kzxZQIYJNqFKgSYvSqLrXM0QaDbibc4GLQBYKe3Scoo+jSsjoKEmr9dwKyX/dzkyBPktd4x0LqdA7Nry68T4tcKb0nEk6px1n8mH3VP7TXcXteAQwSJeZbPH00SMK86JjvAdtghv24i1V8Ewdyh72BQ3uEcPgAn0dDi95fQDFrKJHqHoaWnwy9WzW21xlCan1m5TJLbPIiTNtqd55cv2r69BmBKEaPKq8btBPuxKs2OHOqjPvI672InsOGy6ULXgziynfJBmeEiVRcKfGd1ChjDLDHeP85OxELKLPArdQR7TfPClt/w1aek9Fvn5K0p6DPy7Nppq01aY4L6XrkocIJ+7ohldkeMtfecL/NnjOUkPM0qUZ+sgpLUFLbCbNLq3I1HK2Rt6Dtl/88gvDJKdw=="
+#    OPAL_POLICY_REPO_SSH_KEY: ""
+    OPAL_POLICY_REPO_WEBHOOK_SECRET: "secret"
+    OPAL_WORKER_TOKEN: "token"
+    OPAL_BROADCAST_URI: "postgresql+asyncpg://postgres:password@postgresql.{{ .Release.Namespace }}.svc:5432/postgres"
+    OPAL_DATA_CONFIG_SOURCES: '{"external_source_url":"http://host.docker.internal:8000/v2/opal/data/config"}'
+    OPAL_POLICY_REPO_POLLING_INTERVAL: "60"
+    OPAL_POLICY_REPO_URL: "https://github.com/permitio/opal-example-policy-repo.git"
+    ROOKOUT_SERVICE: "opalserver"
+    OPAL_ENABLE_DATADOG_APM: "true"
+    UVICORN_NUM_WORKERS: "1"
+    OPAL_LOG_FORMAT_INCLUDE_PID: "true"
+    OPAL_LOG_MODULE_EXCLUDE_LIST: "[]"
+    OPAL_LOG_SERIALIZE: "true"
+    OPAL_LOG_DIAGNOSE: "false"
+    OPAL_BASE_DIR: "/opal"
+    OPAL_REDIS_URL: "redis://redis-master.{{ .Release.Namespace }}.svc"
+    OPAL_SCOPES: "1"
+    OPAL_REPO_WATCHER_ENABLED: "0"
+    OPAL_LOG_COLORIZE: "false"
+
+  envRef:
+    DD_AGENT_HOST:
+      name: status.hostIP
+    DD_ENV:
+      name: metadata.labels['tags.datadoghq.com/env']
+    DD_SERVICE:
+      name: metadata.labels['tags.datadoghq.com/service']
+    DD_VERSION:
+      name: metadata.labels['tags.datadoghq.com/version']
+
+expose:
+  type: internal
+  ports:
+    - port: "7002"
+      name: "opal"
+      targetPort: "7002"
+
+labels_all:
+  tags.datadoghq.com/env: "k8s-dev-v2"
+  tags.datadoghq.com/service: "{{ .Chart.Name }}"
+  tags.datadoghq.com/version: "{{ .Release.Name }}"
+
+annotations_template:
+  ad.datadoghq.com/opal-server.logs: '[{"source":"{{ .Chart.Name }}-dev-k8s"}]'
