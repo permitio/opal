@@ -10,6 +10,7 @@ on:
           description: 'If true, will not push the built images to docker hub.'
           required: false
           default: 'false'
+  pull_request:
 
 jobs:
   # this job will build, test and (potentially) push the docker images to docker hub
