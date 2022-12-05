@@ -1,0 +1,111 @@
+name: Release RC Candidate
+on:
+  # Allows you to run this workflow manually from the Actions tab
+  workflow_dispatch:
+    inputs:
+        version_tag:
+          required: true
+          default: '0.4.0-rc1'
+        dry_run:
+          description: 'If true, will not push the built images to docker hub.'
+          required: false
+          default: 'false'
+
+jobs:
+  # this job will build, test and (potentially) push the docker images to docker hub
+  #
+  # BUILD PHASE:
+  # - will auto tag the image according to the release tag / `git describe`.
+  #
+  # TEST PHASE:
+  # - will run an e2e test with a modified docker compose.
+  # - queries OPA data to check its state matches an expected value.
+  # - state will match only if OPAL client successfully synced to OPAL server.
+  # - outputs the docker compose logs to more easily investigate errors.
+  #
+  # PUSH PHASE:
+  # - Runs only if test phase completes with no errors.
+  # - Pushes images (built at BUILD PHASE) to docker hub.
+  docker_build_and_publish:
+    runs-on: ubuntu-latest
+    steps:
+      # BUILD PHASE
+      - name: Checkout
+        uses: actions/checkout@v2
+        with:
+          fetch-depth: 0
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v1
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v1
+
+      - name: Get version tag from git history
+        if: ${{ !(github.event_name == 'release' && github.event.action == 'created') }}
+        run: |
+          echo "opal_version_tag=${{ github.event.inputs.version_tag }}" >> $GITHUB_ENV
+
+      - name: Echo version tag
+        run: |
+          echo "The version tag that will be published to docker hub is: ${{ env.opal_version_tag }}"
+
+      - name: Build client
+        id: build_client
+        uses: docker/build-push-action@v2
+        with:
+          file: docker/Dockerfile
+          push: false
+          target: client
+          cache-from: type=registry,ref=permitio/opal-client:latest
+          cache-to: type=inline
+          load: true
+          tags: |
+            permitio/opal-client:${{ env.opal_version_tag }}
+
+      - name: Build client-standalone
+        id: build_client_standalone
+        uses: docker/build-push-action@v2
+        with:
+          file: docker/Dockerfile
+          push: false
+          target: client-standalone
+          cache-from: type=registry,ref=permitio/opal-client-standalone:latest
+          cache-to: type=inline
+          load: true
+          tags: |
+            permitio/opal-client-standalone:${{ env.opal_version_tag }}
+
+      - name: Build server
+        id: build_server
+        uses: docker/build-push-action@v2
+        with:
+          file: docker/Dockerfile
+          push: false
+          target: server
+          cache-from: type=registry,ref=permitio/opal-server:latest
+          cache-to: type=inline
+          load: true
+          tags: |
+            permitio/opal-server:${{ env.opal_version_tag }}
+
+      # PUSH PHASE
+      - name: Output local docker images
+        run: docker image ls --digests | grep opal
+
+      - name: Login to DockerHub
+        if: ${{ !(github.event_name == 'workflow_dispatch' && github.event.inputs.dry_run == 'true') }}
+        uses: docker/login-action@v1
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      # pushes the *same* docker images that were previously tested as part of e2e sanity test.
+      # each image is pushed with the versioned tag first, if it succeeds the image is pushed with the latest tag as well.
+      - name: Push client
+        if: ${{ !(github.event_name == 'workflow_dispatch' && github.event.inputs.dry_run == 'true') }}
+        run: docker push permitio/opal-client:${{ env.opal_version_tag }}
+
+      - name: Push server
+        if: ${{ !(github.event_name == 'workflow_dispatch' && github.event.inputs.dry_run == 'true') }}
+        run: docker push permitio/opal-server:${{ env.opal_version_tag }}
