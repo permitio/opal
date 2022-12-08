@@ -286,9 +286,6 @@ async def schedule_sync_all_scopes(scopes: ScopeRepository):
     # first we sync with git fetch all the unique repositories
     for scope in all_scopes:
         if scope.policy.url not in already_fetched:
-            logger.info(
-                f"Sync scope {scope.scope_id} (force fetch, remote: {scope.policy.url})"
-            )
             sync_scope.delay(scope.scope_id, force_fetch=True)
             already_fetched.add(scope.policy.url)
             already_synced_scope_ids.append(scope.scope_id)
@@ -296,7 +293,4 @@ async def schedule_sync_all_scopes(scopes: ScopeRepository):
     # then we sync other "same repo" scopes without git fetch to be more efficient
     for scope in all_scopes:
         if scope.scope_id not in already_synced_scope_ids:
-            logger.info(
-                f"Sync scope {scope.scope_id} (SKIP fetch, remote: {scope.policy.url})"
-            )
             sync_scope.delay(scope.scope_id)
