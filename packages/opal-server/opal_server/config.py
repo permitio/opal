@@ -5,6 +5,7 @@ from enum import Enum
 from opal_common.authentication.types import EncryptionKeyFormat
 from opal_common.confi import Confi
 from opal_common.schemas.data import ServerDataSourceConfig
+from opal_common.schemas.webhook import GitWebhookRequestParams
 
 confi = Confi(prefix="OPAL_")
 
@@ -199,6 +200,17 @@ class OpalServerConfig(Confi):
     # github webhook
     POLICY_REPO_WEBHOOK_SECRET = confi.str("POLICY_REPO_WEBHOOK_SECRET", None)
     POLICY_REPO_WEBHOOK_TOPIC = "webhook"
+    POLICY_REPO_WEBHOOK_PARAMS: GitWebhookRequestParams = confi.model(
+        "POLICY_REPO_WEBHOOK_PARAMS",
+        GitWebhookRequestParams,
+        {
+            "secret_header_name": "x-hub-signature-256",
+            "secret_type": "signature",
+            "secret_parsing_regex": "sha256=(.*)",
+            "event_header_name": "X-GitHub-Event",
+            "push_event_value": "push",
+        },
+    )
 
     POLICY_REPO_POLLING_INTERVAL = confi.int("POLICY_REPO_POLLING_INTERVAL", 0)
 
