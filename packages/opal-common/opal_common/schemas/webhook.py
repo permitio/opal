@@ -18,19 +18,20 @@ class GitWebhookRequestParams(BaseSchema):
     secret_header_name: str = Field(
         ...,
         description="The HTTP header holding the secret",
-        default="x-hub-signature-256",
     )
     secret_type: SecretTypeEnum = Field(
-        ..., description=SecretTypeEnum.__doc__, default="signature"
+        ...,
+        description=SecretTypeEnum.__doc__,
     )
     secret_parsing_regex: str = Field(
         ...,
         description="The regex used to parse out the actual signature from the header. Use '(.*)' for the entire value",
-        default="sha256=(.*)",
     )
     event_header_name: str = Field(
-        ..., description="The HTTP header holding the event", default="X-GitHub-Event"
+        ...,
+        description="The HTTP header holding the event",
     )
     push_event_value: str = Field(
-        ..., description="The event value indicating a Git push", default="push"
+        ...,
+        description="The event value indicating a Git push",
     )
