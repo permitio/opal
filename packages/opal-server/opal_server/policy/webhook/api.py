@@ -7,7 +7,7 @@ from opal_common.logger import logger
 from opal_server.config import PolicySourceTypes, opal_server_config
 from opal_server.policy.webhook.deps import (
     affected_repo_urls,
-    validate_github_signature_or_throw,
+    validate_git_secret_or_throw,
 )
 
 
@@ -22,7 +22,7 @@ def init_git_webhook_router(
         route_dependency = authenticator
         func_dependency = dummy_affected_repo_urls
     else:
-        route_dependency = validate_github_signature_or_throw
+        route_dependency = validate_git_secret_or_throw
         func_dependency = affected_repo_urls
 
     router = APIRouter()
@@ -37,8 +37,11 @@ def init_git_webhook_router(
     ):
         # TODO: breaking change: change "repo_url" to "remote_url" in next major
         if source_type == PolicySourceTypes.Git:
-            event = request.headers.get("X-GitHub-Event", "ping")
+            event = request.headers.get(
+                opal_server_config.POLICY_REPO_WEBHOOK_PARAMS.event_header_name, "ping"
+            )
 
+            # Check if the URL we are tracking is mentioned in the webhook
             if (
                 opal_server_config.POLICY_REPO_URL is not None
                 and opal_server_config.POLICY_REPO_URL in urls
@@ -48,7 +51,11 @@ def init_git_webhook_router(
                     repo=opal_server_config.POLICY_REPO_URL,
                     hook_event=event,
                 )
-                if event == "push":
+                # Check if this it the right event (push)
+                if (
+                    event
+                    == opal_server_config.POLICY_REPO_WEBHOOK_PARAMS.push_event_value
+                ):
                     # notifies the webhook listener via the pubsub broadcaster
                     await pubsub_endpoint.publish(
                         opal_server_config.POLICY_REPO_WEBHOOK_TOPIC
@@ -58,6 +65,13 @@ def init_git_webhook_router(
                     "event": event,
                     "repo_url": opal_server_config.POLICY_REPO_URL,
                 }
+            else:
+                logger.warning(
+                    "Got an unexpected webhook not matching the tracked repo ({repo}) - with these URLS instead: {urls} .",
+                    repo=opal_server_config.POLICY_REPO_URL,
+                    urls=urls,
+                    hook_event=event,
+                )
 
         elif source_type == PolicySourceTypes.Api:
             logger.info("Triggered webhook to check API bundle URL")
