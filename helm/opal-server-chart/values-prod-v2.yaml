@@ -1,5 +1,6 @@
-raw_docker_image: 076477451822.dkr.ecr.us-east-2.amazonaws.com/opal-server-v2:latest-private
 name: opal-server
+image:
+  name: opal-server-v2
 
 mounts:
   - name: "scopes-mount"
@@ -47,6 +48,8 @@ config:
     OPAL_BASE_DIR: "/opal"
     OPAL_REDIS_URL: "redis://replication-group-v2-6269ee4-001.wkxvxw.0001.use2.cache.amazonaws.com:6379"
     OPAL_POLICY_REFRESH_INTERVAL: "60"
+    OPAL_LOG_TO_FILE: "True"
+    OPAL_LOG_FILE_PATH: "git_sources/output.log"
 
   envRef:
     DD_AGENT_HOST:
@@ -71,8 +74,8 @@ expose:
 
 labels_all:
   tags.datadoghq.com/env: "k8s-prod-v2"
-  tags.datadoghq.com/service: "{{ .Chart.Name }}"
-  tags.datadoghq.com/version: "{{ .Release.Name }}"
+  tags.datadoghq.com/service: "{{ .Release.Name }}"
+  tags.datadoghq.com/version: "{{ .Values.image.tag }}"
 
 annotations_template:
-  ad.datadoghq.com/opal-server-v2.logs: '[{"source":"{{ .Chart.Name }}-prod-k8s"}]'
+  ad.datadoghq.com/opal-server-v2.logs: '[{"type":"file", "path": "logs/output-opal-server-*.log", "source":"{{ .Release.Name }}-prod-k8s"}]'

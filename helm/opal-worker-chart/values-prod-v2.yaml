@@ -1,5 +1,6 @@
-raw_docker_image: 076477451822.dkr.ecr.us-east-2.amazonaws.com/opal-server-v2:next
 name: opal-worker
+image: 
+  name: permit-opal-worker-v2
 
 config:
   envSecrets:
@@ -13,6 +14,8 @@ config:
     OPAL_SERVER_URL: "https://opal-v2.permit.io"
     OPAL_BASE_DIR: "/opal"
     OPAL_POLICY_REFRESH_INTERVAL: "60"
+    OPAL_LOG_TO_FILE: "True"
+    OPAL_LOG_FILE_PATH: "git_sources/output.log"
   envRef:
     DD_AGENT_HOST:
       name: status.hostIP
@@ -38,8 +41,8 @@ raw_container:
 
 labels_all:
   tags.datadoghq.com/env: "k8s-prod-v2"
-  tags.datadoghq.com/service: "{{ .Chart.Name }}"
-  tags.datadoghq.com/version: "{{ .Release.Name }}"
+  tags.datadoghq.com/service: "{{ .Release.Name }}"
+  tags.datadoghq.com/version: "{{ .Values.image.tag }}"
 
 annotations_template:
-  ad.datadoghq.com/opal-worker-v2.logs: '[{"source":"{{ .Chart.Name }}-prod-k8s"}]'
+  ad.datadoghq.com/opal-worker-v2.logs: '[{"type":"file", "path": "logs/output-opal-worker-*.log", "source":"{{ .Release.Name }}-prod-k8s"}]'
