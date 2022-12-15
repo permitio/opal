@@ -1,0 +1,34 @@
+name: opal-worker
+image:
+  name: permit-opal-worker-v2
+
+config:
+  envSecrets:
+    OPAL_WORKER_TOKEN:
+      name: opal-worker-v2-secret
+      key: OPAL_WORKER_TOKEN
+
+  env:
+    OPAL_SCOPES: "1"
+    OPAL_BASE_DIR: "/opal"
+    OPAL_POLICY_REFRESH_INTERVAL: "60"
+    OPAL_LOG_TO_FILE: "True"
+    OPAL_LOG_FILE_PATH: "git_sources/output.log"
+  envRef:
+    DD_ENV:
+      name: metadata.labels['tags.datadoghq.com/env']
+    DD_SERVICE:
+      name: metadata.labels['tags.datadoghq.com/service']
+    DD_VERSION:
+      name: metadata.labels['tags.datadoghq.com/version']
+
+raw_container:
+  command: [ "/bin/sh","-c" ]
+  args: ["celery -A opal_server.worker worker -B --concurrency=1 -l info -s /tmp/schedule.db" ]
+
+
+labels_all:
+  tags.datadoghq.com/service: "{{ .Release.Name }}"
+  tags.datadoghq.com/version: "{{ .Values.image.tag }}"
+
+annotations_template: {}

@@ -1,0 +1,64 @@
+name: opal-server
+image:
+  name: opal-server-v2
+
+config:
+  envSecrets:
+    OPAL_AUTH_MASTER_TOKEN:
+      name: opal-server-v2-secret
+      key: OPAL_AUTH_MASTER_TOKEN
+    OPAL_AUTH_PRIVATE_KEY:
+      name: opal-server-v2-secret
+      key: OPAL_AUTH_PRIVATE_KEY
+    OPAL_AUTH_PUBLIC_KEY:
+      name: opal-server-v2-secret
+      key: OPAL_AUTH_PUBLIC_KEY
+    OPAL_POLICY_REPO_SSH_KEY:
+      name: opal-server-v2-secret
+      key: OPAL_POLICY_REPO_SSH_KEY
+    OPAL_POLICY_REPO_WEBHOOK_SECRET:
+      name: opal-server-v2-secret
+      key: OPAL_POLICY_REPO_WEBHOOK_SECRET
+    OPAL_BROADCAST_URI:
+      name: opal-server-v2-secret
+      key: OPAL_BROADCAST_URI
+    OPAL_WORKER_TOKEN:
+      name: opal-server-v2-secret
+      key: OPAL_WORKER_TOKEN
+  env:
+    OPAL_POLICY_REPO_URL: "git@github.com:permitio/permit-sidecar-policy.git"
+    UVICORN_NUM_WORKERS: "1"
+    OPAL_LOG_FORMAT_INCLUDE_PID: "true"
+    OPAL_SCOPES: "1"
+    OPAL_LOG_MODULE_EXCLUDE_LIST: "[]"
+    OPAL_LOG_SERIALIZE: "true"
+    OPAL_REPO_WATCHER_ENABLED: "0"
+    OPAL_LOG_DIAGNOSE: "false"
+    OPAL_LOG_COLORIZE: "false"
+    OPAL_BASE_DIR: "/opal"
+    OPAL_POLICY_REFRESH_INTERVAL: "60"
+    OPAL_LOG_TO_FILE: "True"
+    OPAL_LOG_FILE_PATH: "git_sources/output.log"
+
+  envRef:
+    DD_ENV:
+      name: metadata.labels['tags.datadoghq.com/env']
+    DD_SERVICE:
+      name: metadata.labels['tags.datadoghq.com/service']
+    DD_VERSION:
+      name: metadata.labels['tags.datadoghq.com/version']
+
+expose:
+  type: external
+  port: 7002
+  http_paths:
+    - path: /
+      port: 80
+      pathType: Prefix
+
+
+labels_all:
+  tags.datadoghq.com/service: "{{ .Release.Name }}"
+  tags.datadoghq.com/version: "{{ .Values.image.tag }}"
+
+annotations_template: {}
