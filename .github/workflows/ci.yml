@@ -1,5 +1,6 @@
 name: Release Private OPAL
-on: workflow_dispatch
+on: push
+
 env:
   AWS_REGION: "us-east-2"
 
