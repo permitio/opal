@@ -61,7 +61,9 @@ def verify_logged_in(verifier: JWTVerifier, token: Optional[str]) -> JWTClaims:
         details.pop("token", None)
 
         # logs the error and reraises
-        logger.error(f"Authentication failed with {err.status_code} due to error: {details}")
+        logger.error(
+            f"Authentication failed with {err.status_code} due to error: {details}"
+        )
         raise
 
 
@@ -135,4 +137,6 @@ class StaticBearerAuthenticator:
 
         token = get_token_from_header(authorization)
         if token is None or token != self._preconfigured_token:
-            raise Unauthorized(token=token, description="unauthorized to access this endpoint!")
+            raise Unauthorized(
+                token=token, description="unauthorized to access this endpoint!"
+            )

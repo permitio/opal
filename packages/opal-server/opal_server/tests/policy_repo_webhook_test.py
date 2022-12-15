@@ -17,7 +17,9 @@ from opal_server.policy.webhook.api import get_webhook_router
 from opal_server.policy.webhook.deps import affected_repo_urls
 
 # Add parent path to use local src as package for tests
-root_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), os.path.pardir, os.path.pardir))
+root_dir = os.path.abspath(
+    os.path.join(os.path.dirname(__file__), os.path.pardir, os.path.pardir)
+)
 sys.path.append(root_dir)
 
 
@@ -144,7 +146,11 @@ def setup_server(event, webhook_config):
         events.append(event)
 
     webhook_router = get_webhook_router(
-        None, Depends(affected_repo_urls), PolicySourceTypes.Git, publish, webhook_config
+        None,
+        Depends(affected_repo_urls),
+        PolicySourceTypes.Git,
+        publish,
+        webhook_config,
     )
     server_app.include_router(webhook_router)
 
@@ -193,9 +199,7 @@ def gitlab_mode_server():
 
 @pytest.mark.asyncio
 async def test_webhook_mock_github(github_mode_server):
-    """
-    Test the webhook route simulating a webhook from Github
-    """
+    """Test the webhook route simulating a webhook from Github."""
     # Wait for server to be ready
     github_mode_server.wait(5)
     # simulate a webhook
@@ -215,9 +219,7 @@ async def test_webhook_mock_github(github_mode_server):
 
 @pytest.mark.asyncio
 async def test_webhook_mock_gitlab(gitlab_mode_server):
-    """
-    Test the webhook route simulating a webhook from Gitlab
-    """
+    """Test the webhook route simulating a webhook from Gitlab."""
     # Wait for server to be ready
     gitlab_mode_server.wait(5)
     # simulate a webhook

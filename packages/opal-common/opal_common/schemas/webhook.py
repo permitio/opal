@@ -6,7 +6,8 @@ from pydantic import Field
 
 
 class SecretTypeEnum(str, Enum):
-    """is the passed secret in the webhook a token or a signature on the request body"""
+    """is the passed secret in the webhook a token or a signature on the
+    request body."""
 
     token = "token"
     signature = "signature"

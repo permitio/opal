@@ -12,7 +12,9 @@ from opal_server.policy.webhook.deps import (
 )
 
 
-def init_git_webhook_router(pubsub_endpoint: PubSubEndpoint, authenticator: JWTAuthenticator):
+def init_git_webhook_router(
+    pubsub_endpoint: PubSubEndpoint, authenticator: JWTAuthenticator
+):
     async def dummy_affected_repo_urls(request: Request) -> List[str]:
         return []
 
@@ -25,7 +27,10 @@ def init_git_webhook_router(pubsub_endpoint: PubSubEndpoint, authenticator: JWTA
         func_dependency = affected_repo_urls
 
     return get_webhook_router(
-        [Depends(route_dependency)], Depends(func_dependency), source_type, pubsub_endpoint.publish
+        [Depends(route_dependency)],
+        Depends(func_dependency),
+        source_type,
+        pubsub_endpoint.publish,
     )
 
 

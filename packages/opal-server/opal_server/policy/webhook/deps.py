@@ -9,9 +9,9 @@ from opal_server.config import opal_server_config
 
 
 async def validate_git_secret_or_throw(request: Request) -> bool:
-    """authenticates a request from a git service webhook system by checking that the
-    request contains a valid signature (i.e: via the secret stored on github) or a valid
-    token (as stored in Gitlab)."""
+    """authenticates a request from a git service webhook system by checking
+    that the request contains a valid signature (i.e: via the secret stored on
+    github) or a valid token (as stored in Gitlab)."""
     if opal_server_config.POLICY_REPO_WEBHOOK_SECRET is None:
         # webhook can be configured without secret (not recommended but quite possible)
         return True
@@ -23,7 +23,8 @@ async def validate_git_secret_or_throw(request: Request) -> bool:
 
     # parse out the actual secret (Some services like Github add prefixes)
     matches = re.findall(
-        opal_server_config.POLICY_REPO_WEBHOOK_PARAMS.secret_parsing_regex, secret
+        opal_server_config.POLICY_REPO_WEBHOOK_PARAMS.secret_parsing_regex,
+        secret,
     )
     secret = matches[1] if len(matches) > 0 else None
 
