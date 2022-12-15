@@ -3,6 +3,7 @@ repos:
     rev: v4.2.0
     hooks:
       - id: check-yaml
+        exclude: helm/opal-server-chart/templates|helm/opal-worker-chart/templates
       - id: end-of-file-fixer
       - id: trailing-whitespace
   - repo: https://github.com/psf/black
