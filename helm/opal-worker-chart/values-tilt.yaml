@@ -1,24 +1,16 @@
 raw_docker_image: docker.io/permitio/opal-server:latest
-name: opal-worker
 
 config:
+  envSecrets: null
   env:
     OPAL_WORKER_TOKEN: "token"
     OPAL_REDIS_URL: "redis://redis-master.{{ .Release.Namespace }}.svc"
-    OPAL_SCOPES: "1"
     OPAL_SERVER_URL: "http://opal-server.{{ .Release.Namespace }}.svc:7002/"
     OPAL_AMQP_EXCHANGE_NAME: "topic-dev"
-    OPAL_BASE_DIR: "/opal"
-    OPAL_POLICY_REFRESH_INTERVAL: "60"
+    OPAL_LOG_TO_FILE: "False"
   envRef:
     DD_AGENT_HOST:
       name: status.hostIP
-    DD_ENV:
-      name: metadata.labels['tags.datadoghq.com/env']
-    DD_SERVICE:
-      name: metadata.labels['tags.datadoghq.com/service']
-    DD_VERSION:
-      name: metadata.labels['tags.datadoghq.com/version']
 
 mounts:
     - name: opal-data
@@ -26,14 +18,8 @@ mounts:
       mountPath: "/opal/git_sources"
       type: "hostPath"
 
-raw_container:
-  command: ["/bin/sh", "-c"]
-  args: ["celery -A opal_server.worker worker -B --concurrency=1 -l info -s /tmp/schedule.db"]
-
 labels_all:
   tags.datadoghq.com/env: "k8s-dev-v2"
-  tags.datadoghq.com/service: "{{ .Chart.Name }}"
-  tags.datadoghq.com/version: "{{ .Release.Name }}"
 
 annotations_template:
-  ad.datadoghq.com/opal-server.logs: '[{"source":"{{ .Chart.Name }}-dev-k8s"}]'
+  ad.datadoghq.com/opal-worker-v2.logs: '[{"type":"file", "path": "logs/output-opal-worker-*.log", "source":"{{ .Release.Name }}-dev-k8s"}]'

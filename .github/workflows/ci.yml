@@ -1,0 +1,53 @@
+name: Release Private OPAL
+on: workflow_dispatch
+env:
+  AWS_REGION: "us-east-2"
+
+permissions:
+  id-token: write
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    name: Build Push
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+
+      - name: AWS Auth - Assume OIDC Github Role
+        uses: aws-actions/configure-aws-credentials@v1.6.1
+        with:
+          role-to-assume: ${{ secrets.ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-session-name: githubactions
+
+      - name: Amazon ECR Login - Root Account
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v1
+
+      - name: OPAL - Build Tag Push to ECR - Root Account
+        id: build-opal-image
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          ECR_REPOSITORY: opal-server-v2
+          DOCKER_FILE_PATH: "./docker/Dockerfile"
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+
+          docker buildx build -f $DOCKER_FILE_PATH --target server -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+          echo "::set-output name=image::$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
+
+      - name: OPAL Worker - Build Tag Push to ECR - Root Account
+        id: build-opal-worker-image
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          ECR_REPOSITORY: permit-opal-worker-v2
+          DOCKER_FILE_PATH: "./docker/Dockerfile"
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+
+          docker buildx build -f $DOCKER_FILE_PATH --target server -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+          echo "::set-output name=image::$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"

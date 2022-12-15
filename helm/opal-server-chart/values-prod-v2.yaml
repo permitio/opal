@@ -1,6 +1,3 @@
-raw_docker_image: 076477451822.dkr.ecr.us-east-2.amazonaws.com/opal-server-v2:latest-private
-name: opal-server
-
 mounts:
   - name: "scopes-mount"
     type: "efs"
@@ -10,69 +7,19 @@ mounts:
     size: "20Gi"
 
 config:
-  envSecrets:
-    OPAL_AUTH_MASTER_TOKEN:
-      name: opal-server-v2-secret
-      key: OPAL_AUTH_MASTER_TOKEN
-    OPAL_AUTH_PRIVATE_KEY:
-      name: opal-server-v2-secret
-      key: OPAL_AUTH_PRIVATE_KEY
-    OPAL_AUTH_PUBLIC_KEY:
-      name: opal-server-v2-secret
-      key: OPAL_AUTH_PUBLIC_KEY
-    OPAL_POLICY_REPO_SSH_KEY:
-      name: opal-server-v2-secret
-      key: OPAL_POLICY_REPO_SSH_KEY
-    OPAL_POLICY_REPO_WEBHOOK_SECRET:
-      name: opal-server-v2-secret
-      key: OPAL_POLICY_REPO_WEBHOOK_SECRET
-    OPAL_BROADCAST_URI:
-      name: opal-server-v2-secret
-      key: OPAL_BROADCAST_URI
-    OPAL_WORKER_TOKEN:
-      name: opal-server-v2-secret
-      key: OPAL_WORKER_TOKEN
   env:
     OPAL_DATA_CONFIG_SOURCES: '{"external_source_url":"https://api.permit.io/v2/opal/data/config"}'
-    OPAL_POLICY_REPO_URL: "git@github.com:permitio/permit-sidecar-policy.git"
     OPAL_ENABLE_DATADOG_APM: "true"
-    UVICORN_NUM_WORKERS: "1"
-    OPAL_LOG_FORMAT_INCLUDE_PID: "true"
-    OPAL_SCOPES: "1"
-    OPAL_LOG_MODULE_EXCLUDE_LIST: "[]"
-    OPAL_LOG_SERIALIZE: "true"
-    OPAL_REPO_WATCHER_ENABLED: "0"
-    OPAL_LOG_DIAGNOSE: "false"
-    OPAL_LOG_COLORIZE: "false"
-    OPAL_BASE_DIR: "/opal"
     OPAL_REDIS_URL: "redis://replication-group-v2-6269ee4-001.wkxvxw.0001.use2.cache.amazonaws.com:6379"
-    OPAL_POLICY_REFRESH_INTERVAL: "60"
 
   envRef:
     DD_AGENT_HOST:
       name: status.hostIP
-    DD_ENV:
-      name: metadata.labels['tags.datadoghq.com/env']
-    DD_SERVICE:
-      name: metadata.labels['tags.datadoghq.com/service']
-    DD_VERSION:
-      name: metadata.labels['tags.datadoghq.com/version']
-
 expose:
-  type: external
   dnsHostName: opal-v2.permit.io
   tlsHostName: "*.permit.io"
-  port: 7002
-  http_paths:
-    - path: /
-      port: 80
-      pathType: Prefix
-
 
 labels_all:
   tags.datadoghq.com/env: "k8s-prod-v2"
-  tags.datadoghq.com/service: "{{ .Chart.Name }}"
-  tags.datadoghq.com/version: "{{ .Release.Name }}"
-
 annotations_template:
-  ad.datadoghq.com/opal-server-v2.logs: '[{"source":"{{ .Chart.Name }}-prod-k8s"}]'
+  ad.datadoghq.com/opal-server-v2.logs: '[{"type":"file", "path": "logs/output-opal-server-*.log", "source":"{{ .Release.Name }}-prod-k8s"}]'
