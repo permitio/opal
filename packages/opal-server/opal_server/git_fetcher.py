@@ -1,3 +1,4 @@
+import asyncio
 import hashlib
 import shutil
 from pathlib import Path
@@ -16,6 +17,7 @@ from opal_common.schemas.policy_source import (
     GitPolicyScopeSource,
     SSHAuthData,
 )
+from opal_common.synchronization.expiring_redis_lock import run_locked
 from pygit2 import (
     KeypairFromMemory,
     RemoteCallbacks,
@@ -143,15 +145,7 @@ class GitPolicyFetcher(PolicyFetcher):
         locks.
         """
         lock_name = GitPolicyFetcher.source_id(self._source)
-        lock = redis.lock(lock_name)
-        try:
-            logger.info(f"Trying to acquire redis lock: {lock_name}")
-            await lock.acquire()
-            logger.info(f"Acquired lock: {lock_name}")
-            await self.fetch(*args, **kwargs)
-        finally:
-            await lock.release()
-            logger.info(f"Released lock: {lock_name}")
+        await run_locked(redis, lock_name, self.fetch(*args, **kwargs))
 
     async def fetch(self, hinted_hash: Optional[str] = None, force_fetch: bool = False):
         """makes sure the repo is already fetched and is up to date.
