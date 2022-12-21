@@ -1,0 +1,47 @@
+# Troubleshooting
+
+## <a name="troubleshooting"></a> Troubleshooting
+
+#### Networking/DNS issues
+
+In case the client cannot connect to the server, this may be a networking/dns issue in your setup.
+
+OPAL client is configured to keep the connection with server open, and in case of disconnection - retry again and again to reconnect. But if something is wrong with the server address (server is down / unreachable / dns not configured) you might see the following logs:
+
+```
+2021-06-27T15:58:12.564384+0300 |fastapi_websocket_pubsub.pub_sub_client    | INFO  | Trying to connect to Pub/Sub server - ws://localhost:7002/ws
+2021-06-27T15:58:12.564687+0300 |fastapi_websocket_rpc.websocket_rpc_client | INFO  | Trying server - ws://localhost:7002/ws
+2021-06-27T15:58:12.567187+0300 |fastapi_websocket_rpc.websocket_rpc_client | INFO  | RPC connection was refused by server
+...
+```
+
+#### OPAL Log verbosity
+
+In case all you see in the logs is something like this:
+
+```
+2021-06-26T16:39:33.143143+0300 |opal_common.fetcher.fetcher_register    | INFO  | Fetcher Register loaded
+2021-06-26T16:39:33.145399+0300 |opal_client.opa.runner                  | INFO  | Launching opa runner
+2021-06-26T16:39:33.146177+0300 |opal_client.opa.runner                  | INFO  | Running OPA inline: opa run --server --addr=:8181 --authentication=off --authorization=off --log-level=info
+2021-06-26T16:39:34.155196+0300 |opal_client.opa.runner                  | INFO  | Running OPA initial start callbacks
+2021-06-26T16:39:34.156273+0300 |opal_client.data.updater                | INFO  | Launching data updater
+2021-06-26T16:39:34.156519+0300 |opal_client.policy.updater              | INFO  | Launching policy updater
+2021-06-26T16:39:34.156678+0300 |opal_client.data.updater                | INFO  | Subscribing to topics: ['policy_data']
+2021-06-26T16:39:34.157030+0300 |opal_client.policy.updater              | INFO  | Subscribing to topics: ['policy:.']
+```
+
+It means that you logging verbosity does not include the RPC and Pub/Sub logs. You can control the logging verbosity with the following env vars:
+
+| Env Var Name                 | Function                                                                                                                                                                                                                                         |
+| :--------------------------- | :----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| OPAL_LOG_MODULE_INCLUDE_LIST | A directive to include logs outputted by the modules appearing in the lists. e.g: setting `OPAL_LOG_MODULE_INCLUDE_LIST=["uvicorn.protocols.http"]` means that all log lines by the module `uvicorn.protocols.http` will be included in the log. |
+| OPAL_LOG_MODULE_EXCLUDE_LIST | If you want less logs, you can ignore logs emitted by these modules. Opposite of `OPAL_LOG_MODULE_INCLUDE_LIST`. To get all logs and make sure nothing is filtered, set the env var like so: `OPAL_LOG_MODULE_EXCLUDE_LIST=[]`.                  |
+| OPAL_LOG_LEVEL               | Default is `INFO`, you can set to `DEBUG` to get more logs, or to higher other log level (less recommended).                                                                                                                                     |
+
+#### Inline OPA logs
+
+If running OPA inline, OPAL can output the Inline OPA logs in several formats.
+
+| Env Var Name               | Function                                                                                                                                                                                                 |
+| :------------------------- | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| OPAL_INLINE_OPA_LOG_FORMAT | log format of the logs returned by the OPA agent that is being monitored and run by OPAL client. Can be `none`, `minimal`, `http`, or `full`. The recommended value to set is `http` (nicer formatting). |

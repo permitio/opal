@@ -90,51 +90,150 @@ const sidebars = {
         {
           type: "category",
           collapsible: true,
+          collapsed: false,
           label: "Running OPAL",
           items: [
+            // {
+            //   type: "category",
+            //   collapsible: true,
+            //   label: "as Python Packages",
+            //   items: [
+            //     {
+            //       type: "doc",
+            //       id: "getting-started/running-opal/as-python-package/overview",
+            //       label: "Overview",
+            //     },
+            //     {
+            //       type: "doc",
+            //       id: "getting-started/running-opal/as-python-package/opal-server-setup",
+            //       label: "OPAL Server Setup",
+            //     },
+            //     {
+            //       type: "doc",
+            //       id: "getting-started/running-opal/as-python-package/opal-client-setup",
+            //       label: "OPAL Client Setup",
+            //     },
+            //     {
+            //       type: "doc",
+            //       id: "getting-started/running-opal/as-python-package/running-in-prod",
+            //       label: "Running in Production",
+            //     },
+            //     {
+            //       type: "doc",
+            //       id: "getting-started/running-opal/as-python-package/secure-mode-setup",
+            //       label: "Secure Mode Setup",
+            //     },
+            //   ],
+            // },
+
+            {
+              type: "doc",
+              id: "getting-started/running-opal/overview",
+              label: "Overview",
+            },
+            {
+              type: "doc",
+              id: "getting-started/running-opal/download-docker-images",
+              label: "Download Docker Images",
+            },
+            {
+              type: "doc",
+              id: "getting-started/running-opal/run-docker-containers",
+              label: "Run Docker Containers",
+            },
+            {
+              type: "doc",
+              id: "getting-started/running-opal/config-variables",
+              label: "Configuration Variables",
+            },
             {
               type: "category",
               collapsible: true,
-              label: "as Python Packages",
+              label: "Run OPAL Server",
               items: [
                 {
                   type: "doc",
-                  id: "getting-started/running-opal/as-python-package/overview",
-                  label: "Overview",
+                  id: "getting-started/running-opal/run-opal-server/get-server-image",
+                  label: "Get Server Image",
                 },
                 {
                   type: "doc",
-                  id: "getting-started/running-opal/as-python-package/opal-server-setup",
-                  label: "OPAL Server Setup",
+                  id: "getting-started/running-opal/run-opal-server/broadcast-interface",
+                  label: "Broadcast Interface",
                 },
                 {
                   type: "doc",
-                  id: "getting-started/running-opal/as-python-package/opal-client-setup",
-                  label: "OPAL Client Setup",
+                  id: "getting-started/running-opal/run-opal-server/policy-repo-location",
+                  label: "Policy Repo Location",
                 },
                 {
                   type: "doc",
-                  id: "getting-started/running-opal/as-python-package/secure-mode-setup",
-                  label: "Secure Mode Setup",
+                  id: "getting-started/running-opal/run-opal-server/policy-repo-syncing",
+                  label: "Policy Repo Syncing",
+                },
+                {
+                  type: "doc",
+                  id: "getting-started/running-opal/run-opal-server/data-sources",
+                  label: "Data Sources",
+                },
+                {
+                  type: "doc",
+                  id: "getting-started/running-opal/run-opal-server/security-parameters",
+                  label: "Security Parameters",
+                },
+                {
+                  type: "doc",
+                  id: "getting-started/running-opal/run-opal-server/putting-all-together",
+                  label: "Putting it All Together",
                 },
               ],
             },
             {
               type: "category",
               collapsible: true,
-              label: "as Docker Images",
+              label: "Run OPAL Client",
               items: [
                 {
                   type: "doc",
-                  id: "getting-started/running-opal/as-docker-image/overview",
-                  label: "Overview",
+                  id: "getting-started/running-opal/run-opal-client/get-client-image",
+                  label: "Get Client Image",
                 },
                 {
                   type: "doc",
-                  id: "getting-started/running-opal/as-docker-image/run-opal",
-                  label: "Full Guide",
+                  id: "getting-started/running-opal/run-opal-client/obtain-jwt-token",
+                  label: "Obtain JWT Token (Opt)",
+                },
+                {
+                  type: "doc",
+                  id: "getting-started/running-opal/run-opal-client/server-uri",
+                  label: "Server URI",
+                },
+                {
+                  type: "doc",
+                  id: "getting-started/running-opal/run-opal-client/data-topics",
+                  label: "Data Topics",
+                },
+                {
+                  type: "doc",
+                  id: "getting-started/running-opal/run-opal-client/opa-runner-parameters",
+                  label: "OPA Runner Parameters",
+                },
+                {
+                  type: "doc",
+                  id: "getting-started/running-opal/run-opal-client/standalone-opa-uri",
+                  label: "Standalone OPA URI",
+                },
+                {
+                  type: "doc",
+                  id: "getting-started/running-opal/run-opal-client/lets-run-the-client",
+                  label: "Let's Run the Client",
                 },
               ],
+            },
+            {
+              type: "doc",
+              id: "getting-started/running-opal/troubleshooting",
+              label: "Troubleshooting",
             },
           ],
         },

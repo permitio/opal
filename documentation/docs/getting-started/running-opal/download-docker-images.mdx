@@ -1,0 +1,84 @@
+# Download OPAL Docker Images
+
+## <a name="download-images"></a> How to get the OPAL images from Docker Hub
+
+<table>
+  <tbody>
+    <tr>
+      <th align="left">Image Name</th>
+      <th align="left" width="45%">
+        How to Download
+      </th>
+      <th align="left" width="45%">
+        Description
+      </th>
+    </tr>
+    <tr>
+      <td valign="top">
+        <a href="https://hub.docker.com/r/permitio/opal-server">OPAL Server</a>
+      </td>
+      <td valign="top">
+        <code>docker pull permitio/opal-server</code>
+      </td>
+      <td valign="top">
+        <ul>
+          <li>Creates a Pub/Sub channel clients subscribe to</li>
+          <li>
+            Tracks a git repository (via webhook / polling) for updates to
+            policy and static data
+          </li>
+          <li>Accepts data update notifications via Rest API</li>
+          <li>Serves default data source configuration for clients</li>
+          <li>Pushes policy and data updates to clients</li>
+        </ul>
+      </td>
+    </tr>
+    <tr>
+      <td valign="top">
+        <a href="https://hub.docker.com/r/permitio/opal-client">OPAL Client</a>
+      </td>
+      <td valign="top">
+        <code>docker pull permitio/opal-client</code>
+      </td>
+      <td valign="top">
+        <ul>
+          <li>Prebuilt with an OPA agent inside the image</li>
+          <li>
+            Keeps the OPA agent cache up to date with realtime updates pushed
+            from the server
+          </li>
+          <li>
+            Can selectively subscribe to specific topics of policy code (rego)
+            and policy data
+          </li>
+          <li>
+            Fetches data from multiple sources (e.g. DBs, APIs, 3rd party
+            services)
+          </li>
+        </ul>
+      </td>
+    </tr>
+    <tr>
+      <td valign="top">
+        <a href="https://hub.docker.com/r/permitio/opal-client">
+          OPAL Client (Standalone)
+        </a>
+      </td>
+      <td valign="top">
+        <code>docker pull permitio/opal-client-standalone</code>
+      </td>
+      <td valign="top">
+        <ul>
+          <li>
+            <strong>Same as OPAL Client, you want only one of them</strong>
+          </li>
+          <li>This image does not come with OPA installed</li>
+          <li>
+            Intended to be used when you prefer to deploy OPA separately in its
+            own container
+          </li>
+        </ul>
+      </td>
+    </tr>
+  </tbody>
+</table>

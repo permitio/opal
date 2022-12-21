@@ -1,0 +1,69 @@
+# Broadcast Interface
+
+### Step 2: Server config - broadcast interface
+
+#### 1) Deploying the broadcast channel backbone service (optional)
+
+When scaling the OPAL Server to **multiple workers** and/or **multiple containers**, we use a **broadcast channel** to sync between all the instances of OPAL Server. In order words, communication on the broadcast channel is **communication between OPAL servers**, and is not related to the OPAL client.
+
+Under the hood, our interface to the broadcast channel **backbone service** is implemented by [encode/broadcaster](https://github.com/encode/broadcaster).
+
+At the moment, the supported broadcast channel backbones are:
+
+- Postgres LISTEN/NOTIFY
+- Redis
+- Kafka
+
+Deploying the actual service used for broadcast (i.e: Redis) is outside the scope of this tutorial. The easiest way is to use a managed service (e.g: AWS RDS, AWS ElastiCache, etc), but you can also deploy your own dockers.
+
+When running in production, you **should** run with multiple workers per server instance (i.e: container/node), if not multiple containers, and thus deploying the backbone service becomes **mandatory** for production environments.
+
+#### 2) Declaring the broadcast uri environment variable
+
+Declaring the broadcast uri is optional, depending on whether you deployed a broadcast backbone service and are also running with more than one OPAL server instance (multiple workers or multiple nodes). If you are running with multiple server instances (you **should** for production), declaring the broadcast uri is **mandatory**.
+
+<table>
+  <tbody>
+    <tr>
+      <th align="left">Env Var Name</th>
+      <th align="left">Function</th>
+    </tr>
+    <tr>
+      <td valign="top">OPAL_BROADCAST_URI</td>
+      <td>
+        <ul>
+          <li>Broadcast channel backend.</li>
+          <li>
+            The format of the broadcaster URI string is specified{" "}
+            <a href="https://github.com/encode/broadcaster#available-backends">
+              here
+            </a>
+            .
+          </li>
+          <li>
+            Note that password authentication is not supported in the
+            broadcaster URI when using redis, see{" "}
+            <a href="https://github.com/encode/broadcaster/blob/master/broadcaster/_backends/redis.py">
+              source
+            </a>
+            .
+          </li>
+          <li>
+            Example value:{" "}
+            <code>OPAL_BROADCAST_URI=postgres://localhost/mydb</code>
+          </li>
+        </ul>
+      </td>
+    </tr>
+  </tbody>
+</table>
+
+#### 3) Declaring the number of uvicorn workers
+
+As we mentioned in the previous section, each container can run multiple workers, and if you use more than one, you need a broadcast channel.
+
+This is how you define the number of workers (pay attention: this env var is not prefixed with `OPAL_`):
+
+| Env Var Name        | Function                                                         |
+| :------------------ | :--------------------------------------------------------------- |
+| UVICORN_NUM_WORKERS | the number of workers in a single container (example value: `4`) |

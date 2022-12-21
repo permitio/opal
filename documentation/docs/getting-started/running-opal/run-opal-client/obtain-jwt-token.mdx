@@ -1,0 +1,65 @@
+# Obtain the JWT token
+
+### Step 2: Obtain client JWT token (Optional)
+
+In production environments, OPAL server **should** be running in **secure mode**, and the OPAL client must have a valid identity token (which is a signed JWT) in order to successfully connect to the server.
+
+Obtaining a token is easy. You'll need the OPAL server's **master token** in order to request a JWT token.
+
+Let's install the `opal-client` cli to a new python virtualenv (assuming you didn't [already create one](#generate-secret)):
+
+```sh
+# this command is not necessary if you already created this virtualenv
+pyenv virtualenv opal
+# this command is not necessary if the virtualenv is already active
+pyenv activate opal
+# this command installs the client cli
+pip install opal-client
+```
+
+You can obtain a client token with this cli command:
+
+```
+opal-client obtain-token MY_MASTER_TOKEN --server-url=https://opal.yourdomain.com --type client
+```
+
+If you don't want to use the cli, you can obtain the JWT directly from the deployed OPAL server via its REST API:
+
+```
+curl --request POST 'https://opal.yourdomain.com/token' \
+--header 'Authorization: Bearer MY_MASTER_TOKEN' \
+--header 'Content-Type: application/json' \
+--data-raw '{
+  "type": "client",
+}'
+```
+
+The `/token` API endpoint can receive more parameters, as [documented here](https://opal.permit.io/redoc#operation/generate_new_access_token_token_post).
+
+This example assumes that:
+
+- You deployed OPAL server to `https://opal.yourdomain.com`
+- The master token of your deployment is `MY_MASTER_TOKEN`.
+  - However, if you followed our tutorial for the server, you probably generated one [here](#generate-secret) and that is the master token you should use.
+
+example output:
+
+```json
+{
+    "token": "eyJ0...8wsk",
+    "type": "bearer",
+    "details": { ... }
+}
+```
+
+Put the generated token value (the one inside the `token` key) into this environment variable:
+
+| Env Var Name      | Function                                                                     |
+| :---------------- | :--------------------------------------------------------------------------- |
+| OPAL_CLIENT_TOKEN | The client identity token (JWT) used for identification against OPAL server. |
+
+Example:
+
+```sh
+export OPAL_CLIENT_TOKEN=eyJ0...8wsk
+```
