@@ -201,7 +201,7 @@ const sidebars = {
                 {
                   type: "doc",
                   id: "getting-started/running-opal/run-opal-client/obtain-jwt-token",
-                  label: "Obtain JWT Token (Opt)",
+                  label: "Obtain JWT Token",
                 },
                 {
                   type: "doc",

@@ -5,6 +5,7 @@
 If you are running with inline OPA (meaning OPAL client runs OPA for you in the same docker image), you can change the default parameters used to run OPA.
 
 In order to override default configuration, you'll need to set this env var:
-Env Var Name | Function
-:--- | :---
-OPAL_INLINE_OPA_CONFIG | The value of this var should be an [OpaServerOptions](https://github.com/permitio/opal/blob/master/packages/opal-client/opal_client/opa/options.py#L19) pydantic model encoded into json string. The process is similar to the one we showed on how to encode the value of [OPAL_DATA_CONFIG_SOURCES](#encode-data-sources).
+
+| Env Var Name           | Function                                                                                                                                                                                                                                                                                                                     |
+| :--------------------- | :--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| OPAL_INLINE_OPA_CONFIG | The value of this var should be an [OpaServerOptions](https://github.com/permitio/opal/blob/master/packages/opal-client/opal_client/opa/options.py#L19) pydantic model encoded into json string. The process is similar to the one we showed on how to encode the value of [OPAL_DATA_CONFIG_SOURCES](#encode-data-sources). |
