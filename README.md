@@ -32,8 +32,6 @@ Open Policy Administration Layer
 <a href="https://twitter.com/intent/follow?original_referer=https%3A%2F%2Fpublish.twitter.com%2F%3FbuttonType%3DFollowButton%26query%3Dhttps%253A%252F%252Ftwitter.com%252Fpermit_io%26widget%3DButton&ref_src=twsrc%5Etfw&region=follow_link&screen_name=permit_io&tw_p=followbutton"><img src="https://img.shields.io/twitter/follow/permit_io?label=Follow%20%40permit_io&style=social">
 </a>
 
-
-
 ## What is OPAL?
 
 OPAL is an administration layer for <a href="https://www.openpolicyagent.org/">Open Policy Agent (OPA)</a>, detecting changes to both policy and policy data in realtime and pushing live updates to your agents. OPAL brings open-policy up to the speed needed by live applications.
@@ -89,7 +87,7 @@ curl -L https://raw.githubusercontent.com/permitio/opal/master/docker/docker-com
 
   - [How to get started with OPAL (Packages and CLI)](https://docs.opal.ac/getting-started/running-opal/as-python-package/overview)
 
-  - [How to get started with OPAL (Container Images)](https://docs.opal.ac/getting-started/running-opal/as-docker-image/overview)
+  - [How to get started with OPAL (Container Images)](https://docs.opal.ac/getting-started/running-opal/overview)
 
   - [How to trigger Data Updates via OPAL](https://docs.opal.ac/tutorials/trigger_data_updates)
 
