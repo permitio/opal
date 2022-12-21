@@ -93,41 +93,42 @@ const sidebars = {
           collapsed: false,
           label: "Running OPAL",
           items: [
+            // {
+            //   type: "category",
+            //   collapsible: true,
+            //   label: "as Python Packages",
+            //   items: [
+            //     {
+            //       type: "doc",
+            //       id: "getting-started/running-opal/as-python-package/overview",
+            //       label: "Overview",
+            //     },
+            //     {
+            //       type: "doc",
+            //       id: "getting-started/running-opal/as-python-package/opal-server-setup",
+            //       label: "OPAL Server Setup",
+            //     },
+            //     {
+            //       type: "doc",
+            //       id: "getting-started/running-opal/as-python-package/opal-client-setup",
+            //       label: "OPAL Client Setup",
+            //     },
+            //     {
+            //       type: "doc",
+            //       id: "getting-started/running-opal/as-python-package/running-in-prod",
+            //       label: "Running in Production",
+            //     },
+            //     {
+            //       type: "doc",
+            //       id: "getting-started/running-opal/as-python-package/secure-mode-setup",
+            //       label: "Secure Mode Setup",
+            //     },
+            //   ],
+            // },
             {
               type: "category",
               collapsible: true,
-              label: "as Python Packages",
-              items: [
-                {
-                  type: "doc",
-                  id: "getting-started/running-opal/as-python-package/overview",
-                  label: "Overview",
-                },
-                {
-                  type: "doc",
-                  id: "getting-started/running-opal/as-python-package/opal-server-setup",
-                  label: "OPAL Server Setup",
-                },
-                {
-                  type: "doc",
-                  id: "getting-started/running-opal/as-python-package/opal-client-setup",
-                  label: "OPAL Client Setup",
-                },
-                {
-                  type: "doc",
-                  id: "getting-started/running-opal/as-python-package/running-in-prod",
-                  label: "Running in Production",
-                },
-                {
-                  type: "doc",
-                  id: "getting-started/running-opal/as-python-package/secure-mode-setup",
-                  label: "Secure Mode Setup",
-                },
-              ],
-            },
-            {
-              type: "category",
-              collapsible: true,
+              collapsed: false,
               label: "as Docker Images",
               items: [
                 {
