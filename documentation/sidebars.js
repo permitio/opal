@@ -125,122 +125,115 @@ const sidebars = {
             //     },
             //   ],
             // },
+
+            {
+              type: "doc",
+              id: "getting-started/running-opal/as-docker-image/overview",
+              label: "Overview",
+            },
+            {
+              type: "doc",
+              id: "getting-started/running-opal/as-docker-image/download-docker-images",
+              label: "Download Docker Images",
+            },
+            {
+              type: "doc",
+              id: "getting-started/running-opal/as-docker-image/run-docker-containers",
+              label: "Run Docker Containers",
+            },
+            {
+              type: "doc",
+              id: "getting-started/running-opal/as-docker-image/config-variables",
+              label: "Configuration Variables",
+            },
             {
               type: "category",
               collapsible: true,
-              collapsed: false,
-              label: "as Docker Images",
+              label: "Run OPAL Server",
               items: [
                 {
                   type: "doc",
-                  id: "getting-started/running-opal/as-docker-image/overview",
-                  label: "Overview",
+                  id: "getting-started/running-opal/as-docker-image/run-opal-server/get-server-image",
+                  label: "Get Server Image",
                 },
                 {
                   type: "doc",
-                  id: "getting-started/running-opal/as-docker-image/download-docker-images",
-                  label: "Download Docker Images",
+                  id: "getting-started/running-opal/as-docker-image/run-opal-server/broadcast-interface",
+                  label: "Broadcast Interface",
                 },
                 {
                   type: "doc",
-                  id: "getting-started/running-opal/as-docker-image/run-docker-containers",
-                  label: "Run Docker Containers",
+                  id: "getting-started/running-opal/as-docker-image/run-opal-server/policy-repo-location",
+                  label: "Policy Repo Location",
                 },
                 {
                   type: "doc",
-                  id: "getting-started/running-opal/as-docker-image/config-variables",
-                  label: "Configuration Variables",
-                },
-                {
-                  type: "category",
-                  collapsible: true,
-                  label: "Run OPAL Server",
-                  items: [
-                    {
-                      type: "doc",
-                      id: "getting-started/running-opal/as-docker-image/run-opal-server/get-server-image",
-                      label: "Get Server Image",
-                    },
-                    {
-                      type: "doc",
-                      id: "getting-started/running-opal/as-docker-image/run-opal-server/broadcast-interface",
-                      label: "Broadcast Interface",
-                    },
-                    {
-                      type: "doc",
-                      id: "getting-started/running-opal/as-docker-image/run-opal-server/policy-repo-location",
-                      label: "Policy Repo Location",
-                    },
-                    {
-                      type: "doc",
-                      id: "getting-started/running-opal/as-docker-image/run-opal-server/policy-repo-syncing",
-                      label: "Policy Repo Syncing",
-                    },
-                    {
-                      type: "doc",
-                      id: "getting-started/running-opal/as-docker-image/run-opal-server/data-sources",
-                      label: "Data Sources",
-                    },
-                    {
-                      type: "doc",
-                      id: "getting-started/running-opal/as-docker-image/run-opal-server/security-parameters",
-                      label: "Security Parameters",
-                    },
-                    {
-                      type: "doc",
-                      id: "getting-started/running-opal/as-docker-image/run-opal-server/putting-all-together",
-                      label: "Putting it All Together",
-                    },
-                  ],
-                },
-                {
-                  type: "category",
-                  collapsible: true,
-                  label: "Run OPAL Client",
-                  items: [
-                    {
-                      type: "doc",
-                      id: "getting-started/running-opal/as-docker-image/run-opal-client/get-client-image",
-                      label: "Get Client Image",
-                    },
-                    {
-                      type: "doc",
-                      id: "getting-started/running-opal/as-docker-image/run-opal-client/obtain-jwt-token",
-                      label: "Obtain JWT Token (Opt)",
-                    },
-                    {
-                      type: "doc",
-                      id: "getting-started/running-opal/as-docker-image/run-opal-client/server-uri",
-                      label: "Server URI",
-                    },
-                    {
-                      type: "doc",
-                      id: "getting-started/running-opal/as-docker-image/run-opal-client/data-topics",
-                      label: "Data Topics",
-                    },
-                    {
-                      type: "doc",
-                      id: "getting-started/running-opal/as-docker-image/run-opal-client/opa-runner-parameters",
-                      label: "OPA Runner Parameters",
-                    },
-                    {
-                      type: "doc",
-                      id: "getting-started/running-opal/as-docker-image/run-opal-client/standalone-opa-uri",
-                      label: "Standalone OPA URI",
-                    },
-                    {
-                      type: "doc",
-                      id: "getting-started/running-opal/as-docker-image/run-opal-client/lets-run-the-client",
-                      label: "Let's Run the Client",
-                    },
-                  ],
+                  id: "getting-started/running-opal/as-docker-image/run-opal-server/policy-repo-syncing",
+                  label: "Policy Repo Syncing",
                 },
                 {
                   type: "doc",
-                  id: "getting-started/running-opal/as-docker-image/troubleshooting",
-                  label: "Troubleshooting",
+                  id: "getting-started/running-opal/as-docker-image/run-opal-server/data-sources",
+                  label: "Data Sources",
+                },
+                {
+                  type: "doc",
+                  id: "getting-started/running-opal/as-docker-image/run-opal-server/security-parameters",
+                  label: "Security Parameters",
+                },
+                {
+                  type: "doc",
+                  id: "getting-started/running-opal/as-docker-image/run-opal-server/putting-all-together",
+                  label: "Putting it All Together",
                 },
               ],
+            },
+            {
+              type: "category",
+              collapsible: true,
+              label: "Run OPAL Client",
+              items: [
+                {
+                  type: "doc",
+                  id: "getting-started/running-opal/as-docker-image/run-opal-client/get-client-image",
+                  label: "Get Client Image",
+                },
+                {
+                  type: "doc",
+                  id: "getting-started/running-opal/as-docker-image/run-opal-client/obtain-jwt-token",
+                  label: "Obtain JWT Token (Opt)",
+                },
+                {
+                  type: "doc",
+                  id: "getting-started/running-opal/as-docker-image/run-opal-client/server-uri",
+                  label: "Server URI",
+                },
+                {
+                  type: "doc",
+                  id: "getting-started/running-opal/as-docker-image/run-opal-client/data-topics",
+                  label: "Data Topics",
+                },
+                {
+                  type: "doc",
+                  id: "getting-started/running-opal/as-docker-image/run-opal-client/opa-runner-parameters",
+                  label: "OPA Runner Parameters",
+                },
+                {
+                  type: "doc",
+                  id: "getting-started/running-opal/as-docker-image/run-opal-client/standalone-opa-uri",
+                  label: "Standalone OPA URI",
+                },
+                {
+                  type: "doc",
+                  id: "getting-started/running-opal/as-docker-image/run-opal-client/lets-run-the-client",
+                  label: "Let's Run the Client",
+                },
+              ],
+            },
+            {
+              type: "doc",
+              id: "getting-started/running-opal/as-docker-image/troubleshooting",
+              label: "Troubleshooting",
             },
           ],
         },
