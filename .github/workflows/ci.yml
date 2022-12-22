@@ -117,6 +117,9 @@ jobs:
   build:
     runs-on: ubuntu-latest
     name: Build Push
+    outputs:
+      commit-msg-title: ${{ steps.extract-commit-msg.outputs.commit-msg-title }}
+      commit-msg: ${{ steps.extract-commit-msg.outputs.commit-msg }}
     steps:
       - name: Checkout
         uses: actions/checkout@v2
