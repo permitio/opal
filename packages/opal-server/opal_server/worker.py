@@ -248,6 +248,7 @@ configure_metrics(
     statsd_port=8125,
     namespace="opal.worker",
 )
+gauge("testing", 1)
 
 app = Celery(
     "opal-worker",
