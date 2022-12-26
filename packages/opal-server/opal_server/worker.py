@@ -259,7 +259,7 @@ app.conf.task_serializer = "json"
 
 @app.on_after_configure.connect
 def setup_periodic_tasks(sender, **kwargs):
-    sender.add_periodic_task(1.0, send_metrics.s())
+    sender.add_periodic_task(opal_common_config.METRICS_INTERVAL, send_metrics.s())
 
     polling_interval = opal_server_config.POLICY_REFRESH_INTERVAL
     if polling_interval == 0:
