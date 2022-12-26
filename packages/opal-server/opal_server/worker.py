@@ -205,6 +205,8 @@ class Worker:
         scopes = await self._scopes.all()
 
         already_fetched = set()
+        gauge("scope_count", len(scopes))
+
         for scope in scopes:
             if scope.policy.poll_updates and scope.policy.url not in already_fetched:
                 logger.info(
