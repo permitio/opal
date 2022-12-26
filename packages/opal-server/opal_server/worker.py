@@ -1,3 +1,4 @@
+import os
 import shutil
 from functools import partial
 from pathlib import Path
@@ -8,8 +9,10 @@ from aiohttp import ClientError, ClientSession
 from asgiref.sync import async_to_sync
 from celery import Celery
 from fastapi import status
+from opal_common.config import opal_common_config
 from opal_common.git.commit_viewer import VersionedFile
 from opal_common.logger import configure_logs, logger
+from opal_common.metrics import configure_metrics, gauge
 from opal_common.schemas.policy import PolicyUpdateMessageNotification
 from opal_common.schemas.policy_source import GitPolicyScopeSource
 from opal_common.schemas.scopes import Scope
@@ -120,9 +123,10 @@ class NewCommitsCallbacks(PolicyFetcherCallbacks):
 
 
 class Worker:
-    def __init__(self, base_dir: Path, scopes: ScopeRepository):
+    def __init__(self, base_dir: Path, scopes: ScopeRepository, redis: RedisDB):
         self._base_dir = base_dir
         self._scopes = scopes
+        self._redis = redis
         self._http: Optional[ClientSession] = None
 
     async def __aenter__(self):
@@ -209,13 +213,19 @@ class Worker:
                 sync_scope.delay(scope.scope_id, force_fetch=True)
                 already_fetched.add(scope.policy.url)
 
+    async def send_metrics(self):
+        queue_length = await self._redis.redis_connection.llen("opal-worker")
+        gauge("queue_length", queue_length)
+
 
 def create_worker() -> Worker:
     opal_base_dir = Path(opal_server_config.BASE_DIR)
+    redis = RedisDB(opal_server_config.REDIS_URL)
 
     worker = Worker(
         base_dir=opal_base_dir,
-        scopes=ScopeRepository(RedisDB(opal_server_config.REDIS_URL)),
+        scopes=ScopeRepository(redis),
+        redis=redis,
     )
 
     return worker
@@ -230,6 +240,13 @@ def with_worker(f):
 
 
 configure_logs()
+configure_metrics(
+    enable_metrics=opal_common_config.ENABLE_METRICS,
+    statsd_host=os.environ.get("DD_AGENT_HOST", "localhost"),
+    statsd_port=8125,
+    namespace="opal.worker",
+)
+
 app = Celery(
     "opal-worker",
     broker=opal_server_config.REDIS_URL,
@@ -242,6 +259,8 @@ app.conf.task_serializer = "json"
 
 @app.on_after_configure.connect
 def setup_periodic_tasks(sender, **kwargs):
+    sender.add_periodic_task(opal_common_config.METRICS_INTERVAL, send_metrics.s())
+
     polling_interval = opal_server_config.POLICY_REFRESH_INTERVAL
     if polling_interval == 0:
         logger.info("OPAL scopes: polling task is off.")
@@ -269,6 +288,11 @@ def delete_scope(scope_id: str):
 @app.task(ignore_result=True)
 def periodic_check():
     return async_to_sync(with_worker(Worker.periodic_check))()
+
+
+@app.task(ignore_result=True)
+def send_metrics():
+    return async_to_sync(with_worker(Worker.send_metrics))()
 
 
 async def schedule_sync_all_scopes(scopes: ScopeRepository):

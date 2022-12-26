@@ -154,5 +154,8 @@ class OpalCommonConfig(Confi):
     AUTH_JWT_AUDIENCE = confi.str("AUTH_JWT_AUDIENCE", "https://api.opal.ac/v1/")
     AUTH_JWT_ISSUER = confi.str("AUTH_JWT_ISSUER", f"https://opal.ac/")
 
+    ENABLE_METRICS = confi.bool("ENABLE_METRICS", False)
+    METRICS_INTERVAL = confi.int("METRICS_INTERVAL", 10.0)
+
 
 opal_common_config = OpalCommonConfig(prefix="OPAL_")
