@@ -47,6 +47,8 @@ config:
       name: metadata.labels['tags.datadoghq.com/service']
     DD_VERSION:
       name: metadata.labels['tags.datadoghq.com/version']
+    DD_AGENT_HOST:
+      name: status.hostIP
 
 expose:
   type: external
