@@ -7,7 +7,7 @@ services:
     ports:
       - "6379:6379"
   opal_server_worker:
-    image: permitio/opal-server:latest
+    image: permitio/opal-server:next
     environment:
       - OPAL_REDIS_URL=redis://redis:6379
       - OPAL_SCOPES=1
@@ -22,7 +22,7 @@ services:
     command: sh -c "celery -A opal_server.worker worker -B -l info -s /tmp/schedule.db"
   opal_server:
     # by default we run opal-server from latest official image
-    image: permitio/opal-server:latest
+    image: permitio/opal-server:next
     environment:
       # the broadcast backbone uri used by opal server workers (see comments above for: broadcast_channel)
       - OPAL_BROADCAST_URI=redis://redis:6379
@@ -47,16 +47,18 @@ services:
       - OPAL_SCOPES=1
       - OPAL_WORKER_TOKEN=token
       - OPAL_BASE_DIR=/opal
+      - OPAL_ENABLE_METRICS=1
+      - DD_AGENT_HOST=host.docker.internal
     ports:
       # exposes opal server on the host machine, you can access the server at: http://localhost:7002
       - "7002:7002"
     depends_on:
-      - broadcast_channel
+      - redis
     volumes:
       - opal:/opal:rw
   opal_client:
     # by default we run opal-client from latest official image
-    image: permitio/opal-client:latest
+    image: permitio/opal-client:next
     environment:
       - OPAL_SERVER_URL=http://opal_server:7002
       - OPAL_LOG_FORMAT_INCLUDE_PID=true

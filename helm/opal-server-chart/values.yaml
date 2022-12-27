@@ -39,7 +39,7 @@ config:
     OPAL_POLICY_REFRESH_INTERVAL: "60"
     OPAL_LOG_TO_FILE: "True"
     OPAL_LOG_FILE_PATH: "git_sources/output.log"
-
+    OPAL_ENABLE_METRICS: "1"
   envRef:
     DD_ENV:
       name: metadata.labels['tags.datadoghq.com/env']
