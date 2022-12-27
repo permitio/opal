@@ -12,7 +12,7 @@ from fastapi import status
 from opal_common.config import opal_common_config
 from opal_common.git.commit_viewer import VersionedFile
 from opal_common.logger import configure_logs, logger
-from opal_common.metrics import configure_metrics, gauge
+from opal_common.metrics import configure_metrics
 from opal_common.schemas.policy import PolicyUpdateMessageNotification
 from opal_common.schemas.policy_source import GitPolicyScopeSource
 from opal_common.schemas.scopes import Scope
@@ -205,7 +205,6 @@ class Worker:
         scopes = await self._scopes.all()
 
         already_fetched = set()
-        gauge("scope_count", len(scopes))
 
         for scope in scopes:
             if scope.policy.poll_updates and scope.policy.url not in already_fetched:
@@ -214,10 +213,6 @@ class Worker:
                 )
                 sync_scope.delay(scope.scope_id, force_fetch=True)
                 already_fetched.add(scope.policy.url)
-
-    async def send_metrics(self):
-        queue_length = await self._redis.redis_connection.llen("opal-worker")
-        gauge("queue_length", queue_length)
 
 
 def create_worker() -> Worker:
@@ -261,8 +256,6 @@ app.conf.task_serializer = "json"
 
 @app.on_after_configure.connect
 def setup_periodic_tasks(sender, **kwargs):
-    sender.add_periodic_task(opal_common_config.METRICS_INTERVAL, send_metrics.s())
-
     polling_interval = opal_server_config.POLICY_REFRESH_INTERVAL
     if polling_interval == 0:
         logger.info("OPAL scopes: polling task is off.")

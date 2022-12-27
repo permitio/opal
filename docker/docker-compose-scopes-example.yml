@@ -47,9 +47,13 @@ services:
       - OPAL_SCOPES=1
       - OPAL_WORKER_TOKEN=token
       - OPAL_BASE_DIR=/opal
+      - OPAL_ENABLE_METRICS=1
+      - DD_AGENT_HOST=host.docker.internal
     ports:
       # exposes opal server on the host machine, you can access the server at: http://localhost:7002
       - "7002:7002"
+    depends_on:
+      - redis
     volumes:
       - opal:/opal:rw
   opal_client:
