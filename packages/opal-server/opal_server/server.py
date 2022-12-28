@@ -14,6 +14,7 @@ from opal_common.confi.confi import load_conf_if_none
 from opal_common.config import opal_common_config
 from opal_common.git.repo_cloner import RepoClonePathFinder
 from opal_common.logger import configure_logs, logger
+from opal_common.metrics import configure_metrics, gauge
 from opal_common.middleware import configure_middleware
 from opal_common.schemas.data import ServerDataSourceConfig
 from opal_common.schemas.policy_source import SSHAuthData
@@ -108,6 +109,13 @@ class OpalServer:
         self._policy_remote_url = policy_remote_url
 
         configure_logs()
+        configure_metrics(
+            enable_metrics=opal_common_config.ENABLE_METRICS,
+            statsd_host=os.environ.get("DD_AGENT_HOST", "localhost"),
+            statsd_port=8125,
+            namespace="opal",
+        )
+
         logger.info("Attention: this is the private OPAL codebase !")
 
         self.watcher: Optional[PolicyWatcherTask] = None
@@ -183,6 +191,7 @@ class OpalServer:
 
         self.watcher: Optional[PolicyWatcherTask] = None
 
+        self._redis_db = None
         if opal_server_config.SCOPES:
             self._redis_db = RedisDB(opal_server_config.REDIS_URL)
             self._scopes = ScopeRepository(self._redis_db)
@@ -190,6 +199,7 @@ class OpalServer:
 
         # init fastapi app
         self.app: FastAPI = self._init_fast_api_app()
+        self._metrics_task = None
 
     def _init_fast_api_app(self):
         """inits the fastapi app object."""
@@ -296,6 +306,7 @@ class OpalServer:
             try:
                 await self.start()
                 self._task = asyncio.create_task(self.start_server_background_tasks())
+                self._metrics_task = asyncio.create_task(self._collect_metrics())
 
             except Exception:
                 logger.critical("Exception while starting OPAL")
@@ -422,3 +433,16 @@ class OpalServer:
             await asyncio.gather(*tasks)
         except Exception:
             logger.exception("exception while shutting down background tasks")
+
+    async def _collect_metrics(self):
+        while True:
+            try:
+                if self._redis_db:
+                    queue_length = await self._redis_db.redis_connection.llen(
+                        "opal-worker"
+                    )
+                    gauge("worker_queue_len", queue_length)
+
+                await asyncio.sleep(opal_common_config.METRICS_INTERVAL)
+            except Exception as ex:
+                logger.error("Error while collecting metrics: {err}", err=ex)
