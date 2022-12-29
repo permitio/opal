@@ -10,13 +10,11 @@ jobs:
   update-deployments:
     runs-on: ubuntu-latest
     steps:
-      # Checkout our repo to extract commit info
+      # Checkout our repo first to extract commit info
     - name: Checkout
       uses: actions/checkout@v2
 
     - name: Get commit msg
-      # This is for creating the version update PR to permit-deployments,
-      #   do it here to avoid checking out backend's repo again
       id: extract-commit-msg
       run: |
         echo "::set-output name=commit-msg-title::$(git log -1 --pretty=%B | cat | head -n 1)"
@@ -26,6 +24,7 @@ jobs:
         COMMIT_MSG="${COMMIT_MSG//$'\r'/'%0D'}"
         echo "::set-output name=commit-msg::$COMMIT_MSG"
 
+      # Checkout permit-deployments to create upgrade PR
     - uses: actions/checkout@v3
       with:
         repository: permitio/permit-deployments
