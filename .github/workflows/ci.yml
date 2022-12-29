@@ -157,3 +157,21 @@ jobs:
           docker buildx build -f $DOCKER_FILE_PATH --target server -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
           docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
           echo "::set-output name=image::$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
+
+  update-staging:
+    # On push to master - trigger sync of permit-deployments so staging would be deployed with new version
+    if: ${{ !failure() && !cancelled() && github.ref == 'refs/heads/private' && github.event_name == 'push' }}
+    needs: [test-code, test-docker, build]
+    runs-on: ubuntu-latest
+    steps:
+    - name: Trigger Deployments Sync
+      uses: actions/github-script@v6
+      with:
+        github-token: ${{ secrets.GH_TOKEN }}
+        script: |
+          await github.rest.actions.createWorkflowDispatch({
+            owner: 'permitio',
+            repo: 'permit-deployments',
+            workflow_id: 'sync.yml',
+            ref: 'main'
+          })
