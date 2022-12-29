@@ -24,12 +24,19 @@ jobs:
         COMMIT_MSG="${COMMIT_MSG//$'\r'/'%0D'}"
         echo "::set-output name=commit-msg::$COMMIT_MSG"
 
+    - name: Get Token
+      id: get_workflow_token
+      uses: peter-murray/workflow-application-token-action@v1
+      with:
+        application_id: ${{ secrets.APPLICATION_ID }}
+        application_private_key: ${{ secrets.APPLICATION_PRIVATE_KEY }}
+
       # Checkout permit-deployments to create upgrade PR
     - uses: actions/checkout@v3
       with:
         repository: permitio/permit-deployments
         ref: main
-        token: ${{ secrets.GH_TOKEN }}
+        token: ${{ steps.get_workflow_token.outputs.token }}
 
     - name: Update production tracked revision
       uses: mikefarah/yq@master
@@ -59,7 +66,7 @@ jobs:
         gh pr create --fill --reviewer "$GITHUB_ACTOR"
       env:
         FULL_SHA: ${{ github.sha }}
-        GITHUB_TOKEN: ${{secrets.GH_TOKEN}}
+        GITHUB_TOKEN: ${{ steps.get_workflow_token.outputs.token }}
 
     - name: Automatically merge PR
       # To achieve full CI/CD - turn this on
@@ -67,4 +74,4 @@ jobs:
       run: |
         gh pr merge --merge --admin
       env:
-        GITHUB_TOKEN: ${{secrets.GH_TOKEN}}
+        GITHUB_TOKEN: ${{ steps.get_workflow_token.outputs.token }}
