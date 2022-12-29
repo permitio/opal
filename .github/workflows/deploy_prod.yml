@@ -64,7 +64,7 @@ jobs:
     - name: Automatically merge PR
       # To achieve full CI/CD - turn this on
       if: ${{ true }}
+      run: |
+        gh pr merge --merge --admin
       env:
         GITHUB_TOKEN: ${{secrets.GH_TOKEN}}
-      run: |
-        gh pr merge
