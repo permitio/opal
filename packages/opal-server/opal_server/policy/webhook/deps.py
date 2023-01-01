@@ -88,8 +88,8 @@ async def affected_repo_urls(request: Request) -> List[str]:
 
     # Azure style
     resource_payload = payload.get("resource", {})
-    repo_payload = resource_payload.get("repository", {})
-    remote_url = repo_payload.get("remoteUrl", None)
+    azure_repo_payload = resource_payload.get("repository", {})
+    remote_url = azure_repo_payload.get("remoteUrl", None)
 
     # additional support for url payload
     git_http_url = repo_payload.get("git_ssh_url", None)
