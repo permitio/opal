@@ -28,11 +28,11 @@ class GitWebhookRequestParams(BaseSchema):
         description="The regex used to parse out the actual signature from the header. Use '(.*)' for the entire value",
     )
     event_header_name: typing.Optional[str] = Field(
-        ...,
+        default=None,
         description="The HTTP header holding the event information (used instead of event_request_key)",
     )
     event_request_key: typing.Optional[str] = Field(
-        ...,
+        default=None,
         description="The JSON object key holding the event information (used instead of event_header_name)",
     )
     push_event_value: str = Field(
