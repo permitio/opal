@@ -86,6 +86,11 @@ async def affected_repo_urls(request: Request) -> List[str]:
     project_git_http_url = project_payload.get("git_http_url", None)
     project_git_ssh_url = project_payload.get("git_ssh_url", None)
 
+    # Azure style
+    resource_payload = payload.get("resource", {})
+    repo_payload = resource_payload.get("repository", {})
+    remote_url = repo_payload.get("remoteUrl", None)
+
     # additional support for url payload
     git_http_url = repo_payload.get("git_ssh_url", None)
     ssh_http_url = repo_payload.get("git_http_url", None)
@@ -94,6 +99,7 @@ async def affected_repo_urls(request: Request) -> List[str]:
     # remove duplicates and None
     url_set = set(
         [
+            remote_url,
             git_url,
             ssh_url,
             clone_url,
