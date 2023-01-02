@@ -4,6 +4,7 @@ import sys
 import traceback
 from functools import partial
 from typing import List, Optional
+from urllib.parse import urlparse
 
 from fastapi import Depends, FastAPI
 from fastapi_utils.tasks import repeat_every
@@ -13,6 +14,7 @@ from opal_common.authentication.signer import JWTSigner
 from opal_common.confi.confi import load_conf_if_none
 from opal_common.config import opal_common_config
 from opal_common.git.repo_cloner import RepoClonePathFinder
+from opal_common.instrumenation import instrument_app
 from opal_common.logger import configure_logs, logger
 from opal_common.metrics import configure_metrics, gauge
 from opal_common.middleware import configure_middleware
@@ -201,8 +203,9 @@ class OpalServer:
 
     def _init_fast_api_app(self):
         """inits the fastapi app object."""
-        if opal_server_config.ENABLE_DATADOG_APM:
-            self._configure_monitoring()
+        instrument_app(
+            enable_apm=opal_server_config.ENABLE_DATADOG_APM, enable_profiler=False
+        )
 
         app = FastAPI(
             title="Opal Server",
@@ -219,16 +222,6 @@ class OpalServer:
         self._configure_lifecycle_callbacks(app)
 
         return app
-
-    def _configure_monitoring(self):
-        """patch fastapi to enable tracing and monitoring with datadog APM."""
-        from ddtrace import config, patch
-
-        # Datadog APM
-        patch(fastapi=True)
-        # Override service name
-        config.fastapi["service_name"] = "opal-server"
-        config.fastapi["request_span_name"] = "opal-server"
 
     def _configure_api_routes(self, app: FastAPI):
         """mounts the api routes on the app object."""
