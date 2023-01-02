@@ -53,7 +53,18 @@ def get_webhook_router(
     async def trigger_webhook(request: Request, urls: List[str] = parse_urls):
         # TODO: breaking change: change "repo_url" to "remote_url" in next major
         if source_type == PolicySourceTypes.Git:
-            event = request.headers.get(webhook_config.event_header_name, "ping")
+
+            # parse event from header
+            if webhook_config.event_header_name is not None:
+                event = request.headers.get(webhook_config.event_header_name, "ping")
+            # parse event from request body
+            elif webhook_config.event_request_key is not None:
+                payload = await request.json()
+                event = payload.get(webhook_config.event_request_key, "ping")
+            else:
+                logger.error(
+                    "Webhook config is missing both event_request_key and event_header_name. Must have at least one."
+                )
 
             # Check if the URL we are tracking is mentioned in the webhook
             if (

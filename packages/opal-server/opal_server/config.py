@@ -197,7 +197,7 @@ class OpalServerConfig(Confi):
         description="URL to trigger data update events",
     )
 
-    # github webhook
+    # Git service webhook (Default is Github)
     POLICY_REPO_WEBHOOK_SECRET = confi.str("POLICY_REPO_WEBHOOK_SECRET", None)
     POLICY_REPO_WEBHOOK_TOPIC = "webhook"
     POLICY_REPO_WEBHOOK_PARAMS: GitWebhookRequestParams = confi.model(
@@ -208,6 +208,7 @@ class OpalServerConfig(Confi):
             "secret_type": "signature",
             "secret_parsing_regex": "sha256=(.*)",
             "event_header_name": "X-GitHub-Event",
+            "event_request_key": None,
             "push_event_value": "push",
         },
     )
@@ -233,7 +234,9 @@ class OpalServerConfig(Confi):
     )
 
     SERVER_PORT = confi.int(
-        "SERVER_PORT", 7002, description="(if run via CLI)  Port for the server to bind"
+        "SERVER_PORT",
+        7002,
+        description="(if run via CLI)  Port for the server to bind",
     )
 
     # optional APM tracing with datadog
@@ -265,7 +268,9 @@ class OpalServerConfig(Confi):
     )
 
     SERVER_URL = confi.str(
-        "SERVER_URL", default="http://localhost:7002", description="OPAL Server URL"
+        "SERVER_URL",
+        default="http://localhost:7002",
+        description="OPAL Server URL",
     )
 
     WORKER_TOKEN = confi.str(

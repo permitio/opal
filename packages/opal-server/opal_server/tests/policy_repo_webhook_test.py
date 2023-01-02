@@ -62,7 +62,10 @@ SIGNATURE = hmac.new(
     json.dumps(GITHUB_WEBHOOK_BODY_SAMPLE).encode("utf-8"),
     hashlib.sha256,
 ).hexdigest()
-GITHUB_WEBHOOK_HEADERS = {"X-GitHub-Event": "push", "X-Hub-Signature-256": SIGNATURE}
+GITHUB_WEBHOOK_HEADERS = {
+    "X-GitHub-Event": "push",
+    "X-Hub-Signature-256": SIGNATURE,
+}
 
 #######
 
@@ -127,6 +130,67 @@ GITLAB_WEBHOOK_BODY_SAMPLE = {
 GITLAB_WEBHOOK_HEADERS = {
     "X-Gitlab-Event": "Push Hook",
     "X-Gitlab-Token": opal_server_config.POLICY_REPO_WEBHOOK_SECRET,
+}
+
+#######
+
+# Azure GIT mock example
+AZURE_GIT_WEBHOOK_BODY_SAMPLE = {
+    "subscriptionId": "00000000-0000-0000-0000-000000000000",
+    "notificationId": 48,
+    "id": "03c164c2-8912-4d5e-8009-3707d5f83734",
+    "eventType": "git.push",
+    "publisherId": "tfs",
+    "message": {
+        "text": "user pushed updates to repo:master.",
+    },
+    "resource": {
+        "commits": [
+            {
+                "commitId": "33b55f7cb7e7e245323987634f960cf4a6e6bc74",
+                "author": {},
+                "committer": {},
+                "comment": "comment",
+                "url": "https://org.visualstudio.com/DefaultCollection/_git/repo/commit/33b55f7cb7e7e245323987634f960cf4a6e6bc74",
+            }
+        ],
+        "refUpdates": [
+            {
+                "name": "refs/heads/master",
+                "oldObjectId": "111331d8d3b131fa9ae03cf5e53965b51942618a",
+                "newObjectId": "11155f7cb7e7e245323987634f960cf4a6e6bc74",
+            }
+        ],
+        "repository": {
+            "id": "278d5cd2-584d-4b63-824a-2ba458937249",
+            "name": "repo",
+            "url": "https://org.visualstudio.com/DefaultCollection/_apis/git/repositories/111d5cd2-584d-4b63-824a-2ba458937249",
+            "project": {
+                "id": "111154b1-ce1f-45d1-b94d-e6bf2464ba2c",
+                "name": "repo",
+                "url": REPO_URL,
+                "state": "wellFormed",
+                "visibility": "unchanged",
+                "lastUpdateTime": "0001-01-01T00:00:00",
+            },
+            "defaultBranch": "refs/heads/master",
+            "remoteUrl": REPO_URL,
+        },
+        "pushedBy": {
+            "displayName": "user",
+            "id": "000@Live.com",
+            "uniqueName": "user@hotmail.com",
+        },
+        "pushId": 14,
+        "date": "2014-05-02T19:17:13.3309587Z",
+        "url": "https://org.visualstudio.com/DefaultCollection/_apis/git/repositories/278d5cd2-584d-4b63-824a-2ba458937249/pushes/14",
+    },
+    "resourceVersion": "1.0",
+    "resourceContainers": {},
+    "createdDate": "2022-12-15T17:28:23.1937259Z",
+}
+AZURE_GIT_WEBHOOK_HEADERS = {
+    "x-api-key": opal_server_config.POLICY_REPO_WEBHOOK_SECRET,
 }
 
 
@@ -197,6 +261,27 @@ def gitlab_mode_server():
     proc.kill()  # Cleanup after test
 
 
+@pytest.fixture()
+def azure_git_mode_server():
+    # configure server in Azure-git mode
+    webhook_config = GitWebhookRequestParams.parse_obj(
+        {
+            "secret_header_name": "x-api-key",
+            "secret_type": "token",
+            "secret_parsing_regex": "(.*)",
+            "event_header_name": None,
+            "event_request_key": "eventType",
+            "push_event_value": "git.push",
+        }
+    )
+    event = Event()
+    # Run the server as a separate process
+    proc = Process(target=setup_server, args=(event, webhook_config), daemon=True)
+    proc.start()
+    yield event
+    proc.kill()  # Cleanup after test
+
+
 @pytest.mark.asyncio
 async def test_webhook_mock_github(github_mode_server):
     """Test the webhook route simulating a webhook from Github."""
@@ -228,6 +313,26 @@ async def test_webhook_mock_gitlab(gitlab_mode_server):
             WEBHOOK_URL,
             data=json.dumps(GITLAB_WEBHOOK_BODY_SAMPLE),
             headers=GITLAB_WEBHOOK_HEADERS,
+        ) as resp:
+            pass
+    # Use the special test route, to check that an event was published successfully
+    async with ClientSession() as session:
+        async with session.get(PUBLISHED_EVENTS_URL) as resp:
+            json_body = await resp.json()
+            assert "webhook" in json_body
+
+
+@pytest.mark.asyncio
+async def test_webhook_mock_azure_git(azure_git_mode_server):
+    """Test the webhook route simulating a webhook from Azure-Git."""
+    # Wait for server to be ready
+    azure_git_mode_server.wait(5)
+    # simulate a webhook
+    async with ClientSession() as session:
+        async with session.post(
+            WEBHOOK_URL,
+            data=json.dumps(AZURE_GIT_WEBHOOK_BODY_SAMPLE),
+            headers=AZURE_GIT_WEBHOOK_HEADERS,
         ) as resp:
             pass
     # Use the special test route, to check that an event was published successfully
