@@ -197,7 +197,7 @@ class OpalServerConfig(Confi):
         description="URL to trigger data update events",
     )
 
-    # github webhook
+    # Git service webhook (Default is Github)
     POLICY_REPO_WEBHOOK_SECRET = confi.str("POLICY_REPO_WEBHOOK_SECRET", None)
     POLICY_REPO_WEBHOOK_TOPIC = "webhook"
     POLICY_REPO_WEBHOOK_PARAMS: GitWebhookRequestParams = confi.model(
