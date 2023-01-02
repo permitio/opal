@@ -7,3 +7,4 @@ pyjwt[crypto]>=2.4.0,<3
 python-decouple>=3.6,<4
 tenacity>=8.0.1,<9
 datadog >= 0.44.0, <1
+ddtrace >= 1.6.4,<2

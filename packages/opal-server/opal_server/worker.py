@@ -11,6 +11,7 @@ from celery import Celery
 from fastapi import status
 from opal_common.config import opal_common_config
 from opal_common.git.commit_viewer import VersionedFile
+from opal_common.instrumenation import instrument_app
 from opal_common.logger import configure_logs, logger
 from opal_common.metrics import configure_metrics
 from opal_common.schemas.policy import PolicyUpdateMessageNotification
@@ -237,6 +238,7 @@ def with_worker(f):
 
 
 configure_logs()
+instrument_app(enable_apm=opal_server_config.ENABLE_DATADOG_APM, enable_profiler=False)
 configure_metrics(
     enable_metrics=opal_common_config.ENABLE_METRICS,
     statsd_host=os.environ.get("DD_AGENT_HOST", "localhost"),
