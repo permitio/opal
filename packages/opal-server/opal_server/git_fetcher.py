@@ -7,6 +7,7 @@ from typing import Optional, cast
 import aiofiles.os
 import aioredis
 import pygit2
+from ddtrace import tracer
 from git import Repo
 from opal_common.async_utils import run_sync
 from opal_common.git.bundle_maker import BundleMaker
@@ -272,24 +273,27 @@ class GitPolicyFetcher(PolicyFetcher):
         return head_commit_hash
 
     def make_bundle(self, base_hash: Optional[str] = None) -> PolicyBundle:
-        repo = Repo(str(self._repo_path))
-        bundle_maker = BundleMaker(
-            repo,
-            {Path(p) for p in self._source.directories},
-            extensions=self._source.extensions,
-            root_manifest_path=self._source.manifest,
-            bundle_ignore=self._source.bundle_ignore,
-        )
-        current_head_commit = repo.commit(self._get_current_branch_head())
+        with tracer.trace("make_bundle"):
+            repo = Repo(str(self._repo_path))
+            bundle_maker = BundleMaker(
+                repo,
+                {Path(p) for p in self._source.directories},
+                extensions=self._source.extensions,
+                root_manifest_path=self._source.manifest,
+                bundle_ignore=self._source.bundle_ignore,
+            )
+            current_head_commit = repo.commit(self._get_current_branch_head())
 
-        if not base_hash:
-            return bundle_maker.make_bundle(current_head_commit)
-        else:
-            try:
-                base_commit = repo.commit(base_hash)
-                return bundle_maker.make_diff_bundle(base_commit, current_head_commit)
-            except ValueError:
+            if not base_hash:
                 return bundle_maker.make_bundle(current_head_commit)
+            else:
+                try:
+                    base_commit = repo.commit(base_hash)
+                    return bundle_maker.make_diff_bundle(
+                        base_commit, current_head_commit
+                    )
+                except ValueError:
+                    return bundle_maker.make_bundle(current_head_commit)
 
     @staticmethod
     def source_id(source: GitPolicyScopeSource) -> str:
