@@ -206,7 +206,7 @@ class OpalServer:
     def _init_fast_api_app(self):
         """inits the fastapi app object."""
         instrument_app(
-            enable_apm=opal_server_config.ENABLE_DATADOG_APM, enable_profiler=False
+            enable_apm=opal_common_config.ENABLE_DATADOG_APM, enable_profiler=False
         )
 
         app = FastAPI(

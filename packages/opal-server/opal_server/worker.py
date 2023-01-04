@@ -238,7 +238,7 @@ def with_worker(f):
 
 
 configure_logs()
-instrument_app(enable_apm=opal_server_config.ENABLE_DATADOG_APM, enable_profiler=False)
+instrument_app(enable_apm=opal_common_config.ENABLE_DATADOG_APM, enable_profiler=False)
 configure_metrics(
     enable_metrics=opal_common_config.ENABLE_METRICS,
     statsd_host=os.environ.get("DD_AGENT_HOST", "localhost"),
