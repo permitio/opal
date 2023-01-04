@@ -38,6 +38,7 @@ config:
     OPAL_LOG_FILE_PATH: "git_sources/output.log"
     OPAL_ENABLE_METRICS: "1"
     OPAL_ENABLE_DATADOG_APM: "True"
+    DD_TRACE_LOG_FILE: "/opal/dd.log"
   envRef:
     DD_ENV:
       name: metadata.labels['tags.datadoghq.com/env']
