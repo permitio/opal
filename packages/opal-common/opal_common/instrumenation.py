@@ -1,6 +1,8 @@
 from typing import Optional
 from urllib.parse import urlparse
 
+from ddtrace import Span, patch, tracer
+from ddtrace.filters import TraceFilter
 from loguru import logger
 
 
@@ -9,9 +11,6 @@ def instrument_app(enable_apm: bool = False, enable_profiler: bool = False):
     # enable datadog APM (tracing)
     if enable_apm:
         logger.info("Enabling DataDog APM")
-
-        from ddtrace import Span, patch, tracer
-        from ddtrace.filters import TraceFilter
 
         class FilterRootPathTraces(TraceFilter):
             def process_trace(self, trace: list[Span]) -> Optional[list[Span]]:
@@ -37,6 +36,7 @@ def instrument_app(enable_apm: bool = False, enable_profiler: bool = False):
         )
     else:
         logger.info("DataDog APM disabled")
+        tracer.enabled = False
 
     # enable datadog profiler
     if enable_profiler:
