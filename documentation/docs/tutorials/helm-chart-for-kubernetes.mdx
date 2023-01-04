@@ -1,0 +1,58 @@
+# OPAL Helm Chart for Kubernetes
+
+OPAL is an administration layer for Open Policy Agent (OPA), detecting changes to both policy and policy data in realtime
+and pushing live updates to your agents.
+
+OPAL brings open-policy up to the speed needed by live applications. As your application state changes
+(whether it's via your APIs, DBs, git, S3 or 3rd-party SaaS services), OPAL will make sure your services are
+always in sync with the authorization data and policy they need (and only those they need).
+
+## Installation Guide
+
+OPAL Helm chart could be installed only with Helm 3. The chart is published to public Helm repository, hosted on GitHub
+itself. It's recommended to install OPAL into a dedicated namespace.
+
+### Add Helm repository
+
+```
+$ helm repo add opal https://permitio.github.io/opal-helm-chart
+$ helm repo update
+```
+
+### Install the latest version
+
+```
+$ helm install --create-namespace -n opal-ns myopal opal/opal
+```
+
+### Search for all available versions
+
+```
+$ helm search repo opal --versions
+```
+
+## Deploy OPAL to your Kubernetes cluster
+
+### Install specific version (with default configuration):
+
+```
+$ helm install --create-namespace -n opal-ns --version x.x.x myopal opal/opal
+```
+
+### Install specific version (with custom configuration provided as YAML):
+
+```
+$ helm install -f myvalues.yaml --create-namespace -n opal-ns --version x.x.x myopal opal/opal
+```
+
+`myvalues.yaml` must conform to the json schema.
+
+## Verify installation
+
+OPAL Client should populate embedded OPA instance with polices and data from configured Git repository. To validate it - one could create port-forwarding to OPAL client Pod. Port 8181 is the embedded OPA agent.
+
+```
+$ kubectl port-forward -n opal-ns service/myopal-client 8181:8181
+```
+
+Then, open `http://localhost:8181/v1/data/` in your browser to check OPA data document state.
