@@ -157,5 +157,12 @@ class OpalCommonConfig(Confi):
     ENABLE_METRICS = confi.bool("ENABLE_METRICS", False)
     METRICS_INTERVAL = confi.int("METRICS_INTERVAL", 10.0)
 
+    # optional APM tracing with datadog
+    ENABLE_DATADOG_APM = confi.bool(
+        "ENABLE_DATADOG_APM",
+        False,
+        description="Set if OPAL server should enable tracing with datadog APM",
+    )
+
 
 opal_common_config = OpalCommonConfig(prefix="OPAL_")
