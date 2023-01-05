@@ -28,7 +28,7 @@ notice the "kafka://" prefix, that's how we tell OPAL-server to use Kafka.
 #### Setting a Kafka topic (aka Backbone channel)
 
 Be sure to configure the topic in your Kafka server that will act as a channel between all servers - the default name for it is `EventNotifier`.
-But (in version OPAL 0.1.21 and later) you can also use the `OPAL_BROADCAST_CHANNEL` option to specify the name of the channel.
+But (in version OPAL 0.1.21 and later) you can also use the `OPAL_BROADCAST_CHANNEL_NAME` option to specify the name of the channel.
 
 - Don't confuse the Kafka topic with the OPAL-server topics.
   - a Kafka topic is used to control which servers share clients and events.
