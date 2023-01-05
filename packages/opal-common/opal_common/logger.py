@@ -14,6 +14,7 @@ from loguru import logger
 from loguru._defaults import env
 from loguru._file_sink import FileSink
 from opal_common.config import opal_common_config
+from opal_common.logging.thirdparty import hijack_uvicorn_logs
 from pydantic import BaseModel, ByteSize, FilePath, NonNegativeInt, parse_obj_as
 from pydantic.json import pydantic_encoder
 
@@ -162,7 +163,7 @@ def configure_logger(
     logging.getLogger("ddtrace").propagate = False
 
     intercept_handler = InterceptHandler()
-
+    hijack_uvicorn_logs(intercept_handler)
     logging.basicConfig(handlers=[intercept_handler], level=0)
 
     if prefix_intercept is not None and len(prefix_intercept) > 0:
