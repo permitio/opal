@@ -9,6 +9,7 @@ from urllib.parse import urlparse
 from fastapi import Depends, FastAPI
 from fastapi_utils.tasks import repeat_every
 from fastapi_websocket_pubsub.event_broadcaster import EventBroadcasterContextManager
+from opal_common import metrics
 from opal_common.authentication.deps import JWTAuthenticator, StaticBearerAuthenticator
 from opal_common.authentication.signer import JWTSigner
 from opal_common.confi.confi import load_conf_if_none
@@ -16,7 +17,6 @@ from opal_common.config import opal_common_config
 from opal_common.git.repo_cloner import RepoClonePathFinder
 from opal_common.instrumenation import instrument_app
 from opal_common.logger import configure_logs, logger
-from opal_common.metrics import configure_metrics, gauge
 from opal_common.middleware import configure_middleware
 from opal_common.schemas.data import ServerDataSourceConfig
 from opal_common.schemas.policy_source import SSHAuthData
@@ -111,14 +111,15 @@ class OpalServer:
         self._policy_remote_url = policy_remote_url
 
         configure_logs()
-        configure_metrics(
+        metrics.configure_metrics(
             enable_metrics=opal_common_config.ENABLE_METRICS,
             statsd_host=os.environ.get("DD_AGENT_HOST", "localhost"),
             statsd_port=8125,
             namespace="opal",
         )
 
-        logger.info("Attention: this is the private OPAL codebase !")
+        logger.info("Attention: this is the private OPAL release")
+        metrics.increment("opal.startup")
 
         self.watcher: Optional[PolicyWatcherTask] = None
         self.leadership_lock: Optional[NamedLock] = None
@@ -434,7 +435,7 @@ class OpalServer:
                     queue_length = await self._redis_db.redis_connection.llen(
                         "opal-worker"
                     )
-                    gauge("worker_queue_len", queue_length)
+                    metrics.gauge("worker_queue_len", queue_length)
 
                 await asyncio.sleep(opal_common_config.METRICS_INTERVAL)
             except Exception as ex:
