@@ -75,12 +75,12 @@ const sidebars = {
                 },
                 {
                   type: "doc",
-                  id: "getting-started/quickstart/docker-compose-config/opal-server",
+                  id: "getting-started/quickstart/docker-compose-config/opal-client",
                   label: "OPAL Client",
                 },
                 {
                   type: "doc",
-                  id: "getting-started/quickstart/docker-compose-config/opal-client",
+                  id: "getting-started/quickstart/docker-compose-config/opal-server",
                   label: "OPAL Server",
                 },
               ],
