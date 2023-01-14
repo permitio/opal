@@ -6,6 +6,7 @@ from typing import List, Optional
 from fastapi import Header, HTTPException, Request, status
 from opal_common.schemas.webhook import SecretTypeEnum
 from opal_server.config import opal_server_config
+from pydantic import BaseModel
 
 
 async def validate_git_secret_or_throw(request: Request) -> bool:
@@ -65,7 +66,19 @@ async def validate_git_secret_or_throw(request: Request) -> bool:
     return True
 
 
-async def affected_repo_urls(request: Request) -> List[str]:
+class GitChanges(BaseModel):
+    """The summary of a webhook as the properties of what has changed on the
+    reporting Git repo.
+
+    urls - the affected repo URLS
+    branch - the branch the event affected
+    """
+
+    urls: List[str] = []
+    branch: Optional[str] = None
+
+
+async def extracted_git_changes(request: Request) -> GitChanges:
     """extracts the repo url from a webhook request payload.
 
     used to make sure that the webhook was triggered on *our* monitored
@@ -74,6 +87,25 @@ async def affected_repo_urls(request: Request) -> List[str]:
     This functions search for common patterns for where the affected URL may appear in the webhook
     """
     payload = await request.json()
+
+    ### --- Get branch ---  ###
+    # Gitlab / gitHub style
+    ref = payload.get("ref", None)
+
+    # Azure style
+    if ref is None:
+        ref = payload.get("refUpdates", {}).get("name", None)
+
+    if isinstance(ref, str):
+        # remove prefix
+        if ref.startswith("refs/heads/"):
+            branch = ref[11:]
+        else:
+            branch = ref
+    else:
+        branch = None
+
+    ### Get urls ###
 
     # Github style
     repo_payload = payload.get("repository", {})
@@ -118,4 +150,4 @@ async def affected_repo_urls(request: Request) -> List[str]:
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="repo url not found in payload!",
         )
-    return urls
+    return GitChanges(urls=urls, branch=branch)
