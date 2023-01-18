@@ -9,9 +9,8 @@ from typing import Dict, Generator, Optional, Tuple
 
 import aiofiles.os
 import aioredis
-import git
 from ddtrace import tracer
-from git import Repo
+from git import BadName, GitError, InvalidGitRepositoryError, Reference, Repo
 from opal_common.async_utils import run_sync
 from opal_common.git.bundle_maker import BundleMaker
 from opal_common.logger import logger
@@ -44,9 +43,9 @@ class RepoInterface:
     @staticmethod
     def repo_branches(
         repo: Repo,
-    ) -> Tuple[Dict[str, git.Reference], Dict[str, Dict[str, git.Reference]]]:
+    ) -> Tuple[Dict[str, Reference], Dict[str, Dict[str, Reference]]]:
         local_branches = {}
-        remote_branches: dict[str, dict[str, git.Reference]] = defaultdict(dict)
+        remote_branches: dict[str, dict[str, Reference]] = defaultdict(dict)
         for branch in repo.heads:
             local_branches[branch.name] = branch
         for remote in repo.remotes:
@@ -57,8 +56,8 @@ class RepoInterface:
 
     @staticmethod
     def create_local_tracking_branch(
-        repo: Repo, branch_name: str, remote_ref: git.Reference
-    ) -> git.Reference:
+        repo: Repo, branch_name: str, remote_ref: Reference
+    ) -> Reference:
         branch = repo.create_head(branch_name, remote_ref)
         branch.set_tracking_branch(remote_ref)
         logger.debug(
@@ -72,7 +71,7 @@ class RepoInterface:
         branch_name: str,
         remote_name: str,
         base_branch: Optional[str],
-    ) -> git.Reference:
+    ) -> Reference:
         local_branches, remote_branches = RepoInterface.repo_branches(repo)
         if branch_name in local_branches:
             logger.debug(
@@ -94,7 +93,7 @@ class RepoInterface:
         try:
             repo.rev_parse(f"refs/remotes/{remote}/{branch}")
             return True
-        except git.BadName:
+        except BadName:
             return False
 
     @staticmethod
@@ -102,7 +101,7 @@ class RepoInterface:
         try:
             commit = repo.rev_parse(f"refs/remotes/{remote}/{branch}")
             return commit.hexsha
-        except git.BadName:
+        except BadName:
             return None
 
     @staticmethod
@@ -205,7 +204,7 @@ class GitPolicyFetcher(PolicyFetcher):
         try:
             Repo(path)
             return True
-        except git.InvalidGitRepositoryError:
+        except InvalidGitRepositoryError:
             return False
 
     def _git_auth_data(self) -> Tuple[Dict[str, str], Optional[str]]:
@@ -245,9 +244,9 @@ class GitPolicyFetcher(PolicyFetcher):
                     f.write(b"\0" * size)
                 os.unlink(key_path)
 
-    def _clone_repo(self, url: str, path: str, branch: str) -> git.Repo:
+    def _clone_repo(self, url: str, path: str, branch: str) -> Repo:
         with self._git_auth_env() as env:
-            return git.Repo.clone_from(url, path, branch=branch, env=env)
+            return Repo.clone_from(url, path, branch=branch, env=env)
 
     async def _clone(self):
         logger.info(
@@ -264,7 +263,7 @@ class GitPolicyFetcher(PolicyFetcher):
             )
             logger.info(f"Clone completed: {self._source.url}")
             await self.callbacks.on_update(None, repo.head.commit.hexsha)
-        except git.GitError:
+        except GitError:
             logger.exception(
                 f"Could not clone repo at {self._source.url}, checkout branch={self._source.branch}"
             )
@@ -272,7 +271,7 @@ class GitPolicyFetcher(PolicyFetcher):
     def _get_valid_repo_at(self, path: str) -> Optional[Repo]:
         try:
             return Repo(path)
-        except git.InvalidGitRepositoryError:
+        except InvalidGitRepositoryError:
             logger.warning("Invalid repo at: {path}", path=path)
             return None
 
@@ -296,7 +295,7 @@ class GitPolicyFetcher(PolicyFetcher):
             try:
                 repo.rev_parse(hinted_hash)
                 return False  # hinted commit was found, no need to fetch
-            except git.BadName:
+            except BadName:
                 logger.info(
                     "Hinted commit hash was not found in local clone, re-fetching the remote"
                 )
