@@ -14,7 +14,7 @@ from fastapi_websocket_pubsub import PubSubClient
 from flaky import flaky
 from opal_common.schemas.webhook import GitWebhookRequestParams
 from opal_server.policy.webhook.api import get_webhook_router
-from opal_server.policy.webhook.deps import affected_repo_urls
+from opal_server.policy.webhook.deps import extracted_git_changes
 
 # Add parent path to use local src as package for tests
 root_dir = os.path.abspath(
@@ -211,7 +211,7 @@ def setup_server(event, webhook_config):
 
     webhook_router = get_webhook_router(
         None,
-        Depends(affected_repo_urls),
+        Depends(extracted_git_changes),
         PolicySourceTypes.Git,
         publish,
         webhook_config,

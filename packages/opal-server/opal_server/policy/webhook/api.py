@@ -7,7 +7,8 @@ from opal_common.logger import logger
 from opal_common.schemas.webhook import GitWebhookRequestParams
 from opal_server.config import PolicySourceTypes, opal_server_config
 from opal_server.policy.webhook.deps import (
-    affected_repo_urls,
+    GitChanges,
+    extracted_git_changes,
     validate_git_secret_or_throw,
 )
 
@@ -24,7 +25,7 @@ def init_git_webhook_router(
         func_dependency = dummy_affected_repo_urls
     else:
         route_dependency = validate_git_secret_or_throw
-        func_dependency = affected_repo_urls
+        func_dependency = extracted_git_changes
 
     return get_webhook_router(
         [Depends(route_dependency)],
@@ -36,7 +37,7 @@ def init_git_webhook_router(
 
 def get_webhook_router(
     route_dependencies: List[Depends],
-    parse_urls: Depends,
+    git_changes: Depends,
     source_type: PolicySourceTypes,
     publish: Callable,
     webhook_config: GitWebhookRequestParams = opal_server_config.POLICY_REPO_WEBHOOK_PARAMS,
@@ -50,9 +51,25 @@ def get_webhook_router(
         status_code=status.HTTP_200_OK,
         dependencies=route_dependencies,
     )
-    async def trigger_webhook(request: Request, urls: List[str] = parse_urls):
+    async def trigger_webhook(request: Request, git_changes: GitChanges = git_changes):
+        # look at values extracted from request
+        urls = git_changes.urls
+        branch = git_changes.branch
+
         # TODO: breaking change: change "repo_url" to "remote_url" in next major
         if source_type == PolicySourceTypes.Git:
+
+            # Enforce branch matching (webhook to config) if turned on via config
+            if (
+                opal_server_config.POLICY_REPO_WEBHOOK_ENFORCE_BRANCH
+                and opal_server_config.POLICY_REPO_MAIN_BRANCH != branch
+            ):
+                logger.warning(
+                    "Git Webhook ignored - POLICY_REPO_WEBHOOK_ENFORCE_BRANCH is enabled, and POLICY_REPO_MAIN_BRANCH is `{tracking}` but received webhook for a different branch ({branch})",
+                    tracking=opal_server_config.POLICY_REPO_MAIN_BRANCH,
+                    branch=branch,
+                )
+                return None
 
             # parse event from header
             if webhook_config.event_header_name is not None:
