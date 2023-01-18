@@ -1,7 +1,6 @@
 import pathlib
 from typing import List, Optional, cast
 
-import pygit2
 from fastapi import (
     APIRouter,
     Depends,
@@ -13,7 +12,7 @@ from fastapi import (
     status,
 )
 from fastapi_websocket_pubsub import PubSubEndpoint
-from git import InvalidGitRepositoryError
+from git import GitError, InvalidGitRepositoryError
 from opal_common.authentication.authz import (
     require_peer_type,
     restrict_optional_topics_to_publish,
@@ -259,7 +258,7 @@ def init_scope_router(
 
         try:
             return fetcher.make_bundle(base_hash)
-        except (InvalidGitRepositoryError, pygit2.GitError, ValueError):
+        except (InvalidGitRepositoryError, GitError, ValueError):
             raise HTTPException(
                 status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail=f"scope is not yet cloned: {scope_id}",
