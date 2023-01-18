@@ -28,11 +28,12 @@ def force_valid_bundle(bundle) -> PolicyBundle:
 class PolicyFetcher:
     """fetches policy from backend."""
 
-    DEFAULT_RETRY_CONFIG = {
-        "wait": wait.wait_random_exponential(max=10),
-        "stop": stop.stop_after_attempt(5),
-        "reraise": True,
-    }
+    # Use as default config the configuration provider by opal_client_config.POLICY_UPDATER_CONN_RETRY
+    # Add reraise as true (an option not available for control from the higher-level config)
+    DEFAULT_RETRY_CONFIG = (
+        opal_client_config.POLICY_UPDATER_CONN_RETRY.toTenacityConfig()
+    )
+    DEFAULT_RETRY_CONFIG["reraise"] = True
 
     def __init__(self, backend_url=None, token=None, retry_config=None):
         """
@@ -74,7 +75,8 @@ class PolicyFetcher:
             return await attempter(directories=directories, base_hash=base_hash)
         except Exception as err:
             logger.warning(
-                "Failed all attempts to fetch bundle, got error: {err}", err=repr(err)
+                "Failed all attempts to fetch bundle, got error: {err}",
+                err=repr(err),
             )
             raise
 
@@ -90,18 +92,23 @@ class PolicyFetcher:
             params["base_hash"] = base_hash
         async with aiohttp.ClientSession() as session:
             logger.info(
-                "Fetching policy bundle from {url}", url=self._policy_endpoint_url
+                "Fetching policy bundle from {url}",
+                url=self._policy_endpoint_url,
             )
             try:
                 async with session.get(
                     self._policy_endpoint_url,
-                    headers={"content-type": "text/plain", **self._auth_headers},
+                    headers={
+                        "content-type": "text/plain",
+                        **self._auth_headers,
+                    },
                     params=params,
                     **self._ssl_context_kwargs,
                 ) as response:
                     if response.status == status.HTTP_404_NOT_FOUND:
                         logger.warning(
-                            "requested paths not found: {paths}", paths=directories
+                            "requested paths not found: {paths}",
+                            paths=directories,
                         )
                         raise HTTPException(
                             status_code=status.HTTP_404_NOT_FOUND,
