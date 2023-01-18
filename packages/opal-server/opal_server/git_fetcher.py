@@ -1,10 +1,10 @@
 import hashlib
-import os
 import shutil
-import tempfile
 from collections import defaultdict
 from contextlib import contextmanager
 from pathlib import Path
+from platform import system
+from tempfile import NamedTemporaryFile
 from typing import Dict, Generator, Optional, Tuple
 
 import aiofiles.os
@@ -207,42 +207,36 @@ class GitPolicyFetcher(PolicyFetcher):
         except InvalidGitRepositoryError:
             return False
 
-    def _git_auth_data(self) -> Tuple[Dict[str, str], Optional[str]]:
+    @contextmanager
+    def _git_auth_env(self) -> Generator[Dict[str, str], None, None]:
         auth_data = self._source.auth
         if isinstance(auth_data, SSHAuthData):
-            fd, path = tempfile.mkstemp()
-            os.fchmod(fd, 0o600)
-            with os.fdopen(fd, "w") as f:
+            # TODO: Preload a key directly into an ssh-agent to avoid storing
+            # it in a file altogether
+            temp_dir = None
+            if system() == "Linux":
+                # In Linux, use /dev/shm so secrets are never written to disk
+                temp_dir = "/dev/shm"
+            with NamedTemporaryFile(mode="w", dir=temp_dir) as f:
                 f.write(auth_data.private_key)
-            return {"GIT_SSH_COMMAND": f"ssh -i {path}"}, path
+                f.flush()
+                yield {"GIT_SSH_COMMAND": f"ssh -i {f.name}"}
+            return
         if isinstance(auth_data, GitHubTokenAuthData):
-            return {
+            yield {
                 "GIT_ASKPASS": str(Path(__file__).parent / "git_authn.py"),
                 "GIT_USERNAME": "git",
                 "GIT_PASSWORD": auth_data.token,
-            }, None
+            }
+            return
         if isinstance(auth_data, UserPassAuthData):
-            return {
+            yield {
                 "GIT_ASKPASS": str(Path(__file__).parent / "git_authn.py"),
                 "GIT_USERNAME": auth_data.username,
                 "GIT_PASSWORD": auth_data.password,
-            }, None
+            }
+            return
         raise ValueError("Invalid authentication type.")
-
-    @contextmanager
-    def _git_auth_env(self) -> Generator[Dict[str, str], None, None]:
-        env, key_path = self._git_auth_data()
-        try:
-            yield env
-        finally:
-            if key_path is not None:
-                # TODO: Preload a key directly into an ssh-agent to avoid
-                # storing it on the disk altogether
-                # Attempt to securely erase the contents before deleting the key
-                size = os.path.getsize(key_path)
-                with open(key_path, "wb") as f:
-                    f.write(b"\0" * size)
-                os.unlink(key_path)
 
     def _clone_repo(self, url: str, path: str, branch: str) -> Repo:
         with self._git_auth_env() as env:
