@@ -13,8 +13,8 @@ from fastapi import Depends
 from fastapi_websocket_pubsub import PubSubClient
 from flaky import flaky
 from opal_common.schemas.webhook import GitWebhookRequestParams
-from opal_server.policy.webhook.api import get_webhook_router
-from opal_server.policy.webhook.deps import affected_repo_urls
+from opal_server.policy.webhook.api import get_webhook_router, is_matching_webhook_url
+from opal_server.policy.webhook.deps import extracted_git_changes
 
 # Add parent path to use local src as package for tests
 root_dir = os.path.abspath(
@@ -211,7 +211,7 @@ def setup_server(event, webhook_config):
 
     webhook_router = get_webhook_router(
         None,
-        Depends(affected_repo_urls),
+        Depends(extracted_git_changes),
         PolicySourceTypes.Git,
         publish,
         webhook_config,
@@ -340,3 +340,25 @@ async def test_webhook_mock_azure_git(azure_git_mode_server):
         async with session.get(PUBLISHED_EVENTS_URL) as resp:
             json_body = await resp.json()
             assert "webhook" in json_body
+
+
+def test_webhook_url_matcher():
+    url = "https://git.permit.io/opal/server"
+    # these should all be equivalent to the above URL
+    urls = [
+        "https://user:pass@git.permit.io/opal/server",
+        "https://user@git.permit.io/opal/server",
+        "https://user@git.permit.io/opal/server?private=1",
+    ]
+
+    for test in urls:
+        assert is_matching_webhook_url(test, [url])
+
+    urls = [
+        "https://git.permit.io:9090/opal/server",
+        "http://git.permit.io/opal/server",
+        "https://git.permit.io/opal/client",
+    ]
+
+    for test in urls:
+        assert not is_matching_webhook_url(test, [url])

@@ -199,7 +199,13 @@ class OpalServerConfig(Confi):
 
     # Git service webhook (Default is Github)
     POLICY_REPO_WEBHOOK_SECRET = confi.str("POLICY_REPO_WEBHOOK_SECRET", None)
+    # The topic the event of the webhook will publish
     POLICY_REPO_WEBHOOK_TOPIC = "webhook"
+    # Should we check the incoming webhook mentions the branch by name- and not just in the URL
+    POLICY_REPO_WEBHOOK_ENFORCE_BRANCH: bool = confi.bool(
+        "POLICY_REPO_WEBHOOK_ENFORCE_BRANCH", False
+    )
+    # Parameters controlling how the incoming webhook should be read and processed
     POLICY_REPO_WEBHOOK_PARAMS: GitWebhookRequestParams = confi.model(
         "POLICY_REPO_WEBHOOK_PARAMS",
         GitWebhookRequestParams,
