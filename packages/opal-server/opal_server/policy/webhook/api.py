@@ -1,4 +1,5 @@
 from typing import Callable, List
+from urllib.parse import SplitResult, urlparse
 
 from fastapi import APIRouter, Depends, Request, status
 from fastapi_websocket_pubsub.pub_sub_server import PubSubEndpoint
@@ -33,6 +34,19 @@ def init_git_webhook_router(
         source_type,
         pubsub_endpoint.publish,
     )
+
+
+def is_matching_webhook_url(input_url: str, urls: List[str]) -> bool:
+    parsed = urlparse(input_url)
+    netloc = parsed.hostname
+
+    if parsed.port:
+        netloc = f"{parsed.hostname}:{parsed.port}"
+
+    normalized = SplitResult(
+        scheme=parsed.scheme, netloc=netloc, path=parsed.path, query="", fragment=""
+    )
+    return str(normalized.geturl()) in urls
 
 
 def get_webhook_router(
@@ -83,11 +97,10 @@ def get_webhook_router(
                     "Webhook config is missing both event_request_key and event_header_name. Must have at least one."
                 )
 
+            policy_repo_url = opal_server_config.POLICY_REPO_URL
+
             # Check if the URL we are tracking is mentioned in the webhook
-            if (
-                opal_server_config.POLICY_REPO_URL is not None
-                and opal_server_config.POLICY_REPO_URL in urls
-            ):
+            if policy_repo_url and is_matching_webhook_url(policy_repo_url, urls):
                 logger.info(
                     "triggered webhook on repo: {repo}",
                     repo=opal_server_config.POLICY_REPO_URL,
