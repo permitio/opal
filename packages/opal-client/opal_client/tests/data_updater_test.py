@@ -106,7 +106,7 @@ def server():
 def trigger_update():
     async def run():
         # trigger an update
-        entries = [DataSourceEntry(url=DATA_URL)]
+        entries = [DataSourceEntry(url=DATA_URL, topics=DATA_TOPICS)]
         callback = UpdateCallback(callbacks=[DATA_UPDATE_CALLBACK_URL])
         update = DataUpdate(reason="Test", entries=entries, callback=callback)
         async with PubSubClient(

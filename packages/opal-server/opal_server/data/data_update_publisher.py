@@ -70,13 +70,7 @@ class DataUpdatePublisher:
             topics (List[str]): topics (with hierarchy) to notify subscribers of
             update (DataUpdate): update data-source configuration for subscribers to fetch data from
         """
-        all_topic_combos = []
-
-        # Expand the topics for each event to include sub topic combos (e.g. publish 'a/b/c' as 'a' , 'a/b', and 'a/b/c')
-        for entry in update.entries:
-            for topic in entry.topics:
-                topic_combos = DataUpdatePublisher.get_topic_combos(topic)
-                all_topic_combos.extend(topic_combos)
+        all_topic_combos = set()
 
         # a nicer format of entries to the log
         logged_entries = [
@@ -85,9 +79,18 @@ class DataUpdatePublisher:
                 method=entry.save_method,
                 path=entry.dst_path or "/",
                 inline_data=(entry.data is not None),
+                topics=entry.topics,
             )
             for entry in update.entries
         ]
+
+        # Expand the topics for each event to include sub topic combos (e.g. publish 'a/b/c' as 'a' , 'a/b', and 'a/b/c')
+        for entry in update.entries:
+            topic_combos = []
+            for topic in entry.topics:
+                topic_combos.extend(DataUpdatePublisher.get_topic_combos(topic))
+            entry.topics = topic_combos  # Update entry with the exaustive list, so client won't have to expand it again
+            all_topic_combos.update(topic_combos)
 
         # publish all topics with all their sub combinations
         logger.info(
@@ -97,7 +100,7 @@ class DataUpdatePublisher:
             reason=update.reason,
             entries=logged_entries,
         )
-        self._publisher.publish(all_topic_combos, update)
+        self._publisher.publish(list(all_topic_combos), update)
 
     async def _periodic_update_callback(
         self, update: DataSourceEntryWithPollingInterval
