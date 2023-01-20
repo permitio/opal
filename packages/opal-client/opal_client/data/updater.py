@@ -320,7 +320,13 @@ class DataUpdater:
         reports: List[DataEntryReport] = []
         # if we have an actual specification for the update
         if update is not None:
-            entries = update.entries
+            # Check each entry's topics to only process entries designated to us
+            entries = [
+                entry
+                for entry in update.entries
+                if entry.topics
+                and not set(entry.topics).isdisjoint(set(self._data_topics))
+            ]
             urls = [(entry.url, entry.config, entry.data) for entry in entries]
 
         # get the data for the update
