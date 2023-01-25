@@ -76,6 +76,7 @@ class GitChanges(BaseModel):
 
     urls: List[str] = []
     branch: Optional[str] = None
+    names: List[str] = []
 
 
 async def extracted_git_changes(request: Request) -> GitChanges:
@@ -117,11 +118,15 @@ async def extracted_git_changes(request: Request) -> GitChanges:
     project_payload = payload.get("project", {})
     project_git_http_url = project_payload.get("git_http_url", None)
     project_git_ssh_url = project_payload.get("git_ssh_url", None)
+    project_full_name = project_payload.get("path_with_namespace", None)
 
     # Azure style
     resource_payload = payload.get("resource", {})
     azure_repo_payload = resource_payload.get("repository", {})
     remote_url = azure_repo_payload.get("remoteUrl", None)
+
+    # Bitbucket+Github style for fullname
+    full_name = repo_payload.get("full_name", None)
 
     # additional support for url payload
     git_http_url = repo_payload.get("git_ssh_url", None)
@@ -129,25 +134,37 @@ async def extracted_git_changes(request: Request) -> GitChanges:
     url = repo_payload.get("url", None)
 
     # remove duplicates and None
-    url_set = set(
-        [
-            remote_url,
-            git_url,
-            ssh_url,
-            clone_url,
-            git_http_url,
-            ssh_http_url,
-            url,
-            project_git_http_url,
-            project_git_ssh_url,
-        ]
+    urls = list(
+        set(
+            [
+                remote_url,
+                git_url,
+                ssh_url,
+                clone_url,
+                git_http_url,
+                ssh_http_url,
+                url,
+                project_git_http_url,
+                project_git_ssh_url,
+            ]
+        )
     )
-    url_set.discard(None)
-    # continue as a list
-    urls = list(url_set)
-    if not urls:
+    urls.remove(None)
+
+    names = list(
+        set(
+            [
+                project_full_name,
+                full_name,
+            ]
+        )
+    )
+    names.remove(None)
+
+    if not urls and not names:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="repo url not found in payload!",
+            detail="repo url or full name not found in payload!",
         )
-    return GitChanges(urls=urls, branch=branch)
+
+    return GitChanges(urls=urls, branch=branch, names=names)

@@ -36,7 +36,7 @@ def init_git_webhook_router(
     )
 
 
-def is_matching_webhook_url(input_url: str, urls: List[str]) -> bool:
+def is_matching_webhook_url(input_url: str, urls: List[str], names: List[str]) -> bool:
     parsed = urlparse(input_url)
     netloc = parsed.hostname
 
@@ -46,7 +46,12 @@ def is_matching_webhook_url(input_url: str, urls: List[str]) -> bool:
     normalized = SplitResult(
         scheme=parsed.scheme, netloc=netloc, path=parsed.path, query="", fragment=""
     )
-    return str(normalized.geturl()) in urls
+
+    if urls:
+        return str(normalized.geturl()) in urls
+    else:
+        repo_name_from_path = normalized.path.removeprefix("/").removesuffix(".git")
+        return repo_name_from_path in names
 
 
 def get_webhook_router(
@@ -69,6 +74,7 @@ def get_webhook_router(
         # look at values extracted from request
         urls = git_changes.urls
         branch = git_changes.branch
+        names = git_changes.names
 
         # TODO: breaking change: change "repo_url" to "remote_url" in next major
         if source_type == PolicySourceTypes.Git:
@@ -100,7 +106,9 @@ def get_webhook_router(
             policy_repo_url = opal_server_config.POLICY_REPO_URL
 
             # Check if the URL we are tracking is mentioned in the webhook
-            if policy_repo_url and is_matching_webhook_url(policy_repo_url, urls):
+            if policy_repo_url and is_matching_webhook_url(
+                policy_repo_url, urls, names
+            ):
                 logger.info(
                     "triggered webhook on repo: {repo}",
                     repo=opal_server_config.POLICY_REPO_URL,
@@ -117,9 +125,10 @@ def get_webhook_router(
                 }
             else:
                 logger.warning(
-                    "Got an unexpected webhook not matching the tracked repo ({repo}) - with these URLS instead: {urls} .",
+                    "Got an unexpected webhook not matching the tracked repo ({repo}) - with these URLS: {urls} and those names: {names}.",
                     repo=opal_server_config.POLICY_REPO_URL,
                     urls=urls,
+                    names=names,
                     hook_event=event,
                 )
 

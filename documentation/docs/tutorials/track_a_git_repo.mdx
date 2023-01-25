@@ -230,7 +230,7 @@ OPAL needs to parse a few things from an incoming webhook to:
 - A Secret to verify the legitimacy of the incoming event
 - This can be a token (secret to compare) or a signature (secret applied to the request body)
 - The type of the event (e.g. is this a Git push)
-- The repository-url this event refers to
+- The repository-url this event refers to, or the repository's full name if the url is not available (e.g. self hosted bitbucket repo)
 
 We can configure OPAL to expect webhooks from different services
 using the `OPAL_POLICY_REPO_WEBHOOK_PARAMS` config variable.
@@ -281,6 +281,19 @@ The variable is a model with the following members:
       "event_header_name": None,
       "event_request_key": "eventType",
       "push_event_value": "git.push",
+  }
+  ```
+
+- Bitbucket:
+
+  ```
+  {
+    "secret_header_name": "x-hook-uuid",
+    "secret_type": "token",
+    "secret_parsing_regex": "(.*)",
+    "event_header_name": "x-event-key",
+    "event_request_key": None,
+    "push_event_value": "repo:push",
   }
   ```
 
