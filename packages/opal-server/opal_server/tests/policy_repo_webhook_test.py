@@ -38,7 +38,8 @@ PUBLISHED_EVENTS_ROUTE = "/test-webhook-published-events"
 PUBLISHED_EVENTS_URL = f"http://localhost:{PORT}{PUBLISHED_EVENTS_ROUTE}"
 
 # mock tracked repo url
-REPO_URL = "https://github.com/permitio/opal"
+REPO_FULL_NAME = "permitio/opal"
+REPO_URL = f"https://github.com/{REPO_FULL_NAME}"
 
 # configure the server to work with a fake secret and our mock repository
 opal_server_config.POLICY_REPO_WEBHOOK_SECRET = "SECRET"
@@ -50,7 +51,7 @@ GITHUB_WEBHOOK_BODY_SAMPLE = {
     "repository": {
         "id": 1296269,
         "url": REPO_URL,
-        "full_name": "permitio/opal",
+        "full_name": REPO_FULL_NAME,
         "owner": {
             "login": "octocat",
             "id": 1,
@@ -193,6 +194,23 @@ AZURE_GIT_WEBHOOK_HEADERS = {
     "x-api-key": opal_server_config.POLICY_REPO_WEBHOOK_SECRET,
 }
 
+#######
+
+# Bitbucket mock example
+BITBUCKET_WEBHOOK_BODY_SAMPLE = {
+    "repository": {
+        "type": "repository",
+        "full_name": REPO_FULL_NAME,
+        "links": {},
+        "uuid": "{58f3e7e4-9ca1-11ed-883d-5ab73abeaaed}",
+    },
+}
+
+BITBUCKET_WEBHOOK_HEADERS = {
+    "x-event-key": "repo:push",
+    "x-hook-uuid": opal_server_config.POLICY_REPO_WEBHOOK_SECRET,
+}
+
 
 def setup_server(event, webhook_config):
     """
@@ -282,6 +300,27 @@ def azure_git_mode_server():
     proc.kill()  # Cleanup after test
 
 
+@pytest.fixture()
+def bitbucket_mode_server():
+    # configure server in Azure-git mode
+    webhook_config = GitWebhookRequestParams.parse_obj(
+        {
+            "secret_header_name": "x-hook-uuid",
+            "secret_type": "token",
+            "secret_parsing_regex": "(.*)",
+            "event_header_name": "x-event-key",
+            "event_request_key": None,
+            "push_event_value": "repo:push",
+        }
+    )
+    event = Event()
+    # Run the server as a separate process
+    proc = Process(target=setup_server, args=(event, webhook_config), daemon=True)
+    proc.start()
+    yield event
+    proc.kill()  # Cleanup after test
+
+
 @pytest.mark.asyncio
 async def test_webhook_mock_github(github_mode_server):
     """Test the webhook route simulating a webhook from Github."""
@@ -342,6 +381,26 @@ async def test_webhook_mock_azure_git(azure_git_mode_server):
             assert "webhook" in json_body
 
 
+@pytest.mark.asyncio
+async def test_webhook_mock_bitbucket(bitbucket_mode_server):
+    """Test the webhook route simulating a webhook from Azure-Git."""
+    # Wait for server to be ready
+    bitbucket_mode_server.wait(5)
+    # simulate a webhook
+    async with ClientSession() as session:
+        async with session.post(
+            WEBHOOK_URL,
+            data=json.dumps(BITBUCKET_WEBHOOK_BODY_SAMPLE),
+            headers=BITBUCKET_WEBHOOK_HEADERS,
+        ) as resp:
+            pass
+    # Use the special test route, to check that an event was published successfully
+    async with ClientSession() as session:
+        async with session.get(PUBLISHED_EVENTS_URL) as resp:
+            json_body = await resp.json()
+            assert "webhook" in json_body
+
+
 def test_webhook_url_matcher():
     url = "https://git.permit.io/opal/server"
     # these should all be equivalent to the above URL
@@ -352,8 +411,9 @@ def test_webhook_url_matcher():
     ]
 
     for test in urls:
-        assert is_matching_webhook_url(test, [url])
+        assert is_matching_webhook_url(test, [url], [])
 
+    # These should not match
     urls = [
         "https://git.permit.io:9090/opal/server",
         "http://git.permit.io/opal/server",
@@ -361,4 +421,23 @@ def test_webhook_url_matcher():
     ]
 
     for test in urls:
-        assert not is_matching_webhook_url(test, [url])
+        assert not is_matching_webhook_url(test, [url], [])
+
+    # These should match by repo name "opal/server"
+    urls = [
+        "https://user:pass@git.permit.io/opal/server",
+        "https://user@git.permit.io/opal/server",
+        "https://user@git.permit.io/opal/server?private=1",
+        "https://git.permit.io:9090/opal/server",
+        "http://git.permit.io/opal/server",
+        "https://git.permit.io/opal/server.git",
+    ]
+
+    for test in urls:
+        assert is_matching_webhook_url(test, [], ["opal/server"])
+
+    # These should not match by repo name "opal/server"
+    urls = [url.replace("server", "client") for url in urls]
+
+    for test in urls:
+        assert not is_matching_webhook_url(test, [], ["opal/server"])
