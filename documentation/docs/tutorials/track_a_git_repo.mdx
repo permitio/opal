@@ -7,6 +7,14 @@ title: Track a Git Repo
 
 This document describes the policy syncing feature of OPAL (policy-code and static data).
 
+:::tip
+Before starting this tutorial make sure you cover basic repository configuration :
+
+1. [Git Repository location and basic access (e.g. SSH and branches)](/getting-started/running-opal/run-opal-server/policy-repo-location)
+2. [Git Repository syncing (e.g. Polling and Webhooks)](/getting-started/running-opal/run-opal-server/policy-repo-syncing)
+
+:::
+
 ## How policy syncing works
 
 ### 1) OPAL Server tracks a Git branch
@@ -298,7 +306,7 @@ The variable is a model with the following members:
   ```
 
 Many more variations can be created using this configuration model.
-That said, if your flavour isn't supported consider on of:
+That said, if your flavor isn't supported consider one of:
 
 1. Using your CI/CD to send a custom webhook - instead of the built in webhook of your Git service
 2. Opening a Github issue in OPAL's repo to ask for additional features here (include a webhook post example [headers and body])
