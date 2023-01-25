@@ -154,6 +154,7 @@ def configure_logger(
     log_file_rotation: ByteSize = parse_obj_as(ByteSize, "30 MB"),
     log_file_retention: NonNegativeInt = 1,
     prefix_intercept: tuple[str, ...] | None = None,
+    level: str = "DEBUG",
 ) -> None:
     """Configure Loguru to log to stdout and optionally to a file."""
     logging.getLogger("aio_pika").setLevel(logging.WARNING)
@@ -180,12 +181,7 @@ def configure_logger(
             _logger.handlers = [intercept_handler]
             _logger.propagate = False
 
-    handlers = [
-        {
-            "sink": sys.stderr,
-            "format": format_record,
-        }
-    ]
+    handlers = [{"sink": sys.stderr, "format": format_record, "level": level}]
     if log_file is not None:
         handlers.append(
             {
@@ -198,6 +194,7 @@ def configure_logger(
                 "filter": {
                     "ddtrace": "WARNING",
                 },
+                "level": level,
             }
         )
     logger.configure(
@@ -216,6 +213,7 @@ def configure_logs():
         log_file=log_file,
         log_file_rotation=opal_common_config.LOG_FILE_ROTATION,
         log_file_retention=opal_common_config.LOG_FILE_RETENTION,
+        level=opal_common_config.LOG_LEVEL,
     )
 
 
