@@ -57,7 +57,7 @@ class DataSourceConfig(BaseModel):
     """
 
     entries: List[DataSourceEntryWithPollingInterval] = Field(
-        ..., description="list of data sources and how to fetch from them"
+        [], description="list of data sources and how to fetch from them"
     )
 
 
