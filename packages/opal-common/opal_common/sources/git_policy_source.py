@@ -40,12 +40,13 @@ class GitPolicySource(BasePolicySource):
             local_clone_path=local_clone_path,
             polling_interval=polling_interval,
         )
+        self._ssh_key = ssh_key
 
         self._cloner = RepoCloner(
             remote_source_url,
             local_clone_path,
             branch_name=branch_name,
-            ssh_key=ssh_key,
+            ssh_key=self._ssh_key,
             clone_timeout=request_timeout,
         )
         self._branch_name = branch_name
@@ -82,8 +83,7 @@ class GitPolicySource(BasePolicySource):
             return
 
         self._tracker = BranchTracker(
-            repo=repo,
-            branch_name=self._branch_name,
+            repo=repo, branch_name=self._branch_name, ssh_key=self._ssh_key
         )
 
     async def check_for_changes(self):

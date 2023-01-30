@@ -1,8 +1,9 @@
 from functools import partial
-from typing import Tuple
+from typing import Optional, Tuple
 
 from git import GitCommandError, Head, Remote, Repo
 from git.objects.commit import Commit
+from opal_common.git.env import provide_git_ssh_environment
 from opal_common.git.exceptions import GitFailed
 from opal_common.logger import logger
 from tenacity import retry, stop_after_attempt, wait_fixed
@@ -26,6 +27,7 @@ class BranchTracker:
         branch_name: str = "master",
         remote_name: str = "origin",
         retry_config=None,
+        ssh_key: Optional[str] = None,
     ):
         """[summary]
 
@@ -38,6 +40,7 @@ class BranchTracker:
         self._repo = repo
         self._branch_name = branch_name
         self._remote_name = remote_name
+        self._ssh_key = ssh_key
         self._retry_config = (
             retry_config if retry_config is not None else self.DEFAULT_RETRY_CONFIG
         )
@@ -70,7 +73,13 @@ class BranchTracker:
 
     def _pull(self):
         """runs git pull with retries."""
-        attempt_pull = retry(**self._retry_config)(self.tracked_remote.pull)
+
+        def _inner_pull(*args, **kwargs):
+            env = provide_git_ssh_environment(self.tracked_remote.url, self._ssh_key)
+            with self.tracked_remote.repo.git.custom_environment(**env):
+                self.tracked_remote.pull(*args, **kwargs)
+
+        attempt_pull = retry(**self._retry_config)(_inner_pull)
         return attempt_pull()
 
     def checkout(self):
