@@ -12,6 +12,7 @@ from fastapi import (
     Response,
     status,
 )
+from fastapi.responses import RedirectResponse
 from fastapi_websocket_pubsub import PubSubEndpoint
 from git import InvalidGitRepositoryError
 from opal_common.authentication.authz import (
@@ -19,16 +20,21 @@ from opal_common.authentication.authz import (
     restrict_optional_topics_to_publish,
 )
 from opal_common.authentication.casting import cast_private_key
-from opal_common.authentication.deps import JWTAuthenticator
+from opal_common.authentication.deps import JWTAuthenticator, get_token_from_header
 from opal_common.authentication.types import EncryptionKeyFormat, JWTClaims
 from opal_common.authentication.verifier import Unauthorized
 from opal_common.logger import logger
-from opal_common.schemas.data import DataSourceConfig, DataUpdate
+from opal_common.schemas.data import (
+    DataSourceConfig,
+    DataUpdate,
+    ServerDataSourceConfig,
+)
 from opal_common.schemas.policy import PolicyBundle, PolicyUpdateMessageNotification
 from opal_common.schemas.policy_source import GitPolicyScopeSource, SSHAuthData
 from opal_common.schemas.scopes import Scope
 from opal_common.schemas.security import PeerType
 from opal_common.topics.publisher import ScopedServerSideTopicPublisher
+from opal_common.urls import set_url_query_param
 from opal_server.config import opal_server_config
 from opal_server.data.data_update_publisher import DataUpdatePublisher
 from opal_server.git_fetcher import GitPolicyFetcher
@@ -241,9 +247,11 @@ def init_scope_router(
         try:
             scope = await scopes.get(scope_id)
         except ScopeNotFoundError:
-            raise HTTPException(
-                status.HTTP_404_NOT_FOUND, detail=f"No such scope: {scope_id}"
+            logger.warning(
+                "Requested scope {scope_id} not found, returning default scope",
+                scope_id=scope_id,
             )
+            return await _generate_default_scope_bundle(scope_id)
 
         if not isinstance(scope.policy, GitPolicyScopeSource):
             raise HTTPException(
@@ -260,10 +268,28 @@ def init_scope_router(
         try:
             return fetcher.make_bundle(base_hash)
         except (InvalidGitRepositoryError, pygit2.GitError, ValueError):
-            raise HTTPException(
-                status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail=f"scope is not yet cloned: {scope_id}",
+            logger.warning(
+                "Requested scope {scope_id} has invalid repo, returning default scope",
+                scope_id=scope_id,
             )
+            return await _generate_default_scope_bundle(scope_id)
+
+    async def _generate_default_scope_bundle(scope_id: str) -> PolicyBundle:
+        try:
+            scope = await scopes.get("default")
+            fetcher = GitPolicyFetcher(
+                pathlib.Path(opal_server_config.BASE_DIR),
+                scope.scope_id,
+                cast(GitPolicyScopeSource, scope.policy),
+            )
+            return fetcher.make_bundle(None)
+        except (
+            ScopeNotFoundError,
+            InvalidGitRepositoryError,
+            pygit2.GitError,
+            ValueError,
+        ):
+            raise ScopeNotFoundError(scope_id)
 
     @router.get(
         "/{scope_id}/data",
@@ -271,12 +297,34 @@ def init_scope_router(
         status_code=status.HTTP_200_OK,
         dependencies=[Depends(_allowed_scoped_authenticator)],
     )
-    async def get_scope_data_config(*, scope_id: str = Path(..., title="Scope ID")):
+    async def get_scope_data_config(
+        *,
+        scope_id: str = Path(..., title="Scope ID"),
+        authorization: Optional[str] = Header(None),
+    ):
         logger.info(
             "Serving source configuration for scope {scope_id}", scope_id=scope_id
         )
-        scope = await scopes.get(scope_id)
-        return scope.data
+        try:
+            scope = await scopes.get(scope_id)
+            return scope.data
+        except ScopeNotFoundError as ex:
+            logger.warning(
+                "Requested scope {scope_id} not found, returning OPAL_DATA_CONFIG_SOURCES",
+                scope_id=scope_id,
+            )
+            try:
+                config: ServerDataSourceConfig = opal_server_config.DATA_CONFIG_SOURCES
+
+                if config.external_source_url:
+                    url = str(config.external_source_url)
+                    token = get_token_from_header(authorization)
+                    redirect_url = set_url_query_param(url, "token", token)
+                    return RedirectResponse(url=redirect_url)
+                else:
+                    return config.config
+            except ScopeNotFoundError:
+                raise HTTPException(status.HTTP_404_NOT_FOUND, detail=str(ex))
 
     @router.post(
         "/{scope_id}/policy/update",
