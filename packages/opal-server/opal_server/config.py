@@ -223,7 +223,7 @@ class OpalServerConfig(Confi):
 
     ALLOWED_ORIGINS = confi.list("ALLOWED_ORIGINS", ["*"])
     OPA_FILE_EXTENSIONS = (".rego", ".json")
-    OPA_BUNDLE_IGNORE = None
+    BUNDLE_IGNORE = None
 
     NO_RPC_LOGS = confi.bool("NO_RPC_LOGS", True)
 
