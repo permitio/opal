@@ -44,6 +44,7 @@ class BundleMaker:
         in_directories: Set[Path],
         extensions: Optional[List[str]] = None,
         root_manifest_path: str = ".manifest",
+        ignore: Optional[List[str]] = None,
     ):
         """[summary]
 
@@ -53,6 +54,10 @@ class BundleMaker:
                 if the entire repo is relevant, pass Path(".") as the directory
                 (all paths are relative to the repo root).
             extensions (Optional[List[str]]): optional filtering on file extensions.
+            ignore (Optional[List[str]]): optional ignoring of files using glob paths.
+                Note that the std lib's implementation of Path does not support interpreting double asterisks (**)
+                in glob paths as recursive directories so globs will need to explicitly match those directories.
+                Issue: https://github.com/python/cpython/pull/101398
         """
         self._repo = repo
         self._directories = in_directories
@@ -67,6 +72,18 @@ class BundleMaker:
             diffed_file_is_under_directories, directories=in_directories
         )
         self._root_manifest_path = Path(root_manifest_path)
+        self._ignore = ignore
+
+    def ignore_match(self, path: Path) -> Optional[str]:
+        """Determines the ignore glob path, if any, which matches given path.
+        Returns the matched glob path rather than a binary decision of whether
+        there is a match to enable better logging in the case of matched paths in manifests.
+        """
+        if self._ignore != None:
+            for ignore in self._ignore:
+                if path.match(ignore):
+                    return ignore
+        return None
 
     def _get_explicit_manifest(self, viewer: CommitViewer) -> Optional[List[str]]:
         """Rego policies often have dependencies (import statements) between
@@ -120,6 +137,13 @@ class BundleMaker:
 
                         if not viewer.exists(path_entry):
                             logger.warning(f"  Path '{path_entry}' does not exist")
+                            continue
+
+                        ignore_path_match = self.ignore_match(Path(path_entry))
+                        if ignore_path_match != None:
+                            logger.warning(
+                                f"  Path'{path_entry} is ignored by ignore glob '{ignore_path_match}'"
+                            )
                             continue
 
                         if path_entry in visited_paths:
@@ -225,6 +249,9 @@ class BundleMaker:
                 contents = source_file.read()
                 path = source_file.path
 
+                if self.ignore_match(path):
+                    continue
+
                 if is_data_module(path):
                     data_modules.append(
                         DataModule(path=str(path.parent), data=contents)
@@ -287,6 +314,9 @@ class BundleMaker:
             for source_file in viewer.added_or_modified_files(filter):
                 contents = source_file.read()
                 path = source_file.path
+
+                if self.ignore_match(path):
+                    continue
 
                 if is_data_module(path):
                     data_modules.append(

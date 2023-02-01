@@ -355,3 +355,94 @@ def test_bundle_maker_nested_manifest_cycle(local_repo: Repo, helpers):
     #   3. referncing non existing 'some/.manifest' doesn't cause an error
     explicit_manifest = maker._get_explicit_manifest(CommitViewer(commit))
     assert explicit_manifest == ["other/data.json", "other/abac.rego"]
+
+def test_bundle_maker_can_ignore_files_using_a_glob_path(local_repo: Repo, helpers):
+    """Test bundle maker with ignore glob does not include files matching the provided glob."""
+    repo: Repo = local_repo
+    commit: Commit = repo.head.commit
+
+    maker = BundleMaker(
+        repo, in_directories=set([Path(".")]), extensions=OPA_FILE_EXTENSIONS, ignore=["other/**"]
+    )
+    bundle: PolicyBundle = maker.make_bundle(commit)
+    # assert the bundle is a complete bundle (no old hash, etc)
+    assert_is_complete_bundle(bundle)
+    # assert the commit hash is correct
+    assert bundle.hash == commit.hexsha
+
+    # assert only non-ignored files are in the manifest
+    assert len(bundle.manifest) == 2
+    assert "rbac.rego" in bundle.manifest
+    assert "some/dir/to/file.rego" in bundle.manifest
+
+    # assert on the contents of data modules
+    assert len(bundle.data_modules) == 0
+
+    # assert on the contents of policy modules
+    assert len(bundle.policy_modules) == 2
+    policy_modules: List[RegoModule] = bundle.policy_modules
+    policy_modules.sort(key=lambda el: el.path)
+
+    assert policy_modules[0].path == "rbac.rego"
+    assert policy_modules[0].package_name == "app.rbac"
+
+    assert policy_modules[1].path == "some/dir/to/file.rego"
+    assert policy_modules[1].package_name == "envoy.http.public"
+
+    maker = BundleMaker(
+        repo, in_directories=set([Path(".")]), extensions=OPA_FILE_EXTENSIONS, ignore=["some/*/*/file.rego"]
+    )
+    bundle: PolicyBundle = maker.make_bundle(commit)
+    # assert the bundle is a complete bundle (no old hash, etc)
+    assert_is_complete_bundle(bundle)
+    # assert the commit hash is correct
+    assert bundle.hash == commit.hexsha
+
+    # assert only filter directory files are in the manifest
+    assert len(bundle.manifest) == 3
+    assert "other/abac.rego" in bundle.manifest
+    assert "other/data.json" in bundle.manifest
+    assert "rbac.rego" in bundle.manifest
+
+    # assert on the contents of data modules
+    assert len(bundle.data_modules) == 1
+    assert bundle.data_modules[0].path == "other"
+    assert bundle.data_modules[0].data == helpers.json_contents()
+
+    # assert on the contents of policy modules
+    assert len(bundle.policy_modules) == 2
+    policy_modules: List[RegoModule] = bundle.policy_modules
+    policy_modules.sort(key=lambda el: el.path)
+
+    assert policy_modules[0].path == "other/abac.rego"
+    assert policy_modules[0].package_name == "app.abac"
+
+    assert policy_modules[1].path == "rbac.rego"
+    assert policy_modules[1].package_name == "app.rbac"
+
+    maker = BundleMaker(
+        repo, in_directories=set([Path(".")]), extensions=OPA_FILE_EXTENSIONS, ignore=["*bac*"]
+    )
+    bundle: PolicyBundle = maker.make_bundle(commit)
+    # assert the bundle is a complete bundle (no old hash, etc)
+    assert_is_complete_bundle(bundle)
+    # assert the commit hash is correct
+    assert bundle.hash == commit.hexsha
+
+    # assert only filter directory files are in the manifest
+    assert len(bundle.manifest) == 2
+    assert "other/data.json" in bundle.manifest
+    assert "some/dir/to/file.rego" in bundle.manifest
+
+    # assert on the contents of data modules
+    assert len(bundle.data_modules) == 1
+    assert bundle.data_modules[0].path == "other"
+    assert bundle.data_modules[0].data == helpers.json_contents()
+
+    # assert on the contents of policy modules
+    assert len(bundle.policy_modules) == 1
+    policy_modules: List[RegoModule] = bundle.policy_modules
+    policy_modules.sort(key=lambda el: el.path)
+
+    assert policy_modules[0].path == "some/dir/to/file.rego"
+    assert policy_modules[0].package_name == "envoy.http.public"
