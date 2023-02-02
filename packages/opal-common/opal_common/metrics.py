@@ -1,4 +1,5 @@
 import os
+from typing import Optional
 
 import datadog
 from loguru import logger
@@ -28,13 +29,24 @@ def configure_metrics(
     )
 
 
-def increment(metric: str, tags: dict[str, str] = None):
+def _format_tags(tags: Optional[dict[str, str]]) -> Optional[list[str]]:
+    if not tags:
+        return None
+
+    return [f"{k}:{v}" for k, v in tags.items()]
+
+
+def increment(metric: str, tags: Optional[dict[str, str]] = None):
     datadog.statsd.increment(metric, tags=tags)
 
 
-def decrement(metric: str, tags: dict[str, str] = None):
+def decrement(metric: str, tags: Optional[dict[str, str]] = None):
     datadog.statsd.decrement(metric, tags=tags)
 
 
-def gauge(metric: str, value: float, tags: dict[str, str] = None):
+def gauge(metric: str, value: float, tags: Optional[dict[str, str]] = None):
     datadog.statsd.gauge(metric, value, tags=tags)
+
+
+def event(title: str, message: str, tags: Optional[dict[str, str]] = None):
+    datadog.statsd.event(title=title, message=message, tags=tags)
