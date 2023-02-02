@@ -121,6 +121,23 @@ You can read more about the mechanism **[here](/tutorials/healthcheck_policy_and
 
 ### We are using the official OPAL postgres data fetcher. When the OPAL Client is being spun up, it will fetch the data from the postgres instance it is connected to. We are concerned that during that spin up phase, if any updates to the data source happen, how is it handled?
 
+<div
+  style={{
+    padding: "4px 8px",
+    backgroundColor: "#8573ff",
+    marginBottom: "10px",
+    width: "140px",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    color: "white",
+    fontWeight: "bolder",
+    borderRadius: "4px",
+  }}
+>
+  Data Updates
+</div>
+
 ## Answer
 
 Once connected, the OPAL-client will start tracking data update events that you send and handle them. It does so
@@ -142,7 +159,24 @@ but a general multi process read/write sync challenge. If it is an issue for you
 
 ## Question
 
-### I'm configuring OAPL to run with a kafka backbone. We have an existing kafka setup using SASL authentication. I can't see any examples for configuring this with authentication. What's the best way to achieve this?
+### I'm configuring OPAL to run with a kafka backbone. We have an existing kafka setup using SASL authentication. I can't see any examples for configuring this with authentication. What's the best way to achieve this?
+
+<div
+  style={{
+    padding: "4px 8px",
+    backgroundColor: "#8573ff",
+    marginBottom: "10px",
+    width: "120px",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    color: "white",
+    fontWeight: "bolder",
+    borderRadius: "4px",
+  }}
+>
+  Security
+</div>
 
 ## Answer
 
