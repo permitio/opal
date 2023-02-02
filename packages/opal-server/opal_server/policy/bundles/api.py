@@ -105,7 +105,7 @@ async def get_policy(
         in_directories=set(input_paths),
         extensions=opal_server_config.OPA_FILE_EXTENSIONS,
         root_manifest_path=opal_server_config.POLICY_REPO_MANIFEST_PATH,
-        ignore=opal_server_config.BUNDLE_IGNORE,
+        bundle_ignore=opal_server_config.BUNDLE_IGNORE,
     )
     # check if commit exist in the repo
     revision = None

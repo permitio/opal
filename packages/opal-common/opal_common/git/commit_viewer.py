@@ -110,6 +110,18 @@ def has_extension(f: VersionedFile, extensions: Optional[List[str]] = None) -> b
         return f.path.suffix in extensions
 
 
+def find_ignore_match(path: Path, bundle_ignore: Optional[List[str]]) -> Optional[str]:
+    """Determines the ignore glob path, if any, which matches the given file's path.
+    Returns the matched glob path rather than a binary decision of whether
+    there is a match to enable better logging in the case of matched paths in manifests.
+    """
+    if bundle_ignore != None:
+        for ignore in bundle_ignore:
+            if path.match(ignore):
+                return ignore
+    return None
+
+
 def is_under_directories(f: VersionedFile, directories: Set[Path]) -> bool:
     """a filter on versioned files, filters only files under certain
     directories in the repo."""

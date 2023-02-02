@@ -8,6 +8,7 @@ from opal_common.git.commit_viewer import (
     CommitViewer,
     VersionedDirectory,
     VersionedFile,
+    find_ignore_match,
     has_extension,
     is_under_directories,
 )
@@ -44,7 +45,7 @@ class BundleMaker:
         in_directories: Set[Path],
         extensions: Optional[List[str]] = None,
         root_manifest_path: str = ".manifest",
-        ignore: Optional[List[str]] = None,
+        bundle_ignore: Optional[List[str]] = None,
     ):
         """[summary]
 
@@ -54,7 +55,7 @@ class BundleMaker:
                 if the entire repo is relevant, pass Path(".") as the directory
                 (all paths are relative to the repo root).
             extensions (Optional[List[str]]): optional filtering on file extensions.
-            ignore (Optional[List[str]]): optional ignoring of files using glob paths.
+            bundle_ignore (Optional[List[str]]): optional ignoring of files using glob paths.
                 Note that the std lib's implementation of Path does not support interpreting double asterisks (**)
                 in glob paths as recursive directories so globs will need to explicitly match those directories.
                 Issue: https://github.com/python/cpython/pull/101398
@@ -72,18 +73,10 @@ class BundleMaker:
             diffed_file_is_under_directories, directories=in_directories
         )
         self._root_manifest_path = Path(root_manifest_path)
-        self._ignore = ignore
-
-    def ignore_match(self, path: Path) -> Optional[str]:
-        """Determines the ignore glob path, if any, which matches given path.
-        Returns the matched glob path rather than a binary decision of whether
-        there is a match to enable better logging in the case of matched paths in manifests.
-        """
-        if self._ignore != None:
-            for ignore in self._ignore:
-                if path.match(ignore):
-                    return ignore
-        return None
+ 
+        self._bundle_ignore = bundle_ignore
+        self._find_ignore_match = partial(find_ignore_match, bundle_ignore=bundle_ignore)
+        self._diffed_file_find_ignore_match = lambda diff: find_ignore_match(diff.b_path, bundle_ignore)
 
     def _get_explicit_manifest(self, viewer: CommitViewer) -> Optional[List[str]]:
         """Rego policies often have dependencies (import statements) between
@@ -139,7 +132,7 @@ class BundleMaker:
                             logger.warning(f"  Path '{path_entry}' does not exist")
                             continue
 
-                        ignore_path_match = self.ignore_match(Path(path_entry))
+                        ignore_path_match = find_ignore_match(Path(path_entry), self._bundle_ignore)
                         if ignore_path_match != None:
                             logger.warning(
                                 f"  Path'{path_entry} is ignored by ignore glob '{ignore_path_match}'"
@@ -241,16 +234,13 @@ class BundleMaker:
         manifest = []
 
         with CommitViewer(commit) as viewer:
-            filter = lambda f: self._has_extension(f) and self._is_under_directories(f)
+            filter = lambda f: self._has_extension(f) and self._is_under_directories(f) and self._find_ignore_match(f.path) == None
             explicit_manifest = self._get_explicit_manifest(viewer)
             logger.debug(f"Explicit manifest to be used: {explicit_manifest}")
 
             for source_file in viewer.files(filter):
                 contents = source_file.read()
                 path = source_file.path
-
-                if self.ignore_match(path):
-                    continue
 
                 if is_data_module(path):
                     data_modules.append(
@@ -310,13 +300,11 @@ class BundleMaker:
             filter = lambda diff: (
                 self._diffed_file_has_extension(diff)
                 and self._diffed_file_is_under_directories(diff)
+                and self._diffed_file_find_ignore_match(diff) == None
             )
             for source_file in viewer.added_or_modified_files(filter):
                 contents = source_file.read()
                 path = source_file.path
-
-                if self.ignore_match(path):
-                    continue
 
                 if is_data_module(path):
                     data_modules.append(
