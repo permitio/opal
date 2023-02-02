@@ -23,6 +23,12 @@ from .cli import get_cli_object_for_config_objects
 from .types import ConfiDelay, ConfiEntry, no_cast
 
 
+class Placeholder(object):
+    """Placeholder instead of default value for decouple."""
+
+    pass
+
+
 def cast_boolean(value):
     """Parse an entry as a boolean.
 
@@ -193,29 +199,22 @@ class Confi:
 
     def _evaluate(self, key, default=undefined, cast=no_cast, **kwargs):
         safe_cast_func = ignore_confi_delay_cast(cast)
-        failed_to_parse = False
+        # decouple expects a string don't pass actual objects to it, as it will try and cast them - instead pass undefined
+        passed_default = default if isinstance(default, str) else undefined
         try:
-            res = config(key, default=default, cast=safe_cast_func, **kwargs)
+            res = config(key, default=passed_default, cast=safe_cast_func, **kwargs)
+        except UndefinedValueError:
+            # return actual default if provided, if we don't have one re-raise
+            if not isinstance(default, undefined.__class__):
+                return default
+            else:
+                raise
         except ValidationError as err:
             logger = logging.getLogger()
-            logger.exception(f"Failed parsing config- {key}", err)
-            if default is undefined:
-                raise
-            failed_to_parse = True
+            logger.error(f"Failed parsing config key- {key}")
+            raise
         except:
-            if default is undefined:
-                raise
-            failed_to_parse = True
-
-        if failed_to_parse:
-            # cast the default value if possible; otherwise use as is
-            if isinstance(default, str) or (
-                safe_cast_func.__name__ == cast_pydantic(BaseModel).__name__
-                and isinstance(default, dict)
-            ):
-                res = safe_cast_func(default)
-            else:
-                res = default
+            raise
         return res
 
     def __repr__(self) -> str:
