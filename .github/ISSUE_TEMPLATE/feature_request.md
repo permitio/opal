@@ -1,5 +1,13 @@
-We welcome new feature requests!
+## Description
 
-Please let us know what features are you missing :)
+Please provide a clear and concise description of the feature you would like to see implemented.
 
-It would help to describe your usecase in detail, what you are trying to achieve with OPAL, etc.
+## Solution
+<!--Please provide the solution you your feature request -->
+
+## Screenshots / Examples
+
+If applicable, please provide screenshots or examples to help illustrate your feature request.
+
+## Additional Context
+Add any other context or screenshots about the feature request here.
