@@ -37,16 +37,16 @@ def _format_tags(tags: Optional[dict[str, str]]) -> Optional[list[str]]:
 
 
 def increment(metric: str, tags: Optional[dict[str, str]] = None):
-    datadog.statsd.increment(metric, tags=tags)
+    datadog.statsd.increment(metric, tags=_format_tags(tags))
 
 
 def decrement(metric: str, tags: Optional[dict[str, str]] = None):
-    datadog.statsd.decrement(metric, tags=tags)
+    datadog.statsd.decrement(metric, tags=_format_tags(tags))
 
 
 def gauge(metric: str, value: float, tags: Optional[dict[str, str]] = None):
-    datadog.statsd.gauge(metric, value, tags=tags)
+    datadog.statsd.gauge(metric, value, tags=_format_tags(tags))
 
 
 def event(title: str, message: str, tags: Optional[dict[str, str]] = None):
-    datadog.statsd.event(title=title, message=message, tags=tags)
+    datadog.statsd.event(title=title, message=message, tags=_format_tags(tags))
