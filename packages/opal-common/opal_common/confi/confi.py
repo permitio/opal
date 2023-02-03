@@ -206,7 +206,14 @@ class Confi:
         except UndefinedValueError:
             # return actual default if provided, if we don't have one re-raise
             if not isinstance(default, undefined.__class__):
-                return default
+                # cast the default value if needed (it's a string or a dict that represents an object); otherwise use as is
+                if isinstance(default, str) or (
+                    safe_cast_func.__name__ == cast_pydantic(BaseModel).__name__
+                    and isinstance(default, dict)
+                ):
+                    res = safe_cast_func(default)
+                else:
+                    res = default
             else:
                 raise
         except ValidationError as err:
