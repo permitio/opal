@@ -87,9 +87,11 @@ class DataUpdatePublisher:
         # Expand the topics for each event to include sub topic combos (e.g. publish 'a/b/c' as 'a' , 'a/b', and 'a/b/c')
         for entry in update.entries:
             topic_combos = []
-            for topic in entry.topics:
-                topic_combos.extend(DataUpdatePublisher.get_topic_combos(topic))
-            entry.topics = topic_combos  # Update entry with the exaustive list, so client won't have to expand it again
+            # If we we're given any topics - extend them
+            if entry.topics is not None:
+                for topic in entry.topics:
+                    topic_combos.extend(DataUpdatePublisher.get_topic_combos(topic))
+            entry.topics = topic_combos  # Update entry with the exhaustive list, so client won't have to expand it again
             all_topic_combos.update(topic_combos)
 
         # publish all topics with all their sub combinations
@@ -107,7 +109,9 @@ class DataUpdatePublisher:
     ):
         """Called for every periodic update based on repeat_every."""
         logger.info(
-            "[{pid}] Sending Periodic update: {source}", pid=os.getpid(), source=update
+            "[{pid}] Sending Periodic update: {source}",
+            pid=os.getpid(),
+            source=update,
         )
         # Create new publish entry
 
