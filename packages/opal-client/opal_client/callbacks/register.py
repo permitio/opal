@@ -1,5 +1,5 @@
 import hashlib
-from typing import Dict, Generator, List, Optional, Tuple, Union
+from typing import Dict, Generator, List, Optional, Tuple, Union, cast
 
 from opal_client.config import opal_client_config
 from opal_common.fetcher.providers.http_fetch_provider import HttpFetcherConfig
@@ -40,15 +40,18 @@ class CallbacksRegister:
         for callback in callbacks:
             if isinstance(callback, str):
                 url = callback
-                config = opal_client_config.DEFAULT_UPDATE_CALLBACK_CONFIG
-                normalized_callbacks.append((url, config))
-            elif isinstance(callback, CallbackConfig):
-                normalized_callbacks.append(callback)
-            else:
-                logger.warning(
-                    f"Unsupported type for callback config: {type(callback).__name__}"
+                config = cast(
+                    HttpFetcherConfig, opal_client_config.DEFAULT_UPDATE_CALLBACK_CONFIG
                 )
+                normalized_callbacks.append((url, config))
                 continue
+            elif isinstance(callback, tuple):
+                normalized_callbacks.append(callback)
+                continue
+            logger.warning(
+                f"Unsupported type for callback config: {type(callback).__name__}"
+            )
+
         return normalized_callbacks
 
     def _register(self, key: str, url: str, config: HttpFetcherConfig):
