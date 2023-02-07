@@ -248,7 +248,12 @@ class OpalServer:
         app.include_router(data_updates_router, tags=["Data Updates"])
         app.include_router(webhook_router, tags=["Github Webhook"])
         app.include_router(security_router, tags=["Security"])
-        app.include_router(self.pubsub.router, tags=["Pub/Sub"])
+        app.include_router(self.pubsub.pubsub_router, tags=["Pub/Sub"])
+        app.include_router(
+            self.pubsub.api_router,
+            tags=["Pub/Sub"],
+            dependencies=[Depends(authenticator)],
+        )
         app.include_router(
             statistics_router,
             tags=["Server Statistics"],
