@@ -23,6 +23,7 @@ config:
       name: opal-server-v2-secret
       key: OPAL_WORKER_TOKEN
   env:
+    DD_CELERY_DISTRIBUTED_TRACING: "true"
     OPAL_POLICY_REPO_URL: "git@github.com:permitio/permit-sidecar-policy-staging.git"
     UVICORN_NUM_WORKERS: "1"
     OPAL_LOG_FORMAT_INCLUDE_PID: "true"
