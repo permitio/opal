@@ -8,6 +8,7 @@ import git
 from aiohttp import ClientError, ClientSession
 from asgiref.sync import async_to_sync
 from celery import Celery
+from ddtrace import tracer
 from fastapi import status
 from opal_common.config import opal_common_config
 from opal_common.git.commit_viewer import VersionedFile
@@ -149,71 +150,77 @@ class Worker:
         hinted_hash: Optional[str] = None,
         force_fetch: bool = False,
     ):
-        logger.info(f"Sync scope: {scope_id}")
-        scope = await self._scopes.get(scope_id)
+        with tracer.trace("worker.sync_scope", resource=scope_id):
+            logger.info(f"Sync scope: {scope_id}")
+            scope = await self._scopes.get(scope_id)
 
-        if not isinstance(scope.policy, GitPolicyScopeSource):
-            logger.warning("Non-git scopes are currently not supported!")
-            return
-
-        source = cast(GitPolicyScopeSource, scope.policy)
-        fetcher = GitPolicyFetcher(
-            self._base_dir,
-            scope_id,
-            source,
-            callbacks=NewCommitsCallbacks(
-                base_dir=self._base_dir,
-                scope_id=scope_id,
-                source=source,
-                http=self._http,
-            ),
-        )
-
-        try:
-            # using concurrent fetch so that if the celery worker is spawn with concurrency > 1,
-            # the competing processes will not modify the same dir on the filesystem at the same time
-            await fetcher.concurrent_fetch(
-                redis=self._scopes.db.redis_connection,
-                hinted_hash=hinted_hash,
-                force_fetch=force_fetch,
-            )
-        except Exception as e:
-            logger.exception(
-                f"Could not fetch policy for scope {scope_id}, got error: {e}"
-            )
-
-    async def delete_scope(self, scope_id: str):
-        logger.info(f"Delete scope: {scope_id}")
-        scope = await self._scopes.get(scope_id)
-        url = scope.policy.url
-
-        scopes = await self._scopes.all()
-
-        for scope in scopes:
-            if scope.scope_id != scope_id and scope.policy.url == url:
-                logger.info(
-                    f"found another scope with same remote url: {scope.scope_id}"
-                )
+            if not isinstance(scope.policy, GitPolicyScopeSource):
+                logger.warning("Non-git scopes are currently not supported!")
                 return
 
-        scope_dir = GitPolicyFetcher.repo_clone_path(
-            self._base_dir, cast(GitPolicyScopeSource, scope.policy)
-        )
-        shutil.rmtree(scope_dir, ignore_errors=True)
+            source = cast(GitPolicyScopeSource, scope.policy)
+            fetcher = GitPolicyFetcher(
+                self._base_dir,
+                scope_id,
+                source,
+                callbacks=NewCommitsCallbacks(
+                    base_dir=self._base_dir,
+                    scope_id=scope_id,
+                    source=source,
+                    http=self._http,
+                ),
+            )
+
+            try:
+                # using concurrent fetch so that if the celery worker is spawn with concurrency > 1,
+                # the competing processes will not modify the same dir on the filesystem at the same time
+                await fetcher.concurrent_fetch(
+                    redis=self._scopes.db.redis_connection,
+                    hinted_hash=hinted_hash,
+                    force_fetch=force_fetch,
+                )
+            except Exception as e:
+                logger.exception(
+                    f"Could not fetch policy for scope {scope_id}, got error: {e}"
+                )
+
+    async def delete_scope(self, scope_id: str):
+        with tracer.trace("worker.delete_scope"):
+            logger.info(f"Delete scope: {scope_id}")
+            scope = await self._scopes.get(scope_id)
+            url = scope.policy.url
+
+            scopes = await self._scopes.all()
+
+            for scope in scopes:
+                if scope.scope_id != scope_id and scope.policy.url == url:
+                    logger.info(
+                        f"found another scope with same remote url: {scope.scope_id}"
+                    )
+                    return
+
+            scope_dir = GitPolicyFetcher.repo_clone_path(
+                self._base_dir, cast(GitPolicyScopeSource, scope.policy)
+            )
+            shutil.rmtree(scope_dir, ignore_errors=True)
 
     async def periodic_check(self):
-        logger.info("Polling OPAL scopes for policy changes")
-        scopes = await self._scopes.all()
+        with tracer.trace("worker.periodic_check"):
+            logger.info("Polling OPAL scopes for policy changes")
+            scopes = await self._scopes.all()
 
-        already_fetched = set()
+            already_fetched = set()
 
-        for scope in scopes:
-            if scope.policy.poll_updates and scope.policy.url not in already_fetched:
-                logger.info(
-                    f"triggering sync_scope for scope {scope.scope_id} (remote: {scope.policy.url})"
-                )
-                sync_scope.delay(scope.scope_id, force_fetch=True)
-                already_fetched.add(scope.policy.url)
+            for scope in scopes:
+                if (
+                    scope.policy.poll_updates
+                    and scope.policy.url not in already_fetched
+                ):
+                    logger.info(
+                        f"triggering sync_scope for scope {scope.scope_id} (remote: {scope.policy.url})"
+                    )
+                    sync_scope.delay(scope.scope_id, force_fetch=True)
+                    already_fetched.add(scope.policy.url)
 
 
 def create_worker() -> Worker:

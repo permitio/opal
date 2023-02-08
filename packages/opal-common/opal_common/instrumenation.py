@@ -26,7 +26,7 @@ def instrument_app(enable_apm: bool = False, enable_profiler: bool = False):
 
                 return trace
 
-        patch(fastapi=True, redis=True, asyncpg=True, aiohttp=True)
+        patch(fastapi=True, redis=True, asyncpg=True, aiohttp=True, celery=True)
         tracer.configure(
             settings={
                 "FILTERS": [
