@@ -35,6 +35,7 @@ class ConfiEntry:
     default: Any
     description: str
     cast: Callable
+    cast_from_json: Callable
     kwargs: dict
     flags: List[str]
     value: Any
@@ -42,9 +43,11 @@ class ConfiEntry:
     def __init__(
         self,
         key,
+        *,
         default=undefined,
         description=None,
         cast=no_cast,
+        cast_from_json=no_cast,
         type=str,
         index=-1,
         flags: List[str] = None,
@@ -56,6 +59,7 @@ class ConfiEntry:
         self.default = default
         self.description = description
         self.cast = cast
+        self.cast_from_json = cast_from_json
         self.type = type
         self.kwargs = kwargs
         self.flags = flags
