@@ -171,9 +171,11 @@ class Confi:
     def _process(
         self,
         key,
+        *,
         default=undefined,
         description=None,
         cast=no_cast,
+        cast_from_json=no_cast,
         type: ValueT = str,
         flags: List[str] = None,
         **kwargs,
@@ -182,10 +184,11 @@ class Confi:
             # create new entry
             res = ConfiEntry(
                 key,
-                default,
-                description,
-                cast,
-                type,
+                default=default,
+                description=description,
+                cast=cast,
+                cast_from_json=cast_from_json,
+                type=type,
                 index=self._counter,
                 flags=flags,
                 **kwargs,
@@ -193,9 +196,9 @@ class Confi:
             # track count for indexing
             self._counter += 1
             return res
-        else:
-            whole_key = self._prefix_key(key)
-            return self._evaluate(whole_key, default, cast, **kwargs)
+
+        whole_key = self._prefix_key(key)
+        return self._evaluate(whole_key, default, cast, **kwargs)
 
     def _evaluate(self, key, default=undefined, cast=no_cast, **kwargs):
         safe_cast_func = ignore_confi_delay_cast(cast)
@@ -357,6 +360,7 @@ class Confi:
             description=description,
             default=default,
             cast=cast_pydantic(model_type),
+            cast_from_json=cast_pydantic(model_type),
             type=model_type,
             **kwargs,
         )
@@ -375,6 +379,7 @@ class Confi:
             description=description,
             default=default,
             cast=enum_type,
+            cast_from_json=enum_type,
             type=enum_type,
             **kwargs,
         )
@@ -398,6 +403,7 @@ class Confi:
             description=description,
             default=default,
             cast=cast_key,
+            cast_from_json=cast_key,
             type=PrivateKey,
             **kwargs,
         )
@@ -418,6 +424,7 @@ class Confi:
             description=description,
             default=default,
             cast=cast_key,
+            cast_from_json=cast_key,
             type=PublicKey,
             **kwargs,
         )
