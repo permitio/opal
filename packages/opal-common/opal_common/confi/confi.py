@@ -6,6 +6,7 @@ Adding typing support and parsing with Pydantic and Enum.
 
 import inspect
 import json
+import logging
 import string
 from collections import OrderedDict
 from functools import partial, wraps
@@ -15,11 +16,17 @@ from decouple import Csv, UndefinedValueError, config, text_type, undefined
 from opal_common.authentication.casting import cast_private_key, cast_public_key
 from opal_common.authentication.types import EncryptionKeyFormat, PrivateKey, PublicKey
 from opal_common.logging.decorators import log_exception
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 from typer import Typer
 
 from .cli import get_cli_object_for_config_objects
 from .types import ConfiDelay, ConfiEntry, no_cast
+
+
+class Placeholder(object):
+    """Placeholder instead of default value for decouple."""
+
+    pass
 
 
 def cast_boolean(value):
@@ -192,17 +199,36 @@ class Confi:
 
     def _evaluate(self, key, default=undefined, cast=no_cast, **kwargs):
         safe_cast_func = ignore_confi_delay_cast(cast)
+        # decouple expects a string don't pass actual objects to it, as it will try and cast them - instead pass undefined
+        passed_default = default if isinstance(default, str) else undefined
         try:
-            res = config(key, default=default, cast=safe_cast_func, **kwargs)
-        except:
-            if default is undefined:
+            res = config(key, default=passed_default, cast=safe_cast_func, **kwargs)
+        except UndefinedValueError:
+            # return actual default if provided, if we don't have one re-raise
+            if not isinstance(default, undefined.__class__):
+                # cast the default value if needed (it's a string or a dict that represents an object); otherwise use as is
+                if isinstance(default, str) or (
+                    safe_cast_func.__name__ == cast_pydantic(BaseModel).__name__
+                    and isinstance(default, dict)
+                ):
+                    res = safe_cast_func(default)
+                else:
+                    res = default
+            else:
                 raise
-            return default
+        except ValidationError as err:
+            logger = logging.getLogger()
+            logger.error(f"Failed parsing config key- {key}")
+            raise
+        except:
+            raise
         return res
 
     def __repr__(self) -> str:
         return json.dumps(
-            {k: str(v.value) for k, v in self.entries.items()}, indent=2, sort_keys=True
+            {k: str(v.value) for k, v in self.entries.items()},
+            indent=2,
+            sort_keys=True,
         )
 
     def debug_repr(self) -> str:
@@ -275,7 +301,12 @@ class Confi:
 
     def int(self, key, default=undefined, description=None, **kwargs) -> int:
         return self._process(
-            key, description=description, default=default, cast=int, type=int, **kwargs
+            key,
+            description=description,
+            default=default,
+            cast=int,
+            type=int,
+            **kwargs,
         )
 
     def bool(self, key, default=undefined, description=None, **kwargs) -> bool:
@@ -321,7 +352,7 @@ class Confi:
         self, key, model_type: T, default=undefined, description=None, **kwargs
     ) -> T:
         """Parse a config using a Pydantic model."""
-        return self._process(
+        x = self._process(
             key,
             description=description,
             default=default,
@@ -329,9 +360,15 @@ class Confi:
             type=model_type,
             **kwargs,
         )
+        return x
 
     def enum(
-        self, key, enum_type: EnumT, default=undefined, description=None, **kwargs
+        self,
+        key,
+        enum_type: EnumT,
+        default=undefined,
+        description=None,
+        **kwargs,
     ) -> EnumT:
         return self._process(
             key,
