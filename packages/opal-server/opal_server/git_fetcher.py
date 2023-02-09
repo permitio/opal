@@ -1,16 +1,14 @@
+import asyncio
 import hashlib
 import shutil
-from collections import defaultdict
-from contextlib import contextmanager
 from pathlib import Path
-from platform import system
-from tempfile import NamedTemporaryFile
-from typing import Dict, Generator, Optional, Tuple
+from typing import Optional, cast
 
 import aiofiles.os
 import aioredis
+import pygit2
 from ddtrace import tracer
-from git import BadName, GitError, InvalidGitRepositoryError, Reference, Repo
+from git import Repo
 from opal_common.async_utils import run_sync
 from opal_common.git.bundle_maker import BundleMaker
 from opal_common.logger import logger
@@ -19,14 +17,22 @@ from opal_common.schemas.policy_source import (
     GitHubTokenAuthData,
     GitPolicyScopeSource,
     SSHAuthData,
-    UserPassAuthData,
 )
 from opal_common.synchronization.expiring_redis_lock import run_locked
+from pygit2 import (
+    KeypairFromMemory,
+    RemoteCallbacks,
+    Repository,
+    Username,
+    UserPass,
+    clone_repository,
+    discover_repository,
+)
 
 
 class PolicyFetcherCallbacks:
     async def on_update(self, old_head: Optional[str], head: str):
-        ...
+        pass
 
 
 class PolicyFetcher:
@@ -38,88 +44,68 @@ class PolicyFetcher:
 
 
 class RepoInterface:
-    """Manages a git repo with gitpython."""
-
-    @staticmethod
-    def repo_branches(
-        repo: Repo,
-    ) -> Tuple[Dict[str, Reference], Dict[str, Dict[str, Reference]]]:
-        local_branches = {}
-        remote_branches: dict[str, dict[str, Reference]] = defaultdict(dict)
-        for branch in repo.heads:
-            local_branches[branch.name] = branch
-        for remote in repo.remotes:
-            for ref in remote.refs:
-                branch_name = ref.name.split("/", 1)[1]
-                remote_branches[remote.name][branch_name] = ref
-        return local_branches, remote_branches
-
-    @staticmethod
-    def create_local_tracking_branch(
-        repo: Repo, branch_name: str, remote_ref: Reference
-    ) -> Reference:
-        branch = repo.create_head(branch_name, remote_ref)
-        branch.set_tracking_branch(remote_ref)
-        logger.debug(
-            f"Created local branch '{branch_name}', pointing to: {branch.commit.hexsha}"
-        )
-        return branch
+    """Manages a git repo with pygit2."""
 
     @staticmethod
     def create_local_branch_ref(
-        repo: Repo,
+        repo: Repository,
         branch_name: str,
         remote_name: str,
-        base_branch: Optional[str],
-    ) -> Reference:
-        local_branches, remote_branches = RepoInterface.repo_branches(repo)
-        if branch_name in local_branches:
+        base_branch: str,
+    ) -> pygit2.Reference:
+        if branch_name not in repo.branches.local:
+            remote_branch = f"{remote_name}/{branch_name}"
+            base_remote_branch = f"{remote_name}/{base_branch}"
+            if remote_branch in repo.branches.remote:
+                (commit, _) = repo.resolve_refish(remote_branch)
+            elif repo.branches.remote.get(base_remote_branch) is not None:
+                (commit, _) = repo.resolve_refish(base_remote_branch)
+            else:
+                raise RuntimeError(
+                    "Both branch and base branch were not found on remote"
+                )
+            logger.debug(
+                f"Created local branch '{branch_name}', pointing to: {commit.hex}"
+            )
+            return repo.create_reference(f"refs/heads/{branch_name}", commit.hex)
+        else:
             logger.debug(
                 f"No need to create local branch '{branch_name}': already exists!"
             )
-            return local_branches[branch_name]
-        if branch_name in remote_branches[remote_name]:
-            return RepoInterface.create_local_tracking_branch(
-                repo, branch_name, remote_branches[remote_name][branch_name]
-            )
-        elif base_branch is not None and base_branch in remote_branches[remote_name]:
-            return RepoInterface.create_local_tracking_branch(
-                repo, branch_name, remote_branches[remote_name][base_branch]
-            )
-        raise RuntimeError("Both branch and base branch were not found on remote")
+            return repo.references[f"refs/heads/{branch_name}"]
 
     @staticmethod
-    def has_remote_branch(repo: Repo, branch: str, remote: str) -> bool:
+    def has_remote_branch(repo: Repository, branch: str, remote: str) -> bool:
         try:
-            repo.rev_parse(f"refs/remotes/{remote}/{branch}")
+            repo.lookup_reference(f"refs/remotes/{remote}/{branch}")
             return True
-        except BadName:
+        except KeyError:
             return False
 
     @staticmethod
-    def get_commit_hash(repo: Repo, branch: str, remote: str) -> Optional[str]:
+    def get_commit_hash(repo: Repository, branch: str, remote: str) -> Optional[str]:
         try:
-            commit = repo.rev_parse(f"refs/remotes/{remote}/{branch}")
-            return commit.hexsha
-        except BadName:
+            (commit, _) = repo.resolve_refish(f"{remote}/{branch}")
+            return commit.hex
+        except (pygit2.GitError, KeyError):
             return None
 
     @staticmethod
     def checkout_local_branch_from_remote(
-        repo: Repo,
+        repo: Repository,
         branch_name: str,
         remote_name: str,
     ):
-        ref = RepoInterface.create_local_branch_ref(
-            repo, branch_name, remote_name, None
-        )
-        ref.checkout()
+        ref = RepoInterface.create_local_branch_ref(repo, branch_name, remote_name)
+        repo.checkout(ref)
 
     @staticmethod
-    def verify_found_repo_matches_remote(expected_remote_url: str, clone_path: str):
+    def verify_found_repo_matches_remote(
+        expected_remote_url: str, clone_path: str
+    ) -> Repository:
         """verifies that the repo we found in the directory matches the repo we
         are wishing to clone."""
-        repo = Repo(clone_path)
+        repo = Repository(clone_path)
         for remote in repo.remotes:
             if remote.url == expected_remote_url:
                 logger.debug(
@@ -143,6 +129,7 @@ class GitPolicyFetcher(PolicyFetcher):
         super().__init__(callbacks)
         self._base_dir = GitPolicyFetcher.base_dir(base_dir)
         self._source = source
+        self._auth_callbacks = GitCallback(self._source)
         self._repo_path = GitPolicyFetcher.repo_clone_path(base_dir, self._source)
         self._remote = remote_name
         self._scope_id = scope_id
@@ -172,17 +159,13 @@ class GitPolicyFetcher(PolicyFetcher):
         """
         await aiofiles.os.makedirs(str(self._base_dir), exist_ok=True)
 
-        if self._repo_path.exists():
-            if self._is_valid_repository(self._repo_path):
-                logger.info("Repo found at {path}", path=self._repo_path)
-                # This will raise a ValueError if it doesn't match (which won't
-                # let OPAL startup), which is desirable because if it doesn't
-                # it's definitely a misconfiguration and we want the admin to
-                # notice immediately
-                RepoInterface.verify_found_repo_matches_remote(
-                    self._source.url, str(self._repo_path)
-                )
-                repo = Repo(str(self._repo_path))
+        if self._discover_repository(self._repo_path):
+            logger.info("Repo found at {path}", path=self._repo_path)
+            RepoInterface.verify_found_repo_matches_remote(
+                self._source.url, str(self._repo_path)
+            )
+            repo = self._get_valid_repo_at(str(self._repo_path))
+            if repo is not None:
                 if not (
                     await self._should_fetch(
                         repo, hinted_hash=hinted_hash, force_fetch=force_fetch
@@ -192,55 +175,19 @@ class GitPolicyFetcher(PolicyFetcher):
                     return
                 await self._fetch_and_notify_on_changes(repo)
                 return
-
-            # repo dir exists but invalid -> we must delete the directory
-            logger.info("Deleting invalid repo: {path}", path=self._repo_path)
-            shutil.rmtree(self._repo_path)
+            else:
+                # repo dir exists but invalid -> we must delete the directory
+                logger.info("Deleting invalid repo: {path}", path=self._repo_path)
+                shutil.rmtree(self._repo_path)
+        else:
+            logger.info("Repo not found at {path}", path=self._repo_path)
 
         # fallthrough to clean clone
         await self._clone()
 
-    def _is_valid_repository(self, path: Path) -> bool:
-        try:
-            Repo(path)
-            return True
-        except InvalidGitRepositoryError:
-            return False
-
-    @contextmanager
-    def _git_auth_env(self) -> Generator[Dict[str, str], None, None]:
-        auth_data = self._source.auth
-        if isinstance(auth_data, SSHAuthData):
-            # TODO: Preload a key directly into an ssh-agent to avoid storing
-            # it in a file altogether
-            temp_dir = None
-            if system() == "Linux":
-                # In Linux, use /dev/shm so secrets are never written to disk
-                temp_dir = "/dev/shm"
-            with NamedTemporaryFile(mode="w", dir=temp_dir) as f:
-                f.write(auth_data.private_key)
-                f.flush()
-                yield {"GIT_SSH_COMMAND": f"ssh -i {f.name}"}
-            return
-        if isinstance(auth_data, GitHubTokenAuthData):
-            yield {
-                "GIT_ASKPASS": str(Path(__file__).parent / "git_authn.py"),
-                "GIT_USERNAME": "git",
-                "GIT_PASSWORD": auth_data.token,
-            }
-            return
-        if isinstance(auth_data, UserPassAuthData):
-            yield {
-                "GIT_ASKPASS": str(Path(__file__).parent / "git_authn.py"),
-                "GIT_USERNAME": auth_data.username,
-                "GIT_PASSWORD": auth_data.password,
-            }
-            return
-        raise ValueError("Invalid authentication type.")
-
-    def _clone_repo(self, url: str, path: str, branch: str) -> Repo:
-        with self._git_auth_env() as env:
-            return Repo.clone_from(url, path, branch=branch, env=env)
+    def _discover_repository(self, path: Path) -> bool:
+        git_path: Path = path / ".git"
+        return discover_repository(str(path)) and git_path.exists()
 
     async def _clone(self):
         logger.info(
@@ -249,29 +196,31 @@ class GitPolicyFetcher(PolicyFetcher):
             path=self._repo_path,
         )
         try:
-            repo: Repo = await run_sync(
-                self._clone_repo,
+            repo: Repository = await run_sync(
+                clone_repository,
                 self._source.url,
                 str(self._repo_path),
-                branch=self._source.branch,
+                callbacks=self._auth_callbacks,
+                checkout_branch=self._source.branch,
             )
-            logger.info(f"Clone completed: {self._source.url}")
-            await self.callbacks.on_update(None, repo.head.commit.hexsha)
-        except GitError:
+        except pygit2.GitError:
             logger.exception(
                 f"Could not clone repo at {self._source.url}, checkout branch={self._source.branch}"
             )
+        else:
+            logger.info(f"Clone completed: {self._source.url}")
+            await self.callbacks.on_update(None, repo.head.target.hex)
 
-    def _get_valid_repo_at(self, path: str) -> Optional[Repo]:
+    def _get_valid_repo_at(self, path: str) -> Optional[Repository]:
         try:
-            return Repo(path)
-        except InvalidGitRepositoryError:
+            return Repository(path)
+        except pygit2.GitError:
             logger.warning("Invalid repo at: {path}", path=path)
             return None
 
     async def _should_fetch(
         self,
-        repo: Repo,
+        repo: Repository,
         hinted_hash: Optional[str] = None,
         force_fetch: bool = False,
     ) -> bool:
@@ -287,9 +236,9 @@ class GitPolicyFetcher(PolicyFetcher):
 
         if hinted_hash is not None:
             try:
-                repo.rev_parse(hinted_hash)
+                _ = repo.revparse_single(hinted_hash)
                 return False  # hinted commit was found, no need to fetch
-            except BadName:
+            except KeyError:
                 logger.info(
                     "Hinted commit hash was not found in local clone, re-fetching the remote"
                 )
@@ -298,14 +247,12 @@ class GitPolicyFetcher(PolicyFetcher):
         # by default, we try to avoid re-fetching the repo for performance
         return False
 
-    async def _fetch_and_notify_on_changes(self, repo: Repo):
+    async def _fetch_and_notify_on_changes(self, repo: Repository):
         old_revision = RepoInterface.get_commit_hash(
             repo, self._source.branch, self._remote
         )
         logger.info(f"Fetching remote: {self._remote} ({self._source.url})")
-        with self._git_auth_env() as env:
-            with repo.git.custom_environment(**env):
-                await run_sync(repo.remotes[self._remote].fetch)
+        await run_sync(repo.remotes[self._remote].fetch, callbacks=self._auth_callbacks)
         logger.info(f"Fetch completed: {self._source.url}")
         new_revision = RepoInterface.get_commit_hash(
             repo, self._source.branch, self._remote
@@ -316,7 +263,7 @@ class GitPolicyFetcher(PolicyFetcher):
         await self.callbacks.on_update(old_revision, new_revision)
 
     def _get_current_branch_head(self) -> str:
-        repo = Repo(str(self._repo_path))
+        repo = Repository(str(self._repo_path))
         head_commit_hash = RepoInterface.get_commit_hash(
             repo, self._source.branch, self._remote
         )
@@ -358,3 +305,27 @@ class GitPolicyFetcher(PolicyFetcher):
     @staticmethod
     def repo_clone_path(base_dir: Path, source: GitPolicyScopeSource) -> Path:
         return GitPolicyFetcher.base_dir(base_dir) / GitPolicyFetcher.source_id(source)
+
+
+class GitCallback(RemoteCallbacks):
+    def __init__(self, source: GitPolicyScopeSource):
+        super().__init__()
+        self._source = source
+
+    def credentials(self, url, username_from_url, allowed_types):
+        if isinstance(self._source.auth, SSHAuthData):
+            auth = cast(SSHAuthData, self._source.auth)
+
+            ssh_key = dict(
+                username=username_from_url,
+                pubkey=auth.public_key or "",
+                privkey=auth.private_key,
+                passphrase="",
+            )
+            return KeypairFromMemory(**ssh_key)
+        if isinstance(self._source.auth, GitHubTokenAuthData):
+            auth = cast(GitHubTokenAuthData, self._source.auth)
+
+            return UserPass(username="git", password=auth.token)
+
+        return Username(username_from_url)
