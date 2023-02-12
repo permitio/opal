@@ -14,7 +14,10 @@ from fastapi_websocket_pubsub import PubSubClient
 from flaky import flaky
 from opal_common.schemas.webhook import GitWebhookRequestParams
 from opal_server.policy.webhook.api import get_webhook_router, is_matching_webhook_url
-from opal_server.policy.webhook.deps import extracted_git_changes
+from opal_server.policy.webhook.deps import (
+    extracted_git_changes,
+    validate_git_secret_or_throw_factory,
+)
 
 # Add parent path to use local src as package for tests
 root_dir = os.path.abspath(
@@ -42,7 +45,7 @@ REPO_FULL_NAME = "permitio/opal"
 REPO_URL = f"https://github.com/{REPO_FULL_NAME}"
 
 # configure the server to work with a fake secret and our mock repository
-opal_server_config.POLICY_REPO_WEBHOOK_SECRET = "SECRET"
+SECRET = opal_server_config.POLICY_REPO_WEBHOOK_SECRET = "SECRET"
 opal_server_config.POLICY_REPO_URL = REPO_URL
 
 
@@ -59,13 +62,13 @@ GITHUB_WEBHOOK_BODY_SAMPLE = {
     },
 }
 SIGNATURE = hmac.new(
-    opal_server_config.POLICY_REPO_WEBHOOK_SECRET.encode("utf-8"),
+    SECRET.encode("utf-8"),
     json.dumps(GITHUB_WEBHOOK_BODY_SAMPLE).encode("utf-8"),
     hashlib.sha256,
 ).hexdigest()
 GITHUB_WEBHOOK_HEADERS = {
     "X-GitHub-Event": "push",
-    "X-Hub-Signature-256": SIGNATURE,
+    "X-Hub-Signature-256": f"sha256={SIGNATURE}",
 }
 
 #######
@@ -130,7 +133,7 @@ GITLAB_WEBHOOK_BODY_SAMPLE = {
 }
 GITLAB_WEBHOOK_HEADERS = {
     "X-Gitlab-Event": "Push Hook",
-    "X-Gitlab-Token": opal_server_config.POLICY_REPO_WEBHOOK_SECRET,
+    "X-Gitlab-Token": SECRET,
 }
 
 #######
@@ -191,7 +194,7 @@ AZURE_GIT_WEBHOOK_BODY_SAMPLE = {
     "createdDate": "2022-12-15T17:28:23.1937259Z",
 }
 AZURE_GIT_WEBHOOK_HEADERS = {
-    "x-api-key": opal_server_config.POLICY_REPO_WEBHOOK_SECRET,
+    "x-api-key": SECRET,
 }
 
 #######
@@ -208,7 +211,7 @@ BITBUCKET_WEBHOOK_BODY_SAMPLE = {
 
 BITBUCKET_WEBHOOK_HEADERS = {
     "x-event-key": "repo:push",
-    "x-hook-uuid": opal_server_config.POLICY_REPO_WEBHOOK_SECRET,
+    "x-hook-uuid": SECRET,
 }
 
 
@@ -227,8 +230,12 @@ def setup_server(event, webhook_config):
     async def publish(event):
         events.append(event)
 
+    validate_git_secret_or_throw = validate_git_secret_or_throw_factory(
+        SECRET, webhook_config
+    )
+
     webhook_router = get_webhook_router(
-        None,
+        [Depends(validate_git_secret_or_throw)],
         Depends(extracted_git_changes),
         PolicySourceTypes.Git,
         publish,
@@ -253,7 +260,11 @@ def setup_server(event, webhook_config):
 def github_mode_server():
     event = Event()
     # Run the server as a separate process
-    proc = Process(target=setup_server, args=(event, None), daemon=True)
+    proc = Process(
+        target=setup_server,
+        args=(event, opal_server_config.POLICY_REPO_WEBHOOK_PARAMS),
+        daemon=True,
+    )
     proc.start()
     yield event
     proc.kill()  # Cleanup after test

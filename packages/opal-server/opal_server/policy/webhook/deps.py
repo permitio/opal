@@ -4,66 +4,81 @@ import re
 from typing import List, Optional
 
 from fastapi import Header, HTTPException, Request, status
-from opal_common.schemas.webhook import SecretTypeEnum
+from opal_common.schemas.webhook import GitWebhookRequestParams, SecretTypeEnum
 from opal_server.config import opal_server_config
 from pydantic import BaseModel
 
 
-async def validate_git_secret_or_throw(request: Request) -> bool:
-    """authenticates a request from a git service webhook system by checking
-    that the request contains a valid signature (i.e: via the secret stored on
-    github) or a valid token (as stored in Gitlab)."""
-    if opal_server_config.POLICY_REPO_WEBHOOK_SECRET is None:
-        # webhook can be configured without secret (not recommended but quite possible)
-        return True
+def validate_git_secret_or_throw_factory(
+    webhook_secret: Optional[str] = opal_server_config.POLICY_REPO_WEBHOOK_SECRET,
+    webhook_params: GitWebhookRequestParams = opal_server_config.POLICY_REPO_WEBHOOK_PARAMS,
+):
+    """Factory function to create secret validator dependency according to
+    config.
 
-    # get the secret the git service has sent us
-    secret = request.headers.get(
-        opal_server_config.POLICY_REPO_WEBHOOK_PARAMS.secret_header_name, ""
-    )
+    Returns: validate_git_secret_or_throw (async function)
 
-    # parse out the actual secret (Some services like Github add prefixes)
-    matches = re.findall(
-        opal_server_config.POLICY_REPO_WEBHOOK_PARAMS.secret_parsing_regex,
-        secret,
-    )
-    secret = matches[1] if len(matches) > 0 else None
+    Args:
+        webhook_secret (Optional[ str ], optional): The secret to validate. Defaults to opal_server_config.POLICY_REPO_WEBHOOK_SECRET.
+        webhook_params (GitWebhookRequestParams, optional):The webhook configuration - including how to parse the secret. Defaults to opal_server_config.POLICY_REPO_WEBHOOK_PARAMS.
+    """
 
-    # check we actually got something
-    if secret is None or len(secret) == 0:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="No secret was provided!",
+    async def validate_git_secret_or_throw(request: Request) -> bool:
+        """authenticates a request from a git service webhook system by
+        checking that the request contains a valid signature (i.e: via the
+        secret stored on github) or a valid token (as stored in Gitlab)."""
+        if webhook_secret is None:
+            # webhook can be configured without secret (not recommended but quite possible)
+            return True
+
+        # get the secret the git service has sent us
+        incoming_secret = request.headers.get(webhook_params.secret_header_name, "")
+
+        # parse out the actual secret (Some services like Github add prefixes)
+        matches = re.findall(
+            webhook_params.secret_parsing_regex,
+            incoming_secret,
         )
+        incoming_secret = matches[0] if len(matches) > 0 else None
 
-    # Check secret as signature
-    if (
-        opal_server_config.POLICY_REPO_WEBHOOK_PARAMS.secret_type
-        == SecretTypeEnum.signature
-    ):
-        # calculate our signature on the post body
-        payload = await request.body()
-        our_signature = hmac.new(
-            opal_server_config.POLICY_REPO_WEBHOOK_SECRET.encode("utf-8"),
-            payload,
-            hashlib.sha256,
-        ).hexdigest()
-
-        # compare signatures on the post body
-        provided_signature = secret
-        if not hmac.compare_digest(our_signature, provided_signature):
+        # check we actually got something
+        if incoming_secret is None or len(incoming_secret) == 0:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="signatures didn't match!",
+                detail="No secret was provided!",
             )
-    # Check secret as token
-    elif secret != opal_server_config.POLICY_REPO_WEBHOOK_SECRET.encode("utf-8"):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="secret-tokens didn't match!",
-        )
 
-    return True
+        # Check secret as signature
+        if webhook_params.secret_type == SecretTypeEnum.signature:
+            # calculate our signature on the post body
+            payload = await request.body()
+            our_signature = hmac.new(
+                webhook_secret.encode("utf-8"),
+                payload,
+                hashlib.sha256,
+            ).hexdigest()
+
+            # compare signatures on the post body
+            provided_signature = incoming_secret
+            if not hmac.compare_digest(our_signature, provided_signature):
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="signatures didn't match!",
+                )
+        # Check secret as token
+        elif incoming_secret.encode("utf-8") != webhook_secret.encode("utf-8"):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="secret-tokens didn't match!",
+            )
+
+        return True
+
+    return validate_git_secret_or_throw
+
+
+# Init with defaults
+validate_git_secret_or_throw = validate_git_secret_or_throw_factory()
 
 
 class GitChanges(BaseModel):
