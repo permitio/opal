@@ -1,6 +1,7 @@
 import pathlib
 from typing import List, Optional, cast
 
+import pygit2
 from fastapi import (
     APIRouter,
     Depends,
@@ -13,7 +14,7 @@ from fastapi import (
 )
 from fastapi.responses import RedirectResponse
 from fastapi_websocket_pubsub import PubSubEndpoint
-from git import GitError, InvalidGitRepositoryError
+from git import InvalidGitRepositoryError
 from opal_common import metrics
 from opal_common.authentication.authz import (
     require_peer_type,
@@ -204,9 +205,10 @@ def init_scope_router(
             from opal_server.worker import sync_scope
 
             # If the hinted hash is None, we have no way to know whether we should
-            # re-fetch the remote, so we force fetch, just in case anything changed.
+            # re-fetch the remote, so we force fetch, just in case.
             force_fetch = hinted_hash is None
             sync_scope.delay(scope_id, hinted_hash=hinted_hash, force_fetch=force_fetch)
+
             return Response(status_code=status.HTTP_200_OK)
 
         except ScopeNotFoundError:
@@ -226,6 +228,7 @@ def init_scope_router(
         from opal_server.worker import schedule_sync_all_scopes
 
         await schedule_sync_all_scopes(scopes)
+
         return Response(status_code=status.HTTP_200_OK)
 
     @router.get(
@@ -262,9 +265,10 @@ def init_scope_router(
             scope.scope_id,
             cast(GitPolicyScopeSource, scope.policy),
         )
+
         try:
             return fetcher.make_bundle(base_hash)
-        except (InvalidGitRepositoryError, GitError, ValueError):
+        except (InvalidGitRepositoryError, pygit2.GitError, ValueError):
             logger.warning(
                 "Requested scope {scope_id} has invalid repo, returning default scope",
                 scope_id=scope_id,
@@ -289,7 +293,7 @@ def init_scope_router(
         except (
             ScopeNotFoundError,
             InvalidGitRepositoryError,
-            GitError,
+            pygit2.GitError,
             ValueError,
         ):
             raise ScopeNotFoundError(scope_id)
@@ -318,6 +322,7 @@ def init_scope_router(
             )
             try:
                 config: ServerDataSourceConfig = opal_server_config.DATA_CONFIG_SOURCES
+
                 if config.external_source_url:
                     url = str(config.external_source_url)
                     token = get_token_from_header(authorization)
