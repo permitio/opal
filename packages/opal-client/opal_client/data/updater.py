@@ -324,8 +324,8 @@ class DataUpdater:
             entries = [
                 entry
                 for entry in update.entries
-                if entry.topics
-                and not set(entry.topics).isdisjoint(set(self._data_topics))
+                if not entry.topics  # Always process entries with no topics
+                or not set(entry.topics).isdisjoint(set(self._data_topics))
             ]
             urls = [(entry.url, entry.config, entry.data) for entry in entries]
 
