@@ -7,9 +7,10 @@ The OPAL server serves the **base data source configuration** for OPAL client. T
 The data sources configured on the server will be fetched **by the client** every time it decides it needs to fetch the **entire** data configuration (e.g: when the client first loads, after a period of disconnection from the server, etc). This configuration must always point to a complete and up-to-date representation of the data (not a "delta").
 
 You'll need to configure this env var:
-Env Var Name | Function
-:--- | :---
-OPAL_DATA_CONFIG_SOURCES | Directives on **how to fetch** the data configuration we load into OPA cache when OPAL client starts, and **where to put it**.
+
+| Env Var Name             | Function                                                                                                                       |
+| :----------------------- | :----------------------------------------------------------------------------------------------------------------------------- |
+| OPAL_DATA_CONFIG_SOURCES | Directives on **how to fetch** the data configuration we load into OPA cache when OPAL client starts, and **where to put it**. |
 
 #### <a name="encode-data-sources"></a>Data sources config schema
 
@@ -72,6 +73,12 @@ export OPAL_DATA_CONFIG_SOURCES='{"config": {"entries": [{"url": "https://api.pe
 ```
 
 Please be advised, this will not work so great in docker-compose. Docker compose does not know how to deal with env vars that contain spaces, and it treats single quotes (i.e: `''`) as part of the value. But with `docker run` you should be fine.
+
+#### Delegating the sources config to an API server
+
+For more dynamic cases where you'd need different clients to load different sets of data at different times;
+you can have the OPAL-clients be redirected to another server to fetch the configuration.
+See the [details in this tutorial](tutorials/configure_external_data_sources#how-to-configure-an-external-data-source)
 
 #### Security
 
