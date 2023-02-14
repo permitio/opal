@@ -15,6 +15,7 @@ from fastapi import (
 from fastapi.responses import RedirectResponse
 from fastapi_websocket_pubsub import PubSubEndpoint
 from git import InvalidGitRepositoryError
+from opal_common.async_utils import run_sync
 from opal_common.authentication.authz import (
     require_peer_type,
     restrict_optional_topics_to_publish,
@@ -267,7 +268,7 @@ def init_scope_router(
         )
 
         try:
-            return fetcher.make_bundle(base_hash)
+            return await run_sync(fetcher.make_bundle, base_hash)
         except (InvalidGitRepositoryError, pygit2.GitError, ValueError):
             logger.warning(
                 "Requested scope {scope_id} has invalid repo, returning default scope",
