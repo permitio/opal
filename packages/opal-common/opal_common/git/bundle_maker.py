@@ -73,10 +73,14 @@ class BundleMaker:
             diffed_file_is_under_directories, directories=in_directories
         )
         self._root_manifest_path = Path(root_manifest_path)
- 
+
         self._bundle_ignore = bundle_ignore
-        self._find_ignore_match = partial(find_ignore_match, bundle_ignore=bundle_ignore)
-        self._diffed_file_find_ignore_match = lambda diff: find_ignore_match(diff.b_path, bundle_ignore)
+        self._find_ignore_match = partial(
+            find_ignore_match, bundle_ignore=bundle_ignore
+        )
+        self._diffed_file_find_ignore_match = lambda diff: find_ignore_match(
+            diff.b_path, bundle_ignore
+        )
 
     def _get_explicit_manifest(self, viewer: CommitViewer) -> Optional[List[str]]:
         """Rego policies often have dependencies (import statements) between
@@ -132,7 +136,9 @@ class BundleMaker:
                             logger.warning(f"  Path '{path_entry}' does not exist")
                             continue
 
-                        ignore_path_match = find_ignore_match(Path(path_entry), self._bundle_ignore)
+                        ignore_path_match = find_ignore_match(
+                            Path(path_entry), self._bundle_ignore
+                        )
                         if ignore_path_match != None:
                             logger.warning(
                                 f"  Path'{path_entry} is ignored by ignore glob '{ignore_path_match}'"
@@ -234,7 +240,11 @@ class BundleMaker:
         manifest = []
 
         with CommitViewer(commit) as viewer:
-            filter = lambda f: self._has_extension(f) and self._is_under_directories(f) and self._find_ignore_match(f.path) == None
+            filter = (
+                lambda f: self._has_extension(f)
+                and self._is_under_directories(f)
+                and self._find_ignore_match(f.path) == None
+            )
             explicit_manifest = self._get_explicit_manifest(viewer)
             logger.debug(f"Explicit manifest to be used: {explicit_manifest}")
 

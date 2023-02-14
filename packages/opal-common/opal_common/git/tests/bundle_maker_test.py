@@ -356,13 +356,18 @@ def test_bundle_maker_nested_manifest_cycle(local_repo: Repo, helpers):
     explicit_manifest = maker._get_explicit_manifest(CommitViewer(commit))
     assert explicit_manifest == ["other/data.json", "other/abac.rego"]
 
+
 def test_bundle_maker_can_ignore_files_using_a_glob_path(local_repo: Repo, helpers):
-    """Test bundle maker with ignore glob does not include files matching the provided glob."""
+    """Test bundle maker with ignore glob does not include files matching the
+    provided glob."""
     repo: Repo = local_repo
     commit: Commit = repo.head.commit
 
     maker = BundleMaker(
-        repo, in_directories=set([Path(".")]), extensions=OPA_FILE_EXTENSIONS, bundle_ignore=["other/**"]
+        repo,
+        in_directories=set([Path(".")]),
+        extensions=OPA_FILE_EXTENSIONS,
+        bundle_ignore=["other/**"],
     )
     bundle: PolicyBundle = maker.make_bundle(commit)
     # assert the bundle is a complete bundle (no old hash, etc)
@@ -390,7 +395,10 @@ def test_bundle_maker_can_ignore_files_using_a_glob_path(local_repo: Repo, helpe
     assert policy_modules[1].package_name == "envoy.http.public"
 
     maker = BundleMaker(
-        repo, in_directories=set([Path(".")]), extensions=OPA_FILE_EXTENSIONS, bundle_ignore=["some/*/*/file.rego"]
+        repo,
+        in_directories=set([Path(".")]),
+        extensions=OPA_FILE_EXTENSIONS,
+        bundle_ignore=["some/*/*/file.rego"],
     )
     bundle: PolicyBundle = maker.make_bundle(commit)
     # assert the bundle is a complete bundle (no old hash, etc)
@@ -421,7 +429,10 @@ def test_bundle_maker_can_ignore_files_using_a_glob_path(local_repo: Repo, helpe
     assert policy_modules[1].package_name == "app.rbac"
 
     maker = BundleMaker(
-        repo, in_directories=set([Path(".")]), extensions=OPA_FILE_EXTENSIONS, bundle_ignore=["*bac*"]
+        repo,
+        in_directories=set([Path(".")]),
+        extensions=OPA_FILE_EXTENSIONS,
+        bundle_ignore=["*bac*"],
     )
     bundle: PolicyBundle = maker.make_bundle(commit)
     # assert the bundle is a complete bundle (no old hash, etc)

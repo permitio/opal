@@ -110,7 +110,10 @@ def setup_watcher_task(
         raise ValueError("Unknown value for OPAL_POLICY_SOURCE_TYPE")
     watcher.add_on_new_policy_callback(
         partial(
-            publish_changed_directories, publisher=publisher, file_extensions=extensions, bundle_ignore=bundle_ignore
+            publish_changed_directories,
+            publisher=publisher,
+            file_extensions=extensions,
+            bundle_ignore=bundle_ignore,
         )
     )
     return PolicyWatcherTask(watcher)
