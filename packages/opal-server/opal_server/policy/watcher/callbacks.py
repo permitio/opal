@@ -3,7 +3,12 @@ from pathlib import Path
 from typing import List, Optional
 
 from git.objects import Commit
-from opal_common.git.commit_viewer import CommitViewer, FileFilter, find_ignore_match, has_extension
+from opal_common.git.commit_viewer import (
+    CommitViewer,
+    FileFilter,
+    find_ignore_match,
+    has_extension,
+)
 from opal_common.git.diff_viewer import DiffViewer
 from opal_common.logger import logger
 from opal_common.paths import PathUtils
@@ -106,5 +111,7 @@ async def publish_changed_directories(
     """publishes policy topics matching all relevant directories in tracked
     repo, prompting the client to ask for *all* contents of these directories
     (and not just diffs)."""
-    notification = await create_policy_update(old_commit, new_commit, file_extensions, bundle_ignore)
+    notification = await create_policy_update(
+        old_commit, new_commit, file_extensions, bundle_ignore
+    )
     publisher.publish(topics=notification.topics, data=notification.update.dict())
