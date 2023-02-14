@@ -42,6 +42,7 @@ class BasePolicyScopeSource(BaseSchema):
     extensions: List[str] = Field(
         [".rego", ".json"], description="File extensions to use"
     )
+    bundle_ignore: Optional[List[str]] = Field(None, description="glob paths to omit from bundle")
     manifest: str = Field(".manifest", description="path to manifest file")
     poll_updates: bool = Field(
         False, description="Whether OPAL should check for updates periodically"

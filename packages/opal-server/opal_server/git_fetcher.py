@@ -278,6 +278,7 @@ class GitPolicyFetcher(PolicyFetcher):
             {Path(p) for p in self._source.directories},
             extensions=self._source.extensions,
             root_manifest_path=self._source.manifest,
+            bundle_ignore=self._source.bundle_ignore,
         )
         current_head_commit = repo.commit(self._get_current_branch_head())
 

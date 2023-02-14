@@ -24,6 +24,7 @@ def setup_watcher_task(
     request_timeout: int = None,
     policy_bundle_token: str = None,
     extensions: Optional[List[str]] = None,
+    bundle_ignore: Optional[List[str]] = None,
 ) -> PolicyWatcherTask:
     """Create a PolicyWatcherTask with Git / API policy source defined by env
     vars Load all the defaults from config if called without params.
@@ -39,6 +40,7 @@ def setup_watcher_task(
         request_timeout(int):  how many seconds need to wait until timout
         policy_bundle_token(int):  auth token to include in connections to OPAL server. Defaults to POLICY_BUNDLE_SERVER_TOKEN.
         extensions(list(str), optional):  list of extantions to check when new policy arrive default is OPA_FILE_EXTENSIONS
+        bundle_ignore(list(str), optional):  list of glob paths to use for excluding files from bundle default is OPA_BUNDLE_IGNORE
     """
     # load defaults
     source_type = load_conf_if_none(source_type, opal_server_config.POLICY_SOURCE_TYPE)
@@ -71,6 +73,7 @@ def setup_watcher_task(
         policy_bundle_token, opal_server_config.POLICY_BUNDLE_SERVER_TOKEN
     )
     extensions = load_conf_if_none(extensions, opal_server_config.OPA_FILE_EXTENSIONS)
+    bundle_ignore = load_conf_if_none(extensions, opal_server_config.BUNDLE_IGNORE)
     if source_type == PolicySourceTypes.Git:
         remote_source_url = load_conf_if_none(
             remote_source_url, opal_server_config.POLICY_REPO_URL
@@ -107,7 +110,7 @@ def setup_watcher_task(
         raise ValueError("Unknown value for OPAL_POLICY_SOURCE_TYPE")
     watcher.add_on_new_policy_callback(
         partial(
-            publish_changed_directories, publisher=publisher, file_extensions=extensions
+            publish_changed_directories, publisher=publisher, file_extensions=extensions, bundle_ignore=bundle_ignore
         )
     )
     return PolicyWatcherTask(watcher)
