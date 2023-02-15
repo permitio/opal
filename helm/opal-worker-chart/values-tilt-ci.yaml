@@ -1,3 +1,0 @@
-config:
-  env:
-    OPAL_SERVER_URL: "{{ .Release.Namespace }}.opal.dev.permit.io"

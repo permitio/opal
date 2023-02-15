@@ -57,6 +57,40 @@ expose:
       port: 80
       pathType: Prefix
 
+sidecarContainer:
+  name: opal-worker
+  # Inherits parent registry & tag when using 'imageName'
+  imageName: permit-opal-worker-v2
+
+  config:
+    envSecrets:
+      OPAL_WORKER_TOKEN:
+        name: opal-server-v2-secret
+        key: OPAL_WORKER_TOKEN
+
+    env:
+      OPAL_SCOPES: "1"
+      OPAL_BASE_DIR: "/opal"
+      OPAL_POLICY_REFRESH_INTERVAL: "60"
+      OPAL_LOG_TO_FILE: "True"
+      OPAL_LOG_FILE_PATH: "git_sources/output.log"
+      OPAL_ENABLE_METRICS: "1"
+      OPAL_ENABLE_DATADOG_APM: "True"
+      DD_CELERY_DISTRIBUTED_TRACING: "true"
+    envRef:
+      DD_ENV:
+        name: metadata.labels['tags.datadoghq.com/env']
+      DD_SERVICE:
+        name: metadata.labels['tags.datadoghq.com/service']
+      DD_VERSION:
+        name: metadata.labels['tags.datadoghq.com/version']
+      DD_AGENT_HOST:
+        name: status.hostIP
+
+  raw_container:
+    command: [ "/bin/sh","-c" ]
+    args: ["celery -A opal_server.worker worker -B --concurrency=1 -l info -s /tmp/schedule.db" ]
+
 
 labels_all:
   tags.datadoghq.com/service: "{{ .Release.Name }}"
