@@ -4,7 +4,7 @@ from enum import Enum
 
 from opal_common.authentication.types import EncryptionKeyFormat
 from opal_common.confi import Confi
-from opal_common.schemas.data import ServerDataSourceConfig
+from opal_common.schemas.data import DEFAULT_DATA_TOPIC, ServerDataSourceConfig
 from opal_common.schemas.webhook import GitWebhookRequestParams
 
 confi = Confi(prefix="OPAL_")
@@ -159,7 +159,7 @@ class OpalServerConfig(Confi):
 
     # Data updates
     ALL_DATA_TOPIC = confi.str(
-        "ALL_DATA_TOPIC", "policy_data", description="Top level topic for data"
+        "ALL_DATA_TOPIC", DEFAULT_DATA_TOPIC, description="Top level topic for data"
     )
     ALL_DATA_ROUTE = confi.str("ALL_DATA_ROUTE", "/policy-data")
     ALL_DATA_URL = confi.str(

@@ -8,6 +8,8 @@ from pydantic import AnyHttpUrl, BaseModel, Field, root_validator
 
 JsonableValue = Union[Dict[str, Any], List[Any]]
 
+DEFAULT_DATA_TOPIC = "policy_data"
+
 
 class DataSourceEntry(BaseModel):
     """
@@ -26,7 +28,9 @@ class DataSourceEntry(BaseModel):
         description="Suggested fetcher configuration (e.g. auth or method) to fetch data with",
     )
     # How to catalog data
-    topics: List[str] = Field(None, description="topics the data applies to")
+    topics: List[str] = Field(
+        [DEFAULT_DATA_TOPIC], description="topics the data applies to"
+    )
     # How to save the data
     # see https://www.openpolicyagent.org/docs/latest/rest-api/#data-api path is the path nested under <OPA_SERVER>/<version>/data
     dst_path: str = Field("", description="OPA data api path to store the document at")
@@ -36,7 +40,6 @@ class DataSourceEntry(BaseModel):
 
 
 class DataSourceEntryWithPollingInterval(DataSourceEntry):
-
     # Periodic Update Interval
     # If set, tells OPAL server how frequently to send message to clients that they need to refresh their data store from a data source
     # Time in Seconds
