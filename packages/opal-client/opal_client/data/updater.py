@@ -329,8 +329,13 @@ class DataUpdater:
             ]
             urls = [(entry.url, entry.config, entry.data) for entry in entries]
 
-        # get the data for the update
-        logger.info("Fetching policy data", urls=repr(urls))
+        if len(entries) > 0:
+            logger.info("Fetching policy data", urls=repr(urls))
+        else:
+            logger.warning(
+                "None of the update's entries are designated to subscribed topics"
+            )
+
         # Urls may be None - handle_urls has a default for None
         policy_data_with_urls = await data_fetcher.handle_urls(urls)
         # Save the data from the update

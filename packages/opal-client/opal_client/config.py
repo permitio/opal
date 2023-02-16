@@ -6,7 +6,7 @@ from opal_client.policy_store.schemas import PolicyStoreTypes
 from opal_common.confi import Confi, confi
 from opal_common.config import opal_common_config
 from opal_common.fetcher.providers.http_fetch_provider import HttpFetcherConfig
-from opal_common.schemas.data import UpdateCallback
+from opal_common.schemas.data import DEFAULT_DATA_TOPIC, UpdateCallback
 
 
 # Opal Client general configuration -------------------------------------------
@@ -149,7 +149,7 @@ class OpalClientConfig(Confi):
 
     DATA_TOPICS = confi.list(
         "DATA_TOPICS",
-        ["policy_data"],
+        [DEFAULT_DATA_TOPIC],
         description="Data topics to subscribe to",
     )
 

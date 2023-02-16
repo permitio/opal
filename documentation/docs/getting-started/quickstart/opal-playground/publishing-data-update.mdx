@@ -74,8 +74,9 @@ So what happened when we published our update with the CLI?
 
 Let's analyze the components of this update. **OPAL data updates** are built to support **your specific use case**.
 
-- You can specify a topic (in our example it was `policy_data`) to **target only specific OPAL clients**; and by extension **specific OPA agents**.
-  This is only logical if each microservice you have has an OPA sidecar of its own and thus different policy/data needs.
+- You can specify a topic (in our example it was `policy_data`, which) to **target only specific OPAL clients**; and by extension **specific OPA agents**.
+  In our example, we used the `policy_data` topic which clients listen to by default (it's also the default topic for updates published with no topics specification).
+  Changing this default is only logical if each microservice you have has an OPA sidecar of its own and thus different policy/data needs.
 
 - OPAL specifies **from where** to fetch the data that changed. In this example we used a free and open API ([`api.country.is`](https://api.country.is))
   that anyone can access, however, it can be **your specific API**, or a **3rd-party API**.
