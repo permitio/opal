@@ -87,10 +87,17 @@ class DataUpdatePublisher:
         # Expand the topics for each event to include sub topic combos (e.g. publish 'a/b/c' as 'a' , 'a/b', and 'a/b/c')
         for entry in update.entries:
             topic_combos = []
-            for topic in entry.topics:
-                topic_combos.extend(DataUpdatePublisher.get_topic_combos(topic))
-            entry.topics = topic_combos  # Update entry with the exaustive list, so client won't have to expand it again
-            all_topic_combos.update(topic_combos)
+            if entry.topics:
+                for topic in entry.topics:
+                    topic_combos.extend(DataUpdatePublisher.get_topic_combos(topic))
+                entry.topics = topic_combos  # Update entry with the exaustive list, so client won't have to expand it again
+                all_topic_combos.update(topic_combos)
+            else:
+                logger.warning(
+                    "[{pid}] No topics were provided for the following entry: {entry}",
+                    pid=os.getpid(),
+                    entry=entry,
+                )
 
         # publish all topics with all their sub combinations
         logger.info(
