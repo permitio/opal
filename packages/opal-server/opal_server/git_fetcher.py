@@ -296,7 +296,9 @@ class GitPolicyFetcher(PolicyFetcher):
 
     @staticmethod
     def source_id(source: GitPolicyScopeSource) -> str:
-        return hashlib.sha256(source.url.encode("utf-8")).hexdigest()
+        return hashlib.sha256(
+            f"{source.url}-{source.branch}".encode("utf-8")
+        ).hexdigest()
 
     @staticmethod
     def base_dir(base_dir: Path) -> Path:
