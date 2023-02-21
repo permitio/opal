@@ -46,6 +46,7 @@ async def test_retry_failure():
 
         # register the callback
         engine.register_failure_handler(error_callback)
+
         # callback for success - shouldn't eb called in this test
         async def callback(result):
             got_data_event.set()

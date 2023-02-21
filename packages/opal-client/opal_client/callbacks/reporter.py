@@ -44,7 +44,7 @@ class CallbacksReporter:
             logger.info("Reporting the update to requested callbacks", urls=repr(urls))
             report_results = await self._fetcher.handle_urls(urls)
             # log reports which we failed to send
-            for (url, config, result) in report_results:
+            for url, config, result in report_results:
                 if isinstance(result, Exception):
                     logger.error(
                         "Failed to send report to {url}, info={exc_info}",

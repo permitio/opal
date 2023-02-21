@@ -14,7 +14,6 @@ class InvalidPolicyStoreTypeException(Exception):
 
 
 class PolicyStoreClientFactory:
-
     CACHE: Dict[str, BasePolicyStoreClient] = {}
 
     @classmethod
