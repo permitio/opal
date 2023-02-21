@@ -267,6 +267,11 @@ const sidebars = {
       id: "FAQ",
       label: "FAQ",
     },
+    {
+      type: "doc",
+      id: "OPAL_PLUS",
+      label: "OPAL + (Extended OPAL License)",
+    },
   ],
 };
 
