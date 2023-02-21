@@ -201,7 +201,6 @@ class OpaTransactionLogState:
             transaction=transaction.dict(),
         )
         if self._is_policy_transaction(transaction):
-
             if transaction.success:
                 self._last_policy_transaction = transaction
                 self._num_successful_policy_transactions += 1
@@ -210,7 +209,6 @@ class OpaTransactionLogState:
                 self._num_failed_policy_transactions += 1
 
         elif self._is_data_transaction(transaction):
-
             if transaction.success:
                 self._last_data_transaction = transaction
                 self._num_successful_data_transactions += 1

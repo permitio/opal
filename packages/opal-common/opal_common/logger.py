@@ -61,7 +61,8 @@ class InterceptHandler(logging.Handler):
     """This will cause log messages logged with the default python logging
     module propagate into loguru sinks.
 
-    See https://loguru.readthedocs.io/en/stable/overview.html#entirely-compatible-with-standard-logging
+    See https://loguru.readthedocs.io/en/stable/overview.html#entirely-
+    compatible-with-standard-logging
     """
 
     def emit(self, record: logging.LogRecord) -> None:

@@ -36,7 +36,6 @@ class DataSourceEntry(BaseModel):
 
 
 class DataSourceEntryWithPollingInterval(DataSourceEntry):
-
     # Periodic Update Interval
     # If set, tells OPAL server how frequently to send message to clients that they need to refresh their data store from a data source
     # Time in Seconds
