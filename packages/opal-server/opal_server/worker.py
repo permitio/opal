@@ -213,16 +213,11 @@ class Worker:
             scopes = await self._scopes.all()
 
             for scope in scopes:
-                if (
-                    scope.policy.poll_updates
-                    # TODO: That check creates a bug - not notifying other scopes using the same repo+branch
-                    and (scope.policy.url, scope.policy.branch) not in already_fetched
-                ):
+                if scope.policy.poll_updates:
                     logger.info(
                         f"triggering sync_scope for scope {scope.scope_id} (remote: {scope.policy.url} branch: {scope.policy.branch})"
                     )
                     sync_scope.delay(scope.scope_id, force_fetch=True)
-                    already_fetched.add((scope.policy.url, scope.policy.branch))
 
 
 def create_worker() -> Worker:
