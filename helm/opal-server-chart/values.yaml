@@ -1,4 +1,4 @@
-name: opal-server
+name: opal-server-v2
 image:
   name: opal-server-v2
 
@@ -36,16 +36,16 @@ config:
     OPAL_BASE_DIR: "/opal"
     OPAL_POLICY_REFRESH_INTERVAL: "60"
     OPAL_LOG_TO_FILE: "True"
-    OPAL_LOG_FILE_PATH: "git_sources/output.log"
+    OPAL_LOG_FILE_PATH: "logs/output.log"
     OPAL_ENABLE_METRICS: "1"
     OPAL_ENABLE_DATADOG_APM: "True"
   envRef:
     DD_ENV:
-      name: metadata.labels['tags.datadoghq.com/env']
+      name: metadata.labels['tags.datadoghq.com/opal-server-v2.env']
     DD_SERVICE:
-      name: metadata.labels['tags.datadoghq.com/service']
+      name: metadata.labels['tags.datadoghq.com/opal-server-v2.service']
     DD_VERSION:
-      name: metadata.labels['tags.datadoghq.com/version']
+      name: metadata.labels['tags.datadoghq.com/opal-server-v2.version']
     DD_AGENT_HOST:
       name: status.hostIP
 
@@ -58,7 +58,7 @@ expose:
       pathType: Prefix
 
 sidecarContainer:
-  name: opal-worker
+  name: opal-worker-v2
   # Inherits parent registry & tag when using 'imageName'
   imageName: permit-opal-worker-v2
 
@@ -73,17 +73,17 @@ sidecarContainer:
       OPAL_BASE_DIR: "/opal"
       OPAL_POLICY_REFRESH_INTERVAL: "60"
       OPAL_LOG_TO_FILE: "True"
-      OPAL_LOG_FILE_PATH: "git_sources/output.log"
+      OPAL_LOG_FILE_PATH: "logs/output.log"
       OPAL_ENABLE_METRICS: "1"
       OPAL_ENABLE_DATADOG_APM: "True"
       DD_CELERY_DISTRIBUTED_TRACING: "true"
     envRef:
       DD_ENV:
-        name: metadata.labels['tags.datadoghq.com/env']
+        name: metadata.labels['tags.datadoghq.com/opal-worker-v2.env']
       DD_SERVICE:
-        name: metadata.labels['tags.datadoghq.com/service']
+        name: metadata.labels['tags.datadoghq.com/opal-worker-v2.service']
       DD_VERSION:
-        name: metadata.labels['tags.datadoghq.com/version']
+        name: metadata.labels['tags.datadoghq.com/opal-worker-v2.version']
       DD_AGENT_HOST:
         name: status.hostIP
 
@@ -93,7 +93,9 @@ sidecarContainer:
 
 
 labels_all:
-  tags.datadoghq.com/service: "{{ .Release.Name }}"
-  tags.datadoghq.com/version: "{{ .Values.image.tag }}"
+  tags.datadoghq.com/opal-server-v2.service: "opal-server-v2"
+  tags.datadoghq.com/opal-server-v2.version: "{{ .Values.image.tag }}"
+  tags.datadoghq.com/opal-worker-v2.service: "opal-worker-v2"
+  tags.datadoghq.com/opal-worker-v2.version: "{{ .Values.image.tag }}"
 
 annotations_template: {}
