@@ -1,5 +1,4 @@
 import time
-from collections import defaultdict
 from contextlib import contextmanager
 from contextvars import ContextVar
 from threading import Lock
@@ -53,7 +52,6 @@ current_client: ContextVar[ClientInfo] = ContextVar("current_client")
 class ClientTracker:
     def __init__(self):
         self._clients_by_ids: Dict[str, ClientInfo] = {}
-        self._clients_by_topics: Dict[str, Dict[str, ClientInfo]] = defaultdict(dict)
         self._client_lock = Lock()
 
     def clients(self) -> Dict[str, ClientInfo]:
@@ -99,8 +97,6 @@ class ClientTracker:
             topics = [topics]
         client_info = current_client.get()
         client_info.subscribed_topics.update(topics)
-        for topic in topics:
-            self._clients_by_topics[topic][client_info.client_id] = client_info
 
     async def on_unsubscribe(
         self,
@@ -111,10 +107,6 @@ class ClientTracker:
             topics = [topics]
         client_info = current_client.get()
         client_info.subscribed_topics.difference_update(topics)
-        for topic in topics:
-            del self._clients_by_topics[topic][client_info.client_id]
-            if len(self._clients_by_topics[topic]) == 0:
-                del self._clients_by_topics[topic]
 
 
 class PubSub:
