@@ -90,7 +90,7 @@ FROM client-standalone as client
 # Temporarily move back to root for additional setup
 USER root
 
-RUN apt-get update && apt-get install -y netcat && apt-get clean
+RUN apt-get update && apt-get install -y netcat jq && apt-get clean
 
 # copy opa from opa-extractor
 COPY --from=opa-extractor /opal/opa ./opa
@@ -106,7 +106,7 @@ USER opal
 # ---------------------------------------------------
 FROM common as server
 
-RUN apt-get update && apt-get install -y openssh-client git curl && apt-get clean
+RUN apt-get update && apt-get install -y openssh-client git curl jq && apt-get clean
 
 USER opal
 
