@@ -25,8 +25,8 @@ from pygit2 import (
     Repository,
     Username,
     UserPass,
+    clone_repository,
     discover_repository,
-    init_repository,
 )
 
 
@@ -196,25 +196,20 @@ class GitPolicyFetcher(PolicyFetcher):
             path=self._repo_path,
         )
         try:
-
-            def single_branch_repo_clone():
-                """Use our custom clone function to only fetch the branch we
-                need."""
-                repo: Repository = init_repository(str(self._repo_path))
-                repo.remotes.set_url(self._remote, self._source.url)
-                repo.remotes.add_fetch(self._remote, self._get_tracked_refspec())
-                repo.remotes[self._remote].fetch(callbacks=self._auth_callbacks)
-                return repo
-
-            repo: Repository = await run_sync(single_branch_repo_clone)
-
+            repo: Repository = await run_sync(
+                clone_repository,
+                self._source.url,
+                str(self._repo_path),
+                callbacks=self._auth_callbacks,
+                checkout_branch=self._source.branch,
+            )
         except pygit2.GitError:
             logger.exception(
                 f"Could not clone repo at {self._source.url}, checkout branch={self._source.branch}"
             )
         else:
             logger.info(f"Clone completed: {self._source.url}")
-            await self.callbacks.on_update(None, self._get_current_branch_head())
+            await self.callbacks.on_update(None, repo.head.target.hex)
 
     def _get_valid_repo_at(self, path: str) -> Optional[Repository]:
         try:
@@ -299,14 +294,9 @@ class GitPolicyFetcher(PolicyFetcher):
                 except ValueError:
                     return bundle_maker.make_bundle(current_head_commit)
 
-    def _get_tracked_refspec(self) -> str:
-        return f"refs/heads/{self._source.branch}:refs/remotes/{self._remote}/{self._source.branch}"
-
     @staticmethod
     def source_id(source: GitPolicyScopeSource) -> str:
-        return hashlib.sha256(
-            f"{source.url}-{source.branch}".encode("utf-8")
-        ).hexdigest()
+        return hashlib.sha256(source.url.encode("utf-8")).hexdigest()
 
     @staticmethod
     def base_dir(base_dir: Path) -> Path:
