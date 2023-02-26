@@ -187,23 +187,20 @@ class Worker:
     async def delete_scope(self, scope_id: str):
         with tracer.trace("worker.delete_scope"):
             logger.info(f"Delete scope: {scope_id}")
-            scope_to_delete = await self._scopes.get(scope_id)
+            scope = await self._scopes.get(scope_id)
+            url = scope.policy.url
 
             scopes = await self._scopes.all()
 
             for scope in scopes:
-                if (
-                    scope.scope_id != scope_id
-                    and scope.policy.url == scope_to_delete.policy.url
-                    and scope.policy.branch == scope_to_delete.policy.branch
-                ):
+                if scope.scope_id != scope_id and scope.policy.url == url:
                     logger.info(
                         f"found another scope with same remote url: {scope.scope_id}"
                     )
                     return
 
             scope_dir = GitPolicyFetcher.repo_clone_path(
-                self._base_dir, cast(GitPolicyScopeSource, scope_to_delete.policy)
+                self._base_dir, cast(GitPolicyScopeSource, scope.policy)
             )
             shutil.rmtree(scope_dir, ignore_errors=True)
 
@@ -212,12 +209,18 @@ class Worker:
             logger.info("Polling OPAL scopes for policy changes")
             scopes = await self._scopes.all()
 
+            already_fetched = set()
+
             for scope in scopes:
-                if scope.policy.poll_updates:
+                if (
+                    scope.policy.poll_updates
+                    and scope.policy.url not in already_fetched
+                ):
                     logger.info(
-                        f"triggering sync_scope for scope {scope.scope_id} (remote: {scope.policy.url} branch: {scope.policy.branch})"
+                        f"triggering sync_scope for scope {scope.scope_id} (remote: {scope.policy.url})"
                     )
                     sync_scope.delay(scope.scope_id, force_fetch=True)
+                    already_fetched.add(scope.policy.url)
 
 
 def create_worker() -> Worker:
