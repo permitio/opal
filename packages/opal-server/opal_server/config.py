@@ -224,13 +224,6 @@ class OpalServerConfig(Confi):
         "SERVER_PORT", 7002, description="(if run via CLI)  Port for the server to bind"
     )
 
-    SERVER_ROLE = confi.enum(
-        "SERVER_ROLE",
-        ServerRole,
-        default=ServerRole.Primary,
-        description="Server is leader or follower",
-    )
-
     SCOPES = confi.bool("SCOPES", default=False)
 
     REDIS_URL = confi.str("REDIS_URL", default="redis://localhost")
