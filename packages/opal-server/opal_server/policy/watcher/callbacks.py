@@ -76,7 +76,7 @@ async def create_policy_update(
                 return True
             if not path.suffix in file_extensions:
                 return False
-            return find_ignore_match(path, bundle_ignore)
+            return find_ignore_match(path, bundle_ignore) is None
 
         all_paths = list(viewer.affected_paths(is_path_affected))
         if not all_paths:
@@ -114,4 +114,6 @@ async def publish_changed_directories(
     notification = await create_policy_update(
         old_commit, new_commit, file_extensions, bundle_ignore
     )
-    publisher.publish(topics=notification.topics, data=notification.update.dict())
+
+    if notification:
+        publisher.publish(topics=notification.topics, data=notification.update.dict())
