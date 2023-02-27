@@ -292,7 +292,6 @@ class OpalServer:
             logger.info("*** OPAL Server Startup ***")
 
             try:
-                await self.start()
                 self._task = asyncio.create_task(self.start_server_background_tasks())
 
             except Exception:
@@ -307,11 +306,6 @@ class OpalServer:
             await self.stop_server_background_tasks()
 
         return app
-
-    async def start(self):
-        if opal_server_config.SCOPES:
-            await load_scopes(self._scopes)
-            await schedule_sync_all_scopes(self._scopes)
 
     async def start_server_background_tasks(self):
         """starts the background processes (as asyncio tasks) if such are
@@ -335,21 +329,26 @@ class OpalServer:
                     self.pubsub.endpoint.notifier.register_unsubscribe_event(
                         self.opal_statistics.remove_client
                     )
-                if self._init_policy_watcher:
-                    # repo watcher is enabled, but we want only one worker to run it
-                    # (otherwise for each new commit, we will publish multiple updates via pub/sub).
-                    # leadership is determined by the first worker to obtain a lock
-                    self.leadership_lock = NamedLock(
-                        opal_server_config.LEADER_LOCK_FILE_PATH
-                    )
-                    async with self.leadership_lock:
-                        # only one worker gets here, the others block. in case the leader worker
-                        # is terminated, another one will obtain the lock and become leader.
-                        logger.info(
-                            "leadership lock acquired, leader pid: {pid}",
-                            pid=os.getpid(),
-                        )
 
+                # We want only one worker to run repo watchers
+                # (otherwise for each new commit, we will publish multiple updates via pub/sub).
+                # leadership is determined by the first worker to obtain a lock
+                self.leadership_lock = NamedLock(
+                    opal_server_config.LEADER_LOCK_FILE_PATH
+                )
+                async with self.leadership_lock:
+                    # only one worker gets here, the others block. in case the leader worker
+                    # is terminated, another one will obtain the lock and become leader.
+                    logger.info(
+                        "leadership lock acquired, leader pid: {pid}",
+                        pid=os.getpid(),
+                    )
+
+                    if opal_server_config.SCOPES:
+                        await load_scopes(self._scopes)
+                        await schedule_sync_all_scopes(self._scopes)
+
+                    if self._init_policy_watcher:
                         # bind data updater publishers to the leader worker
                         asyncio.create_task(
                             DataUpdatePublisher.mount_and_start_polling_updates(
@@ -357,8 +356,8 @@ class OpalServer:
                             )
                         )
 
-                        # init policy watcher
                         if self.watcher is None:
+                            # init policy watcher
                             clone_path_finder = RepoClonePathFinder(
                                 base_clone_path=opal_server_config.POLICY_REPO_CLONE_PATH,
                                 clone_subdirectory_prefix=opal_server_config.POLICY_REPO_CLONE_FOLDER_PREFIX,

@@ -253,13 +253,6 @@ class OpalServerConfig(Confi):
         description="Set if OPAL server should enable tracing with datadog APM",
     )
 
-    SERVER_ROLE = confi.enum(
-        "SERVER_ROLE",
-        ServerRole,
-        default=ServerRole.Primary,
-        description="Server is leader or follower",
-    )
-
     SCOPES = confi.bool("SCOPES", default=False)
 
     REDIS_URL = confi.str("REDIS_URL", default="redis://localhost")
