@@ -348,6 +348,9 @@ class OpalServer:
                         await load_scopes(self._scopes)
                         await schedule_sync_all_scopes(self._scopes)
 
+                    if self.broadcast_keepalive is not None:
+                        self.broadcast_keepalive.start()
+
                     if self._init_policy_watcher:
                         # bind data updater publishers to the leader worker
                         asyncio.create_task(
@@ -382,8 +385,6 @@ class OpalServer:
 
                         # running the watcher, and waiting until it stops (until self.watcher.signal_stop() is called)
                         async with self.watcher:
-                            if self.broadcast_keepalive is not None:
-                                self.broadcast_keepalive.start()
                             await self.watcher.wait_until_should_stop()
 
                 if (
