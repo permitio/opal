@@ -10,7 +10,9 @@ _LOG_FORMAT_WITH_PID = "<green>{time}</green> | {process} | <blue>{name: <40}</b
 
 
 class OpalCommonConfig(Confi):
-    ALLOWED_ORIGINS = confi.list("ALLOWED_ORIGINS", ["*"])
+    ALLOWED_ORIGINS = confi.list(
+        "ALLOWED_ORIGINS", ["*"], description="List of allowed origins for CORS"
+    )
     # Process name to show in logs - Not confi-controlable on purpose
     PROCESS_NAME = ""
     # Logging
@@ -23,14 +25,23 @@ class OpalCommonConfig(Confi):
             if LOG_FORMAT_INCLUDE_PID
             else _LOG_FORMAT_WITHOUT_PID
         ),
+        description="The format of the log messages",
     )
-    LOG_TRACEBACK = confi.bool("LOG_TRACEBACK", True)
-    LOG_DIAGNOSE = confi.bool("LOG_DIAGNOSE", True)
-    LOG_COLORIZE = confi.bool("LOG_COLORIZE", True)
-    LOG_SERIALIZE = confi.bool("LOG_SERIALIZE", False)
-    LOG_SHOW_CODE_LINE = confi.bool("LOG_SHOW_CODE_LINE", True)
+    LOG_TRACEBACK = confi.bool(
+        "LOG_TRACEBACK", True, description="Include traceback in log messages"
+    )
+    LOG_DIAGNOSE = confi.bool(
+        "LOG_DIAGNOSE", True, description="Include diagnosis in log messages"
+    )
+    LOG_COLORIZE = confi.bool("LOG_COLORIZE", True, description="Colorize log messages")
+    LOG_SERIALIZE = confi.bool(
+        "LOG_SERIALIZE", False, description="Serialize log messages"
+    )
+    LOG_SHOW_CODE_LINE = confi.bool(
+        "LOG_SHOW_CODE_LINE", True, description="Show code line in log messages"
+    )
     #  - log level
-    LOG_LEVEL = confi.str("LOG_LEVEL", "INFO")
+    LOG_LEVEL = confi.str("LOG_LEVEL", "INFO", description="The log level to show")
     #  - Which modules should be logged
     LOG_MODULE_EXCLUDE_LIST = confi.list(
         "LOG_MODULE_EXCLUDE_LIST",
@@ -38,9 +49,12 @@ class OpalCommonConfig(Confi):
             "uvicorn",
             # NOTE: the env var LOG_MODULE_EXCLUDE_OPA affects this list
         ],
+        description="List of modules to exclude from logging",
     )
     LOG_MODULE_INCLUDE_LIST = confi.list(
-        "LOG_MODULE_INCLUDE_LIST", ["uvicorn.protocols.http"]
+        "LOG_MODULE_INCLUDE_LIST",
+        ["uvicorn.protocols.http"],
+        description="List of modules to include in logging",
     )
     LOG_PATCH_UVICORN_LOGS = confi.bool(
         "LOG_PATCH_UVICORN_LOGS",
@@ -56,11 +70,21 @@ class OpalCommonConfig(Confi):
         f"opal_{PROCESS_NAME}{{time}}.log",
         description="path to save log file",
     )
-    LOG_FILE_ROTATION = confi.str("LOG_FILE_ROTATION", "250 MB")
-    LOG_FILE_RETENTION = confi.str("LOG_FILE_RETENTION", "10 days")
-    LOG_FILE_COMPRESSION = confi.str("LOG_FILE_COMPRESSION", None)
-    LOG_FILE_SERIALIZE = confi.str("LOG_FILE_SERIALIZE", True)
-    LOG_FILE_LEVEL = confi.str("LOG_FILE_LEVEL", "INFO")
+    LOG_FILE_ROTATION = confi.str(
+        "LOG_FILE_ROTATION", "250 MB", description="Log file rotation size"
+    )
+    LOG_FILE_RETENTION = confi.str(
+        "LOG_FILE_RETENTION", "10 days", description="Log file retention time"
+    )
+    LOG_FILE_COMPRESSION = confi.str(
+        "LOG_FILE_COMPRESSION", None, description="Log file compression format"
+    )
+    LOG_FILE_SERIALIZE = confi.str(
+        "LOG_FILE_SERIALIZE", True, description="Serialize log messages in file"
+    )
+    LOG_FILE_LEVEL = confi.str(
+        "LOG_FILE_LEVEL", "INFO", description="The log level to show in file"
+    )
 
     STATISTICS_ENABLED = confi.bool(
         "STATISTICS_ENABLED",
