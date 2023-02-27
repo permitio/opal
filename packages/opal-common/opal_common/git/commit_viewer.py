@@ -113,15 +113,16 @@ def has_extension(f: VersionedFile, extensions: Optional[List[str]] = None) -> b
 def find_ignore_match(
     maybe_path: Path, bundle_ignore: Optional[List[str]]
 ) -> Optional[str]:
-    """Determines the ignore glob path, if any, which matches the given file's
+    """Determines the ignored glob path, if any, which matches the given file's
     path.
 
     Returns the matched glob path rather than a binary decision of
     whether there is a match to enable better logging in the case of
     matched paths in manifests.
     """
-    if bundle_ignore != None:
+    if bundle_ignore is not None:
         path = Path(maybe_path)
+
         for ignore in bundle_ignore:
             if path.match(ignore):
                 return ignore
