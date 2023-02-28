@@ -201,12 +201,17 @@ class Worker:
         scopes = await self._scopes.all()
 
         already_fetched = set()
+
         for scope in scopes:
-            if scope.policy.poll_updates and scope.policy.url not in already_fetched:
+            if scope.policy.poll_updates:
                 logger.info(
                     f"triggering sync_scope for scope {scope.scope_id} (remote: {scope.policy.url})"
                 )
-                sync_scope.delay(scope.scope_id, force_fetch=True)
+                sync_scope.delay(
+                    scope.scope_id,
+                    # No need to fetch the same repo twice
+                    force_fetch=scope.policy.url not in already_fetched,
+                )
                 already_fetched.add(scope.policy.url)
 
 

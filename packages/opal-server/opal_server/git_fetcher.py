@@ -80,7 +80,7 @@ class RepoInterface:
             return True
         except KeyError:
             return False
-    
+
     @staticmethod
     def get_local_branch(repo: Repository, branch: str) -> Optional[pygit2.Reference]:
         try:
@@ -172,14 +172,12 @@ class GitPolicyFetcher(PolicyFetcher):
             )
             repo = self._get_valid_repo_at(str(self._repo_path))
             if repo is not None:
-                if not (
-                    await self._should_fetch(
-                        repo, hinted_hash=hinted_hash, force_fetch=force_fetch
-                    )
-                ):
-                    logger.info("Skipping fetch")
-                    return
-                await self._fetch_and_notify_on_changes(repo)
+                should_fetch = await self._should_fetch(
+                    repo, hinted_hash=hinted_hash, force_fetch=force_fetch
+                )
+                await self._fetch_and_notify_on_changes(
+                    repo, skip_fetch=not should_fetch
+                )
                 return
             else:
                 # repo dir exists but invalid -> we must delete the directory
@@ -253,10 +251,15 @@ class GitPolicyFetcher(PolicyFetcher):
         # by default, we try to avoid re-fetching the repo for performance
         return False
 
-    async def _fetch_and_notify_on_changes(self, repo: Repository):
-        logger.info(f"Fetching remote: {self._remote} ({self._source.url})")
-        await run_sync(repo.remotes[self._remote].fetch, callbacks=self._auth_callbacks)
-        logger.info(f"Fetch completed: {self._source.url}")
+    async def _fetch_and_notify_on_changes(
+        self, repo: Repository, skip_fetch: bool = False
+    ):
+        if not skip_fetch:
+            logger.info(f"Fetching remote: {self._remote} ({self._source.url})")
+            await run_sync(
+                repo.remotes[self._remote].fetch, callbacks=self._auth_callbacks
+            )
+            logger.info(f"Fetch completed: {self._source.url}")
 
         local_branch = RepoInterface.get_local_branch(repo, self._source.branch)
         old_revision = local_branch.target.hex
@@ -269,7 +272,7 @@ class GitPolicyFetcher(PolicyFetcher):
         await self.callbacks.on_update(old_revision, new_revision)
 
         # Bring forward local branch (a bit like "pull"), so we won't detect changes again
-        local_branch.set_target(new_revision) 
+        local_branch.set_target(new_revision)
 
     def _get_current_branch_head(self) -> str:
         repo = Repository(str(self._repo_path))
