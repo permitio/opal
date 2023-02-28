@@ -80,6 +80,13 @@ class RepoInterface:
             return True
         except KeyError:
             return False
+    
+    @staticmethod
+    def get_local_branch(repo: Repository, branch: str) -> Optional[pygit2.Reference]:
+        try:
+            return repo.lookup_reference(f"refs/heads/{branch}")
+        except KeyError:
+            return None
 
     @staticmethod
     def get_commit_hash(repo: Repository, branch: str, remote: str) -> Optional[str]:
@@ -247,12 +254,12 @@ class GitPolicyFetcher(PolicyFetcher):
         return False
 
     async def _fetch_and_notify_on_changes(self, repo: Repository):
-        old_revision = RepoInterface.get_commit_hash(
-            repo, self._source.branch, self._remote
-        )
         logger.info(f"Fetching remote: {self._remote} ({self._source.url})")
         await run_sync(repo.remotes[self._remote].fetch, callbacks=self._auth_callbacks)
         logger.info(f"Fetch completed: {self._source.url}")
+
+        local_branch = RepoInterface.get_local_branch(repo, self._source.branch)
+        old_revision = local_branch.target.hex
         new_revision = RepoInterface.get_commit_hash(
             repo, self._source.branch, self._remote
         )
@@ -260,6 +267,9 @@ class GitPolicyFetcher(PolicyFetcher):
             logger.error(f"Did not find target branch on remote: {self._source.branch}")
             return
         await self.callbacks.on_update(old_revision, new_revision)
+
+        # Bring forward local branch (a bit like "pull"), so we won't detect changes again
+        local_branch.set_target(new_revision) 
 
     def _get_current_branch_head(self) -> str:
         repo = Repository(str(self._repo_path))
