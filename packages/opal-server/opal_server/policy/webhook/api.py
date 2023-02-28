@@ -37,21 +37,34 @@ def init_git_webhook_router(
 
 
 def is_matching_webhook_url(input_url: str, urls: List[str], names: List[str]) -> bool:
-    parsed = urlparse(input_url)
-    netloc = parsed.hostname
+    def normalize_url(url: str) -> str:
+        parsed = urlparse(input_url)
+        netloc = parsed.hostname
 
-    if parsed.port:
-        netloc = f"{parsed.hostname}:{parsed.port}"
+        if parsed.port:
+            netloc = f"{netloc}:{parsed.port}"
 
-    normalized = SplitResult(
-        scheme=parsed.scheme, netloc=netloc, path=parsed.path, query="", fragment=""
-    )
+        netloc = netloc.removeprefix("ssh.")
+        path = parsed.path.replace("/_git", "")
+        path = path.removesuffix(".git")
+
+        return str(
+            SplitResult(
+                scheme="",
+                netloc=netloc,
+                path=path,
+                query="",
+                fragment="",
+            ).geturl()
+        )
 
     if urls:
-        return str(normalized.geturl()) in urls
+        return (input_url in urls) or (
+            normalize_url(input_url) in [normalize_url(url) for url in urls]
+        )
     else:
-        repo_name_from_path = normalized.path.removeprefix("/").removesuffix(".git")
-        return repo_name_from_path in names
+        input_url = normalize_url(input_url)
+        return any([name in input_url for name in names])
 
 
 def get_webhook_router(
@@ -78,7 +91,6 @@ def get_webhook_router(
 
         # TODO: breaking change: change "repo_url" to "remote_url" in next major
         if source_type == PolicySourceTypes.Git:
-
             # Enforce branch matching (webhook to config) if turned on via config
             if (
                 opal_server_config.POLICY_REPO_WEBHOOK_ENFORCE_BRANCH
