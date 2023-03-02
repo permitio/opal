@@ -146,7 +146,7 @@ but a general multi process read/write sync challenge. If it is an issue for you
 - Create a clone source where clients get their base data set, instead of working directly with the rapidly changing data source (this can be another OPA+OPAL instance for example - almost like a master node)
 - Temporarily lock access to the database for writing until the client is ready - (reader/writer lock pattern)
 
-#### I'm configuring OPAL to run with a kafka backbone. We have an existing kafka setup using SASL authentication. I can't see any examples for configuring this with authentication. What's the best way to achieve this?
+### I'm configuring OPAL to run with a kafka backbone. We have an existing kafka setup using SASL authentication. I can't see any examples for configuring this with authentication. What's the best way to achieve this?
 
 <div
   style={{
@@ -166,7 +166,7 @@ but a general multi process read/write sync challenge. If it is an issue for you
   Security
 </div>
 
-### Answer:
+#### Answer:
 
 At a glance it seems the current broadcaster Kafka backend doesn't support SASL. You can read more [here](https://github.com/permitio/broadcaster/blob/master/broadcaster/_backends/kafka.py).
 Unless there is a way to pass this configuration via URL to the underlying Kafka consumer.
@@ -209,3 +209,54 @@ That being said, you can technically use `http.send()` to trigger an update - as
 #### Answer:
 
 [See discussion #385 on Github](https://github.com/permitio/opal/discussions/385)
+
+### I have generated a lot of permission data (e.g. 1.3mln records (or ~150MB)) and it causes the OPAL-client container memory to inflate to more than 2GB, and OPA crashes. Could you please advise what could be done to fix this?
+
+I have started the containers with configuration similar to docker-compose-example, with corresponding data config source:
+
+```
+- OPAL_DATA_CONFIG_SOURCES={
+  "config":{
+    "entries":[
+      {
+        "url":"http://host.docker.internal:8000/permissions.json",
+        "topics":["permissions"],
+        "dst_path":"/course_permissions"
+      }
+    ]
+  }
+}
+```
+
+Loading this data itself causes the OPAL client container to consume 2.3 GBs of memory (according to Docker).
+
+Then I have created a policy file with a single policy that filters the records based on `input.userId`.
+
+Evaluating that filtering takes random time from 1 minute to 10 seconds, and sometimes (1 time out of 10) crashes the OPA process.
+See the screenshot for the time difference between request processing.
+
+![screenshot-1](/img/FAQ-1.png)
+
+I understand that this might not be a very optimal data structure, but still not really the performance I'd expect.
+
+#### Answer
+
+These are most likely (>95%) issues with OPA not OPAL, as OPA is running with the OPAL-client container.
+
+OPA is known to bloat loaded data in memory - as it loads it into objects; You can improve that by changing the data schema and policy structure.
+High volume of data, and inefficient structure will lead to bad performance. A few suggestions to what to try next:
+
+**1. Validate that the issue is OPA and not OPAL - you can do so by one of:**
+
+- check which process is the one with the extensive memory consumption within the container
+- loading the data manually into OPA regardless of OPAL
+- Running the OPA agent standalone to the client
+
+**2. Check if you actually need all the data - most often the data needed for authorization is a very small subset (often just ids and their relationships)**
+
+- you can save a lot of space by minimizing the data
+- once you decide on the subset you actually need; you can do so on the fly using a custom data fetcher, or by adding an API service to perform the transformation.
+
+**3. Increase the container / machine resource limits (memory / CPU)**
+
+**4. If you do need all of the data - consider sharding it between multiple OPA agents**
