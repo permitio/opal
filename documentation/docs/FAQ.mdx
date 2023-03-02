@@ -221,3 +221,58 @@ from the policy itself. Instead, the data source or the service mutating it are 
 handling the updates in the background - independent of any policy queries.
 
 That being said, you can technically use `http.send()` to trigger an update - as the API trigger is restful.
+
+## Question
+
+### I have generated 1.3mln records (or ~150MB) of "permissions" data (zipped and uploaded to g-drive), and served this file as an input data with a python http server.
+
+I have started the containers with configuration similar to docker-compose-example, with corresponding data config source:
+
+```
+- OPAL_DATA_CONFIG_SOURCES={
+  "config":{
+    "entries":[
+      {
+        "url":"http://host.docker.internal:8000/permissions.json",
+        "topics":["permissions"],
+        "dst_path":"/course_permissions"
+      }
+    ]
+  }
+}
+```
+
+Loading this data itself causes the OPAL client container to consume 2.3 GBs of memory (according to Docker).
+
+Then I have created a policy file with a single policy that filters the records based on `input.userId`.
+
+Evaluating that filtering takes random time from 1 minute to 10 seconds, and sometimes (1 time out of 10) crashes the OPA process.
+See the screenshot for the time difference between request processing.
+
+![screenshot-1](/img/FAQ-1.png)
+
+I understand that this might not be a very optimal data structure, but still not really the performance I'd expect.
+
+**Could you please advice what could be done to improve or is it just like how it works?**
+
+## Answer
+
+These are most likely (>95%) issues with OPA not OPAL, as OPA is running with the OPAL-client container.
+
+OPA is known to bloat loaded data in memory - as it loads it into objects; You can improve that by changing the data schema and policy structure.
+High volume of data, and inefficient structure will lead to bad performance. A few suggestions to what to try next:
+
+**1. Validate that the issue is OPA and not OPAL - you can do so by one of:**
+
+- check which process is the one with the extensive memory consumption within the container
+- loading the data manually into OPA regardless of OPAL
+- Running the OPA agent standalone to the client
+
+**2. Check if you actually need all the data - most often the data needed for authorization is a very small subset (often just ids and their relationships)**
+
+- you can save a lot of space by minimizing the data
+- once you decide on the subset you actually need; you can do so on the fly using a custom data fetcher, or by adding an API service to perform the transformation.
+
+**3. Increase the container / machine resource limits (memory / CPU**
+
+**4. If you do need all of the data - consider sharding it between multiple OPA agents**
