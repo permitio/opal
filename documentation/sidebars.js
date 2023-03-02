@@ -237,6 +237,11 @@ const sidebars = {
             },
           ],
         },
+        {
+          type: "doc",
+          id: "getting-started/configuration",
+          label: "Configuration",
+        },
       ],
     },
     {
