@@ -210,8 +210,7 @@ That being said, you can technically use `http.send()` to trigger an update - as
 
 [See discussion #385 on Github](https://github.com/permitio/opal/discussions/385)
 
-
-### I have generated 1.3mln records (or ~150MB) of "permissions" data (zipped and uploaded to g-drive), and served this file as an input data with a python http server.
+### I have generated a lot of permission data (e.g. 1.3mln records (or ~150MB)) and it causes the OPAL-client container memory to inflate to more than 2GB, and OPA crashes. Could you please advise what could be done to fix this?
 
 I have started the containers with configuration similar to docker-compose-example, with corresponding data config source:
 
@@ -240,8 +239,6 @@ See the screenshot for the time difference between request processing.
 
 I understand that this might not be a very optimal data structure, but still not really the performance I'd expect.
 
-**Could you please advice what could be done to improve or is it just like how it works?**
-
 #### Answer
 
 These are most likely (>95%) issues with OPA not OPAL, as OPA is running with the OPAL-client container.
@@ -260,6 +257,6 @@ High volume of data, and inefficient structure will lead to bad performance. A f
 - you can save a lot of space by minimizing the data
 - once you decide on the subset you actually need; you can do so on the fly using a custom data fetcher, or by adding an API service to perform the transformation.
 
-**3. Increase the container / machine resource limits (memory / CPU**
+**3. Increase the container / machine resource limits (memory / CPU)**
 
 **4. If you do need all of the data - consider sharding it between multiple OPA agents**
