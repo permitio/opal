@@ -51,7 +51,7 @@ class OpalStatistics:
 
     Args:
         endpoint:
-        The pub/sub server endpoint that allowes us to subscribe to the stats channel on the server side
+        The pub/sub server endpoint that allows us to subscribe to the stats channel on the server side
     """
 
     def __init__(self, endpoint):
@@ -244,7 +244,7 @@ class OpalStatistics:
         """
         if rpc_id not in self._rpc_id_to_client_id:
             logger.debug(
-                f"Statictics.remove_client() got unknown rpc id: {rpc_id} (probably broadcaster)"
+                f"Statistics.remove_client() got unknown rpc id: {rpc_id} (probably broadcaster)"
             )
             return
 
@@ -267,11 +267,13 @@ class OpalStatistics:
         # publish removed client so each server worker and server instance would get it
         if publish:
             logger.info(
-                "Publish rpc_id={rpc_id} to be removed from statistics", rpc_id=rpc_id
+                "Publish rpc_id={rpc_id} to be removed from statistics",
+                rpc_id=rpc_id,
             )
             asyncio.create_task(
                 self._endpoint.publish(
-                    [opal_common_config.STATISTICS_REMOVE_CLIENT_CHANNEL], rpc_id
+                    [opal_common_config.STATISTICS_REMOVE_CLIENT_CHANNEL],
+                    rpc_id,
                 )
             )
 

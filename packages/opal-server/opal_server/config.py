@@ -4,7 +4,8 @@ from enum import Enum
 
 from opal_common.authentication.types import EncryptionKeyFormat
 from opal_common.confi import Confi
-from opal_common.schemas.data import ServerDataSourceConfig
+from opal_common.schemas.data import DEFAULT_DATA_TOPIC, ServerDataSourceConfig
+from opal_common.schemas.webhook import GitWebhookRequestParams
 
 confi = Confi(prefix="OPAL_")
 
@@ -158,7 +159,7 @@ class OpalServerConfig(Confi):
 
     # Data updates
     ALL_DATA_TOPIC = confi.str(
-        "ALL_DATA_TOPIC", "policy_data", description="Top level topic for data"
+        "ALL_DATA_TOPIC", DEFAULT_DATA_TOPIC, description="Top level topic for data"
     )
     ALL_DATA_ROUTE = confi.str("ALL_DATA_ROUTE", "/policy-data")
     ALL_DATA_URL = confi.str(
@@ -196,14 +197,33 @@ class OpalServerConfig(Confi):
         description="URL to trigger data update events",
     )
 
-    # github webhook
+    # Git service webhook (Default is Github)
     POLICY_REPO_WEBHOOK_SECRET = confi.str("POLICY_REPO_WEBHOOK_SECRET", None)
+    # The topic the event of the webhook will publish
     POLICY_REPO_WEBHOOK_TOPIC = "webhook"
+    # Should we check the incoming webhook mentions the branch by name- and not just in the URL
+    POLICY_REPO_WEBHOOK_ENFORCE_BRANCH: bool = confi.bool(
+        "POLICY_REPO_WEBHOOK_ENFORCE_BRANCH", False
+    )
+    # Parameters controlling how the incoming webhook should be read and processed
+    POLICY_REPO_WEBHOOK_PARAMS: GitWebhookRequestParams = confi.model(
+        "POLICY_REPO_WEBHOOK_PARAMS",
+        GitWebhookRequestParams,
+        {
+            "secret_header_name": "x-hub-signature-256",
+            "secret_type": "signature",
+            "secret_parsing_regex": "sha256=(.*)",
+            "event_header_name": "X-GitHub-Event",
+            "event_request_key": None,
+            "push_event_value": "push",
+        },
+    )
 
     POLICY_REPO_POLLING_INTERVAL = confi.int("POLICY_REPO_POLLING_INTERVAL", 0)
 
     ALLOWED_ORIGINS = confi.list("ALLOWED_ORIGINS", ["*"])
     OPA_FILE_EXTENSIONS = (".rego", ".json")
+    BUNDLE_IGNORE = confi.list("BUNDLE_IGNORE", [])
 
     NO_RPC_LOGS = confi.bool("NO_RPC_LOGS", True)
 
@@ -221,7 +241,9 @@ class OpalServerConfig(Confi):
     )
 
     SERVER_PORT = confi.int(
-        "SERVER_PORT", 7002, description="(if run via CLI)  Port for the server to bind"
+        "SERVER_PORT",
+        7002,
+        description="(if run via CLI)  Port for the server to bind",
     )
 
     # optional APM tracing with datadog
@@ -253,7 +275,9 @@ class OpalServerConfig(Confi):
     )
 
     SERVER_URL = confi.str(
-        "SERVER_URL", default="http://localhost:7002", description="OPAL Server URL"
+        "SERVER_URL",
+        default="http://localhost:7002",
+        description="OPAL Server URL",
     )
 
     WORKER_TOKEN = confi.str(

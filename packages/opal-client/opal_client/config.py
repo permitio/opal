@@ -1,12 +1,12 @@
 from enum import Enum
 
 from opal_client.opa.options import OpaServerOptions
-from opal_client.policy_store.options import PolicyStoreConnRetryOptions
+from opal_client.policy.options import PolicyConnRetryOptions
 from opal_client.policy_store.schemas import PolicyStoreTypes
 from opal_common.confi import Confi, confi
 from opal_common.config import opal_common_config
 from opal_common.fetcher.providers.http_fetch_provider import HttpFetcherConfig
-from opal_common.schemas.data import UpdateCallback
+from opal_common.schemas.data import DEFAULT_DATA_TOPIC, UpdateCallback
 
 
 # Opal Client general configuration -------------------------------------------
@@ -28,14 +28,26 @@ class OpalClientConfig(Confi):
         None,
         description="the authentication (bearer) token OPAL client will use to authenticate against the policy store (i.e: OPA agent)",
     )
-    POLICY_STORE_CONN_RETRY = confi.model(
+    POLICY_STORE_CONN_RETRY: PolicyConnRetryOptions = confi.model(
         "POLICY_STORE_CONN_RETRY",
-        PolicyStoreConnRetryOptions,
-        {},  # defaults are being set according to PolicyStoreConnRetryOptions pydantic definitions (see class)
-        description="retry options when connecting to the policy store",
+        PolicyConnRetryOptions,
+        # defaults are being set according to PolicyStoreConnRetryOptions pydantic definitions (see class)
+        {},
+        description="retry options when connecting to the policy store (i.e. the agent that handles the policy, e.g. OPA)",
     )
-    # create an instance of a policy store upon load
+    POLICY_UPDATER_CONN_RETRY: PolicyConnRetryOptions = confi.model(
+        "POLICY_UPDATER_CONN_RETRY",
+        PolicyConnRetryOptions,
+        {
+            "wait_strategy": "random_exponential",
+            "max_wait": 10,
+            "attempts": 5,
+            "wait_time": 1,
+        },
+        description="retry options when connecting to the policy source (e.g. the policy bundle server)",
+    )
 
+    # create an instance of a policy store upon load
     def load_policy_store():
         from opal_client.policy_store.policy_store_client_factory import (
             PolicyStoreClientFactory,
@@ -136,7 +148,9 @@ class OpalClientConfig(Confi):
     )
 
     DATA_TOPICS = confi.list(
-        "DATA_TOPICS", ["policy_data"], description="Data topics to subscribe to"
+        "DATA_TOPICS",
+        [DEFAULT_DATA_TOPIC],
+        description="Data topics to subscribe to",
     )
 
     DEFAULT_DATA_SOURCES_CONFIG_URL = confi.str(
@@ -190,7 +204,9 @@ class OpalClientConfig(Confi):
     )
 
     OPAL_CLIENT_STAT_ID = confi.str(
-        "OPAL_CLIENT_STAT_ID", None, description="Unique client statistics identifier"
+        "OPAL_CLIENT_STAT_ID",
+        None,
+        description="Unique client statistics identifier",
     )
 
     OPA_HEALTH_CHECK_POLICY_PATH = "opa/healthcheck/opal.rego"

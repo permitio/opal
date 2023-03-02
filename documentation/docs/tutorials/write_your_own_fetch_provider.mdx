@@ -291,7 +291,7 @@ async def __aexit__(self, exc_type=None, exc_val=None, tb=None):
 
 #### Implementing `_fetch_` and `_process_`
 
-Providers implement a `_fetch_()` method to access and fetch data from the data-source. They akso optionally implement a `_process_()` method to mutate the data before returning it (for example converting a JSON string to an actual object).
+Providers implement a `_fetch_()` method to access and fetch data from the data-source. They also optionally implement a `_process_()` method to mutate the data before returning it (for example converting a JSON string to an actual object).
 
 The `_fetch_()` and `_process_()` method can access the fields available from `self._event` (the [FetchEvent](https://github.com/permitio/opal/blob/master/packages/opal-common/opal_common/fetcher/events.py#L12)):
 

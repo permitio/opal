@@ -36,6 +36,10 @@ disconnection** from the server etc.
 The data sources specified in the server configuration must always return a complete and up-to-date picture.
 In our example `docker-compose.yml` file, the server is configured to return these data sources directives to the client.
 
+Each data source entry has `topics` to help control which clients should process it.
+The default topic is `"policy_data"` and is used as a default in both the client (for subscription) and the server (for publishing).
+(If publishing to another topic - make sure the client is subscribed to it by setting the `OPAL_DATA_TOPICS` envar)
+
 This is what it looks like:
 
 ```yml

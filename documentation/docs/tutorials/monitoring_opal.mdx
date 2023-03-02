@@ -1,0 +1,22 @@
+---
+sidebar_position: 11
+title: Monitoring OPAL
+---
+
+# Monitoring OPAL
+
+There are multiple ways you can monitor your OPAL deployment:
+
+- **Logs** - Using the structured logs outputted to stderr by both the OPAL-servers and OPAL-clients
+- [**Health-checks**](/tutorials/healthcheck_policy_and_update_callbacks) - Using the health-checks feature (You can query each OPAL client health-check / or even create a specific Rego policy to query which uses that health-check state)
+- [**Callbacks**](/tutorials/healthcheck_policy_and_update_callbacks#-data-update-callbacks) - Using the callback webhooks feature - having OPAL-clients report their updates
+- **Statistics** - Using the built-in statistics feature in OPAL (See below)
+
+## OPAL Statistics
+
+By enabling `OPAL_STATISTICS_ENABLED=true` (on both servers and clients), the OPAL-Server would start maintaining a unified state fo all the clients and which topics they've subscribed to.
+The state can then be retrieved as a JSON object by calling the `/statistics` api route on the server
+
+# Code Reference:
+
+- [opal_server/statistics.py](https://github.com/permitio/opal/blob/master/packages/opal-server/opal_server/statistics.py)
