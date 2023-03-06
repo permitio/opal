@@ -91,15 +91,18 @@ ValueT = TypeVar("ValueT")
 class Confi:
     """Interface to create typed configuration entries."""
 
-    def __init__(self, prefix=None, is_model=True) -> None:
+    def __init__(self, prefix=None, is_model=True, strict_mode=True) -> None:
         """
 
         Args:
             prefix (str, optional): Prefix to add to all env-var keys. Defaults to self.ENV_PREFIX (which defaults to "").
             is_model (bool, optional): Should Confi.<type> return a ConfiEntry (the default, True) or should it evaluate env settings immediately and return a value (False)
+            is_strict (bool|str, optional):  Should Confi raise an exception if parsing of a value fails. If False as long as there's a default value provided Confi would continue.
+                                                if a string is provided; it would be used to look for a config value (e.g. env-var) that will had the boolean value. The name must be part of the members of the class- and not a delayed entry - ideally the first one.
         """
         self._is_model = is_model
         self._prefix = prefix
+        self._is_strict = strict_mode
         # counter of created entries (to track order)
         self._counter = 0
         # entries to be evaluated
@@ -113,7 +116,7 @@ class Confi:
         members = sorted(
             inspect.getmembers(self, self._is_entry), key=self._get_entry_index
         )
-        # eval class entries into values (by order of defintion - same order as in the config class lines)
+        # eval class entries into values (by order of definition - same order as in the config class lines)
         for name, entry in members:
             # unwrap delayed entries
             if isinstance(entry, ConfiDelay):
@@ -128,6 +131,11 @@ class Confi:
                 value = self._eval_and_save_entry(name, entry)
                 # save the value into the entry to be used as default for CLI
                 entry.value = value
+
+                # check if this is the indicated strict mode parameter
+                # set strict mode according to it,if it is
+                if name == strict_mode:
+                    self._is_strict = value
 
         # load (all calls inside should produce a real value)
         self._is_model = False
@@ -219,9 +227,15 @@ class Confi:
         except ValidationError as err:
             logger = logging.getLogger()
             logger.error(f"Failed parsing config key- {key}")
-            raise
+            if self._is_strict:
+                raise
+            else:
+                return default
         except:
-            raise
+            if self._is_strict:
+                raise
+            else:
+                return default
         return res
 
     def __repr__(self) -> str:

@@ -21,6 +21,8 @@ class ServerRole(str, Enum):
 
 
 class OpalServerConfig(Confi):
+    # Control how the reset of the entires are parsed
+    IS_STRICT_CONFIG = confi.bool("IS_STRICT_CONFIG", False)
     # ws server
     OPAL_WS_LOCAL_URL = confi.str("WS_LOCAL_URL", "ws://localhost:7002/ws")
     OPAL_WS_TOKEN = confi.str("WS_TOKEN", "THIS_IS_A_DEV_SECRET")
@@ -159,7 +161,9 @@ class OpalServerConfig(Confi):
 
     # Data updates
     ALL_DATA_TOPIC = confi.str(
-        "ALL_DATA_TOPIC", DEFAULT_DATA_TOPIC, description="Top level topic for data"
+        "ALL_DATA_TOPIC",
+        DEFAULT_DATA_TOPIC,
+        description="Top level topic for data",
     )
     ALL_DATA_ROUTE = confi.str("ALL_DATA_ROUTE", "/policy-data")
     ALL_DATA_URL = confi.str(
@@ -285,4 +289,4 @@ class OpalServerConfig(Confi):
     )
 
 
-opal_server_config = OpalServerConfig(prefix="OPAL_")
+opal_server_config = OpalServerConfig(prefix="OPAL_", strict_mode="IS_STRICT_CONFIG")

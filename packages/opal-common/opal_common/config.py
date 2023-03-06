@@ -10,6 +10,8 @@ _LOG_FORMAT_WITH_PID = "<green>{time}</green> | {process} | <blue>{name: <40}</b
 
 
 class OpalCommonConfig(Confi):
+    # Control how the reset of the entires are parsed
+    IS_STRICT_CONFIG = confi.bool("IS_STRICT_CONFIG", False)
     ALLOWED_ORIGINS = confi.list(
         "ALLOWED_ORIGINS", ["*"], description="List of allowed origins for CORS"
     )
@@ -155,4 +157,4 @@ class OpalCommonConfig(Confi):
     AUTH_JWT_ISSUER = confi.str("AUTH_JWT_ISSUER", f"https://opal.ac/")
 
 
-opal_common_config = OpalCommonConfig(prefix="OPAL_")
+opal_common_config = OpalCommonConfig(prefix="OPAL_", strict_mode="IS_STRICT_CONFIG")

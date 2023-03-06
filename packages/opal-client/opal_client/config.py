@@ -18,6 +18,8 @@ class OpaLogFormat(str, Enum):
 
 
 class OpalClientConfig(Confi):
+    # Control how the reset of the entires are parsed
+    IS_STRICT_CONFIG = confi.bool("IS_STRICT_CONFIG", False)
     # opa client (policy store) configuration
     POLICY_STORE_TYPE = confi.enum(
         "POLICY_STORE_TYPE", PolicyStoreTypes, PolicyStoreTypes.OPA
@@ -223,4 +225,4 @@ class OpalClientConfig(Confi):
             )
 
 
-opal_client_config = OpalClientConfig(prefix="OPAL_")
+opal_client_config = OpalClientConfig(prefix="OPAL_", strict_mode="IS_STRICT_CONFIG")
