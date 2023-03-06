@@ -31,7 +31,7 @@ from opal_server.data.api import init_data_updates_router
 from opal_server.data.data_update_publisher import DataUpdatePublisher
 from opal_server.loadlimiting import init_loadlimit_router
 from opal_server.policy.bundles.api import router as bundles_router
-from opal_server.policy.watcher import setup_watcher_task, trigger_repo_watcher_pull
+from opal_server.policy.watcher import setup_watcher_task
 from opal_server.policy.watcher.task import PolicyWatcherTask
 from opal_server.policy.webhook.api import init_git_webhook_router
 from opal_server.publisher import setup_broadcaster_keepalive_task
@@ -389,18 +389,13 @@ class OpalServer:
 
                             self.watcher = setup_watcher_task(
                                 self.publisher,
+                                self.pubsub.endpoint,
                                 remote_source_url=opal_server_config.POLICY_REPO_URL,
                                 ssh_key=opal_server_config.POLICY_REPO_SSH_KEY,
                                 branch_name=opal_server_config.POLICY_REPO_MAIN_BRANCH,
                                 clone_path_finder=clone_path_finder,
                             )
 
-                        # the leader listens to the webhook topic (webhook api route can be hit randomly in all workers)
-                        # and triggers the watcher to check for changes in the tracked upstream remote.
-                        await self.pubsub.endpoint.subscribe(
-                            [opal_server_config.POLICY_REPO_WEBHOOK_TOPIC],
-                            partial(trigger_repo_watcher_pull, self.watcher),
-                        )
                         # running the watcher, and waiting until it stops (until self.watcher.signal_stop() is called)
                         async with self.watcher:
                             if self.broadcast_keepalive is not None:
