@@ -1,0 +1,47 @@
+---
+sidebar_position: 2
+slug: /release-updates
+title: What's new in OPAL
+---
+
+## OPAL 0.5.0 -
+
+This release contains several small fixes and improvements.
+
+#### New Features - Bundle Ignore
+
+Added support for omitting files in the bundle produced by opal-server. Use the `OPAL_BUNDLE_IGNORE` environment
+variable to specify a list of comma separated glob paths which if matched will ignore a file from being included in
+the policy bundle.
+
+#### Bug fix - [Bitbucket Webhook](https://github.com/permitio/opal/issues/381):
+
+When sending a webhook from Bitbucket to the OPAL server with an secret configured then the the response on the
+request is an 401, no secret was provided. This is unexpected as the configuration looks correct.
+
+#### Bug fix - [Configuration default casting](https://github.com/permitio/opal/pull/371)
+
+#### Improve usability of topics in data updates
+
+1. Have the default topic (policy_data) as a default value for `DataSourceEntry.topics` - To prevent users who have left
+   this empty before from experiencing breaking changes as a result of related bug fixes in `0.4.0`. This also fixes [#375](https://github.com/permitio/opal/issues/375): Uncaught server exception when posting data update without topics.
+
+2. Warn a user at realtime when published entry doesn't have topics, or when client processes data update with no matching entries
+   (this would cover what isn't covered by 1).
+
+3. Fix documentation about topics in data updates.
+
+#### CI Fixes
+
+1. Fixes broken pre commits.
+2. Install `jq` to client and server
+
+#### Documentation Fixes
+
+1.  Updated FAQ for OPAL
+2.  Update feature_request.md
+3.  Update issue templates
+4.  Bump `http-cache-semantics` from `4.1.0` to `4.1.1` in `/documentation`
+5.  Bump `eta`, `@docusaurus/core` and `@docusaurus/preset-classic` in `/documentation`
+6.  Bump `@sideway/formula` from `3.0.0` to `3.0.1` in `/documentation`
+7.  Addition of OPAL-plus

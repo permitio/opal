@@ -9,6 +9,11 @@ const sidebars = {
       label: "Welcome",
     },
     {
+      type: "doc",
+      id: "release-updates",
+      label: "Release Updates",
+    },
+    {
       type: "category",
       label: "Getting Started",
       collapsible: false,
