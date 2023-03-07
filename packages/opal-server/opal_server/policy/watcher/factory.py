@@ -1,7 +1,7 @@
 from functools import partial
 from typing import Any, List, Optional
 
-from fastapi_websocket_pubsub import Topic
+from fastapi_websocket_pubsub.pub_sub_server import PubSubEndpoint
 from opal_common.confi.confi import load_conf_if_none
 from opal_common.git.repo_cloner import RepoClonePathFinder
 from opal_common.logger import logger
@@ -15,6 +15,7 @@ from opal_server.policy.watcher.task import PolicyWatcherTask
 
 def setup_watcher_task(
     publisher: TopicPublisher,
+    pubsub_endpoint: PubSubEndpoint,
     source_type: str = None,
     remote_source_url: str = None,
     clone_path_finder: RepoClonePathFinder = None,
@@ -116,15 +117,4 @@ def setup_watcher_task(
             bundle_ignore=bundle_ignore,
         )
     )
-    return PolicyWatcherTask(watcher)
-
-
-async def trigger_repo_watcher_pull(
-    watcher: PolicyWatcherTask, topic: Topic, data: Any
-):
-    """triggers the policy watcher check for changes.
-
-    will trigger a task on the watcher's thread.
-    """
-    logger.info("webhook listener triggered")
-    watcher.trigger()
+    return PolicyWatcherTask(watcher, pubsub_endpoint)
