@@ -362,6 +362,9 @@ class OpalServer:
 
                     if self.broadcast_keepalive is not None:
                         self.broadcast_keepalive.start()
+                        if not self._init_policy_watcher:
+                            # Wait on keepalive instead to keep leadership lock acquired
+                            await self.broadcast_keepalive.wait_until_done()
 
                     if self._init_policy_watcher:
                         logger.info(
