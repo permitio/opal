@@ -95,6 +95,9 @@ class PeriodicPublisher:
             self._task = None
             logger.info(f"cancelled {self._task_name} to topic: {self._topic}")
 
+    async def wait_until_done(self):
+        await self._task
+
     async def _publish_task(self):
         while True:
             await asyncio.sleep(self._interval)
