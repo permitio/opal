@@ -103,13 +103,19 @@ The client will fetch a new policy bundle upon the following events:
 
 #### Policy bundle manifest - serving dependant policy modules
 
-The policy bundle contains a `manifest` list that contains the paths of all the modules (.rego or data.json) that are included in the bundle. The `manifest` list is important! It controls the **order** in which the OPAL client will load the policy modules into OPA.
+The policy bundle contains a `manifest` list that contains the paths of all the modules (.rego or data.json) that are included
+in the bundle. The `manifest` list is important! It controls the **order** in which the OPAL client will load the policy
+modules into OPA.
 
 OPA rego modules can have dependencies if they use the [import statement](https://www.openpolicyagent.org/docs/latest/policy-language/#imports).
 
-You can control the manifest contents and ensure the correct loading of dependent OPA modules. All you have to do is to put a `.manifest` file in the root directory of your policy git repository (like shown in [this example repo](https://github.com/permitio/opal-example-policy-repo)).
+You can control the manifest contents and ensure the correct loading of dependent OPA modules.
+All you have to do is to put a `.manifest` file in the root directory of your policy git repository
+(like shown in [this example repo](https://github.com/permitio/opal-example-policy-repo)).
 
-**The `.manifest` file is optional!!!** If there is no manifest file, OPAL will load the policy modules it finds in alphabetical order.
+:::note The `.manifest` file is optional
+If there is no manifest file, OPAL will load the policy modules it finds in alphabetical order.
+:::
 
 The format of the `.manifest` file you should adhere to:
 
@@ -122,6 +128,13 @@ The format of the `.manifest` file you should adhere to:
 - If your root `.manifest` file is at another path, you can set another value to the env var `OPAL_POLICY_REPO_MANIFEST_PATH` (either a file path, or a folder path containing a `.manifest` file).
 
 For example, if you look in the [example repo](https://github.com/permitio/opal-example-policy-repo), you would see that the `rbac.rego` module imports the `utils.rego` module (the line `import data.utils` imports the `utils` package). Therefore in the manifest, `utils.rego` appears first because it needs to be loaded into OPA before the `rbac.rego` policy is loaded (otherwise OPA will throw an exception due to the import statement failing).
+
+:::info `OPAL_BUNDLE_IGNORE`
+If you need to omit certain global path from the policy bundle, you can use the optional `OPAL_BUNDLE_IGNORE` environment variable
+to do so. It takes an array of comma separated paths. Note that double asterisks \*\* do not recursively match.
+
+See an example **[here](/getting-started/configuration#opal-server-configuration-variables)**. This is **only for OPAL version 0.5.0 and later**.
+:::
 
 #### Policy bundle API Endpoint
 
