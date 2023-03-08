@@ -274,6 +274,11 @@ const sidebars = {
     },
     {
       type: "doc",
+      id: "fetch-providers",
+      label: "Fetch Providers",
+    },
+    {
+      type: "doc",
       id: "FAQ",
       label: "FAQ",
     },
