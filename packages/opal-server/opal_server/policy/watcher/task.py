@@ -1,19 +1,25 @@
 import asyncio
 import os
 import signal
-from typing import Coroutine, List, Optional
+from typing import Any, Coroutine, List, Optional
 
+from fastapi_websocket_pubsub import Topic
+from fastapi_websocket_pubsub.pub_sub_server import PubSubEndpoint
 from opal_common.logger import logger
 from opal_common.sources.base_policy_source import BasePolicySource
+from opal_server.config import opal_server_config
 
 
 class PolicyWatcherTask:
     """Manages the asyncio tasks of the policy watcher."""
 
-    def __init__(self, policy_source: BasePolicySource):
+    def __init__(
+        self, policy_source: BasePolicySource, pubsub_endpoint: PubSubEndpoint
+    ):
         self._watcher = policy_source
         self._tasks: List[asyncio.Task] = []
         self._should_stop: Optional[asyncio.Event] = None
+        self._pubsub_endpoint = pubsub_endpoint
 
     async def __aenter__(self):
         self.start()
@@ -22,12 +28,32 @@ class PolicyWatcherTask:
     async def __aexit__(self, exc_type, exc, tb):
         await self.stop()
 
+    async def _listen_to_webhook_notifications(self):
+        # Webhook api route can be hit randomly in all workers, so it publishes a message to the webhook topic.
+        # This listener, running in the leader's context, would actually trigger the repo pull
+        if self._pubsub_endpoint.broadcaster is not None:
+            async with self._pubsub_endpoint.broadcaster.get_listening_context():
+                logger.info(
+                    "listening on webhook topic: '{topic}'",
+                    topic=opal_server_config.POLICY_REPO_WEBHOOK_TOPIC,
+                )
+
+                await self._pubsub_endpoint.subscribe(
+                    [opal_server_config.POLICY_REPO_WEBHOOK_TOPIC],
+                    self.trigger,
+                )
+                await self._pubsub_endpoint.broadcaster.get_reader_task()
+
+                # Stop the watcher if broadcaster disconnects
+                self.signal_stop()
+
     def start(self):
         """starts the policy watcher and registers a failure callback to
         terminate gracefully."""
         logger.info("Launching policy watcher")
 
         self._watcher.add_on_failure_callback(self._fail)
+        self._tasks.append(asyncio.create_task(self._listen_to_webhook_notifications()))
         self._tasks.append(asyncio.create_task(self._watcher.run()))
         self._init_should_stop()
 
@@ -40,9 +66,10 @@ class PolicyWatcherTask:
                 task.cancel()
         await asyncio.gather(*self._tasks, return_exceptions=True)
 
-    def trigger(self):
+    async def trigger(self, topic: Topic, data: Any):
         """triggers the policy watcher from outside to check for changes (git
         pull)"""
+        logger.info("Webhook listener triggered")
         self._tasks.append(asyncio.create_task(self._watcher.check_for_changes()))
 
     def wait_until_should_stop(self) -> Coroutine:
