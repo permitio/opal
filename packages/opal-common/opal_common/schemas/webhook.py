@@ -39,3 +39,7 @@ class GitWebhookRequestParams(BaseSchema):
         ...,
         description="The event value indicating a Git push",
     )
+    match_sender_url: bool = Field(
+        True,
+        description="Should OPAL verify that the sender url matches the tracked repo URL, and drop the webhook request otherwise?",
+    )

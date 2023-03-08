@@ -106,8 +106,9 @@ def get_webhook_router(
             policy_repo_url = opal_server_config.POLICY_REPO_URL
 
             # Check if the URL we are tracking is mentioned in the webhook
-            if policy_repo_url and is_matching_webhook_url(
-                policy_repo_url, urls, names
+            if policy_repo_url and (
+                is_matching_webhook_url(policy_repo_url, urls, names)
+                or not webhook_config.match_sender_url
             ):
                 logger.info(
                     "triggered webhook on repo: {repo}",
