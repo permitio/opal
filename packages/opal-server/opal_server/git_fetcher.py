@@ -167,10 +167,7 @@ class GitPolicyFetcher(PolicyFetcher):
 
         if self._discover_repository(self._repo_path):
             logger.info("Repo found at {path}", path=self._repo_path)
-            RepoInterface.verify_found_repo_matches_remote(
-                self._source.url, str(self._repo_path)
-            )
-            repo = self._get_valid_repo_at(str(self._repo_path))
+            repo = self._get_valid_repo()
             if repo is not None:
                 should_fetch = await self._should_fetch(
                     repo, hinted_hash=hinted_hash, force_fetch=force_fetch
@@ -215,7 +212,10 @@ class GitPolicyFetcher(PolicyFetcher):
             logger.info(f"Clone completed: {self._source.url}")
             await self.callbacks.on_update(None, repo.head.target.hex)
 
-    def _get_valid_repo_at(self, path: str) -> Optional[Repository]:
+    def _get_valid_repo(self) -> Optional[Repository]:
+        path = str(self._repo_path)
+        RepoInterface.verify_found_repo_matches_remote(self._source.url, path)
+
         try:
             return Repository(path)
         except pygit2.GitError:
