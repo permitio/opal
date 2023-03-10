@@ -40,13 +40,13 @@ class PolicyStoreDetails(BaseModel):
     )
 
     oauth_client_id: Optional[str] = Field(
-        None, description="optional client id required by the policy store"
+        None, description="optional OAuth client id required by the policy store"
     )
     oauth_client_secret: Optional[str] = Field(
-        None, description="optional client id required by the policy store"
+        None, description="optional OAuth client secret required by the policy store"
     )
     oauth_server: Optional[str] = Field(
-        None, description="optional client id required by the policy store"
+        None, description="optional OAuth server required by the policy store"
     )
 
     @validator("type")

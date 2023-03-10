@@ -36,17 +36,17 @@ class OpalClientConfig(Confi):
     POLICY_STORE_AUTH_OAUTH_SERVER = confi.str(
         "POLICY_STORE_AUTH_OAUTH_SERVER",
         None,
-        description="the authentication server OPAL client will use to authenticate against for retrieving the access_token.'",
+        description="the authentication server OPAL client will use to authenticate against for retrieving the access_token.",
     )
     POLICY_STORE_AUTH_OAUTH_CLIENT_ID = confi.str(
         "POLICY_STORE_AUTH_OAUTH_CLIENT_ID",
         None,
-        description="the client_id OPAL will use to authenticate against the oauth server.",
+        description="the client_id OPAL will use to authenticate against the OAuth server.",
     )
     POLICY_STORE_AUTH_OAUTH_CLIENT_SECRET = confi.str(
         "POLICY_STORE_AUTH_OAUTH_CLIENT_SECRET",
         None,
-        description="the client secret OPAL will use to authenticate against the oauth server.",
+        description="the client secret OPAL will use to authenticate against the OAuth server.",
     )
 
     POLICY_STORE_CONN_RETRY: PolicyConnRetryOptions = confi.model(
