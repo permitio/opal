@@ -2,6 +2,7 @@ from enum import Enum
 
 from opal_client.opa.options import OpaServerOptions
 from opal_client.policy.options import PolicyConnRetryOptions
+from opal_client.policy_store.schemas import PolicyStoreAuth
 from opal_client.policy_store.schemas import PolicyStoreTypes
 from opal_common.confi import Confi, confi
 from opal_common.config import opal_common_config
@@ -23,11 +24,31 @@ class OpalClientConfig(Confi):
         "POLICY_STORE_TYPE", PolicyStoreTypes, PolicyStoreTypes.OPA
     )
     POLICY_STORE_URL = confi.str("POLICY_STORE_URL", f"http://localhost:8181")
+
+    POLICY_STORE_AUTH_TYPE = confi.enum(
+        "POLICY_STORE_AUTH_TYPE", PolicyStoreAuth, PolicyStoreAuth.NONE,
+    )
     POLICY_STORE_AUTH_TOKEN = confi.str(
         "POLICY_STORE_AUTH_TOKEN",
         None,
-        description="the authentication (bearer) token OPAL client will use to authenticate against the policy store (i.e: OPA agent)",
+        description="the authentication (bearer) token OPAL client will use to authenticate against the policy store (i.e: OPA agent).",
     )
+    POLICY_STORE_AUTH_OAUTH_SERVER = confi.str(
+        "POLICY_STORE_AUTH_OAUTH_SERVER",
+        None,
+        description="the authentication server OPAL client will use to authenticate against for retrieving the access_token.'",
+    )
+    POLICY_STORE_AUTH_OAUTH_CLIENT_ID = confi.str(
+        "POLICY_STORE_AUTH_OAUTH_CLIENT_ID",
+        None,
+        description="the client_id OPAL client will use to authenticate POLICY_STORE_AUTH_OAUTH_SERVER",
+    )
+    POLICY_STORE_AUTH_OAUTH_CLIENT_SECRET = confi.str(
+        "POLICY_STORE_AUTH_OAUTH_CLIENT_SECRET",
+        None,
+        description="the secret OPAL client will use to authenticate POLICY_STORE_AUTH_OAUTH_SERVER",
+    )
+
     POLICY_STORE_CONN_RETRY: PolicyConnRetryOptions = confi.model(
         "POLICY_STORE_CONN_RETRY",
         PolicyConnRetryOptions,

@@ -9,6 +9,12 @@ class PolicyStoreTypes(Enum):
     MOCK = "MOCK"
 
 
+class PolicyStoreAuth(Enum):
+    TOKEN = "TOKEN"
+    OAUTH = "OAUTH"
+    NONE = None
+
+
 class PolicyStoreDetails(BaseModel):
     """
     represents a policy store endpoint - contains the policy store's:
