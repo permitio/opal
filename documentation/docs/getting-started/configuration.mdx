@@ -122,16 +122,20 @@ Please use this table as a reference.
 
 ## OPAL Client Configuration Variables
 
-| Variables                 | Description                                                                                                                                                       | Example |
-| ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- |
-| POLICY_STORE_TYPE         |                                                                                                                                                                   |         |
-| POLICY_STORE_AUTH_TOKEN   | The authentication (bearer) token OPAL client will use to authenticate against the policy store (i.e: OPA agent).                                                 |         |
-| POLICY_STORE_CONN_RETRY   | Retry options when connecting to the policy store (i.e. the agent that handles the policy, e.g. OPA).                                                             |         |
-| POLICY_UPDATER_CONN_RETRY | Retry options when connecting to the policy source (e.g. the policy bundle server).                                                                               |         |
-| INLINE_OPA_ENABLED        | Whether or not OPAL should run OPA by itself in the same container.                                                                                               |         |
-| INLINE_OPA_CONFIG         | If inline OPA is indeed enabled, user can pass cli options (configuration) that affects how OPA will run cli options used when running `opa run --server` inline. |         |
-| INLINE_OPA_LOG_FORMAT     |                                                                                                                                                                   |         |
-| KEEP_ALIVE_INTERVAL       |                                                                                                                                                                   |         |
+| Variables                             | Description                                                                                                                                                       | Example |
+|---------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------|
+| POLICY_STORE_TYPE                     |                                                                                                                                                                   |         |
+| POLICY_STORE_AUTH_TYPE                | The authentication method for connecting to the policy store. Possible values are `oauth` or `token`                                                              |         |
+| POLICY_STORE_AUTH_TOKEN               | The authentication (bearer) token OPAL client will use to authenticate against the policy store (i.e: OPA agent).                                                 |         |
+| POLICY_STORE_AUTH_OAUTH_SERVER        | The authentication server OPAL client will use to authenticate against for retrieving the access_token.                                                           |         |
+| POLICY_STORE_AUTH_OAUTH_CLIENT_ID     | the client id OPAL will use to authenticate against the oauth server.                                                                                             |         |
+| POLICY_STORE_AUTH_OAUTH_CLIENT_SECRET | the client secret OPAL will use to authenticate against the oauth server.                                                                                         |         |
+| POLICY_STORE_CONN_RETRY               | Retry options when connecting to the policy store (i.e. the agent that handles the policy, e.g. OPA).                                                             |         |
+| POLICY_UPDATER_CONN_RETRY             | Retry options when connecting to the policy source (e.g. the policy bundle server).                                                                               |         |
+| INLINE_OPA_ENABLED                    | Whether or not OPAL should run OPA by itself in the same container.                                                                                               |         |
+| INLINE_OPA_CONFIG                     | If inline OPA is indeed enabled, user can pass cli options (configuration) that affects how OPA will run cli options used when running `opa run --server` inline. |         |
+| INLINE_OPA_LOG_FORMAT                 |                                                                                                                                                                   |         |
+| KEEP_ALIVE_INTERVAL                   |                                                                                                                                                                   |         |
 
 ## Policy Updater Configuration Variables
 
