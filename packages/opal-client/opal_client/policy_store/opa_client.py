@@ -227,7 +227,7 @@ class OpaClient(BasePolicyStoreClient):
 
     def __init__(self, opa_server_url=None,
         opa_auth_token: Optional[str] = None,
-        opa_auth_type: PolicyStoreAuth = None,
+        auth_type: PolicyStoreAuth = PolicyStoreAuth.NONE,
         oauth_client_id: Optional[str] = None,
         oauth_client_secret: Optional[str] = None,
         oauth_server: Optional[str] = None):
@@ -240,7 +240,7 @@ class OpaClient(BasePolicyStoreClient):
 
         self._token = opa_auth_token
 
-        self._auth_type = opa_auth_type
+        self._auth_type : PolicyStoreTypes = auth_type
         self._oauth_client_id = oauth_client_id
         self._oauth_client_secret = oauth_client_secret
         self._oauth_server = oauth_server

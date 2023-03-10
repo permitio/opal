@@ -10,10 +10,9 @@ class PolicyStoreTypes(Enum):
 
 
 class PolicyStoreAuth(Enum):
-    TOKEN = "TOKEN"
-    OAUTH = "OAUTH"
-    NONE = None
-
+    NONE = "none"
+    TOKEN = "token"
+    OAUTH = "oauth"
 
 class PolicyStoreDetails(BaseModel):
     """
@@ -33,6 +32,21 @@ class PolicyStoreDetails(BaseModel):
     )
     token: Optional[str] = Field(
         None, description="optional access token required by the policy store"
+    )
+
+    auth_type: PolicyStoreAuth = Field(
+        PolicyStoreAuth.NONE,
+        description="the type of authentication is supported for the policy store."
+    )
+
+    oauth_client_id: Optional[str] = Field(
+        None, description="optional client id required by the policy store"
+    )
+    oauth_client_secret: Optional[str] = Field(
+        None, description="optional client id required by the policy store"
+    )
+    oauth_server: Optional[str] = Field(
+        None, description="optional client id required by the policy store"
     )
 
     @validator("type")

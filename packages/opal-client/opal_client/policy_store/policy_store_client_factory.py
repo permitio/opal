@@ -25,7 +25,7 @@ class PolicyStoreClientFactory:
         url: str = None,
         save_to_cache=True,
         token: Optional[str] = None,
-        auth_type: PolicyStoreAuth = None,
+        auth_type: PolicyStoreAuth = PolicyStoreAuth.NONE,
         oauth_client_id: Optional[str] = None,
         oauth_client_secret: Optional[str] = None,
         oauth_server: Optional[str] = None,
@@ -92,7 +92,11 @@ class PolicyStoreClientFactory:
         if PolicyStoreTypes.OPA == store_type:
             from opal_client.policy_store.opa_client import OpaClient
 
-            res = OpaClient(url, opa_auth_token=store_token)
+            res = OpaClient(url, opa_auth_token=store_token,
+                            auth_type=auth_type,
+                            oauth_client_id=oauth_client_id,
+                            oauth_client_secret=oauth_client_secret,
+                            oauth_server=oauth_server)
         # MOCK
         elif PolicyStoreTypes.MOCK == store_type:
             from opal_client.policy_store.mock_policy_store_client import (

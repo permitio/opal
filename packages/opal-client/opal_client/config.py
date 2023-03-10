@@ -26,7 +26,7 @@ class OpalClientConfig(Confi):
     POLICY_STORE_URL = confi.str("POLICY_STORE_URL", f"http://localhost:8181")
 
     POLICY_STORE_AUTH_TYPE = confi.enum(
-        "POLICY_STORE_AUTH_TYPE", PolicyStoreAuth, PolicyStoreAuth.NONE,
+        "POLICY_STORE_AUTH_TYPE", PolicyStoreAuth, PolicyStoreAuth.NONE
     )
     POLICY_STORE_AUTH_TOKEN = confi.str(
         "POLICY_STORE_AUTH_TOKEN",
