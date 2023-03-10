@@ -1,6 +1,9 @@
 import asyncio
+import base64
 import functools
 import json
+import time
+
 from typing import Any, Dict, List, Optional, Set
 
 import aiohttp
@@ -18,6 +21,7 @@ from opal_common.opa.parsing import get_rego_package
 from opal_common.schemas.policy import DataModule, PolicyBundle
 from opal_common.schemas.store import JSONPatchAction, StoreTransaction, TransactionType
 from pydantic import BaseModel
+from urllib.parse import urlencode
 from tenacity import retry
 
 JSONPatchDocument = List[JSONPatchAction]
@@ -244,6 +248,32 @@ class OpaClient(BasePolicyStoreClient):
         self._oauth_client_id = oauth_client_id
         self._oauth_client_secret = oauth_client_secret
         self._oauth_server = oauth_server
+        self._oauth_token_cache = {
+            "token": None,
+            "expires": 0
+        }
+
+        if auth_type == PolicyStoreAuth.TOKEN:
+            if self._token is None:
+                logger.error("POLICY_STORE_AUTH_TOKEN can not be empty")
+                raise Exception("required variables for token auth are not set")
+
+        if auth_type == PolicyStoreAuth.OAUTH:
+            isError = False
+            if self._oauth_client_id is None:
+                isError = True
+                logger.error("POLICY_STORE_AUTH_OAUTH_CLIENT_ID can not be empty")
+
+            if self._oauth_client_secret is None:
+                isError = True
+                logger.error("POLICY_STORE_AUTH_OAUTH_CLIENT_SECRET can not be empty")
+
+            if self._oauth_server is None:
+                isError = True
+                logger.error("POLICY_STORE_AUTH_OAUTH_SERVER can not be empty")
+
+            if isError:
+                raise Exception("required variables for oauth are not set")
 
         # as long as this is null, transaction log is disabled
         self._transaction_state: Optional[OpaTransactionLogState] = None
@@ -251,16 +281,43 @@ class OpaClient(BasePolicyStoreClient):
     async def get_policy_version(self) -> Optional[str]:
         return self._policy_version
 
+    @retry(**RETRY_CONFIG)
+    async def get_oauth_token(self):
+        logger.debug("Token expired or missing. Retrieving new one.")
+
+        async with aiohttp.ClientSession() as session:
+            try:
+                async with session.post(self._oauth_server,
+                    headers={
+                        "accept": "application/json",
+                        "content-type": "application/x-www-form-urlencoded;charset=UTF-8"
+                    },
+                    data = urlencode({"grant_type": "client_credentials"}).encode("utf-8"),
+                    auth = aiohttp.BasicAuth(self._oauth_client_id, self._oauth_client_secret)
+                ) as oauth_response:
+                    response = await oauth_response.json()
+                    logger.debug(f"got access_token, expires in {response['expires_in']} seconds")
+
+                    return {
+                        # refresh token before it expires, lets substract 10 seconds
+                        "expires": time.time() + response["expires_in"] - 10,
+                        "token": response["access_token"]
+                    }
+            except aiohttp.ClientError as e:
+                logger.warning("OAuth server connection error: {err}", err=repr(e))
+                raise
+
     async def get_auth_headers(self) -> {}:
         headers = {}
         if self._auth_type == PolicyStoreAuth.TOKEN:
             if self._token is None:
-                logger.warning("POLICY_STORE_AUTH_TOKEN was empty but auth type is token")
-            else:
                 headers.update({"Authorization": f"Bearer {self._token}"})
 
         elif self._auth_type == PolicyStoreAuth.OAUTH:
-            headers.update({"Authorization": f"Bearer todo-oauth"})
+            if self._oauth_token_cache["token"] is None or time.time() > self._oauth_token_cache["expires"]:
+                self._oauth_token_cache = await self.get_oauth_token()
+
+            headers.update({"Authorization": f"Bearer {self._oauth_token_cache['token']}"})
 
         return headers
 

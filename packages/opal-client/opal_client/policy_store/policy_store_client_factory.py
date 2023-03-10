@@ -47,8 +47,15 @@ class PolicyStoreClientFactory:
         key = cls.get_cache_key(store_type, url)
         value = cls.CACHE.get(key, None)
         if value is None:
-            return cls.create(store_type, url, token, auth_type,
-                oauth_client_id, oauth_client_secret, oauth_server)
+            return cls.create(
+                store_type=store_type,
+                url=url,
+                save_to_cache=True,
+                token=token,
+                auth_type=auth_type,
+                oauth_client_id=oauth_client_id,
+                oauth_client_secret=oauth_client_secret,
+                oauth_server=oauth_server)
         else:
             return value
 
