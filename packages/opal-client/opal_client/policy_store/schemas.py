@@ -30,7 +30,7 @@ class PolicyStoreDetails(BaseModel):
     url: str = Field(
         ...,
         description="the url that OPA can be found in. if localhost is the host - "
-                    "it means OPA is on the same hostname as OPAL client.",
+        "it means OPA is on the same hostname as OPAL client.",
     )
     token: Optional[str] = Field(
         None, description="optional access token required by the policy store"
@@ -38,7 +38,7 @@ class PolicyStoreDetails(BaseModel):
 
     auth_type: PolicyStoreAuth = Field(
         PolicyStoreAuth.NONE,
-        description="the type of authentication is supported for the policy store."
+        description="the type of authentication is supported for the policy store.",
     )
 
     oauth_client_id: Optional[str] = Field(

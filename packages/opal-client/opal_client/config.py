@@ -2,8 +2,7 @@ from enum import Enum
 
 from opal_client.opa.options import OpaServerOptions
 from opal_client.policy.options import PolicyConnRetryOptions
-from opal_client.policy_store.schemas import PolicyStoreAuth
-from opal_client.policy_store.schemas import PolicyStoreTypes
+from opal_client.policy_store.schemas import PolicyStoreAuth, PolicyStoreTypes
 from opal_common.confi import Confi, confi
 from opal_common.config import opal_common_config
 from opal_common.fetcher.providers.http_fetch_provider import HttpFetcherConfig
@@ -32,7 +31,7 @@ class OpalClientConfig(Confi):
         "POLICY_STORE_AUTH_TOKEN",
         None,
         description="the authentication (bearer) token OPAL client will use to "
-                    "authenticate against the policy store (i.e: OPA agent).",
+        "authenticate against the policy store (i.e: OPA agent).",
     )
     POLICY_STORE_AUTH_OAUTH_SERVER = confi.str(
         "POLICY_STORE_AUTH_OAUTH_SERVER",
@@ -167,7 +166,7 @@ class OpalClientConfig(Confi):
         "DATA_UPDATER_ENABLED",
         True,
         description="If set to False, opal client will not listen to dynamic data updates. "
-                    "Dynamic data fetching will be completely disabled.",
+        "Dynamic data fetching will be completely disabled.",
     )
 
     DATA_TOPICS = confi.list(
@@ -192,7 +191,7 @@ class OpalClientConfig(Confi):
         "SHOULD_REPORT_ON_DATA_UPDATES",
         False,
         description="Should the client report on updates to callbacks defined in "
-                    "DEFAULT_UPDATE_CALLBACKS or within the given updates",
+        "DEFAULT_UPDATE_CALLBACKS or within the given updates",
     )
     DEFAULT_UPDATE_CALLBACK_CONFIG = confi.model(
         "DEFAULT_UPDATE_CALLBACK_CONFIG",

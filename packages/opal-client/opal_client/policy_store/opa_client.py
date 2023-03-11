@@ -2,8 +2,8 @@ import asyncio
 import functools
 import json
 import time
-
 from typing import Any, Dict, List, Optional, Set
+from urllib.parse import urlencode
 
 import aiohttp
 from fastapi import Response, status
@@ -20,7 +20,6 @@ from opal_common.opa.parsing import get_rego_package
 from opal_common.schemas.policy import DataModule, PolicyBundle
 from opal_common.schemas.store import JSONPatchAction, StoreTransaction, TransactionType
 from pydantic import BaseModel
-from urllib.parse import urlencode
 from tenacity import retry
 
 JSONPatchDocument = List[JSONPatchAction]
@@ -228,13 +227,15 @@ class OpaClient(BasePolicyStoreClient):
 
     POLICY_NAME = "rbac"
 
-    def __init__(self,
-                 opa_server_url=None,
-                 opa_auth_token: Optional[str] = None,
-                 auth_type: PolicyStoreAuth = PolicyStoreAuth.NONE,
-                 oauth_client_id: Optional[str] = None,
-                 oauth_client_secret: Optional[str] = None,
-                 oauth_server: Optional[str] = None):
+    def __init__(
+        self,
+        opa_server_url=None,
+        opa_auth_token: Optional[str] = None,
+        auth_type: PolicyStoreAuth = PolicyStoreAuth.NONE,
+        oauth_client_id: Optional[str] = None,
+        oauth_client_secret: Optional[str] = None,
+        oauth_server: Optional[str] = None,
+    ):
 
         base_url = opa_server_url or opal_client_config.POLICY_STORE_URL
         self._opa_url = f"{base_url}/v1"
@@ -246,10 +247,7 @@ class OpaClient(BasePolicyStoreClient):
         self._oauth_client_id = oauth_client_id
         self._oauth_client_secret = oauth_client_secret
         self._oauth_server = oauth_server
-        self._oauth_token_cache = {
-            "token": None,
-            "expires": 0
-        }
+        self._oauth_token_cache = {"token": None, "expires": 0}
 
         if auth_type == PolicyStoreAuth.TOKEN:
             if self._token is None:
@@ -291,18 +289,24 @@ class OpaClient(BasePolicyStoreClient):
                     self._oauth_server,
                     headers={
                         "accept": "application/json",
-                        "content-type": "application/x-www-form-urlencoded;charset=UTF-8"
+                        "content-type": "application/x-www-form-urlencoded;charset=UTF-8",
                     },
-                    data=urlencode({"grant_type": "client_credentials"}).encode("utf-8"),
-                    auth=aiohttp.BasicAuth(self._oauth_client_id, self._oauth_client_secret)
+                    data=urlencode({"grant_type": "client_credentials"}).encode(
+                        "utf-8"
+                    ),
+                    auth=aiohttp.BasicAuth(
+                        self._oauth_client_id, self._oauth_client_secret
+                    ),
                 ) as oauth_response:
                     response = await oauth_response.json()
-                    logger.info(f"got access_token, expires in {response['expires_in']} seconds")
+                    logger.info(
+                        f"got access_token, expires in {response['expires_in']} seconds"
+                    )
 
                     return {
                         # refresh token before it expires, lets substract 10 seconds
                         "expires": time.time() + response["expires_in"] - 10,
-                        "token": response["access_token"]
+                        "token": response["access_token"],
                     }
             except aiohttp.ClientError as e:
                 logger.warning("OAuth server connection error: {err}", err=repr(e))
@@ -315,10 +319,15 @@ class OpaClient(BasePolicyStoreClient):
                 headers.update({"Authorization": f"Bearer {self._token}"})
 
         elif self._auth_type == PolicyStoreAuth.OAUTH:
-            if self._oauth_token_cache["token"] is None or time.time() > self._oauth_token_cache["expires"]:
+            if (
+                self._oauth_token_cache["token"] is None
+                or time.time() > self._oauth_token_cache["expires"]
+            ):
                 self._oauth_token_cache = await self._get_oauth_token()
 
-            headers.update({"Authorization": f"Bearer {self._oauth_token_cache['token']}"})
+            headers.update(
+                {"Authorization": f"Bearer {self._oauth_token_cache['token']}"}
+            )
 
         return headers
 
