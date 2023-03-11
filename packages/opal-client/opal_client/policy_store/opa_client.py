@@ -1,7 +1,9 @@
 import asyncio
 import functools
 import json
+import time
 from typing import Any, Dict, List, Optional, Set
+from urllib.parse import urlencode
 
 import aiohttp
 from fastapi import Response, status
@@ -11,6 +13,7 @@ from opal_client.policy_store.base_policy_store_client import (
     BasePolicyStoreClient,
     JsonableValue,
 )
+from opal_client.policy_store.schemas import PolicyStoreAuth
 from opal_client.utils import proxy_response
 from opal_common.git.bundle_utils import BundleUtils
 from opal_common.opa.parsing import get_rego_package
@@ -224,22 +227,109 @@ class OpaClient(BasePolicyStoreClient):
 
     POLICY_NAME = "rbac"
 
-    def __init__(self, opa_server_url=None, opa_auth_token: Optional[str] = None):
+    def __init__(
+        self,
+        opa_server_url=None,
+        opa_auth_token: Optional[str] = None,
+        auth_type: PolicyStoreAuth = PolicyStoreAuth.NONE,
+        oauth_client_id: Optional[str] = None,
+        oauth_client_secret: Optional[str] = None,
+        oauth_server: Optional[str] = None,
+    ):
+
         base_url = opa_server_url or opal_client_config.POLICY_STORE_URL
         self._opa_url = f"{base_url}/v1"
         self._cached_policies: Dict[str, str] = {}
         self._policy_version: Optional[str] = None
         self._lock = asyncio.Lock()
         self._token = opa_auth_token
-        self._headers = {}
-        if opa_auth_token is not None:
-            self._headers.update({"Authorization": f"Bearer {opa_auth_token}"})
+        self._auth_type: PolicyStoreAuth = auth_type
+        self._oauth_client_id = oauth_client_id
+        self._oauth_client_secret = oauth_client_secret
+        self._oauth_server = oauth_server
+        self._oauth_token_cache = {"token": None, "expires": 0}
+
+        if auth_type == PolicyStoreAuth.TOKEN:
+            if self._token is None:
+                logger.error("POLICY_STORE_AUTH_TOKEN can not be empty")
+                raise Exception("required variables for token auth are not set")
+
+        if auth_type == PolicyStoreAuth.OAUTH:
+            isError = False
+            if self._oauth_client_id is None:
+                isError = True
+                logger.error("POLICY_STORE_AUTH_OAUTH_CLIENT_ID can not be empty")
+
+            if self._oauth_client_secret is None:
+                isError = True
+                logger.error("POLICY_STORE_AUTH_OAUTH_CLIENT_SECRET can not be empty")
+
+            if self._oauth_server is None:
+                isError = True
+                logger.error("POLICY_STORE_AUTH_OAUTH_SERVER can not be empty")
+
+            if isError:
+                raise Exception("required variables for oauth are not set")
+
+        logger.info(f"Authentication mode for policy store: {auth_type}")
 
         # as long as this is null, transaction log is disabled
         self._transaction_state: Optional[OpaTransactionLogState] = None
 
     async def get_policy_version(self) -> Optional[str]:
         return self._policy_version
+
+    @retry(**RETRY_CONFIG)
+    async def _get_oauth_token(self):
+        logger.info("Retrieving a new OAuth access_token.")
+
+        async with aiohttp.ClientSession() as session:
+            try:
+                async with session.post(
+                    self._oauth_server,
+                    headers={
+                        "accept": "application/json",
+                        "content-type": "application/x-www-form-urlencoded;charset=UTF-8",
+                    },
+                    data=urlencode({"grant_type": "client_credentials"}).encode(
+                        "utf-8"
+                    ),
+                    auth=aiohttp.BasicAuth(
+                        self._oauth_client_id, self._oauth_client_secret
+                    ),
+                ) as oauth_response:
+                    response = await oauth_response.json()
+                    logger.info(
+                        f"got access_token, expires in {response['expires_in']} seconds"
+                    )
+
+                    return {
+                        # refresh token before it expires, lets substract 10 seconds
+                        "expires": time.time() + response["expires_in"] - 10,
+                        "token": response["access_token"],
+                    }
+            except aiohttp.ClientError as e:
+                logger.warning("OAuth server connection error: {err}", err=repr(e))
+                raise
+
+    async def _get_auth_headers(self) -> {}:
+        headers = {}
+        if self._auth_type == PolicyStoreAuth.TOKEN:
+            if self._token is not None:
+                headers.update({"Authorization": f"Bearer {self._token}"})
+
+        elif self._auth_type == PolicyStoreAuth.OAUTH:
+            if (
+                self._oauth_token_cache["token"] is None
+                or time.time() > self._oauth_token_cache["expires"]
+            ):
+                self._oauth_token_cache = await self._get_oauth_token()
+
+            headers.update(
+                {"Authorization": f"Bearer {self._oauth_token_cache['token']}"}
+            )
+
+        return headers
 
     @affects_transaction
     @retry(**RETRY_CONFIG)
@@ -249,10 +339,12 @@ class OpaClient(BasePolicyStoreClient):
         self._cached_policies[policy_id] = policy_code
         async with aiohttp.ClientSession() as session:
             try:
+                headers = await self._get_auth_headers()
+
                 async with session.put(
                     f"{self._opa_url}/policies/{policy_id}",
                     data=policy_code,
-                    headers={"content-type": "text/plain", **self._headers},
+                    headers={"content-type": "text/plain", **headers},
                 ) as opa_response:
                     return await proxy_response_unless_invalid(
                         opa_response, accepted_status_codes=[status.HTTP_200_OK]
@@ -266,8 +358,10 @@ class OpaClient(BasePolicyStoreClient):
     async def get_policy(self, policy_id: str) -> Optional[str]:
         async with aiohttp.ClientSession() as session:
             try:
+                headers = await self._get_auth_headers()
+
                 async with session.get(
-                    f"{self._opa_url}/policies/{policy_id}", headers=self._headers
+                    f"{self._opa_url}/policies/{policy_id}", headers=headers
                 ) as opa_response:
                     result = await opa_response.json()
                     return result.get("result", {}).get("raw", None)
@@ -280,8 +374,10 @@ class OpaClient(BasePolicyStoreClient):
     async def delete_policy(self, policy_id: str, transaction_id: Optional[str] = None):
         async with aiohttp.ClientSession() as session:
             try:
+                headers = await self._get_auth_headers()
+
                 async with session.delete(
-                    f"{self._opa_url}/policies/{policy_id}", headers=self._headers
+                    f"{self._opa_url}/policies/{policy_id}", headers=headers
                 ) as opa_response:
                     return await proxy_response_unless_invalid(
                         opa_response,
@@ -299,8 +395,10 @@ class OpaClient(BasePolicyStoreClient):
     async def get_policy_module_ids(self) -> List[str]:
         async with aiohttp.ClientSession() as session:
             try:
+                headers = await self._get_auth_headers()
+
                 async with session.get(
-                    f"{self._opa_url}/policies", headers=self._headers
+                    f"{self._opa_url}/policies", headers=headers
                 ) as opa_response:
                     result = await opa_response.json()
                     return OpaClient._extract_module_ids_from_policies_json(result)
@@ -448,10 +546,12 @@ class OpaClient(BasePolicyStoreClient):
 
         async with aiohttp.ClientSession() as session:
             try:
+                headers = await self._get_auth_headers()
+
                 async with session.put(
                     f"{self._opa_url}/data{path}",
                     data=json.dumps(policy_data, default=str),
-                    headers=self._headers,
+                    headers=headers,
                 ) as opa_response:
                     return await proxy_response_unless_invalid(
                         opa_response,
@@ -475,8 +575,10 @@ class OpaClient(BasePolicyStoreClient):
 
         async with aiohttp.ClientSession() as session:
             try:
+                headers = await self._get_auth_headers()
+
                 async with session.delete(
-                    f"{self._opa_url}/data{path}", headers=self._headers
+                    f"{self._opa_url}/data{path}", headers=headers
                 ) as opa_response:
                     return await proxy_response_unless_invalid(
                         opa_response,
@@ -503,10 +605,12 @@ class OpaClient(BasePolicyStoreClient):
 
         async with aiohttp.ClientSession() as session:
             try:
+                headers = await self._get_auth_headers()
+
                 async with session.patch(
                     f"{self._opa_url}/data{path}",
                     data=json_document,
-                    headers=self._headers,
+                    headers=headers,
                 ) as opa_response:
                     return await proxy_response_unless_invalid(
                         opa_response, accepted_status_codes=[status.HTTP_204_NO_CONTENT]
@@ -528,9 +632,11 @@ class OpaClient(BasePolicyStoreClient):
         if path.startswith("/"):
             path = path[1:]
         try:
+            headers = await self._get_auth_headers()
+
             async with aiohttp.ClientSession() as session:
                 async with session.get(
-                    f"{self._opa_url}/data/{path}", headers=self._headers
+                    f"{self._opa_url}/data/{path}", headers=headers
                 ) as opa_response:
                     return await opa_response.json()
         except aiohttp.ClientError as e:
@@ -553,11 +659,13 @@ class OpaClient(BasePolicyStoreClient):
         if path.startswith("/"):
             path = path[1:]
         try:
+            headers = await self._get_auth_headers()
+
             async with aiohttp.ClientSession() as session:
                 async with session.post(
                     f"{self._opa_url}/data/{path}",
                     data=json.dumps(opa_input),
-                    headers=self._headers,
+                    headers=headers,
                 ) as opa_response:
                     return await proxy_response(opa_response)
         except aiohttp.ClientError as e:

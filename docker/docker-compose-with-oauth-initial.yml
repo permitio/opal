@@ -1,0 +1,73 @@
+version: "3.8"
+services:
+  # When scaling the opal-server to multiple nodes and/or multiple workers, we use
+  # a *broadcast* channel to sync between all the instances of opal-server.
+  # Under the hood, this channel is implemented by encode/broadcaster (see link below).
+  # At the moment, the broadcast channel can be either: postgresdb, redis or kafka.
+  # The format of the broadcaster URI string (the one we pass to opal server as `OPAL_BROADCAST_URI`) is specified here:
+  # https://github.com/encode/broadcaster#available-backends
+  broadcast_channel:
+    image: postgres:alpine
+    environment:
+      - POSTGRES_DB=postgres
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+  opal_server:
+    # by default we run opal-server from latest official image
+    image: permitio/opal-server:latest
+    environment:
+      # the broadcast backbone uri used by opal server workers (see comments above for: broadcast_channel)
+      - OPAL_BROADCAST_URI=postgres://postgres:postgres@broadcast_channel:5432/postgres
+      # number of uvicorn workers to run inside the opal-server container
+      - UVICORN_NUM_WORKERS=4
+      # the git repo hosting our policy
+      # - if this repo is not public, you can pass an ssh key via `OPAL_POLICY_REPO_SSH_KEY`)
+      # - the repo we pass in this example is *public* and acts as an example repo with dummy rego policy
+      # - for more info, see: https://docs.opal.ac/tutorials/track_a_git_repo
+      - OPAL_POLICY_REPO_URL=https://github.com/permitio/opal-example-policy-repo
+      # in this example we will use a polling interval of 30 seconds to check for new policy updates (git commits affecting the rego policy).
+      # however, it is better to utilize a git *webhook* to trigger the server to check for changes only when the repo has new commits.
+      # for more info see: https://docs.opal.ac/tutorials/track_a_git_repo
+      - OPAL_POLICY_REPO_POLLING_INTERVAL=30
+      # configures from where the opal client should initially fetch data (when it first goes up, after disconnection, etc).
+      # the data sources represents from where the opal clients should get a "complete picture" of the data they need.
+      # after the initial sources are fetched, the client will subscribe only to update notifications sent by the server.
+      - OPAL_DATA_CONFIG_SOURCES={"config":{"entries":[{"url":"http://opal_server:7002/policy-data","topics":["policy_data"],"dst_path":"/static"}]}}
+      - OPAL_LOG_FORMAT_INCLUDE_PID=true
+    ports:
+      # exposes opal server on the host machine, you can access the server at: http://localhost:7002
+      - "7002:7002"
+    depends_on:
+      - broadcast_channel
+  opal_client:
+    # by default we run opal-client from latest official image
+    image: permitio/opal-client:latest
+    environment:
+      - OPAL_SERVER_URL=http://opal_server:7002
+      - OPAL_LOG_FORMAT_INCLUDE_PID=true
+      - OPAL_INLINE_OPA_LOG_FORMAT=http
+      - OPAL_POLICY_STORE_AUTH_TYPE=oauth
+      - OPAL_POLICY_STORE_AUTH_OAUTH_CLIENT_ID=some_client_id
+      - OPAL_POLICY_STORE_AUTH_OAUTH_CLIENT_SECRET=some_client_secret
+      - OPAL_POLICY_STORE_AUTH_OAUTH_SERVER=https://example/oauth2/token
+      # Enable Authorization / Authentication in OPA
+      - 'OPAL_INLINE_OPA_CONFIG={"authentication":"token", "authorization":"basic", "files": ["authz.rego"]}'
+    volumes:
+      # The goal is to create an initial authorization rego that allows OPAL to write the first policy from the POLICY_REPO_URL.
+      # This is achieved through policy overwrite based on the "id" attribute.
+      # When the authz.rego file is placed in the root directory of OPA, it is given the id 'authz.rego'.
+      # Similarly, if there is another authz.rego file in the root of POLICY_REPO_URL, it will also be given the id 'authz.rego'.
+      # Therefore, if the authz.rego file from the POLICY_REPO_URL exists, it will overwrite the initial authz.rego file.
+      - ./docker_files/policy_test/authz.rego:/opal/authz.rego
+    ports:
+      # exposes opal client on the host machine, you can access the client at: http://localhost:7000
+      - "7766:7000"
+      # exposes the OPA agent (being run by OPAL) on the host machine
+      # you can access the OPA api that you know and love at: http://localhost:8181
+      # OPA api docs are at: https://www.openpolicyagent.org/docs/latest/rest-api/
+      - "8181:8181"
+    depends_on:
+      - opal_server
+    # this command is not necessary when deploying OPAL for real, it is simply a trick for dev environments
+    # to make sure that opal-server is already up before starting the client.
+    command: sh -c "./wait-for.sh opal_server:7002 --timeout=20 -- ./start.sh"

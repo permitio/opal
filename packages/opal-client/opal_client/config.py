@@ -2,7 +2,7 @@ from enum import Enum
 
 from opal_client.opa.options import OpaServerOptions
 from opal_client.policy.options import PolicyConnRetryOptions
-from opal_client.policy_store.schemas import PolicyStoreTypes
+from opal_client.policy_store.schemas import PolicyStoreAuth, PolicyStoreTypes
 from opal_common.confi import Confi, confi
 from opal_common.config import opal_common_config
 from opal_common.fetcher.providers.http_fetch_provider import HttpFetcherConfig
@@ -22,12 +22,33 @@ class OpalClientConfig(Confi):
     POLICY_STORE_TYPE = confi.enum(
         "POLICY_STORE_TYPE", PolicyStoreTypes, PolicyStoreTypes.OPA
     )
-    POLICY_STORE_URL = confi.str("POLICY_STORE_URL", f"http://localhost:8181")
+    POLICY_STORE_URL = confi.str("POLICY_STORE_URL", "http://localhost:8181")
+
+    POLICY_STORE_AUTH_TYPE = confi.enum(
+        "POLICY_STORE_AUTH_TYPE", PolicyStoreAuth, PolicyStoreAuth.NONE
+    )
     POLICY_STORE_AUTH_TOKEN = confi.str(
         "POLICY_STORE_AUTH_TOKEN",
         None,
-        description="the authentication (bearer) token OPAL client will use to authenticate against the policy store (i.e: OPA agent)",
+        description="the authentication (bearer) token OPAL client will use to "
+        "authenticate against the policy store (i.e: OPA agent).",
     )
+    POLICY_STORE_AUTH_OAUTH_SERVER = confi.str(
+        "POLICY_STORE_AUTH_OAUTH_SERVER",
+        None,
+        description="the authentication server OPAL client will use to authenticate against for retrieving the access_token.",
+    )
+    POLICY_STORE_AUTH_OAUTH_CLIENT_ID = confi.str(
+        "POLICY_STORE_AUTH_OAUTH_CLIENT_ID",
+        None,
+        description="the client_id OPAL will use to authenticate against the OAuth server.",
+    )
+    POLICY_STORE_AUTH_OAUTH_CLIENT_SECRET = confi.str(
+        "POLICY_STORE_AUTH_OAUTH_CLIENT_SECRET",
+        None,
+        description="the client secret OPAL will use to authenticate against the OAuth server.",
+    )
+
     POLICY_STORE_CONN_RETRY: PolicyConnRetryOptions = confi.model(
         "POLICY_STORE_CONN_RETRY",
         PolicyConnRetryOptions,
@@ -144,7 +165,8 @@ class OpalClientConfig(Confi):
     DATA_UPDATER_ENABLED = confi.bool(
         "DATA_UPDATER_ENABLED",
         True,
-        description="If set to False, opal client will not listen to dynamic data updates. Dynamic data fetching will be completely disabled.",
+        description="If set to False, opal client will not listen to dynamic data updates. "
+        "Dynamic data fetching will be completely disabled.",
     )
 
     DATA_TOPICS = confi.list(
@@ -168,7 +190,8 @@ class OpalClientConfig(Confi):
     SHOULD_REPORT_ON_DATA_UPDATES = confi.bool(
         "SHOULD_REPORT_ON_DATA_UPDATES",
         False,
-        description="Should the client report on updates to callbacks defined in DEFAULT_UPDATE_CALLBACKS or within the given updates",
+        description="Should the client report on updates to callbacks defined in "
+        "DEFAULT_UPDATE_CALLBACKS or within the given updates",
     )
     DEFAULT_UPDATE_CALLBACK_CONFIG = confi.model(
         "DEFAULT_UPDATE_CALLBACK_CONFIG",
