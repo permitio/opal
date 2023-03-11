@@ -49,7 +49,7 @@ class PolicyStoreClientFactory:
             return cls.create(
                 store_type=store_type,
                 url=url,
-                save_to_cache=True,
+                save_to_cache=save_to_cache,
                 token=token,
                 auth_type=auth_type,
                 oauth_client_id=oauth_client_id,

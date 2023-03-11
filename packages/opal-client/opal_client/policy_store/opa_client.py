@@ -315,7 +315,7 @@ class OpaClient(BasePolicyStoreClient):
     async def _get_auth_headers(self) -> {}:
         headers = {}
         if self._auth_type == PolicyStoreAuth.TOKEN:
-            if self._token is None:
+            if self._token is not None:
                 headers.update({"Authorization": f"Bearer {self._token}"})
 
         elif self._auth_type == PolicyStoreAuth.OAUTH:
