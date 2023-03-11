@@ -228,22 +228,21 @@ class OpaClient(BasePolicyStoreClient):
 
     POLICY_NAME = "rbac"
 
-    def __init__(self, opa_server_url=None,
-        opa_auth_token: Optional[str] = None,
-        auth_type: PolicyStoreAuth = PolicyStoreAuth.NONE,
-        oauth_client_id: Optional[str] = None,
-        oauth_client_secret: Optional[str] = None,
-        oauth_server: Optional[str] = None):
+    def __init__(self,
+                 opa_server_url=None,
+                 opa_auth_token: Optional[str] = None,
+                 auth_type: PolicyStoreAuth = PolicyStoreAuth.NONE,
+                 oauth_client_id: Optional[str] = None,
+                 oauth_client_secret: Optional[str] = None,
+                 oauth_server: Optional[str] = None):
 
         base_url = opa_server_url or opal_client_config.POLICY_STORE_URL
         self._opa_url = f"{base_url}/v1"
         self._cached_policies: Dict[str, str] = {}
         self._policy_version: Optional[str] = None
         self._lock = asyncio.Lock()
-
         self._token = opa_auth_token
-
-        self._auth_type : PolicyStoreTypes = auth_type
+        self._auth_type: PolicyStoreAuth = auth_type
         self._oauth_client_id = oauth_client_id
         self._oauth_client_secret = oauth_client_secret
         self._oauth_server = oauth_server
@@ -288,13 +287,14 @@ class OpaClient(BasePolicyStoreClient):
 
         async with aiohttp.ClientSession() as session:
             try:
-                async with session.post(self._oauth_server,
+                async with session.post(
+                    self._oauth_server,
                     headers={
                         "accept": "application/json",
                         "content-type": "application/x-www-form-urlencoded;charset=UTF-8"
                     },
-                    data = urlencode({"grant_type": "client_credentials"}).encode("utf-8"),
-                    auth = aiohttp.BasicAuth(self._oauth_client_id, self._oauth_client_secret)
+                    data=urlencode({"grant_type": "client_credentials"}).encode("utf-8"),
+                    auth=aiohttp.BasicAuth(self._oauth_client_id, self._oauth_client_secret)
                 ) as oauth_response:
                     response = await oauth_response.json()
                     logger.info(f"got access_token, expires in {response['expires_in']} seconds")

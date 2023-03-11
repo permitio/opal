@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends
 from opal_client.config import opal_client_config
-from opal_client.policy_store.schemas import PolicyStoreDetails
+from opal_client.policy_store.schemas import PolicyStoreDetails, PolicyStoreAuth
 from opal_common.authentication.authz import require_peer_type
 from opal_common.authentication.deps import JWTAuthenticator
 from opal_common.authentication.types import JWTClaims
