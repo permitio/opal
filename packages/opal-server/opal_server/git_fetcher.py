@@ -172,9 +172,14 @@ class GitPolicyFetcher(PolicyFetcher):
                 should_fetch = await self._should_fetch(
                     repo, hinted_hash=hinted_hash, force_fetch=force_fetch
                 )
-                await self._fetch_and_notify_on_changes(
-                    repo, skip_fetch=not should_fetch
-                )
+                if should_fetch:
+                    logger.info(f"Fetching remote: {self._remote} ({self._source.url})")
+                    await run_sync(
+                        repo.remotes[self._remote].fetch, callbacks=self._auth_callbacks
+                    )
+                    logger.info(f"Fetch completed: {self._source.url}")
+
+                    await self._notify_on_changes(repo)
                 return
             else:
                 # repo dir exists but invalid -> we must delete the directory
@@ -251,24 +256,26 @@ class GitPolicyFetcher(PolicyFetcher):
         # by default, we try to avoid re-fetching the repo for performance
         return False
 
-    async def _fetch_and_notify_on_changes(
-        self, repo: Repository, skip_fetch: bool = False
-    ):
-        if not skip_fetch:
-            logger.info(f"Fetching remote: {self._remote} ({self._source.url})")
-            await run_sync(
-                repo.remotes[self._remote].fetch, callbacks=self._auth_callbacks
-            )
-            logger.info(f"Fetch completed: {self._source.url}")
-
-        local_branch = RepoInterface.get_local_branch(repo, self._source.branch)
-        old_revision = local_branch.target.hex
+    async def _notify_on_changes(self, repo: Repository, skip_fetch: bool = False):
+        # Get the latest commit hash of the target branch
         new_revision = RepoInterface.get_commit_hash(
             repo, self._source.branch, self._remote
         )
         if new_revision is None:
             logger.error(f"Did not find target branch on remote: {self._source.branch}")
             return
+
+        # Get the previous commit hash of the target branch
+        local_branch = RepoInterface.get_local_branch(repo, self._source.branch)
+        if local_branch is None:
+            # First sync of a new branch (the first synced branch in this repo was set by the clone (see `checkout_branch`))
+            old_revision = None
+            local_branch = RepoInterface.create_local_branch_ref(
+                repo, self._source.branch, self._remote, self._source.branch
+            )
+        else:
+            old_revision = local_branch.target.hex
+
         await self.callbacks.on_update(old_revision, new_revision)
 
         # Bring forward local branch (a bit like "pull"), so we won't detect changes again
