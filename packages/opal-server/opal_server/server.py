@@ -40,7 +40,7 @@ from opal_server.scopes.scope_repository import ScopeNotFoundError, ScopeReposit
 from opal_server.security.api import init_security_router
 from opal_server.security.jwks import JwksStaticEndpoint
 from opal_server.statistics import OpalStatistics, init_statistics_router
-from opal_server.worker import schedule_sync_all_scopes
+from opal_server.worker import sync_all_scopes
 
 
 class OpalServer:
@@ -346,7 +346,7 @@ class OpalServer:
 
                     if opal_server_config.SCOPES:
                         await load_scopes(self._scopes)
-                        await schedule_sync_all_scopes(self._scopes)
+                        sync_all_scopes.delay()
 
                     if self.broadcast_keepalive is not None:
                         self.broadcast_keepalive.start()

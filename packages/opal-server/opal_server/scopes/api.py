@@ -224,9 +224,9 @@ def init_scope_router(
             logger.error(f"Unauthorized to refresh all scopes: {repr(ex)}")
             raise
 
-        from opal_server.worker import schedule_sync_all_scopes
+        from opal_server.worker import sync_all_scopes
 
-        await schedule_sync_all_scopes(scopes)
+        sync_all_scopes.delay()
 
         return Response(status_code=status.HTTP_200_OK)
 

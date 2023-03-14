@@ -196,9 +196,13 @@ class Worker:
         )
         shutil.rmtree(scope_dir, ignore_errors=True)
 
-    async def periodic_check(self):
-        logger.info("Polling OPAL scopes for policy changes")
+    async def sync_scopes(self, only_poll_updates=False):
         scopes = await self._scopes.all()
+        if only_poll_updates:
+            # Only sync scopes that have polling enabled (in a periodic check)
+            scopes = [scope for scope in scopes if scope.policy.poll_updates]
+
+        logger.info(f"OPAL Scopes: syncing {len(scopes)} scopes in the background")
 
         already_fetched = set()
 
@@ -254,6 +258,7 @@ def setup_periodic_tasks(sender, **kwargs):
         logger.info(
             f"OPAL scopes: started polling task, interval is {polling_interval} seconds."
         )
+        # The first execution will be delayed by the polling interval, letting the initial `sync_all_scopes` task to finish first
         sender.add_periodic_task(polling_interval, periodic_check.s())
 
 
@@ -273,35 +278,9 @@ def delete_scope(scope_id: str):
 
 @app.task(ignore_result=True)
 def periodic_check():
-    return async_to_sync(with_worker(Worker.periodic_check))()
+    return async_to_sync(with_worker(Worker.sync_scopes))(only_poll_updates=True)
 
 
-async def schedule_sync_all_scopes(scopes: ScopeRepository):
-    """Syncing all scopes found in redis.
-
-    Schedules separate sync scope tasks in celery. Git fetches are done
-    only for unique remotes.
-    """
-    all_scopes = await scopes.all()
-    logger.info(f"OPAL Scopes: syncing {len(all_scopes)} scopes in the background")
-
-    already_fetched = set()
-    already_synced_scope_ids: List[str] = []
-
-    # first we sync with git fetch all the unique repositories
-    for scope in all_scopes:
-        if scope.policy.url not in already_fetched:
-            logger.info(
-                f"Sync scope {scope.scope_id} (force fetch, remote: {scope.policy.url})"
-            )
-            sync_scope.delay(scope.scope_id, force_fetch=True)
-            already_fetched.add(scope.policy.url)
-            already_synced_scope_ids.append(scope.scope_id)
-
-    # then we sync other "same repo" scopes without git fetch to be more efficient
-    for scope in all_scopes:
-        if scope.scope_id not in already_synced_scope_ids:
-            logger.info(
-                f"Sync scope {scope.scope_id} (SKIP fetch, remote: {scope.policy.url})"
-            )
-            sync_scope.delay(scope.scope_id)
+@app.task(ignore_result=True)
+def sync_all_scopes():
+    return async_to_sync(with_worker(Worker.sync_scopes))()
