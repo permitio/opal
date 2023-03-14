@@ -179,7 +179,8 @@ class GitPolicyFetcher(PolicyFetcher):
                     )
                     logger.info(f"Fetch completed: {self._source.url}")
 
-                    await self._notify_on_changes(repo)
+                # New commits might be present because of a previous fetch made by another scope
+                await self._notify_on_changes(repo)
                 return
             else:
                 # repo dir exists but invalid -> we must delete the directory
