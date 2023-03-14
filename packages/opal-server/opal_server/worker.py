@@ -7,6 +7,7 @@ import git
 from aiohttp import ClientError, ClientSession
 from asgiref.sync import async_to_sync
 from celery import Celery
+from celery.signals import worker_ready
 from fastapi import status
 from opal_common.git.commit_viewer import VersionedFile
 from opal_common.logger import configure_logs, logger
@@ -249,19 +250,6 @@ app.conf.task_default_queue = "opal-worker"
 app.conf.task_serializer = "json"
 
 
-@app.on_after_configure.connect
-def setup_periodic_tasks(sender, **kwargs):
-    polling_interval = opal_server_config.POLICY_REFRESH_INTERVAL
-    if polling_interval == 0:
-        logger.info("OPAL scopes: polling task is off.")
-    else:
-        logger.info(
-            f"OPAL scopes: started polling task, interval is {polling_interval} seconds."
-        )
-        # The first execution will be delayed by the polling interval, letting the initial `sync_all_scopes` task to finish first
-        sender.add_periodic_task(polling_interval, periodic_check.s())
-
-
 @app.task(ignore_result=True)
 def sync_scope(
     scope_id: str, hinted_hash: Optional[str] = None, force_fetch: bool = False
@@ -283,4 +271,24 @@ def periodic_check():
 
 @app.task(ignore_result=True)
 def sync_all_scopes():
+    logger.info("sync_all_scopes called")
     return async_to_sync(with_worker(Worker.sync_scopes))()
+
+
+@app.on_after_configure.connect
+def setup_worker_tasks(sender, **kwargs):
+    polling_interval = opal_server_config.POLICY_REFRESH_INTERVAL
+    if polling_interval == 0:
+        logger.info("OPAL scopes: polling task is off.")
+    else:
+        logger.info(
+            f"OPAL scopes: started polling task, interval is {polling_interval} seconds."
+        )
+        # The first execution will be delayed by the polling interval, letting the initial `sync_all_scopes` task to finish first
+        sender.add_periodic_task(polling_interval, periodic_check.s())
+
+
+@worker_ready.connect
+def on_worker_ready(**kwargs):
+    logger.info("OPAL worker is ready")
+    sync_all_scopes()
