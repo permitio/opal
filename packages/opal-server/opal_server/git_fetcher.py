@@ -139,7 +139,7 @@ class GitPolicyFetcher(PolicyFetcher):
         self._repo_path = GitPolicyFetcher.repo_clone_path(base_dir, self._source)
         self._remote = remote_name
         self._scope_id = scope_id
-        logger.info(
+        logger.debug(
             f"Initializing git fetcher: scope_id={scope_id}, url={source.url}, branch={self._source.branch}, path={GitPolicyFetcher.source_id(source)}"
         )
 
@@ -173,18 +173,20 @@ class GitPolicyFetcher(PolicyFetcher):
                     repo, hinted_hash=hinted_hash, force_fetch=force_fetch
                 )
                 if should_fetch:
-                    logger.info(f"Fetching remote: {self._remote} ({self._source.url})")
+                    logger.info(
+                        f"Fetching remote (force_fetch={force_fetch}): {self._remote} ({self._source.url})"
+                    )
                     await run_sync(
                         repo.remotes[self._remote].fetch, callbacks=self._auth_callbacks
                     )
-                    logger.info(f"Fetch completed: {self._source.url}")
+                    logger.debug(f"Fetch completed: {self._source.url}")
 
                 # New commits might be present because of a previous fetch made by another scope
                 await self._notify_on_changes(repo)
                 return
             else:
                 # repo dir exists but invalid -> we must delete the directory
-                logger.info("Deleting invalid repo: {path}", path=self._repo_path)
+                logger.warning("Deleting invalid repo: {path}", path=self._repo_path)
                 shutil.rmtree(self._repo_path)
         else:
             logger.info("Repo not found at {path}", path=self._repo_path)
@@ -235,7 +237,6 @@ class GitPolicyFetcher(PolicyFetcher):
         force_fetch: bool = False,
     ) -> bool:
         if force_fetch:
-            logger.info("Force-fetch was requested")
             return True  # must fetch
 
         if not RepoInterface.has_remote_branch(repo, self._source.branch, self._remote):
