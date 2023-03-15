@@ -145,14 +145,17 @@ class Worker:
         hinted_hash: Optional[str] = None,
         force_fetch: bool = False,
     ):
-        logger.info(f"Sync scope: {scope_id}")
         scope = await self._scopes.get(scope_id)
 
         if not isinstance(scope.policy, GitPolicyScopeSource):
             logger.warning("Non-git scopes are currently not supported!")
             return
-
         source = cast(GitPolicyScopeSource, scope.policy)
+
+        logger.info(
+            f"Sync scope: {scope_id} (remote: {source.url}, branch: {source.branch})"
+        )
+
         fetcher = GitPolicyFetcher(
             self._base_dir,
             scope_id,
@@ -203,15 +206,14 @@ class Worker:
             # Only sync scopes that have polling enabled (in a periodic check)
             scopes = [scope for scope in scopes if scope.policy.poll_updates]
 
-        logger.info(f"OPAL Scopes: syncing {len(scopes)} scopes in the background")
+        logger.info(
+            f"OPAL Scopes: syncing {len(scopes)} scopes in the background (polling updates: {only_poll_updates})"
+        )
 
         already_fetched = set()
 
         for scope in scopes:
             if scope.policy.poll_updates:
-                logger.info(
-                    f"triggering sync_scope for scope {scope.scope_id} (remote: {scope.policy.url})"
-                )
                 sync_scope.delay(
                     scope.scope_id,
                     # No need to fetch the same repo twice
@@ -271,7 +273,6 @@ def periodic_check():
 
 @app.task(ignore_result=True)
 def sync_all_scopes():
-    logger.info("sync_all_scopes called")
     return async_to_sync(with_worker(Worker.sync_scopes))()
 
 
@@ -292,3 +293,4 @@ def setup_worker_tasks(sender, **kwargs):
 def on_worker_ready(**kwargs):
     logger.info("OPAL worker is ready")
     sync_all_scopes()
+    logger.info("OPAL worker: initial sync of all scopes is done")
