@@ -8,6 +8,7 @@ import git
 from aiohttp import ClientError, ClientSession
 from asgiref.sync import async_to_sync
 from celery import Celery
+from celery.signals import worker_ready
 from ddtrace import tracer
 from fastapi import status
 from opal_common.config import opal_common_config
@@ -151,14 +152,17 @@ class Worker:
         force_fetch: bool = False,
     ):
         with tracer.trace("worker.sync_scope", resource=scope_id):
-            logger.info(f"Sync scope: {scope_id}")
             scope = await self._scopes.get(scope_id)
 
             if not isinstance(scope.policy, GitPolicyScopeSource):
                 logger.warning("Non-git scopes are currently not supported!")
                 return
-
             source = cast(GitPolicyScopeSource, scope.policy)
+
+            logger.info(
+                f"Sync scope: {scope_id} (remote: {source.url}, branch: {source.branch})"
+            )
+
             fetcher = GitPolicyFetcher(
                 self._base_dir,
                 scope_id,
@@ -211,19 +215,27 @@ class Worker:
                 # Only sync scopes that have polling enabled (in a periodic check)
                 scopes = [scope for scope in scopes if scope.policy.poll_updates]
 
-            logger.info(f"OPAL Scopes: syncing {len(scopes)} scopes in the background")
+            logger.info(
+                f"OPAL Scopes: syncing {len(scopes)} scopes in the background (polling updates: {only_poll_updates})"
+            )
 
-            already_fetched = set()
+            fetched_urls = set()
+            skipped_scopes = []
             for scope in scopes:
-                logger.info(
-                    f"triggering sync_scope for scope {scope.scope_id} (remote: {scope.policy.url})"
-                )
+                # Give priority to scopes that have a unique url (so we'll clone all repos asap)
+                if scope.policy.url in fetched_urls:
+                    skipped_scopes.append(scope)
+                    continue
+
                 await self.sync_scope(
                     scope.scope_id,
-                    # No need to fetch the same repo twice
-                    force_fetch=scope.policy.url not in already_fetched,
+                    force_fetch=True,
                 )
-                already_fetched.add(scope.policy.url)
+                fetched_urls.add(scope.policy.url)
+
+            for scope in skipped_scopes:
+                # No need to refetch the same repo, just check for changes
+                await self.sync_scope(scope.scope_id, force_fetch=False)
 
 
 def create_worker() -> Worker:
@@ -266,21 +278,6 @@ app.conf.task_default_queue = "opal-worker"
 app.conf.task_serializer = "json"
 
 
-@app.on_after_configure.connect
-def setup_worker_tasks(sender, **kwargs):
-    sync_all_scopes.delay()
-
-    polling_interval = opal_server_config.POLICY_REFRESH_INTERVAL
-    if polling_interval == 0:
-        logger.info("OPAL scopes: polling task is off.")
-    else:
-        logger.info(
-            f"OPAL scopes: started polling task, interval is {polling_interval} seconds."
-        )
-        # The first execution will be delayed by the polling interval, letting the initial `sync_all_scopes` task to finish first
-        sender.add_periodic_task(polling_interval, periodic_check.s())
-
-
 @app.task(ignore_result=True)
 def sync_scope(
     scope_id: str, hinted_hash: Optional[str] = None, force_fetch: bool = False
@@ -308,3 +305,23 @@ def sync_all_scopes():
 @app.task(ignore_result=True)
 def send_metrics():
     return async_to_sync(with_worker(Worker.send_metrics))()
+
+
+@app.on_after_configure.connect
+def setup_worker_tasks(sender, **kwargs):
+    polling_interval = opal_server_config.POLICY_REFRESH_INTERVAL
+    if polling_interval == 0:
+        logger.info("OPAL scopes: polling task is off.")
+    else:
+        logger.info(
+            f"OPAL scopes: started polling task, interval is {polling_interval} seconds."
+        )
+        # The first execution will be delayed by the polling interval, letting the initial `sync_all_scopes` task to finish first
+        sender.add_periodic_task(polling_interval, periodic_check.s())
+
+
+@worker_ready.connect
+def on_worker_ready(**kwargs):
+    logger.info("OPAL worker is ready")
+    sync_all_scopes()
+    logger.info("OPAL worker: initial sync of all scopes is done")
