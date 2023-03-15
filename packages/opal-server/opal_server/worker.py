@@ -219,14 +219,23 @@ class Worker:
                 f"OPAL Scopes: syncing {len(scopes)} scopes in the background (polling updates: {only_poll_updates})"
             )
 
-            already_fetched = set()
+            fetched_urls = set()
+            skipped_scopes = []
             for scope in scopes:
+                # Give priority to scopes that have a unique url (so we'll clone all repos asap)
+                if scope.policy.url in fetched_urls:
+                    skipped_scopes.append(scope)
+                    continue
+
                 await self.sync_scope(
                     scope.scope_id,
-                    # No need to fetch the same repo twice
-                    force_fetch=scope.policy.url not in already_fetched,
+                    force_fetch=True,
                 )
-                already_fetched.add(scope.policy.url)
+                fetched_urls.add(scope.policy.url)
+
+            for scope in skipped_scopes:
+                # No need to refetch the same repo, just check for changes
+                await self.sync_scope(scope.scope_id, force_fetch=False)
 
 
 def create_worker() -> Worker:
