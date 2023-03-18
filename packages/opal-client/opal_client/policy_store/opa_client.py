@@ -334,8 +334,17 @@ class OpaClient(BasePolicyStoreClient):
     @affects_transaction
     @retry(**RETRY_CONFIG)
     async def set_policy(
-        self, policy_id: str, policy_code: str, transaction_id: Optional[str] = None
+        self,
+        policy_id: str,
+        policy_code: str,
+        transaction_id: Optional[str] = None,
     ):
+        # ignore explicitly configured paths
+        if policy_id in opal_client_config.POLICY_STORE_POLICY_PATHS_TO_IGNORE:
+            logger.info(
+                f"Ignoring setting policy - {policy_id}, set in POLICY_PATHS_TO_IGNORE."
+            )
+            return
         self._cached_policies[policy_id] = policy_code
         async with aiohttp.ClientSession() as session:
             try:
@@ -372,6 +381,13 @@ class OpaClient(BasePolicyStoreClient):
     @affects_transaction
     @retry(**RETRY_CONFIG)
     async def delete_policy(self, policy_id: str, transaction_id: Optional[str] = None):
+        # ignore explicitly configured paths
+        if policy_id in opal_client_config.POLICY_STORE_POLICY_PATHS_TO_IGNORE:
+            logger.info(
+                f"Ignoring deleting policy - {policy_id}, set in POLICY_PATHS_TO_IGNORE."
+            )
+            return
+
         async with aiohttp.ClientSession() as session:
             try:
                 headers = await self._get_auth_headers()
@@ -465,6 +481,7 @@ class OpaClient(BasePolicyStoreClient):
 
             # remove policies from the store that are not in the bundle
             # (because this bundle is "complete", i.e: contains all policy modules for a given hash)
+            # Note: this can ignored below by config.POLICY_STORE_POLICY_PATHS_TO_IGNORE
             for module_id in module_ids_to_delete:
                 await self.delete_policy(policy_id=module_id)
 
@@ -613,7 +630,8 @@ class OpaClient(BasePolicyStoreClient):
                     headers=headers,
                 ) as opa_response:
                     return await proxy_response_unless_invalid(
-                        opa_response, accepted_status_codes=[status.HTTP_204_NO_CONTENT]
+                        opa_response,
+                        accepted_status_codes=[status.HTTP_204_NO_CONTENT],
                     )
             except aiohttp.ClientError as e:
                 logger.warning("Opa connection error: {err}", err=repr(e))
@@ -674,7 +692,10 @@ class OpaClient(BasePolicyStoreClient):
 
     @retry(**RETRY_CONFIG)
     async def init_healthcheck_policy(
-        self, policy_id: str, policy_code: str, data_updater_enabled: bool = True
+        self,
+        policy_id: str,
+        policy_code: str,
+        data_updater_enabled: bool = True,
     ):
         self._transaction_state = OpaTransactionLogState(
             policy_store=self,

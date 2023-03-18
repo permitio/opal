@@ -68,6 +68,12 @@ class OpalClientConfig(Confi):
         description="retry options when connecting to the policy source (e.g. the policy bundle server)",
     )
 
+    POLICY_STORE_POLICY_PATHS_TO_IGNORE = confi.list(
+        "POLICY_STORE_EXTERNAL_POLICY_PATHS_TO_IGNORE",
+        [],
+        description="When loading policies manually or otherwise externally into the policy store, use this flag to have OPAL ignore and not delete or override them",
+    )
+
     # create an instance of a policy store upon load
     def load_policy_store():
         from opal_client.policy_store.policy_store_client_factory import (
