@@ -87,14 +87,8 @@ class OpaTransactionLogState:
 
     def __init__(
         self,
-        policy_store: BasePolicyStoreClient,
-        policy_id: str,
-        policy_template: str,
         data_updater_enabled: bool = True,
     ):
-        self._store = policy_store
-        self._policy_id = policy_id
-        self._policy_template = policy_template
         self._data_updater_disabled = not data_updater_enabled
         self._num_successful_policy_transactions = 0
         self._num_failed_policy_transactions = 0
@@ -110,7 +104,7 @@ class OpaTransactionLogState:
         is_ready: bool = self._num_successful_policy_transactions > 0 and (
             self._data_updater_disabled or self._num_successful_data_transactions > 0
         )
-        return json.dumps(is_ready)
+        return is_ready
 
     @property
     def healthy(self) -> bool:
@@ -125,78 +119,48 @@ class OpaTransactionLogState:
         is_healthy: bool = policy_updater_is_healthy and (
             self._data_updater_disabled or data_updater_is_healthy
         )
-        return json.dumps(is_healthy)
+        logger.info(
+            f"OPA client health: {is_healthy} (policy: {policy_updater_is_healthy}, data: {data_updater_is_healthy})"
+        )
+        return is_healthy
 
     @property
     def last_policy_transaction(self):
         if self._last_policy_transaction is None:
-            return json.dumps({})
-        return json.dumps(self._last_policy_transaction.dict())
+            return {}
+        return self._last_policy_transaction.dict()
 
     @property
     def last_data_transaction(self):
         if self._last_data_transaction is None:
-            return json.dumps({})
-        return json.dumps(self._last_data_transaction.dict())
+            return {}
+        return self._last_data_transaction.dict()
 
     @property
     def last_failed_policy_transaction(self):
         if self._last_failed_policy_transaction is None:
-            return json.dumps({})
-        return json.dumps(self._last_failed_policy_transaction.dict())
+            return {}
+        return self._last_failed_policy_transaction.dict()
 
     @property
     def last_failed_data_transaction(self):
         if self._last_failed_data_transaction is None:
-            return json.dumps({})
-        return json.dumps(self._last_failed_data_transaction.dict())
+            return {}
+        return self._last_failed_data_transaction.dict()
 
     @property
     def transaction_policy_statistics(self):
-        return json.dumps(
-            {
-                "successful": self._num_successful_policy_transactions,
-                "failed": self._num_failed_policy_transactions,
-            }
-        )
+        return {
+            "successful": self._num_successful_policy_transactions,
+            "failed": self._num_failed_policy_transactions,
+        }
 
     @property
     def transaction_data_statistics(self):
-        return json.dumps(
-            {
-                "successful": self._num_successful_data_transactions,
-                "failed": self._num_failed_data_transactions,
-            }
-        )
-
-    async def persist(self):
-        """renders the policy template with the current state, and writes it to
-        OPA."""
-        logger.info(
-            "persisting health check policy: ready={ready}, healthy={healthy}",
-            ready=self.ready,
-            healthy=self.healthy,
-        )
-        logger.info(
-            "Policy and data statistics: policy: (successful {success_policy}, failed {failed_policy});\tdata: (successful {success_data}, failed {failed_data})",
-            success_policy=self._num_successful_policy_transactions,
-            failed_policy=self._num_failed_policy_transactions,
-            success_data=self._num_successful_data_transactions,
-            failed_data=self._num_failed_data_transactions,
-        )
-        policy_code = self._policy_template.format(
-            ready=self.ready,
-            healthy=self.healthy,
-            last_policy_transaction=self.last_policy_transaction,
-            last_failed_policy_transaction=self.last_failed_policy_transaction,
-            last_data_transaction=self.last_data_transaction,
-            last_failed_data_transaction=self.last_failed_data_transaction,
-            transaction_data_statistics=self.transaction_data_statistics,
-            transaction_policy_statistics=self.transaction_policy_statistics,
-        )
-        return await self._store.set_policy(
-            policy_id=self._policy_id, policy_code=policy_code
-        )
+        return {
+            "successful": self._num_successful_data_transactions,
+            "failed": self._num_failed_data_transactions,
+        }
 
     def _is_policy_transaction(self, transaction: StoreTransaction):
         return transaction.transaction_type == TransactionType.policy
@@ -207,12 +171,11 @@ class OpaTransactionLogState:
     def process_transaction(self, transaction: StoreTransaction):
         """mutates the state into a new state that can be then persisted as
         hardcoded policy."""
-        logger.info(
+        logger.debug(
             "processing store transaction: {transaction}",
             transaction=transaction.dict(),
         )
         if self._is_policy_transaction(transaction):
-
             if transaction.success:
                 self._last_policy_transaction = transaction
                 self._num_successful_policy_transactions += 1
@@ -221,13 +184,59 @@ class OpaTransactionLogState:
                 self._num_failed_policy_transactions += 1
 
         elif self._is_data_transaction(transaction):
-
             if transaction.success:
                 self._last_data_transaction = transaction
                 self._num_successful_data_transactions += 1
             else:
                 self._last_failed_data_transaction = transaction
                 self._num_failed_data_transactions += 1
+
+
+class OpaTransactionLogPolicyWriter:
+    def __init__(
+        self,
+        policy_store: BasePolicyStoreClient,
+        policy_id: str,
+        policy_template: str,
+    ):
+        self._store = policy_store
+        self._policy_id = policy_id
+        self._policy_template = policy_template
+
+    @staticmethod
+    def _format_with_json(template, **kwargs):
+        kwargs = {k: json.dumps(v) for k, v in kwargs.items()}
+        return template.format(**kwargs)
+
+    async def persist(self, state: OpaTransactionLogState):
+        """renders the policy template with the current state, and writes it to
+        OPA."""
+        logger.info(
+            "persisting health check policy: ready={ready}, healthy={healthy}",
+            ready=state.ready,
+            healthy=state.healthy,
+        )
+        logger.info(
+            "Policy and data statistics: policy: (successful {success_policy}, failed {failed_policy});\tdata: (successful {success_data}, failed {failed_data})",
+            success_policy=state._num_successful_policy_transactions,
+            failed_policy=state._num_failed_policy_transactions,
+            success_data=state._num_successful_data_transactions,
+            failed_data=state._num_failed_data_transactions,
+        )
+        policy_code = self._format_with_json(
+            self._policy_template,
+            ready=state.ready,
+            healthy=state.healthy,
+            last_policy_transaction=state.last_policy_transaction,
+            last_failed_policy_transaction=state.last_failed_policy_transaction,
+            last_data_transaction=state.last_data_transaction,
+            last_failed_data_transaction=state.last_failed_data_transaction,
+            transaction_data_statistics=state.transaction_data_statistics,
+            transaction_policy_statistics=state.transaction_policy_statistics,
+        )
+        return await self._store.set_policy(
+            policy_id=self._policy_id, policy_code=policy_code
+        )
 
 
 class OpaClient(BasePolicyStoreClient):
@@ -243,8 +252,8 @@ class OpaClient(BasePolicyStoreClient):
         oauth_client_id: Optional[str] = None,
         oauth_client_secret: Optional[str] = None,
         oauth_server: Optional[str] = None,
+        data_updater_enabled: bool = True,
     ):
-
         base_url = opa_server_url or opal_client_config.POLICY_STORE_URL
         self._opa_url = f"{base_url}/v1"
         self._cached_policies: Dict[str, str] = {}
@@ -281,8 +290,9 @@ class OpaClient(BasePolicyStoreClient):
 
         logger.info(f"Authentication mode for policy store: {auth_type}")
 
-        # as long as this is null, transaction log is disabled
-        self._transaction_state: Optional[OpaTransactionLogState] = None
+        self._transaction_state = OpaTransactionLogState(data_updater_enabled)
+        # as long as this is null, persisting transaction log to OPA is disabled
+        self._transaction_state_writer: Optional[OpaTransactionLogState] = None
 
     async def get_policy_version(self) -> Optional[str]:
         return self._policy_version
@@ -703,23 +713,36 @@ class OpaClient(BasePolicyStoreClient):
             raise
 
     @retry(**RETRY_CONFIG)
-    async def init_healthcheck_policy(
-        self,
-        policy_id: str,
-        policy_code: str,
-        data_updater_enabled: bool = True,
-    ):
-        self._transaction_state = OpaTransactionLogState(
+    async def init_healthcheck_policy(self, policy_id: str, policy_code: str):
+        self._transaction_state_writer = OpaTransactionLogPolicyWriter(
             policy_store=self,
             policy_id=policy_id,
             policy_template=policy_code,
-            data_updater_enabled=data_updater_enabled,
         )
-        return await self._transaction_state.persist()
+        return await self._transaction_state_writer.persist(self._transaction_state)
 
     @retry(**RETRY_CONFIG)
-    async def persist_transaction(self, transaction: StoreTransaction):
-        if self._transaction_state is None:
-            return
+    async def log_transaction(self, transaction: StoreTransaction):
+        logger.info("log_transaction")
         self._transaction_state.process_transaction(transaction)
-        return await self._transaction_state.persist()
+
+        if self._transaction_state_writer:
+            try:
+                return await self._transaction_state_writer.persist(
+                    self._transaction_state
+                )
+            except Exception as e:
+                # The writes to transaction log in OPA cache are not done a protected
+                # transaction context. If they fail, we do nothing special.
+                transaction_data = json.dumps(
+                    transaction, indent=4, sort_keys=True, default=str
+                )
+                logger.error(
+                    "Cannot write to OPAL transaction log, transaction id={id}, error={err} with data={data}",
+                    id=transaction.id,
+                    err=repr(e),
+                    data=transaction_data,
+                )
+
+    async def is_healthy(self) -> bool:
+        return self._transaction_state.healthy

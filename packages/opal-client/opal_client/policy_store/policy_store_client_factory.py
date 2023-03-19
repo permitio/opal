@@ -14,7 +14,6 @@ class InvalidPolicyStoreTypeException(Exception):
 
 
 class PolicyStoreClientFactory:
-
     CACHE: Dict[str, BasePolicyStoreClient] = {}
 
     @classmethod
@@ -70,6 +69,7 @@ class PolicyStoreClientFactory:
         oauth_client_id: Optional[str] = None,
         oauth_client_secret: Optional[str] = None,
         oauth_server: Optional[str] = None,
+        data_updater_enabled: Optional[bool] = None,
     ) -> BasePolicyStoreClient:
         """
         Factory method - create a new policy store by type.
@@ -99,6 +99,11 @@ class PolicyStoreClientFactory:
             or opal_client_config.POLICY_STORE_AUTH_OAUTH_CLIENT_SECRET
         )
         oauth_server = oauth_server or opal_client_config.POLICY_STORE_AUTH_OAUTH_SERVER
+        data_updater_enabled = (
+            data_updater_enabled
+            if data_updater_enabled is not None
+            else opal_client_config.DATA_UPDATER_ENABLED
+        )
 
         # OPA
         if PolicyStoreTypes.OPA == store_type:
@@ -111,6 +116,7 @@ class PolicyStoreClientFactory:
                 oauth_client_id=oauth_client_id,
                 oauth_client_secret=oauth_client_secret,
                 oauth_server=oauth_server,
+                data_updater_enabled=data_updater_enabled,
             )
         # MOCK
         elif PolicyStoreTypes.MOCK == store_type:
