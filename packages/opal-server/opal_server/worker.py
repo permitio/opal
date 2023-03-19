@@ -187,18 +187,22 @@ class Worker:
         url = scope.policy.url
 
         scopes = await self._scopes.all()
+        remove_repo_clone = True
 
         for scope in scopes:
             if scope.scope_id != scope_id and scope.policy.url == url:
                 logger.info(
-                    f"found another scope with same remote url: {scope.scope_id}"
+                    f"found another scope with same remote url ({scope.scope_id}), skipping clone deletion"
                 )
-                return
+                remove_repo_clone = False
 
-        scope_dir = GitPolicyFetcher.repo_clone_path(
-            self._base_dir, cast(GitPolicyScopeSource, scope.policy)
-        )
-        shutil.rmtree(scope_dir, ignore_errors=True)
+        if remove_repo_clone:
+            scope_dir = GitPolicyFetcher.repo_clone_path(
+                self._base_dir, cast(GitPolicyScopeSource, scope.policy)
+            )
+            shutil.rmtree(scope_dir, ignore_errors=True)
+
+        await self._scopes.delete(scope_id)
 
     async def sync_scopes(self, only_poll_updates=False):
         scopes = await self._scopes.all()
