@@ -87,5 +87,5 @@ class MockPolicyStoreClient(BasePolicyStoreClient):
     ):
         pass
 
-    async def persist_transaction(self, transaction: StoreTransaction):
+    async def log_transaction(self, transaction: StoreTransaction):
         pass
