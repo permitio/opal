@@ -67,4 +67,4 @@ class CallbacksReporter:
                         error=error_content,
                     )
         except:
-            logger.exception("Failed to excute report_update_results")
+            logger.exception("Failed to execute report_update_results")

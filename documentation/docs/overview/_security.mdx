@@ -14,7 +14,7 @@ title: Security
   * Meaning: the traffic between OPAL client and OPAL server should always be encrypted (it's ok to terminate SSL in the load balancer).
   * Why:
     * The client can verify the identity of the server using the HTTPS certificate.
-    * To protect yourself from MITM / Sniffing attacks. OPAL server **may** pass autentication tokens and other secrets to OPAL client, if the client need such secrets in order to fetch data.
+    * To protect yourself from MITM / Sniffing attacks. OPAL server **may** pass authentication tokens and other secrets to OPAL client, if the client need such secrets in order to fetch data.
 * OPAL server should **always** run in secure mode - meaning JWT token verification should be active.
   * Why:
     * So that the server may verify the identity of the client. The client may gain access to sensitive secrets pushed from the server, so we want to prevent anyone unauthorized from pretending to be a client.

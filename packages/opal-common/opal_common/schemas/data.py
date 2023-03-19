@@ -13,7 +13,7 @@ DEFAULT_DATA_TOPIC = "policy_data"
 
 class DataSourceEntry(BaseModel):
     """
-    Data source configuration - where client's should retrive data from and how they should store it
+    Data source configuration - where client's should retrieve data from and how they should store it
     """
 
     # How to obtain the data
@@ -154,7 +154,7 @@ class DataEntryReport(BaseModel):
 
 
 class DataUpdateReport(BaseModel):
-    # the UUID fo the update this report is for
+    # the UUID of the update this report is for
     update_id: Optional[str] = None
     # Each DataSourceEntry and how it was processed
     reports: List[DataEntryReport]

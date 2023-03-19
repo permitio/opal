@@ -22,7 +22,7 @@ from opal_server.config import opal_server_config
 
 
 class PubSub:
-    """Warpper for the Pub/Sub channel used for both policy and data
+    """Wrapper for the Pub/Sub channel used for both policy and data
     updates."""
 
     def __init__(self, signer: JWTSigner, broadcaster_uri: str = None):

@@ -38,7 +38,7 @@ def setup_watcher_task(
         branch_name(str):  name of remote branch in git to pull
         ssh_key (str, optional): private ssh key used to gain access to the cloned repo
         polling_interval(int):  how many seconds need to wait between polling
-        request_timeout(int):  how many seconds need to wait until timout
+        request_timeout(int):  how many seconds need to wait until timeout
         policy_bundle_token(int):  auth token to include in connections to OPAL server. Defaults to POLICY_BUNDLE_SERVER_TOKEN.
         extensions(list(str), optional):  list of extantions to check when new policy arrive default is OPA_FILE_EXTENSIONS
         bundle_ignore(list(str), optional):  list of glob paths to use for excluding files from bundle default is OPA_BUNDLE_IGNORE

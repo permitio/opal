@@ -77,7 +77,7 @@ class BasePolicySource:
                 await polling_task()
             except Exception as ex:
                 logger.error(
-                    "Error occured during polling task {task}: {err}",
+                    "Error occurred during polling task {task}: {err}",
                     task=polling_task.__name__,
                     err=ex,
                 )

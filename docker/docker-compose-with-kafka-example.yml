@@ -50,7 +50,7 @@ services:
       KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9092
       # KAFKA_CLUSTERS_0_NAME: local
   opal_server:
-    # build an image from the exmple Dockerfile in the current directory
+    # build an image from the example Dockerfile in the current directory
     # which uses the opal-server image from Docker Hub while adding the brodcaster Kafka module
     image: permitio/opal-server:latest
     environment:

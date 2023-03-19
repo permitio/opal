@@ -21,7 +21,7 @@ app = get_typer_app()
 
 @app.command()
 def run(engine_type: str = typer.Option("uvicron", help="uvicorn or gunicorn")):
-    """Run the server as a deamon."""
+    """Run the server as a daemon."""
     typer.echo(f"-- Starting OPAL Server (with {engine_type}) --")
 
     if engine_type == "gunicorn":

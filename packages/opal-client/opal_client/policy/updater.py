@@ -81,7 +81,7 @@ class PolicyUpdater:
             self._topics = [f"{self._scope_id}:policy:."]
         # The pub/sub client for data updates
         self._client = None
-        # The task running the Pub/Sub subcribing client
+        # The task running the Pub/Sub subscribing client
         self._subscriber_task = None
         self._stopping = False
         # policy fetcher - fetches policy bundles

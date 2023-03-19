@@ -43,7 +43,7 @@ class FetchingEngine(BaseFetchingEngine):
         self._tasks: List[asyncio.Task] = []
         # register of the fetch providers workers can use
         self._fetcher_register = FetcherRegister(register_config)
-        # core event callback regsiters
+        # core event callback registers
         self._failure_handlers: List[OnFetchFailureCallback] = []
         # how many workers to run
         self._worker_count: int = worker_count
@@ -101,7 +101,7 @@ class FetchingEngine(BaseFetchingEngine):
         timeout = self._callback_timeout if timeout is None else timeout
         wait_event = asyncio.Event()
         data = {"result": None}
-        # Callback to wait and retrive data
+        # Callback to wait and retrieve data
 
         async def waiter_callback(answer):
             data["result"] = answer

@@ -59,7 +59,7 @@ class DataUpdater:
         Args:
             token (str, optional): Auth token to include in connections to OPAL server. Defaults to CLIENT_TOKEN.
             pubsub_url (str, optional): URL for Pub/Sub updates for data. Defaults to OPAL_SERVER_PUBSUB_URL.
-            data_sources_config_url (str, optional): URL to retrive base data configuration. Defaults to DEFAULT_DATA_SOURCES_CONFIG_URL.
+            data_sources_config_url (str, optional): URL to retrieve base data configuration. Defaults to DEFAULT_DATA_SOURCES_CONFIG_URL.
             fetch_on_connect (bool, optional): Should the update fetch basic data immediately upon connection/reconnection. Defaults to True.
             data_topics (List[str], optional): Topics of data to fetch and subscribe to. Defaults to DATA_TOPICS.
             policy_store (BasePolicyStoreClient, optional): Policy store client to use to store data. Defaults to DEFAULT_POLICY_STORE.
@@ -188,7 +188,7 @@ class DataUpdater:
         config provided in the config URL.
 
         Args:
-            config_url (str, optional): URL to retrive data sources config from. Defaults to None ( self._data_sources_config_url).
+            config_url (str, optional): URL to retrieve data sources config from. Defaults to None ( self._data_sources_config_url).
             data_fetch_reason (str, optional): Reason to log for the update operation. Defaults to "Initial load".
         """
         logger.info(
@@ -343,7 +343,7 @@ class DataUpdater:
         async with policy_store.transaction_context(
             update.id, transaction_type=TransactionType.data
         ) as store_transaction:
-            # for intelisense treat store_transaction as a PolicyStoreClient (which it proxies)
+            # for intellisense treat store_transaction as a PolicyStoreClient (which it proxies)
             store_transaction: BasePolicyStoreClient
             error_content = None
             for (url, fetch_config, result), entry in itertools.zip_longest(

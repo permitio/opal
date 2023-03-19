@@ -52,7 +52,7 @@ def affects_transaction(func):
 async def proxy_response_unless_invalid(
     raw_response: aiohttp.ClientResponse, accepted_status_codes: List[int]
 ) -> Response:
-    """throws value error if the http response recieved has an unexpected
+    """throws value error if the http response received has an unexpected
     status code."""
     response = await proxy_response(raw_response)
     if response.status_code not in accepted_status_codes:
@@ -304,7 +304,7 @@ class OpaClient(BasePolicyStoreClient):
                     )
 
                     return {
-                        # refresh token before it expires, lets substract 10 seconds
+                        # refresh token before it expires, lets subtract 10 seconds
                         "expires": time.time() + response["expires_in"] - 10,
                         "token": response["access_token"],
                     }

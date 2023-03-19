@@ -25,7 +25,7 @@ def pubsub_topics_from_directories(dirs: List[str]) -> List[str]:
 
     this method also ensures the client only subscribes to non-
     intersecting directories by dedupping directories that are
-    decendents of one another.
+    descendents of one another.
     """
     policy_directories = PathUtils.non_intersecting_directories([Path(d) for d in dirs])
     return policy_topics(policy_directories)

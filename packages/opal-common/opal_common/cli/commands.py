@@ -43,7 +43,7 @@ def obtain_token(
     type: PeerType = PeerType("client"),
     ttl: Tuple[int, str] = typer.Option(
         (365, "days"),
-        help="Time-To-Live / experation for the token in `<int> <str>` e.g. `365 days`, or `1000000 milliseconds` ",
+        help="Time-To-Live / expiration for the token in `<int> <str>` e.g. `365 days`, or `1000000 milliseconds` ",
     ),
     claims: str = typer.Option(
         "{}",

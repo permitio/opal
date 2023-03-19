@@ -322,7 +322,7 @@ def test_bundle_maker_nested_manifest_cycle(local_repo: Repo, helpers):
         root / "other/.manifest",
         contents="\n".join(
             [
-                # Those aren't safe (could include infinite recursion) and unsecure
+                # Those aren't safe (could include infinite recursion) and insecure
                 "../",
                 "..",
                 "./",
@@ -352,7 +352,7 @@ def test_bundle_maker_nested_manifest_cycle(local_repo: Repo, helpers):
     # Make sure:
     #   1. we don't have '../' in list, or getting infinite recursion error
     #   2. 'other/data.json' appears once
-    #   3. referncing non existing 'some/.manifest' doesn't cause an error
+    #   3. referencing non existing 'some/.manifest' doesn't cause an error
     explicit_manifest = maker._get_explicit_manifest(CommitViewer(commit))
     assert explicit_manifest == ["other/data.json", "other/abac.rego"]
 

@@ -40,7 +40,7 @@ async def test_retry_failure():
     async with FetchingEngine() as engine:
         # callback to handle failure
         async def error_callback(error: Exception, event: FetchEvent):
-            # check we got the expection we expected
+            # check we got the exception we expected
             assert isinstance(error, aiohttp.client_exceptions.ClientConnectorError)
             got_error.set()
 

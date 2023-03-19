@@ -113,7 +113,7 @@ class Confi:
         members = sorted(
             inspect.getmembers(self, self._is_entry), key=self._get_entry_index
         )
-        # eval class entries into values (by order of defintion - same order as in the config class lines)
+        # eval class entries into values (by order of definition - same order as in the config class lines)
         for name, entry in members:
             # unwrap delayed entries
             if isinstance(entry, ConfiDelay):

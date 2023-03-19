@@ -70,7 +70,7 @@ class RepoClonePathFinder:
 
     def _get_single_existing_random_clone_path(self) -> Optional[str]:
         """searches for the single randomly-suffixed clone subdirectory in
-        existance.
+        existence.
 
         If found no such subdirectory or if found more than one (multiple matching subdirectories) - will return None.
         otherwise: will return the single and only clone.
