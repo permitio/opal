@@ -208,6 +208,8 @@ class Worker:
             )
             shutil.rmtree(scope_dir, ignore_errors=True)
 
+            await scopes.delete(scope_id)
+
     async def sync_scopes(self, only_poll_updates=False):
         with tracer.trace("worker.sync_scopes"):
             scopes = await self._scopes.all()
