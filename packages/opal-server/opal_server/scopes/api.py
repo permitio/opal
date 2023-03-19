@@ -173,6 +173,8 @@ def init_scope_router(
             logger.error(f"Unauthorized to delete scope: {repr(ex)}")
             raise
 
+        await scopes.delete(scope_id)
+
         from opal_server.worker import delete_scope
 
         delete_scope.delay(scope_id)
