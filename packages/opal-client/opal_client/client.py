@@ -208,6 +208,10 @@ class OpalClient:
         @app.get("/healthcheck", include_in_schema=False)
         @app.get("/", include_in_schema=False)
         async def healthcheck():
+            if not opal_client_config.OPA_HEALTH_CHECK_POLICY_ENABLED:
+                # Currently the client's actual health status is reported by querying OPA, and only when this feature is enabled.
+                return {"status": "ok"}
+
             resp = await self.policy_store.get_data("/system/opal/healthy")
             healthy = resp["result"]
 
