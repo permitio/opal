@@ -169,9 +169,7 @@ class Worker:
         )
 
         try:
-            # using concurrent fetch so that if the celery worker is spawn with concurrency > 1,
-            # the competing processes will not modify the same dir on the filesystem at the same time
-            await fetcher.concurrent_fetch(
+            await fetcher.fetch(
                 redis=self._scopes.db.redis_connection,
                 hinted_hash=hinted_hash,
                 force_fetch=force_fetch,

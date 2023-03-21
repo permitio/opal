@@ -17,7 +17,6 @@ from opal_common.schemas.policy_source import (
     GitPolicyScopeSource,
     SSHAuthData,
 )
-from opal_common.synchronization.expiring_redis_lock import run_locked
 from pygit2 import (
     KeypairFromMemory,
     RemoteCallbacks,
@@ -142,17 +141,6 @@ class GitPolicyFetcher(PolicyFetcher):
         logger.debug(
             f"Initializing git fetcher: scope_id={scope_id}, url={source.url}, branch={self._source.branch}, path={GitPolicyFetcher.source_id(source)}"
         )
-
-    async def concurrent_fetch(self, redis: aioredis.Redis, *args, **kwargs):
-        """makes sure the repo is already fetched and is up to date.
-
-        A wrapper around fetch() to ensure that there are no concurrency
-        issues when trying to fetch multiple scopes that are cloned to
-        the same file system directory. We obtain safety with redis
-        locks.
-        """
-        lock_name = GitPolicyFetcher.source_id(self._source)
-        await run_locked(redis, lock_name, self.fetch(*args, **kwargs))
 
     async def fetch(self, hinted_hash: Optional[str] = None, force_fetch: bool = False):
         """makes sure the repo is already fetched and is up to date.
