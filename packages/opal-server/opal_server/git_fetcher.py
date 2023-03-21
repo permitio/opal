@@ -106,11 +106,11 @@ class RepoInterface:
 
     @staticmethod
     def verify_found_repo_matches_remote(
-        expected_remote_url: str, clone_path: str
+        repo: Repository,
+        expected_remote_url: str,
     ) -> Repository:
         """verifies that the repo we found in the directory matches the repo we
         are wishing to clone."""
-        repo = Repository(clone_path)
         for remote in repo.remotes:
             if remote.url == expected_remote_url:
                 logger.debug(
@@ -142,7 +142,9 @@ class GitPolicyFetcher(PolicyFetcher):
             f"Initializing git fetcher: scope_id={scope_id}, url={source.url}, branch={self._source.branch}, path={GitPolicyFetcher.source_id(source)}"
         )
 
-    async def fetch(self, hinted_hash: Optional[str] = None, force_fetch: bool = False):
+    async def fetch_and_notify_on_changes(
+        self, hinted_hash: Optional[str] = None, force_fetch: bool = False
+    ):
         """makes sure the repo is already fetched and is up to date.
 
         - if no repo is found, the repo will be cloned.
@@ -210,10 +212,11 @@ class GitPolicyFetcher(PolicyFetcher):
 
     def _get_valid_repo(self) -> Optional[Repository]:
         path = str(self._repo_path)
-        RepoInterface.verify_found_repo_matches_remote(self._source.url, path)
 
         try:
-            return Repository(path)
+            repo = Repository(path)
+            RepoInterface.verify_found_repo_matches_remote(repo, self._source.url)
+            return repo
         except pygit2.GitError:
             logger.warning("Invalid repo at: {path}", path=path)
             return None
@@ -246,7 +249,7 @@ class GitPolicyFetcher(PolicyFetcher):
         # by default, we try to avoid re-fetching the repo for performance
         return False
 
-    async def _notify_on_changes(self, repo: Repository, skip_fetch: bool = False):
+    async def _notify_on_changes(self, repo: Repository):
         # Get the latest commit hash of the target branch
         new_revision = RepoInterface.get_commit_hash(
             repo, self._source.branch, self._remote

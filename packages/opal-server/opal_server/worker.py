@@ -169,8 +169,7 @@ class Worker:
         )
 
         try:
-            await fetcher.fetch(
-                redis=self._scopes.db.redis_connection,
+            await fetcher.fetch_and_notify_on_changes(
                 hinted_hash=hinted_hash,
                 force_fetch=force_fetch,
             )
