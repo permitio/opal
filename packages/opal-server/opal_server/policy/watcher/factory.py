@@ -10,7 +10,8 @@ from opal_common.sources.git_policy_source import GitPolicySource
 from opal_common.topics.publisher import TopicPublisher
 from opal_server.config import PolicySourceTypes, opal_server_config
 from opal_server.policy.watcher.callbacks import publish_changed_directories
-from opal_server.policy.watcher.task import PolicyWatcherTask
+from opal_server.policy.watcher.task import BasePolicyWatcherTask, PolicyWatcherTask
+from opal_server.scopes.task import ScopesPolicyWatcherTask
 
 
 def setup_watcher_task(
@@ -26,7 +27,7 @@ def setup_watcher_task(
     policy_bundle_token: str = None,
     extensions: Optional[List[str]] = None,
     bundle_ignore: Optional[List[str]] = None,
-) -> PolicyWatcherTask:
+) -> BasePolicyWatcherTask:
     """Create a PolicyWatcherTask with Git / API policy source defined by env
     vars Load all the defaults from config if called without params.
 
@@ -43,8 +44,12 @@ def setup_watcher_task(
         extensions(list(str), optional):  list of extantions to check when new policy arrive default is OPA_FILE_EXTENSIONS
         bundle_ignore(list(str), optional):  list of glob paths to use for excluding files from bundle default is OPA_BUNDLE_IGNORE
     """
+    if opal_server_config.SCOPES:
+        return ScopesPolicyWatcherTask(pubsub_endpoint)
+
     # load defaults
     source_type = load_conf_if_none(source_type, opal_server_config.POLICY_SOURCE_TYPE)
+
     clone_path_finder = load_conf_if_none(
         clone_path_finder,
         RepoClonePathFinder(
@@ -53,13 +58,12 @@ def setup_watcher_task(
             use_fixed_path=opal_server_config.POLICY_REPO_REUSE_CLONE_PATH,
         ),
     )
-    clone_path = clone_path_finder.get_clone_path()
-    if not clone_path:
-        # we should never see this warning
-        logger.warning(
-            "Policy repo clone path was not found when setting up policy source!! recreating clone path..."
-        )
-        clone_path = clone_path_finder.create_new_clone_path()
+
+    clone_path = (
+        clone_path_finder.get_clone_path() or clone_path_finder.create_new_clone_path()
+    )
+    logger.info(f"Policy repo will be cloned to: {clone_path}")
+
     branch_name = load_conf_if_none(
         branch_name, opal_server_config.POLICY_REPO_MAIN_BRANCH
     )

@@ -33,7 +33,10 @@ from opal_common.schemas.policy import PolicyBundle, PolicyUpdateMessageNotifica
 from opal_common.schemas.policy_source import GitPolicyScopeSource, SSHAuthData
 from opal_common.schemas.scopes import Scope
 from opal_common.schemas.security import PeerType
-from opal_common.topics.publisher import ScopedServerSideTopicPublisher
+from opal_common.topics.publisher import (
+    ScopedServerSideTopicPublisher,
+    ServerSideTopicPublisher,
+)
 from opal_common.urls import set_url_query_param
 from opal_server.config import opal_server_config
 from opal_server.data.data_update_publisher import DataUpdatePublisher
@@ -72,7 +75,9 @@ def verify_private_key_or_throw(scope_in: Scope):
 
 
 def init_scope_router(
-    scopes: ScopeRepository, authenticator: JWTAuthenticator, pubsub: PubSubEndpoint
+    scopes: ScopeRepository,
+    authenticator: JWTAuthenticator,
+    pubsub_endpoint: PubSubEndpoint,
 ):
     router = APIRouter()
 
@@ -118,9 +123,11 @@ def init_scope_router(
         force_fetch_str = " (force fetch)" if force_fetch else ""
         logger.info(f"Sync scope: {scope_in.scope_id}{force_fetch_str}")
 
-        from opal_server.worker import sync_scope
-
-        sync_scope.delay(scope_in.scope_id, force_fetch=force_fetch)
+        # All server replicas (leaders) should sync the scope.
+        await pubsub_endpoint.publish(
+            opal_server_config.POLICY_REPO_WEBHOOK_TOPIC,
+            {"scope_id": scope_in.scope_id, "force_fetch": force_fetch},
+        )
 
         return Response(status_code=status.HTTP_201_CREATED)
 
@@ -199,12 +206,19 @@ def init_scope_router(
 
             logger.info(f"Refresh scope: {scope_id}")
 
-            from opal_server.worker import sync_scope
-
             # If the hinted hash is None, we have no way to know whether we should
             # re-fetch the remote, so we force fetch, just in case.
             force_fetch = hinted_hash is None
-            sync_scope.delay(scope_id, hinted_hash=hinted_hash, force_fetch=force_fetch)
+
+            # All server replicas (leaders) should sync the scope.
+            await pubsub_endpoint.publish(
+                opal_server_config.POLICY_REPO_WEBHOOK_TOPIC,
+                {
+                    "scope_id": scope_id,
+                    "force_fetch": force_fetch,
+                    "hinted_hash": hinted_hash,
+                },
+            )
 
             return Response(status_code=status.HTTP_200_OK)
 
@@ -222,9 +236,8 @@ def init_scope_router(
             logger.error(f"Unauthorized to refresh all scopes: {repr(ex)}")
             raise
 
-        from opal_server.worker import sync_all_scopes
-
-        sync_all_scopes.delay()
+        # All server replicas (leaders) should sync all scopes.
+        await pubsub_endpoint.publish(opal_server_config.POLICY_REPO_WEBHOOK_TOPIC)
 
         return Response(status_code=status.HTTP_200_OK)
 
@@ -334,7 +347,9 @@ def init_scope_router(
         scope_id: str = Path(..., description="Scope ID"),
         notification: PolicyUpdateMessageNotification,
     ):
-        async with ScopedServerSideTopicPublisher(pubsub, scope_id) as publisher:
+        async with ScopedServerSideTopicPublisher(
+            pubsub_endpoint, scope_id
+        ) as publisher:
             publisher.publish(notification.topics, notification.update)
             await publisher.wait()
         return Response(status_code=status.HTTP_204_NO_CONTENT)
@@ -353,7 +368,9 @@ def init_scope_router(
             for entry in update.entries:
                 entry.topics = [f"data:{topic}" for topic in entry.topics]
 
-            async with ScopedServerSideTopicPublisher(pubsub, scope_id) as publisher:
+            async with ScopedServerSideTopicPublisher(
+                pubsub_endpoint, scope_id
+            ) as publisher:
                 DataUpdatePublisher(publisher).publish_data_updates(update)
         except Unauthorized as ex:
             logger.error(f"Unauthorized to publish update: {repr(ex)}")

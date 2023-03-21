@@ -10,13 +10,10 @@ from opal_common.sources.base_policy_source import BasePolicySource
 from opal_server.config import opal_server_config
 
 
-class PolicyWatcherTask:
+class BasePolicyWatcherTask:
     """Manages the asyncio tasks of the policy watcher."""
 
-    def __init__(
-        self, policy_source: BasePolicySource, pubsub_endpoint: PubSubEndpoint
-    ):
-        self._watcher = policy_source
+    def __init__(self, pubsub_endpoint: PubSubEndpoint):
         self._tasks: List[asyncio.Task] = []
         self._should_stop: Optional[asyncio.Event] = None
         self._pubsub_endpoint = pubsub_endpoint
@@ -51,16 +48,12 @@ class PolicyWatcherTask:
         """starts the policy watcher and registers a failure callback to
         terminate gracefully."""
         logger.info("Launching policy watcher")
-
-        self._watcher.add_on_failure_callback(self._fail)
         self._tasks.append(asyncio.create_task(self._listen_to_webhook_notifications()))
-        self._tasks.append(asyncio.create_task(self._watcher.run()))
         self._init_should_stop()
 
     async def stop(self):
         """stops all policy watcher tasks."""
         logger.info("Stopping policy watcher")
-        await self._watcher.stop()
         for task in self._tasks:
             if not task.done():
                 task.cancel()
@@ -69,8 +62,7 @@ class PolicyWatcherTask:
     async def trigger(self, topic: Topic, data: Any):
         """triggers the policy watcher from outside to check for changes (git
         pull)"""
-        logger.info("Webhook listener triggered")
-        self._tasks.append(asyncio.create_task(self._watcher.check_for_changes()))
+        raise NotImplementedError()
 
     def wait_until_should_stop(self) -> Coroutine:
         """waits until self.signal_stop() is called on the watcher.
@@ -96,3 +88,24 @@ class PolicyWatcherTask:
         self.signal_stop()
         # trigger uvicorn graceful shutdown
         os.kill(os.getpid(), signal.SIGTERM)
+
+
+class PolicyWatcherTask(BasePolicyWatcherTask):
+    def __init__(self, policy_source: BasePolicySource, *args, **kwargs):
+        self._watcher = policy_source
+        super().__init__(*args, **kwargs)
+
+    def start(self):
+        super().start()
+        self._watcher.add_on_failure_callback(self._fail)
+        self._tasks.append(asyncio.create_task(self._watcher.run()))
+
+    async def stop(self):
+        await self._watcher.stop()
+        return await super().stop()
+
+    async def trigger(self, topic: Topic, data: Any):
+        """triggers the policy watcher from outside to check for changes (git
+        pull)"""
+        logger.info("Webhook listener triggered")
+        self._tasks.append(asyncio.create_task(self._watcher.check_for_changes()))
