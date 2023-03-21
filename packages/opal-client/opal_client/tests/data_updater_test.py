@@ -56,7 +56,7 @@ DATA_SOURCES_CONFIG = ServerDataSourceConfig(
 
 
 def setup_server(event):
-    # Server without git watcher and with a test specifc url for data, and without broadcasting
+    # Server without git watcher and with a test specific url for data, and without broadcasting
     server = OpalServer(
         init_policy_watcher=False,
         data_sources_config=DATA_SOURCES_CONFIG,
@@ -143,7 +143,7 @@ async def test_data_updater(server):
     try:
         proc = multiprocessing.Process(target=trigger_update, daemon=True)
         proc.start()
-        # wait until new data arrives into the strore via the updater
+        # wait until new data arrives into the store via the updater
         await asyncio.wait_for(policy_store.wait_for_data(), 60)
     # cleanup
     finally:
@@ -177,7 +177,7 @@ async def test_data_updater_with_report_callback(server):
     try:
         proc = multiprocessing.Process(target=trigger_update, daemon=True)
         proc.start()
-        # wait until new data arrives into the strore via the updater
+        # wait until new data arrives into the store via the updater
         await asyncio.wait_for(policy_store.wait_for_data(), 15)
         # give the callback a chance to arrive
         await asyncio.sleep(1)
@@ -212,7 +212,7 @@ async def test_client_get_initial_data(server):
     # start the updater (terminate on exit)
     await updater.start()
     try:
-        # wait until new data arrives into the strore via the updater
+        # wait until new data arrives into the store via the updater
         await asyncio.wait_for(policy_store.wait_for_data(), 5)
     # cleanup
     finally:

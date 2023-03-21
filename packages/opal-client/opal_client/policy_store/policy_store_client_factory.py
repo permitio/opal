@@ -37,7 +37,7 @@ class PolicyStoreClientFactory:
             save_to_cache (bool, optional): Should the created value be saved to cache (To be obtained via the get method).
 
         Raises:
-            InvalidPolicyStoreTypeException: Raised when the factory doesn't have a store-client macthing the given type
+            InvalidPolicyStoreTypeException: Raised when the factory doesn't have a store-client matching the given type
 
         Returns:
             BasePolicyStoreClient: the policy store client interface
@@ -80,7 +80,7 @@ class PolicyStoreClientFactory:
             save_to_cache (bool, optional): Should the created value be saved to cache (To be obtained via the get method).
 
         Raises:
-            InvalidPolicyStoreTypeException: Raised when the factory doesn't have a store-client macthing the given type
+            InvalidPolicyStoreTypeException: Raised when the factory doesn't have a store-client matching the given type
 
         Returns:
             BasePolicyStoreClient: the policy store client interface

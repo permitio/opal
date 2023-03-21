@@ -2,8 +2,8 @@ from pathlib import Path
 
 
 def is_data_module(path: Path) -> bool:
-    """Only json files named `data.json` can be included in offical OPA bundles
-    as static data files.
+    """Only json files named `data.json` can be included in official OPA
+    bundles as static data files.
 
     checks if a given path points to such file.
     """

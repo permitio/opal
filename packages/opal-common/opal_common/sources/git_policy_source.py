@@ -23,7 +23,7 @@ class GitPolicySource(BasePolicySource):
         branch_name(str):  name of remote branch in git to pull, default to master
         ssh_key (str, optional): private ssh key used to gain access to the cloned repo
         polling_interval(int):  how many seconds need to wait between polling
-        request_timeout(int):  how many seconds need to wait until timout
+        request_timeout(int):  how many seconds need to wait until timeout
     """
 
     def __init__(

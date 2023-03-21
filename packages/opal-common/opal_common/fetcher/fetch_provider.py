@@ -10,7 +10,7 @@ class BaseFetchProvider:
     """Base class for data fetching providers.
 
     - Override self._fetch_ to implement fetching
-    - call self.fetch() to retrive data (wrapped in retries and safe execution guards)
+    - call self.fetch() to retrieve data (wrapped in retries and safe execution guards)
     - override __aenter__ and __aexit__ for async context
     """
 

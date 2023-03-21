@@ -90,7 +90,7 @@ class DataUpdatePublisher:
             if entry.topics:
                 for topic in entry.topics:
                     topic_combos.extend(DataUpdatePublisher.get_topic_combos(topic))
-                entry.topics = topic_combos  # Update entry with the exaustive list, so client won't have to expand it again
+                entry.topics = topic_combos  # Update entry with the exhaustive list, so client won't have to expand it again
                 all_topic_combos.update(topic_combos)
             else:
                 logger.warning(
@@ -123,7 +123,7 @@ class DataUpdatePublisher:
         )
 
     def create_polling_updates(self, sources: ServerDataSourceConfig):
-        # For every entry with a non zero period update interval, bind an inverval to it
+        # For every entry with a non zero period update interval, bind an interval to it
         updaters = []
         if hasattr(sources, "config") and hasattr(sources.config, "entries"):
             for source in sources.config.entries:

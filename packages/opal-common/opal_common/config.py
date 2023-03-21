@@ -133,7 +133,7 @@ class OpalCommonConfig(Confi):
     CLIENT_SSL_CONTEXT_TRUSTED_CA_FILE = confi.str(
         "CLIENT_SSL_CONTEXT_TRUSTED_CA_FILE",
         None,
-        description="A path to your own CA public certificate file (usually a .crt or a .pem file). Certifcates signed by this issuer will be trusted by OPAL Client. DO NOT USE THIS IN PRODUCTION!",
+        description="A path to your own CA public certificate file (usually a .crt or a .pem file). Certificates signed by this issuer will be trusted by OPAL Client. DO NOT USE THIS IN PRODUCTION!",
     )
 
     # security

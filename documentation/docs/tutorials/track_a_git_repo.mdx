@@ -101,7 +101,7 @@ The client will fetch a new policy bundle upon the following events:
   - After a disconnect from the OPAL server (e.g: if the server crashed, etc)
   - After receiving a [policy update message](#policy-update-message)
 
-#### Policy bundle manifest - serving dependant policy modules
+#### Policy bundle manifest - serving dependent policy modules
 
 The policy bundle contains a `manifest` list that contains the paths of all the modules (.rego or data.json) that are included
 in the bundle. The `manifest` list is important! It controls the **order** in which the OPAL client will load the policy

@@ -69,7 +69,7 @@ Your minimum file tree should look like this:
 
 It's pretty basic but we'll go through it anyways:
 
-- `LICENSE` - an open-source license. OPAL itselfs uses the Apache 2.0 license.
+- `LICENSE` - an open-source license. OPAL itself uses the Apache 2.0 license.
 - `README.md` - a readme that describes your package, typically includes instructions how to install and use your fetch provider (recommended).
 - `opal_fetcher_postgres` - will be probably have a different name in your own fetch-provider, this is the name of the package after it is installed by pip. (In other words, the import inside python will look like this: `import opal_fetcher_postgres`).
 - `requirements.txt` - other pip packages required by your fetch-provider. At minimum, you will need the following packages: `opal-common` and `pydantic`.

@@ -5,7 +5,7 @@
 We will now explain how to pass configuration variables to OPAL.
 
 - In its dockerized form, OPAL server and client containers pick up their configuration variables from **environment variables** prefixed with `OPAL_` (e.g: `OPAL_DATA_CONFIG_SOURCES`, `OPAL_POLICY_REPO_URL`, etc).
-- The OPAL CLI can pick up config vars from either **environment variables** prefixed with `OPAL_` or from **CLI arguments** (interchangable).
+- The OPAL CLI can pick up config vars from either **environment variables** prefixed with `OPAL_` or from **CLI arguments** (interchangeable).
   - Supported CLI options are listed in `--help`.
   - Each cli argument can match to a **corresponding** environment variable:
     - Simply convert the cli argument name to [SCREAMING_SNAKE_CASE](<https://en.wikipedia.org/wiki/Naming_convention_(programming)#Multiple-word_identifiers>), and prefix it with `OPAL_`.

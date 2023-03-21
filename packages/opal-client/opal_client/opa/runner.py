@@ -203,7 +203,7 @@ class OpaRunner:
 
         Initial Start Callbacks:
             The first time we start opa, we might want to do certain actions (like launch tasks)
-            that are dependant on the policy store being up (such as PolicyUpdater, DataUpdater).
+            that are dependent on the policy store being up (such as PolicyUpdater, DataUpdater).
 
         Rehydration Callbacks:
             when opa restarts, its cache is clean and it does not have the state necessary

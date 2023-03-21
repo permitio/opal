@@ -195,7 +195,7 @@ The called-back server will then receive the update:
 (in the example you see here, the OPAL server is the one receiving the callback payload, as was configured in the [example config](https://github.com/permitio/opal/blob/master/docker/docker-compose-with-callbacks.yml).)
 
 ```
-opal_server.data.api                    | INFO  | Recieved update report: {'update_id': 'c83b6862aa354d338d1a9e23794e3efc', 'reports': [{'entry': {'url': 'https://api.country.is/23.54.6.78', 'config': {}, 'topics': ['policy_data'], 'dst_path': '/users/bob/location', 'save_method': 'PUT'}, 'fetched': True, 'saved': True, 'hash': '3eb2f338beb6691bbeeeca60dc3f4afad74ec8c5881f8abe3aa23d57ffa48424'}]}
+opal_server.data.api                    | INFO  | Received update report: {'update_id': 'c83b6862aa354d338d1a9e23794e3efc', 'reports': [{'entry': {'url': 'https://api.country.is/23.54.6.78', 'config': {}, 'topics': ['policy_data'], 'dst_path': '/users/bob/location', 'save_method': 'PUT'}, 'fetched': True, 'saved': True, 'hash': '3eb2f338beb6691bbeeeca60dc3f4afad74ec8c5881f8abe3aa23d57ffa48424'}]}
 uvicorn.protocols.http.httptools_impl   | INFO  | 172.27.0.4:49720 - "POST /data/callback_report HTTP/1.1" 200
 ```
 

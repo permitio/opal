@@ -11,7 +11,7 @@ DEFAULT_LOCK_ATTEMPT_INTERVAL = 5.0
 
 class NamedLock:
     """creates a a file-lock (can be a normal file or a named pipe / fifo), and
-    exposes a context manager to try to acquire the lock asyncronously."""
+    exposes a context manager to try to acquire the lock asynchronously."""
 
     def __init__(
         self, path: str, attempt_interval: float = DEFAULT_LOCK_ATTEMPT_INTERVAL

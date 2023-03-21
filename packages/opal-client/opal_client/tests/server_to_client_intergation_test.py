@@ -48,7 +48,7 @@ CLIENT_STORE_URL = f"http://localhost:{CLIENT_PORT}{CLIENT_STORE_ROUTE}"
 
 
 def setup_server(event):
-    # Server without git watcher and with a test specifc url for data, and without broadcasting
+    # Server without git watcher and with a test specific url for data, and without broadcasting
     server = OpalServer(
         init_policy_watcher=False,
         init_publisher=False,

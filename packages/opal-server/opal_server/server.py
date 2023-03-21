@@ -169,7 +169,7 @@ class OpalServer:
             self.opal_statistics = None
 
         # if stats are enabled, the server workers must be listening on the broadcast
-        # channel for their own syncronization, not just for their clients. therefore
+        # channel for their own synchronization, not just for their clients. therefore
         # we need a "global" listening context
         self.broadcast_listening_context: Optional[
             EventBroadcasterContextManager
