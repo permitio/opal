@@ -121,11 +121,7 @@ def find_ignore_match(
     matched paths in manifests.
     """
     if bundle_ignore is not None:
-        path = Path(maybe_path)
-
-        for ignore in bundle_ignore:
-            if path.match(ignore):
-                return ignore
+        return PathUtils.glob_style_match_path_to_list(maybe_path, bundle_ignore)
     return None
 
 
@@ -211,7 +207,8 @@ class CommitViewer:
             the next directory found (only for directories passing the filter).
         """
         return filter(
-            lambda node: isinstance(node, VersionedDirectory), self.nodes(predicate)
+            lambda node: isinstance(node, VersionedDirectory),
+            self.nodes(predicate),
         )
 
     def get_node(

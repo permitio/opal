@@ -9,3 +9,9 @@ In order to override default configuration, you'll need to set this env var:
 | Env Var Name           | Function                                                                                                                                                                                                                                                                                                                                                                                                          |
 | :--------------------- | :---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | OPAL_INLINE_OPA_CONFIG | The value of this var should be an [OpaServerOptions](https://github.com/permitio/opal/blob/master/packages/opal-client/opal_client/opa/options.py#L19) pydantic model encoded into json string. The process is similar to the one we showed on how to encode the value of [OPAL_DATA_CONFIG_SOURCES](/getting-started/running-opal/run-opal-server/data-sources#encoding-this-value-in-an-environment-variable). |
+
+#### Control how OPAL interacts with the policy store
+
+Use the `POLICY_STORE_*` [config options](/getting-started/configuration) to control how OPAL-client interacts the policy store (e.g. OPA)
+
+- Use `POLICY_STORE_POLICY_PATHS_TO_IGNORE` to have the client ignore instruction to overwrite or delete policies. Accepting a list of glob paths, or parent paths (without wildcards) ending with "/\*\*"

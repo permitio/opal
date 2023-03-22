@@ -74,7 +74,28 @@ class PathUtils:
             except ValueError:
                 continue  # skip, not found in the original list
 
-        # add the remaineder to the end of the sorted list
+        # add the remainder to the end of the sorted list
         sorted_paths.extend(unsorted)
 
         return sorted_paths
+
+    @staticmethod
+    def glob_style_match_path_to_list(path: str, match_paths: List[str]):
+        """
+        Check if given path matches any of the match_paths either via glob style matching or by being nested under - when the match path ends with "/**"
+        return the match path if there's a match, and None otherwise
+        """
+        # check if any of our ignore paths match the given path
+        for match_path in match_paths:
+            # if the path is indicated as a parent via "/**" at the end
+            if match_path.endswith("/**"):
+                # check if the path is under the parent
+                if path.startswith(match_path[:-2]):
+                    return match_path
+            # otherwise check for simple (non-recursive glob matching)
+            else:
+                path_object = Path(path)
+                if path_object.match(match_path):
+                    return match_path
+        # if no match - this path shouldn't be ignored
+        return None
