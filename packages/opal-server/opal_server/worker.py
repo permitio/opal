@@ -192,6 +192,7 @@ class Worker:
                     f"found another scope with same remote url ({scope.scope_id}), skipping clone deletion"
                 )
                 remove_repo_clone = False
+                break
 
         if remove_repo_clone:
             scope_dir = GitPolicyFetcher.repo_clone_path(
