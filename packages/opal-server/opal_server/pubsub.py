@@ -95,8 +95,12 @@ class ClientTracker:
     ):
         if not isinstance(topics, list):
             topics = [topics]
-        client_info = current_client.get()
-        client_info.subscribed_topics.update(topics)
+
+        client_info = current_client.get(None)
+
+        # on_subscribe is sometimes called for the broadcaster, when there is no "current client"
+        if client_info is not None:
+            client_info.subscribed_topics.update(topics)
 
     async def on_unsubscribe(
         self,
@@ -105,8 +109,12 @@ class ClientTracker:
     ):
         if not isinstance(topics, list):
             topics = [topics]
-        client_info = current_client.get()
-        client_info.subscribed_topics.difference_update(topics)
+
+        client_info = current_client.get(None)
+
+        # on_subscribe is sometimes called for the broadcaster, when there is no "current client"
+        if client_info is not None:
+            client_info.subscribed_topics.difference_update(topics)
 
 
 class PubSub:
