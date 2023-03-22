@@ -13,6 +13,7 @@ import loguru
 from loguru import logger
 from loguru._defaults import env
 from loguru._file_sink import FileSink
+from loguru._better_exceptions import ExceptionFormatter
 from opal_common.config import opal_common_config
 from opal_common.logging.thirdparty import hijack_uvicorn_logs
 from pydantic import BaseModel, ByteSize, FilePath, NonNegativeInt, parse_obj_as
@@ -33,6 +34,8 @@ LOGURU_FORMAT: str = env(
 
 
 class OPALLogSink(FileSink):
+    exception_formatter = ExceptionFormatter()
+
     def __init__(self, *args, **kwargs):
         super(OPALLogSink, self).__init__(*args, **kwargs)
 
@@ -53,7 +56,17 @@ class OPALLogSink(FileSink):
             "thread_id": r.get("thread").id,
         }
 
-        record = record | get_ddtrace_info()
+        record.update(get_ddtrace_info())
+
+        if (exception := r.get("exception")) is not None:
+            record["exception"] = "".join(
+                self.exception_formatter.format_exception(
+                    type_=exception.type,
+                    value=exception.value,
+                    tb=exception.traceback,
+                )
+            )
+
         super().write(json.dumps(record, default=pydantic_encoder) + "\n")
 
 
