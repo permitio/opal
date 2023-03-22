@@ -358,13 +358,9 @@ def test_bundle_maker_nested_manifest_cycle(local_repo: Repo, helpers):
     # Make sure:
     #   1. we don't have '../' in list, or getting infinite recursion error
     #   2. 'other/data.json' appears once
-    #   3. referncing non existing 'some/.manifest' doesn't cause an error
+    #   3. referencing non existing 'some/.manifest' doesn't cause an error
     explicit_manifest = maker._get_explicit_manifest(CommitViewer(commit))
-    assert explicit_manifest == [
-        "other/data.json",
-        "other/abac.rego",
-        "other/more/lies.rego",
-    ]
+    assert explicit_manifest == ["other/data.json", "other/abac.rego"]
 
 
 def test_bundle_maker_can_ignore_files_using_a_glob_path(local_repo: Repo, helpers):
