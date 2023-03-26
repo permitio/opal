@@ -83,7 +83,9 @@ def test_bundle_maker_can_filter_on_directories(local_repo: Repo, helpers):
     commit: Commit = repo.head.commit
 
     maker = BundleMaker(
-        repo, in_directories=set([Path("other")]), extensions=OPA_FILE_EXTENSIONS
+        repo,
+        in_directories=set([Path("other")]),
+        extensions=OPA_FILE_EXTENSIONS,
     )
     bundle: PolicyBundle = maker.make_bundle(commit)
     # assert the bundle is a complete bundle (no old hash, etc)
@@ -214,7 +216,9 @@ def test_bundle_maker_sorts_according_to_explicit_manifest(local_repo: Repo, hel
 
     # create a manifest with this sorting: abac.rego comes before rbac.rego
     helpers.create_new_file_commit(
-        repo, manifest_path, contents="\n".join(["other/abac.rego", "rbac.rego"])
+        repo,
+        manifest_path,
+        contents="\n".join(["other/abac.rego", "rbac.rego"]),
     )
 
     commit: Commit = repo.head.commit
@@ -276,7 +280,9 @@ def test_bundle_maker_sorts_according_to_explicit_manifest_nested(
         ),
     )
     helpers.create_new_file_commit(
-        repo, root / "other/.manifest", contents="\n".join(["data.json", "abac.rego"])
+        repo,
+        root / "other/.manifest",
+        contents="\n".join(["data.json", "abac.rego"]),
     )
     helpers.create_new_file_commit(
         repo, root / "some/dir/.manifest", contents="\n".join(["to"])

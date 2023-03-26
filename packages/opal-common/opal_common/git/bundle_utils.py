@@ -8,7 +8,9 @@ class BundleUtils:
     MAX_INDEX = 10000
 
     @staticmethod
-    def sorted_policy_modules_to_load(bundle: PolicyBundle) -> List[RegoModule]:
+    def sorted_policy_modules_to_load(
+        bundle: PolicyBundle, ignore=None
+    ) -> List[RegoModule]:
         """policy modules sorted according to manifest."""
         manifest_paths = [Path(path) for path in bundle.manifest]
 

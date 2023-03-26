@@ -2,6 +2,7 @@ import asyncio
 import functools
 import json
 import time
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Set
 from urllib.parse import urlencode
 
@@ -17,6 +18,7 @@ from opal_client.policy_store.schemas import PolicyStoreAuth
 from opal_client.utils import proxy_response
 from opal_common.git.bundle_utils import BundleUtils
 from opal_common.opa.parsing import get_rego_package
+from opal_common.paths import PathUtils
 from opal_common.schemas.policy import DataModule, PolicyBundle
 from opal_common.schemas.store import JSONPatchAction, StoreTransaction, TransactionType
 from pydantic import BaseModel
@@ -26,6 +28,12 @@ JSONPatchDocument = List[JSONPatchAction]
 
 
 RETRY_CONFIG = opal_client_config.POLICY_STORE_CONN_RETRY.toTenacityConfig()
+
+
+def should_ignore_path(path, ignore_paths):
+    """Helper function to check if the policy-store should ignore to given
+    path."""
+    return PathUtils.glob_style_match_path_to_list(path, ignore_paths) is not None
 
 
 def fail_silently(fallback=None):
@@ -334,8 +342,19 @@ class OpaClient(BasePolicyStoreClient):
     @affects_transaction
     @retry(**RETRY_CONFIG)
     async def set_policy(
-        self, policy_id: str, policy_code: str, transaction_id: Optional[str] = None
+        self,
+        policy_id: str,
+        policy_code: str,
+        transaction_id: Optional[str] = None,
     ):
+        # ignore explicitly configured paths
+        if should_ignore_path(
+            policy_id, opal_client_config.POLICY_STORE_POLICY_PATHS_TO_IGNORE
+        ):
+            logger.info(
+                f"Ignoring setting policy - {policy_id}, set in POLICY_PATHS_TO_IGNORE."
+            )
+            return
         self._cached_policies[policy_id] = policy_code
         async with aiohttp.ClientSession() as session:
             try:
@@ -372,6 +391,15 @@ class OpaClient(BasePolicyStoreClient):
     @affects_transaction
     @retry(**RETRY_CONFIG)
     async def delete_policy(self, policy_id: str, transaction_id: Optional[str] = None):
+        # ignore explicitly configured paths
+        if should_ignore_path(
+            policy_id, opal_client_config.POLICY_STORE_POLICY_PATHS_TO_IGNORE
+        ):
+            logger.info(
+                f"Ignoring deleting policy - {policy_id}, set in POLICY_PATHS_TO_IGNORE."
+            )
+            return
+
         async with aiohttp.ClientSession() as session:
             try:
                 headers = await self._get_auth_headers()
@@ -465,6 +493,7 @@ class OpaClient(BasePolicyStoreClient):
 
             # remove policies from the store that are not in the bundle
             # (because this bundle is "complete", i.e: contains all policy modules for a given hash)
+            # Note: this can be ignored below by config.POLICY_STORE_POLICY_PATHS_TO_IGNORE
             for module_id in module_ids_to_delete:
                 await self.delete_policy(policy_id=module_id)
 
@@ -613,7 +642,8 @@ class OpaClient(BasePolicyStoreClient):
                     headers=headers,
                 ) as opa_response:
                     return await proxy_response_unless_invalid(
-                        opa_response, accepted_status_codes=[status.HTTP_204_NO_CONTENT]
+                        opa_response,
+                        accepted_status_codes=[status.HTTP_204_NO_CONTENT],
                     )
             except aiohttp.ClientError as e:
                 logger.warning("Opa connection error: {err}", err=repr(e))
@@ -674,7 +704,10 @@ class OpaClient(BasePolicyStoreClient):
 
     @retry(**RETRY_CONFIG)
     async def init_healthcheck_policy(
-        self, policy_id: str, policy_code: str, data_updater_enabled: bool = True
+        self,
+        policy_id: str,
+        policy_code: str,
+        data_updater_enabled: bool = True,
     ):
         self._transaction_state = OpaTransactionLogState(
             policy_store=self,
