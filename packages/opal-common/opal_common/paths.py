@@ -90,7 +90,7 @@ class PathUtils:
             # if the path is indicated as a parent via "/**" at the end
             if match_path.endswith("/**"):
                 # check if the path is under the parent
-                if path.startswith(match_path[:-2]):
+                if path.startswith(match_path[:-3]):
                     return match_path
             # otherwise check for simple (non-recursive glob matching)
             else:
