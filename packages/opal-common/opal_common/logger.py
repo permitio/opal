@@ -195,7 +195,15 @@ def configure_logger(
             _logger.handlers = [intercept_handler]
             _logger.propagate = False
 
-    handlers = [{"sink": sys.stderr, "format": format_record, "level": level}]
+    handlers = [
+        {
+            "sink": sys.stderr,
+            "format": format_record,
+            "level": level,
+            "serialize": opal_common_config.LOG_SERIALIZE,
+        }
+    ]
+
     if log_file is not None:
         handlers.append(
             {
@@ -204,13 +212,14 @@ def configure_logger(
                     rotation=log_file_rotation,
                     retention=log_file_retention,
                 ),
-                "serialize": True,
+                "serialize": opal_common_config.LOG_FILE_SERIALIZE,
                 "filter": {
                     "ddtrace": "WARNING",
                 },
                 "level": level,
             }
         )
+
     logger.configure(
         handlers=handlers,
         patcher=log_patcher,
