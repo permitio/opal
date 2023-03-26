@@ -178,9 +178,8 @@ def init_scope_router(
             logger.error(f"Unauthorized to delete scope: {repr(ex)}")
             raise
 
-        from opal_server.worker import delete_scope
-
-        delete_scope.delay(scope_id)
+        # TODO: This should also asynchronously clean the repo from the disk (if it's not used by other scopes)
+        await scopes.delete(scope_id)
 
         return Response(status_code=status.HTTP_204_NO_CONTENT)
 
