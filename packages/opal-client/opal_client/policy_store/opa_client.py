@@ -493,7 +493,7 @@ class OpaClient(BasePolicyStoreClient):
 
             # remove policies from the store that are not in the bundle
             # (because this bundle is "complete", i.e: contains all policy modules for a given hash)
-            # Note: this can ignored below by config.POLICY_STORE_POLICY_PATHS_TO_IGNORE
+            # Note: this can be ignored below by config.POLICY_STORE_POLICY_PATHS_TO_IGNORE
             for module_id in module_ids_to_delete:
                 await self.delete_policy(policy_id=module_id)
 
