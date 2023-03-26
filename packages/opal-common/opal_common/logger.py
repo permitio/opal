@@ -11,9 +11,9 @@ from typing import Any, Optional
 import ddtrace
 import loguru
 from loguru import logger
+from loguru._better_exceptions import ExceptionFormatter
 from loguru._defaults import env
 from loguru._file_sink import FileSink
-from loguru._better_exceptions import ExceptionFormatter
 from opal_common.config import opal_common_config
 from opal_common.logging.thirdparty import hijack_uvicorn_logs
 from pydantic import BaseModel, ByteSize, FilePath, NonNegativeInt, parse_obj_as
