@@ -176,10 +176,7 @@ class Worker:
             )
 
             try:
-                # using concurrent fetch so that if the celery worker is spawn with concurrency > 1,
-                # the competing processes will not modify the same dir on the filesystem at the same time
-                await fetcher.concurrent_fetch(
-                    redis=self._scopes.db.redis_connection,
+                await fetcher.fetch_and_notify_on_changes(
                     hinted_hash=hinted_hash,
                     force_fetch=force_fetch,
                 )
@@ -203,6 +200,7 @@ class Worker:
                         f"found another scope with same remote url ({scope.scope_id}), skipping clone deleteion"
                     )
                     remove_repo_clone = False
+                    break
 
             if remove_repo_clone:
                 scope_dir = GitPolicyFetcher.repo_clone_path(
