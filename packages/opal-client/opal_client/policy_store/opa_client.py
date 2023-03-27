@@ -723,7 +723,6 @@ class OpaClient(BasePolicyStoreClient):
 
     @retry(**RETRY_CONFIG)
     async def log_transaction(self, transaction: StoreTransaction):
-        logger.info("log_transaction")
         self._transaction_state.process_transaction(transaction)
 
         if self._transaction_state_writer:
