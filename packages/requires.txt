@@ -2,7 +2,7 @@ charset-normalizer>=2.0.12,<3
 idna>=3.3,<4
 typer>=0.4.1,<1
 fastapi>=0.78.0,<1
-fastapi_websocket_pubsub>=0.3.0,<1
+fastapi_websocket_pubsub==0.3.3
 fastapi_websocket_rpc>=0.1.21,<1
 gunicorn>=20.1.0,<21
 pydantic[email]>=1.9.1,<2
