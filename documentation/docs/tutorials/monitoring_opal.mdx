@@ -8,9 +8,25 @@ title: Monitoring OPAL
 There are multiple ways you can monitor your OPAL deployment:
 
 - **Logs** - Using the structured logs outputted to stderr by both the OPAL-servers and OPAL-clients
-- [**Health-checks**](/tutorials/healthcheck_policy_and_update_callbacks) - Using the health-checks feature (You can query each OPAL client health-check / or even create a specific Rego policy to query which uses that health-check state)
+- **Health-checks** - OPAL exposes HTTP health check endpoints ([See below](##health-checks))
 - [**Callbacks**](/tutorials/healthcheck_policy_and_update_callbacks#-data-update-callbacks) - Using the callback webhooks feature - having OPAL-clients report their updates
-- **Statistics** - Using the built-in statistics feature in OPAL (See below)
+- **Statistics** - Using the built-in statistics feature in OPAL ([See below](##opal-statistics))
+
+## Health checks
+
+### OPAL Server
+
+opal-server exposes http health check endpoints on `/` & `/healthcheck`. <br/>
+Currently it returns `200 OK` as long as server is up.
+
+### OPAL Client
+
+opal-client exposes http health check endpoints on `/` & `/healthcheck`. <br/>
+The health check returns `200 OK` when both policy and data were successfully loaded into OPA, otherwise `503 Unavailable` is returned
+
+**Notice:** if you don't except your opal-client to load any data into OPA, set `OPAL_DATA_UPDATER_ENABLED: False`, so opal-client could report being healthy.
+
+You can also configure opal-client to store dynamic health status in OPA, [Learn more here](/tutorials/healthcheck_policy_and_update_callbacks)
 
 ## OPAL Statistics
 
