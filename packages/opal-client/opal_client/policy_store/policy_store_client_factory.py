@@ -52,6 +52,7 @@ class PolicyStoreClientFactory:
         url: str = None,
         save_to_cache=True,
         token: Optional[str] = None,
+        data_updater_enabled: Optional[bool] = None,
     ) -> BasePolicyStoreClient:
         """
         Factory method - create a new policy store by type.
@@ -71,12 +72,21 @@ class PolicyStoreClientFactory:
         store_type = store_type or opal_client_config.POLICY_STORE_TYPE
         url = url or opal_client_config.POLICY_STORE_URL
         store_token = token or opal_client_config.POLICY_STORE_AUTH_TOKEN
+        data_updater_enabled = (
+            data_updater_enabled
+            if data_updater_enabled is not None
+            else opal_client_config.DATA_UPDATER_ENABLED
+        )
 
         # OPA
         if PolicyStoreTypes.OPA == store_type:
             from opal_client.policy_store.opa_client import OpaClient
 
-            res = OpaClient(url, opa_auth_token=store_token)
+            res = OpaClient(
+                url,
+                opa_auth_token=store_token,
+                data_updater_enabled=data_updater_enabled,
+            )
         # MOCK
         elif PolicyStoreTypes.MOCK == store_type:
             from opal_client.policy_store.mock_policy_store_client import (

@@ -65,12 +65,13 @@ class AbstractPolicyStore:
     async def get_data_with_input(self, path: str, input: BaseModel) -> Dict:
         raise NotImplementedError()
 
-    async def init_healthcheck_policy(
-        self, policy_id: str, policy_code: str, data_updater_enabled: bool = True
-    ):
+    async def init_healthcheck_policy(self, policy_id: str, policy_code: str):
         raise NotImplementedError()
 
-    async def persist_transaction(self, transaction: StoreTransaction):
+    async def log_transaction(self, transaction: StoreTransaction):
+        raise NotImplementedError()
+
+    async def is_healthy(self) -> bool:
         raise NotImplementedError()
 
 
@@ -230,20 +231,4 @@ class BasePolicyStoreClient(AbstractPolicyStore):
                 remotes_status=remotes_status,
             )
 
-        if not opal_client_config.OPA_HEALTH_CHECK_POLICY_ENABLED:
-            return  # skip persisting the transaction, healthcheck policy is disabled
-
-        try:
-            await self.persist_transaction(transaction)
-        except Exception as e:
-            # The writes to transaction log in OPA cache are not done a protected
-            # transaction context. If they fail, we do nothing special.
-            transaction_data = json.dumps(
-                transaction, indent=4, sort_keys=True, default=str
-            )
-            logger.error(
-                "Cannot write to OPAL transaction log, transaction id={id}, error={err} with data={data}",
-                id=transaction.id,
-                err=repr(e),
-                data=transaction_data,
-            )
+        await self.log_transaction(transaction)

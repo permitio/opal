@@ -208,8 +208,7 @@ class OpalClient:
         @app.get("/healthcheck", include_in_schema=False)
         @app.get("/", include_in_schema=False)
         async def healthcheck():
-            resp = await self.policy_store.get_data("/system/opal/healthy")
-            healthy = resp["result"]
+            healthy = await self.policy_store.is_healthy()
 
             if healthy:
                 return JSONResponse(
@@ -336,7 +335,6 @@ class OpalClient:
             await self.policy_store.init_healthcheck_policy(
                 policy_id=healthcheck_policy_relpath,
                 policy_code=healthcheck_policy_code,
-                data_updater_enabled=opal_client_config.DATA_UPDATER_ENABLED,
             )
         except aiohttp.ClientError as err:
             logger.error(
