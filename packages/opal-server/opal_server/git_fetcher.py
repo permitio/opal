@@ -165,14 +165,14 @@ class GitPolicyFetcher(PolicyFetcher):
         repo_lock = await self._get_repo_lock()
         async with repo_lock:
             if self._discover_repository(self._repo_path):
-                logger.info("Repo found at {path}", path=self._repo_path)
+                logger.debug("Repo found at {path}", path=self._repo_path)
                 repo = self._get_valid_repo()
                 if repo is not None:
                     should_fetch = await self._should_fetch(
                         repo, hinted_hash=hinted_hash, force_fetch=force_fetch
                     )
                     if should_fetch:
-                        logger.info(
+                        logger.debug(
                             f"Fetching remote (force_fetch={force_fetch}): {self._remote} ({self._source.url})"
                         )
                         await run_sync(
