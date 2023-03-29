@@ -4,24 +4,17 @@ from pathlib import Path
 from typing import List, Optional, Set, cast
 
 import git
-from aiohttp import ClientError, ClientSession
-from asgiref.sync import async_to_sync
-from celery import Celery
-from celery.signals import worker_ready
-from fastapi import status
+from fastapi_websocket_pubsub import PubSubEndpoint
 from opal_common.git.commit_viewer import VersionedFile
-from opal_common.logger import configure_logs, logger
+from opal_common.logger import logger
 from opal_common.schemas.policy import PolicyUpdateMessageNotification
 from opal_common.schemas.policy_source import GitPolicyScopeSource
-from opal_common.schemas.scopes import Scope
-from opal_common.utils import get_authorization_header, tuple_to_dict
-from opal_server.config import opal_server_config
+from opal_common.topics.publisher import ScopedServerSideTopicPublisher
 from opal_server.git_fetcher import GitPolicyFetcher, PolicyFetcherCallbacks
 from opal_server.policy.watcher.callbacks import (
     create_policy_update,
     create_update_all_directories_in_repo,
 )
-from opal_server.redis import RedisDB
 from opal_server.scopes.scope_repository import ScopeRepository
 
 
@@ -46,12 +39,12 @@ class NewCommitsCallbacks(PolicyFetcherCallbacks):
         base_dir: Path,
         scope_id: str,
         source: GitPolicyScopeSource,
-        http: ClientSession,
+        pubsub_endpoint: PubSubEndpoint,
     ):
         self._scope_repo_dir = GitPolicyFetcher.repo_clone_path(base_dir, source)
         self._scope_id = scope_id
         self._source = source
-        self._http = http
+        self._pubsub_endpoint = pubsub_endpoint
 
     async def on_update(self, previous_head: str, head: str):
         if previous_head == head:
@@ -98,46 +91,23 @@ class NewCommitsCallbacks(PolicyFetcherCallbacks):
         logger.info(
             f"Triggering policy update for scope {self._scope_id}: {notification.dict()}"
         )
-
-        url = f"{opal_server_config.SERVER_URL}/scopes/{self._scope_id}/policy/update"
-        try:
-            async with self._http.post(
-                url,
-                json=notification.dict(),
-                headers=tuple_to_dict(
-                    get_authorization_header(opal_server_config.WORKER_TOKEN)
-                ),
-            ) as response:
-                if response.status == status.HTTP_204_NO_CONTENT:
-                    logger.debug(
-                        f"triggered policy notification for {self._scope_id} via the api"
-                    )
-                else:
-                    logger.error(
-                        f"could not trigger policy notification for {self._scope_id} via the api, got status={response.status}"
-                    )
-        except ClientError as e:
-            logger.error("opal server connection error: {err}", err=repr(e))
+        async with ScopedServerSideTopicPublisher(
+            self._pubsub_endpoint, self._scope_id
+        ) as publisher:
+            publisher.publish(notification.topics, notification.update)
+            await publisher.wait()
 
 
 class Worker:
-    def __init__(self, base_dir: Path, scopes: ScopeRepository):
+    def __init__(
+        self,
+        base_dir: Path,
+        scopes: ScopeRepository,
+        pubsub_endpoint: PubSubEndpoint,
+    ):
         self._base_dir = base_dir
         self._scopes = scopes
-        self._http: Optional[ClientSession] = None
-
-    async def __aenter__(self):
-        await self.start()
-        return self
-
-    async def __aexit__(self, exc_type, exc_val, exc_tb):
-        await self.stop()
-
-    async def start(self):
-        self._http = ClientSession()
-
-    async def stop(self):
-        await self._http.close()
+        self._pubsub_endpoint = pubsub_endpoint
 
     async def sync_scope(
         self,
@@ -164,7 +134,7 @@ class Worker:
                 base_dir=self._base_dir,
                 scope_id=scope_id,
                 source=source,
-                http=self._http,
+                pubsub_endpoint=self._pubsub_endpoint,
             ),
         )
 
@@ -229,77 +199,3 @@ class Worker:
         for scope in skipped_scopes:
             # No need to refetch the same repo, just check for changes
             await self.sync_scope(scope.scope_id, force_fetch=False)
-
-
-def create_worker() -> Worker:
-    opal_base_dir = Path(opal_server_config.BASE_DIR)
-
-    worker = Worker(
-        base_dir=opal_base_dir,
-        scopes=ScopeRepository(RedisDB(opal_server_config.REDIS_URL)),
-    )
-
-    return worker
-
-
-def with_worker(f):
-    async def _inner(*args, **kwargs):
-        async with create_worker() as worker:
-            await f(worker, *args, **kwargs)
-
-    return _inner
-
-
-configure_logs()
-app = Celery(
-    "opal-worker",
-    broker=opal_server_config.REDIS_URL,
-    # if none, no results backend is used
-    backend=opal_server_config.CELERY_BACKEND,
-)
-app.conf.task_default_queue = "opal-worker"
-app.conf.task_serializer = "json"
-
-
-@app.task(ignore_result=True)
-def sync_scope(
-    scope_id: str, hinted_hash: Optional[str] = None, force_fetch: bool = False
-):
-    return async_to_sync(with_worker(Worker.sync_scope))(
-        scope_id, hinted_hash=hinted_hash, force_fetch=force_fetch
-    )
-
-
-@app.task(ignore_result=True)
-def delete_scope(scope_id: str):
-    return async_to_sync(with_worker(Worker.delete_scope))(scope_id)
-
-
-@app.task(ignore_result=True)
-def periodic_check():
-    return async_to_sync(with_worker(Worker.sync_scopes))(only_poll_updates=True)
-
-
-@app.task(ignore_result=True)
-def sync_all_scopes():
-    return async_to_sync(with_worker(Worker.sync_scopes))()
-
-
-@app.on_after_configure.connect
-def setup_worker_tasks(sender, **kwargs):
-    polling_interval = opal_server_config.POLICY_REFRESH_INTERVAL
-    if polling_interval == 0:
-        logger.info("OPAL scopes: polling task is off.")
-    else:
-        logger.info(
-            f"OPAL scopes: started polling task, interval is {polling_interval} seconds."
-        )
-        # The first execution will be delayed by the polling interval, letting the initial `sync_all_scopes` task to finish first
-        sender.add_periodic_task(polling_interval, periodic_check.s())
-
-
-@worker_ready.connect
-def on_worker_ready(**kwargs):
-    logger.info("OPAL worker is ready")
-    sync_all_scopes()
-    logger.info("OPAL worker: initial sync of all scopes is done")

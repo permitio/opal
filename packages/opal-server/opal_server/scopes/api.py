@@ -92,15 +92,6 @@ def init_scope_router(
         if not allowed_scopes or scope_id not in allowed_scopes:
             raise HTTPException(status.HTTP_403_FORBIDDEN)
 
-    def _check_worker_token(authorization: str = Header()):
-        if authorization is None:
-            raise Unauthorized()
-
-        scheme, token = authorization.split(" ")
-
-        if scheme.lower() != "bearer" or token != opal_server_config.WORKER_TOKEN:
-            raise Unauthorized()
-
     @router.put("", status_code=status.HTTP_201_CREATED)
     async def put_scope(
         *,
@@ -335,23 +326,6 @@ def init_scope_router(
                     return config.config
             except ScopeNotFoundError:
                 raise HTTPException(status.HTTP_404_NOT_FOUND, detail=str(ex))
-
-    @router.post(
-        "/{scope_id}/policy/update",
-        status_code=status.HTTP_204_NO_CONTENT,
-        dependencies=[Depends(_check_worker_token)],
-    )
-    async def notify_new_policy(
-        *,
-        scope_id: str = Path(..., description="Scope ID"),
-        notification: PolicyUpdateMessageNotification,
-    ):
-        async with ScopedServerSideTopicPublisher(
-            pubsub_endpoint, scope_id
-        ) as publisher:
-            publisher.publish(notification.topics, notification.update)
-            await publisher.wait()
-        return Response(status_code=status.HTTP_204_NO_CONTENT)
 
     @router.post("/{scope_id}/data/update")
     async def publish_data_update_event(
