@@ -98,7 +98,7 @@ class NewCommitsCallbacks(PolicyFetcherCallbacks):
             await publisher.wait()
 
 
-class Worker:
+class ScopesService:
     def __init__(
         self,
         base_dir: Path,
