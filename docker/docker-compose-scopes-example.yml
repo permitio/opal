@@ -6,20 +6,6 @@ services:
     image: redis
     ports:
       - "6379:6379"
-  opal_server_worker:
-    image: permitio/opal-server:latest
-    environment:
-      - OPAL_REDIS_URL=redis://redis:6379
-      - OPAL_SCOPES=1
-      - OPAL_SERVER_URL=http://opal_server:7002
-      - OPAL_WORKER_TOKEN=token
-      - OPAL_POLICY_REPO_POLLING_INTERVAL=30
-      - OPAL_BASE_DIR=/opal
-    volumes:
-      - opal:/opal:rw
-    depends_on:
-      - redis
-    command: sh -c "celery -A opal_server.worker worker -B -l info -s /tmp/schedule.db"
   opal_server:
     # by default we run opal-server from latest official image
     image: permitio/opal-server:latest
@@ -45,7 +31,7 @@ services:
       - OPAL_LOG_FORMAT_INCLUDE_PID=true
       - OPAL_REDIS_URL=redis://redis:6379
       - OPAL_SCOPES=1
-      - OPAL_WORKER_TOKEN=token
+      - OPAL_POLICY_REPO_POLLING_INTERVAL=30
       - OPAL_BASE_DIR=/opal
     ports:
       # exposes opal server on the host machine, you can access the server at: http://localhost:7002
