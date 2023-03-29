@@ -7,8 +7,3 @@ expose:
     - path: /
       port: 80
       pathType: Prefix
-
-sidecarContainer:
-  config:
-    env:
-      OPAL_SERVER_URL: "{{ .Release.Namespace }}.opal.dev.permit.io"
