@@ -122,7 +122,7 @@ def find_ignore_match(
     """
     if bundle_ignore is not None:
         return PathUtils.glob_style_match_path_to_list(
-            maybe_path.as_posix(), bundle_ignore
+            Path(maybe_path).as_posix(), bundle_ignore
         )
     return None
 
