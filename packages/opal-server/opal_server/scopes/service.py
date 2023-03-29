@@ -114,6 +114,7 @@ class ScopesService:
         scope_id: str,
         hinted_hash: Optional[str] = None,
         force_fetch: bool = False,
+        notify_on_changes: bool = True,
     ):
         scope = await self._scopes.get(scope_id)
 
@@ -126,16 +127,20 @@ class ScopesService:
             f"Sync scope: {scope_id} (remote: {source.url}, branch: {source.branch})"
         )
 
-        fetcher = GitPolicyFetcher(
-            self._base_dir,
-            scope_id,
-            source,
-            callbacks=NewCommitsCallbacks(
+        callbacks = PolicyFetcherCallbacks()
+        if notify_on_changes:
+            callbacks = NewCommitsCallbacks(
                 base_dir=self._base_dir,
                 scope_id=scope_id,
                 source=source,
                 pubsub_endpoint=self._pubsub_endpoint,
-            ),
+            )
+
+        fetcher = GitPolicyFetcher(
+            self._base_dir,
+            scope_id,
+            source,
+            callbacks=callbacks,
         )
 
         try:
@@ -172,7 +177,7 @@ class ScopesService:
 
         await self._scopes.delete(scope_id)
 
-    async def sync_scopes(self, only_poll_updates=False):
+    async def sync_scopes(self, only_poll_updates=False, notify_on_changes=True):
         scopes = await self._scopes.all()
         if only_poll_updates:
             # Only sync scopes that have polling enabled (in a periodic check)
@@ -193,9 +198,14 @@ class ScopesService:
             await self.sync_scope(
                 scope.scope_id,
                 force_fetch=True,
+                notify_on_changes=notify_on_changes,
             )
             fetched_urls.add(scope.policy.url)
 
         for scope in skipped_scopes:
             # No need to refetch the same repo, just check for changes
-            await self.sync_scope(scope.scope_id, force_fetch=False)
+            await self.sync_scope(
+                scope.scope_id,
+                force_fetch=False,
+                notify_on_changes=notify_on_changes,
+            )
