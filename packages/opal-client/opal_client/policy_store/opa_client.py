@@ -2,8 +2,7 @@ import asyncio
 import functools
 import json
 import time
-from pathlib import Path
-from typing import Any, Dict, List, Optional, Set
+from typing import Any, Awaitable, Callable, Dict, List, Optional, Set
 from urllib.parse import urlencode
 
 import aiohttp
@@ -22,7 +21,7 @@ from opal_common.paths import PathUtils
 from opal_common.schemas.policy import DataModule, PolicyBundle
 from opal_common.schemas.store import JSONPatchAction, StoreTransaction, TransactionType
 from pydantic import BaseModel
-from tenacity import retry
+from tenacity import RetryError, retry
 
 JSONPatchDocument = List[JSONPatchAction]
 
@@ -376,7 +375,11 @@ class OpaClient(BasePolicyStoreClient):
                     headers={"content-type": "text/plain", **headers},
                 ) as opa_response:
                     return await proxy_response_unless_invalid(
-                        opa_response, accepted_status_codes=[status.HTTP_200_OK]
+                        opa_response,
+                        accepted_status_codes=[
+                            status.HTTP_200_OK,
+                            status.HTTP_400_BAD_REQUEST,  # No point in immediate retry, this means erroneous rego (bad syntax, duplicated definition, etc)
+                        ],
                     )
             except aiohttp.ClientError as e:
                 logger.warning("Opa connection error: {err}", err=repr(e))
@@ -481,6 +484,38 @@ class OpaClient(BasePolicyStoreClient):
         else:
             return await self._set_policies_from_delta_bundle(bundle)
 
+    @staticmethod
+    async def _attempt_operations_with_postponed_failure_retry(
+        ops: List[Callable[[], Awaitable[Response]]]
+    ):
+        """Attempt to execute the given operations in the given order, where
+        failed operations are tried again at the end (recursively).
+
+        This overcomes issues of misordering (e.g. setting a renamed
+        policy before deleting the old one, or setting a policy before
+        its dependencies)
+        """
+        while True:
+            failed_ops = []
+            for op in ops:
+                # Only expected errors are retried (such as 400), so exceptions are not caught
+                response = await op()
+                if response.status_code != status.HTTP_200_OK:
+                    logger.warning(
+                        f"Failed policy operation, would retry again after the rest. status: {response.status_code}, body: {response.body.decode()}"
+                    )
+                    failed_ops.append(op)
+
+            if len(failed_ops) == 0:
+                # all ops succeeded
+                return
+
+            if len(failed_ops) == len(ops):
+                # all ops failed on this iteration, no point at retrying
+                raise RuntimeError("Giving up setting / deleting failed modules to OPA")
+
+            ops = failed_ops  # retry failed ops
+
     async def _set_policies_from_complete_bundle(self, bundle: PolicyBundle):
         module_ids_in_store: Set[str] = set(await self.get_policy_module_ids())
         module_ids_in_bundle: Set[str] = {
@@ -498,8 +533,14 @@ class OpaClient(BasePolicyStoreClient):
                 )
 
             # save bundled policies into store
-            for module in BundleUtils.sorted_policy_modules_to_load(bundle):
-                await self.set_policy(policy_id=module.path, policy_code=module.rego)
+            await OpaClient._attempt_operations_with_postponed_failure_retry(
+                [
+                    functools.partial(
+                        self.set_policy, policy_id=module.path, policy_code=module.rego
+                    )
+                    for module in BundleUtils.sorted_policy_modules_to_load(bundle)
+                ]
+            )
 
             # remove policies from the store that are not in the bundle
             # (because this bundle is "complete", i.e: contains all policy modules for a given hash)
@@ -518,19 +559,26 @@ class OpaClient(BasePolicyStoreClient):
                     module, hash=bundle.hash
                 )
 
-            # save bundled policies into store
-            for module in BundleUtils.sorted_policy_modules_to_load(bundle):
-                await self.set_policy(policy_id=module.path, policy_code=module.rego)
+            # remove static policy data from store
+            for module_id in BundleUtils.sorted_data_modules_to_delete(bundle):
+                await self.delete_policy_data(
+                    path=self._safe_data_module_path(str(module_id))
+                )
 
-            # remove deleted policies (or static policy data) from store
-            if bundle.deleted_files is not None:
-                for module_id in BundleUtils.sorted_policy_modules_to_delete(bundle):
-                    await self.delete_policy(policy_id=module_id)
-
-                for module_id in BundleUtils.sorted_data_modules_to_delete(bundle):
-                    await self.delete_policy_data(
-                        path=self._safe_data_module_path(str(module_id))
+            await OpaClient._attempt_operations_with_postponed_failure_retry(
+                # save bundled policies into store
+                [
+                    functools.partial(
+                        self.set_policy, policy_id=module.path, policy_code=module.rego
                     )
+                    for module in BundleUtils.sorted_policy_modules_to_load(bundle)
+                ]
+                + [
+                    # remove deleted policies from store
+                    functools.partial(self.delete_policy, policy_id=module_id)
+                    for module_id in BundleUtils.sorted_policy_modules_to_delete(bundle)
+                ]
+            )
 
             # save policy version (hash) into store
             self._policy_version = bundle.hash
