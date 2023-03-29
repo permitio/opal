@@ -145,19 +145,6 @@ jobs:
           docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
           echo "::set-output name=image::$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
 
-      - name: OPAL Worker - Build Tag Push to ECR - Root Account
-        id: build-opal-worker-image
-        env:
-          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-          ECR_REPOSITORY: permit-opal-worker-v2
-          DOCKER_FILE_PATH: "./docker/Dockerfile"
-          IMAGE_TAG: ${{ github.sha }}
-        run: |
-
-          docker buildx build -f $DOCKER_FILE_PATH --target server -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
-          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
-          echo "::set-output name=image::$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
-
   update-staging:
     # On push to master - trigger sync of permit-deployments so staging would be deployed with new version
     if: ${{ !failure() && !cancelled() && github.ref == 'refs/heads/private' && github.event_name == 'push' }}
