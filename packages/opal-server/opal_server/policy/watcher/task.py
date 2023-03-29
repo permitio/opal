@@ -19,11 +19,15 @@ class BasePolicyWatcherTask:
         self._pubsub_endpoint = pubsub_endpoint
 
     async def __aenter__(self):
-        self.start()
+        await self.start()
         return self
 
     async def __aexit__(self, exc_type, exc, tb):
         await self.stop()
+
+    async def _on_webhook(self, topic: Topic, data: Any):
+        logger.info("Webhook listener triggered")
+        self._tasks.append(asyncio.create_task(self.trigger(topic, data)))
 
     async def _listen_to_webhook_notifications(self):
         # Webhook api route can be hit randomly in all workers, so it publishes a message to the webhook topic.
@@ -37,14 +41,14 @@ class BasePolicyWatcherTask:
 
                 await self._pubsub_endpoint.subscribe(
                     [opal_server_config.POLICY_REPO_WEBHOOK_TOPIC],
-                    self.trigger,
+                    self._on_webhook,
                 )
                 await self._pubsub_endpoint.broadcaster.get_reader_task()
 
                 # Stop the watcher if broadcaster disconnects
                 self.signal_stop()
 
-    def start(self):
+    async def start(self):
         """starts the policy watcher and registers a failure callback to
         terminate gracefully."""
         logger.info("Launching policy watcher")
@@ -95,8 +99,8 @@ class PolicyWatcherTask(BasePolicyWatcherTask):
         self._watcher = policy_source
         super().__init__(*args, **kwargs)
 
-    def start(self):
-        super().start()
+    async def start(self):
+        await super().start()
         self._watcher.add_on_failure_callback(self._fail)
         self._tasks.append(asyncio.create_task(self._watcher.run()))
 
@@ -107,5 +111,4 @@ class PolicyWatcherTask(BasePolicyWatcherTask):
     async def trigger(self, topic: Topic, data: Any):
         """triggers the policy watcher from outside to check for changes (git
         pull)"""
-        logger.info("Webhook listener triggered")
-        self._tasks.append(asyncio.create_task(self._watcher.check_for_changes()))
+        await self._watcher.check_for_changes()
