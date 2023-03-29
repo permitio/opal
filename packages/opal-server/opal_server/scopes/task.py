@@ -8,14 +8,14 @@ from opal_server.config import opal_server_config
 from opal_server.policy.watcher.task import BasePolicyWatcherTask
 from opal_server.redis import RedisDB
 from opal_server.scopes.scope_repository import ScopeRepository
-from opal_server.worker import Worker
+from opal_server.scopes.service import ScopesService
 
 
 class ScopesPolicyWatcherTask(BasePolicyWatcherTask):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-        self._worker = Worker(
+        self._service = ScopesService(
             base_dir=Path(opal_server_config.BASE_DIR),
             scopes=ScopeRepository(RedisDB(opal_server_config.REDIS_URL)),
             pubsub_endpoint=self._pubsub_endpoint,
@@ -36,7 +36,7 @@ class ScopesPolicyWatcherTask(BasePolicyWatcherTask):
             while True:
                 await asyncio.sleep(opal_server_config.POLICY_REFRESH_INTERVAL)
                 logger.info("Periodic sync")
-                await self._worker.sync_scopes(only_poll_updates=True)
+                await self._service.sync_scopes(only_poll_updates=True)
         except asyncio.CancelledError:
             logger.info("Periodic sync cancelled")
 
@@ -44,7 +44,7 @@ class ScopesPolicyWatcherTask(BasePolicyWatcherTask):
         if data is not None and isinstance(data, dict):
             # Refresh single scope
             try:
-                await self._worker.sync_scope(
+                await self._service.sync_scope(
                     data["scope_id"],
                     force_fetch=data.get("force_fetch", False),
                     hinted_hash=data.get("hinted_hash"),
@@ -55,4 +55,4 @@ class ScopesPolicyWatcherTask(BasePolicyWatcherTask):
                 )
         else:
             # Refresh all scopes
-            await self._worker.sync_scopes()
+            await self._service.sync_scopes()

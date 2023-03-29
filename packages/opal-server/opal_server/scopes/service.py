@@ -100,7 +100,7 @@ class NewCommitsCallbacks(PolicyFetcherCallbacks):
             await publisher.wait()
 
 
-class Worker:
+class ScopesService:
     def __init__(
         self,
         base_dir: Path,
@@ -117,7 +117,7 @@ class Worker:
         hinted_hash: Optional[str] = None,
         force_fetch: bool = False,
     ):
-        with tracer.trace("worker.sync_scope", resource=scope_id):
+        with tracer.trace("scopes_service.sync_scope", resource=scope_id):
             scope = await self._scopes.get(scope_id)
 
             if not isinstance(scope.policy, GitPolicyScopeSource):
@@ -152,7 +152,7 @@ class Worker:
                 )
 
     async def delete_scope(self, scope_id: str):
-        with tracer.trace("worker.delete_scope"):
+        with tracer.trace("scopes_service.delete_scope"):
             logger.info(f"Delete scope: {scope_id}")
             scope = await self._scopes.get(scope_id)
             url = scope.policy.url
@@ -177,7 +177,7 @@ class Worker:
             await self._scopes.delete(scope_id)
 
     async def sync_scopes(self, only_poll_updates=False):
-        with tracer.trace("worker.sync_scopes"):
+        with tracer.trace("scopes_service.sync_scopes"):
             scopes = await self._scopes.all()
             if only_poll_updates:
                 # Only sync scopes that have polling enabled (in a periodic check)
