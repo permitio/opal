@@ -23,7 +23,7 @@ class ScopesPolicyWatcherTask(BasePolicyWatcherTask):
 
     async def start(self):
         await super().start()
-        self._tasks.append(asyncio.create_task(self._worker.sync_scopes()))
+        self._tasks.append(asyncio.create_task(self._service.sync_scopes()))
 
         if opal_server_config.POLICY_REFRESH_INTERVAL > 0:
             self._tasks.append(asyncio.create_task(self._periodic_polling()))
@@ -56,3 +56,22 @@ class ScopesPolicyWatcherTask(BasePolicyWatcherTask):
         else:
             # Refresh all scopes
             await self._service.sync_scopes()
+
+    @staticmethod
+    def preload_scopes():
+        """Clone all scopes repositories as part as server startup.
+
+        This speeds up the first sync of scopes after workers are
+        started.
+        """
+        if opal_server_config.SCOPES:
+            logger.info("Preloading repo clones for scopes")
+
+            service = ScopesService(
+                base_dir=Path(opal_server_config.BASE_DIR),
+                scopes=ScopeRepository(RedisDB(opal_server_config.REDIS_URL)),
+                pubsub_endpoint=None,
+            )
+            asyncio.run(service.sync_scopes(notify_on_changes=False))
+
+            logger.warning("Finished preloading repo clones for scopes.")
