@@ -1,7 +1,9 @@
 name: CI Workflow (Test, Build & Deploy)
 on:
   push:
-    branches: [ rk/fix-long-startup ]
+    branches: [ private ]
+  pull_request:
+    branches: [ private ]
 
   # Allows you to run this workflow manually from the Actions tab
   workflow_dispatch:
