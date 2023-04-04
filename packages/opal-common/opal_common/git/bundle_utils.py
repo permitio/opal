@@ -43,10 +43,14 @@ class BundleUtils:
 
     @staticmethod
     def sorted_policy_modules_to_delete(bundle: PolicyBundle) -> List[Path]:
+        if bundle.deleted_files is None:
+            return []
         # already sorted
         return bundle.deleted_files.policy_modules
 
     @staticmethod
     def sorted_data_modules_to_delete(bundle: PolicyBundle) -> List[Path]:
+        if bundle.deleted_files is None:
+            return []
         # already sorted
         return bundle.deleted_files.data_modules
