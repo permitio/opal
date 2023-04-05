@@ -60,9 +60,9 @@ OPAL runs in the background, supercharging policy-agents, keeping them in sync w
 
   OPAL is available both as **python packages** with a built-in CLI as well as pre-built **docker images** ready-to-go.
 
-  - [Play with a live playground environment in docker-compose](https://docs.opal.ac/getting-started/get_started_with_opal_docker_compose_tutorial)
+  - [Play with a live playground environment in docker-compose](https://docs.opal.ac/getting-started/quickstart/opal-playground/overview)
   <!-- - this tutorial is great for learning about OPAL core features and see what OPAL can do for you. -->
-  - [Try the getting started guide for containers](https://docs.opal.ac/getting-started/get_started_with_opal_using_docker)
+  - [Try the getting started guide for containers](https://docs.opal.ac/getting-started/running-opal/overview)
   <!-- - this tutorial will show you how to configure OPAL to your specific needs and run the official docker containers locally or in production. -->
 
   - [Check out the Helm Chart for Kubernetes](https://github.com/permitio/opal-helm-chart)
