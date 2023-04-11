@@ -188,6 +188,7 @@ class OpalClient:
                 "Offline mode was enabled, but isn't supported when using an external policy store (inline OPA is disabled)"
             )
             self.offline_mode_enabled = False
+        self._backup_loaded = False
 
         # init fastapi app
         self.app: FastAPI = self._init_fast_api_app()
@@ -227,10 +228,28 @@ class OpalClient:
         # top level routes (i.e: healthchecks)
         @app.get("/healthcheck", include_in_schema=False)
         @app.get("/", include_in_schema=False)
-        async def healthcheck():
+        @app.get("/healthy", include_in_schema=False)
+        async def healthy():
+            """returns 200 if updates keep being successfully fetched from the
+            server and applied to the policy store."""
             healthy = await self.policy_store.is_healthy()
 
             if healthy:
+                return JSONResponse(
+                    status_code=status.HTTP_200_OK, content={"status": "ok"}
+                )
+            else:
+                return JSONResponse(
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    content={"status": "unavailable"},
+                )
+
+        @app.get("/ready", include_in_schema=False)
+        async def ready():
+            """returns 200 if the policy store is ready to serve requests."""
+            ready = self._backup_loaded or await self.policy_store.is_ready()
+
+            if ready:
                 return JSONResponse(
                     status_code=status.HTTP_200_OK, content={"status": "ok"}
                 )
@@ -318,6 +337,7 @@ class OpalClient:
                     logger.debug("importing policy store from backup file...")
                     await self.policy_store.full_import(backup_file)
                     logger.debug("import completed")
+                    self._backup_loaded = True
             else:
                 logger.warning("policy store backup file wasn't found")
         except Exception:
