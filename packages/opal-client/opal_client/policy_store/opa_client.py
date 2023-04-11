@@ -797,6 +797,9 @@ class OpaClient(BasePolicyStoreClient):
                     data=transaction_data,
                 )
 
+    async def is_ready(self) -> bool:
+        return self._transaction_state.ready
+
     async def is_healthy(self) -> bool:
         return self._transaction_state.healthy
 
