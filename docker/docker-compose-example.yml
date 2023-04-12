@@ -46,6 +46,12 @@ services:
       - OPAL_SERVER_URL=http://opal_server:7002
       - OPAL_LOG_FORMAT_INCLUDE_PID=true
       - OPAL_INLINE_OPA_LOG_FORMAT=http
+
+      # Uncomment the following lines to enable storing & loading OPA data from a backup file:
+      # - OPAL_OFFLINE_MODE_ENABLED=true
+    # volumes:
+    #  - opa_backup:/opal/backup:rw
+
     ports:
       # exposes opal client on the host machine, you can access the client at: http://localhost:7000
       - "7766:7000"
@@ -58,3 +64,6 @@ services:
     # this command is not necessary when deploying OPAL for real, it is simply a trick for dev environments
     # to make sure that opal-server is already up before starting the client.
     command: sh -c "./wait-for.sh opal_server:7002 --timeout=20 -- ./start.sh"
+
+volumes:
+  opa_backup:
