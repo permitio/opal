@@ -71,10 +71,11 @@ def get_webhook_router(
         dependencies=route_dependencies,
     )
     async def trigger_webhook(request: Request, git_changes: GitChanges = git_changes):
-        # look at values extracted from request
-        urls = git_changes.urls
-        branch = git_changes.branch
-        names = git_changes.names
+        if source_type != PolicySourceTypes.Api:
+            # look at values extracted from request
+            urls = git_changes.urls
+            branch = git_changes.branch
+            names = git_changes.names
 
         # TODO: breaking change: change "repo_url" to "remote_url" in next major
         if source_type == PolicySourceTypes.Git:
