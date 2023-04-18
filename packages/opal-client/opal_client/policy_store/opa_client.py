@@ -1,6 +1,7 @@
 import asyncio
 import functools
 import json
+from asyncio import StreamReader, StreamWriter
 from typing import Any, Awaitable, Callable, Dict, List, Optional, Set
 
 import aiohttp
@@ -14,7 +15,7 @@ from opal_client.policy_store.base_policy_store_client import (
 from opal_client.utils import proxy_response
 from opal_common.git.bundle_utils import BundleUtils
 from opal_common.opa.parsing import get_rego_package
-from opal_common.schemas.policy import DataModule, PolicyBundle
+from opal_common.schemas.policy import DataModule, PolicyBundle, RegoModule
 from opal_common.schemas.store import JSONPatchAction, StoreTransaction, TransactionType
 from pydantic import BaseModel
 from tenacity import RetryError, retry
@@ -294,6 +295,20 @@ class OpaClient(BasePolicyStoreClient):
                 logger.warning("Opa connection error: {err}", err=repr(e))
                 raise
 
+    @fail_silently()
+    @retry(**RETRY_CONFIG)
+    async def get_policies(self) -> Optional[Dict[str, str]]:
+        async with aiohttp.ClientSession() as session:
+            try:
+                async with session.get(
+                    f"{self._opa_url}/policies", headers=self._headers
+                ) as opa_response:
+                    result = await opa_response.json()
+                    return OpaClient._extract_modules_from_policies_json(result)
+            except aiohttp.ClientError as e:
+                logger.warning("Opa connection error: {err}", err=repr(e))
+                raise
+
     @affects_transaction
     @retry(**RETRY_CONFIG)
     async def delete_policy(self, policy_id: str, transaction_id: Optional[str] = None):
@@ -313,34 +328,25 @@ class OpaClient(BasePolicyStoreClient):
                 logger.warning("Opa connection error: {err}", err=repr(e))
                 raise
 
-    @fail_silently()
-    @retry(**RETRY_CONFIG)
     async def get_policy_module_ids(self) -> List[str]:
-        async with aiohttp.ClientSession() as session:
-            try:
-                async with session.get(
-                    f"{self._opa_url}/policies", headers=self._headers
-                ) as opa_response:
-                    result = await opa_response.json()
-                    return OpaClient._extract_module_ids_from_policies_json(result)
-            except aiohttp.ClientError as e:
-                logger.warning("Opa connection error: {err}", err=repr(e))
-                raise
+        modules = await self.get_policies()
+        return modules.keys()
 
     @staticmethod
-    def _extract_module_ids_from_policies_json(result: Dict[str, Any]) -> List[str]:
+    def _extract_modules_from_policies_json(result: Dict[str, Any]) -> Dict[str, str]:
         """return all module ids in OPA cache who are not:
 
         - skipped module ids (i.e: our health check policy)
         - all modules with package name starting with "system" (special OPA policies)
         """
-        modules: List[Dict[str, Any]] = result.get("result", [])
+        policies: List[Dict[str, Any]] = result.get("result", [])
         builtin_modules = [opal_client_config.OPA_HEALTH_CHECK_POLICY_PATH]
 
-        module_ids = []
-        for module in modules:
-            module_id = module.get("id", None)
-            package_name = get_rego_package(module.get("raw", ""))
+        modules = {}
+        for policy in policies:
+            module_id = policy.get("id", None)
+            module_raw = policy.get("raw", "")
+            package_name = get_rego_package(module_raw)
 
             if module_id is None:
                 continue
@@ -351,9 +357,9 @@ class OpaClient(BasePolicyStoreClient):
             if module_id in builtin_modules:
                 continue
 
-            module_ids.append(module_id)
+            modules[module_id] = module_raw
 
-        return module_ids
+        return modules
 
     @affects_transaction
     async def set_policies(
@@ -589,12 +595,12 @@ class OpaClient(BasePolicyStoreClient):
         returns a dict (parsed json).
         """
         # function accepts paths that start with / and also path that do not start with /
-        if path.startswith("/"):
-            path = path[1:]
+        if path != "" and not path.startswith("/"):
+            path = "/" + path
         try:
             async with aiohttp.ClientSession() as session:
                 async with session.get(
-                    f"{self._opa_url}/data/{path}", headers=self._headers
+                    f"{self._opa_url}/data{path}", headers=self._headers
                 ) as opa_response:
                     return await opa_response.json()
         except aiohttp.ClientError as e:
@@ -659,5 +665,25 @@ class OpaClient(BasePolicyStoreClient):
                     data=transaction_data,
                 )
 
+    async def is_ready(self) -> bool:
+        return self._transaction_state.ready
+
     async def is_healthy(self) -> bool:
         return self._transaction_state.healthy
+
+    async def full_export(self, writer: StreamWriter) -> None:
+        policies = await self.get_policies()
+        data = await self.get_data("")
+        await writer.write(json.dumps({"policies": policies, "data": data}))
+
+    async def full_import(self, reader: StreamReader) -> None:
+        import_data = json.loads(await reader.read())
+
+        await OpaClient._attempt_operations_with_postponed_failure_retry(
+            [
+                functools.partial(self.set_policy, policy_id=id, policy_code=raw)
+                for id, raw in import_data["policies"].items()
+            ]
+        )
+
+        await self.set_policy_data(import_data["data"])

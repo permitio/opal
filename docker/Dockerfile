@@ -66,6 +66,9 @@ ENV OPAL_INLINE_OPA_ENABLED=false
 EXPOSE 7000
 USER opal
 
+RUN mkdir -p /opal/backup
+VOLUME /opal/backup
+
 
 FROM alpine:latest as opa-extractor
 USER root
@@ -100,7 +103,6 @@ ENV OPAL_INLINE_OPA_ENABLED=true
 # expose opa port
 EXPOSE 8181
 USER opal
-
 
 # SERVER IMAGE --------------------------------------
 # ---------------------------------------------------
