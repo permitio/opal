@@ -12,13 +12,14 @@ async def test_attempt_operations_with_postponed_failure_retry():
         def __init__(self, loadable=True):
             self.next_allowed_module = 0
             self.badly_ordered_bundle = list(range(random.randint(5, 25)))
-            random.shuffle(self.badly_ordered_bundle)
 
             if not loadable:
                 # Remove a random module from the bundle, so dependent modules won't be able to ever load
                 self.badly_ordered_bundle.pop(
-                    random.randint(0, len(self.badly_ordered_bundle) - 1)
+                    random.randint(0, len(self.badly_ordered_bundle) - 2)
                 )
+
+            random.shuffle(self.badly_ordered_bundle)
 
         async def _policy_op(self, module: int) -> Response:
             if self.next_allowed_module == module:
