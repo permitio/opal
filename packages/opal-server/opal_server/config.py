@@ -253,18 +253,9 @@ class OpalServerConfig(Confi):
         description="Set if OPAL server should enable tracing with datadog APM",
     )
 
-    SERVER_ROLE = confi.enum(
-        "SERVER_ROLE",
-        ServerRole,
-        default=ServerRole.Primary,
-        description="Server is leader or follower",
-    )
-
     SCOPES = confi.bool("SCOPES", default=False)
 
     REDIS_URL = confi.str("REDIS_URL", default="redis://localhost")
-
-    CELERY_BACKEND = confi.str("CELERY_BACKEND", None)
 
     BASE_DIR = confi.str("BASE_DIR", default=pathlib.Path.home() / ".local/state/opal")
 
@@ -272,16 +263,6 @@ class OpalServerConfig(Confi):
         "POLICY_REFRESH_INTERVAL",
         default=0,
         description="Policy polling refresh interval",
-    )
-
-    SERVER_URL = confi.str(
-        "SERVER_URL",
-        default="http://localhost:7002",
-        description="OPAL Server URL",
-    )
-
-    WORKER_TOKEN = confi.str(
-        "WORKER_TOKEN", "", description="Server/Worker access token"
     )
 
 
