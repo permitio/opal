@@ -271,12 +271,10 @@ class OpalClient:
 
         @app.on_event("startup")
         async def startup_event():
-            logger.warning("STARTUP STARTUP STARTUP")
             asyncio.create_task(self.start_client_background_tasks())
 
         @app.on_event("shutdown")
         async def shutdown_event():
-            logger.warning("SHUTDOWN SHUTDOWN SHUTDOWN")
             if self.offline_mode_enabled:
                 await self.backup_store()
 
@@ -332,7 +330,7 @@ class OpalClient:
     async def load_store_from_backup(self):
         """Imports the backup file, if exists, to the policy store."""
         try:
-            if os.path.exists(self.store_backup_path):
+            if os.path.isfile(self.store_backup_path):
                 async with aiofiles.open(self.store_backup_path, "r") as backup_file:
                     logger.debug("importing policy store from backup file...")
                     await self.policy_store.full_import(backup_file)
@@ -356,7 +354,7 @@ class OpalClient:
                     await self.policy_store.full_export(backup_file)
                     logger.debug("export completed")
 
-                # Atomically replace the backup file with the new one after export is completed
+                # Atomically replace the previous backup (only after the new one is ready)
                 await aiofiles.os.replace(tmp_backup_path, self.store_backup_path)
         except Exception:
             logger.exception("failed to backup policy store")
