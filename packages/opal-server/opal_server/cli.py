@@ -32,14 +32,14 @@ def run(engine_type: str = typer.Option("uvicron", help="uvicorn or gunicorn")):
             app,
             opal_server_config.SERVER_WORKER_COUNT,
             host=opal_server_config.SERVER_HOST,
-            port=opal_server_config.SERVER_PORT,
+            port=opal_server_config.SERVER_BIND_PORT,
         )
     else:
         run_uvicorn(
             "opal_server.main:app",
             workers=opal_server_config.SERVER_WORKER_COUNT,
             host=opal_server_config.SERVER_HOST,
-            port=opal_server_config.SERVER_PORT,
+            port=opal_server_config.SERVER_BIND_PORT,
         )
 
 
