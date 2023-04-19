@@ -6,6 +6,8 @@ import uuid
 from logging import disable
 from typing import List, Optional
 
+import aiofiles
+import aiofiles.os
 import aiohttp
 import websockets
 from fastapi import FastAPI, status
@@ -45,6 +47,9 @@ class OpalClient:
         inline_opa_enabled: bool = None,
         inline_opa_options: OpaServerOptions = None,
         verifier: Optional[JWTVerifier] = None,
+        store_backup_path: Optional[str] = None,
+        store_backup_interval: Optional[int] = None,
+        offline_mode_enabled: bool = False,
     ) -> None:
         """
         Args:
@@ -168,6 +173,22 @@ class OpalClient:
             logger.info(
                 "API authentication disabled (public encryption key was not provided)"
             )
+        self.store_backup_path = (
+            store_backup_path or opal_client_config.STORE_BACKUP_PATH
+        )
+        self.store_backup_interval = (
+            store_backup_interval or opal_client_config.STORE_BACKUP_INTERVAL
+        )
+
+        self.offline_mode_enabled = (
+            offline_mode_enabled or opal_client_config.OFFLINE_MODE_ENABLED
+        )
+        if self.offline_mode_enabled and not inline_opa_enabled:
+            logger.warning(
+                "Offline mode was enabled, but isn't supported when using an external policy store (inline OPA is disabled)"
+            )
+            self.offline_mode_enabled = False
+        self._backup_loaded = False
 
         # init fastapi app
         self.app: FastAPI = self._init_fast_api_app()
@@ -207,10 +228,28 @@ class OpalClient:
         # top level routes (i.e: healthchecks)
         @app.get("/healthcheck", include_in_schema=False)
         @app.get("/", include_in_schema=False)
-        async def healthcheck():
+        @app.get("/healthy", include_in_schema=False)
+        async def healthy():
+            """returns 200 if updates keep being successfully fetched from the
+            server and applied to the policy store."""
             healthy = await self.policy_store.is_healthy()
 
             if healthy:
+                return JSONResponse(
+                    status_code=status.HTTP_200_OK, content={"status": "ok"}
+                )
+            else:
+                return JSONResponse(
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    content={"status": "unavailable"},
+                )
+
+        @app.get("/ready", include_in_schema=False)
+        async def ready():
+            """returns 200 if the policy store is ready to serve requests."""
+            ready = self._backup_loaded or await self.policy_store.is_ready()
+
+            if ready:
                 return JSONResponse(
                     status_code=status.HTTP_200_OK, content={"status": "ok"}
                 )
@@ -236,6 +275,9 @@ class OpalClient:
 
         @app.on_event("shutdown")
         async def shutdown_event():
+            if self.offline_mode_enabled:
+                await self.backup_store()
+
             await self.stop_client_background_tasks()
 
         return app
@@ -285,6 +327,46 @@ class OpalClient:
         except Exception:
             logger.exception("exception while shutting down updaters")
 
+    async def load_store_from_backup(self):
+        """Imports the backup file, if exists, to the policy store."""
+        try:
+            if os.path.isfile(self.store_backup_path):
+                async with aiofiles.open(self.store_backup_path, "r") as backup_file:
+                    logger.debug("importing policy store from backup file...")
+                    await self.policy_store.full_import(backup_file)
+                    logger.debug("import completed")
+                    self._backup_loaded = True
+            else:
+                logger.warning("policy store backup file wasn't found")
+        except Exception:
+            logger.exception("failed to load backup data to policy store")
+
+    async def backup_store(self):
+        """Exports the policy store's data to a backup file."""
+        try:
+            async with self._backup_lock:
+                await aiofiles.os.makedirs(
+                    os.path.dirname(self.store_backup_path), exist_ok=True
+                )
+                tmp_backup_path = self.store_backup_path + ".tmp"
+                async with aiofiles.open(tmp_backup_path, "w") as backup_file:
+                    logger.debug("exporting policy store to backup file...")
+                    await self.policy_store.full_export(backup_file)
+                    logger.debug("export completed")
+
+                # Atomically replace the previous backup (only after the new one is ready)
+                await aiofiles.os.replace(tmp_backup_path, self.store_backup_path)
+        except Exception:
+            logger.exception("failed to backup policy store")
+
+    async def periodically_backup_store(self):
+        self._backup_lock = asyncio.Lock()
+
+        # Backup store periodically
+        while True:
+            await asyncio.sleep(self.store_backup_interval)
+            await self.backup_store()
+
     async def launch_policy_store_dependent_tasks(self):
         try:
             await self.maybe_init_healthcheck_policy()
@@ -292,6 +374,11 @@ class OpalClient:
             logger.critical("healthcheck policy enabled but could not be initialized!")
             self._trigger_shutdown()
             return
+
+        if self.offline_mode_enabled:
+            # Immediately attempt loading from backup (waiting for failure loading from server would delay availability)
+            await self.load_store_from_backup()
+            asyncio.create_task(self.periodically_backup_store())
 
         try:
             for task in asyncio.as_completed(

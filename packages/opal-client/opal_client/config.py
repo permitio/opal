@@ -242,6 +242,22 @@ class OpalClientConfig(Confi):
 
     SCOPE_ID = confi.str("SCOPE_ID", "default", description="OPAL Scope ID")
 
+    STORE_BACKUP_PATH = confi.str(
+        "STORE_BACKUP_PATH",
+        "/opal/backup/opa.json",
+        description="Path to backup policy store's data to",
+    )
+    STORE_BACKUP_INTERVAL = confi.int(
+        "STORE_BACKUP_INTERVAL",
+        60,
+        description="Interval in seconds to backup policy store's data",
+    )
+    OFFLINE_MODE_ENABLED = confi.bool(
+        "OFFLINE_MODE_ENABLED",
+        False,
+        description="If set, opal client will try to load policy store from backup file and operate even if server is unreachable. Ignored if INLINE_OPA_ENABLED=False",
+    )
+
     def on_load(self):
         # LOGGER
         if self.INLINE_OPA_LOG_FORMAT == OpaLogFormat.NONE:
