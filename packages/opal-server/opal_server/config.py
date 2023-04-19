@@ -36,7 +36,7 @@ class OpalServerConfig(Confi):
     # The name to be used for segmentation in the backbone pub/sub (e.g. the Kafka topic)
     BROADCAST_CHANNEL_NAME = confi.str("BROADCAST_CHANNEL_NAME", "EventNotifier")
     BROADCAST_CONN_LOSS_BUGFIX_EXPERIMENT_ENABLED = confi.bool(
-        "BROADCAST_CONN_LOSS_BUGFIX_EXPERIMENT_ENABLED", False
+        "BROADCAST_CONN_LOSS_BUGFIX_EXPERIMENT_ENABLED", True
     )
 
     # server security
