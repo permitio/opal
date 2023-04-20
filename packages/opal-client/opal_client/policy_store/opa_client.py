@@ -506,7 +506,7 @@ class OpaClient(BasePolicyStoreClient):
             for op in ops:
                 # Only expected errors are retried (such as 400), so exceptions are not caught
                 response = await op()
-                if response.status_code != status.HTTP_200_OK:
+                if response and response.status_code != status.HTTP_200_OK:
                     logger.warning(
                         f"Failed policy operation, would retry again after the rest. status: {response.status_code}, body: {response.body.decode()}"
                     )
