@@ -69,7 +69,7 @@ class OpalClientConfig(Confi):
     )
 
     POLICY_STORE_POLICY_PATHS_TO_IGNORE = confi.list(
-        "POLICY_STORE_EXTERNAL_POLICY_PATHS_TO_IGNORE",
+        "POLICY_STORE_POLICY_PATHS_TO_IGNORE",
         [],
         description="When loading policies manually or otherwise externally into the policy store, use this list of glob patterns to have OPAL ignore and not delete or override them, end paths (without any wildcards in the middle) with '\**' to indicate you want all nested under the path to be ignored",
     )
