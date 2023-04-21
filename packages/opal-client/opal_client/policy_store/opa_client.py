@@ -620,6 +620,7 @@ class OpaClient(BasePolicyStoreClient):
         self,
         policy_data: JsonableValue,
         path: str = "",
+        method: str = "PUT",
         transaction_id: Optional[str] = None,
     ):
         path = self._safe_data_module_path(path)
@@ -635,7 +636,8 @@ class OpaClient(BasePolicyStoreClient):
             try:
                 headers = await self._get_auth_headers()
 
-                async with session.put(
+                async with session.request(
+                    method,
                     f"{self._opa_url}/data{path}",
                     data=json.dumps(policy_data, default=str),
                     headers=headers,

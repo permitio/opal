@@ -41,6 +41,7 @@ class AbstractPolicyStore:
     async def set_policy_data(
         self,
         policy_data: JsonableValue,
+        method: str = "PUT",
         path: str = "",
         transaction_id: Optional[str] = None,
     ):

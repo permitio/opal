@@ -5,6 +5,7 @@ from typing import List
 from fastapi_utils.tasks import repeat_every
 from opal_common.logger import logger
 from opal_common.schemas.data import (
+    DataSourceEntry,
     DataSourceEntryWithPollingInterval,
     DataUpdate,
     ServerDataSourceConfig,
@@ -48,7 +49,8 @@ class DataUpdatePublisher:
             current_topic = sub_topics[0]
 
             if prefix:
-                topic_combos.append(f"{prefix}{PREFIX_DELIMITER}{current_topic}")
+                topic_combos.append(
+                    f"{prefix}{PREFIX_DELIMITER}{current_topic}")
             else:
                 topic_combos.append(current_topic)
             if len(sub_topics) > 1:
@@ -72,6 +74,25 @@ class DataUpdatePublisher:
         """
         all_topic_combos = set()
 
+        invalidEntries: List[DataSourceEntry] = []
+        for entry in update.entries:
+            if entry.save_method.upper() not in {"PUT", "PATCH", "DELETE"}:
+                logger.warning(
+                    "[{pid}] Data update entry for url '{entry.url}' has an invalid save_method and will not be published. save_method: {entry.save_method}",
+                    pid=os.getpid(),
+                    entry=entry
+                )
+                invalidEntries.append(entry)
+
+        validEntries = [e for e in update.entries if e not in invalidEntries]
+        # all entries are invalid, no reason to continue
+        if not validEntries:
+            logger.warning(
+                "[{pid}] No valid data update entries were provided. Skipping data update.",
+                pid=os.getpid()
+            )
+            return
+
         # a nicer format of entries to the log
         logged_entries = [
             dict(
@@ -81,16 +102,18 @@ class DataUpdatePublisher:
                 inline_data=(entry.data is not None),
                 topics=entry.topics,
             )
-            for entry in update.entries
+            for entry in validEntries
         ]
 
         # Expand the topics for each event to include sub topic combos (e.g. publish 'a/b/c' as 'a' , 'a/b', and 'a/b/c')
-        for entry in update.entries:
+        for entry in validEntries:
             topic_combos = []
             if entry.topics:
                 for topic in entry.topics:
-                    topic_combos.extend(DataUpdatePublisher.get_topic_combos(topic))
-                entry.topics = topic_combos  # Update entry with the exhaustive list, so client won't have to expand it again
+                    topic_combos.extend(
+                        DataUpdatePublisher.get_topic_combos(topic))
+                # Update entry with the exhaustive list, so client won't have to expand it again
+                entry.topics = topic_combos
                 all_topic_combos.update(topic_combos)
             else:
                 logger.warning(

@@ -166,7 +166,8 @@ class DataUpdater:
         """
         if url is None:
             url = self._data_sources_config_url
-        logger.info("Getting data-sources configuration from '{source}'", source=url)
+        logger.info(
+            "Getting data-sources configuration from '{source}'", source=url)
         try:
             async with ClientSession(headers=self._extra_headers) as session:
                 response = await session.get(url, **self._ssl_context_kwargs)
@@ -236,7 +237,8 @@ class DataUpdater:
     async def _subscriber(self):
         """Coroutine meant to be spunoff with create_task to listen in the
         background for data events and pass them to the data_fetcher."""
-        logger.info("Subscribing to topics: {topics}", topics=self._data_topics)
+        logger.info(
+            "Subscribing to topics: {topics}", topics=self._data_topics)
         self._client = PubSubClient(
             self._data_topics,
             self._update_policy_data_callback,
@@ -299,7 +301,8 @@ class DataUpdater:
                 data = json.dumps(data, default=str)
             return hashlib.sha256(data.encode("utf-8")).hexdigest()
         except:
-            logger.exception("Failed to calculate hash for data {data}", data=data)
+            logger.exception(
+                "Failed to calculate hash for data {data}", data=data)
             return ""
 
     async def update_policy_data(
@@ -327,17 +330,18 @@ class DataUpdater:
                 if entry.topics
                 and not set(entry.topics).isdisjoint(set(self._data_topics))
             ]
-            urls = [(entry.url, entry.config, entry.data) for entry in entries]
+            urls = [(entry.url, entry.config, entry.data)
+                    for entry in entries if entry.save_method.upper() != "DELETE"]
 
-        if len(entries) > 0:
-            logger.info("Fetching policy data", urls=repr(urls))
+        policy_data_with_urls: List[Tuple[str, FetcherConfig, any]] = []
+        if len(urls) > 0:
+            logger.info("Fetching policy data from {urls}", urls=repr(urls))
+            # Urls may be None - handle_urls has a default for None
+            policy_data_with_urls = await data_fetcher.handle_urls(urls)
         else:
             logger.warning(
                 "None of the update's entries are designated to subscribed topics"
             )
-
-        # Urls may be None - handle_urls has a default for None
-        policy_data_with_urls = await data_fetcher.handle_urls(urls)
         # Save the data from the update
         # We wrap our interaction with the policy store with a transaction
         async with policy_store.transaction_context(
@@ -345,91 +349,19 @@ class DataUpdater:
         ) as store_transaction:
             # for intellisense treat store_transaction as a PolicyStoreClient (which it proxies)
             store_transaction: BasePolicyStoreClient
-            error_content = None
             for (url, fetch_config, result), entry in itertools.zip_longest(
-                policy_data_with_urls, entries
+                policy_data_with_urls, entries, fillvalue=(None, None, None)
             ):
-                fetched_data_successfully = True
-
-                if isinstance(result, Exception):
-                    fetched_data_successfully = False
-                    logger.error(
-                        "Failed to fetch url {url}, got exception: {exc}",
-                        url=url,
-                        exc=result,
-                    )
-
-                if isinstance(
-                    result, aiohttp.ClientResponse
-                ) and is_http_error_response(
-                    result
-                ):  # error responses
-                    fetched_data_successfully = False
-                    try:
-                        error_content = await result.json()
-                        logger.error(
-                            "Failed to fetch url {url}, got response code {status} with error: {error}",
-                            url=url,
-                            status=result.status,
-                            error=error_content,
-                        )
-                    except json.JSONDecodeError:
-                        error_content = await result.text()
-                        logger.error(
-                            "Failed to decode response from url:{url}, got response code {status} with response: {error}",
-                            url=url,
-                            status=result.status,
-                            error=error_content,
-                        )
-                store_transaction._update_remote_status(
-                    url=url, status=fetched_data_successfully, error=str(error_content)
-                )
-
-                if fetched_data_successfully:
-                    # get path to store the URL data (default mode (None) is as "" - i.e. as all the data at root)
-                    policy_store_path = "" if entry is None else entry.dst_path
-                    # None is not valid - use "" (protect from missconfig)
-                    if policy_store_path is None:
-                        policy_store_path = ""
-                    # fix opa_path (if not empty must start with "/" to be nested under data)
-                    if policy_store_path != "" and not policy_store_path.startswith(
-                        "/"
-                    ):
-                        policy_store_path = f"/{policy_store_path}"
-                    policy_data = result
-                    # Create a report on the data-fetching
-                    report = DataEntryReport(
-                        entry=entry, hash=self.calc_hash(policy_data), fetched=True
-                    )
-                    logger.info(
-                        "Saving fetched data to policy-store: source url='{url}', destination path='{path}'",
-                        url=url,
-                        path=policy_store_path or "/",
-                    )
-                    try:
-                        await store_transaction.set_policy_data(
-                            policy_data, path=policy_store_path
-                        )
-                        # No exception we we're able to save to the policy-store
-                        report.saved = True
-                        # save the report for the entry
-                        reports.append(report)
-                    except Exception:
-                        logger.exception("Failed to save data update to policy-store")
-                        # we failed to save to policy-store
-                        report.saved = False
-                        # save the report for the entry
-                        reports.append(report)
-                        # re-raise so the context manager will be aware of the failure
-                        raise
+                if entry.save_method.upper() == "DELETE":
+                    await self.handle_delete_data(store_transaction, entry)
                 else:
-                    report = DataEntryReport(entry=entry, fetched=False, saved=False)
-                    # save the report for the entry
-                    reports.append(report)
+                    await self.handle_new_data(reports, store_transaction, url, result, entry)
+
         # should we send a report to defined callbackers?
         if self._should_send_reports:
             # spin off reporting (no need to wait on it)
-            whole_report = DataUpdateReport(update_id=update.id, reports=reports)
+            whole_report = DataUpdateReport(
+                update_id=update.id, reports=reports)
             extra_callbacks = self._callbacks_register.normalize_callbacks(
                 update.callback.callbacks
             )
@@ -438,3 +370,107 @@ class DataUpdater:
                     whole_report, extra_callbacks
                 )
             )
+
+    async def handle_delete_data(self, store_transaction, entry):
+        policy_store_path = "" if entry is None else entry.dst_path
+        logger.info(
+            "Deleting data in policy-store: destination path='{path}'",
+            path=policy_store_path or "/",
+        )
+        try:
+            await store_transaction.set_policy_data(
+                method="DELETE",
+                policy_data=None,
+                path=policy_store_path
+            )
+        except Exception:
+            logger.exception(
+                "Failed to delete data in policy-store")
+            # re-raise so the context manager will be aware of the failure
+            raise
+
+    async def handle_new_data(self, reports, store_transaction, url, result, entry):
+        error_content = None
+        fetched_data_successfully = True
+
+        if isinstance(result, Exception):
+            fetched_data_successfully = False
+            logger.error(
+                "Failed to fetch url {url}, got exception: {exc}",
+                url=url,
+                exc=result,
+            )
+        if isinstance(
+            result, aiohttp.ClientResponse
+        ) and is_http_error_response(
+            result
+        ):  # error responses
+            fetched_data_successfully = False
+            try:
+                error_content = await result.json()
+                logger.error(
+                    "Failed to fetch url {url}, got response code {status} with error: {error}",
+                    url=url,
+                    status=result.status,
+                    error=error_content,
+                )
+            except json.JSONDecodeError:
+                error_content = await result.text()
+                logger.error(
+                    "Failed to decode response from url:{url}, got response code {status} with response: {error}",
+                    url=url,
+                    status=result.status,
+                    error=error_content,
+                )
+        store_transaction._update_remote_status(
+            url=url, status=fetched_data_successfully, error=str(
+                error_content)
+        )
+
+        if fetched_data_successfully:
+            # get path to store the URL data (default mode (None) is as "" - i.e. as all the data at root)
+            policy_store_path = "" if entry is None else entry.dst_path
+            # always default to PUT
+            method = "PUT" if entry is None else entry.save_method
+            # None is not valid - use "" (protect from missconfig)
+            if policy_store_path is None:
+                policy_store_path = ""
+                # fix opa_path (if not empty must start with "/" to be nested under data)
+            if policy_store_path != "" and not policy_store_path.startswith(
+                "/"
+            ):
+                policy_store_path = f"/{policy_store_path}"
+            policy_data = result
+            # Create a report on the data-fetching
+            report = DataEntryReport(
+                entry=entry, hash=self.calc_hash(policy_data), fetched=True
+            )
+            logger.info(
+                "Saving fetched data to policy-store: source url='{url}', destination path='{path}'",
+                url=url,
+                path=policy_store_path or "/",
+            )
+            try:
+                await store_transaction.set_policy_data(
+                    method=method,
+                    policy_data=policy_data,
+                    path=policy_store_path
+                )
+                # No exception we we're able to save to the policy-store
+                report.saved = True
+                # save the report for the entry
+                reports.append(report)
+            except Exception:
+                logger.exception(
+                    "Failed to save data update to policy-store")
+                # we failed to save to policy-store
+                report.saved = False
+                # save the report for the entry
+                reports.append(report)
+                # re-raise so the context manager will be aware of the failure
+                raise
+        else:
+            report = DataEntryReport(
+                entry=entry, fetched=False, saved=False)
+            # save the report for the entry
+            reports.append(report)

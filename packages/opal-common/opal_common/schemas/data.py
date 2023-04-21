@@ -17,7 +17,9 @@ class DataSourceEntry(BaseModel):
     """
 
     # How to obtain the data
-    url: str = Field(..., description="Url source to query for data")
+    url: Optional[str] = Field(
+        "", description="Url source to query for data. Optional with save_method=DELETE"
+    )
     data: Optional[JsonableValue] = Field(
         None,
         description="Data payload to embed within the data update (instead of having "
@@ -33,9 +35,10 @@ class DataSourceEntry(BaseModel):
     )
     # How to save the data
     # see https://www.openpolicyagent.org/docs/latest/rest-api/#data-api path is the path nested under <OPA_SERVER>/<version>/data
-    dst_path: str = Field("", description="OPA data api path to store the document at")
+    dst_path: str = Field(
+        "", description="OPA data api path to store the document at")
     save_method: str = Field(
-        "PUT", description="Method used to write into OPA - PUT/PATCH"
+        "PUT", description="Method used to write into OPA - PUT/PATCH/DELETE"
     )
 
 
@@ -88,7 +91,8 @@ class ServerDataSourceConfig(BaseModel):
 
     @root_validator
     def check_passwords_match(cls, values):
-        config, redirect_url = values.get("config"), values.get("external_source_url")
+        config, redirect_url = values.get(
+            "config"), values.get("external_source_url")
         if config is None and redirect_url is None:
             raise ValueError(
                 "you must provide one of these fields: config, external_source_url"
@@ -144,7 +148,8 @@ class DataUpdate(BaseModel):
 class DataEntryReport(BaseModel):
     """A report of the processing of a single DataSourceEntry."""
 
-    entry: DataSourceEntry = Field(..., description="The entry that was processed")
+    entry: DataSourceEntry = Field(...,
+                                   description="The entry that was processed")
     # Was the entry successfully fetched
     fetched: Optional[bool] = False
     # Was the entry successfully saved into the policy-data-store

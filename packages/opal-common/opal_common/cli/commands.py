@@ -129,7 +129,7 @@ def publish_data_update(
     ),
     save_method: str = typer.Option(
         "PUT",
-        help="[SINGLE-ENTRY-UPDATE] How the data should be saved into the give dst-path",
+        help="[SINGLE-ENTRY-UPDATE] How the data should be updated in OPA",
     ),
 ):
     """Publish a DataUpdate through an OPAL-server (indicated by --server_url).
