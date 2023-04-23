@@ -503,12 +503,14 @@ class OpaClient(BasePolicyStoreClient):
         """
         while True:
             failed_ops = []
+            failure_msgs = []
             for op in ops:
                 # Only expected errors are retried (such as 400), so exceptions are not caught
                 response = await op()
                 if response and response.status_code != status.HTTP_200_OK:
-                    logger.warning(
-                        f"Failed policy operation, would retry again after the rest. status: {response.status_code}, body: {response.body.decode()}"
+                    # Delay error logging until we know retrying won't help
+                    failure_msgs.append(
+                        f"Failed policy operation. status: {response.status_code}, body: {response.body.decode()}"
                     )
                     failed_ops.append(op)
 
@@ -518,6 +520,9 @@ class OpaClient(BasePolicyStoreClient):
 
             if len(failed_ops) == len(ops):
                 # all ops failed on this iteration, no point at retrying
+                for failure_msg in failure_msgs:
+                    logger.error(failure_msg)
+
                 raise RuntimeError("Giving up setting / deleting failed modules to OPA")
 
             ops = failed_ops  # retry failed ops
