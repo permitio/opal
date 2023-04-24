@@ -332,7 +332,7 @@ class OpalClient:
         try:
             if os.path.isfile(self.store_backup_path):
                 async with aiofiles.open(self.store_backup_path, "r") as backup_file:
-                    logger.debug("importing policy store from backup file...")
+                    logger.info("importing policy store from backup file...")
                     await self.policy_store.full_import(backup_file)
                     logger.debug("import completed")
                     self._backup_loaded = True
