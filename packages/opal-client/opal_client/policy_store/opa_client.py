@@ -564,32 +564,6 @@ class OpaClient(BasePolicyStoreClient):
                 logger.warning("Opa connection error: {err}", err=repr(e))
                 raise
 
-    @affects_transaction
-    async def patch_data(
-        self,
-        path: str,
-        patch_document: JSONPatchDocument,
-        transaction_id: Optional[str] = None,
-    ):
-        path = self._safe_data_module_path(path)
-        # a patch document is a list of actions
-        # we render each action with pydantic, and then dump the doc into json
-        json_document = json.dumps([action.dict() for action in patch_document])
-
-        async with aiohttp.ClientSession() as session:
-            try:
-                async with session.patch(
-                    f"{self._opa_url}/data{path}",
-                    data=json_document,
-                    headers=self._headers,
-                ) as opa_response:
-                    return await proxy_response_unless_invalid(
-                        opa_response, accepted_status_codes=[status.HTTP_204_NO_CONTENT]
-                    )
-            except aiohttp.ClientError as e:
-                logger.warning("Opa connection error: {err}", err=repr(e))
-                raise
-
     @fail_silently()
     @retry(**RETRY_CONFIG)
     async def get_data(self, path: str) -> Dict:
