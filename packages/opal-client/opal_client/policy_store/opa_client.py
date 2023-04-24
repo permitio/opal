@@ -607,7 +607,8 @@ class OpaClient(BasePolicyStoreClient):
                 async with session.get(
                     f"{self._opa_url}/data{path}", headers=self._headers
                 ) as opa_response:
-                    return await opa_response.json()
+                    json_response = await opa_response.json()
+                    return json_response.get("result", {})
         except aiohttp.ClientError as e:
             logger.warning("Opa connection error: {err}", err=repr(e))
             raise
