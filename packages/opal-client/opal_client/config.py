@@ -212,6 +212,9 @@ class OpalClientConfig(Confi):
         False,
         description="If set, opal client will try to load policy store from backup file and operate even if server is unreachable. Ignored if INLINE_OPA_ENABLED=False",
     )
+    SPLIT_ROOT_DATA = confi.bool(
+        "SPLIT_ROOT_DATA", False, description="Split writing data updates to root path"
+    )
 
     def on_load(self):
         # LOGGER
