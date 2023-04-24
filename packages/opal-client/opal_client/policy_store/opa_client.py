@@ -7,6 +7,7 @@ from typing import Any, Awaitable, Callable, Dict, List, Optional, Set
 from urllib.parse import urlencode
 
 import aiohttp
+import dpath
 from fastapi import Response, status
 from opal_client.config import opal_client_config
 from opal_client.logger import logger
@@ -239,6 +240,35 @@ class OpaTransactionLogPolicyWriter:
         )
 
 
+class OpaStaticDataCache:
+    """Caching OPA's static data, so we can back it up without querying.
+
+    /v1/data which also includes virtual documents.
+    """
+
+    def __init__(self):
+        self._root_data = {}
+
+    def set(self, path, data):
+        if not path or path == "/":
+            assert isinstance(data, dict), ValueError(
+                "Setting root document must be a dict"
+            )
+            self._root_data = data.copy()
+        else:
+            # This would overwrite already existing paths
+            dpath.new(self._root_data, path, data)
+
+    def delete(self, path):
+        if not path or path == "/":
+            self._root_data = {}
+        else:
+            dpath.delete(self._root_data, path)
+
+    def get_data(self):
+        return self._root_data
+
+
 class OpaClient(BasePolicyStoreClient):
     """communicates with OPA via its REST API."""
 
@@ -253,6 +283,7 @@ class OpaClient(BasePolicyStoreClient):
         oauth_client_secret: Optional[str] = None,
         oauth_server: Optional[str] = None,
         data_updater_enabled: bool = True,
+        cache_policy_data: bool = False,
     ):
         base_url = opa_server_url or opal_client_config.POLICY_STORE_URL
         self._opa_url = f"{base_url}/v1"
@@ -292,6 +323,10 @@ class OpaClient(BasePolicyStoreClient):
         self._transaction_state = OpaTransactionLogState(data_updater_enabled)
         # as long as this is null, persisting transaction log to OPA is disabled
         self._transaction_state_writer: Optional[OpaTransactionLogState] = None
+
+        self._policy_data_cache: Optional[OpaStaticDataCache] = None
+        if cache_policy_data:
+            self._policy_data_cache = OpaStaticDataCache()
 
     async def get_policy_version(self) -> Optional[str]:
         return self._policy_version
@@ -649,13 +684,16 @@ class OpaClient(BasePolicyStoreClient):
                     data=json.dumps(policy_data, default=str),
                     headers=headers,
                 ) as opa_response:
-                    return await proxy_response_unless_invalid(
+                    response = await proxy_response_unless_invalid(
                         opa_response,
                         accepted_status_codes=[
                             status.HTTP_204_NO_CONTENT,
                             status.HTTP_304_NOT_MODIFIED,
                         ],
                     )
+                    if self._policy_data_cache:
+                        self._policy_data_cache.set(path, policy_data)
+                    return response
             except aiohttp.ClientError as e:
                 logger.warning("Opa connection error: {err}", err=repr(e))
                 raise
@@ -676,13 +714,16 @@ class OpaClient(BasePolicyStoreClient):
                 async with session.delete(
                     f"{self._opa_url}/data{path}", headers=headers
                 ) as opa_response:
-                    return await proxy_response_unless_invalid(
+                    response = await proxy_response_unless_invalid(
                         opa_response,
                         accepted_status_codes=[
                             status.HTTP_204_NO_CONTENT,
                             status.HTTP_404_NOT_FOUND,
                         ],
                     )
+                    if self._policy_data_cache:
+                        self._policy_data_cache.delete(path)
+                    return response
             except aiohttp.ClientError as e:
                 logger.warning("Opa connection error: {err}", err=repr(e))
                 raise
@@ -780,8 +821,10 @@ class OpaClient(BasePolicyStoreClient):
 
     async def full_export(self, writer: StreamWriter) -> None:
         policies = await self.get_policies()
-        data = await self.get_data("")
-        await writer.write(json.dumps({"policies": policies, "data": data}))
+        data = self._policy_data_cache.get_data()
+        await writer.write(
+            json.dumps({"policies": policies, "data": data}, default=str)
+        )
 
     async def full_import(self, reader: StreamReader) -> None:
         import_data = json.loads(await reader.read())
