@@ -256,7 +256,6 @@ class OpaClient(BasePolicyStoreClient):
     ):
         base_url = opa_server_url or opal_client_config.POLICY_STORE_URL
         self._opa_url = f"{base_url}/v1"
-        self._cached_policies: Dict[str, str] = {}
         self._policy_version: Optional[str] = None
         self._lock = asyncio.Lock()
         self._token = opa_auth_token
@@ -365,7 +364,6 @@ class OpaClient(BasePolicyStoreClient):
                 f"Ignoring setting policy - {policy_id}, set in POLICY_PATHS_TO_IGNORE."
             )
             return
-        self._cached_policies[policy_id] = policy_code
         async with aiohttp.ClientSession() as session:
             try:
                 headers = await self._get_auth_headers()
