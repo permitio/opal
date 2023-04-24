@@ -3,7 +3,7 @@ import hashlib
 import itertools
 import json
 import uuid
-from typing import List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 import aiohttp
 from aiohttp.client import ClientError, ClientSession
@@ -401,15 +401,23 @@ class DataUpdater:
                     report = DataEntryReport(
                         entry=entry, hash=self.calc_hash(policy_data), fetched=True
                     )
-                    logger.info(
-                        "Saving fetched data to policy-store: source url='{url}', destination path='{path}'",
-                        url=url,
-                        path=policy_store_path or "/",
-                    )
+
                     try:
-                        await store_transaction.set_policy_data(
-                            policy_data, path=policy_store_path
-                        )
+                        if (
+                            opal_client_config.SPLIT_ROOT_DATA
+                            and policy_store_path in ("/", "")
+                            and isinstance(policy_data, dict)
+                        ):
+                            await self._set_split_policy_data(
+                                store_transaction, url=url, data=policy_data
+                            )
+                        else:
+                            await self._set_policy_data(
+                                store_transaction,
+                                url=url,
+                                path=policy_store_path,
+                                data=policy_data,
+                            )
                         # No exception we we're able to save to the policy-store
                         report.saved = True
                         # save the report for the entry
@@ -438,3 +446,20 @@ class DataUpdater:
                     whole_report, extra_callbacks
                 )
             )
+
+    async def _set_split_policy_data(self, tx, url: str, data: Dict[str, Any]):
+        """Split data writes to root ("/") path, so they won't overwrite other
+        sources."""
+        logger.info("Splitting root data to {n} keys", n=len(data))
+
+        for prefix, obj in data.items():
+            await self._set_policy_data(tx, url=url, path=f"/{prefix}", data=obj)
+
+    async def _set_policy_data(self, tx, url: str, path: str, data: JsonableValue):
+        logger.info(
+            "Saving fetched data to policy-store: source url='{url}', destination path='{path}'",
+            url=url,
+            path=path or "/",
+        )
+
+        await tx.set_policy_data(data, path=path)
