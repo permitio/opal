@@ -3,3 +3,4 @@ aiohttp>=3.8.1,<4
 psutil>=5.9.1,<6
 tenacity>=8.0.1,<9
 websockets>=10.3,<11
+dpath>=2.1.5,<3

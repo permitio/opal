@@ -75,10 +75,23 @@ class OpalClient:
         )
         # set logs
         configure_logs()
+
+        self.offline_mode_enabled = (
+            offline_mode_enabled or opal_client_config.OFFLINE_MODE_ENABLED
+        )
+        if self.offline_mode_enabled and not inline_opa_enabled:
+            logger.warning(
+                "Offline mode was enabled, but isn't supported when using an external policy store (inline OPA is disabled)"
+            )
+            self.offline_mode_enabled = False
+
         # Init policy store client
         self.policy_store_type: PolicyStoreTypes = policy_store_type
         self.policy_store: BasePolicyStoreClient = (
-            policy_store or PolicyStoreClientFactory.create(policy_store_type)
+            policy_store
+            or PolicyStoreClientFactory.create(
+                policy_store_type, offline_mode_enabled=self.offline_mode_enabled
+            )
         )
         # data fetcher
         self.data_fetcher = DataFetcher()
@@ -179,15 +192,6 @@ class OpalClient:
         self.store_backup_interval = (
             store_backup_interval or opal_client_config.STORE_BACKUP_INTERVAL
         )
-
-        self.offline_mode_enabled = (
-            offline_mode_enabled or opal_client_config.OFFLINE_MODE_ENABLED
-        )
-        if self.offline_mode_enabled and not inline_opa_enabled:
-            logger.warning(
-                "Offline mode was enabled, but isn't supported when using an external policy store (inline OPA is disabled)"
-            )
-            self.offline_mode_enabled = False
         self._backup_loaded = False
 
         # init fastapi app
@@ -332,7 +336,7 @@ class OpalClient:
         try:
             if os.path.isfile(self.store_backup_path):
                 async with aiofiles.open(self.store_backup_path, "r") as backup_file:
-                    logger.debug("importing policy store from backup file...")
+                    logger.info("importing policy store from backup file...")
                     await self.policy_store.full_import(backup_file)
                     logger.debug("import completed")
                     self._backup_loaded = True

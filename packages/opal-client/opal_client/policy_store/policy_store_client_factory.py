@@ -53,6 +53,7 @@ class PolicyStoreClientFactory:
         save_to_cache=True,
         token: Optional[str] = None,
         data_updater_enabled: Optional[bool] = None,
+        offline_mode_enabled: bool = False,
     ) -> BasePolicyStoreClient:
         """
         Factory method - create a new policy store by type.
@@ -86,6 +87,7 @@ class PolicyStoreClientFactory:
                 url,
                 opa_auth_token=store_token,
                 data_updater_enabled=data_updater_enabled,
+                cache_policy_data=offline_mode_enabled,
             )
         # MOCK
         elif PolicyStoreTypes.MOCK == store_type:
