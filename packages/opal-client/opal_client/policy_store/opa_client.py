@@ -7,6 +7,7 @@ from typing import Any, Awaitable, Callable, Dict, List, Optional, Set
 from urllib.parse import urlencode
 
 import aiohttp
+import dpath
 from fastapi import Response, status
 from opal_client.config import opal_client_config
 from opal_client.logger import logger
@@ -239,6 +240,35 @@ class OpaTransactionLogPolicyWriter:
         )
 
 
+class OpaStaticDataCache:
+    """Caching OPA's static data, so we can back it up without querying.
+
+    /v1/data which also includes virtual documents.
+    """
+
+    def __init__(self):
+        self._root_data = {}
+
+    def set(self, path, data):
+        if not path or path == "/":
+            assert isinstance(data, dict), ValueError(
+                "Setting root document must be a dict"
+            )
+            self._root_data = data.copy()
+        else:
+            # This would overwrite already existing paths
+            dpath.new(self._root_data, path, data)
+
+    def delete(self, path):
+        if not path or path == "/":
+            self._root_data = {}
+        else:
+            dpath.delete(self._root_data, path)
+
+    def get_data(self):
+        return self._root_data
+
+
 class OpaClient(BasePolicyStoreClient):
     """communicates with OPA via its REST API."""
 
@@ -253,10 +283,10 @@ class OpaClient(BasePolicyStoreClient):
         oauth_client_secret: Optional[str] = None,
         oauth_server: Optional[str] = None,
         data_updater_enabled: bool = True,
+        cache_policy_data: bool = False,
     ):
         base_url = opa_server_url or opal_client_config.POLICY_STORE_URL
         self._opa_url = f"{base_url}/v1"
-        self._cached_policies: Dict[str, str] = {}
         self._policy_version: Optional[str] = None
         self._lock = asyncio.Lock()
         self._token = opa_auth_token
@@ -293,6 +323,10 @@ class OpaClient(BasePolicyStoreClient):
         self._transaction_state = OpaTransactionLogState(data_updater_enabled)
         # as long as this is null, persisting transaction log to OPA is disabled
         self._transaction_state_writer: Optional[OpaTransactionLogState] = None
+
+        self._policy_data_cache: Optional[OpaStaticDataCache] = None
+        if cache_policy_data:
+            self._policy_data_cache = OpaStaticDataCache()
 
     async def get_policy_version(self) -> Optional[str]:
         return self._policy_version
@@ -365,7 +399,6 @@ class OpaClient(BasePolicyStoreClient):
                 f"Ignoring setting policy - {policy_id}, set in POLICY_PATHS_TO_IGNORE."
             )
             return
-        self._cached_policies[policy_id] = policy_code
         async with aiohttp.ClientSession() as session:
             try:
                 headers = await self._get_auth_headers()
@@ -503,12 +536,14 @@ class OpaClient(BasePolicyStoreClient):
         """
         while True:
             failed_ops = []
+            failure_msgs = []
             for op in ops:
                 # Only expected errors are retried (such as 400), so exceptions are not caught
                 response = await op()
                 if response and response.status_code != status.HTTP_200_OK:
-                    logger.warning(
-                        f"Failed policy operation, would retry again after the rest. status: {response.status_code}, body: {response.body.decode()}"
+                    # Delay error logging until we know retrying won't help
+                    failure_msgs.append(
+                        f"Failed policy operation. status: {response.status_code}, body: {response.body.decode()}"
                     )
                     failed_ops.append(op)
 
@@ -518,6 +553,9 @@ class OpaClient(BasePolicyStoreClient):
 
             if len(failed_ops) == len(ops):
                 # all ops failed on this iteration, no point at retrying
+                for failure_msg in failure_msgs:
+                    logger.error(failure_msg)
+
                 raise RuntimeError("Giving up setting / deleting failed modules to OPA")
 
             ops = failed_ops  # retry failed ops
@@ -646,13 +684,16 @@ class OpaClient(BasePolicyStoreClient):
                     data=json.dumps(policy_data, default=str),
                     headers=headers,
                 ) as opa_response:
-                    return await proxy_response_unless_invalid(
+                    response = await proxy_response_unless_invalid(
                         opa_response,
                         accepted_status_codes=[
                             status.HTTP_204_NO_CONTENT,
                             status.HTTP_304_NOT_MODIFIED,
                         ],
                     )
+                    if self._policy_data_cache:
+                        self._policy_data_cache.set(path, policy_data)
+                    return response
             except aiohttp.ClientError as e:
                 logger.warning("Opa connection error: {err}", err=repr(e))
                 raise
@@ -673,42 +714,16 @@ class OpaClient(BasePolicyStoreClient):
                 async with session.delete(
                     f"{self._opa_url}/data{path}", headers=headers
                 ) as opa_response:
-                    return await proxy_response_unless_invalid(
+                    response = await proxy_response_unless_invalid(
                         opa_response,
                         accepted_status_codes=[
                             status.HTTP_204_NO_CONTENT,
                             status.HTTP_404_NOT_FOUND,
                         ],
                     )
-            except aiohttp.ClientError as e:
-                logger.warning("Opa connection error: {err}", err=repr(e))
-                raise
-
-    @affects_transaction
-    async def patch_data(
-        self,
-        path: str,
-        patch_document: JSONPatchDocument,
-        transaction_id: Optional[str] = None,
-    ):
-        path = self._safe_data_module_path(path)
-        # a patch document is a list of actions
-        # we render each action with pydantic, and then dump the doc into json
-        json_document = json.dumps([action.dict() for action in patch_document])
-
-        async with aiohttp.ClientSession() as session:
-            try:
-                headers = await self._get_auth_headers()
-
-                async with session.patch(
-                    f"{self._opa_url}/data{path}",
-                    data=json_document,
-                    headers=headers,
-                ) as opa_response:
-                    return await proxy_response_unless_invalid(
-                        opa_response,
-                        accepted_status_codes=[status.HTTP_204_NO_CONTENT],
-                    )
+                    if self._policy_data_cache:
+                        self._policy_data_cache.delete(path)
+                    return response
             except aiohttp.ClientError as e:
                 logger.warning("Opa connection error: {err}", err=repr(e))
                 raise
@@ -732,7 +747,8 @@ class OpaClient(BasePolicyStoreClient):
                 async with session.get(
                     f"{self._opa_url}/data{path}", headers=headers
                 ) as opa_response:
-                    return await opa_response.json()
+                    json_response = await opa_response.json()
+                    return json_response.get("result", {})
         except aiohttp.ClientError as e:
             logger.warning("Opa connection error: {err}", err=repr(e))
             raise
@@ -805,8 +821,10 @@ class OpaClient(BasePolicyStoreClient):
 
     async def full_export(self, writer: StreamWriter) -> None:
         policies = await self.get_policies()
-        data = await self.get_data("")
-        await writer.write(json.dumps({"policies": policies, "data": data}))
+        data = self._policy_data_cache.get_data()
+        await writer.write(
+            json.dumps({"policies": policies, "data": data}, default=str)
+        )
 
     async def full_import(self, reader: StreamReader) -> None:
         import_data = json.loads(await reader.read())
