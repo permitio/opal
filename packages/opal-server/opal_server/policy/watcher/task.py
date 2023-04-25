@@ -59,7 +59,7 @@ class BasePolicyWatcherTask:
         """stops all policy watcher tasks."""
         logger.info("Stopping policy watcher")
         for task in self._tasks:
-            if not task.done():
+            if not task.done() and not task.cancelled():
                 task.cancel()
         await asyncio.gather(*self._tasks, return_exceptions=True)
 

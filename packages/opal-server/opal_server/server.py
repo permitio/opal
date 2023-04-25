@@ -162,17 +162,6 @@ class OpalServer:
         else:
             self.opal_statistics = None
 
-        # if stats are enabled, the server workers must be listening on the broadcast
-        # channel for their own synchronization, not just for their clients. therefore
-        # we need a "global" listening context
-        self.broadcast_listening_context: Optional[
-            EventBroadcasterContextManager
-        ] = None
-        if self.broadcaster_uri is not None and opal_common_config.STATISTICS_ENABLED:
-            self.broadcast_listening_context = (
-                self.pubsub.endpoint.broadcaster.get_listening_context()
-            )
-
         self.watcher: PolicyWatcherTask = None
         self.leadership_lock: Optional[NamedLock] = None
 
@@ -315,14 +304,8 @@ class OpalServer:
         if self.publisher is not None:
             async with self.publisher:
                 if self.opal_statistics is not None:
-                    if self.broadcast_listening_context is not None:
-                        logger.info(
-                            "listening on broadcast channel for statistics events..."
-                        )
-                        await self.broadcast_listening_context.__aenter__()
-                    asyncio.create_task(self.opal_statistics.run())
-                    self.pubsub.endpoint.notifier.register_unsubscribe_event(
-                        self.opal_statistics.remove_client
+                    self._statistics_task = asyncio.create_task(
+                        self.opal_statistics.run()
                     )
 
                 # We want only one worker to run repo watchers
@@ -362,15 +345,6 @@ class OpalServer:
                         # running the watcher, and waiting until it stops (until self.watcher.signal_stop() is called)
                         async with self.watcher:
                             await self.watcher.wait_until_should_stop()
-
-                if (
-                    self.opal_statistics is not None
-                    and self.broadcast_listening_context is not None
-                ):
-                    await self.broadcast_listening_context.__aexit__()
-                    logger.info(
-                        "stopped listening for statistics events on the broadcast channel"
-                    )
 
     async def stop_server_background_tasks(self):
         logger.info("stopping background tasks...")

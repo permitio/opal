@@ -78,9 +78,30 @@ class OpalStatistics:
     def state(self) -> ServerStats:
         return self._state
 
+    async def _listen_to_broadcast_channel(self):
+        """if stats are enabled, the server workers must be listening on the
+        broadcast channel for their own synchronization, not just for their
+        clients.
+
+        therefore we need a "global" listening context
+        """
+        if self._endpoint.broadcaster is not None:
+            async with self._endpoint.broadcaster.get_listening_context():
+                logger.info("listening on broadcast channel for statistics events...")
+                await self._endpoint.broadcaster.get_reader_task()
+
+            logger.info(
+                "stopped listening for statistics events on the broadcast channel"
+            )
+
     async def run(self):
         """subscribe to two channels to be able to sync add and delete of
         clients."""
+        self._broadcast_listening_task = asyncio.create_task(
+            self._listen_to_broadcast_channel()
+        )
+        await asyncio.sleep(0)  # yield control to the task above
+
         await self._endpoint.subscribe(
             [opal_server_config.STATISTICS_WAKEUP_CHANNEL],
             self._receive_other_worker_wakeup_message,
@@ -96,6 +117,7 @@ class OpalStatistics:
             [opal_common_config.STATISTICS_REMOVE_CLIENT_CHANNEL],
             self._sync_remove_client,
         )
+        self._endpoint.notifier.register_unsubscribe_event(self.remove_client)
 
         # wait before publishing the wakeup message, due to the fact we are
         # counting on the broadcaster to listen and to replicate the message
