@@ -36,7 +36,7 @@ class OpalServerConfig(Confi):
     # The name to be used for segmentation in the backbone pub/sub (e.g. the Kafka topic)
     BROADCAST_CHANNEL_NAME = confi.str("BROADCAST_CHANNEL_NAME", "EventNotifier")
     BROADCAST_CONN_LOSS_BUGFIX_EXPERIMENT_ENABLED = confi.bool(
-        "BROADCAST_CONN_LOSS_BUGFIX_EXPERIMENT_ENABLED", False
+        "BROADCAST_CONN_LOSS_BUGFIX_EXPERIMENT_ENABLED", True
     )
 
     # server security
@@ -240,8 +240,15 @@ class OpalServerConfig(Confi):
         description="(if run via CLI)  Address for the server to bind",
     )
 
-    SERVER_PORT = confi.int(
+    SERVER_PORT = confi.str(
         "SERVER_PORT",
+        None,
+        # Users have expirienced errors when kubernetes sets the envar OPAL_SERVER_PORT="tcp://..." (which fails to parse as a port integer).
+        description="Deprecated, use SERVER_BIND_PORT instead",
+    )
+
+    SERVER_BIND_PORT = confi.int(
+        "SERVER_BIND_PORT",
         7002,
         description="(if run via CLI)  Port for the server to bind",
     )
@@ -253,18 +260,9 @@ class OpalServerConfig(Confi):
         description="Set if OPAL server should enable tracing with datadog APM",
     )
 
-    SERVER_ROLE = confi.enum(
-        "SERVER_ROLE",
-        ServerRole,
-        default=ServerRole.Primary,
-        description="Server is leader or follower",
-    )
-
     SCOPES = confi.bool("SCOPES", default=False)
 
     REDIS_URL = confi.str("REDIS_URL", default="redis://localhost")
-
-    CELERY_BACKEND = confi.str("CELERY_BACKEND", None)
 
     BASE_DIR = confi.str("BASE_DIR", default=pathlib.Path.home() / ".local/state/opal")
 
@@ -274,15 +272,12 @@ class OpalServerConfig(Confi):
         description="Policy polling refresh interval",
     )
 
-    SERVER_URL = confi.str(
-        "SERVER_URL",
-        default="http://localhost:7002",
-        description="OPAL Server URL",
-    )
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
 
-    WORKER_TOKEN = confi.str(
-        "WORKER_TOKEN", "", description="Server/Worker access token"
-    )
+        if self.SERVER_PORT is not None and self.SERVER_PORT.isdigit():
+            # Backward compatibility - if SERVER_PORT is set with a valid value, use it as SERVER_BIND_PORT
+            self.SERVER_BIND_PORT = int(self.SERVER_PORT)
 
 
 opal_server_config = OpalServerConfig(prefix="OPAL_")

@@ -6,17 +6,14 @@ from functools import partial
 from typing import List, Optional
 
 from fastapi import Depends, FastAPI
-from fastapi_utils.tasks import repeat_every
 from fastapi_websocket_pubsub.event_broadcaster import EventBroadcasterContextManager
 from opal_common.authentication.deps import JWTAuthenticator, StaticBearerAuthenticator
 from opal_common.authentication.signer import JWTSigner
 from opal_common.confi.confi import load_conf_if_none
 from opal_common.config import opal_common_config
-from opal_common.git.repo_cloner import RepoClonePathFinder
 from opal_common.logger import configure_logs, logger
 from opal_common.middleware import configure_middleware
 from opal_common.schemas.data import ServerDataSourceConfig
-from opal_common.schemas.policy_source import SSHAuthData
 from opal_common.synchronization.named_lock import NamedLock
 from opal_common.topics.publisher import (
     PeriodicPublisher,
@@ -28,19 +25,18 @@ from opal_server.data.api import init_data_updates_router
 from opal_server.data.data_update_publisher import DataUpdatePublisher
 from opal_server.loadlimiting import init_loadlimit_router
 from opal_server.policy.bundles.api import router as bundles_router
-from opal_server.policy.watcher import setup_watcher_task
+from opal_server.policy.watcher.factory import setup_watcher_task
 from opal_server.policy.watcher.task import PolicyWatcherTask
 from opal_server.policy.webhook.api import init_git_webhook_router
 from opal_server.publisher import setup_broadcaster_keepalive_task
 from opal_server.pubsub import PubSub
 from opal_server.redis import RedisDB
 from opal_server.scopes.api import init_scope_router
-from opal_server.scopes.loader import DEFAULT_SCOPE_ID, load_scopes
-from opal_server.scopes.scope_repository import ScopeNotFoundError, ScopeRepository
+from opal_server.scopes.loader import load_scopes
+from opal_server.scopes.scope_repository import ScopeRepository
 from opal_server.security.api import init_security_router
 from opal_server.security.jwks import JwksStaticEndpoint
 from opal_server.statistics import OpalStatistics, init_statistics_router
-from opal_server.worker import schedule_sync_all_scopes
 
 
 class OpalServer:
@@ -108,8 +104,6 @@ class OpalServer:
         self._policy_remote_url = policy_remote_url
 
         configure_logs()
-        self.watcher: Optional[PolicyWatcherTask] = None
-        self.leadership_lock: Optional[NamedLock] = None
 
         self.data_sources_config: ServerDataSourceConfig = (
             data_sources_config
@@ -179,7 +173,8 @@ class OpalServer:
                 self.pubsub.endpoint.broadcaster.get_listening_context()
             )
 
-        self.watcher: Optional[PolicyWatcherTask] = None
+        self.watcher: PolicyWatcherTask = None
+        self.leadership_lock: Optional[NamedLock] = None
 
         if opal_server_config.SCOPES:
             self._redis_db = RedisDB(opal_server_config.REDIS_URL)
@@ -292,7 +287,6 @@ class OpalServer:
             logger.info("*** OPAL Server Startup ***")
 
             try:
-                await self.start()
                 self._task = asyncio.create_task(self.start_server_background_tasks())
 
             except Exception:
@@ -307,11 +301,6 @@ class OpalServer:
             await self.stop_server_background_tasks()
 
         return app
-
-    async def start(self):
-        if opal_server_config.SCOPES:
-            await load_scopes(self._scopes)
-            await schedule_sync_all_scopes(self._scopes)
 
     async def start_server_background_tasks(self):
         """starts the background processes (as asyncio tasks) if such are
@@ -335,56 +324,43 @@ class OpalServer:
                     self.pubsub.endpoint.notifier.register_unsubscribe_event(
                         self.opal_statistics.remove_client
                     )
-                if self._init_policy_watcher:
-                    # repo watcher is enabled, but we want only one worker to run it
-                    # (otherwise for each new commit, we will publish multiple updates via pub/sub).
-                    # leadership is determined by the first worker to obtain a lock
-                    self.leadership_lock = NamedLock(
-                        opal_server_config.LEADER_LOCK_FILE_PATH
-                    )
-                    async with self.leadership_lock:
-                        # only one worker gets here, the others block. in case the leader worker
-                        # is terminated, another one will obtain the lock and become leader.
-                        logger.info(
-                            "leadership lock acquired, leader pid: {pid}",
-                            pid=os.getpid(),
-                        )
 
+                # We want only one worker to run repo watchers
+                # (otherwise for each new commit, we will publish multiple updates via pub/sub).
+                # leadership is determined by the first worker to obtain a lock
+                self.leadership_lock = NamedLock(
+                    opal_server_config.LEADER_LOCK_FILE_PATH
+                )
+                async with self.leadership_lock:
+                    # only one worker gets here, the others block. in case the leader worker
+                    # is terminated, another one will obtain the lock and become leader.
+                    logger.info(
+                        "leadership lock acquired, leader pid: {pid}",
+                        pid=os.getpid(),
+                    )
+
+                    if not opal_server_config.SCOPES:
                         # bind data updater publishers to the leader worker
                         asyncio.create_task(
                             DataUpdatePublisher.mount_and_start_polling_updates(
                                 self.publisher, opal_server_config.DATA_CONFIG_SOURCES
                             )
                         )
+                    else:
+                        await load_scopes(self._scopes)
 
-                        # init policy watcher
-                        if self.watcher is None:
-                            clone_path_finder = RepoClonePathFinder(
-                                base_clone_path=opal_server_config.POLICY_REPO_CLONE_PATH,
-                                clone_subdirectory_prefix=opal_server_config.POLICY_REPO_CLONE_FOLDER_PREFIX,
-                                use_fixed_path=opal_server_config.POLICY_REPO_REUSE_CLONE_PATH,
-                            )
-                            # only the leader should create new clone path and discard previous ones
-                            full_local_repo_path = (
-                                clone_path_finder.create_new_clone_path()
-                            )
-                            logger.info(
-                                f"Policy repo will be cloned to: {full_local_repo_path}"
-                            )
+                    if self.broadcast_keepalive is not None:
+                        self.broadcast_keepalive.start()
+                        if not self._init_policy_watcher:
+                            # Wait on keepalive instead to keep leadership lock acquired
+                            await self.broadcast_keepalive.wait_until_done()
 
-                            self.watcher = setup_watcher_task(
-                                self.publisher,
-                                self.pubsub.endpoint,
-                                remote_source_url=opal_server_config.POLICY_REPO_URL,
-                                ssh_key=opal_server_config.POLICY_REPO_SSH_KEY,
-                                branch_name=opal_server_config.POLICY_REPO_MAIN_BRANCH,
-                                clone_path_finder=clone_path_finder,
-                            )
-
+                    if self._init_policy_watcher:
+                        self.watcher = setup_watcher_task(
+                            self.publisher, self.pubsub.endpoint
+                        )
                         # running the watcher, and waiting until it stops (until self.watcher.signal_stop() is called)
                         async with self.watcher:
-                            if self.broadcast_keepalive is not None:
-                                self.broadcast_keepalive.start()
                             await self.watcher.wait_until_should_stop()
 
                 if (

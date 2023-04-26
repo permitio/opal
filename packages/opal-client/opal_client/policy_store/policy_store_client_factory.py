@@ -70,6 +70,7 @@ class PolicyStoreClientFactory:
         oauth_client_secret: Optional[str] = None,
         oauth_server: Optional[str] = None,
         data_updater_enabled: Optional[bool] = None,
+        offline_mode_enabled: bool = False,
     ) -> BasePolicyStoreClient:
         """
         Factory method - create a new policy store by type.
@@ -117,6 +118,7 @@ class PolicyStoreClientFactory:
                 oauth_client_secret=oauth_client_secret,
                 oauth_server=oauth_server,
                 data_updater_enabled=data_updater_enabled,
+                cache_policy_data=offline_mode_enabled,
             )
         # MOCK
         elif PolicyStoreTypes.MOCK == store_type:

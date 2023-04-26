@@ -21,12 +21,17 @@ Currently it returns `200 OK` as long as server is up.
 
 ### OPAL Client
 
-opal-client exposes http health check endpoints on `/` & `/healthcheck`. <br/>
-The health check returns `200 OK` when both policy and data were successfully loaded into OPA, otherwise `503 Unavailable` is returned
+opal-client exposes 2 types of http health checks:
+
+- **Readiness** - available on `/ready`. <br/>
+  Returns `200 OK` if the client have loaded policy & data to OPA at least once (from either server, or local backup file), otherwise `503 Unavailable` is returned.
+
+- **Liveness** - available on `/`, `/healthcheck` & `/healthy`. <br/>
+  Returns `200 OK` if the last attempts to load policy & data to OPA were successful, otherwise `503 Unavailable` is returned
 
 **Notice:** if you don't except your opal-client to load any data into OPA, set `OPAL_DATA_UPDATER_ENABLED: False`, so opal-client could report being healthy.
 
-You can also configure opal-client to store dynamic health status in OPA, [Learn more here](/tutorials/healthcheck_policy_and_update_callbacks)
+You can also configure opal-client to store dynamic health status as a document in OPA, [Learn more here](/tutorials/healthcheck_policy_and_update_callbacks)
 
 ## OPAL Statistics
 

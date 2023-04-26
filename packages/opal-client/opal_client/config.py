@@ -69,7 +69,7 @@ class OpalClientConfig(Confi):
     )
 
     POLICY_STORE_POLICY_PATHS_TO_IGNORE = confi.list(
-        "POLICY_STORE_EXTERNAL_POLICY_PATHS_TO_IGNORE",
+        "POLICY_STORE_POLICY_PATHS_TO_IGNORE",
         [],
         description="When loading policies manually or otherwise externally into the policy store, use this list of glob patterns to have OPAL ignore and not delete or override them, end paths (without any wildcards in the middle) with '\**' to indicate you want all nested under the path to be ignored",
     )
@@ -241,6 +241,22 @@ class OpalClientConfig(Confi):
     OPA_HEALTH_CHECK_POLICY_PATH = "opa/healthcheck/opal.rego"
 
     SCOPE_ID = confi.str("SCOPE_ID", "default", description="OPAL Scope ID")
+
+    STORE_BACKUP_PATH = confi.str(
+        "STORE_BACKUP_PATH",
+        "/opal/backup/opa.json",
+        description="Path to backup policy store's data to",
+    )
+    STORE_BACKUP_INTERVAL = confi.int(
+        "STORE_BACKUP_INTERVAL",
+        60,
+        description="Interval in seconds to backup policy store's data",
+    )
+    OFFLINE_MODE_ENABLED = confi.bool(
+        "OFFLINE_MODE_ENABLED",
+        False,
+        description="If set, opal client will try to load policy store from backup file and operate even if server is unreachable. Ignored if INLINE_OPA_ENABLED=False",
+    )
 
     def on_load(self):
         # LOGGER

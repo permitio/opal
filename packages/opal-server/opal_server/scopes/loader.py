@@ -12,9 +12,8 @@ DEFAULT_SCOPE_ID = "default"
 
 
 async def load_scopes(repo: ScopeRepository):
-    if opal_server_config.SERVER_ROLE == ServerRole.Primary:
-        logger.info("Server is primary, loading default scope.")
-        await _load_env_scope(repo)
+    logger.info("Server is primary, loading default scope.")
+    await _load_env_scope(repo)
 
 
 async def _load_env_scope(repo: ScopeRepository):

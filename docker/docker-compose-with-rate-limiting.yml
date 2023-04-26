@@ -61,7 +61,7 @@ services:
       - opal_server
     # this command is not necessary when deploying OPAL for real, it is simply a trick for dev environments
     # to make sure that opal-server is already up before starting the client.
-    command: sh -c "./wait-for.sh opal_server:7002 --timeout=20 -- ./start.sh"
+    command: sh -c "exec ./wait-for.sh opal_server:7002 --timeout=20 -- ./start.sh"
   opal_client2:
     # by default we run opal-client from latest official image
     image: permitio/opal-client:next
@@ -82,4 +82,4 @@ services:
       - opal_server
     # this command is not necessary when deploying OPAL for real, it is simply a trick for dev environments
     # to make sure that opal-server is already up before starting the client.
-    command: sh -c "./wait-for.sh opal_server:7002 --timeout=20 -- ./start.sh"
+    command: sh -c "exec ./wait-for.sh opal_server:7002 --timeout=20 -- ./start.sh"

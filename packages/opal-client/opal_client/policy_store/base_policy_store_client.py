@@ -1,5 +1,6 @@
 import json
 import uuid
+from asyncio import StreamReader, StreamWriter
 from datetime import datetime
 from functools import partial
 from inspect import signature
@@ -51,14 +52,6 @@ class AbstractPolicyStore:
     ):
         raise NotImplementedError()
 
-    async def patch_data(
-        self,
-        path: str,
-        patch_document: Dict[str, Any],
-        transaction_id: Optional[str] = None,
-    ):
-        raise NotImplementedError()
-
     async def get_data(self, path: str) -> Dict:
         raise NotImplementedError()
 
@@ -72,6 +65,12 @@ class AbstractPolicyStore:
         raise NotImplementedError()
 
     async def is_healthy(self) -> bool:
+        raise NotImplementedError()
+
+    async def full_export(self, writer: StreamWriter) -> None:
+        raise NotImplementedError()
+
+    async def full_import(self, reader: StreamReader) -> None:
         raise NotImplementedError()
 
 
