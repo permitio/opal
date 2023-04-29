@@ -1,5 +1,6 @@
 import asyncio
 import os
+import signal
 import sys
 import traceback
 from functools import partial
@@ -263,6 +264,11 @@ class OpalServer:
 
         return app
 
+    def _graceful_shutdown(self):
+        logger.info("Triggering graceful shutdown of worker")
+        # trigger uvicorn graceful shutdown
+        os.kill(os.getpid(), signal.SIGTERM)
+
     def _configure_lifecycle_callbacks(self, app: FastAPI):
         """registers callbacks on app startup and shutdown.
 
@@ -276,7 +282,10 @@ class OpalServer:
             logger.info("*** OPAL Server Startup ***")
 
             try:
-                self._task = asyncio.create_task(self.start_server_background_tasks())
+                self._background_task = asyncio.create_task(self._background_task())
+                self._background_task.add_done_callback(
+                    lambda _: self._graceful_shutdown()
+                )
 
             except Exception:
                 logger.critical("Exception while starting OPAL")
@@ -291,7 +300,48 @@ class OpalServer:
 
         return app
 
-    async def start_server_background_tasks(self):
+    async def _leadership_task(self):
+        # We want only one worker to run repo watchers
+        # (otherwise for each new commit, we will publish multiple updates via pub/sub).
+        # leadership is determined by the first worker to obtain a lock
+
+        try:
+            self.leadership_lock = NamedLock(opal_server_config.LEADER_LOCK_FILE_PATH)
+            async with self.leadership_lock:
+                # only one worker gets here, the others block. in case the leader worker
+                # is terminated, another one will obtain the lock and become leader.
+                logger.info(
+                    "leadership lock acquired, leader pid: {pid}",
+                    pid=os.getpid(),
+                )
+
+                if not opal_server_config.SCOPES:
+                    # bind data updater publishers to the leader worker
+                    self._data_polling_updates_task = asyncio.create_task(
+                        DataUpdatePublisher.mount_and_start_polling_updates(
+                            self.publisher, opal_server_config.DATA_CONFIG_SOURCES
+                        )
+                    )
+                else:
+                    await load_scopes(self._scopes)
+
+                if self.broadcast_keepalive is not None:
+                    self.broadcast_keepalive.start()
+                    if not self._init_policy_watcher:
+                        # Wait on keepalive instead to keep leadership lock acquired
+                        await self.broadcast_keepalive.wait_until_done()
+
+                if self._init_policy_watcher:
+                    self.watcher = setup_watcher_task(
+                        self.publisher, self.pubsub.endpoint
+                    )
+                    # running the watcher, and waiting until it stops (until self.watcher.signal_stop() is called)
+                    async with self.watcher:
+                        await self.watcher.wait_until_should_stop()
+        except asyncio.CancelledError:
+            pass
+
+    async def _background_task(self):
         """starts the background processes (as asyncio tasks) if such are
         configured.
 
@@ -303,54 +353,31 @@ class OpalServer:
         """
         if self.publisher is not None:
             async with self.publisher:
+                long_running_tasks = []
+
                 if self.opal_statistics is not None:
-                    self._statistics_task = asyncio.create_task(
-                        self.opal_statistics.run()
+                    long_running_tasks.append(
+                        asyncio.create_task(self.opal_statistics.run())
                     )
 
-                # We want only one worker to run repo watchers
-                # (otherwise for each new commit, we will publish multiple updates via pub/sub).
-                # leadership is determined by the first worker to obtain a lock
-                self.leadership_lock = NamedLock(
-                    opal_server_config.LEADER_LOCK_FILE_PATH
+                leadership_task = asyncio.create_task(self._leadership_task())
+                long_running_tasks.append(leadership_task)
+
+                # Those tasks should only complete if something wrong and restart is needed
+                _, pending = await asyncio.wait(
+                    long_running_tasks,
+                    return_when=asyncio.FIRST_COMPLETED,
                 )
-                async with self.leadership_lock:
-                    # only one worker gets here, the others block. in case the leader worker
-                    # is terminated, another one will obtain the lock and become leader.
-                    logger.info(
-                        "leadership lock acquired, leader pid: {pid}",
-                        pid=os.getpid(),
-                    )
-
-                    if not opal_server_config.SCOPES:
-                        # bind data updater publishers to the leader worker
-                        asyncio.create_task(
-                            DataUpdatePublisher.mount_and_start_polling_updates(
-                                self.publisher, opal_server_config.DATA_CONFIG_SOURCES
-                            )
-                        )
-                    else:
-                        await load_scopes(self._scopes)
-
-                    if self.broadcast_keepalive is not None:
-                        self.broadcast_keepalive.start()
-                        if not self._init_policy_watcher:
-                            # Wait on keepalive instead to keep leadership lock acquired
-                            await self.broadcast_keepalive.wait_until_done()
-
-                    if self._init_policy_watcher:
-                        self.watcher = setup_watcher_task(
-                            self.publisher, self.pubsub.endpoint
-                        )
-                        # running the watcher, and waiting until it stops (until self.watcher.signal_stop() is called)
-                        async with self.watcher:
-                            await self.watcher.wait_until_should_stop()
+                if leadership_task in pending:
+                    leadership_task.cancel()
 
     async def stop_server_background_tasks(self):
         logger.info("stopping background tasks...")
 
         tasks: List[asyncio.Task] = []
 
+        if self.opal_statistics is not None:
+            tasks.append(asyncio.create_task(self.opal_statistics.stop()))
         if self.watcher is not None:
             tasks.append(asyncio.create_task(self.watcher.stop()))
         if self.publisher is not None:

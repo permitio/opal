@@ -74,6 +74,8 @@ class OpalStatistics:
         self._synced_after_wakeup = asyncio.Event()
         self._received_sync_messages: Set[str] = set()
 
+        self._done_event = asyncio.Event()
+
     @property
     def state(self) -> ServerStats:
         return self._state
@@ -93,6 +95,8 @@ class OpalStatistics:
             logger.info(
                 "stopped listening for statistics events on the broadcast channel"
             )
+
+            await self.stop()
 
     async def run(self):
         """subscribe to two channels to be able to sync add and delete of
@@ -133,6 +137,13 @@ class OpalStatistics:
                 SyncRequest(requesting_worker_id=self._worker_id).dict(),
             )
         )
+        await self._done_event.wait()
+
+        if not self._broadcast_listening_task.done():
+            self._broadcast_listening_task.cancel()
+
+    async def stop(self):
+        self._done_event.set()
 
     async def _sync_remove_client(self, subscription: Subscription, rpc_id: str):
         """helper function to recall remove client in all servers.
