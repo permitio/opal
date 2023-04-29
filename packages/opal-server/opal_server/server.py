@@ -1,5 +1,6 @@
 import asyncio
 import os
+import signal
 import sys
 import traceback
 from functools import partial
@@ -363,6 +364,9 @@ class OpalServer:
                         async with self.watcher:
                             await self.watcher.wait_until_should_stop()
 
+                            # Worker should restart when watcher stops
+                            self._graceful_shutdown()
+
                 if (
                     self.opal_statistics is not None
                     and self.broadcast_listening_context is not None
@@ -388,3 +392,7 @@ class OpalServer:
             await asyncio.gather(*tasks)
         except Exception:
             logger.exception("exception while shutting down background tasks")
+
+    def _graceful_shutdown(self):
+        logger.info("Trigger worker graceful shutdown")
+        os.kill(os.getpid(), signal.SIGTERM)
