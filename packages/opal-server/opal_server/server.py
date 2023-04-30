@@ -321,6 +321,10 @@ class OpalServer:
                             "listening on broadcast channel for statistics events..."
                         )
                         await self.broadcast_listening_context.__aenter__()
+                        # if the broadcast channel is closed, we want to restart worker process because statistics can't be reliable anymore
+                        self.broadcast_listening_context._event_broadcaster.get_reader_task().add_done_callback(
+                            lambda _: self._graceful_shutdown()
+                        )
                     asyncio.create_task(self.opal_statistics.run())
                     self.pubsub.endpoint.notifier.register_unsubscribe_event(
                         self.opal_statistics.remove_client
