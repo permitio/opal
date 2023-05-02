@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field, validator
 
 class PolicyStoreTypes(Enum):
     OPA = "OPA"
+    CEDAR = "CEDAR"
     MOCK = "MOCK"
 
 
