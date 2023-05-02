@@ -2,7 +2,7 @@ import asyncio
 import functools
 import json
 import time
-from asyncio import StreamReader, StreamWriter
+from aiofiles.threadpool.text import AsyncTextIOWrapper
 from typing import Any, Awaitable, Callable, Dict, List, Optional, Set
 from urllib.parse import urlencode
 
@@ -819,14 +819,14 @@ class OpaClient(BasePolicyStoreClient):
     async def is_healthy(self) -> bool:
         return self._transaction_state.healthy
 
-    async def full_export(self, writer: StreamWriter) -> None:
+    async def full_export(self, writer: AsyncTextIOWrapper) -> None:
         policies = await self.get_policies()
         data = self._policy_data_cache.get_data()
         await writer.write(
             json.dumps({"policies": policies, "data": data}, default=str)
         )
 
-    async def full_import(self, reader: StreamReader) -> None:
+    async def full_import(self, reader: AsyncTextIOWrapper) -> None:
         import_data = json.loads(await reader.read())
 
         await OpaClient._attempt_operations_with_postponed_failure_retry(
