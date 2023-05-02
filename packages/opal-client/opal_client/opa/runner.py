@@ -25,36 +25,38 @@ async def wait_until_process_is_up(
     """
     start_time = time.time()
     while not psutil.pid_exists(process_pid):
-        if timeout is not None and start_time - time() > timeout:
+        if timeout is not None and start_time - time.time() > timeout:
             break
         await asyncio.sleep(wait_interval)
     if callback is not None:
         await callback()
 
 
-class OpaRunner:
-    """Runs OPA in a supervised subprocess.
+class PolicyEngineRunner:
+    """Runs the policy engine in a supervised subprocess.
 
-    - if the OPA process fails, OPA runner will restart the process.
-    - OPA runner can register callbacks on the lifecycle of OPA,
-    making it easy to keep the OPA cache hydrated (up-to-date).
-    - OPA runner can pipe the logs of the OPA process into OPAL logger.
+    - if the process fails, the runner will restart the process.
+    - The runner can register callbacks on the lifecycle of OPA,
+    making it easy to keep the policy engine cache hydrated (up-to-date).
+    - The runner can pipe the logs of the process into OPAL logger.
     """
 
     def __init__(
         self,
-        options: Optional[OpaServerOptions] = None,
         piped_logs_format: OpaLogFormat = OpaLogFormat.NONE,
     ):
-        self._options = options or OpaServerOptions()
         self._stopped = False
-        self._process = None
+        self._process: Optional[asyncio.subprocess.Process] = None
         self._should_stop: Optional[asyncio.Event] = None
         self._run_task: Optional[asyncio.Task] = None
-        self._on_opa_initial_start_callbacks: List[AsyncCallback] = []
-        self._on_opa_restart_callbacks: List[AsyncCallback] = []
+        self._on_process_initial_start_callbacks: List[AsyncCallback] = []
+        self._on_process_restart_callbacks: List[AsyncCallback] = []
         self._process_was_never_up_before = True
         self._piped_logs_format = piped_logs_format
+
+    @property
+    def command(self) -> str:
+        raise NotImplementedError()
 
     async def __aenter__(self):
         self.start()
@@ -64,17 +66,18 @@ class OpaRunner:
         await self.stop()
 
     def start(self):
-        """starts the opa runner task, and launches the OPA subprocess."""
+        """starts the runner task, and launches the OPA subprocess."""
         logger.info("Launching opa runner")
         self._run_task = asyncio.create_task(self._run())
 
     async def stop(self):
-        """stops the opa runner task (and terminates OPA)"""
+        """stops the runner task (and terminates OPA)"""
         self._init_events()
         if not self._should_stop.is_set():
             logger.info("Stopping opa runner")
             self._should_stop.set()
-            self._terminate_opa()
+            logger.info("Stopping OPA")
+            self._process.terminate()
             await asyncio.sleep(1)  # wait for opa process to go down
 
         if self._run_task is not None:
@@ -89,29 +92,18 @@ class OpaRunner:
         if self._run_task is not None:
             await self._run_task
 
-    @property
-    def command(self):
-        opts = self._options.get_cli_options_dict()
-        opts_string = " ".join([f"{k}={v}" for k, v in opts.items()])
-        startup_files = self._options.get_opa_startup_files()
-        return f"opa run --server {opts_string} {startup_files}".strip()
-
-    def _terminate_opa(self):
-        logger.info("Stopping OPA")
-        self._process.terminate()
-
     async def _run(self):
         self._init_events()
         while not self._should_stop.is_set():
             for task in asyncio.as_completed(
-                [self._run_opa_until_terminated(), self._should_stop.wait()]
+                [self._run_process_until_terminated(), self._should_stop.wait()]
             ):
                 await task
                 break
 
     @retry(wait=wait_random_exponential(multiplier=0.5, max=10))
-    async def _run_opa_until_terminated(self) -> int:
-        """This function runs opa server as a subprocess.
+    async def _run_process_until_terminated(self) -> int:
+        """This function runs the policy engine as a subprocess.
 
         it returns only when the process terminates.
         """
@@ -149,15 +141,15 @@ class OpaRunner:
         logger.info(
             "OPA exited with return code: {return_code}", return_code=return_code
         )
-        if return_code > 0:  # exception in running opa
+        if return_code > 0:  # exception in running process
             raise Exception(f"OPA exited with return code: {return_code}")
         return return_code
 
-    def register_opa_initial_start_callbacks(self, callbacks: List[AsyncCallback]):
+    def register_process_initial_start_callbacks(self, callbacks: List[AsyncCallback]):
         """register a callback to run when OPA is started the first time."""
-        self._on_opa_initial_start_callbacks.extend(callbacks)
+        self._on_process_initial_start_callbacks.extend(callbacks)
 
-    def register_opa_restart_callbacks(self, callbacks: List[AsyncCallback]):
+    def register_process_restart_callbacks(self, callbacks: List[AsyncCallback]):
         """register a callback to run when OPA is restarted (i.e: OPA was
         already up, then got terminated, and now is up again).
 
@@ -166,7 +158,7 @@ class OpaRunner:
         empty cache, OPA cannot evaluate authorization queries
         correctly.
         """
-        self._on_opa_restart_callbacks.extend(callbacks)
+        self._on_process_restart_callbacks.extend(callbacks)
 
     async def _run_start_callbacks(self):
         """runs callbacks after OPA process starts."""
@@ -178,11 +170,11 @@ class OpaRunner:
             self._process_was_never_up_before = False
             logger.info("Running OPA initial start callbacks")
             asyncio.create_task(
-                self._run_callbacks(self._on_opa_initial_start_callbacks)
+                self._run_callbacks(self._on_process_initial_start_callbacks)
             )
         else:
             logger.info("Running OPA rehydration callbacks")
-            asyncio.create_task(self._run_callbacks(self._on_opa_restart_callbacks))
+            asyncio.create_task(self._run_callbacks(self._on_process_restart_callbacks))
 
     async def _run_callbacks(self, callbacks: List[AsyncCallback]):
         return await asyncio.gather(*(callback() for callback in callbacks))
@@ -192,7 +184,7 @@ class OpaRunner:
             self._should_stop = asyncio.Event()
 
     @staticmethod
-    def setup_opa_runner(
+    def setup_process_runner(
         options: Optional[OpaServerOptions] = None,
         piped_logs_format: OpaLogFormat = OpaLogFormat.NONE,
         initial_start_callbacks: Optional[List[AsyncCallback]] = None,
@@ -202,17 +194,33 @@ class OpaRunner:
         lifecycle events.
 
         Initial Start Callbacks:
-            The first time we start opa, we might want to do certain actions (like launch tasks)
+            The first time we start the engine, we might want to do certain actions (like launch tasks)
             that are dependent on the policy store being up (such as PolicyUpdater, DataUpdater).
 
         Rehydration Callbacks:
-            when opa restarts, its cache is clean and it does not have the state necessary
+            when the engine restarts, its cache is clean and it does not have the state necessary
             to handle authorization queries. therefore it is necessary that we rehydrate the
             cache with fresh state fetched from the server.
         """
-        opa_runner = OpaRunner(options=options, piped_logs_format=piped_logs_format)
+        process_runner = OpaRunner(options=options, piped_logs_format=piped_logs_format)
         if initial_start_callbacks:
-            opa_runner.register_opa_initial_start_callbacks(initial_start_callbacks)
+            process_runner.register_process_initial_start_callbacks(initial_start_callbacks)
         if rehydration_callbacks:
-            opa_runner.register_opa_restart_callbacks(rehydration_callbacks)
-        return opa_runner
+            process_runner.register_process_restart_callbacks(rehydration_callbacks)
+        return process_runner
+
+class OpaRunner(PolicyEngineRunner):
+    def __init__(
+        self,
+        options: Optional[OpaServerOptions] = None,
+        piped_logs_format: OpaLogFormat = OpaLogFormat.NONE,
+    ):
+        super().__init__(piped_logs_format)
+        self._options = options or OpaServerOptions()
+
+    @property
+    def command(self) -> str:
+        opts = self._options.get_cli_options_dict()
+        opts_string = " ".join([f"{k}={v}" for k, v in opts.items()])
+        startup_files = self._options.get_opa_startup_files()
+        return f"opa run --server {opts_string} {startup_files}".strip()
