@@ -1,6 +1,6 @@
 from enum import Enum
 
-from opal_client.opa.options import OpaServerOptions
+from opal_client.opa.options import OpaServerOptions, CedarServerOptions
 from opal_client.policy.options import PolicyConnRetryOptions
 from opal_client.policy_store.schemas import PolicyStoreAuth, PolicyStoreTypes
 from opal_common.confi import Confi, confi
@@ -94,6 +94,18 @@ class OpalClientConfig(Confi):
         OpaServerOptions,
         {},  # defaults are being set according to OpaServerOptions pydantic definitions (see class)
         description="cli options used when running `opa run --server` inline",
+    )
+
+    # whether or not OPAL should run the Cedar agent by itself in the same container
+    INLINE_CEDAR_ENABLED = confi.bool("INLINE_CEDAR_ENABLED", True)
+
+    # if inline Cedar is indeed enabled, user can pass cli options
+    # (configuration) that affects how the agent will run
+    INLINE_CEDAR_CONFIG = confi.model(
+        "INLINE_CEDAR_CONFIG",
+        CedarServerOptions,
+        {},  # defaults are being set according to CedarServerOptions pydantic definitions (see class)
+        description="cli options used when running the Cedar agent inline",
     )
 
     INLINE_OPA_LOG_FORMAT: OpaLogFormat = confi.enum(

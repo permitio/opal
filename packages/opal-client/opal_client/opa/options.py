@@ -1,7 +1,7 @@
 from enum import Enum
-from typing import List, Optional
+from typing import List, Optional, Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, validator
 
 
 class LogLevel(str, Enum):
@@ -81,3 +81,55 @@ class OpaServerOptions(BaseModel):
         """returns a list of startup policies and data."""
         files = self.files if self.files is not None else []
         return " ".join(files)
+
+class CedarServerOptions(BaseModel):
+    """Options to configure the Cedar agent (apply when choosing to run Cedar inline).
+    """
+
+    addr: str = Field(
+        ":8181",
+        description="listening address of the Cedar agent (e.g., [ip]:<port> for TCP)",
+    )
+    authentication: AuthenticationScheme = Field(
+        AuthenticationScheme.off, description="Cedar agent authentication scheme (default off)"
+    )
+    authentication_token: Optional[str] = Field(
+        None, description="If authentication is 'token', this specifies the token to use."
+    )
+    files: Optional[List[str]] = Field(
+        None,
+        description="list of built-in policies files that must be loaded on startup.",
+    )
+
+    class Config:
+        use_enum_values = True
+        allow_population_by_field_name = True
+
+        @classmethod
+        def alias_generator(cls, string: str) -> str:
+            """converts field named tls_private_key_file to --tls-private-key-
+            file (to be used by opa cli)"""
+            return "--{}".format(string.replace("_", "-"))
+
+    @validator("authentication")
+    def validate_authentication(cls, v: AuthenticationScheme):
+        if v not in [AuthenticationScheme.off, AuthenticationScheme.token]:
+            raise ValueError("Invalid AuthenticationScheme for Cedar.")
+        return v
+
+    @validator("authentication_token")
+    def validate_authentication_token(cls, v: Optional[str], values: dict[str, Any]):
+        if values['authentication'] == AuthenticationScheme.token and v is None:
+            raise ValueError("A token must be speicified for AuthenticationScheme.token.")
+        return v
+
+    def get_cmdline(self) -> str:
+        result = [
+            "cedar-agent",
+        ]
+        if self.authentication == AuthenticationScheme.token and self.authentication_token is not None:
+            result += [
+                "-a", self.authentication_token,
+            ]
+        # TODO: files
+        return " ".join(result)

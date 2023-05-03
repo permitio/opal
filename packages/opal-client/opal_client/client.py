@@ -4,7 +4,7 @@ import os
 import signal
 import uuid
 from logging import disable
-from typing import List, Optional
+from typing import List, Optional, Literal, Union
 
 import aiofiles
 import aiofiles.os
@@ -19,8 +19,8 @@ from opal_client.data.api import init_data_router
 from opal_client.data.fetcher import DataFetcher
 from opal_client.data.updater import DataUpdater
 from opal_client.limiter import StartupLoadLimiter
-from opal_client.opa.options import OpaServerOptions
-from opal_client.opa.runner import OpaRunner
+from opal_client.opa.options import OpaServerOptions, CedarServerOptions
+from opal_client.opa.runner import OpaRunner, CedarRunner
 from opal_client.policy.api import init_policy_router
 from opal_client.policy.updater import PolicyUpdater
 from opal_client.policy_store.api import init_policy_store_router
@@ -46,6 +46,8 @@ class OpalClient:
         policy_updater: PolicyUpdater = None,
         inline_opa_enabled: bool = None,
         inline_opa_options: OpaServerOptions = None,
+        inline_cedar_enabled: bool = None,
+        inline_cedar_options: CedarServerOptions = None,
         verifier: Optional[JWTVerifier] = None,
         store_backup_path: Optional[str] = None,
         store_backup_interval: Optional[int] = None,
@@ -67,8 +69,8 @@ class OpalClient:
         inline_opa_enabled: bool = (
             inline_opa_enabled or opal_client_config.INLINE_OPA_ENABLED
         )
-        inline_opa_options: OpaServerOptions = (
-            inline_opa_options or opal_client_config.INLINE_OPA_CONFIG
+        inline_cedar_enabled: bool = (
+            inline_cedar_enabled or opal_client_config.INLINE_CEDAR_ENABLED
         )
         opal_client_identifier: str = (
             opal_client_config.OPAL_CLIENT_STAT_ID or f"CLIENT_{uuid.uuid4().hex}"
@@ -140,29 +142,7 @@ class OpalClient:
 
         # Internal services
         # Policy store
-        if self.policy_store_type == PolicyStoreTypes.OPA and inline_opa_enabled:
-            rehydration_callbacks = [
-                # refetches policy code (e.g: rego) and static data from server
-                functools.partial(
-                    self.policy_updater.update_policy, force_full_update=True
-                ),
-            ]
-
-            if self.data_updater:
-                rehydration_callbacks.append(
-                    functools.partial(
-                        self.data_updater.get_base_policy_data,
-                        data_fetch_reason="policy store rehydration",
-                    )
-                )
-
-            self.opa_runner = OpaRunner.setup_opa_runner(
-                options=inline_opa_options,
-                piped_logs_format=opal_client_config.INLINE_OPA_LOG_FORMAT,
-                rehydration_callbacks=rehydration_callbacks,
-            )
-        else:
-            self.opa_runner = False
+        self.opa_runner = self._init_engine_runner(inline_opa_enabled, inline_cedar_enabled, inline_opa_options, inline_cedar_options)
 
         custom_ssl_context = get_custom_ssl_context()
         if (
@@ -196,6 +176,47 @@ class OpalClient:
 
         # init fastapi app
         self.app: FastAPI = self._init_fast_api_app()
+
+    def _init_engine_runner(self,
+                            inline_opa_enabled: bool, inline_cedar_enabled: bool,
+        inline_opa_options: Optional[OpaServerOptions] = None,
+        inline_cedar_options: Optional[CedarServerOptions] = None,
+                            ) -> Union[OpaRunner, CedarRunner, Literal[False]]:
+        if inline_opa_enabled and self.policy_store_type == PolicyStoreTypes.OPA:
+            inline_opa_options = (
+                inline_opa_options or opal_client_config.INLINE_OPA_CONFIG
+            )
+            rehydration_callbacks = [
+                # refetches policy code (e.g: rego) and static data from server
+                functools.partial(
+                    self.policy_updater.update_policy, force_full_update=True
+                ),
+            ]
+
+            if self.data_updater:
+                rehydration_callbacks.append(
+                    functools.partial(
+                        self.data_updater.get_base_policy_data,
+                        data_fetch_reason="policy store rehydration",
+                    )
+                )
+
+            return OpaRunner.setup_opa_runner(
+                    options=inline_opa_options,
+                    piped_logs_format=opal_client_config.INLINE_OPA_LOG_FORMAT,
+                    rehydration_callbacks=rehydration_callbacks,
+                )
+
+        elif inline_cedar_enabled and self.policy_store_type == PolicyStoreTypes.CEDAR:
+            inline_cedar_options = (
+                inline_cedar_options or opal_client_config.INLINE_CEDAR_CONFIG
+            )
+            return CedarRunner.setup_cedar_runner(
+                    options=inline_cedar_options,
+                    piped_logs_format=opal_client_config.INLINE_OPA_LOG_FORMAT,
+                )
+
+        return False
 
     def _init_fast_api_app(self):
         """inits the fastapi app object."""

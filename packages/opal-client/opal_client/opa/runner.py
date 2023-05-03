@@ -6,7 +6,7 @@ import psutil
 from opal_client.config import OpaLogFormat
 from opal_client.logger import logger
 from opal_client.opa.logger import pipe_opa_logs
-from opal_client.opa.options import OpaServerOptions
+from opal_client.opa.options import OpaServerOptions, CedarServerOptions
 from tenacity import retry, wait_random_exponential
 
 AsyncCallback = Callable[[], Coroutine]
@@ -183,8 +183,24 @@ class PolicyEngineRunner:
         if self._should_stop is None:
             self._should_stop = asyncio.Event()
 
+class OpaRunner(PolicyEngineRunner):
+    def __init__(
+        self,
+        options: Optional[OpaServerOptions] = None,
+        piped_logs_format: OpaLogFormat = OpaLogFormat.NONE,
+    ):
+        super().__init__(piped_logs_format)
+        self._options = options or OpaServerOptions()
+
+    @property
+    def command(self) -> str:
+        opts = self._options.get_cli_options_dict()
+        opts_string = " ".join([f"{k}={v}" for k, v in opts.items()])
+        startup_files = self._options.get_opa_startup_files()
+        return f"opa run --server {opts_string} {startup_files}".strip()
+
     @staticmethod
-    def setup_process_runner(
+    def setup_opa_runner(
         options: Optional[OpaServerOptions] = None,
         piped_logs_format: OpaLogFormat = OpaLogFormat.NONE,
         initial_start_callbacks: Optional[List[AsyncCallback]] = None,
@@ -202,25 +218,50 @@ class PolicyEngineRunner:
             to handle authorization queries. therefore it is necessary that we rehydrate the
             cache with fresh state fetched from the server.
         """
-        process_runner = OpaRunner(options=options, piped_logs_format=piped_logs_format)
+        opa_runner = OpaRunner(options=options, piped_logs_format=piped_logs_format)
         if initial_start_callbacks:
-            process_runner.register_process_initial_start_callbacks(initial_start_callbacks)
+            opa_runner.register_process_initial_start_callbacks(initial_start_callbacks)
         if rehydration_callbacks:
-            process_runner.register_process_restart_callbacks(rehydration_callbacks)
-        return process_runner
+            opa_runner.register_process_restart_callbacks(rehydration_callbacks)
+        return opa_runner
 
-class OpaRunner(PolicyEngineRunner):
+
+
+class CedarRunner(PolicyEngineRunner):
     def __init__(
         self,
-        options: Optional[OpaServerOptions] = None,
+        options: Optional[CedarServerOptions] = None,
         piped_logs_format: OpaLogFormat = OpaLogFormat.NONE,
     ):
         super().__init__(piped_logs_format)
-        self._options = options or OpaServerOptions()
+        self._options = options or CedarServerOptions()
 
     @property
     def command(self) -> str:
-        opts = self._options.get_cli_options_dict()
-        opts_string = " ".join([f"{k}={v}" for k, v in opts.items()])
-        startup_files = self._options.get_opa_startup_files()
-        return f"opa run --server {opts_string} {startup_files}".strip()
+        return self._options.get_cmdline()
+
+    @staticmethod
+    def setup_cedar_runner(
+        options: Optional[CedarServerOptions] = None,
+        piped_logs_format: OpaLogFormat = OpaLogFormat.NONE,
+        initial_start_callbacks: Optional[List[AsyncCallback]] = None,
+        rehydration_callbacks: Optional[List[AsyncCallback]] = None,
+    ):
+        """factory for CedarRunner, accept optional callbacks to run in certain
+        lifecycle events.
+
+        Initial Start Callbacks:
+            The first time we start the engine, we might want to do certain actions (like launch tasks)
+            that are dependent on the policy store being up (such as PolicyUpdater, DataUpdater).
+
+        Rehydration Callbacks:
+            when the engine restarts, its cache is clean and it does not have the state necessary
+            to handle authorization queries. therefore it is necessary that we rehydrate the
+            cache with fresh state fetched from the server.
+        """
+        cedar_runner = CedarRunner(options=options, piped_logs_format=piped_logs_format)
+        if initial_start_callbacks:
+            cedar_runner.register_process_initial_start_callbacks(initial_start_callbacks)
+        if rehydration_callbacks:
+            cedar_runner.register_process_restart_callbacks(rehydration_callbacks)
+        return cedar_runner
