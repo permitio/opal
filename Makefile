@@ -41,6 +41,9 @@ install-develop:
 docker-build-client:
 	@docker build -t permitio/opal-client --target client -f docker/Dockerfile .
 
+docker-build-client-cedar:
+	@docker build -t permitio/opal-client-cedar --target client-cedar -f docker/Dockerfile .
+
 docker-build-client-standalone:
 	@docker build -t permitio/opal-client-standalone --target client-standalone -f docker/Dockerfile .
 
