@@ -153,6 +153,11 @@ class OpalCommonConfig(Confi):
     )
     AUTH_JWT_AUDIENCE = confi.str("AUTH_JWT_AUDIENCE", "https://api.opal.ac/v1/")
     AUTH_JWT_ISSUER = confi.str("AUTH_JWT_ISSUER", f"https://opal.ac/")
+    POLICY_REPO_POLICY_EXTENSIONS = confi.list(
+        "POLICY_REPO_POLICY_EXTENSIONS",
+        [".rego"],
+        description="List of extensions to serve as policy modules",
+    )
 
 
 opal_common_config = OpalCommonConfig(prefix="OPAL_")

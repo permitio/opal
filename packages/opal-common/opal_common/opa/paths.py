@@ -1,4 +1,5 @@
 from pathlib import Path
+from opal_common.config import opal_common_config
 
 
 def is_data_module(path: Path) -> bool:
@@ -15,4 +16,4 @@ def is_rego_module(path: Path) -> bool:
 
     Only rego files are allowed in official OPA bundles as policy files.
     """
-    return path.suffix == ".rego"
+    return path.suffix in opal_common_config.POLICY_REPO_POLICY_EXTENSIONS

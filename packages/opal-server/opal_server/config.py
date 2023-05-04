@@ -222,7 +222,7 @@ class OpalServerConfig(Confi):
     POLICY_REPO_POLLING_INTERVAL = confi.int("POLICY_REPO_POLLING_INTERVAL", 0)
 
     ALLOWED_ORIGINS = confi.list("ALLOWED_ORIGINS", ["*"])
-    OPA_FILE_EXTENSIONS = (".rego", ".json")
+    OPA_FILE_EXTENSIONS = confi.list("OPA_FILE_EXTENSIONS", [".rego", ".json"])
     BUNDLE_IGNORE = confi.list("BUNDLE_IGNORE", [])
 
     NO_RPC_LOGS = confi.bool("NO_RPC_LOGS", True)
