@@ -126,11 +126,14 @@ USER root
 
 RUN apt-get update && apt-get install -y netcat jq && apt-get clean
 
-# copy cedar from its build stage
-COPY --from=cedar-builder /cedar-agent /cedar-agent
+# Copy cedar from its build stage
+COPY --from=cedar-builder /cedar-agent /bin/cedar-agent
 
 # enable inline Cedar agent
+ENV OPAL_POLICY_STORE_TYPE=CEDAR
 ENV OPAL_INLINE_CEDAR_ENABLED=true
+ENV OPAL_INLINE_CEDAR_CONFIG='{"addr": "0.0.0.0:8180"}'
+ENV OPAL_POLICY_STORE_URL=http://localhost:8180
 # expose cedar port
 EXPOSE 8180
 USER opal
