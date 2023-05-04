@@ -74,9 +74,9 @@ class PolicyEngineRunner:
         """stops the runner task (and terminates OPA)"""
         self._init_events()
         if not self._should_stop.is_set():
-            logger.info("Stopping opa runner")
+            logger.info("Stopping policy engine runner")
             self._should_stop.set()
-            logger.info("Stopping OPA")
+            logger.info("Stopping policy engine")
             self._process.terminate()
             await asyncio.sleep(1)  # wait for opa process to go down
 
@@ -107,7 +107,7 @@ class PolicyEngineRunner:
 
         it returns only when the process terminates.
         """
-        logger.info("Running OPA inline: {command}", command=self.command)
+        logger.info("Running policy engine inline: {command}", command=self.command)
 
         logs_sink = (
             asyncio.subprocess.DEVNULL
@@ -139,10 +139,10 @@ class PolicyEngineRunner:
 
         return_code = await self._process.wait()
         logger.info(
-            "OPA exited with return code: {return_code}", return_code=return_code
+            "Policy engine exited with return code: {return_code}", return_code=return_code
         )
         if return_code > 0:  # exception in running process
-            raise Exception(f"OPA exited with return code: {return_code}")
+            raise Exception(f"Policy engine exited with return code: {return_code}")
         return return_code
 
     def register_process_initial_start_callbacks(self, callbacks: List[AsyncCallback]):
@@ -168,12 +168,12 @@ class PolicyEngineRunner:
         if self._process_was_never_up_before:
             # no need to rehydrate the first time
             self._process_was_never_up_before = False
-            logger.info("Running OPA initial start callbacks")
+            logger.info("Running policy engine initial start callbacks")
             asyncio.create_task(
                 self._run_callbacks(self._on_process_initial_start_callbacks)
             )
         else:
-            logger.info("Running OPA rehydration callbacks")
+            logger.info("Running policy engine rehydration callbacks")
             asyncio.create_task(self._run_callbacks(self._on_process_restart_callbacks))
 
     async def _run_callbacks(self, callbacks: List[AsyncCallback]):

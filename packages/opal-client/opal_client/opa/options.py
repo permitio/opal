@@ -131,5 +131,20 @@ class CedarServerOptions(BaseModel):
             result += [
                 "-a", self.authentication_token,
             ]
+        addr = self.addr.split(":", 1)
+        port = None
+        if len(addr) == 1:
+            listen_address = addr[0]
+        elif len(addr) == 2:
+            listen_address, port = addr
+        if len(listen_address) == 0:
+            listen_address = "0.0.0.0"
+        result += [
+            "--addr", listen_address,
+        ]
+        if port is not None:
+            result += [
+                "--port", port,
+            ]
         # TODO: files
         return " ".join(result)

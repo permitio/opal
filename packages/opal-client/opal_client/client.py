@@ -321,7 +321,7 @@ class OpalClient:
 
         if self.opa_runner:
             # runs the policy store dependent tasks after policy store is up
-            self.opa_runner.register_opa_initial_start_callbacks(
+            self.opa_runner.register_process_initial_start_callbacks(
                 [self.launch_policy_store_dependent_tasks]
             )
             async with self.opa_runner:

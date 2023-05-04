@@ -1,6 +1,6 @@
 import asyncio
 import json
-from typing import Dict, Optional
+from typing import Dict, Optional, Union, List, Set
 
 import aiohttp
 from aiofiles.threadpool.text import AsyncTextIOWrapper
@@ -19,6 +19,7 @@ from opal_client.policy_store.opa_client import (
     should_ignore_path,
 )
 from opal_client.policy_store.schemas import PolicyStoreAuth
+from opal_common.schemas.policy import PolicyBundle
 from opal_common.schemas.store import StoreTransaction
 from tenacity import retry
 
@@ -74,8 +75,10 @@ class CedarClient(BasePolicyStoreClient):
 
                 async with session.put(
                     f"{self._cedar_url}/policies/{policy_id}",
-                    data=policy_code,
-                    headers={"content-type": "text/plain", **headers},
+                    json={
+                        "content": policy_code,
+                    },
+                    headers=headers,
                 ) as cedar_response:
                     return await proxy_response_unless_invalid(
                         cedar_response,
@@ -142,7 +145,7 @@ class CedarClient(BasePolicyStoreClient):
                     return await proxy_response_unless_invalid(
                         cedar_response,
                         accepted_status_codes=[
-                            status.HTTP_200_OK,
+                            status.HTTP_204_NO_CONTENT,
                             status.HTTP_404_NOT_FOUND,
                         ],
                     )
@@ -169,7 +172,6 @@ class CedarClient(BasePolicyStoreClient):
         async with aiohttp.ClientSession() as session:
             try:
                 headers = await self._get_auth_headers()
-
                 async with session.put(
                     f"{self._cedar_url}/data",
                     json=policy_data,
@@ -178,6 +180,7 @@ class CedarClient(BasePolicyStoreClient):
                     response = await proxy_response_unless_invalid(
                         cedar_response,
                         accepted_status_codes=[
+                            status.HTTP_200_OK,
                             status.HTTP_204_NO_CONTENT,
                             status.HTTP_304_NOT_MODIFIED,
                         ],
@@ -263,3 +266,22 @@ class CedarClient(BasePolicyStoreClient):
             self.set_policy(policy_id=id, policy_code=raw)
 
         await self.set_policy_data(import_data["data"])
+
+    async def get_policy_version(self) -> Optional[str]:
+        return self._policy_version
+
+    @affects_transaction
+    async def set_policies(
+        self, bundle: PolicyBundle, transaction_id: Optional[str] = None
+    ):
+        for policy in bundle.policy_modules:
+            await self.set_policy(policy.path, policy.rego)
+        deleted_modules: Union[List[str], Set[str]] = []
+        if bundle.old_hash is None:
+            deleted_modules = set((await self.get_policies()).keys()) - set(policy.path for policy in bundle.policy_modules)
+        elif bundle.deleted_files is not None:
+            deleted_modules = [str(module) for module in bundle.deleted_files.policy_modules]
+        for module_id in deleted_modules:
+            print(module_id)
+            await self.delete_policy(policy_id=module_id)
+        self._policy_version = bundle.hash
