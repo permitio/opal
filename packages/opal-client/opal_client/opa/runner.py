@@ -5,7 +5,7 @@ from typing import Callable, Coroutine, List, Optional
 import psutil
 from opal_client.config import OpaLogFormat
 from opal_client.logger import logger
-from opal_client.opa.logger import pipe_opa_logs
+from opal_client.opa.logger import pipe_opa_logs, pipe_simple_logs
 from opal_client.opa.options import OpaServerOptions, CedarServerOptions
 from tenacity import retry, wait_random_exponential
 
@@ -132,14 +132,15 @@ class PolicyEngineRunner:
         if self._piped_logs_format != OpaLogFormat.NONE:
             await asyncio.wait(
                 [
-                    pipe_opa_logs(self._process.stdout, self._piped_logs_format),
-                    pipe_opa_logs(self._process.stderr, self._piped_logs_format),
+                    self.pipe_logs(self._process.stdout, self._piped_logs_format),
+                    self.pipe_logs(self._process.stderr, self._piped_logs_format),
                 ]
             )
 
         return_code = await self._process.wait()
         logger.info(
-            "Policy engine exited with return code: {return_code}", return_code=return_code
+            "Policy engine exited with return code: {return_code}",
+            return_code=return_code,
         )
         if return_code > 0:  # exception in running process
             raise Exception(f"Policy engine exited with return code: {return_code}")
@@ -183,6 +184,10 @@ class PolicyEngineRunner:
         if self._should_stop is None:
             self._should_stop = asyncio.Event()
 
+    async def pipe_logs(self, stream, logs_format: OpaLogFormat):
+        raise NotImplementedError()
+
+
 class OpaRunner(PolicyEngineRunner):
     def __init__(
         self,
@@ -191,6 +196,9 @@ class OpaRunner(PolicyEngineRunner):
     ):
         super().__init__(piped_logs_format)
         self._options = options or OpaServerOptions()
+
+    async def pipe_logs(self, stream, logs_format: OpaLogFormat):
+        return await pipe_opa_logs(stream, logs_format)
 
     @property
     def command(self) -> str:
@@ -226,7 +234,6 @@ class OpaRunner(PolicyEngineRunner):
         return opa_runner
 
 
-
 class CedarRunner(PolicyEngineRunner):
     def __init__(
         self,
@@ -247,7 +254,8 @@ class CedarRunner(PolicyEngineRunner):
         initial_start_callbacks: Optional[List[AsyncCallback]] = None,
         rehydration_callbacks: Optional[List[AsyncCallback]] = None,
     ):
-        """factory for CedarRunner, accept optional callbacks to run in certain
+        """
+        Factory for CedarRunner, accept optional callbacks to run in certain
         lifecycle events.
 
         Initial Start Callbacks:
@@ -260,8 +268,16 @@ class CedarRunner(PolicyEngineRunner):
             cache with fresh state fetched from the server.
         """
         cedar_runner = CedarRunner(options=options, piped_logs_format=piped_logs_format)
+
         if initial_start_callbacks:
-            cedar_runner.register_process_initial_start_callbacks(initial_start_callbacks)
+            cedar_runner.register_process_initial_start_callbacks(
+                initial_start_callbacks
+            )
+
         if rehydration_callbacks:
             cedar_runner.register_process_restart_callbacks(rehydration_callbacks)
+
         return cedar_runner
+
+    async def pipe_logs(self, stream, logs_format: OpaLogFormat):
+        return await pipe_simple_logs(stream, logs_format)

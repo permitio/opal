@@ -95,3 +95,24 @@ def log_entire_dict(level: str, msg: Optional[str], log_line: dict):
         pass  # fallback to dict
     logger.opt(colors=True).log(level, format, msg=msg, log_line=log_line)
     return True
+
+
+async def pipe_simple_logs(stream, logs_format: OpaLogFormat):
+    """
+    Gets a stream of logs from the engine process, and logs it into the main
+    opal log.
+    """
+    if logs_format == OpaLogFormat.NONE:
+        return
+
+    while True:
+        line = await stream.readline()
+        if not line:
+            break
+
+        try:
+            line = line.decode().strip()
+        except UnicodeDecodeError:
+            ...
+
+        logger.info(line)

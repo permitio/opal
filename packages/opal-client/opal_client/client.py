@@ -213,7 +213,7 @@ class OpalClient:
             )
             return CedarRunner.setup_cedar_runner(
                     options=inline_cedar_options,
-                    piped_logs_format=opal_client_config.INLINE_OPA_LOG_FORMAT,
+                    piped_logs_format=opal_client_config.INLINE_CEDAR_LOG_FORMAT,
                 )
 
         return False

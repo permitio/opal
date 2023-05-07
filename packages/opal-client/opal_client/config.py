@@ -96,6 +96,12 @@ class OpalClientConfig(Confi):
         description="cli options used when running `opa run --server` inline",
     )
 
+    INLINE_OPA_LOG_FORMAT: OpaLogFormat = confi.enum(
+        "INLINE_OPA_LOG_FORMAT", OpaLogFormat, OpaLogFormat.NONE
+    )
+
+    # Cedar runner configuration (Cedar-engine can optionally be run by OPAL) ----------------
+
     # whether or not OPAL should run the Cedar agent by itself in the same container
     INLINE_CEDAR_ENABLED = confi.bool("INLINE_CEDAR_ENABLED", True)
 
@@ -108,8 +114,8 @@ class OpalClientConfig(Confi):
         description="cli options used when running the Cedar agent inline",
     )
 
-    INLINE_OPA_LOG_FORMAT: OpaLogFormat = confi.enum(
-        "INLINE_OPA_LOG_FORMAT", OpaLogFormat, OpaLogFormat.NONE
+    INLINE_CEDAR_LOG_FORMAT: OpaLogFormat = confi.enum(
+        "INLINE_CEDAR_LOG_FORMAT", OpaLogFormat, OpaLogFormat.NONE
     )
 
     # configuration for fastapi routes
