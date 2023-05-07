@@ -1,6 +1,6 @@
 from enum import Enum
 
-from opal_client.opa.options import OpaServerOptions, CedarServerOptions
+from opal_client.engine.options import OpaServerOptions, CedarServerOptions
 from opal_client.policy.options import PolicyConnRetryOptions
 from opal_client.policy_store.schemas import PolicyStoreAuth, PolicyStoreTypes
 from opal_common.confi import Confi, confi
@@ -10,7 +10,7 @@ from opal_common.schemas.data import DEFAULT_DATA_TOPIC, UpdateCallback
 
 
 # Opal Client general configuration -------------------------------------------
-class OpaLogFormat(str, Enum):
+class EngineLogFormat(str, Enum):
     NONE = "none"  # no opa logs are piped
     MINIMAL = "minimal"  # only the event name is logged
     HTTP = "http"  # tries to extract http method, path and response status code
@@ -96,8 +96,8 @@ class OpalClientConfig(Confi):
         description="cli options used when running `opa run --server` inline",
     )
 
-    INLINE_OPA_LOG_FORMAT: OpaLogFormat = confi.enum(
-        "INLINE_OPA_LOG_FORMAT", OpaLogFormat, OpaLogFormat.NONE
+    INLINE_OPA_LOG_FORMAT: EngineLogFormat = confi.enum(
+        "INLINE_OPA_LOG_FORMAT", EngineLogFormat, EngineLogFormat.NONE
     )
 
     # Cedar runner configuration (Cedar-engine can optionally be run by OPAL) ----------------
@@ -114,8 +114,8 @@ class OpalClientConfig(Confi):
         description="cli options used when running the Cedar agent inline",
     )
 
-    INLINE_CEDAR_LOG_FORMAT: OpaLogFormat = confi.enum(
-        "INLINE_CEDAR_LOG_FORMAT", OpaLogFormat, OpaLogFormat.NONE
+    INLINE_CEDAR_LOG_FORMAT: EngineLogFormat = confi.enum(
+        "INLINE_CEDAR_LOG_FORMAT", EngineLogFormat, EngineLogFormat.NONE
     )
 
     # configuration for fastapi routes
@@ -256,7 +256,7 @@ class OpalClientConfig(Confi):
         description="Unique client statistics identifier",
     )
 
-    OPA_HEALTH_CHECK_POLICY_PATH = "opa/healthcheck/opal.rego"
+    OPA_HEALTH_CHECK_POLICY_PATH = "engine/healthcheck/opal.rego"
 
     SCOPE_ID = confi.str("SCOPE_ID", "default", description="OPAL Scope ID")
 
@@ -278,7 +278,7 @@ class OpalClientConfig(Confi):
 
     def on_load(self):
         # LOGGER
-        if self.INLINE_OPA_LOG_FORMAT == OpaLogFormat.NONE:
+        if self.INLINE_OPA_LOG_FORMAT == EngineLogFormat.NONE:
             opal_common_config.LOG_MODULE_EXCLUDE_LIST.append("opal_client.opa.logger")
             # re-assign to apply to internal confi-entries as well
             opal_common_config.LOG_MODULE_EXCLUDE_LIST = (

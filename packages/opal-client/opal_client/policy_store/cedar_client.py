@@ -84,7 +84,7 @@ class CedarClient(BasePolicyStoreClient):
                         cedar_response,
                         accepted_status_codes=[
                             status.HTTP_200_OK,
-                            status.HTTP_400_BAD_REQUEST,  # No point in immediate retry, this means erroneous rego (bad syntax, duplicated definition, etc)
+                            status.HTTP_400_BAD_REQUEST,  # No point in immediate retry, this means erroneous policy (bad syntax, duplicated definition, etc)
                         ],
                     )
             except aiohttp.ClientError as e:

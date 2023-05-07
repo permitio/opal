@@ -3,10 +3,10 @@ import time
 from typing import Callable, Coroutine, List, Optional
 
 import psutil
-from opal_client.config import OpaLogFormat
+from opal_client.config import EngineLogFormat
+from opal_client.engine.logger import pipe_opa_logs, pipe_simple_logs
+from opal_client.engine.options import OpaServerOptions, CedarServerOptions
 from opal_client.logger import logger
-from opal_client.opa.logger import pipe_opa_logs, pipe_simple_logs
-from opal_client.opa.options import OpaServerOptions, CedarServerOptions
 from tenacity import retry, wait_random_exponential
 
 AsyncCallback = Callable[[], Coroutine]
@@ -43,7 +43,7 @@ class PolicyEngineRunner:
 
     def __init__(
         self,
-        piped_logs_format: OpaLogFormat = OpaLogFormat.NONE,
+        piped_logs_format: EngineLogFormat = EngineLogFormat.NONE,
     ):
         self._stopped = False
         self._process: Optional[asyncio.subprocess.Process] = None
@@ -67,7 +67,7 @@ class PolicyEngineRunner:
 
     def start(self):
         """starts the runner task, and launches the OPA subprocess."""
-        logger.info("Launching opa runner")
+        logger.info("Launching engine runner")
         self._run_task = asyncio.create_task(self._run())
 
     async def stop(self):
@@ -85,9 +85,9 @@ class PolicyEngineRunner:
         self._run_task = None
 
     async def wait_until_done(self):
-        """waits until the OPA runner task is complete.
+        """waits until the engine runner task is complete.
 
-        this is great when using opa runner as a context manager.
+        this is great when using engine runner as a context manager.
         """
         if self._run_task is not None:
             await self._run_task
@@ -111,7 +111,7 @@ class PolicyEngineRunner:
 
         logs_sink = (
             asyncio.subprocess.DEVNULL
-            if self._piped_logs_format == OpaLogFormat.NONE
+            if self._piped_logs_format == EngineLogFormat.NONE
             else asyncio.subprocess.PIPE
         )
 
@@ -129,7 +129,7 @@ class PolicyEngineRunner:
             )
         )
 
-        if self._piped_logs_format != OpaLogFormat.NONE:
+        if self._piped_logs_format != EngineLogFormat.NONE:
             await asyncio.wait(
                 [
                     self.pipe_logs(self._process.stdout, self._piped_logs_format),
@@ -184,7 +184,7 @@ class PolicyEngineRunner:
         if self._should_stop is None:
             self._should_stop = asyncio.Event()
 
-    async def pipe_logs(self, stream, logs_format: OpaLogFormat):
+    async def pipe_logs(self, stream, logs_format: EngineLogFormat):
         raise NotImplementedError()
 
 
@@ -192,12 +192,12 @@ class OpaRunner(PolicyEngineRunner):
     def __init__(
         self,
         options: Optional[OpaServerOptions] = None,
-        piped_logs_format: OpaLogFormat = OpaLogFormat.NONE,
+        piped_logs_format: EngineLogFormat = EngineLogFormat.NONE,
     ):
         super().__init__(piped_logs_format)
         self._options = options or OpaServerOptions()
 
-    async def pipe_logs(self, stream, logs_format: OpaLogFormat):
+    async def pipe_logs(self, stream, logs_format: EngineLogFormat):
         return await pipe_opa_logs(stream, logs_format)
 
     @property
@@ -210,7 +210,7 @@ class OpaRunner(PolicyEngineRunner):
     @staticmethod
     def setup_opa_runner(
         options: Optional[OpaServerOptions] = None,
-        piped_logs_format: OpaLogFormat = OpaLogFormat.NONE,
+        piped_logs_format: EngineLogFormat = EngineLogFormat.NONE,
         initial_start_callbacks: Optional[List[AsyncCallback]] = None,
         rehydration_callbacks: Optional[List[AsyncCallback]] = None,
     ):
@@ -238,7 +238,7 @@ class CedarRunner(PolicyEngineRunner):
     def __init__(
         self,
         options: Optional[CedarServerOptions] = None,
-        piped_logs_format: OpaLogFormat = OpaLogFormat.NONE,
+        piped_logs_format: EngineLogFormat = EngineLogFormat.NONE,
     ):
         super().__init__(piped_logs_format)
         self._options = options or CedarServerOptions()
@@ -250,7 +250,7 @@ class CedarRunner(PolicyEngineRunner):
     @staticmethod
     def setup_cedar_runner(
         options: Optional[CedarServerOptions] = None,
-        piped_logs_format: OpaLogFormat = OpaLogFormat.NONE,
+        piped_logs_format: EngineLogFormat = EngineLogFormat.NONE,
         initial_start_callbacks: Optional[List[AsyncCallback]] = None,
         rehydration_callbacks: Optional[List[AsyncCallback]] = None,
     ):
@@ -279,5 +279,5 @@ class CedarRunner(PolicyEngineRunner):
 
         return cedar_runner
 
-    async def pipe_logs(self, stream, logs_format: OpaLogFormat):
+    async def pipe_logs(self, stream, logs_format: EngineLogFormat):
         return await pipe_simple_logs(stream, logs_format)

@@ -11,7 +11,7 @@ def is_data_module(path: Path) -> bool:
     return path.name == "data.json"
 
 
-def is_rego_module(path: Path) -> bool:
+def is_policy_module(path: Path) -> bool:
     """Checks if a given path points to a rego file (extension == .rego).
 
     Only rego files are allowed in official OPA bundles as policy files.

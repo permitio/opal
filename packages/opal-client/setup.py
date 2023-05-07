@@ -57,7 +57,7 @@ setup(
     license=about.__license__,
     packages=find_packages(include=("opal_client*",)),
     package_data={
-        "": ["opa/healthcheck/opal.rego"],
+        "": ["engine/healthcheck/opal.rego"],
     },
     classifiers=[
         "Operating System :: OS Independent",

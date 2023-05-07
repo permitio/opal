@@ -4,7 +4,7 @@ import os
 import signal
 import uuid
 from logging import disable
-from typing import List, Optional, Literal, Union
+from typing import List, Optional, Literal, Union, Callable, Awaitable
 
 import aiofiles
 import aiofiles.os
@@ -18,9 +18,9 @@ from opal_client.config import PolicyStoreTypes, opal_client_config
 from opal_client.data.api import init_data_router
 from opal_client.data.fetcher import DataFetcher
 from opal_client.data.updater import DataUpdater
+from opal_client.engine.options import OpaServerOptions, CedarServerOptions
+from opal_client.engine.runner import OpaRunner, CedarRunner
 from opal_client.limiter import StartupLoadLimiter
-from opal_client.opa.options import OpaServerOptions, CedarServerOptions
-from opal_client.opa.runner import OpaRunner, CedarRunner
 from opal_client.policy.api import init_policy_router
 from opal_client.policy.updater import PolicyUpdater
 from opal_client.policy_store.api import init_policy_store_router
@@ -142,7 +142,7 @@ class OpalClient:
 
         # Internal services
         # Policy store
-        self.opa_runner = self._init_engine_runner(inline_opa_enabled, inline_cedar_enabled, inline_opa_options, inline_cedar_options)
+        self.engine_runner = self._init_engine_runner(inline_opa_enabled, inline_cedar_enabled, inline_opa_options, inline_cedar_options)
 
         custom_ssl_context = get_custom_ssl_context()
         if (
@@ -307,6 +307,20 @@ class OpalClient:
 
         return app
 
+    async def _run_or_delay_for_engine_runner(self, callback: Callable[[], Awaitable[None]]):
+        if self.engine_runner:
+            # runs the callback after policy store is up
+            self.engine_runner.register_process_initial_start_callbacks(
+                [callback]
+            )
+            async with self.engine_runner:
+                await self.engine_runner.wait_until_done()
+            return
+
+        # we do not run the policy store in the same container
+        # therefore we can immediately run the callback
+        await callback()
+
     async def start_client_background_tasks(self):
         """Launch OPAL client long-running tasks:
 
@@ -319,25 +333,15 @@ class OpalClient:
         if self._startup_wait:
             await self._startup_wait()
 
-        if self.opa_runner:
-            # runs the policy store dependent tasks after policy store is up
-            self.opa_runner.register_process_initial_start_callbacks(
-                [self.launch_policy_store_dependent_tasks]
-            )
-            async with self.opa_runner:
-                await self.opa_runner.wait_until_done()
-        else:
-            # we do not run the policy store in the same container
-            # therefore we can immediately launch dependent tasks
-            await self.launch_policy_store_dependent_tasks()
+        await self._run_or_delay_for_engine_runner(self.launch_policy_store_dependent_tasks)
 
     async def stop_client_background_tasks(self):
         """stops all background tasks (called on shutdown event)"""
         logger.info("stopping background tasks...")
 
         # stopping opa runner
-        if self.opa_runner:
-            await self.opa_runner.stop()
+        if self.engine_runner:
+            await self.engine_runner.stop()
 
         # stopping updater tasks (each updater runs a pub/sub client)
         logger.info("trying to shutdown DataUpdater and PolicyUpdater gracefully...")

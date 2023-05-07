@@ -16,7 +16,7 @@ sys.path.append(root_dir)
 
 from pathlib import Path
 
-from opal_common.opa.paths import is_data_module, is_rego_module
+from opal_common.engine.paths import is_data_module, is_policy_module
 
 
 def test_is_data_module():
@@ -37,15 +37,15 @@ def test_is_data_module():
     assert is_data_module(Path("some/dir/to")) == False
 
 
-def test_is_rego_module():
-    """Test is_rego_module() on different paths."""
+def test_is_policy_module():
+    """Test is_policy_module() on different paths."""
     # files with rego extension are rego modules
-    assert is_rego_module(Path("some/dir/to/file.rego")) == True
-    assert is_rego_module(Path("rbac.rego")) == True
+    assert is_policy_module(Path("some/dir/to/file.rego")) == True
+    assert is_policy_module(Path("rbac.rego")) == True
 
     # files with other extensions are not rego modules
-    assert is_rego_module(Path("rbac.json")) == False
+    assert is_policy_module(Path("rbac.json")) == False
 
     # directories are not data modules
-    assert is_rego_module(Path(".")) == False
-    assert is_rego_module(Path("some/dir/to")) == False
+    assert is_policy_module(Path(".")) == False
+    assert is_policy_module(Path("some/dir/to")) == False

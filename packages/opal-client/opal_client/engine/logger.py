@@ -3,7 +3,7 @@ import logging
 from enum import Enum
 from typing import Optional
 
-from opal_client.config import OpaLogFormat
+from opal_client.config import EngineLogFormat
 from opal_client.logger import logger
 
 
@@ -26,10 +26,10 @@ def logging_level_from_string(level: str) -> int:
     return logging.INFO
 
 
-async def pipe_opa_logs(stream, logs_format: OpaLogFormat):
+async def pipe_opa_logs(stream, logs_format: EngineLogFormat):
     """gets a stream of logs from the opa process, and logs it into the main
     opal log."""
-    if logs_format == OpaLogFormat.NONE:
+    if logs_format == EngineLogFormat.NONE:
         return
 
     while True:
@@ -44,13 +44,13 @@ async def pipe_opa_logs(stream, logs_format: OpaLogFormat):
             msg = log_line.pop("msg", None)
 
             logged = False
-            if logs_format == OpaLogFormat.MINIMAL:
+            if logs_format == EngineLogFormat.MINIMAL:
                 logged = log_event_name(level, msg)
-            elif logs_format == OpaLogFormat.HTTP:
+            elif logs_format == EngineLogFormat.HTTP:
                 logged = log_formatted_http_details(level, msg, log_line)
 
             # always fall back to log the entire line
-            if not logged or logs_format == OpaLogFormat.FULL:
+            if not logged or logs_format == EngineLogFormat.FULL:
                 log_entire_dict(level, msg, log_line)
         except json.JSONDecodeError:
             logger.info(line)
@@ -97,12 +97,12 @@ def log_entire_dict(level: str, msg: Optional[str], log_line: dict):
     return True
 
 
-async def pipe_simple_logs(stream, logs_format: OpaLogFormat):
+async def pipe_simple_logs(stream, logs_format: EngineLogFormat):
     """
     Gets a stream of logs from the engine process, and logs it into the main
     opal log.
     """
-    if logs_format == OpaLogFormat.NONE:
+    if logs_format == EngineLogFormat.NONE:
         return
 
     while True:

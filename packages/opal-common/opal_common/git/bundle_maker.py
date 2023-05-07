@@ -18,7 +18,7 @@ from opal_common.git.diff_viewer import (
     diffed_file_is_under_directories,
 )
 from opal_common.logger import logger
-from opal_common.opa import get_rego_package, is_data_module, is_rego_module
+from opal_common.engine import get_rego_package, is_data_module, is_policy_module
 from opal_common.paths import PathUtils
 from opal_common.schemas.policy import (
     DataModule,
@@ -256,7 +256,8 @@ class BundleMaker:
                     data_modules.append(
                         DataModule(path=str(path.parent), data=contents)
                     )
-                elif is_rego_module(path):
+                    manifest.append(str(path))
+                elif is_policy_module(path):
                     policy_modules.append(
                         RegoModule(
                             path=str(path),
@@ -264,10 +265,8 @@ class BundleMaker:
                             rego=contents,
                         )
                     )
-                else:
-                    continue
+                    manifest.append(str(path))
 
-                manifest.append(str(path))  # only returns the relative path
 
             return PolicyBundle(
                 manifest=self._sort_manifest(manifest, explicit_manifest),
@@ -322,7 +321,8 @@ class BundleMaker:
                         # i.e: /path/to/data.json will put the json contents under "/path/to" in the opa tree
                         DataModule(path=str(path.parent), data=contents)
                     )
-                elif is_rego_module(path):
+                    manifest.append(str(path))
+                elif is_policy_module(path):
                     policy_modules.append(
                         RegoModule(
                             path=str(path),
@@ -330,10 +330,8 @@ class BundleMaker:
                             rego=contents,
                         )
                     )
-                else:
-                    continue
+                    manifest.append(str(path))
 
-                manifest.append(str(path))  # only returns the relative path
 
             for source_file in viewer.deleted_files(filter):
                 path = source_file.path
@@ -341,7 +339,7 @@ class BundleMaker:
                 if is_data_module(path):
                     # in OPA, the data module path is the containing directory (see above)
                     deleted_data_modules.append(str(path.parent))
-                elif is_rego_module(path):
+                elif is_policy_module(path):
                     deleted_policy_modules.append(path)
 
             if deleted_data_modules or deleted_policy_modules:
