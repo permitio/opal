@@ -41,7 +41,7 @@ def setup_watcher_task(
         polling_interval(int):  how many seconds need to wait between polling
         request_timeout(int):  how many seconds need to wait until timeout
         policy_bundle_token(int):  auth token to include in connections to OPAL server. Defaults to POLICY_BUNDLE_SERVER_TOKEN.
-        extensions(list(str), optional):  list of extantions to check when new policy arrive default is OPA_FILE_EXTENSIONS
+        extensions(list(str), optional):  list of extantions to check when new policy arrive default is FILTER_FILE_EXTENSIONS
         bundle_ignore(list(str), optional):  list of glob paths to use for excluding files from bundle default is OPA_BUNDLE_IGNORE
     """
     if opal_server_config.SCOPES:
@@ -77,7 +77,7 @@ def setup_watcher_task(
     policy_bundle_token = load_conf_if_none(
         policy_bundle_token, opal_server_config.POLICY_BUNDLE_SERVER_TOKEN
     )
-    extensions = load_conf_if_none(extensions, opal_server_config.OPA_FILE_EXTENSIONS)
+    extensions = load_conf_if_none(extensions, opal_server_config.FILTER_FILE_EXTENSIONS)
     bundle_ignore = load_conf_if_none(bundle_ignore, opal_server_config.BUNDLE_IGNORE)
     if source_type == PolicySourceTypes.Git:
         remote_source_url = load_conf_if_none(
