@@ -1,6 +1,6 @@
 import asyncio
 import json
-from typing import Dict, Optional, Union, List, Set
+from typing import Dict, List, Optional, Set, Union
 
 import aiohttp
 from aiofiles.threadpool.text import AsyncTextIOWrapper
@@ -20,7 +20,7 @@ from opal_client.policy_store.opa_client import (
 )
 from opal_client.policy_store.schemas import PolicyStoreAuth
 from opal_common.schemas.policy import PolicyBundle
-from opal_common.schemas.store import StoreTransaction
+from opal_common.schemas.store import StoreTransaction, TransactionType
 from tenacity import retry
 
 
@@ -37,6 +37,11 @@ class CedarClient(BasePolicyStoreClient):
         self._lock = asyncio.Lock()
         self._token = cedar_auth_token
         self._auth_type: PolicyStoreAuth = auth_type
+
+        self._had_successful_data_transaction = False
+        self._had_successful_policy_transaction = False
+        self._most_recent_data_transaction: Optional[StoreTransaction] = None
+        self._most_recent_policy_transaction: Optional[StoreTransaction] = None
 
         if auth_type == PolicyStoreAuth.TOKEN:
             if self._token is None:
@@ -242,15 +247,29 @@ class CedarClient(BasePolicyStoreClient):
             raise
 
     async def log_transaction(self, transaction: StoreTransaction):
-        ...
+        if transaction.transaction_type == TransactionType.policy:
+            self._most_recent_policy_transaction = transaction
+            if transaction.success:
+                self._had_successful_policy_transaction = True
+        elif transaction.transaction_type == TransactionType.data:
+            self._most_recent_data_transaction = transaction
+            if transaction.success:
+                self._had_successful_data_transaction = True
 
     async def is_ready(self) -> bool:
-        # TODO
-        return True
+        return (
+            self._had_successful_policy_transaction
+            and self._had_successful_data_transaction
+        )
 
     async def is_healthy(self) -> bool:
-        # TODO
-        return True
+        return (
+            self._most_recent_policy_transaction is not None
+            and self._most_recent_policy_transaction.success
+        ) and (
+            self._most_recent_data_transaction is not None
+            and self._most_recent_data_transaction.success
+        )
 
     async def full_export(self, writer: AsyncTextIOWrapper) -> None:
         policies = await self.get_policies()
@@ -276,11 +295,18 @@ class CedarClient(BasePolicyStoreClient):
     ):
         for policy in bundle.policy_modules:
             await self.set_policy(policy.path, policy.rego)
+
         deleted_modules: Union[List[str], Set[str]] = []
+
         if bundle.old_hash is None:
-            deleted_modules = set((await self.get_policies()).keys()) - set(policy.path for policy in bundle.policy_modules)
+            deleted_modules = set((await self.get_policies()).keys()) - set(
+                policy.path for policy in bundle.policy_modules
+            )
         elif bundle.deleted_files is not None:
-            deleted_modules = [str(module) for module in bundle.deleted_files.policy_modules]
+            deleted_modules = [
+                str(module) for module in bundle.deleted_files.policy_modules
+            ]
+
         for module_id in deleted_modules:
             print(module_id)
             await self.delete_policy(policy_id=module_id)
