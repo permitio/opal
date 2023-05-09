@@ -45,13 +45,13 @@ docker-build-client-standalone:
 	@docker build -t permitio/opal-client-standalone --target client-standalone -f docker/Dockerfile .
 
 docker-run-client:
-	@docker run -it -e "OPAL_SERVER_URL=$(OPAL_SERVER_URL)" -p 7000:7000 -p 8181:8181 permitio/opal-client
+	@docker run -it -e "OPAL_SERVER_URL=$(OPAL_SERVER_URL)" -p 7766:7000 -p 8181:8181 permitio/opal-client
 
 docker-run-client-standalone:
 	@docker run -it \
 		-e "OPAL_SERVER_URL=$(OPAL_SERVER_URL)" \
 		-e "OPAL_POLICY_STORE_URL=$(OPAL_POLICY_STORE_URL)" \
-		-p 7000:7000 \
+		-p 7766:7000 \
 		permitio/opal-client-standalone
 
 docker-build-server:

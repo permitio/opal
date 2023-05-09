@@ -103,7 +103,7 @@ docker run -it \
   --env OPAL_SERVER_URL \
   --env OPAL_DATA_TOPICS \
   --env OPAL_SCOPE_ID=internal \
-  -p 7000:7000 \
+  -p 7766:7000 \
   -p 8181:8181 \
   permitio/opal-client
 ```

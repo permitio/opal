@@ -50,7 +50,7 @@ The `docker-compose.yml` we just downloaded ([Click here to view its contents](h
 OPAL (and also OPA) are now running on your machine, the following ports are exposed on `localhost`:
 
 - OPAL Server (port `:7002`) - the OPAL client (and potentially the cli) can connect to this port.
-- OPAL Client (port `:7000`) - the OPAL client has its own API, but it's irrelevant to this tutorial :)
+- OPAL Client (port `:7766`) - the OPAL client has its own API, but it's irrelevant to this tutorial :)
 - OPA (port `:8181`) - the port of the OPA agent (running in server mode).
   - OPA is being run by OPAL client in its container as a managed process.
 - Nginx server that serves a static bundle file (bundle.tar.gz) on port 8000

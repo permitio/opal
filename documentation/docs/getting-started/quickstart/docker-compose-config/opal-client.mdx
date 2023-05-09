@@ -11,7 +11,7 @@ service:
     - OPAL_LOG_FORMAT_INCLUDE_PID=true
     - OPAL_INLINE_OPA_LOG_FORMAT=http
   ports:
-    - "7000:7000"
+    - "7766:7000"
     - "8181:8181"
   depends_on:
     - opal_server
@@ -33,7 +33,7 @@ In our example `docker-compose.yml` file, OPA is enabled and runs on port `:8181
 
 ```yml showLineNumbers {3}
 ports:
-  - "7000:7000"
+  - "7766:7000"
   - "8181:8181"
 ```
 

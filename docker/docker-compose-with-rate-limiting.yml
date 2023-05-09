@@ -51,7 +51,7 @@ services:
       # Turns on rate limiting in the client (without this flag the client won't respect the server's rate limiting)
       - OPAL_WAIT_ON_SERVER_LOAD=true
     ports:
-      # exposes opal client on the host machine, you can access the client at: http://localhost:7000
+      # exposes opal client on the host machine, you can access the client at: http://localhost:7003
       - "7003:7000"
       # exposes the OPA agent (being run by OPAL) on the host machine
       # you can access the OPA api that you know and love at: http://localhost:8181
@@ -72,7 +72,7 @@ services:
       # Turns on rate limiting in the client (without this flag the client won't respect the server's rate limiting)
       - OPAL_WAIT_ON_SERVER_LOAD=true
     ports:
-      # exposes opal client on the host machine, you can access the client at: http://localhost:7000
+      # exposes opal client on the host machine, you can access the client at: http://localhost:7004
       - "7004:7000"
       # exposes the OPA agent (being run by OPAL) on the host machine
       # you can access the OPA api that you know and love at: http://localhost:8181
