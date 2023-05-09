@@ -96,7 +96,8 @@ Hence OPAL-clients are aware of changes very quickly, and can react to the chang
 
 ## Can I run the OPAL-server without `OPAL_BROADCAST_URI` ?
 
-This is mainly useful for light-workloads (Where a single worker is enough) and development environments (where you just don't want the hassle of setting up a Kafka / Redis / Postgres service)
+Yes. This is mainly useful for light-workloads (Where a single worker is enough) and development environments (where you just don't want the hassle of setting up a Kafka / Redis / Postgres service).
+Since server replication requires broadcasting, make sure that `UVICORN_NUM_WORKERS=1` and pod scaling is set to 1 (when running on k8s)
 
 ## How does OPAL guarantee that the policy data is actually in sync with the actual application state. We get that OPAL server publishes updates to OPAL client but is there error correction in place.
 
