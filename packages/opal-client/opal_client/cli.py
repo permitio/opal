@@ -14,7 +14,6 @@ from opal_client.config import opal_client_config
 from opal_common.cli.docs import MainTexts
 from opal_common.cli.typer_app import get_typer_app
 from opal_common.config import opal_common_config
-from opal_common.corn_utils import run_gunicorn, run_uvicorn
 
 app = get_typer_app()
 
@@ -23,6 +22,7 @@ app = get_typer_app()
 def run(engine_type: str = typer.Option("uvicron", help="uvicorn or gunicorn")):
     """Run the client as a daemon."""
     typer.echo(f"-- Starting OPAL client (with {engine_type}) --")
+    from opal_common.corn_utils import run_gunicorn, run_uvicorn
 
     if engine_type == "gunicorn":
         app: FastAPI
@@ -63,7 +63,10 @@ def cli():
             typer.echo(main_texts.docs)
 
     opal_client_config.cli(
-        [opal_common_config], typer_app=app, help=main_texts.docs, on_start=on_start
+        [opal_common_config],
+        typer_app=app,
+        help=main_texts.docs,
+        on_start=on_start,
     )
 
 
