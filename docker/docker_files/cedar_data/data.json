@@ -1,0 +1,131 @@
+[
+  {
+    "attrs": {
+      "confidenceScore": {
+        "__extn": {
+          "arg": "33.57",
+          "fn": "decimal"
+        }
+      },
+      "department": "HardwareEngineering",
+      "homeIp": {
+        "__extn": {
+          "arg": "222.222.222.7",
+          "fn": "ip"
+        }
+      },
+      "jobLevel": 5
+    },
+    "parents": [
+      {
+        "id": "Editor",
+        "type": "Role"
+      }
+    ],
+    "uid": {
+      "id": "someone@permit.io",
+      "type": "User"
+    }
+  },
+  {
+    "attrs": {},
+    "parents": [
+      {
+        "id": "document",
+        "type": "ResourceType"
+      },
+      {
+        "id": "Editor",
+        "type": "Role"
+      }
+    ],
+    "uid": {
+      "id": "document:delete",
+      "type": "Action"
+    }
+  },
+  {
+    "attrs": {},
+    "parents": [
+      {
+        "id": "document",
+        "type": "ResourceType"
+      },
+      {
+        "id": "Editor",
+        "type": "Role"
+      }
+    ],
+    "uid": {
+      "id": "document:create",
+      "type": "Action"
+    }
+  },
+  {
+    "attrs": {},
+    "parents": [],
+    "uid": {
+      "id": "document",
+      "type": "ResourceType"
+    }
+  },
+  {
+    "attrs": {},
+    "parents": [
+      {
+        "id": "Editor",
+        "type": "Role"
+      },
+      {
+        "id": "document",
+        "type": "ResourceType"
+      }
+    ],
+    "uid": {
+      "id": "document:update",
+      "type": "Action"
+    }
+  },
+  {
+    "attrs": {},
+    "parents": [
+      {
+        "id": "document",
+        "type": "ResourceType"
+      },
+      {
+        "id": "Editor",
+        "type": "Role"
+      }
+    ],
+    "uid": {
+      "id": "document:list",
+      "type": "Action"
+    }
+  },
+  {
+    "attrs": {},
+    "parents": [
+      {
+        "id": "document",
+        "type": "ResourceType"
+      },
+      {
+        "id": "Editor",
+        "type": "Role"
+      }
+    ],
+    "uid": {
+      "id": "document:get",
+      "type": "Action"
+    }
+  },
+  {
+    "attrs": {},
+    "parents": [],
+    "uid": {
+      "id": "Editor",
+      "type": "Role"
+    }
+  }
+]
