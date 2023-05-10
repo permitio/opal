@@ -4,8 +4,8 @@ from datetime import datetime
 from functools import partial
 from inspect import signature
 from typing import Any, Dict, List, Optional, Union
-from aiofiles.threadpool.text import AsyncTextIOWrapper
 
+from aiofiles.threadpool.text import AsyncTextIOWrapper
 from opal_client.config import opal_client_config
 from opal_client.logger import logger
 from opal_common.schemas.data import JsonableValue

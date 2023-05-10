@@ -104,7 +104,8 @@ class CedarClient(BasePolicyStoreClient):
                 headers = await self._get_auth_headers()
 
                 async with session.get(
-                    f"{self._cedar_url}/policies/{quote_plus(policy_id)}", headers=headers
+                    f"{self._cedar_url}/policies/{quote_plus(policy_id)}",
+                    headers=headers,
                 ) as cedar_response:
                     result = await cedar_response.json()
                     return result.get("result", {}).get("raw", None)
@@ -145,7 +146,8 @@ class CedarClient(BasePolicyStoreClient):
                 headers = await self._get_auth_headers()
 
                 async with session.delete(
-                    f"{self._cedar_url}/policies/{quote_plus(policy_id)}", headers=headers
+                    f"{self._cedar_url}/policies/{quote_plus(policy_id)}",
+                    headers=headers,
                 ) as cedar_response:
                     return await proxy_response_unless_invalid(
                         cedar_response,

@@ -98,10 +98,8 @@ def log_entire_dict(level: str, msg: Optional[str], log_line: dict):
 
 
 async def pipe_simple_logs(stream, logs_format: EngineLogFormat):
-    """
-    Gets a stream of logs from the engine process, and logs it into the main
-    opal log.
-    """
+    """Gets a stream of logs from the engine process, and logs it into the main
+    opal log."""
     if logs_format == EngineLogFormat.NONE:
         return
 

@@ -5,7 +5,7 @@ from typing import Callable, Coroutine, List, Optional
 import psutil
 from opal_client.config import EngineLogFormat
 from opal_client.engine.logger import pipe_opa_logs, pipe_simple_logs
-from opal_client.engine.options import OpaServerOptions, CedarServerOptions
+from opal_client.engine.options import CedarServerOptions, OpaServerOptions
 from opal_client.logger import logger
 from tenacity import retry, wait_random_exponential
 
@@ -254,8 +254,7 @@ class CedarRunner(PolicyEngineRunner):
         initial_start_callbacks: Optional[List[AsyncCallback]] = None,
         rehydration_callbacks: Optional[List[AsyncCallback]] = None,
     ):
-        """
-        Factory for CedarRunner, accept optional callbacks to run in certain
+        """Factory for CedarRunner, accept optional callbacks to run in certain
         lifecycle events.
 
         Initial Start Callbacks:

@@ -1,4 +1,5 @@
 from pathlib import Path
+
 from opal_common.config import opal_common_config
 
 

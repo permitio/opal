@@ -4,7 +4,7 @@ import os
 import signal
 import uuid
 from logging import disable
-from typing import List, Optional, Literal, Union, Callable, Awaitable
+from typing import Awaitable, Callable, List, Literal, Optional, Union
 
 import aiofiles
 import aiofiles.os
@@ -18,8 +18,8 @@ from opal_client.config import PolicyStoreTypes, opal_client_config
 from opal_client.data.api import init_data_router
 from opal_client.data.fetcher import DataFetcher
 from opal_client.data.updater import DataUpdater
-from opal_client.engine.options import OpaServerOptions, CedarServerOptions
-from opal_client.engine.runner import OpaRunner, CedarRunner
+from opal_client.engine.options import CedarServerOptions, OpaServerOptions
+from opal_client.engine.runner import CedarRunner, OpaRunner
 from opal_client.limiter import StartupLoadLimiter
 from opal_client.policy.api import init_policy_router
 from opal_client.policy.updater import PolicyUpdater
@@ -142,7 +142,12 @@ class OpalClient:
 
         # Internal services
         # Policy store
-        self.engine_runner = self._init_engine_runner(inline_opa_enabled, inline_cedar_enabled, inline_opa_options, inline_cedar_options)
+        self.engine_runner = self._init_engine_runner(
+            inline_opa_enabled,
+            inline_cedar_enabled,
+            inline_opa_options,
+            inline_cedar_options,
+        )
 
         custom_ssl_context = get_custom_ssl_context()
         if (
@@ -177,11 +182,13 @@ class OpalClient:
         # init fastapi app
         self.app: FastAPI = self._init_fast_api_app()
 
-    def _init_engine_runner(self,
-                            inline_opa_enabled: bool, inline_cedar_enabled: bool,
+    def _init_engine_runner(
+        self,
+        inline_opa_enabled: bool,
+        inline_cedar_enabled: bool,
         inline_opa_options: Optional[OpaServerOptions] = None,
         inline_cedar_options: Optional[CedarServerOptions] = None,
-                            ) -> Union[OpaRunner, CedarRunner, Literal[False]]:
+    ) -> Union[OpaRunner, CedarRunner, Literal[False]]:
         if inline_opa_enabled and self.policy_store_type == PolicyStoreTypes.OPA:
             inline_opa_options = (
                 inline_opa_options or opal_client_config.INLINE_OPA_CONFIG
@@ -202,19 +209,19 @@ class OpalClient:
                 )
 
             return OpaRunner.setup_opa_runner(
-                    options=inline_opa_options,
-                    piped_logs_format=opal_client_config.INLINE_OPA_LOG_FORMAT,
-                    rehydration_callbacks=rehydration_callbacks,
-                )
+                options=inline_opa_options,
+                piped_logs_format=opal_client_config.INLINE_OPA_LOG_FORMAT,
+                rehydration_callbacks=rehydration_callbacks,
+            )
 
         elif inline_cedar_enabled and self.policy_store_type == PolicyStoreTypes.CEDAR:
             inline_cedar_options = (
                 inline_cedar_options or opal_client_config.INLINE_CEDAR_CONFIG
             )
             return CedarRunner.setup_cedar_runner(
-                    options=inline_cedar_options,
-                    piped_logs_format=opal_client_config.INLINE_CEDAR_LOG_FORMAT,
-                )
+                options=inline_cedar_options,
+                piped_logs_format=opal_client_config.INLINE_CEDAR_LOG_FORMAT,
+            )
 
         return False
 
@@ -307,12 +314,12 @@ class OpalClient:
 
         return app
 
-    async def _run_or_delay_for_engine_runner(self, callback: Callable[[], Awaitable[None]]):
+    async def _run_or_delay_for_engine_runner(
+        self, callback: Callable[[], Awaitable[None]]
+    ):
         if self.engine_runner:
             # runs the callback after policy store is up
-            self.engine_runner.register_process_initial_start_callbacks(
-                [callback]
-            )
+            self.engine_runner.register_process_initial_start_callbacks([callback])
             async with self.engine_runner:
                 await self.engine_runner.wait_until_done()
             return
@@ -333,7 +340,9 @@ class OpalClient:
         if self._startup_wait:
             await self._startup_wait()
 
-        await self._run_or_delay_for_engine_runner(self.launch_policy_store_dependent_tasks)
+        await self._run_or_delay_for_engine_runner(
+            self.launch_policy_store_dependent_tasks
+        )
 
     async def stop_client_background_tasks(self):
         """stops all background tasks (called on shutdown event)"""

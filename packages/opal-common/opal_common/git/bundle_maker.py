@@ -4,6 +4,7 @@ from typing import List, Optional, Set
 
 from git import Repo
 from git.objects import Commit
+from opal_common.engine import get_rego_package, is_data_module, is_policy_module
 from opal_common.git.commit_viewer import (
     CommitViewer,
     VersionedDirectory,
@@ -18,7 +19,6 @@ from opal_common.git.diff_viewer import (
     diffed_file_is_under_directories,
 )
 from opal_common.logger import logger
-from opal_common.engine import get_rego_package, is_data_module, is_policy_module
 from opal_common.paths import PathUtils
 from opal_common.schemas.policy import (
     DataModule,
@@ -267,7 +267,6 @@ class BundleMaker:
                     )
                     manifest.append(str(path))
 
-
             return PolicyBundle(
                 manifest=self._sort_manifest(manifest, explicit_manifest),
                 hash=commit.hexsha,
@@ -331,7 +330,6 @@ class BundleMaker:
                         )
                     )
                     manifest.append(str(path))
-
 
             for source_file in viewer.deleted_files(filter):
                 path = source_file.path

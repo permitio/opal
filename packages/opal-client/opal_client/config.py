@@ -1,6 +1,6 @@
 from enum import Enum
 
-from opal_client.engine.options import OpaServerOptions, CedarServerOptions
+from opal_client.engine.options import CedarServerOptions, OpaServerOptions
 from opal_client.policy.options import PolicyConnRetryOptions
 from opal_client.policy_store.schemas import PolicyStoreAuth, PolicyStoreTypes
 from opal_common.confi import Confi, confi

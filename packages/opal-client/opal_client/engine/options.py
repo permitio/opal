@@ -1,5 +1,5 @@
 from enum import Enum
-from typing import List, Optional, Any
+from typing import Any, List, Optional
 
 from pydantic import BaseModel, Field, validator
 
@@ -82,19 +82,22 @@ class OpaServerOptions(BaseModel):
         files = self.files if self.files is not None else []
         return " ".join(files)
 
+
 class CedarServerOptions(BaseModel):
-    """Options to configure the Cedar agent (apply when choosing to run Cedar inline).
-    """
+    """Options to configure the Cedar agent (apply when choosing to run Cedar
+    inline)."""
 
     addr: str = Field(
         ":8181",
         description="listening address of the Cedar agent (e.g., [ip]:<port> for TCP)",
     )
     authentication: AuthenticationScheme = Field(
-        AuthenticationScheme.off, description="Cedar agent authentication scheme (default off)"
+        AuthenticationScheme.off,
+        description="Cedar agent authentication scheme (default off)",
     )
     authentication_token: Optional[str] = Field(
-        None, description="If authentication is 'token', this specifies the token to use."
+        None,
+        description="If authentication is 'token', this specifies the token to use.",
     )
     files: Optional[List[str]] = Field(
         None,
@@ -119,17 +122,23 @@ class CedarServerOptions(BaseModel):
 
     @validator("authentication_token")
     def validate_authentication_token(cls, v: Optional[str], values: dict[str, Any]):
-        if values['authentication'] == AuthenticationScheme.token and v is None:
-            raise ValueError("A token must be speicified for AuthenticationScheme.token.")
+        if values["authentication"] == AuthenticationScheme.token and v is None:
+            raise ValueError(
+                "A token must be specified for AuthenticationScheme.token."
+            )
         return v
 
     def get_cmdline(self) -> str:
         result = [
             "cedar-agent",
         ]
-        if self.authentication == AuthenticationScheme.token and self.authentication_token is not None:
+        if (
+            self.authentication == AuthenticationScheme.token
+            and self.authentication_token is not None
+        ):
             result += [
-                "-a", self.authentication_token,
+                "-a",
+                self.authentication_token,
             ]
         addr = self.addr.split(":", 1)
         port = None
@@ -140,11 +149,13 @@ class CedarServerOptions(BaseModel):
         if len(listen_address) == 0:
             listen_address = "0.0.0.0"
         result += [
-            "--addr", listen_address,
+            "--addr",
+            listen_address,
         ]
         if port is not None:
             result += [
-                "--port", port,
+                "--port",
+                port,
             ]
         # TODO: files
         return " ".join(result)

@@ -77,7 +77,9 @@ def setup_watcher_task(
     policy_bundle_token = load_conf_if_none(
         policy_bundle_token, opal_server_config.POLICY_BUNDLE_SERVER_TOKEN
     )
-    extensions = load_conf_if_none(extensions, opal_server_config.FILTER_FILE_EXTENSIONS)
+    extensions = load_conf_if_none(
+        extensions, opal_server_config.FILTER_FILE_EXTENSIONS
+    )
     bundle_ignore = load_conf_if_none(bundle_ignore, opal_server_config.BUNDLE_IGNORE)
     if source_type == PolicySourceTypes.Git:
         remote_source_url = load_conf_if_none(
