@@ -103,7 +103,7 @@ async def get_policy(
     maker = BundleMaker(
         repo,
         in_directories=set(input_paths),
-        extensions=opal_server_config.OPA_FILE_EXTENSIONS,
+        extensions=opal_server_config.FILTER_FILE_EXTENSIONS,
         root_manifest_path=opal_server_config.POLICY_REPO_MANIFEST_PATH,
         bundle_ignore=opal_server_config.BUNDLE_IGNORE,
     )

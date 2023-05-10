@@ -14,7 +14,7 @@ root_dir = os.path.abspath(
 )
 sys.path.append(root_dir)
 
-from opal_common.opa.parsing import get_rego_package
+from opal_common.engine.parsing import get_rego_package
 
 
 def test_can_extract_the_correct_package_name():

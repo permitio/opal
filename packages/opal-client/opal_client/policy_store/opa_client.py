@@ -2,12 +2,12 @@ import asyncio
 import functools
 import json
 import time
-from asyncio import StreamReader, StreamWriter
 from typing import Any, Awaitable, Callable, Dict, List, Optional, Set
 from urllib.parse import urlencode
 
 import aiohttp
 import dpath
+from aiofiles.threadpool.text import AsyncTextIOWrapper
 from fastapi import Response, status
 from opal_client.config import opal_client_config
 from opal_client.logger import logger
@@ -17,8 +17,8 @@ from opal_client.policy_store.base_policy_store_client import (
 )
 from opal_client.policy_store.schemas import PolicyStoreAuth
 from opal_client.utils import proxy_response
+from opal_common.engine.parsing import get_rego_package
 from opal_common.git.bundle_utils import BundleUtils
-from opal_common.opa.parsing import get_rego_package
 from opal_common.paths import PathUtils
 from opal_common.schemas.policy import DataModule, PolicyBundle, RegoModule
 from opal_common.schemas.store import JSONPatchAction, StoreTransaction, TransactionType
@@ -819,14 +819,14 @@ class OpaClient(BasePolicyStoreClient):
     async def is_healthy(self) -> bool:
         return self._transaction_state.healthy
 
-    async def full_export(self, writer: StreamWriter) -> None:
+    async def full_export(self, writer: AsyncTextIOWrapper) -> None:
         policies = await self.get_policies()
         data = self._policy_data_cache.get_data()
         await writer.write(
             json.dumps({"policies": policies, "data": data}, default=str)
         )
 
-    async def full_import(self, reader: StreamReader) -> None:
+    async def full_import(self, reader: AsyncTextIOWrapper) -> None:
         import_data = json.loads(await reader.read())
 
         await OpaClient._attempt_operations_with_postponed_failure_retry(

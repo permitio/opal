@@ -1,0 +1,3 @@
+[submodule "cedar-agent"]
+	path = cedar-agent
+	url = https://github.com/permitio/cedar-agent.git

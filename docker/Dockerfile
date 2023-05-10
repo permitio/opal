@@ -12,6 +12,16 @@ COPY ./packages/opal-server/requires.txt ./server_requires.txt
 # install python deps
 RUN pip install --no-cache-dir --upgrade pip && pip install --no-cache-dir -r ./base_requires.txt -r ./common_requires.txt -r ./client_requires.txt -r ./server_requires.txt
 
+# CEDAR AGENT BUILD STAGE ---------------------------
+# split this stage to save time and reduce image size
+# ---------------------------------------------------
+FROM rust:1.69.0 as cedar-builder
+COPY cedar-agent /tmp/cedar-agent/
+ARG cargo_flags="-r"
+RUN cd /tmp/cedar-agent && \
+	cargo build ${cargo_flags} && \
+	cp /tmp/cedar-agent/target/*/cedar-agent /
+
 # COMMON IMAGE --------------------------------------
 # ---------------------------------------------------
 FROM python:3.10-slim as common
@@ -70,6 +80,8 @@ RUN mkdir -p /opal/backup
 VOLUME /opal/backup
 
 
+# IMAGE to extract OPA from official image ----------
+# ---------------------------------------------------
 FROM alpine:latest as opa-extractor
 USER root
 
@@ -85,7 +97,7 @@ RUN skopeo copy "docker://${opa_image}:${opa_tag}" docker-archive:./image.tar &&
   rm -r image image.tar
 
 
-# CLIENT IMAGE --------------------------------------
+# OPA CLIENT IMAGE ----------------------------------
 # Using standalone image as base --------------------
 # ---------------------------------------------------
 FROM client-standalone as client
@@ -102,6 +114,28 @@ COPY --from=opa-extractor /opal/opa ./opa
 ENV OPAL_INLINE_OPA_ENABLED=true
 # expose opa port
 EXPOSE 8181
+USER opal
+
+# CEDAR CLIENT IMAGE --------------------------------
+# Using standalone image as base --------------------
+# ---------------------------------------------------
+FROM client-standalone as client-cedar
+
+# Temporarily move back to root for additional setup
+USER root
+
+RUN apt-get update && apt-get install -y netcat jq && apt-get clean
+
+# Copy cedar from its build stage
+COPY --from=cedar-builder /cedar-agent /bin/cedar-agent
+
+# enable inline Cedar agent
+ENV OPAL_POLICY_STORE_TYPE=CEDAR
+ENV OPAL_INLINE_CEDAR_ENABLED=true
+ENV OPAL_INLINE_CEDAR_CONFIG='{"addr": "0.0.0.0:8180"}'
+ENV OPAL_POLICY_STORE_URL=http://localhost:8180
+# expose cedar port
+EXPOSE 8180
 USER opal
 
 # SERVER IMAGE --------------------------------------

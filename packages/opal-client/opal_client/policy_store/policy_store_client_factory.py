@@ -106,6 +106,8 @@ class PolicyStoreClientFactory:
             else opal_client_config.DATA_UPDATER_ENABLED
         )
 
+        res: Optional[BasePolicyStoreClient] = None
+
         # OPA
         if PolicyStoreTypes.OPA == store_type:
             from opal_client.policy_store.opa_client import OpaClient
@@ -120,6 +122,14 @@ class PolicyStoreClientFactory:
                 data_updater_enabled=data_updater_enabled,
                 cache_policy_data=offline_mode_enabled,
             )
+        elif PolicyStoreTypes.CEDAR == store_type:
+            from opal_client.policy_store.cedar_client import CedarClient
+
+            res = CedarClient(
+                url,
+                cedar_auth_token=store_token,
+                auth_type=auth_type,
+            )
         # MOCK
         elif PolicyStoreTypes.MOCK == store_type:
             from opal_client.policy_store.mock_policy_store_client import (
@@ -127,10 +137,12 @@ class PolicyStoreClientFactory:
             )
 
             res = MockPolicyStoreClient()
-        else:
+
+        if res is None:
             raise InvalidPolicyStoreTypeException(
                 f"{store_type} is not a valid policy store type"
             )
+
         # save to cache
         if save_to_cache:
             cls.CACHE[cls.get_cache_key(store_type, url)] = res

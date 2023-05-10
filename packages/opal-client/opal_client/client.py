@@ -4,7 +4,7 @@ import os
 import signal
 import uuid
 from logging import disable
-from typing import List, Optional
+from typing import Awaitable, Callable, List, Literal, Optional, Union
 
 import aiofiles
 import aiofiles.os
@@ -18,9 +18,9 @@ from opal_client.config import PolicyStoreTypes, opal_client_config
 from opal_client.data.api import init_data_router
 from opal_client.data.fetcher import DataFetcher
 from opal_client.data.updater import DataUpdater
+from opal_client.engine.options import CedarServerOptions, OpaServerOptions
+from opal_client.engine.runner import CedarRunner, OpaRunner
 from opal_client.limiter import StartupLoadLimiter
-from opal_client.opa.options import OpaServerOptions
-from opal_client.opa.runner import OpaRunner
 from opal_client.policy.api import init_policy_router
 from opal_client.policy.updater import PolicyUpdater
 from opal_client.policy_store.api import init_policy_store_router
@@ -46,6 +46,8 @@ class OpalClient:
         policy_updater: PolicyUpdater = None,
         inline_opa_enabled: bool = None,
         inline_opa_options: OpaServerOptions = None,
+        inline_cedar_enabled: bool = None,
+        inline_cedar_options: CedarServerOptions = None,
         verifier: Optional[JWTVerifier] = None,
         store_backup_path: Optional[str] = None,
         store_backup_interval: Optional[int] = None,
@@ -67,8 +69,8 @@ class OpalClient:
         inline_opa_enabled: bool = (
             inline_opa_enabled or opal_client_config.INLINE_OPA_ENABLED
         )
-        inline_opa_options: OpaServerOptions = (
-            inline_opa_options or opal_client_config.INLINE_OPA_CONFIG
+        inline_cedar_enabled: bool = (
+            inline_cedar_enabled or opal_client_config.INLINE_CEDAR_ENABLED
         )
         opal_client_identifier: str = (
             opal_client_config.OPAL_CLIENT_STAT_ID or f"CLIENT_{uuid.uuid4().hex}"
@@ -140,29 +142,12 @@ class OpalClient:
 
         # Internal services
         # Policy store
-        if self.policy_store_type == PolicyStoreTypes.OPA and inline_opa_enabled:
-            rehydration_callbacks = [
-                # refetches policy code (e.g: rego) and static data from server
-                functools.partial(
-                    self.policy_updater.update_policy, force_full_update=True
-                ),
-            ]
-
-            if self.data_updater:
-                rehydration_callbacks.append(
-                    functools.partial(
-                        self.data_updater.get_base_policy_data,
-                        data_fetch_reason="policy store rehydration",
-                    )
-                )
-
-            self.opa_runner = OpaRunner.setup_opa_runner(
-                options=inline_opa_options,
-                piped_logs_format=opal_client_config.INLINE_OPA_LOG_FORMAT,
-                rehydration_callbacks=rehydration_callbacks,
-            )
-        else:
-            self.opa_runner = False
+        self.engine_runner = self._init_engine_runner(
+            inline_opa_enabled,
+            inline_cedar_enabled,
+            inline_opa_options,
+            inline_cedar_options,
+        )
 
         custom_ssl_context = get_custom_ssl_context()
         if (
@@ -196,6 +181,49 @@ class OpalClient:
 
         # init fastapi app
         self.app: FastAPI = self._init_fast_api_app()
+
+    def _init_engine_runner(
+        self,
+        inline_opa_enabled: bool,
+        inline_cedar_enabled: bool,
+        inline_opa_options: Optional[OpaServerOptions] = None,
+        inline_cedar_options: Optional[CedarServerOptions] = None,
+    ) -> Union[OpaRunner, CedarRunner, Literal[False]]:
+        if inline_opa_enabled and self.policy_store_type == PolicyStoreTypes.OPA:
+            inline_opa_options = (
+                inline_opa_options or opal_client_config.INLINE_OPA_CONFIG
+            )
+            rehydration_callbacks = [
+                # refetches policy code (e.g: rego) and static data from server
+                functools.partial(
+                    self.policy_updater.update_policy, force_full_update=True
+                ),
+            ]
+
+            if self.data_updater:
+                rehydration_callbacks.append(
+                    functools.partial(
+                        self.data_updater.get_base_policy_data,
+                        data_fetch_reason="policy store rehydration",
+                    )
+                )
+
+            return OpaRunner.setup_opa_runner(
+                options=inline_opa_options,
+                piped_logs_format=opal_client_config.INLINE_OPA_LOG_FORMAT,
+                rehydration_callbacks=rehydration_callbacks,
+            )
+
+        elif inline_cedar_enabled and self.policy_store_type == PolicyStoreTypes.CEDAR:
+            inline_cedar_options = (
+                inline_cedar_options or opal_client_config.INLINE_CEDAR_CONFIG
+            )
+            return CedarRunner.setup_cedar_runner(
+                options=inline_cedar_options,
+                piped_logs_format=opal_client_config.INLINE_CEDAR_LOG_FORMAT,
+            )
+
+        return False
 
     def _init_fast_api_app(self):
         """inits the fastapi app object."""
@@ -286,6 +314,20 @@ class OpalClient:
 
         return app
 
+    async def _run_or_delay_for_engine_runner(
+        self, callback: Callable[[], Awaitable[None]]
+    ):
+        if self.engine_runner:
+            # runs the callback after policy store is up
+            self.engine_runner.register_process_initial_start_callbacks([callback])
+            async with self.engine_runner:
+                await self.engine_runner.wait_until_done()
+            return
+
+        # we do not run the policy store in the same container
+        # therefore we can immediately run the callback
+        await callback()
+
     async def start_client_background_tasks(self):
         """Launch OPAL client long-running tasks:
 
@@ -298,25 +340,17 @@ class OpalClient:
         if self._startup_wait:
             await self._startup_wait()
 
-        if self.opa_runner:
-            # runs the policy store dependent tasks after policy store is up
-            self.opa_runner.register_opa_initial_start_callbacks(
-                [self.launch_policy_store_dependent_tasks]
-            )
-            async with self.opa_runner:
-                await self.opa_runner.wait_until_done()
-        else:
-            # we do not run the policy store in the same container
-            # therefore we can immediately launch dependent tasks
-            await self.launch_policy_store_dependent_tasks()
+        await self._run_or_delay_for_engine_runner(
+            self.launch_policy_store_dependent_tasks
+        )
 
     async def stop_client_background_tasks(self):
         """stops all background tasks (called on shutdown event)"""
         logger.info("stopping background tasks...")
 
         # stopping opa runner
-        if self.opa_runner:
-            await self.opa_runner.stop()
+        if self.engine_runner:
+            await self.engine_runner.stop()
 
         # stopping updater tasks (each updater runs a pub/sub client)
         logger.info("trying to shutdown DataUpdater and PolicyUpdater gracefully...")

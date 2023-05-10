@@ -1,11 +1,11 @@
 import json
 import uuid
-from asyncio import StreamReader, StreamWriter
 from datetime import datetime
 from functools import partial
 from inspect import signature
 from typing import Any, Dict, List, Optional, Union
 
+from aiofiles.threadpool.text import AsyncTextIOWrapper
 from opal_client.config import opal_client_config
 from opal_client.logger import logger
 from opal_common.schemas.data import JsonableValue
@@ -67,10 +67,10 @@ class AbstractPolicyStore:
     async def is_healthy(self) -> bool:
         raise NotImplementedError()
 
-    async def full_export(self, writer: StreamWriter) -> None:
+    async def full_export(self, writer: AsyncTextIOWrapper) -> None:
         raise NotImplementedError()
 
-    async def full_import(self, reader: StreamReader) -> None:
+    async def full_import(self, reader: AsyncTextIOWrapper) -> None:
         raise NotImplementedError()
 
 

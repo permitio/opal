@@ -115,7 +115,7 @@ async with policy_store.transaction_context(update.id) as store_transaction:
   await store_transaction.set_policy_data(policy_data, path=policy_store_path)
 ```
 
-Every time a transaction [is ended](https://github.com/permitio/opal/blob/master/packages/opal-client/opal_client/policy_store/base_policy_store_client.py#L116) it is saved into OPA, by rendering the state of `OpaTransactionLogState` using the [healthcheck policy template](https://github.com/permitio/opal/blob/master/packages/opal-client/opal_client/opa/healthcheck/opal.rego).
+Every time a transaction [is ended](https://github.com/permitio/opal/blob/master/packages/opal-client/opal_client/policy_store/base_policy_store_client.py#L116) it is saved into OPA, by rendering the state of `OpaTransactionLogState` using the [healthcheck policy template](https://github.com/permitio/opal/blob/master/packages/opal-client/opal_client/engine/healthcheck/opal.rego).
 
 ## <a name="callbacks"></a> Data update callbacks
 
