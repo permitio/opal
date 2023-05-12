@@ -18,25 +18,30 @@ OPAL supercharges OPA to meet the pace of live applications, where the state rel
 - OPAL aggregates policy and data from across the field and integrates them seamlessly into the authorization layer.
 - OPAL is microservices and cloud-native (see [Key concepts and design](../overview/design))
 
-### Why OPA + OPAL == 💪 💜
+### Why OPA + OPAL == 💜
 
 OPA (Open Policy Agent) is great! It decouples policy from code in a highly-performant and elegant way. But the challenge of keeping policy agents up-to-date is hard - especially in applications - where each user interaction or API call may affect access-control decisions.
 OPAL runs in the background, supercharging policy-agents, keeping them in sync with events in realtime.
+
+## AWS Cedar + OPAL == 💪
+
+Cedar is a very powerful policy language, which powers AWS' AVP (Amazon Verified Permissions) - but what if you want to enjoy the power of Cedar on another cloud, locally, or on premise?
+This is where [Cedar-Agent](https://github.com/permitio/cedar-agent) and OPAL come in.
 
 ### What OPAL _is not_
 
 #### OPAL is not a Policy Engine:
 
-- OPAL uses a policy-engine, but isn't one itself
-- Check out <a href="https://www.openpolicyagent.org/" target="_blank">Open-Policy-Agent</a>, and <a href="https://www.osohq.com/" target="_blank">OSO</a>
+- OPAL uses policy-engines, but isn't one itself -
+- Check out <a href="https://github.com/permitio/cedar-agent" target="_blank">Cedar-Agent</a>, <a href="https://www.openpolicyagent.org/" target="_blank">Open-Policy-Agent</a>, and <a href="https://www.osohq.com/" target="_blank">OSO</a>
 
 #### OPAL is not a large scale global fine-grained authorization:
 
 - Currently OPAL is not meant for managing ridiculous (>100GB) amounts of data within one layer. Though it can complement a CDN to achieve a similar result - see [Key concepts and design](../overview/design#large-scale-fga).
 - Check out <a href="https://research.google/pubs/pub48190/" target="_blank">Google-Zanzibar</a>
 
-- Fullstack authorization:
+- Fullstack permissions:
 
-  - OPAL and OPA essentially provide microservices for authorization
+  - OPAL + policy-agent essentially provide microservices for authorization
   - Developers still need to add control interfaces on top (e.g. user-management, api-key-management, audit, impersonation, invites) both as APIs and UIs
   - Check out <a href="https://permit.io" target="_blank">Permit.io</a>

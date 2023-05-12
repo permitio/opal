@@ -4,10 +4,10 @@ slug: /
 title: Welcome to OPAL 👋
 ---
 
-**OPAL** stands for **Open Policy Administration Layer**. OPAL is a layer for the **Open Policy Agent (OPA)**, allowing us to detect changes
+**OPAL** stands for **Open Policy Administration Layer**. OPAL is an administration layer for Policy Engines such as <a target="_blank" href="https://www.openpolicyagent.org/">Open Policy Agent (OPA)</a>, and <a target="_blank" href="https://github.com/permitio/cedar-agent">AWS' Cedar Agent</a>, allowing us to detect changes
 made to our policies and data, and thus pushing live real-time updates to your agents.
 
-OPAL is designed to work with **live applications**, and bring open-policy to a real-time speed. As updates are pushed to application
+OPAL is designed to work with **live applications**, and bring policy to a real-time speed. As updates are pushed to application
 stores - this could be your Git, your databases, SaaS services and so on - **OPAL will make sure the services are always in sync**
 with the authorization data and policy they need, and more importantly, **only** the services that they need.
 
@@ -28,11 +28,18 @@ With the advanced OPAL setup, there are two options you can choose:
 1. Running **[OPAL as Docker Images](/getting-started/running-opal/overview)**
 2. Running **[OPAL as Python Packages](/getting-started/running-opal/as-python-package/overview)**
 
+### Using AWS Cedar
+
+Many of the docs use OPA as the main example agent, but OPAL works as smoothly with AWS Cedar.
+
+- Check out this [OPAL-Cedar Tutorial](/tutorials/cedar) to get started with OPAL and AWS' Cedar.
+- Learn more about [Cedar Agent here](https://github.com/permitio/cedar-agent), and the [Cedar Policy](https://www.cedarpolicy.com/) language here.
+
 :::
 
 ### Need help?
 
-We are always eager to talk to fellow developers, and we'd be happy to help with anything regarding **OPA & OPAL**, **Permit.io** and the **IAM flow** in general.
+We are always eager to talk to fellow developers, and we'd be happy to help with anything regarding **OPA, Cedar, OPAL**, **Permit.io** and the **IAM flow** in general.
 
 #### 💬 Slack Community
 
@@ -47,6 +54,7 @@ You're welcome to join the conversation, open **issues (bug reports, feature req
 - **[OPAL](https://github.com/permitio/opal)**
 - **[Permit.io](https://github.com/permitio)**
 - **[OPToggles](https://github.com/permitio/OPToggles)**
+- **[Cedar Agent](https://github.com/permitio/cedar-agent)**
 
 #### 📧 Email & Zoom
 
