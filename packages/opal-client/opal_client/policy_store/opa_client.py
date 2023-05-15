@@ -347,8 +347,8 @@ class OpaClient(BasePolicyStoreClient):
 
         logger.info(f"Authentication mode for policy store: {auth_type}")
 
-        # custom SSL context (for mutual tls)
-        self._custom_ssl_context = self._get_mutual_ssl_context()
+        # custom SSL context
+        self._custom_ssl_context = self._get_custom_ssl_context()
         self._ssl_context_kwargs = (
             {"ssl": self._custom_ssl_context}
             if self._custom_ssl_context is not None
@@ -363,21 +363,17 @@ class OpaClient(BasePolicyStoreClient):
         if cache_policy_data:
             self._policy_data_cache = OpaStaticDataCache()
 
-    def _get_mutual_ssl_context(self) -> Optional[ssl.SSLContext]:
+    def _get_custom_ssl_context(self) -> Optional[ssl.SSLContext]:
 
         if not self._tls_ca:
             return None
 
-        if not self._tls_client_key:
-            return None
-
-        if not self._tls_client_cert:
-            return None
-
         ssl_context = ssl.create_default_context(purpose=ssl.Purpose.SERVER_AUTH,
                                                  cafile=self._tls_ca)
-        ssl_context.load_cert_chain(
-            certfile=self._tls_client_cert, keyfile=self._tls_client_key)
+
+        if self._tls_client_key and self._tls_client_cert:
+            ssl_context.load_cert_chain(certfile=self._tls_client_cert,
+                                        keyfile=self._tls_client_key)
 
         return ssl_context
 
@@ -787,37 +783,6 @@ class OpaClient(BasePolicyStoreClient):
                     if self._policy_data_cache:
                         self._policy_data_cache.delete(path)
                     return response
-            except aiohttp.ClientError as e:
-                logger.warning("Opa connection error: {err}", err=repr(e))
-                raise
-
-    @affects_transaction
-    async def patch_data(
-        self,
-        path: str,
-        patch_document: JSONPatchDocument,
-        transaction_id: Optional[str] = None,
-    ):
-        path = self._safe_data_module_path(path)
-        # a patch document is a list of actions
-        # we render each action with pydantic, and then dump the doc into json
-        json_document = json.dumps([action.dict()
-                                   for action in patch_document])
-
-        async with aiohttp.ClientSession() as session:
-            try:
-                headers = await self._get_auth_headers()
-
-                async with session.patch(
-                    f"{self._opa_url}/data{path}",
-                    data=json_document,
-                    headers=headers,
-                    **self._ssl_context_kwargs,
-                ) as opa_response:
-                    return await proxy_response_unless_invalid(
-                        opa_response,
-                        accepted_status_codes=[status.HTTP_204_NO_CONTENT],
-                    )
             except aiohttp.ClientError as e:
                 logger.warning("Opa connection error: {err}", err=repr(e))
                 raise
