@@ -77,7 +77,7 @@ services:
       - "7002:7002"
     depends_on:
       - kafka_broadcast_channel
-    command: sh -c "exec /usr/wait-for.sh kafka:9092 --timeout=30 -- /start.sh"
+    command: sh -c "exec /usr/wait-for.sh kafka:9092 --timeout=60 -- /start.sh"
 
   opal_client:
     # by default we run opal-client from latest official image

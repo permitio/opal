@@ -142,7 +142,7 @@ USER opal
 # ---------------------------------------------------
 FROM common as server
 
-RUN apt-get update && apt-get install -y openssh-client git curl jq && apt-get clean
+RUN apt-get update && apt-get install -y openssh-client git curl jq netcat && apt-get clean
 
 USER opal
 
