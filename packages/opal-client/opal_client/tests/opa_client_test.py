@@ -1,6 +1,6 @@
 import functools
-import random
 import os
+import random
 
 import pytest
 from fastapi import Response, status
@@ -25,20 +25,22 @@ def parse_nested_tuple(tuple, key):
     p = [parse_nested_tuple(item, key) for item in tuple]
     return p[1]
 
+
 def test_constuctor_should_panic_tls_configured_without_all_parts():
     with pytest.raises(Exception, match="required variables for tls are not set"):
         OpaClient(
-                "http://example.com",
-                opa_auth_token=None,
-                auth_type=PolicyStoreAuth.TLS,
-                oauth_client_id=None,
-                oauth_client_secret=None,
-                oauth_server=None,
-                data_updater_enabled=None,
-                tls_client_cert=None,
-                tls_client_key=None,
-                tls_ca=None
-            )
+            "http://example.com",
+            opa_auth_token=None,
+            auth_type=PolicyStoreAuth.TLS,
+            oauth_client_id=None,
+            oauth_client_secret=None,
+            oauth_server=None,
+            data_updater_enabled=None,
+            tls_client_cert=None,
+            tls_client_key=None,
+            tls_ca=None,
+        )
+
 
 def test_constructor_should_set_up_ca_certificate_even_without_tls_auth_type(tmpdir):
 
@@ -47,19 +49,19 @@ def test_constructor_should_set_up_ca_certificate_even_without_tls_auth_type(tmp
         ca.write(TEST_CA_CERT)
 
     c = OpaClient(
-                "http://example.com",
-                opa_auth_token=None,
-                auth_type=PolicyStoreAuth.NONE,
-                oauth_client_id=None,
-                oauth_client_secret=None,
-                oauth_server=None,
-                data_updater_enabled=None,
-                tls_client_cert=None,
-                tls_client_key=None,
-                tls_ca=ca_path
-            )
+        "http://example.com",
+        opa_auth_token=None,
+        auth_type=PolicyStoreAuth.NONE,
+        oauth_client_id=None,
+        oauth_client_secret=None,
+        oauth_server=None,
+        data_updater_enabled=None,
+        tls_client_cert=None,
+        tls_client_key=None,
+        tls_ca=ca_path,
+    )
     assert c._custom_ssl_context != None
-    certs = c._custom_ssl_context.get_ca_certs(binary_form= False)
+    certs = c._custom_ssl_context.get_ca_certs(binary_form=False)
     assert len(certs) == 1
 
 

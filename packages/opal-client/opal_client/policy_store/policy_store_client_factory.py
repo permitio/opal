@@ -73,7 +73,7 @@ class PolicyStoreClientFactory:
         offline_mode_enabled: bool = False,
         tls_client_cert: Optional[str] = None,
         tls_client_key: Optional[str] = None,
-        tls_ca: Optional[str] = None
+        tls_ca: Optional[str] = None,
     ) -> BasePolicyStoreClient:
         """
         Factory method - create a new policy store by type.
@@ -111,19 +111,14 @@ class PolicyStoreClientFactory:
 
         res: Optional[BasePolicyStoreClient] = None
         tls_client_cert = (
-            tls_client_cert
-            or opal_client_config.POLICY_STORE_TLS_CLIENT_CERT
+            tls_client_cert or opal_client_config.POLICY_STORE_TLS_CLIENT_CERT
         )
 
         tls_client_key = (
-            tls_client_key
-            or opal_client_config.POLICY_STORE_TLS_CLIENT_KEY
+            tls_client_key or opal_client_config.POLICY_STORE_TLS_CLIENT_KEY
         )
 
-        tls_ca = (
-            tls_ca
-            or opal_client_config.POLICY_STORE_TLS_CA
-        )
+        tls_ca = tls_ca or opal_client_config.POLICY_STORE_TLS_CA
 
         # OPA
         if PolicyStoreTypes.OPA == store_type:
@@ -140,7 +135,7 @@ class PolicyStoreClientFactory:
                 cache_policy_data=offline_mode_enabled,
                 tls_client_cert=tls_client_cert,
                 tls_client_key=tls_client_key,
-                tls_ca=tls_ca
+                tls_ca=tls_ca,
             )
         elif PolicyStoreTypes.CEDAR == store_type:
             from opal_client.policy_store.cedar_client import CedarClient

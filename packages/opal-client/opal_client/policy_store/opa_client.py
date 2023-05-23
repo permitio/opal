@@ -1,8 +1,8 @@
 import asyncio
 import functools
 import json
-import time
 import ssl
+import time
 from typing import Any, Awaitable, Callable, Dict, List, Optional, Set
 from urllib.parse import urlencode
 
@@ -287,7 +287,7 @@ class OpaClient(BasePolicyStoreClient):
         cache_policy_data: bool = False,
         tls_client_cert: Optional[str] = None,
         tls_client_key: Optional[str] = None,
-        tls_ca: Optional[str] = None
+        tls_ca: Optional[str] = None,
     ):
         base_url = opa_server_url or opal_client_config.POLICY_STORE_URL
         self._opa_url = f"{base_url}/v1"
@@ -306,20 +306,17 @@ class OpaClient(BasePolicyStoreClient):
         if auth_type == PolicyStoreAuth.TOKEN:
             if self._token is None:
                 logger.error("POLICY_STORE_AUTH_TOKEN can not be empty")
-                raise Exception(
-                    "required variables for token auth are not set")
+                raise Exception("required variables for token auth are not set")
 
         if auth_type == PolicyStoreAuth.OAUTH:
             isError = False
             if self._oauth_client_id is None:
                 isError = True
-                logger.error(
-                    "POLICY_STORE_AUTH_OAUTH_CLIENT_ID can not be empty")
+                logger.error("POLICY_STORE_AUTH_OAUTH_CLIENT_ID can not be empty")
 
             if self._oauth_client_secret is None:
                 isError = True
-                logger.error(
-                    "POLICY_STORE_AUTH_OAUTH_CLIENT_SECRET can not be empty")
+                logger.error("POLICY_STORE_AUTH_OAUTH_CLIENT_SECRET can not be empty")
 
             if self._oauth_server is None:
                 isError = True
@@ -368,12 +365,14 @@ class OpaClient(BasePolicyStoreClient):
         if not self._tls_ca:
             return None
 
-        ssl_context = ssl.create_default_context(purpose=ssl.Purpose.SERVER_AUTH,
-                                                 cafile=self._tls_ca)
+        ssl_context = ssl.create_default_context(
+            purpose=ssl.Purpose.SERVER_AUTH, cafile=self._tls_ca
+        )
 
         if self._tls_client_key and self._tls_client_cert:
-            ssl_context.load_cert_chain(certfile=self._tls_client_cert,
-                                        keyfile=self._tls_client_key)
+            ssl_context.load_cert_chain(
+                certfile=self._tls_client_cert, keyfile=self._tls_client_key
+            )
 
         return ssl_context
 
@@ -410,8 +409,7 @@ class OpaClient(BasePolicyStoreClient):
                         "token": response["access_token"],
                     }
             except aiohttp.ClientError as e:
-                logger.warning(
-                    "OAuth server connection error: {err}", err=repr(e))
+                logger.warning("OAuth server connection error: {err}", err=repr(e))
                 raise
 
     async def _get_auth_headers(self) -> {}:
@@ -479,7 +477,8 @@ class OpaClient(BasePolicyStoreClient):
                 headers = await self._get_auth_headers()
 
                 async with session.get(
-                    f"{self._opa_url}/policies/{policy_id}", headers=headers,
+                    f"{self._opa_url}/policies/{policy_id}",
+                    headers=headers,
                     **self._ssl_context_kwargs,
                 ) as opa_response:
                     result = await opa_response.json()
@@ -496,7 +495,8 @@ class OpaClient(BasePolicyStoreClient):
                 headers = await self._get_auth_headers()
 
                 async with session.get(
-                    f"{self._opa_url}/policies", headers=headers,
+                    f"{self._opa_url}/policies",
+                    headers=headers,
                     **self._ssl_context_kwargs,
                 ) as opa_response:
                     result = await opa_response.json()
@@ -522,7 +522,8 @@ class OpaClient(BasePolicyStoreClient):
                 headers = await self._get_auth_headers()
 
                 async with session.delete(
-                    f"{self._opa_url}/policies/{policy_id}", headers=headers,
+                    f"{self._opa_url}/policies/{policy_id}",
+                    headers=headers,
                     **self._ssl_context_kwargs,
                 ) as opa_response:
                     return await proxy_response_unless_invalid(
@@ -612,8 +613,7 @@ class OpaClient(BasePolicyStoreClient):
                 for failure_msg in failure_msgs:
                     logger.error(failure_msg)
 
-                raise RuntimeError(
-                    "Giving up setting / deleting failed modules to OPA")
+                raise RuntimeError("Giving up setting / deleting failed modules to OPA")
 
             ops = failed_ops  # retry failed ops
 
@@ -770,7 +770,8 @@ class OpaClient(BasePolicyStoreClient):
                 headers = await self._get_auth_headers()
 
                 async with session.delete(
-                    f"{self._opa_url}/data{path}", headers=headers,
+                    f"{self._opa_url}/data{path}",
+                    headers=headers,
                     **self._ssl_context_kwargs,
                 ) as opa_response:
                     response = await proxy_response_unless_invalid(
@@ -804,7 +805,8 @@ class OpaClient(BasePolicyStoreClient):
 
             async with aiohttp.ClientSession() as session:
                 async with session.get(
-                    f"{self._opa_url}/data{path}", headers=headers,
+                    f"{self._opa_url}/data{path}",
+                    headers=headers,
                     **self._ssl_context_kwargs,
                 ) as opa_response:
                     json_response = await opa_response.json()
@@ -892,8 +894,7 @@ class OpaClient(BasePolicyStoreClient):
 
         await OpaClient._attempt_operations_with_postponed_failure_retry(
             [
-                functools.partial(
-                    self.set_policy, policy_id=id, policy_code=raw)
+                functools.partial(self.set_policy, policy_id=id, policy_code=raw)
                 for id, raw in import_data["policies"].items()
             ]
         )
