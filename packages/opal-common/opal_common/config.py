@@ -1,163 +1,140 @@
 from pathlib import Path
-from sys import prefix
 
-from opal_common.authentication.types import EncryptionKeyFormat, JWTAlgorithm
-
-from .confi import Confi, confi
+from opal_common.authentication.casting import cast_public_key
+from opal_common.authentication.types import (
+    EncryptionKeyFormat,
+    JWTAlgorithm,
+    PublicKey,
+)
+from pydantic import BaseSettings, Field, validator
 
 _LOG_FORMAT_WITHOUT_PID = "<green>{time}</green> | <blue>{name: <40}</blue>|<level>{level:^6} | {message}</level>\n{exception}"
 _LOG_FORMAT_WITH_PID = "<green>{time}</green> | {process} | <blue>{name: <40}</blue>|<level>{level:^6} | {message}</level>\n{exception}"
 
 
-class OpalCommonConfig(Confi):
-    ALLOWED_ORIGINS = confi.list(
-        "ALLOWED_ORIGINS", ["*"], description="List of allowed origins for CORS"
-    )
+class OpalCommonConfig(BaseSettings):
+    class Config:
+        env_prefix = "OPAL_"
+
+    ALLOWED_ORIGINS: list = Field(["*"], description="List of allowed origins for CORS")
     # Process name to show in logs - Not confi-controlable on purpose
     PROCESS_NAME = ""
     # Logging
     # - Log formatting
-    LOG_FORMAT_INCLUDE_PID = confi.bool("LOG_FORMAT_INCLUDE_PID", False)
-    LOG_FORMAT = confi.str(
-        "LOG_FORMAT",
-        confi.delay(
-            lambda LOG_FORMAT_INCLUDE_PID=False: _LOG_FORMAT_WITH_PID
-            if LOG_FORMAT_INCLUDE_PID
-            else _LOG_FORMAT_WITHOUT_PID
-        ),
+    LOG_FORMAT_INCLUDE_PID: bool = False
+    LOG_FORMAT: str = Field(
+        None,
         description="The format of the log messages",
     )
-    LOG_TRACEBACK = confi.bool(
-        "LOG_TRACEBACK", True, description="Include traceback in log messages"
-    )
-    LOG_DIAGNOSE = confi.bool(
-        "LOG_DIAGNOSE", True, description="Include diagnosis in log messages"
-    )
-    LOG_COLORIZE = confi.bool("LOG_COLORIZE", True, description="Colorize log messages")
-    LOG_SERIALIZE = confi.bool(
-        "LOG_SERIALIZE", False, description="Serialize log messages"
-    )
-    LOG_SHOW_CODE_LINE = confi.bool(
-        "LOG_SHOW_CODE_LINE", True, description="Show code line in log messages"
-    )
+
+    @validator("LOG_FORMAT", pre=True)
+    def log_format(cls, v, values):
+        if v is None:
+            return (
+                _LOG_FORMAT_WITH_PID
+                if values["LOG_FORMAT_INCLUDE_PID"]
+                else _LOG_FORMAT_WITHOUT_PID
+            )
+        return v
+
+    LOG_TRACEBACK: bool = Field(True, description="Include traceback in log messages")
+    LOG_DIAGNOSE: bool = Field(True, description="Include diagnosis in log messages")
+    LOG_COLORIZE: bool = Field(True, description="Colorize log messages")
+    LOG_SERIALIZE: bool = Field(False, description="Serialize log messages")
+    LOG_SHOW_CODE_LINE: bool = Field(True, description="Show code line in log messages")
     #  - log level
-    LOG_LEVEL = confi.str("LOG_LEVEL", "INFO", description="The log level to show")
+    LOG_LEVEL: str = Field("INFO", description="The log level to show")
     #  - Which modules should be logged
-    LOG_MODULE_EXCLUDE_LIST = confi.list(
-        "LOG_MODULE_EXCLUDE_LIST",
+    LOG_MODULE_EXCLUDE_LIST: list = Field(
         [
             "uvicorn",
             # NOTE: the env var LOG_MODULE_EXCLUDE_OPA affects this list
         ],
         description="List of modules to exclude from logging",
     )
-    LOG_MODULE_INCLUDE_LIST = confi.list(
-        "LOG_MODULE_INCLUDE_LIST",
+    LOG_MODULE_INCLUDE_LIST: list = Field(
         ["uvicorn.protocols.http"],
         description="List of modules to include in logging",
     )
-    LOG_PATCH_UVICORN_LOGS = confi.bool(
-        "LOG_PATCH_UVICORN_LOGS",
+    LOG_PATCH_UVICORN_LOGS: bool = Field(
         True,
         description="Should we takeover UVICORN's logs so they appear in the main logger",
     )
     # - Log to file as well ( @see https://github.com/Delgan/loguru#easier-file-logging-with-rotation--retention--compression)
-    LOG_TO_FILE = confi.bool(
-        "LOG_TO_FILE", False, description="Should we log to a file"
-    )
-    LOG_FILE_PATH = confi.str(
-        "LOG_FILE_PATH",
+    LOG_TO_FILE: bool = Field(False, description="Should we log to a file")
+    LOG_FILE_PATH: str = Field(
         f"opal_{PROCESS_NAME}{{time}}.log",
         description="path to save log file",
     )
-    LOG_FILE_ROTATION = confi.str(
-        "LOG_FILE_ROTATION", "250 MB", description="Log file rotation size"
-    )
-    LOG_FILE_RETENTION = confi.str(
-        "LOG_FILE_RETENTION", "10 days", description="Log file retention time"
-    )
-    LOG_FILE_COMPRESSION = confi.str(
-        "LOG_FILE_COMPRESSION", None, description="Log file compression format"
-    )
-    LOG_FILE_SERIALIZE = confi.str(
-        "LOG_FILE_SERIALIZE", True, description="Serialize log messages in file"
-    )
-    LOG_FILE_LEVEL = confi.str(
-        "LOG_FILE_LEVEL", "INFO", description="The log level to show in file"
-    )
+    LOG_FILE_ROTATION: str = Field("250 MB", description="Log file rotation size")
+    LOG_FILE_RETENTION: str = Field("10 days", description="Log file retention time")
+    LOG_FILE_COMPRESSION: str = Field(None, description="Log file compression format")
+    LOG_FILE_SERIALIZE: str = Field(True, description="Serialize log messages in file")
+    LOG_FILE_LEVEL: str = Field("INFO", description="The log level to show in file")
 
-    STATISTICS_ENABLED = confi.bool(
-        "STATISTICS_ENABLED",
+    STATISTICS_ENABLED: bool = Field(
         False,
         description="Set if OPAL server will collect statistics about OPAL clients may cause a small performance hit",
     )
-    STATISTICS_ADD_CLIENT_CHANNEL = confi.str(
-        "STATISTICS_ADD_CLIENT_CHANNEL",
+    STATISTICS_ADD_CLIENT_CHANNEL: str = Field(
         "__opal_stats_add",
         description="The topic to update about new OPAL clients connection",
     )
-    STATISTICS_REMOVE_CLIENT_CHANNEL = confi.str(
-        "STATISTICS_REMOVE_CLIENT_CHANNEL",
+    STATISTICS_REMOVE_CLIENT_CHANNEL: str = Field(
         "__opal_stats_rm",
         description="The topic to update about OPAL clients disconnection",
     )
 
     # Fetching Providers
     # - where to load providers from
-    FETCH_PROVIDER_MODULES = confi.list(
-        "FETCH_PROVIDER_MODULES", ["opal_common.fetcher.providers"]
-    )
+    FETCH_PROVIDER_MODULES: list = ["opal_common.fetcher.providers"]
 
     # Fetching engine
     # Max number of worker tasks handling fetch events concurrently
-    FETCHING_WORKER_COUNT = confi.int("FETCHING_WORKER_COUNT", 5)
+    FETCHING_WORKER_COUNT: int = 5
     # Time in seconds to wait on the queued fetch task.
-    FETCHING_CALLBACK_TIMEOUT = confi.int("FETCHING_CALLBACK_TIMEOUT", 10)
+    FETCHING_CALLBACK_TIMEOUT: int = 10
     # Time in seconds to wait for queuing a new task (if the queue is full)
-    FETCHING_ENQUEUE_TIMEOUT = confi.int("FETCHING_ENQUEUE_TIMEOUT", 10)
+    FETCHING_ENQUEUE_TIMEOUT: int = 10
 
-    GIT_SSH_KEY_FILE = confi.str(
-        "GIT_SSH_KEY_FILE", str(Path.home() / ".ssh/opal_repo_ssh_key")
-    )
+    GIT_SSH_KEY_FILE: str = str(Path.home() / ".ssh/opal_repo_ssh_key")
 
     # Trust self signed certificates (Advanced Usage - only affects OPAL client) -----------------------------
     # DO NOT change these defaults unless you absolutely know what you are doing!
     # By default, OPAL client only trusts SSL certificates that are signed by a public recognized CA (certificate authority).
     # However, sometimes (mostly in on-prem setups or in dev environments) users setup their own self-signed certificates.
     # We allow OPAL client to trust these certificates, by changing the following config vars.
-    CLIENT_SELF_SIGNED_CERTIFICATES_ALLOWED = confi.bool(
-        "CLIENT_SELF_SIGNED_CERTIFICATES_ALLOWED",
+    CLIENT_SELF_SIGNED_CERTIFICATES_ALLOWED: bool = Field(
         False,
         description="Whether or not OPAL Client will trust HTTPs connections protected by self signed certificates. DO NOT USE THIS IN PRODUCTION!",
     )
-    CLIENT_SSL_CONTEXT_TRUSTED_CA_FILE = confi.str(
-        "CLIENT_SSL_CONTEXT_TRUSTED_CA_FILE",
+    CLIENT_SSL_CONTEXT_TRUSTED_CA_FILE: str = Field(
         None,
         description="A path to your own CA public certificate file (usually a .crt or a .pem file). Certificates signed by this issuer will be trusted by OPAL Client. DO NOT USE THIS IN PRODUCTION!",
     )
 
     # security
-    AUTH_PUBLIC_KEY_FORMAT = confi.enum(
-        "AUTH_PUBLIC_KEY_FORMAT", EncryptionKeyFormat, EncryptionKeyFormat.ssh
-    )
-    AUTH_PUBLIC_KEY = confi.delay(
-        lambda AUTH_PUBLIC_KEY_FORMAT=None: confi.public_key(
-            "AUTH_PUBLIC_KEY", default=None, key_format=AUTH_PUBLIC_KEY_FORMAT
-        )
-    )
-    AUTH_JWT_ALGORITHM = confi.enum(
-        "AUTH_JWT_ALGORITHM",
-        JWTAlgorithm,
+    AUTH_PUBLIC_KEY_FORMAT: EncryptionKeyFormat = EncryptionKeyFormat.ssh
+    AUTH_PUBLIC_KEY: PublicKey = None
+
+    @validator("AUTH_PUBLIC_KEY", pre=True)
+    def auth_publick_key(cls, v, values):
+        return cast_public_key(v, values["AUTH_PUBLIC_KEY_FORMAT"])
+
+    AUTH_JWT_ALGORITHM: JWTAlgorithm = Field(
         getattr(JWTAlgorithm, "RS256"),
         description="jwt algorithm, possible values: see: https://pyjwt.readthedocs.io/en/stable/algorithms.html",
     )
-    AUTH_JWT_AUDIENCE = confi.str("AUTH_JWT_AUDIENCE", "https://api.opal.ac/v1/")
-    AUTH_JWT_ISSUER = confi.str("AUTH_JWT_ISSUER", f"https://opal.ac/")
-    POLICY_REPO_POLICY_EXTENSIONS = confi.list(
-        "POLICY_REPO_POLICY_EXTENSIONS",
+    AUTH_JWT_AUDIENCE: str = "https://api.opal.ac/v1/"
+    AUTH_JWT_ISSUER: str = f"https://opal.ac/"
+    POLICY_REPO_POLICY_EXTENSIONS: list = Field(
         [".rego"],
         description="List of extensions to serve as policy modules",
     )
 
+    @property
+    def auth_public_key(self):
+        return cast_public_key(self.AUTH_PUBLIC_KEY, self.AUTH_PUBLIC_KEY_FORMAT)
 
-opal_common_config = OpalCommonConfig(prefix="OPAL_")
+
+opal_common_config = OpalCommonConfig()
