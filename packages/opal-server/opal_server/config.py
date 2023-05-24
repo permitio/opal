@@ -2,6 +2,7 @@ import os
 import pathlib
 from enum import Enum
 
+import yaml
 from opal_common.authentication.casting import cast_private_key
 from opal_common.authentication.types import EncryptionKeyFormat, PrivateKey
 from opal_common.schemas.data import DEFAULT_DATA_TOPIC, ServerDataSourceConfig
@@ -255,4 +256,14 @@ class OpalServerConfig(BaseSettings):
             self.SERVER_BIND_PORT = int(self.SERVER_PORT)
 
 
-opal_server_config = OpalServerConfig()
+# TODO:
+# 1. Share with client
+# 2. Should path be configurable from envars?
+# 3. What about common?
+with open("/opal/config.yaml", "r") as config_stream:
+    try:
+        config_data = yaml.safe_load(config_stream)
+        opal_server_config = OpalServerConfig.parse_obj(config_data["server"])
+    except yaml.YAMLError as exc:
+        print(exc)
+        exit(1)
