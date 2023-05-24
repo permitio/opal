@@ -1,6 +1,7 @@
 import asyncio
 import functools
 import json
+import ssl
 import time
 from typing import Any, Awaitable, Callable, Dict, List, Optional, Set
 from urllib.parse import urlencode
@@ -284,6 +285,9 @@ class OpaClient(BasePolicyStoreClient):
         oauth_server: Optional[str] = None,
         data_updater_enabled: bool = True,
         cache_policy_data: bool = False,
+        tls_client_cert: Optional[str] = None,
+        tls_client_key: Optional[str] = None,
+        tls_ca: Optional[str] = None,
     ):
         base_url = opa_server_url or opal_client_config.POLICY_STORE_URL
         self._opa_url = f"{base_url}/v1"
@@ -295,6 +299,9 @@ class OpaClient(BasePolicyStoreClient):
         self._oauth_client_secret = oauth_client_secret
         self._oauth_server = oauth_server
         self._oauth_token_cache = {"token": None, "expires": 0}
+        self._tls_client_cert = tls_client_cert
+        self._tls_client_key = tls_client_key
+        self._tls_ca = tls_ca
 
         if auth_type == PolicyStoreAuth.TOKEN:
             if self._token is None:
@@ -318,7 +325,32 @@ class OpaClient(BasePolicyStoreClient):
             if isError:
                 raise Exception("required variables for oauth are not set")
 
+        if auth_type == PolicyStoreAuth.TLS:
+            isError = False
+            if self._tls_client_cert is None:
+                isError = True
+                logger.error("POLICY_STORE_TLS_CLIENT_CERT can not be empty")
+
+            if self._tls_client_key is None:
+                isError = True
+                logger.error("POLICY_STORE_TLS_CLIENT_KEY can not be empty")
+
+            if self._tls_ca is None:
+                isError = True
+                logger.error("POLICY_STORE_TLS_CA can not be empty")
+
+            if isError:
+                raise Exception("required variables for tls are not set")
+
         logger.info(f"Authentication mode for policy store: {auth_type}")
+
+        # custom SSL context
+        self._custom_ssl_context = self._get_custom_ssl_context()
+        self._ssl_context_kwargs = (
+            {"ssl": self._custom_ssl_context}
+            if self._custom_ssl_context is not None
+            else {}
+        )
 
         self._transaction_state = OpaTransactionLogState(data_updater_enabled)
         # as long as this is null, persisting transaction log to OPA is disabled
@@ -327,6 +359,22 @@ class OpaClient(BasePolicyStoreClient):
         self._policy_data_cache: Optional[OpaStaticDataCache] = None
         if cache_policy_data:
             self._policy_data_cache = OpaStaticDataCache()
+
+    def _get_custom_ssl_context(self) -> Optional[ssl.SSLContext]:
+
+        if not self._tls_ca:
+            return None
+
+        ssl_context = ssl.create_default_context(
+            purpose=ssl.Purpose.SERVER_AUTH, cafile=self._tls_ca
+        )
+
+        if self._tls_client_key and self._tls_client_cert:
+            ssl_context.load_cert_chain(
+                certfile=self._tls_client_cert, keyfile=self._tls_client_key
+            )
+
+        return ssl_context
 
     async def get_policy_version(self) -> Optional[str]:
         return self._policy_version
@@ -407,12 +455,14 @@ class OpaClient(BasePolicyStoreClient):
                     f"{self._opa_url}/policies/{policy_id}",
                     data=policy_code,
                     headers={"content-type": "text/plain", **headers},
+                    **self._ssl_context_kwargs,
                 ) as opa_response:
                     return await proxy_response_unless_invalid(
                         opa_response,
                         accepted_status_codes=[
                             status.HTTP_200_OK,
-                            status.HTTP_400_BAD_REQUEST,  # No point in immediate retry, this means erroneous rego (bad syntax, duplicated definition, etc)
+                            # No point in immediate retry, this means erroneous rego (bad syntax, duplicated definition, etc)
+                            status.HTTP_400_BAD_REQUEST,
                         ],
                     )
             except aiohttp.ClientError as e:
@@ -427,7 +477,9 @@ class OpaClient(BasePolicyStoreClient):
                 headers = await self._get_auth_headers()
 
                 async with session.get(
-                    f"{self._opa_url}/policies/{policy_id}", headers=headers
+                    f"{self._opa_url}/policies/{policy_id}",
+                    headers=headers,
+                    **self._ssl_context_kwargs,
                 ) as opa_response:
                     result = await opa_response.json()
                     return result.get("result", {}).get("raw", None)
@@ -443,7 +495,9 @@ class OpaClient(BasePolicyStoreClient):
                 headers = await self._get_auth_headers()
 
                 async with session.get(
-                    f"{self._opa_url}/policies", headers=headers
+                    f"{self._opa_url}/policies",
+                    headers=headers,
+                    **self._ssl_context_kwargs,
                 ) as opa_response:
                     result = await opa_response.json()
                     return OpaClient._extract_modules_from_policies_json(result)
@@ -468,7 +522,9 @@ class OpaClient(BasePolicyStoreClient):
                 headers = await self._get_auth_headers()
 
                 async with session.delete(
-                    f"{self._opa_url}/policies/{policy_id}", headers=headers
+                    f"{self._opa_url}/policies/{policy_id}",
+                    headers=headers,
+                    **self._ssl_context_kwargs,
                 ) as opa_response:
                     return await proxy_response_unless_invalid(
                         opa_response,
@@ -552,6 +608,7 @@ class OpaClient(BasePolicyStoreClient):
                 return
 
             if len(failed_ops) == len(ops):
+
                 # all ops failed on this iteration, no point at retrying
                 for failure_msg in failure_msgs:
                     logger.error(failure_msg)
@@ -683,6 +740,7 @@ class OpaClient(BasePolicyStoreClient):
                     f"{self._opa_url}/data{path}",
                     data=json.dumps(policy_data, default=str),
                     headers=headers,
+                    **self._ssl_context_kwargs,
                 ) as opa_response:
                     response = await proxy_response_unless_invalid(
                         opa_response,
@@ -712,7 +770,9 @@ class OpaClient(BasePolicyStoreClient):
                 headers = await self._get_auth_headers()
 
                 async with session.delete(
-                    f"{self._opa_url}/data{path}", headers=headers
+                    f"{self._opa_url}/data{path}",
+                    headers=headers,
+                    **self._ssl_context_kwargs,
                 ) as opa_response:
                     response = await proxy_response_unless_invalid(
                         opa_response,
@@ -745,7 +805,9 @@ class OpaClient(BasePolicyStoreClient):
 
             async with aiohttp.ClientSession() as session:
                 async with session.get(
-                    f"{self._opa_url}/data{path}", headers=headers
+                    f"{self._opa_url}/data{path}",
+                    headers=headers,
+                    **self._ssl_context_kwargs,
                 ) as opa_response:
                     json_response = await opa_response.json()
                     return json_response.get("result", {})
@@ -776,6 +838,7 @@ class OpaClient(BasePolicyStoreClient):
                     f"{self._opa_url}/data/{path}",
                     data=json.dumps(opa_input),
                     headers=headers,
+                    **self._ssl_context_kwargs,
                 ) as opa_response:
                     return await proxy_response(opa_response)
         except aiohttp.ClientError as e:
