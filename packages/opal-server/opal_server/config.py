@@ -36,6 +36,14 @@ class OpalServerConfig(OpalSettings):
     class BroadcastConfig(OpalSettings):
         # The URL for the backbone pub/sub server (e.g. Postgres, Kfaka, Redis) @see
         BROADCAST_URI: str = None
+
+        @validator("BROADCAST_URI")
+        def broadcast_uri(cls, v):
+            if v is None:
+                assert (
+                    not int(os.getenv("UVICORN_NUM_WORKERS", default=0)) > 1
+                ), "BROADCAST_URI must be set when running with multiple workers"
+
         # The name to be used for segmentation in the backbone pub/sub (e.g. the Kafka topic)
         BROADCAST_CHANNEL_NAME: str = "EventNotifier"
         BROADCAST_CONN_LOSS_BUGFIX_EXPERIMENT_ENABLED: bool = True
@@ -53,7 +61,8 @@ class OpalServerConfig(OpalSettings):
 
         keepalive: BroadcastKeepaliveConfig = BroadcastKeepaliveConfig()
 
-    broadcast: BroadcastConfig = BroadcastConfig()
+    # Delay instantiation of empty config, so error won't be raised when running with multiple workers
+    broadcast: BroadcastConfig = Field(default_factory=BroadcastConfig)
 
     class AuthConfig(OpalSettings):
         # server security
