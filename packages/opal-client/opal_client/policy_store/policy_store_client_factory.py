@@ -31,8 +31,8 @@ class PolicyStoreClientFactory:
         """Same as self.create() but with caching.
 
         Args:
-            store_type (PolicyStoreTypes, optional): The type of policy-store to use. Defaults to opal_client_config.POLICY_STORE_TYPE.
-            url (str, optional): the URL of the policy store. Defaults to opal_client_config.POLICY_STORE_URL.
+            store_type (PolicyStoreTypes, optional): The type of policy-store to use. Defaults to opal_client_config.policy_store.POLICY_STORE_TYPE.
+            url (str, optional): the URL of the policy store. Defaults to opal_client_config.policy_store.POLICY_STORE_URL.
             save_to_cache (bool, optional): Should the created value be saved to cache (To be obtained via the get method).
 
         Raises:
@@ -76,8 +76,8 @@ class PolicyStoreClientFactory:
         Factory method - create a new policy store by type.
 
         Args:
-            store_type (PolicyStoreTypes, optional): The type of policy-store to use. Defaults to opal_client_config.POLICY_STORE_TYPE.
-            url (str, optional): the URL of the policy store. Defaults to opal_client_config.POLICY_STORE_URL.
+            store_type (PolicyStoreTypes, optional): The type of policy-store to use. Defaults to opal_client_config.policy_store.POLICY_STORE_TYPE.
+            url (str, optional): the URL of the policy store. Defaults to opal_client_config.policy_store.POLICY_STORE_URL.
             save_to_cache (bool, optional): Should the created value be saved to cache (To be obtained via the get method).
 
         Raises:
@@ -87,19 +87,23 @@ class PolicyStoreClientFactory:
             BasePolicyStoreClient: the policy store client interface
         """
         # load defaults
-        store_type = store_type or opal_client_config.POLICY_STORE_TYPE
-        url = url or opal_client_config.POLICY_STORE_URL
-        store_token = token or opal_client_config.POLICY_STORE_AUTH_TOKEN
+        store_type = store_type or opal_client_config.policy_store.POLICY_STORE_TYPE
+        url = url or opal_client_config.policy_store.POLICY_STORE_URL
+        store_token = token or opal_client_config.policy_store.POLICY_STORE_AUTH_TOKEN
 
-        auth_type = auth_type or opal_client_config.POLICY_STORE_AUTH_TYPE
+        auth_type = auth_type or opal_client_config.policy_store.POLICY_STORE_AUTH_TYPE
         oauth_client_id = (
-            oauth_client_id or opal_client_config.POLICY_STORE_AUTH_OAUTH_CLIENT_ID
+            oauth_client_id
+            or opal_client_config.policy_store.POLICY_STORE_AUTH_OAUTH_CLIENT_ID
         )
         oauth_client_secret = (
             oauth_client_secret
-            or opal_client_config.POLICY_STORE_AUTH_OAUTH_CLIENT_SECRET
+            or opal_client_config.policy_store.POLICY_STORE_AUTH_OAUTH_CLIENT_SECRET
         )
-        oauth_server = oauth_server or opal_client_config.POLICY_STORE_AUTH_OAUTH_SERVER
+        oauth_server = (
+            oauth_server
+            or opal_client_config.policy_store.POLICY_STORE_AUTH_OAUTH_SERVER
+        )
         data_updater_enabled = (
             data_updater_enabled
             if data_updater_enabled is not None

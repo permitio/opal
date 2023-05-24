@@ -28,7 +28,9 @@ from tenacity import RetryError, retry
 JSONPatchDocument = List[JSONPatchAction]
 
 
-RETRY_CONFIG = opal_client_config.POLICY_STORE_CONN_RETRY.toTenacityConfig()
+RETRY_CONFIG = (
+    opal_client_config.policy_store.POLICY_STORE_CONN_RETRY.toTenacityConfig()
+)
 
 
 def should_ignore_path(path, ignore_paths):
@@ -285,7 +287,7 @@ class OpaClient(BasePolicyStoreClient):
         data_updater_enabled: bool = True,
         cache_policy_data: bool = False,
     ):
-        base_url = opa_server_url or opal_client_config.POLICY_STORE_URL
+        base_url = opa_server_url or opal_client_config.policy_store.POLICY_STORE_URL
         self._opa_url = f"{base_url}/v1"
         self._policy_version: Optional[str] = None
         self._lock = asyncio.Lock()
@@ -393,7 +395,8 @@ class OpaClient(BasePolicyStoreClient):
     ):
         # ignore explicitly configured paths
         if should_ignore_path(
-            policy_id, opal_client_config.POLICY_STORE_POLICY_PATHS_TO_IGNORE
+            policy_id,
+            opal_client_config.policy_store.POLICY_STORE_POLICY_PATHS_TO_IGNORE,
         ):
             logger.info(
                 f"Ignoring setting policy - {policy_id}, set in POLICY_PATHS_TO_IGNORE."
@@ -456,7 +459,8 @@ class OpaClient(BasePolicyStoreClient):
     async def delete_policy(self, policy_id: str, transaction_id: Optional[str] = None):
         # ignore explicitly configured paths
         if should_ignore_path(
-            policy_id, opal_client_config.POLICY_STORE_POLICY_PATHS_TO_IGNORE
+            policy_id,
+            opal_client_config.policy_store.POLICY_STORE_POLICY_PATHS_TO_IGNORE,
         ):
             logger.info(
                 f"Ignoring deleting policy - {policy_id}, set in POLICY_PATHS_TO_IGNORE."
@@ -588,7 +592,7 @@ class OpaClient(BasePolicyStoreClient):
 
             # remove policies from the store that are not in the bundle
             # (because this bundle is "complete", i.e: contains all policy modules for a given hash)
-            # Note: this can be ignored below by config.POLICY_STORE_POLICY_PATHS_TO_IGNORE
+            # Note: this can be ignored below by POLICY_STORE_POLICY_PATHS_TO_IGNORE
             for module_id in module_ids_to_delete:
                 await self.delete_policy(policy_id=module_id)
 

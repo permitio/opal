@@ -117,7 +117,7 @@ def init_scope_router(
 
         # All server replicas (leaders) should sync the scope.
         await pubsub_endpoint.publish(
-            opal_server_config.POLICY_REPO_WEBHOOK_TOPIC,
+            opal_server_config.policy.repo_webhook.POLICY_REPO_WEBHOOK_TOPIC,
             {"scope_id": scope_in.scope_id, "force_fetch": force_fetch},
         )
 
@@ -203,7 +203,7 @@ def init_scope_router(
 
             # All server replicas (leaders) should sync the scope.
             await pubsub_endpoint.publish(
-                opal_server_config.POLICY_REPO_WEBHOOK_TOPIC,
+                opal_server_config.policy.repo_webhook.POLICY_REPO_WEBHOOK_TOPIC,
                 {
                     "scope_id": scope_id,
                     "force_fetch": force_fetch,
@@ -228,7 +228,9 @@ def init_scope_router(
             raise
 
         # All server replicas (leaders) should sync all scopes.
-        await pubsub_endpoint.publish(opal_server_config.POLICY_REPO_WEBHOOK_TOPIC)
+        await pubsub_endpoint.publish(
+            opal_server_config.policy.repo_webhook.POLICY_REPO_WEBHOOK_TOPIC
+        )
 
         return Response(status_code=status.HTTP_200_OK)
 
@@ -316,7 +318,9 @@ def init_scope_router(
                 scope_id=scope_id,
             )
             try:
-                config: ServerDataSourceConfig = opal_server_config.DATA_CONFIG_SOURCES
+                config: ServerDataSourceConfig = (
+                    opal_server_config.data.DATA_CONFIG_SOURCES
+                )
 
                 if config.external_source_url:
                     url = str(config.external_source_url)

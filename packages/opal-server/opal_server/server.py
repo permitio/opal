@@ -87,17 +87,19 @@ class OpalServer:
             init_publisher, opal_server_config.PUBLISHER_ENABLED
         )
         broadcaster_uri: str = load_conf_if_none(
-            broadcaster_uri, opal_server_config.BROADCAST_URI
+            broadcaster_uri, opal_server_config.broadcast.BROADCAST_URI
         )
-        jwks_url: str = load_conf_if_none(jwks_url, opal_server_config.AUTH_JWKS_URL)
+        jwks_url: str = load_conf_if_none(
+            jwks_url, opal_server_config.auth.AUTH_JWKS_URL
+        )
         jwks_static_dir: str = load_conf_if_none(
-            jwks_static_dir, opal_server_config.AUTH_JWKS_STATIC_DIR
+            jwks_static_dir, opal_server_config.auth.AUTH_JWKS_STATIC_DIR
         )
         master_token: str = load_conf_if_none(
-            master_token, opal_server_config.AUTH_MASTER_TOKEN
+            master_token, opal_server_config.auth.AUTH_MASTER_TOKEN
         )
         self._init_policy_watcher: bool = load_conf_if_none(
-            init_policy_watcher, opal_server_config.REPO_WATCHER_ENABLED
+            init_policy_watcher, opal_server_config.policy.REPO_WATCHER_ENABLED
         )
         self.loadlimit_notation: str = load_conf_if_none(
             loadlimit_notation, opal_server_config.CLIENT_LOAD_LIMIT_NOTATION
@@ -109,7 +111,7 @@ class OpalServer:
         self.data_sources_config: ServerDataSourceConfig = (
             data_sources_config
             if data_sources_config is not None
-            else opal_server_config.DATA_CONFIG_SOURCES
+            else opal_server_config.data.DATA_CONFIG_SOURCES
         )
 
         self.broadcaster_uri = broadcaster_uri
@@ -119,11 +121,11 @@ class OpalServer:
             self.signer = signer
         else:
             self.signer = JWTSigner(
-                private_key=opal_server_config.AUTH_PRIVATE_KEY,
-                public_key=opal_common_config.AUTH_PUBLIC_KEY,
-                algorithm=opal_common_config.AUTH_JWT_ALGORITHM,
-                audience=opal_common_config.AUTH_JWT_AUDIENCE,
-                issuer=opal_common_config.AUTH_JWT_ISSUER,
+                private_key=opal_server_config.auth.AUTH_PRIVATE_KEY,
+                public_key=opal_common_config.security.AUTH_PUBLIC_KEY,
+                algorithm=opal_common_config.security.AUTH_JWT_ALGORITHM,
+                audience=opal_common_config.security.AUTH_JWT_AUDIENCE,
+                issuer=opal_common_config.security.AUTH_JWT_ISSUER,
             )
         if self.signer.enabled:
             logger.info(
@@ -149,16 +151,16 @@ class OpalServer:
             self.publisher = ServerSideTopicPublisher(self.pubsub.endpoint)
 
             if (
-                opal_server_config.BROADCAST_KEEPALIVE_INTERVAL > 0
+                opal_server_config.broadcast.keepalive.BROADCAST_KEEPALIVE_INTERVAL > 0
                 and self.broadcaster_uri is not None
             ):
                 self.broadcast_keepalive = setup_broadcaster_keepalive_task(
                     self.publisher,
-                    time_interval=opal_server_config.BROADCAST_KEEPALIVE_INTERVAL,
-                    topic=opal_server_config.BROADCAST_KEEPALIVE_TOPIC,
+                    time_interval=opal_server_config.broadcast.keepalive.BROADCAST_KEEPALIVE_INTERVAL,
+                    topic=opal_server_config.broadcast.keepalive.BROADCAST_KEEPALIVE_TOPIC,
                 )
 
-        if opal_common_config.STATISTICS_ENABLED:
+        if opal_server_config.statistics.STATISTICS_ENABLED:
             self.opal_statistics = OpalStatistics(self.pubsub.endpoint)
         else:
             self.opal_statistics = None
@@ -169,7 +171,10 @@ class OpalServer:
         self.broadcast_listening_context: Optional[
             EventBroadcasterContextManager
         ] = None
-        if self.broadcaster_uri is not None and opal_common_config.STATISTICS_ENABLED:
+        if (
+            self.broadcaster_uri is not None
+            and opal_server_config.statistics.STATISTICS_ENABLED
+        ):
             self.broadcast_listening_context = (
                 self.pubsub.endpoint.broadcaster.get_listening_context()
             )
@@ -177,7 +182,7 @@ class OpalServer:
         self.watcher: PolicyWatcherTask = None
         self.leadership_lock: Optional[NamedLock] = None
 
-        if opal_server_config.SCOPES:
+        if opal_server_config.scopes.SCOPES:
             self._redis_db = RedisDB(opal_server_config.REDIS_URL)
             self._scopes = ScopeRepository(self._redis_db)
             logger.info("OPAL Scopes: server is connected to scopes repository")
@@ -256,7 +261,7 @@ class OpalServer:
             dependencies=[Depends(authenticator)],
         )
 
-        if opal_server_config.SCOPES:
+        if opal_server_config.scopes.SCOPES:
             app.include_router(
                 init_scope_router(self._scopes, authenticator, self.pubsub.endpoint),
                 tags=["Scopes"],
@@ -344,11 +349,12 @@ class OpalServer:
                         pid=os.getpid(),
                     )
 
-                    if not opal_server_config.SCOPES:
+                    if not opal_server_config.scopes.SCOPES:
                         # bind data updater publishers to the leader worker
                         asyncio.create_task(
                             DataUpdatePublisher.mount_and_start_polling_updates(
-                                self.publisher, opal_server_config.DATA_CONFIG_SOURCES
+                                self.publisher,
+                                opal_server_config.data.DATA_CONFIG_SOURCES,
                             )
                         )
                     else:

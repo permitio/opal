@@ -155,11 +155,11 @@ class PolicyUpdater:
         """
         logger.info("Connected to server")
         await self.update_policy()
-        if opal_common_config.STATISTICS_ENABLED:
+        if opal_client_config.statistics.STATISTICS_ENABLED:
             await self._client.wait_until_ready()
             # publish statistics to the server about new connection from client (only if STATISTICS_ENABLED is True, default to False)
             await self._client.publish(
-                [opal_common_config.STATISTICS_ADD_CLIENT_CHANNEL],
+                [opal_client_config.statistics.STATISTICS_ADD_CLIENT_CHANNEL],
                 data={
                     "topics": self._topics,
                     "client_id": self._opal_client_id,

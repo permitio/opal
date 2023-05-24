@@ -45,8 +45,8 @@ REPO_FULL_NAME = "permitio/opal"
 REPO_URL = f"https://github.com/{REPO_FULL_NAME}"
 
 # configure the server to work with a fake secret and our mock repository
-SECRET = opal_server_config.POLICY_REPO_WEBHOOK_SECRET = "SECRET"
-opal_server_config.POLICY_REPO_URL = REPO_URL
+SECRET = opal_server_config.policy.repo_webhook.POLICY_REPO_WEBHOOK_SECRET = "SECRET"
+opal_server_config.policy.POLICY_REPO_URL = REPO_URL
 
 
 # Github mock example
@@ -262,7 +262,7 @@ def github_mode_server():
     # Run the server as a separate process
     proc = Process(
         target=setup_server,
-        args=(event, opal_server_config.POLICY_REPO_WEBHOOK_PARAMS),
+        args=(event, opal_server_config.policy.repo_webhook.POLICY_REPO_WEBHOOK_PARAMS),
         daemon=True,
     )
     proc.start()

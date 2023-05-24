@@ -18,16 +18,16 @@ async def load_scopes(repo: ScopeRepository):
 
 async def _load_env_scope(repo: ScopeRepository):
     # backwards compatible opal scope
-    if opal_server_config.POLICY_REPO_URL is not None:
+    if opal_server_config.policy.POLICY_REPO_URL is not None:
         logger.info(
             "Adding default scope from env: {url}",
-            url=opal_server_config.POLICY_REPO_URL,
+            url=opal_server_config.policy.POLICY_REPO_URL,
         )
 
         auth = NoAuthData()
 
-        if opal_server_config.POLICY_REPO_SSH_KEY is not None:
-            private_ssh_key = opal_server_config.POLICY_REPO_SSH_KEY
+        if opal_server_config.policy.POLICY_REPO_SSH_KEY is not None:
+            private_ssh_key = opal_server_config.policy.POLICY_REPO_SSH_KEY
             private_ssh_key = private_ssh_key.replace("_", "\n")
 
             if not private_ssh_key.endswith("\n"):
@@ -38,10 +38,10 @@ async def _load_env_scope(repo: ScopeRepository):
         scope = Scope(
             scope_id=DEFAULT_SCOPE_ID,
             policy=GitPolicyScopeSource(
-                source_type=opal_server_config.POLICY_SOURCE_TYPE.lower(),
-                url=opal_server_config.POLICY_REPO_URL,
-                manifest=opal_server_config.POLICY_REPO_MANIFEST_PATH,
-                branch=opal_server_config.POLICY_REPO_MAIN_BRANCH,
+                source_type=opal_server_config.policy.POLICY_SOURCE_TYPE.lower(),
+                url=opal_server_config.policy.POLICY_REPO_URL,
+                manifest=opal_server_config.policy.POLICY_REPO_MANIFEST_PATH,
+                branch=opal_server_config.policy.POLICY_REPO_MAIN_BRANCH,
                 auth=auth,
             ),
         )

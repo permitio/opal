@@ -82,18 +82,19 @@ class OpalStatistics:
         """subscribe to two channels to be able to sync add and delete of
         clients."""
         await self._endpoint.subscribe(
-            [opal_server_config.STATISTICS_WAKEUP_CHANNEL],
+            [opal_server_config.statistics.STATISTICS_WAKEUP_CHANNEL],
             self._receive_other_worker_wakeup_message,
         )
         await self._endpoint.subscribe(
-            [opal_server_config.STATISTICS_STATE_SYNC_CHANNEL],
+            [opal_server_config.statistics.STATISTICS_STATE_SYNC_CHANNEL],
             self._receive_other_worker_synced_state,
         )
         await self._endpoint.subscribe(
-            [opal_common_config.STATISTICS_ADD_CLIENT_CHANNEL], self._add_client
+            [opal_server_config.statistics.STATISTICS_ADD_CLIENT_CHANNEL],
+            self._add_client,
         )
         await self._endpoint.subscribe(
-            [opal_common_config.STATISTICS_REMOVE_CLIENT_CHANNEL],
+            [opal_server_config.statistics.STATISTICS_REMOVE_CLIENT_CHANNEL],
             self._sync_remove_client,
         )
 
@@ -107,7 +108,7 @@ class OpalStatistics:
         logger.info(f"sending stats wakeup message: {self._worker_id}")
         asyncio.create_task(
             self._endpoint.publish(
-                [opal_server_config.STATISTICS_WAKEUP_CHANNEL],
+                [opal_server_config.statistics.STATISTICS_WAKEUP_CHANNEL],
                 SyncRequest(requesting_worker_id=self._worker_id).dict(),
             )
         )
@@ -156,7 +157,7 @@ class OpalStatistics:
                 )
                 asyncio.create_task(
                     self._endpoint.publish(
-                        [opal_server_config.STATISTICS_STATE_SYNC_CHANNEL],
+                        [opal_server_config.statistics.STATISTICS_STATE_SYNC_CHANNEL],
                         SyncResponse(
                             requesting_worker_id=request.requesting_worker_id,
                             clients=self._state.clients,
@@ -272,7 +273,7 @@ class OpalStatistics:
             )
             asyncio.create_task(
                 self._endpoint.publish(
-                    [opal_common_config.STATISTICS_REMOVE_CLIENT_CHANNEL],
+                    [opal_server_config.statistics.STATISTICS_REMOVE_CLIENT_CHANNEL],
                     rpc_id,
                 )
             )

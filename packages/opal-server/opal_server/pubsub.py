@@ -32,7 +32,7 @@ class PubSub:
             None means no broadcasting.
         """
         broadcaster_uri = load_conf_if_none(
-            broadcaster_uri, opal_server_config.BROADCAST_URI
+            broadcaster_uri, opal_server_config.broadcast.BROADCAST_URI
         )
         self.router = APIRouter()
         # Pub/Sub Internals
@@ -45,7 +45,7 @@ class PubSub:
             self.broadcaster = EventBroadcaster(
                 broadcaster_uri,
                 notifier=self.notifier,
-                channel=opal_server_config.BROADCAST_CHANNEL_NAME,
+                channel=opal_server_config.broadcast.BROADCAST_CHANNEL_NAME,
             )
         else:
             logger.info("Pub/Sub broadcaster is off")
@@ -54,9 +54,9 @@ class PubSub:
         self.endpoint = PubSubEndpoint(
             broadcaster=self.broadcaster,
             notifier=self.notifier,
-            rpc_channel_get_remote_id=opal_common_config.STATISTICS_ENABLED,
+            rpc_channel_get_remote_id=opal_server_config.statistics.STATISTICS_ENABLED,
             ignore_broadcaster_disconnected=(
-                not opal_server_config.BROADCAST_CONN_LOSS_BUGFIX_EXPERIMENT_ENABLED
+                not opal_server_config.broadcast.BROADCAST_CONN_LOSS_BUGFIX_EXPERIMENT_ENABLED
             ),
         )
         authenticator = WebsocketJWTAuthenticator(signer)

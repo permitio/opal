@@ -32,7 +32,7 @@ class CedarClient(BasePolicyStoreClient):
         cedar_auth_token: Optional[str] = None,
         auth_type: PolicyStoreAuth = PolicyStoreAuth.NONE,
     ):
-        base_url = cedar_server_url or opal_client_config.POLICY_STORE_URL
+        base_url = cedar_server_url or opal_client_config.policy_store.POLICY_STORE_URL
         self._cedar_url = f"{base_url}/v1"
         self._policy_version: Optional[str] = None
         self._lock = asyncio.Lock()
@@ -69,7 +69,8 @@ class CedarClient(BasePolicyStoreClient):
     ):
         # ignore explicitly configured paths
         if should_ignore_path(
-            policy_id, opal_client_config.POLICY_STORE_POLICY_PATHS_TO_IGNORE
+            policy_id,
+            opal_client_config.policy_store.POLICY_STORE_POLICY_PATHS_TO_IGNORE,
         ):
             logger.info(
                 f"Ignoring setting policy - {policy_id}, set in POLICY_PATHS_TO_IGNORE."
@@ -134,7 +135,8 @@ class CedarClient(BasePolicyStoreClient):
     async def delete_policy(self, policy_id: str, transaction_id: Optional[str] = None):
         # ignore explicitly configured paths
         if should_ignore_path(
-            policy_id, opal_client_config.POLICY_STORE_POLICY_PATHS_TO_IGNORE
+            policy_id,
+            opal_client_config.policy_store.POLICY_STORE_POLICY_PATHS_TO_IGNORE,
         ):
             logger.info(
                 f"Ignoring deleting policy - {policy_id}, set in POLICY_PATHS_TO_IGNORE."

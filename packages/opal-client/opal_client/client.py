@@ -64,13 +64,13 @@ class OpalClient:
         """
         # defaults
         policy_store_type: PolicyStoreTypes = (
-            policy_store_type or opal_client_config.POLICY_STORE_TYPE
+            policy_store_type or opal_client_config.policy_store.POLICY_STORE_TYPE
         )
         inline_opa_enabled: bool = (
-            inline_opa_enabled or opal_client_config.INLINE_OPA_ENABLED
+            inline_opa_enabled or opal_client_config.policy_store.INLINE_OPA_ENABLED
         )
         inline_cedar_enabled: bool = (
-            inline_cedar_enabled or opal_client_config.INLINE_CEDAR_ENABLED
+            inline_cedar_enabled or opal_client_config.policy_store.INLINE_CEDAR_ENABLED
         )
         opal_client_identifier: str = (
             opal_client_config.OPAL_CLIENT_STAT_ID or f"CLIENT_{uuid.uuid4().hex}"
@@ -79,7 +79,7 @@ class OpalClient:
         configure_logs()
 
         self.offline_mode_enabled = (
-            offline_mode_enabled or opal_client_config.OFFLINE_MODE_ENABLED
+            offline_mode_enabled or opal_client_config.policy_store.OFFLINE_MODE_ENABLED
         )
         if self.offline_mode_enabled and not inline_opa_enabled:
             logger.warning(
@@ -162,20 +162,21 @@ class OpalClient:
             self.verifier = verifier
         else:
             self.verifier = JWTVerifier(
-                public_key=opal_common_config.AUTH_PUBLIC_KEY,
-                algorithm=opal_common_config.AUTH_JWT_ALGORITHM,
-                audience=opal_common_config.AUTH_JWT_AUDIENCE,
-                issuer=opal_common_config.AUTH_JWT_ISSUER,
+                public_key=opal_common_config.security.AUTH_PUBLIC_KEY,
+                algorithm=opal_common_config.security.AUTH_JWT_ALGORITHM,
+                audience=opal_common_config.security.AUTH_JWT_AUDIENCE,
+                issuer=opal_common_config.security.AUTH_JWT_ISSUER,
             )
         if not self.verifier.enabled:
             logger.info(
                 "API authentication disabled (public encryption key was not provided)"
             )
         self.store_backup_path = (
-            store_backup_path or opal_client_config.STORE_BACKUP_PATH
+            store_backup_path or opal_client_config.policy_store.STORE_BACKUP_PATH
         )
         self.store_backup_interval = (
-            store_backup_interval or opal_client_config.STORE_BACKUP_INTERVAL
+            store_backup_interval
+            or opal_client_config.policy_store.STORE_BACKUP_INTERVAL
         )
         self._backup_loaded = False
 
@@ -191,7 +192,7 @@ class OpalClient:
     ) -> Union[OpaRunner, CedarRunner, Literal[False]]:
         if inline_opa_enabled and self.policy_store_type == PolicyStoreTypes.OPA:
             inline_opa_options = (
-                inline_opa_options or opal_client_config.INLINE_OPA_CONFIG
+                inline_opa_options or opal_client_config.policy_store.INLINE_OPA_CONFIG
             )
             rehydration_callbacks = [
                 # refetches policy code (e.g: rego) and static data from server
@@ -210,17 +211,18 @@ class OpalClient:
 
             return OpaRunner.setup_opa_runner(
                 options=inline_opa_options,
-                piped_logs_format=opal_client_config.INLINE_OPA_LOG_FORMAT,
+                piped_logs_format=opal_client_config.policy_store.INLINE_OPA_LOG_FORMAT,
                 rehydration_callbacks=rehydration_callbacks,
             )
 
         elif inline_cedar_enabled and self.policy_store_type == PolicyStoreTypes.CEDAR:
             inline_cedar_options = (
-                inline_cedar_options or opal_client_config.INLINE_CEDAR_CONFIG
+                inline_cedar_options
+                or opal_client_config.policy_store.INLINE_CEDAR_CONFIG
             )
             return CedarRunner.setup_cedar_runner(
                 options=inline_cedar_options,
-                piped_logs_format=opal_client_config.INLINE_CEDAR_LOG_FORMAT,
+                piped_logs_format=opal_client_config.policy_store.INLINE_CEDAR_LOG_FORMAT,
             )
 
         return False

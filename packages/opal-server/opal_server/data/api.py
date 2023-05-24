@@ -29,7 +29,7 @@ def init_data_updates_router(
 ):
     router = APIRouter()
 
-    @router.get(opal_server_config.ALL_DATA_ROUTE)
+    @router.get(opal_server_config.data.ALL_DATA_ROUTE)
     async def default_all_data():
         """A fake data source configured to be fetched by the default data
         source config.
@@ -44,7 +44,7 @@ def init_data_updates_router(
         return {}
 
     @router.post(
-        opal_server_config.DATA_CALLBACK_DEFAULT_ROUTE,
+        opal_server_config.data.DATA_CALLBACK_DEFAULT_ROUTE,
         dependencies=[Depends(authenticator)],
     )
     async def log_client_update_report(report: DataUpdateReport):
@@ -64,7 +64,7 @@ def init_data_updates_router(
         return {}  # simply returns 200
 
     @router.get(
-        opal_server_config.DATA_CONFIG_ROUTE,
+        opal_server_config.data.DATA_CONFIG_ROUTE,
         response_model=DataSourceConfig,
         responses={
             307: {
@@ -104,7 +104,7 @@ def init_data_updates_router(
                 detail="Did not find a data source configuration!",
             )
 
-    @router.post(opal_server_config.DATA_CONFIG_ROUTE)
+    @router.post(opal_server_config.data.DATA_CONFIG_ROUTE)
     async def publish_data_update_event(
         update: DataUpdate, claims: JWTClaims = Depends(authenticator)
     ):

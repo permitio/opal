@@ -196,10 +196,10 @@ def init_dynamic_data_sources_router():
     router = APIRouter()
 
     verifier = JWTVerifier(
-        public_key=opal_common_config.AUTH_PUBLIC_KEY,
-        algorithm=opal_common_config.AUTH_JWT_ALGORITHM,
-        audience=opal_common_config.AUTH_JWT_AUDIENCE,
-        issuer=opal_common_config.AUTH_JWT_ISSUER,
+        public_key=opal_common_config.security.AUTH_PUBLIC_KEY,
+        algorithm=opal_common_config.security.AUTH_JWT_ALGORITHM,
+        audience=opal_common_config.security.AUTH_JWT_AUDIENCE,
+        issuer=opal_common_config.security.AUTH_JWT_ISSUER,
     )
     # notice - we defined RedirectJWTAuthenticator in our previous code sample (step 1)
     authenticator = RedirectJWTAuthenticator(verifier)

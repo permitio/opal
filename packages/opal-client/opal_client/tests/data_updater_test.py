@@ -38,7 +38,7 @@ PORT = int(os.environ.get("PORT") or "9123")
 UPDATES_URL = f"ws://localhost:{PORT}/ws"
 DATA_ROUTE = "/fetchable_data"
 DATA_URL = f"http://localhost:{PORT}{DATA_ROUTE}"
-DATA_CONFIG_URL = f"http://localhost:{PORT}{opal_server_config.DATA_CONFIG_ROUTE}"
+DATA_CONFIG_URL = f"http://localhost:{PORT}{opal_server_config.data.DATA_CONFIG_ROUTE}"
 DATA_TOPICS = ["policy_data"]
 TEST_DATA = {"hello": "world"}
 

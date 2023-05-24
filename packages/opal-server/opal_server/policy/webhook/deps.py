@@ -10,8 +10,10 @@ from pydantic import BaseModel
 
 
 def validate_git_secret_or_throw_factory(
-    webhook_secret: Optional[str] = opal_server_config.POLICY_REPO_WEBHOOK_SECRET,
-    webhook_params: GitWebhookRequestParams = opal_server_config.POLICY_REPO_WEBHOOK_PARAMS,
+    webhook_secret: Optional[
+        str
+    ] = opal_server_config.policy.repo_webhook.POLICY_REPO_WEBHOOK_SECRET,
+    webhook_params: GitWebhookRequestParams = opal_server_config.policy.repo_webhook.POLICY_REPO_WEBHOOK_PARAMS,
 ):
     """Factory function to create secret validator dependency according to
     config.
@@ -19,8 +21,8 @@ def validate_git_secret_or_throw_factory(
     Returns: validate_git_secret_or_throw (async function)
 
     Args:
-        webhook_secret (Optional[ str ], optional): The secret to validate. Defaults to opal_server_config.POLICY_REPO_WEBHOOK_SECRET.
-        webhook_params (GitWebhookRequestParams, optional):The webhook configuration - including how to parse the secret. Defaults to opal_server_config.POLICY_REPO_WEBHOOK_PARAMS.
+        webhook_secret (Optional[ str ], optional): The secret to validate. Defaults to opal_server_config.policy.repo_webhook.POLICY_REPO_WEBHOOK_SECRET.
+        webhook_params (GitWebhookRequestParams, optional):The webhook configuration - including how to parse the secret. Defaults to opal_server_config.policy.repo_webhook.POLICY_REPO_WEBHOOK_PARAMS.
     """
 
     async def validate_git_secret_or_throw(request: Request) -> bool:

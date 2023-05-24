@@ -20,7 +20,7 @@ def init_git_webhook_router(
     async def dummy_affected_repo_urls(request: Request) -> List[str]:
         return []
 
-    source_type = opal_server_config.POLICY_SOURCE_TYPE
+    source_type = opal_server_config.policy.POLICY_SOURCE_TYPE
     if source_type == PolicySourceTypes.Api:
         route_dependency = authenticator
         func_dependency = dummy_affected_repo_urls
@@ -59,10 +59,12 @@ def get_webhook_router(
     git_changes: Depends,
     source_type: PolicySourceTypes,
     publish: Callable,
-    webhook_config: GitWebhookRequestParams = opal_server_config.POLICY_REPO_WEBHOOK_PARAMS,
+    webhook_config: GitWebhookRequestParams = opal_server_config.policy.repo_webhook.POLICY_REPO_WEBHOOK_PARAMS,
 ):
     if webhook_config is None:
-        webhook_config = opal_server_config.POLICY_REPO_WEBHOOK_PARAMS
+        webhook_config = (
+            opal_server_config.policy.repo_webhook.POLICY_REPO_WEBHOOK_PARAMS
+        )
     router = APIRouter()
 
     @router.post(
@@ -71,7 +73,6 @@ def get_webhook_router(
         dependencies=route_dependencies,
     )
     async def trigger_webhook(request: Request, git_changes: GitChanges = git_changes):
-
         # TODO: breaking change: change "repo_url" to "remote_url" in next major
         if source_type == PolicySourceTypes.Git:
             # look at values extracted from request
@@ -81,12 +82,12 @@ def get_webhook_router(
 
             # Enforce branch matching (webhook to config) if turned on via config
             if (
-                opal_server_config.POLICY_REPO_WEBHOOK_ENFORCE_BRANCH
-                and opal_server_config.POLICY_REPO_MAIN_BRANCH != branch
+                opal_server_config.policy.repo_webhook.POLICY_REPO_WEBHOOK_ENFORCE_BRANCH
+                and opal_server_config.policy.POLICY_REPO_MAIN_BRANCH != branch
             ):
                 logger.warning(
                     "Git Webhook ignored - POLICY_REPO_WEBHOOK_ENFORCE_BRANCH is enabled, and POLICY_REPO_MAIN_BRANCH is `{tracking}` but received webhook for a different branch ({branch})",
-                    tracking=opal_server_config.POLICY_REPO_MAIN_BRANCH,
+                    tracking=opal_server_config.policy.POLICY_REPO_MAIN_BRANCH,
                     branch=branch,
                 )
                 return None
@@ -103,7 +104,7 @@ def get_webhook_router(
                     "Webhook config is missing both event_request_key and event_header_name. Must have at least one."
                 )
 
-            policy_repo_url = opal_server_config.POLICY_REPO_URL
+            policy_repo_url = opal_server_config.policy.POLICY_REPO_URL
 
             # Check if the URL we are tracking is mentioned in the webhook
             if policy_repo_url and (
@@ -112,22 +113,24 @@ def get_webhook_router(
             ):
                 logger.info(
                     "triggered webhook on repo: {repo}",
-                    repo=opal_server_config.POLICY_REPO_URL,
+                    repo=opal_server_config.policy.POLICY_REPO_URL,
                     hook_event=event,
                 )
                 # Check if this it the right event (push)
                 if event == webhook_config.push_event_value:
                     # notifies the webhook listener via the pubsub broadcaster
-                    await publish(opal_server_config.POLICY_REPO_WEBHOOK_TOPIC)
+                    await publish(
+                        opal_server_config.policy.repo_webhook.POLICY_REPO_WEBHOOK_TOPIC
+                    )
                 return {
                     "status": "ok",
                     "event": event,
-                    "repo_url": opal_server_config.POLICY_REPO_URL,
+                    "repo_url": opal_server_config.policy.POLICY_REPO_URL,
                 }
             else:
                 logger.warning(
                     "Got an unexpected webhook not matching the tracked repo ({repo}) - with these URLS: {urls} and those names: {names}.",
-                    repo=opal_server_config.POLICY_REPO_URL,
+                    repo=opal_server_config.policy.POLICY_REPO_URL,
                     urls=urls,
                     names=names,
                     hook_event=event,
@@ -135,11 +138,13 @@ def get_webhook_router(
 
         elif source_type == PolicySourceTypes.Api:
             logger.info("Triggered webhook to check API bundle URL")
-            await publish(opal_server_config.POLICY_REPO_WEBHOOK_TOPIC)
+            await publish(
+                opal_server_config.policy.repo_webhook.POLICY_REPO_WEBHOOK_TOPIC
+            )
             return {
                 "status": "ok",
                 "event": "webhook_trigger",
-                "repo_url": opal_server_config.POLICY_BUNDLE_URL,
+                "repo_url": opal_server_config.policy.POLICY_BUNDLE_URL,
             }
 
         return {"status": "ignored", "event": event}

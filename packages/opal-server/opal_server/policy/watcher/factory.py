@@ -44,18 +44,20 @@ def setup_watcher_task(
         extensions(list(str), optional):  list of extantions to check when new policy arrive default is FILTER_FILE_EXTENSIONS
         bundle_ignore(list(str), optional):  list of glob paths to use for excluding files from bundle default is OPA_BUNDLE_IGNORE
     """
-    if opal_server_config.SCOPES:
+    if opal_server_config.scopes.SCOPES:
         return ScopesPolicyWatcherTask(pubsub_endpoint)
 
     # load defaults
-    source_type = load_conf_if_none(source_type, opal_server_config.POLICY_SOURCE_TYPE)
+    source_type = load_conf_if_none(
+        source_type, opal_server_config.policy.POLICY_SOURCE_TYPE
+    )
 
     clone_path_finder = load_conf_if_none(
         clone_path_finder,
         RepoClonePathFinder(
-            base_clone_path=opal_server_config.POLICY_REPO_CLONE_PATH,
-            clone_subdirectory_prefix=opal_server_config.POLICY_REPO_CLONE_FOLDER_PREFIX,
-            use_fixed_path=opal_server_config.POLICY_REPO_REUSE_CLONE_PATH,
+            base_clone_path=opal_server_config.policy.POLICY_REPO_CLONE_PATH,
+            clone_subdirectory_prefix=opal_server_config.policy.POLICY_REPO_CLONE_FOLDER_PREFIX,
+            use_fixed_path=opal_server_config.policy.POLICY_REPO_REUSE_CLONE_PATH,
         ),
     )
 
@@ -65,25 +67,27 @@ def setup_watcher_task(
     logger.info(f"Policy repo will be cloned to: {clone_path}")
 
     branch_name = load_conf_if_none(
-        branch_name, opal_server_config.POLICY_REPO_MAIN_BRANCH
+        branch_name, opal_server_config.policy.POLICY_REPO_MAIN_BRANCH
     )
-    ssh_key = load_conf_if_none(ssh_key, opal_server_config.POLICY_REPO_SSH_KEY)
+    ssh_key = load_conf_if_none(ssh_key, opal_server_config.policy.POLICY_REPO_SSH_KEY)
     polling_interval = load_conf_if_none(
-        polling_interval, opal_server_config.POLICY_REPO_POLLING_INTERVAL
+        polling_interval, opal_server_config.policy.POLICY_REPO_POLLING_INTERVAL
     )
     request_timeout = load_conf_if_none(
-        request_timeout, opal_server_config.POLICY_REPO_CLONE_TIMEOUT
+        request_timeout, opal_server_config.policy.POLICY_REPO_CLONE_TIMEOUT
     )
     policy_bundle_token = load_conf_if_none(
-        policy_bundle_token, opal_server_config.POLICY_BUNDLE_SERVER_TOKEN
+        policy_bundle_token, opal_server_config.policy.POLICY_BUNDLE_SERVER_TOKEN
     )
     extensions = load_conf_if_none(
-        extensions, opal_server_config.FILTER_FILE_EXTENSIONS
+        extensions, opal_server_config.policy.FILTER_FILE_EXTENSIONS
     )
-    bundle_ignore = load_conf_if_none(bundle_ignore, opal_server_config.BUNDLE_IGNORE)
+    bundle_ignore = load_conf_if_none(
+        bundle_ignore, opal_server_config.policy.BUNDLE_IGNORE
+    )
     if source_type == PolicySourceTypes.Git:
         remote_source_url = load_conf_if_none(
-            remote_source_url, opal_server_config.POLICY_REPO_URL
+            remote_source_url, opal_server_config.policy.POLICY_REPO_URL
         )
         if remote_source_url is None:
             logger.warning(
@@ -99,7 +103,7 @@ def setup_watcher_task(
         )
     elif source_type == PolicySourceTypes.Api:
         remote_source_url = load_conf_if_none(
-            remote_source_url, opal_server_config.POLICY_BUNDLE_URL
+            remote_source_url, opal_server_config.policy.POLICY_BUNDLE_URL
         )
         if remote_source_url is None:
             logger.warning(
@@ -110,8 +114,8 @@ def setup_watcher_task(
             local_clone_path=clone_path,
             polling_interval=polling_interval,
             token=policy_bundle_token,
-            policy_bundle_path=opal_server_config.POLICY_BUNDLE_TMP_PATH,
-            policy_bundle_git_add_pattern=opal_server_config.POLICY_BUNDLE_GIT_ADD_PATTERN,
+            policy_bundle_path=opal_server_config.policy.POLICY_BUNDLE_TMP_PATH,
+            policy_bundle_git_add_pattern=opal_server_config.policy.POLICY_BUNDLE_GIT_ADD_PATTERN,
         )
     else:
         raise ValueError("Unknown value for OPAL_POLICY_SOURCE_TYPE")

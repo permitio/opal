@@ -36,11 +36,11 @@ class BasePolicyWatcherTask:
             async with self._pubsub_endpoint.broadcaster.get_listening_context():
                 logger.info(
                     "listening on webhook topic: '{topic}'",
-                    topic=opal_server_config.POLICY_REPO_WEBHOOK_TOPIC,
+                    topic=opal_server_config.policy.repo_webhook.POLICY_REPO_WEBHOOK_TOPIC,
                 )
 
                 await self._pubsub_endpoint.subscribe(
-                    [opal_server_config.POLICY_REPO_WEBHOOK_TOPIC],
+                    [opal_server_config.policy.repo_webhook.POLICY_REPO_WEBHOOK_TOPIC],
                     self._on_webhook,
                 )
                 await self._pubsub_endpoint.broadcaster.get_reader_task()

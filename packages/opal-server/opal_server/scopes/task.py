@@ -25,7 +25,7 @@ class ScopesPolicyWatcherTask(BasePolicyWatcherTask):
         await super().start()
         self._tasks.append(asyncio.create_task(self._service.sync_scopes()))
 
-        if opal_server_config.POLICY_REFRESH_INTERVAL > 0:
+        if opal_server_config.scopes.POLICY_REFRESH_INTERVAL > 0:
             self._tasks.append(asyncio.create_task(self._periodic_polling()))
 
     async def stop(self):
@@ -34,7 +34,7 @@ class ScopesPolicyWatcherTask(BasePolicyWatcherTask):
     async def _periodic_polling(self):
         try:
             while True:
-                await asyncio.sleep(opal_server_config.POLICY_REFRESH_INTERVAL)
+                await asyncio.sleep(opal_server_config.scopes.POLICY_REFRESH_INTERVAL)
                 logger.info("Periodic sync")
                 await self._service.sync_scopes(only_poll_updates=True)
         except asyncio.CancelledError:
@@ -64,7 +64,7 @@ class ScopesPolicyWatcherTask(BasePolicyWatcherTask):
         This speeds up the first sync of scopes after workers are
         started.
         """
-        if opal_server_config.SCOPES:
+        if opal_server_config.scopes.SCOPES:
             logger.info("Preloading repo clones for scopes")
 
             service = ScopesService(
