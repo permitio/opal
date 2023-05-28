@@ -90,8 +90,10 @@ class OpaTransactionLogState:
     def __init__(
         self,
         data_updater_enabled: bool = True,
+        policy_updater_enabled: bool = True,
     ):
         self._data_updater_disabled = not data_updater_enabled
+        self._policy_updater_disabled = not policy_updater_enabled
         self._num_successful_policy_transactions = 0
         self._num_failed_policy_transactions = 0
         self._num_successful_data_transactions = 0
@@ -118,7 +120,7 @@ class OpaTransactionLogState:
             self._last_data_transaction is not None
             and self._last_data_transaction.success
         )
-        is_healthy: bool = policy_updater_is_healthy and (
+        is_healthy: bool = (self._policy_updater_disabled or policy_updater_is_healthy) and (
             self._data_updater_disabled or data_updater_is_healthy
         )
         logger.info(
@@ -284,6 +286,7 @@ class OpaClient(BasePolicyStoreClient):
         oauth_client_secret: Optional[str] = None,
         oauth_server: Optional[str] = None,
         data_updater_enabled: bool = True,
+        policy_updater_enabled: bool = True,
         cache_policy_data: bool = False,
         tls_client_cert: Optional[str] = None,
         tls_client_key: Optional[str] = None,
@@ -352,7 +355,7 @@ class OpaClient(BasePolicyStoreClient):
             else {}
         )
 
-        self._transaction_state = OpaTransactionLogState(data_updater_enabled)
+        self._transaction_state = OpaTransactionLogState(data_updater_enabled=data_updater_enabled, policy_updater_enabled=policy_updater_enabled)
         # as long as this is null, persisting transaction log to OPA is disabled
         self._transaction_state_writer: Optional[OpaTransactionLogState] = None
 
