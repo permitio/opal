@@ -80,6 +80,21 @@ class OpalClientConfig(Confi):
         description="If set to False, opal client will not listen to dynamic policy updates."
         "Policy update fetching will be completely disabled.",
     )
+    POLICY_STORE_TLS_CLIENT_CERT = confi.str(
+        "POLICY_STORE_TLS_CLIENT_CERT",
+        None,
+        description="path to the client certificate used for tls authentication with the policy store",
+    )
+    POLICY_STORE_TLS_CLIENT_KEY = confi.str(
+        "POLICY_STORE_TLS_CLIENT_KEY",
+        None,
+        description="path to the client key used for tls authentication with the policy store",
+    )
+    POLICY_STORE_TLS_CA = confi.str(
+        "POLICY_STORE_TLS_CA",
+        None,
+        description="path to the file containing the ca certificate(s) used for tls authentication with the policy store",
+    )
 
     # create an instance of a policy store upon load
     def load_policy_store():

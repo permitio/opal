@@ -14,6 +14,7 @@ class PolicyStoreAuth(Enum):
     NONE = "none"
     TOKEN = "token"
     OAUTH = "oauth"
+    TLS = "tls"
 
 
 class PolicyStoreDetails(BaseModel):
