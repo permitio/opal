@@ -6,7 +6,11 @@ from ddtrace.filters import TraceFilter
 from loguru import logger
 
 
-def instrument_app(enable_apm: bool = False, enable_profiler: bool = False):
+def instrument_app(
+    enable_apm: bool = False,
+    enable_profiler: bool = False,
+    enable_runtime_metrics: bool = False,
+):
     """optionally enable datadog APM / profiler."""
     # enable datadog APM (tracing)
     if enable_apm:
@@ -45,5 +49,18 @@ def instrument_app(enable_apm: bool = False, enable_profiler: bool = False):
 
         prof = Profiler()
         prof.start()
+
+        from ddtrace.runtime import RuntimeMetrics
+
+        RuntimeMetrics.enable()
     else:
         logger.info("DataDog profiling disabled")
+
+    if enable_runtime_metrics:
+        logger.info("enabling datadog runtime metrics")
+
+        from ddtrace.runtime import RuntimeMetrics
+
+        RuntimeMetrics.enable()
+    else:
+        logger.info("DataDog runtime metrics disabled")

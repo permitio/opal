@@ -203,6 +203,7 @@ class OpalServer:
         instrument_app(
             enable_apm=opal_common_config.ENABLE_DATADOG_APM,
             enable_profiler=(os.getenv("DD_PROFILING_ENABLED") == "true"),
+            enable_runtime_metrics=(os.getenv("DD_RUNTIME_METRICS_ENABLED") == "true"),
         )
 
         app = FastAPI(
