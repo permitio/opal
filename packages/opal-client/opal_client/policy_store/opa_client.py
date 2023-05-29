@@ -120,9 +120,9 @@ class OpaTransactionLogState:
             self._last_data_transaction is not None
             and self._last_data_transaction.success
         )
-        is_healthy: bool = (self._policy_updater_disabled or policy_updater_is_healthy) and (
-            self._data_updater_disabled or data_updater_is_healthy
-        )
+        is_healthy: bool = (
+            self._policy_updater_disabled or policy_updater_is_healthy
+        ) and (self._data_updater_disabled or data_updater_is_healthy)
         logger.info(
             f"OPA client health: {is_healthy} (policy: {policy_updater_is_healthy}, data: {data_updater_is_healthy})"
         )
@@ -355,7 +355,10 @@ class OpaClient(BasePolicyStoreClient):
             else {}
         )
 
-        self._transaction_state = OpaTransactionLogState(data_updater_enabled=data_updater_enabled, policy_updater_enabled=policy_updater_enabled)
+        self._transaction_state = OpaTransactionLogState(
+            data_updater_enabled=data_updater_enabled,
+            policy_updater_enabled=policy_updater_enabled,
+        )
         # as long as this is null, persisting transaction log to OPA is disabled
         self._transaction_state_writer: Optional[OpaTransactionLogState] = None
 
