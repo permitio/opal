@@ -70,6 +70,7 @@ class PolicyStoreClientFactory:
         oauth_client_secret: Optional[str] = None,
         oauth_server: Optional[str] = None,
         data_updater_enabled: Optional[bool] = None,
+        policy_updater_enabled: Optional[bool] = None,
         offline_mode_enabled: bool = False,
         tls_client_cert: Optional[str] = None,
         tls_client_key: Optional[str] = None,
@@ -108,6 +109,11 @@ class PolicyStoreClientFactory:
             if data_updater_enabled is not None
             else opal_client_config.DATA_UPDATER_ENABLED
         )
+        policy_updater_enabled = (
+            policy_updater_enabled
+            if policy_updater_enabled is not None
+            else opal_client_config.POLICY_UPDATER_ENABLED
+        )
 
         res: Optional[BasePolicyStoreClient] = None
         tls_client_cert = (
@@ -132,6 +138,7 @@ class PolicyStoreClientFactory:
                 oauth_client_secret=oauth_client_secret,
                 oauth_server=oauth_server,
                 data_updater_enabled=data_updater_enabled,
+                policy_updater_enabled=policy_updater_enabled,
                 cache_policy_data=offline_mode_enabled,
                 tls_client_cert=tls_client_cert,
                 tls_client_key=tls_client_key,

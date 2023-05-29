@@ -74,6 +74,12 @@ class OpalClientConfig(Confi):
         description="When loading policies manually or otherwise externally into the policy store, use this list of glob patterns to have OPAL ignore and not delete or override them, end paths (without any wildcards in the middle) with '\**' to indicate you want all nested under the path to be ignored",
     )
 
+    POLICY_UPDATER_ENABLED = confi.bool(
+        "POLICY_UPDATER_ENABLED",
+        True,
+        description="If set to False, opal client will not listen to dynamic policy updates."
+        "Policy update fetching will be completely disabled.",
+    )
     POLICY_STORE_TLS_CLIENT_CERT = confi.str(
         "POLICY_STORE_TLS_CLIENT_CERT",
         None,

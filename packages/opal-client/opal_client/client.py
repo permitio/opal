@@ -109,16 +109,20 @@ class OpalClient:
         if opal_client_config.WAIT_ON_SERVER_LOAD:
             self._startup_wait = StartupLoadLimiter()
 
-        # Init policy updater
-        if policy_updater is not None:
-            self.policy_updater = policy_updater
+        if opal_client_config.POLICY_UPDATER_ENABLED:
+            # Init policy updater
+            if policy_updater is not None:
+                self.policy_updater = policy_updater
+            else:
+                self.policy_updater = PolicyUpdater(
+                    policy_store=self.policy_store,
+                    data_fetcher=self.data_fetcher,
+                    callbacks_register=self._callbacks_register,
+                    opal_client_id=opal_client_identifier,
+                )
         else:
-            self.policy_updater = PolicyUpdater(
-                policy_store=self.policy_store,
-                data_fetcher=self.data_fetcher,
-                callbacks_register=self._callbacks_register,
-                opal_client_id=opal_client_identifier,
-            )
+            self.policy_updater = None
+
         # Data updating service
         if opal_client_config.DATA_UPDATER_ENABLED:
             if data_updater is not None:
@@ -193,12 +197,14 @@ class OpalClient:
             inline_opa_options = (
                 inline_opa_options or opal_client_config.INLINE_OPA_CONFIG
             )
-            rehydration_callbacks = [
-                # refetches policy code (e.g: rego) and static data from server
-                functools.partial(
-                    self.policy_updater.update_policy, force_full_update=True
-                ),
-            ]
+            rehydration_callbacks = []
+            if self.policy_updater:
+                rehydration_callbacks.append(
+                    # refetches policy code (e.g: rego) and static data from server
+                    functools.partial(
+                        self.policy_updater.update_policy, force_full_update=True
+                    ),
+                )
 
             if self.data_updater:
                 rehydration_callbacks.append(
