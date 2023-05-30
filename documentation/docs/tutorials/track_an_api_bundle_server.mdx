@@ -31,6 +31,16 @@ Currently OPAL server supports two ways to detect changes in the tracked repo / 
 
 The rest of the policy syncing process is the same as with a [git policy source](track_a_git_repo).
 
+### Authenticating with Bundle server
+
+You can configure how the OPAL-server will authenticate itself with the bundle server with the following env-var:
+
+| Variables                     | Description                                                                                                                                                                     | Example                                  |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------- |
+| POLICY_BUNDLE_SERVER_TYPE     | `HTTP` (authenticated with bearer token,or nothing), `AWS-S3`(Authenticated with [AWS REST Auth](https://docs.aws.amazon.com/AmazonS3/latest/userguide/RESTAuthentication.html) | AWS-S3                                   |
+| POLICY_BUNDLE_SERVER_TOKEN_ID | The Secret Token Id (AKA user id, AKA access-key) sent to the API bundle server.                                                                                                | AKIAIOSFODNN7EXAMPLE                     |
+| POLICY_BUNDLE_SERVER_TOKEN    | The Secret Token (AKA password, AKA secret-key) sent to the API bundle server.                                                                                                  | wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY |
+
 ## <a name="compose-example"></a>Docker compose example
 
 In this section we show how to configure an **API bundle server as OPAL's policy source**. We made an example [docker-compose.yml](https://github.com/permitio/opal/blob/master/docker/docker-compose-api-policy-source-example.yml) file with all the necessary configuration.
