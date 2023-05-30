@@ -38,7 +38,7 @@ class ApiPolicySource(BasePolicySource):
         local_clone_path(str):  path for the local git to manage policies
         polling_interval(int):  how many seconds need to wait between polling
         token (str, optional):  auth token to include in connections to bundle server. Defaults to POLICY_BUNDLE_SERVER_TOKEN.
-        token (str, optional):  auth token ID to include in connections to bundle server. Defaults to POLICY_BUNDLE_SERVER_TOKEN_ID.
+        token_id (str, optional):  auth token ID to include in connections to bundle server. Defaults to POLICY_BUNDLE_SERVER_TOKEN_ID.
         bundle_server_type (PolicyBundleServerType, optional):  the type of bundle server
     """
 
