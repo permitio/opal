@@ -63,7 +63,7 @@ class DataUpdatePublisher:
 
         return topic_combos
 
-    def publish_data_updates(self, update: DataUpdate):
+    async def publish_data_updates(self, update: DataUpdate):
         """Notify OPAL subscribers of a new data update by topic.
 
         Args:
@@ -97,7 +97,9 @@ class DataUpdatePublisher:
             reason=update.reason,
             entries=logged_entries,
         )
-        self._publisher.publish(all_topic_combos, update)
+
+        async with self._publisher:
+            await self._publisher.publish(list(all_topic_combos), update)
 
     async def _periodic_update_callback(
         self, update: DataSourceEntryWithPollingInterval
@@ -108,7 +110,7 @@ class DataUpdatePublisher:
         )
         # Create new publish entry
 
-        return self.publish_data_updates(
+        return await self.publish_data_updates(
             DataUpdate(reason="Periodic Update", entries=[update])
         )
 
