@@ -128,7 +128,7 @@ def init_data_updates_router(
             logger.error(f"Unauthorized to publish update: {repr(e)}")
             raise
 
-        data_update_publisher.publish_data_updates(update)
+        await data_update_publisher.publish_data_updates(update)
         return {"status": "ok"}
 
     return router

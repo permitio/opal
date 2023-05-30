@@ -94,8 +94,7 @@ class NewCommitsCallbacks(PolicyFetcherCallbacks):
         async with ScopedServerSideTopicPublisher(
             self._pubsub_endpoint, self._scope_id
         ) as publisher:
-            publisher.publish(notification.topics, notification.update)
-            await publisher.wait()
+            await publisher.publish(notification.topics, notification.update)
 
 
 class ScopesService:
