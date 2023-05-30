@@ -15,6 +15,11 @@ class PolicySourceTypes(str, Enum):
     Api = "API"
 
 
+class PolicyBundleServerType(str, Enum):
+    HTTP = "HTTP"
+    AWS_S3 = "AWS-S3"
+
+
 class ServerRole(str, Enum):
     Primary = "primary"
     Secondary = "secondary"
@@ -107,10 +112,21 @@ class OpalServerConfig(Confi):
     LEADER_LOCK_FILE_PATH = confi.str(
         "LEADER_LOCK_FILE_PATH", "/tmp/opal_server_leader.lock"
     )
+    POLICY_BUNDLE_SERVER_TYPE = confi.enum(
+        "POLICY_SOURCE_TYPE",
+        PolicyBundleServerType,
+        PolicyBundleServerType.HTTP,
+        description="The type of bundle server e.g. basic HTTP , AWS S3. (affects how we authenticate with it)",
+    )
     POLICY_BUNDLE_SERVER_TOKEN = confi.str(
         "POLICY_BUNDLE_SERVER_TOKEN",
         None,
-        description="Bearer token to sent to API bundle server",
+        description="Secret token to be sent to API bundle server",
+    )
+    POLICY_BUNDLE_SERVER_TOKEN_ID = confi.str(
+        "POLICY_BUNDLE_SERVER_TOKEN_ID",
+        None,
+        description="The id of the secret token to be sent to API bundle server",
     )
     POLICY_BUNDLE_TMP_PATH = confi.str(
         "POLICY_BUNDLE_TMP_PATH",
@@ -159,7 +175,9 @@ class OpalServerConfig(Confi):
 
     # Data updates
     ALL_DATA_TOPIC = confi.str(
-        "ALL_DATA_TOPIC", DEFAULT_DATA_TOPIC, description="Top level topic for data"
+        "ALL_DATA_TOPIC",
+        DEFAULT_DATA_TOPIC,
+        description="Top level topic for data",
     )
     ALL_DATA_ROUTE = confi.str("ALL_DATA_ROUTE", "/policy-data")
     ALL_DATA_URL = confi.str(
@@ -243,7 +261,7 @@ class OpalServerConfig(Confi):
     SERVER_PORT = confi.str(
         "SERVER_PORT",
         None,
-        # Users have expirienced errors when kubernetes sets the envar OPAL_SERVER_PORT="tcp://..." (which fails to parse as a port integer).
+        # Users have experienced errors when kubernetes sets the env-var OPAL_SERVER_PORT="tcp://..." (which fails to parse as a port integer).
         description="Deprecated, use SERVER_BIND_PORT instead",
     )
 
