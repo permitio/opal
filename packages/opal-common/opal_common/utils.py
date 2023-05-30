@@ -1,9 +1,13 @@
 import asyncio
+import base64
 import glob
 import hashlib
+import hmac
 import logging
 import os
 import threading
+from datetime import datetime
+from hashlib import sha1
 from typing import Coroutine, Dict, List, Tuple
 
 import aiohttp
@@ -50,6 +54,35 @@ def tuple_to_dict(tup: Tuple[str, str]) -> Dict[str, str]:
 
 def get_authorization_header(token: str) -> Tuple[str, str]:
     return "Authorization", f"Bearer {token}"
+
+
+def build_aws_rest_auth_headers(key_id: str, secret_key: str, path: str):
+    """Use the AWS signature algorithm (https://docs.aws.amazon.com/AmazonS3/la
+    test/userguide/RESTAuthentication.html) to generate the hTTP headers.
+
+    Args:
+        key_id (str): Access key (aka user ID) of an account in the S3 service.
+        secret_key (str): Secret key (aka password) of an account in the S3 service.
+        path (str): file path in the S3 bucket
+
+    Returns: http headers
+    """
+
+    # Get the current datetime
+    current_datetime = datetime.utcnow()
+
+    # Format the datetime as a string in the required format
+    formatted_datetime = current_datetime.strftime("%a, %d %b %Y %H:%M:%S +0000")
+
+    string_to_sign = f"GET\n\n\n{formatted_datetime}\n/{path}".encode("UTF-8")
+    signature = base64.encodestring(
+        hmac.new(secret_key, string_to_sign, sha1).digest()
+    ).strip()
+
+    return {
+        "Date": formatted_datetime,
+        "Authorization": f"AWS {key_id}:{signature}",
+    }
 
 
 def sorted_list_from_set(s: set) -> list:

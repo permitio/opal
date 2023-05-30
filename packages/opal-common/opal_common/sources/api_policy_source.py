@@ -9,11 +9,13 @@ from opal_common.git.tar_file_to_local_git_extractor import TarFileToLocalGitExt
 from opal_common.logger import logger
 from opal_common.sources.base_policy_source import BasePolicySource
 from opal_common.utils import (
+    build_aws_rest_auth_headers,
     get_authorization_header,
     hash_file,
     throw_if_bad_status_code,
     tuple_to_dict,
 )
+from opal_server.config import PolicyBundleServerType
 from tenacity import AsyncRetrying
 from tenacity.wait import wait_fixed
 
@@ -35,7 +37,9 @@ class ApiPolicySource(BasePolicySource):
         remote_source_url(str): the base address to request the policy from
         local_clone_path(str):  path for the local git to manage policies
         polling_interval(int):  how many seconds need to wait between polling
-        token (str, optional):  auth token to include in connections to OPAL server. Defaults to POLICY_BUNDLE_SERVER_TOKEN.
+        token (str, optional):  auth token to include in connections to bundle server. Defaults to POLICY_BUNDLE_SERVER_TOKEN.
+        token_id (str, optional):  auth token ID to include in connections to bundle server. Defaults to POLICY_BUNDLE_SERVER_TOKEN_ID.
+        bundle_server_type (PolicyBundleServerType, optional):  the type of bundle server
     """
 
     def __init__(
@@ -44,6 +48,8 @@ class ApiPolicySource(BasePolicySource):
         local_clone_path: str,
         polling_interval: int = 0,
         token: Optional[str] = None,
+        token_id: Optional[str] = None,
+        bundle_server_type: Optional[PolicyBundleServerType] = None,
         policy_bundle_path=".",
         policy_bundle_git_add_pattern="*",
     ):
@@ -53,6 +59,8 @@ class ApiPolicySource(BasePolicySource):
             polling_interval=polling_interval,
         )
         self.token = token
+        self.token_id = token_id
+        self.server_type = bundle_server_type
         self.bundle_hash = None
         self.etag = None
         self.tmp_bundle_path = Path(policy_bundle_path)
@@ -91,9 +99,29 @@ class ApiPolicySource(BasePolicySource):
                     ) = self.tar_to_git.extract_bundle_to_local_git(
                         commit_msg=commit_msg
                     )
-                    return True, prev_version, current_hash, prev_commit, new_commit
+                    return (
+                        True,
+                        prev_version,
+                        current_hash,
+                        prev_commit,
+                        new_commit,
+                    )
                 else:
                     return False, None, current_hash, None, None
+
+    def build_auth_headers(self, token=None, path=None):
+        # if it's a simple HTTP server with a bearer token
+        if self.server_type == PolicyBundleServerType.HTTP and token is not None:
+            return tuple_to_dict(get_authorization_header(token))
+        # if it's an AWS s3 server and we have the token and it's id -
+        elif (
+            self.server_type == PolicyBundleServerType.AWS_S3
+            and token is not None
+            and self.token_id is not None
+        ):
+            return build_aws_rest_auth_headers(self.token_id, token, path)
+        else:
+            return {}
 
     async def fetch_policy_bundle_from_api_source(
         self, url: str, token: Optional[str]
@@ -113,11 +141,12 @@ class ApiPolicySource(BasePolicySource):
             BundleHash: previous bundle hash on None if this is the initial bundle file
             BundleHash: current bundle hash
         """
-        auth_headers = tuple_to_dict(get_authorization_header(token)) if token else {}
+        path = "bundle.tar.gz"
+        auth_headers = self.build_auth_headers(token=token, path=path)
         etag_headers = (
             {"ETag": self.etag, "If-None-Match": self.etag} if self.etag else {}
         )
-        full_url = f"{url}/bundle.tar.gz"
+        full_url = f"{url}/{path}"
 
         async with aiohttp.ClientSession() as session:
             try:
@@ -131,7 +160,8 @@ class ApiPolicySource(BasePolicySource):
                 ) as response:
                     if response.status == status.HTTP_404_NOT_FOUND:
                         logger.warning(
-                            "requested url not found: {full_url}", full_url=full_url
+                            "requested url not found: {full_url}",
+                            full_url=full_url,
                         )
                         raise HTTPException(
                             status_code=status.HTTP_404_NOT_FOUND,
@@ -156,7 +186,7 @@ class ApiPolicySource(BasePolicySource):
 
                     if not current_etag:
                         logger.info(
-                            "Etag is turnned off, you may want to turn it on at your bundle server"
+                            "Etag is turned off, you may want to turn it on at your bundle server"
                         )
                         current_bundle_hash = hash_file(tmp_file_path)
                         logger.info("Bundle hash is {hash}", hash=current_bundle_hash)
@@ -173,13 +203,18 @@ class ApiPolicySource(BasePolicySource):
                             )
                             prev_bundle_hash = self.bundle_hash
                             self.bundle_hash = current_bundle_hash
-                            return tmp_file_path, prev_bundle_hash, current_bundle_hash
+                            return (
+                                tmp_file_path,
+                                prev_bundle_hash,
+                                current_bundle_hash,
+                            )
                     else:
                         if (
                             self.etag == current_etag
                         ):  # validate against bad etag implementation
                             logger.info(
-                                "No new bundle, hash is: {hash}", hash=current_etag
+                                "No new bundle, hash is: {hash}",
+                                hash=current_etag,
                             )
                             return False, None, current_etag
                         prev_etag = self.etag
@@ -200,7 +235,8 @@ class ApiPolicySource(BasePolicySource):
         call the callbacks registered with _on_new_policy().
         """
         logger.info(
-            "Fetching changes from remote: '{remote}'", remote=self.remote_source_url
+            "Fetching changes from remote: '{remote}'",
+            remote=self.remote_source_url,
         )
         (
             has_changes,
