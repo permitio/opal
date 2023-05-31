@@ -1,6 +1,7 @@
 from datetime import datetime
 from pathlib import Path
 from typing import Optional, Tuple
+from urllib.parse import urlparse
 
 import aiohttp
 from fastapi import status
@@ -18,7 +19,6 @@ from opal_common.utils import (
 from opal_server.config import PolicyBundleServerType
 from tenacity import AsyncRetrying
 from tenacity.wait import wait_fixed
-from urllib.parse import urlparse
 
 BundleHash = str
 
