@@ -113,7 +113,7 @@ class OpalServerConfig(Confi):
         "LEADER_LOCK_FILE_PATH", "/tmp/opal_server_leader.lock"
     )
     POLICY_BUNDLE_SERVER_TYPE = confi.enum(
-        "POLICY_SOURCE_TYPE",
+        "POLICY_BUNDLE_SERVER_TYPE",
         PolicyBundleServerType,
         PolicyBundleServerType.HTTP,
         description="The type of bundle server e.g. basic HTTP , AWS S3. (affects how we authenticate with it)",

@@ -56,32 +56,87 @@ def get_authorization_header(token: str) -> Tuple[str, str]:
     return "Authorization", f"Bearer {token}"
 
 
-def build_aws_rest_auth_headers(key_id: str, secret_key: str, path: str):
+def build_aws_rest_auth_headers(key_id: str, secret_key: str, host: str, path: str):
     """Use the AWS signature algorithm (https://docs.aws.amazon.com/AmazonS3/la
     test/userguide/RESTAuthentication.html) to generate the hTTP headers.
 
     Args:
         key_id (str): Access key (aka user ID) of an account in the S3 service.
         secret_key (str): Secret key (aka password) of an account in the S3 service.
-        path (str): file path in the S3 bucket
+        host (str): S3 storage host
+        path (str): path to bundle file in s3 storage (including bucket)
 
     Returns: http headers
     """
 
-    # Get the current datetime
-    current_datetime = datetime.utcnow()
+    def sign(key, msg):
+        return hmac.new(key, msg.encode("utf-8"), hashlib.sha256).digest()
 
-    # Format the datetime as a string in the required format
-    formatted_datetime = current_datetime.strftime("%a, %d %b %Y %H:%M:%S +0000")
+    def getSignatureKey(key, dateStamp, regionName, serviceName):
+        kDate = sign(("AWS4" + key).encode("utf-8"), dateStamp)
+        kRegion = sign(kDate, regionName)
+        kService = sign(kRegion, serviceName)
+        kSigning = sign(kService, "aws4_request")
+        return kSigning
 
-    string_to_sign = f"GET\n\n\n{formatted_datetime}\n/{path}".encode("UTF-8")
-    signature = base64.encodestring(
-        hmac.new(secret_key, string_to_sign, sha1).digest()
-    ).strip()
+    t = datetime.utcnow()
+    amzdate = t.strftime("%Y%m%dT%H%M%SZ")
+    datestamp = t.strftime("%Y%m%d")
+
+    canonical_headers = "host:" + host + "\n" + "x-amz-date:" + amzdate + "\n"
+    signed_headers = "host;x-amz-date"
+
+    payload_hash = hashlib.sha256("".encode("utf-8")).hexdigest()
+
+    canonical_request = (
+        "GET"
+        + "\n"
+        + path
+        + "\n"
+        + "\n"
+        + canonical_headers
+        + "\n"
+        + signed_headers
+        + "\n"
+        + payload_hash
+    )
+
+    region = "us-east-1"
+    algorithm = "AWS4-HMAC-SHA256"
+    credential_scope = datestamp + "/" + region + "/" + "s3" + "/" + "aws4_request"
+
+    string_to_sign = (
+        algorithm
+        + "\n"
+        + amzdate
+        + "\n"
+        + credential_scope
+        + "\n"
+        + hashlib.sha256(canonical_request.encode("utf-8")).hexdigest()
+    )
+    signing_key = getSignatureKey(secret_key, datestamp, region, "s3")
+    signature = hmac.new(
+        signing_key, (string_to_sign).encode("utf-8"), hashlib.sha256
+    ).hexdigest()
+
+    authorization_header = (
+        algorithm
+        + " "
+        + "Credential="
+        + key_id
+        + "/"
+        + credential_scope
+        + ", "
+        + "SignedHeaders="
+        + signed_headers
+        + ", "
+        + "Signature="
+        + signature
+    )
 
     return {
-        "Date": formatted_datetime,
-        "Authorization": f"AWS {key_id}:{signature}",
+        "x-amz-date": amzdate,
+        "Authorization": authorization_header,
     }
 
 

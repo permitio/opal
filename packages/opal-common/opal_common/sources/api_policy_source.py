@@ -1,6 +1,7 @@
 from datetime import datetime
 from pathlib import Path
 from typing import Optional, Tuple
+from urllib.parse import urlparse
 
 import aiohttp
 from fastapi import status
@@ -119,7 +120,11 @@ class ApiPolicySource(BasePolicySource):
             and token is not None
             and self.token_id is not None
         ):
-            return build_aws_rest_auth_headers(self.token_id, token, path)
+            split_url = urlparse(self.remote_source_url)
+            host = split_url.netloc
+            path = split_url.path + "/" + path
+
+            return build_aws_rest_auth_headers(self.token_id, token, host, path)
         else:
             return {}
 
@@ -142,10 +147,12 @@ class ApiPolicySource(BasePolicySource):
             BundleHash: current bundle hash
         """
         path = "bundle.tar.gz"
+
         auth_headers = self.build_auth_headers(token=token, path=path)
         etag_headers = (
             {"ETag": self.etag, "If-None-Match": self.etag} if self.etag else {}
         )
+
         full_url = f"{url}/{path}"
 
         async with aiohttp.ClientSession() as session:
