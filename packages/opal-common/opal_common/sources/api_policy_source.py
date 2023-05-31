@@ -18,6 +18,7 @@ from opal_common.utils import (
 from opal_server.config import PolicyBundleServerType
 from tenacity import AsyncRetrying
 from tenacity.wait import wait_fixed
+from urllib.parse import urlparse
 
 BundleHash = str
 
@@ -119,9 +120,9 @@ class ApiPolicySource(BasePolicySource):
             and token is not None
             and self.token_id is not None
         ):
-            split_url = self.remote_source_url.split("/", 3)
-            host = split_url[2]
-            path = "/" + split_url[3] + "/" + path
+            split_url = urlparse(self.remote_source_url)
+            host = split_url.netloc
+            path = split_url.path + "/" + path
 
             return build_aws_rest_auth_headers(self.token_id, token, host, path)
         else:
