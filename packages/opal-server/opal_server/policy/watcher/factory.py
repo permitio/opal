@@ -25,6 +25,8 @@ def setup_watcher_task(
     polling_interval: int = None,
     request_timeout: int = None,
     policy_bundle_token: str = None,
+    policy_bundle_token_id: str = None,
+    policy_bundle_server_type: str = None,
     extensions: Optional[List[str]] = None,
     bundle_ignore: Optional[List[str]] = None,
 ) -> BasePolicyWatcherTask:
@@ -41,6 +43,8 @@ def setup_watcher_task(
         polling_interval(int):  how many seconds need to wait between polling
         request_timeout(int):  how many seconds need to wait until timeout
         policy_bundle_token(int):  auth token to include in connections to OPAL server. Defaults to POLICY_BUNDLE_SERVER_TOKEN.
+        policy_bundle_token_id(int):  id token to include in connections to OPAL server. Defaults to POLICY_BUNDLE_SERVER_TOKEN_ID.
+        policy_bundle_server_type (str): type of policy bundle server (HTTP S3). Defaults to POLICY_BUNDLE_SERVER_TYPE
         extensions(list(str), optional):  list of extantions to check when new policy arrive default is FILTER_FILE_EXTENSIONS
         bundle_ignore(list(str), optional):  list of glob paths to use for excluding files from bundle default is OPA_BUNDLE_IGNORE
     """
@@ -105,11 +109,19 @@ def setup_watcher_task(
             logger.warning(
                 "POLICY_BUNDLE_URL is unset but policy watcher is enabled! disabling watcher."
             )
+        policy_bundle_token_id = load_conf_if_none(
+            policy_bundle_token_id, opal_server_config.POLICY_BUNDLE_SERVER_TOKEN_ID
+        )
+        policy_bundle_server_type = load_conf_if_none(
+            policy_bundle_server_type, opal_server_config.POLICY_BUNDLE_SERVER_TYPE
+        )
         watcher = ApiPolicySource(
             remote_source_url=remote_source_url,
             local_clone_path=clone_path,
             polling_interval=polling_interval,
             token=policy_bundle_token,
+            token_id=policy_bundle_token_id,
+            bundle_server_type=policy_bundle_server_type,
             policy_bundle_path=opal_server_config.POLICY_BUNDLE_TMP_PATH,
             policy_bundle_git_add_pattern=opal_server_config.POLICY_BUNDLE_GIT_ADD_PATTERN,
         )
