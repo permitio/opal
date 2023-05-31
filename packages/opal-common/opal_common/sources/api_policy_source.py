@@ -38,7 +38,7 @@ class ApiPolicySource(BasePolicySource):
         local_clone_path(str):  path for the local git to manage policies
         polling_interval(int):  how many seconds need to wait between polling
         token (str, optional):  auth token to include in connections to bundle server. Defaults to POLICY_BUNDLE_SERVER_TOKEN.
-        token (str, optional):  auth token ID to include in connections to bundle server. Defaults to POLICY_BUNDLE_SERVER_TOKEN_ID.
+        token_id (str, optional):  secret token ID to include in connections to s3 bundle server. Defaults to POLICY_BUNDLE_SERVER_TOKEN_ID.
         bundle_server_type (PolicyBundleServerType, optional):  the type of bundle server
     """
 
@@ -109,7 +109,7 @@ class ApiPolicySource(BasePolicySource):
                 else:
                     return False, None, current_hash, None, None
 
-    def build_auth_headers(self, token=None, path=None):
+    def build_auth_headers(self, token=None, host=None, path=None):
         # if it's a simple HTTP server with a bearer token
         if self.server_type == PolicyBundleServerType.HTTP and token is not None:
             return tuple_to_dict(get_authorization_header(token))
@@ -119,7 +119,7 @@ class ApiPolicySource(BasePolicySource):
             and token is not None
             and self.token_id is not None
         ):
-            return build_aws_rest_auth_headers(self.token_id, token, path)
+            return build_aws_rest_auth_headers(self.token_id, token, host, path)
         else:
             return {}
 
@@ -141,12 +141,16 @@ class ApiPolicySource(BasePolicySource):
             BundleHash: previous bundle hash on None if this is the initial bundle file
             BundleHash: current bundle hash
         """
-        path = "bundle.tar.gz"
-        auth_headers = self.build_auth_headers(token=token, path=path)
+        split_url = url.split("/", 3)
+        host = split_url[2]
+        path = "/" + split_url[3] + "/bundle.tar.gz"
+
+        auth_headers = self.build_auth_headers(token=token, host=host, path=path)
         etag_headers = (
             {"ETag": self.etag, "If-None-Match": self.etag} if self.etag else {}
         )
-        full_url = f"{url}/{path}"
+
+        full_url = f"{url}/bundle.tar.gz"
 
         async with aiohttp.ClientSession() as session:
             try:
