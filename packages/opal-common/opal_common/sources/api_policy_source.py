@@ -109,7 +109,7 @@ class ApiPolicySource(BasePolicySource):
                 else:
                     return False, None, current_hash, None, None
 
-    def build_auth_headers(self, token=None, host=None, path=None):
+    def build_auth_headers(self, token=None, path=None):
         # if it's a simple HTTP server with a bearer token
         if self.server_type == PolicyBundleServerType.HTTP and token is not None:
             return tuple_to_dict(get_authorization_header(token))
@@ -119,6 +119,10 @@ class ApiPolicySource(BasePolicySource):
             and token is not None
             and self.token_id is not None
         ):
+            split_url = self.remote_source_url.split("/", 3)
+            host = split_url[2]
+            path = "/" + split_url[3] + "/" + path
+
             return build_aws_rest_auth_headers(self.token_id, token, host, path)
         else:
             return {}
@@ -141,11 +145,9 @@ class ApiPolicySource(BasePolicySource):
             BundleHash: previous bundle hash on None if this is the initial bundle file
             BundleHash: current bundle hash
         """
-        split_url = url.split("/", 3)
-        host = split_url[2]
-        path = "/" + split_url[3] + "/bundle.tar.gz"
+        path = "bundle.tar.gz"
 
-        auth_headers = self.build_auth_headers(token=token, host=host, path=path)
+        auth_headers = self.build_auth_headers(token=token, path=path)
         etag_headers = (
             {"ETag": self.etag, "If-None-Match": self.etag} if self.etag else {}
         )
