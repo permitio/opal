@@ -68,40 +68,74 @@ def build_aws_rest_auth_headers(key_id: str, secret_key: str, host: str, path: s
 
     Returns: http headers
     """
-    
+
     def sign(key, msg):
-        return hmac.new(key, msg.encode('utf-8'), hashlib.sha256).digest()
-    
+        return hmac.new(key, msg.encode("utf-8"), hashlib.sha256).digest()
+
     def getSignatureKey(key, dateStamp, regionName, serviceName):
-        kDate = sign(('AWS4' + key).encode('utf-8'), dateStamp)
+        kDate = sign(("AWS4" + key).encode("utf-8"), dateStamp)
         kRegion = sign(kDate, regionName)
         kService = sign(kRegion, serviceName)
-        kSigning = sign(kService, 'aws4_request')
+        kSigning = sign(kService, "aws4_request")
         return kSigning
-    
+
     t = datetime.utcnow()
-    amzdate = t.strftime('%Y%m%dT%H%M%SZ')
-    datestamp = t.strftime('%Y%m%d')
-    
-    canonical_headers = 'host:' + host + '\n' + 'x-amz-date:' + amzdate + '\n'
-    signed_headers = 'host;x-amz-date'
-    
-    payload_hash = hashlib.sha256(''.encode('utf-8')).hexdigest()
-    
-    canonical_request = 'GET' + '\n' + path + '\n' + '\n' + canonical_headers + '\n' + signed_headers + '\n' + payload_hash
-    
-    region = 'us-east-1'
-    algorithm = 'AWS4-HMAC-SHA256'
-    credential_scope = datestamp + '/' + region + '/' + 's3' + '/' + 'aws4_request'
-    string_to_sign = algorithm + '\n' +  amzdate + '\n' +  credential_scope + '\n' +  hashlib.sha256(canonical_request.encode('utf-8')).hexdigest()
-    
-    signing_key = getSignatureKey(secret_key, datestamp, region, 's3')
-    signature = hmac.new(signing_key, (string_to_sign).encode('utf-8'), hashlib.sha256).hexdigest()
-    
-    authorization_header = algorithm + ' ' + 'Credential=' + key_id + '/' + credential_scope + ', ' +  'SignedHeaders=' + signed_headers + ', ' + 'Signature=' + signature
-    
+    amzdate = t.strftime("%Y%m%dT%H%M%SZ")
+    datestamp = t.strftime("%Y%m%d")
+
+    canonical_headers = "host:" + host + "\n" + "x-amz-date:" + amzdate + "\n"
+    signed_headers = "host;x-amz-date"
+
+    payload_hash = hashlib.sha256("".encode("utf-8")).hexdigest()
+
+    canonical_request = (
+        "GET"
+        + "\n"
+        + path
+        + "\n"
+        + "\n"
+        + canonical_headers
+        + "\n"
+        + signed_headers
+        + "\n"
+        + payload_hash
+    )
+
+    region = "us-east-1"
+    algorithm = "AWS4-HMAC-SHA256"
+    credential_scope = datestamp + "/" + region + "/" + "s3" + "/" + "aws4_request"
+    string_to_sign = (
+        algorithm
+        + "\n"
+        + amzdate
+        + "\n"
+        + credential_scope
+        + "\n"
+        + hashlib.sha256(canonical_request.encode("utf-8")).hexdigest()
+    )
+
+    signing_key = getSignatureKey(secret_key, datestamp, region, "s3")
+    signature = hmac.new(
+        signing_key, (string_to_sign).encode("utf-8"), hashlib.sha256
+    ).hexdigest()
+
+    authorization_header = (
+        algorithm
+        + " "
+        + "Credential="
+        + key_id
+        + "/"
+        + credential_scope
+        + ", "
+        + "SignedHeaders="
+        + signed_headers
+        + ", "
+        + "Signature="
+        + signature
+    )
+
     return {
-        'x-amz-date': amzdate,
+        "x-amz-date": amzdate,
         "Authorization": authorization_header,
     }
 
