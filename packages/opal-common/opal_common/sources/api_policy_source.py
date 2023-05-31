@@ -152,7 +152,7 @@ class ApiPolicySource(BasePolicySource):
             {"ETag": self.etag, "If-None-Match": self.etag} if self.etag else {}
         )
 
-        full_url = f"{url}/bundle.tar.gz"
+        full_url = f"{url}/{path}"
 
         async with aiohttp.ClientSession() as session:
             try:
