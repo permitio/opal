@@ -70,6 +70,15 @@ We'll deploy a different OPAL client as part of our on-prem/edge container in ea
   - `edge2` will set `OPAL_POLICY_SUBSCRIPTION_DIRS=default:tenants/tenant2`.
   - `edge3` will set `OPAL_POLICY_SUBSCRIPTION_DIRS=default:tenants/tenant3`.
 
+#### 2.1) Loading Data.json files
+
+In general `data.json` files are mostly meant for backward as a backward compatibility to vanilla OPA bundles, and we recommend you use dynamic updates with data-sources-config instead.
+If you do use `data.json` here are a few things to note:
+
+- The OPAL server looks for any file matching `.*data.json` and not just `data.json`
+- The data from the files will be nested in the policy-store under the path of it's folder (i.e. `/foldername/data.json` in the repo will be loaded under ` /v1/data/foldername`)
+- When loaded into a path the data will override all in that path (it won't merge) - use different folders to avoid overrides
+
 ### 3) <a name="policy-update-message"></a>OPAL Server notifies his OPAL clients about policy updates
 
 Upon learning about **new commits** in the tracked branch, and assuming these new commits include changes **that affect rego or data files**, OPAL server will push an update message via pub/sub to its OPAL clients.
