@@ -72,8 +72,9 @@ We'll deploy a different OPAL client as part of our on-prem/edge container in ea
 
 #### 2.1) Loading Data.json files
 
-In general `data.json` files are mostly meant for backward as a backward compatibility to vanilla OPA bundles, and we recommend you use dynamic updates with data-sources-config instead.
-If you do use `data.json` here are a few things to note:
+In general `data.json` files are mostly meant for backward as a backward compatibility to vanilla OPA bundles (in OPA the `data.json` in [bundles](https://www.openpolicyagent.org/docs/latest/management-bundles/) is the primary way to load data. For users migrating from plain OPA to OPAL being able to reuse their bundles can be useful).
+We recommend you use dynamic updates with data-sources-config for a more efficient and up-to-date approach.
+However, if you choose to utilize data.json files, here are a few important points to consider:
 
 - The OPAL server looks for any file matching `.*data.json` and not just `data.json`
 - The data from the files will be nested in the policy-store under the path of it's folder (i.e. `/foldername/data.json` in the repo will be loaded under ` /v1/data/foldername`)
