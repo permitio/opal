@@ -17,6 +17,7 @@ class BasePolicyWatcherTask:
         self._tasks: List[asyncio.Task] = []
         self._should_stop: Optional[asyncio.Event] = None
         self._pubsub_endpoint = pubsub_endpoint
+        self._webhook_tasks: List[asyncio.Task] = []
 
     async def __aenter__(self):
         await self.start()
@@ -26,8 +27,13 @@ class BasePolicyWatcherTask:
         await self.stop()
 
     async def _on_webhook(self, topic: Topic, data: Any):
-        logger.info("Webhook listener triggered")
-        self._tasks.append(asyncio.create_task(self.trigger(topic, data)))
+        logger.info(f"Webhook listener triggered ({len(self._webhook_tasks)})")
+        for task in self._webhook_tasks:
+            if task.done():
+                # Clean references to finished tasks
+                self._webhook_tasks.remove(task)
+
+        self._webhook_tasks.append(asyncio.create_task(self.trigger(topic, data)))
 
     async def _listen_to_webhook_notifications(self):
         # Webhook api route can be hit randomly in all workers, so it publishes a message to the webhook topic.
