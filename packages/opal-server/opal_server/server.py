@@ -300,7 +300,6 @@ class OpalServer:
 
             try:
                 self._task = asyncio.create_task(self.start_server_background_tasks())
-                self._metrics_task = asyncio.create_task(self._collect_metrics())
 
             except Exception:
                 logger.critical("Exception while starting OPAL")
@@ -401,16 +400,3 @@ class OpalServer:
             await asyncio.gather(*tasks)
         except Exception:
             logger.exception("exception while shutting down background tasks")
-
-    async def _collect_metrics(self):
-        while True:
-            try:
-                if self._redis_db:
-                    queue_length = await self._redis_db.redis_connection.llen(
-                        "opal-worker"
-                    )
-                    metrics.gauge("worker_queue_len", queue_length)
-
-                await asyncio.sleep(opal_common_config.METRICS_INTERVAL)
-            except Exception as ex:
-                logger.error("Error while collecting metrics: {err}", err=ex)

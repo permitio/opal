@@ -131,7 +131,6 @@ class OpalCommonConfig(Confi):
     AUTH_JWT_ISSUER = confi.str("AUTH_JWT_ISSUER", f"https://opal.ac/")
 
     ENABLE_METRICS = confi.bool("ENABLE_METRICS", False)
-    METRICS_INTERVAL = confi.int("METRICS_INTERVAL", 10.0)
 
     # optional APM tracing with datadog
     ENABLE_DATADOG_APM = confi.bool(
