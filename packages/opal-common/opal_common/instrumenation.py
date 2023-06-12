@@ -49,10 +49,6 @@ def instrument_app(
 
         prof = Profiler()
         prof.start()
-
-        from ddtrace.runtime import RuntimeMetrics
-
-        RuntimeMetrics.enable()
     else:
         logger.info("DataDog profiling disabled")
 

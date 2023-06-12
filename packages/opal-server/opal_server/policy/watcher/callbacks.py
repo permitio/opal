@@ -99,4 +99,5 @@ async def publish_changed_directories(
     repo, prompting the client to ask for *all* contents of these directories
     (and not just diffs)."""
     notification = await create_policy_update(old_commit, new_commit, file_extensions)
-    publisher.publish(topics=notification.topics, data=notification.update.dict())
+    async with publisher:
+        publisher.publish(topics=notification.topics, data=notification.update.dict())
