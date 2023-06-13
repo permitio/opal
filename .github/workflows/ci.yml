@@ -1,7 +1,7 @@
 name: CI Workflow (Test, Build & Deploy)
 on:
   push:
-    branches: [ private ]
+    branches: [ private, rk/*]
   pull_request:
     branches: [ private ]
 
