@@ -117,6 +117,6 @@ async def publish_changed_directories(
 
     if notification:
         async with publisher:
-            publisher.publish(
+            await publisher.publish(
                 topics=notification.topics, data=notification.update.dict()
             )

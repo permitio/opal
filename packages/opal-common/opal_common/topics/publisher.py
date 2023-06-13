@@ -14,7 +14,7 @@ class TopicPublisher:
         self._tasks: List[asyncio.Task] = []
         self._tasks_lock = asyncio.Lock()
 
-    def publish(self, topics: TopicList, data: Any = None):
+    async def publish(self, topics: TopicList, data: Any = None):
         raise NotImplementedError()
 
     async def __aenter__(self):
@@ -109,7 +109,7 @@ class PeriodicPublisher:
                 f"{self._task_name}: publishing message on topic '{self._topic}', next publish is scheduled in {self._interval} seconds"
             )
             async with self._publisher:
-                self._publisher.publish(topics=[self._topic], data=self._message)
+                await self._publisher.publish(topics=[self._topic], data=self._message)
 
 
 class ServerSideTopicPublisher(TopicPublisher):
