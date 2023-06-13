@@ -357,8 +357,7 @@ def init_scope_router(
         async with ScopedServerSideTopicPublisher(
             pubsub_endpoint, scope_id
         ) as publisher:
-            publisher.publish(notification.topics, notification.update)
-            await publisher.wait()
+            await publisher.publish(notification.topics, notification.update)
         return Response(status_code=status.HTTP_204_NO_CONTENT)
 
     @router.post("/{scope_id}/data/update")

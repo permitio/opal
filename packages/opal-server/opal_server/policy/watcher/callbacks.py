@@ -100,4 +100,6 @@ async def publish_changed_directories(
     (and not just diffs)."""
     notification = await create_policy_update(old_commit, new_commit, file_extensions)
     async with publisher:
-        publisher.publish(topics=notification.topics, data=notification.update.dict())
+        await publisher.publish(
+            topics=notification.topics, data=notification.update.dict()
+        )
