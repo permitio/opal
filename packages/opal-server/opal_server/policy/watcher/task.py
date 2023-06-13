@@ -64,7 +64,7 @@ class BasePolicyWatcherTask:
     async def stop(self):
         """stops all policy watcher tasks."""
         logger.info("Stopping policy watcher")
-        for task in self._tasks:
+        for task in self._tasks + self._webhook_tasks:
             if not task.done():
                 task.cancel()
         await asyncio.gather(*self._tasks, return_exceptions=True)
