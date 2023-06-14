@@ -126,6 +126,7 @@ class RepoInterface:
 
 class GitPolicyFetcher(PolicyFetcher):
     repo_locks = {}
+    repos = {}
 
     def __init__(
         self,
@@ -233,15 +234,19 @@ class GitPolicyFetcher(PolicyFetcher):
             logger.info(f"Clone completed: {self._source.url}")
             await self.callbacks.on_update(None, repo.head.target.hex)
 
-    def _get_valid_repo(self) -> Optional[Repository]:
+    def _get_repo(self) -> Repository:
         path = str(self._repo_path)
+        if path not in GitPolicyFetcher.repos:
+            GitPolicyFetcher.repos[path] = Repository(path)
+        return GitPolicyFetcher.repos[path]
 
+    def _get_valid_repo(self) -> Optional[Repository]:
         try:
-            repo = Repository(path)
+            repo = self._get_repo()
             RepoInterface.verify_found_repo_matches_remote(repo, self._source.url)
             return repo
         except pygit2.GitError:
-            logger.warning("Invalid repo at: {path}", path=path)
+            logger.warning("Invalid repo at: {path}", path=self._repo_path)
             return None
 
     async def _should_fetch(
@@ -298,7 +303,7 @@ class GitPolicyFetcher(PolicyFetcher):
         local_branch.set_target(new_revision)
 
     def _get_current_branch_head(self) -> str:
-        repo = Repository(str(self._repo_path))
+        repo = self._get_repo()
         head_commit_hash = RepoInterface.get_commit_hash(
             repo, self._source.branch, self._remote
         )
