@@ -122,6 +122,7 @@ class DataUpdater:
             if self._custom_ssl_context is not None
             else {}
         )
+        self._update_tasks = []
 
     async def __aenter__(self):
         await self.start()
@@ -144,17 +145,15 @@ class DataUpdater:
             reason = "Periodic update"
         logger.info("Updating policy data, reason: {reason}", reason=reason)
         update = DataUpdate.parse_obj(data)
-        self.trigger_data_update(update)
+        await self.trigger_data_update(update)
 
-    def trigger_data_update(self, update: DataUpdate):
+    async def trigger_data_update(self, update: DataUpdate):
         # make sure the id has a unique id for tracking
         if update.id is None:
             update.id = uuid.uuid4().hex
         logger.info("Triggering data update with id: {id}", id=update.id)
-        asyncio.create_task(
-            self.update_policy_data(
-                update, policy_store=self._policy_store, data_fetcher=self._data_fetcher
-            )
+        await self.update_policy_data(
+            update, policy_store=self._policy_store, data_fetcher=self._data_fetcher
         )
 
     async def get_policy_data_config(self, url: str = None) -> DataSourceConfig:
@@ -199,7 +198,7 @@ class DataUpdater:
         # translate config to a data update
         entries = sources_config.entries
         update = DataUpdate(reason=data_fetch_reason, entries=entries)
-        self.trigger_data_update(update)
+        await self.trigger_data_update(update)
 
     async def on_connect(self, client: PubSubClient, channel: RpcChannel):
         """Pub/Sub on_connect callback On connection to backend, whether its
