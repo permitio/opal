@@ -70,13 +70,13 @@ class DataUpdatePublisher:
             topics (List[str]): topics (with hierarchy) to notify subscribers of
             update (DataUpdate): update data-source configuration for subscribers to fetch data from
         """
-        all_topic_combos = []
+        all_topic_combos = set()
 
         # Expand the topics for each event to include sub topic combos (e.g. publish 'a/b/c' as 'a' , 'a/b', and 'a/b/c')
         for entry in update.entries:
             for topic in entry.topics:
                 topic_combos = DataUpdatePublisher.get_topic_combos(topic)
-                all_topic_combos.extend(topic_combos)
+                all_topic_combos.update(topic_combos)
 
         # a nicer format of entries to the log
         logged_entries = [
