@@ -124,8 +124,8 @@ class ServerSideTopicPublisher(TopicPublisher):
         self._endpoint = endpoint
         super().__init__()
 
-    def publish(self, topics: TopicList, data: Any = None):
-        self._add_task(
+    async def publish(self, topics: TopicList, data: Any = None):
+        await self._add_task(
             asyncio.create_task(self._endpoint.publish(topics=topics, data=data))
         )
 
@@ -168,14 +168,16 @@ class ClientSideTopicPublisher(TopicPublisher):
         context."""
         return await self._client.wait_until_done()
 
-    def publish(self, topics: TopicList, data: Any = None):
+    async def publish(self, topics: TopicList, data: Any = None):
         """publish a message by launching a background task on the event loop.
 
         Args:
             topics (TopicList): a list of topics to publish the message to
             data (Any): optional data to publish as part of the message
         """
-        self._add_task(asyncio.create_task(self._publish(topics=topics, data=data)))
+        await self._add_task(
+            asyncio.create_task(self._publish(topics=topics, data=data))
+        )
 
     async def _publish(self, topics: TopicList, data: Any = None) -> bool:
         """Do not trigger directly, must be triggered via publish() in order to
@@ -190,7 +192,7 @@ class ScopedServerSideTopicPublisher(ServerSideTopicPublisher):
         super().__init__(endpoint)
         self._scope_id = scope_id
 
-    def publish(self, topics: TopicList, data: Any = None):
+    async def publish(self, topics: TopicList, data: Any = None):
         scoped_topics = [f"{self._scope_id}:{topic}" for topic in topics]
         logger.info("Publishing to topics: {topics}", topics=scoped_topics)
-        super().publish(scoped_topics, data)
+        await super().publish(scoped_topics, data)

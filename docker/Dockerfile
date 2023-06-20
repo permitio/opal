@@ -1,7 +1,7 @@
 # BUILD STAGE ---------------------------------------
 # split this stage to save time and reduce image size
 # ---------------------------------------------------
-FROM python:3.10 as BuildStage
+FROM python:3.10-bullseye as BuildStage
 # from now on, work in the /app directory
 WORKDIR /app/
 # Layer dependency install (for caching)
@@ -24,7 +24,7 @@ RUN cd /tmp/cedar-agent && \
 
 # COMMON IMAGE --------------------------------------
 # ---------------------------------------------------
-FROM python:3.10-slim as common
+FROM python:3.10-slim-bullseye as common
 
 # copy libraries from build stage (This won't copy redundant libraries we used in BuildStage)
 COPY --from=BuildStage /usr/local /usr/local
