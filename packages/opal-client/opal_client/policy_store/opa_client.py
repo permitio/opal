@@ -124,9 +124,16 @@ class OpaTransactionLogState:
         is_healthy: bool = (
             self._policy_updater_disabled or policy_updater_is_healthy
         ) and (self._data_updater_disabled or data_updater_is_healthy)
-        logger.info(
-            f"OPA client health: {is_healthy} (policy: {policy_updater_is_healthy}, data: {data_updater_is_healthy})"
-        )
+
+        if is_healthy:
+            logger.debug(
+                f"OPA client health: {is_healthy} (policy: {policy_updater_is_healthy}, data: {data_updater_is_healthy})"
+            )
+        else:
+            logger.warning(
+                f"OPA client health: {is_healthy} (policy: {policy_updater_is_healthy}, data: {data_updater_is_healthy})"
+            )
+
         return is_healthy
 
     @property
