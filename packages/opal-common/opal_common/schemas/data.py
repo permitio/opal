@@ -4,11 +4,26 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 
 from opal_common.fetcher.events import FetcherConfig
 from opal_common.fetcher.providers.http_fetch_provider import HttpFetcherConfig
-from pydantic import AnyHttpUrl, BaseModel, Field, root_validator
+from opal_common.schemas.store import JSONPatchAction
+from pydantic import AnyHttpUrl, BaseModel, Field, root_validator, validator
+from pydantic.json import pydantic_encoder
 
-JsonableValue = Union[Dict[str, Any], List[Any]]
+JsonableValue = Union[List[JSONPatchAction], List[Any], Dict[str, Any]]
+
 
 DEFAULT_DATA_TOPIC = "policy_data"
+
+# custom encoder for doing a json.dumps on JsonableValue to pass in additional
+# kwargs like by_alias, exclude_none etc to avoid field name being sent to OPA instead of alias
+# and to exclude default fields from the JSON being sent to OPA
+def custom_encoder(**kwargs):
+    def base_encoder(obj):
+        if isinstance(obj, BaseModel):
+            return obj.dict(**kwargs)
+        else:
+            return pydantic_encoder(obj)
+
+    return base_encoder
 
 
 class DataSourceEntry(BaseModel):
@@ -16,13 +31,19 @@ class DataSourceEntry(BaseModel):
     Data source configuration - where client's should retrieve data from and how they should store it
     """
 
+    @validator("data")
+    def name_must_contain_space(cls, value, values):
+        if values["save_method"] == "PATCH" and (
+            not isinstance(value, list)
+            or not all(isinstance(elem, JSONPatchAction) for elem in value)
+        ):
+            raise TypeError(
+                "'data' must be of type JSON patch request when save_method is PATCH"
+            )
+        return value
+
     # How to obtain the data
     url: str = Field(..., description="Url source to query for data")
-    data: Optional[JsonableValue] = Field(
-        None,
-        description="Data payload to embed within the data update (instead of having "
-        "the client fetch it from the url).",
-    )
     config: dict = Field(
         None,
         description="Suggested fetcher configuration (e.g. auth or method) to fetch data with",
@@ -36,6 +57,11 @@ class DataSourceEntry(BaseModel):
     dst_path: str = Field("", description="OPA data api path to store the document at")
     save_method: str = Field(
         "PUT", description="Method used to write into OPA - PUT/PATCH"
+    )
+    data: Optional[JsonableValue] = Field(
+        None,
+        description="Data payload to embed within the data update (instead of having "
+        "the client fetch it from the url).",
     )
 
 

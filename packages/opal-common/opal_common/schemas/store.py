@@ -1,8 +1,8 @@
 from datetime import datetime
 from enum import Enum
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, root_validator
 
 
 class TransactionType(str, Enum):
@@ -47,9 +47,18 @@ class JSONPatchAction(BaseModel):
 
     op: str = Field(..., description="patch action to perform")
     path: str = Field(..., description="target location in modified json")
-    value: Dict[str, Any] = Field(
-        ..., description="json document, the operand of the action"
+    value: Optional[Any] = Field(
+        None, description="json document, the operand of the action"
     )
+    from_field: Optional[str] = Field(
+        None, description="source location in json", alias="from"
+    )
+
+    @root_validator
+    def value_must_be_present(cls, values):
+        if values.get("op") in ["add", "replace"] and values.get("value") is None:
+            raise TypeError("'value' must be present when op is either add or replace")
+        return values
 
 
 class ArrayAppendAction(JSONPatchAction):
