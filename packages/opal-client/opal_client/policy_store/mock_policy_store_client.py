@@ -1,8 +1,11 @@
 import asyncio
+import json
 from typing import Any, Dict, List, Optional
 
+import jsonpatch
+from opal_common.schemas.data import custom_encoder
 from opal_common.schemas.policy import PolicyBundle
-from opal_common.schemas.store import StoreTransaction
+from opal_common.schemas.store import JSONPatchAction, StoreTransaction
 from pydantic import BaseModel
 
 from .base_policy_store_client import BasePolicyStoreClient, JsonableValue
@@ -51,6 +54,22 @@ class MockPolicyStoreClient(BasePolicyStoreClient):
         transaction_id: Optional[str] = None,
     ):
         self._data[path] = policy_data
+        self.has_data_event.set()
+
+    async def patch_policy_data(
+        self,
+        policy_data: List[JSONPatchAction],
+        path: str = "",
+        transaction_id: Optional[str] = None,
+    ):
+        for i, _ in enumerate(policy_data):
+            if not path == "/":
+                policy_data[i].path = path + policy_data[i].path
+        data_str = json.dumps(
+            policy_data, default=custom_encoder(by_alias=True, exclude_none=True)
+        )
+        patch = jsonpatch.JsonPatch.from_string(data_str)
+        patch.apply(self._data, in_place=True)
         self.has_data_event.set()
 
     async def get_data(self, path: str = None) -> Dict:

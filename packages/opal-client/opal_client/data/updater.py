@@ -35,6 +35,7 @@ from opal_common.schemas.data import (
 from opal_common.schemas.store import TransactionType
 from opal_common.security.sslcontext import get_custom_ssl_context
 from opal_common.utils import get_authorization_header
+from pydantic.json import pydantic_encoder
 
 
 class DataUpdater:
@@ -296,7 +297,7 @@ class DataUpdater:
         """
         try:
             if not isinstance(data, str):
-                data = json.dumps(data, default=str)
+                data = json.dumps(data, default=pydantic_encoder)
             return hashlib.sha256(data.encode("utf-8")).hexdigest()
         except:
             logger.exception("Failed to calculate hash for data {data}", data=data)

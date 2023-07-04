@@ -56,7 +56,8 @@ class DataSourceEntry(BaseModel):
     # see https://www.openpolicyagent.org/docs/latest/rest-api/#data-api path is the path nested under <OPA_SERVER>/<version>/data
     dst_path: str = Field("", description="OPA data api path to store the document at")
     save_method: str = Field(
-        "PUT", description="Method used to write into OPA - PUT/PATCH"
+        "PUT",
+        description="Method used to write into OPA - PUT/PATCH, when using the PATCH method the data field should conform to the JSON patch schema defined in RFC 6902(https://datatracker.ietf.org/doc/html/rfc6902#section-3)",
     )
     data: Optional[JsonableValue] = Field(
         None,
