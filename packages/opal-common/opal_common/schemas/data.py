@@ -6,24 +6,11 @@ from opal_common.fetcher.events import FetcherConfig
 from opal_common.fetcher.providers.http_fetch_provider import HttpFetcherConfig
 from opal_common.schemas.store import JSONPatchAction
 from pydantic import AnyHttpUrl, BaseModel, Field, root_validator, validator
-from pydantic.json import pydantic_encoder
 
 JsonableValue = Union[List[JSONPatchAction], List[Any], Dict[str, Any]]
 
 
 DEFAULT_DATA_TOPIC = "policy_data"
-
-# custom encoder for doing a json.dumps on JsonableValue to pass in additional
-# kwargs like by_alias, exclude_none etc to avoid field name being sent to OPA instead of alias
-# and to exclude default fields from the JSON being sent to OPA
-def custom_encoder(**kwargs):
-    def base_encoder(obj):
-        if isinstance(obj, BaseModel):
-            return obj.dict(**kwargs)
-        else:
-            return pydantic_encoder(obj)
-
-    return base_encoder
 
 
 class DataSourceEntry(BaseModel):
@@ -33,6 +20,8 @@ class DataSourceEntry(BaseModel):
 
     @validator("data")
     def name_must_contain_space(cls, value, values):
+        if values["save_method"] not in ["PUT", "PATCH"]:
+            raise ValueError("'save_method' must be either PUT or PATCH")
         if values["save_method"] == "PATCH" and (
             not isinstance(value, list)
             or not all(isinstance(elem, JSONPatchAction) for elem in value)

@@ -3,7 +3,7 @@ import json
 from typing import Any, Dict, List, Optional
 
 import jsonpatch
-from opal_common.schemas.data import custom_encoder
+from opal_client.utils import exclude_none_fields
 from opal_common.schemas.policy import PolicyBundle
 from opal_common.schemas.store import JSONPatchAction, StoreTransaction
 from pydantic import BaseModel
@@ -65,10 +65,9 @@ class MockPolicyStoreClient(BasePolicyStoreClient):
         for i, _ in enumerate(policy_data):
             if not path == "/":
                 policy_data[i].path = path + policy_data[i].path
-        data_str = json.dumps(
-            policy_data, default=custom_encoder(by_alias=True, exclude_none=True)
+        patch = jsonpatch.JsonPatch.from_string(
+            json.dumps(exclude_none_fields(policy_data))
         )
-        patch = jsonpatch.JsonPatch.from_string(data_str)
         patch.apply(self._data, in_place=True)
         self.has_data_event.set()
 

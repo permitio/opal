@@ -18,11 +18,10 @@ from opal_client.policy_store.base_policy_store_client import (
     JsonableValue,
 )
 from opal_client.policy_store.schemas import PolicyStoreAuth
-from opal_client.utils import proxy_response
+from opal_client.utils import exclude_none_fields, proxy_response
 from opal_common.engine.parsing import get_rego_package
 from opal_common.git.bundle_utils import BundleUtils
 from opal_common.paths import PathUtils
-from opal_common.schemas.data import custom_encoder
 from opal_common.schemas.policy import DataModule, PolicyBundle, RegoModule
 from opal_common.schemas.store import JSONPatchAction, StoreTransaction, TransactionType
 from pydantic import BaseModel
@@ -268,10 +267,7 @@ class OpaStaticDataCache:
         for i, _ in enumerate(data):
             if not path == "/":
                 data[i].path = path + data[i].path
-        data_str = json.dumps(
-            data, default=custom_encoder(by_alias=True, exclude_none=True)
-        )
-        patch = jsonpatch.JsonPatch.from_string(data_str)
+        patch = jsonpatch.JsonPatch.from_string(json.dumps(exclude_none_fields(data)))
         patch.apply(self._root_data, in_place=True)
 
     def delete(self, path):
@@ -753,11 +749,7 @@ class OpaClient(BasePolicyStoreClient):
         async with aiohttp.ClientSession() as session:
             try:
                 headers = await self._get_auth_headers()
-                data = json.dumps(
-                    policy_data,
-                    default=custom_encoder(by_alias=True, exclude_none=True),
-                )
-
+                data = json.dumps(exclude_none_fields(policy_data))
                 async with session.put(
                     f"{self._opa_url}/data{path}",
                     data=data,
@@ -799,14 +791,10 @@ class OpaClient(BasePolicyStoreClient):
             try:
                 headers = await self._get_auth_headers()
                 headers["Content-Type"] = "application/json-patch+json"
-                data = json.dumps(
-                    policy_data,
-                    default=custom_encoder(by_alias=True, exclude_none=True),
-                )
 
                 async with session.patch(
                     f"{self._opa_url}/data{path}",
-                    data=data,
+                    data=json.dumps(exclude_none_fields(policy_data)),
                     headers=headers,
                     **self._ssl_context_kwargs,
                 ) as opa_response:
