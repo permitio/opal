@@ -19,7 +19,7 @@ class DataSourceEntry(BaseModel):
     """
 
     @validator("data")
-    def name_must_contain_space(cls, value, values):
+    def validate_save_method(cls, value, values):
         if values["save_method"] not in ["PUT", "PATCH"]:
             raise ValueError("'save_method' must be either PUT or PATCH")
         if values["save_method"] == "PATCH" and (
