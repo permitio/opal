@@ -4,9 +4,11 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 
 from opal_common.fetcher.events import FetcherConfig
 from opal_common.fetcher.providers.http_fetch_provider import HttpFetcherConfig
-from pydantic import AnyHttpUrl, BaseModel, Field, root_validator
+from opal_common.schemas.store import JSONPatchAction
+from pydantic import AnyHttpUrl, BaseModel, Field, root_validator, validator
 
-JsonableValue = Union[Dict[str, Any], List[Any]]
+JsonableValue = Union[List[JSONPatchAction], List[Any], Dict[str, Any]]
+
 
 DEFAULT_DATA_TOPIC = "policy_data"
 
@@ -16,13 +18,21 @@ class DataSourceEntry(BaseModel):
     Data source configuration - where client's should retrieve data from and how they should store it
     """
 
+    @validator("data")
+    def validate_save_method(cls, value, values):
+        if values["save_method"] not in ["PUT", "PATCH"]:
+            raise ValueError("'save_method' must be either PUT or PATCH")
+        if values["save_method"] == "PATCH" and (
+            not isinstance(value, list)
+            or not all(isinstance(elem, JSONPatchAction) for elem in value)
+        ):
+            raise TypeError(
+                "'data' must be of type JSON patch request when save_method is PATCH"
+            )
+        return value
+
     # How to obtain the data
     url: str = Field(..., description="Url source to query for data")
-    data: Optional[JsonableValue] = Field(
-        None,
-        description="Data payload to embed within the data update (instead of having "
-        "the client fetch it from the url).",
-    )
     config: dict = Field(
         None,
         description="Suggested fetcher configuration (e.g. auth or method) to fetch data with",
@@ -35,7 +45,13 @@ class DataSourceEntry(BaseModel):
     # see https://www.openpolicyagent.org/docs/latest/rest-api/#data-api path is the path nested under <OPA_SERVER>/<version>/data
     dst_path: str = Field("", description="OPA data api path to store the document at")
     save_method: str = Field(
-        "PUT", description="Method used to write into OPA - PUT/PATCH"
+        "PUT",
+        description="Method used to write into OPA - PUT/PATCH, when using the PATCH method the data field should conform to the JSON patch schema defined in RFC 6902(https://datatracker.ietf.org/doc/html/rfc6902#section-3)",
+    )
+    data: Optional[JsonableValue] = Field(
+        None,
+        description="Data payload to embed within the data update (instead of having "
+        "the client fetch it from the url).",
     )
 
 

@@ -35,6 +35,7 @@ from opal_common.schemas.data import (
 from opal_common.schemas.store import TransactionType
 from opal_common.security.sslcontext import get_custom_ssl_context
 from opal_common.utils import get_authorization_header
+from pydantic.json import pydantic_encoder
 
 
 class DataUpdater:
@@ -296,7 +297,7 @@ class DataUpdater:
         """
         try:
             if not isinstance(data, str):
-                data = json.dumps(data, default=str)
+                data = json.dumps(data, default=pydantic_encoder)
             return hashlib.sha256(data.encode("utf-8")).hexdigest()
         except:
             logger.exception("Failed to calculate hash for data {data}", data=data)
@@ -409,13 +410,17 @@ class DataUpdater:
                             and isinstance(policy_data, dict)
                         ):
                             await self._set_split_policy_data(
-                                store_transaction, url=url, data=policy_data
+                                store_transaction,
+                                url=url,
+                                save_method=entry.save_method,
+                                data=policy_data,
                             )
                         else:
                             await self._set_policy_data(
                                 store_transaction,
                                 url=url,
                                 path=policy_store_path,
+                                save_method=entry.save_method,
                                 data=policy_data,
                             )
                         # No exception we we're able to save to the policy-store
@@ -447,19 +452,27 @@ class DataUpdater:
                 )
             )
 
-    async def _set_split_policy_data(self, tx, url: str, data: Dict[str, Any]):
+    async def _set_split_policy_data(
+        self, tx, url: str, save_method: str, data: Dict[str, Any]
+    ):
         """Split data writes to root ("/") path, so they won't overwrite other
         sources."""
         logger.info("Splitting root data to {n} keys", n=len(data))
 
         for prefix, obj in data.items():
-            await self._set_policy_data(tx, url=url, path=f"/{prefix}", data=obj)
+            await self._set_policy_data(
+                tx, url=url, path=f"/{prefix}", save_method=save_method, data=obj
+            )
 
-    async def _set_policy_data(self, tx, url: str, path: str, data: JsonableValue):
+    async def _set_policy_data(
+        self, tx, url: str, path: str, save_method: str, data: JsonableValue
+    ):
         logger.info(
             "Saving fetched data to policy-store: source url='{url}', destination path='{path}'",
             url=url,
             path=path or "/",
         )
-
-        await tx.set_policy_data(data, path=path)
+        if save_method == "PUT":
+            await tx.set_policy_data(data, path=path)
+        else:
+            await tx.patch_policy_data(data, path=path)

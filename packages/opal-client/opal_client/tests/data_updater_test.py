@@ -1,4 +1,5 @@
 import asyncio
+import json
 import logging
 import multiprocessing
 import os
@@ -6,10 +7,12 @@ import sys
 from multiprocessing import Event, Process
 
 import pytest
+import requests
 import uvicorn
 from aiohttp import ClientSession
 from fastapi_websocket_pubsub import PubSubClient
 from flaky import flaky
+from pydantic.json import pydantic_encoder
 
 # Add parent path to use local src as package for tests
 root_dir = os.path.abspath(
@@ -30,6 +33,7 @@ from opal_common.schemas.data import (
     ServerDataSourceConfig,
     UpdateCallback,
 )
+from opal_common.schemas.store import JSONPatchAction
 from opal_common.utils import get_authorization_header
 from opal_server.config import opal_server_config
 from opal_server.server import OpalServer
@@ -53,6 +57,9 @@ CHECK_DATA_UPDATE_CALLBACK_URL = (
 DATA_SOURCES_CONFIG = ServerDataSourceConfig(
     config=DataSourceConfig(entries=[{"url": DATA_URL, "topics": DATA_TOPICS}])
 )
+DATA_UPDATE_ROUTE = f"http://localhost:{PORT}/data/config"
+
+PATCH_DATA_UPDATE = [JSONPatchAction(op="add", path="/", value=TEST_DATA)]
 
 
 def setup_server(event):
@@ -75,7 +82,10 @@ def setup_server(event):
     # route to report complition to
     @server_app.post(DATA_UPDATE_CALLBACK_ROUTE)
     def callback(report: DataUpdateReport):
-        assert report.reports[0].hash == DataUpdater.calc_hash(TEST_DATA)
+        if len(callbacks) == 1:
+            assert report.reports[0].hash == DataUpdater.calc_hash(PATCH_DATA_UPDATE)
+        else:
+            assert report.reports[0].hash == DataUpdater.calc_hash(TEST_DATA)
         callbacks.append(report)
         return "OKAY"
 
@@ -122,6 +132,33 @@ def trigger_update():
     asyncio.run(run())
 
 
+def trigger_update_patch():
+    async def run():
+        # trigger an update
+        entries = [
+            DataSourceEntry(
+                url="",
+                data=PATCH_DATA_UPDATE,
+                dst_path="/",
+                save_method="PATCH",
+                topics=DATA_TOPICS,
+            )
+        ]
+        callback = UpdateCallback(callbacks=[DATA_UPDATE_CALLBACK_URL])
+        update = DataUpdate(reason="Test", entries=entries, callback=callback)
+        async with PubSubClient(
+            server_uri=UPDATES_URL,
+            methods_class=TenantAwareRpcEventClientMethods,
+            extra_headers=[get_authorization_header(opal_client_config.CLIENT_TOKEN)],
+        ) as client:
+            # Channel must be ready before we can publish on it
+            await asyncio.wait_for(client.wait_until_ready(), 5)
+            logging.info("Publishing data event")
+            await client.publish(DATA_TOPICS, data=update)
+
+    asyncio.run(run())
+
+
 @flaky
 @pytest.mark.asyncio
 async def test_data_updater(server):
@@ -149,6 +186,46 @@ async def test_data_updater(server):
     finally:
         await updater.stop()
         proc.terminate()
+    try:
+        proc = multiprocessing.Process(target=trigger_update_patch, daemon=True)
+        proc.start()
+        # wait until new data arrives into the store via the updater
+        await asyncio.wait_for(policy_store.wait_for_data(), 60)
+    # cleanup
+    finally:
+        await updater.stop()
+        proc.terminate()
+
+    # test PATCH update event via API
+    entries = [
+        DataSourceEntry(
+            url="",
+            data=PATCH_DATA_UPDATE,
+            dst_path="/",
+            topics=DATA_TOPICS,
+            save_method="PATCH",
+        )
+    ]
+    update = DataUpdate(
+        reason="Test_Patch", entries=entries, callback=UpdateCallback(callbacks=[])
+    )
+
+    headers = {"content-type": "application/json"}
+    # trigger an update
+    res = requests.post(
+        DATA_UPDATE_ROUTE,
+        data=json.dumps(update, default=pydantic_encoder),
+        headers=headers,
+    )
+    assert res.status_code == 200
+    # value field is not specified for add operation should fail
+    entries[0].data = [{"op": "add", "path": "/"}]
+    res = requests.post(
+        DATA_UPDATE_ROUTE,
+        data=json.dumps(update, default=pydantic_encoder),
+        headers=headers,
+    )
+    assert res.status_code == 422
 
 
 @pytest.mark.asyncio
@@ -188,10 +265,28 @@ async def test_data_updater_with_report_callback(server):
             # we got one callback in the interim
             assert count == current_callback_count + 1
 
+        async with ClientSession() as session:
+            res = await session.get(CHECK_DATA_UPDATE_CALLBACK_URL)
+            current_callback_count = await res.json()
+
+        proc2 = multiprocessing.Process(target=trigger_update_patch, daemon=True)
+        proc2.start()
+        # wait until new data arrives into the store via the updater
+        await asyncio.wait_for(policy_store.wait_for_data(), 15)
+        # give the callback a chance to arrive
+        await asyncio.sleep(1)
+
+        async with ClientSession() as session:
+            res = await session.get(CHECK_DATA_UPDATE_CALLBACK_URL)
+            count = await res.json()
+            # we got one callback in the interim
+            assert count == current_callback_count + 1
+
     # cleanup
     finally:
         await updater.stop()
         proc.terminate()
+        proc2.terminate()
 
 
 @pytest.mark.asyncio

@@ -8,6 +8,7 @@ from urllib.parse import urlencode
 
 import aiohttp
 import dpath
+import jsonpatch
 from aiofiles.threadpool.text import AsyncTextIOWrapper
 from fastapi import Response, status
 from opal_client.config import opal_client_config
@@ -17,7 +18,7 @@ from opal_client.policy_store.base_policy_store_client import (
     JsonableValue,
 )
 from opal_client.policy_store.schemas import PolicyStoreAuth
-from opal_client.utils import proxy_response
+from opal_client.utils import exclude_none_fields, proxy_response
 from opal_common.engine.parsing import get_rego_package
 from opal_common.git.bundle_utils import BundleUtils
 from opal_common.paths import PathUtils
@@ -261,6 +262,13 @@ class OpaStaticDataCache:
         else:
             # This would overwrite already existing paths
             dpath.new(self._root_data, path, data)
+
+    def patch(self, path, data: List[JSONPatchAction]):
+        for i, _ in enumerate(data):
+            if not path == "/":
+                data[i].path = path + data[i].path
+        patch = jsonpatch.JsonPatch.from_string(json.dumps(exclude_none_fields(data)))
+        patch.apply(self._root_data, in_place=True)
 
     def delete(self, path):
         if not path or path == "/":
@@ -741,10 +749,10 @@ class OpaClient(BasePolicyStoreClient):
         async with aiohttp.ClientSession() as session:
             try:
                 headers = await self._get_auth_headers()
-
+                data = json.dumps(exclude_none_fields(policy_data))
                 async with session.put(
                     f"{self._opa_url}/data{path}",
-                    data=json.dumps(policy_data, default=str),
+                    data=data,
                     headers=headers,
                     **self._ssl_context_kwargs,
                 ) as opa_response:
@@ -756,7 +764,49 @@ class OpaClient(BasePolicyStoreClient):
                         ],
                     )
                     if self._policy_data_cache:
-                        self._policy_data_cache.set(path, policy_data)
+                        self._policy_data_cache.set(path, json.loads(data))
+                    return response
+            except aiohttp.ClientError as e:
+                logger.warning("Opa connection error: {err}", err=repr(e))
+                raise
+
+    @affects_transaction
+    @retry(**RETRY_CONFIG)
+    async def patch_policy_data(
+        self,
+        policy_data: List[JSONPatchAction],
+        path: str = "",
+        transaction_id: Optional[str] = None,
+    ):
+        path = self._safe_data_module_path(path)
+
+        # in OPA, the root document must be an object, so we must wrap list values
+        if not path and isinstance(policy_data, list):
+            logger.warning(
+                "OPAL client was instructed to put a list on OPA's root document. In OPA the root document must be an object so the original value was wrapped."
+            )
+            policy_data = {"items": policy_data}
+
+        async with aiohttp.ClientSession() as session:
+            try:
+                headers = await self._get_auth_headers()
+                headers["Content-Type"] = "application/json-patch+json"
+
+                async with session.patch(
+                    f"{self._opa_url}/data{path}",
+                    data=json.dumps(exclude_none_fields(policy_data)),
+                    headers=headers,
+                    **self._ssl_context_kwargs,
+                ) as opa_response:
+                    response = await proxy_response_unless_invalid(
+                        opa_response,
+                        accepted_status_codes=[
+                            status.HTTP_204_NO_CONTENT,
+                            status.HTTP_304_NOT_MODIFIED,
+                        ],
+                    )
+                    if self._policy_data_cache:
+                        self._policy_data_cache.patch(path, policy_data)
                     return response
             except aiohttp.ClientError as e:
                 logger.warning("Opa connection error: {err}", err=repr(e))
