@@ -51,6 +51,7 @@ class DataUpdater:
         data_fetcher: Optional[DataFetcher] = None,
         callbacks_register: Optional[CallbacksRegister] = None,
         opal_client_id: str = None,
+        shard_id: Optional[str] = None,
     ):
         """Keeps policy-stores (e.g. OPA) up to date with relevant data Obtains
         data configuration on startup from OPAL-server Uses Pub/Sub to
@@ -107,13 +108,17 @@ class DataUpdater:
             self._callbacks_register, self._data_fetcher
         )
         self._token = token
+        self._shard_id = shard_id
         self._server_url = pubsub_url
         self._data_sources_config_url = data_sources_config_url
         self._opal_client_id = opal_client_id
-        if self._token is None:
+        self._extra_headers = []
+        if self._token is not None:
+            self._extra_headers.append(get_authorization_header(self._token))
+        if self._shard_id is not None:
+            self._extra_headers.append(("X-Shard-ID", self._shard_id))
+        if len(self._extra_headers) == 0:
             self._extra_headers = None
-        else:
-            self._extra_headers = [get_authorization_header(self._token)]
         self._stopping = False
         # custom SSL context (for self-signed certificates)
         self._custom_ssl_context = get_custom_ssl_context()
