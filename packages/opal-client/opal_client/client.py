@@ -50,6 +50,7 @@ class OpalClient:
         store_backup_path: Optional[str] = None,
         store_backup_interval: Optional[int] = None,
         offline_mode_enabled: bool = False,
+        shard_id: Optional[str] = None,
     ) -> None:
         """
         Args:
@@ -60,6 +61,7 @@ class OpalClient:
                 data_updater (DataUpdater, optional): Defaults to None.
                 policy_updater (PolicyUpdater, optional): Defaults to None.
         """
+        self._shard_id = shard_id
         # defaults
         policy_store_type: PolicyStoreTypes = (
             policy_store_type or opal_client_config.POLICY_STORE_TYPE
@@ -134,6 +136,7 @@ class OpalClient:
                     data_fetcher=self.data_fetcher,
                     callbacks_register=self._callbacks_register,
                     opal_client_id=opal_client_identifier,
+                    shard_id=self._shard_id,
                 )
         else:
             self.data_updater = None
