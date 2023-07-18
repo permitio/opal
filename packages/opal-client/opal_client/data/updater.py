@@ -332,7 +332,14 @@ class DataUpdater:
                 if entry.topics
                 and not set(entry.topics).isdisjoint(set(self._data_topics))
             ]
-            urls = [(entry.url, entry.config, entry.data) for entry in entries]
+            urls = []
+            for entry in entries:
+                config = entry.config
+                if self._shard_id is not None:
+                    headers = config.get("headers", {})
+                    headers.update({"X-Shard-ID": self._shard_id})
+                    config["headers"] = headers
+                urls.append((entry.url, config, entry.data))
 
         if len(entries) > 0:
             logger.info("Fetching policy data", urls=repr(urls))
