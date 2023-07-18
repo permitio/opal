@@ -325,7 +325,14 @@ class DataUpdater:
         # if we have an actual specification for the update
         if update is not None:
             entries = update.entries
-            urls = [(entry.url, entry.config, entry.data) for entry in entries]
+            urls = []
+            for entry in entries:
+                config = entry.config
+                if self._shard_id is not None:
+                    headers = config.get("headers", {})
+                    headers.update({"X-Shard-ID": self._shard_id})
+                    config["headers"] = headers
+                urls.append((entry.url, config, entry.data))
 
         # get the data for the update
         logger.info("Fetching policy data", urls=repr(urls))
