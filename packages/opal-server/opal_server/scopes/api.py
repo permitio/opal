@@ -34,7 +34,10 @@ from opal_common.schemas.policy import PolicyBundle, PolicyUpdateMessageNotifica
 from opal_common.schemas.policy_source import GitPolicyScopeSource, SSHAuthData
 from opal_common.schemas.scopes import Scope
 from opal_common.schemas.security import PeerType
-from opal_common.topics.publisher import ScopedServerSideTopicPublisher
+from opal_common.topics.publisher import (
+    ScopedServerSideTopicPublisher,
+    ServerSideTopicPublisher,
+)
 from opal_common.urls import set_url_query_param
 from opal_server.config import opal_server_config
 from opal_server.data.data_update_publisher import DataUpdatePublisher
@@ -290,19 +293,6 @@ def init_scope_router(
         ):
             raise ScopeNotFoundError(scope_id)
 
-    def _update_entries_with_shard_id_header(
-        config: DataSourceConfig, shard_id: Optional[str] = None
-    ) -> DataSourceConfig:
-        logger.info("before alter: {data_config}", data_config=config.dict())
-        if shard_id is None:
-            return config
-        for entry_i in range(len(config.entries)):
-            headers = config.entries[entry_i].config.get("headers", {})
-            headers.update({"X-Shard-ID": shard_id})
-            config.entries[entry_i].config["headers"] = headers
-        logger.info("after alter: {data_config}", data_config=config.dict())
-        return config
-
     @router.get(
         "/{scope_id}/data",
         response_model=DataSourceConfig,
@@ -313,14 +303,13 @@ def init_scope_router(
         *,
         scope_id: str = Path(..., title="Scope ID"),
         authorization: Optional[str] = Header(None),
-        shard_id: Optional[str] = Header(None, alias="X-Shard-ID"),
     ):
         logger.info(
             "Serving source configuration for scope {scope_id}", scope_id=scope_id
         )
         try:
             scope = await scopes.get(scope_id)
-            return _update_entries_with_shard_id_header(scope.data, shard_id)
+            return scope.data
         except ScopeNotFoundError as ex:
             logger.warning(
                 "Requested scope {scope_id} not found, returning OPAL_DATA_CONFIG_SOURCES",
@@ -335,7 +324,7 @@ def init_scope_router(
                     redirect_url = set_url_query_param(url, "token", token)
                     return RedirectResponse(url=redirect_url)
                 else:
-                    return _update_entries_with_shard_id_header(config.config, shard_id)
+                    return config.config
             except ScopeNotFoundError:
                 raise HTTPException(status.HTTP_404_NOT_FOUND, detail=str(ex))
 
