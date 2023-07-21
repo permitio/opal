@@ -25,6 +25,11 @@ Starting with OPAL 0.1.21, it is no longer needed to install the `broadcaster[ka
 When you run the OPAL-server you can choose which backend it should use with the `OPAL_BROADCAST_URI` option default is Postgres but running with Kafka is as simple as `OPAL_BROADCAST_URI=kafka://kafka-host-name:9092`
 notice the "kafka://" prefix, that's how we tell OPAL-server to use Kafka.
 
+#### Running Kafka with Advanced config
+
+To run Kafka with SASL and/or other advanced configuration checkout the docs for the broadcaster here:
+https://github.com/permitio/broadcaster#kafka-environment-variables
+
 #### Setting a Kafka topic (aka Backbone channel)
 
 Be sure to configure the topic in your Kafka server that will act as a channel between all servers - the default name for it is `EventNotifier`.
