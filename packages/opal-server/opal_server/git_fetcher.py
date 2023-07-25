@@ -19,6 +19,7 @@ from opal_common.schemas.policy_source import (
     SSHAuthData,
 )
 from opal_common.synchronization.named_lock import NamedLock
+from opal_server.config import opal_server_config
 from pygit2 import (
     KeypairFromMemory,
     RemoteCallbacks,
@@ -336,7 +337,12 @@ class GitPolicyFetcher(PolicyFetcher):
 
     @staticmethod
     def source_id(source: GitPolicyScopeSource) -> str:
-        return hashlib.sha256(source.url.encode("utf-8")).hexdigest()
+        base = hashlib.sha256(source.url.encode("utf-8")).hexdigest()
+        index = (
+            hashlib.sha256(source.branch.encode("utf-8")).digest()[0]
+            % opal_server_config.SCOPES_REPO_CLONES_SHARDS
+        )
+        return f"{base}-{index}"
 
     @staticmethod
     def base_dir(base_dir: Path) -> Path:
