@@ -25,6 +25,11 @@ const sidebars = {
           label: "Introduction",
         },
         {
+          type: "doc",
+          id: "getting-started/tldr",
+          label: "TL;DR",
+        },
+        {
           type: "category",
           label: "Quickstart",
           collapsible: true,

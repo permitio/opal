@@ -36,9 +36,10 @@ At the moment, only GitHub-hosted repos support webhooks. We plan to expand to m
 
 ### 2) OPAL Client subscribes to policy update notifications
 
-OPAL client can subscribe to multiple policy topics, each policy topic is formatted as `policy:{path}` where path is a **directory** in the policy git repository (**relative path** to the root of the repository).
+OPAL client can subscribe to multiple policy topics, topics are based on paths where each path is a **directory** in the policy git repository (**relative path** to the root of the repository).
 
 The policy directories the client will subscribe to are specified by the environment variable `OPAL_POLICY_SUBSCRIPTION_DIRS` passed to the client. The default is `"."` meaning the root directory in the branch (i.e: essentially all `.rego` and `data.json` files in the branch).
+`:` is used by the environment variable parsing as a delimiter between directories.
 
 Let's look at at a more complex example. Let's say we have a multi-tenant application in the cloud with an on-prem component in each customer site. We want to apply the same base policy to all tenants, but also to allow special rules (different policy) per tenant.
 
@@ -69,6 +70,12 @@ We'll deploy a different OPAL client as part of our on-prem/edge container in ea
 - Similarly:
   - `edge2` will set `OPAL_POLICY_SUBSCRIPTION_DIRS=default:tenants/tenant2`.
   - `edge3` will set `OPAL_POLICY_SUBSCRIPTION_DIRS=default:tenants/tenant3`.
+
+:::note
+When translated from directories to pub/sub topics - each topic is formatted as `{scope}:{policy_topic_prefix}:{path}` where path is the **directory**.
+`policy_topic_prefix` would usually be just "policy" and `scope` "default".
+Relevant code: [packages/opal-client/opal_client/policy/updater.py](https://github.com/permitio/opal/blob/41cd3f33fb6c089fef3eb402c7457012a3526531/packages/opal-client/opal_client/policy/updater.py#L76C13-L76C13)
+:::
 
 #### 2.1) Loading Data.json files
 
