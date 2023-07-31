@@ -1,7 +1,5 @@
 import asyncio
-import os
 import sys
-from concurrent.futures import ThreadPoolExecutor
 from functools import partial
 from typing import Callable, TypeVar
 
@@ -12,8 +10,6 @@ else:
 
 T_result = TypeVar("T_result")
 P_args = ParamSpec("P_args")
-
-executor = ThreadPoolExecutor(max_workers=os.cpu_count() * 4)
 
 
 async def run_sync(
@@ -27,5 +23,5 @@ async def run_sync(
     await run_sync(sync_function_that_takes_time_to_run, 1, arg2=5)
     """
     return await asyncio.get_event_loop().run_in_executor(
-        executor, partial(func, *args, **kwargs)
+        None, partial(func, *args, **kwargs)
     )
