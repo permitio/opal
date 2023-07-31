@@ -1,4 +1,5 @@
 import asyncio
+import datetime
 from pathlib import Path
 from typing import Any
 
@@ -48,6 +49,7 @@ class ScopesPolicyWatcherTask(BasePolicyWatcherTask):
                     data["scope_id"],
                     force_fetch=data.get("force_fetch", False),
                     hinted_hash=data.get("hinted_hash"),
+                    req_time=datetime.datetime.now(),
                 )
             except KeyError:
                 logger.warning(

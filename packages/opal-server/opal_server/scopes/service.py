@@ -1,3 +1,4 @@
+import datetime
 import shutil
 from functools import partial
 from pathlib import Path
@@ -114,6 +115,7 @@ class ScopesService:
         hinted_hash: Optional[str] = None,
         force_fetch: bool = False,
         notify_on_changes: bool = True,
+        req_time: datetime.datetime = None,
     ):
         scope = await self._scopes.get(scope_id)
 
@@ -123,7 +125,7 @@ class ScopesService:
         source = cast(GitPolicyScopeSource, scope.policy)
 
         logger.info(
-            f"Sync scope: {scope_id} (remote: {source.url}, branch: {source.branch})"
+            f"Sync scope: {scope_id} (remote: {source.url}, branch: {source.branch}, req_time: {req_time})"
         )
 
         callbacks = PolicyFetcherCallbacks()
@@ -144,8 +146,7 @@ class ScopesService:
 
         try:
             await fetcher.fetch_and_notify_on_changes(
-                hinted_hash=hinted_hash,
-                force_fetch=force_fetch,
+                hinted_hash=hinted_hash, force_fetch=force_fetch, req_time=req_time
             )
         except Exception as e:
             logger.exception(
