@@ -192,10 +192,7 @@ class GitPolicyFetcher(PolicyFetcher):
                                 f"Fetching remote (force_fetch={force_fetch}): {self._remote} ({self._source.url})"
                             )
                             await run_sync(
-                                tracer.wrap(
-                                    "scopes_service.actual_fetch",
-                                    resource=self._scope_id,
-                                )(repo.remotes[self._remote].fetch),
+                                repo.remotes[self._remote].fetch,
                                 callbacks=self._auth_callbacks,
                             )
                             logger.debug(f"Fetch completed: {self._source.url}")
