@@ -98,8 +98,7 @@ class DataUpdatePublisher:
             entries=logged_entries,
         )
 
-        async with self._publisher:
-            await self._publisher.publish(list(all_topic_combos), update)
+        await self._publisher.publish(list(all_topic_combos), update)
 
     async def _periodic_update_callback(
         self, update: DataSourceEntryWithPollingInterval
