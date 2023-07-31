@@ -1,8 +1,10 @@
 import asyncio
+import datetime
 import hashlib
 import shutil
 from pathlib import Path
 from typing import Optional, cast
+import time
 
 import aiofiles.os
 import aioredis
@@ -128,6 +130,7 @@ class RepoInterface:
 class GitPolicyFetcher(PolicyFetcher):
     repo_locks = {}
     repos = {}
+    repos_last_fetched = {}
 
     def __init__(
         self,
@@ -164,8 +167,17 @@ class GitPolicyFetcher(PolicyFetcher):
         )
         return lock
 
+    async def _was_fetched_after(self, t: datetime.datetime):
+        last_fetched = GitPolicyFetcher.repos_last_fetched.get(self.source_id, None)
+        if last_fetched is None:
+            return False
+        return last_fetched > t
+
     async def fetch_and_notify_on_changes(
-        self, hinted_hash: Optional[str] = None, force_fetch: bool = False
+        self,
+        hinted_hash: Optional[str] = None,
+        force_fetch: bool = False,
+        req_time: datetime.datetime = None,
     ):
         """makes sure the repo is already fetched and is up to date.
 
@@ -178,19 +190,26 @@ class GitPolicyFetcher(PolicyFetcher):
         repo_lock = await self._get_repo_lock()
         async with repo_lock:
             with tracer.trace(
-                "scopes_service.fetch_and_notify_on_changes", resource=self._scope_id
+                "scopes_service.fetch_and_notify_on_changes",
+                resource=self._scope_id,
             ):
                 if self._discover_repository(self._repo_path):
                     logger.debug("Repo found at {path}", path=self._repo_path)
                     repo = self._get_valid_repo()
                     if repo is not None:
                         should_fetch = await self._should_fetch(
-                            repo, hinted_hash=hinted_hash, force_fetch=force_fetch
+                            repo,
+                            hinted_hash=hinted_hash,
+                            force_fetch=force_fetch,
+                            req_time=req_time,
                         )
                         if should_fetch:
                             logger.debug(
                                 f"Fetching remote (force_fetch={force_fetch}): {self._remote} ({self._source.url})"
                             )
+                            GitPolicyFetcher.repos_last_fetched[
+                                self.source_id
+                            ] = datetime.datetime.now()
                             await run_sync(
                                 repo.remotes[self._remote].fetch,
                                 callbacks=self._auth_callbacks,
@@ -258,9 +277,15 @@ class GitPolicyFetcher(PolicyFetcher):
         repo: Repository,
         hinted_hash: Optional[str] = None,
         force_fetch: bool = False,
+        req_time: datetime.datetime = None,
     ) -> bool:
         if force_fetch:
-            return True  # must fetch
+            if req_time is not None and await self._was_fetched_after(req_time):
+                logger.info(
+                    "Repo was fetched after refresh request, override force_fetch with False"
+                )
+            else:
+                return True  # must fetch
 
         if not RepoInterface.has_remote_branch(repo, self._source.branch, self._remote):
             logger.info(
