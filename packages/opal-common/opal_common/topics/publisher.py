@@ -31,7 +31,6 @@ class TopicPublisher:
     async def _add_task(self, task: asyncio.Task):
         async with self._tasks_lock:
             self._tasks.add(task)
-
             task.add_done_callback(self._cleanup_task)
 
     async def wait(self):
@@ -45,8 +44,10 @@ class TopicPublisher:
         await self.wait()
 
     def _cleanup_task(self, task: asyncio.Task):
-        if task in self._tasks:
+        try:
             self._tasks.remove(task)
+        except KeyError:
+            ...
 
 
 class PeriodicPublisher:
