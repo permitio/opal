@@ -1,5 +1,5 @@
 import asyncio
-from typing import Any, List, Optional
+from typing import Any, Optional, Set
 
 from fastapi_websocket_pubsub import PubSubClient, PubSubEndpoint, Topic, TopicList
 from opal_common.logger import logger
@@ -11,7 +11,7 @@ class TopicPublisher:
 
     def __init__(self):
         """inits the publisher's asyncio tasks list."""
-        self._tasks: List[asyncio.Task] = []
+        self._tasks: Set[asyncio.Task] = set()
         self._tasks_lock = asyncio.Lock()
 
     async def publish(self, topics: TopicList, data: Any = None):
@@ -30,7 +30,8 @@ class TopicPublisher:
 
     async def _add_task(self, task: asyncio.Task):
         async with self._tasks_lock:
-            self._tasks.append(task)
+            self._tasks.add(task)
+            task.add_done_callback(self._cleanup_task)
 
     async def wait(self):
         async with self._tasks_lock:
@@ -41,6 +42,12 @@ class TopicPublisher:
         """stops the publisher (cancels any running publishing tasks)"""
         logger.debug("stopping topic publisher")
         await self.wait()
+
+    def _cleanup_task(self, task: asyncio.Task):
+        try:
+            self._tasks.remove(task)
+        except KeyError:
+            ...
 
 
 class PeriodicPublisher:
