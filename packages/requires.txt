@@ -1,11 +1,11 @@
 charset-normalizer>=2.0.12,<3
 idna>=3.3,<4
 typer>=0.4.1,<1
-fastapi>=0.78.0,<1
+fastapi>=0.101.0,<1
 fastapi_websocket_pubsub==0.3.4
 fastapi_websocket_rpc>=0.1.21,<1
 gunicorn>=20.1.0,<21
-pydantic[email]>=1.9.1,<2
+pydantic[email]>=2.1.1,<3
 typing-extensions;python_version<'3.8'
 uvicorn[standard]>=0.17.6,<1
 fastapi-utils>=0.2.1,<1
