@@ -2,8 +2,8 @@ charset-normalizer>=2.0.12,<3
 idna>=3.3,<4
 typer>=0.4.1,<1
 fastapi>=0.101.0,<1
-fastapi_websocket_pubsub==0.3.4
-fastapi_websocket_rpc>=0.1.21,<1
+git+https://github.com/permitio/fastapi_websocket_pubsub.git@guyzyl/per-7303-update-pydantic-to-v2    # TODO: Restore to use package from pypi
+git+https://github.com/permitio/fastapi_websocket_rpc.git@guyzyl/per-7303-update-pydantic-to-v2    # TODO: Restore to use package from pypi
 gunicorn>=20.1.0,<21
 pydantic[email]>=2.1.1,<3
 typing-extensions;python_version<'3.8'
