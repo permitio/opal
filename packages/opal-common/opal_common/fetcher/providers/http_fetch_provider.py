@@ -4,7 +4,7 @@ from enum import Enum
 from typing import Any
 
 from aiohttp import ClientResponse, ClientSession
-from pydantic import validator
+from pydantic import field_validator, ConfigDict
 
 from ...http import is_http_error_response
 from ...security.sslcontext import get_custom_ssl_context
@@ -33,16 +33,15 @@ class HttpFetcherConfig(FetcherConfig):
     method: HttpMethods = HttpMethods.GET
     data: Any = None
 
-    @validator("method")
+    @field_validator("method")
+    @classmethod
     def force_enum(cls, v):
         if isinstance(v, str):
             return HttpMethods(v)
         if isinstance(v, HttpMethods):
             return v
         raise ValueError(f"invalid value: {v}")
-
-    class Config:
-        use_enum_values = True
+    model_config = ConfigDict(use_enum_values=True)
 
 
 class HttpFetchEvent(FetchEvent):

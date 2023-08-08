@@ -3,7 +3,7 @@ from enum import Enum
 from typing import Optional
 from uuid import UUID, uuid4
 
-from pydantic import BaseModel, Field, validator
+from pydantic import field_validator, ConfigDict, BaseModel, Field
 
 PEER_TYPE_DESCRIPTION = (
     "The peer type we generate access token for, i.e: opal client, data provider, etc."
@@ -29,17 +29,15 @@ class AccessTokenRequest(BaseModel):
     ttl: timedelta = Field(timedelta(days=365), description=TTL_DESCRIPTION)
     claims: dict = Field({}, description=CLAIMS_DESCRIPTION)
 
-    @validator("type")
+    @field_validator("type")
+    @classmethod
     def force_enum(cls, v):
         if isinstance(v, str):
             return PeerType(v)
         if isinstance(v, PeerType):
             return v
         raise ValueError(f"invalid value: {v}")
-
-    class Config:
-        use_enum_values = True
-        allow_population_by_field_name = True
+    model_config = ConfigDict(use_enum_values=True, populate_by_name=True)
 
 
 class TokenDetails(BaseModel):
@@ -52,4 +50,4 @@ class TokenDetails(BaseModel):
 class AccessToken(BaseModel):
     token: str
     type: str = "bearer"
-    details: Optional[TokenDetails]
+    details: Optional[TokenDetails] = None
