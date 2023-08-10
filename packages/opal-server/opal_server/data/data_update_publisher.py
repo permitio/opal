@@ -2,7 +2,6 @@ import asyncio
 import os
 from typing import List
 
-from fastapi_utils.tasks import repeat_every
 from opal_common.logger import logger
 from opal_common.schemas.data import (
     DataSourceEntryWithPollingInterval,
@@ -10,6 +9,7 @@ from opal_common.schemas.data import (
     ServerDataSourceConfig,
 )
 from opal_common.topics.publisher import TopicPublisher
+from opal_common.utils import repeat_every
 
 TOPIC_DELIMITER = "/"
 PREFIX_DELIMITER = ":"
