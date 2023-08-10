@@ -508,3 +508,7 @@ class DataUpdater:
             await tx.set_policy_data(data, path=path)
         else:
             await tx.patch_policy_data(data, path=path)
+
+    @property
+    def callbacks_reporter(self) -> CallbacksReporter:
+        return self._callbacks_reporter
