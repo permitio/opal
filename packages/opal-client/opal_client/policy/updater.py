@@ -352,3 +352,11 @@ class PolicyUpdater:
                 break
             except Exception:
                 logger.exception("Failed to update policy")
+
+    @property
+    def topics(self) -> List[str]:
+        return self._topics
+
+    @property
+    def callbacks_reporter(self) -> CallbacksReporter:
+        return self._callbacks_reporter

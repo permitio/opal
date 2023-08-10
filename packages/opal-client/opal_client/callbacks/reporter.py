@@ -1,5 +1,5 @@
 import json
-from typing import List, Optional
+from typing import Any, Awaitable, Callable, Dict, List, Optional
 
 import aiohttp
 from opal_client.callbacks.register import CallbackConfig, CallbacksRegister
@@ -8,6 +8,8 @@ from opal_common.fetcher.providers.http_fetch_provider import HttpFetcherConfig
 from opal_common.http import is_http_error_response
 from opal_common.logger import logger
 from opal_common.schemas.data import DataUpdateReport
+
+GetUserDataHandler = Callable[[DataUpdateReport], Awaitable[Dict[str, Any]]]
 
 
 class CallbacksReporter:
@@ -18,12 +20,18 @@ class CallbacksReporter:
     ) -> None:
         self._register = register
         self._fetcher = data_fetcher or DataFetcher()
+        self._get_user_data_handler: Optional[GetUserDataHandler] = None
 
     async def start(self):
         await self._fetcher.start()
 
     async def stop(self):
         await self._fetcher.stop()
+
+    def set_user_data_handler(self, handler: GetUserDataHandler):
+        if self._get_user_data_handler is not None:
+            logger.warning("set_user_data_handler called and already have a handler.")
+        self._get_user_data_handler = handler
 
     async def report_update_results(
         self,
@@ -33,6 +41,9 @@ class CallbacksReporter:
         try:
             # all the urls that will be eventually called by the fetcher
             urls = []
+            if self._get_user_data_handler is not None:
+                report = report.copy()
+                report.user_data = await self._get_user_data_handler(report)
             report_data = report.json()
 
             # first we add the callback urls from the callback register
