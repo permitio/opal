@@ -2,7 +2,8 @@ from datetime import datetime
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
-from pydantic import BaseModel, Field, root_validator
+from pydantic import BaseModel, Field, model_validator(mode="before")
+@classmethod
 
 
 class TransactionType(str, Enum):
@@ -54,7 +55,8 @@ class JSONPatchAction(BaseModel):
         None, description="source location in json", alias="from"
     )
 
-    @root_validator
+    @model_validator(mode="before")
+    @classmethod
     def value_must_be_present(cls, values):
         if values.get("op") in ["add", "replace"] and values.get("value") is None:
             raise TypeError("'value' must be present when op is either add or replace")

@@ -5,7 +5,7 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 from opal_common.fetcher.events import FetcherConfig
 from opal_common.fetcher.providers.http_fetch_provider import HttpFetcherConfig
 from opal_common.schemas.store import JSONPatchAction
-from pydantic import AnyHttpUrl, BaseModel, Field, root_validator, validator
+from pydantic import AnyHttpUrl, BaseModel, Field, model_validator, validator
 
 JsonableValue = Union[List[JSONPatchAction], List[Any], Dict[str, Any]]
 
@@ -104,7 +104,8 @@ class ServerDataSourceConfig(BaseModel):
         + " if set, the clients will be redirected to this url when requesting to fetch data sources.",
     )
 
-    @root_validator
+    @model_validator(mode="before")
+    @classmethod
     def check_passwords_match(cls, values):
         config, redirect_url = values.get("config"), values.get("external_source_url")
         if config is None and redirect_url is None:
