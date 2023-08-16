@@ -78,7 +78,6 @@ class PubSub:
                         remote_address=websocket.client,
                         reason="Authentication failed",
                     )
-                    await websocket.close()
                     return
 
                 await self.endpoint.main_loop(websocket, claims=claims)
