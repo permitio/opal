@@ -1,5 +1,5 @@
 click>=8.1.3,<9
-permit-broadcaster[postgres,redis,kafka]==0.2.4
+permit-broadcaster[postgres,redis,kafka]==0.2.5
 gitpython>=3.1.32,<4
 pyjwt[crypto]>=2.1.0,<3
 websockets>=10.3,<11
