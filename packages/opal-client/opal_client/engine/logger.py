@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 from enum import Enum
@@ -32,8 +33,17 @@ async def pipe_opa_logs(stream, logs_format: EngineLogFormat):
     if logs_format == EngineLogFormat.NONE:
         return
 
+    line = b""
     while True:
-        line = await stream.readline()
+        try:
+            line += await stream.readuntil(b"\n")
+        except asyncio.exceptions.IncompleteReadError as e:
+            line += e.partial
+        except asyncio.exceptions.LimitOverrunError as e:
+            # No new line yet but buffer limit exceeded, read what's available and try again
+            line += await stream.readexactly(e.consumed)
+            continue
+
         if not line:
             break
         try:
@@ -54,6 +64,8 @@ async def pipe_opa_logs(stream, logs_format: EngineLogFormat):
                 log_entire_dict(level, msg, log_line)
         except json.JSONDecodeError:
             logger.info(line)
+        finally:
+            line = b""
 
 
 def log_event_name(level: str, msg: Optional[str]) -> bool:
