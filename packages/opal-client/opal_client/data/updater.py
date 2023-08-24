@@ -22,6 +22,7 @@ from opal_client.policy_store.base_policy_store_client import (
 from opal_client.policy_store.policy_store_client_factory import (
     DEFAULT_POLICY_STORE_GETTER,
 )
+from opal_common.async_utils import TakeANumberQueue, TasksPool
 from opal_common.config import opal_common_config
 from opal_common.fetcher.events import FetcherConfig
 from opal_common.http import is_http_error_response
@@ -127,7 +128,8 @@ class DataUpdater:
             if self._custom_ssl_context is not None
             else {}
         )
-        self._update_tasks = []
+        self._updates_storing_queue = TakeANumberQueue(logger)
+        self._tasks = TasksPool()
 
     async def __aenter__(self):
         await self.start()
@@ -157,9 +159,10 @@ class DataUpdater:
         if update.id is None:
             update.id = uuid.uuid4().hex
         logger.info("Triggering data update with id: {id}", id=update.id)
-        await self.update_policy_data(
-            update, policy_store=self._policy_store, data_fetcher=self._data_fetcher
-        )
+
+        # Fetching should be concurrent, but storing should be done in the original order
+        store_queue_number = await self._updates_storing_queue.take_a_number()
+        self._tasks.add_task(self._update_policy_data(update, store_queue_number))
 
     async def get_policy_data_config(self, url: str = None) -> DataSourceConfig:
         """
@@ -234,6 +237,9 @@ class DataUpdater:
 
     async def start(self):
         logger.info("Launching data updater")
+        await self._updates_storing_queue.start_queue_handling(
+            self._store_fetched_update
+        )
         if self._subscriber_task is None:
             self._subscriber_task = asyncio.create_task(self._subscriber())
             await self._data_fetcher.start()
@@ -286,6 +292,9 @@ class DataUpdater:
         logger.debug("Stopping data fetcher")
         await self._data_fetcher.stop()
 
+        # stop queue handling
+        await self._updates_storing_queue.stop_queue_handling()
+
     async def wait_until_done(self):
         if self._subscriber_task is not None:
             await self._subscriber_task
@@ -307,22 +316,20 @@ class DataUpdater:
             logger.exception("Failed to calculate hash for data {data}", data=data)
             return ""
 
-    async def update_policy_data(
+    async def _update_policy_data(
         self,
-        update: DataUpdate = None,
-        policy_store: BasePolicyStoreClient = None,
-        data_fetcher=None,
+        update: DataUpdate,
+        store_queue_number: TakeANumberQueue.Number,
     ):
         """fetches policy data (policy configuration) from backend and updates
         it into policy-store (i.e. OPA)"""
-        policy_store = policy_store or DEFAULT_POLICY_STORE_GETTER()
-        if data_fetcher is None:
-            data_fetcher = DataFetcher()
+
+        if update is None:
+            return
+
         # types / defaults
         urls: List[Tuple[str, FetcherConfig, Optional[JsonableValue]]] = None
         entries: List[DataSourceEntry] = []
-        # track the result of each url in order to report back
-        reports: List[DataEntryReport] = []
         # if we have an actual specification for the update
         if update is not None:
             # Check each entry's topics to only process entries designated to us
@@ -349,10 +356,18 @@ class DataUpdater:
             )
 
         # Urls may be None - handle_urls has a default for None
-        policy_data_with_urls = await data_fetcher.handle_urls(urls)
+        policy_data_with_urls = await self._data_fetcher.handle_urls(urls)
+        store_queue_number.put((update, entries, policy_data_with_urls))
+
+    async def _store_fetched_update(self, update_item):
+        (update, entries, policy_data_with_urls) = update_item
+
+        # track the result of each url in order to report back
+        reports: List[DataEntryReport] = []
+
         # Save the data from the update
         # We wrap our interaction with the policy store with a transaction
-        async with policy_store.transaction_context(
+        async with self._policy_store.transaction_context(
             update.id, transaction_type=TransactionType.data
         ) as store_transaction:
             # for intellisense treat store_transaction as a PolicyStoreClient (which it proxies)
@@ -394,7 +409,9 @@ class DataUpdater:
                             error=error_content,
                         )
                 store_transaction._update_remote_status(
-                    url=url, status=fetched_data_successfully, error=str(error_content)
+                    url=url,
+                    status=fetched_data_successfully,
+                    error=str(error_content),
                 )
 
                 if fetched_data_successfully:
@@ -457,7 +474,7 @@ class DataUpdater:
             extra_callbacks = self._callbacks_register.normalize_callbacks(
                 update.callback.callbacks
             )
-            asyncio.create_task(
+            self._tasks.add_task(
                 self._callbacks_reporter.report_update_results(
                     whole_report, extra_callbacks
                 )

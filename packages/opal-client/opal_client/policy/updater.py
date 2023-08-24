@@ -15,6 +15,7 @@ from opal_client.policy_store.base_policy_store_client import BasePolicyStoreCli
 from opal_client.policy_store.policy_store_client_factory import (
     DEFAULT_POLICY_STORE_GETTER,
 )
+from opal_common.async_utils import TakeANumberQueue, TasksPool
 from opal_common.config import opal_common_config
 from opal_common.schemas.data import DataUpdateReport
 from opal_common.schemas.policy import PolicyBundle, PolicyUpdateMessage
@@ -102,6 +103,8 @@ class PolicyUpdater:
             if self._custom_ssl_context is not None
             else {}
         )
+        self._policy_storing_queue = TakeANumberQueue(logger)
+        self._tasks = TasksPool()
 
     async def __aenter__(self):
         await self.start()
@@ -142,7 +145,11 @@ class PolicyUpdater:
                 set(self._subscription_directories)
             )
         )
-        await self.update_policy(directories)
+        await self.trigger_update_policy(directories)
+
+    async def trigger_update_policy(self, directories: List[str] = None):
+        store_queue_number = await self._policy_storing_queue.take_a_number()
+        self._tasks.add_task(self.update_policy(directories, store_queue_number))
 
     async def _on_connect(self, client: PubSubClient, channel: RpcChannel):
         """Pub/Sub on_connect callback On connection to backend, whether its
@@ -154,7 +161,7 @@ class PolicyUpdater:
         start from scratch.
         """
         logger.info("Connected to server")
-        await self.update_policy()
+        await self.trigger_update_policy()
         if opal_common_config.STATISTICS_ENABLED:
             await self._client.wait_until_ready()
             # publish statistics to the server about new connection from client (only if STATISTICS_ENABLED is True, default to False)
@@ -174,6 +181,9 @@ class PolicyUpdater:
     async def start(self):
         """launches the policy updater."""
         logger.info("Launching policy updater")
+        await self._policy_storing_queue.start_queue_handling(
+            self._store_fetched_update
+        )
         if self._subscriber_task is None:
             self._subscriber_task = asyncio.create_task(self._subscriber())
             await self._data_fetcher.start()
@@ -208,6 +218,9 @@ class PolicyUpdater:
 
         await self._data_fetcher.stop()
 
+        # stop queue handling
+        await self._updates_storing_queue.stop_queue_handling()
+
     async def wait_until_done(self):
         if self._subscriber_task is not None:
             await self._subscriber_task
@@ -232,7 +245,10 @@ class PolicyUpdater:
             await self._client.wait_until_done()
 
     async def update_policy(
-        self, directories: List[str] = None, force_full_update=False
+        self,
+        directories: List[str],
+        store_queue_number: TakeANumberQueue.Number,
+        force_full_update=False,
     ):
         """fetches policy (code, e.g: rego) from backend and stores it in the
         policy store.
@@ -294,6 +310,16 @@ class PolicyUpdater:
         except Exception as err:
             bundle_error = repr(err)
             bundle_succeeded = False
+
+        store_queue_number.put((bundle, bundle_succeeded, bundle_error))
+
+    async def _store_fetched_update(self, update_item):
+        (
+            bundle,
+            bundle_succeeded,
+            bundle_error,
+        ) = update_item
+
         bundle_hash = None if bundle is None else bundle.hash
 
         # store policy bundle in OPA cache
@@ -313,6 +339,6 @@ class PolicyUpdater:
                 if self._should_send_reports:
                     # spin off reporting (no need to wait on it)
                     report = DataUpdateReport(policy_hash=bundle.hash, reports=[])
-                    asyncio.create_task(
+                    self._tasks.add_task(
                         self._callbacks_reporter.report_update_results(report)
                     )
