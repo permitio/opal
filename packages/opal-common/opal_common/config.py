@@ -110,7 +110,7 @@ class OpalCommonConfig(Confi):
 
     # Fetching engine
     # Max number of worker tasks handling fetch events concurrently
-    FETCHING_WORKER_COUNT = confi.int("FETCHING_WORKER_COUNT", 5)
+    FETCHING_WORKER_COUNT = confi.int("FETCHING_WORKER_COUNT", 6)
     # Time in seconds to wait on the queued fetch task.
     FETCHING_CALLBACK_TIMEOUT = confi.int("FETCHING_CALLBACK_TIMEOUT", 10)
     # Time in seconds to wait for queuing a new task (if the queue is full)
