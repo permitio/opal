@@ -90,9 +90,7 @@ class PolicyUpdater:
         # callbacks on policy changes
         self._data_fetcher = data_fetcher or DataFetcher()
         self._callbacks_register = callbacks_register or CallbacksRegister()
-        self._callbacks_reporter = CallbacksReporter(
-            self._callbacks_register, self._data_fetcher
-        )
+        self._callbacks_reporter = CallbacksReporter(self._callbacks_register)
         self._should_send_reports = (
             opal_client_config.SHOULD_REPORT_ON_DATA_UPDATES or False
         )
@@ -181,6 +179,7 @@ class PolicyUpdater:
     async def start(self):
         """launches the policy updater."""
         logger.info("Launching policy updater")
+        await self._callbacks_reporter.start()
         await self._policy_storing_queue.start_queue_handling(
             self._store_fetched_update
         )
@@ -220,6 +219,9 @@ class PolicyUpdater:
 
         # stop queue handling
         await self._updates_storing_queue.stop_queue_handling()
+
+        # stop the callbacks reporter
+        await self._callbacks_reporter.stop()
 
     async def wait_until_done(self):
         if self._subscriber_task is not None:

@@ -97,8 +97,6 @@ class OpalClient:
                 policy_store_type, offline_mode_enabled=self.offline_mode_enabled
             )
         )
-        # data fetcher
-        self.data_fetcher = DataFetcher()
         # callbacks register
         if hasattr(opal_client_config.DEFAULT_UPDATE_CALLBACKS, "callbacks"):
             default_callbacks = opal_client_config.DEFAULT_UPDATE_CALLBACKS.callbacks
@@ -118,7 +116,6 @@ class OpalClient:
             else:
                 self.policy_updater = PolicyUpdater(
                     policy_store=self.policy_store,
-                    data_fetcher=self.data_fetcher,
                     callbacks_register=self._callbacks_register,
                     opal_client_id=opal_client_identifier,
                 )
@@ -139,7 +136,6 @@ class OpalClient:
                 self.data_updater = DataUpdater(
                     policy_store=self.policy_store,
                     data_topics=data_topics,
-                    data_fetcher=self.data_fetcher,
                     callbacks_register=self._callbacks_register,
                     opal_client_id=opal_client_identifier,
                     shard_id=self._shard_id,
