@@ -13,9 +13,17 @@ from opal_common.schemas.data import DataUpdateReport
 class CallbacksReporter:
     """can send a report to callbacks registered on the callback register."""
 
-    def __init__(self, register: CallbacksRegister, data_fetcher: DataFetcher) -> None:
+    def __init__(
+        self, register: CallbacksRegister, data_fetcher: DataFetcher = None
+    ) -> None:
         self._register = register
-        self._fetcher = data_fetcher
+        self._fetcher = data_fetcher or DataFetcher()
+
+    async def start(self):
+        await self._fetcher.start()
+
+    async def stop(self):
+        await self._fetcher.stop()
 
     async def report_update_results(
         self,
@@ -44,7 +52,7 @@ class CallbacksReporter:
             logger.info("Reporting the update to requested callbacks", urls=repr(urls))
             report_results = await self._fetcher.handle_urls(urls)
             # log reports which we failed to send
-            for (url, config, result) in report_results:
+            for url, config, result in report_results:
                 if isinstance(result, Exception):
                     logger.error(
                         "Failed to send report to {url}, info={exc_info}",
