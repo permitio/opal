@@ -1,7 +1,11 @@
+from __future__ import annotations
+
 import asyncio
 import sys
 from functools import partial
-from typing import Callable, TypeVar
+from typing import Any, Callable, Coroutine, List, TypeVar
+
+import loguru
 
 if sys.version_info < (3, 10):
     from typing_extensions import ParamSpec
@@ -25,3 +29,72 @@ async def run_sync(
     return await asyncio.get_event_loop().run_in_executor(
         None, partial(func, *args, **kwargs)
     )
+
+
+class TakeANumberQueue:
+    """Enables a task to hold a place in queue prior to having the actual item
+    to be sent over the queue.
+
+    The goal is executing concurrent tasks while still processing their
+    results by the original order of execution
+    """
+
+    class Number:
+        def __init__(self):
+            self._event = asyncio.Event()
+            self._item = None
+
+        def put(self, item: Any):
+            self._item = item
+            self._event.set()
+
+        async def get(self) -> Any:
+            await self._event.wait()
+            return self._item
+
+    def __init__(self, logger: loguru.Logger):
+        self._queue = asyncio.Queue()
+        self._logger = logger
+
+    async def take_a_number(self) -> Number:
+        n = TakeANumberQueue.Number()
+        await self._queue.put(n)
+        return n
+
+    async def get(self) -> Any:
+        n: TakeANumberQueue.Number = await self._queue.get()
+        return await n.get()  # Wait for next in line to have a result
+
+    async def _handle_queue(self, handler: Coroutine):
+        while True:
+            item = await self.get()
+            try:
+                await handler(item)
+            except Exception:
+                if self._logger:
+                    self._logger.exception("failed handling take-a-number queue item")
+            except asyncio.CancelledError:
+                if self._logger:
+                    self._logger.debug("queue handling task cancelled")
+                return
+
+    async def start_queue_handling(self, handler: Coroutine):
+        self._handler_task = asyncio.create_task(self._handle_queue(handler))
+
+    async def stop_queue_handling(self):
+        if self._handler_task:
+            self._handler_task.cancel()
+            self._handler_task = None
+
+
+class TasksPool:
+    def __init__(self):
+        self._tasks: List[asyncio.Task] = []
+
+    def _cleanup_task(self, done_task):
+        self._tasks.remove(done_task)
+
+    def add_task(self, f):
+        t = asyncio.create_task(f)
+        self._tasks.append(t)
+        t.add_done_callback(self._cleanup_task)
