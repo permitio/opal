@@ -201,7 +201,8 @@ class OpalClient:
                 rehydration_callbacks.append(
                     # refetches policy code (e.g: rego) and static data from server
                     functools.partial(
-                        self.policy_updater.update_policy, force_full_update=True
+                        self.policy_updater.trigger_update_policy,
+                        force_full_update=True,
                     ),
                 )
 
