@@ -145,9 +145,13 @@ class PolicyUpdater:
         )
         await self.trigger_update_policy(directories)
 
-    async def trigger_update_policy(self, directories: List[str] = None):
+    async def trigger_update_policy(
+        self, directories: List[str] = None, force_full_update: bool = False
+    ):
         store_queue_number = await self._policy_storing_queue.take_a_number()
-        self._tasks.add_task(self.update_policy(directories, store_queue_number))
+        self._tasks.add_task(
+            self.update_policy(directories, store_queue_number, force_full_update)
+        )
 
     async def _on_connect(self, client: PubSubClient, channel: RpcChannel):
         """Pub/Sub on_connect callback On connection to backend, whether its
@@ -218,7 +222,7 @@ class PolicyUpdater:
         await self._data_fetcher.stop()
 
         # stop queue handling
-        await self._updates_storing_queue.stop_queue_handling()
+        await self._policy_storing_queue.stop_queue_handling()
 
         # stop the callbacks reporter
         await self._callbacks_reporter.stop()
@@ -250,7 +254,7 @@ class PolicyUpdater:
         self,
         directories: List[str],
         store_queue_number: TakeANumberQueue.Number,
-        force_full_update=False,
+        force_full_update: bool,
     ):
         """fetches policy (code, e.g: rego) from backend and stores it in the
         policy store.
