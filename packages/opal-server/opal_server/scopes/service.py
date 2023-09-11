@@ -195,17 +195,24 @@ class ScopesService:
                 skipped_scopes.append(scope)
                 continue
 
-            await self.sync_scope(
-                scope.scope_id,
-                force_fetch=True,
-                notify_on_changes=notify_on_changes,
-            )
+            try:
+                await self.sync_scope(
+                    scope.scope_id,
+                    force_fetch=True,
+                    notify_on_changes=notify_on_changes,
+                )
+            except Exception as e:
+                logger.exception(f"sync_scope failed for {scope.scope_id}")
+
             fetched_urls.add(scope.policy.url)
 
         for scope in skipped_scopes:
             # No need to refetch the same repo, just check for changes
-            await self.sync_scope(
-                scope.scope_id,
-                force_fetch=False,
-                notify_on_changes=notify_on_changes,
-            )
+            try:
+                await self.sync_scope(
+                    scope.scope_id,
+                    force_fetch=False,
+                    notify_on_changes=notify_on_changes,
+                )
+            except Exception as e:
+                logger.exception(f"sync_scope failed for {scope.scope_id}")

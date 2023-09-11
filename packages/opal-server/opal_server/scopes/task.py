@@ -37,7 +37,13 @@ class ScopesPolicyWatcherTask(BasePolicyWatcherTask):
             while True:
                 await asyncio.sleep(opal_server_config.POLICY_REFRESH_INTERVAL)
                 logger.info("Periodic sync")
-                await self._service.sync_scopes(only_poll_updates=True)
+                try:
+                    await self._service.sync_scopes(only_poll_updates=True)
+                except asyncio.CancelledError:
+                    raise
+                except Exception as e:
+                    logger.exception(f"Periodic sync (sync_scopes) failed")
+
         except asyncio.CancelledError:
             logger.info("Periodic sync cancelled")
 
