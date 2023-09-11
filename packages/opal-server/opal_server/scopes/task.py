@@ -52,7 +52,7 @@ class ScopesPolicyWatcherTask(BasePolicyWatcherTask):
             # Refresh single scope
             try:
                 await self._service.sync_scope(
-                    data["scope_id"],
+                    scope_id=data["scope_id"],
                     force_fetch=data.get("force_fetch", False),
                     hinted_hash=data.get("hinted_hash"),
                     req_time=datetime.datetime.now(),

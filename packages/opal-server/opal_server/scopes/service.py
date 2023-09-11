@@ -16,7 +16,7 @@ from opal_server.policy.watcher.callbacks import (
     create_policy_update,
     create_update_all_directories_in_repo,
 )
-from opal_server.scopes.scope_repository import ScopeRepository
+from opal_server.scopes.scope_repository import Scope, ScopeRepository
 
 
 def is_rego_source_file(
@@ -111,13 +111,16 @@ class ScopesService:
 
     async def sync_scope(
         self,
-        scope_id: str,
+        scope_id: str = None,
+        scope: Scope = None,
         hinted_hash: Optional[str] = None,
         force_fetch: bool = False,
         notify_on_changes: bool = True,
         req_time: datetime.datetime = None,
     ):
-        scope = await self._scopes.get(scope_id)
+        if scope is None:
+            assert scope_id, ValueError("scope_id not set for sync_scope")
+            scope = await self._scopes.get(scope_id)
 
         if not isinstance(scope.policy, GitPolicyScopeSource):
             logger.warning("Non-git scopes are currently not supported!")
@@ -125,21 +128,21 @@ class ScopesService:
         source = cast(GitPolicyScopeSource, scope.policy)
 
         logger.info(
-            f"Sync scope: {scope_id} (remote: {source.url}, branch: {source.branch}, req_time: {req_time})"
+            f"Sync scope: {scope.scope_id} (remote: {source.url}, branch: {source.branch}, req_time: {req_time})"
         )
 
         callbacks = PolicyFetcherCallbacks()
         if notify_on_changes:
             callbacks = NewCommitsCallbacks(
                 base_dir=self._base_dir,
-                scope_id=scope_id,
+                scope_id=scope.scope_id,
                 source=source,
                 pubsub_endpoint=self._pubsub_endpoint,
             )
 
         fetcher = GitPolicyFetcher(
             self._base_dir,
-            scope_id,
+            scope.scope_id,
             source,
             callbacks=callbacks,
         )
@@ -150,7 +153,7 @@ class ScopesService:
             )
         except Exception as e:
             logger.exception(
-                f"Could not fetch policy for scope {scope_id}, got error: {e}"
+                f"Could not fetch policy for scope {scope.scope_id}, got error: {e}"
             )
 
     async def delete_scope(self, scope_id: str):
@@ -197,7 +200,7 @@ class ScopesService:
 
             try:
                 await self.sync_scope(
-                    scope.scope_id,
+                    scope=scope,
                     force_fetch=True,
                     notify_on_changes=notify_on_changes,
                 )
@@ -210,7 +213,7 @@ class ScopesService:
             # No need to refetch the same repo, just check for changes
             try:
                 await self.sync_scope(
-                    scope.scope_id,
+                    scope=scope,
                     force_fetch=False,
                     notify_on_changes=notify_on_changes,
                 )
