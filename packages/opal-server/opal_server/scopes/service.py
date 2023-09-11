@@ -190,11 +190,13 @@ class ScopesService:
             f"OPAL Scopes: syncing {len(scopes)} scopes in the background (polling updates: {only_poll_updates})"
         )
 
-        fetched_urls = set()
+        fetched_source_ids = set()
         skipped_scopes = []
         for scope in scopes:
-            # Give priority to scopes that have a unique url (so we'll clone all repos asap)
-            if scope.policy.url in fetched_urls:
+            src_id = GitPolicyFetcher.source_id(scope.policy)
+
+            # Give priority to scopes that have a unique url per shard (so we'll clone all repos asap)
+            if src_id in fetched_source_ids:
                 skipped_scopes.append(scope)
                 continue
 
@@ -207,7 +209,7 @@ class ScopesService:
             except Exception as e:
                 logger.exception(f"sync_scope failed for {scope.scope_id}")
 
-            fetched_urls.add(scope.policy.url)
+            fetched_source_ids.add(src_id)
 
         for scope in skipped_scopes:
             # No need to refetch the same repo, just check for changes
