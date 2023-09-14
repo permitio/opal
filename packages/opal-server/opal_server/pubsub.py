@@ -71,16 +71,19 @@ class PubSub:
             as you can see, this endpoint is protected by an HTTP
             Authorization Bearer token.
             """
-            if claims is None:
-                logger.info(
-                    "Closing connection, remote address: {remote_address}",
-                    remote_address=websocket.client,
-                    reason="Authentication failed",
-                )
-                await websocket.close()
-                return
+            try:
+                if claims is None:
+                    logger.info(
+                        "Closing connection, remote address: {remote_address}",
+                        remote_address=websocket.client,
+                        reason="Authentication failed",
+                    )
+                    await websocket.close()
+                    return
 
-            await self.endpoint.main_loop(websocket, claims=claims)
+                await self.endpoint.main_loop(websocket, claims=claims)
+            finally:
+                await websocket.close()
 
     @staticmethod
     async def _verify_permitted_topics(
