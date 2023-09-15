@@ -1,4 +1,3 @@
-import asyncio
 import hashlib
 import shutil
 from pathlib import Path
