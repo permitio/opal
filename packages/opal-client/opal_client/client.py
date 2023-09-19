@@ -2,6 +2,7 @@ import asyncio
 import functools
 import os
 import signal
+import tempfile
 import uuid
 from logging import disable
 from typing import Awaitable, Callable, List, Literal, Optional, Union
@@ -392,8 +393,14 @@ class OpalClient:
                 await aiofiles.os.makedirs(
                     os.path.dirname(self.store_backup_path), exist_ok=True
                 )
-                tmp_backup_path = self.store_backup_path + ".tmp"
-                async with aiofiles.open(tmp_backup_path, "w") as backup_file:
+                tmp_backup_path = ""
+                async with aiofiles.tempfile.NamedTemporaryFile(
+                    "w",
+                    delete=False,
+                    dir=os.path.dirname(self.store_backup_path),
+                    suffix=".json.tmp",
+                ) as backup_file:
+                    tmp_backup_path = backup_file.name
                     logger.debug("exporting policy store to backup file...")
                     await self.policy_store.full_export(backup_file)
                     logger.debug("export completed")
