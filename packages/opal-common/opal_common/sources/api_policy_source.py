@@ -76,39 +76,51 @@ class ApiPolicySource(BasePolicySource):
         """init remote data to local repo."""
         async for attempt in AsyncRetrying(wait=wait_fixed(5)):
             with attempt:
-                await self.fetch_policy_bundle_from_api_source(
-                    self.remote_source_url, self.token
-                )
-                self.local_git = self.tar_to_git.create_local_git()
+                try:
+                    await self.fetch_policy_bundle_from_api_source(
+                        self.remote_source_url, self.token
+                    )
+                    self.local_git = self.tar_to_git.create_local_git()
+                except Exception:
+                    logger.exception(
+                        "Failed to load initial policy from remote API bundle server"
+                    )
+                    raise
 
     async def api_update_policy(self) -> Tuple[bool, str, str]:
         async for attempt in AsyncRetrying(wait=wait_fixed(5)):
             with attempt:
-                (
-                    tmp_bundle_path,
-                    prev_version,
-                    current_hash,
-                ) = await self.fetch_policy_bundle_from_api_source(
-                    self.remote_source_url, self.token
-                )
-                if tmp_bundle_path and prev_version and current_hash:
-                    commit_msg = f"new version {current_hash}"
+                try:
                     (
-                        self.local_git,
-                        prev_commit,
-                        new_commit,
-                    ) = self.tar_to_git.extract_bundle_to_local_git(
-                        commit_msg=commit_msg
-                    )
-                    return (
-                        True,
+                        tmp_bundle_path,
                         prev_version,
                         current_hash,
-                        prev_commit,
-                        new_commit,
+                    ) = await self.fetch_policy_bundle_from_api_source(
+                        self.remote_source_url, self.token
                     )
-                else:
-                    return False, None, current_hash, None, None
+                    if tmp_bundle_path and prev_version and current_hash:
+                        commit_msg = f"new version {current_hash}"
+                        (
+                            self.local_git,
+                            prev_commit,
+                            new_commit,
+                        ) = self.tar_to_git.extract_bundle_to_local_git(
+                            commit_msg=commit_msg
+                        )
+                        return (
+                            True,
+                            prev_version,
+                            current_hash,
+                            prev_commit,
+                            new_commit,
+                        )
+                    else:
+                        return False, None, current_hash, None, None
+                except Exception as e:
+                    logger.exception(
+                        f"Failed to update policy from remote API bundle server"
+                    )
+                    raise
 
     def build_auth_headers(self, token=None, path=None):
         # if it's a simple HTTP server with a bearer token
