@@ -1,11 +1,11 @@
 import asyncio
 
-import aioredis
+import redis.asyncio as redis
 from opal_common.logger import logger
 
 
 async def run_locked(
-    redis: aioredis.Redis, lock_name: str, coro: asyncio.coroutine, timeout: int = 10
+    _redis: redis.Redis, lock_name: str, coro: asyncio.coroutine, timeout: int = 10
 ):
     """This function runs a coroutine wrapped in a redis lock, in a way that
     prevents hanging locks. Hanging locks can happen when a process crashes
@@ -13,7 +13,7 @@ async def run_locked(
 
     This function sets a redis enforced timeout, and reacquires the lock every timeout * 0.8 (as long as it runs)
     """
-    lock = redis.lock(lock_name, timeout=timeout)
+    lock = _redis.lock(lock_name, timeout=timeout)
     try:
         logger.debug(f"Trying to acquire redis lock: {lock_name}")
         await lock.acquire()
