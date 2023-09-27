@@ -1,4 +1,5 @@
 import asyncio
+import codecs
 import datetime
 import hashlib
 import shutil
@@ -55,16 +56,11 @@ class RepoInterface:
         base_branch: str,
     ) -> pygit2.Reference:
         if branch_name not in repo.branches.local:
-            remote_branch = f"{remote_name}/{branch_name}"
             base_remote_branch = f"{remote_name}/{base_branch}"
-            if remote_branch in repo.branches.remote:
-                (commit, _) = repo.resolve_refish(remote_branch)
-            elif repo.branches.remote.get(base_remote_branch) is not None:
+            if repo.branches.remote.get(base_remote_branch) is not None:
                 (commit, _) = repo.resolve_refish(base_remote_branch)
             else:
-                raise RuntimeError(
-                    "Both branch and base branch were not found on remote"
-                )
+                raise RuntimeError("Base branch was not found on remote")
             logger.debug(
                 f"Created local branch '{branch_name}', pointing to: {commit.hex}"
             )
@@ -97,15 +93,6 @@ class RepoInterface:
             return commit.hex
         except (pygit2.GitError, KeyError):
             return None
-
-    @staticmethod
-    def checkout_local_branch_from_remote(
-        repo: Repository,
-        branch_name: str,
-        remote_name: str,
-    ):
-        ref = RepoInterface.create_local_branch_ref(repo, branch_name, remote_name)
-        repo.checkout(ref)
 
     @staticmethod
     def verify_found_repo_matches_remote(
@@ -243,15 +230,12 @@ class GitPolicyFetcher(PolicyFetcher):
                 self._source.url,
                 str(self._repo_path),
                 callbacks=self._auth_callbacks,
-                checkout_branch=self._source.branch,
             )
         except pygit2.GitError:
-            logger.exception(
-                f"Could not clone repo at {self._source.url}, checkout branch={self._source.branch}"
-            )
+            logger.exception(f"Could not clone repo at {self._source.url}")
         else:
             logger.info(f"Clone completed: {self._source.url}")
-            await self.callbacks.on_update(None, repo.head.target.hex)
+            await self._notify_on_changes(repo)
 
     def _get_repo(self) -> Repository:
         path = str(self._repo_path)
@@ -302,6 +286,10 @@ class GitPolicyFetcher(PolicyFetcher):
         # by default, we try to avoid re-fetching the repo for performance
         return False
 
+    @property
+    def local_branch_name(self) -> str:
+        return f"{self._source.branch}/scope_{self._scope_id}"
+
     async def _notify_on_changes(self, repo: Repository):
         # Get the latest commit hash of the target branch
         new_revision = RepoInterface.get_commit_hash(
@@ -312,12 +300,12 @@ class GitPolicyFetcher(PolicyFetcher):
             return
 
         # Get the previous commit hash of the target branch
-        local_branch = RepoInterface.get_local_branch(repo, self._source.branch)
+        local_branch = RepoInterface.get_local_branch(repo, self.local_branch_name)
         if local_branch is None:
             # First sync of a new branch (the first synced branch in this repo was set by the clone (see `checkout_branch`))
             old_revision = None
             local_branch = RepoInterface.create_local_branch_ref(
-                repo, self._source.branch, self._remote, self._source.branch
+                repo, self.local_branch_name, self._remote, self._source.branch
             )
         else:
             old_revision = local_branch.target.hex
