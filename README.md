@@ -19,11 +19,11 @@ Open Policy Administration Layer
     <img src="https://img.shields.io/pypi/v/opal-client?color=%2331C654&label=OPAL%20Client%20%28PyPi%29" alt="Package">
 </a>
 <a href="https://pepy.tech/project/opal-server" target="_blank">
-    <img src="https://static.pepy.tech/personalized-badge/opal-server?period=total&units=international_system&left_color=black&right_color=blue&left_text=Downloads" alt="Downloads">
+    <img src="https://static.pepy.tech/personalized-badge/opal-client?period=total&units=international_system&left_color=black&right_color=blue&left_text=Downloads" alt="Downloads">
 </a>
 
 <a href="https://hub.docker.com/r/permitio/opal-server" target="_blank">
-    <img src="https://img.shields.io/docker/pulls/permitio/opal-server?label=Docker%20pulls" alt="Docker pulls">
+    <img src="https://img.shields.io/docker/pulls/permitio/opal-client?label=Docker%20pulls" alt="Docker pulls">
 </a>
 
 <a href="https://bit.ly/permit-slack" target="_blank">
