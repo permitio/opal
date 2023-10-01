@@ -1,7 +1,7 @@
 from enum import Enum
 
 from opal_client.engine.options import CedarServerOptions, OpaServerOptions
-from opal_client.policy.options import PolicyConnRetryOptions
+from opal_client.policy.options import ConnRetryOptions
 from opal_client.policy_store.schemas import PolicyStoreAuth, PolicyStoreTypes
 from opal_common.confi import Confi, confi
 from opal_common.config import opal_common_config
@@ -49,16 +49,16 @@ class OpalClientConfig(Confi):
         description="the client secret OPAL will use to authenticate against the OAuth server.",
     )
 
-    POLICY_STORE_CONN_RETRY: PolicyConnRetryOptions = confi.model(
+    POLICY_STORE_CONN_RETRY: ConnRetryOptions = confi.model(
         "POLICY_STORE_CONN_RETRY",
-        PolicyConnRetryOptions,
+        ConnRetryOptions,
         # defaults are being set according to PolicyStoreConnRetryOptions pydantic definitions (see class)
         {},
         description="retry options when connecting to the policy store (i.e. the agent that handles the policy, e.g. OPA)",
     )
-    POLICY_UPDATER_CONN_RETRY: PolicyConnRetryOptions = confi.model(
+    POLICY_UPDATER_CONN_RETRY: ConnRetryOptions = confi.model(
         "POLICY_UPDATER_CONN_RETRY",
-        PolicyConnRetryOptions,
+        ConnRetryOptions,
         {
             "wait_strategy": "random_exponential",
             "max_wait": 10,
@@ -66,6 +66,18 @@ class OpalClientConfig(Confi):
             "wait_time": 1,
         },
         description="retry options when connecting to the policy source (e.g. the policy bundle server)",
+    )
+
+    DATA_STORE_CONN_RETRY: ConnRetryOptions = confi.model(
+        "DATA_STORE_CONN_RETRY",
+        ConnRetryOptions,
+        {
+            "wait_strategy": "random_exponential",
+            "max_wait": 10,
+            "attempts": 5,
+            "wait_time": 1,
+        },
+        description="retry options when connecting to the base data source (e.g. an external API server which returns data snapshot)",
     )
 
     POLICY_STORE_POLICY_PATHS_TO_IGNORE = confi.list(
