@@ -1,11 +1,9 @@
-import asyncio
 import hashlib
 import shutil
 from pathlib import Path
 from typing import Optional, cast
 
 import aiofiles.os
-import aioredis
 import pygit2
 from git import Repo
 from opal_common.async_utils import run_sync
