@@ -29,6 +29,7 @@ from pygit2 import (
     UserPass,
     clone_repository,
     discover_repository,
+    reference_is_valid_name,
 )
 
 
@@ -288,7 +289,12 @@ class GitPolicyFetcher(PolicyFetcher):
 
     @property
     def local_branch_name(self) -> str:
-        return f"{self._source.branch}/scope_{self._scope_id}"
+        # Use the scope id as local branch name, so different scopes could track the same remote branch separately
+        if reference_is_valid_name(self._scope_id):
+            return f"scopes/{self._scope_id}"
+        else:
+            # if scope id can't be used as a gitref (e.g invalid chars), use its hex representation
+            return f"scopes/{self._scope_id.encode().hex()}"
 
     async def _notify_on_changes(self, repo: Repository):
         # Get the latest commit hash of the target branch
