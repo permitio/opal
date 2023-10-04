@@ -1,6 +1,7 @@
 import asyncio
 from typing import Any, Dict, List, Optional, Tuple
 
+import aiohttp
 from fastapi import HTTPException
 from opal_client.config import opal_client_config
 from opal_client.policy_store.base_policy_store_client import JsonableValue
@@ -85,7 +86,10 @@ class DataFetcher:
             try:
                 # ask the engine to get our data
                 response = await self._engine.handle_url(url, config=config)
-                if response.status >= 400:
+                if (
+                    isinstance(response, aiohttp.ClientResponse)
+                    and response.status >= 400
+                ):
                     logger.error(
                         "error while fetching url: {url}, got response code: {code}",
                         url=url,
