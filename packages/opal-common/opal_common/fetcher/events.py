@@ -23,14 +23,14 @@ class FetchEvent(BaseModel):
     """
 
     # Event id to be filled by the engine
-    id: str = None
+    id: Optional[str] = None
     # optional name of the specific event
-    name: str = None
+    name: Optional[str] = None
     # A string identifying the fetcher class to use (as registered in the fetcher register)
     fetcher: str
     # The url the event targets for fetching
     url: str
     # Specific fetcher configuration (overridden by deriving event classes (FetcherConfig)
-    config: dict = None
+    config: Optional[dict] = None
     # Tenacity.retry - Override default retry configuration for this event
-    retry: dict = None
+    retry: Optional[dict] = None
