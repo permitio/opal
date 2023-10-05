@@ -143,7 +143,7 @@ class DataUpdater:
         else:
             reason = "Periodic update"
         logger.info("Updating policy data, reason: {reason}", reason=reason)
-        update = DataUpdate.parse_obj(data)
+        update = DataUpdate.model_validate(data)
         self.trigger_data_update(update)
 
     def trigger_data_update(self, update: DataUpdate):
@@ -172,7 +172,7 @@ class DataUpdater:
             async with ClientSession(headers=self._extra_headers) as session:
                 response = await session.get(url, **self._ssl_context_kwargs)
                 if response.status == 200:
-                    return DataSourceConfig.parse_obj(await response.json())
+                    return DataSourceConfig.model_validate(await response.json())
                 else:
                     error_details = await response.json()
                     raise ClientError(
