@@ -35,7 +35,7 @@ class DataSourceEntry(BaseModel):
 
     # How to obtain the data
     url: str = Field(..., description="Url source to query for data")
-    config: dict = Field(
+    config: Optional[dict] = Field(
         None,
         description="Suggested fetcher configuration (e.g. auth or method) to fetch data with",
     )
