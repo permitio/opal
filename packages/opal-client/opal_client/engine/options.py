@@ -110,7 +110,7 @@ class CedarServerOptions(BaseModel):
         file (to be used by opa cli)"""
         return "--{}".format(string.replace("_", "-"))
 
-    config = ConfigDict(
+    model_config = ConfigDict(
         use_enum_values=True, populate_by_name=True, alias_generator=alias_generator
     )
 
