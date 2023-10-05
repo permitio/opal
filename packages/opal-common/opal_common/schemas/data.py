@@ -5,7 +5,7 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 from opal_common.fetcher.events import FetcherConfig
 from opal_common.fetcher.providers.http_fetch_provider import HttpFetcherConfig
 from opal_common.schemas.store import JSONPatchAction
-from pydantic import AnyHttpUrl, BaseModel, Field, model_validator, validator
+from pydantic import AnyHttpUrl, BaseModel, Field, model_validator, field_validator
 
 JsonableValue = Union[List[JSONPatchAction], List[Any], Dict[str, Any]]
 
@@ -18,9 +18,8 @@ class DataSourceEntry(BaseModel):
     Data source configuration - where client's should retrieve data from and how they should store it
     """
 
-    # TODO[pydantic]: We couldn't refactor the `validator`, please replace it by `field_validator` manually.
-    # Check https://docs.pydantic.dev/dev-v2/migration/#changes-to-validators for more information.
-    @validator("data")
+    @field_validator("data")
+    @classmethod
     def validate_save_method(cls, value, values):
         if values["save_method"] not in ["PUT", "PATCH"]:
             raise ValueError("'save_method' must be either PUT or PATCH")

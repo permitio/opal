@@ -1,7 +1,7 @@
 from enum import Enum
 from typing import Any, List, Optional
 
-from pydantic import field_validator, BaseModel, Field, validator
+from pydantic import field_validator, BaseModel, Field
 
 
 class LogLevel(str, Enum):
@@ -63,8 +63,6 @@ class OpaServerOptions(BaseModel):
         description="list of built-in rego policies and data.json files that must be loaded into OPA on startup. e.g: system.authz policy when using --authorization=basic, see: https://www.openpolicyagent.org/docs/latest/security/#authentication-and-authorization",
     )
 
-    # TODO[pydantic]: We couldn't refactor this class, please create the `model_config` manually.
-    # Check https://docs.pydantic.dev/dev-v2/migration/#changes-to-config for more information.
     class Config:
         use_enum_values = True
         allow_population_by_field_name = True
@@ -106,8 +104,6 @@ class CedarServerOptions(BaseModel):
         description="list of built-in policies files that must be loaded on startup.",
     )
 
-    # TODO[pydantic]: We couldn't refactor this class, please create the `model_config` manually.
-    # Check https://docs.pydantic.dev/dev-v2/migration/#changes-to-config for more information.
     class Config:
         use_enum_values = True
         allow_population_by_field_name = True
@@ -125,9 +121,8 @@ class CedarServerOptions(BaseModel):
             raise ValueError("Invalid AuthenticationScheme for Cedar.")
         return v
 
-    # TODO[pydantic]: We couldn't refactor the `validator`, please replace it by `field_validator` manually.
-    # Check https://docs.pydantic.dev/dev-v2/migration/#changes-to-validators for more information.
-    @validator("authentication_token")
+    @field_validator("authentication_token")
+    @classmethod
     def validate_authentication_token(cls, v: Optional[str], values: dict[str, Any]):
         if values["authentication"] == AuthenticationScheme.token and v is None:
             raise ValueError(
