@@ -63,11 +63,8 @@ class OpaServerOptions(BaseModel):
         description="list of built-in rego policies and data.json files that must be loaded into OPA on startup. e.g: system.authz policy when using --authorization=basic, see: https://www.openpolicyagent.org/docs/latest/security/#authentication-and-authorization",
     )
 
-    @staticmethod
-    def alias_generator(string: str) -> str:
-        """converts field named tls_private_key_file to --tls-private-key-
-        file (to be used by opa cli)"""
-        return "--{}".format(string.replace("_", "-"))
+    # Converts field named tls_private_key_file to --tls-private-key-file (to be used by opa cli)
+    alias_generator = lambda string: "--{}".format(string.replace("_", "-"))
 
     model_config = ConfigDict(
         use_enum_values=True, populate_by_name=True, alias_generator=alias_generator
@@ -104,11 +101,8 @@ class CedarServerOptions(BaseModel):
         description="list of built-in policies files that must be loaded on startup.",
     )
 
-    @staticmethod
-    def alias_generator(string: str) -> str:
-        """converts field named tls_private_key_file to --tls-private-key-
-        file (to be used by opa cli)"""
-        return "--{}".format(string.replace("_", "-"))
+    # Converts field named tls_private_key_file to --tls-private-key-file (to be used by opa cli)
+    alias_generator = lambda string: "--{}".format(string.replace("_", "-"))
 
     model_config = ConfigDict(
         use_enum_values=True, populate_by_name=True, alias_generator=alias_generator
