@@ -4,13 +4,15 @@ import asyncio
 import logging
 from functools import wraps
 from traceback import format_exception
-from typing import Callable, Coroutine, Any, Union
+from typing import Any, Callable, Coroutine, Union
 
 from starlette.concurrency import run_in_threadpool
 
 NoArgsNoReturnFuncT = Callable[[], None]
 NoArgsNoReturnAsyncFuncT = Callable[[], Coroutine[Any, Any, None]]
-NoArgsNoReturnDecorator = Callable[[Union[NoArgsNoReturnFuncT, NoArgsNoReturnAsyncFuncT]], NoArgsNoReturnAsyncFuncT]
+NoArgsNoReturnDecorator = Callable[
+    [Union[NoArgsNoReturnFuncT, NoArgsNoReturnAsyncFuncT]], NoArgsNoReturnAsyncFuncT
+]
 
 
 def repeat_every(
@@ -45,7 +47,9 @@ def repeat_every(
         The maximum number of times to call the repeated function. If `None`, the function is repeated forever.
     """
 
-    def decorator(func: NoArgsNoReturnAsyncFuncT | NoArgsNoReturnFuncT) -> NoArgsNoReturnAsyncFuncT:
+    def decorator(
+        func: NoArgsNoReturnAsyncFuncT | NoArgsNoReturnFuncT,
+    ) -> NoArgsNoReturnAsyncFuncT:
         """
         Converts the decorated function into a repeated, periodically-called version of itself.
         """
@@ -68,7 +72,9 @@ def repeat_every(
                         repetitions += 1
                     except Exception as exc:
                         if logger is not None:
-                            formatted_exception = "".join(format_exception(type(exc), exc, exc.__traceback__))
+                            formatted_exception = "".join(
+                                format_exception(type(exc), exc, exc.__traceback__)
+                            )
                             logger.error(formatted_exception)
                         if raise_exceptions:
                             raise exc

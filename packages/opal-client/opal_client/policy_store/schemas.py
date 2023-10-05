@@ -1,7 +1,7 @@
 from enum import Enum
 from typing import Optional
 
-from pydantic import field_validator, ConfigDict, BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class PolicyStoreTypes(Enum):
@@ -61,4 +61,5 @@ class PolicyStoreDetails(BaseModel):
         if isinstance(v, PolicyStoreTypes):
             return v
         raise ValueError(f"invalid value: {v}")
+
     model_config = ConfigDict(use_enum_values=True, populate_by_name=True)

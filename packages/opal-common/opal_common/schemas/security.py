@@ -3,7 +3,7 @@ from enum import Enum
 from typing import Optional
 from uuid import UUID, uuid4
 
-from pydantic import field_validator, ConfigDict, BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 PEER_TYPE_DESCRIPTION = (
     "The peer type we generate access token for, i.e: opal client, data provider, etc."
@@ -37,6 +37,7 @@ class AccessTokenRequest(BaseModel):
         if isinstance(v, PeerType):
             return v
         raise ValueError(f"invalid value: {v}")
+
     model_config = ConfigDict(use_enum_values=True, populate_by_name=True)
 
 
