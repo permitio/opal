@@ -29,7 +29,7 @@ class FastApiRpcFetchProvider(BaseFetchProvider):
 
     def parse_event(self, event: FetchEvent) -> FastApiRpcFetchEvent:
         return FastApiRpcFetchEvent(
-            **event.dict(exclude={"config"}), config=event.config
+            **event.model_dump(exclude={"config"}), config=event.config
         )
 
     async def _fetch_(self):

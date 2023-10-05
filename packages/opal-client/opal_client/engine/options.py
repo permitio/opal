@@ -1,7 +1,7 @@
 from enum import Enum
 from typing import Any, List, Optional
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, ConfigDict
 
 
 class LogLevel(str, Enum):
@@ -63,19 +63,19 @@ class OpaServerOptions(BaseModel):
         description="list of built-in rego policies and data.json files that must be loaded into OPA on startup. e.g: system.authz policy when using --authorization=basic, see: https://www.openpolicyagent.org/docs/latest/security/#authentication-and-authorization",
     )
 
-    class Config:
-        use_enum_values = True
-        allow_population_by_field_name = True
+    @staticmethod
+    def alias_generator(string: str) -> str:
+        """converts field named tls_private_key_file to --tls-private-key-
+        file (to be used by opa cli)"""
+        return "--{}".format(string.replace("_", "-"))
 
-        @classmethod
-        def alias_generator(cls, string: str) -> str:
-            """converts field named tls_private_key_file to --tls-private-key-
-            file (to be used by opa cli)"""
-            return "--{}".format(string.replace("_", "-"))
+    model_config = ConfigDict(
+        use_enum_values=True, populate_by_name=True, alias_generator=alias_generator
+    )
 
     def get_cli_options_dict(self):
         """returns a dict that can be passed to the OPA cli."""
-        return self.dict(exclude_none=True, by_alias=True, exclude={"files"})
+        return self.model_dump(exclude_none=True, by_alias=True, exclude={"files"})
 
     def get_opa_startup_files(self) -> str:
         """returns a list of startup policies and data."""
@@ -104,15 +104,15 @@ class CedarServerOptions(BaseModel):
         description="list of built-in policies files that must be loaded on startup.",
     )
 
-    class Config:
-        use_enum_values = True
-        allow_population_by_field_name = True
+    @staticmethod
+    def alias_generator(string: str) -> str:
+        """converts field named tls_private_key_file to --tls-private-key-
+        file (to be used by opa cli)"""
+        return "--{}".format(string.replace("_", "-"))
 
-        @classmethod
-        def alias_generator(cls, string: str) -> str:
-            """converts field named tls_private_key_file to --tls-private-key-
-            file (to be used by opa cli)"""
-            return "--{}".format(string.replace("_", "-"))
+    config = ConfigDict(
+        use_enum_values=True, populate_by_name=True, alias_generator=alias_generator
+    )
 
     @field_validator("authentication")
     @classmethod

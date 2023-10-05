@@ -13,7 +13,7 @@ class ErrorResponse(BaseModel):
 
 def get_response() -> JSONResponse:
     error = ErrorResponse(error="Uncaught server exception")
-    json_error = jsonable_encoder(error.dict())
+    json_error = jsonable_encoder(error.model_dump())
     return JSONResponse(
         content=json_error, status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
     )

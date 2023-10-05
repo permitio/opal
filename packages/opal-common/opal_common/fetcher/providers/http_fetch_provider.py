@@ -65,7 +65,7 @@ class HttpFetchProvider(BaseFetchProvider):
         )
 
     def parse_event(self, event: FetchEvent) -> HttpFetchEvent:
-        return HttpFetchEvent(**event.dict(exclude={"config"}), config=event.config)
+        return HttpFetchEvent(**event.model_dump(exclude={"config"}), config=event.config)
 
     async def __aenter__(self):
         headers = {}
