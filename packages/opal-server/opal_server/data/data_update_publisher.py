@@ -9,7 +9,7 @@ from opal_common.schemas.data import (
     ServerDataSourceConfig,
 )
 from opal_common.topics.publisher import TopicPublisher
-from opal_common.utils import repeat_every
+from opal_server.utils import repeat_every
 
 TOPIC_DELIMITER = "/"
 PREFIX_DELIMITER = ":"
