@@ -69,7 +69,9 @@ def obtain_token(
         async with ClientSession(
             headers={"Authorization": f"bearer {master_token}"}
         ) as session:
-            details = AccessTokenRequest(type=type, ttl=ttl, claims=claims).model_dump_json()
+            details = AccessTokenRequest(
+                type=type, ttl=ttl, claims=claims
+            ).model_dump_json()
             res = await session.post(
                 server_url, data=details, headers={"content-type": "application/json"}
             )
