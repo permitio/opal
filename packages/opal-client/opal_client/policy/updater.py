@@ -84,6 +84,7 @@ class PolicyUpdater:
         self._client = None
         # The task running the Pub/Sub subscribing client
         self._subscriber_task = None
+        self._policy_update_task = None
         self._stopping = False
         # policy fetcher - fetches policy bundles
         self._policy_fetcher = PolicyFetcher()
@@ -101,7 +102,7 @@ class PolicyUpdater:
             if self._custom_ssl_context is not None
             else {}
         )
-        self._policy_storing_queue = TakeANumberQueue(logger)
+        self._policy_update_queue = asyncio.Queue()
         self._tasks = TasksPool()
 
     async def __aenter__(self):
@@ -148,10 +149,7 @@ class PolicyUpdater:
     async def trigger_update_policy(
         self, directories: List[str] = None, force_full_update: bool = False
     ):
-        store_queue_number = await self._policy_storing_queue.take_a_number()
-        self._tasks.add_task(
-            self.update_policy(directories, store_queue_number, force_full_update)
-        )
+        await self._policy_update_queue.put((directories, force_full_update))
 
     async def _on_connect(self, client: PubSubClient, channel: RpcChannel):
         """Pub/Sub on_connect callback On connection to backend, whether its
@@ -184,9 +182,8 @@ class PolicyUpdater:
         """launches the policy updater."""
         logger.info("Launching policy updater")
         await self._callbacks_reporter.start()
-        await self._policy_storing_queue.start_queue_handling(
-            self._store_fetched_update
-        )
+        if self._policy_update_task is None:
+            self._policy_update_task = asyncio.create_task(self.handle_policy_updates())
         if self._subscriber_task is None:
             self._subscriber_task = asyncio.create_task(self._subscriber())
             await self._data_fetcher.start()
@@ -222,7 +219,13 @@ class PolicyUpdater:
         await self._data_fetcher.stop()
 
         # stop queue handling
-        await self._policy_storing_queue.stop_queue_handling()
+        if self._policy_update_task is not None:
+            self._policy_update_task.cancel()
+            try:
+                await self._policy_update_task
+            except asyncio.CancelledError:
+                pass
+            self._policy_update_task = None
 
         # stop the callbacks reporter
         await self._callbacks_reporter.stop()
@@ -253,7 +256,6 @@ class PolicyUpdater:
     async def update_policy(
         self,
         directories: List[str],
-        store_queue_number: TakeANumberQueue.Number,
         force_full_update: bool,
     ):
         """fetches policy (code, e.g: rego) from backend and stores it in the
@@ -286,10 +288,10 @@ class PolicyUpdater:
         bundle = None
         bundle_succeeded = True
         try:
-            bundle: Optional[
-                PolicyBundle
-            ] = await self._policy_fetcher.fetch_policy_bundle(
-                directories, base_hash=base_hash
+            bundle: Optional[PolicyBundle] = (
+                await self._policy_fetcher.fetch_policy_bundle(
+                    directories, base_hash=base_hash
+                )
             )
             if bundle:
                 if bundle.old_hash is None:
@@ -317,15 +319,6 @@ class PolicyUpdater:
             bundle_error = repr(err)
             bundle_succeeded = False
 
-        store_queue_number.put((bundle, bundle_succeeded, bundle_error))
-
-    async def _store_fetched_update(self, update_item):
-        (
-            bundle,
-            bundle_succeeded,
-            bundle_error,
-        ) = update_item
-
         bundle_hash = None if bundle is None else bundle.hash
 
         # store policy bundle in OPA cache
@@ -348,3 +341,14 @@ class PolicyUpdater:
                     self._tasks.add_task(
                         self._callbacks_reporter.report_update_results(report)
                     )
+
+    async def handle_policy_updates(self):
+        while True:
+            try:
+                directories, force_full_update = await self._policy_update_queue.get()
+                await self.update_policy(directories, force_full_update)
+            except asyncio.CancelledError:
+                logger.debug("PolicyUpdater policy update task was cancelled")
+                break
+            except Exception:
+                logger.exception("Failed to update policy")
