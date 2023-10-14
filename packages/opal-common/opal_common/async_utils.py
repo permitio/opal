@@ -70,13 +70,13 @@ class TakeANumberQueue:
             item = await self.get()
             try:
                 await handler(item)
-            except Exception:
-                if self._logger:
-                    self._logger.exception("failed handling take-a-number queue item")
             except asyncio.CancelledError:
                 if self._logger:
                     self._logger.debug("queue handling task cancelled")
                 return
+            except Exception:
+                if self._logger:
+                    self._logger.exception("failed handling take-a-number queue item")
 
     async def start_queue_handling(self, handler: Coroutine):
         self._handler_task = asyncio.create_task(self._handle_queue(handler))
