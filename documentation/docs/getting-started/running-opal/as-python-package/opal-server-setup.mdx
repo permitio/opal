@@ -90,9 +90,11 @@ a [Github SSH key here](https://docs.github.com/en/github/authenticating-to-gith
 
 The value you pass for the `POLICY_REPO_SSH_KEY` can either be a file path, or the contents of the SSH-key - with newlines replaced with `\_`.
 
-#### `OPAL_POLICY_REPO_CLONE_PATH` & `OPAL_POLICY_REPO_MAIN_BRANCH`
+#### `OPAL_POLICY_REPO_CLONE_PATH`, `OPAL_POLICY_REPO_MAIN_BRANCH` & `OPAL_POLICY_REPO_TAG`
 
-These will allow you to control how the repo is cloned.
+These will allow you to control how the repo is cloned. By default OPAL will track the `master` branch of the repo, you may optionally track another branch or a tag in the repo.
+
+You must choose between tracking a branch or a tag, OPAL will fail if you try to supply both `OPAL_POLICY_REPO_MAIN_BRANCH` and `OPAL_POLICY_REPO_TAG`.
 
 ### Simple run with Data source configuration
 

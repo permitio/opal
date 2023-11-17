@@ -1,7 +1,7 @@
 from functools import partial
 from typing import Optional, Tuple
 
-from git import GitCommandError, Head, Remote, Repo
+from git import GitCommandError, Head, Remote, Repo, Reference
 from git.objects.commit import Commit
 from opal_common.git.env import provide_git_ssh_environment
 from opal_common.git.exceptions import GitFailed
@@ -134,6 +134,10 @@ class BranchTracker:
                 branches_found=branches,
             )
             raise GitFailed(e)
+    
+    @property
+    def tracked_reference(self) -> Reference:
+        return self.tracked_branch
 
     @property
     def tracked_remote(self) -> Remote:

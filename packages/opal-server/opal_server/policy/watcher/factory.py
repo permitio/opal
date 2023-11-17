@@ -21,6 +21,7 @@ def setup_watcher_task(
     remote_source_url: str = None,
     clone_path_finder: RepoClonePathFinder = None,
     branch_name: str = None,
+    tag_name: str = None,
     ssh_key: Optional[str] = None,
     polling_interval: int = None,
     request_timeout: int = None,
@@ -39,6 +40,7 @@ def setup_watcher_task(
         remote_source_url(str): the base address to request the policy from
         clone_path_finder(RepoClonePathFinder): from which the local dir path for the repo clone would be retrieved
         branch_name(str):  name of remote branch in git to pull
+        tag_name(str):  name of remote tag in git to track
         ssh_key (str, optional): private ssh key used to gain access to the cloned repo
         polling_interval(int):  how many seconds need to wait between polling
         request_timeout(int):  how many seconds need to wait until timeout
@@ -71,6 +73,13 @@ def setup_watcher_task(
     branch_name = load_conf_if_none(
         branch_name, opal_server_config.POLICY_REPO_MAIN_BRANCH
     )
+    tag_name = load_conf_if_none(
+        tag_name, opal_server_config.POLICY_REPO_TAG
+    )
+    if branch_name is None and tag_name is None:
+        logger.info("No branch or tag specified, falling back to using branch 'master'")
+        branch_name = "master"
+
     ssh_key = load_conf_if_none(ssh_key, opal_server_config.POLICY_REPO_SSH_KEY)
     polling_interval = load_conf_if_none(
         polling_interval, opal_server_config.POLICY_REPO_POLLING_INTERVAL
@@ -97,6 +106,7 @@ def setup_watcher_task(
             remote_source_url=remote_source_url,
             local_clone_path=clone_path,
             branch_name=branch_name,
+            tag_name=tag_name,
             ssh_key=ssh_key,
             polling_interval=polling_interval,
             request_timeout=request_timeout,

@@ -2,6 +2,7 @@ from typing import Optional
 
 from git import Repo
 from opal_common.git.branch_tracker import BranchTracker
+from opal_common.git.tag_tracker import TagTracker
 from opal_common.git.exceptions import GitFailed
 from opal_common.git.repo_cloner import RepoCloner
 from opal_common.logger import logger
@@ -30,7 +31,8 @@ class GitPolicySource(BasePolicySource):
         self,
         remote_source_url: str,
         local_clone_path: str,
-        branch_name: str = "master",
+        branch_name: Optional[str] = None,
+        tag_name: Optional[str] = None,
         ssh_key: Optional[str] = None,
         polling_interval: int = 0,
         request_timeout: int = 0,
@@ -49,7 +51,16 @@ class GitPolicySource(BasePolicySource):
             ssh_key=self._ssh_key,
             clone_timeout=request_timeout,
         )
+
+        if branch_name is None and tag_name is None:
+            logger.exception("Must provide either branch_name or tag_name")
+            raise ValueError("Must provide either branch_name or tag_name")
+        if branch_name is not None and tag_name is not None:
+            logger.exception("Must provide either branch_name or tag_name, not both")
+            raise ValueError("Must provide either branch_name or tag_name, not both")
+
         self._branch_name = branch_name
+        self._tag_name = tag_name
         self._tracker = None
 
     async def get_initial_policy_state_from_remote(self):
@@ -82,9 +93,14 @@ class GitPolicySource(BasePolicySource):
             await self._on_git_failed(e)
             return
 
-        self._tracker = BranchTracker(
-            repo=repo, branch_name=self._branch_name, ssh_key=self._ssh_key
-        )
+        if self._tag_name is not None:
+            self._tracker = TagTracker(
+                repo=repo, tag_name=self._tag_name, ssh_key=self._ssh_key
+            )
+        else:
+            self._tracker = BranchTracker(
+                repo=repo, branch_name=self._branch_name, ssh_key=self._ssh_key
+            )
 
     async def check_for_changes(self):
         """Calling this method will trigger a git pull from the tracked remote.
@@ -98,7 +114,7 @@ class GitPolicySource(BasePolicySource):
         )
         has_changes, prev, latest = self._tracker.pull()
         if not has_changes:
-            logger.info("No new commits: HEAD is at '{head}'", head=latest.hexsha)
+            logger.info("No new commits: {ref} is at '{head}'", ref=self._tracker.tracked_reference.name, head=latest.hexsha)
         else:
             logger.info(
                 "Found new commits: old HEAD was '{prev_head}', new HEAD is '{new_head}'",
