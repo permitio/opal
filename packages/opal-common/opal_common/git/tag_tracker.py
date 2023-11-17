@@ -1,13 +1,14 @@
 from functools import partial
 from typing import Optional, Tuple
 
-from git import GitCommandError, Tag, Repo, Reference
+from git import GitCommandError, Reference, Repo, Tag
 from git.objects.commit import Commit
+from opal_common.git.branch_tracker import BranchTracker
 from opal_common.git.env import provide_git_ssh_environment
 from opal_common.git.exceptions import GitFailed
 from opal_common.logger import logger
 from tenacity import retry, stop_after_attempt, wait_fixed
-from opal_common.git.branch_tracker import BranchTracker
+
 
 class TagTracker(BranchTracker):
     """Tracks the state of a git tag (hash the tag is pointing at).
@@ -33,7 +34,13 @@ class TagTracker(BranchTracker):
             ssh_key (Optional[str]): SSH key for private repositories
         """
         self._tag_name = tag_name
-        super().__init__(repo, branch_name=None, remote_name=remote_name, retry_config=retry_config, ssh_key=ssh_key)
+        super().__init__(
+            repo,
+            branch_name=None,
+            remote_name=remote_name,
+            retry_config=retry_config,
+            ssh_key=ssh_key,
+        )
 
     def checkout(self):
         """Checkouts the repository at the current tag."""
@@ -53,10 +60,11 @@ class TagTracker(BranchTracker):
 
     def _fetch(self):
         """Fetch updates including tags with force option."""
+
         def _inner_fetch(*args, **kwargs):
             env = provide_git_ssh_environment(self.tracked_remote.url, self._ssh_key)
             with self.tracked_remote.repo.git.custom_environment(**env):
-                self.tracked_remote.repo.git.fetch('--tags', '--force', *args, **kwargs)
+                self.tracked_remote.repo.git.fetch("--tags", "--force", *args, **kwargs)
 
         attempt_fetch = retry(**self._retry_config)(_inner_fetch)
         return attempt_fetch()
@@ -68,14 +76,12 @@ class TagTracker(BranchTracker):
 
     @property
     def tracked_tag(self) -> Tag:
-        """returns the tracked tag reference (of type git.Reference) or throws if
-        such tag does not exist on the repo."""
+        """returns the tracked tag reference (of type git.Reference) or throws
+        if such tag does not exist on the repo."""
         try:
             return getattr(self._repo.tags, self._tag_name)
         except AttributeError as e:
-            tags = [
-                {"path": tag.path} for tag in self._repo.tags
-            ]
+            tags = [{"path": tag.path} for tag in self._repo.tags]
             logger.exception(
                 "did not find main branch: {error}, instead found: {tags_found}",
                 error=e,

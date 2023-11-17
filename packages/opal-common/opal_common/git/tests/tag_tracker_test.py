@@ -18,8 +18,8 @@ from pathlib import Path
 
 from git import Repo
 from git.objects.commit import Commit
-from opal_common.git.tag_tracker import TagTracker
 from opal_common.git.exceptions import GitFailed
+from opal_common.git.tag_tracker import TagTracker
 
 
 def test_pull_with_no_changes(local_repo_clone: Repo):
@@ -68,7 +68,10 @@ def test_pull_with_new_commits(
     assert prev != latest
     assert most_recent_commit_before_pull == prev
     assert (
-        remote_repo.tags.__getattr__("test_tag").commit == repo.tags.__getattr__("test_tag").commit == latest == tracker.latest_commit
+        remote_repo.tags.__getattr__("test_tag").commit
+        == repo.tags.__getattr__("test_tag").commit
+        == latest
+        == tracker.latest_commit
     )
 
 

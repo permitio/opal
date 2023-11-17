@@ -2,9 +2,9 @@ from typing import Optional
 
 from git import Repo
 from opal_common.git.branch_tracker import BranchTracker
-from opal_common.git.tag_tracker import TagTracker
 from opal_common.git.exceptions import GitFailed
 from opal_common.git.repo_cloner import RepoCloner
+from opal_common.git.tag_tracker import TagTracker
 from opal_common.logger import logger
 from opal_common.sources.base_policy_source import BasePolicySource
 
@@ -114,7 +114,11 @@ class GitPolicySource(BasePolicySource):
         )
         has_changes, prev, latest = self._tracker.pull()
         if not has_changes:
-            logger.info("No new commits: {ref} is at '{head}'", ref=self._tracker.tracked_reference.name, head=latest.hexsha)
+            logger.info(
+                "No new commits: {ref} is at '{head}'",
+                ref=self._tracker.tracked_reference.name,
+                head=latest.hexsha,
+            )
         else:
             logger.info(
                 "Found new commits: old HEAD was '{prev_head}', new HEAD is '{new_head}'",
