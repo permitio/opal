@@ -46,6 +46,7 @@ async def test_repo_watcher_git_failed_callback(tmp_path):
     # configure the watcher to watch an invalid repo
     watcher = GitPolicySource(
         remote_source_url=INVALID_REPO_REMOTE_URL,
+        branch_name="master",
         local_clone_path=target_path,
         request_timeout=3,
     )
@@ -86,7 +87,9 @@ async def test_repo_watcher_detect_new_commits_with_manual_trigger(
     # configure the watcher with a valid local repo (our test repo)
     # the returned repo will track the local remote repo
     watcher = GitPolicySource(
-        remote_source_url=remote_repo.working_tree_dir, local_clone_path=target_path
+        remote_source_url=remote_repo.working_tree_dir,
+        local_clone_path=target_path,
+        branch_name=remote_repo.active_branch.name,
     )
     # configure the error callback
     watcher.add_on_new_policy_callback(partial(new_commits_callback, detected_commits))
@@ -157,6 +160,7 @@ async def test_repo_watcher_detect_new_commits_with_polling(
     watcher = GitPolicySource(
         remote_source_url=remote_repo.working_tree_dir,
         local_clone_path=target_path,
+        branch_name=remote_repo.active_branch.name,
         polling_interval=3,  # every 3 seconds do a pull to try and detect changes
     )
     # configure the error callback
