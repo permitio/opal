@@ -136,6 +136,7 @@ def build_aws_rest_auth_headers(key_id: str, secret_key: str, host: str, path: s
 
     return {
         "x-amz-date": amzdate,
+        "x-amz-content-sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
         "Authorization": authorization_header,
     }
 
