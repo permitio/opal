@@ -6,6 +6,6 @@ websockets>=10.3,<11
 ddtrace>=1.1.4,<2
 slowapi>=0.1.5,<1
 # slowapi is stuck on and old `redis`, so fix that and switch from aioredis to redis
-pygit2>=1.9.2,<2
+pygit2>=1.13.3,<2
 asgiref>=3.5.2,<4
 redis>=4.3.4,<5
