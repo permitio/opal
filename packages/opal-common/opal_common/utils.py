@@ -56,7 +56,7 @@ def get_authorization_header(token: str) -> Tuple[str, str]:
     return "Authorization", f"Bearer {token}"
 
 
-def build_aws_rest_auth_headers(key_id: str, secret_key: str, host: str, path: str):
+def build_aws_rest_auth_headers(key_id: str, secret_key: str, host: str, path: str, region: str):
     """Use the AWS signature algorithm (https://docs.aws.amazon.com/AmazonS3/la
     test/userguide/RESTAuthentication.html) to generate the hTTP headers.
 
@@ -101,7 +101,9 @@ def build_aws_rest_auth_headers(key_id: str, secret_key: str, host: str, path: s
         + payload_hash
     )
 
-    region = "us-east-1"
+    if not region:
+        region = "us-east-1"
+
     algorithm = "AWS4-HMAC-SHA256"
     credential_scope = datestamp + "/" + region + "/" + "s3" + "/" + "aws4_request"
 
