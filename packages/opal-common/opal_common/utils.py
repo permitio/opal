@@ -79,6 +79,9 @@ def build_aws_rest_auth_headers(key_id: str, secret_key: str, host: str, path: s
         kSigning = sign(kService, "aws4_request")
         return kSigning
 
+    # SHA256 of empty string.  This is needed when S3 request payload is empty.
+    SHA256_EMPTY = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+
     t = datetime.utcnow()
     amzdate = t.strftime("%Y%m%dT%H%M%SZ")
     datestamp = t.strftime("%Y%m%d")
@@ -138,7 +141,7 @@ def build_aws_rest_auth_headers(key_id: str, secret_key: str, host: str, path: s
 
     return {
         "x-amz-date": amzdate,
-        "x-amz-content-sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "x-amz-content-sha256": SHA256_EMPTY,
         "Authorization": authorization_header,
     }
 
