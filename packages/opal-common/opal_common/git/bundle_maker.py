@@ -110,7 +110,7 @@ class BundleMaker:
             manifest_file_path = dir.path / manifest_file_name
             _branch.append(str(manifest_file_path))
 
-            logger.info(f"Compiling manifest file { ' -> '.join(_branch)}")
+            logger.debug(f"Compiling manifest file { ' -> '.join(_branch)}")
             try:
                 manifest_file = viewer.get_file(dir.path / manifest_file_name)
                 if manifest_file is None:

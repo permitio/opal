@@ -49,7 +49,7 @@ class NewCommitsCallbacks(PolicyFetcherCallbacks):
 
     async def on_update(self, previous_head: str, head: str):
         if previous_head == head:
-            logger.info(
+            logger.debug(
                 f"scope '{self._scope_id}': No new commits, HEAD is at '{head}'"
             )
             return
@@ -127,7 +127,7 @@ class ScopesService:
             return
         source = cast(GitPolicyScopeSource, scope.policy)
 
-        logger.info(
+        logger.debug(
             f"Sync scope: {scope.scope_id} (remote: {source.url}, branch: {source.branch}, req_time: {req_time})"
         )
 
