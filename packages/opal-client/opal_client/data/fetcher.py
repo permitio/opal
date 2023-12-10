@@ -34,20 +34,21 @@ class DataFetcher:
         # defaults
         default_data_url: str = default_data_url or opal_client_config.DEFAULT_DATA_URL
         token: str = token or opal_client_config.CLIENT_TOKEN
+        self._retry_config = (
+            retry_config if retry_config is not None else self.DEFAULT_RETRY_CONFIG
+        )
         # The underlying fetching engine
         self._engine = FetchingEngine(
             worker_count=opal_common_config.FETCHING_WORKER_COUNT,
             callback_timeout=opal_common_config.FETCHING_CALLBACK_TIMEOUT,
             enqueue_timeout=opal_common_config.FETCHING_ENQUEUE_TIMEOUT,
+            retry_config=self._retry_config,
         )
         self._data_url = default_data_url
         self._token = token
         self._auth_headers = tuple_to_dict(get_authorization_header(token))
         self._default_fetcher_config = HttpFetcherConfig(
             headers=self._auth_headers, is_json=True
-        )
-        self._retry_config = (
-            retry_config if retry_config is not None else self.DEFAULT_RETRY_CONFIG
         )
 
     async def __aenter__(self):
@@ -80,37 +81,11 @@ class DataFetcher:
         logger.info("Fetching data from url: {url}", url=url)
         response = None
 
-        @retry(**self._retry_config)
-        async def handle_url_with_retry():
-            nonlocal response
-            try:
-                # ask the engine to get our data
-                response = await self._engine.handle_url(url, config=config)
-                if (
-                    isinstance(response, aiohttp.ClientResponse)
-                    and response.status >= 400
-                ):
-                    logger.error(
-                        "error while fetching url: {url}, got response code: {code}",
-                        url=url,
-                        code=response.status,
-                    )
-                    raise HTTPException(
-                        status_code=response.status,
-                        detail=f"bad status code(>=400) returned accessing url: {url}",
-                    )
-                return response
-            except asyncio.TimeoutError as e:
-                logger.exception("Timeout while fetching url: {url}", url=url)
-                raise
-
         try:
-            await handle_url_with_retry()
-        except HTTPException:
+            response = await self._engine.handle_url(url, config=config)
             return response
         except asyncio.TimeoutError as e:
             raise
-        return response
 
     async def handle_urls(
         self, urls: List[Tuple[str, FetcherConfig, Optional[JsonableValue]]] = None
