@@ -79,12 +79,12 @@ class DataFetcher:
             return None
 
         logger.info("Fetching data from url: {url}", url=url)
-        response = None
-
         try:
+            # ask the engine to get our data
             response = await self._engine.handle_url(url, config=config)
             return response
         except asyncio.TimeoutError as e:
+            logger.exception("Timeout while fetching url: {url}", url=url)
             raise
 
     async def handle_urls(
