@@ -1,8 +1,6 @@
 import asyncio
 from typing import Any, Dict, List, Optional, Tuple
 
-import aiohttp
-from fastapi import HTTPException
 from opal_client.config import opal_client_config
 from opal_client.policy_store.base_policy_store_client import JsonableValue
 from opal_common.config import opal_common_config
@@ -11,7 +9,6 @@ from opal_common.fetcher.events import FetcherConfig
 from opal_common.fetcher.providers.http_fetch_provider import HttpFetcherConfig
 from opal_common.logger import logger
 from opal_common.utils import get_authorization_header, tuple_to_dict
-from tenacity import retry
 
 
 class DataFetcher:
