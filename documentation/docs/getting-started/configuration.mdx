@@ -127,9 +127,7 @@ Please use this table as a reference.
 | POLICY_STORE_AUTH_OAUTH_CLIENT_ID     | The client id OPAL will use to authenticate against the OAuth server.                                                                                                                     |         |
 | POLICY_STORE_AUTH_OAUTH_CLIENT_SECRET | The client secret OPAL will use to authenticate against the OAuth server.                                                                                                                 |         |
 | POLICY_STORE_CONN_RETRY               | Retry options when connecting to the policy store (i.e. the agent that handles the policy, e.g. OPA).                                                                                     |         |
-| DATA_STORE_CONN_RETRY                 | Retry options when connecting to the base data source (e.g. an external API server which returns data snapshot).                                                                          |         |
 | POLICY_STORE_POLICY_PATHS_TO_IGNORE   | Which policy paths pushed to the client should be ignored. List of glob style paths, or paths without wildcards but ending with "/\*\*" indicating a parent path (ignoring all under it). |         |
-| POLICY_UPDATER_CONN_RETRY             | Retry options when connecting to the policy source (e.g. the policy bundle server).                                                                                                       |         |
 | INLINE_OPA_ENABLED                    | Whether or not OPAL should run OPA by itself in the same container.                                                                                                                       |         |
 | INLINE_OPA_CONFIG                     | If inline OPA is indeed enabled, the user can set the [server configuration options](https://docs.opal.ac/getting-started/running-opal/run-opal-client/opa-runner-parameters) that affects how OPA will start when running `opa run --server` inline.  Watch escaping quotes.  | {"config_file":"/mnt/opa/config"}        |
 | INLINE_OPA_LOG_FORMAT                 |                                                                                                                                                                                           |         |
@@ -141,9 +139,10 @@ Please use this table as a reference.
 
 ## Policy Updater Configuration Variables
 
-| Variables                | Description                                                                             | Example |
-| ------------------------ | --------------------------------------------------------------------------------------- | ------- |
-| POLICY_SUBSCRIPTION_DIRS | The directories in a policy repo we should subscribe to for policy code (rego) modules. |         |
+| Variables                 | Description                                                                             | Example |
+| ------------------------- | --------------------------------------------------------------------------------------- | ------- |
+| POLICY_SUBSCRIPTION_DIRS  | The directories in a policy repo we should subscribe to for policy code (rego) modules. |         |
+| POLICY_UPDATER_CONN_RETRY | Retry options when connecting to the policy source (e.g. the policy bundle server       |         |
 
 ## Data Updater Configuration Variables
 
@@ -156,6 +155,7 @@ Please use this table as a reference.
 | SHOULD_REPORT_ON_DATA_UPDATES   | Should the client report on updates to callbacks defined in DEFAULT_UPDATE_CALLBACKS or within the given updates. |         |
 | DEFAULT_UPDATE_CALLBACK_CONFIG  |                                                                                                                   |         |
 | DEFAULT_UPDATE_CALLBACKS        | Where/How the client should report on the completion of data updates.                                             |         |
+| DATA_STORE_CONN_RETRY           | Retry options when connecting to the base data source (e.g. an external API server which returns data snapshot).  |         |
 
 ## OPA Transaction Log / Healthcheck Configuration Variables
 
