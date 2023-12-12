@@ -20,7 +20,7 @@ class WaitStrategy(str, Enum):
     random_exponential = "random_exponential"
 
 
-class PolicyConnRetryOptions(BaseModel):
+class ConnRetryOptions(BaseModel):
     wait_strategy: WaitStrategy = Field(
         WaitStrategy.fixed,
         description="waiting strategy (e.g. fixed for fixed-time waiting, exponential for exponential back-off) (default fixed)",

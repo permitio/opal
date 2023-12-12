@@ -36,6 +36,7 @@ class FetchingEngine(BaseFetchingEngine):
         worker_count: int = DEFAULT_WORKER_COUNT,
         callback_timeout: int = DEFAULT_CALLBACK_TIMEOUT,
         enqueue_timeout: int = DEFAULT_ENQUEUE_TIMEOUT,
+        retry_config=None,
     ) -> None:
         # The internal task queue (created at start_workers)
         self._queue: asyncio.Queue = None
@@ -51,6 +52,7 @@ class FetchingEngine(BaseFetchingEngine):
         self._callback_timeout = callback_timeout
         # time in seconds before time out on adding a task to queue (when full)
         self._enqueue_timeout = enqueue_timeout
+        self._retry_config = retry_config
 
     def start_workers(self):
         if self._queue is None:
@@ -145,7 +147,9 @@ class FetchingEngine(BaseFetchingEngine):
             fetcher = config.fetcher
 
         # init a URL event
-        event = FetchEvent(url=url, fetcher=fetcher, config=config)
+        event = FetchEvent(
+            url=url, fetcher=fetcher, config=config, retry=self._retry_config
+        )
         return await self.queue_fetch_event(event, callback)
 
     async def queue_fetch_event(

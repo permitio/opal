@@ -71,7 +71,9 @@ class HttpFetchProvider(BaseFetchProvider):
         headers = {}
         if self._event.config.headers is not None:
             headers = self._event.config.headers
-        self._session = await ClientSession(headers=headers).__aenter__()
+        self._session = await ClientSession(
+            headers=headers, raise_for_status=True
+        ).__aenter__()
         return self
 
     async def __aexit__(self, exc_type=None, exc_val=None, tb=None):

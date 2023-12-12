@@ -14,7 +14,14 @@ from opal_common.utils import get_authorization_header, tuple_to_dict
 class DataFetcher:
     """fetches policy data from backend."""
 
-    def __init__(self, default_data_url: str = None, token: str = None):
+    # Use as default config the configuration provider by opal_client_config.DATA_STORE_CONN_RETRY
+    # Add reraise as true (an option not available for control from the higher-level config)
+    DEFAULT_RETRY_CONFIG = opal_client_config.DATA_STORE_CONN_RETRY.toTenacityConfig()
+    DEFAULT_RETRY_CONFIG["reraise"] = True
+
+    def __init__(
+        self, default_data_url: str = None, token: str = None, retry_config=None
+    ):
         """
 
         Args:
@@ -24,11 +31,15 @@ class DataFetcher:
         # defaults
         default_data_url: str = default_data_url or opal_client_config.DEFAULT_DATA_URL
         token: str = token or opal_client_config.CLIENT_TOKEN
+        self._retry_config = (
+            retry_config if retry_config is not None else self.DEFAULT_RETRY_CONFIG
+        )
         # The underlying fetching engine
         self._engine = FetchingEngine(
             worker_count=opal_common_config.FETCHING_WORKER_COUNT,
             callback_timeout=opal_common_config.FETCHING_CALLBACK_TIMEOUT,
             enqueue_timeout=opal_common_config.FETCHING_ENQUEUE_TIMEOUT,
+            retry_config=self._retry_config,
         )
         self._data_url = default_data_url
         self._token = token
