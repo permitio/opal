@@ -21,9 +21,9 @@ class DataSourceEntry(BaseModel):
     @field_validator("data")
     @classmethod
     def validate_save_method(cls, value, values):
-        if values["save_method"] not in ["PUT", "PATCH"]:
+        if values.data["save_method"] not in ["PUT", "PATCH"]:
             raise ValueError("'save_method' must be either PUT or PATCH")
-        if values["save_method"] == "PATCH" and (
+        if values.data["save_method"] == "PATCH" and (
             not isinstance(value, list)
             or not all(isinstance(elem, JSONPatchAction) for elem in value)
         ):
