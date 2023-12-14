@@ -1,7 +1,7 @@
 from enum import Enum
 from typing import Optional
 
-from pydantic import BaseModel, Field
+from pydantic.v1 import BaseModel, Field
 from tenacity import (
     _utils,
     stop_after_attempt,

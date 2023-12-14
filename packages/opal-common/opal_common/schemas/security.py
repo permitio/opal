@@ -3,7 +3,7 @@ from enum import Enum
 from typing import Optional
 from uuid import UUID, uuid4
 
-from pydantic import BaseModel, Field, validator
+from pydantic.v1 import BaseModel, Field, validator
 
 PEER_TYPE_DESCRIPTION = (
     "The peer type we generate access token for, i.e: opal client, data provider, etc."

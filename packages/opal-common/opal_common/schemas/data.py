@@ -5,7 +5,7 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 from opal_common.fetcher.events import FetcherConfig
 from opal_common.fetcher.providers.http_fetch_provider import HttpFetcherConfig
 from opal_common.schemas.store import JSONPatchAction
-from pydantic import AnyHttpUrl, BaseModel, Field, root_validator, validator
+from pydantic.v1 import AnyHttpUrl, BaseModel, Field, root_validator, validator
 
 JsonableValue = Union[List[JSONPatchAction], List[Any], Dict[str, Any]]
 

@@ -3,7 +3,7 @@ from enum import Enum
 from typing import Union
 
 from opal_common.schemas.policy import BaseSchema
-from pydantic import Field
+from pydantic.v1 import Field
 
 
 class SecretTypeEnum(str, Enum):

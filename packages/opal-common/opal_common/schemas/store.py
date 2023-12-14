@@ -2,7 +2,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
-from pydantic import BaseModel, Field, root_validator
+from pydantic.v1 import BaseModel, Field, root_validator
 
 
 class TransactionType(str, Enum):

@@ -27,7 +27,7 @@ POWER_LEVEL = confi.int("POWER_LEVEL", 9001, description="The scouter power read
 # you can pass a valid JSON to the envvar
 
 # define model
-from pydantic import BaseModel
+from pydantic.v1 import BaseModel
 class MyPydantic(BaseModel):
     entries: List[int] = Field(..., description="list of integers")
     name: str

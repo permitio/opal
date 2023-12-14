@@ -24,7 +24,7 @@ from opal_common.git.bundle_utils import BundleUtils
 from opal_common.paths import PathUtils
 from opal_common.schemas.policy import DataModule, PolicyBundle, RegoModule
 from opal_common.schemas.store import JSONPatchAction, StoreTransaction, TransactionType
-from pydantic import BaseModel
+from pydantic.v1 import BaseModel
 from tenacity import RetryError, retry
 
 JSONPatchDocument = List[JSONPatchAction]

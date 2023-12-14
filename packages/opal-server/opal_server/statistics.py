@@ -4,14 +4,14 @@ from random import uniform
 from typing import Dict, List, Optional, Set
 from uuid import uuid4
 
-import pydantic
+import pydantic.v1
 from fastapi import APIRouter, HTTPException, status
 from fastapi_websocket_pubsub.event_notifier import Subscription, TopicList
 from fastapi_websocket_pubsub.pub_sub_server import PubSubEndpoint
 from opal_common.config import opal_common_config
 from opal_common.logger import get_logger
 from opal_server.config import opal_server_config
-from pydantic import BaseModel, Field
+from pydantic.v1 import BaseModel, Field
 
 
 class ChannelStats(BaseModel):

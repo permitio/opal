@@ -1,7 +1,7 @@
 from enum import Enum
 from typing import Any, List, Optional
 
-from pydantic import BaseModel, Field, validator
+from pydantic.v1 import BaseModel, Field, validator
 
 
 class LogLevel(str, Enum):

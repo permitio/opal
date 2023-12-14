@@ -4,7 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from opal_common.config import opal_common_config
 from opal_common.logger import logger
-from pydantic import BaseModel
+from pydantic.v1 import BaseModel
 
 
 class ErrorResponse(BaseModel):

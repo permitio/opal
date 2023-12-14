@@ -6,7 +6,7 @@ from typing import List, Optional
 from fastapi import Header, HTTPException, Request, status
 from opal_common.schemas.webhook import GitWebhookRequestParams, SecretTypeEnum
 from opal_server.config import opal_server_config
-from pydantic import BaseModel
+from pydantic.v1 import BaseModel
 
 
 def validate_git_secret_or_throw_factory(

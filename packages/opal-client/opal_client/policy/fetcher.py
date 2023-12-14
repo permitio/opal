@@ -11,7 +11,7 @@ from opal_common.utils import (
     throw_if_bad_status_code,
     tuple_to_dict,
 )
-from pydantic import ValidationError
+from pydantic.v1 import ValidationError
 from tenacity import retry, stop, wait
 
 

@@ -1,7 +1,7 @@
 import asyncio
 from typing import List, Optional
 
-import pydantic
+import pydantic.v1
 from fastapi_websocket_pubsub import PubSubClient
 from fastapi_websocket_rpc.rpc_channel import RpcChannel
 from opal_client.callbacks.register import CallbacksRegister

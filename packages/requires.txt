@@ -1,12 +1,12 @@
 charset-normalizer>=2.0.12,<3
 idna>=3.3,<4
 typer>=0.4.1,<1
-fastapi>=0.78.0,<1
-fastapi_websocket_pubsub==0.3.4
-fastapi_websocket_rpc>=0.1.21,<1
+fastapi>=0.101.0,<1
+fastapi_websocket_pubsub @ git+https://github.com/permitio/fastapi_websocket_pubsub.git@noam/per-7303-update-pydantic-to-v2   # TODO: Restore to use package from pypi
+fastapi_websocket_rpc @ git+https://github.com/permitio/fastapi_websocket_rpc.git@naom/per-7303-update-pydantic-to-v2   # TODO: Restore to use package
 gunicorn>=20.1.0,<21
-pydantic[email]>=1.9.1,<2
+pydantic[email]>=2.1.1,<3
 typing-extensions;python_version<'3.8'
 uvicorn[standard]>=0.17.6,<1
-fastapi-utils>=0.2.1,<1
+starlette>=0.26.1,<1
 setuptools>=65.5.1 # not directly required, pinned by Snyk to avoid a vulnerability

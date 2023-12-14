@@ -4,7 +4,7 @@ from enum import Enum
 from typing import Any
 
 from aiohttp import ClientResponse, ClientSession
-from pydantic import validator
+from pydantic.v1 import validator
 
 from ...http import is_http_error_response
 from ...security.sslcontext import get_custom_ssl_context

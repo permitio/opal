@@ -2,7 +2,7 @@ import asyncio
 import os
 from typing import List
 
-from fastapi_utils.tasks import repeat_every
+from opal_server.utils import repeat_every
 from opal_common.logger import logger
 from opal_common.schemas.data import (
     DataSourceEntryWithPollingInterval,

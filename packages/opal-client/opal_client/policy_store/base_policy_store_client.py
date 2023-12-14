@@ -11,7 +11,7 @@ from opal_client.logger import logger
 from opal_common.schemas.data import JsonableValue
 from opal_common.schemas.policy import PolicyBundle
 from opal_common.schemas.store import RemoteStatus, StoreTransaction
-from pydantic import BaseModel
+from pydantic.v1 import BaseModel
 
 
 class AbstractPolicyStore:

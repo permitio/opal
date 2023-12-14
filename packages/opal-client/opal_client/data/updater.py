@@ -35,7 +35,7 @@ from opal_common.schemas.data import (
 from opal_common.schemas.store import TransactionType
 from opal_common.security.sslcontext import get_custom_ssl_context
 from opal_common.utils import get_authorization_header
-from pydantic.json import pydantic_encoder
+from pydantic.v1.json import pydantic_encoder
 
 
 class DataUpdater:

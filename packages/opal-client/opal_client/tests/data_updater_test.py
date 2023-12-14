@@ -12,7 +12,7 @@ import uvicorn
 from aiohttp import ClientSession
 from fastapi_websocket_pubsub import PubSubClient
 from flaky import flaky
-from pydantic.json import pydantic_encoder
+from pydantic.v1.json import pydantic_encoder
 
 # Add parent path to use local src as package for tests
 root_dir = os.path.abspath(

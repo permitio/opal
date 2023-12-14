@@ -7,7 +7,7 @@ except ImportError:
     from typing_extensions import Literal
 
 from opal_common.schemas.policy import BaseSchema
-from pydantic import Field
+from pydantic.v1 import Field
 
 
 class NoAuthData(BaseSchema):

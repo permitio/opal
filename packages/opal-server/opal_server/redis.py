@@ -2,7 +2,7 @@ from typing import Generator
 
 import redis.asyncio as redis
 from opal_common.logger import logger
-from pydantic import BaseModel
+from pydantic.v1 import BaseModel
 
 
 class RedisDB:
