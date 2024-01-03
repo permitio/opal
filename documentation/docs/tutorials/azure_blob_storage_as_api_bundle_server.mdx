@@ -1,0 +1,43 @@
+---
+sidebar_position: 11
+title: Azure Blob Storage as Policy Bundle Server
+---
+
+# Azure Blob Storage as Policy Bundle Server
+
+Due to azure blob storage appending the SAS token to the end of the url, the url creation needs to be handled different for Azure Blob Storage connection. 
+
+Setting PolicyBundleServerType.AZURE_BLOB will handle this case and create the correct connection when given the required parameters as environment variables. 
+
+
+You can configure how the OPAL-server will authenticate itself with the bundle server with the following env-var:
+
+| Variables                     | Description                                                                                                                                                                     | Example                                                                                  |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| OPAL_BUNDLE_SERVER_TYPE       | Setting to AZURE_BLOB rather than HTTP or AWS_S3, requires extra env-var (below)                                                                                                | AZURE_BLOB                                                                               |
+| OPAL_MI_CLIENT_ID             | Used to create BlobServiceClient using DefaultAzureCredentials                                                                                                                  | a23kj2jd-1ke3-8jdm-dbdhak3949xx (ms authenticated uuid service principle app id)         |
+| OPAL_BUNDLE_CONTAINER         | Container name for the azure blob storage that is being targeted                                                                                                                | opalpolicybundle                                                                         |
+| OPAL_BLOB_ACCOUNT_URL         | The Secret Token (AKA password, AKA secret-key) sent to the API bundle server.                                                                                                  | https://opalpolicybundleserver43dke.blob.core.windows.net                                |
+
+
+The env-var OPAL_POLICE_BUNDLE_URL should now follow the below pattern:
+
+
+`f"{OPAL_BLOB_ACCOUNT_URL}/{OPAL_BUNDLE_CONTAINER}/bundle.tar.gz"`
+
+
+Similar to AWS and HTTP the following should also be set:
+
+OPAL_POLICY_SOURCE_TYPE = "API"
+OPAL_POLICY_REPO_CLONE_PATH = /local/path/to/policyfiles   (example : "~/opal")
+
+
+You can also set polling interval 
+
+OPAL_POLICY_REPO_POLLING_INTERVAL = 60 (seconds)
+
+
+Notes:
+
+The URL package from yarl is used to encode the URL as SAS tokens can contain special characters that break the url encoding from environment variables. 
+
