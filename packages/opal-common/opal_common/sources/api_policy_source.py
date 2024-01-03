@@ -1,9 +1,10 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional, Tuple
 from urllib.parse import urlparse
 
 import aiohttp
+from yarl import URL
 from fastapi import status
 from fastapi.exceptions import HTTPException
 from opal_common.git.tar_file_to_local_git_extractor import TarFileToLocalGitExtractor
@@ -19,6 +20,18 @@ from opal_common.utils import (
 from opal_server.config import PolicyBundleServerType
 from tenacity import AsyncRetrying
 from tenacity.wait import wait_fixed
+import os
+from azure.identity import ManagedIdentityCredential
+from azure.storage.blob import (
+    BlobServiceClient,
+    ContainerClient,
+    BlobClient,
+    BlobSasPermissions,
+    ContainerSasPermissions,
+    UserDelegationKey,
+    generate_container_sas,
+    generate_blob_sas,
+)
 
 BundleHash = str
 
@@ -167,10 +180,40 @@ class ApiPolicySource(BasePolicySource):
 
         full_url = f"{url}/{path}"
 
+        if self.server_type == PolicyBundleServerType.AZURE_BLOB:
+            mi_client_id = os.environ.get("OPAL_MI_CLIENT_ID", None)
+            bundle_container = os.environ.get("OPAL_BUNDLE_CONTAINER", None)
+            blob_account_url = os.environ.get("OPAL_BLOB_ACCOUNT_URL", None)
+            
+            if mi_client_id is None:
+                raise TypeError("OPAL_MI_CLIENT_ID env var is not set")
+            if bundle_container is None:
+                raise TypeError("OPAL_BUNDLE_CONTAINER env var is not set")
+            if blob_account_url is None:
+                raise TypeError("OPAL_BLOB_ACCOUNT_URL env var is not set")
+            
+            account_url = blob_account_url
+            blob_service_client = BlobServiceClient(account_url, credentials=ManagedIdentityCredential(client_id=mi_client_id))
+            user_delegation_key = self.request_user_delegation_key(blob_service_client)
+            
+            start_time = datetime.now()
+            expiry_time = start_time + timedelta(days=1)
+            
+            sas_token = generate_container_sas(
+                account_name=blob_service_client.account_name,
+                container_name=bundle_container,
+                user_delegation_key=user_delegation_key,
+                permission=ContainerSasPermissions(read=True),
+                expiry=expiry_time,
+                start=start_time
+            )
+            
+            full_url = f"{url}?{sas_token}"
+
         async with aiohttp.ClientSession() as session:
             try:
                 async with session.get(
-                    f"{full_url}",
+                    URL(full_url, encoded=True),
                     headers={
                         "content-type": "application/gzip",
                         **auth_headers,
@@ -273,3 +316,14 @@ class ApiPolicySource(BasePolicySource):
                 new_head=latest,
             )
             await self._on_new_policy(old=prev_commit, new=new_commit)
+
+    def request_user_delegation_key(self, blob_service_client: BlobServiceClient) -> UserDelegationKey:
+        delegation_key_start_time = datetime.now()
+        delegation_key_expiry_time = delegation_key_start_time + timedelta(days=1)
+        
+        user_delegation_key = blob_service_client.get_user_delegation_key(
+            key_start_time=delegation_key_start_time,
+            key_expiry_time=delegation_key_expiry_time
+        )
+        
+        return user_delegation_key
