@@ -17,7 +17,7 @@ You can configure how the OPAL-server will authenticate itself with the bundle s
 | OPAL_BUNDLE_SERVER_TYPE       | Setting to AZURE_BLOB rather than HTTP or AWS_S3, requires extra env-var (below)                                                                                                | AZURE_BLOB                                                                               |
 | OPAL_MI_CLIENT_ID             | Used to create BlobServiceClient using DefaultAzureCredentials                                                                                                                  | a23kj2jd-1ke3-8jdm-dbdhak3949xx (ms authenticated uuid service principle app id)         |
 | OPAL_BUNDLE_CONTAINER         | Container name for the azure blob storage that is being targeted                                                                                                                | opalpolicybundle                                                                         |
-| OPAL_BLOB_ACCOUNT_URL         | The Secret Token (AKA password, AKA secret-key) sent to the API bundle server.                                                                                                  | https://opalpolicybundleserver43dke.blob.core.windows.net                                |
+| OPAL_BLOB_ACCOUNT_URL         | Url to the blob account on azure                                                                                                                                                | https://opalpolicybundleserver43dke.blob.core.windows.net                                |
 
 
 The env-var OPAL_POLICE_BUNDLE_URL should now follow the below pattern:
