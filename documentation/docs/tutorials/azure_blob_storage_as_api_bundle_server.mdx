@@ -23,12 +23,15 @@ You can configure how the OPAL-server will authenticate itself with the bundle s
 The env-var OPAL_POLICE_BUNDLE_URL should now follow the below pattern:
 
 
-`f"{OPAL_BLOB_ACCOUNT_URL}/{OPAL_BUNDLE_CONTAINER}/bundle.tar.gz"`
+```python
+f"{OPAL_BLOB_ACCOUNT_URL}/{OPAL_BUNDLE_CONTAINER}/bundle.tar.gz"
+```
 
 
 Similar to AWS and HTTP the following should also be set:
 
 OPAL_POLICY_SOURCE_TYPE = "API"
+
 OPAL_POLICY_REPO_CLONE_PATH = /local/path/to/policyfiles   (example : "~/opal")
 
 

@@ -177,7 +177,7 @@ class ApiPolicySource(BasePolicySource):
         etag_headers = (
             {"ETag": self.etag, "If-None-Match": self.etag} if self.etag else {}
         )
-        
+
         full_url = f"{url}/{path}"
 
         if self.server_type == PolicyBundleServerType.AZURE_BLOB:
