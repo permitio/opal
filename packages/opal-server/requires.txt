@@ -9,6 +9,6 @@ slowapi>=0.1.5,<1
 pygit2>=1.9.2,<2
 asgiref>=3.5.2,<4
 redis>=4.3.4,<5
-azure-core==1.29.6
-azure-identity==1.15.0
-azure-storage-blob==12.19.0
+azure-core>=1.29.6
+azure-identity>=1.15.0
+azure-storage-blob>=12.19.0
