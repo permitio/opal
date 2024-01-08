@@ -1,7 +1,7 @@
 # BUILD STAGE ---------------------------------------
 # split this stage to save time and reduce image size
 # ---------------------------------------------------
-FROM python:3.10-bullseye as BuildStage
+FROM python:alpine3.19 as BuildStage
 # from now on, work in the /app directory
 WORKDIR /app/
 # Layer dependency install (for caching)
@@ -9,6 +9,10 @@ COPY ./packages/requires.txt ./base_requires.txt
 COPY ./packages/opal-common/requires.txt ./common_requires.txt
 COPY ./packages/opal-client/requires.txt ./client_requires.txt
 COPY ./packages/opal-server/requires.txt ./server_requires.txt
+
+# add required packages with apk
+RUN apk add gcc musl-dev linux-headers python3-dev zlib-dev libffi-dev libgit2-dev
+
 # install python deps
 RUN pip install --no-cache-dir --upgrade pip && pip install --no-cache-dir -r ./base_requires.txt -r ./common_requires.txt -r ./client_requires.txt -r ./server_requires.txt
 
@@ -24,14 +28,17 @@ RUN cd /tmp/cedar-agent && \
 
 # COMMON IMAGE --------------------------------------
 # ---------------------------------------------------
-FROM python:3.10-slim-bullseye as common
+FROM python:alpine3.19 as common
 
 # copy libraries from build stage (This won't copy redundant libraries we used in BuildStage)
 COPY --from=BuildStage /usr/local /usr/local
+COPY --from=BuildStage /etc/apk/repositories /etc/apk/repositories
 
 # Add non-root user (with home dir at /opal)
-RUN useradd -m -b / -s /bin/bash opal
+RUN adduser -s /bin/bash -h /opal --disabled-password opal
 WORKDIR /opal
+
+RUN apk add bash
 
 # copy wait-for script (create link at old path to maintain backward compatibility)
 COPY scripts/wait-for.sh .
@@ -39,7 +46,7 @@ RUN chmod +x ./wait-for.sh
 RUN ln -s /opal/wait-for.sh /usr/wait-for.sh
 
 # netcat (nc) is used by the wait-for.sh script
-RUN apt-get update && apt-get install -y netcat jq && apt-get clean
+RUN apk update && apk add netcat-openbsd jq libgit2-dev
 
 # copy startup script (create link at old path to maintain backward compatibility)
 COPY ./scripts/start.sh .
@@ -142,7 +149,7 @@ USER opal
 # ---------------------------------------------------
 FROM common as server
 
-RUN apt-get update && apt-get install -y openssh-client git curl && apt-get clean
+RUN apk update && apk add openssh-client git curl
 
 USER opal
 
