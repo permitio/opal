@@ -130,11 +130,9 @@ class PolicyEngineRunner:
         )
 
         if self._piped_logs_format != EngineLogFormat.NONE:
-            await asyncio.wait(
-                [
-                    self.pipe_logs(self._process.stdout, self._piped_logs_format),
-                    self.pipe_logs(self._process.stderr, self._piped_logs_format),
-                ]
+            await asyncio.gather(
+                self.pipe_logs(self._process.stdout, self._piped_logs_format),
+                self.pipe_logs(self._process.stderr, self._piped_logs_format)
             )
 
         return_code = await self._process.wait()
