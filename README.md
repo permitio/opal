@@ -1,5 +1,5 @@
 <p  align="center">
- <img src="https://i.ibb.co/BGVBmMK/opal.png" height=170 alt="opal" border="0" />
+ <img src="https://github.com/permitio/opal/assets/4082578/4e21f85f-30ab-43e2-92de-b82f78888c71" height=170 alt="opal" border="0" />
 </p>
 <h1 align="center">
 ⚡OPAL⚡
