@@ -100,19 +100,17 @@ curl -L https://raw.githubusercontent.com/permitio/opal/master/docker/docker-com
 
   - [How to configure OPAL (basic concepts)](https://docs.opal.ac/tutorials/configure_opal)
 
+  - [How to Use OPAL with Cedar in a Multi-Language Project](https://www.permit.io/blog/scaling-authorization-with-cedar-and-opal)
+
 - 🎨 &nbsp; [Key concepts and design](https://docs.opal.ac/overview/design)
 - 🏗️ &nbsp; [Architecture](https://docs.opal.ac/overview/architecture)
-
-      OPAL  uses a client-server stateless architecture. OPAL-Servers publish policy and data updates over a lightweight (websocket) PubSub Channel, which OPAL-clients subscribe to via topics. Upon updates each client fetches data directly (from source) to load it in to its managed OPA instance.
-
-  <br>
-  <br>
-
-<img src="https://i.ibb.co/CvmX8rR/simplified-diagram-highlight.png" alt="simplified" border="0">
-
+<be>
 <br>
-
-- 📖 &nbsp; For further reading check out our [Blog](https://bit.ly/opal_blog).
+OPAL  uses a client-server stateless architecture. OPAL-Servers publish policy and data updates over a lightweight (websocket) PubSub Channel, which OPAL-clients subscribe to via topics. Upon updates each client fetches data directly (from source) to load it in to its managed OPA instance.
+  <br>
+<img src="https://github.com/permitio/opal/assets/4082578/99d3dd95-a7ff-45c2-805e-3d533f8b1e8c" alt="simplified" border="0">
+<br>
+📖 &nbsp; For further reading check out our [Blog](https://bit.ly/opal_blog).
 
 ## Community
 
