@@ -5,7 +5,9 @@ title: Track an API Bundle Server
 
 # Policy syncing from API
 
-This document describes how to change policy syncing feature of OPAL (policy-code and static data) from the default git to an API server that exposes tar bundles.
+This document describes how to use OPAL for syncing policy (code & static data) sourced from an API server that exposes tar bundles (rather than from a git repo, which is the default policy source).
+
+Bundle in this context are nothing more than a compressed tarball file archiving your policy filles, **not to be confused with an `OPA Bundle`**
 
 We have a [docker compose example file](https://github.com/permitio/opal/blob/master/docker/docker-compose-api-policy-source-example.yml) configured with an api policy source that we will explore in detail [later in this guide](#compose-example).
 
