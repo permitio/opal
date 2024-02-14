@@ -2,6 +2,7 @@ from functools import partial
 from pathlib import Path
 from typing import List, Optional, Set
 
+from ddtrace import tracer
 from git import Repo
 from git.objects import Commit
 from opal_common.engine import get_rego_package, is_data_module, is_policy_module
@@ -249,7 +250,10 @@ class BundleMaker:
             logger.debug(f"Explicit manifest to be used: {explicit_manifest}")
 
             for source_file in viewer.files(filter):
-                contents = source_file.read()
+                with tracer.trace(
+                    "bundle_maker.git_file_read", resource=str(source_file.path)
+                ):
+                    contents = source_file.read()
                 path = source_file.path
 
                 if is_data_module(path):

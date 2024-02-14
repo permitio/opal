@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import List, Optional, Set, cast
 
 import git
+from ddtrace import tracer
 from fastapi_websocket_pubsub import PubSubEndpoint
 from opal_common.git.commit_viewer import VersionedFile
 from opal_common.logger import logger
@@ -122,102 +123,105 @@ class ScopesService:
             assert scope_id, ValueError("scope_id not set for sync_scope")
             scope = await self._scopes.get(scope_id)
 
-        if not isinstance(scope.policy, GitPolicyScopeSource):
-            logger.warning("Non-git scopes are currently not supported!")
-            return
-        source = cast(GitPolicyScopeSource, scope.policy)
+        with tracer.trace("scopes_service.sync_scope", resource=scope.scope_id):
+            if not isinstance(scope.policy, GitPolicyScopeSource):
+                logger.warning("Non-git scopes are currently not supported!")
+                return
+            source = cast(GitPolicyScopeSource, scope.policy)
 
-        logger.debug(
-            f"Sync scope: {scope.scope_id} (remote: {source.url}, branch: {source.branch}, req_time: {req_time})"
-        )
-
-        callbacks = PolicyFetcherCallbacks()
-        if notify_on_changes:
-            callbacks = NewCommitsCallbacks(
-                base_dir=self._base_dir,
-                scope_id=scope.scope_id,
-                source=source,
-                pubsub_endpoint=self._pubsub_endpoint,
+            logger.debug(
+                f"Sync scope: {scope.scope_id} (remote: {source.url}, branch: {source.branch}, req_time: {req_time})"
             )
 
-        fetcher = GitPolicyFetcher(
-            self._base_dir,
-            scope.scope_id,
-            source,
-            callbacks=callbacks,
-        )
+            callbacks = PolicyFetcherCallbacks()
+            if notify_on_changes:
+                callbacks = NewCommitsCallbacks(
+                    base_dir=self._base_dir,
+                    scope_id=scope.scope_id,
+                    source=source,
+                    pubsub_endpoint=self._pubsub_endpoint,
+                )
 
-        try:
-            await fetcher.fetch_and_notify_on_changes(
-                hinted_hash=hinted_hash, force_fetch=force_fetch, req_time=req_time
+            fetcher = GitPolicyFetcher(
+                self._base_dir,
+                scope.scope_id,
+                source,
+                callbacks=callbacks,
             )
-        except Exception as e:
-            logger.exception(
-                f"Could not fetch policy for scope {scope.scope_id}, got error: {e}"
-            )
+
+            try:
+                await fetcher.fetch_and_notify_on_changes(
+                    hinted_hash=hinted_hash, force_fetch=force_fetch, req_time=req_time
+                )
+            except Exception as e:
+                logger.exception(
+                    f"Could not fetch policy for scope {scope.scope_id}, got error: {e}"
+                )
 
     async def delete_scope(self, scope_id: str):
-        logger.info(f"Delete scope: {scope_id}")
-        scope = await self._scopes.get(scope_id)
-        url = scope.policy.url
+        with tracer.trace("scopes_service.delete_scope", resource=scope_id):
+            logger.info(f"Delete scope: {scope_id}")
+            scope = await self._scopes.get(scope_id)
+            url = scope.policy.url
 
-        scopes = await self._scopes.all()
-        remove_repo_clone = True
+            scopes = await self._scopes.all()
+            remove_repo_clone = True
 
-        for scope in scopes:
-            if scope.scope_id != scope_id and scope.policy.url == url:
-                logger.info(
-                    f"found another scope with same remote url ({scope.scope_id}), skipping clone deletion"
+            for scope in scopes:
+                if scope.scope_id != scope_id and scope.policy.url == url:
+                    logger.info(
+                        f"found another scope with same remote url ({scope.scope_id}), skipping clone deleteion"
+                    )
+                    remove_repo_clone = False
+                    break
+
+            if remove_repo_clone:
+                scope_dir = GitPolicyFetcher.repo_clone_path(
+                    self._base_dir, cast(GitPolicyScopeSource, scope.policy)
                 )
-                remove_repo_clone = False
-                break
+                shutil.rmtree(scope_dir, ignore_errors=True)
 
-        if remove_repo_clone:
-            scope_dir = GitPolicyFetcher.repo_clone_path(
-                self._base_dir, cast(GitPolicyScopeSource, scope.policy)
-            )
-            shutil.rmtree(scope_dir, ignore_errors=True)
-
-        await self._scopes.delete(scope_id)
+            await self._scopes.delete(scope_id)
 
     async def sync_scopes(self, only_poll_updates=False, notify_on_changes=True):
-        scopes = await self._scopes.all()
-        if only_poll_updates:
-            # Only sync scopes that have polling enabled (in a periodic check)
-            scopes = [scope for scope in scopes if scope.policy.poll_updates]
+        with tracer.trace("scopes_service.sync_scopes"):
+            scopes = await self._scopes.all()
+            if only_poll_updates:
+                # Only sync scopes that have polling enabled (in a periodic check)
+                scopes = [scope for scope in scopes if scope.policy.poll_updates]
 
-        logger.info(
-            f"OPAL Scopes: syncing {len(scopes)} scopes in the background (polling updates: {only_poll_updates})"
-        )
+            logger.info(
+                f"OPAL Scopes: syncing {len(scopes)} scopes in the background (polling updates: {only_poll_updates})"
+            )
 
-        fetched_source_ids = set()
-        skipped_scopes = []
-        for scope in scopes:
-            src_id = GitPolicyFetcher.source_id(scope.policy)
+            fetched_source_ids = set()
+            skipped_scopes = []
+            for scope in scopes:
+                src_id = GitPolicyFetcher.source_id(scope.policy)
 
-            # Give priority to scopes that have a unique url per shard (so we'll clone all repos asap)
-            if src_id in fetched_source_ids:
-                skipped_scopes.append(scope)
-                continue
+                # Give priority to scopes that have a unique url per shard (so we'll clone all repos asap)
+                if src_id in fetched_source_ids:
+                    skipped_scopes.append(scope)
+                    continue
 
-            try:
-                await self.sync_scope(
-                    scope=scope,
-                    force_fetch=True,
-                    notify_on_changes=notify_on_changes,
-                )
-            except Exception as e:
-                logger.exception(f"sync_scope failed for {scope.scope_id}")
+                try:
+                    await self.sync_scope(
+                        scope=scope,
+                        force_fetch=True,
+                        notify_on_changes=notify_on_changes,
+                    )
+                except Exception as e:
+                    logger.exception(f"sync_scope failed for {scope.scope_id}")
 
-            fetched_source_ids.add(src_id)
+                fetched_source_ids.add(src_id)
 
-        for scope in skipped_scopes:
-            # No need to refetch the same repo, just check for changes
-            try:
-                await self.sync_scope(
-                    scope=scope,
-                    force_fetch=False,
-                    notify_on_changes=notify_on_changes,
-                )
-            except Exception as e:
-                logger.exception(f"sync_scope failed for {scope.scope_id}")
+            for scope in skipped_scopes:
+                # No need to refetch the same repo, just check for changes
+                try:
+                    await self.sync_scope(
+                        scope=scope,
+                        force_fetch=False,
+                        notify_on_changes=notify_on_changes,
+                    )
+                except Exception as e:
+                    logger.exception(f"sync_scope failed for {scope.scope_id}")

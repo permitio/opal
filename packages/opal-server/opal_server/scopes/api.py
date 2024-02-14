@@ -15,6 +15,7 @@ from fastapi import (
 from fastapi.responses import RedirectResponse
 from fastapi_websocket_pubsub import PubSubEndpoint
 from git import InvalidGitRepositoryError
+from opal_common.monitoring import metrics
 from opal_common.async_utils import run_sync
 from opal_common.authentication.authz import (
     require_peer_type,
@@ -277,6 +278,12 @@ def init_scope_router(
             return await _generate_default_scope_bundle(scope_id)
 
     async def _generate_default_scope_bundle(scope_id: str) -> PolicyBundle:
+        metrics.event(
+            "ScopeNotFound",
+            message=f"Scope {scope_id} not found. Serving default scope instead",
+            tags={"scope_id": scope_id},
+        )
+
         try:
             scope = await scopes.get("default")
             fetcher = GitPolicyFetcher(
