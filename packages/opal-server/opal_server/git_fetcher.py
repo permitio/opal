@@ -9,6 +9,7 @@ from typing import Optional, cast
 
 import aiofiles.os
 import pygit2
+from ddtrace import tracer
 from git import Repo
 from opal_common.async_utils import run_sync
 from opal_common.git.bundle_maker import BundleMaker
@@ -177,43 +178,47 @@ class GitPolicyFetcher(PolicyFetcher):
         """
         repo_lock = await self._get_repo_lock()
         async with repo_lock:
-            if self._discover_repository(self._repo_path):
-                logger.debug("Repo found at {path}", path=self._repo_path)
-                repo = self._get_valid_repo()
-                if repo is not None:
-                    should_fetch = await self._should_fetch(
-                        repo,
-                        hinted_hash=hinted_hash,
-                        force_fetch=force_fetch,
-                        req_time=req_time,
-                    )
-                    if should_fetch:
-                        logger.debug(
-                            f"Fetching remote (force_fetch={force_fetch}): {self._remote} ({self._source.url})"
+            with tracer.trace(
+                "git_policy_fetcher.fetch_and_notify_on_changes",
+                resource=self._scope_id,
+            ):
+                if self._discover_repository(self._repo_path):
+                    logger.debug("Repo found at {path}", path=self._repo_path)
+                    repo = self._get_valid_repo()
+                    if repo is not None:
+                        should_fetch = await self._should_fetch(
+                            repo,
+                            hinted_hash=hinted_hash,
+                            force_fetch=force_fetch,
+                            req_time=req_time,
                         )
-                        GitPolicyFetcher.repos_last_fetched[self.source_id] = (
-                            datetime.datetime.now()
-                        )
-                        await run_sync(
-                            repo.remotes[self._remote].fetch,
-                            callbacks=self._auth_callbacks,
-                        )
-                        logger.debug(f"Fetch completed: {self._source.url}")
+                        if should_fetch:
+                            logger.debug(
+                                f"Fetching remote (force_fetch={force_fetch}): {self._remote} ({self._source.url})"
+                            )
+                            GitPolicyFetcher.repos_last_fetched[self.source_id] = (
+                                datetime.datetime.now()
+                            )
+                            await run_sync(
+                                repo.remotes[self._remote].fetch,
+                                callbacks=self._auth_callbacks,
+                            )
+                            logger.debug(f"Fetch completed: {self._source.url}")
 
-                    # New commits might be present because of a previous fetch made by another scope
-                    await self._notify_on_changes(repo)
-                    return
+                        # New commits might be present because of a previous fetch made by another scope
+                        await self._notify_on_changes(repo)
+                        return
+                    else:
+                        # repo dir exists but invalid -> we must delete the directory
+                        logger.warning(
+                            "Deleting invalid repo: {path}", path=self._repo_path
+                        )
+                        shutil.rmtree(self._repo_path)
                 else:
-                    # repo dir exists but invalid -> we must delete the directory
-                    logger.warning(
-                        "Deleting invalid repo: {path}", path=self._repo_path
-                    )
-                    shutil.rmtree(self._repo_path)
-            else:
-                logger.info("Repo not found at {path}", path=self._repo_path)
+                    logger.info("Repo not found at {path}", path=self._repo_path)
 
-            # fallthrough to clean clone
-            await self._clone()
+                # fallthrough to clean clone
+                await self._clone()
 
     def _discover_repository(self, path: Path) -> bool:
         git_path: Path = path / ".git"
@@ -332,6 +337,7 @@ class GitPolicyFetcher(PolicyFetcher):
             raise ValueError("Could not find current branch head")
         return head_commit_hash
 
+    @tracer.wrap("git_policy_fetcher.make_bundle")
     def make_bundle(self, base_hash: Optional[str] = None) -> PolicyBundle:
         repo = Repo(str(self._repo_path))
         bundle_maker = BundleMaker(

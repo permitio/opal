@@ -1,6 +1,7 @@
 import asyncio
 from typing import Any, Optional, Set
 
+from ddtrace import tracer
 from fastapi_websocket_pubsub import PubSubClient, PubSubEndpoint, Topic, TopicList
 from opal_common.logger import logger
 
@@ -131,10 +132,12 @@ class ServerSideTopicPublisher(TopicPublisher):
         self._endpoint = endpoint
         super().__init__()
 
+    async def _publish_impl(self, topics: TopicList, data: Any = None):
+        with tracer.trace("topic_publisher.publish", resource=str(topics)):
+            await self._endpoint.publish(topics=topics, data=data)
+
     async def publish(self, topics: TopicList, data: Any = None):
-        await self._add_task(
-            asyncio.create_task(self._endpoint.publish(topics=topics, data=data))
-        )
+        await self._add_task(asyncio.create_task(self._publish_impl(topics, data)))
 
 
 class ClientSideTopicPublisher(TopicPublisher):

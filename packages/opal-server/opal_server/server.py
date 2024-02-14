@@ -8,6 +8,7 @@ from typing import List, Optional
 
 from fastapi import Depends, FastAPI
 from fastapi_websocket_pubsub.event_broadcaster import EventBroadcasterContextManager
+from opal_common.monitoring import apm, metrics
 from opal_common.authentication.deps import JWTAuthenticator, StaticBearerAuthenticator
 from opal_common.authentication.signer import JWTSigner
 from opal_common.confi.confi import load_conf_if_none
@@ -105,6 +106,7 @@ class OpalServer:
         self._policy_remote_url = policy_remote_url
 
         configure_logs()
+        metrics.increment("startup")
 
         self.data_sources_config: ServerDataSourceConfig = (
             data_sources_config
@@ -166,9 +168,9 @@ class OpalServer:
         # if stats are enabled, the server workers must be listening on the broadcast
         # channel for their own synchronization, not just for their clients. therefore
         # we need a "global" listening context
-        self.broadcast_listening_context: Optional[
-            EventBroadcasterContextManager
-        ] = None
+        self.broadcast_listening_context: Optional[EventBroadcasterContextManager] = (
+            None
+        )
         if self.broadcaster_uri is not None and opal_common_config.STATISTICS_ENABLED:
             self.broadcast_listening_context = (
                 self.pubsub.endpoint.broadcaster.get_listening_context()
@@ -187,8 +189,7 @@ class OpalServer:
 
     def _init_fast_api_app(self):
         """inits the fastapi app object."""
-        if opal_server_config.ENABLE_DATADOG_APM:
-            self._configure_monitoring()
+        self._configure_monitoring()
 
         app = FastAPI(
             title="Opal Server",
@@ -207,14 +208,14 @@ class OpalServer:
         return app
 
     def _configure_monitoring(self):
-        """patch fastapi to enable tracing and monitoring with datadog APM."""
-        from ddtrace import config, patch
+        apm.configure_apm(opal_server_config.ENABLE_DATADOG_APM, "opal-server")
 
-        # Datadog APM
-        patch(fastapi=True)
-        # Override service name
-        config.fastapi["service_name"] = "opal-server"
-        config.fastapi["request_span_name"] = "opal-server"
+        metrics.configure_metrics(
+            enable_metrics=opal_common_config.ENABLE_METRICS,
+            statsd_host=os.environ.get("DD_AGENT_HOST", "localhost"),
+            statsd_port=8125,
+            namespace="opal",
+        )
 
     def _configure_api_routes(self, app: FastAPI):
         """mounts the api routes on the app object."""
