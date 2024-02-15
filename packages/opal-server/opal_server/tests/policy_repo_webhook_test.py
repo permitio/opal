@@ -13,6 +13,7 @@ from fastapi import Depends
 from fastapi_websocket_pubsub import PubSubClient
 from flaky import flaky
 from opal_common.schemas.webhook import GitWebhookRequestParams
+from opal_common.tests.test_utils import wait_for_server
 from opal_server.policy.webhook.api import get_webhook_router, is_matching_webhook_url
 from opal_server.policy.webhook.deps import (
     extracted_git_changes,
@@ -245,7 +246,6 @@ def setup_server(event, webhook_config):
 
     @server_app.on_event("startup")
     async def startup_event():
-        await asyncio.sleep(0.4)
         # signal the server is ready
         event.set()
 
@@ -266,6 +266,8 @@ def github_mode_server():
         daemon=True,
     )
     proc.start()
+    assert event.wait(5)
+    wait_for_server(PORT)
     yield event
     proc.kill()  # Cleanup after test
 
@@ -286,6 +288,8 @@ def gitlab_mode_server():
     # Run the server as a separate process
     proc = Process(target=setup_server, args=(event, webhook_config), daemon=True)
     proc.start()
+    assert event.wait(5)
+    wait_for_server(PORT)
     yield event
     proc.kill()  # Cleanup after test
 
@@ -307,6 +311,8 @@ def azure_git_mode_server():
     # Run the server as a separate process
     proc = Process(target=setup_server, args=(event, webhook_config), daemon=True)
     proc.start()
+    assert event.wait(5)
+    wait_for_server(PORT)
     yield event
     proc.kill()  # Cleanup after test
 
@@ -328,6 +334,8 @@ def bitbucket_mode_server():
     # Run the server as a separate process
     proc = Process(target=setup_server, args=(event, webhook_config), daemon=True)
     proc.start()
+    assert event.wait(5)
+    wait_for_server(PORT)
     yield event
     proc.kill()  # Cleanup after test
 
@@ -335,8 +343,6 @@ def bitbucket_mode_server():
 @pytest.mark.asyncio
 async def test_webhook_mock_github(github_mode_server):
     """Test the webhook route simulating a webhook from Github."""
-    # Wait for server to be ready
-    github_mode_server.wait(5)
     # simulate a webhook
     async with ClientSession() as session:
         async with session.post(
@@ -355,8 +361,6 @@ async def test_webhook_mock_github(github_mode_server):
 @pytest.mark.asyncio
 async def test_webhook_mock_gitlab(gitlab_mode_server):
     """Test the webhook route simulating a webhook from Gitlab."""
-    # Wait for server to be ready
-    gitlab_mode_server.wait(5)
     # simulate a webhook
     async with ClientSession() as session:
         async with session.post(
@@ -375,8 +379,6 @@ async def test_webhook_mock_gitlab(gitlab_mode_server):
 @pytest.mark.asyncio
 async def test_webhook_mock_azure_git(azure_git_mode_server):
     """Test the webhook route simulating a webhook from Azure-Git."""
-    # Wait for server to be ready
-    azure_git_mode_server.wait(5)
     # simulate a webhook
     async with ClientSession() as session:
         async with session.post(
@@ -395,8 +397,6 @@ async def test_webhook_mock_azure_git(azure_git_mode_server):
 @pytest.mark.asyncio
 async def test_webhook_mock_bitbucket(bitbucket_mode_server):
     """Test the webhook route simulating a webhook from Azure-Git."""
-    # Wait for server to be ready
-    bitbucket_mode_server.wait(5)
     # simulate a webhook
     async with ClientSession() as session:
         async with session.post(

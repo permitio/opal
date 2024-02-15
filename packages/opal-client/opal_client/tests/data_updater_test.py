@@ -34,6 +34,7 @@ from opal_common.schemas.data import (
     UpdateCallback,
 )
 from opal_common.schemas.store import JSONPatchAction
+from opal_common.tests.test_utils import wait_for_server
 from opal_common.utils import get_authorization_header
 from opal_server.config import opal_server_config
 from opal_server.server import OpalServer
@@ -96,7 +97,6 @@ def setup_server(event):
 
     @server_app.on_event("startup")
     async def startup_event():
-        await asyncio.sleep(0.4)
         # signal the server is ready
         event.set()
 
@@ -109,6 +109,8 @@ def server():
     # Run the server as a separate process
     proc = Process(target=setup_server, args=(event,), daemon=True)
     proc.start()
+    assert event.wait(5)
+    wait_for_server(PORT)
     yield event
     proc.kill()  # Cleanup after test
 
@@ -164,8 +166,6 @@ def trigger_update_patch():
 async def test_data_updater(server):
     """Disable auto-update on connect (fetch_on_connect=False) Connect to OPAL-
     server trigger a Data-update and check our policy store gets the update."""
-    # Wait for the server to start
-    server.wait(5)
     # config to use mock OPA
     policy_store = PolicyStoreClientFactory.create(store_type=PolicyStoreTypes.MOCK)
     updater = DataUpdater(
@@ -232,8 +232,6 @@ async def test_data_updater(server):
 async def test_data_updater_with_report_callback(server):
     """Disable auto-update on connect (fetch_on_connect=False) Connect to OPAL-
     server trigger a Data-update and check our policy store gets the update."""
-    # Wait for the server to start
-    server.wait(5)
     # config to use mock OPA
     policy_store = PolicyStoreClientFactory.create(store_type=PolicyStoreTypes.MOCK)
     updater = DataUpdater(
@@ -292,8 +290,6 @@ async def test_data_updater_with_report_callback(server):
 @pytest.mark.asyncio
 async def test_client_get_initial_data(server):
     """Connect to OPAL-server and make sure data is fetched on-connect."""
-    # Wait for the server to start
-    server.wait(5)
     # config to use mock OPA
     policy_store = PolicyStoreClientFactory.create(store_type=PolicyStoreTypes.MOCK)
     updater = DataUpdater(

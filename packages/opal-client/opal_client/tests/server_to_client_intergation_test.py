@@ -25,6 +25,7 @@ from opal_client.policy_store.policy_store_client_factory import (
 )
 from opal_client.policy_store.schemas import PolicyStoreTypes
 from opal_common.schemas.data import DataSourceConfig, ServerDataSourceConfig
+from opal_common.tests.test_utils import wait_for_server
 from opal_common.utils import get_authorization_header
 from opal_server.config import opal_server_config
 from opal_server.server import OpalServer
@@ -113,6 +114,8 @@ def server():
     # Run the server as a separate process
     proc = Process(target=setup_server, args=(event,), daemon=True)
     proc.start()
+    assert event.wait(5)
+    wait_for_server(PORT)
     yield event
     proc.kill()  # Cleanup after test
 
@@ -123,16 +126,16 @@ def client():
     # Run the server as a separate process
     proc = Process(target=setup_client, args=(event,), daemon=True)
     proc.start()
+    assert event.wait(5)
+    wait_for_server(CLIENT_PORT)
     yield event
     proc.kill()  # Cleanup after test
 
 
 @pytest.mark.asyncio
-async def test_client_connect_to_server_data_updates(client, server):
+async def test_client_connect_to_server_data_updates(server, client):
     """Disable auto-update on connect (fetch_on_connect=False) Connect to OPAL-
     server trigger a Data-update and check our policy store gets the update."""
-    server.wait(5)
-    client.wait(5)
 
     async with ClientSession() as session:
         res = await session.get(CLIENT_STORE_URL)
