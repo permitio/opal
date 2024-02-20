@@ -4,72 +4,58 @@ slug: /
 title: Welcome to OPAL 👋
 ---
 
-**OPAL** stands for **Open Policy Administration Layer**. OPAL is an administration layer for Policy Engines such as <a target="_blank" href="https://www.openpolicyagent.org/">Open Policy Agent (OPA)</a>, and <a target="_blank" href="https://github.com/permitio/cedar-agent">AWS' Cedar Agent</a>, allowing us to detect changes
-made to our policies and data, and thus pushing live real-time updates to your agents.
+<div style={{ textAlign: "left", marginBottom: "-20px" }}>
+  <img
+    src="https://github.com/permitio/opal/assets/4082578/4e21f85f-30ab-43e2-92de-b82f78888c71"
+    style={{ height: "150px", width: "auto" }}
+    alt="opal"
+  />
+</div>
 
-OPAL is designed to work with **live applications**, and bring policy to a real-time speed. As updates are pushed to application
-stores - this could be your Git, your databases, SaaS services and so on - **OPAL will make sure the services are always in sync**
-with the authorization data and policy they need, and more importantly, **only** the services that they need.
+## **Open Policy Administration Layer**
 
-### How do I start with OPAL?
+OPAL is an administration layer for Policy Engines such as [Open Policy Agent (OPA)](https://www.openpolicyagent.org),
+and [AWS' Cedar Agent](https://github.com/permitio/cedar-agent). OPAL detects changes to both policy and policy data in realtime, and pushes live
+updates to your agents - briging open-policy up to the speed needed by live applications.
 
-We recommend that you:
+As your application state changes (whether it's via your APIs, DBs, git, S3 or 3rd-party SaaS services),
+OPAL will make sure your services are always in sync with the authorization data and policy they need.
 
-1. Get a quick understanding by reading the TL;DR article
-2. Explore the tutorials
-3. Play with OPAL's docker compose playground
+### Getting Started
 
-:::tip OPAL Playground - taking your first steps
+OPAL is available both as python packages with a built-in CLI as well as pre-built docker images.
 
-If you are new to OPAL and want to run step by step through setting up an OPAL playground - please follow
-the guide **[here](/getting-started/quickstart/opal-playground/overview)**.
-:::
-
-:::info Advanced OPAL Setup - for the brave, willing to discover the power of OPAL
-
-With the advanced OPAL setup, there are two options you can choose:
-
-1. Running **[OPAL as Docker Images](/getting-started/running-opal/overview)**
-2. Running **[OPAL as Python Packages](/getting-started/running-opal/as-python-package/overview)**
-
-### Using AWS Cedar
-
-Many of the docs use OPA as the main example agent, but OPAL works as smoothly with AWS Cedar.
-
-- Check out this [OPAL-Cedar Tutorial](/tutorials/cedar) to get started with OPAL and AWS' Cedar.
-- Learn more about [Cedar Agent here](https://github.com/permitio/cedar-agent), and the [Cedar Policy](https://www.cedarpolicy.com/) language here.
-
-:::
+- **[Try the OPAL live playground environment in docker-compose](https://docs.opal.ac/getting-started/quickstart/opal-playground/overview/)**
+- **[Getting Started Guide for Containers](https://docs.opal.ac/getting-started/running-opal/overview/)**
+- **[OPAL Kubernetes Helm Chart](https://github.com/permitio/opal-helm-chart)**
+- An in-depth introduction to OPAL **[is available here](https://www.permit.io/blog/introduction-to-opal)**.
 
 ### Need help?
 
-We are always eager to talk to fellow developers, and we'd be happy to help with anything regarding **OPA, Cedar, OPAL**, **Permit.io** and the **IAM flow** in general.
+Come talk to us about OPAL, or authorization in general - we would love to hear from you ❤️
 
-#### 💬 Slack Community
+<div style={{ display: "flex", alignItems: "center", marginTop: "-10px" }}>
+  <a
+    href="https://io.permit.io/join_community"
+    target="_blank"
+    rel="noopener noreferrer"
+  >
+    <img
+      src="https://i.ibb.co/wzrGHQL/Group-749.png"
+      alt="Join Slack"
+      style={{ marginRight: "10px" }}
+    />
+  </a>
+  <a
+    href="https://twitter.com/opal_ac"
+    target="_blank"
+    rel="noopener noreferrer"
+  >
+    <img src="https://i.ibb.co/k4x55Lr/Group-750.png" alt="Follow on Twitter" />
+  </a>
+</div>
 
-The easiest way to **[reach out to us is via our Slack community](https://bit.ly/permit-slack)** - you're welcome to join, ask questions, and see what others are asking / working on.
+You can also ask questions and request features to be added to the road-map in our [**Github discussions**](https://github.com/permitio/opal/discussions).
+Issues should be reported in [**Github issues**](https://github.com/permitio/opal/issues).
 
-#### 👩‍💻 GitHub
-
-We use Github to manage support tickets, ongoing design discussions and keep track of out product roadmap.
-
-You're welcome to join the conversation, open **issues (bug reports, feature requests)** and **discussions (general questions / thoughts)** across our suite of products:
-
-- **[OPAL](https://github.com/permitio/opal)**
-- **[Permit.io](https://github.com/permitio)**
-- **[OPToggles](https://github.com/permitio/OPToggles)**
-- **[Cedar Agent](https://github.com/permitio/cedar-agent)**
-
-#### 📧 Email & Zoom
-
-Do you have a more specific question? You can reach out to us via classic email at **[support@permit.io](mailto:support@permit.io)**.
-Want a deep dive with our team? You can even **[schedule a Zoom call with us](https://calendly.com/permitio/meeting)**.
-
-<iframe
-  src="https://giphy.com/embed/LfNHnQSMLz22A"
-  width="480"
-  height="270"
-  frameBorder="0"
-  class="giphy-embed"
-  allowFullScreen
-></iframe>
+Want to support the project? **[Give us a ⭐️ on GitHub!](https://github.com/permitio/opal)**
