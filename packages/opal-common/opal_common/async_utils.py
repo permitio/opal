@@ -53,10 +53,11 @@ class TakeANumberQueue:
             return self._item
 
     def __init__(self, logger: loguru.Logger):
-        self._queue = asyncio.Queue()
+        self._queue: asyncio.Queue | None = None
         self._logger = logger
 
     async def take_a_number(self) -> Number:
+        assert self._queue is not None, "Queue not initialized"
         n = TakeANumberQueue.Number()
         await self._queue.put(n)
         return n
@@ -66,9 +67,10 @@ class TakeANumberQueue:
         return await n.get()  # Wait for next in line to have a result
 
     async def _handle_queue(self, handler: Coroutine):
+        self._queue = asyncio.Queue()
         while True:
-            item = await self.get()
             try:
+                item = await self.get()
                 await handler(item)
             except asyncio.CancelledError:
                 if self._logger:
