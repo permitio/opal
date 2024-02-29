@@ -1,7 +1,7 @@
 from enum import Enum
 from typing import Optional
 
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class PolicyStoreTypes(Enum):
@@ -53,7 +53,8 @@ class PolicyStoreDetails(BaseModel):
         None, description="optional OAuth server required by the policy store"
     )
 
-    @validator("type")
+    @field_validator("type")
+    @classmethod
     def force_enum(cls, v):
         if isinstance(v, str):
             return PolicyStoreTypes(v)
@@ -61,6 +62,4 @@ class PolicyStoreDetails(BaseModel):
             return v
         raise ValueError(f"invalid value: {v}")
 
-    class Config:
-        use_enum_values = True
-        allow_population_by_field_name = True
+    model_config = ConfigDict(use_enum_values=True, populate_by_name=True)

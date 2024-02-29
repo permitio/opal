@@ -54,7 +54,7 @@ def cast_pydantic(model: BaseModel):
         if isinstance(value, str):
             return model.parse_raw(value)
         else:
-            return model.parse_obj(value)
+            return model.model_validate(value)
 
     return cast_pydantic_by_model
 
@@ -249,7 +249,6 @@ class Confi:
         help: str = None,
         on_start: Callable = None,
     ):
-
         if config_objects is None:
             config_objects = []
         config_objects.append(self)

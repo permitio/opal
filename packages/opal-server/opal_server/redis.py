@@ -45,4 +45,4 @@ class RedisDB:
         await self._redis.delete(key)
 
     def _serialize(self, value: BaseModel) -> str:
-        return value.json()
+        return value.model_dump_json()

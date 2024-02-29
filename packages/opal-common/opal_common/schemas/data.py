@@ -5,7 +5,7 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 from opal_common.fetcher.events import FetcherConfig
 from opal_common.fetcher.providers.http_fetch_provider import HttpFetcherConfig
 from opal_common.schemas.store import JSONPatchAction
-from pydantic import AnyHttpUrl, BaseModel, Field, root_validator, validator
+from pydantic import AnyHttpUrl, BaseModel, Field, field_validator, model_validator
 
 JsonableValue = Union[List[JSONPatchAction], List[Any], Dict[str, Any]]
 
@@ -18,7 +18,8 @@ class DataSourceEntry(BaseModel):
     Data source configuration - where client's should retrieve data from and how they should store it
     """
 
-    @validator("data")
+    @field_validator("data")
+    @classmethod
     def validate_save_method(cls, value, values):
         if values["save_method"] not in ["PUT", "PATCH"]:
             raise ValueError("'save_method' must be either PUT or PATCH")
@@ -33,7 +34,7 @@ class DataSourceEntry(BaseModel):
 
     # How to obtain the data
     url: str = Field(..., description="Url source to query for data")
-    config: dict = Field(
+    config: Optional[dict] = Field(
         None,
         description="Suggested fetcher configuration (e.g. auth or method) to fetch data with",
     )
@@ -102,7 +103,8 @@ class ServerDataSourceConfig(BaseModel):
         + " if set, the clients will be redirected to this url when requesting to fetch data sources.",
     )
 
-    @root_validator
+    @model_validator(mode="before")
+    @classmethod
     def check_passwords_match(cls, values):
         config, redirect_url = values.get("config"), values.get("external_source_url")
         if config is None and redirect_url is None:

@@ -108,7 +108,7 @@ class OpalStatistics:
         asyncio.create_task(
             self._endpoint.publish(
                 [opal_server_config.STATISTICS_WAKEUP_CHANNEL],
-                SyncRequest(requesting_worker_id=self._worker_id).dict(),
+                SyncRequest(requesting_worker_id=self._worker_id).model_dump(),
             )
         )
 
@@ -161,7 +161,7 @@ class OpalStatistics:
                             requesting_worker_id=request.requesting_worker_id,
                             clients=self._state.clients,
                             rpc_id_to_client_id=self._rpc_id_to_client_id,
-                        ).dict(),
+                        ).model_dump(),
                     )
                 )
 
