@@ -3,7 +3,7 @@ permit-broadcaster[postgres,redis,kafka]>=0.2.0,<1
 gitpython>=3.1.32,<4
 pyjwt[crypto]>=2.1.0,<3
 websockets>=10.3,<11
-ddtrace>=1.1.4,<2
+ddtrace>=2.4.0
 slowapi>=0.1.5,<1
 # slowapi is stuck on and old `redis`, so fix that and switch from aioredis to redis
 pygit2>=1.9.2,<2
