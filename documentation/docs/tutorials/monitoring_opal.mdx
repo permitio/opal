@@ -38,6 +38,17 @@ You can also configure opal-client to store dynamic health status as a document 
 By enabling `OPAL_STATISTICS_ENABLED=true` (on both servers and clients), the OPAL-Server would start maintaining a unified state of all the clients and which topics they've subscribed to.
 The state can then be retrieved as a JSON object by calling the `/statistics` api route on the server
 
-# Code Reference:
+### Code Reference:
 
 - [opal_server/statistics.py](https://github.com/permitio/opal/blob/master/packages/opal-server/opal_server/statistics.py)
+
+
+## OPAL Client tracker (EAP)
+
+Alternative implementation for the Statistics feature, OPAL-Server tracks all OPAL-clients connected through websocket.
+Gathered information includes connection details (client's source host and port), connection time, and subscribed topics.
+Available through `/pubsub_client_info` api route on the server.
+
+### Caveats:
+- When `UVICORN_NUM_WORKERS > 1`, retrieved information would only include clients connected to the replying server process.
+- This is an early access feature and is likely to change. Backward compatibility is not garaunteed.
