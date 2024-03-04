@@ -105,7 +105,7 @@ class OpalServer:
         )
         self._policy_remote_url = policy_remote_url
 
-        configure_logs()
+        self._configure_monitoring()
         metrics.increment("startup")
 
         self.data_sources_config: ServerDataSourceConfig = (
@@ -189,8 +189,6 @@ class OpalServer:
 
     def _init_fast_api_app(self):
         """inits the fastapi app object."""
-        self._configure_monitoring()
-
         app = FastAPI(
             title="Opal Server",
             description="OPAL is an administration layer for Open Policy Agent (OPA), detecting changes"
@@ -208,6 +206,8 @@ class OpalServer:
         return app
 
     def _configure_monitoring(self):
+        configure_logs()
+
         apm.configure_apm(opal_server_config.ENABLE_DATADOG_APM, "opal-server")
 
         metrics.configure_metrics(
