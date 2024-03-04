@@ -288,10 +288,10 @@ class PolicyUpdater:
         bundle = None
         bundle_succeeded = True
         try:
-            bundle: Optional[PolicyBundle] = (
-                await self._policy_fetcher.fetch_policy_bundle(
-                    directories, base_hash=base_hash
-                )
+            bundle: Optional[
+                PolicyBundle
+            ] = await self._policy_fetcher.fetch_policy_bundle(
+                directories, base_hash=base_hash
             )
             if bundle:
                 if bundle.old_hash is None:

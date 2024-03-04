@@ -74,7 +74,6 @@ def setup_server(event):
 
 
 def setup_client(event):
-
     # config to use mock OPA
     policy_store = PolicyStoreClientFactory.create(store_type=PolicyStoreTypes.MOCK)
     data_updater = DataUpdater(

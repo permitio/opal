@@ -15,7 +15,6 @@ from fastapi import (
 from fastapi.responses import RedirectResponse
 from fastapi_websocket_pubsub import PubSubEndpoint
 from git import InvalidGitRepositoryError
-from opal_common.monitoring import metrics
 from opal_common.async_utils import run_sync
 from opal_common.authentication.authz import (
     require_peer_type,
@@ -26,6 +25,7 @@ from opal_common.authentication.deps import JWTAuthenticator, get_token_from_hea
 from opal_common.authentication.types import EncryptionKeyFormat, JWTClaims
 from opal_common.authentication.verifier import Unauthorized
 from opal_common.logger import logger
+from opal_common.monitoring import metrics
 from opal_common.schemas.data import (
     DataSourceConfig,
     DataUpdate,

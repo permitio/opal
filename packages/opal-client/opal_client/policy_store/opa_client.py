@@ -382,7 +382,6 @@ class OpaClient(BasePolicyStoreClient):
             self._policy_data_cache = OpaStaticDataCache()
 
     def _get_custom_ssl_context(self) -> Optional[ssl.SSLContext]:
-
         if not self._tls_ca:
             return None
 
@@ -629,7 +628,6 @@ class OpaClient(BasePolicyStoreClient):
                 return
 
             if len(failed_ops) == len(ops):
-
                 # all ops failed on this iteration, no point at retrying
                 for failure_msg in failure_msgs:
                     logger.error(failure_msg)

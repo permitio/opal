@@ -252,7 +252,6 @@ class Confi:
         help: str = None,
         on_start: Callable = None,
     ):
-
         if config_objects is None:
             config_objects = []
         config_objects.append(self)

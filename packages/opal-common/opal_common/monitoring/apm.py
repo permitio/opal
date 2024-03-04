@@ -2,7 +2,7 @@ import logging
 from typing import Optional
 from urllib.parse import urlparse
 
-from ddtrace import Span, patch, tracer, config
+from ddtrace import Span, config, patch, tracer
 from ddtrace.filters import TraceFilter
 from loguru import logger
 

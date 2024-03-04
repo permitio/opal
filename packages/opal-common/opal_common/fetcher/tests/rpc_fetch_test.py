@@ -67,6 +67,7 @@ async def test_simple_rpc_fetch(server):
                 rpc_method_name="get_data", rpc_arguments={"suffix": SUFFIX}
             ),
         )
+
         # Callback for event
         async def callback(result):
             data = result.result
