@@ -11,7 +11,6 @@ import uvicorn
 from aiohttp import ClientSession
 from fastapi import Depends
 from fastapi_websocket_pubsub import PubSubClient
-from flaky import flaky
 from opal_common.schemas.webhook import GitWebhookRequestParams
 from opal_common.tests.test_utils import wait_for_server
 from opal_server.policy.webhook.api import get_webhook_router, is_matching_webhook_url

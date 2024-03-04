@@ -11,7 +11,6 @@ import requests
 import uvicorn
 from aiohttp import ClientSession
 from fastapi_websocket_pubsub import PubSubClient
-from flaky import flaky
 from pydantic.json import pydantic_encoder
 
 # Add parent path to use local src as package for tests
@@ -161,7 +160,7 @@ def trigger_update_patch():
     asyncio.run(run())
 
 
-@flaky
+@pytest.mark.flaky(reruns=1)
 @pytest.mark.asyncio
 async def test_data_updater(server):
     """Disable auto-update on connect (fetch_on_connect=False) Connect to OPAL-
