@@ -109,9 +109,7 @@ class RepoInterface:
                     f"found target repo url is referred by remote: {remote.name}, url={remote.url}"
                 )
                 return
-        error: str = (
-            f"Repo mismatch! No remote matches target url: {expected_remote_url}, found urls: {[remote.url for remote in repo.remotes]}"
-        )
+        error: str = f"Repo mismatch! No remote matches target url: {expected_remote_url}, found urls: {[remote.url for remote in repo.remotes]}"
         logger.error(error)
         raise ValueError(error)
 
@@ -196,9 +194,9 @@ class GitPolicyFetcher(PolicyFetcher):
                             logger.debug(
                                 f"Fetching remote (force_fetch={force_fetch}): {self._remote} ({self._source.url})"
                             )
-                            GitPolicyFetcher.repos_last_fetched[self.source_id] = (
-                                datetime.datetime.now()
-                            )
+                            GitPolicyFetcher.repos_last_fetched[
+                                self.source_id
+                            ] = datetime.datetime.now()
                             await run_sync(
                                 repo.remotes[self._remote].fetch,
                                 callbacks=self._auth_callbacks,

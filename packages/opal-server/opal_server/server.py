@@ -8,13 +8,13 @@ from typing import List, Optional
 
 from fastapi import Depends, FastAPI
 from fastapi_websocket_pubsub.event_broadcaster import EventBroadcasterContextManager
-from opal_common.monitoring import apm, metrics
 from opal_common.authentication.deps import JWTAuthenticator, StaticBearerAuthenticator
 from opal_common.authentication.signer import JWTSigner
 from opal_common.confi.confi import load_conf_if_none
 from opal_common.config import opal_common_config
 from opal_common.logger import configure_logs, logger
 from opal_common.middleware import configure_middleware
+from opal_common.monitoring import apm, metrics
 from opal_common.schemas.data import ServerDataSourceConfig
 from opal_common.synchronization.named_lock import NamedLock
 from opal_common.topics.publisher import (
@@ -168,9 +168,9 @@ class OpalServer:
         # if stats are enabled, the server workers must be listening on the broadcast
         # channel for their own synchronization, not just for their clients. therefore
         # we need a "global" listening context
-        self.broadcast_listening_context: Optional[EventBroadcasterContextManager] = (
-            None
-        )
+        self.broadcast_listening_context: Optional[
+            EventBroadcasterContextManager
+        ] = None
         if self.broadcaster_uri is not None and opal_common_config.STATISTICS_ENABLED:
             self.broadcast_listening_context = (
                 self.pubsub.endpoint.broadcaster.get_listening_context()

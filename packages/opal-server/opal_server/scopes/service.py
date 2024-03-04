@@ -170,7 +170,7 @@ class ScopesService:
             for scope in scopes:
                 if scope.scope_id != scope_id and scope.policy.url == url:
                     logger.info(
-                        f"found another scope with same remote url ({scope.scope_id}), skipping clone deleteion"
+                        f"found another scope with same remote url ({scope.scope_id}), skipping clone deletion"
                     )
                     remove_repo_clone = False
                     break
