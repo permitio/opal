@@ -4,7 +4,7 @@
 ipython
 pytest
 pytest-asyncio
-flaky
+pytest-rerunfailures
 wheel
 twine
 setuptools>=65.5.1 # not directly required, pinned by Snyk to avoid a vulnerability

@@ -15,7 +15,6 @@ from multiprocessing import Process
 import pytest
 import uvicorn
 from fastapi import Depends, FastAPI, Header, HTTPException
-from flaky import flaky
 from opal_common.fetcher import FetchingEngine
 from opal_common.fetcher.providers.http_fetch_provider import HttpFetcherConfig
 
@@ -124,7 +123,7 @@ async def test_authorized_http_get_from_dict(server):
         assert got_data_event.is_set()
 
 
-@flaky
+@pytest.mark.flaky(reruns=1)
 @pytest.mark.asyncio
 async def test_external_http_get():
     """Test simple http get on external (https://freegeoip.app/) site Checking
