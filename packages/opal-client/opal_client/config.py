@@ -52,7 +52,7 @@ class OpalClientConfig(Confi):
     POLICY_STORE_CONN_RETRY: ConnRetryOptions = confi.model(
         "POLICY_STORE_CONN_RETRY",
         ConnRetryOptions,
-        # defaults are being set according to PolicyStoreConnRetryOptions pydantic definitions (see class)
+        # defaults are being set according to ConnRetryOptions pydantic definitions (see class)
         {},
         description="retry options when connecting to the policy store (i.e. the agent that handles the policy, e.g. OPA)",
     )
@@ -70,6 +70,13 @@ class OpalClientConfig(Confi):
 
     DATA_STORE_CONN_RETRY: ConnRetryOptions = confi.model(
         "DATA_STORE_CONN_RETRY",
+        ConnRetryOptions,
+        None,
+        description="DEPTRECATED - The old confusing name for DATA_UPDATER_CONN_RETRY, kept for backwards compatibilit (for now)",
+    )
+
+    DATA_UPDATER_CONN_RETRY: ConnRetryOptions = confi.model(
+        "DATA_UPDATER_CONN_RETRY",
         ConnRetryOptions,
         {
             "wait_strategy": "random_exponential",
@@ -321,6 +328,10 @@ class OpalClientConfig(Confi):
             opal_common_config.LOG_MODULE_EXCLUDE_LIST = (
                 opal_common_config.LOG_MODULE_EXCLUDE_LIST
             )
+
+        if self.DATA_STORE_CONN_RETRY is not None:
+            # You should use `DATA_UPDATER_CONN_RETRY`, but that's for backwards compatibility
+            self.DATA_UPDATER_CONN_RETRY = self.DATA_STORE_CONN_RETRY
 
 
 opal_client_config = OpalClientConfig(prefix="OPAL_")

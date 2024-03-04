@@ -14,9 +14,9 @@ from opal_common.utils import get_authorization_header, tuple_to_dict
 class DataFetcher:
     """fetches policy data from backend."""
 
-    # Use as default config the configuration provider by opal_client_config.DATA_STORE_CONN_RETRY
+    # Use as default config the configuration provider by opal_client_config.DATA_UPDATER_CONN_RETRY
     # Add reraise as true (an option not available for control from the higher-level config)
-    DEFAULT_RETRY_CONFIG = opal_client_config.DATA_STORE_CONN_RETRY.toTenacityConfig()
+    DEFAULT_RETRY_CONFIG = opal_client_config.DATA_UPDATER_CONN_RETRY.toTenacityConfig()
     DEFAULT_RETRY_CONFIG["reraise"] = True
 
     def __init__(
