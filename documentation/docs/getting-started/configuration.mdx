@@ -156,7 +156,9 @@ Please use this table as a reference.
 | SHOULD_REPORT_ON_DATA_UPDATES   | Should the client report on updates to callbacks defined in DEFAULT_UPDATE_CALLBACKS or within the given updates. |         |
 | DEFAULT_UPDATE_CALLBACK_CONFIG  |                                                                                                                   |         |
 | DEFAULT_UPDATE_CALLBACKS        | Where/How the client should report on the completion of data updates.                                             |         |
-| DATA_STORE_CONN_RETRY           | Retry options when connecting to the base data source (e.g. an external API server which returns data snapshot).  |         |
+| DATA_UPDATER_CONN_RETRY         | Retry options when connecting to the base data source (e.g. an external API server which returns data snapshot).  |         |
+| DATA_STORE_CONN_RETRY           | DEPTRECATED - The old confusing name for DATA_UPDATER_CONN_RETRY, kept for backwards compatibilit (for now)       |         |
+
 
 ## OPA Transaction Log / Healthcheck Configuration Variables
 
