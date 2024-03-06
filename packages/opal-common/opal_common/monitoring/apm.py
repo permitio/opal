@@ -42,10 +42,6 @@ def configure_apm(enable_apm: bool, service_name: str):
             }
         )
 
-        # Override service name
-        config.fastapi["service_name"] = service_name
-        config.fastapi["request_span_name"] = f"{service_name}.request"
-
     else:
         logger.info("DataDog APM disabled")
         tracer.configure(enabled=False)
