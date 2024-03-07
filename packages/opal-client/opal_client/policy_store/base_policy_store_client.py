@@ -120,7 +120,7 @@ class PolicyStoreTransactionContextManager(AbstractPolicyStore):
         return self
 
     async def __aexit__(self, exc_type, exc, tb):
-        await self._store.end_transcation(
+        await self._store.end_transaction(
             exc_type,
             exc,
             tb,
@@ -154,7 +154,7 @@ class BasePolicyStoreClient(AbstractPolicyStore):
         a series of operations with the policy store."""
         pass
 
-    async def end_transcation(
+    async def end_transaction(
         self,
         exc_type=None,
         exc=None,

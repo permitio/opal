@@ -107,6 +107,11 @@ class OpalClientConfig(Confi):
         None,
         description="path to the file containing the ca certificate(s) used for tls authentication with the policy store",
     )
+    POLICY_STORE_REBUILD_CACHE = confi.bool(
+        "POLICY_STORE_REBUILD_CACHE",
+        False,
+        description="If set, opal client will rebuild the policy store cache after each data update",
+    )
 
     # create an instance of a policy store upon load
     def load_policy_store():

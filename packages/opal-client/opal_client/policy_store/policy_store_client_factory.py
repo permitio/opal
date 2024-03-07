@@ -123,8 +123,8 @@ class PolicyStoreClientFactory:
         tls_client_key = (
             tls_client_key or opal_client_config.POLICY_STORE_TLS_CLIENT_KEY
         )
-
         tls_ca = tls_ca or opal_client_config.POLICY_STORE_TLS_CA
+        rebuild_cache = opal_client_config.POLICY_STORE_REBUILD_CACHE
 
         # OPA
         if PolicyStoreTypes.OPA == store_type:
@@ -143,6 +143,7 @@ class PolicyStoreClientFactory:
                 tls_client_cert=tls_client_cert,
                 tls_client_key=tls_client_key,
                 tls_ca=tls_ca,
+                rebuild_cache=rebuild_cache,
             )
         elif PolicyStoreTypes.CEDAR == store_type:
             from opal_client.policy_store.cedar_client import CedarClient

@@ -86,7 +86,7 @@ class OpaTransactionLogState:
     """
 
     POLICY_ACTIONS = ["set_policies", "set_policy", "delete_policy"]
-    DATA_ACTIONS = ["set_policy_data", "delete_policy_data"]
+    DATA_ACTIONS = ["set_policy_data", "delete_policy_data", "patch_policy_data"]
 
     def __init__(
         self,
@@ -306,6 +306,7 @@ class OpaClient(BasePolicyStoreClient):
         tls_client_cert: Optional[str] = None,
         tls_client_key: Optional[str] = None,
         tls_ca: Optional[str] = None,
+        rebuild_cache: bool = True,
     ):
         base_url = opa_server_url or opal_client_config.POLICY_STORE_URL
         self._opa_url = f"{base_url}/v1"
@@ -320,6 +321,7 @@ class OpaClient(BasePolicyStoreClient):
         self._tls_client_cert = tls_client_cert
         self._tls_client_key = tls_client_key
         self._tls_ca = tls_ca
+        self._rebuild_cache = rebuild_cache
 
         if auth_type == PolicyStoreAuth.TOKEN:
             if self._token is None:
@@ -961,3 +963,19 @@ class OpaClient(BasePolicyStoreClient):
         )
 
         await self.set_policy_data(import_data["data"])
+
+    async def end_transaction(
+        self, *args, transaction_type: TransactionType = None, **kwargs
+    ):
+        logger.warning(
+            "OPA client end transaction: {rebuild_cache} {transaction_type}",
+            rebuild_cache=self._rebuild_cache,
+            transaction_type=transaction_type,
+        )
+        if self._rebuild_cache and transaction_type == TransactionType.data:
+            # TODO: Should be configurable
+            await self.get_data("permit/rebac/cache_rebuild")
+
+        await super().end_transaction(
+            *args, transaction_type=transaction_type, **kwargs
+        )
