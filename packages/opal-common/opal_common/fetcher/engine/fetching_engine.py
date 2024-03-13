@@ -22,7 +22,7 @@ class FetchingEngine(BaseFetchingEngine):
     - Use with 'async with' to terminate tasks (or call self.terminate_tasks() when done)
     """
 
-    DEFAULT_WORKER_COUNT = 5
+    DEFAULT_WORKER_COUNT = 6
     DEFAULT_CALLBACK_TIMEOUT = 10
     DEFAULT_ENQUEUE_TIMEOUT = 10
 

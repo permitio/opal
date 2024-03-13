@@ -176,3 +176,4 @@ class DataUpdateReport(BaseModel):
     reports: List[DataEntryReport]
     # in case this is a policy update, the new hash committed the policy store.
     policy_hash: Optional[str] = None
+    user_data: Dict[str, Any] = {}

@@ -1,10 +1,12 @@
 import asyncio
+import os
+import signal
 import time
 from typing import Callable, Coroutine, List, Optional
 
 import psutil
 from opal_client.config import EngineLogFormat
-from opal_client.engine.logger import pipe_opa_logs, pipe_simple_logs
+from opal_client.engine.logger import log_engine_output_opa, log_engine_output_simple
 from opal_client.engine.options import CedarServerOptions, OpaServerOptions
 from opal_client.logger import logger
 from tenacity import retry, wait_random_exponential
@@ -76,8 +78,7 @@ class PolicyEngineRunner:
         if not self._should_stop.is_set():
             logger.info("Stopping policy engine runner")
             self._should_stop.set()
-            logger.info("Stopping policy engine")
-            self._process.terminate()
+            self._terminate_engine()
             await asyncio.sleep(1)  # wait for opa process to go down
 
         if self._run_task is not None:
@@ -92,6 +93,11 @@ class PolicyEngineRunner:
         if self._run_task is not None:
             await self._run_task
 
+    def _terminate_engine(self):
+        logger.info("Stopping policy engine")
+        # Should kill group (There would be a parent shell process and a child opa process)
+        os.killpg(self._process.pid, signal.SIGTERM)
+
     async def _run(self):
         self._init_events()
         while not self._should_stop.is_set():
@@ -100,6 +106,51 @@ class PolicyEngineRunner:
             ):
                 await task
                 break
+
+    async def pipe_logs(self):
+        """gets a stream of logs from the opa process, and logs it into the
+        main opal log."""
+        self._engine_panicked = False
+
+        async def _pipe_logs_stream(stream: asyncio.StreamReader):
+            line = b""
+            while True:
+                try:
+                    line += await stream.readuntil(b"\n")
+                except asyncio.exceptions.IncompleteReadError as e:
+                    line += e.partial
+                except asyncio.exceptions.LimitOverrunError as e:
+                    # No new line yet but buffer limit exceeded, read what's available and try again
+                    line += await stream.readexactly(e.consumed)
+                    continue
+
+                if not line:
+                    break  # EOF, process terminated
+
+                panic_detected = await self.handle_log_line(line)
+                if not self._engine_panicked and panic_detected:
+                    self._engine_panicked = True
+                    # Terminate to prevent Engine from hanging,
+                    # but keep streaming logs til it actually dies (for full stack trace etc.)
+                    self._terminate_engine()
+
+                line = b""
+
+        await asyncio.wait(
+            [
+                _pipe_logs_stream(self._process.stdout),
+                _pipe_logs_stream(self._process.stderr),
+            ]
+        )
+        if self._engine_panicked:
+            logger.error("restart policy engine due to a detected panic")
+
+    async def handle_log_line(self, line: bytes) -> bool:
+        """handles a single line of log from the engine process.
+
+        returns True if the engine panicked.
+        """
+        raise NotImplementedError()
 
     @retry(wait=wait_random_exponential(multiplier=0.5, max=10))
     async def _run_process_until_terminated(self) -> int:
@@ -130,12 +181,8 @@ class PolicyEngineRunner:
         )
 
         if self._piped_logs_format != EngineLogFormat.NONE:
-            await asyncio.wait(
-                [
-                    self.pipe_logs(self._process.stdout, self._piped_logs_format),
-                    self.pipe_logs(self._process.stderr, self._piped_logs_format),
-                ]
-            )
+            # TODO: Won't detect panic if logs aren't piped
+            await self.pipe_logs()
 
         return_code = await self._process.wait()
         logger.info(
@@ -184,11 +231,10 @@ class PolicyEngineRunner:
         if self._should_stop is None:
             self._should_stop = asyncio.Event()
 
-    async def pipe_logs(self, stream, logs_format: EngineLogFormat):
-        raise NotImplementedError()
-
 
 class OpaRunner(PolicyEngineRunner):
+    PANIC_DETECTION_SUBSTRINGS = [b"go/src/runtime/panic.go"]
+
     def __init__(
         self,
         options: Optional[OpaServerOptions] = None,
@@ -197,8 +243,9 @@ class OpaRunner(PolicyEngineRunner):
         super().__init__(piped_logs_format)
         self._options = options or OpaServerOptions()
 
-    async def pipe_logs(self, stream, logs_format: EngineLogFormat):
-        return await pipe_opa_logs(stream, logs_format)
+    async def handle_log_line(self, line: bytes) -> bool:
+        await log_engine_output_opa(line, self._piped_logs_format)
+        return any([substr in line for substr in self.PANIC_DETECTION_SUBSTRINGS])
 
     @property
     def command(self) -> str:
@@ -278,5 +325,6 @@ class CedarRunner(PolicyEngineRunner):
 
         return cedar_runner
 
-    async def pipe_logs(self, stream, logs_format: EngineLogFormat):
-        return await pipe_simple_logs(stream, logs_format)
+    async def handle_log_line(self, line: bytes) -> bool:
+        await log_engine_output_simple(line)
+        return False

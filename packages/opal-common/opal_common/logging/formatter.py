@@ -1,5 +1,4 @@
 class Formatter:
-
     MAX_FIELD_LEN = 25
 
     def __init__(self, format_string: str):

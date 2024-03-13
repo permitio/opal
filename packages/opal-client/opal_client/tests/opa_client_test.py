@@ -43,7 +43,6 @@ def test_constuctor_should_panic_tls_configured_without_all_parts():
 
 
 def test_constructor_should_set_up_ca_certificate_even_without_tls_auth_type(tmpdir):
-
     ca_path = os.path.join(tmpdir, "ca.pem")
     with open(ca_path, "w") as ca:
         ca.write(TEST_CA_CERT)

@@ -1,6 +1,5 @@
 class MainTexts:
     def __init__(self, first_line, name):
-
         self.header = f"""\b
     {first_line}
     Open-Policy Administration Layer - {name}\b\f"""

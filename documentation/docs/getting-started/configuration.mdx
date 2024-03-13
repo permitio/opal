@@ -12,6 +12,7 @@ Please use this table as a reference.
 | LOG_FORMAT_INCLUDE_PID                  |                                                                                                                                                                                 |         |
 | LOG_FORMAT                              |                                                                                                                                                                                 |         |
 | LOG_TRACEBACK                           |                                                                                                                                                                                 |         |
+| LOG_SERIALIZE                           | Serialize log messages into json format (useful for log aggregation platforms)                                                                                                  |         |
 | LOG_SHOW_CODE_LINE                      |                                                                                                                                                                                 |         |
 | LOG_LEVEL                               |                                                                                                                                                                                 |         |
 | LOG_MODULE_EXCLUDE_LIST                 |                                                                                                                                                                                 |         |
@@ -22,7 +23,7 @@ Please use this table as a reference.
 | LOG_FILE_ROTATION                       |                                                                                                                                                                                 |         |
 | LOG_FILE_RETENTION                      |                                                                                                                                                                                 |         |
 | LOG_FILE_COMPRESSION                    |                                                                                                                                                                                 |         |
-| LOG_FILE_SERIALIZE                      |                                                                                                                                                                                 |         |
+| LOG_FILE_SERIALIZE                      | Serialize log messages in file into json format (useful for log aggregation platforms)                                                                                          |         |
 | LOG_FILE_LEVEL                          |                                                                                                                                                                                 |         |
 | STATISTICS_ENABLED                      | Collect statistics about OPAL clients.                                                                                                                                          |         |
 | STATISTICS_ADD_CLIENT_CHANNEL           | The topic to update about the new OPAL clients connection.                                                                                                                      |         |
@@ -155,7 +156,9 @@ Please use this table as a reference.
 | SHOULD_REPORT_ON_DATA_UPDATES   | Should the client report on updates to callbacks defined in DEFAULT_UPDATE_CALLBACKS or within the given updates. |         |
 | DEFAULT_UPDATE_CALLBACK_CONFIG  |                                                                                                                   |         |
 | DEFAULT_UPDATE_CALLBACKS        | Where/How the client should report on the completion of data updates.                                             |         |
-| DATA_STORE_CONN_RETRY           | Retry options when connecting to the base data source (e.g. an external API server which returns data snapshot).  |         |
+| DATA_UPDATER_CONN_RETRY         | Retry options when connecting to the base data source (e.g. an external API server which returns data snapshot).  |         |
+| DATA_STORE_CONN_RETRY           | DEPTRECATED - The old confusing name for DATA_UPDATER_CONN_RETRY, kept for backwards compatibilit (for now)       |         |
+
 
 ## OPA Transaction Log / Healthcheck Configuration Variables
 
