@@ -47,6 +47,7 @@ The healthcheck policy defines two main OPA rules:
 - `ready`, checks that:
   - policy was synced correctly at least once
   - **and** all the initial data sources (defined by `OPAL_DATA_CONFIG_SOURCES`) were synced correctly as well.
+    - **or** a following data-update was processed successfully (this part of the behavior is subject to change in upcoming versions)
 - `healthy`, checks that:
   - OPA is `ready` (as defined above)
   - **and** latest policy update bundle synced correctly

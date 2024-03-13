@@ -2,6 +2,7 @@ import asyncio
 import functools
 import os
 import signal
+import tempfile
 import uuid
 from logging import disable
 from typing import Awaitable, Callable, List, Literal, Optional, Union
@@ -52,6 +53,7 @@ class OpalClient:
         store_backup_path: Optional[str] = None,
         store_backup_interval: Optional[int] = None,
         offline_mode_enabled: bool = False,
+        shard_id: Optional[str] = None,
     ) -> None:
         """
         Args:
@@ -62,6 +64,7 @@ class OpalClient:
                 data_updater (DataUpdater, optional): Defaults to None.
                 policy_updater (PolicyUpdater, optional): Defaults to None.
         """
+        self._shard_id = shard_id
         # defaults
         policy_store_type: PolicyStoreTypes = (
             policy_store_type or opal_client_config.POLICY_STORE_TYPE
@@ -95,8 +98,6 @@ class OpalClient:
                 policy_store_type, offline_mode_enabled=self.offline_mode_enabled
             )
         )
-        # data fetcher
-        self.data_fetcher = DataFetcher()
         # callbacks register
         if hasattr(opal_client_config.DEFAULT_UPDATE_CALLBACKS, "callbacks"):
             default_callbacks = opal_client_config.DEFAULT_UPDATE_CALLBACKS.callbacks
@@ -116,7 +117,6 @@ class OpalClient:
             else:
                 self.policy_updater = PolicyUpdater(
                     policy_store=self.policy_store,
-                    data_fetcher=self.data_fetcher,
                     callbacks_register=self._callbacks_register,
                     opal_client_id=opal_client_identifier,
                 )
@@ -137,9 +137,9 @@ class OpalClient:
                 self.data_updater = DataUpdater(
                     policy_store=self.policy_store,
                     data_topics=data_topics,
-                    data_fetcher=self.data_fetcher,
                     callbacks_register=self._callbacks_register,
                     opal_client_id=opal_client_identifier,
+                    shard_id=self._shard_id,
                 )
         else:
             self.data_updater = None
@@ -202,7 +202,8 @@ class OpalClient:
                 rehydration_callbacks.append(
                     # refetches policy code (e.g: rego) and static data from server
                     functools.partial(
-                        self.policy_updater.update_policy, force_full_update=True
+                        self.policy_updater.trigger_update_policy,
+                        force_full_update=True,
                     ),
                 )
 
@@ -392,8 +393,14 @@ class OpalClient:
                 await aiofiles.os.makedirs(
                     os.path.dirname(self.store_backup_path), exist_ok=True
                 )
-                tmp_backup_path = self.store_backup_path + ".tmp"
-                async with aiofiles.open(tmp_backup_path, "w") as backup_file:
+                tmp_backup_path = ""
+                async with aiofiles.tempfile.NamedTemporaryFile(
+                    "w",
+                    delete=False,
+                    dir=os.path.dirname(self.store_backup_path),
+                    suffix=".json.tmp",
+                ) as backup_file:
+                    tmp_backup_path = backup_file.name
                     logger.debug("exporting policy store to backup file...")
                     await self.policy_store.full_export(backup_file)
                     logger.debug("export completed")

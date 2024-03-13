@@ -1,10 +1,15 @@
+import asyncio
+import codecs
+import datetime
 import hashlib
 import shutil
+import time
 from pathlib import Path
 from typing import Optional, cast
 
 import aiofiles.os
 import pygit2
+from ddtrace import tracer
 from git import Repo
 from opal_common.async_utils import run_sync
 from opal_common.git.bundle_maker import BundleMaker
@@ -16,6 +21,7 @@ from opal_common.schemas.policy_source import (
     SSHAuthData,
 )
 from opal_common.synchronization.named_lock import NamedLock
+from opal_server.config import opal_server_config
 from pygit2 import (
     KeypairFromMemory,
     RemoteCallbacks,
@@ -24,6 +30,7 @@ from pygit2 import (
     UserPass,
     clone_repository,
     discover_repository,
+    reference_is_valid_name,
 )
 
 
@@ -51,16 +58,11 @@ class RepoInterface:
         base_branch: str,
     ) -> pygit2.Reference:
         if branch_name not in repo.branches.local:
-            remote_branch = f"{remote_name}/{branch_name}"
             base_remote_branch = f"{remote_name}/{base_branch}"
-            if remote_branch in repo.branches.remote:
-                (commit, _) = repo.resolve_refish(remote_branch)
-            elif repo.branches.remote.get(base_remote_branch) is not None:
+            if repo.branches.remote.get(base_remote_branch) is not None:
                 (commit, _) = repo.resolve_refish(base_remote_branch)
             else:
-                raise RuntimeError(
-                    "Both branch and base branch were not found on remote"
-                )
+                raise RuntimeError("Base branch was not found on remote")
             logger.debug(
                 f"Created local branch '{branch_name}', pointing to: {commit.hex}"
             )
@@ -95,15 +97,6 @@ class RepoInterface:
             return None
 
     @staticmethod
-    def checkout_local_branch_from_remote(
-        repo: Repository,
-        branch_name: str,
-        remote_name: str,
-    ):
-        ref = RepoInterface.create_local_branch_ref(repo, branch_name, remote_name)
-        repo.checkout(ref)
-
-    @staticmethod
     def verify_found_repo_matches_remote(
         repo: Repository,
         expected_remote_url: str,
@@ -122,6 +115,10 @@ class RepoInterface:
 
 
 class GitPolicyFetcher(PolicyFetcher):
+    repo_locks = {}
+    repos = {}
+    repos_last_fetched = {}
+
     def __init__(
         self,
         base_dir: Path,
@@ -142,15 +139,32 @@ class GitPolicyFetcher(PolicyFetcher):
         )
 
     async def _get_repo_lock(self):
-        locks_dir = self._base_dir / ".locks"
-        await aiofiles.os.makedirs(str(locks_dir), exist_ok=True)
+        # # This implementation works across multiple processes/threads, but is not fair (next acquiree is random)
+        # locks_dir = self._base_dir / ".locks"
+        # await aiofiles.os.makedirs(str(locks_dir), exist_ok=True)
 
-        return NamedLock(
-            locks_dir / GitPolicyFetcher.source_id(self._source), attempt_interval=0.1
+        # return NamedLock(
+        #     locks_dir / GitPolicyFetcher.source_id(self._source), attempt_interval=0.1
+        # )
+
+        # This implementation works only within the same process/thread, but is fair (next acquiree is the earliest to enter the lock)
+        src_id = GitPolicyFetcher.source_id(self._source)
+        lock = GitPolicyFetcher.repo_locks[src_id] = GitPolicyFetcher.repo_locks.get(
+            src_id, asyncio.Lock()
         )
+        return lock
+
+    async def _was_fetched_after(self, t: datetime.datetime):
+        last_fetched = GitPolicyFetcher.repos_last_fetched.get(self.source_id, None)
+        if last_fetched is None:
+            return False
+        return last_fetched > t
 
     async def fetch_and_notify_on_changes(
-        self, hinted_hash: Optional[str] = None, force_fetch: bool = False
+        self,
+        hinted_hash: Optional[str] = None,
+        force_fetch: bool = False,
+        req_time: datetime.datetime = None,
     ):
         """makes sure the repo is already fetched and is up to date.
 
@@ -162,37 +176,47 @@ class GitPolicyFetcher(PolicyFetcher):
         """
         repo_lock = await self._get_repo_lock()
         async with repo_lock:
-            if self._discover_repository(self._repo_path):
-                logger.debug("Repo found at {path}", path=self._repo_path)
-                repo = self._get_valid_repo()
-                if repo is not None:
-                    should_fetch = await self._should_fetch(
-                        repo, hinted_hash=hinted_hash, force_fetch=force_fetch
-                    )
-                    if should_fetch:
-                        logger.debug(
-                            f"Fetching remote (force_fetch={force_fetch}): {self._remote} ({self._source.url})"
+            with tracer.trace(
+                "git_policy_fetcher.fetch_and_notify_on_changes",
+                resource=self._scope_id,
+            ):
+                if self._discover_repository(self._repo_path):
+                    logger.debug("Repo found at {path}", path=self._repo_path)
+                    repo = self._get_valid_repo()
+                    if repo is not None:
+                        should_fetch = await self._should_fetch(
+                            repo,
+                            hinted_hash=hinted_hash,
+                            force_fetch=force_fetch,
+                            req_time=req_time,
                         )
-                        await run_sync(
-                            repo.remotes[self._remote].fetch,
-                            callbacks=self._auth_callbacks,
-                        )
-                        logger.debug(f"Fetch completed: {self._source.url}")
+                        if should_fetch:
+                            logger.debug(
+                                f"Fetching remote (force_fetch={force_fetch}): {self._remote} ({self._source.url})"
+                            )
+                            GitPolicyFetcher.repos_last_fetched[
+                                self.source_id
+                            ] = datetime.datetime.now()
+                            await run_sync(
+                                repo.remotes[self._remote].fetch,
+                                callbacks=self._auth_callbacks,
+                            )
+                            logger.debug(f"Fetch completed: {self._source.url}")
 
-                    # New commits might be present because of a previous fetch made by another scope
-                    await self._notify_on_changes(repo)
-                    return
+                        # New commits might be present because of a previous fetch made by another scope
+                        await self._notify_on_changes(repo)
+                        return
+                    else:
+                        # repo dir exists but invalid -> we must delete the directory
+                        logger.warning(
+                            "Deleting invalid repo: {path}", path=self._repo_path
+                        )
+                        shutil.rmtree(self._repo_path)
                 else:
-                    # repo dir exists but invalid -> we must delete the directory
-                    logger.warning(
-                        "Deleting invalid repo: {path}", path=self._repo_path
-                    )
-                    shutil.rmtree(self._repo_path)
-            else:
-                logger.info("Repo not found at {path}", path=self._repo_path)
+                    logger.info("Repo not found at {path}", path=self._repo_path)
 
-            # fallthrough to clean clone
-            await self._clone()
+                # fallthrough to clean clone
+                await self._clone()
 
     def _discover_repository(self, path: Path) -> bool:
         git_path: Path = path / ".git"
@@ -210,25 +234,26 @@ class GitPolicyFetcher(PolicyFetcher):
                 self._source.url,
                 str(self._repo_path),
                 callbacks=self._auth_callbacks,
-                checkout_branch=self._source.branch,
             )
         except pygit2.GitError:
-            logger.exception(
-                f"Could not clone repo at {self._source.url}, checkout branch={self._source.branch}"
-            )
+            logger.exception(f"Could not clone repo at {self._source.url}")
         else:
             logger.info(f"Clone completed: {self._source.url}")
-            await self.callbacks.on_update(None, repo.head.target.hex)
+            await self._notify_on_changes(repo)
+
+    def _get_repo(self) -> Repository:
+        path = str(self._repo_path)
+        if path not in GitPolicyFetcher.repos:
+            GitPolicyFetcher.repos[path] = Repository(path)
+        return GitPolicyFetcher.repos[path]
 
     def _get_valid_repo(self) -> Optional[Repository]:
-        path = str(self._repo_path)
-
         try:
-            repo = Repository(path)
+            repo = self._get_repo()
             RepoInterface.verify_found_repo_matches_remote(repo, self._source.url)
             return repo
         except pygit2.GitError:
-            logger.warning("Invalid repo at: {path}", path=path)
+            logger.warning("Invalid repo at: {path}", path=self._repo_path)
             return None
 
     async def _should_fetch(
@@ -236,9 +261,15 @@ class GitPolicyFetcher(PolicyFetcher):
         repo: Repository,
         hinted_hash: Optional[str] = None,
         force_fetch: bool = False,
+        req_time: datetime.datetime = None,
     ) -> bool:
         if force_fetch:
-            return True  # must fetch
+            if req_time is not None and await self._was_fetched_after(req_time):
+                logger.info(
+                    "Repo was fetched after refresh request, override force_fetch with False"
+                )
+            else:
+                return True  # must fetch
 
         if not RepoInterface.has_remote_branch(repo, self._source.branch, self._remote):
             logger.info(
@@ -259,6 +290,16 @@ class GitPolicyFetcher(PolicyFetcher):
         # by default, we try to avoid re-fetching the repo for performance
         return False
 
+    @property
+    def local_branch_name(self) -> str:
+        # Use the scope id as local branch name, so different scopes could track the same remote branch separately
+        branch_name_unescaped = f"scopes/{self._scope_id}"
+        if reference_is_valid_name(branch_name_unescaped):
+            return branch_name_unescaped
+
+        # if scope id can't be used as a gitref (e.g invalid chars), use its hex representation
+        return f"scopes/{self._scope_id.encode().hex()}"
+
     async def _notify_on_changes(self, repo: Repository):
         # Get the latest commit hash of the target branch
         new_revision = RepoInterface.get_commit_hash(
@@ -269,12 +310,12 @@ class GitPolicyFetcher(PolicyFetcher):
             return
 
         # Get the previous commit hash of the target branch
-        local_branch = RepoInterface.get_local_branch(repo, self._source.branch)
+        local_branch = RepoInterface.get_local_branch(repo, self.local_branch_name)
         if local_branch is None:
             # First sync of a new branch (the first synced branch in this repo was set by the clone (see `checkout_branch`))
             old_revision = None
             local_branch = RepoInterface.create_local_branch_ref(
-                repo, self._source.branch, self._remote, self._source.branch
+                repo, self.local_branch_name, self._remote, self._source.branch
             )
         else:
             old_revision = local_branch.target.hex
@@ -285,7 +326,7 @@ class GitPolicyFetcher(PolicyFetcher):
         local_branch.set_target(new_revision)
 
     def _get_current_branch_head(self) -> str:
-        repo = Repository(str(self._repo_path))
+        repo = self._get_repo()
         head_commit_hash = RepoInterface.get_commit_hash(
             repo, self._source.branch, self._remote
         )
@@ -294,6 +335,7 @@ class GitPolicyFetcher(PolicyFetcher):
             raise ValueError("Could not find current branch head")
         return head_commit_hash
 
+    @tracer.wrap("git_policy_fetcher.make_bundle")
     def make_bundle(self, base_hash: Optional[str] = None) -> PolicyBundle:
         repo = Repo(str(self._repo_path))
         bundle_maker = BundleMaker(
@@ -316,7 +358,12 @@ class GitPolicyFetcher(PolicyFetcher):
 
     @staticmethod
     def source_id(source: GitPolicyScopeSource) -> str:
-        return hashlib.sha256(source.url.encode("utf-8")).hexdigest()
+        base = hashlib.sha256(source.url.encode("utf-8")).hexdigest()
+        index = (
+            hashlib.sha256(source.branch.encode("utf-8")).digest()[0]
+            % opal_server_config.SCOPES_REPO_CLONES_SHARDS
+        )
+        return f"{base}-{index}"
 
     @staticmethod
     def base_dir(base_dir: Path) -> Path:

@@ -280,6 +280,12 @@ class OpalServerConfig(Confi):
 
     SCOPES = confi.bool("SCOPES", default=False)
 
+    SCOPES_REPO_CLONES_SHARDS = confi.int(
+        "SCOPES_REPO_CLONES_SHARDS",
+        1,
+        description="The max number of local clones to use for the same repo (reused across scopes)",
+    )
+
     REDIS_URL = confi.str("REDIS_URL", default="redis://localhost")
 
     BASE_DIR = confi.str("BASE_DIR", default=pathlib.Path.home() / ".local/state/opal")
@@ -290,9 +296,7 @@ class OpalServerConfig(Confi):
         description="Policy polling refresh interval",
     )
 
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-
+    def on_load(self):
         if self.SERVER_PORT is not None and self.SERVER_PORT.isdigit():
             # Backward compatibility - if SERVER_PORT is set with a valid value, use it as SERVER_BIND_PORT
             self.SERVER_BIND_PORT = int(self.SERVER_PORT)

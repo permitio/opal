@@ -25,6 +25,7 @@ from opal_common.authentication.deps import JWTAuthenticator, get_token_from_hea
 from opal_common.authentication.types import EncryptionKeyFormat, JWTClaims
 from opal_common.authentication.verifier import Unauthorized
 from opal_common.logger import logger
+from opal_common.monitoring import metrics
 from opal_common.schemas.data import (
     DataSourceConfig,
     DataUpdate,
@@ -277,6 +278,12 @@ def init_scope_router(
             return await _generate_default_scope_bundle(scope_id)
 
     async def _generate_default_scope_bundle(scope_id: str) -> PolicyBundle:
+        metrics.event(
+            "ScopeNotFound",
+            message=f"Scope {scope_id} not found. Serving default scope instead",
+            tags={"scope_id": scope_id},
+        )
+
         try:
             scope = await scopes.get("default")
             fetcher = GitPolicyFetcher(

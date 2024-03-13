@@ -99,3 +99,6 @@ class MockPolicyStoreClient(BasePolicyStoreClient):
 
     async def log_transaction(self, transaction: StoreTransaction):
         pass
+
+    async def is_healthy(self) -> bool:
+        return self.has_data_event.is_set()

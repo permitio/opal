@@ -124,9 +124,16 @@ class OpaTransactionLogState:
         is_healthy: bool = (
             self._policy_updater_disabled or policy_updater_is_healthy
         ) and (self._data_updater_disabled or data_updater_is_healthy)
-        logger.info(
-            f"OPA client health: {is_healthy} (policy: {policy_updater_is_healthy}, data: {data_updater_is_healthy})"
-        )
+
+        if is_healthy:
+            logger.debug(
+                f"OPA client health: {is_healthy} (policy: {policy_updater_is_healthy}, data: {data_updater_is_healthy})"
+            )
+        else:
+            logger.warning(
+                f"OPA client health: {is_healthy} (policy: {policy_updater_is_healthy}, data: {data_updater_is_healthy})"
+            )
+
         return is_healthy
 
     @property
@@ -375,7 +382,6 @@ class OpaClient(BasePolicyStoreClient):
             self._policy_data_cache = OpaStaticDataCache()
 
     def _get_custom_ssl_context(self) -> Optional[ssl.SSLContext]:
-
         if not self._tls_ca:
             return None
 
@@ -622,7 +628,6 @@ class OpaClient(BasePolicyStoreClient):
                 return
 
             if len(failed_ops) == len(ops):
-
                 # all ops failed on this iteration, no point at retrying
                 for failure_msg in failure_msgs:
                     logger.error(failure_msg)

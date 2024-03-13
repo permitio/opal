@@ -76,7 +76,6 @@ class Emport(object):
         """
         res = []
         for member in self._members:
-
             # if a member is an Emport itself flatten it as well
             if isinstance(member, Emport):
                 res += member.get_flat_list()
@@ -138,7 +137,7 @@ def emport_by_class(from_path, cls, import_items=None):
     import_items = import_items or ["*"]
     module_obj = __import__(from_path, globals(), locals(), import_items, 0)
     clean_items = ObjectUtils.get_class_members_who_derive_of(module_obj, cls)
-    for (sub_name, sub_module) in ObjectUtils.get_members_who_are_instance_of(
+    for sub_name, sub_module in ObjectUtils.get_members_who_are_instance_of(
         module_obj, module_obj.__class__
     ):
         results = ObjectUtils.get_class_members_who_derive_of(sub_module, cls)
@@ -166,7 +165,7 @@ def emport_objects_by_class(from_path, cls, import_items=None):
     clean_items = ObjectUtils.get_class_members_who_derive_of(module_obj, cls)
     results.extend(clean_items)
     # nested
-    for (sub_name, sub_module) in ObjectUtils.get_members_who_are_instance_of(
+    for sub_name, sub_module in ObjectUtils.get_members_who_are_instance_of(
         module_obj, module_obj.__class__
     ):
         objects = ObjectUtils.get_class_members_who_derive_of(sub_module, cls)
