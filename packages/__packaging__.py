@@ -6,7 +6,6 @@ changes to your authorization policies and pushes live updates to your policy ag
 
 Project homepage: https://github.com/permitio/opal
 """
-
 import os
 
 VERSION = (0, 7, 5)
