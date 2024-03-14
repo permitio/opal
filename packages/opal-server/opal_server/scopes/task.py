@@ -1,4 +1,5 @@
 import asyncio
+import datetime
 from pathlib import Path
 from typing import Any
 
@@ -36,7 +37,13 @@ class ScopesPolicyWatcherTask(BasePolicyWatcherTask):
             while True:
                 await asyncio.sleep(opal_server_config.POLICY_REFRESH_INTERVAL)
                 logger.info("Periodic sync")
-                await self._service.sync_scopes(only_poll_updates=True)
+                try:
+                    await self._service.sync_scopes(only_poll_updates=True)
+                except asyncio.CancelledError:
+                    raise
+                except Exception as e:
+                    logger.exception(f"Periodic sync (sync_scopes) failed")
+
         except asyncio.CancelledError:
             logger.info("Periodic sync cancelled")
 
@@ -45,9 +52,10 @@ class ScopesPolicyWatcherTask(BasePolicyWatcherTask):
             # Refresh single scope
             try:
                 await self._service.sync_scope(
-                    data["scope_id"],
+                    scope_id=data["scope_id"],
                     force_fetch=data.get("force_fetch", False),
                     hinted_hash=data.get("hinted_hash"),
+                    req_time=datetime.datetime.now(),
                 )
             except KeyError:
                 logger.warning(

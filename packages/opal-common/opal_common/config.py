@@ -21,9 +21,11 @@ class OpalCommonConfig(Confi):
     LOG_FORMAT = confi.str(
         "LOG_FORMAT",
         confi.delay(
-            lambda LOG_FORMAT_INCLUDE_PID=False: _LOG_FORMAT_WITH_PID
-            if LOG_FORMAT_INCLUDE_PID
-            else _LOG_FORMAT_WITHOUT_PID
+            lambda LOG_FORMAT_INCLUDE_PID=False: (
+                _LOG_FORMAT_WITH_PID
+                if LOG_FORMAT_INCLUDE_PID
+                else _LOG_FORMAT_WITHOUT_PID
+            )
         ),
         description="The format of the log messages",
     )
@@ -110,7 +112,7 @@ class OpalCommonConfig(Confi):
 
     # Fetching engine
     # Max number of worker tasks handling fetch events concurrently
-    FETCHING_WORKER_COUNT = confi.int("FETCHING_WORKER_COUNT", 5)
+    FETCHING_WORKER_COUNT = confi.int("FETCHING_WORKER_COUNT", 6)
     # Time in seconds to wait on the queued fetch task.
     FETCHING_CALLBACK_TIMEOUT = confi.int("FETCHING_CALLBACK_TIMEOUT", 10)
     # Time in seconds to wait for queuing a new task (if the queue is full)
@@ -157,6 +159,15 @@ class OpalCommonConfig(Confi):
         "POLICY_REPO_POLICY_EXTENSIONS",
         [".rego"],
         description="List of extensions to serve as policy modules",
+    )
+
+    ENABLE_METRICS = confi.bool("ENABLE_METRICS", False)
+
+    # optional APM tracing with datadog
+    ENABLE_DATADOG_APM = confi.bool(
+        "ENABLE_DATADOG_APM",
+        False,
+        description="Set if OPAL server should enable tracing with datadog APM",
     )
 
 

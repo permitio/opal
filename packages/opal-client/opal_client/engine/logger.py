@@ -27,45 +27,29 @@ def logging_level_from_string(level: str) -> int:
     return logging.INFO
 
 
-async def pipe_opa_logs(stream, logs_format: EngineLogFormat):
-    """gets a stream of logs from the opa process, and logs it into the main
-    opal log."""
+async def log_engine_output_opa(
+    line: bytes, logs_format: EngineLogFormat = EngineLogFormat.NONE
+):
     if logs_format == EngineLogFormat.NONE:
         return
+    try:
+        log_line = json.loads(line)
+        level = logging.getLevelName(
+            logging_level_from_string(log_line.pop("level", "info"))
+        )
+        msg = log_line.pop("msg", None)
 
-    line = b""
-    while True:
-        try:
-            line += await stream.readuntil(b"\n")
-        except asyncio.exceptions.IncompleteReadError as e:
-            line += e.partial
-        except asyncio.exceptions.LimitOverrunError as e:
-            # No new line yet but buffer limit exceeded, read what's available and try again
-            line += await stream.readexactly(e.consumed)
-            continue
+        logged = False
+        if logs_format == EngineLogFormat.MINIMAL:
+            logged = log_event_name(level, msg)
+        elif logs_format == EngineLogFormat.HTTP:
+            logged = log_formatted_http_details(level, msg, log_line)
 
-        if not line:
-            break
-        try:
-            log_line = json.loads(line)
-            level = logging.getLevelName(
-                logging_level_from_string(log_line.pop("level", "info"))
-            )
-            msg = log_line.pop("msg", None)
-
-            logged = False
-            if logs_format == EngineLogFormat.MINIMAL:
-                logged = log_event_name(level, msg)
-            elif logs_format == EngineLogFormat.HTTP:
-                logged = log_formatted_http_details(level, msg, log_line)
-
-            # always fall back to log the entire line
-            if not logged or logs_format == EngineLogFormat.FULL:
-                log_entire_dict(level, msg, log_line)
-        except json.JSONDecodeError:
-            logger.info(line)
-        finally:
-            line = b""
+        # always fall back to log the entire line
+        if not logged or logs_format == EngineLogFormat.FULL:
+            log_entire_dict(level, msg, log_line)
+    except json.JSONDecodeError:
+        logger.info(line)
 
 
 def log_event_name(level: str, msg: Optional[str]) -> bool:
@@ -109,20 +93,10 @@ def log_entire_dict(level: str, msg: Optional[str], log_line: dict):
     return True
 
 
-async def pipe_simple_logs(stream, logs_format: EngineLogFormat):
-    """Gets a stream of logs from the engine process, and logs it into the main
-    opal log."""
-    if logs_format == EngineLogFormat.NONE:
-        return
+async def log_engine_output_simple(line: bytes):
+    try:
+        line = line.decode().strip()
+    except UnicodeDecodeError:
+        ...
 
-    while True:
-        line = await stream.readline()
-        if not line:
-            break
-
-        try:
-            line = line.decode().strip()
-        except UnicodeDecodeError:
-            ...
-
-        logger.info(line)
+    logger.info(line)

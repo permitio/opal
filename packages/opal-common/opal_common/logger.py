@@ -8,11 +8,14 @@ from .logging.filter import ModuleFilter
 from .logging.formatter import Formatter
 from .logging.intercept import InterceptHandler
 from .logging.thirdparty import hijack_uvicorn_logs
+from .monitoring.apm import fix_ddtrace_logging
 
 
 def configure_logs():
     """Takeover process logs and create a logger with Loguru according to the
     configuration."""
+    fix_ddtrace_logging()
+
     intercept_handler = InterceptHandler()
     formatter = Formatter(opal_common_config.LOG_FORMAT)
     filter = ModuleFilter(
@@ -20,6 +23,7 @@ def configure_logs():
         exclude_list=opal_common_config.LOG_MODULE_EXCLUDE_LIST,
     )
     logging.basicConfig(handlers=[intercept_handler], level=0, force=True)
+
     if opal_common_config.LOG_PATCH_UVICORN_LOGS:
         # Monkey patch UVICORN to use our logger
         hijack_uvicorn_logs(intercept_handler)
