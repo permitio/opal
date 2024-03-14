@@ -48,7 +48,9 @@ RUN ln -s /opal/start.sh /start.sh
 # copy gunicorn_config
 COPY ./scripts/gunicorn_conf.py .
 # copy app code
-COPY . ./
+
+COPY ./README.md .
+COPY ./packages ./packages/
 # install the opal-common package
 RUN cd ./packages/opal-common && python setup.py install
 # Make sure scripts in .local are usable:
