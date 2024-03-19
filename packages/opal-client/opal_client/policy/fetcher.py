@@ -28,14 +28,7 @@ def force_valid_bundle(bundle) -> PolicyBundle:
 class PolicyFetcher:
     """fetches policy from backend."""
 
-    # Use as default config the configuration provider by opal_client_config.POLICY_UPDATER_CONN_RETRY
-    # Add reraise as true (an option not available for control from the higher-level config)
-    DEFAULT_RETRY_CONFIG = (
-        opal_client_config.POLICY_UPDATER_CONN_RETRY.toTenacityConfig()
-    )
-    DEFAULT_RETRY_CONFIG["reraise"] = True
-
-    def __init__(self, backend_url=None, token=None, retry_config=None):
+    def __init__(self, backend_url=None, token=None):
         """
         Args:
             backend_url (str): Defaults to opal_client_config.SERVER_URL.
@@ -44,9 +37,11 @@ class PolicyFetcher:
         self._token = token or opal_client_config.CLIENT_TOKEN
         self._backend_url = backend_url or opal_client_config.SERVER_URL
         self._auth_headers = tuple_to_dict(get_authorization_header(self._token))
+
         self._retry_config = (
-            retry_config if retry_config is not None else self.DEFAULT_RETRY_CONFIG
+            opal_client_config.POLICY_UPDATER_CONN_RETRY.toTenacityConfig()
         )
+        self._retry_config["reraise"] = True  # This is currently not configurable
 
         scope_id = opal_client_config.SCOPE_ID
 

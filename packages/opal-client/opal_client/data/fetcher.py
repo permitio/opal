@@ -14,14 +14,7 @@ from opal_common.utils import get_authorization_header, tuple_to_dict
 class DataFetcher:
     """fetches policy data from backend."""
 
-    # Use as default config the configuration provider by opal_client_config.DATA_UPDATER_CONN_RETRY
-    # Add reraise as true (an option not available for control from the higher-level config)
-    DEFAULT_RETRY_CONFIG = opal_client_config.DATA_UPDATER_CONN_RETRY.toTenacityConfig()
-    DEFAULT_RETRY_CONFIG["reraise"] = True
-
-    def __init__(
-        self, default_data_url: str = None, token: str = None, retry_config=None
-    ):
+    def __init__(self, default_data_url: str = None, token: str = None):
         """
 
         Args:
@@ -31,15 +24,16 @@ class DataFetcher:
         # defaults
         default_data_url: str = default_data_url or opal_client_config.DEFAULT_DATA_URL
         token: str = token or opal_client_config.CLIENT_TOKEN
-        self._retry_config = (
-            retry_config if retry_config is not None else self.DEFAULT_RETRY_CONFIG
-        )
+
+        retry_config = opal_client_config.DATA_UPDATER_CONN_RETRY.toTenacityConfig()
+        retry_config["reraise"] = True  # This is currently not configurable
+
         # The underlying fetching engine
         self._engine = FetchingEngine(
             worker_count=opal_common_config.FETCHING_WORKER_COUNT,
             callback_timeout=opal_common_config.FETCHING_CALLBACK_TIMEOUT,
             enqueue_timeout=opal_common_config.FETCHING_ENQUEUE_TIMEOUT,
-            retry_config=self._retry_config,
+            retry_config=retry_config,
         )
         self._data_url = default_data_url
         self._token = token
