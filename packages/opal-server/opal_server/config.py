@@ -99,7 +99,8 @@ class OpalServerConfig(Confi):
         False,
         "Set if OPAL server should use a fixed clone path (and reuse if it already exists) instead of randomizing its suffix on each run",
     )
-    POLICY_REPO_MAIN_BRANCH = confi.str("POLICY_REPO_MAIN_BRANCH", "master")
+    POLICY_REPO_MAIN_BRANCH = confi.str("POLICY_REPO_MAIN_BRANCH", None)
+    POLICY_REPO_TAG = confi.str("POLICY_REPO_TAG", None)
     POLICY_REPO_SSH_KEY = confi.str("POLICY_REPO_SSH_KEY", None)
     POLICY_REPO_MANIFEST_PATH = confi.str(
         "POLICY_REPO_MANIFEST_PATH",
