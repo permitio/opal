@@ -130,7 +130,7 @@ class OpalServerConfig(Confi):
     )
     POLICY_BUNDLE_SERVER_AWS_REGION = confi.str(
         "POLICY_BUNDLE_SERVER_AWS_REGION",
-        None,
+        "us-east-1",
         description="The AWS region of the S3 bucket",
     )
     POLICY_BUNDLE_TMP_PATH = confi.str(

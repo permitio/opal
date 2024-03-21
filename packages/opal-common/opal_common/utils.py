@@ -104,8 +104,6 @@ def build_aws_rest_auth_headers(key_id: str, secret_key: str, host: str, path: s
         + payload_hash
     )
 
-    if not region:
-        region = "us-east-1"
 
     algorithm = "AWS4-HMAC-SHA256"
     credential_scope = datestamp + "/" + region + "/" + "s3" + "/" + "aws4_request"
