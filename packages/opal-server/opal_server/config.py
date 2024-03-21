@@ -128,6 +128,11 @@ class OpalServerConfig(Confi):
         None,
         description="The id of the secret token to be sent to API bundle server",
     )
+    POLICY_BUNDLE_SERVER_AWS_REGION = confi.str(
+        "POLICY_BUNDLE_SERVER_AWS_REGION",
+        "us-east-1",
+        description="The AWS region of the S3 bucket",
+    )
     POLICY_BUNDLE_TMP_PATH = confi.str(
         "POLICY_BUNDLE_TMP_PATH",
         "/tmp/bundle.tar.gz",

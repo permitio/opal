@@ -56,7 +56,9 @@ def get_authorization_header(token: str) -> Tuple[str, str]:
     return "Authorization", f"Bearer {token}"
 
 
-def build_aws_rest_auth_headers(key_id: str, secret_key: str, host: str, path: str):
+def build_aws_rest_auth_headers(
+    key_id: str, secret_key: str, host: str, path: str, region: str
+):
     """Use the AWS signature algorithm (https://docs.aws.amazon.com/AmazonS3/la
     test/userguide/RESTAuthentication.html) to generate the hTTP headers.
 
@@ -78,6 +80,9 @@ def build_aws_rest_auth_headers(key_id: str, secret_key: str, host: str, path: s
         kService = sign(kRegion, serviceName)
         kSigning = sign(kService, "aws4_request")
         return kSigning
+
+    # SHA256 of empty string.  This is needed when S3 request payload is empty.
+    SHA256_EMPTY = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
 
     t = datetime.utcnow()
     amzdate = t.strftime("%Y%m%dT%H%M%SZ")
@@ -101,7 +106,6 @@ def build_aws_rest_auth_headers(key_id: str, secret_key: str, host: str, path: s
         + payload_hash
     )
 
-    region = "us-east-1"
     algorithm = "AWS4-HMAC-SHA256"
     credential_scope = datestamp + "/" + region + "/" + "s3" + "/" + "aws4_request"
 
@@ -136,6 +140,7 @@ def build_aws_rest_auth_headers(key_id: str, secret_key: str, host: str, path: s
 
     return {
         "x-amz-date": amzdate,
+        "x-amz-content-sha256": SHA256_EMPTY,
         "Authorization": authorization_header,
     }
 

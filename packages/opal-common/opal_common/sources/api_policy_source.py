@@ -50,6 +50,7 @@ class ApiPolicySource(BasePolicySource):
         polling_interval: int = 0,
         token: Optional[str] = None,
         token_id: Optional[str] = None,
+        region: Optional[str] = None,
         bundle_server_type: Optional[PolicyBundleServerType] = None,
         policy_bundle_path=".",
         policy_bundle_git_add_pattern="*",
@@ -62,6 +63,7 @@ class ApiPolicySource(BasePolicySource):
         self.token = token
         self.token_id = token_id
         self.server_type = bundle_server_type
+        self.region = region
         self.bundle_hash = None
         self.etag = None
         self.tmp_bundle_path = Path(policy_bundle_path)
@@ -136,7 +138,9 @@ class ApiPolicySource(BasePolicySource):
             host = split_url.netloc
             path = split_url.path + "/" + path
 
-            return build_aws_rest_auth_headers(self.token_id, token, host, path)
+            return build_aws_rest_auth_headers(
+                self.token_id, token, host, path, self.region
+            )
         else:
             return {}
 

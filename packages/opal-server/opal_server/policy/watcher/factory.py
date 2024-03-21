@@ -27,6 +27,7 @@ def setup_watcher_task(
     policy_bundle_token: str = None,
     policy_bundle_token_id: str = None,
     policy_bundle_server_type: str = None,
+    policy_bundle_aws_region: str = None,
     extensions: Optional[List[str]] = None,
     bundle_ignore: Optional[List[str]] = None,
 ) -> BasePolicyWatcherTask:
@@ -115,6 +116,9 @@ def setup_watcher_task(
         policy_bundle_server_type = load_conf_if_none(
             policy_bundle_server_type, opal_server_config.POLICY_BUNDLE_SERVER_TYPE
         )
+        policy_bundle_aws_region = load_conf_if_none(
+            policy_bundle_aws_region, opal_server_config.POLICY_BUNDLE_SERVER_AWS_REGION
+        )
         watcher = ApiPolicySource(
             remote_source_url=remote_source_url,
             local_clone_path=clone_path,
@@ -124,6 +128,7 @@ def setup_watcher_task(
             bundle_server_type=policy_bundle_server_type,
             policy_bundle_path=opal_server_config.POLICY_BUNDLE_TMP_PATH,
             policy_bundle_git_add_pattern=opal_server_config.POLICY_BUNDLE_GIT_ADD_PATTERN,
+            region=policy_bundle_aws_region,
         )
     else:
         raise ValueError("Unknown value for OPAL_POLICY_SOURCE_TYPE")
