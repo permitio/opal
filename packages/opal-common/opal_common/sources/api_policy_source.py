@@ -138,7 +138,9 @@ class ApiPolicySource(BasePolicySource):
             host = split_url.netloc
             path = split_url.path + "/" + path
 
-            return build_aws_rest_auth_headers(self.token_id, token, host, path, self.region)
+            return build_aws_rest_auth_headers(
+                self.token_id, token, host, path, self.region
+            )
         else:
             return {}
 

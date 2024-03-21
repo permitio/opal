@@ -128,7 +128,7 @@ def setup_watcher_task(
             bundle_server_type=policy_bundle_server_type,
             policy_bundle_path=opal_server_config.POLICY_BUNDLE_TMP_PATH,
             policy_bundle_git_add_pattern=opal_server_config.POLICY_BUNDLE_GIT_ADD_PATTERN,
-            region=policy_bundle_aws_region
+            region=policy_bundle_aws_region,
         )
     else:
         raise ValueError("Unknown value for OPAL_POLICY_SOURCE_TYPE")
