@@ -18,6 +18,7 @@ class PolicySourceTypes(str, Enum):
 class PolicyBundleServerType(str, Enum):
     HTTP = "HTTP"
     AWS_S3 = "AWS-S3"
+    AZURE_BLOB = "AZURE_BLOB"
 
 
 class ServerRole(str, Enum):
