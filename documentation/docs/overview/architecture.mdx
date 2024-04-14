@@ -83,8 +83,8 @@ OPAL consists of two key components that work together:
 
   ## OPAL's architecture potentially uses two Pub/Sub channels-
 
-        Client <> Server - lightweight websocket Pub/Sub
-        Server <> Server - backbone Pub/Sub
+        Client \<> Server - lightweight websocket Pub/Sub
+        Server \<> Server - backbone Pub/Sub
 
         While the lightweight channel requires no additional infrastructure, and can suffice for the can we are running only a single OPAL-server. If we wish to scale-out OPAL-servers, we achieve this using a backbone Pub/Sub (such as Redis, Kafka, or Postgres Listen/Notify) to sync all the servers (So a client connecting to one server, receive notifications of updates that are triggered by another server)
         The backbone Pub/Sub is connected to the lightweight Pub/SUb through the [Broadcaster](https://pypi.org/project/broadcaster/) module.
