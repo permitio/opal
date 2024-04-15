@@ -35,7 +35,8 @@ const config = {
         },
         blog: false, // disabled docusaurus default blog
         theme: {
-          customCss: require.resolve("./src/css/custom.scss"),
+          customCss:[ require.resolve("./src/css/custom.scss")
+          ]
         },
       }),
     ],
@@ -71,7 +72,8 @@ const config = {
         copyright: `Copyright © ${new Date().getFullYear()} Permit, Inc.`,
       },
       prism: {
-            theme: require("prism-react-renderer/themes/dracula"),
+            theme: require('prism-react-renderer').themes.nightOwl,
+            additionalLanguages: ['bash']
       },
       announcementBar: {
         id: "support_us",
