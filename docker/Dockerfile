@@ -24,7 +24,7 @@ RUN cd /tmp/cedar-agent && \
 
 # COMMON IMAGE --------------------------------------
 # ---------------------------------------------------
-FROM python:3.10-slim-bookworm as common
+FROM python:3.13.0a6-slim as common
 
 # copy libraries from build stage (This won't copy redundant libraries we used in BuildStage)
 COPY --from=BuildStage /usr/local /usr/local
