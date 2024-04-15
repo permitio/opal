@@ -1,7 +1,6 @@
 // @ts-check
 // Note: type annotations allow type checking and IDEs autocompletion
 
-import {themes as prismThemes} from 'prism-react-renderer';
 
 /** @type {import('@docusaurus/types').Config} */
 const config = {
@@ -72,7 +71,7 @@ const config = {
         copyright: `Copyright © ${new Date().getFullYear()} Permit, Inc.`,
       },
       prism: {
-            theme: prismThemes.dracula,
+            theme: require("prism-react-renderer/themes/dracula"),
       },
       announcementBar: {
         id: "support_us",
