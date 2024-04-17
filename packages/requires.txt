@@ -4,7 +4,7 @@ typer>=0.4.1,<1
 fastapi>=0.109.1,<1
 fastapi_websocket_pubsub==0.3.7
 fastapi_websocket_rpc>=0.1.21,<1
-gunicorn>=20.1.0,<21
+gunicorn>=22.0.0,<21
 pydantic[email]>=1.9.1,<2
 typing-extensions;python_version<'3.8'
 uvicorn[standard]>=0.17.6,<1
