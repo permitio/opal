@@ -3,6 +3,7 @@ import hashlib
 import itertools
 import json
 import uuid
+from functools import partial
 from typing import Any, Dict, List, Optional, Tuple
 
 import aiohttp
@@ -22,7 +23,7 @@ from opal_client.policy_store.base_policy_store_client import (
 from opal_client.policy_store.policy_store_client_factory import (
     DEFAULT_POLICY_STORE_GETTER,
 )
-from opal_common.async_utils import TakeANumberQueue, TasksPool
+from opal_common.async_utils import TakeANumberQueue, TasksPool, repeated_call
 from opal_common.config import opal_common_config
 from opal_common.fetcher.events import FetcherConfig
 from opal_common.http import is_http_error_response
@@ -130,6 +131,7 @@ class DataUpdater:
         )
         self._updates_storing_queue = TakeANumberQueue(logger)
         self._tasks = TasksPool()
+        self._polling_update_tasks = []
 
     async def __aenter__(self):
         await self.start()
@@ -202,11 +204,34 @@ class DataUpdater:
         logger.info(
             "Performing data configuration, reason: {reason}", reason=data_fetch_reason
         )
+        await self._stop_polling_update_tasks()  # If this is a reconnect - should stop previously received periodic updates
         sources_config = await self.get_policy_data_config(url=config_url)
-        # translate config to a data update
-        entries = sources_config.entries
-        update = DataUpdate(reason=data_fetch_reason, entries=entries)
+
+        init_entries, periodic_entries = [], []
+        for entry in sources_config.entries:
+            (
+                periodic_entries
+                if (entry.periodic_update_interval is not None)
+                else init_entries
+            ).append(entry)
+
+        # Process one time entries now
+        update = DataUpdate(reason=data_fetch_reason, entries=init_entries)
         await self.trigger_data_update(update)
+
+        # Schedule repeated processing of periodic polling entries
+        async def _trigger_update_with_entry(entry):
+            await self.trigger_data_update(
+                DataUpdate(reason="Periodic Update", entries=[entry])
+            )
+
+        for entry in periodic_entries:
+            repeat_process_entry = repeated_call(
+                partial(_trigger_update_with_entry, entry),
+                entry.periodic_update_interval,
+                logger=logger,
+            )
+            self._polling_update_tasks.append(asyncio.create_task(repeat_process_entry))
 
     async def on_connect(self, client: PubSubClient, channel: RpcChannel):
         """Pub/Sub on_connect callback On connection to backend, whether its
@@ -262,6 +287,13 @@ class DataUpdater:
         async with self._client:
             await self._client.wait_until_done()
 
+    async def _stop_polling_update_tasks(self):
+        if len(self._polling_update_tasks) > 0:
+            for task in self._polling_update_tasks:
+                task.cancel()
+            await asyncio.gather(*self._polling_update_tasks, return_exceptions=True)
+            self._polling_update_tasks = []
+
     async def stop(self):
         self._stopping = True
         logger.info("Stopping data updater")
@@ -274,6 +306,9 @@ class DataUpdater:
                 logger.debug(
                     "Timeout waiting for DataUpdater pubsub client to disconnect"
                 )
+
+        # stop periodic updates
+        await self._stop_polling_update_tasks()
 
         # stop subscriber task
         if self._subscriber_task is not None:

@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import sys
 from functools import partial
-from typing import Any, Callable, Coroutine, List, TypeVar
+from typing import Any, Callable, Coroutine, List, Optional, Tuple, TypeVar
 
 import loguru
 
@@ -100,3 +100,23 @@ class TasksPool:
         t = asyncio.create_task(f)
         self._tasks.append(t)
         t.add_done_callback(self._cleanup_task)
+
+
+async def repeated_call(
+    func: Coroutine,
+    seconds: float,
+    *args: Tuple[Any],
+    logger: Optional[loguru.Logger] = None,
+):
+    while True:
+        try:
+            await func(*args)
+            await asyncio.sleep(seconds)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            logger.exception(
+                "Error during repeated call to {func}: {exc}",
+                func=func,
+                exc=exc,
+            )
