@@ -350,14 +350,7 @@ class OpalServer:
                         pid=os.getpid(),
                     )
 
-                    if not opal_server_config.SCOPES:
-                        # bind data updater publishers to the leader worker
-                        asyncio.create_task(
-                            DataUpdatePublisher.mount_and_start_polling_updates(
-                                self.publisher, opal_server_config.DATA_CONFIG_SOURCES
-                            )
-                        )
-                    else:
+                    if opal_server_config.SCOPES:
                         await load_scopes(self._scopes)
 
                     if self.broadcast_keepalive is not None:
