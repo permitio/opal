@@ -50,7 +50,8 @@ def cast_private_key(
 
     key_path = os.path.expanduser(value)
     if os.path.isfile(key_path):
-        raw_key = open(key_path, "rb").read()
+        with open(key_path, "rb") as file:
+            raw_key = file.read()
     else:
         raw_key = maybe_decode_multiline_key(value)
 
@@ -84,7 +85,8 @@ def cast_public_key(value: str, key_format: EncryptionKeyFormat) -> Optional[Pub
 
     key_path = os.path.expanduser(value)
     if os.path.isfile(key_path):
-        raw_key = open(key_path, "rb").read()
+        with open(key_path, "rb") as file:
+            raw_key = file.read()
     elif key_format == EncryptionKeyFormat.ssh:  # ssh key format is one line
         raw_key = to_bytes(value)
     else:
