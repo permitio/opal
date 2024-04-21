@@ -462,7 +462,8 @@ class OpalClient:
             raise ValueError("OPA health check policy not found!")
 
         try:
-            healthcheck_policy_code = open(healthcheck_policy_path, "r").read()
+            with open(healthcheck_policy_path, "r") as file:
+                healthcheck_policy_code = file.read()
         except IOError as err:
             logger.error(
                 "Critical: Cannot read healthcheck policy: {err}", err=repr(err)
