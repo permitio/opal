@@ -343,7 +343,7 @@ async def _process_(self, records: List[asyncpg.Record]):
 
 - The fetch provider is called by the [FetchingEngine](https://github.com/permitio/opal/blob/master/packages/opal-common/opal_common/fetcher/engine/fetching_engine.py)'s `fetch_worker`.
 - The [fetch_worker](https://github.com/permitio/opal/blob/master/packages/opal-common/opal_common/fetcher/engine/fetch_worker.py#L33-L34) invokes a provider's `.fetch()` and `.process()` methods which are simply proxies to its `_fetch_()` and `_process_()` methods.
-- The [fetcher-register](https://github.com/permitio/opal/blob/master/opal/common/fetcher/fetcher_register.py) loads the providers when OPAL client first loads and makes them available for fetch-workers.
+- The [fetcher-register](https://github.com/permitio/opal/blob/master/packages/opal-common/opal_common/fetcher/fetcher_register.py) loads the providers when OPAL client first loads and makes them available for fetch-workers.
 
 ## <a name="using-providers"></a>Using a custom fetch provider
 
