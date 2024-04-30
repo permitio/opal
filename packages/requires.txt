@@ -1,4 +1,3 @@
-charset-normalizer>=2.0.12,<3
 idna>=3.3,<4
 typer>=0.4.1,<1
 fastapi>=0.109.1,<1
