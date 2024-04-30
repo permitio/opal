@@ -1,10 +1,10 @@
 -e ./packages/opal-common
 -e ./packages/opal-client
 -e ./packages/opal-server
-ipython
+ipython>=8.10.0
 pytest
 pytest-asyncio
 pytest-rerunfailures
-wheel
+wheel>=0.38.0
 twine
 setuptools>=65.5.1 # not directly required, pinned by Snyk to avoid a vulnerability

@@ -35,7 +35,7 @@ other setting.
 The authorization used in this example are GitHub Personal Access Tokens that
 can be [generated here](https://github.com/settings/tokens).
 
-```shell
+```bash
 curl --request PUT 'http://opal_server/scopes'
 --header 'Content-Type: application/json'
 --header 'Authorization: $OPAL_TOKEN'
@@ -65,7 +65,7 @@ curl --request PUT 'http://opal_server/scopes'
 }'
 ```
 
-```shell
+```bash
 curl --request PUT 'http://opal_server/scopes'
 --header 'Content-Type: application/json'
 --header 'Authorization: $OPAL_TOKEN'
@@ -97,7 +97,7 @@ curl --request PUT 'http://opal_server/scopes'
 
 ### Launch OPAL Client with a scope
 
-```shell
+```bash
 docker run -it \
   --env OPAL_CLIENT_TOKEN \
   --env OPAL_SERVER_URL \

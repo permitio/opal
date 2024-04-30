@@ -1,8 +1,6 @@
 // @ts-check
 // Note: type annotations allow type checking and IDEs autocompletion
 
-const lightCodeTheme = require("./src/css/prism-theme");
-const darkCodeTheme = require("prism-react-renderer/themes/dracula");
 
 /** @type {import('@docusaurus/types').Config} */
 const config = {
@@ -37,7 +35,8 @@ const config = {
         },
         blog: false, // disabled docusaurus default blog
         theme: {
-          customCss: require.resolve("./src/css/custom.scss"),
+          customCss:[ require.resolve("./src/css/custom.scss")
+          ]
         },
       }),
     ],
@@ -73,8 +72,8 @@ const config = {
         copyright: `Copyright © ${new Date().getFullYear()} Permit, Inc.`,
       },
       prism: {
-        theme: require("prism-react-renderer/themes/nightOwl"),
-        // darkTheme: require("prism-react-renderer/themes/nightOwlLight"),
+            theme: require('prism-react-renderer').themes.nightOwl,
+            additionalLanguages: ['bash']
       },
       announcementBar: {
         id: "support_us",
