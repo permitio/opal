@@ -1,13 +1,14 @@
 import asyncio
 from datetime import datetime
 from random import uniform
-from typing import Dict, List, Optional, Set
+from typing import Any, Dict, List, Optional, Set
 from uuid import uuid4
 
 import pydantic
 from fastapi import APIRouter, HTTPException, status
 from fastapi_websocket_pubsub.event_notifier import Subscription, TopicList
 from fastapi_websocket_pubsub.pub_sub_server import PubSubEndpoint
+from opal_common.async_utils import TasksPool
 from opal_common.config import opal_common_config
 from opal_common.logger import get_logger
 from opal_server.config import opal_server_config
@@ -73,10 +74,16 @@ class OpalStatistics:
         self._worker_id = uuid4().hex
         self._synced_after_wakeup = asyncio.Event()
         self._received_sync_messages: Set[str] = set()
+        self._publish_tasks = TasksPool()
 
     @property
     def state(self) -> ServerStats:
         return self._state
+
+    def _publish(self, channel: str, message: Any):
+        self._publish_tasks.add_task(
+            asyncio.create_task(self._endpoint.publish([channel], message))
+        )
 
     async def run(self):
         """subscribe to two channels to be able to sync add and delete of
@@ -101,15 +108,13 @@ class OpalStatistics:
         # counting on the broadcaster to listen and to replicate the message
         # to the other workers / server nodes in the networks.
         # However, since broadcaster is using asyncio.create_task(), there is a
-        # race condition that is mitigate by this asyncio.sleep() call.
+        # race condition that is mitigated by this asyncio.sleep() call.
         await asyncio.sleep(SLEEP_TIME_FOR_BROADCASTER_READER_TO_START)
         # Let all the other opal servers know that new opal server started
         logger.info(f"sending stats wakeup message: {self._worker_id}")
-        asyncio.create_task(
-            self._endpoint.publish(
-                [opal_server_config.STATISTICS_WAKEUP_CHANNEL],
-                SyncRequest(requesting_worker_id=self._worker_id).dict(),
-            )
+        self._publish(
+            opal_server_config.STATISTICS_WAKEUP_CHANNEL,
+            SyncRequest(requesting_worker_id=self._worker_id).dict(),
         )
 
     async def _sync_remove_client(self, subscription: Subscription, rpc_id: str):
@@ -128,7 +133,9 @@ class OpalStatistics:
         """Callback when new server wakes up and requests our statistics state.
 
         Sends state only if we have state of our own and another
-        response to that request was not already received.
+        response to that request was not already received. Always reply
+        with hello message to refresh the "workers" state of other
+        servers.
         """
         try:
             request = SyncRequest(**sync_request)
@@ -150,19 +157,17 @@ class OpalStatistics:
             # wait random time in order to reduce the number of messages sent by all the other opal servers
             await asyncio.sleep(uniform(MIN_TIME_TO_WAIT, MAX_TIME_TO_WAIT))
             # if didn't got any other message it means that this server is the first one to pass the sleep
-            if not request.requesting_worker_id in self._received_sync_messages:
+            if request.requesting_worker_id not in self._received_sync_messages:
                 logger.info(
                     f"[{request.requesting_worker_id}] respond with my own stats"
                 )
-                asyncio.create_task(
-                    self._endpoint.publish(
-                        [opal_server_config.STATISTICS_STATE_SYNC_CHANNEL],
-                        SyncResponse(
-                            requesting_worker_id=request.requesting_worker_id,
-                            clients=self._state.clients,
-                            rpc_id_to_client_id=self._rpc_id_to_client_id,
-                        ).dict(),
-                    )
+                self._publish(
+                    opal_server_config.STATISTICS_STATE_SYNC_CHANNEL,
+                    SyncResponse(
+                        requesting_worker_id=request.requesting_worker_id,
+                        clients=self._state.clients,
+                        rpc_id_to_client_id=self._rpc_id_to_client_id,
+                    ).dict(),
                 )
 
     async def _receive_other_worker_synced_state(
@@ -270,11 +275,9 @@ class OpalStatistics:
                 "Publish rpc_id={rpc_id} to be removed from statistics",
                 rpc_id=rpc_id,
             )
-            asyncio.create_task(
-                self._endpoint.publish(
-                    [opal_common_config.STATISTICS_REMOVE_CLIENT_CHANNEL],
-                    rpc_id,
-                )
+            self._publish(
+                opal_common_config.STATISTICS_REMOVE_CLIENT_CHANNEL,
+                rpc_id,
             )
 
 
