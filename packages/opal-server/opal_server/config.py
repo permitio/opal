@@ -177,6 +177,11 @@ class OpalServerConfig(Confi):
         "__opal_stats_state_sync",
         description="The topic other servers with statistics provide their state to a waking-up server",
     )
+    STATISTICS_SERVER_HELLO_CHANNEL = confi.str(
+        "STATISTICS_SERVER_HELLO_CHANNEL",
+        "__opal_stats_server_hello",
+        description="The topic workers use to signal they exist and are alive",
+    )
 
     # Data updates
     ALL_DATA_TOPIC = confi.str(

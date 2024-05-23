@@ -1,4 +1,5 @@
 import asyncio
+import os
 from datetime import datetime
 from random import uniform
 from typing import Any, Dict, List, Optional, Set
@@ -27,6 +28,15 @@ class ServerStats(BaseModel):
         ...,
         description="connected opal clients, each client can have multiple subscriptions",
     )
+    servers: Set[str] = Field(
+        ...,
+        description="list of all connected opal server replicas",
+    )
+
+
+class StatCounts(BaseModel):
+    clients: int
+    servers: int
 
 
 class SyncRequest(BaseModel):
@@ -37,6 +47,10 @@ class SyncResponse(BaseModel):
     requesting_worker_id: str
     clients: Dict[str, List[ChannelStats]]
     rpc_id_to_client_id: Dict[str, str]
+
+
+class ServerHello(BaseModel):
+    worker_id: str
 
 
 logger = get_logger("opal.statistics")
@@ -59,19 +73,21 @@ class OpalStatistics:
         self._endpoint: PubSubEndpoint = endpoint
         self._uptime = datetime.utcnow()
 
+        # helps us realize when another server already responded to a sync request
+        self._worker_id = uuid4().hex
+
         # state: Dict[str, List[ChannelStats]]
         # The state is built in this way so it will be easy to understand how much OPAL clients (vs. rpc clients)
         # you have connected to your OPAL server and to help merge client lists between servers.
         # The state is keyed by unique client id (A unique id that each opal client can set in env var `OPAL_CLIENT_STAT_ID`)
-        self._state: ServerStats = ServerStats(uptime=self._uptime, clients={})
+        self._state: ServerStats = ServerStats(
+            uptime=self._uptime, clients={}, servers={self._worker_id}
+        )
 
         # rpc_id_to_client_id:
         # dict to help us get client id without another loop
         self._rpc_id_to_client_id: Dict[str, str] = {}
         self._lock = asyncio.Lock()
-
-        # helps us realize when another server already responded to a sync request
-        self._worker_id = uuid4().hex
         self._synced_after_wakeup = asyncio.Event()
         self._received_sync_messages: Set[str] = set()
         self._publish_tasks = TasksPool()
@@ -80,10 +96,14 @@ class OpalStatistics:
     def state(self) -> ServerStats:
         return self._state
 
-    def _publish(self, channel: str, message: Any):
-        self._publish_tasks.add_task(
-            asyncio.create_task(self._endpoint.publish([channel], message))
+    @property
+    def stat_counts(self) -> StatCounts:
+        return StatCounts(
+            clients=len(self._state.clients), servers=len(self._state.servers)
         )
+
+    def _publish(self, channel: str, message: Any):
+        self._publish_tasks.add_task(self._endpoint.publish([channel], message))
 
     async def run(self):
         """subscribe to two channels to be able to sync add and delete of
@@ -95,6 +115,10 @@ class OpalStatistics:
         await self._endpoint.subscribe(
             [opal_server_config.STATISTICS_STATE_SYNC_CHANNEL],
             self._receive_other_worker_synced_state,
+        )
+        await self._endpoint.subscribe(
+            [opal_server_config.STATISTICS_SERVER_HELLO_CHANNEL],
+            self._receive_other_worker_hello_message,
         )
         await self._endpoint.subscribe(
             [opal_common_config.STATISTICS_ADD_CLIENT_CHANNEL], self._add_client
@@ -153,10 +177,18 @@ class OpalStatistics:
             return
 
         logger.debug(f"received stats wakeup message: {request.requesting_worker_id}")
+
+        # Use worker wakeup to reset everyone's "servers" state
+        self._state.servers = {self._worker_id, request.requesting_worker_id}
+        self._publish(
+            opal_server_config.STATISTICS_SERVER_HELLO_CHANNEL,
+            ServerHello(worker_id=self._worker_id).dict(),
+        )
+
         if len(self._state.clients):
             # wait random time in order to reduce the number of messages sent by all the other opal servers
             await asyncio.sleep(uniform(MIN_TIME_TO_WAIT, MAX_TIME_TO_WAIT))
-            # if didn't got any other message it means that this server is the first one to pass the sleep
+            # if didn't get any other message it means that this server is the first one to pass the sleep
             if request.requesting_worker_id not in self._received_sync_messages:
                 logger.info(
                     f"[{request.requesting_worker_id}] respond with my own stats"
@@ -197,6 +229,11 @@ class OpalStatistics:
                 self._state.clients = response.clients
                 self._rpc_id_to_client_id = response.rpc_id_to_client_id
                 self._synced_after_wakeup.set()
+
+    async def _receive_other_worker_hello_message(
+        self, subscription: Subscription, hello_message: dict
+    ):
+        self._state.servers.add(hello_message["worker_id"])
 
     async def _add_client(self, subscription: Subscription, stats_message: dict):
         """add client record to statistics state.
@@ -304,5 +341,19 @@ def init_statistics_router(stats: Optional[OpalStatistics] = None):
             )
         logger.info("Serving statistics")
         return stats.state
+
+    @router.get("/stat_counts", response_model=StatCounts)
+    async def get_stat_counts():
+        """Route to serve only server and client instanace counts."""
+        if stats is None:
+            raise HTTPException(
+                status_code=status.HTTP_501_NOT_IMPLEMENTED,
+                detail={
+                    "error": "This OPAL server does not have statistics turned on."
+                    + " To turn on, set this config var: OPAL_STATISTICS_ENABLED=true"
+                },
+            )
+        logger.info("Serving stat counts")
+        return stats.stat_counts
 
     return router
