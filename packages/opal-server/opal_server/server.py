@@ -390,6 +390,8 @@ class OpalServer:
             tasks.append(asyncio.create_task(self.publisher.stop()))
         if self.broadcast_keepalive is not None:
             tasks.append(asyncio.create_task(self.broadcast_keepalive.stop()))
+        if self.opal_statistics is not None:
+            tasks.append(asyncio.create_task(self.opal_statistics.stop()))
 
         try:
             await asyncio.gather(*tasks)
