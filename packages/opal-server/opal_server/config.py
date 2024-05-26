@@ -179,7 +179,7 @@ class OpalServerConfig(Confi):
     )
     STATISTICS_SERVER_KEEPALIVE_CHANNEL = confi.str(
         "STATISTICS_SERVER_KEEPALIVE_CHANNEL",
-        "__opal_stats_server_hello",
+        "__opal_stats_server_keepalive",
         description="The topic workers use to signal they exist and are alive",
     )
     STATISTICS_SERVER_KEEPALIVE_TIMEOUT = confi.str(
