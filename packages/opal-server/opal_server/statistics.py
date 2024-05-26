@@ -27,6 +27,7 @@ class ChannelStats(BaseModel):
 
 class ServerStats(BaseModel):
     uptime: datetime = Field(..., description="uptime for this opal server worker")
+    version: str = Field(..., description="opal server version")
     clients: Dict[str, List[ChannelStats]] = Field(
         ...,
         description="connected opal clients, each client can have multiple subscriptions",
@@ -37,9 +38,11 @@ class ServerStats(BaseModel):
     )
 
 
-class StatCounts(BaseModel):
-    clients: int
-    servers: int
+class ServerStatsBrief(BaseModel):
+    uptime: datetime = Field(..., description="uptime for this opal server worker")
+    version: str = Field(..., description="opal server version")
+    client_count: int = Field(..., description="number of connected opal clients")
+    server_count: int = Field(..., description="number of opal server replicas")
 
 
 class SyncRequest(BaseModel):
@@ -75,7 +78,6 @@ class OpalStatistics:
     def __init__(self, endpoint):
         self._endpoint: PubSubEndpoint = endpoint
         self._uptime = datetime.utcnow()
-        self._opal_version = module_version(opal_server.__name__)
         self._workers_count = (lambda envar: int(envar) if envar.isdigit() else 1)(
             os.environ.get("UVICORN_NUM_WORKERS", "1")
         )
@@ -88,7 +90,10 @@ class OpalStatistics:
         # you have connected to your OPAL server and to help merge client lists between servers.
         # The state is keyed by unique client id (A unique id that each opal client can set in env var `OPAL_CLIENT_STAT_ID`)
         self._state: ServerStats = ServerStats(
-            uptime=self._uptime, clients={}, servers={self._worker_id}
+            uptime=self._uptime,
+            clients={},
+            servers={self._worker_id},
+            version=module_version(opal_server.__name__),
         )
 
         # rpc_id_to_client_id:
@@ -106,10 +111,12 @@ class OpalStatistics:
         return self._state
 
     @property
-    def stat_counts(self) -> StatCounts:
-        return StatCounts(
-            clients=len(self._state.clients),
-            servers=len(self._state.servers) / self._workers_count,
+    def state_brief(self) -> ServerStatsBrief:
+        return ServerStatsBrief(
+            uptime=self._state.uptime,
+            version=self._state.version,
+            client_count=len(self._state.clients),
+            server_count=len(self._state.servers) / self._workers_count,
         )
 
     async def _expire_old_servers(self):
@@ -386,7 +393,7 @@ def init_statistics_router(stats: Optional[OpalStatistics] = None):
         logger.info("Serving statistics")
         return stats.state
 
-    @router.get("/stat_counts", response_model=StatCounts)
+    @router.get("/stats", response_model=ServerStatsBrief)
     async def get_stat_counts():
         """Route to serve only server and client instanace counts."""
         if stats is None:
@@ -397,7 +404,7 @@ def init_statistics_router(stats: Optional[OpalStatistics] = None):
                     + " To turn on, set this config var: OPAL_STATISTICS_ENABLED=true"
                 },
             )
-        logger.info("Serving stat counts")
-        return stats.stat_counts
+        logger.info("Serving brief statistics info")
+        return stats.state_brief
 
     return router
