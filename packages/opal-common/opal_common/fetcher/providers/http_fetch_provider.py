@@ -1,9 +1,11 @@
 """Simple HTTP get data fetcher using requests supports."""
 
 from enum import Enum
-from typing import Any
+from typing import Any, Union, cast
 
+import httpx
 from aiohttp import ClientResponse, ClientSession
+from opal_common.config import opal_common_config
 from pydantic import validator
 
 from ...http import is_http_error_response
@@ -71,13 +73,15 @@ class HttpFetchProvider(BaseFetchProvider):
         headers = {}
         if self._event.config.headers is not None:
             headers = self._event.config.headers
-        self._session = await ClientSession(
-            headers=headers, raise_for_status=True
-        ).__aenter__()
+        if opal_common_config.HTTP_FETCHER_PROVIDER_CLIENT == "httpx":
+            self._session = httpx.AsyncClient(headers=headers)
+        else:
+            self._session = ClientSession(headers=headers, raise_for_status=True)
+        self._session = await self._session.__aenter__()
         return self
 
     async def __aexit__(self, exc_type=None, exc_val=None, tb=None):
-        await self._session.__aexit__(exc_type=exc_type, exc_val=exc_val, exc_tb=tb)
+        await self._session.__aexit__(exc_type, exc_val, tb)
 
     async def _fetch_(self):
         logger.debug(f"{self.__class__.__name__} fetching from {self._url}")
@@ -85,29 +89,38 @@ class HttpFetchProvider(BaseFetchProvider):
             self._session, self._event.config.method
         )
         if self._event.config.data is not None:
-            result = await http_method(
+            result: Union[ClientResponse, httpx.Response] = await http_method(
                 self._url, data=self._event.config.data, **self._ssl_context_kwargs
             )
         else:
             result = await http_method(self._url, **self._ssl_context_kwargs)
+        result.raise_for_status()
         return result
 
     @staticmethod
-    def match_http_method_from_type(session: ClientSession, method_type: HttpMethods):
+    def match_http_method_from_type(
+        session: Union[ClientSession, httpx.AsyncClient], method_type: HttpMethods
+    ):
         return getattr(session, method_type.value)
 
-    async def _process_(self, res: ClientResponse):
+    @staticmethod
+    async def _response_to_data(
+        res: Union[ClientResponse, httpx.Response], *, is_json: bool
+    ) -> Any:
+        if isinstance(res, httpx.Response):
+            return res.json() if is_json else res.text
+        else:
+            res = cast(ClientResponse, res)
+            return await (res.json() if is_json else res.text())
+
+    async def _process_(self, res: Union[ClientResponse, httpx.Response]):
         # do not process data when the http response is an error
         if is_http_error_response(res):
             return res
 
         # if we are asked to process the data before we return it
         if self._event.config.process_data:
-            # if data is JSON
-            if self._event.config.is_json:
-                data = await res.json()
-            else:
-                data = await res.text()
+            data = await self._response_to_data(res, is_json=self._event.config.is_json)
             return data
         # return raw result
         else:
