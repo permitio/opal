@@ -169,6 +169,12 @@ class OpalCommonConfig(Confi):
         False,
         description="Set if OPAL server should enable tracing with datadog APM",
     )
+    HTTP_FETCHER_PROVIDER_CLIENT = confi.str(
+        "HTTP_FETCHER_PROVIDER_CLIENT",
+        "aiohttp",
+        description="The client to use for fetching data, can be either aiohttp or httpx."
+                    "if provided different value, aiohttp will be used.",
+    )
 
 
 opal_common_config = OpalCommonConfig(prefix="OPAL_")

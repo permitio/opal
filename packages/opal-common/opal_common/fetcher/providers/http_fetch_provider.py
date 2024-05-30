@@ -6,7 +6,7 @@ from typing import Any, Union, cast
 import httpx
 from aiohttp import ClientResponse, ClientSession
 from pydantic import validator
-from typing_extensions import Literal
+from opal_common.config import opal_common_config
 
 from ...http import is_http_error_response
 from ...security.sslcontext import get_custom_ssl_context
@@ -50,7 +50,6 @@ class HttpFetcherConfig(FetcherConfig):
 class HttpFetchEvent(FetchEvent):
     fetcher: str = "HttpFetchProvider"
     config: HttpFetcherConfig = None
-    client_type: Literal["httpx", "aiohttp"] = "httpx"
 
 
 class HttpFetchProvider(BaseFetchProvider):
@@ -74,11 +73,11 @@ class HttpFetchProvider(BaseFetchProvider):
         headers = {}
         if self._event.config.headers is not None:
             headers = self._event.config.headers
-        if self._event.client_type == "httpx":
+        if opal_common_config.HTTP_FETCHER_PROVIDER_CLIENT == "httpx":
             self._session = httpx.AsyncClient(headers=headers)
         else:
             self._session = ClientSession(headers=headers, raise_for_status=True)
-        self._session = self._session.__aenter__()
+        self._session = await self._session.__aenter__()
         return self
 
     async def __aexit__(self, exc_type=None, exc_val=None, tb=None):
