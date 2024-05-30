@@ -5,8 +5,8 @@ from typing import Any, Union, cast
 
 import httpx
 from aiohttp import ClientResponse, ClientSession
-from pydantic import validator
 from opal_common.config import opal_common_config
+from pydantic import validator
 
 from ...http import is_http_error_response
 from ...security.sslcontext import get_custom_ssl_context
@@ -89,11 +89,12 @@ class HttpFetchProvider(BaseFetchProvider):
             self._session, self._event.config.method
         )
         if self._event.config.data is not None:
-            result = await http_method(
+            result: Union[ClientResponse, httpx.Response] = await http_method(
                 self._url, data=self._event.config.data, **self._ssl_context_kwargs
             )
         else:
             result = await http_method(self._url, **self._ssl_context_kwargs)
+        result.raise_for_status()
         return result
 
     @staticmethod
