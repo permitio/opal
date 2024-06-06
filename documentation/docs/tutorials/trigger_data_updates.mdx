@@ -61,6 +61,7 @@ Example:
 - All the APIs in opal are OpenAPI / Swagger based (via FastAPI).
 - Check out the [API docs on your running OPAL-server](http://localhost:7002/docs#/Data%20Updates/publish_data_update_event_data_config_post) -- this link assumes you have the server running on `http://localhost:7002`
 - You can also [generate an API-client](https://github.com/OpenAPITools/openapi-generator) in the language of your choice using the [OpenAPI spec provided by the server](http://localhost:7002/openapi.json)
+
 #### Using PATCH save method
 - There are two save methods of triggering data update, PUT and PATCH defined in the payload using the `save_method` field
 - Using PUT basically places(overrides if path exists) data at the specified `dst_path`
@@ -70,8 +71,9 @@ Example:
 - Example: Consider this [JSON data](https://github.com/permitio/opal-example-policy-repo/blob/master/data.json) from the [opal-example-policy-repo](https://github.com/permitio/opal-example-policy-repo)
 - Let's say a user is deleted from the system and we would want that user details to be removed from the JSON, let's remove bob from the list, we can use the `remove` operation of JSON patch to achieve this
 - The following API request will remove `bob` from the `users` JSON
-  ```
-  curl -X 'POST' \
+
+```
+ curl -X 'POST' \
   'http://localhost:7002/data/config' \
   -H 'accept: application/json' \
   -H 'Content-Type: application/json' \
@@ -97,9 +99,17 @@ Example:
   "reason": "user bob is deleted from the system",
   "callback": {
     "callbacks": []
-  }
-}'
-  ```
+  } 
+ }' 
+```
+
+:::note
+The primariy way meant to do updates with OPAL is with the `PUT` method; `PATCH` is better used for light tweaks to the data.
+While future versions of OPAL might have deeper support for PATCH, it is not currently the case.
+To build complex data layouts - we recommend building data-updates into keys that do not intersect to build larger data-sets, and when they do intersect we’d recommend updating the entire entry.
+If you want to use PATCH and have more control over its behavior you can implement a custom data fetcher that will handle the order of writing or dependencies.
+:::
+
 ### Option 3: Write your own - import code from the OPAL's packages
 - One of the great things about OPAL being written in Python is that you can easily reuse its code.
 See the code for the `DataUpdate` model at [opal_common/schemas/data.py](https://github.com/permitio/opal/blob/master/packages/opal-common/opal_common/schemas/data.py) and use it within your own code to send an update to the server
