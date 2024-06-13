@@ -177,6 +177,16 @@ class OpalServerConfig(Confi):
         "__opal_stats_state_sync",
         description="The topic other servers with statistics provide their state to a waking-up server",
     )
+    STATISTICS_SERVER_KEEPALIVE_CHANNEL = confi.str(
+        "STATISTICS_SERVER_KEEPALIVE_CHANNEL",
+        "__opal_stats_server_keepalive",
+        description="The topic workers use to signal they exist and are alive",
+    )
+    STATISTICS_SERVER_KEEPALIVE_TIMEOUT = confi.str(
+        "STATISTICS_SERVER_KEEPALIVE_TIMEOUT",
+        20,
+        description="Timeout for forgetting a server from which a keep-alive haven't been seen (keep-alive frequency would be half of this value)",
+    )
 
     # Data updates
     ALL_DATA_TOPIC = confi.str(
