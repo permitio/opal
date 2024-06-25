@@ -15,6 +15,12 @@ from opal_common.security.sslcontext import get_custom_ssl_context
 from opal_common.authentication.authenticator import ClientAuthenticator
 from pydantic import validator
 
+from ...http import is_http_error_response
+from ...security.sslcontext import get_custom_ssl_context
+from ..events import FetcherConfig, FetchEvent
+from ..fetch_provider import BaseFetchProvider
+from ..logger import get_logger
+
 logger = get_logger("http_fetch_provider")
 
 
