@@ -16,6 +16,7 @@ from opal_client.policy_store.policy_store_client_factory import (
     DEFAULT_POLICY_STORE_GETTER,
 )
 from opal_common.async_utils import TakeANumberQueue, TasksPool
+from opal_common.authentication.authenticator import ClientAuthenticator
 from opal_common.config import opal_common_config
 from opal_common.schemas.data import DataUpdateReport
 from opal_common.schemas.policy import PolicyBundle, PolicyUpdateMessage
@@ -43,6 +44,7 @@ class PolicyUpdater:
         data_fetcher: Optional[DataFetcher] = None,
         callbacks_register: Optional[CallbacksRegister] = None,
         opal_client_id: str = None,
+        authenticator: Optional[ClientAuthenticator] = None,
     ):
         """inits the policy updater.
 
@@ -64,15 +66,21 @@ class PolicyUpdater:
         self._opal_client_id = opal_client_id
         self._scope_id = opal_client_config.SCOPE_ID
 
+        if authenticator is not None:
+            self._authenticator = authenticator
+        else:
+            self._authenticator = ClientAuthenticator()
         # The policy store we'll save policy modules into (i.e: OPA)
         self._policy_store = policy_store or DEFAULT_POLICY_STORE_GETTER()
         # pub/sub server url and authentication data
         self._server_url = pubsub_url
         self._token = token
-        if self._token is None:
-            self._extra_headers = None
-        else:
-            self._extra_headers = [get_authorization_header(self._token)]
+        if self._token == "THIS_IS_A_DEV_SECRET":
+            self._token = None
+        self._extra_headers = {}
+        if self._token is not None:
+            auth_token = get_authorization_header(self._token)
+            self._extra_headers[auth_token[0]] = auth_token[1]
         # Pub/Sub topics we subscribe to for policy updates
         if self._scope_id == "default":
             self._topics = pubsub_topics_from_directories(
@@ -87,7 +95,7 @@ class PolicyUpdater:
         self._policy_update_task = None
         self._stopping = False
         # policy fetcher - fetches policy bundles
-        self._policy_fetcher = PolicyFetcher()
+        self._policy_fetcher = PolicyFetcher(authenticator=self._authenticator)
         # callbacks on policy changes
         self._data_fetcher = data_fetcher or DataFetcher()
         self._callbacks_register = callbacks_register or CallbacksRegister()
@@ -240,12 +248,18 @@ class PolicyUpdater:
         update_policy() callback (which will fetch the relevant policy bundle
         from the server and update the policy store)."""
         logger.info("Subscribing to topics: {topics}", topics=self._topics)
+
+        headers = {}
+        if self._extra_headers is not None:
+            headers = self._extra_headers.copy()
+        await self._authenticator.authenticate(headers)
+
         self._client = PubSubClient(
             topics=self._topics,
             callback=self._update_policy_callback,
             on_connect=[self._on_connect],
             on_disconnect=[self._on_disconnect],
-            extra_headers=self._extra_headers,
+            extra_headers=headers,
             keep_alive=opal_client_config.KEEP_ALIVE_INTERVAL,
             server_uri=self._server_url,
             **self._ssl_context_kwargs,

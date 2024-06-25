@@ -1,15 +1,15 @@
 from fastapi import APIRouter, Depends
 from opal_client.config import opal_client_config
 from opal_client.policy_store.schemas import PolicyStoreAuth, PolicyStoreDetails
+from opal_common.authentication.authenticator import Authenticator
 from opal_common.authentication.authz import require_peer_type
-from opal_common.authentication.deps import JWTAuthenticator
 from opal_common.authentication.types import JWTClaims
 from opal_common.authentication.verifier import Unauthorized
 from opal_common.logger import logger
 from opal_common.schemas.security import PeerType
 
 
-def init_policy_store_router(authenticator: JWTAuthenticator):
+def init_policy_store_router(authenticator: Authenticator):
     router = APIRouter()
 
     @router.get(
