@@ -6,7 +6,6 @@ from typing import Any, Optional, Union, cast
 import httpx
 from aiohttp import ClientResponse, ClientSession
 from opal_common.config import opal_common_config
-from opal_common.authentication.authenticator import ClientAuthenticator
 from opal_common.fetcher.events import FetcherConfig, FetchEvent
 from opal_common.fetcher.fetch_provider import BaseFetchProvider
 from opal_common.fetcher.logger import get_logger
