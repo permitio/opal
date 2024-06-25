@@ -1,7 +1,7 @@
 """Simple HTTP get data fetcher using requests supports."""
 
 from enum import Enum
-from typing import Any, Optional, Union, cast
+from typing import Any, Union, cast
 
 import httpx
 from aiohttp import ClientResponse, ClientSession
