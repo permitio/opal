@@ -115,6 +115,12 @@ class OpalClientConfig(Confi):
         description="path to the file containing the ca certificate(s) used for tls authentication with the policy store",
     )
 
+    EXCLUDE_POLICY_STORE_SECRETS = confi.bool(
+        "EXCLUDE_POLICY_STORE_SECRETS",
+        False,
+        description="If set, policy store secrets will be excluded from the logs",
+    )
+
     # create an instance of a policy store upon load
     def load_policy_store():
         from opal_client.policy_store.policy_store_client_factory import (
