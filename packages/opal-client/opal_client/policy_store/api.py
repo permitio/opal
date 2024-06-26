@@ -16,7 +16,7 @@ def init_policy_store_router(authenticator: JWTAuthenticator):
         "/policy-store/config",
         response_model=PolicyStoreDetails,
         response_model_exclude_none=True,
-        # Deprecating this route 
+        # Deprecating this route
         deprecated=True,
     )
     async def get_policy_store_details(claims: JWTClaims = Depends(authenticator)):
@@ -32,15 +32,16 @@ def init_policy_store_router(authenticator: JWTAuthenticator):
         oauth_client_secret = None
         if not opal_client_config.EXCLUDE_POLICY_STORE_SECRETS:
             token = opal_client_config.POLICY_STORE_AUTH_TOKEN
-            oauth_client_secret = opal_client_config.POLICY_STORE_AUTH_OAUTH_CLIENT_SECRET
+            oauth_client_secret = (
+                opal_client_config.POLICY_STORE_AUTH_OAUTH_CLIENT_SECRET
+            )
         return PolicyStoreDetails(
             url=opal_client_config.POLICY_STORE_URL,
             token=token or None,
             auth_type=opal_client_config.POLICY_STORE_AUTH_TYPE or PolicyStoreAuth.NONE,
             oauth_client_id=opal_client_config.POLICY_STORE_AUTH_OAUTH_CLIENT_ID
             or None,
-            oauth_client_secret=oauth_client_secret
-            or None,
+            oauth_client_secret=oauth_client_secret or None,
             oauth_server=opal_client_config.POLICY_STORE_AUTH_OAUTH_SERVER or None,
         )
 
