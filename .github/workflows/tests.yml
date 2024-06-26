@@ -79,6 +79,19 @@ jobs:
           tags: |
             permitio/opal-client:test
 
+      - name: Build client cedar
+        id: build_client
+        uses: docker/build-push-action@v2
+        with:
+          file: docker/Dockerfile
+          push: false
+          target: client-cedar
+          cache-from: type=registry,ref=permitio/opal-client-cedar:latest
+          cache-to: type=inline
+          load: true
+          tags: |
+            permitio/opal-client-cedar:test
+
       - name: Build server
         id: build_server
         uses: docker/build-push-action@v2
