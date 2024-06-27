@@ -31,7 +31,7 @@ from opal_server.config import opal_server_config
 from opal_server.server import OpalServer
 
 # Server settings
-PORT = int(os.environ.get("PORT") or "9123")
+PORT = int(os.environ.get("PORT") or "9124")
 UPDATES_URL = f"ws://localhost:{PORT}/ws"
 DATA_ROUTE = "/fetchable_data"
 DATA_URL = f"http://localhost:{PORT}{DATA_ROUTE}"
