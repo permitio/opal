@@ -29,7 +29,7 @@ sys.path.append(root_dir)
 from opal_common.utils import get_authorization_header
 from opal_server.config import PolicySourceTypes, opal_server_config
 
-PORT = int(os.environ.get("PORT") or "9123")
+PORT = int(os.environ.get("PORT") or "9125")
 
 # Basic server route config
 WEBHOOK_ROUTE = "/webhook"
