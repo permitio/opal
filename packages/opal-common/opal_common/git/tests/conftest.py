@@ -98,7 +98,7 @@ def local_repo(tmp_path, helpers: Helpers) -> Repo:
     """
     root: Path = tmp_path / "myrepo"
     root.mkdir()
-    repo = Repo.init(root)
+    repo = Repo.init(root, initial_branch="master")
 
     # create file to delete later
     helpers.create_new_file_commit(repo, root / "deleted.rego")
