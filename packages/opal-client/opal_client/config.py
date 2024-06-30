@@ -118,7 +118,7 @@ class OpalClientConfig(Confi):
     EXCLUDE_POLICY_STORE_SECRETS = confi.bool(
         "EXCLUDE_POLICY_STORE_SECRETS",
         False,
-        description="If set, policy store secrets will be excluded from the logs",
+        description="If set, policy store secrets will be excluded from the /policy-store/config route",
     )
 
     # create an instance of a policy store upon load
