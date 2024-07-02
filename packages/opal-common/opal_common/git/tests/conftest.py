@@ -73,6 +73,15 @@ class Helpers:
         repo.index.move([filename, new_filename])
         repo.index.commit(commit_msg, author=author)
 
+    @staticmethod
+    def create_new_tag(repo: Repo, tag_name: str):
+        repo.create_tag(tag_name)
+
+    @staticmethod
+    def update_tag_to_head(repo: Repo, tag_name: str):
+        repo.delete_tag(tag_name)
+        repo.create_tag(tag_name)
+
 
 @pytest.fixture
 def helpers() -> Helpers:
@@ -140,6 +149,9 @@ def local_repo(tmp_path, helpers: Helpers) -> Repo:
 
     # create a "delete" commit
     helpers.create_delete_file_commit(repo, root / "deleted.rego")
+
+    # create a test tag
+    helpers.create_new_tag(repo, "test_tag")
     return repo
 
 
