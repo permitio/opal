@@ -139,14 +139,7 @@ class GitPolicyFetcher(PolicyFetcher):
         )
 
     async def _get_repo_lock(self):
-        # # This implementation works across multiple processes/threads, but is not fair (next acquiree is random)
-        # locks_dir = self._base_dir / ".locks"
-        # await aiofiles.os.makedirs(str(locks_dir), exist_ok=True)
-
-        # return NamedLock(
-        #     locks_dir / GitPolicyFetcher.source_id(self._source), attempt_interval=0.1
-        # )
-
+        # Previous file based implementation worked across multiple processes/threads, but wasn't fair (next acquiree is random)
         # This implementation works only within the same process/thread, but is fair (next acquiree is the earliest to enter the lock)
         src_id = GitPolicyFetcher.source_id(self._source)
         lock = GitPolicyFetcher.repo_locks[src_id] = GitPolicyFetcher.repo_locks.get(

@@ -22,9 +22,12 @@ async def run_sync(
     """Shorthand for running a sync function in an executor within an async
     context.
 
-    For example:     def sync_function_that_takes_time_to_run(arg1,
-    arg2):         time.sleep(5)     async def async_function():
-    await run_sync(sync_function_that_takes_time_to_run, 1, arg2=5)
+    For example:
+        def sync_function_that_takes_time_to_run(arg1, arg2):
+            time.sleep(5)
+
+        async def async_function():
+            await run_sync(sync_function_that_takes_time_to_run, 1, arg2=5)
     """
     return await asyncio.get_event_loop().run_in_executor(
         None, partial(func, *args, **kwargs)
