@@ -50,12 +50,11 @@ class BasePolicyWatcherTask:
             )
 
         if self._pubsub_endpoint.broadcaster is not None:
-            try:
-                async with self._pubsub_endpoint.broadcaster.get_listening_context():
-                    await _subscribe_internal()
-                    await self._pubsub_endpoint.broadcaster.get_reader_task()
-            finally:
-                # Stop the watcher if broadcaster disconnects / fails to connect
+            async with self._pubsub_endpoint.broadcaster.get_listening_context():
+                await _subscribe_internal()
+                await self._pubsub_endpoint.broadcaster.get_reader_task()
+
+                # Stop the watcher if broadcaster disconnects
                 self.signal_stop()
         else:
             # If no broadcaster is configured, just subscribe, no need to wait on anything
