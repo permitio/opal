@@ -39,6 +39,7 @@ services:
       - "7002:7002"
     depends_on:
       - broadcast_channel
+    command: sh -c "exec ./wait-for.sh broadcast_channel:5432 --timeout=20 -- ./start.sh"
   opal_client:
     # by default we run opal-client from latest official image
     image: permitio/opal-client:latest
