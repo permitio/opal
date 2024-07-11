@@ -62,7 +62,7 @@ jobs:
         run: docker-compose -f docker/docker-compose-test.yml up -d
 
       - name: Check if OPA is healthy
-        run: ./scripts/wait-for.sh -t 30 http://localhost:8181/v1/data/users -- sleep 10 && curl -s "http://localhost:8181/v1/data/users" | jq '.result.bob.location.country == "US"'
+        run: ./scripts/wait-for.sh -t 2 http://localhost:8181/v1/data/users -- sleep 10 && curl -s "http://localhost:8181/v1/data/users" | jq '.result.bob.location.country == "US"'
 
       - name: Output container logs
         run: docker-compose -f docker/docker-compose-test.yml logs
@@ -79,7 +79,7 @@ jobs:
         run: docker-compose -f docker/docker-compose-test.yml up -d
 
       - name: Check if OPA is healthy
-        run: ./scripts/wait-for.sh -t 30 http://localhost:8181/v1/data/users -- sleep 10 && curl -s "http://localhost:8181/v1/data/users" | jq '.result.bob.location.country == "US"'
+        run: ./scripts/wait-for.sh -t 2 http://localhost:8181/v1/data/users -- sleep 10 && curl -s "http://localhost:8181/v1/data/users" | jq '.result.bob.location.country == "US"'
 
       - name: Output container logs
         run: docker-compose -f docker/docker-compose-test.yml logs
@@ -96,7 +96,7 @@ jobs:
         run: docker-compose -f docker/docker-compose-test.yml up -d
 
       - name: Check if OPA is healthy
-        run: ./scripts/wait-for.sh -t 30 http://localhost:8181/v1/data/users -- sleep 10 && curl -s "http://localhost:8181/v1/data/users" | jq '.result.bob.location.country == "US"'
+        run: ./scripts/wait-for.sh -t 2 http://localhost:8181/v1/data/users -- sleep 10 && curl -s "http://localhost:8181/v1/data/users" | jq '.result.bob.location.country == "US"'
 
       - name: Output container logs
         run: docker-compose -f docker/docker-compose-test.yml logs
@@ -113,7 +113,7 @@ jobs:
         run: docker-compose -f docker/docker-compose-test.yml up -d
 
       - name: Check if OPA is healthy
-        run: ./scripts/wait-for.sh -t 30 http://localhost:8181/v1/data/users -- sleep 10 && curl -s "http://localhost:8181/v1/data/users" | jq '.result.bob.location.country == "US"'
+        run: ./scripts/wait-for.sh -t 2 http://localhost:8181/v1/data/users -- sleep 10 && curl -s "http://localhost:8181/v1/data/users" | jq '.result.bob.location.country == "US"'
 
       - name: Output container logs
         run: docker-compose -f docker/docker-compose-test.yml logs
