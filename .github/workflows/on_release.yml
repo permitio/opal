@@ -123,20 +123,20 @@ jobs:
             permitio/opal-client:latest
             permitio/opal-client:${{ env.opal_version_tag }}
 
-      - name: Build & Push client cedar
-        if: ${{ !(github.event_name == 'workflow_dispatch' && github.event.inputs.dry_run == 'true') }}
-        id: build_push_client_cedar
-        uses: docker/build-push-action@v4
-        with:
-          file: docker/Dockerfile
-          platforms: linux/amd64,linux/arm64
-          push: true
-          target: client-cedar
-          cache-from: type=registry,ref=permitio/opal-client-cedar:latest
-          cache-to: type=inline
-          tags: |
-            permitio/opal-client-cedar:latest
-            permitio/opal-client-cedar:${{ env.opal_version_tag }}
+#      - name: Build & Push client cedar
+#        if: ${{ !(github.event_name == 'workflow_dispatch' && github.event.inputs.dry_run == 'true') }}
+#        id: build_push_client_cedar
+#        uses: docker/build-push-action@v4
+#        with:
+#          file: docker/Dockerfile
+#          platforms: linux/amd64,linux/arm64
+#          push: true
+#          target: client-cedar
+#          cache-from: type=registry,ref=permitio/opal-client-cedar:latest
+#          cache-to: type=inline
+#          tags: |
+#            permitio/opal-client-cedar:latest
+#            permitio/opal-client-cedar:${{ env.opal_version_tag }}
 
       - name: Build client-standalone
         if: ${{ !(github.event_name == 'workflow_dispatch' && github.event.inputs.dry_run == 'true') }}
