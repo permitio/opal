@@ -20,7 +20,7 @@ from opal_client.policy_store.base_policy_store_client import (
 from opal_client.policy_store.schemas import PolicyStoreAuth
 from opal_client.utils import exclude_none_fields, proxy_response
 from opal_common.engine.parsing import get_rego_package
-from opal_common.git.bundle_utils import BundleUtils
+from opal_common.git_utils.bundle_utils import BundleUtils
 from opal_common.paths import PathUtils
 from opal_common.schemas.policy import DataModule, PolicyBundle, RegoModule
 from opal_common.schemas.store import JSONPatchAction, StoreTransaction, TransactionType

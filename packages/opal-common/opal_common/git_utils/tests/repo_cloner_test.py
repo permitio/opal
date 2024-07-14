@@ -18,8 +18,8 @@ from pathlib import Path
 
 from git import Repo
 from opal_common.confi import Confi
-from opal_common.git.exceptions import GitFailed
-from opal_common.git.repo_cloner import RepoCloner
+from opal_common.git_utils.exceptions import GitFailed
+from opal_common.git_utils.repo_cloner import RepoCloner
 
 VALID_REPO_REMOTE_URL_HTTPS = "https://github.com/permitio/fastapi_websocket_pubsub.git"
 

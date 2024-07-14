@@ -3,7 +3,7 @@ from typing import Any, List, Optional
 
 from fastapi_websocket_pubsub.pub_sub_server import PubSubEndpoint
 from opal_common.confi.confi import load_conf_if_none
-from opal_common.git.repo_cloner import RepoClonePathFinder
+from opal_common.git_utils.repo_cloner import RepoClonePathFinder
 from opal_common.logger import logger
 from opal_common.sources.api_policy_source import ApiPolicySource
 from opal_common.sources.git_policy_source import GitPolicySource

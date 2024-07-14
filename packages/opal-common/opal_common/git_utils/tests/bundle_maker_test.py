@@ -19,8 +19,8 @@ from typing import List, Tuple
 
 from git import Repo
 from git.objects import Commit
-from opal_common.git.bundle_maker import BundleMaker
-from opal_common.git.commit_viewer import CommitViewer
+from opal_common.git_utils.bundle_maker import BundleMaker
+from opal_common.git_utils.commit_viewer import CommitViewer
 from opal_common.schemas.policy import PolicyBundle, RegoModule
 
 OPA_FILE_EXTENSIONS = (".rego", ".json")

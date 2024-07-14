@@ -4,11 +4,12 @@ from typing import List, Optional
 
 import fastapi.responses
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response, status
-from git import Repo
+from git.repo import Repo
+
 from opal_common.confi.confi import load_conf_if_none
-from opal_common.git.bundle_maker import BundleMaker
-from opal_common.git.commit_viewer import CommitViewer
-from opal_common.git.repo_cloner import RepoClonePathFinder
+from opal_common.git_utils.bundle_maker import BundleMaker
+from opal_common.git_utils.commit_viewer import CommitViewer
+from opal_common.git_utils.repo_cloner import RepoClonePathFinder
 from opal_common.logger import logger
 from opal_common.schemas.policy import PolicyBundle
 from opal_server.config import opal_server_config

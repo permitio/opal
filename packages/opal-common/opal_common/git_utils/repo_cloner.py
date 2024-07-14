@@ -8,8 +8,8 @@ from typing import Generator, Optional
 
 from git import GitCommandError, GitError, Repo
 from opal_common.config import opal_common_config
-from opal_common.git.env import provide_git_ssh_environment
-from opal_common.git.exceptions import GitFailed
+from opal_common.git_utils.env import provide_git_ssh_environment
+from opal_common.git_utils.exceptions import GitFailed
 from opal_common.logger import logger
 from opal_common.utils import get_filepaths_with_glob
 from tenacity import RetryError, retry, stop, wait
