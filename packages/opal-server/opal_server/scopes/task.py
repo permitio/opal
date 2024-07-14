@@ -7,7 +7,7 @@ from fastapi_websocket_pubsub import Topic
 from opal_common.logger import logger
 from opal_server.config import opal_server_config
 from opal_server.policy.watcher.task import BasePolicyWatcherTask
-from opal_server.redis import RedisDB
+from opal_server.redis_utils import RedisDB
 from opal_server.scopes.scope_repository import ScopeRepository
 from opal_server.scopes.service import ScopesService
 
