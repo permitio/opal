@@ -15,12 +15,12 @@ If you are experiencing issues with OPAL+, please provide us with the following 
 #### Extract Logs
 
 On production, we advise you to connect OPAL+ to your logging system to collect logs.
-Configure the [LOG_SERIALIZE](/getting-started/configuration) environment variable to `true` to serialize logs in JSON format.
+Configure the [OPAL_LOG_SERIALIZE](/getting-started/configuration) environment variable to `true` to serialize logs in JSON format.
 
 When running OPAL+ locally or in a development environment, you can extract logs from the console.
-Alternatively, you can enable logging to file by setting the [LOG_TO_FILE](/getting-started/configuration) to `true`.
+Alternatively, you can enable logging to file by setting the [OPAL_LOG_TO_FILE](/getting-started/configuration) to `true`.
 
-You can also enable debug logs by setting the [LOG_LEVEL](/getting-started/configuration) environment variable to `debug`.
+You can also enable debug logs by setting the [OPAL_LOG_LEVEL](/getting-started/configuration) environment variable to `debug`.
 
 #### Export Configuration
 
@@ -35,7 +35,3 @@ Make sure to censor any sensitive information, like passwords or API keys, befor
 ## Common Issues
 
 More common issues and their solutions are available in the [OPAL documentation](/getting-started/running-opal/troubleshooting).
-
-:::note
-This part is a work in progress, and we will be adding more content soon.
-:::
