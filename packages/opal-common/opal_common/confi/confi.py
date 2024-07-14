@@ -15,7 +15,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple, TypeVar, Union
 from decouple import Csv, UndefinedValueError, config, text_type, undefined
 from opal_common.authentication.casting import cast_private_key, cast_public_key
 from opal_common.authentication.types import EncryptionKeyFormat, PrivateKey, PublicKey
-from opal_common.logging.decorators import log_exception
+from opal_common.logging_utils.decorators import log_exception
 from pydantic import BaseModel, ValidationError
 from typer import Typer
 
