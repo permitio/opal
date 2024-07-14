@@ -8,7 +8,7 @@ from opal_common.schemas.policy import PolicyBundle
 from opal_common.schemas.store import JSONPatchAction, StoreTransaction
 from pydantic import BaseModel
 
-from .base_policy_store_client import BasePolicyStoreClient, JsonableValue
+from opal_client.policy_store.base_policy_store_client import BasePolicyStoreClient, JsonableValue
 
 
 class MockPolicyStoreClient(BasePolicyStoreClient):

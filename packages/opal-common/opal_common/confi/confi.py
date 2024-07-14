@@ -19,8 +19,8 @@ from opal_common.logging.decorators import log_exception
 from pydantic import BaseModel, ValidationError
 from typer import Typer
 
-from .cli import get_cli_object_for_config_objects
-from .types import ConfiDelay, ConfiEntry, no_cast
+from opal_common.confi.cli import get_cli_object_for_config_objects
+from opal_common.confi.types import ConfiDelay, ConfiEntry, no_cast
 
 
 class Placeholder(object):

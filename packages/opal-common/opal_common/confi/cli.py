@@ -4,7 +4,7 @@ import click
 import typer
 from typer.main import Typer
 
-from .types import ConfiEntry
+from opal_common.confi.types import ConfiEntry
 
 
 def create_click_cli(confi_entries: Dict[str, ConfiEntry], callback: Callable):

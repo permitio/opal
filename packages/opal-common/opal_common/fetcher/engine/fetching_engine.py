@@ -2,13 +2,13 @@ import asyncio
 import uuid
 from typing import Coroutine, Dict, List, Union
 
-from ..events import FetcherConfig, FetchEvent
-from ..fetch_provider import BaseFetchProvider
-from ..fetcher_register import FetcherRegister
-from ..logger import get_logger
-from .base_fetching_engine import BaseFetchingEngine
-from .core_callbacks import OnFetchFailureCallback
-from .fetch_worker import fetch_worker
+from opal_common.fetcher.events import FetcherConfig, FetchEvent
+from opal_common.fetcher.fetch_provider import BaseFetchProvider
+from opal_common.fetcher.fetcher_register import FetcherRegister
+from opal_common.fetcher.logger import get_logger
+from opal_common.fetcher.engine.base_fetching_engine import BaseFetchingEngine
+from opal_common.fetcher.engine.core_callbacks import OnFetchFailureCallback
+from opal_common.fetcher.engine.fetch_worker import fetch_worker
 
 logger = get_logger("engine")
 

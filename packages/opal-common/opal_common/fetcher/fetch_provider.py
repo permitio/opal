@@ -1,7 +1,7 @@
 from tenacity import retry, stop, wait
 
-from .events import FetchEvent
-from .logger import get_logger
+from opal_common.fetcher.events import FetchEvent
+from opal_common.fetcher.logger import get_logger
 
 logger = get_logger("opal.providers")
 

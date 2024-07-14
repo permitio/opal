@@ -2,8 +2,7 @@ from pathlib import Path
 from sys import prefix
 
 from opal_common.authentication.types import EncryptionKeyFormat, JWTAlgorithm
-
-from .confi import Confi, confi
+from opal_common.confi import Confi, confi
 
 _LOG_FORMAT_WITHOUT_PID = "<green>{time}</green> | <blue>{name: <40}</blue>|<level>{level:^6} | {message}</level>\n{exception}"
 _LOG_FORMAT_WITH_PID = "<green>{time}</green> | {process} | <blue>{name: <40}</blue>|<level>{level:^6} | {message}</level>\n{exception}"
@@ -173,7 +172,7 @@ class OpalCommonConfig(Confi):
         "HTTP_FETCHER_PROVIDER_CLIENT",
         "aiohttp",
         description="The client to use for fetching data, can be either aiohttp or httpx."
-        "if provided different value, aiohttp will be used.",
+                    "if provided different value, aiohttp will be used.",
     )
 
 

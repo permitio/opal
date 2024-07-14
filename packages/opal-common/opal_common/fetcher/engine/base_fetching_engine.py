@@ -1,8 +1,8 @@
 from typing import Coroutine
 
-from ..events import FetcherConfig, FetchEvent
-from ..fetcher_register import FetcherRegister
-from .core_callbacks import OnFetchFailureCallback
+from opal_common.fetcher.events import FetcherConfig, FetchEvent
+from opal_common.fetcher.fetcher_register import FetcherRegister
+from opal_common.fetcher.engine.core_callbacks import OnFetchFailureCallback
 
 
 class BaseFetchingEngine:
