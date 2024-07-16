@@ -124,9 +124,9 @@ class OpalStatistics:
             now = datetime.utcnow()
             still_alive = {}
             for server_id, last_seen in self._seen_servers.items():
-                if (
-                    now - last_seen
-                ).total_seconds() < opal_server_config.STATISTICS_SERVER_KEEPALIVE_TIMEOUT:
+                if (now - last_seen).total_seconds() < float(
+                    opal_server_config.STATISTICS_SERVER_KEEPALIVE_TIMEOUT
+                ):
                     still_alive[server_id] = last_seen
             self._seen_servers = still_alive
             self._state.servers = {self._worker_id} | set(self._seen_servers.keys())
@@ -140,7 +140,7 @@ class OpalStatistics:
                     ServerKeepalive(worker_id=self._worker_id).dict(),
                 )
                 await asyncio.sleep(
-                    opal_server_config.STATISTICS_SERVER_KEEPALIVE_TIMEOUT / 2
+                    float(opal_server_config.STATISTICS_SERVER_KEEPALIVE_TIMEOUT) / 2
                 )
             except asyncio.CancelledError:
                 logger.debug("Statistics: periodic server keepalive cancelled")
