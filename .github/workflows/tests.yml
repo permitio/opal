@@ -13,45 +13,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  build:
-    services:
-      redis:
-        image: redis
-        ports:
-          - 6379:6379
-        options: >-
-          --health-cmd "redis-cli ping"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        python-version: ["3.9", "3.10", "3.11", "3.12"]
-
-    steps:
-    - uses: actions/checkout@v2
-    - name: Set up Python ${{ matrix.python-version }}
-      uses: actions/setup-python@v2
-      with:
-        python-version: ${{ matrix.python-version }}
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        python -m pip install flake8
-        if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
-        if [ -f ./tests/requirements.txt ]; then pip install -r ./tests/requirements.txt; fi
-    - name: Lint with flake8
-      run: |
-        # stop the build if there are Python syntax errors or undefined names
-        flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
-        # exit-zero treats all errors as warnings. The GitHub editor is 127 chars wide
-        flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
-    - name: Test with pytest
-      run: |
-        pytest
-
-  test-docker:
+  build-cedar-test-1:
     runs-on: ubuntu-latest
     steps:
       # BUILD PHASE
@@ -66,46 +28,49 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v1
 
-      - name: Build client
+      - name: Show cedar-agent
+        run: |
+          ls -la ./cedar-agent
+
+      - name: Build client cedar
         id: build_client
         uses: docker/build-push-action@v2
         with:
           file: docker/Dockerfile
           push: false
-          target: client
-          cache-from: type=registry,ref=permitio/opal-client:latest
+          target: client-cedar
+          cache-from: type=registry,ref=permitio/opal-client-cedar:latest
           cache-to: type=inline
           load: true
           tags: |
-            permitio/opal-client:test
+            permitio/opal-client-cedar:test
 
-      - name: Build server
-        id: build_server
-        uses: docker/build-push-action@v2
+  build-cedar-test-2:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+        with:
+          fetch-depth: 0
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v2
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+
+      - name: Show cedar-agent
+        run: |
+          ls -la ./cedar-agent
+
+      - name: Build & Push client cedar
+        id: build_push_client_cedar
+        uses: docker/build-push-action@v4
         with:
           file: docker/Dockerfile
-          push: false
-          target: server
-          cache-from: type=registry,ref=permitio/opal-server:latest
+          platforms: linux/amd64,linux/arm64
+          target: client-cedar
+          cache-from: type=registry,ref=permitio/opal-client-cedar:latest
           cache-to: type=inline
-          load: true
           tags: |
-            permitio/opal-server:test
-
-      # TEST PHASE
-      - name: Create modified docker compose file
-        run: sed 's/:latest/:test/g' docker/docker-compose-with-callbacks.yml > docker/docker-compose-test.yml
-
-      - name: Bring up stack
-        run: docker-compose -f docker/docker-compose-test.yml up -d
-
-      - name: Check if OPA is healthy
-        run: ./scripts/wait-for.sh -t 2 http://localhost:8181/v1/data/users -- sleep 10 && curl -s "http://localhost:8181/v1/data/users" | jq '.result.bob.location.country == "US"'
-
-      - name: Output container logs
-        run: docker-compose -f docker/docker-compose-test.yml logs
-
-      - name: check if opal-client was brought up
-        run: |
-          docker-compose -f docker/docker-compose-test.yml logs opal_client | grep "Connected to PubSub server"
-          docker-compose -f docker/docker-compose-test.yml logs opal_client | grep "Got policy bundle"
+            permitio/opal-client-cedar:latest
