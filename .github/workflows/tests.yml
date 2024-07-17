@@ -42,7 +42,6 @@ jobs:
           target: client-cedar
           cache-from: type=registry,ref=permitio/opal-client-cedar:latest
           cache-to: type=inline
-          load: true
           tags: |
             permitio/opal-client-cedar:test
 
