@@ -1,4 +1,3 @@
-version: "3.8"
 services:
   # When scaling the opal-server to multiple nodes and/or multiple workers, we use
   # a *broadcast* channel to sync between all the instances of opal-server.
