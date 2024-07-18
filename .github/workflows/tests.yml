@@ -105,7 +105,8 @@ jobs:
       - name: Output container logs
         run: docker-compose -f docker/docker-compose-test.yml logs
 
-      - name: check if opal-client was brought up
+      - name: check if opal-client was brought up successfully
         run: |
           docker-compose -f docker/docker-compose-test.yml logs opal_client | grep "Connected to PubSub server"
           docker-compose -f docker/docker-compose-test.yml logs opal_client | grep "Got policy bundle"
+          docker-compose -f docker/docker-compose-test.yml logs opal_client | grep 'PUT /v1/data/static -> 204'
