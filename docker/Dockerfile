@@ -15,7 +15,7 @@ RUN pip install --no-cache-dir --upgrade pip && pip install --no-cache-dir -r ./
 # CEDAR AGENT BUILD STAGE ---------------------------
 # split this stage to save time and reduce image size
 # ---------------------------------------------------
-FROM rust:1.69.0 as cedar-builder
+FROM rust:1.77-bullseye as cedar-builder
 COPY cedar-agent /tmp/cedar-agent/
 ARG cargo_flags="--release"
 RUN cd /tmp/cedar-agent

@@ -150,22 +150,6 @@ jobs:
             permitio/opal-server:latest
             permitio/opal-server:${{ env.opal_version_tag }}
 
-      - name: Check if cedar-agent directory exists
-        id: check_cedar_agent
-        run: |
-          if [ -d "cedar-agent" ]; then
-            echo "exists=true" >> $GITHUB_ENV
-          else
-            echo "exists=false" >> $GITHUB_ENV
-          fi
-
-      - name: Clone cedar-agent repository
-        if: steps.check_cedar_agent.outputs.exists == 'false'
-        id: clone_cedar_agent
-        working-directory: .
-        run: |
-          git clone https://github.com/permitio/cedar-agent.git cedar-agent
-
       - name: Build & Push client cedar
         id: build_push_client_cedar
         uses: docker/build-push-action@v4
