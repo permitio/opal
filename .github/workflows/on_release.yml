@@ -203,7 +203,7 @@ jobs:
           cd packages/opal-server/ ; rm -rf *.egg-info build/ dist/
           python setup.py sdist bdist_wheel
           cd ../..
-          
+
       - name: Publish package distributions to PyPI - Opal-Common
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
