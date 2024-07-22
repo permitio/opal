@@ -16,10 +16,9 @@ RUN pip install --no-cache-dir --upgrade pip && pip install --no-cache-dir -r ./
 # split this stage to save time and reduce image size
 # ---------------------------------------------------
 FROM rust:1.79 AS cedar-builder
-COPY ./cedar-agent /tmp/cedar-agent/
-RUN cd /tmp/cedar-agent
-RUN CARGO_REGISTRIES_CRATES_IO_PROTOCOL=sparse cargo build ${cargo_flags}
-RUN cp /tmp/cedar-agent/target/*/cedar-agent /
+COPY ./cedar-agent /tmp/cedar-agent
+WORKDIR /tmp/cedar-agent
+RUN CARGO_REGISTRIES_CRATES_IO_PROTOCOL=sparse cargo build --release
 
 # COMMON IMAGE --------------------------------------
 # ---------------------------------------------------
@@ -128,7 +127,7 @@ FROM client-standalone AS client-cedar
 USER root
 
 # Copy cedar from its build stage
-COPY --from=cedar-builder /cedar-agent /bin/cedar-agent
+COPY --from=cedar-builder /tmp/cedar-agent/target/*/cedar-agent /bin/cedar-agent
 
 # enable inline Cedar agent
 ENV OPAL_POLICY_STORE_TYPE=CEDAR
