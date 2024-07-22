@@ -176,6 +176,7 @@ jobs:
             permitio/opal-server:${{ env.opal_version_tag }}
 
       - name: Python setup
+        if: github.event_name == 'release' && github.event.action == 'created'
         uses: actions/setup-python@v5
         with:
           python-version: '3.11.8'
@@ -192,6 +193,7 @@ jobs:
           git commit -m "Bump version to ${version_tag}"
 
       - name: Cleanup setup.py and Build every sub-packages
+        if: github.event_name == 'release' && github.event.action == 'created'
         run: |
           pip install wheel
           cd packages/opal-common/ ; rm -rf *.egg-info build/ dist/
@@ -205,24 +207,28 @@ jobs:
           cd ../..
 
       - name: Publish package distributions to PyPI - Opal-Common
+        if: github.event_name == 'release' && github.event.action == 'created'
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           password: ${{ secrets.PYPI_TOKEN }}
           packages-dir: packages/opal-common/
 
       - name: Publish package distributions to PyPI - Opal-Client
+        if: github.event_name == 'release' && github.event.action == 'created'
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           password: ${{ secrets.PYPI_TOKEN }}
           packages-dir: packages/opal-client/
 
       - name: Publish package distributions to PyPI - Opal-Server
+        if: github.event_name == 'release' && github.event.action == 'created'
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           password: ${{ secrets.PYPI_TOKEN }}
           packages-dir: packages/opal-server/
 
       - name: Push changes of __packaging__.py to GitHub
+        if: github.event_name == 'release' && github.event.action == 'created'
         uses: ad-m/github-push-action@master
         with:
           github_token: ${{ secrets.TOKEN_GITHUB }}
