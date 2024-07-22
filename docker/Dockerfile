@@ -17,10 +17,10 @@ RUN pip install --no-cache-dir --upgrade pip && pip install --no-cache-dir -r ./
 # ---------------------------------------------------
 FROM rust:1.69.0 as cedar-builder
 COPY cedar-agent /tmp/cedar-agent/
-ARG cargo_flags="-r"
-RUN cd /tmp/cedar-agent && \
-	cargo build ${cargo_flags} && \
-	cp /tmp/cedar-agent/target/*/cedar-agent /
+ARG cargo_flags="--release"
+RUN cd /tmp/cedar-agent
+RUN CARGO_REGISTRIES_CRATES_IO_PROTOCOL=sparse cargo build ${cargo_flags}
+RUN cp /tmp/cedar-agent/target/*/cedar-agent /
 
 # COMMON IMAGE --------------------------------------
 # ---------------------------------------------------
