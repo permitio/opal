@@ -29,6 +29,13 @@ jobs:
   # - Pushes images (built at BUILD PHASE) to docker hub.
   docker_build_and_publish:
     runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/p/permit
+    permissions:
+      id-token: write
+      contents: write           # 'write' access to repository contents
+      pull-requests: write      # 'write' access to pull requests
     steps:
       # BUILD PHASE
       - name: Checkout
@@ -167,3 +174,56 @@ jobs:
           tags: |
             permitio/opal-server:latest
             permitio/opal-server:${{ env.opal_version_tag }}
+
+      - name: Python setup
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11.8'
+
+      # This is the root file representing the package for all the sub-packages.
+      - name: Bump version - packaging__.py
+        if: github.event_name == 'release' && github.event.action == 'created'
+        run: |
+          version_tag=${{ github.event.release.tag_name }}
+          sed -i "s/__version__ = \".*\"/__version__ = \"${version_tag}\"/" packages/opal-client/__packaging__.py
+          git config --local user.email "eli@permit.io"
+          git config --local user.name "elimoshkovich"
+          git add packages/opal-client/__packaging__.py
+          git commit -m "Bump version to ${version_tag}"
+
+      - name: Cleanup setup.py and Build every sub-packages
+        run: |
+          pip install wheel
+          cd packages/opal-common/ ; rm -rf *.egg-info build/ dist/
+          python setup.py sdist bdist_wheel
+          cd ../..
+          cd packages/opal-client/ ; rm -rf *.egg-info build/ dist/
+          python setup.py sdist bdist_wheel
+          cd ../..
+          cd packages/opal-server/ ; rm -rf *.egg-info build/ dist/
+          python setup.py sdist bdist_wheel
+          cd ../..
+          
+      - name: Publish package distributions to PyPI - Opal-Common
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          password: ${{ secrets.PYPI_TOKEN }}
+          packages-dir: packages/opal-common/
+
+      - name: Publish package distributions to PyPI - Opal-Client
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          password: ${{ secrets.PYPI_TOKEN }}
+          packages-dir: packages/opal-client/
+
+      - name: Publish package distributions to PyPI - Opal-Server
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          password: ${{ secrets.PYPI_TOKEN }}
+          packages-dir: packages/opal-server/
+
+      - name: Push changes of __packaging__.py to GitHub
+        uses: ad-m/github-push-action@master
+        with:
+          github_token: ${{ secrets.TOKEN_GITHUB }}
+          branch: main
