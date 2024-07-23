@@ -185,14 +185,9 @@ jobs:
       - name: Bump version - packaging__.py
         if: github.event_name == 'release' && github.event.action == 'created'
         run: |
-          #version_tag=${{ github.event.release.tag_name }}
-          version_tag=3.5.1
+          version_tag=${{ github.event.release.tag_name }}
           sed -i "s/__version__ = VERSION_STRING/__version__ = \"${version_tag}\"/" packages/__packaging__.py
           cat packages/__packaging__.py
-          # git config --local user.email "eli@permit.io"
-          # git config --local user.name "elimoshkovich"
-          # git add packages/__packaging__.py
-          # git commit -m "Bump version to ${version_tag}"
 
       - name: Cleanup setup.py and Build every sub-packages
         if: github.event_name == 'release' && github.event.action == 'created'
