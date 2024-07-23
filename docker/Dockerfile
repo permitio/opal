@@ -1,7 +1,7 @@
 # BUILD STAGE ---------------------------------------
 # split this stage to save time and reduce image size
 # ---------------------------------------------------
-FROM python:3.10-bookworm as BuildStage
+FROM python:3.10-bookworm AS build-stage
 # from now on, work in the /app directory
 WORKDIR /app/
 # Layer dependency install (for caching)
@@ -15,19 +15,17 @@ RUN pip install --no-cache-dir --upgrade pip && pip install --no-cache-dir -r ./
 # CEDAR AGENT BUILD STAGE ---------------------------
 # split this stage to save time and reduce image size
 # ---------------------------------------------------
-FROM rust:1.69.0 as cedar-builder
-COPY cedar-agent /tmp/cedar-agent/
-ARG cargo_flags="-r"
-RUN cd /tmp/cedar-agent && \
-	cargo build ${cargo_flags} && \
-	cp /tmp/cedar-agent/target/*/cedar-agent /
+FROM rust:1.79 AS cedar-builder
+COPY ./cedar-agent /tmp/cedar-agent
+WORKDIR /tmp/cedar-agent
+RUN CARGO_REGISTRIES_CRATES_IO_PROTOCOL=sparse cargo build --release
 
 # COMMON IMAGE --------------------------------------
 # ---------------------------------------------------
-FROM python:3.10-slim-bookworm as common
+FROM python:3.10-slim-bookworm AS common
 
-# copy libraries from build stage (This won't copy redundant libraries we used in BuildStage)
-COPY --from=BuildStage /usr/local /usr/local
+# copy libraries from build stage (This won't copy redundant libraries we used in build-stage)
+COPY --from=build-stage /usr/local /usr/local
 
 # Add non-root user (with home dir at /opal)
 RUN useradd -m -b / -s /bin/bash opal
@@ -61,7 +59,7 @@ CMD ["./start.sh"]
 
 # STANDALONE IMAGE ----------------------------------
 # ---------------------------------------------------
-FROM common as client-standalone
+FROM common AS client-standalone
 # uvicorn config ------------------------------------
 # install the opal-client package
 RUN cd ./packages/opal-client && python setup.py install
@@ -88,7 +86,7 @@ VOLUME /opal/backup
 
 # IMAGE to extract OPA from official image ----------
 # ---------------------------------------------------
-FROM alpine:latest as opa-extractor
+FROM alpine:latest AS opa-extractor
 USER root
 
 RUN apk update && apk add skopeo tar
@@ -106,7 +104,7 @@ RUN skopeo copy "docker://${opa_image}:${opa_tag}" docker-archive:./image.tar &&
 # OPA CLIENT IMAGE ----------------------------------
 # Using standalone image as base --------------------
 # ---------------------------------------------------
-FROM client-standalone as client
+FROM client-standalone AS client
 
 # Temporarily move back to root for additional setup
 USER root
@@ -123,13 +121,13 @@ USER opal
 # CEDAR CLIENT IMAGE --------------------------------
 # Using standalone image as base --------------------
 # ---------------------------------------------------
-FROM client-standalone as client-cedar
+FROM client-standalone AS client-cedar
 
 # Temporarily move back to root for additional setup
 USER root
 
 # Copy cedar from its build stage
-COPY --from=cedar-builder /cedar-agent /bin/cedar-agent
+COPY --from=cedar-builder /tmp/cedar-agent/target/*/cedar-agent /bin/cedar-agent
 
 # enable inline Cedar agent
 ENV OPAL_POLICY_STORE_TYPE=CEDAR
@@ -142,7 +140,7 @@ USER opal
 
 # SERVER IMAGE --------------------------------------
 # ---------------------------------------------------
-FROM common as server
+FROM common AS server
 
 RUN apt-get update && apt-get install -y openssh-client git && apt-get clean
 

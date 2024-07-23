@@ -109,13 +109,12 @@ jobs:
       # pushes the *same* docker images that were previously tested as part of e2e sanity test.
       # each image is pushed with the versioned tag first, if it succeeds the image is pushed with the latest tag as well.
       - name: Build & Push client
-        if: ${{ !(github.event_name == 'workflow_dispatch' && github.event.inputs.dry_run == 'true') }}
         id: build_push_client
         uses: docker/build-push-action@v4
         with:
           file: docker/Dockerfile
           platforms: linux/amd64,linux/arm64
-          push: true
+          push: ${{ !(github.event_name == 'workflow_dispatch' && github.event.inputs.dry_run == 'true') }}
           target: client
           cache-from: type=registry,ref=permitio/opal-client:latest
           cache-to: type=inline
@@ -123,29 +122,13 @@ jobs:
             permitio/opal-client:latest
             permitio/opal-client:${{ env.opal_version_tag }}
 
-#      - name: Build & Push client cedar
-#        if: ${{ !(github.event_name == 'workflow_dispatch' && github.event.inputs.dry_run == 'true') }}
-#        id: build_push_client_cedar
-#        uses: docker/build-push-action@v4
-#        with:
-#          file: docker/Dockerfile
-#          platforms: linux/amd64,linux/arm64
-#          push: true
-#          target: client-cedar
-#          cache-from: type=registry,ref=permitio/opal-client-cedar:latest
-#          cache-to: type=inline
-#          tags: |
-#            permitio/opal-client-cedar:latest
-#            permitio/opal-client-cedar:${{ env.opal_version_tag }}
-
       - name: Build client-standalone
-        if: ${{ !(github.event_name == 'workflow_dispatch' && github.event.inputs.dry_run == 'true') }}
         id: build_push_client_standalone
         uses: docker/build-push-action@v4
         with:
           file: docker/Dockerfile
           platforms: linux/amd64,linux/arm64
-          push: true
+          push: ${{ !(github.event_name == 'workflow_dispatch' && github.event.inputs.dry_run == 'true') }}
           target: client-standalone
           cache-from: type=registry,ref=permitio/opal-client-standalone:latest
           cache-to: type=inline
@@ -154,16 +137,29 @@ jobs:
             permitio/opal-client-standalone:${{ env.opal_version_tag }}
 
       - name: Build server
-        if: ${{ !(github.event_name == 'workflow_dispatch' && github.event.inputs.dry_run == 'true') }}
         id: build_push_server
         uses: docker/build-push-action@v4
         with:
           file: docker/Dockerfile
           platforms: linux/amd64,linux/arm64
-          push: true
+          push: ${{ !(github.event_name == 'workflow_dispatch' && github.event.inputs.dry_run == 'true') }}
           target: server
           cache-from: type=registry,ref=permitio/opal-server:latest
           cache-to: type=inline
           tags: |
             permitio/opal-server:latest
             permitio/opal-server:${{ env.opal_version_tag }}
+
+      - name: Build & Push client cedar
+        id: build_push_client_cedar
+        uses: docker/build-push-action@v4
+        with:
+          file: docker/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: ${{ !(github.event_name == 'workflow_dispatch' && github.event.inputs.dry_run == 'true') }}
+          target: client-cedar
+          cache-from: type=registry,ref=permitio/opal-client-cedar:latest
+          cache-to: type=inline
+          tags: |
+            permitio/opal-client-cedar:latest
+            permitio/opal-client-cedar:${{ env.opal_version_tag }}
