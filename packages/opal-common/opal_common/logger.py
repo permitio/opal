@@ -2,7 +2,6 @@ import logging
 import sys
 
 from loguru import logger
-
 from opal_common.config import opal_common_config
 from opal_common.logging_utils.filter import ModuleFilter
 from opal_common.logging_utils.formatter import Formatter

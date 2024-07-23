@@ -6,13 +6,12 @@ from typing import Any, Union, cast
 import httpx
 from aiohttp import ClientResponse, ClientSession
 from opal_common.config import opal_common_config
-from pydantic import validator
-
-from opal_common.http_utils import is_http_error_response
-from opal_common.security.sslcontext import get_custom_ssl_context
 from opal_common.fetcher.events import FetcherConfig, FetchEvent
 from opal_common.fetcher.fetch_provider import BaseFetchProvider
 from opal_common.fetcher.logger import get_logger
+from opal_common.http_utils import is_http_error_response
+from opal_common.security.sslcontext import get_custom_ssl_context
+from pydantic import validator
 
 logger = get_logger("http_fetch_provider")
 

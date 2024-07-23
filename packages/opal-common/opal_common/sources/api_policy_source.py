@@ -6,7 +6,9 @@ from urllib.parse import urlparse
 import aiohttp
 from fastapi import status
 from fastapi.exceptions import HTTPException
-from opal_common.git_utils.tar_file_to_local_git_extractor import TarFileToLocalGitExtractor
+from opal_common.git_utils.tar_file_to_local_git_extractor import (
+    TarFileToLocalGitExtractor,
+)
 from opal_common.logger import logger
 from opal_common.sources.base_policy_source import BasePolicySource
 from opal_common.utils import (

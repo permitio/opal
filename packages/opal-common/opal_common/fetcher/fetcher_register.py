@@ -1,10 +1,9 @@
 from typing import Dict, Optional, Type
 
-from opal_common.fetcher.logger import get_logger
-
 from opal_common.config import opal_common_config
 from opal_common.fetcher.events import FetchEvent
 from opal_common.fetcher.fetch_provider import BaseFetchProvider
+from opal_common.fetcher.logger import get_logger
 from opal_common.fetcher.providers.http_fetch_provider import HttpFetchProvider
 
 logger = get_logger("opal.fetcher_register")

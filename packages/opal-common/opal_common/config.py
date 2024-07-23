@@ -172,7 +172,7 @@ class OpalCommonConfig(Confi):
         "HTTP_FETCHER_PROVIDER_CLIENT",
         "aiohttp",
         description="The client to use for fetching data, can be either aiohttp or httpx."
-                    "if provided different value, aiohttp will be used.",
+        "if provided different value, aiohttp will be used.",
     )
 
 

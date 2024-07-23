@@ -1,10 +1,10 @@
 import asyncio
 from typing import Coroutine
 
+from opal_common.fetcher.engine.base_fetching_engine import BaseFetchingEngine
 from opal_common.fetcher.events import FetchEvent
 from opal_common.fetcher.fetcher_register import FetcherRegister
 from opal_common.fetcher.logger import get_logger
-from opal_common.fetcher.engine.base_fetching_engine import BaseFetchingEngine
 
 logger = get_logger("fetch_worker")
 

@@ -3,12 +3,14 @@ import json
 from typing import Any, Dict, List, Optional
 
 import jsonpatch
+from opal_client.policy_store.base_policy_store_client import (
+    BasePolicyStoreClient,
+    JsonableValue,
+)
 from opal_client.utils import exclude_none_fields
 from opal_common.schemas.policy import PolicyBundle
 from opal_common.schemas.store import JSONPatchAction, StoreTransaction
 from pydantic import BaseModel
-
-from opal_client.policy_store.base_policy_store_client import BasePolicyStoreClient, JsonableValue
 
 
 class MockPolicyStoreClient(BasePolicyStoreClient):

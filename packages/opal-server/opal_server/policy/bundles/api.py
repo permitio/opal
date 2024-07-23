@@ -5,7 +5,6 @@ from typing import List, Optional
 import fastapi.responses
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response, status
 from git.repo import Repo
-
 from opal_common.confi.confi import load_conf_if_none
 from opal_common.git_utils.bundle_maker import BundleMaker
 from opal_common.git_utils.commit_viewer import CommitViewer

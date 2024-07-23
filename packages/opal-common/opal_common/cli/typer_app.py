@@ -1,5 +1,4 @@
 import typer
-
 from opal_common.cli.commands import all_commands
 
 

@@ -2,7 +2,6 @@
 
 from fastapi_websocket_rpc.rpc_methods import RpcMethodsBase
 from fastapi_websocket_rpc.websocket_rpc_client import WebSocketRpcClient
-
 from opal_common.fetcher.events import FetcherConfig, FetchEvent
 from opal_common.fetcher.fetch_provider import BaseFetchProvider
 from opal_common.fetcher.logger import get_logger

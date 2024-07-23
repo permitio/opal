@@ -21,7 +21,10 @@ from typing import List, Tuple
 from git import Diff, Repo
 from git.objects import Commit
 from opal_common.git_utils.commit_viewer import VersionedFile
-from opal_common.git_utils.diff_viewer import DiffViewer, diffed_file_is_under_directories
+from opal_common.git_utils.diff_viewer import (
+    DiffViewer,
+    diffed_file_is_under_directories,
+)
 
 
 def diff_paths(diffs: List[Diff]) -> List[Path]:
