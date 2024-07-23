@@ -29,13 +29,10 @@ jobs:
   # - Pushes images (built at BUILD PHASE) to docker hub.
   docker_build_and_publish:
     runs-on: ubuntu-latest
-    environment:
-      name: pypi
-      url: https://pypi.org/p/permit
     permissions:
       id-token: write
       contents: write           # 'write' access to repository contents
-      pull-requests: write      # 'write' access to pull requests
+      # pull-requests: write      # 'write' access to pull requests
     steps:
       # BUILD PHASE
       - name: Checkout
@@ -209,6 +206,9 @@ jobs:
         with:
           password: ${{ secrets.PYPI_TOKEN }}
           packages-dir: packages/opal-common/
+        env:
+          name: pypi
+          url: https://pypi.org/p/opal-common
 
       - name: Publish package distributions to PyPI - Opal-Client
         if: github.event_name == 'release' && github.event.action == 'created'
@@ -216,6 +216,9 @@ jobs:
         with:
           password: ${{ secrets.PYPI_TOKEN }}
           packages-dir: packages/opal-client/
+        env:
+          name: pypi
+          url: https://pypi.org/p/opal-client
 
       - name: Publish package distributions to PyPI - Opal-Server
         if: github.event_name == 'release' && github.event.action == 'created'
@@ -223,3 +226,6 @@ jobs:
         with:
           password: ${{ secrets.PYPI_TOKEN }}
           packages-dir: packages/opal-server/
+        env:
+          name: pypi
+          url: https://pypi.org/p/opal-server
