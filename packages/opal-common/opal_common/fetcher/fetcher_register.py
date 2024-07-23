@@ -1,11 +1,10 @@
 from typing import Dict, Optional, Type
 
+from opal_common.config import opal_common_config
+from opal_common.fetcher.events import FetchEvent
+from opal_common.fetcher.fetch_provider import BaseFetchProvider
 from opal_common.fetcher.logger import get_logger
-
-from ..config import opal_common_config
-from .events import FetchEvent
-from .fetch_provider import BaseFetchProvider
-from .providers.http_fetch_provider import HttpFetchProvider
+from opal_common.fetcher.providers.http_fetch_provider import HttpFetchProvider
 
 logger = get_logger("opal.fetcher_register")
 
@@ -30,7 +29,7 @@ class FetcherRegister:
         if config is not None:
             self._config = config
         else:
-            from ..emport import emport_objects_by_class
+            from opal_common.emport import emport_objects_by_class
 
             # load fetchers
             fetchers = []

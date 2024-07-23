@@ -26,7 +26,7 @@ from opal_client.policy_store.policy_store_client_factory import (
 from opal_common.async_utils import TakeANumberQueue, TasksPool, repeated_call
 from opal_common.config import opal_common_config
 from opal_common.fetcher.events import FetcherConfig
-from opal_common.http import is_http_error_response
+from opal_common.http_utils import is_http_error_response
 from opal_common.schemas.data import (
     DataEntryReport,
     DataSourceConfig,

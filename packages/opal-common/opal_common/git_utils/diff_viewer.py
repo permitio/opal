@@ -4,7 +4,7 @@ from typing import IO, Callable, Generator, List, Optional, Set
 from git import Repo
 from git.diff import Diff, DiffIndex
 from git.objects.commit import Commit
-from opal_common.git.commit_viewer import VersionedFile
+from opal_common.git_utils.commit_viewer import VersionedFile
 from opal_common.paths import PathUtils
 
 DiffFilter = Callable[[Diff], bool]

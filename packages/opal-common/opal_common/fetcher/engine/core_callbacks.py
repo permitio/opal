@@ -1,4 +1,4 @@
-from ..events import FetchEvent
+from opal_common.fetcher.events import FetchEvent
 
 
 # Callback signatures

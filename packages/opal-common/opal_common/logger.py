@@ -2,13 +2,12 @@ import logging
 import sys
 
 from loguru import logger
-
-from .config import opal_common_config
-from .logging.filter import ModuleFilter
-from .logging.formatter import Formatter
-from .logging.intercept import InterceptHandler
-from .logging.thirdparty import hijack_uvicorn_logs
-from .monitoring.apm import fix_ddtrace_logging
+from opal_common.config import opal_common_config
+from opal_common.logging_utils.filter import ModuleFilter
+from opal_common.logging_utils.formatter import Formatter
+from opal_common.logging_utils.intercept import InterceptHandler
+from opal_common.logging_utils.thirdparty import hijack_uvicorn_logs
+from opal_common.monitoring.apm import fix_ddtrace_logging
 
 
 def configure_logs():

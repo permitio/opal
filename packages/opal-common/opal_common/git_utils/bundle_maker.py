@@ -6,7 +6,7 @@ from ddtrace import tracer
 from git import Repo
 from git.objects import Commit
 from opal_common.engine import get_rego_package, is_data_module, is_policy_module
-from opal_common.git.commit_viewer import (
+from opal_common.git_utils.commit_viewer import (
     CommitViewer,
     VersionedDirectory,
     VersionedFile,
@@ -14,7 +14,7 @@ from opal_common.git.commit_viewer import (
     has_extension,
     is_under_directories,
 )
-from opal_common.git.diff_viewer import (
+from opal_common.git_utils.diff_viewer import (
     DiffViewer,
     diffed_file_has_extension,
     diffed_file_is_under_directories,

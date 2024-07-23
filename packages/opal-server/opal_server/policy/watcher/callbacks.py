@@ -3,13 +3,13 @@ from pathlib import Path
 from typing import List, Optional
 
 from git.objects import Commit
-from opal_common.git.commit_viewer import (
+from opal_common.git_utils.commit_viewer import (
     CommitViewer,
     FileFilter,
     find_ignore_match,
     has_extension,
 )
-from opal_common.git.diff_viewer import DiffViewer
+from opal_common.git_utils.diff_viewer import DiffViewer
 from opal_common.logger import logger
 from opal_common.paths import PathUtils
 from opal_common.schemas.policy import (
