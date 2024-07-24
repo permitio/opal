@@ -231,6 +231,12 @@ jobs:
       #     asset_path: packages/opal-server/dist/*
       #     asset_name: opal-server-${{ github.event.release.tag_name }}.zip
       #     asset_content_type: application/zip
+      
+      - name: Remove unwanted files before publishing
+        run: |
+          cd packages/opal-common/ ; rm -rf build/
+          cd ../opal-client/ ; rm -rf build/
+          cd ../opal-server/ ; rm -rf build/
           
       # Publish package distributions to PyPI
       - name: Publish package distributions to PyPI - Opal-Common
