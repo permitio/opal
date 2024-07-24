@@ -10,28 +10,10 @@ jobs:
   sync:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-
       - name: Set up Git configuration
         run: |
           git config --global user.name 'github-actions[bot]'
           git config --global user.email 'github-actions[bot]@users.noreply.github.com'
-
-      - name: Add opal-plus repository as remote
-        run: |
-          git remote add private https://github.com/permitio/opal-plus.git
-
-      - name: Fetch private repository branches
-        run: |
-          git fetch private
-
-      - name: Rebase master onto public-master
-        run: |
-          git rebase private/public-master
-
-      - name: Push changes to public-master branch
-        run: |
-          git push private sync-test:public-master
 
       - name: Get Token
         id: get_workflow_token
@@ -39,6 +21,35 @@ jobs:
         with:
           application_id: ${{ secrets.APPLICATION_ID }}
           application_private_key: ${{ secrets.APPLICATION_PRIVATE_KEY }}
+
+      - name: Checkout permitio/opal repository
+        uses: actions/checkout@v4
+        with:
+          repository: permitio/opal
+          ref: sync-test
+          path: opal
+          fetch-depth: 0
+
+      - name: Checkout permitio/opal-plus repository
+        uses: actions/checkout@v4
+        with:
+          repository: permitio/opal-plus
+          ref: public-master
+          path: opal-plus
+          token: ${{ steps.get_workflow_token.outputs.token }}
+
+      - name: Rebase opal-plus:public-master onto opal:master
+        working-directory: opal-plus
+        run: |
+          git remote add opal ../opal
+          git fetch opal
+          git checkout public-master
+          git rebase opal/sync-test
+
+      - name: Push changes to opal-plus public-master branch
+        working-directory: opal-plus
+        run: |
+          git push origin public-master
 
       - name: Create Pull Request for opal-plus
         run: |
