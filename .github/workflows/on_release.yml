@@ -181,7 +181,7 @@ jobs:
         #if: github.event_name == 'release' && github.event.action == 'created'
         run: |
           #version_tag=${{ github.event.release.tag_name }}
-          version_tag="0.7.11"
+          version_tag=0.7.11
           version_tuple=$(echo $version_tag | sed 's/\./, /g')
           sed -i "s/VERSION = (.*/VERSION = (${version_tuple})/" packages/__packaging__.py
           cat packages/__packaging__.py
