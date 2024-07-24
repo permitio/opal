@@ -9,7 +9,7 @@ Project homepage: https://github.com/permitio/opal
 
 import os
 
-VERSION = (0, 7, 9)
+VERSION = (0, 7, 10)
 VERSION_STRING = ".".join(map(str, VERSION))
 
 __version__ = VERSION_STRING
