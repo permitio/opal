@@ -190,19 +190,19 @@ jobs:
           #git add packages/__packaging__.py
           #git commit -m "Bump version to ${version_tag}"
 
-      # - name: Cleanup setup.py and Build every sub-packages
-      #   if: github.event_name == 'release' && github.event.action == 'created'
-      #   run: |
-      #     pip install wheel
-      #     cd packages/opal-common/ ; rm -rf *.egg-info build/ dist/
-      #     python setup.py sdist bdist_wheel
-      #     cd ../..
-      #     cd packages/opal-client/ ; rm -rf *.egg-info build/ dist/
-      #     python setup.py sdist bdist_wheel
-      #     cd ../..
-      #     cd packages/opal-server/ ; rm -rf *.egg-info build/ dist/
-      #     python setup.py sdist bdist_wheel
-      #     cd ../..
+      - name: Cleanup setup.py and Build every sub-packages
+        #if: github.event_name == 'release' && github.event.action == 'created'
+        run: |
+          pip install wheel
+          cd packages/opal-common/ ; rm -rf *.egg-info build/ dist/
+          python setup.py sdist bdist_wheel
+          cd ../..
+          cd packages/opal-client/ ; rm -rf *.egg-info build/ dist/
+          python setup.py sdist bdist_wheel
+          cd ../..
+          cd packages/opal-server/ ; rm -rf *.egg-info build/ dist/
+          python setup.py sdist bdist_wheel
+          cd ../..
 
       # # Upload package distributions to the release - Assets
       # - name: Upload assets to release - Opal-Common
