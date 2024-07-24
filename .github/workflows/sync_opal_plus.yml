@@ -52,7 +52,8 @@ jobs:
           git push origin public-master
 
       - name: Create Pull Request for opal-plus
+        working-directory: opal-plus
         run: |
-          gh pr create --assignee @me --reviewer "$GITHUB_ACTOR" --base sync-test --head public-master --title "Sync changes from public OPAL repository" --fill-verbose
+          gh pr create --assignee @me --reviewer "$GITHUB_ACTOR" --base master --head public-master --title "Sync changes from public OPAL repository" --fill-verbose
         env:
           GITHUB_TOKEN: ${{ steps.get_workflow_token.outputs.token }}
