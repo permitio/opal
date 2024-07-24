@@ -231,13 +231,7 @@ jobs:
       #     asset_path: packages/opal-server/dist/*
       #     asset_name: opal-server-${{ github.event.release.tag_name }}.zip
       #     asset_content_type: application/zip
-      
-      - name: Remove unwanted files before publishing
-        run: |
-          cd packages/opal-common/ ; rm -rf build/
-          cd ../opal-client/ ; rm -rf build/
-          cd ../opal-server/ ; rm -rf build/
-          
+
       # Publish package distributions to PyPI
       - name: Publish package distributions to PyPI - Opal-Common
         #if: github.event_name == 'release' && github.event.action == 'created'
@@ -245,7 +239,7 @@ jobs:
         with:
           # password: ${{ secrets.PYPI_TOKEN }}
           password: ${{ secrets.TEST_PYPI_TOKEN }}
-          packages-dir: packages/opal-common/
+          packages-dir: packages/opal-common/dist/
           repository-url: https://test.pypi.org/test-opal-common/
         # env:
         #   name: pypi
@@ -257,7 +251,7 @@ jobs:
         with:
           # password: ${{ secrets.PYPI_TOKEN }}
           password: ${{ secrets.TEST_PYPI_TOKEN }}
-          packages-dir: packages/opal-client/
+          packages-dir: packages/opal-client/dist/
           repository-url: https://test.pypi.org/test-opal-client/
         # env:
         #   name: pypi
@@ -269,7 +263,7 @@ jobs:
         with:
           # password: ${{ secrets.PYPI_TOKEN }}
           password: ${{ secrets.TEST_PYPI_TOKEN }}
-          packages-dir: packages/opal-server/
+          packages-dir: packages/opal-server/dist/
           repository-url: https://test.pypi.org/test-opal-server/
         # env:
         #   name: pypi
