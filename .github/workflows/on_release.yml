@@ -1,16 +1,16 @@
 name: Build and publish to Docker Hub
-on:
-  release:
-    # job will automatically run after a new "release" is create on github.
-    types: [created]
+on: push
+  # release:
+  #   # job will automatically run after a new "release" is create on github.
+  #   types: [created]
 
-  #Allows you to run this workflow manually from the Actions tab
-  workflow_dispatch:
-    inputs:
-        dry_run:
-          description: 'If true, will not push the built images to docker hub.'
-          required: false
-          default: 'false'
+  # #Allows you to run this workflow manually from the Actions tab
+  # workflow_dispatch:
+  #   inputs:
+  #       dry_run:
+  #         description: 'If true, will not push the built images to docker hub.'
+  #         required: false
+  #         default: 'false'
 
 jobs:
   # this job will build, test and (potentially) push the docker images to docker hub
@@ -29,10 +29,12 @@ jobs:
   # - Pushes images (built at BUILD PHASE) to docker hub.
   docker_build_and_publish:
     runs-on: ubuntu-latest
+    env:
+      GITHUB_TOKEN: ${{ secrets.TOKEN_GITHUB }}
     permissions:
       id-token: write
       contents: write           # 'write' access to repository contents
-      # pull-requests: write      # 'write' access to pull requests
+      pull-requests: write      # 'write' access to pull requests
     steps:
       # BUILD PHASE
       - name: Checkout
@@ -40,188 +42,229 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v2
+      # - name: Set up QEMU
+      #   uses: docker/setup-qemu-action@v2
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v2
+      # - name: Set up Docker Buildx
+      #   uses: docker/setup-buildx-action@v2
 
-      - name: Login to DockerHub
-        if: ${{ !(github.event_name == 'workflow_dispatch' && github.event.inputs.dry_run == 'true') }}
-        uses: docker/login-action@v2
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      # - name: Login to DockerHub
+      #   if: ${{ !(github.event_name == 'workflow_dispatch' && github.event.inputs.dry_run == 'true') }}
+      #   uses: docker/login-action@v2
+      #   with:
+      #     username: ${{ secrets.DOCKERHUB_USERNAME }}
+      #     password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Get version tag from github release
-        if: github.event_name == 'release' && github.event.action == 'created'
-        run: |
-          echo "opal_version_tag=${{ github.event.release.tag_name }}" >> $GITHUB_ENV
+      # - name: Get version tag from github release
+      #   if: github.event_name == 'release' && github.event.action == 'created'
+      #   run: |
+      #     echo "opal_version_tag=${{ github.event.release.tag_name }}" >> $GITHUB_ENV
 
-      - name: Get version tag from git history
-        if: ${{ !(github.event_name == 'release' && github.event.action == 'created') }}
-        run: |
-          echo "opal_version_tag=$(git describe --tags --abbrev=0)" >> $GITHUB_ENV
+      # - name: Get version tag from git history
+      #   if: ${{ !(github.event_name == 'release' && github.event.action == 'created') }}
+      #   run: |
+      #     echo "opal_version_tag=$(git describe --tags --abbrev=0)" >> $GITHUB_ENV
 
-      - name: Echo version tag
-        run: |
-          echo "The version tag that will be published to docker hub is: ${{ env.opal_version_tag }}"
+      # - name: Echo version tag
+      #   run: |
+      #     echo "The version tag that will be published to docker hub is: ${{ env.opal_version_tag }}"
 
-      - name: Build client for testing
-        id: build_client
-        uses: docker/build-push-action@v4
-        with:
-          file: docker/Dockerfile
-          push: false
-          target: client
-          cache-from: type=registry,ref=permitio/opal-client:latest
-          cache-to: type=inline
-          load: true
-          tags: |
-            permitio/opal-client:test
+      # - name: Build client for testing
+      #   id: build_client
+      #   uses: docker/build-push-action@v4
+      #   with:
+      #     file: docker/Dockerfile
+      #     push: false
+      #     target: client
+      #     cache-from: type=registry,ref=permitio/opal-client:latest
+      #     cache-to: type=inline
+      #     load: true
+      #     tags: |
+      #       permitio/opal-client:test
 
-      - name: Build server for testing
-        id: build_server
-        uses: docker/build-push-action@v4
-        with:
-          file: docker/Dockerfile
-          push: false
-          target: server
-          cache-from: type=registry,ref=permitio/opal-server:latest
-          cache-to: type=inline
-          load: true
-          tags: |
-            permitio/opal-server:test
+      # - name: Build server for testing
+      #   id: build_server
+      #   uses: docker/build-push-action@v4
+      #   with:
+      #     file: docker/Dockerfile
+      #     push: false
+      #     target: server
+      #     cache-from: type=registry,ref=permitio/opal-server:latest
+      #     cache-to: type=inline
+      #     load: true
+      #     tags: |
+      #       permitio/opal-server:test
 
-      # TEST PHASE
-      - name: Create modified docker compose file
-        run: sed 's/:latest/:test/g' docker/docker-compose-example.yml > docker/docker-compose-test.yml
+      # # TEST PHASE
+      # - name: Create modified docker compose file
+      #   run: sed 's/:latest/:test/g' docker/docker-compose-example.yml > docker/docker-compose-test.yml
 
-      - name: Bring up stack
-        run: docker-compose -f docker/docker-compose-test.yml up -d
+      # - name: Bring up stack
+      #   run: docker-compose -f docker/docker-compose-test.yml up -d
 
-      - name: Check if OPA is healthy
-        run: ./scripts/wait-for.sh -t 60 http://localhost:8181/v1/data/users -- sleep 10 && curl -s "http://localhost:8181/v1/data/users" | jq '.result.bob.location.country == "US"'
+      # - name: Check if OPA is healthy
+      #   run: ./scripts/wait-for.sh -t 60 http://localhost:8181/v1/data/users -- sleep 10 && curl -s "http://localhost:8181/v1/data/users" | jq '.result.bob.location.country == "US"'
 
-      - name: Output container logs
-        run: docker-compose -f docker/docker-compose-test.yml logs
+      # - name: Output container logs
+      #   run: docker-compose -f docker/docker-compose-test.yml logs
 
-      # PUSH PHASE
-      - name: Output local docker images
-        run: docker image ls --digests | grep opal
+      # # PUSH PHASE
+      # - name: Output local docker images
+      #   run: docker image ls --digests | grep opal
 
-      # pushes the *same* docker images that were previously tested as part of e2e sanity test.
-      # each image is pushed with the versioned tag first, if it succeeds the image is pushed with the latest tag as well.
-      - name: Build & Push client
-        id: build_push_client
-        uses: docker/build-push-action@v4
-        with:
-          file: docker/Dockerfile
-          platforms: linux/amd64,linux/arm64
-          push: ${{ !(github.event_name == 'workflow_dispatch' && github.event.inputs.dry_run == 'true') }}
-          target: client
-          cache-from: type=registry,ref=permitio/opal-client:latest
-          cache-to: type=inline
-          tags: |
-            permitio/opal-client:latest
-            permitio/opal-client:${{ env.opal_version_tag }}
+      # # pushes the *same* docker images that were previously tested as part of e2e sanity test.
+      # # each image is pushed with the versioned tag first, if it succeeds the image is pushed with the latest tag as well.
+      # - name: Build & Push client
+      #   id: build_push_client
+      #   uses: docker/build-push-action@v4
+      #   with:
+      #     file: docker/Dockerfile
+      #     platforms: linux/amd64,linux/arm64
+      #     push: ${{ !(github.event_name == 'workflow_dispatch' && github.event.inputs.dry_run == 'true') }}
+      #     target: client
+      #     cache-from: type=registry,ref=permitio/opal-client:latest
+      #     cache-to: type=inline
+      #     tags: |
+      #       permitio/opal-client:latest
+      #       permitio/opal-client:${{ env.opal_version_tag }}
 
-      - name: Build client-standalone
-        id: build_push_client_standalone
-        uses: docker/build-push-action@v4
-        with:
-          file: docker/Dockerfile
-          platforms: linux/amd64,linux/arm64
-          push: ${{ !(github.event_name == 'workflow_dispatch' && github.event.inputs.dry_run == 'true') }}
-          target: client-standalone
-          cache-from: type=registry,ref=permitio/opal-client-standalone:latest
-          cache-to: type=inline
-          tags: |
-            permitio/opal-client-standalone:latest
-            permitio/opal-client-standalone:${{ env.opal_version_tag }}
+      # - name: Build client-standalone
+      #   id: build_push_client_standalone
+      #   uses: docker/build-push-action@v4
+      #   with:
+      #     file: docker/Dockerfile
+      #     platforms: linux/amd64,linux/arm64
+      #     push: ${{ !(github.event_name == 'workflow_dispatch' && github.event.inputs.dry_run == 'true') }}
+      #     target: client-standalone
+      #     cache-from: type=registry,ref=permitio/opal-client-standalone:latest
+      #     cache-to: type=inline
+      #     tags: |
+      #       permitio/opal-client-standalone:latest
+      #       permitio/opal-client-standalone:${{ env.opal_version_tag }}
 
-      - name: Build server
-        id: build_push_server
-        uses: docker/build-push-action@v4
-        with:
-          file: docker/Dockerfile
-          platforms: linux/amd64,linux/arm64
-          push: ${{ !(github.event_name == 'workflow_dispatch' && github.event.inputs.dry_run == 'true') }}
-          target: server
-          cache-from: type=registry,ref=permitio/opal-server:latest
-          cache-to: type=inline
-          tags: |
-            permitio/opal-server:latest
-            permitio/opal-server:${{ env.opal_version_tag }}
+      # - name: Build server
+      #   id: build_push_server
+      #   uses: docker/build-push-action@v4
+      #   with:
+      #     file: docker/Dockerfile
+      #     platforms: linux/amd64,linux/arm64
+      #     push: ${{ !(github.event_name == 'workflow_dispatch' && github.event.inputs.dry_run == 'true') }}
+      #     target: server
+      #     cache-from: type=registry,ref=permitio/opal-server:latest
+      #     cache-to: type=inline
+      #     tags: |
+      #       permitio/opal-server:latest
+      #       permitio/opal-server:${{ env.opal_version_tag }}
 
-      - name: Build & Push client cedar
-        id: build_push_client_cedar
-        uses: docker/build-push-action@v4
-        with:
-          file: docker/Dockerfile
-          platforms: linux/amd64,linux/arm64
-          push: ${{ !(github.event_name == 'workflow_dispatch' && github.event.inputs.dry_run == 'true') }}
-          target: client-cedar
-          cache-from: type=registry,ref=permitio/opal-client-cedar:latest
-          cache-to: type=inline
-          tags: |
-            permitio/opal-client-cedar:latest
-            permitio/opal-client-cedar:${{ env.opal_version_tag }}
+      # - name: Build & Push client cedar
+      #   id: build_push_client_cedar
+      #   uses: docker/build-push-action@v4
+      #   with:
+      #     file: docker/Dockerfile
+      #     platforms: linux/amd64,linux/arm64
+      #     push: ${{ !(github.event_name == 'workflow_dispatch' && github.event.inputs.dry_run == 'true') }}
+      #     target: client-cedar
+      #     cache-from: type=registry,ref=permitio/opal-client-cedar:latest
+      #     cache-to: type=inline
+      #     tags: |
+      #       permitio/opal-client-cedar:latest
+      #       permitio/opal-client-cedar:${{ env.opal_version_tag }}
 
-      - name: Python setup
-        if: github.event_name == 'release' && github.event.action == 'created'
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11.8'
+      # - name: Python setup
+      #   if: github.event_name == 'release' && github.event.action == 'created'
+      #   uses: actions/setup-python@v5
+      #   with:
+      #     python-version: '3.11.8'
 
       # This is the root file representing the package for all the sub-packages.
       - name: Bump version - packaging__.py
-        if: github.event_name == 'release' && github.event.action == 'created'
+        #if: github.event_name == 'release' && github.event.action == 'created'
         run: |
-          version_tag=${{ github.event.release.tag_name }}
-          sed -i "s/__version__ = VERSION_STRING/__version__ = \"${version_tag}\"/" packages/__packaging__.py
+          #version_tag=${{ github.event.release.tag_name }}
+          version_tag="0.7.11"
+          version_tuple=$(echo $version_tag | sed 's/\./, /g')
+          sed -i "s/VERSION = (.*/VERSION = (${version_tuple})/" packages/__packaging__.py
           cat packages/__packaging__.py
+          #git config --local user.email "eli@permit.io"
+          #git config --local user.name "elimoshkovich"
+          #git add packages/__packaging__.py
+          #git commit -m "Bump version to ${version_tag}"
 
-      - name: Cleanup setup.py and Build every sub-packages
-        if: github.event_name == 'release' && github.event.action == 'created'
-        run: |
-          pip install wheel
-          cd packages/opal-common/ ; rm -rf *.egg-info build/ dist/
-          python setup.py sdist bdist_wheel
-          cd ../..
-          cd packages/opal-client/ ; rm -rf *.egg-info build/ dist/
-          python setup.py sdist bdist_wheel
-          cd ../..
-          cd packages/opal-server/ ; rm -rf *.egg-info build/ dist/
-          python setup.py sdist bdist_wheel
-          cd ../..
+      # - name: Cleanup setup.py and Build every sub-packages
+      #   if: github.event_name == 'release' && github.event.action == 'created'
+      #   run: |
+      #     pip install wheel
+      #     cd packages/opal-common/ ; rm -rf *.egg-info build/ dist/
+      #     python setup.py sdist bdist_wheel
+      #     cd ../..
+      #     cd packages/opal-client/ ; rm -rf *.egg-info build/ dist/
+      #     python setup.py sdist bdist_wheel
+      #     cd ../..
+      #     cd packages/opal-server/ ; rm -rf *.egg-info build/ dist/
+      #     python setup.py sdist bdist_wheel
+      #     cd ../..
 
-      - name: Publish package distributions to PyPI - Opal-Common
-        if: github.event_name == 'release' && github.event.action == 'created'
-        uses: pypa/gh-action-pypi-publish@release/v1
-        with:
-          password: ${{ secrets.PYPI_TOKEN }}
-          packages-dir: packages/opal-common/
-        env:
-          name: pypi
-          url: https://pypi.org/p/opal-common
+      # # Upload package distributions to the release - Assets
+      # - name: Upload assets to release - Opal-Common
+      #   if: github.event_name == 'release' && github.event.action == 'created'
+      #   uses: actions/upload-release-asset@v1
+      #   with:
+      #     upload_url: ${{ github.event.release.upload_url }}
+      #     asset_path: packages/opal-common/dist/*
+      #     asset_name: opal-common-${{ github.event.release.tag_name }}.zip
+      #     asset_content_type: application/zip
 
-      - name: Publish package distributions to PyPI - Opal-Client
-        if: github.event_name == 'release' && github.event.action == 'created'
-        uses: pypa/gh-action-pypi-publish@release/v1
-        with:
-          password: ${{ secrets.PYPI_TOKEN }}
-          packages-dir: packages/opal-client/
-        env:
-          name: pypi
-          url: https://pypi.org/p/opal-client
+      # - name: Upload assets to release - Opal-Client
+      #   if: github.event_name == 'release' && github.event.action == 'created'
+      #   uses: actions/upload-release-asset@v1
+      #   with:
+      #     upload_url: ${{ github.event.release.upload_url }}
+      #     asset_path: packages/opal-client/dist/*
+      #     asset_name: opal-client-${{ github.event.release.tag_name }}.zip
+      #     asset_content_type: application/zip
 
-      - name: Publish package distributions to PyPI - Opal-Server
-        if: github.event_name == 'release' && github.event.action == 'created'
-        uses: pypa/gh-action-pypi-publish@release/v1
-        with:
-          password: ${{ secrets.PYPI_TOKEN }}
-          packages-dir: packages/opal-server/
-        env:
-          name: pypi
-          url: https://pypi.org/p/opal-server
+      # - name: Upload assets to release - Opal-Server
+      #   if: github.event_name == 'release' && github.event.action == 'created'
+      #   uses: actions/upload-release-asset@v1
+      #   with:
+      #     upload_url: ${{ github.event.release.upload_url }}
+      #     asset_path: packages/opal-server/dist/*
+      #     asset_name: opal-server-${{ github.event.release.tag_name }}.zip
+      #     asset_content_type: application/zip
+          
+      # # Publish package distributions to PyPI
+      # - name: Publish package distributions to PyPI - Opal-Common
+      #   if: github.event_name == 'release' && github.event.action == 'created'
+      #   uses: pypa/gh-action-pypi-publish@release/v1
+      #   with:
+      #     password: ${{ secrets.PYPI_TOKEN }}
+      #     packages-dir: packages/opal-common/
+      #   env:
+      #     name: pypi
+      #     url: https://pypi.org/p/opal-common
+
+      # - name: Publish package distributions to PyPI - Opal-Client
+      #   if: github.event_name == 'release' && github.event.action == 'created'
+      #   uses: pypa/gh-action-pypi-publish@release/v1
+      #   with:
+      #     password: ${{ secrets.PYPI_TOKEN }}
+      #     packages-dir: packages/opal-client/
+      #   env:
+      #     name: pypi
+      #     url: https://pypi.org/p/opal-client
+
+      # - name: Publish package distributions to PyPI - Opal-Server
+      #   if: github.event_name == 'release' && github.event.action == 'created'
+      #   uses: pypa/gh-action-pypi-publish@release/v1
+      #   with:
+      #     password: ${{ secrets.PYPI_TOKEN }}
+      #     packages-dir: packages/opal-server/
+      #   env:
+      #     name: pypi
+      #     url: https://pypi.org/p/opal-server
+
+      # - name: Push changes of setup.py to GitHub
+      #   uses: ad-m/github-push-action@master
+      #   with:
+      #     github_token: ${{ secrets.TOKEN_GITHUB }}
+      #     branch: master
