@@ -3,7 +3,7 @@ name: Sync branch to OPAL Plus
 on:
   push:
     branches:
-      - sync-test
+      - master
   workflow_dispatch:
 
 jobs:
