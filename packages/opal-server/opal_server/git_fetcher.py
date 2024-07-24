@@ -12,7 +12,7 @@ import pygit2
 from ddtrace import tracer
 from git import Repo
 from opal_common.async_utils import run_sync
-from opal_common.git.bundle_maker import BundleMaker
+from opal_common.git_utils.bundle_maker import BundleMaker
 from opal_common.logger import logger
 from opal_common.schemas.policy import PolicyBundle
 from opal_common.schemas.policy_source import (

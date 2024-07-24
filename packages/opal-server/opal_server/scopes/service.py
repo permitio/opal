@@ -7,7 +7,7 @@ from typing import List, Optional, Set, cast
 import git
 from ddtrace import tracer
 from fastapi_websocket_pubsub import PubSubEndpoint
-from opal_common.git.commit_viewer import VersionedFile
+from opal_common.git_utils.commit_viewer import VersionedFile
 from opal_common.logger import logger
 from opal_common.schemas.policy import PolicyUpdateMessageNotification
 from opal_common.schemas.policy_source import GitPolicyScopeSource

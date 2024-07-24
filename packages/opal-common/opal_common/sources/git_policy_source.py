@@ -1,9 +1,9 @@
 from typing import Optional
 
 from git import Repo
-from opal_common.git.branch_tracker import BranchTracker
-from opal_common.git.exceptions import GitFailed
-from opal_common.git.repo_cloner import RepoCloner
+from opal_common.git_utils.branch_tracker import BranchTracker
+from opal_common.git_utils.exceptions import GitFailed
+from opal_common.git_utils.repo_cloner import RepoCloner
 from opal_common.logger import logger
 from opal_common.sources.base_policy_source import BasePolicySource
 

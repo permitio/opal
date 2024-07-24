@@ -3,8 +3,8 @@ from typing import Optional, Tuple
 
 from git import GitCommandError, Head, Remote, Repo
 from git.objects.commit import Commit
-from opal_common.git.env import provide_git_ssh_environment
-from opal_common.git.exceptions import GitFailed
+from opal_common.git_utils.env import provide_git_ssh_environment
+from opal_common.git_utils.exceptions import GitFailed
 from opal_common.logger import logger
 from tenacity import retry, stop_after_attempt, wait_fixed
 

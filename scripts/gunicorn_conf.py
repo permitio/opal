@@ -1,5 +1,3 @@
-import os
-
 from opal_common.logger import logger
 
 

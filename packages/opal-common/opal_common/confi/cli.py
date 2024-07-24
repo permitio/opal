@@ -2,9 +2,8 @@ from typing import Callable, Dict, List
 
 import click
 import typer
+from opal_common.confi.types import ConfiEntry
 from typer.main import Typer
-
-from .types import ConfiEntry
 
 
 def create_click_cli(confi_entries: Dict[str, ConfiEntry], callback: Callable):

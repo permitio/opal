@@ -5,7 +5,7 @@ import aiohttp
 from opal_client.callbacks.register import CallbackConfig, CallbacksRegister
 from opal_client.data.fetcher import DataFetcher
 from opal_common.fetcher.providers.http_fetch_provider import HttpFetcherConfig
-from opal_common.http import is_http_error_response
+from opal_common.http_utils import is_http_error_response
 from opal_common.logger import logger
 from opal_common.schemas.data import DataUpdateReport
 

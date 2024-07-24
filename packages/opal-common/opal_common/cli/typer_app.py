@@ -1,6 +1,5 @@
 import typer
-
-from .commands import all_commands
+from opal_common.cli.commands import all_commands
 
 
 def get_typer_app():

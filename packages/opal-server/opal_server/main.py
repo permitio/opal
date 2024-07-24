@@ -1,5 +1,5 @@
 def create_app(*args, **kwargs):
-    from .server import OpalServer
+    from opal_server.server import OpalServer
 
     server = OpalServer(*args, **kwargs)
     return server.app

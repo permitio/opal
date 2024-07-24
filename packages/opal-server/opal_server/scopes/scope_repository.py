@@ -1,7 +1,7 @@
 from typing import List
 
 from opal_common.schemas.scopes import Scope
-from opal_server.redis import RedisDB
+from opal_server.redis_utils import RedisDB
 
 
 class ScopeNotFoundError(Exception):

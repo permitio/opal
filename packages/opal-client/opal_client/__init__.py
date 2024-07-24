@@ -1,1 +1,1 @@
-from .client import OpalClient
+from opal_client.client import OpalClient
