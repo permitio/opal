@@ -2,8 +2,7 @@ name: Build and publish to Docker Hub
 on:
   release:
     # job will automatically run after a new "release" is create on github.
-    types: [created]
-
+    types: [published]
   #Allows you to run this workflow manually from the Actions tab
   workflow_dispatch:
     inputs:
@@ -171,14 +170,14 @@ jobs:
             permitio/opal-client-cedar:${{ env.opal_version_tag }}
 
       - name: Python setup
-        if: github.event_name == 'release' && github.event.action == 'created'
+        if: ${{ !(github.event_name == 'workflow_dispatch' && github.event.inputs.dry_run == 'true') }}
         uses: actions/setup-python@v5
         with:
           python-version: '3.11.8'
 
       # This is the root file representing the package for all the sub-packages.
       - name: Bump version - packaging__.py
-        if: github.event_name == 'release' && github.event.action == 'created'
+        if: ${{ !(github.event_name == 'workflow_dispatch' && github.event.inputs.dry_run == 'true') }}
         run: |
           version_tag=${{ github.event.release.tag_name }}
           version_tuple=$(echo $version_tag | sed 's/\./, /g')
@@ -190,7 +189,7 @@ jobs:
           git commit -m "Bump version to ${version_tag}"
 
       - name: Cleanup setup.py and Build every sub-packages
-        if: github.event_name == 'release' && github.event.action == 'created'
+        if: ${{ !(github.event_name == 'workflow_dispatch' && github.event.inputs.dry_run == 'true') }}
         run: |
           pip install wheel
           cd packages/opal-common/ ; rm -rf *.egg-info build/ dist/
@@ -205,7 +204,7 @@ jobs:
 
       # Upload package distributions to the release - Assets
       - name: Upload assets to release - Opal-Common
-        if: github.event_name == 'release' && github.event.action == 'created'
+        if: ${{ !(github.event_name == 'workflow_dispatch' && github.event.inputs.dry_run == 'true') }}
         uses: actions/upload-release-asset@v1
         with:
           upload_url: ${{ github.event.release.upload_url }}
@@ -214,7 +213,7 @@ jobs:
           asset_content_type: application/zip
 
       - name: Upload assets to release - Opal-Client
-        if: github.event_name == 'release' && github.event.action == 'created'
+        if: ${{ !(github.event_name == 'workflow_dispatch' && github.event.inputs.dry_run == 'true') }}
         uses: actions/upload-release-asset@v1
         with:
           upload_url: ${{ github.event.release.upload_url }}
@@ -223,7 +222,7 @@ jobs:
           asset_content_type: application/zip
 
       - name: Upload assets to release - Opal-Server
-        if: github.event_name == 'release' && github.event.action == 'created'
+        if: ${{ !(github.event_name == 'workflow_dispatch' && github.event.inputs.dry_run == 'true') }}
         uses: actions/upload-release-asset@v1
         with:
           upload_url: ${{ github.event.release.upload_url }}
@@ -233,7 +232,7 @@ jobs:
 
       # Publish package distributions to PyPI
       - name: Publish package distributions to PyPI - Opal-Common
-        if: github.event_name == 'release' && github.event.action == 'created'
+        if: ${{ !(github.event_name == 'workflow_dispatch' && github.event.inputs.dry_run == 'true') }}
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           password: ${{ secrets.PYPI_TOKEN }}
@@ -246,7 +245,7 @@ jobs:
           url: https://pypi.org/p/opal-common
 
       - name: Publish package distributions to PyPI - Opal-Client
-        if: github.event_name == 'release' && github.event.action == 'created'
+        if: ${{ !(github.event_name == 'workflow_dispatch' && github.event.inputs.dry_run == 'true') }}
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           password: ${{ secrets.PYPI_TOKEN }}
@@ -259,7 +258,7 @@ jobs:
           url: https://pypi.org/p/opal-client
 
       - name: Publish package distributions to PyPI - Opal-Server
-        if: github.event_name == 'release' && github.event.action == 'created'
+        if: ${{ !(github.event_name == 'workflow_dispatch' && github.event.inputs.dry_run == 'true') }}
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           password: ${{ secrets.PYPI_TOKEN }}
@@ -272,6 +271,7 @@ jobs:
           url: https://pypi.org/p/opal-server
 
       - name: Push changes of packages/__packaging__.py to GitHub
+        if: ${{ !(github.event_name == 'workflow_dispatch' && github.event.inputs.dry_run == 'true') }}
         uses: ad-m/github-push-action@master
         with:
           github_token: ${{ secrets.TOKEN_GITHUB }}
