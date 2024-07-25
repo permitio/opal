@@ -30,6 +30,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       GITHUB_TOKEN: ${{ secrets.TOKEN_GITHUB }}
+      github_token: ${{ secrets.TOKEN_GITHUB }}
     permissions:
       id-token: write
       contents: write           # 'write' access to repository contents
@@ -202,33 +203,16 @@ jobs:
           python setup.py sdist bdist_wheel
           cd ../..
 
-      # Upload package distributions to the release - Assets
-      - name: Upload assets to release - Opal-Common
+      # Upload package distributions to the release - All assets in one step
+      - name: Upload assets to release
         if: ${{ !(github.event_name == 'workflow_dispatch' && github.event.inputs.dry_run == 'true') }}
-        uses: actions/upload-release-asset@v1
+        uses: shogo82148/actions-upload-release-asset@v1.7.5
         with:
           upload_url: ${{ github.event.release.upload_url }}
-          asset_path: packages/opal-common/dist/*
-          asset_name: opal-common-${{ github.event.release.tag_name }}.zip
-          asset_content_type: application/zip
-
-      - name: Upload assets to release - Opal-Client
-        if: ${{ !(github.event_name == 'workflow_dispatch' && github.event.inputs.dry_run == 'true') }}
-        uses: actions/upload-release-asset@v1
-        with:
-          upload_url: ${{ github.event.release.upload_url }}
-          asset_path: packages/opal-client/dist/*
-          asset_name: opal-client-${{ github.event.release.tag_name }}.zip
-          asset_content_type: application/zip
-
-      - name: Upload assets to release - Opal-Server
-        if: ${{ !(github.event_name == 'workflow_dispatch' && github.event.inputs.dry_run == 'true') }}
-        uses: actions/upload-release-asset@v1
-        with:
-          upload_url: ${{ github.event.release.upload_url }}
-          asset_path: packages/opal-server/dist/*
-          asset_name: opal-server-${{ github.event.release.tag_name }}.zip
-          asset_content_type: application/zip
+          asset_path: |
+            packages/opal-common/dist/*
+            packages/opal-client/dist/*
+            packages/opal-server/dist/*
 
       # Publish package distributions to PyPI
       - name: Publish package distributions to PyPI - Opal-Common
