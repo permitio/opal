@@ -9,6 +9,7 @@ on:
 jobs:
   sync:
     name: Sync branch to OPAL Plus
+    if: github.repository == 'permitio/opal'
     runs-on: ubuntu-latest
     steps:
       - name: Set up Git configuration
