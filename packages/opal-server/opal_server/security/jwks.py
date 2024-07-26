@@ -1,5 +1,6 @@
 import json
 from pathlib import Path
+from typing import Optional
 
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
@@ -11,7 +12,7 @@ class JwksStaticEndpoint:
 
     def __init__(
         self,
-        signer: JWTSigner,
+        signer: Optional[JWTSigner],
         jwks_url: str,
         jwks_static_dir: str,
     ):
@@ -25,7 +26,7 @@ class JwksStaticEndpoint:
 
         # get the jwks contents from the signer
         jwks_contents = {}
-        if self._signer.enabled:
+        if self._signer is not None and self._signer.enabled:
             jwk = json.loads(self._signer.get_jwk())
             jwks_contents = {"keys": [jwk]}
 

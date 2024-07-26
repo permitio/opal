@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from opal_common.authentication.deps import StaticBearerAuthenticator
@@ -7,7 +8,7 @@ from opal_common.logger import logger
 from opal_common.schemas.security import AccessToken, AccessTokenRequest, TokenDetails
 
 
-def init_security_router(signer: JWTSigner, authenticator: StaticBearerAuthenticator):
+def init_security_router(signer: Optional[JWTSigner], authenticator: StaticBearerAuthenticator):
     router = APIRouter()
 
     @router.post(
@@ -17,7 +18,7 @@ def init_security_router(signer: JWTSigner, authenticator: StaticBearerAuthentic
         dependencies=[Depends(authenticator)],
     )
     async def generate_new_access_token(req: AccessTokenRequest):
-        if not signer.enabled:
+        if signer is None or not signer.enabled:
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail="opal server was not configured with security, cannot generate tokens!",
