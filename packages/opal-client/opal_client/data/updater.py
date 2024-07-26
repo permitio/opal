@@ -24,6 +24,7 @@ from opal_client.policy_store.policy_store_client_factory import (
     DEFAULT_POLICY_STORE_GETTER,
 )
 from opal_common.async_utils import TakeANumberQueue, TasksPool, repeated_call
+from opal_common.authentication.authenticator import ClientAuthenticator
 from opal_common.config import opal_common_config
 from opal_common.fetcher.events import FetcherConfig
 from opal_common.http_utils import is_http_error_response
@@ -54,6 +55,7 @@ class DataUpdater:
         callbacks_register: Optional[CallbacksRegister] = None,
         opal_client_id: str = None,
         shard_id: Optional[str] = None,
+        authenticator: Optional[ClientAuthenticator] = None,
     ):
         """Keeps policy-stores (e.g. OPA) up to date with relevant data Obtains
         data configuration on startup from OPAL-server Uses Pub/Sub to
@@ -110,17 +112,18 @@ class DataUpdater:
             self._callbacks_register,
         )
         self._token = token
+        if self._token == "THIS_IS_A_DEV_SECRET":
+            self._token = None
         self._shard_id = shard_id
         self._server_url = pubsub_url
         self._data_sources_config_url = data_sources_config_url
         self._opal_client_id = opal_client_id
-        self._extra_headers = []
+        self._extra_headers = {}
         if self._token is not None:
-            self._extra_headers.append(get_authorization_header(self._token))
+            auth_token = get_authorization_header(self._token)
+            self._extra_headers[auth_token[0]] = auth_token[1]
         if self._shard_id is not None:
-            self._extra_headers.append(("X-Shard-ID", self._shard_id))
-        if len(self._extra_headers) == 0:
-            self._extra_headers = None
+            self._extra_headers['X-Shard-ID'] = self._shard_id
         self._stopping = False
         # custom SSL context (for self-signed certificates)
         self._custom_ssl_context = get_custom_ssl_context()
@@ -132,6 +135,10 @@ class DataUpdater:
         self._updates_storing_queue = TakeANumberQueue(logger)
         self._tasks = TasksPool()
         self._polling_update_tasks = []
+        if authenticator is not None:
+            self._authenticator = authenticator
+        else:
+            self._authenticator = ClientAuthenticator()
 
     async def __aenter__(self):
         await self.start()
@@ -177,8 +184,14 @@ class DataUpdater:
         if url is None:
             url = self._data_sources_config_url
         logger.info("Getting data-sources configuration from '{source}'", source=url)
+
+        headers = {}
+        if self._extra_headers is not None:
+            headers = self._extra_headers.copy()
+        await self._authenticator.authenticate(headers)
+
         try:
-            async with ClientSession(headers=self._extra_headers) as session:
+            async with ClientSession(headers=headers) as session:
                 response = await session.get(url, **self._ssl_context_kwargs)
                 if response.status == 200:
                     return DataSourceConfig.parse_obj(await response.json())
@@ -274,12 +287,19 @@ class DataUpdater:
         """Coroutine meant to be spunoff with create_task to listen in the
         background for data events and pass them to the data_fetcher."""
         logger.info("Subscribing to topics: {topics}", topics=self._data_topics)
+
+        headers = {}
+        if self._extra_headers is not None:
+            headers = self._extra_headers.copy()
+        await self._authenticator.authenticate(headers)
+
         self._client = PubSubClient(
-            self._data_topics,
-            self._update_policy_data_callback,
+            topics=self._data_topics,
+            callback=self._update_policy_data_callback,
             methods_class=TenantAwareRpcEventClientMethods,
             on_connect=[self.on_connect],
-            extra_headers=self._extra_headers,
+            on_disconnect=[self.on_disconnect],
+            extra_headers=headers,
             keep_alive=opal_client_config.KEEP_ALIVE_INTERVAL,
             server_uri=self._server_url,
             **self._ssl_context_kwargs,
