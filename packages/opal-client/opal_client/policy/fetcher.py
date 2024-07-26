@@ -4,6 +4,7 @@ import aiohttp
 from fastapi import HTTPException, status
 from opal_client.config import opal_client_config
 from opal_client.logger import logger
+from opal_common.authentication.authenticator import ClientAuthenticator
 from opal_common.schemas.policy import PolicyBundle
 from opal_common.security.sslcontext import get_custom_ssl_context
 from opal_common.utils import (
@@ -28,15 +29,26 @@ def force_valid_bundle(bundle) -> PolicyBundle:
 class PolicyFetcher:
     """fetches policy from backend."""
 
-    def __init__(self, backend_url=None, token=None):
+    def __init__(
+        self,
+        backend_url=None,
+        token=None,
+        authenticator: Optional[ClientAuthenticator] = None,
+    ):
         """
         Args:
             backend_url (str): Defaults to opal_client_config.SERVER_URL.
             token ([type], optional): [description]. Defaults to opal_client_config.CLIENT_TOKEN.
         """
+        if authenticator is not None:
+            self._authenticator = authenticator
+        else:
+            self._authenticator = ClientAuthenticator()
         self._token = token or opal_client_config.CLIENT_TOKEN
         self._backend_url = backend_url or opal_client_config.SERVER_URL
-        self._auth_headers = tuple_to_dict(get_authorization_header(self._token))
+        self._auth_headers = {}
+        if self._token != "THIS_IS_A_DEV_SECRET":
+            self._auth_headers = tuple_to_dict(get_authorization_header(self._token))
 
         self._retry_config = (
             opal_client_config.POLICY_UPDATER_CONN_RETRY.toTenacityConfig()
@@ -82,10 +94,15 @@ class PolicyFetcher:
 
         May throw, in which case we retry again.
         """
+        headers = {}
+        if self._auth_headers is not None:
+            headers = self._auth_headers.copy()
+        await self._authenticator.authenticate(headers)
+
         params = {"path": directories}
         if base_hash is not None:
             params["base_hash"] = base_hash
-        async with aiohttp.ClientSession() as session:
+        async with aiohttp.ClientSession(headers=headers) as session:
             logger.info(
                 "Fetching policy bundle from {url}",
                 url=self._policy_endpoint_url,
@@ -95,7 +112,6 @@ class PolicyFetcher:
                     self._policy_endpoint_url,
                     headers={
                         "content-type": "text/plain",
-                        **self._auth_headers,
                     },
                     params=params,
                     **self._ssl_context_kwargs,
