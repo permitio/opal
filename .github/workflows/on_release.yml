@@ -1,15 +1,10 @@
 name: Build and publish to Docker Hub
-on:
-  release:
-    # job will automatically run after a new "release" is create on github.
-    types: [published]
+on: push
+  # release:
+  #   # job will automatically run after a new "release" is create on github.
+  #   types: [published]
   #Allows you to run this workflow manually from the Actions tab
   workflow_dispatch:
-    inputs:
-        dry_run:
-          description: 'If true, will not push the built images to docker hub.'
-          required: false
-          default: 'false'
 
 jobs:
   # this job will build, test and (potentially) push the docker images to docker hub
@@ -49,7 +44,7 @@ jobs:
         uses: docker/setup-buildx-action@v2
 
       - name: Login to DockerHub
-        if: ${{ !(github.event_name == 'workflow_dispatch' && github.event.inputs.dry_run == 'true') }}
+        if: ${{ !(github.event_name == 'workflow_dispatch') }}
         uses: docker/login-action@v2
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
@@ -120,7 +115,7 @@ jobs:
         with:
           file: docker/Dockerfile
           platforms: linux/amd64,linux/arm64
-          push: ${{ !(github.event_name == 'workflow_dispatch' && github.event.inputs.dry_run == 'true') }}
+          push: ${{ !(github.event_name == 'workflow_dispatch') }}
           target: client
           cache-from: type=registry,ref=permitio/opal-client:latest
           cache-to: type=inline
@@ -134,7 +129,7 @@ jobs:
         with:
           file: docker/Dockerfile
           platforms: linux/amd64,linux/arm64
-          push: ${{ !(github.event_name == 'workflow_dispatch' && github.event.inputs.dry_run == 'true') }}
+          push: ${{ !(github.event_name == 'workflow_dispatch') }}
           target: client-standalone
           cache-from: type=registry,ref=permitio/opal-client-standalone:latest
           cache-to: type=inline
@@ -148,7 +143,7 @@ jobs:
         with:
           file: docker/Dockerfile
           platforms: linux/amd64,linux/arm64
-          push: ${{ !(github.event_name == 'workflow_dispatch' && github.event.inputs.dry_run == 'true') }}
+          push: ${{ !(github.event_name == 'workflow_dispatch') }}
           target: server
           cache-from: type=registry,ref=permitio/opal-server:latest
           cache-to: type=inline
@@ -162,7 +157,7 @@ jobs:
         with:
           file: docker/Dockerfile
           platforms: linux/amd64,linux/arm64
-          push: ${{ !(github.event_name == 'workflow_dispatch' && github.event.inputs.dry_run == 'true') }}
+          push: ${{ !(github.event_name == 'workflow_dispatch') }}
           target: client-cedar
           cache-from: type=registry,ref=permitio/opal-client-cedar:latest
           cache-to: type=inline
@@ -171,14 +166,14 @@ jobs:
             permitio/opal-client-cedar:${{ env.opal_version_tag }}
 
       - name: Python setup
-        if: ${{ !(github.event_name == 'workflow_dispatch' && github.event.inputs.dry_run == 'true') }}
+        if: ${{ !(github.event_name == 'workflow_dispatch') }}
         uses: actions/setup-python@v5
         with:
           python-version: '3.11.8'
 
       # This is the root file representing the package for all the sub-packages.
       - name: Bump version - packaging__.py
-        if: ${{ !(github.event_name == 'workflow_dispatch' && github.event.inputs.dry_run == 'true') }}
+        if: ${{ !(github.event_name == 'workflow_dispatch') }}
         run: |
           version_tag=${{ github.event.release.tag_name }}
           version_tuple=$(echo $version_tag | sed 's/\./, /g')
@@ -190,7 +185,7 @@ jobs:
           git commit -m "Bump version to ${version_tag}"
 
       - name: Cleanup setup.py and Build every sub-packages
-        if: ${{ !(github.event_name == 'workflow_dispatch' && github.event.inputs.dry_run == 'true') }}
+        if: ${{ !(github.event_name == 'workflow_dispatch') }}
         run: |
           pip install wheel
           cd packages/opal-common/ ; rm -rf *.egg-info build/ dist/
@@ -205,7 +200,7 @@ jobs:
 
       # Upload package distributions to the release - All assets in one step
       - name: Upload assets to release
-        if: ${{ !(github.event_name == 'workflow_dispatch' && github.event.inputs.dry_run == 'true') }}
+        if: ${{ !(github.event_name == 'workflow_dispatch') }}
         uses: shogo82148/actions-upload-release-asset@v1.7.5
         with:
           upload_url: ${{ github.event.release.upload_url }}
@@ -216,7 +211,7 @@ jobs:
 
       # Publish package distributions to PyPI
       - name: Publish package distributions to PyPI - Opal-Common
-        if: ${{ !(github.event_name == 'workflow_dispatch' && github.event.inputs.dry_run == 'true') }}
+        if: ${{ !(github.event_name == 'workflow_dispatch') }}
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           password: ${{ secrets.PYPI_TOKEN }}
@@ -229,7 +224,7 @@ jobs:
           url: https://pypi.org/p/opal-common
 
       - name: Publish package distributions to PyPI - Opal-Client
-        if: ${{ !(github.event_name == 'workflow_dispatch' && github.event.inputs.dry_run == 'true') }}
+        if: ${{ !(github.event_name == 'workflow_dispatch') }}
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           password: ${{ secrets.PYPI_TOKEN }}
@@ -242,7 +237,7 @@ jobs:
           url: https://pypi.org/p/opal-client
 
       - name: Publish package distributions to PyPI - Opal-Server
-        if: ${{ !(github.event_name == 'workflow_dispatch' && github.event.inputs.dry_run == 'true') }}
+        if: ${{ !(github.event_name == 'workflow_dispatch') }}
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           password: ${{ secrets.PYPI_TOKEN }}
@@ -255,7 +250,7 @@ jobs:
           url: https://pypi.org/p/opal-server
 
       - name: Push changes of packages/__packaging__.py to GitHub
-        if: ${{ !(github.event_name == 'workflow_dispatch' && github.event.inputs.dry_run == 'true') }}
+        if: ${{ !(github.event_name == 'workflow_dispatch') }}
         uses: ad-m/github-push-action@master
         with:
           github_token: ${{ secrets.TOKEN_GITHUB }}
