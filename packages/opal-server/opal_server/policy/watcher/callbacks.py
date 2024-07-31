@@ -16,8 +16,8 @@ from opal_common.schemas.policy import (
     PolicyUpdateMessage,
     PolicyUpdateMessageNotification,
 )
-from opal_common.topics.publisher import TopicPublisher
 from opal_common.topics.utils import policy_topics
+from opal_server.pubsub import PubSub
 
 
 async def create_update_all_directories_in_repo(
@@ -104,7 +104,7 @@ async def create_policy_update(
 async def publish_changed_directories(
     old_commit: Commit,
     new_commit: Commit,
-    publisher: TopicPublisher,
+    pubsub: PubSub,
     file_extensions: Optional[List[str]] = None,
     bundle_ignore: Optional[List[str]] = None,
 ):
@@ -116,7 +116,4 @@ async def publish_changed_directories(
     )
 
     if notification:
-        async with publisher:
-            await publisher.publish(
-                topics=notification.topics, data=notification.update.dict()
-            )
+        await pubsub.publish_sync(notification.topics, notification.update.dict())

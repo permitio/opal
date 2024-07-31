@@ -2,12 +2,9 @@ import asyncio
 import os
 import signal
 import sys
-import traceback
-from functools import partial
 from typing import List, Optional
 
 from fastapi import Depends, FastAPI
-from fastapi_websocket_pubsub.event_broadcaster import EventBroadcasterContextManager
 from opal_common.authentication.deps import JWTAuthenticator, StaticBearerAuthenticator
 from opal_common.authentication.signer import JWTSigner
 from opal_common.confi.confi import load_conf_if_none
@@ -17,11 +14,6 @@ from opal_common.middleware import configure_middleware
 from opal_common.monitoring import apm, metrics
 from opal_common.schemas.data import ServerDataSourceConfig
 from opal_common.synchronization.named_lock import NamedLock
-from opal_common.topics.publisher import (
-    PeriodicPublisher,
-    ServerSideTopicPublisher,
-    TopicPublisher,
-)
 from opal_server.config import opal_server_config
 from opal_server.data.api import init_data_updates_router
 from opal_server.data.data_update_publisher import DataUpdatePublisher
@@ -30,7 +22,6 @@ from opal_server.policy.bundles.api import router as bundles_router
 from opal_server.policy.watcher.factory import setup_watcher_task
 from opal_server.policy.watcher.task import PolicyWatcherTask
 from opal_server.policy.webhook.api import init_git_webhook_router
-from opal_server.publisher import setup_broadcaster_keepalive_task
 from opal_server.pubsub import PubSub
 from opal_server.redis_utils import RedisDB
 from opal_server.scopes.api import init_scope_router
@@ -59,7 +50,7 @@ class OpalServer:
         """
         Args:
             policy_remote_url (str, optional): the url of the repo watched by policy watcher.
-            init_publisher (bool, optional): whether or not to launch a publisher pub/sub client.
+            init_publisher (bool, optional): whether to launch a publisher pub/sub client.
                 this publisher is used by the server processes to publish data to the client.
             data_sources_config (ServerDataSourceConfig, optional): base data configuration, that opal
                 clients should get the data from.
@@ -143,38 +134,17 @@ class OpalServer:
         else:
             self.jwks_endpoint = None
 
-        self.pubsub = PubSub(signer=self.signer, broadcaster_uri=broadcaster_uri)
+        self.pubsub = PubSub(
+            signer=self.signer,
+            broadcaster_uri=broadcaster_uri,
+            disconnect_callback=self._graceful_shutdown(),  # TODO: a better approach might be to have each component (e.g statistics) register a callback on broadcaster reconnect that resets its own state (shouldn't rely on state if broadcaster was down)
+        )
 
-        self.publisher: Optional[TopicPublisher] = None
-        self.broadcast_keepalive: Optional[PeriodicPublisher] = None
-        if init_publisher:
-            self.publisher = ServerSideTopicPublisher(self.pubsub.endpoint)
-
-            if (
-                opal_server_config.BROADCAST_KEEPALIVE_INTERVAL > 0
-                and self.broadcaster_uri is not None
-            ):
-                self.broadcast_keepalive = setup_broadcaster_keepalive_task(
-                    self.publisher,
-                    time_interval=opal_server_config.BROADCAST_KEEPALIVE_INTERVAL,
-                    topic=opal_server_config.BROADCAST_KEEPALIVE_TOPIC,
-                )
-
+        # TODO: Ignore init_publisher
         if opal_common_config.STATISTICS_ENABLED:
-            self.opal_statistics = OpalStatistics(self.pubsub.endpoint)
+            self.opal_statistics = OpalStatistics(self.pubsub)
         else:
             self.opal_statistics = None
-
-        # if stats are enabled, the server workers must be listening on the broadcast
-        # channel for their own synchronization, not just for their clients. therefore
-        # we need a "global" listening context
-        self.broadcast_listening_context: Optional[
-            EventBroadcasterContextManager
-        ] = None
-        if self.broadcaster_uri is not None and opal_common_config.STATISTICS_ENABLED:
-            self.broadcast_listening_context = (
-                self.pubsub.endpoint.broadcaster.get_listening_context()
-            )
 
         self.watcher: PolicyWatcherTask = None
         self.leadership_lock: Optional[NamedLock] = None
@@ -183,6 +153,8 @@ class OpalServer:
             self._redis_db = RedisDB(opal_server_config.REDIS_URL)
             self._scopes = ScopeRepository(self._redis_db)
             logger.info("OPAL Scopes: server is connected to scopes repository")
+
+        self._leadership_task: Optional[asyncio.Task] = None
 
         # init fastapi app
         self.app: FastAPI = self._init_fast_api_app()
@@ -221,15 +193,15 @@ class OpalServer:
         """mounts the api routes on the app object."""
         authenticator = JWTAuthenticator(self.signer)
 
-        data_update_publisher: Optional[DataUpdatePublisher] = None
-        if self.publisher is not None:
-            data_update_publisher = DataUpdatePublisher(self.publisher)
+        data_update_publisher: Optional[DataUpdatePublisher] = DataUpdatePublisher(
+            self.pubsub
+        )
 
         # Init api routers with required dependencies
         data_updates_router = init_data_updates_router(
             data_update_publisher, self.data_sources_config, authenticator
         )
-        webhook_router = init_git_webhook_router(self.pubsub.endpoint, authenticator)
+        webhook_router = init_git_webhook_router(self.pubsub, authenticator)
         security_router = init_security_router(
             self.signer, StaticBearerAuthenticator(self.master_token)
         )
@@ -264,7 +236,7 @@ class OpalServer:
 
         if opal_server_config.SCOPES:
             app.include_router(
-                init_scope_router(self._scopes, authenticator, self.pubsub.endpoint),
+                init_scope_router(self._scopes, authenticator, self.pubsub),
                 tags=["Scopes"],
                 prefix="/scopes",
             )
@@ -294,12 +266,9 @@ class OpalServer:
             logger.info("*** OPAL Server Startup ***")
 
             try:
-                self._task = asyncio.create_task(self.start_server_background_tasks())
-
+                await self.start_server_background_tasks()
             except Exception:
-                logger.critical("Exception while starting OPAL")
-                traceback.print_exc()
-
+                logger.exception("Exception while starting OPAL")
                 sys.exit(1)
 
         @app.on_event("shutdown")
@@ -308,6 +277,27 @@ class OpalServer:
             await self.stop_server_background_tasks()
 
         return app
+
+    async def _wait_for_leadership(self):
+        # We want only one worker to run repo watchers
+        # (otherwise for each new commit, we will publish multiple updates via pub/sub).
+        # leadership is determined by the first worker to obtain a lock
+        self.leadership_lock = NamedLock(opal_server_config.LEADER_LOCK_FILE_PATH)
+        await self.leadership_lock.acquire()
+        # only one worker gets here, the others block. in case the leader worker
+        # is terminated, another one will obtain the lock and become leader.
+        logger.info(
+            "leadership lock acquired, leader pid: {pid}",
+            pid=os.getpid(),
+        )
+
+        if opal_server_config.SCOPES:
+            await load_scopes(self._scopes)
+
+        if self._init_policy_watcher:
+            # TODO: Should somehow refresh scopes if broadcaster connection was lost (maybe webhook msgs got lost?)
+            self.watcher = setup_watcher_task(self.pubsub)
+            await self.watcher.start()
 
     async def start_server_background_tasks(self):
         """starts the background processes (as asyncio tasks) if such are
@@ -319,85 +309,36 @@ class OpalServer:
         only the leader worker (first to obtain leadership lock) will start these tasks:
         - (repo) watcher: monitors the policy git repository for changes.
         """
-        if self.publisher is not None:
-            async with self.publisher:
-                if self.opal_statistics is not None:
-                    if self.broadcast_listening_context is not None:
-                        logger.info(
-                            "listening on broadcast channel for statistics events..."
-                        )
-                        await self.broadcast_listening_context.__aenter__()
-                        # if the broadcast channel is closed, we want to restart worker process because statistics can't be reliable anymore
-                        self.broadcast_listening_context._event_broadcaster.get_reader_task().add_done_callback(
-                            lambda _: self._graceful_shutdown()
-                        )
-                    asyncio.create_task(self.opal_statistics.run())
-                    self.pubsub.endpoint.notifier.register_unsubscribe_event(
-                        self.opal_statistics.remove_client
-                    )
+        await self.pubsub.start()
 
-                # We want only one worker to run repo watchers
-                # (otherwise for each new commit, we will publish multiple updates via pub/sub).
-                # leadership is determined by the first worker to obtain a lock
-                self.leadership_lock = NamedLock(
-                    opal_server_config.LEADER_LOCK_FILE_PATH
-                )
-                async with self.leadership_lock:
-                    # only one worker gets here, the others block. in case the leader worker
-                    # is terminated, another one will obtain the lock and become leader.
-                    logger.info(
-                        "leadership lock acquired, leader pid: {pid}",
-                        pid=os.getpid(),
-                    )
+        if self.opal_statistics is not None:
+            await self.opal_statistics.start()
 
-                    if opal_server_config.SCOPES:
-                        await load_scopes(self._scopes)
-
-                    if self.broadcast_keepalive is not None:
-                        self.broadcast_keepalive.start()
-                        if not self._init_policy_watcher:
-                            # Wait on keepalive instead to keep leadership lock acquired
-                            await self.broadcast_keepalive.wait_until_done()
-
-                    if self._init_policy_watcher:
-                        self.watcher = setup_watcher_task(
-                            self.publisher, self.pubsub.endpoint
-                        )
-                        # running the watcher, and waiting until it stops (until self.watcher.signal_stop() is called)
-                        async with self.watcher:
-                            await self.watcher.wait_until_should_stop()
-
-                            # Worker should restart when watcher stops
-                            self._graceful_shutdown()
-
-                if (
-                    self.opal_statistics is not None
-                    and self.broadcast_listening_context is not None
-                ):
-                    await self.broadcast_listening_context.__aexit__()
-                    logger.info(
-                        "stopped listening for statistics events on the broadcast channel"
-                    )
+        self._leadership_task = asyncio.create_task(self._wait_for_leadership())
 
     async def stop_server_background_tasks(self):
         logger.info("stopping background tasks...")
 
         tasks: List[asyncio.Task] = []
 
-        if self.watcher is not None:
-            tasks.append(asyncio.create_task(self.watcher.stop()))
-        if self.publisher is not None:
-            tasks.append(asyncio.create_task(self.publisher.stop()))
-        if self.broadcast_keepalive is not None:
-            tasks.append(asyncio.create_task(self.broadcast_keepalive.stop()))
         if self.opal_statistics is not None:
             tasks.append(asyncio.create_task(self.opal_statistics.stop()))
+        if self.watcher is not None:
+            tasks.append(asyncio.create_task(self.watcher.stop()))
+        if self._leadership_task is not None:
+            self._leadership_task.cancel()
+            tasks.append(self._leadership_task)
+        tasks.append(asyncio.create_task(self.pubsub.stop()))
 
         try:
             await asyncio.gather(*tasks)
         except Exception:
             logger.exception("exception while shutting down background tasks")
 
-    def _graceful_shutdown(self):
+        if self.leadership_lock.is_locked:
+            await self.leadership_lock.release()
+
+    @staticmethod
+    async def _graceful_shutdown():
         logger.info("Trigger worker graceful shutdown")
         os.kill(os.getpid(), signal.SIGTERM)

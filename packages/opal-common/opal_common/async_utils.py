@@ -97,12 +97,22 @@ class TasksPool:
         self._tasks: List[asyncio.Task] = []
 
     def _cleanup_task(self, done_task):
-        self._tasks.remove(done_task)
+        try:
+            self._tasks.remove(done_task)
+        except KeyError:
+            ...
 
     def add_task(self, f):
         t = asyncio.create_task(f)
         self._tasks.append(t)
         t.add_done_callback(self._cleanup_task)
+
+    async def join(self, cancel=False):
+        if cancel:
+            for t in self._tasks:
+                t.cancel()
+        await asyncio.gather(*self._tasks, return_exceptions=True)
+        self._tasks.clear()
 
 
 async def repeated_call(

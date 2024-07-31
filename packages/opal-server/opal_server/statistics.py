@@ -10,12 +10,11 @@ import opal_server
 import pydantic
 from fastapi import APIRouter, HTTPException, status
 from fastapi_websocket_pubsub.event_notifier import Subscription, TopicList
-from fastapi_websocket_pubsub.pub_sub_server import PubSubEndpoint
 from opal_common.async_utils import TasksPool
 from opal_common.config import opal_common_config
 from opal_common.logger import get_logger
-from opal_common.topics.publisher import PeriodicPublisher
 from opal_server.config import opal_server_config
+from opal_server.pubsub import PubSub
 from pydantic import BaseModel, Field
 
 
@@ -75,8 +74,8 @@ class OpalStatistics:
         The pub/sub server endpoint that allows us to subscribe to the stats channel on the server side
     """
 
-    def __init__(self, endpoint):
-        self._endpoint: PubSubEndpoint = endpoint
+    def __init__(self, pubsub):
+        self._pubsub: PubSub = pubsub
         self._uptime = datetime.utcnow()
         self._workers_count = (lambda envar: int(envar) if envar.isdigit() else 1)(
             os.environ.get("UVICORN_NUM_WORKERS", "1")
@@ -135,7 +134,7 @@ class OpalStatistics:
         while True:
             try:
                 await self._expire_old_servers()
-                self._publish(
+                await self._publish(
                     opal_server_config.STATISTICS_SERVER_KEEPALIVE_CHANNEL,
                     ServerKeepalive(worker_id=self._worker_id).dict(),
                 )
@@ -147,43 +146,45 @@ class OpalStatistics:
                 return
             except Exception as e:
                 logger.exception("Statistics: periodic server keepalive failed")
-                logger.exception("Statistics: periodic server keepalive failed")
 
-    def _publish(self, channel: str, message: Any):
-        self._publish_tasks.add_task(self._endpoint.publish([channel], message))
+    async def _publish(self, channel: str, message: Any):
+        await self._pubsub.publish([channel], message)
 
-    async def run(self):
+    async def start(self):
         """subscribe to two channels to be able to sync add and delete of
         clients."""
-        await self._endpoint.subscribe(
+        await self._pubsub.subscribe(
             [opal_server_config.STATISTICS_WAKEUP_CHANNEL],
             self._receive_other_worker_wakeup_message,
         )
-        await self._endpoint.subscribe(
+        await self._pubsub.subscribe(
             [opal_server_config.STATISTICS_STATE_SYNC_CHANNEL],
             self._receive_other_worker_synced_state,
         )
-        await self._endpoint.subscribe(
+        await self._pubsub.subscribe(
             [opal_server_config.STATISTICS_SERVER_KEEPALIVE_CHANNEL],
             self._receive_other_worker_keepalive_message,
         )
-        await self._endpoint.subscribe(
+        await self._pubsub.subscribe(
             [opal_common_config.STATISTICS_ADD_CLIENT_CHANNEL], self._add_client
         )
-        await self._endpoint.subscribe(
+        await self._pubsub.subscribe(
             [opal_common_config.STATISTICS_REMOVE_CLIENT_CHANNEL],
             self._sync_remove_client,
         )
+        self._pubsub.endpoint.notifier.register_unsubscribe_event(
+            self.remove_client
+        )  # TODO: Fix that
 
         # wait before publishing the wakeup message, due to the fact we are
         # counting on the broadcaster to listen and to replicate the message
         # to the other workers / server nodes in the networks.
         # However, since broadcaster is using asyncio.create_task(), there is a
         # race condition that is mitigated by this asyncio.sleep() call.
-        await asyncio.sleep(SLEEP_TIME_FOR_BROADCASTER_READER_TO_START)
+        # await asyncio.sleep(SLEEP_TIME_FOR_BROADCASTER_READER_TO_START)
         # Let all the other opal servers know that new opal server started
         logger.info(f"sending stats wakeup message: {self._worker_id}")
-        self._publish(
+        await self._publish(
             opal_server_config.STATISTICS_WAKEUP_CHANNEL,
             SyncRequest(requesting_worker_id=self._worker_id).dict(),
         )
@@ -242,7 +243,7 @@ class OpalStatistics:
                 logger.info(
                     f"[{request.requesting_worker_id}] respond with my own stats"
                 )
-                self._publish(
+                await self._publish(
                     opal_server_config.STATISTICS_STATE_SYNC_CHANNEL,
                     SyncResponse(
                         requesting_worker_id=request.requesting_worker_id,
@@ -363,7 +364,7 @@ class OpalStatistics:
                 "Publish rpc_id={rpc_id} to be removed from statistics",
                 rpc_id=rpc_id,
             )
-            self._publish(
+            await self._publish(
                 opal_common_config.STATISTICS_REMOVE_CLIENT_CHANNEL,
                 rpc_id,
             )

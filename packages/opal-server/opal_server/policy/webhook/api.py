@@ -2,7 +2,6 @@ from typing import Callable, List
 from urllib.parse import SplitResult, urlparse
 
 from fastapi import APIRouter, Depends, Request, status
-from fastapi_websocket_pubsub.pub_sub_server import PubSubEndpoint
 from opal_common.authentication.deps import JWTAuthenticator
 from opal_common.logger import logger
 from opal_common.schemas.webhook import GitWebhookRequestParams
@@ -12,11 +11,10 @@ from opal_server.policy.webhook.deps import (
     extracted_git_changes,
     validate_git_secret_or_throw,
 )
+from opal_server.pubsub import PubSub
 
 
-def init_git_webhook_router(
-    pubsub_endpoint: PubSubEndpoint, authenticator: JWTAuthenticator
-):
+def init_git_webhook_router(pubsub: PubSub, authenticator: JWTAuthenticator):
     async def dummy_affected_repo_urls(request: Request) -> List[str]:
         return []
 
@@ -32,7 +30,7 @@ def init_git_webhook_router(
         [Depends(route_dependency)],
         Depends(func_dependency),
         source_type,
-        pubsub_endpoint.publish,
+        pubsub.publish_sync,
     )
 
 

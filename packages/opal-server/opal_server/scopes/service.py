@@ -6,18 +6,18 @@ from typing import List, Optional, Set, cast
 
 import git
 from ddtrace import tracer
-from fastapi_websocket_pubsub import PubSubEndpoint
 from opal_common.git_utils.commit_viewer import VersionedFile
 from opal_common.logger import logger
 from opal_common.schemas.policy import PolicyUpdateMessageNotification
 from opal_common.schemas.policy_source import GitPolicyScopeSource
-from opal_common.topics.publisher import ScopedServerSideTopicPublisher
 from opal_server.git_fetcher import GitPolicyFetcher, PolicyFetcherCallbacks
 from opal_server.policy.watcher.callbacks import (
     create_policy_update,
     create_update_all_directories_in_repo,
 )
+from opal_server.pubsub import PubSub
 from opal_server.scopes.scope_repository import Scope, ScopeRepository
+from opal_server.scopes.scoped_pubsub import ScopedPubSub
 
 
 def is_rego_source_file(
@@ -41,12 +41,12 @@ class NewCommitsCallbacks(PolicyFetcherCallbacks):
         base_dir: Path,
         scope_id: str,
         source: GitPolicyScopeSource,
-        pubsub_endpoint: PubSubEndpoint,
+        pubsub: PubSub,
     ):
         self._scope_repo_dir = GitPolicyFetcher.repo_clone_path(base_dir, source)
         self._scope_id = scope_id
         self._source = source
-        self._pubsub_endpoint = pubsub_endpoint
+        self._pubsub = pubsub
 
     async def on_update(self, previous_head: str, head: str):
         if previous_head == head:
@@ -93,10 +93,9 @@ class NewCommitsCallbacks(PolicyFetcherCallbacks):
         logger.info(
             f"Triggering policy update for scope {self._scope_id}: {notification.dict()}"
         )
-        async with ScopedServerSideTopicPublisher(
-            self._pubsub_endpoint, self._scope_id
-        ) as publisher:
-            await publisher.publish(notification.topics, notification.update)
+        await ScopedPubSub(self._pubsub, self._scope_id).publish_sync(
+            notification.topics, notification.update
+        )
 
 
 class ScopesService:
@@ -104,11 +103,11 @@ class ScopesService:
         self,
         base_dir: Path,
         scopes: ScopeRepository,
-        pubsub_endpoint: PubSubEndpoint,
+        pubsub: Optional[PubSub],
     ):
         self._base_dir = base_dir
         self._scopes = scopes
-        self._pubsub_endpoint = pubsub_endpoint
+        self._pubsub = pubsub
 
     async def sync_scope(
         self,
@@ -139,7 +138,7 @@ class ScopesService:
                     base_dir=self._base_dir,
                     scope_id=scope.scope_id,
                     source=source,
-                    pubsub_endpoint=self._pubsub_endpoint,
+                    pubsub=self._pubsub,
                 )
 
             fetcher = GitPolicyFetcher(
