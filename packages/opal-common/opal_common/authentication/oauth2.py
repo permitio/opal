@@ -75,9 +75,6 @@ class OAuth2ClientCredentialsAuthenticator(_OAuth2Authenticator):
         self._verify_exact_match_claims(claims)
         self._verify_required_claims(claims)
 
-        #TODO TODO
-        claims["peer_type"] = "datasource"
-
         return claims
 
     def _verify_opaque(self, token: str) -> {}:
