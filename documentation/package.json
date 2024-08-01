@@ -21,8 +21,8 @@
     "docusaurus-plugin-sass": "^0.2.5",
     "node": "^18.0.0",
     "prism-react-renderer": "^2.1.0",
-    "react": "^18.0.0",
-    "react-dom": "^18.0.0",
+    "react": "^18.3.0",
+    "react-dom": "^18.3.0",
     "sass": "^1.71.1"
   },
   "devDependencies": {
