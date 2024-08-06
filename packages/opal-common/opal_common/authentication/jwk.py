@@ -5,7 +5,6 @@ from cachetools import TTLCache
 from opal_common.authentication.verifier import Unauthorized
 
 class JWKManager:
-    #TODO TODO: maxsize, ttl
     def __init__(self, openid_configuration_url, jwt_algorithm, cache_maxsize, cache_ttl):
         self._openid_configuration_url = openid_configuration_url
         self._jwt_algorithm = jwt_algorithm
