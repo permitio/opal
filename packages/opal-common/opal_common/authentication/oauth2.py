@@ -1,8 +1,7 @@
 import asyncio
-import time
-from typing import Optional
-
 import httpx
+import time
+
 from cachetools import cached, TTLCache
 from fastapi import Header
 from httpx import AsyncClient, BasicAuth
@@ -10,16 +9,13 @@ from opal_common.authentication.deps import get_token_from_header
 from opal_common.authentication.jwk import JWKManager
 from opal_common.authentication.verifier import JWTVerifier, Unauthorized
 from opal_common.config import opal_common_config
-
+from typing import Optional
 
 class _OAuth2Authenticator:
     async def authenticate(self, headers):
         if "Authorization" not in headers:
             token = await self.token()
             headers['Authorization'] = f"Bearer {token}"
-#            logger.info(f".....*****..... Adding headers: {headers}")
-#        else:
-#            logger.info(f".....*****..... Authorization header already exists")
 
 
 class OAuth2ClientCredentialsAuthenticator(_OAuth2Authenticator):
@@ -74,9 +70,6 @@ class OAuth2ClientCredentialsAuthenticator(_OAuth2Authenticator):
 
         self._verify_exact_match_claims(claims)
         self._verify_required_claims(claims)
-
-        #TODO TODO
-        claims["peer_type"] = "datasource"
 
         return claims
 
