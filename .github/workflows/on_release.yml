@@ -203,7 +203,7 @@ jobs:
         with:
           password: ${{ secrets.PYPI_TOKEN }}
           packages-dir: packages/opal-common/dist/
-          repository-url: https://pypi.org/p/opal-common
+          repository-url: https://pypi.org/p/opal-common/
           # For Test only !
           # password: ${{ secrets.TEST_PYPI_TOKEN }}
           # repository-url: https://test.pypi.org/legacy/
@@ -213,7 +213,7 @@ jobs:
         with:
           password: ${{ secrets.PYPI_TOKEN }}
           packages-dir: packages/opal-client/dist/
-          repository-url: https://pypi.org/p/opal-client
+          repository-url: https://pypi.org/p/opal-client/
           # For Test only !
           # password: ${{ secrets.TEST_PYPI_TOKEN }}
           # repository-url: https://test.pypi.org/legacy/
@@ -223,7 +223,7 @@ jobs:
         with:
           password: ${{ secrets.PYPI_TOKEN }}
           packages-dir: packages/opal-server/dist/
-          repository-url: https://pypi.org/p/opal-server
+          repository-url: https://pypi.org/p/opal-server/
           # For Test only !
           # password: ${{ secrets.TEST_PYPI_TOKEN }}
           # repository-url: https://test.pypi.org/legacy/
