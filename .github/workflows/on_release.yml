@@ -203,33 +203,36 @@ jobs:
         with:
           password: ${{ secrets.PYPI_TOKEN }}
           packages-dir: packages/opal-common/dist/
-          url: https://pypi.org/p/opal-common/
-          name: pypi
           # For Test only !
           # password: ${{ secrets.TEST_PYPI_TOKEN }}
           # repository-url: https://test.pypi.org/legacy/
+        env:
+          name: pypi
+          url: https://pypi.org/p/opal-common/
 
       - name: Publish package distributions to PyPI - Opal-Client
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           password: ${{ secrets.PYPI_TOKEN }}
           packages-dir: packages/opal-client/dist/
-          url: https://pypi.org/p/opal-client/
-          name: pypi
           # For Test only !
           # password: ${{ secrets.TEST_PYPI_TOKEN }}
           # repository-url: https://test.pypi.org/legacy/
+        env:
+          name: pypi
+          url: https://pypi.org/p/opal-client/
 
       - name: Publish package distributions to PyPI - Opal-Server
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           password: ${{ secrets.PYPI_TOKEN }}
           packages-dir: packages/opal-server/dist/
-          url: https://pypi.org/p/opal-server/
-          name: pypi
           # For Test only !
           # password: ${{ secrets.TEST_PYPI_TOKEN }}
           # repository-url: https://test.pypi.org/legacy/
+        env:
+          name: pypi
+          url: https://pypi.org/p/opal-server/
 
       - name: Push changes of packages/__packaging__.py to GitHub
         uses: ad-m/github-push-action@master
