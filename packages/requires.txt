@@ -8,4 +8,4 @@ pydantic[email]>=1.9.1,<2
 typing-extensions;python_version<'3.8'
 uvicorn[standard]>=0.17.6,<1
 fastapi-utils>=0.2.1,<1
-setuptools>=65.5.1 # not directly required, pinned by Snyk to avoid a vulnerability
+setuptools>=70.0.0 # not directly required, pinned by Snyk to avoid a vulnerability
