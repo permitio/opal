@@ -143,6 +143,7 @@ USER opal
 FROM common AS server
 
 RUN apt-get update && apt-get install -y openssh-client git && apt-get clean
+RUN git config --global core.symlinks false # Mitigate CVE-2024-32002
 
 USER opal
 
