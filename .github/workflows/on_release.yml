@@ -3,7 +3,6 @@ on:
   release:
     # job will automatically run after a new "release" is create on github.
     types: [published]
-  #Allows you to run this workflow manually from the Actions tab
 
 jobs:
   # this job will build, test and (potentially) push the docker images to docker hub
@@ -166,13 +165,10 @@ jobs:
       - name: Bump version - packaging__.py
         run: |
           version_tag=${{ github.event.release.tag_name }}
+          version_tag=${version_tag#v} # Remove the leading 'v'
           version_tuple=$(echo $version_tag | sed 's/\./, /g')
           sed -i "s/VERSION = (.*/VERSION = (${version_tuple})/" packages/__packaging__.py
           cat packages/__packaging__.py
-          git config --local user.email "eli@permit.io"
-          git config --local user.name "elimoshkovich"
-          git add packages/__packaging__.py
-          git commit -m "Bump version to ${version_tag}"
 
       - name: Cleanup setup.py and Build every sub-packages
         run: |
@@ -208,7 +204,7 @@ jobs:
           # repository-url: https://test.pypi.org/legacy/
         env:
           name: pypi
-          url: https://pypi.org/p/opal-common
+          url: https://pypi.org/p/opal-common/
 
       - name: Publish package distributions to PyPI - Opal-Client
         uses: pypa/gh-action-pypi-publish@release/v1
@@ -220,7 +216,7 @@ jobs:
           # repository-url: https://test.pypi.org/legacy/
         env:
           name: pypi
-          url: https://pypi.org/p/opal-client
+          url: https://pypi.org/p/opal-client/
 
       - name: Publish package distributions to PyPI - Opal-Server
         uses: pypa/gh-action-pypi-publish@release/v1
@@ -232,10 +228,4 @@ jobs:
           # repository-url: https://test.pypi.org/legacy/
         env:
           name: pypi
-          url: https://pypi.org/p/opal-server
-
-      - name: Push changes of packages/__packaging__.py to GitHub
-        uses: ad-m/github-push-action@master
-        with:
-          github_token: ${{ secrets.TOKEN_GITHUB }}
-          branch: master
+          url: https://pypi.org/p/opal-server/
