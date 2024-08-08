@@ -6,51 +6,48 @@ if [ ! -f "docker-compose-with-everything.yml" ]; then
    exit
 fi
 
-#echo "generating opal crypto keys..."
-#ssh-keygen -q -t rsa -b 4096 -m pem -f opal_crypto_key -N ""
-#
-#echo "saving crypto keys to env vars and removing temp key files..."
-#export OPAL_AUTH_PUBLIC_KEY=`cat opal_crypto_key.pub`
-#export OPAL_AUTH_PRIVATE_KEY=`cat opal_crypto_key | tr '\n' '_'`
-#rm opal_crypto_key.pub opal_crypto_key
-#
-#echo "generating master token..."
-#export OPAL_AUTH_MASTER_TOKEN=`openssl rand -hex 16`
-#
-#if ! command -v opal-server &> /dev/null
-#then
-#    echo "opal-server cli was not found, run: 'pip install opal-server'"
-#    exit
-#fi
-#
-#if ! command -v opal-client &> /dev/null
-#then
-#    echo "opal-client cli was not found, run: 'pip install opal-client'"
-#    exit
-#fi
-#
-#echo "running OPAL server so we can sign on JWT tokens..."
-#OPAL_AUTH_JWT_AUDIENCE=https://api.opal.ac/v1/ OPAL_AUTH_JWT_ISSUER=https://opal.ac/ OPAL_REPO_WATCHER_ENABLED=0 opal-server run &
-#
-#sleep 2;
-#
-#echo "obtaining client JWT token..."
-#export OPAL_CLIENT_TOKEN=`opal-client obtain-token $OPAL_AUTH_MASTER_TOKEN --type client`
-#
-#echo "killing opal server..."
-#ps -ef | grep opal | grep -v grep | awk '{print $2}' | xargs kill
-#
-#sleep 5;
-#
-#echo "Saving your config to .env file..."
-#rm -f .env
-#echo "OPAL_AUTH_PUBLIC_KEY=\"$OPAL_AUTH_PUBLIC_KEY\"" >> .env
-#echo "OPAL_AUTH_PRIVATE_KEY=\"$OPAL_AUTH_PRIVATE_KEY\"" >> .env
-#echo "OPAL_AUTH_MASTER_TOKEN=\"$OPAL_AUTH_MASTER_TOKEN\"" >> .env
-#echo "OPAL_CLIENT_TOKEN=\"$OPAL_CLIENT_TOKEN\"" >> .env
-#echo "OPAL_AUTH_PRIVATE_KEY_PASSPHRASE=\"$OPAL_AUTH_PRIVATE_KEY_PASSPHRASE\"" >> .env
-#
+# TODO: Pretiffy exports
+ssh-keygen -q -t rsa -b 4096 -m pem -f opal_crypto_key -N ""
 
+export OPAL_AUTH_PUBLIC_KEY=`cat opal_crypto_key.pub`
+export OPAL_AUTH_PRIVATE_KEY=`cat opal_crypto_key | tr '\n' '_'`
+rm opal_crypto_key.pub opal_crypto_key
+
+echo "generating master token..."
+export OPAL_AUTH_MASTER_TOKEN=`openssl rand -hex 16`
+
+if ! command -v opal-server &> /dev/null
+then
+    echo "opal-server cli was not found, run: 'pip install opal-server'"
+    exit
+fi
+
+if ! command -v opal-client &> /dev/null
+then
+    echo "opal-client cli was not found, run: 'pip install opal-client'"
+    exit
+fi
+
+OPAL_AUTH_JWT_AUDIENCE=https://api.opal.ac/v1/ OPAL_AUTH_JWT_ISSUER=https://opal.ac/ OPAL_REPO_WATCHER_ENABLED=0 opal-server run &
+
+sleep 2;
+
+export OPAL_CLIENT_TOKEN=`opal-client obtain-token $OPAL_AUTH_MASTER_TOKEN --type client`
+export OPAL_DATA_SOURCE_TOEN=`opal-client obtain-token $OPAL_AUTH_MASTER_TOKEN --type datasource`
+
+ps -ef | grep opal | grep -v grep | awk '{print $2}' | xargs kill
+
+sleep 5;
+
+rm -f .env
+echo "OPAL_AUTH_PUBLIC_KEY=\"$OPAL_AUTH_PUBLIC_KEY\"" >> .env
+echo "OPAL_AUTH_PRIVATE_KEY=\"$OPAL_AUTH_PRIVATE_KEY\"" >> .env
+echo "OPAL_AUTH_MASTER_TOKEN=\"$OPAL_AUTH_MASTER_TOKEN\"" >> .env
+echo "OPAL_CLIENT_TOKEN=\"$OPAL_CLIENT_TOKEN\"" >> .env
+echo "OPAL_AUTH_PRIVATE_KEY_PASSPHRASE=\"$OPAL_AUTH_PRIVATE_KEY_PASSPHRASE\"" >> .env
+
+
+# Clone tests repo & create testing branch
 export POLICY_REPO_BRANCH
 POLICY_REPO_BRANCH=test-$RANDOM$RANDOM
 rm -rf ./opal-tests-policy-repo
@@ -63,82 +60,80 @@ cd -
 export POLICY_REPO_SSH_KEY
 POLICY_REPO_SSH_KEY=${POLICY_REPO_SSH_KEY:=$(cat ~/.ssh/id_rsa)}
 
-docker compose -f docker-compose-with-everything.yml --env-file .env down --remove-orphans
-docker compose -f docker-compose-with-everything.yml --env-file .env up -d
-sleep 10
+function compose {
+  docker compose -f docker-compose-with-everything.yml --env-file .env "$@"
+}
 
-clean_up () {
+function check_clients_logged {
+  compose logs --index 1 opal_client | grep -q "$1"
+  compose logs --index 2 opal_client | grep -q "$1"
+}
+
+function check_no_error {
+  # Without index would output all replicas
+  if compose logs opal_client | grep -q 'ERROR'; then
+    echo "Found error in logs"
+    exit 1
+  fi
+}
+
+function clean_up {
     ARG=$?
     if [[ "$ARG" -ne 0 ]]; then
-#      docker compose -f docker-compose-with-everything.yml logs
+      # compose logs
       echo "Failed test"
     else
-      echo "OK"
+      echo "Success"
     fi
-    # TODO: Have an arg for not bringing it down
-#    docker compose -f docker-compose-with-everything.yml down
-#    rm -rf ./opal-tests-policy-repo
-    # TODO: Remove branch
+    compose down
+    cd opal-tests-policy-repo; git push -d origin $POLICY_REPO_BRANCH; cd - # Remove remote tests branch
+    rm -rf ./opal-tests-policy-repo
     exit $ARG
 }
 trap clean_up EXIT
 
-# Test callback worked
-docker compose -f docker-compose-with-everything.yml logs --index 1 opal_client | grep -q "Connected to PubSub server"
-docker compose -f docker-compose-with-everything.yml logs --index 1 opal_client | grep -q "Got policy bundle"
-docker compose -f docker-compose-with-everything.yml logs --index 1 opal_client | grep -q 'PUT /v1/data/static -> 204'
-if docker compose -f docker-compose-with-everything.yml logs --index 1 opal_client | grep -q 'ERROR'; then
-  echo "Found error in logs"
-  exit 1
-fi
-docker compose -f docker-compose-with-everything.yml logs --index 2 opal_client | grep -q "Connected to PubSub server"
-docker compose -f docker-compose-with-everything.yml logs --index 2 opal_client | grep -q "Got policy bundle"
-docker compose -f docker-compose-with-everything.yml logs --index 2 opal_client | grep -q 'PUT /v1/data/static -> 204'
-if docker compose -f docker-compose-with-everything.yml logs --index 2 opal_client | grep -q 'ERROR'; then
-  echo "Found error in logs"
-  exit 1
-fi
+compose down --remove-orphans
+compose up -d
+sleep 10
 
+# Test started correctly
+check_clients_logged "Connected to PubSub server"
+check_clients_logged "Got policy bundle"
+check_clients_logged 'PUT /v1/data/static -> 204'
+check_no_error
 
-# Git push
-# TODO: Turn into a function
-cd opal-tests-policy-repo; echo "package something" > something.rego; git add something.rego ; git commit -m "Add something.rego"; git push; cd -
-curl --request POST 'http://localhost:7002/webhook' --header 'Content-Type: application/json' --header 'x-webhook-token: xxxxx' --data-raw '{"gitEvent":"git.push","repository":{"git_url":"git@github.com:permitio/opal-tests-policy-repo.git"}}'
-sleep 2
-docker compose -f docker-compose-with-everything.yml logs --index 1 opal_client | grep -q 'PUT /v1/policies/something.rego -> 200'
-docker compose -f docker-compose-with-everything.yml logs --index 2 opal_client | grep -q 'PUT /v1/policies/something.rego -> 200'
+function test_push_policy {
+  regofile="$1.rego"
+  cd opal-tests-policy-repo
+  echo "package $1" > "$regofile"
+  git add "$regofile"
+  git commit -m "Add $regofile"
+  git push
+  cd -
 
-### Test data publish
-set -o allexport
-source .env
-set +o allexport
+  curl --request POST 'http://localhost:7002/webhook' --header 'Content-Type: application/json' --header 'x-webhook-token: xxxxx' --data-raw '{"gitEvent":"git.push","repository":{"git_url":"git@github.com:permitio/opal-tests-policy-repo.git"}}'
+  sleep 5
+  check_clients_logged "PUT /v1/policies/$regofile -> 200"
+}
 
-export OPAL_CLIENT_TOKEN
-OPAL_CLIENT_TOKEN=$(opal-client obtain-token "$OPAL_AUTH_MASTER_TOKEN" --type datasource)
+function test_data_publish {
+  user=$1
+  OPAL_CLIENT_TOKEN=$OPAL_DATA_SOURCE_TOEN opal-client publish-data-update --src-url https://api.country.is/23.54.6.78 -t policy_data --dst-path "/users/$user/location"
+  sleep 5
+  check_clients_logged "PUT /v1/data/users/$user/location -> 204"
+}
 
-opal-client publish-data-update --src-url https://api.country.is/23.54.6.78 -t policy_data --dst-path /users/bob/location
-sleep 2
-docker compose -f docker-compose-with-everything.yml logs --index 1 opal_client | grep -q 'PUT /v1/data/users/bob/location -> 204'
-docker compose -f docker-compose-with-everything.yml logs --index 2 opal_client | grep -q 'PUT /v1/data/users/bob/location -> 204'
-
+test_data_publish "bob"
+test_push_policy "something"
 
 # TODO: Test statistic
 
-docker compose -f docker-compose-with-everything.yml restart broadcast_channel
+compose restart broadcast_channel
 sleep 10
 
-# TODO: Maybe do couple of times so this would test different processes handling the request.
-opal-client publish-data-update --src-url https://api.country.is/23.54.6.78 -t policy_data --dst-path /users/alice/location
-sleep 2
-docker compose -f docker-compose-with-everything.yml logs --index 1 opal_client | grep -q 'PUT /v1/data/users/alice/location -> 204'
-docker compose -f docker-compose-with-everything.yml logs --index 2 opal_client | grep -q 'PUT /v1/data/users/alice/location -> 204'
+test_data_publish "alice"
+test_push_policy "another"
 
-# Git push
-# TODO: Turn into a function
-cd opal-tests-policy-repo; echo "package another" > another.rego; git add another.rego ; git commit -m "Add another.rego"; git push; cd -
-curl --request POST 'http://localhost:7002/webhook' --header 'Content-Type: application/json' --header 'x-webhook-token: xxxxx' --data-raw '{"gitEvent":"git.push","repository":{"git_url":"git@github.com:permitio/opal-tests-policy-repo.git"}}'
-sleep 5
-docker compose -f docker-compose-with-everything.yml logs --index 1 opal_client | grep -q 'PUT /v1/policies/another.rego -> 200'
-docker compose -f docker-compose-with-everything.yml logs --index 2 opal_client | grep -q 'PUT /v1/policies/another.rego -> 200'
-
-echo "Success!"
+test_data_publish "sunil"
+test_data_publish "eve"
+test_push_policy "best_one_yet"
