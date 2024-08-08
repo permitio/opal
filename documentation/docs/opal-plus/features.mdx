@@ -39,13 +39,13 @@ Configure the [OPAL_STATISTICS_ENABLED=true](/getting-started/configuration) env
 
 You can then monitor the state of your OPAL+ cluster by calling the `/stats` API route on the server.
 ```bash
-curl http://opal-server:8181/stats -H "Authorization: Bearer <token>"
+curl http://opal_server:8181/stats -H "Authorization: Bearer <token>"
 # { "uptime": "2024-07-14T14:55:02.710Z", "version": "0.7.8", "client_count": 1, "server_count": 1 }
 ```
 
 You can also get detailed information about the OPAL+ clients and servers by calling the `/statistics` API route on the server.
 ```bash
-curl http://opal-server:8181/statistics -H "Authorization: Bear <token>"
+curl http://opal_server:8181/statistics -H "Authorization: Bear <token>"
 ```
 ```json
 {
