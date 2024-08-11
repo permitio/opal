@@ -34,9 +34,16 @@ RETRY_CONFIG = opal_client_config.POLICY_STORE_CONN_RETRY.toTenacityConfig()
 
 
 def should_ignore_path(path, ignore_paths):
-    """Helper function to check if the policy-store should ignore to given
-    path."""
-    return PathUtils.glob_style_match_path_to_list(path, ignore_paths) is not None
+    """Helper function to check if the policy-store should ignore the given path."""
+    paths_to_ignore = [p for p in ignore_paths if not p.startswith('!')]
+    paths_to_not_ignore = [p[1:] for p in ignore_paths if p.startswith('!')]
+
+    # Check if the path matches any path to not be ignored
+    if PathUtils.glob_style_match_path_to_list(path, paths_to_not_ignore) is not None:
+        return False
+
+    # Check if the path matches any path to be ignored
+    return PathUtils.glob_style_match_path_to_list(path, paths_to_ignore) is not None
 
 
 def fail_silently(fallback=None):
@@ -464,7 +471,7 @@ class OpaClient(BasePolicyStoreClient):
             policy_id, opal_client_config.POLICY_STORE_POLICY_PATHS_TO_IGNORE
         ):
             logger.info(
-                f"Ignoring setting policy - {policy_id}, set in POLICY_PATHS_TO_IGNORE."
+                f"Ignoring setting policy - {policy_id}, set in POLICY_STORE_POLICY_PATHS_TO_IGNORE."
             )
             return
         async with aiohttp.ClientSession() as session:
@@ -533,7 +540,7 @@ class OpaClient(BasePolicyStoreClient):
             policy_id, opal_client_config.POLICY_STORE_POLICY_PATHS_TO_IGNORE
         ):
             logger.info(
-                f"Ignoring deleting policy - {policy_id}, set in POLICY_PATHS_TO_IGNORE."
+                f"Ignoring deleting policy - {policy_id}, set in POLICY_STORE_POLICY_PATHS_TO_IGNORE."
             )
             return
 

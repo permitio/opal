@@ -14,7 +14,7 @@ In order to override default configuration, you'll need to set this env var:
 
 Use the `POLICY_STORE_*` [config options](/getting-started/configuration) to control how OPAL-client interacts the policy store (e.g. OPA)
 
-- Use `POLICY_STORE_POLICY_PATHS_TO_IGNORE` to have the client ignore instruction to overwrite or delete policies. Accepting a list of glob paths, or parent paths (without wildcards) ending with "/\*\*"
+- Use `POLICY_STORE_POLICY_PATHS_TO_IGNORE` to have the client ignore instruction to overwrite or delete policies. Accepting a list of glob paths, or parent paths (without wildcards) ending with "/\*\*". It does support paths starting with '!' to force to not ignore them.
 
 #### Policy store backup
 
