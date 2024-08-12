@@ -8,8 +8,8 @@ def set_url_query_param(url: str, param_name: str, param_value: str):
     >> set_url_query_param('https://api.permit.io/opal/data/config', 'token', 'secret')
     'https://api.permit.io/opal/data/config?token=secret'
 
-    >> set_url_query_param('https://api.permit.io/opal/data/config&some=var', 'token', 'secret')
-    'https://api.permit.io/opal/data/config&some=var?token=secret'
+    >> set_url_query_param('https://api.permit.io/opal/data/config?some=var', 'token', 'secret')
+    'https://api.permit.io/opal/data/config?some=var&token=secret'
     """
     parsed_url: ParseResult = urlparse(url)
 
