@@ -5,8 +5,9 @@ services:
       - POSTGRES_DB=postgres
       - POSTGRES_USER=postgres
       - POSTGRES_PASSWORD=postgres
+
   opal_server:
-    image: permitio/opal-server:latest
+    image: permitio/opal-server:test
     deploy:
       mode: replicated
       replicas: 2
@@ -16,7 +17,7 @@ services:
       - UVICORN_NUM_WORKERS=4
       - OPAL_POLICY_REPO_URL=git@github.com:permitio/opal-tests-policy-repo.git
       - OPAL_POLICY_REPO_MAIN_BRANCH=${POLICY_REPO_BRANCH}
-      - OPAL_POLICY_REPO_SSH_KEY=${POLICY_REPO_SSH_KEY}
+      - OPAL_POLICY_REPO_SSH_KEY=${OPAL_POLICY_REPO_SSH_KEY}
       - OPAL_DATA_CONFIG_SOURCES={"config":{"entries":[{"url":"http://opal_server:7002/policy-data","config":{"headers":{"Authorization":"Bearer ${OPAL_CLIENT_TOKEN}"}},"topics":["policy_data"],"dst_path":"/static"}]}}
       - OPAL_LOG_FORMAT_INCLUDE_PID=true
       - OPAL_POLICY_REPO_WEBHOOK_SECRET=xxxxx
@@ -31,8 +32,9 @@ services:
       - "7002-7003:7002"
     depends_on:
       - broadcast_channel
+
   opal_client:
-    image: permitio/opal-client:latest
+    image: permitio/opal-client:test
     deploy:
       mode: replicated
       replicas: 2

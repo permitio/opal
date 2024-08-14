@@ -1,12 +1,7 @@
 #!/bin/bash
-set -ex
+set -e
 
-if [ ! -f "docker-compose-with-everything.yml" ]; then
-   echo "did not find compose file - run this script from the 'docker/' directory under opal root!"
-   exit
-fi
-
-# TODO: Pretiffy exports
+# TODO: Prettify exports
 ssh-keygen -q -t rsa -b 4096 -m pem -f opal_crypto_key -N ""
 
 export OPAL_AUTH_PUBLIC_KEY=`cat opal_crypto_key.pub`
@@ -15,18 +10,6 @@ rm opal_crypto_key.pub opal_crypto_key
 
 echo "generating master token..."
 export OPAL_AUTH_MASTER_TOKEN=`openssl rand -hex 16`
-
-if ! command -v opal-server &> /dev/null
-then
-    echo "opal-server cli was not found, run: 'pip install opal-server'"
-    exit
-fi
-
-if ! command -v opal-client &> /dev/null
-then
-    echo "opal-client cli was not found, run: 'pip install opal-client'"
-    exit
-fi
 
 OPAL_AUTH_JWT_AUDIENCE=https://api.opal.ac/v1/ OPAL_AUTH_JWT_ISSUER=https://opal.ac/ OPAL_REPO_WATCHER_ENABLED=0 opal-server run &
 
@@ -39,6 +22,7 @@ ps -ef | grep opal | grep -v grep | awk '{print $2}' | xargs kill
 
 sleep 5;
 
+echo "create .env file"
 rm -f .env
 echo "OPAL_AUTH_PUBLIC_KEY=\"$OPAL_AUTH_PUBLIC_KEY\"" >> .env
 echo "OPAL_AUTH_PRIVATE_KEY=\"$OPAL_AUTH_PRIVATE_KEY\"" >> .env
@@ -46,8 +30,8 @@ echo "OPAL_AUTH_MASTER_TOKEN=\"$OPAL_AUTH_MASTER_TOKEN\"" >> .env
 echo "OPAL_CLIENT_TOKEN=\"$OPAL_CLIENT_TOKEN\"" >> .env
 echo "OPAL_AUTH_PRIVATE_KEY_PASSPHRASE=\"$OPAL_AUTH_PRIVATE_KEY_PASSPHRASE\"" >> .env
 
-
 # Clone tests repo & create testing branch
+echo "clone opal policy test git repo"
 export POLICY_REPO_BRANCH
 POLICY_REPO_BRANCH=test-$RANDOM$RANDOM
 rm -rf ./opal-tests-policy-repo
@@ -57,14 +41,15 @@ git checkout -b $POLICY_REPO_BRANCH
 git push --set-upstream origin $POLICY_REPO_BRANCH
 cd -
 
-export POLICY_REPO_SSH_KEY
-POLICY_REPO_SSH_KEY=${POLICY_REPO_SSH_KEY:=$(cat ~/.ssh/id_rsa)}
+export OPAL_POLICY_REPO_SSH_KEY
+OPAL_POLICY_REPO_SSH_KEY=$(cat "$POLICY_REPO_SSH_KEY_PATH")
 
 function compose {
-  docker compose -f docker-compose-with-everything.yml --env-file .env "$@"
+  docker compose -f ./docker-compose-app-tests.yml --env-file .env "$@"
 }
 
 function check_clients_logged {
+  echo "- Looking for msg '$1' in client's logs"
   compose logs --index 1 opal_client | grep -q "$1"
   compose logs --index 2 opal_client | grep -q "$1"
 }
@@ -80,10 +65,12 @@ function check_no_error {
 function clean_up {
     ARG=$?
     if [[ "$ARG" -ne 0 ]]; then
-      # compose logs
-      echo "Failed test"
+      echo "*** Test Failed ***"
+      echo ""
+      compose logs
     else
-      echo "Success"
+      echo "*** Test Passed ***"
+      echo ""
     fi
     compose down
     cd opal-tests-policy-repo; git push -d origin $POLICY_REPO_BRANCH; cd - # Remove remote tests branch
@@ -103,6 +90,7 @@ check_clients_logged 'PUT /v1/data/static -> 204'
 check_no_error
 
 function test_push_policy {
+  echo "- Testing pushing policy $1"
   regofile="$1.rego"
   cd opal-tests-policy-repo
   echo "package $1" > "$regofile"
@@ -117,6 +105,7 @@ function test_push_policy {
 }
 
 function test_data_publish {
+  echo "- Testing data publish for user $1"
   user=$1
   OPAL_CLIENT_TOKEN=$OPAL_DATA_SOURCE_TOEN opal-client publish-data-update --src-url https://api.country.is/23.54.6.78 -t policy_data --dst-path "/users/$user/location"
   sleep 5
@@ -128,6 +117,7 @@ test_push_policy "something"
 
 # TODO: Test statistic
 
+echo "- Testing broadcast channel disconnection"
 compose restart broadcast_channel
 sleep 10
 
