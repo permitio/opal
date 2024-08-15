@@ -1,48 +1,57 @@
 #!/bin/bash
 set -e
 
-# TODO: Prettify exports
-ssh-keygen -q -t rsa -b 4096 -m pem -f opal_crypto_key -N ""
+export OPAL_AUTH_PUBLIC_KEY
+export OPAL_AUTH_PRIVATE_KEY
+export OPAL_AUTH_MASTER_TOKEN
+export OPAL_CLIENT_TOKEN
+export OPAL_DATA_SOURCE_TOKEN
 
-export OPAL_AUTH_PUBLIC_KEY=`cat opal_crypto_key.pub`
-export OPAL_AUTH_PRIVATE_KEY=`cat opal_crypto_key | tr '\n' '_'`
-rm opal_crypto_key.pub opal_crypto_key
+function generate_opal_keys {
+  echo "generating OPAL keys"
 
-echo "generating master token..."
-export OPAL_AUTH_MASTER_TOKEN=`openssl rand -hex 16`
+  ssh-keygen -q -t rsa -b 4096 -m pem -f opal_crypto_key -N ""
+  OPAL_AUTH_PUBLIC_KEY="$(cat opal_crypto_key.pub)"
+  OPAL_AUTH_PRIVATE_KEY="$(tr '\n' '_' < opal_crypto_key)"
+  rm opal_crypto_key.pub opal_crypto_key
 
-OPAL_AUTH_JWT_AUDIENCE=https://api.opal.ac/v1/ OPAL_AUTH_JWT_ISSUER=https://opal.ac/ OPAL_REPO_WATCHER_ENABLED=0 opal-server run &
+  OPAL_AUTH_MASTER_TOKEN="$(openssl rand -hex 16)"
+  OPAL_AUTH_JWT_AUDIENCE=https://api.opal.ac/v1/ OPAL_AUTH_JWT_ISSUER=https://opal.ac/ OPAL_REPO_WATCHER_ENABLED=0 opal-server run &
+  sleep 2;
+  OPAL_CLIENT_TOKEN="$(opal-client obtain-token "$OPAL_AUTH_MASTER_TOKEN" --type client)"
+  OPAL_DATA_SOURCE_TOKEN="$(opal-client obtain-token "$OPAL_AUTH_MASTER_TOKEN" --type datasource)"
+  pkill opal
+  sleep 5;
 
-sleep 2;
+  echo "create .env file"
+  rm -f .env
+  (
+    echo "OPAL_AUTH_PUBLIC_KEY=\"$OPAL_AUTH_PUBLIC_KEY\"";
+    echo "OPAL_AUTH_PRIVATE_KEY=\"$OPAL_AUTH_PRIVATE_KEY\"";
+    echo "OPAL_AUTH_MASTER_TOKEN=\"$OPAL_AUTH_MASTER_TOKEN\"";
+    echo "OPAL_CLIENT_TOKEN=\"$OPAL_CLIENT_TOKEN\"";
+    echo "OPAL_AUTH_PRIVATE_KEY_PASSPHRASE=\"$OPAL_AUTH_PRIVATE_KEY_PASSPHRASE\""
+  ) > .env
+}
 
-export OPAL_CLIENT_TOKEN=`opal-client obtain-token $OPAL_AUTH_MASTER_TOKEN --type client`
-export OPAL_DATA_SOURCE_TOEN=`opal-client obtain-token $OPAL_AUTH_MASTER_TOKEN --type datasource`
+function prepare_policy_repo {
+  echo "clone tests policy repo to create test's branch"
+  export POLICY_REPO_BRANCH
+  POLICY_REPO_BRANCH=test-$RANDOM$RANDOM
+  rm -rf ./opal-tests-policy-repo
+  git clone git@github.com:permitio/opal-tests-policy-repo.git
+  cd opal-tests-policy-repo
+  git checkout -b $POLICY_REPO_BRANCH
+  git push --set-upstream origin $POLICY_REPO_BRANCH
+  cd -
 
-ps -ef | grep opal | grep -v grep | awk '{print $2}' | xargs kill
+  export OPAL_POLICY_REPO_SSH_KEY
+  OPAL_POLICY_REPO_SSH_KEY=$(cat "$POLICY_REPO_SSH_KEY_PATH")
+}
 
-sleep 5;
-
-echo "create .env file"
-rm -f .env
-echo "OPAL_AUTH_PUBLIC_KEY=\"$OPAL_AUTH_PUBLIC_KEY\"" >> .env
-echo "OPAL_AUTH_PRIVATE_KEY=\"$OPAL_AUTH_PRIVATE_KEY\"" >> .env
-echo "OPAL_AUTH_MASTER_TOKEN=\"$OPAL_AUTH_MASTER_TOKEN\"" >> .env
-echo "OPAL_CLIENT_TOKEN=\"$OPAL_CLIENT_TOKEN\"" >> .env
-echo "OPAL_AUTH_PRIVATE_KEY_PASSPHRASE=\"$OPAL_AUTH_PRIVATE_KEY_PASSPHRASE\"" >> .env
-
-# Clone tests repo & create testing branch
-echo "clone opal policy test git repo"
-export POLICY_REPO_BRANCH
-POLICY_REPO_BRANCH=test-$RANDOM$RANDOM
-rm -rf ./opal-tests-policy-repo
-git clone git@github.com:permitio/opal-tests-policy-repo.git
-cd opal-tests-policy-repo
-git checkout -b $POLICY_REPO_BRANCH
-git push --set-upstream origin $POLICY_REPO_BRANCH
-cd -
-
-export OPAL_POLICY_REPO_SSH_KEY
-OPAL_POLICY_REPO_SSH_KEY=$(cat "$POLICY_REPO_SSH_KEY_PATH")
+# Test setup
+generate_opal_keys
+prepare_policy_repo
 
 function compose {
   docker compose -f ./docker-compose-app-tests.yml --env-file .env "$@"
@@ -83,7 +92,7 @@ compose down --remove-orphans
 compose up -d
 sleep 10
 
-# Test started correctly
+# Check containers started correctly
 check_clients_logged "Connected to PubSub server"
 check_clients_logged "Got policy bundle"
 check_clients_logged 'PUT /v1/data/static -> 204'
@@ -107,7 +116,7 @@ function test_push_policy {
 function test_data_publish {
   echo "- Testing data publish for user $1"
   user=$1
-  OPAL_CLIENT_TOKEN=$OPAL_DATA_SOURCE_TOEN opal-client publish-data-update --src-url https://api.country.is/23.54.6.78 -t policy_data --dst-path "/users/$user/location"
+  OPAL_CLIENT_TOKEN=$OPAL_DATA_SOURCE_TOKEN opal-client publish-data-update --src-url https://api.country.is/23.54.6.78 -t policy_data --dst-path "/users/$user/location"
   sleep 5
   check_clients_logged "PUT /v1/data/users/$user/location -> 204"
 }
