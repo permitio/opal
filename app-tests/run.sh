@@ -20,7 +20,8 @@ function generate_opal_keys {
   sleep 2;
   OPAL_CLIENT_TOKEN="$(opal-client obtain-token "$OPAL_AUTH_MASTER_TOKEN" --type client)"
   OPAL_DATA_SOURCE_TOKEN="$(opal-client obtain-token "$OPAL_AUTH_MASTER_TOKEN" --type datasource)"
-  pkill opal
+  # shellcheck disable=SC2009
+  ps -ef | grep opal-server | grep -v grep | awk '{print $2}' | xargs kill
   sleep 5;
 
   echo "- Create .env file"
@@ -45,13 +46,16 @@ function prepare_policy_repo {
   git push --set-upstream origin $POLICY_REPO_BRANCH
   cd -
 
+  # That's for the docker-compose to use, set ssh key from "~/.ssh/id_rsa", unless another path/key data was configured
   export OPAL_POLICY_REPO_SSH_KEY
-  OPAL_POLICY_REPO_SSH_KEY=$(cat "$POLICY_REPO_SSH_KEY_PATH")
+  OPAL_POLICY_REPO_SSH_KEY_PATH=${OPAL_POLICY_REPO_SSH_KEY_PATH:-~/.ssh/id_rsa}
+  OPAL_POLICY_REPO_SSH_KEY=${OPAL_POLICY_REPO_SSH_KEY:-$(cat "$OPAL_POLICY_REPO_SSH_KEY_PATH")}
 }
 
-# Test setup
+# Setup
 generate_opal_keys
 prepare_policy_repo
+
 
 function compose {
   docker compose -f ./docker-compose-app-tests.yml --env-file .env "$@"
@@ -88,6 +92,7 @@ function clean_up {
 }
 trap clean_up EXIT
 
+# Bring up OPAL containers
 compose down --remove-orphans
 compose up -d
 sleep 10

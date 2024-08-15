@@ -7,7 +7,7 @@ services:
       - POSTGRES_PASSWORD=postgres
 
   opal_server:
-    image: permitio/opal-server:test
+    image: permitio/opal-server:${OPAL_IMAGE_TAG:-latest}
     deploy:
       mode: replicated
       replicas: 2
@@ -34,7 +34,7 @@ services:
       - broadcast_channel
 
   opal_client:
-    image: permitio/opal-client:test
+    image: permitio/opal-client:${OPAL_IMAGE_TAG:-latest}
     deploy:
       mode: replicated
       replicas: 2
