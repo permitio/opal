@@ -8,7 +8,7 @@ export OPAL_CLIENT_TOKEN
 export OPAL_DATA_SOURCE_TOKEN
 
 function generate_opal_keys {
-  echo "generating OPAL keys"
+  echo "- Generating OPAL keys"
 
   ssh-keygen -q -t rsa -b 4096 -m pem -f opal_crypto_key -N ""
   OPAL_AUTH_PUBLIC_KEY="$(cat opal_crypto_key.pub)"
@@ -23,7 +23,7 @@ function generate_opal_keys {
   pkill opal
   sleep 5;
 
-  echo "create .env file"
+  echo "- Create .env file"
   rm -f .env
   (
     echo "OPAL_AUTH_PUBLIC_KEY=\"$OPAL_AUTH_PUBLIC_KEY\"";
@@ -35,7 +35,7 @@ function generate_opal_keys {
 }
 
 function prepare_policy_repo {
-  echo "clone tests policy repo to create test's branch"
+  echo "- Clone tests policy repo to create test's branch"
   export POLICY_REPO_BRANCH
   POLICY_REPO_BRANCH=test-$RANDOM$RANDOM
   rm -rf ./opal-tests-policy-repo
@@ -66,7 +66,7 @@ function check_clients_logged {
 function check_no_error {
   # Without index would output all replicas
   if compose logs opal_client | grep -q 'ERROR'; then
-    echo "Found error in logs"
+    echo "- Found error in logs"
     exit 1
   fi
 }
@@ -108,7 +108,7 @@ function test_push_policy {
   git push
   cd -
 
-  curl --request POST 'http://localhost:7002/webhook' --header 'Content-Type: application/json' --header 'x-webhook-token: xxxxx' --data-raw '{"gitEvent":"git.push","repository":{"git_url":"git@github.com:permitio/opal-tests-policy-repo.git"}}'
+  curl -s --request POST 'http://localhost:7002/webhook' --header 'Content-Type: application/json' --header 'x-webhook-token: xxxxx' --data-raw '{"gitEvent":"git.push","repository":{"git_url":"git@github.com:permitio/opal-tests-policy-repo.git"}}'
   sleep 5
   check_clients_logged "PUT /v1/policies/$regofile -> 200"
 }
@@ -121,10 +121,17 @@ function test_data_publish {
   check_clients_logged "PUT /v1/data/users/$user/location -> 204"
 }
 
+function test_statistics {
+    echo "- Testing statistics feature"
+    # Make sure 2 servers & 2 clients (repeat few times cause different workers might response)
+    for _ in {1..10}; do
+      curl -s 'http://localhost:7002/stats' --header "Authorization: Bearer $OPAL_DATA_SOURCE_TOKEN" | grep '"client_count":2,"server_count":2'
+    done
+}
+
 test_data_publish "bob"
 test_push_policy "something"
-
-# TODO: Test statistic
+test_statistics
 
 echo "- Testing broadcast channel disconnection"
 compose restart broadcast_channel
@@ -132,7 +139,7 @@ sleep 10
 
 test_data_publish "alice"
 test_push_policy "another"
-
 test_data_publish "sunil"
 test_data_publish "eve"
 test_push_policy "best_one_yet"
+# TODO: Test statistics feature again after broadcaster restart (should first fix statistics bug)
