@@ -15,7 +15,7 @@ services:
     environment:
       - OPAL_BROADCAST_URI=postgres://postgres:postgres@broadcast_channel:5432/postgres
       - UVICORN_NUM_WORKERS=4
-      - OPAL_POLICY_REPO_URL=git@github.com:permitio/opal-tests-policy-repo.git
+      - OPAL_POLICY_REPO_URL=${OPAL_POLICY_REPO_URL:-git@github.com:permitio/opal-tests-policy-repo.git}
       - OPAL_POLICY_REPO_MAIN_BRANCH=${POLICY_REPO_BRANCH}
       - OPAL_POLICY_REPO_SSH_KEY=${OPAL_POLICY_REPO_SSH_KEY}
       - OPAL_DATA_CONFIG_SOURCES={"config":{"entries":[{"url":"http://opal_server:7002/policy-data","config":{"headers":{"Authorization":"Bearer ${OPAL_CLIENT_TOKEN}"}},"topics":["policy_data"],"dst_path":"/static"}]}}
