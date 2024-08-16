@@ -2,29 +2,21 @@ from typing import Optional
 
 from fastapi import Header
 from fastapi.exceptions import HTTPException
+from opal_common.config import opal_common_config
 from opal_common.authentication.authenticator import Authenticator
 from opal_common.authentication.deps import JWTAuthenticator
-from opal_common.authentication.oauth2 import (
-    CachedOAuth2Authenticator,
-    OAuth2ClientCredentialsAuthenticator,
-)
+from opal_common.authentication.oauth2 import CachedOAuth2Authenticator, OAuth2ClientCredentialsAuthenticator
 from opal_common.authentication.signer import JWTSigner
 from opal_common.authentication.types import JWTClaims
 from opal_common.authentication.verifier import JWTVerifier, Unauthorized
-from opal_common.config import opal_common_config
 from opal_common.logger import logger
 from opal_server.config import opal_server_config
-
 
 class _ServerAuthenticator(Authenticator):
     def __init__(self):
         if opal_common_config.AUTH_TYPE == "oauth2":
-            self.__delegate = CachedOAuth2Authenticator(
-                OAuth2ClientCredentialsAuthenticator()
-            )
-            logger.info(
-                "OPAL is running in secure mode - will verify API requests with OAuth2 tokens."
-            )
+            self.__delegate = CachedOAuth2Authenticator(OAuth2ClientCredentialsAuthenticator())
+            logger.info("OPAL is running in secure mode - will verify API requests with OAuth2 tokens.")
         else:
             self.__delegate = JWTAuthenticator(self.__signer())
 
@@ -37,13 +29,9 @@ class _ServerAuthenticator(Authenticator):
             issuer=opal_common_config.AUTH_JWT_ISSUER,
         )
         if signer.enabled:
-            logger.info(
-                "OPAL is running in secure mode - will verify API requests with JWT tokens."
-            )
+            logger.info("OPAL is running in secure mode - will verify API requests with JWT tokens.")
         else:
-            logger.info(
-                "OPAL was not provided with JWT encryption keys, cannot verify api requests!"
-            )
+            logger.info("OPAL was not provided with JWT encryption keys, cannot verify api requests!")
         return signer
 
     def _delegate(self) -> dict:
@@ -55,11 +43,9 @@ class _ServerAuthenticator(Authenticator):
         else:
             return None
 
-
 class ServerAuthenticator(_ServerAuthenticator):
     def __call__(self, authorization: Optional[str] = Header(None)) -> JWTClaims:
         return self._delegate()(authorization)
-
 
 class WebsocketServerAuthenticator(_ServerAuthenticator):
     def __call__(self, authorization: Optional[str] = Header(None)) -> JWTClaims:
