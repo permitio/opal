@@ -3,7 +3,7 @@ import hashlib
 import json
 import uuid
 from functools import partial
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 import aiohttp
 from aiohttp.client import ClientError, ClientSession
@@ -25,6 +25,8 @@ from opal_client.policy_store.policy_store_client_factory import (
     DEFAULT_POLICY_STORE_GETTER,
 )
 from opal_common.async_utils import TasksPool, repeated_call
+from opal_common.authentication.authenticator import Authenticator
+from opal_common.authentication.authenticator_factory import AuthenticatorFactory
 from opal_common.config import opal_common_config
 from opal_common.http_utils import is_http_error_response
 from opal_common.schemas.data import (
@@ -71,6 +73,7 @@ class DataUpdater:
         shard_id: Optional[str] = None,
         on_connect: List[PubSubOnConnectCallback] = None,
         on_disconnect: List[OnDisconnectCallback] = None,
+        authenticator: Optional[Authenticator] = None,
     ):
         """Initializes the DataUpdater with the necessary configuration and
         clients.
@@ -165,6 +168,10 @@ class DataUpdater:
         # Optional user-defined hooks for connection lifecycle
         self._on_connect_callbacks = on_connect or []
         self._on_disconnect_callbacks = on_disconnect or []
+        if authenticator is not None:
+            self._authenticator = authenticator
+        else:
+            self._authenticator = AuthenticatorFactory.create()
 
     async def __aenter__(self):
         await self.start()
@@ -229,19 +236,29 @@ class DataUpdater:
             url = self._data_sources_config_url
         logger.info("Getting data-sources configuration from '{source}'", source=url)
 
+
+        headers = {}
+        if self._extra_headers is not None:
+            headers = self._extra_headers.copy()
+        headers['Accept'] = "application/json"
+
         try:
-            async with ClientSession(headers=self._extra_headers) as session:
-                response = await session.get(url, **self._ssl_context_kwargs)
-                if response.status == 200:
-                    return DataSourceConfig.parse_obj(await response.json())
-                else:
-                    error_details = await response.json()
-                    raise ClientError(
-                        f"Fetch data sources failed with status code {response.status}, error: {error_details}"
-                    )
+            response = await self._load_policy_data_config(url, headers)
+
+            if response.status == 200:
+                return DataSourceConfig.parse_obj(await response.json())
+            else:
+                error_details = await response.text()
+                raise ClientError(
+                    f"Fetch data sources failed with status code {response.status}, error: {error_details}"
+                )
         except:
             logger.exception("Failed to load data sources config")
             raise
+
+    async def _load_policy_data_config(self, url: str, headers) -> aiohttp.ClientResponse:
+        async with ClientSession(headers=headers) as session:
+            return await session.get(url, **self._ssl_context_kwargs)
 
     async def get_base_policy_data(
         self, config_url: str = None, data_fetch_reason="Initial load"
@@ -341,6 +358,12 @@ class DataUpdater:
         callback.
         """
         logger.info("Subscribing to topics: {topics}", topics=self._data_topics)
+
+        headers = {}
+        if self._extra_headers is not None:
+            headers = self._extra_headers.copy()
+        await self._authenticator.authenticate(headers)
+
         self._client = PubSubClient(
             self._data_topics,
             self._update_policy_data_callback,
@@ -348,6 +371,7 @@ class DataUpdater:
             on_connect=[self.on_connect, *self._on_connect_callbacks],
             on_disconnect=[self.on_disconnect, *self._on_disconnect_callbacks],
             additional_headers=self._extra_headers,
+            extra_headers=headers,
             keep_alive=opal_client_config.KEEP_ALIVE_INTERVAL,
             server_uri=self._server_url,
             **self._ssl_context_kwargs,

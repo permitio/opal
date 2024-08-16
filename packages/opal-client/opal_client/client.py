@@ -2,9 +2,7 @@ import asyncio
 import functools
 import os
 import signal
-import tempfile
 import uuid
-from logging import disable
 from typing import Awaitable, Callable, List, Literal, Optional, Union
 
 import aiofiles
@@ -19,8 +17,8 @@ from opal_client.callbacks.api import init_callbacks_api
 from opal_client.callbacks.register import CallbacksRegister
 from opal_client.config import PolicyStoreTypes, opal_client_config
 from opal_client.data.api import init_data_router
-from opal_client.data.fetcher import DataFetcher
 from opal_client.data.updater import DataUpdater
+from opal_client.data.updater_factory import DataUpdaterFactory
 from opal_client.engine.options import CedarServerOptions, OpaServerOptions
 from opal_client.engine.runner import CedarRunner, OpaRunner
 from opal_client.limiter import StartupLoadLimiter
@@ -31,8 +29,8 @@ from opal_client.policy_store.base_policy_store_client import BasePolicyStoreCli
 from opal_client.policy_store.policy_store_client_factory import (
     PolicyStoreClientFactory,
 )
-from opal_common.authentication.deps import JWTAuthenticator
-from opal_common.authentication.verifier import JWTVerifier
+from opal_common.authentication.authenticator import Authenticator
+from opal_common.authentication.authenticator_factory import AuthenticatorFactory
 from opal_common.config import opal_common_config
 from opal_common.logger import configure_logs, logger
 from opal_common.middleware import configure_middleware
@@ -51,7 +49,7 @@ class OpalClient:
         inline_opa_options: OpaServerOptions = None,
         inline_cedar_enabled: bool = None,
         inline_cedar_options: CedarServerOptions = None,
-        verifier: Optional[JWTVerifier] = None,
+        authenticator: Optional[Authenticator] = None,
         store_backup_path: Optional[str] = None,
         store_backup_interval: Optional[int] = None,
         offline_mode_enabled: bool = False,
@@ -70,6 +68,10 @@ class OpalClient:
                 data_updater (DataUpdater, optional): Defaults to None.
                 policy_updater (PolicyUpdater, optional): Defaults to None.
         """
+        if authenticator is not None:
+            self.authenticator = authenticator
+        else:
+            self.authenticator = AuthenticatorFactory.create()
         self._shard_id = shard_id
         # defaults
         policy_store_type: PolicyStoreTypes = (
@@ -127,6 +129,7 @@ class OpalClient:
                     opal_client_id=opal_client_identifier,
                     on_connect=on_policy_updater_connect,
                     on_disconnect=on_policy_updater_disconnect,
+                    authenticator=self.authenticator,
                 )
         else:
             self.policy_updater = None
@@ -142,7 +145,7 @@ class OpalClient:
                     else opal_client_config.DATA_TOPICS
                 )
 
-                self.data_updater = DataUpdater(
+                self.data_updater = DataUpdaterFactory.create(
                     policy_store=self.policy_store,
                     data_topics=data_topics,
                     callbacks_register=self._callbacks_register,
@@ -150,6 +153,7 @@ class OpalClient:
                     shard_id=self._shard_id,
                     on_connect=on_data_updater_connect,
                     on_disconnect=on_data_updater_disconnect,
+                    authenticator=self.authenticator,
                 )
         else:
             self.data_updater = None
@@ -172,19 +176,6 @@ class OpalClient:
                 "OPAL client is configured to trust self-signed certificates"
             )
 
-        if verifier is not None:
-            self.verifier = verifier
-        else:
-            self.verifier = JWTVerifier(
-                public_key=opal_common_config.AUTH_PUBLIC_KEY,
-                algorithm=opal_common_config.AUTH_JWT_ALGORITHM,
-                audience=opal_common_config.AUTH_JWT_AUDIENCE,
-                issuer=opal_common_config.AUTH_JWT_ISSUER,
-            )
-        if not self.verifier.enabled:
-            logger.info(
-                "API authentication disabled (public encryption key was not provided)"
-            )
         self.store_backup_path = (
             store_backup_path or opal_client_config.STORE_BACKUP_PATH
         )
@@ -264,13 +255,11 @@ class OpalClient:
     def _configure_api_routes(self, app: FastAPI):
         """Mounts the api routes on the app object."""
 
-        authenticator = JWTAuthenticator(self.verifier)
-
         # Init api routers with required dependencies
         policy_router = init_policy_router(policy_updater=self.policy_updater)
         data_router = init_data_router(data_updater=self.data_updater)
-        policy_store_router = init_policy_store_router(authenticator)
-        callbacks_router = init_callbacks_api(authenticator, self._callbacks_register)
+        policy_store_router = init_policy_store_router(self.authenticator)
+        callbacks_router = init_callbacks_api(self.authenticator, self._callbacks_register)
 
         # mount the api routes on the app object
         app.include_router(policy_router, tags=["Policy Updater"])

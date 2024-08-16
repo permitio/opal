@@ -21,7 +21,7 @@ sys.path.append(root_dir)
 
 from opal_client.config import opal_client_config
 from opal_client.data.rpc import TenantAwareRpcEventClientMethods
-from opal_client.data.updater import DataSourceEntry, DataUpdate, DataUpdater
+from opal_client.data.updater import DataSourceEntry, DataUpdate, DataUpdater, DefaultDataUpdater
 from opal_client.policy_store.policy_store_client_factory import (
     PolicyStoreClientFactory,
 )
@@ -171,7 +171,7 @@ async def test_data_updater(server):
     server trigger a Data-update and check our policy store gets the update."""
     # config to use mock OPA
     policy_store = PolicyStoreClientFactory.create(store_type=PolicyStoreTypes.MOCK)
-    updater = DataUpdater(
+    updater = DefaultDataUpdater(
         pubsub_url=UPDATES_URL,
         policy_store=policy_store,
         fetch_on_connect=False,
@@ -251,7 +251,7 @@ async def test_data_updater_with_report_callback(server):
     server trigger a Data-update and check our policy store gets the update."""
     # config to use mock OPA
     policy_store = PolicyStoreClientFactory.create(store_type=PolicyStoreTypes.MOCK)
-    updater = DataUpdater(
+    updater = DefaultDataUpdater(
         pubsub_url=UPDATES_URL,
         policy_store=policy_store,
         fetch_on_connect=False,
@@ -311,7 +311,7 @@ async def test_client_get_initial_data(server):
     """Connect to OPAL-server and make sure data is fetched on-connect."""
     # config to use mock OPA
     policy_store = PolicyStoreClientFactory.create(store_type=PolicyStoreTypes.MOCK)
-    updater = DataUpdater(
+    updater = DefaultDataUpdater(
         pubsub_url=UPDATES_URL,
         data_sources_config_url=DATA_CONFIG_URL,
         policy_store=policy_store,
