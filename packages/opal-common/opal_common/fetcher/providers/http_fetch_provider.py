@@ -1,7 +1,7 @@
 """Simple HTTP get data fetcher using requests supports."""
 
 from enum import Enum
-from typing import Any, Union, cast
+from typing import Any, Optional, Union, cast
 
 import httpx
 from aiohttp import ClientResponse, ClientSession
@@ -11,6 +11,7 @@ from opal_common.fetcher.fetch_provider import BaseFetchProvider
 from opal_common.fetcher.logger import get_logger
 from opal_common.http_utils import is_http_error_response
 from opal_common.security.sslcontext import get_custom_ssl_context
+from opal_common.authentication.authenticator import ClientAuthenticator
 from pydantic import validator
 
 logger = get_logger("http_fetch_provider")
@@ -52,6 +53,8 @@ class HttpFetchEvent(FetchEvent):
 
 
 class HttpFetchProvider(BaseFetchProvider):
+    _authenticator: Optional[dict] = None
+
     def __init__(self, event: HttpFetchEvent) -> None:
         self._event: HttpFetchEvent
         if event.config is None:
@@ -64,6 +67,9 @@ class HttpFetchProvider(BaseFetchProvider):
             if self._custom_ssl_context is not None
             else {}
         )
+        if HttpFetchProvider._authenticator is None:
+            HttpFetchProvider._authenticator = ClientAuthenticator()
+        self._authenticator = HttpFetchProvider._authenticator
 
     def parse_event(self, event: FetchEvent) -> HttpFetchEvent:
         return HttpFetchEvent(**event.dict(exclude={"config"}), config=event.config)
@@ -71,7 +77,10 @@ class HttpFetchProvider(BaseFetchProvider):
     async def __aenter__(self):
         headers = {}
         if self._event.config.headers is not None:
-            headers = self._event.config.headers
+            headers = self._event.config.headers.copy()
+
+        await self._authenticator.authenticate(headers)
+
         if opal_common_config.HTTP_FETCHER_PROVIDER_CLIENT == "httpx":
             self._session = httpx.AsyncClient(headers=headers)
         else:
