@@ -2,9 +2,7 @@ import asyncio
 import functools
 import os
 import signal
-import tempfile
 import uuid
-from logging import disable
 from typing import Awaitable, Callable, List, Literal, Optional, Union
 
 import aiofiles
@@ -17,7 +15,6 @@ from opal_client.callbacks.api import init_callbacks_api
 from opal_client.callbacks.register import CallbacksRegister
 from opal_client.config import PolicyStoreTypes, opal_client_config
 from opal_client.data.api import init_data_router
-from opal_client.data.fetcher import DataFetcher
 from opal_client.data.updater import DataUpdater
 from opal_client.engine.options import CedarServerOptions, OpaServerOptions
 from opal_client.engine.runner import CedarRunner, OpaRunner
