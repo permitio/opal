@@ -6,7 +6,8 @@ from opal_common.authentication.authz import (
     require_peer_type,
     restrict_optional_topics_to_publish,
 )
-from opal_common.authentication.deps import JWTAuthenticator, get_token_from_header
+from opal_common.authentication.authenticator import Authenticator
+from opal_common.authentication.deps import get_token_from_header
 from opal_common.authentication.types import JWTClaims
 from opal_common.authentication.verifier import Unauthorized
 from opal_common.logger import logger
@@ -25,7 +26,7 @@ from opal_server.data.data_update_publisher import DataUpdatePublisher
 def init_data_updates_router(
     data_update_publisher: DataUpdatePublisher,
     data_sources_config: ServerDataSourceConfig,
-    authenticator: JWTAuthenticator,
+    authenticator: Authenticator,
 ):
     router = APIRouter()
 
