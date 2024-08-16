@@ -3,8 +3,8 @@ from typing import List
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 from opal_client.callbacks.register import CallbacksRegister
 from opal_client.config import opal_client_config
+from opal_common.authentication.authenticator import Authenticator
 from opal_common.authentication.authz import require_peer_type
-from opal_common.authentication.deps import JWTAuthenticator
 from opal_common.authentication.types import JWTClaims
 from opal_common.authentication.verifier import Unauthorized
 from opal_common.logger import logger
@@ -13,7 +13,7 @@ from opal_common.schemas.security import PeerType
 from starlette.status import HTTP_500_INTERNAL_SERVER_ERROR
 
 
-def init_callbacks_api(authenticator: JWTAuthenticator, register: CallbacksRegister):
+def init_callbacks_api(authenticator: Authenticator, register: CallbacksRegister):
     async def require_listener_token(claims: JWTClaims = Depends(authenticator)):
         try:
             require_peer_type(

@@ -8,8 +8,8 @@ from typing import List, Optional
 
 from fastapi import Depends, FastAPI
 from fastapi_websocket_pubsub.event_broadcaster import EventBroadcasterContextManager
-from opal_common.authentication.deps import JWTAuthenticator, StaticBearerAuthenticator
-from opal_common.authentication.signer import JWTSigner
+from opal_common.authentication.authenticator import Authenticator
+from opal_common.authentication.deps import StaticBearerAuthenticator
 from opal_common.confi.confi import load_conf_if_none
 from opal_common.config import opal_common_config
 from opal_common.logger import configure_logs, logger
@@ -21,6 +21,11 @@ from opal_common.topics.publisher import (
     PeriodicPublisher,
     ServerSideTopicPublisher,
     TopicPublisher,
+)
+from opal_server.authentication.authenticator import WebsocketServerAuthenticator
+from opal_server.authentication.authenticator_factory import (
+    ServerAuthenticatorFactory,
+    WebsocketServerAuthenticatorFactory,
 )
 from opal_server.config import opal_server_config
 from opal_server.data.api import init_data_updates_router
@@ -49,7 +54,8 @@ class OpalServer:
         init_publisher: bool = None,
         data_sources_config: Optional[ServerDataSourceConfig] = None,
         broadcaster_uri: str = None,
-        signer: Optional[JWTSigner] = None,
+        authenticator: Optional[Authenticator] = None,
+        websocketAuthenticator: Optional[WebsocketServerAuthenticator] = None,
         enable_jwks_endpoint=True,
         jwks_url: str = None,
         jwks_static_dir: str = None,
@@ -117,33 +123,26 @@ class OpalServer:
         self.broadcaster_uri = broadcaster_uri
         self.master_token = master_token
 
-        if signer is not None:
-            self.signer = signer
+        if authenticator is not None:
+            self.authenticator = authenticator
         else:
-            self.signer = JWTSigner(
-                private_key=opal_server_config.AUTH_PRIVATE_KEY,
-                public_key=opal_common_config.AUTH_PUBLIC_KEY,
-                algorithm=opal_common_config.AUTH_JWT_ALGORITHM,
-                audience=opal_common_config.AUTH_JWT_AUDIENCE,
-                issuer=opal_common_config.AUTH_JWT_ISSUER,
-            )
-        if self.signer.enabled:
-            logger.info(
-                "OPAL is running in secure mode - will verify API requests with JWT tokens."
-            )
-        else:
-            logger.info(
-                "OPAL was not provided with JWT encryption keys, cannot verify api requests!"
-            )
+            self.authenticator = ServerAuthenticatorFactory.create()
 
         if enable_jwks_endpoint:
             self.jwks_endpoint = JwksStaticEndpoint(
-                signer=self.signer, jwks_url=jwks_url, jwks_static_dir=jwks_static_dir
+                signer=self.authenticator.signer(),
+                jwks_url=jwks_url,
+                jwks_static_dir=jwks_static_dir,
             )
         else:
             self.jwks_endpoint = None
 
-        self.pubsub = PubSub(signer=self.signer, broadcaster_uri=broadcaster_uri)
+        _websocketAuthenticator = websocketAuthenticator
+        if _websocketAuthenticator is None:
+            _websocketAuthenticator = WebsocketServerAuthenticatorFactory.create()
+        self.pubsub = PubSub(
+            broadcaster_uri=broadcaster_uri, authenticator=_websocketAuthenticator
+        )
 
         self.publisher: Optional[TopicPublisher] = None
         self.broadcast_keepalive: Optional[PeriodicPublisher] = None
@@ -219,19 +218,19 @@ class OpalServer:
 
     def _configure_api_routes(self, app: FastAPI):
         """Mounts the api routes on the app object."""
-        authenticator = JWTAuthenticator(self.signer)
-
         data_update_publisher: Optional[DataUpdatePublisher] = None
         if self.publisher is not None:
             data_update_publisher = DataUpdatePublisher(self.publisher)
 
         # Init api routers with required dependencies
         data_updates_router = init_data_updates_router(
-            data_update_publisher, self.data_sources_config, authenticator
+            data_update_publisher, self.data_sources_config, self.authenticator
         )
-        webhook_router = init_git_webhook_router(self.pubsub.endpoint, authenticator)
+        webhook_router = init_git_webhook_router(
+            self.pubsub.endpoint, self.authenticator
+        )
         security_router = init_security_router(
-            self.signer, StaticBearerAuthenticator(self.master_token)
+            self.authenticator.signer(), StaticBearerAuthenticator(self.master_token)
         )
         statistics_router = init_statistics_router(self.opal_statistics)
         loadlimit_router = init_loadlimit_router(self.loadlimit_notation)
@@ -240,7 +239,7 @@ class OpalServer:
         app.include_router(
             bundles_router,
             tags=["Bundle Server"],
-            dependencies=[Depends(authenticator)],
+            dependencies=[Depends(self.authenticator)],
         )
         app.include_router(data_updates_router, tags=["Data Updates"])
         app.include_router(webhook_router, tags=["Github Webhook"])
@@ -249,22 +248,24 @@ class OpalServer:
         app.include_router(
             self.pubsub.api_router,
             tags=["Pub/Sub"],
-            dependencies=[Depends(authenticator)],
+            dependencies=[Depends(self.authenticator)],
         )
         app.include_router(
             statistics_router,
             tags=["Server Statistics"],
-            dependencies=[Depends(authenticator)],
+            dependencies=[Depends(self.authenticator)],
         )
         app.include_router(
             loadlimit_router,
             tags=["Client Load Limiting"],
-            dependencies=[Depends(authenticator)],
+            dependencies=[Depends(self.authenticator)],
         )
 
         if opal_server_config.SCOPES:
             app.include_router(
-                init_scope_router(self._scopes, authenticator, self.pubsub.endpoint),
+                init_scope_router(
+                    self._scopes, self.authenticator, self.pubsub.endpoint
+                ),
                 tags=["Scopes"],
                 prefix="/scopes",
             )

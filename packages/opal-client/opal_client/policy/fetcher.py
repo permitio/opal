@@ -4,6 +4,8 @@ import aiohttp
 from fastapi import HTTPException, status
 from opal_client.config import opal_client_config
 from opal_client.logger import logger
+from opal_common.authentication.authenticator import Authenticator
+from opal_common.authentication.authenticator_factory import AuthenticatorFactory
 from opal_common.schemas.policy import PolicyBundle
 from opal_common.security.sslcontext import get_custom_ssl_context
 from opal_common.utils import (
@@ -28,15 +30,27 @@ def force_valid_bundle(bundle) -> PolicyBundle:
 class PolicyFetcher:
     """Fetches policy from backend."""
 
-    def __init__(self, backend_url=None, token=None):
+    def __init__(
+        self,
+        backend_url=None,
+        token=None,
+        authenticator: Optional[Authenticator] = None,
+    ):
         """
         Args:
             backend_url (str): Defaults to opal_client_config.SERVER_URL.
             token ([type], optional): [description]. Defaults to opal_client_config.CLIENT_TOKEN.
         """
+        if authenticator is not None:
+            self._authenticator = authenticator
+        else:
+            self._authenticator = AuthenticatorFactory.create()
         self._token = token or opal_client_config.CLIENT_TOKEN
         self._backend_url = backend_url or opal_client_config.SERVER_URL
-        self._auth_headers = tuple_to_dict(get_authorization_header(self._token))
+        if self._token is not None:
+            self._auth_headers = tuple_to_dict(get_authorization_header(self._token))
+        else:
+            self._auth_headers = dict()
 
         self._retry_config = (
             opal_client_config.POLICY_UPDATER_CONN_RETRY.toTenacityConfig()
@@ -82,10 +96,16 @@ class PolicyFetcher:
 
         May throw, in which case we retry again.
         """
+        headers = {}
+        if self._auth_headers is not None:
+            headers = self._auth_headers.copy()
+        await self._authenticator.authenticate(headers)
+
         params = {"path": directories}
         if base_hash is not None:
             params["base_hash"] = base_hash
         async with aiohttp.ClientSession(
+            headers=headers,
             trust_env=True,
         ) as session:
             logger.info(

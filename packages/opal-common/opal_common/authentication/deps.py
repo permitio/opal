@@ -4,6 +4,8 @@ from uuid import UUID
 from fastapi import Header
 from fastapi.exceptions import HTTPException
 from fastapi.security.utils import get_authorization_scheme_param
+from opal_common.authentication.authenticator import Authenticator
+from opal_common.authentication.signer import JWTSigner
 from opal_common.authentication.types import JWTClaims
 from opal_common.authentication.verifier import JWTVerifier, Unauthorized
 from opal_common.logger import logger
@@ -67,7 +69,7 @@ def verify_logged_in(verifier: JWTVerifier, token: Optional[str]) -> JWTClaims:
         raise
 
 
-class _JWTAuthenticator:
+class _JWTAuthenticator(Authenticator):
     def __init__(self, verifier: JWTVerifier):
         self._verifier = verifier
 
@@ -75,9 +77,15 @@ class _JWTAuthenticator:
     def verifier(self) -> JWTVerifier:
         return self._verifier
 
+    def signer(self) -> Optional[JWTSigner]:
+        return self._verifier
+
     @property
     def enabled(self) -> JWTVerifier:
         return self._verifier.enabled
+
+    async def authenticate(self, headers):
+        pass
 
 
 class JWTAuthenticator(_JWTAuthenticator):
