@@ -24,6 +24,7 @@ from opal_client.policy_store.policy_store_client_factory import (
     DEFAULT_POLICY_STORE_GETTER,
 )
 from opal_common.async_utils import TakeANumberQueue, TasksPool, repeated_call
+from opal_common.authentication.authenticator import ClientAuthenticator
 from opal_common.config import opal_common_config
 from opal_common.fetcher.events import FetcherConfig
 from opal_common.http_utils import is_http_error_response
@@ -54,6 +55,7 @@ class DataUpdater:
         callbacks_register: Optional[CallbacksRegister] = None,
         opal_client_id: str = None,
         shard_id: Optional[str] = None,
+        authenticator: Optional[ClientAuthenticator] = None,
     ):
         """Keeps policy-stores (e.g. OPA) up to date with relevant data Obtains
         data configuration on startup from OPAL-server Uses Pub/Sub to
@@ -132,6 +134,10 @@ class DataUpdater:
         self._updates_storing_queue = TakeANumberQueue(logger)
         self._tasks = TasksPool()
         self._polling_update_tasks = []
+        if authenticator is not None:
+            self._authenticator = authenticator
+        else:
+            self._authenticator = ClientAuthenticator()
 
     async def __aenter__(self):
         await self.start()
@@ -177,8 +183,14 @@ class DataUpdater:
         if url is None:
             url = self._data_sources_config_url
         logger.info("Getting data-sources configuration from '{source}'", source=url)
+
+        headers = {}
+        if self._extra_headers is not None:
+            headers = self._extra_headers.copy()
+        await self._authenticator.authenticate(headers)
+
         try:
-            async with ClientSession(headers=self._extra_headers) as session:
+            async with ClientSession(headers=headers) as session:
                 response = await session.get(url, **self._ssl_context_kwargs)
                 if response.status == 200:
                     return DataSourceConfig.parse_obj(await response.json())
@@ -274,12 +286,18 @@ class DataUpdater:
         """Coroutine meant to be spunoff with create_task to listen in the
         background for data events and pass them to the data_fetcher."""
         logger.info("Subscribing to topics: {topics}", topics=self._data_topics)
+
+        headers = {}
+        if self._extra_headers is not None:
+            headers = self._extra_headers.copy()
+        await self._authenticator.authenticate(headers)
+
         self._client = PubSubClient(
             self._data_topics,
             self._update_policy_data_callback,
             methods_class=TenantAwareRpcEventClientMethods,
             on_connect=[self.on_connect],
-            extra_headers=self._extra_headers,
+            extra_headers=headers,
             keep_alive=opal_client_config.KEEP_ALIVE_INTERVAL,
             server_uri=self._server_url,
             **self._ssl_context_kwargs,

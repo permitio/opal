@@ -28,7 +28,7 @@ class ServerRole(str, Enum):
 class OpalServerConfig(Confi):
     # ws server
     OPAL_WS_LOCAL_URL = confi.str("WS_LOCAL_URL", "ws://localhost:7002/ws")
-    OPAL_WS_TOKEN = confi.str("WS_TOKEN", "THIS_IS_A_DEV_SECRET")
+    OPAL_WS_TOKEN = confi.str("WS_TOKEN", None)
     CLIENT_LOAD_LIMIT_NOTATION = confi.str(
         "CLIENT_LOAD_LIMIT_NOTATION",
         None,
