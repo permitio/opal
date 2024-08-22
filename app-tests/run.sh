@@ -16,8 +16,10 @@ function generate_opal_keys {
   rm opal_crypto_key.pub opal_crypto_key
 
   OPAL_AUTH_MASTER_TOKEN="$(openssl rand -hex 16)"
-  OPAL_AUTH_JWT_AUDIENCE=https://api.opal.ac/v1/ OPAL_AUTH_JWT_ISSUER=https://opal.ac/ OPAL_REPO_WATCHER_ENABLED=0 opal-server run &
+  OPAL_AUTH_JWT_AUDIENCE=https://api.opal.ac/v1/ OPAL_AUTH_JWT_ISSUER=https://opal.ac/ OPAL_REPO_WATCHER_ENABLED=0 \
+    opal-server run &
   sleep 2;
+
   OPAL_CLIENT_TOKEN="$(opal-client obtain-token "$OPAL_AUTH_MASTER_TOKEN" --type client)"
   OPAL_DATA_SOURCE_TOKEN="$(opal-client obtain-token "$OPAL_AUTH_MASTER_TOKEN" --type datasource)"
   # shellcheck disable=SC2009
@@ -37,10 +39,12 @@ function generate_opal_keys {
 
 function prepare_policy_repo {
   echo "- Clone tests policy repo to create test's branch"
+  export OPAL_POLICY_REPO_URL
   export POLICY_REPO_BRANCH
+  OPAL_POLICY_REPO_URL=${OPAL_POLICY_REPO_URL:-git@github.com:permitio/opal-tests-policy-repo.git}
   POLICY_REPO_BRANCH=test-$RANDOM$RANDOM
   rm -rf ./opal-tests-policy-repo
-  git clone git@github.com:permitio/opal-tests-policy-repo.git
+  git clone "$OPAL_POLICY_REPO_URL"
   cd opal-tests-policy-repo
   git checkout -b $POLICY_REPO_BRANCH
   git push --set-upstream origin $POLICY_REPO_BRANCH
@@ -51,11 +55,6 @@ function prepare_policy_repo {
   OPAL_POLICY_REPO_SSH_KEY_PATH=${OPAL_POLICY_REPO_SSH_KEY_PATH:-~/.ssh/id_rsa}
   OPAL_POLICY_REPO_SSH_KEY=${OPAL_POLICY_REPO_SSH_KEY:-$(cat "$OPAL_POLICY_REPO_SSH_KEY_PATH")}
 }
-
-# Setup
-generate_opal_keys
-prepare_policy_repo
-
 
 function compose {
   docker compose -f ./docker-compose-app-tests.yml --env-file .env "$@"
@@ -90,18 +89,6 @@ function clean_up {
     rm -rf ./opal-tests-policy-repo
     exit $ARG
 }
-trap clean_up EXIT
-
-# Bring up OPAL containers
-compose down --remove-orphans
-compose up -d
-sleep 10
-
-# Check containers started correctly
-check_clients_logged "Connected to PubSub server"
-check_clients_logged "Got policy bundle"
-check_clients_logged 'PUT /v1/data/static -> 204'
-check_no_error
 
 function test_push_policy {
   echo "- Testing pushing policy $1"
@@ -113,7 +100,7 @@ function test_push_policy {
   git push
   cd -
 
-  curl -s --request POST 'http://localhost:7002/webhook' --header 'Content-Type: application/json' --header 'x-webhook-token: xxxxx' --data-raw '{"gitEvent":"git.push","repository":{"git_url":"git@github.com:permitio/opal-tests-policy-repo.git"}}'
+  curl -s --request POST 'http://localhost:7002/webhook' --header 'Content-Type: application/json' --header 'x-webhook-token: xxxxx' --data-raw '{"gitEvent":"git.push","repository":{"git_url":"'"$OPAL_POLICY_REPO_URL"'"}}'
   sleep 5
   check_clients_logged "PUT /v1/policies/$regofile -> 200"
 }
@@ -134,17 +121,39 @@ function test_statistics {
     done
 }
 
-test_data_publish "bob"
-test_push_policy "something"
-test_statistics
+function main {
+  # Setup
+  generate_opal_keys
+  prepare_policy_repo
 
-echo "- Testing broadcast channel disconnection"
-compose restart broadcast_channel
-sleep 10
+  trap clean_up EXIT
 
-test_data_publish "alice"
-test_push_policy "another"
-test_data_publish "sunil"
-test_data_publish "eve"
-test_push_policy "best_one_yet"
-# TODO: Test statistics feature again after broadcaster restart (should first fix statistics bug)
+  # Bring up OPAL containers
+  compose down --remove-orphans
+  compose up -d
+  sleep 10
+
+  # Check containers started correctly
+  check_clients_logged "Connected to PubSub server"
+  check_clients_logged "Got policy bundle"
+  check_clients_logged 'PUT /v1/data/static -> 204'
+  check_no_error
+
+  # Test functionality
+  test_data_publish "bob"
+  test_push_policy "something"
+  test_statistics
+
+  echo "- Testing broadcast channel disconnection"
+  compose restart broadcast_channel
+  sleep 10
+
+  test_data_publish "alice"
+  test_push_policy "another"
+  test_data_publish "sunil"
+  test_data_publish "eve"
+  test_push_policy "best_one_yet"
+  # TODO: Test statistics feature again after broadcaster restart (should first fix statistics bug)
+}
+
+main
