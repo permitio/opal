@@ -34,9 +34,10 @@ RETRY_CONFIG = opal_client_config.POLICY_STORE_CONN_RETRY.toTenacityConfig()
 
 
 def should_ignore_path(path, ignore_paths):
-    """Helper function to check if the policy-store should ignore the given path."""
-    paths_to_ignore = [p for p in ignore_paths if not p.startswith('!')]
-    paths_to_not_ignore = [p[1:] for p in ignore_paths if p.startswith('!')]
+    """Helper function to check if the policy-store should ignore the given
+    path."""
+    paths_to_ignore = [p for p in ignore_paths if not p.startswith("!")]
+    paths_to_not_ignore = [p[1:] for p in ignore_paths if p.startswith("!")]
 
     # Check if the path matches any path to not be ignored
     if PathUtils.glob_style_match_path_to_list(path, paths_to_not_ignore) is not None:
