@@ -248,6 +248,7 @@ async def test_data_updater_with_report_callback(server):
         res = await session.get(CHECK_DATA_UPDATE_CALLBACK_URL)
         current_callback_count = await res.json()
 
+    proc2 = None
     try:
         proc = multiprocessing.Process(target=trigger_update, daemon=True)
         proc.start()
@@ -283,7 +284,8 @@ async def test_data_updater_with_report_callback(server):
     finally:
         await updater.stop()
         proc.terminate()
-        proc2.terminate()
+        if proc2:
+            proc2.terminate()
 
 
 @pytest.mark.asyncio
