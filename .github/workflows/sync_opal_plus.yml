@@ -56,10 +56,19 @@ jobs:
         working-directory: opal-plus
         run: |
           git push origin public-${{ github.ref_name }}
-
+          
       - name: Create Pull Request for opal-plus
         working-directory: opal-plus
         run: |
-          gh pr create --repo permitio/opal-plus --assignee "$GITHUB_ACTOR" --reviewer "$GITHUB_ACTOR" --base master --head public-${{ github.ref_name }} --title "Sync changes from public OPAL repository" --body "This PR synchronizes changes from the public OPAL repository to the private OPAL Plus repository."
+          set -e
+          PR_NUMBER=$(gh pr list --repo permitio/opal-plus --base master --head public-master --json number --jq '.[0].number')
+          if [ -n "$PR_NUMBER" ]; then
+            echo "PR already exists: #$PR_NUMBER"
+            gh pr review --repo permitio/opal-plus --request-reviewer "$GITHUB_ACTOR" "$PR_NUMBER" || true
+          else
+            gh pr create --repo permitio/opal-plus --assignee "$GITHUB_ACTOR" --reviewer "$GITHUB_ACTOR" --base master --head public-master --title "Sync changes from public OPAL repository" --body "This PR synchronizes changes from the public OPAL repository to the private OPAL Plus repository." || true
+            echo "New PR created."
+          fi
+        shell: bash
         env:
           GITHUB_TOKEN: ${{ steps.get_workflow_token.outputs.token }}
