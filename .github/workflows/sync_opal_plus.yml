@@ -56,7 +56,7 @@ jobs:
         working-directory: opal-plus
         run: |
           git push origin public-${{ github.ref_name }}
-          
+
       - name: Create Pull Request for opal-plus
         working-directory: opal-plus
         run: |
