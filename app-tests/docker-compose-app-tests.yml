@@ -1,0 +1,58 @@
+services:
+  broadcast_channel:
+    image: postgres:alpine
+    environment:
+      - POSTGRES_DB=postgres
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+
+  opal_server:
+    image: permitio/opal-server:${OPAL_IMAGE_TAG:-latest}
+    deploy:
+      mode: replicated
+      replicas: 2
+      endpoint_mode: vip
+    environment:
+      - OPAL_BROADCAST_URI=postgres://postgres:postgres@broadcast_channel:5432/postgres
+      - UVICORN_NUM_WORKERS=4
+      - OPAL_POLICY_REPO_URL=${OPAL_POLICY_REPO_URL:-git@github.com:permitio/opal-tests-policy-repo.git}
+      - OPAL_POLICY_REPO_MAIN_BRANCH=${POLICY_REPO_BRANCH}
+      - OPAL_POLICY_REPO_SSH_KEY=${OPAL_POLICY_REPO_SSH_KEY}
+      - OPAL_DATA_CONFIG_SOURCES={"config":{"entries":[{"url":"http://opal_server:7002/policy-data","config":{"headers":{"Authorization":"Bearer ${OPAL_CLIENT_TOKEN}"}},"topics":["policy_data"],"dst_path":"/static"}]}}
+      - OPAL_LOG_FORMAT_INCLUDE_PID=true
+      - OPAL_POLICY_REPO_WEBHOOK_SECRET=xxxxx
+      - OPAL_POLICY_REPO_WEBHOOK_PARAMS={"secret_header_name":"x-webhook-token","secret_type":"token","secret_parsing_regex":"(.*)","event_request_key":"gitEvent","push_event_value":"git.push"}
+      - OPAL_AUTH_PUBLIC_KEY=${OPAL_AUTH_PUBLIC_KEY}
+      - OPAL_AUTH_PRIVATE_KEY=${OPAL_AUTH_PRIVATE_KEY}
+      - OPAL_AUTH_MASTER_TOKEN=${OPAL_AUTH_MASTER_TOKEN}
+      - OPAL_AUTH_JWT_AUDIENCE=https://api.opal.ac/v1/
+      - OPAL_AUTH_JWT_ISSUER=https://opal.ac/
+      - OPAL_STATISTICS_ENABLED=true
+    ports:
+      - "7002-7003:7002"
+    depends_on:
+      - broadcast_channel
+
+  opal_client:
+    image: permitio/opal-client:${OPAL_IMAGE_TAG:-latest}
+    deploy:
+      mode: replicated
+      replicas: 2
+      endpoint_mode: vip
+    environment:
+      - OPAL_SERVER_URL=http://opal_server:7002
+      - OPAL_LOG_FORMAT_INCLUDE_PID=true
+      - OPAL_INLINE_OPA_LOG_FORMAT=http
+      - OPAL_SHOULD_REPORT_ON_DATA_UPDATES=True
+      - OPAL_DEFAULT_UPDATE_CALLBACKS={"callbacks":[["http://opal_server:7002/data/callback_report",{"method":"post","process_data":false,"headers":{"Authorization":"Bearer ${OPAL_CLIENT_TOKEN}","content-type":"application/json"}}]]}
+      - OPAL_OPA_HEALTH_CHECK_POLICY_ENABLED=True
+      - OPAL_CLIENT_TOKEN=${OPAL_CLIENT_TOKEN}
+      - OPAL_AUTH_JWT_AUDIENCE=https://api.opal.ac/v1/
+      - OPAL_AUTH_JWT_ISSUER=https://opal.ac/
+      - OPAL_STATISTICS_ENABLED=true
+    ports:
+      - "7766-7767:7000"
+      - "8181-8182:8181"
+    depends_on:
+      - opal_server
+    command: sh -c "exec ./wait-for.sh opal_server:7002 --timeout=20 -- ./start.sh"

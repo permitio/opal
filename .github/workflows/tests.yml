@@ -97,21 +97,30 @@ jobs:
           tags: |
             permitio/opal-server:test
 
-      # TEST PHASE
-      - name: Create modified docker compose file
-        run: sed 's/:latest/:test/g' docker/docker-compose-with-callbacks.yml > docker/docker-compose-test.yml
+      - name: Set up Python
+        uses: actions/setup-python@v2
+        with:
+          python-version: "3.10"
 
-      - name: Bring up stack
-        run: docker-compose -f docker/docker-compose-test.yml up -d
-
-      - name: Check if OPA is healthy
-        run: ./scripts/wait-for.sh -t 2 http://localhost:8181/v1/data/users -- sleep 10 && curl -s "http://localhost:8181/v1/data/users" | jq '.result.bob.location.country == "US"'
-
-      - name: Output container logs
-        run: docker-compose -f docker/docker-compose-test.yml logs
-
-      - name: check if opal-client was brought up successfully
+      - name: Install opal packages
         run: |
-          docker-compose -f docker/docker-compose-test.yml logs opal_client | grep "Connected to PubSub server"
-          docker-compose -f docker/docker-compose-test.yml logs opal_client | grep "Got policy bundle"
-          docker-compose -f docker/docker-compose-test.yml logs opal_client | grep 'PUT /v1/data/static -> 204'
+          python -m pip install -e ./packages/opal-common
+          python -m pip install -e ./packages/opal-client
+          python -m pip install -e ./packages/opal-server
+
+      - name: App Tests
+        working-directory: ./app-tests
+        env:
+          OPAL_IMAGE_TAG: test
+          OPAL_TESTS_POLICY_REPO_DEPLOY_KEY: ${{ secrets.OPAL_TESTS_POLICY_REPO_DEPLOY_KEY }}
+        run: |
+          # Prepare git for using tests policy repo
+          export OPAL_POLICY_REPO_SSH_KEY_PATH=$(realpath ./opal-tests-policy-repo-key)
+          echo "$OPAL_TESTS_POLICY_REPO_DEPLOY_KEY" > $OPAL_POLICY_REPO_SSH_KEY_PATH
+          chmod 400 $OPAL_POLICY_REPO_SSH_KEY_PATH
+
+          git config --global core.sshCommand "ssh -i $OPAL_POLICY_REPO_SSH_KEY_PATH -o IdentitiesOnly=yes"
+          git config --global user.name "$GITHUB_ACTOR"
+          git config --global user.email "<>"
+
+          ./run.sh
