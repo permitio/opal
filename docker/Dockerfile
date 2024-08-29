@@ -25,6 +25,8 @@ RUN CARGO_REGISTRIES_CRATES_IO_PROTOCOL=sparse cargo build --release
 FROM python:3.10-slim-bookworm AS common
 
 # copy libraries from build stage (This won't copy redundant libraries we used in build-stage)
+# also remove the default python site-packages that has older versions of packages that won't be overridden
+RUN rm -r /usr/local/lib/python3.10/site-packages
 COPY --from=build-stage /usr/local /usr/local
 
 # Add non-root user (with home dir at /opal)
