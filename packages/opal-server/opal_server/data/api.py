@@ -2,11 +2,11 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, Header, HTTPException, status
 from fastapi.responses import RedirectResponse
+from opal_common.authentication.authenticator import Authenticator
 from opal_common.authentication.authz import (
     require_peer_type,
     restrict_optional_topics_to_publish,
 )
-from opal_common.authentication.authenticator import Authenticator
 from opal_common.authentication.deps import get_token_from_header
 from opal_common.authentication.types import JWTClaims
 from opal_common.authentication.verifier import Unauthorized
