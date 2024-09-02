@@ -259,7 +259,9 @@ class OpalClient:
         policy_router = init_policy_router(policy_updater=self.policy_updater)
         data_router = init_data_router(data_updater=self.data_updater)
         policy_store_router = init_policy_store_router(self.authenticator)
-        callbacks_router = init_callbacks_api(self.authenticator, self._callbacks_register)
+        callbacks_router = init_callbacks_api(
+            self.authenticator, self._callbacks_register
+        )
 
         # mount the api routes on the app object
         app.include_router(policy_router, tags=["Policy Updater"])
