@@ -21,7 +21,10 @@ from opal_common.topics.publisher import (
     ServerSideTopicPublisher,
     TopicPublisher,
 )
-from opal_server.authentication.authenticator import ServerAuthenticator, WebsocketServerAuthenticator
+from opal_server.authentication.authenticator import (
+    ServerAuthenticator,
+    WebsocketServerAuthenticator,
+)
 from opal_server.config import opal_server_config
 from opal_server.data.api import init_data_updates_router
 from opal_server.data.data_update_publisher import DataUpdatePublisher
@@ -125,7 +128,9 @@ class OpalServer:
 
         if enable_jwks_endpoint:
             self.jwks_endpoint = JwksStaticEndpoint(
-                signer=self.authenticator.signer(), jwks_url=jwks_url, jwks_static_dir=jwks_static_dir
+                signer=self.authenticator.signer(),
+                jwks_url=jwks_url,
+                jwks_static_dir=jwks_static_dir,
             )
         else:
             self.jwks_endpoint = None
@@ -133,7 +138,9 @@ class OpalServer:
         _websocketAuthenticator = websocketAuthenticator
         if _websocketAuthenticator is None:
             _websocketAuthenticator = WebsocketServerAuthenticator()
-        self.pubsub = PubSub(broadcaster_uri=broadcaster_uri, authenticator=_websocketAuthenticator)
+        self.pubsub = PubSub(
+            broadcaster_uri=broadcaster_uri, authenticator=_websocketAuthenticator
+        )
 
         self.publisher: Optional[TopicPublisher] = None
         self.broadcast_keepalive: Optional[PeriodicPublisher] = None
@@ -217,7 +224,9 @@ class OpalServer:
         data_updates_router = init_data_updates_router(
             data_update_publisher, self.data_sources_config, self.authenticator
         )
-        webhook_router = init_git_webhook_router(self.pubsub.endpoint, self.authenticator)
+        webhook_router = init_git_webhook_router(
+            self.pubsub.endpoint, self.authenticator
+        )
         security_router = init_security_router(
             self.authenticator.signer(), StaticBearerAuthenticator(self.master_token)
         )
@@ -252,7 +261,9 @@ class OpalServer:
 
         if opal_server_config.SCOPES:
             app.include_router(
-                init_scope_router(self._scopes, self.authenticator, self.pubsub.endpoint),
+                init_scope_router(
+                    self._scopes, self.authenticator, self.pubsub.endpoint
+                ),
                 tags=["Scopes"],
                 prefix="/scopes",
             )

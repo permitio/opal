@@ -1,21 +1,22 @@
 import asyncio
-import httpx
 import time
+from typing import Optional
 
-from cachetools import cached, TTLCache
+import httpx
+from cachetools import TTLCache, cached
 from fastapi import Header
 from httpx import AsyncClient, BasicAuth
 from opal_common.authentication.deps import get_token_from_header
 from opal_common.authentication.jwk import JWKManager
 from opal_common.authentication.verifier import JWTVerifier, Unauthorized
 from opal_common.config import opal_common_config
-from typing import Optional
+
 
 class _OAuth2Authenticator:
     async def authenticate(self, headers):
         if "Authorization" not in headers:
             token = await self.token()
-            headers['Authorization'] = f"Bearer {token}"
+            headers["Authorization"] = f"Bearer {token}"
 
 
 class OAuth2ClientCredentialsAuthenticator(_OAuth2Authenticator):
@@ -56,7 +57,7 @@ class OAuth2ClientCredentialsAuthenticator(_OAuth2Authenticator):
 
         async with AsyncClient() as client:
             response = await client.post(self._token_url, auth=auth, data=data)
-            return (response.json())['access_token']
+            return (response.json())["access_token"]
 
     def __call__(self, authorization: Optional[str] = Header(None)) -> {}:
         token = get_token_from_header(authorization)
@@ -74,10 +75,12 @@ class OAuth2ClientCredentialsAuthenticator(_OAuth2Authenticator):
         return claims
 
     def _verify_opaque(self, token: str) -> {}:
-        response = httpx.post(self._introspect_url, data={'token': token})
+        response = httpx.post(self._introspect_url, data={"token": token})
 
         if response.status_code != httpx.codes.OK:
-            raise Unauthorized(description=f"invalid status code {response.status_code}")
+            raise Unauthorized(
+                description=f"invalid status code {response.status_code}"
+            )
 
         claims = response.json()
         active = claims.get("active", False)
@@ -144,13 +147,15 @@ class CachedOAuth2Authenticator(_OAuth2Authenticator):
             claims = self._delegate.verify(token)
 
             self._token = token
-            self._exp = claims['exp']
+            self._exp = claims["exp"]
 
             return self._token
 
-    @cached(cache=TTLCache(
-        maxsize=opal_common_config.OAUTH2_TOKEN_VERIFY_CACHE_MAXSIZE,
-        ttl=opal_common_config.OAUTH2_TOKEN_VERIFY_CACHE_TTL
-    ))
+    @cached(
+        cache=TTLCache(
+            maxsize=opal_common_config.OAUTH2_TOKEN_VERIFY_CACHE_MAXSIZE,
+            ttl=opal_common_config.OAUTH2_TOKEN_VERIFY_CACHE_TTL,
+        )
+    )
     def __call__(self, authorization: Optional[str] = Header(None)) -> {}:
         return self._delegate(authorization)
