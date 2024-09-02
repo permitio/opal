@@ -1,18 +1,20 @@
-import jwt
 import httpx
-
+import jwt
 from cachetools import TTLCache
 from opal_common.authentication.verifier import Unauthorized
 
+
 class JWKManager:
-    def __init__(self, openid_configuration_url, jwt_algorithm, cache_maxsize, cache_ttl):
+    def __init__(
+        self, openid_configuration_url, jwt_algorithm, cache_maxsize, cache_ttl
+    ):
         self._openid_configuration_url = openid_configuration_url
         self._jwt_algorithm = jwt_algorithm
         self._cache = TTLCache(maxsize=cache_maxsize, ttl=cache_ttl)
 
     def public_key(self, token):
         header = jwt.get_unverified_header(token)
-        kid = header['kid']
+        kid = header["kid"]
 
         public_key = self._cache.get(kid)
         if public_key is None:
@@ -40,6 +42,8 @@ class JWKManager:
         response = httpx.get(self._openid_configuration_url)
 
         if response.status_code != httpx.codes.OK:
-            raise Unauthorized(description=f"invalid status code {response.status_code}")
+            raise Unauthorized(
+                description=f"invalid status code {response.status_code}"
+            )
 
         return response.json()

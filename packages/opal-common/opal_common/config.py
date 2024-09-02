@@ -224,17 +224,9 @@ class OpalCommonConfig(Confi):
         description="OAuth2 token validation cache TTL.",
     )
 
-    OAUTH2_EXP_MARGIN = confi.int(
-        "OAUTH2_EXP_MARGIN", 5 * 60, description="OAuth2 expiration margin."
-    )
-    OAUTH2_EXACT_MATCH_CLAIMS = confi.str(
-        "OAUTH2_EXACT_MATCH_CLAIMS", None, description="OAuth2 exact match claims."
-    )
-    OAUTH2_REQUIRED_CLAIMS = confi.str(
-        "OAUTH2_REQUIRED_CLAIMS",
-        None,
-        description="Comma separated list of required claims.",
-    )
+    OAUTH2_EXP_MARGIN = confi.int("OAUTH2_EXP_MARGIN", 5 * 60, description="OAuth2 expiration margin.")
+    OAUTH2_EXACT_MATCH_CLAIMS = confi.str("OAUTH2_EXACT_MATCH_CLAIMS", None, description="OAuth2 exact match claims.")
+    OAUTH2_REQUIRED_CLAIMS = confi.str("OAUTH2_REQUIRED_CLAIMS", None, description="Comma separated list of required claims.")
     OAUTH2_JWT_ALGORITHM = confi.enum(
         "OAUTH2_JWT_ALGORITHM",
         JWTAlgorithm,
