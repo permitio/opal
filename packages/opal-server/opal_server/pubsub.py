@@ -20,6 +20,7 @@ from opal_server.config import opal_server_config
 from opal_server.publisher import PeriodicPublisher, Publisher
 from pydantic import BaseModel
 from starlette.datastructures import QueryParams
+from tenacity import retry, wait_fixed
 
 from fastapi_websocket_pubsub import (
     ALL_TOPICS,
@@ -135,6 +136,9 @@ def setup_broadcaster_keepalive_task(
     )
 
 
+BROADCASTER_CONNECT_RETRY_INTERVAL = 2
+
+
 class PubSub(Publisher):
     """Wrapper for the Pub/Sub channel used for both policy and data
     updates."""
@@ -238,8 +242,11 @@ class PubSub(Publisher):
 
     async def start(self):
         if self.broadcaster is not None:
-            await self.broadcaster.connect()
-            # TODO: That's still not good
+            logger.info("Waiting for successful broadcaster connection")
+            await retry(wait=wait_fixed(BROADCASTER_CONNECT_RETRY_INTERVAL))(
+                self.broadcaster.connect
+            )()
+            logger.info("Broadcaster connected")
             self._wait_for_broadcaster_closed = asyncio.create_task(
                 self.wait_until_done()
             )
