@@ -1,6 +1,5 @@
-import asyncio
 import os
-from typing import List
+from typing import List, Union
 
 from opal_common.logger import logger
 from opal_common.schemas.data import DataUpdate
@@ -12,7 +11,7 @@ PREFIX_DELIMITER = ":"
 
 
 class DataUpdatePublisher:
-    def __init__(self, pubsub: PubSub | ScopedPubSub) -> None:
+    def __init__(self, pubsub: Union[PubSub, ScopedPubSub]) -> None:
         self._pubsub = pubsub
 
     @staticmethod
