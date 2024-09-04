@@ -3,12 +3,11 @@ import os
 import signal
 from typing import Any, List, Optional
 
+from fastapi_websocket_pubsub import Topic
 from opal_common.logger import logger
 from opal_common.sources.base_policy_source import BasePolicySource
 from opal_server.config import opal_server_config
 from opal_server.pubsub import PubSub
-
-from fastapi_websocket_pubsub import Topic
 
 
 class BasePolicyWatcherTask:

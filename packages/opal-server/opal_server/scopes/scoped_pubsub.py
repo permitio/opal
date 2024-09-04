@@ -1,9 +1,8 @@
 from typing import Any
 
+from fastapi_websocket_pubsub import TopicList
 from opal_common.logger import logger
 from opal_server.pubsub import PubSub
-
-from fastapi_websocket_pubsub import TopicList
 
 
 class ScopedPubSub:

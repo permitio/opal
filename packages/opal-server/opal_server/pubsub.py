@@ -8,20 +8,6 @@ from uuid import uuid4
 
 from ddtrace import tracer
 from fastapi import APIRouter, Depends, WebSocket
-from fastapi_websocket_rpc import RpcChannel
-from opal_common.async_utils import TasksPool
-from opal_common.authentication.deps import WebsocketJWTAuthenticator
-from opal_common.authentication.signer import JWTSigner
-from opal_common.authentication.types import JWTClaims
-from opal_common.authentication.verifier import Unauthorized
-from opal_common.config import opal_common_config
-from opal_common.logger import logger
-from opal_server.config import opal_server_config
-from opal_server.publisher import PeriodicPublisher, Publisher
-from pydantic import BaseModel
-from starlette.datastructures import QueryParams
-from tenacity import retry, wait_fixed
-
 from fastapi_websocket_pubsub import (
     ALL_TOPICS,
     EventBroadcaster,
@@ -37,6 +23,19 @@ from fastapi_websocket_pubsub.event_notifier import (
 from fastapi_websocket_pubsub.websocket_rpc_event_notifier import (
     WebSocketRpcEventNotifier,
 )
+from fastapi_websocket_rpc import RpcChannel
+from opal_common.async_utils import TasksPool
+from opal_common.authentication.deps import WebsocketJWTAuthenticator
+from opal_common.authentication.signer import JWTSigner
+from opal_common.authentication.types import JWTClaims
+from opal_common.authentication.verifier import Unauthorized
+from opal_common.config import opal_common_config
+from opal_common.logger import logger
+from opal_server.config import opal_server_config
+from opal_server.publisher import PeriodicPublisher, Publisher
+from pydantic import BaseModel
+from starlette.datastructures import QueryParams
+from tenacity import retry, wait_fixed
 
 OPAL_CLIENT_INFO_PARAM_PREFIX = "__opal_"
 OPAL_CLIENT_INFO_CLIENT_ID = f"{OPAL_CLIENT_INFO_PARAM_PREFIX}client_id"
