@@ -5,13 +5,15 @@ import time
 from cachetools import cached, TTLCache
 from fastapi import Header
 from httpx import AsyncClient, BasicAuth
+from opal_common.authentication.authenticator import Authenticator
 from opal_common.authentication.deps import get_token_from_header
 from opal_common.authentication.jwk import JWKManager
+from opal_common.authentication.signer import JWTSigner
 from opal_common.authentication.verifier import JWTVerifier, Unauthorized
 from opal_common.config import opal_common_config
 from typing import Optional
 
-class _OAuth2Authenticator:
+class _OAuth2Authenticator(Authenticator):
     async def authenticate(self, headers):
         if "Authorization" not in headers:
             token = await self.token()
@@ -49,6 +51,9 @@ class OAuth2ClientCredentialsAuthenticator(_OAuth2Authenticator):
     @property
     def enabled(self):
         return True
+
+    def signer(self) -> Optional[JWTSigner]:
+        return None
 
     async def token(self):
         auth = BasicAuth(self._client_id, self._client_secret)
@@ -123,7 +128,10 @@ class CachedOAuth2Authenticator(_OAuth2Authenticator):
 
     @property
     def enabled(self):
-        return True
+        return self._delegate.enabled
+
+    def signer(self) -> Optional[JWTSigner]:
+        return self._delegate.signer()
 
     def _expired(self):
         if self._token is None:

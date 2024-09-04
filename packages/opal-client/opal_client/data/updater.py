@@ -24,7 +24,8 @@ from opal_client.policy_store.policy_store_client_factory import (
     DEFAULT_POLICY_STORE_GETTER,
 )
 from opal_common.async_utils import TakeANumberQueue, TasksPool, repeated_call
-from opal_common.authentication.authenticator import ClientAuthenticator
+from opal_common.authentication.authenticator import Authenticator
+from opal_common.authentication.authenticator_factory import AuthenticatorFactory
 from opal_common.config import opal_common_config
 from opal_common.fetcher.events import FetcherConfig
 from opal_common.http_utils import is_http_error_response
@@ -55,7 +56,7 @@ class DataUpdater:
         callbacks_register: Optional[CallbacksRegister] = None,
         opal_client_id: str = None,
         shard_id: Optional[str] = None,
-        authenticator: Optional[ClientAuthenticator] = None,
+        authenticator: Optional[Authenticator] = None,
     ):
         """Keeps policy-stores (e.g. OPA) up to date with relevant data Obtains
         data configuration on startup from OPAL-server Uses Pub/Sub to
@@ -137,7 +138,7 @@ class DataUpdater:
         if authenticator is not None:
             self._authenticator = authenticator
         else:
-            self._authenticator = ClientAuthenticator()
+            self._authenticator = AuthenticatorFactory.create()
 
     async def __aenter__(self):
         await self.start()

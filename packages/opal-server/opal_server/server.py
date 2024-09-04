@@ -8,6 +8,7 @@ from typing import List, Optional
 
 from fastapi import Depends, FastAPI
 from fastapi_websocket_pubsub.event_broadcaster import EventBroadcasterContextManager
+from opal_common.authentication.authenticator import Authenticator
 from opal_common.authentication.deps import StaticBearerAuthenticator
 from opal_common.confi.confi import load_conf_if_none
 from opal_common.config import opal_common_config
@@ -21,7 +22,11 @@ from opal_common.topics.publisher import (
     ServerSideTopicPublisher,
     TopicPublisher,
 )
-from opal_server.authentication.authenticator import ServerAuthenticator, WebsocketServerAuthenticator
+from opal_server.authentication.authenticator import WebsocketServerAuthenticator
+from opal_server.authentication.authenticator_factory import (
+    ServerAuthenticatorFactory,
+    WebsocketServerAuthenticatorFactory,
+)
 from opal_server.config import opal_server_config
 from opal_server.data.api import init_data_updates_router
 from opal_server.data.data_update_publisher import DataUpdatePublisher
@@ -49,7 +54,7 @@ class OpalServer:
         init_publisher: bool = None,
         data_sources_config: Optional[ServerDataSourceConfig] = None,
         broadcaster_uri: str = None,
-        authenticator: Optional[ServerAuthenticator] = None,
+        authenticator: Optional[Authenticator] = None,
         websocketAuthenticator: Optional[WebsocketServerAuthenticator] = None,
         enable_jwks_endpoint=True,
         jwks_url: str = None,
@@ -121,19 +126,23 @@ class OpalServer:
         if authenticator is not None:
             self.authenticator = authenticator
         else:
-            self.authenticator = ServerAuthenticator()
+            self.authenticator = ServerAuthenticatorFactory.create()
 
         if enable_jwks_endpoint:
             self.jwks_endpoint = JwksStaticEndpoint(
-                signer=self.authenticator.signer(), jwks_url=jwks_url, jwks_static_dir=jwks_static_dir
+                signer=self.authenticator.signer(),
+                jwks_url=jwks_url,
+                jwks_static_dir=jwks_static_dir,
             )
         else:
             self.jwks_endpoint = None
 
         _websocketAuthenticator = websocketAuthenticator
         if _websocketAuthenticator is None:
-            _websocketAuthenticator = WebsocketServerAuthenticator()
-        self.pubsub = PubSub(broadcaster_uri=broadcaster_uri, authenticator=_websocketAuthenticator)
+            _websocketAuthenticator = WebsocketServerAuthenticatorFactory.create()
+        self.pubsub = PubSub(
+            broadcaster_uri=broadcaster_uri, authenticator=_websocketAuthenticator
+        )
 
         self.publisher: Optional[TopicPublisher] = None
         self.broadcast_keepalive: Optional[PeriodicPublisher] = None
@@ -217,7 +226,9 @@ class OpalServer:
         data_updates_router = init_data_updates_router(
             data_update_publisher, self.data_sources_config, self.authenticator
         )
-        webhook_router = init_git_webhook_router(self.pubsub.endpoint, self.authenticator)
+        webhook_router = init_git_webhook_router(
+            self.pubsub.endpoint, self.authenticator
+        )
         security_router = init_security_router(
             self.authenticator.signer(), StaticBearerAuthenticator(self.master_token)
         )
@@ -252,7 +263,9 @@ class OpalServer:
 
         if opal_server_config.SCOPES:
             app.include_router(
-                init_scope_router(self._scopes, self.authenticator, self.pubsub.endpoint),
+                init_scope_router(
+                    self._scopes, self.authenticator, self.pubsub.endpoint
+                ),
                 tags=["Scopes"],
                 prefix="/scopes",
             )
