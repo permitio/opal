@@ -4,7 +4,8 @@ import aiohttp
 from fastapi import HTTPException, status
 from opal_client.config import opal_client_config
 from opal_client.logger import logger
-from opal_common.authentication.authenticator import ClientAuthenticator
+from opal_common.authentication.authenticator import Authenticator
+from opal_common.authentication.authenticator_factory import AuthenticatorFactory
 from opal_common.schemas.policy import PolicyBundle
 from opal_common.security.sslcontext import get_custom_ssl_context
 from opal_common.utils import (
@@ -33,7 +34,7 @@ class PolicyFetcher:
         self,
         backend_url=None,
         token=None,
-        authenticator: Optional[ClientAuthenticator] = None,
+        authenticator: Optional[Authenticator] = None,
     ):
         """
         Args:
@@ -43,7 +44,7 @@ class PolicyFetcher:
         if authenticator is not None:
             self._authenticator = authenticator
         else:
-            self._authenticator = ClientAuthenticator()
+            self._authenticator = AuthenticatorFactory.create()
         self._token = token or opal_client_config.CLIENT_TOKEN
         self._backend_url = backend_url or opal_client_config.SERVER_URL
         if self._token is not None:

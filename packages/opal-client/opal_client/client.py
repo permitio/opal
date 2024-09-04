@@ -29,7 +29,8 @@ from opal_client.policy_store.base_policy_store_client import BasePolicyStoreCli
 from opal_client.policy_store.policy_store_client_factory import (
     PolicyStoreClientFactory,
 )
-from opal_common.authentication.authenticator import ClientAuthenticator
+from opal_common.authentication.authenticator import Authenticator
+from opal_common.authentication.authenticator_factory import AuthenticatorFactory
 from opal_common.config import opal_common_config
 from opal_common.logger import configure_logs, logger
 from opal_common.middleware import configure_middleware
@@ -48,7 +49,7 @@ class OpalClient:
         inline_opa_options: OpaServerOptions = None,
         inline_cedar_enabled: bool = None,
         inline_cedar_options: CedarServerOptions = None,
-        authenticator: Optional[ClientAuthenticator] = None,
+        authenticator: Optional[Authenticator] = None,
         store_backup_path: Optional[str] = None,
         store_backup_interval: Optional[int] = None,
         offline_mode_enabled: bool = False,
@@ -66,7 +67,7 @@ class OpalClient:
         if authenticator is not None:
             self.authenticator = authenticator
         else:
-            self.authenticator = ClientAuthenticator()
+            self.authenticator = AuthenticatorFactory.create()
         self._shard_id = shard_id
         # defaults
         policy_store_type: PolicyStoreTypes = (

@@ -16,7 +16,8 @@ from opal_client.policy_store.policy_store_client_factory import (
     DEFAULT_POLICY_STORE_GETTER,
 )
 from opal_common.async_utils import TakeANumberQueue, TasksPool
-from opal_common.authentication.authenticator import ClientAuthenticator
+from opal_common.authentication.authenticator import Authenticator
+from opal_common.authentication.authenticator_factory import AuthenticatorFactory
 from opal_common.config import opal_common_config
 from opal_common.schemas.data import DataUpdateReport
 from opal_common.schemas.policy import PolicyBundle, PolicyUpdateMessage
@@ -44,7 +45,7 @@ class PolicyUpdater:
         data_fetcher: Optional[DataFetcher] = None,
         callbacks_register: Optional[CallbacksRegister] = None,
         opal_client_id: str = None,
-        authenticator: Optional[ClientAuthenticator] = None,
+        authenticator: Optional[Authenticator] = None,
     ):
         """inits the policy updater.
 
@@ -69,7 +70,7 @@ class PolicyUpdater:
         if authenticator is not None:
             self._authenticator = authenticator
         else:
-            self._authenticator = ClientAuthenticator()
+            self._authenticator = AuthenticatorFactory.create()
         # The policy store we'll save policy modules into (i.e: OPA)
         self._policy_store = policy_store or DEFAULT_POLICY_STORE_GETTER()
         # pub/sub server url and authentication data

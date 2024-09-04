@@ -5,14 +5,14 @@ from typing import Any, Optional, Union, cast
 
 import httpx
 from aiohttp import ClientResponse, ClientSession
-from opal_common.authentication.authenticator import ClientAuthenticator
+from opal_common.authentication.authenticator import Authenticator
+from opal_common.authentication.authenticator_factory import AuthenticatorFactory
 from opal_common.config import opal_common_config
 from opal_common.fetcher.events import FetcherConfig, FetchEvent
 from opal_common.fetcher.fetch_provider import BaseFetchProvider
 from opal_common.fetcher.logger import get_logger
 from opal_common.http_utils import is_http_error_response
 from opal_common.security.sslcontext import get_custom_ssl_context
-from opal_common.authentication.authenticator import ClientAuthenticator
 from pydantic import validator
 
 logger = get_logger("http_fetch_provider")
@@ -54,7 +54,7 @@ class HttpFetchEvent(FetchEvent):
 
 
 class HttpFetchProvider(BaseFetchProvider):
-    _authenticator: Optional[dict] = None
+    _authenticator: Optional[Authenticator] = None
 
     def __init__(self, event: HttpFetchEvent) -> None:
         self._event: HttpFetchEvent
@@ -69,7 +69,7 @@ class HttpFetchProvider(BaseFetchProvider):
             else {}
         )
         if HttpFetchProvider._authenticator is None:
-            HttpFetchProvider._authenticator = ClientAuthenticator()
+            HttpFetchProvider._authenticator = AuthenticatorFactory.create()
         self._authenticator = HttpFetchProvider._authenticator
 
     def parse_event(self, event: FetchEvent) -> HttpFetchEvent:
