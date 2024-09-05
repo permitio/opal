@@ -101,7 +101,6 @@ class OpalStatistics:
         self._lock = asyncio.Lock()
         self._synced_after_wakeup = asyncio.Event()
         self._received_sync_messages: Set[str] = set()
-        self._publish_tasks = TasksPool()
         self._seen_servers: Dict[str, datetime] = {}
         self._periodic_keepalive_task: asyncio.Task | None = None
 
@@ -174,14 +173,14 @@ class OpalStatistics:
         )
         self._pubsub.endpoint.notifier.register_unsubscribe_event(
             self.remove_client
-        )  # TODO: Fix that
+        )  # TODO: Should have a better way to handle this
 
         # wait before publishing the wakeup message, due to the fact we are
         # counting on the broadcaster to listen and to replicate the message
         # to the other workers / server nodes in the networks.
         # However, since broadcaster is using asyncio.create_task(), there is a
         # race condition that is mitigated by this asyncio.sleep() call.
-        # await asyncio.sleep(SLEEP_TIME_FOR_BROADCASTER_READER_TO_START)
+        await asyncio.sleep(SLEEP_TIME_FOR_BROADCASTER_READER_TO_START)
         # Let all the other opal servers know that new opal server started
         logger.info(f"sending stats wakeup message: {self._worker_id}")
         await self._publish(
