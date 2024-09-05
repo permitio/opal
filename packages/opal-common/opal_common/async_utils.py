@@ -110,7 +110,8 @@ class TasksPool:
     async def join(self, cancel=False):
         if cancel:
             for t in self._tasks:
-                t.cancel()
+                if not t.done():
+                    t.cancel()
         await asyncio.gather(*self._tasks, return_exceptions=True)
         self._tasks.clear()
 
