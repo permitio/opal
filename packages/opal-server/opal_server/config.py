@@ -146,9 +146,6 @@ class OpalServerConfig(Confi):
 
     REPO_WATCHER_ENABLED = confi.bool("REPO_WATCHER_ENABLED", True)
 
-    # publisher
-    PUBLISHER_ENABLED = confi.bool("PUBLISHER_ENABLED", True)
-
     # broadcaster keepalive
     BROADCAST_KEEPALIVE_INTERVAL = confi.int(
         "BROADCAST_KEEPALIVE_INTERVAL",

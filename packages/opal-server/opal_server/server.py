@@ -37,7 +37,6 @@ class OpalServer:
         self,
         init_policy_watcher: bool = None,
         policy_remote_url: str = None,
-        init_publisher: bool = None,
         data_sources_config: Optional[ServerDataSourceConfig] = None,
         broadcaster_uri: str = None,
         signer: Optional[JWTSigner] = None,
@@ -50,8 +49,6 @@ class OpalServer:
         """
         Args:
             policy_remote_url (str, optional): the url of the repo watched by policy watcher.
-            init_publisher (bool, optional): whether to launch a publisher pub/sub client.
-                this publisher is used by the server processes to publish data to the client.
             data_sources_config (ServerDataSourceConfig, optional): base data configuration, that opal
                 clients should get the data from.
             broadcaster_uri (str, optional): Which server/medium should the PubSub use for broadcasting.
@@ -75,9 +72,6 @@ class OpalServer:
                 will update the opal client via pubsub.
         """
         # load defaults
-        init_publisher: bool = load_conf_if_none(
-            init_publisher, opal_server_config.PUBLISHER_ENABLED
-        )
         broadcaster_uri: str = load_conf_if_none(
             broadcaster_uri, opal_server_config.BROADCAST_URI
         )
@@ -140,7 +134,6 @@ class OpalServer:
             disconnect_callback=self._graceful_shutdown(),  # TODO: a better approach might be to have each component (e.g statistics) register a callback on broadcaster reconnect that resets its own state (shouldn't rely on state if broadcaster was down)
         )
 
-        # TODO: Ignore init_publisher
         if opal_common_config.STATISTICS_ENABLED:
             self.opal_statistics = OpalStatistics(self.pubsub)
         else:
