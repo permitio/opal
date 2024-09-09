@@ -18,7 +18,7 @@ sys.path.append(root_dir)
 
 from opal_client import OpalClient
 from opal_client.data.rpc import TenantAwareRpcEventClientMethods
-from opal_client.data.updater import DataSourceEntry, DataUpdate, DataUpdater
+from opal_client.data.updater import DataSourceEntry, DataUpdate, DefaultDataUpdater
 from opal_client.policy_store.mock_policy_store_client import MockPolicyStoreClient
 from opal_client.policy_store.policy_store_client_factory import (
     PolicyStoreClientFactory,
@@ -76,7 +76,7 @@ def setup_server(event):
 def setup_client(event):
     # config to use mock OPA
     policy_store = PolicyStoreClientFactory.create(store_type=PolicyStoreTypes.MOCK)
-    data_updater = DataUpdater(
+    data_updater = DefaultDataUpdater(
         pubsub_url=UPDATES_URL,
         data_sources_config_url=DATA_CONFIG_URL,
         policy_store=policy_store,
