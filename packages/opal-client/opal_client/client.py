@@ -16,6 +16,7 @@ from opal_client.callbacks.register import CallbacksRegister
 from opal_client.config import PolicyStoreTypes, opal_client_config
 from opal_client.data.api import init_data_router
 from opal_client.data.updater import DataUpdater
+from opal_client.data.updater_factory import DataUpdaterFactory
 from opal_client.engine.options import CedarServerOptions, OpaServerOptions
 from opal_client.engine.runner import CedarRunner, OpaRunner
 from opal_client.limiter import StartupLoadLimiter
@@ -136,7 +137,7 @@ class OpalClient:
                     else opal_client_config.DATA_TOPICS
                 )
 
-                self.data_updater = DataUpdater(
+                self.data_updater = DataUpdaterFactory.create(
                     policy_store=self.policy_store,
                     data_topics=data_topics,
                     callbacks_register=self._callbacks_register,
