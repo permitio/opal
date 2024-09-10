@@ -260,7 +260,6 @@ class PubSub(Publisher):
             self._wait_for_broadcaster_closed.cancel()
             stop_tasks.append(self._wait_for_broadcaster_closed)
 
-        # TODO: return_exceptions?
         await asyncio.gather(*stop_tasks, return_exceptions=True)
         if self.broadcaster is not None:
             await self.broadcaster.close()
