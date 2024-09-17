@@ -74,7 +74,7 @@ OPAL is being used as the core engine of Permit.io Authorization Service and ser
 * \> 100,000 policy changes and data synchronizations every day
 * \> 10,000,000 authorization checks every day
 
-Besides Permit, OPAL is being used in Production in **Tesla**, **Walmart**, **NBA**, **Intel**, **Cisco**, **Credit One**, and 1000s more development teams and companies of any size.
+Besides Permit, OPAL is being used in Production in **Tesla**, **Walmart**, **The NBA**, **Intel**, **Cisco**, **Live-Oak Bank**, and thousands of other development teams and companies of all sizes.
 
 ## Documentation
 
