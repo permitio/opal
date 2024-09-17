@@ -44,7 +44,7 @@ Check out OPAL's main site at <a target="_blank" href="https://opal.ac">OPAL.ac<
 
 OPAL is the easiest way to keep your solution's authorization layer up-to-date in realtime. It aggregates policy and data from across the field and integrates them seamlessly into the authorization layer, and is microservices and cloud-native.
 
-Here are the main use cases of OPAL:
+Here are some of the main use cases for using OPAL:
 * **End-to-End [Fine-Grained Authorization](https://www.permit.io/blog/what-is-fine-grained-authorization-fga) service** that can be used with any policy language or data store
 * [Google-Zanzibar](https://www.permit.io/blog/what-is-google-zanzibar) support for Policy as Code engines such as OPA and AWS Cedar
 * Streamline permissions in microservice architectures using [centralized policy configuration with decentralized data](https://www.permit.io/blog/best-practices-for-implementing-hybrid-cloud-security) sources and policy engines
