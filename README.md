@@ -36,24 +36,45 @@ Open Policy Administration Layer
 
 OPAL is an administration layer for Policy Engines such as <a target="_blank" href="https://www.openpolicyagent.org/">Open Policy Agent (OPA)</a>, and <a target="_blank" href="https://github.com/permitio/cedar-agent">AWS' Cedar Agent</a> detecting changes to both policy and policy data in realtime and pushing live updates to your agents. OPAL brings open-policy up to the speed needed by live applications.
 
-As your application state changes (whether it's via your APIs, DBs, git, S3 or 3rd-party SaaS services), OPAL will make sure your services are always in sync with the authorization data and policy they need (and only those they need).
+As your app's data state changes (whether it's via your APIs, DBs, git, S3 or 3rd-party SaaS services), OPAL will make sure your services are always in sync with the authorization data and policy they need (and only those they need).
 
-Check out our main site at <a target="_blank" href="https://opal.ac">OPAL.ac</a>, <a target="_blank" href="https://youtu.be/tG8jrdcc7Zo">this video</a> briefly explaining OPAL and how it works with OPA, and a deeper dive into it at [this OWASP DevSlop talk](https://www.youtube.com/watch?v=1_Iz0tRQCH4).
+Check out OPAL's main site at <a target="_blank" href="https://opal.ac">OPAL.ac</a>
 
-## Why use OPAL?
+## OPAL Use Cases
 
 OPAL is the easiest way to keep your solution's authorization layer up-to-date in realtime. It aggregates policy and data from across the field and integrates them seamlessly into the authorization layer, and is microservices and cloud-native.
 
-## OPA + OPAL == 💜
+Here are some of the main use cases for using OPAL:
+* **End-to-End [Fine-Grained Authorization](https://www.permit.io/blog/what-is-fine-grained-authorization-fga) service** that can be used with any policy language or data store
+* [Google-Zanzibar](https://www.permit.io/blog/what-is-google-zanzibar) support for Policy as Code engines such as OPA and AWS Cedar
+* Streamline permissions in microservice architectures using [centralized policy configuration with decentralized data](https://www.permit.io/blog/best-practices-for-implementing-hybrid-cloud-security) sources and policy engines
+* Manage and automate the deployment of multiple Open Policy Agent engines in a Cloud-Native environment
+
+<img src="https://github.com/permitio/opal/assets/4082578/99d3dd95-a7ff-45c2-805e-3d533f8b1e8c" alt="simplified" border="0">
+
+OPAL  uses a client-server stateless architecture. OPAL-Servers publish policy and data updates over a lightweight (websocket) PubSub Channel, which OPAL-clients subscribe to via topics. Upon updates, each client fetches data directly (from the source) to load it into its managed Policy Engine instance.
+
+
+### OPA + OPAL == 💜
 
 While OPA (Open Policy Agent) decouples policy from code in a highly-performant and elegant way, the challenge of keeping policy agents up-to-date remains.
 This is especially true in applications, where each user interaction or API call may affect access-control decisions.
-OPAL runs in the background, supercharging policy-agents, keeping them in sync with events in realtime.
+OPAL runs in the background, supercharging policy agents and keeping them in sync with events in real time.
 
-## AWS Cedar + OPAL == 💪
+### AWS Cedar + OPAL == 💪
 
 Cedar is a very powerful policy language, which powers AWS' AVP (Amazon Verified Permissions) - but what if you want to enjoy the power of Cedar on another cloud, locally, or on premise?
 This is where [Cedar-Agent](https://github.com/permitio/cedar-agent) and OPAL come in.
+
+This [video](https://youtu.be/tG8jrdcc7Zo) briefly explains OPAL and how it works with OPA, and a deeper dive into it at [this OWASP DevSlop talk](https://www.youtube.com/watch?v=1_Iz0tRQCH4).
+
+## Who's Using OPAL?
+OPAL is being used as the core engine of Permit.io Authorization Service and serves in production:
+* \> 10,000 policy engines deployment
+* \> 100,000 policy changes and data synchronizations every day
+* \> 10,000,000 authorization checks every day
+
+Besides Permit, OPAL is being used in Production in **Tesla**, **Walmart**, **The NBA**, **Intel**, **Cisco**, **Live-Oak Bank**, and thousands of other development teams and companies of all sizes.
 
 ## Documentation
 
@@ -104,22 +125,18 @@ curl -L https://raw.githubusercontent.com/permitio/opal/master/docker/docker-com
 
 - 🎨 &nbsp; [Key concepts and design](https://docs.opal.ac/overview/design)
 - 🏗️ &nbsp; [Architecture](https://docs.opal.ac/overview/architecture)
-<be>
 <br>
-OPAL  uses a client-server stateless architecture. OPAL-Servers publish policy and data updates over a lightweight (websocket) PubSub Channel, which OPAL-clients subscribe to via topics. Upon updates each client fetches data directly (from source) to load it in to its managed OPA instance.
-  <br>
-<img src="https://github.com/permitio/opal/assets/4082578/99d3dd95-a7ff-45c2-805e-3d533f8b1e8c" alt="simplified" border="0">
-<br>
-📖 &nbsp; For further reading check out our [Blog](https://bit.ly/opal_blog).
+
+📖 For further reading, check out our [Blog](https://io.permit.io/opal-readme-blog)
 
 ## Community
 
-Come talk to us about OPAL, or authorization in general - we would love to hear from you ❤️
+ We would love to chat with you about OPAL. [Join our Slack community](https://io.permit.io/opal-readme-slack) to chat about authorization, open-source, realtime communication, tech, or anything else!
 
-You can raise questions and ask for features to be added to the road-map in our [**Github discussions**](https://github.com/permitio/opal/discussions), report issues in [**Github issues**](https://github.com/permitio/opal/issues), follow us on Twitter to get the latest OPAL updates, and join our Slack community to chat about authorization, open-source, realtime communication, tech, or anything else!
+You can raise questions and ask for features to be added to the road-map in our [**Github discussions**](https://github.com/permitio/opal/discussions), report issues in [**Github issues**](https://github.com/permitio/opal/issues)
 </br>
 </br>
-If you are using our project, please consider giving us a ⭐️
+If you like our project, please consider giving us a ⭐️
 </br>
 
 [![Button][join-slack-link]][badge-slack-link] </br> [![Button][follow-twitter-link]][badge-twitter-link]
