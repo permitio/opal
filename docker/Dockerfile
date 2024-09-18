@@ -20,10 +20,6 @@ COPY ./cedar-agent /tmp/cedar-agent
 WORKDIR /tmp/cedar-agent
 RUN CARGO_REGISTRIES_CRATES_IO_PROTOCOL=sparse cargo build --release
 
-# BUSYBOX IMAGE --------------------------------------
-# ---------------------------------------------------
-FROM busybox:1.36.1-uclibc AS busybox-builder
-
 # COMMON IMAGE --------------------------------------
 # ---------------------------------------------------
 FROM python:3.10-slim-bookworm AS common
@@ -37,17 +33,13 @@ COPY --from=build-stage /usr/local /usr/local
 RUN useradd -m -b / -s /bin/bash opal
 WORKDIR /opal
 
-# copy wget binary
-COPY --from=busybox-builder /bin/wget /bin/wget
-RUN chmod +x /bin/wget
-
 # copy wait-for script (create link at old path to maintain backward compatibility)
 COPY scripts/wait-for.sh .
 RUN chmod +x ./wait-for.sh
 RUN ln -s /opal/wait-for.sh /usr/wait-for.sh
 
-# netcat (nc) is used by the wait-for.sh script
-RUN apt-get update && apt-get install -y netcat-traditional jq && apt-get clean
+# netcat (nc) and wget are used by the wait-for.sh script
+RUN apt-get update && apt-get install -y netcat-traditional jq wget && apt-get clean
 
 # copy startup script (create link at old path to maintain backward compatibility)
 COPY ./scripts/start.sh .
