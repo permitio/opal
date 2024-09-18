@@ -20,10 +20,6 @@ COPY ./cedar-agent /tmp/cedar-agent
 WORKDIR /tmp/cedar-agent
 RUN CARGO_REGISTRIES_CRATES_IO_PROTOCOL=sparse cargo build --release
 
-# BUSYBOX IMAGE --------------------------------------
-# ---------------------------------------------------
-FROM busybox:1.36.1-uclibc AS busybox-builder
-
 # COMMON IMAGE --------------------------------------
 # ---------------------------------------------------
 FROM python:3.10-slim-bookworm AS common
@@ -36,10 +32,6 @@ COPY --from=build-stage /usr/local /usr/local
 # Add non-root user (with home dir at /opal)
 RUN useradd -m -b / -s /bin/bash opal
 WORKDIR /opal
-
-# copy wget binary
-COPY --from=busybox-builder /bin/wget /bin/wget
-RUN chmod +x /bin/wget
 
 # copy wait-for script (create link at old path to maintain backward compatibility)
 COPY scripts/wait-for.sh .
