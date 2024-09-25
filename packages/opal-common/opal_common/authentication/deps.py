@@ -30,7 +30,7 @@ def verify_logged_in(verifier: JWTVerifier, token: Optional[str]) -> JWTClaims:
     try:
         if not verifier.enabled:
             logger.debug("JWT verification disabled, cannot verify requests!")
-            return {}
+            raise Unauthorized(description="JWT verification is disabled")
         if token is None:
             raise Unauthorized(description="access token was not provided")
         claims: JWTClaims = verifier.verify(token)
