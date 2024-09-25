@@ -17,10 +17,10 @@ OPAL-server can scale out both in number of worker processes per server and acro
 
 ### Broadcaster Module
 
-Support for multiple backbone solutions is provided by the [Python Broadcaster package](https://pypi.org/project/broadcaster/). To use it with Apache Pulsar, install the `broadcaster[pulsar]` module:
+Support for multiple backbone solutions is provided by the Permit's port of the [Python Broadcaster package](https://pypi.org/project/permit-broadcaster/). To use it with Apache Pulsar, install the `permit-broadcaster[pulsar]` module:
 
 ```bash
-pip install broadcaster[pulsar]
+pip install permit-broadcaster[pulsar]
 ```
 
 ## Setting Up OPAL-server with Apache Pulsar
@@ -101,7 +101,6 @@ You should see the effect in:
 ## Advanced: Publishing Events Directly to Pulsar
 
 You can trigger events by publishing messages directly to the 'broadcast' topic in Pulsar. Ensure the message format follows the OPAL-server schema for backbone events.
-
 
 ## Conclusion
 
