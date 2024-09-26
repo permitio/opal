@@ -63,9 +63,9 @@ class JWTVerifier:
                 )
             except jwt.exceptions.InvalidKeyError as e:
                 logger.error(f"Invalid public key for jwt verification, error: {e}!")
-                self._disable(f"Invalid public key: {e}")
+                self._disable()
         else:
-            self._disable("No public key provided")
+            self._disable()
 
     def get_jwk(self) -> str:
         """returns the jwk json contents."""
@@ -74,8 +74,7 @@ class JWTVerifier:
             raise ValueError(f"invalid jwt algorithm: {self._algorithm}")
         return algorithm.to_jwk(self._public_key)
 
-    def _disable(self, reason: str):
-        logger.warning(f"Disabled JWT verification due to: {reason}")
+    def _disable(self):
         self._enabled = False
 
     @property

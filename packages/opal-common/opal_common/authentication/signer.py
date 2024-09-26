@@ -94,7 +94,7 @@ class JWTSigner(JWTVerifier):
             )
         elif self._private_key is None and self._public_key is None:
             # valid situation, running in dev mode and api security is off
-            self._disable("No crypto keys provided")
+            self._disable()
         else:
             raise ValueError("Invalid JWT Signer input!")
 
