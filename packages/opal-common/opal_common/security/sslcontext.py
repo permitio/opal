@@ -64,7 +64,7 @@ def get_custom_ssl_context_for_mtls(
         client_key_file = get_verified_expanded_filename(client_key_file)
         ca_file = get_verified_expanded_filename(ca_file)
 
-        ssl_context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
+        ssl_context = ssl.create_default_context(ssl.Purpose.SERVER_AUTH)
         ssl_context.load_cert_chain(certfile=client_cert_file, keyfile=client_key_file)
         if ca_file is not None:
             ssl_context.load_verify_locations(ca_file)
