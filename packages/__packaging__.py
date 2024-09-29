@@ -9,7 +9,7 @@ Project homepage: https://github.com/permitio/opal
 
 import os
 
-VERSION = (0, 0, 0)  # Placeholder, to be set by CI/CD
+VERSION = ("0", "7", "13-rc.2")
 VERSION_STRING = ".".join(map(str, VERSION))
 
 __version__ = VERSION_STRING

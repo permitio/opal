@@ -6,6 +6,20 @@ from loguru import logger
 from opal_common.config import opal_common_config
 
 
+class CustomSSLContext:
+    def __init__(
+        self,
+        ssl_context: ssl.SSLContext,
+        certfile: str,
+        keyfile: str,
+        cafile: Optional[str],
+    ):
+        self.ssl_context = ssl_context
+        self.certfile = certfile
+        self.keyfile = keyfile
+        self.cafile = cafile
+
+
 def get_custom_ssl_context() -> Optional[ssl.SSLContext]:
     """Potentially (if enabled), returns a custom ssl context that respect
     self-signed certificates or mutual TLS (mTLS).
@@ -17,11 +31,12 @@ def get_custom_ssl_context() -> Optional[ssl.SSLContext]:
         opal_common_config.MTLS_CLIENT_CERT is not None
         and opal_common_config.MTLS_CLIENT_KEY is not None
     ):
-        return get_custom_ssl_context_for_mtls(
+        custom_ssl_context = get_custom_ssl_context_for_mtls(
             client_cert_file=opal_common_config.MTLS_CLIENT_CERT,
             client_key_file=opal_common_config.MTLS_CLIENT_KEY,
             ca_file=opal_common_config.MTLS_CA_CERT,
         )
+        return None if custom_ssl_context is None else custom_ssl_context.ssl_context
 
     if not opal_common_config.CLIENT_SELF_SIGNED_CERTIFICATES_ALLOWED:
         return None
@@ -43,20 +58,23 @@ def get_custom_ssl_context() -> Optional[ssl.SSLContext]:
 
 def get_custom_ssl_context_for_mtls(
     client_cert_file: str, client_key_file: str, ca_file: Optional[str]
-) -> Optional[ssl.SSLContext]:
+) -> Optional[CustomSSLContext]:
     try:
         client_cert_file = get_verified_expanded_filename(client_cert_file)
         client_key_file = get_verified_expanded_filename(client_key_file)
         ca_file = get_verified_expanded_filename(ca_file)
 
-        custom_ssl_context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
-        custom_ssl_context.load_cert_chain(
-            certfile=client_cert_file, keyfile=client_key_file
-        )
+        ssl_context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
+        ssl_context.load_cert_chain(certfile=client_cert_file, keyfile=client_key_file)
         if ca_file is not None:
-            custom_ssl_context.load_verify_locations(ca_file)
+            ssl_context.load_verify_locations(ca_file)
 
-        return custom_ssl_context
+        return CustomSSLContext(
+            ssl_context=ssl_context,
+            certfile=client_cert_file,
+            keyfile=client_key_file,
+            cafile=ca_file,
+        )
     except ValueError:
         return None
 
