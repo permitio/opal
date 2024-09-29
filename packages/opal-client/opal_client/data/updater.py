@@ -129,6 +129,17 @@ class DataUpdater:
             if self._custom_ssl_context is not None
             else {}
         )
+        self._ssl_context_ws_kwargs = (
+            self._ssl_context_kwargs
+            # apply ssl context only if it's enabled for ws
+            if opal_common_config.MTLS_WS_ENABLE
+            or (
+                # or if no mTLS is enabled
+                opal_common_config.MTLS_CLIENT_CERT is None
+                or opal_common_config.MTLS_CLIENT_KEY is None
+            )
+            else {}
+        )
         self._updates_storing_queue = TakeANumberQueue(logger)
         self._tasks = TasksPool()
         self._polling_update_tasks = []
@@ -282,7 +293,7 @@ class DataUpdater:
             extra_headers=self._extra_headers,
             keep_alive=opal_client_config.KEEP_ALIVE_INTERVAL,
             server_uri=self._server_url,
-            **self._ssl_context_kwargs,
+            **self._ssl_context_ws_kwargs,
         )
         async with self._client:
             await self._client.wait_until_done()

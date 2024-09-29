@@ -191,6 +191,11 @@ class OpalCommonConfig(Confi):
         None,
         description="If mTLS is enabled, path to the file containing the corporate CA certificate that is used to estabilish trust.",
     )
+    MTLS_WS_ENABLE = confi.bool(
+        "MTLS_WS_ENABLE",
+        False,
+        description="If mTLS is enabled, enable it for websocket connection as well.",
+    )
 
 
 opal_common_config = OpalCommonConfig(prefix="OPAL_")

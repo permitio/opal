@@ -102,6 +102,17 @@ class PolicyUpdater:
             if self._custom_ssl_context is not None
             else {}
         )
+        self._ssl_context_ws_kwargs = (
+            self._ssl_context_kwargs
+            # apply ssl context only if it's enabled for ws
+            if opal_common_config.MTLS_WS_ENABLE
+            or (
+                # or if no mTLS is enabled
+                opal_common_config.MTLS_CLIENT_CERT is None
+                or opal_common_config.MTLS_CLIENT_KEY is None
+            )
+            else {}
+        )
         self._policy_update_queue = asyncio.Queue()
         self._tasks = TasksPool()
 
@@ -248,7 +259,7 @@ class PolicyUpdater:
             extra_headers=self._extra_headers,
             keep_alive=opal_client_config.KEEP_ALIVE_INTERVAL,
             server_uri=self._server_url,
-            **self._ssl_context_kwargs,
+            **self._ssl_context_ws_kwargs,
         )
         async with self._client:
             await self._client.wait_until_done()
@@ -288,10 +299,10 @@ class PolicyUpdater:
         bundle = None
         bundle_succeeded = True
         try:
-            bundle: Optional[
-                PolicyBundle
-            ] = await self._policy_fetcher.fetch_policy_bundle(
-                directories, base_hash=base_hash
+            bundle: Optional[PolicyBundle] = (
+                await self._policy_fetcher.fetch_policy_bundle(
+                    directories, base_hash=base_hash
+                )
             )
             if bundle:
                 if bundle.old_hash is None:
