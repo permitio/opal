@@ -175,5 +175,22 @@ class OpalCommonConfig(Confi):
         "if provided different value, aiohttp will be used.",
     )
 
+    # mTLS requires at least MTLS_CLIENT_CERT and MTLS_CLIENT_KEY to be defined.
+    MTLS_CLIENT_CERT = confi.str(
+        "MTLS_CLIENT_CERT",
+        None,
+        description="If mTLS is enabled, path to the file containing the public key and identity information for the client. This is shared with the server.",
+    )
+    MTLS_CLIENT_KEY = confi.str(
+        "MTLS_CLIENT_KEY",
+        None,
+        description="If mTLS is enabled, path to the file containing the private key for the client, used to prove ownership of the public key. This is never shared.",
+    )
+    MTLS_CA_CERT = confi.str(
+        "MTLS_CA_CERT",
+        None,
+        description="If mTLS is enabled, path to the file containing the corporate CA certificate that is used to estabilish trust.",
+    )
+
 
 opal_common_config = OpalCommonConfig(prefix="OPAL_")
