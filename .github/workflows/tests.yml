@@ -25,6 +25,7 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     strategy:
       matrix:
         python-version: ["3.9", "3.10", "3.11", "3.12"]
@@ -53,6 +54,7 @@ jobs:
 
   test-docker:
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     steps:
       # BUILD PHASE
       - name: Checkout
