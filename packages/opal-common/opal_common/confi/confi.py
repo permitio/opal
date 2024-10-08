@@ -75,7 +75,7 @@ def ignore_confi_delay_cast(cast_func):
     return wrapped_cast
 
 
-def load_conf_if_none(variable, conf):
+def load_conf_if_none(variable: Any, conf: Any):
     if variable is None:
         return conf
     else:
