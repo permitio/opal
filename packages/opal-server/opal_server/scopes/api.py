@@ -16,12 +16,14 @@ from fastapi.responses import RedirectResponse
 from fastapi_websocket_pubsub import PubSubEndpoint
 from git import InvalidGitRepositoryError
 from opal_common.async_utils import run_sync
+from opal_common.authentication.authenticator import Authenticator
 from opal_common.authentication.authz import (
     require_peer_type,
     restrict_optional_topics_to_publish,
 )
+from opal_common.authentication.authenticator import Authenticator
 from opal_common.authentication.casting import cast_private_key
-from opal_common.authentication.deps import JWTAuthenticator, get_token_from_header
+from opal_common.authentication.deps import get_token_from_header
 from opal_common.authentication.types import EncryptionKeyFormat, JWTClaims
 from opal_common.authentication.verifier import Unauthorized
 from opal_common.logger import logger
@@ -78,7 +80,7 @@ def verify_private_key_or_throw(scope_in: Scope):
 
 def init_scope_router(
     scopes: ScopeRepository,
-    authenticator: JWTAuthenticator,
+    authenticator: Authenticator,
     pubsub_endpoint: PubSubEndpoint,
 ):
     router = APIRouter()

@@ -192,7 +192,7 @@ class OpalClientConfig(Confi):
     # opal server auth token
     CLIENT_TOKEN = confi.str(
         "CLIENT_TOKEN",
-        "THIS_IS_A_DEV_SECRET",
+        None,
         description="opal server auth token",
         flags=["-t"],
     )
