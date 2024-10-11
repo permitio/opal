@@ -4,7 +4,7 @@ services:
     ports:
       - "7002:7002"
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:7002/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:7002/healthcheck"]
       interval: 10s
       timeout: 10s
       retries: 5
@@ -12,9 +12,11 @@ services:
   opal_client:
     image: permitio/opal-client:${OPAL_IMAGE_TAG:-latest}
     ports:
-      - "7776:7000"
+      - "7000:7000"
+    depends_on:
+      - opal_server
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://opal_server:7002/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:7000/healthcheck"]
       interval: 10s
       timeout: 10s
       retries: 5
