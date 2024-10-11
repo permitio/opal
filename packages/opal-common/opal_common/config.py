@@ -5,7 +5,7 @@ from opal_common.authentication.types import EncryptionKeyFormat, JWTAlgorithm
 from opal_common.confi import Confi, confi
 
 _LOG_FORMAT_WITHOUT_PID = "<green>{time}</green> | <blue>{name: <40}</blue>|<level>{level:^6} | {message}</level>\n{exception}"
-_LOG_FORMAT_WITH_PID = "<green>{time}</green> | {process} | <blue>{name: <40}</blue>|<level>{level:^6} | {message}</level>\n{exception}"
+_LOG_FORMAT_WITH_PID = "<green>{time}</green> | {process} | <blue>{name: <40></blue>|<level>{level:^6} | {message}</level>\n{exception}"
 
 
 class OpalCommonConfig(Confi):
@@ -16,7 +16,7 @@ class OpalCommonConfig(Confi):
     PROCESS_NAME = ""
     # Logging
     # - Log formatting
-    LOG_FORMAT_INCLUDE_PID = confi.bool("LOG_FORMAT_INCLUDE_PID", False)
+    LOG_FORMAT_INCLUDE_PID = confi.bool("LOG_FORMAT_INCLUDE_PID", False, description="Include process ID in log format")
     LOG_FORMAT = confi.str(
         "LOG_FORMAT",
         confi.delay(
@@ -106,19 +106,19 @@ class OpalCommonConfig(Confi):
     # Fetching Providers
     # - where to load providers from
     FETCH_PROVIDER_MODULES = confi.list(
-        "FETCH_PROVIDER_MODULES", ["opal_common.fetcher.providers"]
+        "FETCH_PROVIDER_MODULES", ["opal_common.fetcher.providers"], description="Modules to load fetch providers from"
     )
 
     # Fetching engine
     # Max number of worker tasks handling fetch events concurrently
-    FETCHING_WORKER_COUNT = confi.int("FETCHING_WORKER_COUNT", 6)
+    FETCHING_WORKER_COUNT = confi.int("FETCHING_WORKER_COUNT", 6, description="Number of worker tasks for handling fetch events concurrently")
     # Time in seconds to wait on the queued fetch task.
-    FETCHING_CALLBACK_TIMEOUT = confi.int("FETCHING_CALLBACK_TIMEOUT", 10)
+    FETCHING_CALLBACK_TIMEOUT = confi.int("FETCHING_CALLBACK_TIMEOUT", 10, description="Timeout in seconds for fetch task callbacks")
     # Time in seconds to wait for queuing a new task (if the queue is full)
-    FETCHING_ENQUEUE_TIMEOUT = confi.int("FETCHING_ENQUEUE_TIMEOUT", 10)
+    FETCHING_ENQUEUE_TIMEOUT = confi.int("FETCHING_ENQUEUE_TIMEOUT", 10, description="Timeout in seconds for enqueueing new fetch tasks")
 
     GIT_SSH_KEY_FILE = confi.str(
-        "GIT_SSH_KEY_FILE", str(Path.home() / ".ssh/opal_repo_ssh_key")
+        "GIT_SSH_KEY_FILE", str(Path.home() / ".ssh/opal_repo_ssh_key"), description="Path to SSH key file for Git operations"
     )
 
     # Trust self signed certificates (Advanced Usage - only affects OPAL client) -----------------------------
@@ -139,7 +139,7 @@ class OpalCommonConfig(Confi):
 
     # security
     AUTH_PUBLIC_KEY_FORMAT = confi.enum(
-        "AUTH_PUBLIC_KEY_FORMAT", EncryptionKeyFormat, EncryptionKeyFormat.ssh
+        "AUTH_PUBLIC_KEY_FORMAT", EncryptionKeyFormat, EncryptionKeyFormat.ssh, description="Format of the public key used for authentication"
     )
     AUTH_PUBLIC_KEY = confi.delay(
         lambda AUTH_PUBLIC_KEY_FORMAT=None: confi.public_key(
@@ -152,15 +152,15 @@ class OpalCommonConfig(Confi):
         getattr(JWTAlgorithm, "RS256"),
         description="jwt algorithm, possible values: see: https://pyjwt.readthedocs.io/en/stable/algorithms.html",
     )
-    AUTH_JWT_AUDIENCE = confi.str("AUTH_JWT_AUDIENCE", "https://api.opal.ac/v1/")
-    AUTH_JWT_ISSUER = confi.str("AUTH_JWT_ISSUER", f"https://opal.ac/")
+    AUTH_JWT_AUDIENCE = confi.str("AUTH_JWT_AUDIENCE", "https://api.opal.ac/v1/", description="Audience claim for JWT tokens")
+    AUTH_JWT_ISSUER = confi.str("AUTH_JWT_ISSUER", f"https://opal.ac/", description="Issuer claim for JWT tokens")
     POLICY_REPO_POLICY_EXTENSIONS = confi.list(
         "POLICY_REPO_POLICY_EXTENSIONS",
         [".rego"],
         description="List of extensions to serve as policy modules",
     )
 
-    ENABLE_METRICS = confi.bool("ENABLE_METRICS", False)
+    ENABLE_METRICS = confi.bool("ENABLE_METRICS", False, description="Enable metrics collection")
 
     # optional APM tracing with datadog
     ENABLE_DATADOG_APM = confi.bool(

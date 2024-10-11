@@ -20,12 +20,22 @@ class EngineLogFormat(str, Enum):
 class OpalClientConfig(Confi):
     # opa client (policy store) configuration
     POLICY_STORE_TYPE = confi.enum(
-        "POLICY_STORE_TYPE", PolicyStoreTypes, PolicyStoreTypes.OPA
+        "POLICY_STORE_TYPE",
+        PolicyStoreTypes,
+        PolicyStoreTypes.OPA,
+        description="The type of policy store to use (e.g., OPA, Cedar)"
     )
-    POLICY_STORE_URL = confi.str("POLICY_STORE_URL", "http://localhost:8181")
+    POLICY_STORE_URL = confi.str(
+        "POLICY_STORE_URL",
+        "http://localhost:8181",
+        description="URL of the policy store"
+    )
 
     POLICY_STORE_AUTH_TYPE = confi.enum(
-        "POLICY_STORE_AUTH_TYPE", PolicyStoreAuth, PolicyStoreAuth.NONE
+        "POLICY_STORE_AUTH_TYPE",
+        PolicyStoreAuth,
+        PolicyStoreAuth.NONE,
+        description="Authentication type for the policy store"
     )
     POLICY_STORE_AUTH_TOKEN = confi.str(
         "POLICY_STORE_AUTH_TOKEN",
@@ -132,7 +142,11 @@ class OpalClientConfig(Confi):
     # opa runner configuration (OPA can optionally be run by OPAL) ----------------
 
     # whether or not OPAL should run OPA by itself in the same container
-    INLINE_OPA_ENABLED = confi.bool("INLINE_OPA_ENABLED", True)
+    INLINE_OPA_ENABLED = confi.bool(
+        "INLINE_OPA_ENABLED",
+        True,
+        description="Whether to run OPA inline within OPAL"
+    )
 
     # if inline OPA is indeed enabled, user can pass cli options
     # (configuration) that affects how OPA will run
@@ -150,7 +164,11 @@ class OpalClientConfig(Confi):
     # Cedar runner configuration (Cedar-engine can optionally be run by OPAL) ----------------
 
     # whether or not OPAL should run the Cedar agent by itself in the same container
-    INLINE_CEDAR_ENABLED = confi.bool("INLINE_CEDAR_ENABLED", True)
+    INLINE_CEDAR_ENABLED = confi.bool(
+        "INLINE_CEDAR_ENABLED",
+        True,
+        description="Whether to run Cedar inline within OPAL"
+    )
 
     # if inline Cedar is indeed enabled, user can pass cli options
     # (configuration) that affects how the agent will run
@@ -169,12 +187,21 @@ class OpalClientConfig(Confi):
     ALLOWED_ORIGINS = ["*"]
 
     # general configuration for pub/sub clients
-    KEEP_ALIVE_INTERVAL = confi.int("KEEP_ALIVE_INTERVAL", 0)
+    KEEP_ALIVE_INTERVAL = confi.int(
+        "KEEP_ALIVE_INTERVAL",
+        0,
+        description="Interval for keep-alive messages in seconds (0 to disable)"
+    )
 
     # Opal Server general configuration -------------------------------------------
 
     # opal server url
-    SERVER_URL = confi.str("SERVER_URL", "http://localhost:7002", flags=["-s"])
+    SERVER_URL = confi.str(
+        "SERVER_URL",
+        "http://localhost:7002",
+        description="URL of the OPAL server",
+        flags=["-s"]
+    )
     # opal server pubsub url
     OPAL_WS_ROUTE = "/ws"
     SERVER_WS_URL = confi.str(
@@ -184,17 +211,20 @@ class OpalClientConfig(Confi):
                 "http", "ws"
             )
         ),
+        description="WebSocket URL of the OPAL server"
     )
     SERVER_PUBSUB_URL = confi.str(
-        "SERVER_PUBSUB_URL", confi.delay("{SERVER_WS_URL}" + f"{OPAL_WS_ROUTE}")
+        "SERVER_PUBSUB_URL",
+        confi.delay("{SERVER_WS_URL}" + f"{OPAL_WS_ROUTE}"),
+        description="PubSub URL of the OPAL server"
     )
 
     # opal server auth token
     CLIENT_TOKEN = confi.str(
         "CLIENT_TOKEN",
         "THIS_IS_A_DEV_SECRET",
-        description="opal server auth token",
-        flags=["-t"],
+        description="Authentication token for the OPAL server",
+        flags=["-t"]
     )
 
     # client-api server
@@ -229,7 +259,7 @@ class OpalClientConfig(Confi):
         "POLICY_SUBSCRIPTION_DIRS",
         ["."],
         delimiter=":",
-        description="directories in policy repo we should subscribe to",
+        description="Directories in the policy repo to subscribe to"
     )
 
     # Data updater configuration --------------------------------------------------
@@ -243,7 +273,7 @@ class OpalClientConfig(Confi):
     DATA_TOPICS = confi.list(
         "DATA_TOPICS",
         [DEFAULT_DATA_TOPIC],
-        description="Data topics to subscribe to",
+        description="Data topics to subscribe to"
     )
 
     DEFAULT_DATA_SOURCES_CONFIG_URL = confi.str(
@@ -305,7 +335,11 @@ class OpalClientConfig(Confi):
 
     OPA_HEALTH_CHECK_POLICY_PATH = "engine/healthcheck/opal.rego"
 
-    SCOPE_ID = confi.str("SCOPE_ID", "default", description="OPAL Scope ID")
+    SCOPE_ID = confi.str(
+        "SCOPE_ID",
+        "default",
+        description="OPAL Scope ID"
+    )
 
     STORE_BACKUP_PATH = confi.str(
         "STORE_BACKUP_PATH",
