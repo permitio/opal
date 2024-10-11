@@ -1,0 +1,20 @@
+services:
+  opal_server:
+    image: permitio/opal-server:${OPAL_IMAGE_TAG:-latest}
+    ports:
+      - "7002:7002"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:7002/health"]
+      interval: 10s
+      timeout: 10s
+      retries: 5
+  
+  opal_client:
+    image: permitio/opal-client:${OPAL_IMAGE_TAG:-latest}
+    ports:
+      - "7776:7000"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://opal_server:7002/health"]
+      interval: 10s
+      timeout: 10s
+      retries: 5
