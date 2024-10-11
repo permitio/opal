@@ -158,7 +158,10 @@ class OpalClientConfig(Confi):
     )
 
     INLINE_OPA_LOG_FORMAT: EngineLogFormat = confi.enum(
-        "INLINE_OPA_LOG_FORMAT", EngineLogFormat, EngineLogFormat.NONE
+        "INLINE_OPA_LOG_FORMAT",
+        EngineLogFormat,
+        EngineLogFormat.NONE,
+        description="Specifies the log format for inline OPA. Options are: none, minimal, http, or full."
     )
 
     # Cedar runner configuration (Cedar-engine can optionally be run by OPAL) ----------------
@@ -180,7 +183,10 @@ class OpalClientConfig(Confi):
     )
 
     INLINE_CEDAR_LOG_FORMAT: EngineLogFormat = confi.enum(
-        "INLINE_CEDAR_LOG_FORMAT", EngineLogFormat, EngineLogFormat.NONE
+        "INLINE_CEDAR_LOG_FORMAT",
+        EngineLogFormat,
+        EngineLogFormat.NONE,
+        description="Specifies the log format for inline Cedar. Options are: none, minimal, http, or full."
     )
 
     # configuration for fastapi routes
@@ -302,6 +308,7 @@ class OpalClientConfig(Confi):
             "headers": {"content-type": "application/json"},
             "process_data": False,
         },
+        description="Default configuration for update callbacks, including HTTP method, headers, and data processing options."
     )
 
     DEFAULT_UPDATE_CALLBACKS = confi.model(

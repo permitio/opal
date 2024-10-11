@@ -143,7 +143,8 @@ class OpalCommonConfig(Confi):
     )
     AUTH_PUBLIC_KEY = confi.delay(
         lambda AUTH_PUBLIC_KEY_FORMAT=None: confi.public_key(
-            "AUTH_PUBLIC_KEY", default=None, key_format=AUTH_PUBLIC_KEY_FORMAT
+            "AUTH_PUBLIC_KEY", default=None, key_format=AUTH_PUBLIC_KEY_FORMAT,
+            description="The public key used for authentication and JWT token verification"
         )
     )
     AUTH_JWT_ALGORITHM = confi.enum(
