@@ -1,33 +1,31 @@
 from functools import partial
-from typing import Any, List, Optional
+from typing import List, Optional
 
-from fastapi_websocket_pubsub.pub_sub_server import PubSubEndpoint
 from opal_common.confi.confi import load_conf_if_none
 from opal_common.git_utils.repo_cloner import RepoClonePathFinder
 from opal_common.logger import logger
 from opal_common.sources.api_policy_source import ApiPolicySource
 from opal_common.sources.git_policy_source import GitPolicySource
-from opal_common.topics.publisher import TopicPublisher
 from opal_server.config import PolicySourceTypes, opal_server_config
 from opal_server.policy.watcher.callbacks import publish_changed_directories
 from opal_server.policy.watcher.task import BasePolicyWatcherTask, PolicyWatcherTask
+from opal_server.pubsub import PubSub
 from opal_server.scopes.task import ScopesPolicyWatcherTask
 
 
 def setup_watcher_task(
-    publisher: TopicPublisher,
-    pubsub_endpoint: PubSubEndpoint,
-    source_type: str = None,
-    remote_source_url: str = None,
-    clone_path_finder: RepoClonePathFinder = None,
-    branch_name: str = None,
+    pubsub: PubSub,
+    source_type: Optional[str] = None,
+    remote_source_url: Optional[str] = None,
+    clone_path_finder: Optional[RepoClonePathFinder] = None,
+    branch_name: Optional[str] = None,
     ssh_key: Optional[str] = None,
-    polling_interval: int = None,
-    request_timeout: int = None,
-    policy_bundle_token: str = None,
-    policy_bundle_token_id: str = None,
-    policy_bundle_server_type: str = None,
-    policy_bundle_aws_region: str = None,
+    polling_interval: Optional[int] = None,
+    request_timeout: Optional[int] = None,
+    policy_bundle_token: Optional[str] = None,
+    policy_bundle_token_id: Optional[str] = None,
+    policy_bundle_server_type: Optional[str] = None,
+    policy_bundle_aws_region: Optional[str] = None,
     extensions: Optional[List[str]] = None,
     bundle_ignore: Optional[List[str]] = None,
 ) -> BasePolicyWatcherTask:
@@ -35,7 +33,7 @@ def setup_watcher_task(
     vars Load all the defaults from config if called without params.
 
     Args:
-        publisher(TopicPublisher): server side publisher to publish changes in policy
+        pubsub(PubSub): server side pubsub client to publish changes in policy
         source_type(str): policy source type, can be Git / Api to opa bundle server
         remote_source_url(str): the base address to request the policy from
         clone_path_finder(RepoClonePathFinder): from which the local dir path for the repo clone would be retrieved
@@ -46,11 +44,11 @@ def setup_watcher_task(
         policy_bundle_token(int):  auth token to include in connections to OPAL server. Defaults to POLICY_BUNDLE_SERVER_TOKEN.
         policy_bundle_token_id(int):  id token to include in connections to OPAL server. Defaults to POLICY_BUNDLE_SERVER_TOKEN_ID.
         policy_bundle_server_type (str): type of policy bundle server (HTTP S3). Defaults to POLICY_BUNDLE_SERVER_TYPE
-        extensions(list(str), optional):  list of extantions to check when new policy arrive default is FILTER_FILE_EXTENSIONS
+        extensions(list(str), optional):  list of extensions to check when new policy arrive default is FILTER_FILE_EXTENSIONS
         bundle_ignore(list(str), optional):  list of glob paths to use for excluding files from bundle default is OPA_BUNDLE_IGNORE
     """
     if opal_server_config.SCOPES:
-        return ScopesPolicyWatcherTask(pubsub_endpoint)
+        return ScopesPolicyWatcherTask(pubsub)
 
     # load defaults
     source_type = load_conf_if_none(source_type, opal_server_config.POLICY_SOURCE_TYPE)
@@ -135,9 +133,9 @@ def setup_watcher_task(
     watcher.add_on_new_policy_callback(
         partial(
             publish_changed_directories,
-            publisher=publisher,
+            pubsub=pubsub,
             file_extensions=extensions,
             bundle_ignore=bundle_ignore,
         )
     )
-    return PolicyWatcherTask(watcher, pubsub_endpoint)
+    return PolicyWatcherTask(watcher, pubsub)

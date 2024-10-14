@@ -1,7 +1,7 @@
 idna>=3.3,<4
 typer>=0.4.1,<1
 fastapi>=0.109.1,<1
-fastapi_websocket_pubsub==0.3.7
+fastapi_websocket_pubsub==0.3.9
 fastapi_websocket_rpc==0.1.27
 websockets>=10.3,<14
 gunicorn>=22.0.0,<23

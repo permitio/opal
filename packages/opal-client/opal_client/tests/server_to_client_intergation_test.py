@@ -52,7 +52,6 @@ def setup_server(event):
     # Server without git watcher and with a test specific url for data, and without broadcasting
     server = OpalServer(
         init_policy_watcher=False,
-        init_publisher=False,
         data_sources_config=DATA_SOURCES_CONFIG,
         broadcaster_uri=None,
         enable_jwks_endpoint=False,
