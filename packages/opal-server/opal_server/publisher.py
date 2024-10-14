@@ -33,7 +33,7 @@ def setup_broadcaster_keepalive_task(
     time_interval: int,
     topic: Topic = "__broadcast_session_keepalive__",
 ) -> PeriodicPublisher:
-    """a periodic publisher with the intent to trigger messages on the
+    """A periodic publisher with the intent to trigger messages on the
     broadcast channel, so that the session to the backbone won't become idle
     and close on the backbone end."""
     return PeriodicPublisher(

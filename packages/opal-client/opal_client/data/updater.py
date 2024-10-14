@@ -360,7 +360,7 @@ class DataUpdater:
         update: DataUpdate,
         store_queue_number: TakeANumberQueue.Number,
     ):
-        """fetches policy data (policy configuration) from backend and updates
+        """Fetches policy data (policy configuration) from backend and updates
         it into policy-store (i.e. OPA)"""
 
         if update is None:

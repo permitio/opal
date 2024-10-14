@@ -14,7 +14,7 @@ JWTClaims = Dict[str, Any]
 
 
 class EncryptionKeyFormat(str, Enum):
-    """represent the supported formats for storing encryption keys.
+    """Represent the supported formats for storing encryption keys.
 
     - PEM (https://en.wikipedia.org/wiki/Privacy-Enhanced_Mail)
     - SSH (RFC4716) or short format (RFC4253, section-6.6, explained here: https://coolaj86.com/articles/the-ssh-public-key-format/)

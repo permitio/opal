@@ -15,7 +15,7 @@ from pydantic import BaseModel
 
 
 class AbstractPolicyStore:
-    """holds only the interface of a policy store."""
+    """Holds only the interface of a policy store."""
 
     async def set_policy(
         self, policy_id: str, policy_code: str, transaction_id: Optional[str] = None

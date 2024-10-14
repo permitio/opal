@@ -221,7 +221,7 @@ def init_scope_router(
 
     @router.post("/refresh", status_code=status.HTTP_200_OK)
     async def sync_all_scopes(claims: JWTClaims = Depends(authenticator)):
-        """sync all scopes."""
+        """Sync all scopes."""
         try:
             require_peer_type(authenticator, claims, PeerType.datasource)
         except Unauthorized as ex:

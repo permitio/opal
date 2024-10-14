@@ -69,16 +69,16 @@ class OpaServerOptions(BaseModel):
 
         @classmethod
         def alias_generator(cls, string: str) -> str:
-            """converts field named tls_private_key_file to --tls-private-key-
+            """Converts field named tls_private_key_file to --tls-private-key-
             file (to be used by opa cli)"""
             return "--{}".format(string.replace("_", "-"))
 
     def get_cli_options_dict(self):
-        """returns a dict that can be passed to the OPA cli."""
+        """Returns a dict that can be passed to the OPA cli."""
         return self.dict(exclude_none=True, by_alias=True, exclude={"files"})
 
     def get_opa_startup_files(self) -> str:
-        """returns a list of startup policies and data."""
+        """Returns a list of startup policies and data."""
         files = self.files if self.files is not None else []
         return " ".join(files)
 
@@ -110,7 +110,7 @@ class CedarServerOptions(BaseModel):
 
         @classmethod
         def alias_generator(cls, string: str) -> str:
-            """converts field named tls_private_key_file to --tls-private-key-
+            """Converts field named tls_private_key_file to --tls-private-key-
             file (to be used by opa cli)"""
             return "--{}".format(string.replace("_", "-"))
 

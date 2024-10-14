@@ -16,7 +16,7 @@ from tenacity import RetryError, retry, stop, wait
 
 
 class CloneResult:
-    """wraps a git.Repo instance but knows if the repo was initialized with a
+    """Wraps a git.Repo instance but knows if the repo was initialized with a
     url and cloned from a remote repo, or was initialed from a local `.git`
     repo."""
 
@@ -25,7 +25,7 @@ class CloneResult:
 
     @property
     def repo(self) -> Repo:
-        """the wrapped repo instance."""
+        """The wrapped repo instance."""
         return self._repo
 
 
@@ -56,7 +56,7 @@ class RepoClonePathFinder:
         self._use_fixed_path = use_fixed_path
 
     def _get_randomized_clone_subdirectories(self) -> Generator[str, None, None]:
-        """a generator yielding all the randomized subdirectories of the base
+        """A generator yielding all the randomized subdirectories of the base
         clone path that are matching the clone pattern.
 
         Yields:
@@ -69,7 +69,7 @@ class RepoClonePathFinder:
             yield folder
 
     def _get_single_existing_random_clone_path(self) -> Optional[str]:
-        """searches for the single randomly-suffixed clone subdirectory in
+        """Searches for the single randomly-suffixed clone subdirectory in
         existence.
 
         If found no such subdirectory or if found more than one (multiple matching subdirectories) - will return None.
@@ -125,7 +125,7 @@ class RepoClonePathFinder:
 
 
 class RepoCloner:
-    """simple wrapper for git.Repo() to simplify other classes that need to
+    """Simple wrapper for git.Repo() to simplify other classes that need to
     deal with the case where a repo must be cloned from url *only if* the repo
     does not already exists locally, and otherwise initialize the repo instance
     from the repo already existing on the filesystem."""
@@ -145,7 +145,7 @@ class RepoCloner:
         ssh_key_file_path: Optional[str] = None,
         clone_timeout: int = 0,
     ):
-        """inits the repo cloner.
+        """Inits the repo cloner.
 
         Args:
             repo_url (str): the url to the remote repo we want to clone
@@ -172,7 +172,7 @@ class RepoCloner:
             self._retry_config.update({"stop": stop.stop_after_delay(clone_timeout)})
 
     async def clone(self) -> CloneResult:
-        """initializes a git.Repo and returns the clone result. it either:
+        """Initializes a git.Repo and returns the clone result. it either:
 
         - does not found a cloned repo locally and clones from remote url
         - finds a cloned repo locally and does not clone from remote.
@@ -187,7 +187,7 @@ class RepoCloner:
         return await loop.run_in_executor(None, self._attempt_clone_from_url)
 
     def _attempt_clone_from_url(self) -> CloneResult:
-        """clones the repo from url or throws GitFailed."""
+        """Clones the repo from url or throws GitFailed."""
         env = provide_git_ssh_environment(self.url, self._ssh_key)
         _clone_func = partial(self._clone, env=env)
         _clone_with_retries = retry(**self._retry_config)(_clone_func)

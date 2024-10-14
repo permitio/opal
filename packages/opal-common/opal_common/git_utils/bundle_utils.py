@@ -11,11 +11,11 @@ class BundleUtils:
     def sorted_policy_modules_to_load(
         bundle: PolicyBundle, ignore=None
     ) -> List[RegoModule]:
-        """policy modules sorted according to manifest."""
+        """Policy modules sorted according to manifest."""
         manifest_paths = [Path(path) for path in bundle.manifest]
 
         def key_function(module: RegoModule) -> int:
-            """this method reduces the module to a number that can be act as
+            """This method reduces the module to a number that can be act as
             sorting key.
 
             the number is the index in the manifest list, so basically
@@ -30,7 +30,7 @@ class BundleUtils:
 
     @staticmethod
     def sorted_data_modules_to_load(bundle: PolicyBundle) -> List[DataModule]:
-        """data modules sorted according to manifest."""
+        """Data modules sorted according to manifest."""
         manifest_paths = [Path(path) for path in bundle.manifest]
 
         def key_function(module: DataModule) -> int:
