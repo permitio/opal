@@ -62,7 +62,7 @@ async def get_input_paths_or_throw(
     repo: Repo = Depends(get_repo),
     paths: Optional[List[str]] = Query(None, alias="path"),
 ) -> List[Path]:
-    """validates the :path query param, and return valid paths.
+    """Validates the :path query param, and return valid paths.
 
     if an invalid path is provided, will throw 404.
     """

@@ -7,11 +7,11 @@ from opal_common.logger import logger
 
 
 class TopicPublisher:
-    """abstract publisher, base class for client side and server side
+    """Abstract publisher, base class for client side and server side
     publisher."""
 
     def __init__(self):
-        """inits the publisher's asyncio tasks list."""
+        """Inits the publisher's asyncio tasks list."""
         self._tasks: Set[asyncio.Task] = set()
         self._tasks_lock = asyncio.Lock()
 
@@ -26,7 +26,7 @@ class TopicPublisher:
         await self.stop()
 
     def start(self):
-        """starts the publisher."""
+        """Starts the publisher."""
         logger.debug("started topic publisher")
 
     async def _add_task(self, task: asyncio.Task):
@@ -40,7 +40,7 @@ class TopicPublisher:
             self._tasks.clear()
 
     async def stop(self):
-        """stops the publisher (cancels any running publishing tasks)"""
+        """Stops the publisher (cancels any running publishing tasks)"""
         logger.debug("stopping topic publisher")
         await self.wait()
 
@@ -63,7 +63,7 @@ class PeriodicPublisher:
         message: Any = None,
         task_name: str = "periodic publish task",
     ):
-        """inits the publisher.
+        """Inits the publisher.
 
         Args:
             publisher (TopicPublisher): can publish messages on the pub/sub channel
@@ -86,7 +86,7 @@ class PeriodicPublisher:
         await self.stop()
 
     def start(self):
-        """starts the periodic publisher task."""
+        """Starts the periodic publisher task."""
         if self._task is not None:
             logger.warning(f"{self._task_name} already started")
             return
@@ -97,7 +97,7 @@ class PeriodicPublisher:
         self._task = asyncio.create_task(self._publish_task())
 
     async def stop(self):
-        """stops the publisher (cancels any running publishing tasks)"""
+        """Stops the publisher (cancels any running publishing tasks)"""
         if self._task is not None:
             self._task.cancel()
             try:
@@ -124,7 +124,7 @@ class ServerSideTopicPublisher(TopicPublisher):
     """A simple wrapper around a PubSubEndpoint that exposes publish()."""
 
     def __init__(self, endpoint: PubSubEndpoint):
-        """inits the publisher.
+        """Inits the publisher.
 
         Args:
             endpoint (PubSubEndpoint): a pub/sub endpoint
@@ -148,7 +148,7 @@ class ClientSideTopicPublisher(TopicPublisher):
     """
 
     def __init__(self, client: PubSubClient, server_uri: str):
-        """inits the publisher.
+        """Inits the publisher.
 
         Args:
             client (PubSubClient): a configured not-yet-started pub sub client
@@ -159,7 +159,7 @@ class ClientSideTopicPublisher(TopicPublisher):
         super().__init__()
 
     def start(self):
-        """starts the pub/sub client as a background asyncio task.
+        """Starts the pub/sub client as a background asyncio task.
 
         the client will attempt to connect to the pubsub server until
         successful.
@@ -168,7 +168,7 @@ class ClientSideTopicPublisher(TopicPublisher):
         self._client.start_client(f"{self._server_uri}")
 
     async def stop(self):
-        """stops the pubsub client, and cancels any publishing tasks."""
+        """Stops the pubsub client, and cancels any publishing tasks."""
         await self._client.disconnect()
         await super().stop()
 
@@ -179,7 +179,7 @@ class ClientSideTopicPublisher(TopicPublisher):
         return await self._client.wait_until_done()
 
     async def publish(self, topics: TopicList, data: Any = None):
-        """publish a message by launching a background task on the event loop.
+        """Publish a message by launching a background task on the event loop.
 
         Args:
             topics (TopicList): a list of topics to publish the message to

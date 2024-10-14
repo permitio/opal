@@ -243,7 +243,7 @@ class OpalClient:
         return False
 
     def _init_fast_api_app(self):
-        """inits the fastapi app object."""
+        """Inits the fastapi app object."""
         app = FastAPI(
             title="OPAL Client",
             description="OPAL is an administration layer for Open Policy Agent (OPA), detecting changes"
@@ -258,7 +258,7 @@ class OpalClient:
         return app
 
     def _configure_api_routes(self, app: FastAPI):
-        """mounts the api routes on the app object."""
+        """Mounts the api routes on the app object."""
 
         authenticator = JWTAuthenticator(self.verifier)
 
@@ -279,7 +279,7 @@ class OpalClient:
         @app.get("/", include_in_schema=False)
         @app.get("/healthy", include_in_schema=False)
         async def healthy():
-            """returns 200 if updates keep being successfully fetched from the
+            """Returns 200 if updates keep being successfully fetched from the
             server and applied to the policy store."""
             healthy = await self.policy_store.is_healthy()
 
@@ -295,7 +295,7 @@ class OpalClient:
 
         @app.get("/ready", include_in_schema=False)
         async def ready():
-            """returns 200 if the policy store is ready to serve requests."""
+            """Returns 200 if the policy store is ready to serve requests."""
             ready = self._backup_loaded or await self.policy_store.is_ready()
 
             if ready:
@@ -311,7 +311,7 @@ class OpalClient:
         return app
 
     def _configure_lifecycle_callbacks(self, app: FastAPI):
-        """registers callbacks on app startup and shutdown.
+        """Registers callbacks on app startup and shutdown.
 
         on app startup we launch our long running processes (async
         tasks) on the event loop. on app shutdown we stop these long
@@ -362,7 +362,7 @@ class OpalClient:
         )
 
     async def stop_client_background_tasks(self):
-        """stops all background tasks (called on shutdown event)"""
+        """Stops all background tasks (called on shutdown event)"""
         logger.info("stopping background tasks...")
 
         # stopping opa runner
@@ -493,7 +493,7 @@ class OpalClient:
             raise
 
     def _trigger_shutdown(self):
-        """this will send SIGTERM (Keyboard interrupt) to the worker, making
+        """This will send SIGTERM (Keyboard interrupt) to the worker, making
         uvicorn send "lifespan.shutdown" event to Starlette via the ASGI
         lifespan interface.
 
