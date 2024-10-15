@@ -8,7 +8,9 @@ import os
 import threading
 from datetime import datetime
 from hashlib import sha1
-from typing import Coroutine, Dict, List, Tuple
+from typing import Callable, Coroutine, Dict, List, Tuple
+import functools
+import time
 
 import aiohttp
 
@@ -275,3 +277,27 @@ class AsyncioEventLoopThread(threading.Thread):
         run_coro() is thread-safe.
         """
         return asyncio.run_coroutine_threadsafe(coro, loop=self.loop).result()
+
+
+def time_cache(ttl: float):
+    """
+    This decorator a wrapper around lru_cache that makes it time sensitive.
+
+    ttl is in seconds
+    """
+
+    def inner(func: Callable):
+        # instead of directly caching the function, a time "hash" is
+        # also passed in as a param that will invalidate the cache
+        # after at most ttl seconds
+        @functools.lru_cache
+        def wrapped(*args, __ttl_hash=None, **kwargs):
+            return func(*args, **kwargs)
+
+        def ret(*args, **kwargs):
+            ttl_hash = round(time.time() / ttl)
+            return wrapped(*args, **kwargs, __ttl_hash=ttl_hash)
+
+        return ret
+
+    return inner
