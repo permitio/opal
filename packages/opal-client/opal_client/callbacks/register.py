@@ -58,14 +58,14 @@ class CallbacksRegister:
         self._callbacks[key] = (url, config)
 
     def calc_hash(self, url: str, config: HttpFetcherConfig) -> str:
-        """gets a unique hash key from a callback url and config."""
+        """Gets a unique hash key from a callback url and config."""
         m = hashlib.sha256()
         m.update(url.encode())
         m.update(config.json().encode())
         return m.hexdigest()
 
     def get(self, key: str) -> Optional[CallbackEntry]:
-        """gets a registered callback by its key, or None if no such key found
+        """Gets a registered callback by its key, or None if no such key found
         in register."""
         callback = self._callbacks.get(key, None)
         if callback is None:
@@ -79,7 +79,7 @@ class CallbacksRegister:
         config: Optional[HttpFetcherConfig] = None,
         key: Optional[str] = None,
     ) -> str:
-        """puts a callback in the register.
+        """Puts a callback in the register.
 
         if no config is provided, the default callback config will be
         used. if no key is provided, the key will be calculated by
@@ -100,12 +100,12 @@ class CallbacksRegister:
         return callback_key
 
     def remove(self, key: str):
-        """removes a callback from the register, if exists."""
+        """Removes a callback from the register, if exists."""
         if key in self._callbacks:
             del self._callbacks[key]
 
     def all(self) -> Generator[CallbackEntry, None, None]:
-        """a generator yielding all the callback configs currently registered.
+        """A generator yielding all the callback configs currently registered.
 
         Yields:
             the next callback config found

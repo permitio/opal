@@ -30,7 +30,7 @@ INVALID_REPO_REMOTE_URL = "git@github.com:permitio/no_such_repo.git"
 
 @pytest.mark.asyncio
 async def test_repo_cloner_clone_local_repo(local_repo: Repo):
-    """checks that the cloner can handle a local repo url."""
+    """Checks that the cloner can handle a local repo url."""
     repo: Repo = local_repo
 
     root: str = repo.working_tree_dir
@@ -84,7 +84,7 @@ async def test_repo_cloner_clone_remote_repo_ssh_url(tmp_path):
 
 @pytest.mark.asyncio
 async def test_repo_cloner_clone_fail_on_invalid_remote_url(tmp_path):
-    """if remote url is invalid, cloner will retry with tenacity until the last
+    """If remote url is invalid, cloner will retry with tenacity until the last
     attempt is failed, and then throw GitFailed."""
     target_path: Path = tmp_path / "target"
     with pytest.raises(GitFailed):

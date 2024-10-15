@@ -7,7 +7,7 @@ from opal_common.authentication.signer import JWTSigner
 
 
 class JwksStaticEndpoint:
-    """configure a static files endpoint on a fastapi app, exposing JWKs."""
+    """Configure a static files endpoint on a fastapi app, exposing JWKs."""
 
     def __init__(
         self,

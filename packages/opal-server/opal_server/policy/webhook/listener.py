@@ -1,4 +1,4 @@
-"""the webhook listener listens on the `webhook` topic. the reason we need it,
+"""The webhook listener listens on the `webhook` topic. the reason we need it,
 is because the uvicorn worker that serves the webhook HTTP request from github
 is not necessarily the leader worker that runs the repo watcher.
 

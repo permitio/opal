@@ -14,7 +14,7 @@ PathFilter = Callable[[Path], bool]
 def apply_filter(
     generator: Generator[Diff, None, None], filter: Optional[DiffFilter] = None
 ) -> Generator[Diff, None, None]:
-    """applies an optional filter on top of a Diff generator.
+    """Applies an optional filter on top of a Diff generator.
 
     returns only the diffs yielded by the source generator that pass the
     filter. if no filter is provided, returns the same results as the
@@ -31,7 +31,7 @@ def apply_filter(
 def diffed_file_has_extension(
     diff: Diff, extensions: Optional[List[str]] = None
 ) -> bool:
-    """filter on git diffs, filters only diffs on files that has a certain
+    """Filter on git diffs, filters only diffs on files that has a certain
     extension/type.
 
     if the file is renamed/added/removed, its enough that only one of
@@ -47,7 +47,7 @@ def diffed_file_has_extension(
 
 
 def diffed_file_is_under_directories(diff: Diff, directories: Set[Path]) -> bool:
-    """filter on git diffs, filters only diffs on files that are located in
+    """Filter on git diffs, filters only diffs on files that are located in
     certain directories.
 
     if a file is renamed/added/removed, its enough that only one of its
@@ -90,7 +90,7 @@ class DiffViewer:
     def changes(
         self, filter: Optional[DiffFilter] = None
     ) -> Generator[Diff, None, None]:
-        """a generator yielding all the diffs between the old commit and the
+        """A generator yielding all the diffs between the old commit and the
         new commit, after applying the filter.
 
         Each diff (instance of `Diff`) is a change in one file, i.e: if the
@@ -117,7 +117,7 @@ class DiffViewer:
                 yield diff
 
     def added(self, filter: Optional[DiffFilter] = None) -> Generator[Diff, None, None]:
-        """a generator yielding all the diffs between the old commit and the
+        """A generator yielding all the diffs between the old commit and the
         new commit, that are of type "new file" (i.e: added), after applying
         the filter.
 
@@ -129,7 +129,7 @@ class DiffViewer:
     def deleted(
         self, filter: Optional[DiffFilter] = None
     ) -> Generator[Diff, None, None]:
-        """a generator yielding all the diffs between the old commit and the
+        """A generator yielding all the diffs between the old commit and the
         new commit, that are of type "deleted", after applying the filter.
 
         @see `changes()`
@@ -140,7 +140,7 @@ class DiffViewer:
     def renamed(
         self, filter: Optional[DiffFilter] = None
     ) -> Generator[Diff, None, None]:
-        """a generator yielding all the diffs between the old commit and the
+        """A generator yielding all the diffs between the old commit and the
         new commit, that are of type "renamed", after applying the filter.
 
         @see `changes()`
@@ -151,7 +151,7 @@ class DiffViewer:
     def modified(
         self, filter: Optional[DiffFilter] = None
     ) -> Generator[Diff, None, None]:
-        """a generator yielding all the diffs between the old commit and the
+        """A generator yielding all the diffs between the old commit and the
         new commit, that are of type "modified", after applying the filter.
 
         @see `changes()`
@@ -162,7 +162,7 @@ class DiffViewer:
     def added_files(
         self, filter: Optional[DiffFilter] = None
     ) -> Generator[VersionedFile, None, None]:
-        """a generator yielding the new version (blob) of files that were added
+        """A generator yielding the new version (blob) of files that were added
         (or renamed, meaning a new file was added under the new name) in the
         diff, between the old and new commits.
 
@@ -178,7 +178,7 @@ class DiffViewer:
     def deleted_files(
         self, filter: Optional[DiffFilter] = None
     ) -> Generator[VersionedFile, None, None]:
-        """a generator yielding the old version (blob) of the files that were
+        """A generator yielding the old version (blob) of the files that were
         removed (or renamed, meaning the file under the old name was removed)
         in the diff between the old and new commits.
 
@@ -193,7 +193,7 @@ class DiffViewer:
     def modified_files(
         self, filter: Optional[DiffFilter] = None
     ) -> Generator[VersionedFile, None, None]:
-        """a generator yielding the new version (blob) of files that were
+        """A generator yielding the new version (blob) of files that were
         changed (modified) in the diff between the old and new commit."""
         for diff in self.modified(filter):
             yield VersionedFile(diff.b_blob, self._new)
@@ -201,13 +201,13 @@ class DiffViewer:
     def added_or_modified_files(
         self, filter: Optional[DiffFilter] = None
     ) -> Generator[VersionedFile, None, None]:
-        """a shortcut generator yield both `added_files()` and
+        """A shortcut generator yield both `added_files()` and
         `modified_files()`."""
         yield from self.added_files(filter)
         yield from self.modified_files(filter)
 
     def affected_paths(self, filter: Optional[PathFilter] = None) -> Set[Path]:
-        """returns the set of paths of all files that were affected in the diff
+        """Returns the set of paths of all files that were affected in the diff
         between the old and new commits.
 
         only file paths are returned (and not directories).

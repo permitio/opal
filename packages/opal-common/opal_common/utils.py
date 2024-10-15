@@ -210,7 +210,7 @@ class AsyncioEventLoopThread(threading.Thread):
             self._create_worker()
 
     def run(self):
-        """called by the default threading.Thread.start() method.
+        """Called by the default threading.Thread.start() method.
 
         runs the main activity of the thread, which in our case is
         simply running the asyncio loop until it stop.
@@ -260,7 +260,7 @@ class AsyncioEventLoopThread(threading.Thread):
         """
 
         async def _schedule_task():
-            """since the queue is infinite, queue.put() will not block."""
+            """Since the queue is infinite, queue.put() will not block."""
             await self._queue.put(coro)
 
         # the asyncio loop might not be running yet (if the thread was
@@ -268,7 +268,7 @@ class AsyncioEventLoopThread(threading.Thread):
         return asyncio.run_coroutine_threadsafe(_schedule_task(), loop=self.loop)
 
     def run_coro(self, coro: Coroutine):
-        """can be called from the main thread, but will run the coroutine on
+        """Can be called from the main thread, but will run the coroutine on
         the event loop thread.
 
         the main thread will block until a result is returned. calling

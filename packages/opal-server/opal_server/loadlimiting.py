@@ -4,7 +4,7 @@ from slowapi import Limiter
 
 
 def init_loadlimit_router(loadlimit_notation: str = None):
-    """initializes a route where a client (or any other network peer) can
+    """Initializes a route where a client (or any other network peer) can
     inquire what opal clients are currently connected to the server and on what
     topics are they registered.
 

@@ -35,7 +35,7 @@ INVALID_REPO_REMOTE_URL = "git@github.com:permitio/no_such_repo.git"
 
 @pytest.mark.asyncio
 async def test_repo_watcher_git_failed_callback(tmp_path):
-    """checks that on failure to clone, the failure callback is called."""
+    """Checks that on failure to clone, the failure callback is called."""
     got_error = asyncio.Event()
 
     async def failure_callback(e: Exception):

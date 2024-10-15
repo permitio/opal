@@ -20,22 +20,22 @@ class VersionedNode:
 
     @property
     def repo(self) -> Repo:
-        """the repo containing the versioned node."""
+        """The repo containing the versioned node."""
         return self._repo
 
     @property
     def commit(self) -> Commit:
-        """the commit in which the node (blob, tree) is located."""
+        """The commit in which the node (blob, tree) is located."""
         return self._commit
 
     @property
     def version(self) -> str:
-        """the hash (hex sha) of the node's parent commit."""
+        """The hash (hex sha) of the node's parent commit."""
         return self._commit.hexsha
 
     @property
     def path(self) -> Path:
-        """the relative path to the node (either file path or directory path),
+        """The relative path to the node (either file path or directory path),
         relative to the repo root."""
         return Path(self._node.path)
 
@@ -50,12 +50,12 @@ class VersionedFile(VersionedNode):
 
     @property
     def blob(self) -> Blob:
-        """the blob containing metadata for the file version."""
+        """The blob containing metadata for the file version."""
         return self._blob
 
     @property
     def stream(self) -> IO:
-        """an io stream to the version of the file represented by that
+        """An io stream to the version of the file represented by that
         instance.
 
         reading that stream will return the contents of the file for
@@ -64,12 +64,12 @@ class VersionedFile(VersionedNode):
         return self.blob.data_stream
 
     def read_bytes(self) -> bytes:
-        """returns the contents of the file as a byte array (without
+        """Returns the contents of the file as a byte array (without
         encoding)."""
         return self.stream.read()
 
     def read(self, encoding="utf-8") -> str:
-        """returns the contents of the file as a string, decoded according to
+        """Returns the contents of the file as a string, decoded according to
         the input `encoding`.
 
         (by default, git usually encodes source files as utf-8).
@@ -88,10 +88,11 @@ class VersionedDirectory(VersionedNode):
 
     @property
     def dir(self) -> Tree:
-        """the git tree representing the metadata for that version of the
+        """The git tree representing the metadata for that version of the
         directory.
 
-        i.e: one can get child directories (trees) and files (blobs) for the instance's version.
+        i.e: one can get child directories (trees) and files (blobs) for
+        the instance's version.
         """
         return self._dir
 
@@ -102,7 +103,7 @@ DirectoryFilter = Callable[[VersionedDirectory], bool]
 
 
 def has_extension(f: VersionedFile, extensions: Optional[List[str]] = None) -> bool:
-    """a filter on versioned files, filters only files with specific types
+    """A filter on versioned files, filters only files with specific types
     (file extensions)."""
     if extensions is None:
         return True  # no filter
@@ -128,7 +129,7 @@ def find_ignore_match(
 
 
 def is_under_directories(f: VersionedFile, directories: Set[Path]) -> bool:
-    """a filter on versioned files, filters only files under certain
+    """A filter on versioned files, filters only files under certain
     directories in the repo."""
     return PathUtils.is_child_of_directories(f.path, directories)
 
@@ -137,11 +138,13 @@ class CommitViewer:
     """This class allows us to view the repository files and directories from
     the perspective of a specific git commit (i.e: version).
 
-    i.e: if in the latest commit we removed a file called `a.txt`, we will
-    see it while initializing CommitViewer with commit=HEAD~1, but we will
-    not see `a.txt` if we initialize the CommitViewer with commit=HEAD.
+    i.e: if in the latest commit we removed a file called `a.txt`, we
+    will see it while initializing CommitViewer with commit=HEAD~1, but
+    we will not see `a.txt` if we initialize the CommitViewer with
+    commit=HEAD.
 
-    The viewer also allows us to filter out certain paths of the commit tree.
+    The viewer also allows us to filter out certain paths of the commit
+    tree.
     """
 
     def __init__(self, commit: Commit):
@@ -165,7 +168,7 @@ class CommitViewer:
     def nodes(
         self, predicate: Optional[NodeFilter] = None
     ) -> Generator[VersionedNode, None, None]:
-        """a generator yielding all the nodes (files and directories) found in
+        """A generator yielding all the nodes (files and directories) found in
         the repository for the current commit, after applying the filter.
 
         Args:
@@ -183,7 +186,7 @@ class CommitViewer:
     def files(
         self, predicate: Optional[FileFilter] = None
     ) -> Generator[VersionedFile, None, None]:
-        """a generator yielding all the files found in the repository for the
+        """A generator yielding all the files found in the repository for the
         current commit, after applying the filter.
 
         Args:
@@ -199,7 +202,7 @@ class CommitViewer:
     def directories(
         self, predicate: Optional[DirectoryFilter] = None
     ) -> Generator[VersionedDirectory, None, None]:
-        """a generator yielding all the directories found in the repository for
+        """A generator yielding all the directories found in the repository for
         the current commit, after applying the filter.
 
         Args:
@@ -230,17 +233,17 @@ class CommitViewer:
 
     @property
     def paths(self) -> List[Path]:
-        """returns all the paths in the repo for the current commit (both files
+        """Returns all the paths in the repo for the current commit (both files
         and directories)"""
         return [node.path for node in self.nodes()]
 
     def exists(self, path: Path) -> bool:
-        """checks if a certain path exists in the repo in the current
+        """Checks if a certain path exists in the repo in the current
         commit."""
         return path in self.paths
 
     def _nodes_in_tree(self, root: Tree) -> Generator[VersionedNode, None, None]:
-        """a generator returning all the nodes (files and directories) under a
+        """A generator returning all the nodes (files and directories) under a
         certain git Tree (a versioned directory)."""
         # yield current directory
         yield VersionedDirectory(root, self._commit)

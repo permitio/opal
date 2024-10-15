@@ -22,7 +22,7 @@ class PeerType(str, Enum):
 
 
 class AccessTokenRequest(BaseModel):
-    """a request to generate an access token to opal server."""
+    """A request to generate an access token to opal server."""
 
     id: UUID = Field(default_factory=uuid4)
     type: PeerType = Field(PeerType.client, description=PEER_TYPE_DESCRIPTION)

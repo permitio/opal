@@ -51,7 +51,7 @@ class TopicListener:
         await self.stop()
 
     def start(self):
-        """starts the pub/sub client and subscribes to the predefined topic.
+        """Starts the pub/sub client and subscribes to the predefined topic.
 
         the client will attempt to connect to the pubsub server until
         successful.
@@ -62,7 +62,7 @@ class TopicListener:
         self._client.start_client(f"{self._server_uri}")
 
     async def stop(self):
-        """stops the pubsub client."""
+        """Stops the pubsub client."""
         await self._client.disconnect()
         logger.info("stopped topic listener", topics=self._topics)
 

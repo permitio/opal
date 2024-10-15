@@ -17,7 +17,7 @@ class RemoteStatus(BaseModel):
 
 
 class StoreTransaction(BaseModel):
-    """represents a transaction of policy or data to OPA."""
+    """Represents a transaction of policy or data to OPA."""
 
     id: str = Field(..., description="The id of the transaction")
     actions: List[str] = Field(

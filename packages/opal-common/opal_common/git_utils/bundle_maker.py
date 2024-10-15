@@ -89,16 +89,20 @@ class BundleMaker:
         api currently does not allow to load bundles (multiple policies
         together), OPAL client can only load one policy at a time.
 
-        If policies with dependencies between them are loaded out-of-order, OPA will throw an exception.
+        If policies with dependencies between them are loaded out-of-
+        order, OPA will throw an exception.
 
-        To mitigate this, we allow the developer to put a manifest file in the repository (default path: .manifest).
-        This file, if exists, should contain the list of policy files (.rego) in the correct order they should be
-        loaded into OPA.
+        To mitigate this, we allow the developer to put a manifest file
+        in the repository (default path: .manifest). This file, if
+        exists, should contain the list of policy files (.rego) in the
+        correct order they should be loaded into OPA.
 
-        This method searches for an explicit manifest file, reads it and returns the list of paths, or None if not found.
+        This method searches for an explicit manifest file, reads it and
+        returns the list of paths, or None if not found.
 
-        The manifest file can include references to other directories containing a ".manifest" file,
-        those would be recursively expanded to compile the final manifest list.
+        The manifest file can include references to other directories
+        containing a ".manifest" file, those would be recursively
+        expanded to compile the final manifest list.
         """
         visited_paths = []
 
@@ -203,7 +207,7 @@ class BundleMaker:
     def _sort_manifest(
         self, unsorted_manifest: List[str], explicit_sorting: Optional[List[str]]
     ) -> List[str]:
-        """the way this sorting works, is assuming that explicit_sorting does
+        """The way this sorting works, is assuming that explicit_sorting does
         NOT necessarily contains all the policies found in the manifest, or
         that even "policies" mentioned in it actually exists in the actual
         generated manifest.
@@ -227,7 +231,7 @@ class BundleMaker:
         return [str(path) for path in sorted_paths]
 
     def make_bundle(self, commit: Commit) -> PolicyBundle:
-        """creates a *complete* bundle of all the policy and data modules found
+        """Creates a *complete* bundle of all the policy and data modules found
         in the policy repo, when the repo HEAD is at the given `commit`.
 
         Args:
@@ -279,7 +283,7 @@ class BundleMaker:
             )
 
     def make_diff_bundle(self, old_commit: Commit, new_commit: Commit) -> PolicyBundle:
-        """creates a *diff* bundle of all the policy and data modules that were
+        """Creates a *diff* bundle of all the policy and data modules that were
         changed (either added, renamed, modified or deleted) between the
         `old_commit` and `new_commit`. essentially all the relevant files when
         running `git diff old_commit..new_commit`.

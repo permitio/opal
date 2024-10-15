@@ -11,7 +11,8 @@ async def run_locked(
     prevents hanging locks. Hanging locks can happen when a process crashes
     while holding a lock.
 
-    This function sets a redis enforced timeout, and reacquires the lock every timeout * 0.8 (as long as it runs)
+    This function sets a redis enforced timeout, and reacquires the lock
+    every timeout * 0.8 (as long as it runs)
     """
     lock = _redis.lock(lock_name, timeout=timeout)
     try:

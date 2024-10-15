@@ -40,7 +40,7 @@ def test_can_extract_the_correct_package_name():
 
 
 def test_no_package_name_in_file():
-    """test no package name in module or invalid package."""
+    """Test no package name in module or invalid package."""
     # package line was removed
     source_rego = os.path.join(os.path.dirname(__file__), "fixtures/no-package.rego")
     with open(source_rego, "r") as f:

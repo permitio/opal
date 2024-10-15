@@ -10,7 +10,7 @@ from tenacity import retry, stop_after_attempt, wait_fixed
 
 
 class BranchTracker:
-    """tracks the state of a git branch (hash at branch HEAD).
+    """Tracks the state of a git branch (hash at branch HEAD).
 
     can also perform git pull and detect if the hash changed.
     """
@@ -50,11 +50,11 @@ class BranchTracker:
 
     @property
     def repo(self) -> Repo:
-        """the repo we are tracking."""
+        """The repo we are tracking."""
         return self._repo
 
     def pull(self) -> Tuple[bool, Commit, Commit]:
-        """git pulls from tracked remote.
+        """Git pulls from tracked remote.
 
         Returns:
             pull_result (bool, Commit, Commit): a tuple consisting of:
@@ -72,7 +72,7 @@ class BranchTracker:
             return True, prev, self.latest_commit
 
     def _pull(self):
-        """runs git pull with retries."""
+        """Runs git pull with retries."""
 
         def _inner_pull(*args, **kwargs):
             env = provide_git_ssh_environment(self.tracked_remote.url, self._ssh_key)
@@ -83,7 +83,7 @@ class BranchTracker:
         return attempt_pull()
 
     def checkout(self):
-        """checkouts the desired branch."""
+        """Checkouts the desired branch."""
         checkout_func = partial(self._repo.git.checkout, self._branch_name)
         attempt_checkout = retry(**self._retry_config)(checkout_func)
         try:
@@ -101,7 +101,7 @@ class BranchTracker:
             raise GitFailed(e)
 
     def _save_latest_commit_as_prev_commit(self):
-        """saves the top of the branch as a last known commit (HEAD).
+        """Saves the top of the branch as a last known commit (HEAD).
 
         in the next pull, we can then compare the new branch HEAD to the
         previous _prev_commit.
@@ -110,17 +110,17 @@ class BranchTracker:
 
     @property
     def latest_commit(self) -> Commit:
-        """the top commit (HEAD) of the tracked branch."""
+        """The top commit (HEAD) of the tracked branch."""
         return self.tracked_branch.commit
 
     @property
     def prev_commit(self) -> Commit:
-        """the last previously known HEAD of the tracked branch."""
+        """The last previously known HEAD of the tracked branch."""
         return self._prev_commit
 
     @property
     def tracked_branch(self) -> Head:
-        """returns the tracked branch object (of type git.HEAD) or throws if
+        """Returns the tracked branch object (of type git.HEAD) or throws if
         such branch does not exist on the repo."""
         try:
             return getattr(self._repo.heads, self._branch_name)
@@ -137,7 +137,7 @@ class BranchTracker:
 
     @property
     def tracked_remote(self) -> Remote:
-        """returns the tracked remote object (of type git.Remote) or throws if
+        """Returns the tracked remote object (of type git.Remote) or throws if
         such remote does not exist on the repo."""
         try:
             return getattr(self._repo.remotes, self._remote_name)

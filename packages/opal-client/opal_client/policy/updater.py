@@ -26,12 +26,12 @@ from opal_common.utils import get_authorization_header
 
 
 class PolicyUpdater:
-    """
-    Keeps policy-stores (e.g. OPA) up to date with relevant policy code
+    """Keeps policy-stores (e.g. OPA) up to date with relevant policy code
     (e.g: rego) and static data (e.g: data.json files like in OPA bundles).
 
     Uses Pub/Sub to subscribe to specific directories in the policy code
-    repository (i.e: git), and fetches bundles containing updated policy code.
+    repository (i.e: git), and fetches bundles containing updated policy
+    code.
     """
 
     def __init__(
@@ -44,7 +44,7 @@ class PolicyUpdater:
         callbacks_register: Optional[CallbacksRegister] = None,
         opal_client_id: str = None,
     ):
-        """inits the policy updater.
+        """Inits the policy updater.
 
         Args:
             token (str, optional): Auth token to include in connections to OPAL server. Defaults to CLIENT_TOKEN.
@@ -179,7 +179,7 @@ class PolicyUpdater:
         logger.info("Disconnected from server")
 
     async def start(self):
-        """launches the policy updater."""
+        """Launches the policy updater."""
         logger.info("Launching policy updater")
         await self._callbacks_reporter.start()
         if self._policy_update_task is None:
@@ -189,7 +189,7 @@ class PolicyUpdater:
             await self._data_fetcher.start()
 
     async def stop(self):
-        """stops the policy updater."""
+        """Stops the policy updater."""
         self._stopping = True
         logger.info("Stopping policy updater")
 
@@ -258,7 +258,7 @@ class PolicyUpdater:
         directories: List[str],
         force_full_update: bool,
     ):
-        """fetches policy (code, e.g: rego) from backend and stores it in the
+        """Fetches policy (code, e.g: rego) from backend and stores it in the
         policy store.
 
         Args:

@@ -53,7 +53,7 @@ class GitPolicySource(BasePolicySource):
         self._tracker = None
 
     async def get_initial_policy_state_from_remote(self):
-        """init remote data to local repo."""
+        """Init remote data to local repo."""
         try:
             try:
                 # Check if path already contains valid repo

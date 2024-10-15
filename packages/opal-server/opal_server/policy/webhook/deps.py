@@ -24,7 +24,7 @@ def validate_git_secret_or_throw_factory(
     """
 
     async def validate_git_secret_or_throw(request: Request) -> bool:
-        """authenticates a request from a git service webhook system by
+        """Authenticates a request from a git service webhook system by
         checking that the request contains a valid signature (i.e: via the
         secret stored on github) or a valid token (as stored in Gitlab)."""
         if webhook_secret is None:
@@ -95,12 +95,13 @@ class GitChanges(BaseModel):
 
 
 async def extracted_git_changes(request: Request) -> GitChanges:
-    """extracts the repo url from a webhook request payload.
+    """Extracts the repo url from a webhook request payload.
 
     used to make sure that the webhook was triggered on *our* monitored
     repo.
 
-    This functions search for common patterns for where the affected URL may appear in the webhook
+    This functions search for common patterns for where the affected URL
+    may appear in the webhook
     """
     payload = await request.json()
 

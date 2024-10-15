@@ -30,12 +30,12 @@ def init_callbacks_api(authenticator: JWTAuthenticator, register: CallbacksRegis
 
     @router.get("", response_model=List[CallbackEntry])
     async def list_callbacks():
-        """list all the callbacks currently registered by OPAL client."""
+        """List all the callbacks currently registered by OPAL client."""
         return list(register.all())
 
     @router.get("/{key}", response_model=CallbackEntry)
     async def get_callback_by_key(key: str):
-        """get a callback by its key (if such callback is indeed
+        """Get a callback by its key (if such callback is indeed
         registered)."""
         callback = register.get(key)
         if callback is None:
@@ -47,7 +47,7 @@ def init_callbacks_api(authenticator: JWTAuthenticator, register: CallbacksRegis
 
     @router.post("", response_model=CallbackEntry)
     async def register_callback(entry: CallbackEntry):
-        """register a new callback by OPAL client, to be called on OPA state
+        """Register a new callback by OPAL client, to be called on OPA state
         updates."""
         saved_key = register.put(url=entry.url, config=entry.config, key=entry.key)
         saved_entry = register.get(saved_key)
@@ -60,7 +60,7 @@ def init_callbacks_api(authenticator: JWTAuthenticator, register: CallbacksRegis
 
     @router.delete("/{key}", status_code=status.HTTP_204_NO_CONTENT)
     async def get_callback_by_key(key: str):
-        """unregisters a callback identified by its key (if such callback is
+        """Unregisters a callback identified by its key (if such callback is
         indeed registered)."""
         callback = register.get(key)
         if callback is None:

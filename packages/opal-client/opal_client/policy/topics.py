@@ -6,7 +6,7 @@ from opal_common.paths import PathUtils
 
 
 def default_subscribed_policy_directories() -> List[str]:
-    """wraps the configured value of POLICY_SUBSCRIPTION_DIRS, but dedups
+    """Wraps the configured value of POLICY_SUBSCRIPTION_DIRS, but dedups
     intersecting dirs."""
     subscription_directories = [
         Path(d) for d in opal_client_config.POLICY_SUBSCRIPTION_DIRS

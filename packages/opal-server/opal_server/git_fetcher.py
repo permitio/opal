@@ -101,7 +101,7 @@ class RepoInterface:
         repo: Repository,
         expected_remote_url: str,
     ) -> Repository:
-        """verifies that the repo we found in the directory matches the repo we
+        """Verifies that the repo we found in the directory matches the repo we
         are wishing to clone."""
         for remote in repo.remotes:
             if remote.url == expected_remote_url:
@@ -159,7 +159,7 @@ class GitPolicyFetcher(PolicyFetcher):
         force_fetch: bool = False,
         req_time: datetime.datetime = None,
     ):
-        """makes sure the repo is already fetched and is up to date.
+        """Makes sure the repo is already fetched and is up to date.
 
         - if no repo is found, the repo will be cloned.
         - if the repo is found and it is deemed out-of-date, the configured remote will be fetched.

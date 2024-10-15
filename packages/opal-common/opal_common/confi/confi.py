@@ -59,7 +59,7 @@ def cast_pydantic(model: BaseModel):
 
 
 def ignore_confi_delay_cast(cast_func):
-    """when we pass a ConfiDelay as the default to decouple, until this delayed
+    """When we pass a ConfiDelay as the default to decouple, until this delayed
     default is evaluated by confi, there is no point in casting it.
 
     After a ConfiDelay is evaluated, the resulted value should be passed
@@ -234,7 +234,7 @@ class Confi:
         )
 
     def debug_repr(self) -> str:
-        """repr() intended for debug purposes, since it runs repr() on each
+        """Repr() intended for debug purposes, since it runs repr() on each
         entry.value, it is more accurate than str(entry.value)"""
         repr_string = "{}(Confi):\n".format(self.__class__.__name__)
         items = list(self.entries.items())
@@ -392,7 +392,7 @@ class Confi:
         passphrase: Optional[str] = None,
         **kwargs,
     ) -> Optional[PrivateKey]:
-        """parse a cryptographic private key from env vars."""
+        """Parse a cryptographic private key from env vars."""
         cast_key = partial(
             cast_private_key, key_format=key_format, passphrase=passphrase
         )
@@ -415,7 +415,7 @@ class Confi:
         key_format: Optional[EncryptionKeyFormat] = None,
         **kwargs,
     ) -> Optional[PublicKey]:
-        """parse a cryptographic public key from env vars."""
+        """Parse a cryptographic public key from env vars."""
         cast_key = partial(cast_public_key, key_format=key_format)
         return self._process(
             key,
