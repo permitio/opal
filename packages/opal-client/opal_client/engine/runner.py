@@ -254,6 +254,15 @@ class OpaRunner(PolicyEngineRunner):
         opts_string = " ".join([f"{k}={v}" for k, v in opts.items()])
         startup_files = self._options.get_opa_startup_files()
         opa_path = self._options.opa_executable_path
+
+        # Check if the OPA executable exists and is a file
+        if not os.path.isfile(opa_path):
+            raise FileNotFoundError(f"OPA executable not found at path: {opa_path}")
+        
+        opts = self._options.get_cli_options_dict()
+        opts_string = " ".join([f"{k}={v}" for k, v in opts.items()])
+        startup_files = self._options.get_opa_startup_files()
+
         return f"{opa_path} run --server {opts_string} {startup_files}".strip()
 
 
@@ -283,6 +292,10 @@ class OpaRunner(PolicyEngineRunner):
             )
         elif options.opa_executable_path == "opa":
             options.opa_executable_path = opal_client_config.INLINE_OPA_EXECUTABLE_PATH
+
+        # Check if the OPA executable exists and is a file
+        if not os.path.isfile(options.opa_executable_path):
+            raise FileNotFoundError(f"OPA executable not found at path: {options.opa_executable_path}")
 
 
         opa_runner = OpaRunner(options=options, piped_logs_format=piped_logs_format)
