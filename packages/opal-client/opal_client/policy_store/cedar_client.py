@@ -72,7 +72,7 @@ class CedarClient(BasePolicyStoreClient):
             policy_id, opal_client_config.POLICY_STORE_POLICY_PATHS_TO_IGNORE
         ):
             logger.info(
-                f"Ignoring setting policy - {policy_id}, set in POLICY_PATHS_TO_IGNORE."
+                f"Ignoring setting policy - {policy_id}, set in POLICY_STORE_POLICY_PATHS_TO_IGNORE."
             )
             return
         async with aiohttp.ClientSession() as session:
@@ -137,7 +137,7 @@ class CedarClient(BasePolicyStoreClient):
             policy_id, opal_client_config.POLICY_STORE_POLICY_PATHS_TO_IGNORE
         ):
             logger.info(
-                f"Ignoring deleting policy - {policy_id}, set in POLICY_PATHS_TO_IGNORE."
+                f"Ignoring deleting policy - {policy_id}, set in POLICY_STORE_POLICY_PATHS_TO_IGNORE."
             )
             return
 
