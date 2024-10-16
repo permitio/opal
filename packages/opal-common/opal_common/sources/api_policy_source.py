@@ -130,7 +130,7 @@ class ApiPolicySource(BasePolicySource):
                     )
                     raise
 
-    def build_auth_headers(self, token=None, path=None):
+    async def build_auth_headers(self, token=None, path=None):
         # if it's a simple HTTP server with a bearer token
         if self.server_type == PolicyBundleServerType.HTTP and token is not None:
             return tuple_to_dict(get_authorization_header(token))
@@ -170,7 +170,7 @@ class ApiPolicySource(BasePolicySource):
         """
         path = "bundle.tar.gz"
 
-        auth_headers = self.build_auth_headers(token=token, path=path)
+        auth_headers = await self.build_auth_headers(token=token, path=path)
         etag_headers = (
             {"ETag": self.etag, "If-None-Match": self.etag} if self.etag else {}
         )
