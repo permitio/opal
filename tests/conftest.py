@@ -1,7 +1,7 @@
 import json
 import pytest
 
-from tests.containers import OpalServerContainer
+from tests.containers import OpalClientContainer, OpalServerContainer
 from .settings import *  # noqa: F403
 from testcontainers.core.waiting_utils import wait_for_logs
 from testcontainers.core.generic import DockerContainer
@@ -29,4 +29,11 @@ def opal_server(broadcast_channel: PostgresContainer):
 
 
 @pytest.fixture
-def opal_client(): ...
+def opal_client(opal_server: OpalServerContainer):
+    container = (
+        OpalClientContainer("permitio/opal-client")
+        .with_env("OPAL_SERVER_URL", "")
+        .start()
+    )
+    yield container
+    container.stop()
