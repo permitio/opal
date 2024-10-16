@@ -53,6 +53,8 @@ class ApiPolicySource(BasePolicySource):
         token: Optional[str] = None,
         token_id: Optional[str] = None,
         region: Optional[str] = None,
+        role_arn: Optional[str] = None,
+        token_file: Optional[str] = None,
         bundle_server_type: Optional[PolicyBundleServerType] = None,
         policy_bundle_path=".",
         policy_bundle_git_add_pattern="*",
@@ -66,6 +68,8 @@ class ApiPolicySource(BasePolicySource):
         self.token_id = token_id
         self.server_type = bundle_server_type
         self.region = region
+        self.role_arn = role_arn
+        self.token_file = token_file
         self.bundle_hash = None
         self.etag = None
         self.tmp_bundle_path = Path(policy_bundle_path)
