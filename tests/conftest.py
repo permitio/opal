@@ -18,15 +18,13 @@ def broadcast_channel():
 
 @pytest.fixture(autouse=True)
 def opal_server(broadcast_channel: PostgresContainer):
-    OPAL_BROADCAST_URI = broadcast_channel.get_connection_url()
-    container = OpalServerContainer("permitio/opal-server").with_env(
-        "OPAL_BROADCAST_URI", OPAL_BROADCAST_URI
+    container = (
+        OpalServerContainer("permitio/opal-server")
+        .with_env("OPAL_BROADCAST_URI", broadcast_channel.get_connection_url())
+        .start()
     )
-    container.start()
-    print(container.env)
     wait_for_logs(container, "Clone succeeded")
-    print("port:", container.get_container_host_ip(), container.get_exposed_port(7002))
-    yield
+    yield container
     container.stop()
 
 
