@@ -2,6 +2,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional, Tuple
 from urllib.parse import urlparse
+from xml.etree import ElementTree
 
 import aiohttp
 from fastapi import status
@@ -130,6 +131,62 @@ class ApiPolicySource(BasePolicySource):
                     )
                     raise
 
+    async def get_temporary_sts_credentials(self) -> Tuple[str, str]:
+        assert self.token_file
+        assert self.role_arn
+        assert self.region
+
+        with open(self.token_file) as token_file:
+            token = token_file.read()
+
+        sts_url = f"sts.{self.region}.amazonaws.com"
+        params = (
+            {
+                "Action": "AssumeRoleWithWebIdentity",
+                "DurationSeconds": 3600,
+                "RoleSessionName": "Opal",
+                "RoleArn": self.role_arn,
+                "WebIdentityToken": token,
+                "Version": "2011-06-15",
+            },
+        )
+
+        async with aiohttp.ClientSession() as session:
+            try:
+                async with session.get(
+                    f"{sts_url}",
+                    params=params,
+                ) as response:
+                    if response.status == status.HTTP_404_NOT_FOUND:
+                        logger.warning(
+                            "requested url not found: {sts_url}",
+                            sts_url=sts_url,
+                        )
+                        raise HTTPException(
+                            status_code=status.HTTP_404_NOT_FOUND,
+                            detail=f"requested url not found: {sts_url}",
+                        )
+
+                    body = await response.read()
+
+                    et = ElementTree.parse(body)
+                    credentials = et.find(
+                        "/AssumeRoleWithWebIdentityResponse/AssumeRoleWithWebIdentityResult/Credentials"
+                    )
+                    assert credentials
+
+                    assert (id := credentials.findtext("AccessKeyId"))
+                    assert (key := credentials.findtext("SecretAccessKey"))
+
+            except (aiohttp.ClientError, HTTPException) as e:
+                logger.warning("server connection error: {err}", err=repr(e))
+                raise
+            except Exception as e:
+                logger.error("unexpected server connection error: {err}", err=repr(e))
+                raise
+
+        return id, key
+
     async def build_auth_headers(self, token=None, path=None):
         # if it's a simple HTTP server with a bearer token
         if self.server_type == PolicyBundleServerType.HTTP and token is not None:
@@ -147,6 +204,19 @@ class ApiPolicySource(BasePolicySource):
             return build_aws_rest_auth_headers(
                 self.token_id, token, host, path, self.region
             )
+        elif (
+            self.server_type == PolicyBundleServerType.AWS_S3
+            and self.role_arn is not None
+            and self.token_file is not None
+            and self.region is not None
+        ):
+            split_url = urlparse(self.remote_source_url)
+            host = split_url.netloc
+            path = split_url.path + "/" + path
+
+            id, key = await self.get_temporary_sts_credentials()
+
+            return build_aws_rest_auth_headers(id, key, host, path, self.region)
         else:
             return {}
 
