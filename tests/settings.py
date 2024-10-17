@@ -9,6 +9,7 @@ from opal_common.schemas.security import PeerType
 from testcontainers.core.generic import DockerContainer
 from testcontainers.core.waiting_utils import wait_for_logs
 
+OPAL_IMAGE_TAG = _("OPAL_IMAGE_TAG", "latest")
 
 OPAL_AUTH_PUBLIC_KEY = _("OPAL_AUTH_PUBLIC_KEY", "")
 OPAL_AUTH_PRIVATE_KEY = _("OPAL_AUTH_PRIVATE_KEY", "")
@@ -18,8 +19,8 @@ OPAL_AUTH_JWT_ISSUER = _("OPAL_AUTH_JWT_ISSUER", "https://opal.ac/")
 
 # Temporary container to generate the required tokens.
 _container = (
-    DockerContainer("permitio/opal-server")
-    .with_bind_ports(7002)
+    DockerContainer(f"permitio/opal-server:{OPAL_IMAGE_TAG}")
+    .with_exposed_ports(7002)
     .with_env("OPAL_REPO_WATCHER_ENABLED", "0")
     .with_env("OPAL_AUTH_PUBLIC_KEY", OPAL_AUTH_PUBLIC_KEY)
     .with_env("OPAL_AUTH_PRIVATE_KEY", OPAL_AUTH_PRIVATE_KEY)
