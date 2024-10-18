@@ -9,6 +9,8 @@ from opal_common.schemas.security import PeerType
 from testcontainers.core.generic import DockerContainer
 from testcontainers.core.waiting_utils import wait_for_logs
 
+OPAL_TESTS_UNIQ_ID = token_hex(4)
+
 OPAL_IMAGE_TAG = _("OPAL_IMAGE_TAG", "latest")
 
 OPAL_AUTH_PUBLIC_KEY = _("OPAL_AUTH_PUBLIC_KEY", "")
@@ -41,12 +43,12 @@ with _container:
     with io.StringIO() as stdout:
         with redirect_stdout(stdout):
             obtain_token(type=PeerType("client"), **kwargs)
-    OPAL_CLIENT_TOKEN = stdout.getvalue().strip()
+        OPAL_CLIENT_TOKEN = stdout.getvalue().strip()
 
     with io.StringIO() as stdout:
         with redirect_stdout(stdout):
             obtain_token(type=PeerType("datasource"), **kwargs)
-    OPAL_DATA_SOURCE_TOKEN = stdout.getvalue().strip()
+        OPAL_DATA_SOURCE_TOKEN = stdout.getvalue().strip()
 
 UVICORN_NUM_WORKERS = _("UVICORN_NUM_WORKERS", "4")
 OPAL_STATISTICS_ENABLED = _("OPAL_STATISTICS_ENABLED", "true")
