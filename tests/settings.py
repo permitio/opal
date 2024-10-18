@@ -29,7 +29,7 @@ _container = (
     .with_env("OPAL_AUTH_JWT_ISSUER", OPAL_AUTH_JWT_ISSUER)
 )
 
-with _container, io.StringIO() as stdout:
+with _container:
     wait_for_logs(_container, "OPAL Server Startup")
     kwargs = {
         "master_token": OPAL_AUTH_MASTER_TOKEN,
@@ -38,14 +38,14 @@ with _container, io.StringIO() as stdout:
         "claims": {},
     }
 
-    with redirect_stdout(stdout):
-        obtain_token(type=PeerType("client"), **kwargs)
+    with io.StringIO() as stdout:
+        with redirect_stdout(stdout):
+            obtain_token(type=PeerType("client"), **kwargs)
     OPAL_CLIENT_TOKEN = stdout.getvalue().strip()
 
-    stdout.seek(0)  # Overwrite the buffer.
-
-    with redirect_stdout(stdout):
-        obtain_token(type=PeerType("datasource"), **kwargs)
+    with io.StringIO() as stdout:
+        with redirect_stdout(stdout):
+            obtain_token(type=PeerType("datasource"), **kwargs)
     OPAL_DATA_SOURCE_TOKEN = stdout.getvalue().strip()
 
 UVICORN_NUM_WORKERS = _("UVICORN_NUM_WORKERS", "4")
