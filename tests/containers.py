@@ -1,7 +1,8 @@
 import json
-from secrets import token_hex
-from . import settings as s
+
 from testcontainers.core.generic import DockerContainer
+
+from . import settings as s
 
 
 class OpalServerContainer(DockerContainer):
@@ -13,7 +14,7 @@ class OpalServerContainer(DockerContainer):
     ) -> None:
         super().__init__(image, docker_client_kw, **kwargs)
 
-        self.with_name(f"pytest_{token_hex(2)}_opal_server")
+        self.with_name(f"pytest_{s.OPAL_TESTS_UNIQ_ID}_opal_server")
         self.with_exposed_ports(7002)
         self.with_env("UVICORN_NUM_WORKERS", s.UVICORN_NUM_WORKERS)
         self.with_env("OPAL_POLICY_REPO_URL", s.OPAL_POLICY_REPO_URL)
@@ -48,7 +49,7 @@ class OpalClientContainer(DockerContainer):
     ) -> None:
         super().__init__(image, docker_client_kw, **kwargs)
 
-        self.with_name(f"pytest_{token_hex(2)}_opal_client")  # noqa: F821
+        self.with_name(f"pytest_{s.OPAL_TESTS_UNIQ_ID}_opal_client")  # noqa: F821
         self.with_exposed_ports(7000, 8181)
         self.with_env("OPAL_LOG_FORMAT_INCLUDE_PID", s.OPAL_LOG_FORMAT_INCLUDE_PID)
         self.with_env("OPAL_INLINE_OPA_LOG_FORMAT", s.OPAL_INLINE_OPA_LOG_FORMAT)

@@ -1,5 +1,4 @@
 import time
-from secrets import token_hex
 
 import docker
 import pytest
@@ -9,13 +8,17 @@ from testcontainers.postgres import PostgresContainer
 
 from tests.containers import OpalClientContainer, OpalServerContainer
 
+from . import settings as s
+
 # https://stackoverflow.com/questions/7119452/git-commit-from-python
 
 
 @pytest.fixture(scope="session")
 def opal_network():
     client = docker.from_env()
-    network = client.networks.create(f"pytest_opal_{token_hex(2)}", driver="bridge")
+    network = client.networks.create(
+        f"pytest_opal_{s.OPAL_TESTS_UNIQ_ID}", driver="bridge"
+    )
     yield network.name
     network.remove()
 
@@ -24,7 +27,7 @@ def opal_network():
 def broadcast_channel(opal_network: str):
     with PostgresContainer(
         "postgres:alpine", driver=None, network=opal_network
-    ).with_name(f"pytest_{token_hex(2)}_broadcast_channel") as container:
+    ).with_name(f"pytest_{s.OPAL_TESTS_UNIQ_ID}_broadcast_channel") as container:
         # opal_network.connect(container.get_wrapped_container())
         yield container
 
