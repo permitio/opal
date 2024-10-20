@@ -83,6 +83,84 @@ class OpaServerOptions(BaseModel):
         return " ".join(files)
 
 
+class OpenFGAServerOptions(BaseModel):
+    """Options to configure the OpenFGA server (apply when choosing to run OpenFGA inline)."""
+
+    addr: str = Field(
+        ":8080",
+        description="listening address of the OpenFGA server (e.g., [ip]:<port> for TCP)",
+    )
+    authentication: AuthenticationScheme = Field(
+        AuthenticationScheme.off,
+        description="OpenFGA authentication scheme (default off)",
+    )
+    authentication_token: Optional[str] = Field(
+        None,
+        description="If authentication is 'token', this specifies the token to use.",
+    )
+    store_id: Optional[str] = Field(
+        None,
+        description="The OpenFGA store ID to use.",
+    )
+
+    class Config:
+        use_enum_values = True
+        allow_population_by_field_name = True
+
+        @classmethod
+        def alias_generator(cls, string: str) -> str:
+            return "--{}".format(string.replace("_", "-"))
+
+    @validator("authentication")
+    def validate_authentication(cls, v: AuthenticationScheme):
+        if v not in [AuthenticationScheme.off, AuthenticationScheme.token]:
+            raise ValueError("Invalid AuthenticationScheme for OpenFGA.")
+        return v
+
+    @validator("authentication_token")
+    def validate_authentication_token(cls, v: Optional[str], values: dict[str, Any]):
+        if values["authentication"] == AuthenticationScheme.token and v is None:
+            raise ValueError(
+                "A token must be specified for AuthenticationScheme.token."
+            )
+        return v
+
+    def get_cmdline(self) -> str:
+        result = [
+            "openfga-server",  # Assuming there's an openfga-server command
+        ]
+        if (
+            self.authentication == AuthenticationScheme.token
+            and self.authentication_token is not None
+        ):
+            result += [
+                "--token",
+                self.authentication_token,
+            ]
+        addr = self.addr.split(":", 1)
+        port = None
+        if len(addr) == 1:
+            listen_address = addr[0]
+        elif len(addr) == 2:
+            listen_address, port = addr
+        if len(listen_address) == 0:
+            listen_address = "0.0.0.0"
+        result += [
+            "--addr",
+            listen_address,
+        ]
+        if port is not None:
+            result += [
+                "--port",
+                port,
+            ]
+        if self.store_id is not None:
+            result += [
+                "--store-id",
+                self.store_id,
+            ]
+        return " ".join(result)
+
 class CedarServerOptions(BaseModel):
     """Options to configure the Cedar agent (apply when choosing to run Cedar
     inline)."""

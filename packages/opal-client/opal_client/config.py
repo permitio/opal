@@ -1,6 +1,6 @@
 from enum import Enum
 
-from opal_client.engine.options import CedarServerOptions, OpaServerOptions
+from opal_client.engine.options import CedarServerOptions, OpaServerOptions, OpenFGAServerOptions
 from opal_client.policy.options import ConnRetryOptions
 from opal_client.policy_store.schemas import PolicyStoreAuth, PolicyStoreTypes
 from opal_common.confi import Confi, confi
@@ -23,6 +23,9 @@ class OpalClientConfig(Confi):
         "POLICY_STORE_TYPE", PolicyStoreTypes, PolicyStoreTypes.OPA
     )
     POLICY_STORE_URL = confi.str("POLICY_STORE_URL", "http://localhost:8181")
+
+    #openfga 
+    OPENFGA_URL = confi.str("OPENFGA_URL", "http://localhost:8080")
 
     POLICY_STORE_AUTH_TYPE = confi.enum(
         "POLICY_STORE_AUTH_TYPE", PolicyStoreAuth, PolicyStoreAuth.NONE
@@ -164,6 +167,22 @@ class OpalClientConfig(Confi):
     INLINE_CEDAR_LOG_FORMAT: EngineLogFormat = confi.enum(
         "INLINE_CEDAR_LOG_FORMAT", EngineLogFormat, EngineLogFormat.NONE
     )
+
+
+    # OpenFGA runner configuration
+    INLINE_OPENFGA_ENABLED = confi.bool("INLINE_OPENFGA_ENABLED", True)
+
+    INLINE_OPENFGA_CONFIG = confi.model(
+        "INLINE_OPENFGA_CONFIG",
+        OpenFGAServerOptions,
+        {},  # defaults are being set according to OpenFGAServerOptions pydantic definitions (see class)
+        description="cli options used when running OpenFGA inline",
+    )
+
+    INLINE_OPENFGA_LOG_FORMAT: EngineLogFormat = confi.enum(
+        "INLINE_OPENFGA_LOG_FORMAT", EngineLogFormat, EngineLogFormat.NONE
+    )
+
 
     # configuration for fastapi routes
     ALLOWED_ORIGINS = ["*"]
@@ -334,6 +353,11 @@ class OpalClientConfig(Confi):
             opal_common_config.LOG_MODULE_EXCLUDE_LIST = (
                 opal_common_config.LOG_MODULE_EXCLUDE_LIST
             )
+        
+        # Set the appropriate URL based on the policy store type
+        if self.POLICY_STORE_TYPE == PolicyStoreTypes.OPENFGA:
+            self.POLICY_STORE_URL = self.OPENFGA_URL
+
 
         if self.DATA_STORE_CONN_RETRY is not None:
             # You should use `DATA_UPDATER_CONN_RETRY`, but that's for backwards compatibility

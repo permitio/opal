@@ -7,7 +7,7 @@ from typing import Callable, Coroutine, List, Optional
 import psutil
 from opal_client.config import EngineLogFormat
 from opal_client.engine.logger import log_engine_output_opa, log_engine_output_simple
-from opal_client.engine.options import CedarServerOptions, OpaServerOptions
+from opal_client.engine.options import CedarServerOptions, OpaServerOptions, OpenFGAServerOptions
 from opal_client.logger import logger
 from tenacity import retry, wait_random_exponential
 
@@ -280,6 +280,54 @@ class OpaRunner(PolicyEngineRunner):
             opa_runner.register_process_restart_callbacks(rehydration_callbacks)
         return opa_runner
 
+
+class OpenFGARunner(PolicyEngineRunner):
+    def __init__(
+        self,
+        options: Optional[OpenFGAServerOptions] = None,
+        piped_logs_format: EngineLogFormat = EngineLogFormat.NONE,
+    ):
+        super().__init__(piped_logs_format)
+        self._options = options or OpenFGAServerOptions()
+
+    async def handle_log_line(self, line: bytes) -> bool:
+        await log_engine_output_simple(line)
+        return False
+
+    @property
+    def command(self) -> str:
+        return self._options.get_cmdline()
+
+    @staticmethod
+    def setup_openfga_runner(
+        options: Optional[OpenFGAServerOptions] = None,
+        piped_logs_format: EngineLogFormat = EngineLogFormat.NONE,
+        initial_start_callbacks: Optional[List[AsyncCallback]] = None,
+        rehydration_callbacks: Optional[List[AsyncCallback]] = None,
+    ):
+        """Factory for OpenFGARunner, accept optional callbacks to run in certain
+        lifecycle events.
+
+        Initial Start Callbacks:
+            The first time we start the engine, we might want to do certain actions (like launch tasks)
+            that are dependent on the policy store being up (such as PolicyUpdater, DataUpdater).
+
+        Rehydration Callbacks:
+            when the engine restarts, its cache is clean and it does not have the state necessary
+            to handle authorization queries. therefore it is necessary that we rehydrate the
+            cache with fresh state fetched from the server.
+        """
+        openfga_runner = OpenFGARunner(options=options, piped_logs_format=piped_logs_format)
+
+        if initial_start_callbacks:
+            openfga_runner.register_process_initial_start_callbacks(
+                initial_start_callbacks
+            )
+
+        if rehydration_callbacks:
+            openfga_runner.register_process_restart_callbacks(rehydration_callbacks)
+
+        return openfga_runner
 
 class CedarRunner(PolicyEngineRunner):
     def __init__(
