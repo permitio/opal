@@ -156,6 +156,7 @@ class ApiPolicySource(BasePolicySource):
                 async with session.get(
                     f"{sts_url}",
                     params=params,
+                    headers={"Content-Type": "application/xml"},
                 ) as response:
                     if response.status == status.HTTP_404_NOT_FOUND:
                         logger.warning(
@@ -185,6 +186,7 @@ class ApiPolicySource(BasePolicySource):
                 logger.error("unexpected server connection error: {err}", err=repr(e))
                 raise
 
+        logger.info("Successfully generated temporary AWS credentials")
         return id, key
 
     async def build_auth_headers(self, token=None, path=None):
@@ -197,6 +199,8 @@ class ApiPolicySource(BasePolicySource):
             and token is not None
             and self.token_id is not None
         ):
+            logger.info("Using provided token to login to AWS_S3")
+
             split_url = urlparse(self.remote_source_url)
             host = split_url.netloc
             path = split_url.path + "/" + path
@@ -208,8 +212,9 @@ class ApiPolicySource(BasePolicySource):
             self.server_type == PolicyBundleServerType.AWS_S3
             and self.role_arn is not None
             and self.token_file is not None
-            and self.region is not None
         ):
+            logger.info("Using IAM Web auth to login to AWS_S3")
+
             split_url = urlparse(self.remote_source_url)
             host = split_url.netloc
             path = split_url.path + "/" + path
@@ -218,6 +223,7 @@ class ApiPolicySource(BasePolicySource):
 
             return build_aws_rest_auth_headers(id, key, host, path, self.region)
         else:
+            logger.info("Not authenticating on bundle endpoint")
             return {}
 
     async def fetch_policy_bundle_from_api_source(
