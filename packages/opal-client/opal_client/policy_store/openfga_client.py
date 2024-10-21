@@ -17,7 +17,9 @@ from opal_common.schemas.policy import PolicyBundle
 from opal_common.schemas.store import StoreTransaction, TransactionType
 from tenacity import retry, stop_after_attempt, wait_exponential
 from openfga_sdk import OpenFgaClient as SDKOpenFgaClient, ClientConfiguration
-from openfga_sdk.client.models import ClientWriteRequest, ClientTuple, WriteAuthorizationModelRequest, ClientReadRequest, ClientCheckRequest
+from openfga_sdk.client.models import ClientWriteRequest, ClientTuple, ClientCheckRequest, ClientListObjectsRequest
+from openfga_sdk.models import WriteAuthorizationModelRequest, TupleKey, ReadRequest
+
 
 RETRY_CONFIG = {
     "stop": stop_after_attempt(5),
@@ -34,7 +36,7 @@ class OpenFGAClient(BasePolicyStoreClient):
     ):
         base_url = openfga_server_url or opal_client_config.POLICY_STORE_URL
         self._openfga_url = base_url
-        self._store_id = store_id
+        self._store_id = store_id or opal_client_config.OPENFGA_STORE_ID
         self._policy_version: Optional[str] = None
         self._lock = asyncio.Lock()
         self._token = openfga_auth_token
@@ -67,19 +69,53 @@ class OpenFGAClient(BasePolicyStoreClient):
         policy_code: str,
         transaction_id: Optional[str] = None,
     ):
+        logger.debug(f"Attempting to set policy with ID {policy_id}: {policy_code}")
         try:
-            model = json.loads(policy_code)
+            policy = json.loads(policy_code)
             response = await self._fga_client.write_authorization_model(
-                WriteAuthorizationModelRequest(**model)
+                WriteAuthorizationModelRequest(**policy)
             )
             self._policy_version = response.authorization_model_id
             logger.info(f"Successfully set policy with ID: {self._policy_version}")
             return response
         except json.JSONDecodeError:
-            logger.error(f"Invalid policy code: {policy_code}")
+            logger.error(f"Invalid policy code (not valid JSON): {policy_code}")
             raise
         except Exception as e:
             logger.error(f"Error setting policy: {str(e)}")
+            raise
+
+    @retry(**RETRY_CONFIG)
+    async def set_policy_data(
+        self,
+        policy_data: JsonableValue,
+        path: str = "",
+        transaction_id: Optional[str] = None,
+    ):
+        logger.debug(f"Attempting to set policy data: {json.dumps(policy_data, indent=2)}")
+        try:
+            if not policy_data:
+                logger.warning("Received empty policy data. Skipping operation.")
+                return None
+
+            tuples = [
+                ClientTuple(user=t["user"], relation=t["relation"], object=t["object"])
+                for t in policy_data
+                if all(k in t for k in ("user", "relation", "object"))
+            ]
+            logger.debug(f"Created tuples: {tuples}")
+
+            if not tuples:
+                logger.warning("No valid tuples found in policy data. Skipping operation.")
+                return None
+
+            body = ClientWriteRequest(writes=tuples)
+            logger.debug(f"Sending write request to OpenFGA: {body}")
+            await self._fga_client.write(body)
+            logger.info(f"Successfully set policy data for path: {path}")
+            return None
+        except Exception as e:
+            logger.error(f"Error setting policy data: {str(e)}")
             raise
 
     @retry(**RETRY_CONFIG)
@@ -107,26 +143,6 @@ class OpenFGAClient(BasePolicyStoreClient):
         logger.warning("Deleting policies is not supported in OpenFGA")
 
     @retry(**RETRY_CONFIG)
-    async def set_policy_data(
-        self,
-        policy_data: JsonableValue,
-        path: str = "",
-        transaction_id: Optional[str] = None,
-    ):
-        try:
-            tuples = [
-                ClientTuple(user=t["user"], relation=t["relation"], object=t["object"])
-                for t in policy_data
-            ]
-            body = ClientWriteRequest(writes=tuples)
-            await self._fga_client.write(body)
-            logger.info(f"Successfully set policy data for path: {path}")
-            return None
-        except Exception as e:
-            logger.error(f"Error setting policy data: {str(e)}")
-            raise
-
-    @retry(**RETRY_CONFIG)
     async def delete_policy_data(
         self, path: str = "", transaction_id: Optional[str] = None
     ):
@@ -142,7 +158,7 @@ class OpenFGAClient(BasePolicyStoreClient):
     @retry(**RETRY_CONFIG)
     async def get_data(self, path: str) -> Dict:
         try:
-            response = await self._fga_client.read(ClientReadRequest(object=path))
+            response = await self._fga_client.read(ReadRequest(object=path))
             return {"tuples": [tuple.dict() for tuple in response.tuples]}
         except Exception as e:
             logger.error(f"Error getting data: {str(e)}")
@@ -155,18 +171,7 @@ class OpenFGAClient(BasePolicyStoreClient):
         transaction_id: Optional[str] = None,
     ):
         # OpenFGA doesn't have a direct patch operation, so we'll implement it as a write
-        try:
-            tuples = [
-                ClientTuple(user=t["user"], relation=t["relation"], object=t["object"])
-                for t in policy_data
-            ]
-            body = ClientWriteRequest(writes=tuples)
-            await self._fga_client.write(body)
-            logger.info(f"Successfully patched policy data for path: {path}")
-            return None
-        except Exception as e:
-            logger.error(f"Error patching policy data: {str(e)}")
-            raise
+        return await self.set_policy_data(policy_data, path, transaction_id)
 
     @retry(**RETRY_CONFIG)
     async def check_permission(self, user: str, relation: str, object: str) -> bool:
@@ -226,6 +231,6 @@ class OpenFGAClient(BasePolicyStoreClient):
         self, bundle: PolicyBundle, transaction_id: Optional[str] = None
     ):
         for policy in bundle.policy_modules:
-            await self.set_policy(policy.path, policy.rego)
+            await self.set_policy(policy.path, json.dumps(policy.rego))
 
         self._policy_version = bundle.hash
