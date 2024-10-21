@@ -26,10 +26,12 @@ class OpalClientConfig(Confi):
 
     #openfga 
     OPENFGA_URL = confi.str("OPENFGA_URL", "http://localhost:8080")
+    OPENFGA_STORE_ID = confi.str("OPENFGA_STORE_ID", None, description="The OpenFGA store ID to use")
 
     POLICY_STORE_AUTH_TYPE = confi.enum(
         "POLICY_STORE_AUTH_TYPE", PolicyStoreAuth, PolicyStoreAuth.NONE
     )
+    
     POLICY_STORE_AUTH_TOKEN = confi.str(
         "POLICY_STORE_AUTH_TOKEN",
         None,

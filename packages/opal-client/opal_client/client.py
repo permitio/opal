@@ -158,6 +158,7 @@ class OpalClient:
             inline_cedar_enabled,
             inline_opa_options,
             inline_cedar_options,
+            inline_openfga_options,
         )
 
         custom_ssl_context = get_custom_ssl_context()
@@ -197,6 +198,7 @@ class OpalClient:
         self,
         inline_opa_enabled: bool,
         inline_cedar_enabled: bool,
+        inline_openfga_enabled: bool, 
         inline_opa_options: Optional[OpaServerOptions] = None,
         inline_cedar_options: Optional[CedarServerOptions] = None,
         inline_openfga_options: Optional[OpenFGAServerOptions] = None,
