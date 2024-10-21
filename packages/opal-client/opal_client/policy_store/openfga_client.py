@@ -64,19 +64,26 @@ class OpenFGAClient(BasePolicyStoreClient):
 
     @retry(**RETRY_CONFIG)
     async def set_policy(
-        self,
-        policy_id: str,
-        policy_code: str,
-        transaction_id: Optional[str] = None,
-    ):
+    self,
+    policy_id: str,
+    policy_code: str,
+    transaction_id: Optional[str] = None,
+):
         logger.debug(f"Attempting to set policy with ID {policy_id}: {policy_code}")
         try:
             policy = json.loads(policy_code)
-            response = await self._fga_client.write_authorization_model(
-                WriteAuthorizationModelRequest(**policy)
-            )
-            self._policy_version = response.authorization_model_id
-            logger.info(f"Successfully set policy with ID: {self._policy_version}")
+            if 'schema_version' in policy:
+                # This is an authorization model
+                response = await self._fga_client.write_authorization_model(
+                    WriteAuthorizationModelRequest(**policy)
+                )
+                self._policy_version = response.authorization_model_id
+                logger.info(f"Successfully set OpenFGA authorization model with ID: {self._policy_version}")
+            else:
+                # This is relationship tuples data
+                tuples = [ClientTuple(**t) for t in policy]
+                response = await self._fga_client.write(ClientWriteRequest(writes=tuples))
+                logger.info(f"Successfully set OpenFGA relationship tuples for {policy_id}")
             return response
         except json.JSONDecodeError:
             logger.error(f"Invalid policy code (not valid JSON): {policy_code}")

@@ -1,6 +1,6 @@
 import asyncio
 from typing import List, Optional
-
+import json
 import pydantic
 from fastapi_websocket_pubsub import PubSubClient
 from fastapi_websocket_rpc.rpc_channel import RpcChannel
@@ -15,6 +15,7 @@ from opal_client.policy_store.base_policy_store_client import BasePolicyStoreCli
 from opal_client.policy_store.policy_store_client_factory import (
     DEFAULT_POLICY_STORE_GETTER,
 )
+from opal_client.policy_store.openfga_client import OpenFGAClient
 from opal_common.async_utils import TakeANumberQueue, TasksPool
 from opal_common.config import opal_common_config
 from opal_common.schemas.data import DataUpdateReport
@@ -333,7 +334,20 @@ class PolicyUpdater:
                 error=bundle_error,
             )
             if bundle:
-                await store_transaction.set_policies(bundle)
+
+                if isinstance(self._policy_store, OpenFGAClient):
+                    for policy_module in bundle.policy_modules:
+                        if policy_module.path.endswith('.json'):
+                            try:
+                                policy_data = json.loads(policy_module.rego)
+                                await store_transaction.set_policy(policy_module.path, json.dumps(policy_data))
+                            except json.JSONDecodeError:
+                                logger.error(f"Invalid JSON in OpenFGA policy file: {policy_module.path}")
+                        else:
+                            logger.warning(f"Skipping non-JSON file for OpenFGA: {policy_module.path}")
+                else:
+                    await store_transaction.set_policies(bundle)
+                    
                 # if we got here, we did not throw during the transaction
                 if self._should_send_reports:
                     # spin off reporting (no need to wait on it)

@@ -20,6 +20,7 @@ from opal_client.policy_store.base_policy_store_client import (
     BasePolicyStoreClient,
     JsonableValue,
 )
+from opal_client.policy_store.openfga_client import OpenFGAClient
 from opal_client.policy_store.policy_store_client_factory import (
     DEFAULT_POLICY_STORE_GETTER,
 )
@@ -471,25 +472,33 @@ class DataUpdater:
                     )
 
                     try:
-                        if (
-                            opal_client_config.SPLIT_ROOT_DATA
-                            and policy_store_path in ("/", "")
-                            and isinstance(policy_data, dict)
-                        ):
-                            await self._set_split_policy_data(
-                                store_transaction,
-                                url=url,
-                                save_method=entry.save_method,
-                                data=policy_data,
-                            )
+                        if isinstance(self._policy_store, OpenFGAClient):
+                            # OpenFGA expects a list of tuples
+                            if isinstance(policy_data, list):
+                                await store_transaction.set_policy_data(policy_data, path=policy_store_path)
+                            else:
+                                logger.warning(f"Skipping non-list data for OpenFGA: {policy_store_path}")
                         else:
-                            await self._set_policy_data(
-                                store_transaction,
-                                url=url,
-                                path=policy_store_path,
-                                save_method=entry.save_method,
-                                data=policy_data,
-                            )
+
+                            if (
+                                opal_client_config.SPLIT_ROOT_DATA
+                                and policy_store_path in ("/", "")
+                                and isinstance(policy_data, dict)
+                            ):
+                                await self._set_split_policy_data(
+                                    store_transaction,
+                                    url=url,
+                                    save_method=entry.save_method,
+                                    data=policy_data,
+                                )
+                            else:
+                                await self._set_policy_data(
+                                    store_transaction,
+                                    url=url,
+                                    path=policy_store_path,
+                                    save_method=entry.save_method,
+                                    data=policy_data,
+                                )
                         # No exception we we're able to save to the policy-store
                         report.saved = True
                         # save the report for the entry
