@@ -11,23 +11,6 @@ from . import settings as s
 # https://stackoverflow.com/questions/7119452/git-commit-from-python
 
 
-@pytest.fixture(scope="session", autouse=True)
-def dump_env():
-    if s.OPAL_TESTS_DEBUG:
-        # Dump current config in a .env file for debugging purposes.
-        env = []
-        for key, val in vars(s).items():
-            if key.startswith("OPAL_"):
-                env.append(f"export {key}='{val}'\n\n")
-        with open(f"pytest_{s.OPAL_TESTS_UNIQ_ID}.env", "w") as envfile:
-            envfile.writelines(
-                [
-                    "#!/usr/bin/env bash\n\n",
-                    *env,
-                ]
-            )
-
-
 @pytest.fixture(scope="session")
 def opal_network():
     client = docker.from_env()
@@ -44,8 +27,7 @@ def broadcast_channel(opal_network: str):
         yield container
 
 
-@pytest.fixture(scope="session", autouse=True)
-# @pytest.fixture(scope="session")
+@pytest.fixture(scope="session")
 def opal_server(opal_network: str, broadcast_channel: PostgresContainer):
     opal_broadcast_uri = broadcast_channel.get_connection_url(
         host=f"{broadcast_channel._name}.{opal_network}", driver=None
@@ -54,9 +36,10 @@ def opal_server(opal_network: str, broadcast_channel: PostgresContainer):
     with OpalServerContainer(network=opal_network).with_env(
         "OPAL_BROADCAST_URI", opal_broadcast_uri
     ) as container:
+        container.get_wrapped_container().reload()
+        print(container.get_wrapped_container().id)
         wait_for_logs(container, "Clone succeeded")
         yield container
-        time.sleep(600)
 
 
 # @pytest.fixture(scope="session", autouse=True)
@@ -70,3 +53,16 @@ def opal_server(opal_network: str, broadcast_channel: PostgresContainer):
 #         yield container
 #         time.sleep(600)
 #
+
+
+@pytest.fixture(scope="session", autouse=True)
+def setup(opal_server):
+    yield
+    # Dump current config in a .env file for debugging purposes.
+    if s.OPAL_TESTS_DEBUG:
+        with open(f"pytest_{s.OPAL_TESTS_UNIQ_ID}.env", "w") as envfile:
+            envfile.write("#!/usr/bin/env bash\n\n")
+            for key, val in vars(s).items():
+                envfile.write(f"export {key}='{val}'\n\n")
+
+        time.sleep(3600)  # Giving us some time to inspect the containers
