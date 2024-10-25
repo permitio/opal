@@ -1,6 +1,6 @@
 import asyncio
 import json
-from typing import Dict, List, Optional, Union
+from typing import Dict, List, Optional, Any
 from urllib.parse import quote_plus
 
 import aiohttp
@@ -16,15 +16,82 @@ from opal_client.policy_store.schemas import PolicyStoreAuth
 from opal_common.schemas.policy import PolicyBundle
 from opal_common.schemas.store import StoreTransaction, TransactionType
 from tenacity import retry, stop_after_attempt, wait_exponential
-from openfga_sdk import OpenFgaClient as SDKOpenFgaClient, ClientConfiguration
-from openfga_sdk.client.models import ClientWriteRequest, ClientTuple, ClientCheckRequest, ClientListObjectsRequest
-from openfga_sdk.models import WriteAuthorizationModelRequest, TupleKey, ReadRequest
-
 
 RETRY_CONFIG = {
     "stop": stop_after_attempt(5),
     "wait": wait_exponential(multiplier=1, min=4, max=10),
 }
+
+class OpenFGATransactionLogState:
+    """State tracker for OpenFGA transactions and health checks."""
+
+    def __init__(
+        self,
+        data_updater_enabled: bool = True,
+        policy_updater_enabled: bool = True,
+    ):
+        self._data_updater_disabled = not data_updater_enabled
+        self._policy_updater_disabled = not policy_updater_enabled
+        self._num_successful_policy_transactions = 0
+        self._num_failed_policy_transactions = 0
+        self._num_successful_data_transactions = 0
+        self._num_failed_data_transactions = 0
+        self._last_policy_transaction: Optional[StoreTransaction] = None
+        self._last_failed_policy_transaction: Optional[StoreTransaction] = None
+        self._last_data_transaction: Optional[StoreTransaction] = None
+        self._last_failed_data_transaction: Optional[StoreTransaction] = None
+
+    @property
+    def ready(self) -> bool:
+        return self._num_successful_policy_transactions > 0 and (
+            self._data_updater_disabled or self._num_successful_data_transactions > 0
+        )
+
+    @property
+    def healthy(self) -> bool:
+        policy_updater_is_healthy: bool = (
+            self._last_policy_transaction is not None
+            and self._last_policy_transaction.success
+        )
+        data_updater_is_healthy: bool = (
+            self._last_data_transaction is not None
+            and self._last_data_transaction.success
+        )
+        is_healthy: bool = (
+            self._policy_updater_disabled or policy_updater_is_healthy
+        ) and (self._data_updater_disabled or data_updater_is_healthy)
+
+        if is_healthy:
+            logger.debug(
+                f"OpenFGA client health: {is_healthy} (policy: {policy_updater_is_healthy}, data: {data_updater_is_healthy})"
+            )
+        else:
+            logger.warning(
+                f"OpenFGA client health: {is_healthy} (policy: {policy_updater_is_healthy}, data: {data_updater_is_healthy})"
+            )
+
+        return is_healthy
+
+    def process_transaction(self, transaction: StoreTransaction):
+        """Process and track transaction state."""
+        logger.debug(
+            "processing store transaction: {transaction}",
+            transaction=transaction.dict(),
+        )
+        if transaction.transaction_type == TransactionType.policy:
+            if transaction.success:
+                self._last_policy_transaction = transaction
+                self._num_successful_policy_transactions += 1
+            else:
+                self._last_failed_policy_transaction = transaction
+                self._num_failed_policy_transactions += 1
+        elif transaction.transaction_type == TransactionType.data:
+            if transaction.success:
+                self._last_data_transaction = transaction
+                self._num_successful_data_transactions += 1
+            else:
+                self._last_failed_data_transaction = transaction
+                self._num_failed_data_transactions += 1
 
 class OpenFGAClient(BasePolicyStoreClient):
     def __init__(
@@ -33,64 +100,103 @@ class OpenFGAClient(BasePolicyStoreClient):
         openfga_auth_token: Optional[str] = None,
         auth_type: PolicyStoreAuth = PolicyStoreAuth.NONE,
         store_id: Optional[str] = None,
+        data_updater_enabled: bool = True,
+        policy_updater_enabled: bool = True,
     ):
         base_url = openfga_server_url or opal_client_config.POLICY_STORE_URL
-        self._openfga_url = base_url
+        self._openfga_url = base_url.rstrip('/')
         self._store_id = store_id or opal_client_config.OPENFGA_STORE_ID
+        self._base_url = f"{self._openfga_url}/stores/{self._store_id}"
         self._policy_version: Optional[str] = None
         self._lock = asyncio.Lock()
         self._token = openfga_auth_token
         self._auth_type: PolicyStoreAuth = auth_type
+        self._session: Optional[aiohttp.ClientSession] = None
 
-        self._had_successful_data_transaction = False
-        self._had_successful_policy_transaction = False
-        self._most_recent_data_transaction: Optional[StoreTransaction] = None
-        self._most_recent_policy_transaction: Optional[StoreTransaction] = None
-
-        configuration = ClientConfiguration(
-            api_url=self._openfga_url,
-            store_id=self._store_id,
+        # Initialize transaction tracking
+        self._transaction_state = OpenFGATransactionLogState(
+            data_updater_enabled=data_updater_enabled,
+            policy_updater_enabled=policy_updater_enabled,
         )
-        if self._auth_type == PolicyStoreAuth.TOKEN:
-            configuration.credentials = self._token
 
-        self._fga_client = SDKOpenFgaClient(configuration)
-
-    async def _get_auth_headers(self) -> Dict[str, str]:
-        headers: Dict[str, str] = {}
-        if self._auth_type == PolicyStoreAuth.TOKEN and self._token is not None:
-            headers["Authorization"] = f"Bearer {self._token}"
-        return headers
+    async def _get_session(self) -> aiohttp.ClientSession:
+        """Get or create the aiohttp session with proper headers."""
+        if self._session is None or self._session.closed:
+            headers = {"Content-Type": "application/json"}
+            if self._auth_type == PolicyStoreAuth.TOKEN and self._token is not None:
+                headers["Authorization"] = f"Bearer {self._token}"
+            self._session = aiohttp.ClientSession(headers=headers)
+        return self._session
 
     @retry(**RETRY_CONFIG)
     async def set_policy(
-    self,
-    policy_id: str,
-    policy_code: str,
-    transaction_id: Optional[str] = None,
-):
-        logger.debug(f"Attempting to set policy with ID {policy_id}: {policy_code}")
+        self,
+        policy_id: str,
+        policy_code: str,
+        transaction_id: Optional[str] = None,
+    ):
+        """Write an authorization model to OpenFGA."""
         try:
+            logger.debug(f"Attempting to set policy with ID {policy_id}: {policy_code}")
             policy = json.loads(policy_code)
-            if 'schema_version' in policy:
-                # This is an authorization model
-                response = await self._fga_client.write_authorization_model(
-                    WriteAuthorizationModelRequest(**policy)
-                )
-                self._policy_version = response.authorization_model_id
-                logger.info(f"Successfully set OpenFGA authorization model with ID: {self._policy_version}")
-            else:
-                # This is relationship tuples data
-                tuples = [ClientTuple(**t) for t in policy]
-                response = await self._fga_client.write(ClientWriteRequest(writes=tuples))
-                logger.info(f"Successfully set OpenFGA relationship tuples for {policy_id}")
-            return response
-        except json.JSONDecodeError:
-            logger.error(f"Invalid policy code (not valid JSON): {policy_code}")
-            raise
+
+            session = await self._get_session()
+            async with session.post(
+                f"{self._base_url}/authorization-models",
+                json=policy
+            ) as response:
+                if response.status == 201:
+                    data = await response.json()
+                    self._policy_version = data["authorization_model_id"]
+                    logger.info(f"Successfully set policy with model ID: {self._policy_version}")
+                    return data
+                else:
+                    error_body = await response.text()
+                    logger.error(f"Error setting policy: {error_body}")
+                    raise Exception(f"Failed to set policy: HTTP {response.status}")
         except Exception as e:
-            logger.error(f"Error setting policy: {str(e)}")
+            logger.error(f"Error in set_policy: {str(e)}")
             raise
+
+    @retry(**RETRY_CONFIG)
+    async def get_policy(self, policy_id: str) -> Optional[str]:
+        """Get an authorization model by ID."""
+        try:
+            session = await self._get_session()
+            async with session.get(
+                f"{self._base_url}/authorization-models/{policy_id}"
+            ) as response:
+                if response.status == 200:
+                    data = await response.json()
+                    return json.dumps(data["authorization_model"])
+                return None
+        except Exception as e:
+            logger.error(f"Error in get_policy: {str(e)}")
+            return None
+
+    @retry(**RETRY_CONFIG)
+    async def get_policies(self) -> Optional[Dict[str, str]]:
+        """Get all authorization models."""
+        try:
+            session = await self._get_session()
+            async with session.get(
+                f"{self._base_url}/authorization-models"
+            ) as response:
+                if response.status == 200:
+                    data = await response.json()
+                    return {
+                        model["id"]: json.dumps(model)
+                        for model in data.get("authorization_models", [])
+                    }
+                return None
+        except Exception as e:
+            logger.error(f"Error in get_policies: {str(e)}")
+            return None
+
+    async def delete_policy(self, policy_id: str, transaction_id: Optional[str] = None):
+        """OpenFGA does not support deletion of authorization models."""
+        logger.warning("Deleting policies is not supported in OpenFGA")
+        return None
 
     @retry(**RETRY_CONFIG)
     async def set_policy_data(
@@ -99,77 +205,97 @@ class OpenFGAClient(BasePolicyStoreClient):
         path: str = "",
         transaction_id: Optional[str] = None,
     ):
-        logger.debug(f"Attempting to set policy data: {json.dumps(policy_data, indent=2)}")
+        """Set relationship tuples in OpenFGA."""
         try:
-            if not policy_data:
-                logger.warning("Received empty policy data. Skipping operation.")
-                return None
+            logger.debug(f"Setting policy data: {policy_data}")
+            
+            # Transform data into tuples if needed
+            if isinstance(policy_data, dict) and "tuples" in policy_data:
+                tuples = policy_data["tuples"]
+            elif isinstance(policy_data, list):
+                tuples = policy_data
+            else:
+                logger.warning(f"Invalid policy data format: {policy_data}")
+                return
 
-            tuples = [
-                ClientTuple(user=t["user"], relation=t["relation"], object=t["object"])
-                for t in policy_data
-                if all(k in t for k in ("user", "relation", "object"))
-            ]
-            logger.debug(f"Created tuples: {tuples}")
-
-            if not tuples:
-                logger.warning("No valid tuples found in policy data. Skipping operation.")
-                return None
-
-            body = ClientWriteRequest(writes=tuples)
-            logger.debug(f"Sending write request to OpenFGA: {body}")
-            await self._fga_client.write(body)
-            logger.info(f"Successfully set policy data for path: {path}")
-            return None
-        except Exception as e:
-            logger.error(f"Error setting policy data: {str(e)}")
-            raise
-
-    @retry(**RETRY_CONFIG)
-    async def get_policy(self, policy_id: str) -> Optional[str]:
-        try:
-            response = await self._fga_client.read_authorization_model(policy_id)
-            return json.dumps(response.authorization_model.dict())
-        except Exception as e:
-            logger.error(f"Error getting policy: {str(e)}")
-            return None
-
-    @retry(**RETRY_CONFIG)
-    async def get_policies(self) -> Optional[Dict[str, str]]:
-        try:
-            response = await self._fga_client.read_authorization_models()
-            return {
-                model.id: json.dumps(model.dict())
-                for model in response.authorization_models
+            writes = {
+                "writes": {
+                    "tuple_keys": [
+                        {
+                            "user": tuple["user"],
+                            "relation": tuple["relation"],
+                            "object": tuple["object"]
+                        } for tuple in tuples
+                    ]
+                }
             }
-        except Exception as e:
-            logger.error(f"Error getting policies: {str(e)}")
-            return None
 
-    async def delete_policy(self, policy_id: str, transaction_id: Optional[str] = None):
-        logger.warning("Deleting policies is not supported in OpenFGA")
+            session = await self._get_session()
+            async with session.post(
+                f"{self._base_url}/write",
+                json=writes
+            ) as response:
+                if response.status != 200:
+                    error_body = await response.text()
+                    raise Exception(f"Failed to set policy data: {error_body}")
+                logger.info(f"Successfully wrote {len(tuples)} tuples")
 
-    @retry(**RETRY_CONFIG)
-    async def delete_policy_data(
-        self, path: str = "", transaction_id: Optional[str] = None
-    ):
-        try:
-            body = ClientWriteRequest(deletes=[ClientTuple(object=path)])
-            await self._fga_client.write(body)
-            logger.info(f"Successfully deleted policy data for path: {path}")
-            return None
         except Exception as e:
-            logger.error(f"Error deleting policy data: {str(e)}")
+            logger.error(f"Error in set_policy_data: {str(e)}")
             raise
 
     @retry(**RETRY_CONFIG)
-    async def get_data(self, path: str) -> Dict:
+    async def get_data(self, path: str = "") -> Dict:
+        """Get relationship tuples, optionally filtered by path."""
         try:
-            response = await self._fga_client.read(ReadRequest(object=path))
-            return {"tuples": [tuple.dict() for tuple in response.tuples]}
+            session = await self._get_session()
+            async with session.post(
+                f"{self._base_url}/read",
+                json={"tuple_key": {"object": path} if path else {}}
+            ) as response:
+                if response.status == 200:
+                    data = await response.json()
+                    return {
+                        "tuples": [
+                            {
+                                "user": tuple["key"]["user"],
+                                "relation": tuple["key"]["relation"],
+                                "object": tuple["key"]["object"]
+                            }
+                            for tuple in data.get("tuples", [])
+                        ]
+                    }
+                return {}
         except Exception as e:
-            logger.error(f"Error getting data: {str(e)}")
+            logger.error(f"Error in get_data: {str(e)}")
             return {}
+
+    async def get_data_with_input(self, path: str, input_model: Any) -> Dict:
+        """Check authorization with context."""
+        try:
+            input_data = input_model.dict()
+            session = await self._get_session()
+            async with session.post(
+                f"{self._base_url}/check",
+                json={
+                    "tuple_key": {
+                        "user": input_data.get("user"),
+                        "relation": input_data.get("relation"),
+                        "object": path
+                    },
+                    "context": input_data.get("context", {})
+                }
+            ) as response:
+                if response.status == 200:
+                    data = await response.json()
+                    return {
+                        "allowed": data.get("allowed", False),
+                        "resolution": data.get("resolution")
+                    }
+                return {"allowed": False}
+        except Exception as e:
+            logger.error(f"Error in get_data_with_input: {str(e)}")
+            return {"allowed": False}
 
     async def patch_policy_data(
         self,
@@ -177,67 +303,76 @@ class OpenFGAClient(BasePolicyStoreClient):
         path: str = "",
         transaction_id: Optional[str] = None,
     ):
-        # OpenFGA doesn't have a direct patch operation, so we'll implement it as a write
+        """OpenFGA doesn't support patches directly - implementing as a write."""
         return await self.set_policy_data(policy_data, path, transaction_id)
 
-    @retry(**RETRY_CONFIG)
     async def check_permission(self, user: str, relation: str, object: str) -> bool:
+        """Check if a user has a specific relation to an object."""
         try:
-            response = await self._fga_client.check(
-                ClientCheckRequest(user=user, relation=relation, object=object)
-            )
-            return response.allowed
+            session = await self._get_session()
+            async with session.post(
+                f"{self._base_url}/check",
+                json={
+                    "tuple_key": {
+                        "user": user,
+                        "relation": relation,
+                        "object": object
+                    }
+                }
+            ) as response:
+                if response.status == 200:
+                    data = await response.json()
+                    return data.get("allowed", False)
+                return False
         except Exception as e:
             logger.error(f"Error checking permission: {str(e)}")
             return False
 
     async def log_transaction(self, transaction: StoreTransaction):
-        if transaction.transaction_type == TransactionType.policy:
-            self._most_recent_policy_transaction = transaction
-            if transaction.success:
-                self._had_successful_policy_transaction = True
-        elif transaction.transaction_type == TransactionType.data:
-            self._most_recent_data_transaction = transaction
-            if transaction.success:
-                self._had_successful_data_transaction = True
+        """Log and track transaction state."""
+        self._transaction_state.process_transaction(transaction)
 
     async def is_ready(self) -> bool:
-        return (
-            self._had_successful_policy_transaction
-            and self._had_successful_data_transaction
-        )
+        """Check if the client is ready to handle requests."""
+        return self._transaction_state.ready
 
     async def is_healthy(self) -> bool:
-        return (
-            self._most_recent_policy_transaction is not None
-            and self._most_recent_policy_transaction.success
-        ) and (
-            self._most_recent_data_transaction is not None
-            and self._most_recent_data_transaction.success
-        )
+        """Check if the client is healthy."""
+        return self._transaction_state.healthy
 
     async def full_export(self, writer: AsyncTextIOWrapper) -> None:
+        """Export full state to a file."""
         policies = await self.get_policies()
-        data = await self.get_data("")
+        data = await self.get_data()
         await writer.write(
             json.dumps({"policies": policies, "data": data}, default=str)
         )
 
     async def full_import(self, reader: AsyncTextIOWrapper) -> None:
+        """Import full state from a file."""
         import_data = json.loads(await reader.read())
-
-        for policy_id, policy_code in import_data["policies"].items():
+        
+        for policy_id, policy_code in import_data.get("policies", {}).items():
             await self.set_policy(policy_id, policy_code)
-
-        await self.set_policy_data(import_data["data"])
+            
+        if "data" in import_data:
+            await self.set_policy_data(import_data["data"])
 
     async def get_policy_version(self) -> Optional[str]:
+        """Get the current policy version."""
         return self._policy_version
 
     async def set_policies(
-        self, bundle: PolicyBundle, transaction_id: Optional[str] = None
+        self,
+        bundle: PolicyBundle,
+        transaction_id: Optional[str] = None
     ):
+        """Set policies from a bundle."""
         for policy in bundle.policy_modules:
-            await self.set_policy(policy.path, json.dumps(policy.rego))
-
+            await self.set_policy(policy.path, policy.rego)
         self._policy_version = bundle.hash
+
+    async def get_policy_module_ids(self) -> List[str]:
+        """Get all policy module IDs."""
+        policies = await self.get_policies()
+        return list(policies.keys()) if policies else []
