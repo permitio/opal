@@ -43,31 +43,46 @@ class OpenFGATransactionLogState:
 
     @property
     def ready(self) -> bool:
-        return self._num_successful_policy_transactions > 0 and (
+        """System is ready if:
+        1. Policy updater is enabled and has at least one successful transaction, or policy updater is disabled
+        2. Data updater is enabled and has at least one successful transaction, or data updater is disabled
+        """
+        policy_ready = (
+            self._policy_updater_disabled or self._num_successful_policy_transactions > 0
+        )
+        data_ready = (
             self._data_updater_disabled or self._num_successful_data_transactions > 0
         )
+        return policy_ready and data_ready
 
-    @property
+    @property 
     def healthy(self) -> bool:
-        policy_updater_is_healthy: bool = (
-            self._last_policy_transaction is not None
-            and self._last_policy_transaction.success
+        """System is healthy if:
+        1. For enabled updaters: last transaction was successful
+        2. For disabled updaters: always considered healthy
+        """
+        if not self.ready:
+            return False
+            
+        policy_healthy = (
+            self._policy_updater_disabled or 
+            (self._last_policy_transaction is not None and self._last_policy_transaction.success)
         )
-        data_updater_is_healthy: bool = (
-            self._last_data_transaction is not None
-            and self._last_data_transaction.success
+
+        data_healthy = (
+            self._data_updater_disabled or
+            (self._last_data_transaction is not None and self._last_data_transaction.success)
         )
-        is_healthy: bool = (
-            self._policy_updater_disabled or policy_updater_is_healthy
-        ) and (self._data_updater_disabled or data_updater_is_healthy)
+
+        is_healthy = policy_healthy and data_healthy
 
         if is_healthy:
             logger.debug(
-                f"OpenFGA client health: {is_healthy} (policy: {policy_updater_is_healthy}, data: {data_updater_is_healthy})"
+                f"OpenFGA client health: {is_healthy} (policy: {policy_healthy}, data: {data_healthy})"
             )
         else:
             logger.warning(
-                f"OpenFGA client health: {is_healthy} (policy: {policy_updater_is_healthy}, data: {data_updater_is_healthy})"
+                f"OpenFGA client health: {is_healthy} (policy: {policy_healthy}, data: {data_healthy})"
             )
 
         return is_healthy
@@ -78,21 +93,23 @@ class OpenFGATransactionLogState:
             "processing store transaction: {transaction}",
             transaction=transaction.dict(),
         )
+
         if transaction.transaction_type == TransactionType.policy:
+            self._last_policy_transaction = transaction
             if transaction.success:
-                self._last_policy_transaction = transaction
                 self._num_successful_policy_transactions += 1
             else:
                 self._last_failed_policy_transaction = transaction
                 self._num_failed_policy_transactions += 1
+                
         elif transaction.transaction_type == TransactionType.data:
+            self._last_data_transaction = transaction
             if transaction.success:
-                self._last_data_transaction = transaction
                 self._num_successful_data_transactions += 1
             else:
                 self._last_failed_data_transaction = transaction
                 self._num_failed_data_transactions += 1
-
+                
 class OpenFGAClient(BasePolicyStoreClient):
     def __init__(
         self,
@@ -102,7 +119,17 @@ class OpenFGAClient(BasePolicyStoreClient):
         store_id: Optional[str] = None,
         data_updater_enabled: bool = True,
         policy_updater_enabled: bool = True,
-    ):
+    ):  
+
+            # Check for unsupported auth types first
+        if auth_type == PolicyStoreAuth.OAUTH:
+            raise ValueError("OpenFGA doesn't support OAuth")
+
+        # Check token auth if enabled
+        if auth_type == PolicyStoreAuth.TOKEN and openfga_auth_token is None:
+            logger.error("POLICY_STORE_AUTH_TOKEN cannot be empty")
+            raise Exception("Required variables for token auth are not set")
+            
         base_url = openfga_server_url or opal_client_config.POLICY_STORE_URL
         self._openfga_url = base_url.rstrip('/')
         self._store_id = store_id or opal_client_config.OPENFGA_STORE_ID
