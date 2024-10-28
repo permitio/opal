@@ -1,0 +1,49 @@
+version: '3'
+
+services:
+  broadcast_channel:
+    image: postgres:alpine
+    environment:
+      - POSTGRES_DB=postgres
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+    networks:
+      - opal-network
+
+  opal_server:
+    image: permitio/opal-server:latest
+    environment:
+      - OPAL_BROADCAST_URI=postgres://postgres:postgres@broadcast_channel:5432/postgres
+      - UVICORN_NUM_WORKERS=4
+      - OPAL_POLICY_REPO_URL=https://github.com/daveads/opal-example-policy-openfga
+      - OPAL_POLICY_REPO_POLLING_INTERVAL=30
+      - OPAL_DATA_CONFIG_SOURCES={"config":{"entries":[{"url":"http://opal_server:7002/policy-data","topics":["policy_data"],"dst_path":"/static"}]}}
+      - OPAL_LOG_FORMAT_INCLUDE_PID=true
+    ports:
+      - "7002:7002"
+    depends_on:
+      - broadcast_channel
+    networks:
+      - opal-network
+
+  opal_client_openfga:
+    image: permitio/opal-client-openfga:latest
+    environment:
+      - OPAL_SERVER_URL=http://opal_server:7002
+      - OPAL_LOG_FORMAT_INCLUDE_PID=true
+      - OPAL_POLICY_STORE_TYPE=OPENFGA
+      - OPAL_POLICY_STORE_URL=http://127.0.0.1:8080
+      - OPAL_OPENFGA_STORE_ID=01JAT34GM6T5WRVMXXDYWGSYKN
+      - OPAL_INLINE_OPENFGA_ENABLED=true
+      - "OPAL_INLINE_OPENFGA_CONFIG={\"addr\":\"0.0.0.0:8080\", \"datastore_engine\":\"memory\"}"
+    ports:
+      - "7766:7000"
+      - "8080:8080"
+      - "3000:3000"
+    networks:
+      - opal-network
+    depends_on:
+      - opal_server
+    command: ./start-openfga.sh
+    volumes:
+      - openfga_backup:/opal/backup:rw
