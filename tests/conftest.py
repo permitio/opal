@@ -4,11 +4,9 @@ import pytest
 from testcontainers.core.waiting_utils import wait_for_logs
 from testcontainers.postgres import PostgresContainer
 
-from tests.containers import OpalServerContainer
+from tests.containers import OpalClientContainer, OpalServerContainer
 
 from . import settings as s
-
-# https://stackoverflow.com/questions/7119452/git-commit-from-python
 
 
 @pytest.fixture(scope="session")
@@ -42,27 +40,20 @@ def opal_server(opal_network: str, broadcast_channel: PostgresContainer):
         yield container
 
 
-# @pytest.fixture(scope="session", autouse=True)
-# def opal_client(opal_network: str, opal_server: OpalServerContainer):
-#     opal_server_url = f"http://{opal_server._name}.{opal_network}:7002"
-#
-#     with OpalClientContainer(network=opal_network).with_env(
-#         "OPAL_SERVER_URL", opal_server_url
-#     ) as container:
-#         wait_for_logs(container, "")
-#         yield container
-#         time.sleep(600)
-#
+@pytest.fixture(scope="session")
+def opal_client(opal_network: str, opal_server: OpalServerContainer):
+    opal_server_url = f"http://{opal_server._name}.{opal_network}:7002"
+
+    with OpalClientContainer(network=opal_network).with_env(
+        "OPAL_SERVER_URL", opal_server_url
+    ) as container:
+        wait_for_logs(container, "")
+        yield container
 
 
 @pytest.fixture(scope="session", autouse=True)
-def setup(opal_server):
+def setup(opal_server, opal_client):
     yield
-    # Dump current config in a .env file for debugging purposes.
     if s.OPAL_TESTS_DEBUG:
-        with open(f"pytest_{s.OPAL_TESTS_UNIQ_ID}.env", "w") as envfile:
-            envfile.write("#!/usr/bin/env bash\n\n")
-            for key, val in vars(s).items():
-                envfile.write(f"export {key}='{val}'\n\n")
-
+        s.dump_settings()
         time.sleep(3600)  # Giving us some time to inspect the containers

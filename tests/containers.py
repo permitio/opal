@@ -10,7 +10,6 @@ class OpalServerContainer(DockerContainer):
         docker_client_kw: dict | None = None,
         **kwargs,
     ) -> None:
-        kwargs.update({"tty": s.OPAL_TESTS_DEBUG})
         super().__init__(image, docker_client_kw, **kwargs)
 
         self.with_name(s.OPAL_TESTS_SERVER_CONTAINER_NAME)
@@ -18,6 +17,7 @@ class OpalServerContainer(DockerContainer):
 
         if s.OPAL_TESTS_DEBUG:
             self.with_env("LOG_DIAGNOSE", "true")
+            self.with_env("OPAL_LOG_LEVEL", "DEBUG")
 
         self.with_env("UVICORN_NUM_WORKERS", s.UVICORN_NUM_WORKERS)
 
@@ -59,11 +59,15 @@ class OpalClientContainer(DockerContainer):
         docker_client_kw: dict | None = None,
         **kwargs,
     ) -> None:
-        kwargs.update({"tty": s.OPAL_TESTS_DEBUG})
         super().__init__(image, docker_client_kw, **kwargs)
 
         self.with_name(s.OPAL_TESTS_CLIENT_CONTAINER_NAME)
         self.with_exposed_ports(7000, 8181)
+
+        if s.OPAL_TESTS_DEBUG:
+            self.with_env("LOG_DIAGNOSE", "true")
+            self.with_env("OPAL_LOG_LEVEL", "DEBUG")
+
         self.with_env("OPAL_LOG_FORMAT_INCLUDE_PID", s.OPAL_LOG_FORMAT_INCLUDE_PID)
         self.with_env("OPAL_INLINE_OPA_LOG_FORMAT", s.OPAL_INLINE_OPA_LOG_FORMAT)
         self.with_env(
@@ -75,6 +79,7 @@ class OpalClientContainer(DockerContainer):
             s.OPAL_OPA_HEALTH_CHECK_POLICY_ENABLED,
         )
         self.with_env("OPAL_CLIENT_TOKEN", s.OPAL_CLIENT_TOKEN)
+        self.with_env("OPAL_AUTH_PUBLIC_KEY", s.OPAL_AUTH_PUBLIC_KEY)
         self.with_env("OPAL_AUTH_JWT_AUDIENCE", s.OPAL_AUTH_JWT_AUDIENCE)
         self.with_env("OPAL_AUTH_JWT_ISSUER", s.OPAL_AUTH_JWT_ISSUER)
         # self.with_env("OPAL_STATISTICS_ENABLED", s.OPAL_STATISTICS_ENABLED)
