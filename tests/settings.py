@@ -1,13 +1,14 @@
 import io
 import json
-from contextlib import redirect_stdout
+
+# from contextlib import redirect_stdout
 from os import getenv as _
 from secrets import token_hex
 
-from opal_common.cli.commands import obtain_token
-from opal_common.schemas.security import PeerType
-from testcontainers.core.generic import DockerContainer
-from testcontainers.core.waiting_utils import wait_for_logs
+# from opal_common.cli.commands import obtain_token
+# from opal_common.schemas.security import PeerType
+# from testcontainers.core.generic import DockerContainer
+# from testcontainers.core.waiting_utils import wait_for_logs
 
 OPAL_TESTS_DEBUG = _("OPAL_TESTS_DEBUG") is not None
 
@@ -20,41 +21,44 @@ OPAL_IMAGE_TAG = _("OPAL_IMAGE_TAG", "latest")
 
 OPAL_AUTH_PUBLIC_KEY = _("OPAL_AUTH_PUBLIC_KEY", "")
 OPAL_AUTH_PRIVATE_KEY = _("OPAL_AUTH_PRIVATE_KEY", "")
-OPAL_AUTH_PRIVATE_KEY_PASSPHRASE = _("OPAL_AUTH_PRIVATE_KEY_PASSPHRASE", "")
+OPAL_AUTH_PRIVATE_KEY_PASSPHRASE = _("OPAL_AUTH_PRIVATE_KEY_PASSPHRASE")
 OPAL_AUTH_MASTER_TOKEN = _("OPAL_AUTH_MASTER_TOKEN", token_hex(16))
 OPAL_AUTH_JWT_AUDIENCE = _("OPAL_AUTH_JWT_AUDIENCE", "https://api.opal.ac/v1/")
 OPAL_AUTH_JWT_ISSUER = _("OPAL_AUTH_JWT_ISSUER", "https://opal.ac/")
 
 # Temporary container to generate the required tokens.
-_container = (
-    DockerContainer(f"permitio/opal-server:{OPAL_IMAGE_TAG}")
-    .with_exposed_ports(7002)
-    .with_env("OPAL_REPO_WATCHER_ENABLED", "0")
-    .with_env("OPAL_AUTH_PUBLIC_KEY", OPAL_AUTH_PUBLIC_KEY)
-    .with_env("OPAL_AUTH_PRIVATE_KEY", OPAL_AUTH_PRIVATE_KEY)
-    .with_env("OPAL_AUTH_MASTER_TOKEN", OPAL_AUTH_MASTER_TOKEN)
-    .with_env("OPAL_AUTH_JWT_AUDIENCE", OPAL_AUTH_JWT_AUDIENCE)
-    .with_env("OPAL_AUTH_JWT_ISSUER", OPAL_AUTH_JWT_ISSUER)
-)
+# _container = (
+#     DockerContainer(f"permitio/opal-server:{OPAL_IMAGE_TAG}")
+#     .with_exposed_ports(7002)
+#     .with_env("OPAL_REPO_WATCHER_ENABLED", "0")
+#     .with_env("OPAL_AUTH_PUBLIC_KEY", OPAL_AUTH_PUBLIC_KEY)
+#     .with_env("OPAL_AUTH_PRIVATE_KEY", OPAL_AUTH_PRIVATE_KEY)
+#     .with_env("OPAL_AUTH_MASTER_TOKEN", OPAL_AUTH_MASTER_TOKEN)
+#     .with_env("OPAL_AUTH_JWT_AUDIENCE", OPAL_AUTH_JWT_AUDIENCE)
+#     .with_env("OPAL_AUTH_JWT_ISSUER", OPAL_AUTH_JWT_ISSUER)
+# )
 
-with _container:
-    wait_for_logs(_container, "OPAL Server Startup")
-    kwargs = {
-        "master_token": OPAL_AUTH_MASTER_TOKEN,
-        "server_url": f"http://{_container.get_container_host_ip()}:{_container.get_exposed_port(7002)}",
-        "ttl": (365, "days"),
-        "claims": {},
-    }
+# with _container:
+#     wait_for_logs(_container, "OPAL Server Startup")
+#     kwargs = {
+#         "master_token": OPAL_AUTH_MASTER_TOKEN,
+#         "server_url": f"http://{_container.get_container_host_ip()}:{_container.get_exposed_port(7002)}",
+#         "ttl": (365, "days"),
+#         "claims": {},
+#     }
+#
+#     with io.StringIO() as stdout:
+#         with redirect_stdout(stdout):
+#             obtain_token(type=PeerType("client"), **kwargs)
+#         OPAL_CLIENT_TOKEN = stdout.getvalue().strip()
+#
+#     with io.StringIO() as stdout:
+#         with redirect_stdout(stdout):
+#             obtain_token(type=PeerType("datasource"), **kwargs)
+#         OPAL_DATA_SOURCE_TOKEN = stdout.getvalue().strip()
 
-    with io.StringIO() as stdout:
-        with redirect_stdout(stdout):
-            obtain_token(type=PeerType("client"), **kwargs)
-        OPAL_CLIENT_TOKEN = stdout.getvalue().strip()
-
-    with io.StringIO() as stdout:
-        with redirect_stdout(stdout):
-            obtain_token(type=PeerType("datasource"), **kwargs)
-        OPAL_DATA_SOURCE_TOKEN = stdout.getvalue().strip()
+OPAL_CLIENT_TOKEN = _("OPAL_CLIENT_TOKEN", "")
+OPAL_DATA_SOURCE_TOKEN = _("OPAL_DATA_SOURCE_TOKEN", "")
 
 UVICORN_NUM_WORKERS = _("UVICORN_NUM_WORKERS", "4")
 OPAL_STATISTICS_ENABLED = _("OPAL_STATISTICS_ENABLED", "true")
@@ -119,3 +123,11 @@ OPAL_DEFAULT_UPDATE_CALLBACKS = json.dumps(
         ]
     }
 )
+
+
+def dump_settings():
+    with open(f"pytest_{OPAL_TESTS_UNIQ_ID}.env", "w") as envfile:
+        envfile.write("#!/usr/bin/env bash\n\n")
+        for key, val in globals().items():
+            if key.startswith("OPAL") or key.startswith("UVICORN"):
+                envfile.write(f"export {key}='{val}'\n\n")
