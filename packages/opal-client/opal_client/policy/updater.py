@@ -1,6 +1,7 @@
 import asyncio
 from typing import List, Optional
 import json
+import yaml
 import pydantic
 from fastapi_websocket_pubsub import PubSubClient
 from fastapi_websocket_rpc.rpc_channel import RpcChannel
@@ -343,6 +344,12 @@ class PolicyUpdater:
                                 await store_transaction.set_policy(policy_module.path, json.dumps(policy_data))
                             except json.JSONDecodeError:
                                 logger.error(f"Invalid JSON in OpenFGA policy file: {policy_module.path}")
+
+                        elif policy_module.path.endswith('.yaml'):
+                            policy_data = yaml.safe_load(policy_module.rego)
+                            await store_transaction.set_policy(policy_module.path, json.dumps(policy_data))
+                            #logger.error(f"yaml file")
+
                         else:
                             logger.warning(f"Skipping non-JSON file for OpenFGA: {policy_module.path}")
                 else:
