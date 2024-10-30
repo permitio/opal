@@ -8,7 +8,7 @@ from opal_common.schemas.data import DEFAULT_DATA_TOPIC, ServerDataSourceConfig
 from opal_common.schemas.webhook import GitWebhookRequestParams
 
 confi = Confi(prefix="OPAL_")
-confi_no_prefix = Confi(prefix=None)
+# confi_no_prefix = Confi(prefix="")
 
 
 class PolicySourceTypes(str, Enum):
@@ -52,7 +52,8 @@ class OpalServerConfig(Confi):
     AUTH_PRIVATE_KEY_PASSPHRASE = confi.str("AUTH_PRIVATE_KEY_PASSPHRASE", None)
 
     AUTH_PRIVATE_KEY = confi.delay(
-        lambda AUTH_PRIVATE_KEY_FORMAT=None, AUTH_PRIVATE_KEY_PASSPHRASE="": confi.private_key(
+        lambda AUTH_PRIVATE_KEY_FORMAT=None,
+        AUTH_PRIVATE_KEY_PASSPHRASE="": confi.private_key(
             "AUTH_PRIVATE_KEY",
             default=None,
             key_format=AUTH_PRIVATE_KEY_FORMAT,
@@ -134,16 +135,16 @@ class OpalServerConfig(Confi):
         "us-east-1",
         description="The AWS region of the S3 bucket",
     )
-    POLICY_BUNDLE_AWS_ROLE_ARN = confi_no_prefix.str(
-        "AWS_ROLE_ARN",
-        None,
-        description="The IAM role to be used when accessing the bundle server. This is set by AWS automatically in EKS",
-    )
-    POLICY_BUNDLE_AWS_WEB_IDENTITY_TOKEN_FILE = confi_no_prefix.str(
-        "AWS_WEB_IDENTITY_TOKEN_FILE",
-        None,
-        description="The oidc token for the IAM role to be used when accessing the bundle server. This is set by AWS automatically in EKS",
-    )
+    # POLICY_BUNDLE_AWS_ROLE_ARN = confi_no_prefix.str(
+    #     "AWS_ROLE_ARN",
+    #     None,
+    #     description="The IAM role to be used when accessing the bundle server. This is set by AWS automatically in EKS",
+    # )
+    # POLICY_BUNDLE_AWS_WEB_IDENTITY_TOKEN_FILE = confi_no_prefix.str(
+    #     "AWS_WEB_IDENTITY_TOKEN_FILE",
+    #     None,
+    #     description="The oidc token for the IAM role to be used when accessing the bundle server. This is set by AWS automatically in EKS",
+    # )
     POLICY_BUNDLE_TMP_PATH = confi.str(
         "POLICY_BUNDLE_TMP_PATH",
         "/tmp/bundle.tar.gz",
