@@ -318,6 +318,23 @@ class OpalClientConfig(Confi):
         description="Path to OPA document that stores the OPA write transactions",
     )
 
+
+    # OpenFGA health check configurations
+    OPENFGA_HEALTH_CHECK_POLICY_ENABLED = confi.bool(
+        "OPENFGA_HEALTH_CHECK_POLICY_ENABLED",
+        False,
+        description="Should we load a special healthcheck policy into OpenFGA that checks "
+        + "that OpenFGA was synced correctly and is ready to answer to authorization queries",
+    )
+
+    OPENFGA_HEALTH_CHECK_TRANSACTION_LOG_PATH = confi.str(
+        "OPENFGA_HEALTH_CHECK_TRANSACTION_LOG_PATH",
+        "system/opal/transactions",
+        description="Path to OpenFGA document that stores the OpenFGA write transactions",
+    )
+
+    
+
     OPAL_CLIENT_STAT_ID = confi.str(
         "OPAL_CLIENT_STAT_ID",
         None,
@@ -325,6 +342,8 @@ class OpalClientConfig(Confi):
     )
 
     OPA_HEALTH_CHECK_POLICY_PATH = "engine/healthcheck/opal.rego"
+
+    OPENFGA_HEALTH_CHECK_POLICY_PATH = "engine/healthcheck/openfga.json"
 
     SCOPE_ID = confi.str("SCOPE_ID", "default", description="OPAL Scope ID")
 
@@ -356,6 +375,14 @@ class OpalClientConfig(Confi):
                 opal_common_config.LOG_MODULE_EXCLUDE_LIST
             )
         
+
+        # Add OpenFGA logger handling
+        if self.INLINE_OPENFGA_LOG_FORMAT == EngineLogFormat.NONE:
+            opal_common_config.LOG_MODULE_EXCLUDE_LIST.append("opal_client.openfga.logger")
+            opal_common_config.LOG_MODULE_EXCLUDE_LIST = (
+                opal_common_config.LOG_MODULE_EXCLUDE_LIST
+            )
+            
         # Set the appropriate URL based on the policy store type
         if self.POLICY_STORE_TYPE == PolicyStoreTypes.OPENFGA:
             self.POLICY_STORE_URL = self.OPENFGA_URL

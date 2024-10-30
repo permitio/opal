@@ -156,6 +156,7 @@ class OpalClient:
         self.engine_runner = self._init_engine_runner(
             inline_opa_enabled,
             inline_cedar_enabled,
+            inline_openfga_enabled,
             inline_opa_options,
             inline_cedar_options,
             inline_openfga_options,
@@ -203,34 +204,39 @@ class OpalClient:
         inline_cedar_options: Optional[CedarServerOptions] = None,
         inline_openfga_options: Optional[OpenFGAServerOptions] = None,
     ) -> Union[OpaRunner, CedarRunner, OpenFGARunner, Literal[False]]:
+        """Initialize appropriate engine runner based on policy store type."""
+        
+        # Setup rehydration callbacks for all policy store types
+        rehydration_callbacks = []
+        if self.policy_updater:
+            rehydration_callbacks.append(
+                # refetches policy code and static data from server
+                functools.partial(
+                    self.policy_updater.trigger_update_policy,
+                    force_full_update=True,
+                ),
+            )
+
+        if self.data_updater:
+            rehydration_callbacks.append(
+                functools.partial(
+                    self.data_updater.get_base_policy_data,
+                    data_fetch_reason="policy store rehydration",
+                )
+            )
+
+        # OPA Runner
         if inline_opa_enabled and self.policy_store_type == PolicyStoreTypes.OPA:
             inline_opa_options = (
                 inline_opa_options or opal_client_config.INLINE_OPA_CONFIG
             )
-            rehydration_callbacks = []
-            if self.policy_updater:
-                rehydration_callbacks.append(
-                    # refetches policy code (e.g: rego) and static data from server
-                    functools.partial(
-                        self.policy_updater.trigger_update_policy,
-                        force_full_update=True,
-                    ),
-                )
-
-            if self.data_updater:
-                rehydration_callbacks.append(
-                    functools.partial(
-                        self.data_updater.get_base_policy_data,
-                        data_fetch_reason="policy store rehydration",
-                    )
-                )
-
             return OpaRunner.setup_opa_runner(
                 options=inline_opa_options,
                 piped_logs_format=opal_client_config.INLINE_OPA_LOG_FORMAT,
                 rehydration_callbacks=rehydration_callbacks,
             )
 
+        # Cedar Runner
         elif inline_cedar_enabled and self.policy_store_type == PolicyStoreTypes.CEDAR:
             inline_cedar_options = (
                 inline_cedar_options or opal_client_config.INLINE_CEDAR_CONFIG
@@ -240,6 +246,7 @@ class OpalClient:
                 piped_logs_format=opal_client_config.INLINE_CEDAR_LOG_FORMAT,
             )
 
+        # OpenFGA Runner 
         elif inline_openfga_enabled and self.policy_store_type == PolicyStoreTypes.OPENFGA:
             inline_openfga_options = (
                 inline_openfga_options or opal_client_config.INLINE_OPENFGA_CONFIG
@@ -249,7 +256,7 @@ class OpalClient:
                 piped_logs_format=opal_client_config.INLINE_OPENFGA_LOG_FORMAT,
                 rehydration_callbacks=rehydration_callbacks,
             )
-
+                
         return False
 
     def _init_fast_api_app(self):
