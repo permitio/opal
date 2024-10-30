@@ -46,6 +46,9 @@ class ApiPolicySource(BasePolicySource):
         token (str, optional):  auth token to include in connections to bundle server. Defaults to POLICY_BUNDLE_SERVER_TOKEN.
         token_id (str, optional):  auth token ID to include in connections to bundle server. Defaults to POLICY_BUNDLE_SERVER_TOKEN_ID.
         bundle_server_type (PolicyBundleServerType, optional):  the type of bundle server
+        region (str, optional): the aws region of s3 bucket containing the bundle
+        aws_role_arn (str, optional): the aws iam role to assume when accessing the s3 bucket. Only required when using temporary sts credentials.
+        aws_web_id_token_file (str, optional): the file containing a web id token for the target aws iam role. Only required when using temporary sts credentials.
     """
 
     def __init__(
@@ -56,8 +59,8 @@ class ApiPolicySource(BasePolicySource):
         token: Optional[str] = None,
         token_id: Optional[str] = None,
         region: Optional[str] = None,
-        role_arn: Optional[str] = None,
-        token_file: Optional[str] = None,
+        aws_role_arn: Optional[str] = None,
+        aws_web_id_token_file: Optional[str] = None,
         bundle_server_type: Optional[PolicyBundleServerType] = None,
         policy_bundle_path=".",
         policy_bundle_git_add_pattern="*",
@@ -71,8 +74,8 @@ class ApiPolicySource(BasePolicySource):
         self.token_id = token_id
         self.server_type = bundle_server_type
         self.region = region
-        self.role_arn = role_arn
-        self.token_file = token_file
+        self.aws_role_arn = aws_role_arn
+        self.aws_web_id_token_file = aws_web_id_token_file
         self.bundle_hash = None
         self.etag = None
         self.tmp_bundle_path = Path(policy_bundle_path)
@@ -135,11 +138,23 @@ class ApiPolicySource(BasePolicySource):
 
     @async_time_cache(ttl=3000)
     async def get_temporary_sts_credentials(self) -> tuple[str, str, str]:
-        assert self.token_file
-        assert self.role_arn
+        """
+        This function will fetch a set of temporary credentials for a IAM role
+        from Amazon STS. It requires an aws region, the arn for the target role
+        and the file containing the web token.
+
+        This function will return the id and secret key required for login.
+        When using temporary credentials, AWS also requires a session token
+        which this function also provides.
+
+        This result of this funciton is cached to avoid being rate limited by
+        STS.
+        """
+        assert self.aws_web_id_token_file
+        assert self.aws_role_arn
         assert self.region
 
-        async with aiofiles.open(self.token_file) as token_file:
+        async with aiofiles.open(self.aws_web_id_token_file) as token_file:
             token = await token_file.read()
 
         sts_url = f"sts.{self.region}.amazonaws.com"
@@ -147,7 +162,7 @@ class ApiPolicySource(BasePolicySource):
             "Action": "AssumeRoleWithWebIdentity",
             "DurationSeconds": "3600",
             "RoleSessionName": "Opal",
-            "RoleArn": self.role_arn,
+            "RoleArn": self.aws_role_arn,
             "WebIdentityToken": token,
             "Version": "2011-06-15",
         }
@@ -208,7 +223,7 @@ class ApiPolicySource(BasePolicySource):
             and token is not None
             and self.token_id is not None
         ):
-            logger.info("Using provided token to login to AWS_S3")
+            logger.info("Using provided token to log in to AWS_S3")
 
             split_url = urlparse(self.remote_source_url)
             host = split_url.netloc
@@ -219,11 +234,11 @@ class ApiPolicySource(BasePolicySource):
             )
         elif (
             self.server_type == PolicyBundleServerType.AWS_S3
-            and self.role_arn is not None
-            and self.token_file is not None
+            and self.aws_role_arn is not None
+            and self.aws_web_id_token_file is not None
             and self.region is not None
         ):
-            logger.info("Using IAM Web auth to login to AWS_S3")
+            logger.info("Using IAM Web auth to log in to AWS_S3")
 
             split_url = urlparse(self.remote_source_url)
             host = split_url.netloc

@@ -296,7 +296,7 @@ class AsyncioEventLoopThread(threading.Thread):
 
 def async_time_cache(ttl: float):
     """
-    This decorator a wrapper around lru_cache that makes it time sensitive.
+    This decorator is a wrapper around lru_cache that makes it time sensitive.
 
     ttl is in seconds
     """

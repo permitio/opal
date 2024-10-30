@@ -8,7 +8,6 @@ from opal_common.schemas.data import DEFAULT_DATA_TOPIC, ServerDataSourceConfig
 from opal_common.schemas.webhook import GitWebhookRequestParams
 
 confi = Confi(prefix="OPAL_")
-# confi_no_prefix = Confi(prefix="")
 
 
 class PolicySourceTypes(str, Enum):
@@ -135,16 +134,18 @@ class OpalServerConfig(Confi):
         "us-east-1",
         description="The AWS region of the S3 bucket",
     )
-    # POLICY_BUNDLE_AWS_ROLE_ARN = confi_no_prefix.str(
-    #     "AWS_ROLE_ARN",
-    #     None,
-    #     description="The IAM role to be used when accessing the bundle server. This is set by AWS automatically in EKS",
-    # )
-    # POLICY_BUNDLE_AWS_WEB_IDENTITY_TOKEN_FILE = confi_no_prefix.str(
-    #     "AWS_WEB_IDENTITY_TOKEN_FILE",
-    #     None,
-    #     description="The oidc token for the IAM role to be used when accessing the bundle server. This is set by AWS automatically in EKS",
-    # )
+    POLICY_BUNDLE_AWS_ROLE_ARN = confi.str(
+        "AWS_ROLE_ARN",
+        # default to the env var injected by aws
+        os.getenv("AWS_ROLE_ARN"),
+        description="The IAM role to be used when accessing the bundle server. This is set by AWS automatically in EKS, but can be overridden if required.",
+    )
+    POLICY_BUNDLE_AWS_WEB_IDENTITY_TOKEN_FILE = confi.str(
+        "AWS_WEB_IDENTITY_TOKEN_FILE",
+        # default to the env var injected by aws
+        os.getenv("AWS_WEB_IDENTITY_TOKEN_FILE"),
+        description="The oidc token for the IAM role to be used when accessing the bundle server. This is set by AWS automatically in EKS, but can be overridden if required.",
+    )
     POLICY_BUNDLE_TMP_PATH = confi.str(
         "POLICY_BUNDLE_TMP_PATH",
         "/tmp/bundle.tar.gz",
