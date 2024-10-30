@@ -5,6 +5,7 @@ from urllib.parse import urlparse
 from xml.etree import ElementTree
 
 import aiohttp
+import aiofiles
 from fastapi import status
 from fastapi.exceptions import HTTPException
 from opal_common.git_utils.tar_file_to_local_git_extractor import (
@@ -132,31 +133,29 @@ class ApiPolicySource(BasePolicySource):
                     )
                     raise
 
-    async def get_temporary_sts_credentials(self) -> Tuple[str, str]:
     @async_time_cache(ttl=3000)
+    async def get_temporary_sts_credentials(self) -> tuple[str, str, str]:
         assert self.token_file
         assert self.role_arn
         assert self.region
 
-        with open(self.token_file) as token_file:
-            token = token_file.read()
+        async with aiofiles.open(self.token_file) as token_file:
+            token = await token_file.read()
 
         sts_url = f"sts.{self.region}.amazonaws.com"
-        params = (
-            {
-                "Action": "AssumeRoleWithWebIdentity",
-                "DurationSeconds": 3600,
-                "RoleSessionName": "Opal",
-                "RoleArn": self.role_arn,
-                "WebIdentityToken": token,
-                "Version": "2011-06-15",
-            },
-        )
+        params: dict[str, str] = {
+            "Action": "AssumeRoleWithWebIdentity",
+            "DurationSeconds": "3600",
+            "RoleSessionName": "Opal",
+            "RoleArn": self.role_arn,
+            "WebIdentityToken": token,
+            "Version": "2011-06-15",
+        }
 
         async with aiohttp.ClientSession() as session:
             try:
                 async with session.get(
-                    f"{sts_url}",
+                    f"https://{sts_url}",
                     params=params,
                     headers={"Content-Type": "application/xml"},
                 ) as response:
@@ -172,14 +171,22 @@ class ApiPolicySource(BasePolicySource):
 
                     body = await response.read()
 
-                    et = ElementTree.parse(body)
+                    # the default aws xml namespace
+                    ns = {"": "https://sts.amazonaws.com/doc/2011-06-15/"}
+
+                    et = ElementTree.fromstring(body)
                     credentials = et.find(
-                        "/AssumeRoleWithWebIdentityResponse/AssumeRoleWithWebIdentityResult/Credentials"
+                        "AssumeRoleWithWebIdentityResult/Credentials", ns
                     )
                     assert credentials
 
-                    assert (id := credentials.findtext("AccessKeyId"))
-                    assert (key := credentials.findtext("SecretAccessKey"))
+                    id = credentials.findtext("AccessKeyId", namespaces=ns)
+                    key = credentials.findtext("SecretAccessKey", namespaces=ns)
+                    session_token = credentials.findtext("SessionToken", namespaces=ns)
+
+                    assert id
+                    assert key
+                    assert session_token
 
             except (aiohttp.ClientError, HTTPException) as e:
                 logger.warning("server connection error: {err}", err=repr(e))
@@ -189,7 +196,7 @@ class ApiPolicySource(BasePolicySource):
                 raise
 
         logger.info("Successfully generated temporary AWS credentials")
-        return id, key
+        return id, key, session_token
 
     async def build_auth_headers(self, token=None, path=None):
         # if it's a simple HTTP server with a bearer token
@@ -214,6 +221,7 @@ class ApiPolicySource(BasePolicySource):
             self.server_type == PolicyBundleServerType.AWS_S3
             and self.role_arn is not None
             and self.token_file is not None
+            and self.region is not None
         ):
             logger.info("Using IAM Web auth to login to AWS_S3")
 
@@ -221,9 +229,11 @@ class ApiPolicySource(BasePolicySource):
             host = split_url.netloc
             path = split_url.path + "/" + path
 
-            id, key = await self.get_temporary_sts_credentials()
+            id, key, session_token = await self.get_temporary_sts_credentials()
 
-            return build_aws_rest_auth_headers(id, key, host, path, self.region)
+            return build_aws_rest_auth_headers(
+                id, key, host, path, self.region, session_token
+            )
         else:
             logger.info("Not authenticating on bundle endpoint")
             return {}
