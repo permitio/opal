@@ -59,7 +59,12 @@ def get_authorization_header(token: str) -> Tuple[str, str]:
 
 
 def build_aws_rest_auth_headers(
-    key_id: str, secret_key: str, host: str, path: str, region: str
+    key_id: str,
+    secret_key: str,
+    host: str,
+    path: str,
+    region: str,
+    token: str | None,
 ):
     """Use the AWS signature algorithm (https://docs.aws.amazon.com/AmazonS3/la
     test/userguide/RESTAuthentication.html) to generate the hTTP headers.
@@ -69,6 +74,7 @@ def build_aws_rest_auth_headers(
         secret_key (str): Secret key (aka password) of an account in the S3 service.
         host (str): S3 storage host
         path (str): path to bundle file in s3 storage (including bucket)
+        token (str | None): Optional session token when using temporary credential.
 
     Returns: http headers
     """
@@ -92,6 +98,10 @@ def build_aws_rest_auth_headers(
 
     canonical_headers = "host:" + host + "\n" + "x-amz-date:" + amzdate + "\n"
     signed_headers = "host;x-amz-date"
+
+    if token:
+        canonical_headers += f"x-amz-security-token:{token}\n"
+        signed_headers += ";x-amz-security-token"
 
     payload_hash = hashlib.sha256("".encode("utf-8")).hexdigest()
 
@@ -140,8 +150,13 @@ def build_aws_rest_auth_headers(
         + signature
     )
 
+    token_header: dict[str, str] = {}
+    if token:
+        token_header["x-amz-security-token"] = token
+
     return {
         "x-amz-date": amzdate,
+        **token_header,
         "x-amz-content-sha256": SHA256_EMPTY,
         "Authorization": authorization_header,
     }
