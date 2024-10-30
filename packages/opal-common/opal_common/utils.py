@@ -279,20 +279,21 @@ class AsyncioEventLoopThread(threading.Thread):
         return asyncio.run_coroutine_threadsafe(coro, loop=self.loop).result()
 
 
-def time_cache(ttl: float):
+def async_time_cache(ttl: float):
     """
     This decorator a wrapper around lru_cache that makes it time sensitive.
 
     ttl is in seconds
     """
 
-    def inner(func: Callable):
+    def decorator(func: Callable):
         # instead of directly caching the function, a time "hash" is
         # also passed in as a param that will invalidate the cache
         # after at most ttl seconds
         @functools.lru_cache
         def wrapped(*args, __ttl_hash=None, **kwargs):
-            return func(*args, **kwargs)
+            coro = func(*args, **kwargs)
+            return asyncio.ensure_future(coro)
 
         def ret(*args, **kwargs):
             ttl_hash = round(time.time() / ttl)
@@ -300,4 +301,4 @@ def time_cache(ttl: float):
 
         return ret
 
-    return inner
+    return decorator

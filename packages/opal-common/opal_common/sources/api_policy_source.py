@@ -18,6 +18,7 @@ from opal_common.utils import (
     hash_file,
     throw_if_bad_status_code,
     tuple_to_dict,
+    async_time_cache,
 )
 from opal_server.config import PolicyBundleServerType
 from tenacity import AsyncRetrying
@@ -132,6 +133,7 @@ class ApiPolicySource(BasePolicySource):
                     raise
 
     async def get_temporary_sts_credentials(self) -> Tuple[str, str]:
+    @async_time_cache(ttl=3000)
         assert self.token_file
         assert self.role_arn
         assert self.region
