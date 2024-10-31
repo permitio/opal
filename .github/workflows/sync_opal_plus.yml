@@ -1,4 +1,4 @@
-name: Sync branch to OPAL Plus 
+name: Sync branch to OPAL Plus
 
 on:
   push:
