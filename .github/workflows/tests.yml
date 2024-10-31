@@ -119,22 +119,60 @@ jobs:
           # Clear any existing SSH setup
           rm -rf ~/.ssh
 
-          # Fresh SSH setup
+          # Fresh SSH setup with debugging
           mkdir -p ~/.ssh
           chmod 700 ~/.ssh
 
-
-          # Prepare git for using tests policy repo
+          # Write deploy key with debug info
           export OPAL_POLICY_REPO_SSH_KEY_PATH=$(realpath ./opal-tests-policy-repo-key)
+          echo "Writing deploy key to: $OPAL_POLICY_REPO_SSH_KEY_PATH"
           echo "$OPAL_TESTS_POLICY_REPO_DEPLOY_KEY" > $OPAL_POLICY_REPO_SSH_KEY_PATH
-          chmod 400 $OPAL_POLICY_REPO_SSH_KEY_PATH
+          chmod 600 $OPAL_POLICY_REPO_SSH_KEY_PATH
 
-          # Fresh known hosts
-          ssh-keyscan -t rsa github.com > ~/.ssh/known_hosts
+          # Verify key content (safely)
+          echo "Key file permissions:"
+          ls -l $OPAL_POLICY_REPO_SSH_KEY_PATH
+          echo "Key file first line (safely):"
+          head -n 1 $OPAL_POLICY_REPO_SSH_KEY_PATH | grep -q "BEGIN" && echo "Key starts correctly" || echo "Key appears malformed"
+
+          # Setup known hosts with debug info
+          echo "Setting up known hosts..."
+          ssh-keyscan -t rsa,ecdsa,ed25519 github.com > ~/.ssh/known_hosts 2>/dev/null
           chmod 644 ~/.ssh/known_hosts
-          
-          git config --global core.sshCommand "ssh -i $OPAL_POLICY_REPO_SSH_KEY_PATH -o IdentitiesOnly=yes"
+          echo "Known hosts content:"
+          cat ~/.ssh/known_hosts
+
+          # Configure SSH explicitly
+          echo "Configuring SSH..."
+          cat > ~/.ssh/config << EOF
+          Host github.com
+            IdentityFile $OPAL_POLICY_REPO_SSH_KEY_PATH
+            IdentitiesOnly yes
+            UserKnownHostsFile ~/.ssh/known_hosts
+            StrictHostKeyChecking yes
+          EOF
+          chmod 600 ~/.ssh/config
+
+          # Configure git
+          git config --global core.sshCommand "ssh -v -i $OPAL_POLICY_REPO_SSH_KEY_PATH -o IdentitiesOnly=yes"
           git config --global user.name "$GITHUB_ACTOR"
-          git config --global user.email "<>"
+          git config --global user.email "github-actions@github.com"
+
+          # Test SSH connection
+          echo "Testing SSH connection to GitHub..."
+          ssh -v -T git@github.com || true
+
+          # Try cloning with fallback
+          echo "Attempting to clone repository..."
+          if ! git clone git@github.com:permitio/opal-tests-policy-repo.git; then
+            echo "SSH clone failed. SSH Debug info:"
+            ssh -vvT git@github.com || true
+            echo "SSH directory contents:"
+            ls -la ~/.ssh/
+            echo "Current location:"
+            pwd
+            echo "Failed to clone repository"
+            exit 1
+          fi
 
           ./run.sh
