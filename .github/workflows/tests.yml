@@ -116,63 +116,43 @@ jobs:
           OPAL_IMAGE_TAG: test
           OPAL_TESTS_POLICY_REPO_DEPLOY_KEY: ${{ secrets.OPAL_TESTS_POLICY_REPO_DEPLOY_KEY }}
         run: |
+          # Validate secret is available
+          if [ -z "$OPAL_TESTS_POLICY_REPO_DEPLOY_KEY" ]; then
+            echo "Error: OPAL_TESTS_POLICY_REPO_DEPLOY_KEY secret is not set"
+            exit 1
+          fi
+
+          # Print secret length (safely)
+          echo "Deploy key length: $(echo "$OPAL_TESTS_POLICY_REPO_DEPLOY_KEY" | wc -c) bytes"
+
+          # Check if secret looks like a valid SSH key
+          if ! echo "$OPAL_TESTS_POLICY_REPO_DEPLOY_KEY" | grep -q "BEGIN.*PRIVATE KEY"; then
+            echo "Error: Deploy key does not look like a valid SSH private key"
+            exit 1
+          fi
+
           # Clear any existing SSH setup
           rm -rf ~/.ssh
-
-          # Fresh SSH setup with debugging
           mkdir -p ~/.ssh
           chmod 700 ~/.ssh
 
-          # Write deploy key with debug info
+          # Write deploy key
           export OPAL_POLICY_REPO_SSH_KEY_PATH=$(realpath ./opal-tests-policy-repo-key)
-          echo "Writing deploy key to: $OPAL_POLICY_REPO_SSH_KEY_PATH"
-          echo "$OPAL_TESTS_POLICY_REPO_DEPLOY_KEY" > $OPAL_POLICY_REPO_SSH_KEY_PATH
+          # Use printf to ensure newlines are preserved
+          printf "%s\n" "$OPAL_TESTS_POLICY_REPO_DEPLOY_KEY" > $OPAL_POLICY_REPO_SSH_KEY_PATH
           chmod 600 $OPAL_POLICY_REPO_SSH_KEY_PATH
 
-          # Verify key content (safely)
-          echo "Key file permissions:"
-          ls -l $OPAL_POLICY_REPO_SSH_KEY_PATH
-          echo "Key file first line (safely):"
-          head -n 1 $OPAL_POLICY_REPO_SSH_KEY_PATH | grep -q "BEGIN" && echo "Key starts correctly" || echo "Key appears malformed"
-
-          # Setup known hosts with debug info
-          echo "Setting up known hosts..."
-          ssh-keyscan -t rsa,ecdsa,ed25519 github.com > ~/.ssh/known_hosts 2>/dev/null
-          chmod 644 ~/.ssh/known_hosts
-          echo "Known hosts content:"
-          cat ~/.ssh/known_hosts
-
-          # Configure SSH explicitly
-          echo "Configuring SSH..."
-          cat > ~/.ssh/config << EOF
-          Host github.com
-            IdentityFile $OPAL_POLICY_REPO_SSH_KEY_PATH
-            IdentitiesOnly yes
-            UserKnownHostsFile ~/.ssh/known_hosts
-            StrictHostKeyChecking yes
-          EOF
-          chmod 600 ~/.ssh/config
-
-          # Configure git
-          git config --global core.sshCommand "ssh -v -i $OPAL_POLICY_REPO_SSH_KEY_PATH -o IdentitiesOnly=yes"
-          git config --global user.name "$GITHUB_ACTOR"
-          git config --global user.email "github-actions@github.com"
-
-          # Test SSH connection
-          echo "Testing SSH connection to GitHub..."
-          ssh -v -T git@github.com || true
-
-          # Try cloning with fallback
-          echo "Attempting to clone repository..."
-          if ! git clone git@github.com:permitio/opal-tests-policy-repo.git; then
-            echo "SSH clone failed. SSH Debug info:"
-            ssh -vvT git@github.com || true
-            echo "SSH directory contents:"
-            ls -la ~/.ssh/
-            echo "Current location:"
-            pwd
-            echo "Failed to clone repository"
+          # Verify key content
+          if ! ssh-keygen -l -f $OPAL_POLICY_REPO_SSH_KEY_PATH &>/dev/null; then
+            echo "Error: Invalid SSH key format"
             exit 1
           fi
+
+          # Setup known hosts
+          ssh-keyscan github.com >> ~/.ssh/known_hosts
+          chmod 644 ~/.ssh/known_hosts
+
+          # Configure SSH
+          ssh-agent bash -c "ssh-add $OPAL_POLICY_REPO_SSH_KEY_PATH && git clone git@github.com:permitio/opal-tests-policy-repo.git"
 
           ./run.sh
