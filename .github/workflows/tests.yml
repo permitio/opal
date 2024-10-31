@@ -116,11 +116,23 @@ jobs:
           OPAL_IMAGE_TAG: test
           OPAL_TESTS_POLICY_REPO_DEPLOY_KEY: ${{ secrets.OPAL_TESTS_POLICY_REPO_DEPLOY_KEY }}
         run: |
+          # Clear any existing SSH setup
+          rm -rf ~/.ssh
+
+          # Fresh SSH setup
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+
+
           # Prepare git for using tests policy repo
           export OPAL_POLICY_REPO_SSH_KEY_PATH=$(realpath ./opal-tests-policy-repo-key)
           echo "$OPAL_TESTS_POLICY_REPO_DEPLOY_KEY" > $OPAL_POLICY_REPO_SSH_KEY_PATH
           chmod 400 $OPAL_POLICY_REPO_SSH_KEY_PATH
 
+          # Fresh known hosts
+          ssh-keyscan -t rsa github.com > ~/.ssh/known_hosts
+          chmod 644 ~/.ssh/known_hosts
+          
           git config --global core.sshCommand "ssh -i $OPAL_POLICY_REPO_SSH_KEY_PATH -o IdentitiesOnly=yes"
           git config --global user.name "$GITHUB_ACTOR"
           git config --global user.email "<>"
