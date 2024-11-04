@@ -7,6 +7,10 @@ OPAL_AUTH_PRIVATE_KEY ?= /root/ssh/opal_rsa
 OPAL_AUTH_PUBLIC_KEY ?= /root/ssh/opal_rsa.pub
 OPAL_POLICY_STORE_URL ?= http://host.docker.internal:8181
 
+OPENFGA_STORE_ID ?= 01JAT34GM6T5WRVMXXDYWGSYKN
+OPENFGA_AUTH_TOKEN ?= default-token
+OPENFGA_SERVER_URL ?= http://localhost:8080
+
 # python packages (pypi)
 clean:
 	cd packages/opal-common/ ; rm -rf *.egg-info build/ dist/
@@ -98,8 +102,10 @@ docker-build-client-openfga:
 docker-run-client-openfga:
 	@docker run -it \
 		-e "OPAL_SERVER_URL=$(OPAL_SERVER_URL)" \
-		-e "OPAL_POLICY_STORE_URL=$(OPAL_POLICY_STORE_URL)" \
+		-e "OPAL_POLICY_STORE_URL=http://localhost:8080" \
+		-e "OPAL_POLICY_STORE_TYPE=OPENFGA" \
 		-e "OPAL_OPENFGA_STORE_ID=$(OPENFGA_STORE_ID)" \
+		-e "OPAL_POLICY_STORE_AUTH_TOKEN=$(OPENFGA_AUTH_TOKEN)" \
 		-p 7766:7000 \
 		-p 8080:8080 \
 		-p 3000:3000 \

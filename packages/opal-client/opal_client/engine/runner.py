@@ -294,10 +294,13 @@ class OpenFGARunner(PolicyEngineRunner):
         await log_engine_output_simple(line)
         return False
 
+    
     @property
     def command(self) -> str:
-        return self._options.get_cmdline()
-
+        """Get OpenFGA run command."""
+        #return f"openfga run --http-addr=0.0.0.0:8080 --playground-enabled=false"
+        return f"/usr/local/bin/openfga run --http-addr=0.0.0.0:8080 --playground-enabled=false"
+        
     @staticmethod
     def setup_openfga_runner(
         options: Optional[OpenFGAServerOptions] = None,

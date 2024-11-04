@@ -1,5 +1,4 @@
 version: '3'
-
 services:
   broadcast_channel:
     image: postgres:alpine
@@ -32,10 +31,11 @@ services:
       - OPAL_SERVER_URL=http://opal_server:7002
       - OPAL_LOG_FORMAT_INCLUDE_PID=true
       - OPAL_POLICY_STORE_TYPE=OPENFGA
-      - OPAL_POLICY_STORE_URL=http://127.0.0.1:8080
+      - OPAL_POLICY_STORE_URL=http://0.0.0.0:8080
       - OPAL_OPENFGA_STORE_ID=01JAT34GM6T5WRVMXXDYWGSYKN
       - OPAL_INLINE_OPENFGA_ENABLED=true
-      - "OPAL_INLINE_OPENFGA_CONFIG={\"addr\":\"0.0.0.0:8080\", \"datastore_engine\":\"memory\"}"
+      #- OPAL_LOG_LEVEL=DEBUG
+
     ports:
       - "7766:7000"
       - "8080:8080"
@@ -44,6 +44,13 @@ services:
       - opal-network
     depends_on:
       - opal_server
-    command: ./start-openfga.sh
+    command: sh -c "exec ./wait-for.sh opal_server:7002 --timeout=20 -- ./start.sh"
     volumes:
       - openfga_backup:/opal/backup:rw
+
+networks:
+  opal-network:
+    driver: bridge
+
+volumes:
+  openfga_backup:
