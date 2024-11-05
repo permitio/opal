@@ -20,6 +20,9 @@ from opal_common.schemas.security import PeerType
 from opal_common.urls import set_url_query_param
 from opal_server.config import opal_server_config
 from opal_server.data.data_update_publisher import DataUpdatePublisher
+import os
+import json
+from pathlib import Path
 
 
 def init_data_updates_router(
@@ -31,17 +34,55 @@ def init_data_updates_router(
 
     @router.get(opal_server_config.ALL_DATA_ROUTE)
     async def default_all_data():
-        """A fake data source configured to be fetched by the default data
-        source config.
+        """Look for data.json in the repo clone directory and return its contents.
+        If not found, return data.json in the root repo"""
+        
+        try:
+            clone_path = opal_server_config.POLICY_REPO_CLONE_PATH
+            # Look for data.json in the clone directory
+            data_file = Path(clone_path) / "data.json"
+            
+            if data_file.exists():
+                logger.info(f"Found data.json at {data_file}")
+                try:
+                    with open(data_file, 'r') as f:
+                        data = json.load(f)
+                    logger.info("Successfully loaded data.json")
+                    return data
+                except json.JSONDecodeError:
+                    logger.error(f"Error parsing data.json: Invalid JSON format")
+                    return {}
+                except Exception as e:
+                    logger.error(f"Error reading data.json: {str(e)}")
+                    return {}
+            else:
+                # If data.json not found in root, try searching subdirectories
+                for root, dirs, files in os.walk(clone_path):
+                    if 'data.json' in files:
+                        data_file = Path(root) / 'data.json'
+                        logger.info(f"Found data.json at {data_file}")
+                        try:
+                            with open(data_file, 'r') as f:
+                                data = json.load(f)
+                            logger.info("Successfully loaded data.json")
+                            return data
+                        except json.JSONDecodeError:
+                            logger.error(f"Error parsing data.json: Invalid JSON format")
+                            continue
+                        except Exception as e:
+                            logger.error(f"Error reading data.json: {str(e)}")
+                            continue
 
-        If the user deploying OPAL did not set DATA_CONFIG_SOURCES
-        properly, OPAL clients will be hitting this route, which will
-        return an empty dataset (empty dict).
-        """
-        logger.warning(
-            "Serving default all-data route, meaning DATA_CONFIG_SOURCES was not configured!"
-        )
-        return {}
+            logger.warning(
+                "No valid data.json found in repository clone directory: {clone_path}",
+                clone_path=clone_path
+            )
+            return {}
+
+        except Exception as e:
+            logger.error(f"Error in default_all_data: {str(e)}")
+            return {}
+
 
     @router.post(
         opal_server_config.DATA_CALLBACK_DEFAULT_ROUTE,
