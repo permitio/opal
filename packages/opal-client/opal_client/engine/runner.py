@@ -136,8 +136,8 @@ class PolicyEngineRunner:
 
                 line = b""
 
-        await asyncio.wait(
-            [
+        await asyncio.gather(
+            *[
                 _pipe_logs_stream(self._process.stdout),
                 _pipe_logs_stream(self._process.stderr),
             ]
