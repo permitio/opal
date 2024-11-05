@@ -1,0 +1,73 @@
+version: '3.8'
+
+services:
+  # Database service for broadcast channel
+  broadcast_channel:
+    image: postgres:alpine
+    environment:
+      - POSTGRES_DB=postgres
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+
+  # OPAL Server and Client service
+  opal_server:
+    build:
+      context: ../  # Point to the directory containing your Dockerfile
+      dockerfile: ./docker/Dockerfile.server  # Specify your Dockerfile if it's not named 'Dockerfile'
+    environment:
+      # OPAL Server specific environment variables
+      - OPAL_BROADCAST_URI=postgres://postgres:postgres@broadcast_channel:5432/postgres
+      - UVICORN_NUM_WORKERS=1
+      - OPAL_POLICY_REPO_URL=https://github.com/permitio/opal-example-policy-repo
+      - OPAL_POLICY_REPO_POLLING_INTERVAL=30
+      - OPAL_DATA_CONFIG_SOURCES={"config":{"entries":[{"url":"http://opal_server:7002/policy-data","topics":["policy_data"],"dst_path":"/static"}]}}
+      - OPAL_LOG_FORMAT_INCLUDE_PID=true
+      # OPAL Client specific environment variables
+      - OPAL_SERVER_URL=http://opal_server:7002
+      - OPAL_LOG_FORMAT_INCLUDE_PID=true
+      - OPAL_INLINE_OPA_LOG_FORMAT=http
+      # Uncomment the following lines to enable storing & loading OPA data from a backup file:
+      # - OPAL_OFFLINE_MODE_ENABLED=true
+      - DEBUGPY_PORT=5678
+    ports:
+      - "7002:7002"  # Expose OPAL Server
+      - "5679:5678"  # DebugPy
+    volumes:
+      - ../packages:/app/packages  # Mount local packages directory for live updates
+      - ../scripts:/app/scripts      # Mount local scripts for live updates
+      - ../README.md:/app/README.md   # Mount README for reference, if necessary
+    depends_on:
+      - broadcast_channel
+    command: sh -c "exec ./wait-for.sh broadcast_channel:5432 --timeout=20 -- ./start.sh"
+
+  opal_client:
+    # by default we run opal-client from latest official image
+    build:
+      context: ../  # Point to the directory containing your Dockerfile
+      dockerfile: ./docker/Dockerfile.client  # Specify your Dockerfile if it's not named 'Dockerfile'
+    environment:
+      - OPAL_SERVER_URL=http://opal_server:7002
+      - OPAL_LOG_FORMAT_INCLUDE_PID=true
+      - OPAL_INLINE_OPA_LOG_FORMAT=http
+
+      # Uncomment the following lines to enable storing & loading OPA data from a backup file:
+      # - OPAL_OFFLINE_MODE_ENABLED=true
+    # volumes:
+    #  - opa_backup:/opal/backup:rw
+      - DEBUGPY_PORT=5678
+    ports:
+      # exposes opal client on the host machine, you can access the client at: http://localhost:7766
+      - "7766:7000"
+      # exposes the OPA agent (being run by OPAL) on the host machine
+      # you can access the OPA api that you know and love at: http://localhost:8181
+      # OPA api docs are at: https://www.openpolicyagent.org/docs/latest/rest-api/
+      - "8181:8181"
+      - "5680:5678"  # DebugPy
+    depends_on:
+      - opal_server
+    # this command is not necessary when deploying OPAL for real, it is simply a trick for dev environments
+    # to make sure that opal-server is already up before starting the client.
+    command: sh -c "exec  ./wait-for.sh opal_server:7002 --timeout=20 -- ./start.sh"
+    
+volumes:
+  opa_backup:

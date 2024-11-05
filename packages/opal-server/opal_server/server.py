@@ -114,6 +114,10 @@ class OpalServer:
             else opal_server_config.DATA_CONFIG_SOURCES
         )
 
+        # print configuration element data_sources_config
+        logger.info("DATA_CONFIG_SOURCES:") 
+        logger.info(self.data_sources_config)
+        
         self.broadcaster_uri = broadcaster_uri
         self.master_token = master_token
 
