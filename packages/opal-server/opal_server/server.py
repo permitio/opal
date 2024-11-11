@@ -8,6 +8,9 @@ from typing import List, Optional
 
 from fastapi import Depends, FastAPI
 from fastapi_websocket_pubsub.event_broadcaster import EventBroadcasterContextManager
+from fastapi.responses import Response
+from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
+
 from opal_common.authentication.deps import JWTAuthenticator, StaticBearerAuthenticator
 from opal_common.authentication.signer import JWTSigner
 from opal_common.confi.confi import load_conf_if_none
@@ -278,6 +281,11 @@ class OpalServer:
         @app.get("/", include_in_schema=False)
         def healthcheck():
             return {"status": "ok"}
+        
+        @app.get("/metrics", include_in_schema=False)
+        def metrics():
+            """Endpoint to expose Prometheus metrics."""
+            return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
         return app
 

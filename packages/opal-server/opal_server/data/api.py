@@ -20,6 +20,7 @@ from opal_common.schemas.security import PeerType
 from opal_common.urls import set_url_query_param
 from opal_server.config import opal_server_config
 from opal_server.data.data_update_publisher import DataUpdatePublisher
+from metrics import data_update_total, data_update_errors
 
 
 def init_data_updates_router(
@@ -125,8 +126,10 @@ def init_data_updates_router(
                 authenticator, claims, update
             )  # may throw Unauthorized
         except Unauthorized as e:
+            data_update_errors.inc()
             logger.error(f"Unauthorized to publish update: {repr(e)}")
             raise
+        data_update_total.inc()
 
         await data_update_publisher.publish_data_updates(update)
         return {"status": "ok"}
