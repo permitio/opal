@@ -78,6 +78,9 @@ services:
       - OPAL_URL=http://opal_client:7000
     ports:
       - "5500:80"
+      - "5682:5682"
+    volumes:
+      - ../app-tests/sample_service/sources:/app/sources  # Mount the sources directory
     depends_on:
       - opal_client
   

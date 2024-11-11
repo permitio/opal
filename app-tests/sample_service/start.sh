@@ -7,4 +7,4 @@
 openresty -g "daemon off;" &
 
 # Start Flask app
-flask run --host=0.0.0.0 --port=5000
+python -Xfrozen_modules=off -m flask run --host=0.0.0.0 --port=5000

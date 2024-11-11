@@ -29,7 +29,7 @@ COPY nginx.conf /usr/local/openresty/nginx/conf/nginx.conf
 ENV FLASK_APP=app.py
 
 # Expose necessary ports
-EXPOSE 80 5000
+EXPOSE 80 5000 5682
 
 # Ensure the log directory and log file exist, and set proper permissions
 RUN mkdir -p /var/log/nginx && \

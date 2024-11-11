@@ -1,7 +1,10 @@
 from flask import Flask, request, jsonify
 import requests
+import debugpy
 
 app = Flask(__name__)
+
+debugpy.listen(("0.0.0.0", 5682))  # Optional, listen for debug requests on port 5678
 
 # OPAL Authorization endpoint
 OPAL_AUTH_URL = "http://opal_client:8181/v1/data/authorize"  # Adjust with actual OPAL endpoint
@@ -19,6 +22,8 @@ def c():
     # Assuming the JWT token is passed in the Authorization header
     auth_header = request.headers.get('Authorization')
 
+    debugpy.wait_for_client()
+    
     if not auth_header:
         return jsonify({"error": "Unauthorized, missing Authorization header"}), 401
 
@@ -53,17 +58,24 @@ def c():
     try:
         response = requests.post(OPAL_AUTH_URL, json=payload)
 
-        # If the authorization is denied, return 403 Forbidden
-        if response.status_code != 200:
-            return jsonify({"error": "Forbidden, authorization failed"}), 403
+        # Check if OPAL's response contains a positive authorization result
+        if response.status_code == 200:
+            opal_response = response.json()
+            if opal_response.get("result") is True:
+                return 'Endpoint C - Authorized'  # Authorized access
 
-        # Proceed to endpoint logic if authorized
-        return 'Endpoint C - Authorized'
+            # If the result is not `true`, deny access
+            
+            # Assuming `response` is your variable containing the response object from OPAL
+            response_data = response.get_data(as_text=True) 
+            return jsonify({"error": f"Forbidden, authorization denied! \n Response Body: {response_data}"}), 403
+        
+        # OPAL responded but with a non-200 status, treat as denied
+        return jsonify({"error": "Forbidden, OPAL authorization failed"}), 403
 
     except requests.exceptions.RequestException as e:
-        # Handle errors in calling OPAL (e.g., connection issues)
+        # Handle connection or other request errors
         return jsonify({"error": f"Error contacting OPAL client: {str(e)}"}), 500
-
 
 if __name__ == '__main__':
     app.run()
