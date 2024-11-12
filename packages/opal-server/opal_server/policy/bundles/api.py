@@ -13,6 +13,11 @@ from opal_common.logger import logger
 from opal_common.schemas.policy import PolicyBundle
 from opal_server.config import opal_server_config
 from starlette.responses import RedirectResponse
+from opal_server.metrics import (
+    policy_bundle_request_count,
+    policy_bundle_latency,
+    policy_update_size,
+)
 
 router = APIRouter()
 
@@ -99,29 +104,48 @@ async def get_policy(
         None,
         description="hash of previous bundle already downloaded, server will return a diff bundle.",
     ),
-):
-    maker = BundleMaker(
-        repo,
-        in_directories=set(input_paths),
-        extensions=opal_server_config.FILTER_FILE_EXTENSIONS,
-        root_manifest_path=opal_server_config.POLICY_REPO_MANIFEST_PATH,
-        bundle_ignore=opal_server_config.BUNDLE_IGNORE,
-    )
-    # check if commit exist in the repo
-    revision = None
-    if base_hash:
-        try:
-            revision = repo.rev_parse(base_hash)
-        except ValueError:
-            logger.warning(f"base_hash {base_hash} not exist in the repo")
+): 
+    policy_bundle_request_count.inc()
+    
+    with policy_bundle_latency.time():
+        maker = BundleMaker(
+            repo,
+            in_directories=set(input_paths),
+            extensions=opal_server_config.FILTER_FILE_EXTENSIONS,
+            root_manifest_path=opal_server_config.POLICY_REPO_MANIFEST_PATH,
+            bundle_ignore=opal_server_config.BUNDLE_IGNORE,
+        )
+        # check if commit exist in the repo
+        revision = None
+        if base_hash:
+            try:
+                revision = repo.rev_parse(base_hash)
+            except ValueError:
+                logger.warning(f"base_hash {base_hash} not exist in the repo")
 
-    if revision is None:
-        return maker.make_bundle(repo.head.commit)
-    try:
-        old_commit = repo.commit(base_hash)
-        return maker.make_diff_bundle(old_commit, repo.head.commit)
-    except ValueError:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"commit with hash {base_hash} was not found in the policy repo!",
+        if revision is None:
+            bundle = maker.make_bundle(repo.head.commit)
+            bundle_size = (
+                (len(bundle.data_modules) if bundle.data_modules is not None else 0) +
+                (len(bundle.policy_modules) if bundle.policy_modules is not None else 0)
+            )
+            if bundle.deleted_files:
+                bundle_size += len(bundle.deleted_files.files)
+            policy_update_size.observe(bundle_size)
+            return bundle
+        try:
+            old_commit = repo.commit(base_hash)
+            diff_bundle = maker.make_diff_bundle(old_commit, repo.head.commit)
+            diff_bundle_size = (
+                (len(diff_bundle.data_modules) if diff_bundle.data_modules is not None else 0) +
+                (len(diff_bundle.policy_modules) if diff_bundle.policy_modules is not None else 0)
+            )
+            if diff_bundle.deleted_files:
+                diff_bundle_size += len(diff_bundle.deleted_files.files)
+            policy_update_size.observe(diff_bundle_size)
+            return diff_bundle
+        except ValueError:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"commit with hash {base_hash} was not found in the policy repo!",
         )

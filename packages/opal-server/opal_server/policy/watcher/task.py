@@ -8,6 +8,10 @@ from fastapi_websocket_pubsub.pub_sub_server import PubSubEndpoint
 from opal_common.logger import logger
 from opal_common.sources.base_policy_source import BasePolicySource
 from opal_server.config import opal_server_config
+from opal_server.metrics import (
+    policy_update_count,
+    policy_update_latency
+)
 
 
 class BasePolicyWatcherTask:
@@ -123,4 +127,7 @@ class PolicyWatcherTask(BasePolicyWatcherTask):
     async def trigger(self, topic: Topic, data: Any):
         """triggers the policy watcher from outside to check for changes (git
         pull)"""
-        await self._watcher.check_for_changes()
+        policy_update_count.labels(source="webhook").inc()
+
+        with policy_update_latency.labels(source="webhook").time():
+            await self._watcher.check_for_changes()
