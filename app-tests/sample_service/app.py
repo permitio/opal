@@ -69,7 +69,6 @@ def c():
             # Assuming `response` is your variable containing the response object from OPAL
             response_data = response.get_data(as_text=True) 
             return jsonify({"error": f"Forbidden, authorization denied! \n Response Body: {response_data}"}), 403
-        
         # OPAL responded but with a non-200 status, treat as denied
         return jsonify({"error": "Forbidden, OPAL authorization failed"}), 403
 
