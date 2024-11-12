@@ -20,7 +20,7 @@ from opal_common.schemas.security import PeerType
 from opal_common.urls import set_url_query_param
 from opal_server.config import opal_server_config
 from opal_server.data.data_update_publisher import DataUpdatePublisher
-from metrics import data_update_total, data_update_errors
+from opal_server.metrics.prometheus_metrics import data_update_total, data_update_errors
 
 
 def init_data_updates_router(

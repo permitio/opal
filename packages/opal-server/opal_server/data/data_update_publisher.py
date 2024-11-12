@@ -10,7 +10,7 @@ from opal_common.schemas.data import (
     ServerDataSourceConfig,
 )
 from opal_common.topics.publisher import TopicPublisher
-from metrics import data_update_latency
+from opal_server.metrics.prometheus_metrics import data_update_latency
 
 
 TOPIC_DELIMITER = "/"
