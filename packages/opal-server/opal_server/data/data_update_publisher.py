@@ -10,7 +10,10 @@ from opal_common.schemas.data import (
     ServerDataSourceConfig,
 )
 from opal_common.topics.publisher import TopicPublisher
-from opal_server.metrics.prometheus_metrics import data_update_latency
+from opal_server.metrics.prometheus_metrics import (
+    data_update_latency,
+    data_update_count_per_topic
+)
 
 
 TOPIC_DELIMITER = "/"
@@ -96,6 +99,9 @@ class DataUpdatePublisher:
                         topic_combos.extend(DataUpdatePublisher.get_topic_combos(topic))
                     entry.topics = topic_combos  # Update entry with the exhaustive list, so client won't have to expand it again
                     all_topic_combos.update(topic_combos)
+
+                    for topic in topic_combos:
+                        data_update_count_per_topic.labels(topic).inc()
                 else:
                     logger.warning(
                         "[{pid}] No topics were provided for the following entry: {entry}",
