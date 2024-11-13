@@ -230,6 +230,12 @@ class OpalServerConfig(Confi):
         description="URL to trigger data update events",
     )
 
+    POLICY_REPO_DEFAULT_DATA_FILENAME = confi.str(
+        "POLICY_REPO_DEFAULT_DATA_FILENAME",
+        "data.json",
+        description="Default filename for policy data files in the repository"
+    )
+    
     # Git service webhook (Default is Github)
     POLICY_REPO_WEBHOOK_SECRET = confi.str("POLICY_REPO_WEBHOOK_SECRET", None)
     # The topic the event of the webhook will publish

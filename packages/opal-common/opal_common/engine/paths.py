@@ -16,4 +16,4 @@ def is_policy_module(path: Path) -> bool:
     """Checks if a given path points to a rego file (extension == .rego) or a JSON file for OpenFGA.
     """
 
-    return path.suffix in opal_common_config.POLICY_REPO_POLICY_EXTENSIONS or path.suffix == '.json' or path.suffix == ".yaml"
+    return path.suffix in opal_common_config.POLICY_REPO_POLICY_EXTENSIONS

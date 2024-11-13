@@ -148,6 +148,31 @@ class PolicyUpdater:
         )
         await self.trigger_update_policy(directories)
 
+
+
+    async def _handle_openfga_policy_modules(self, store_transaction, policy_modules):
+        """Handle policy modules specifically for OpenFGA policy store.
+        
+        Args:
+            store_transaction: The current store transaction
+            policy_modules: List of policy modules to process
+        """
+        for policy_module in policy_modules:
+            if policy_module.path.endswith('.json'):
+                try:
+                    policy_data = json.loads(policy_module.rego)
+                    await store_transaction.set_policy(policy_module.path, json.dumps(policy_data))
+                except json.JSONDecodeError:
+                    logger.error(f"Invalid JSON in OpenFGA policy file: {policy_module.path}")
+            elif policy_module.path.endswith('.yaml'):
+                try:
+                    policy_data = yaml.safe_load(policy_module.rego)
+                    await store_transaction.set_policy(policy_module.path, json.dumps(policy_data)) 
+                except yaml.YAMLError as e:
+                    logger.error(f"Invalid YAML in OpenFGA policy file: {policy_module.path} - Error: {str(e)}")
+            else:
+                logger.warning(f"Skipping non-JSON file for OpenFGA: {policy_module.path}")
+
     async def trigger_update_policy(
         self, directories: List[str] = None, force_full_update: bool = False
     ):
@@ -335,23 +360,9 @@ class PolicyUpdater:
                 error=bundle_error,
             )
             if bundle:
-
                 if isinstance(self._policy_store, OpenFGAClient):
-                    for policy_module in bundle.policy_modules:
-                        if policy_module.path.endswith('.json'):
-                            try:
-                                policy_data = json.loads(policy_module.rego)
-                                await store_transaction.set_policy(policy_module.path, json.dumps(policy_data))
-                            except json.JSONDecodeError:
-                                logger.error(f"Invalid JSON in OpenFGA policy file: {policy_module.path}")
-
-                        elif policy_module.path.endswith('.yaml'):
-                            policy_data = yaml.safe_load(policy_module.rego)
-                            await store_transaction.set_policy(policy_module.path, json.dumps(policy_data))
-                            #logger.error(f"yaml file")
-
-                        else:
-                            logger.warning(f"Skipping non-JSON file for OpenFGA: {policy_module.path}")
+                    await self._handle_openfga_policy_modules(store_transaction, bundle.policy_modules)
+            
                 else:
                     await store_transaction.set_policies(bundle)
                     

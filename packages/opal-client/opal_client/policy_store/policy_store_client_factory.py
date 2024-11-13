@@ -162,8 +162,8 @@ class PolicyStoreClientFactory:
                 openfga_auth_token=store_token,
                 auth_type=auth_type,
                 store_id=opal_client_config.OPENFGA_STORE_ID,
-                data_updater_enabled=True,
-                policy_updater_enabled=True
+                data_updater_enabled=data_updater_enabled,
+                policy_updater_enabled=policy_updater_enabled
             )
 
         # MOCK
