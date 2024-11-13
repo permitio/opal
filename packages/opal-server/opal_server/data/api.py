@@ -24,6 +24,19 @@ import os
 import json
 from pathlib import Path
 
+def load_json_data(file_path):
+    """Helper function to load JSON data from a file."""
+    try:
+        with open(file_path, 'r') as f:
+            data = json.load(f)
+        logger.info(f"Successfully loaded data from {file_path}")
+        return data
+    except json.JSONDecodeError:
+        logger.error(f"Error parsing {file_path}: Invalid JSON format")
+    except Exception as e:
+        logger.error(f"Error reading {file_path}: {str(e)}")
+    return {}
+
 
 def init_data_updates_router(
     data_update_publisher: DataUpdatePublisher,
@@ -34,7 +47,6 @@ def init_data_updates_router(
 
     @router.get(opal_server_config.ALL_DATA_ROUTE)
     async def default_all_data():
-
         """Look for default data file in the repo clone directory and return its contents."""
         try:
             clone_path = opal_server_config.POLICY_REPO_CLONE_PATH
@@ -42,48 +54,30 @@ def init_data_updates_router(
 
             # Look for data.json in the clone directory
             data_file = Path(clone_path) / data_filename
-            
             if data_file.exists():
                 logger.info(f"Found {data_filename} at {data_file}")
-                try:
-                    with open(data_file, 'r') as f:
-                        data = json.load(f)
-                    logger.info(f"Successfully loaded {data_filename}")
-                    return data
-                except json.JSONDecodeError:
-                    logger.error(f"Error parsing {data_filename}: Invalid JSON format")
-                    return {}
-                except Exception as e:
-                    logger.error(f"Error reading {data_filename}: {str(e)}")
-                    return {}
-            else:
-                # If data file not found in root, try searching subdirectories
-                for root, dirs, files in os.walk(clone_path):
-                    if data_filename in files:
-                        data_file = Path(root) / data_filename
-                        logger.info(f"Found {data_filename} at {data_file}")
-                        try:
-                            with open(data_file, 'r') as f:
-                                data = json.load(f)
-                            logger.info(f"Successfully loaded {data_filename}")
-                            return data
-                        except json.JSONDecodeError:
-                            logger.error(f"Error parsing {data_filename}: Invalid JSON format")
-                            continue
-                        except Exception as e:
-                            logger.error(f"Error reading {data_filename}: {str(e)}")
-                            continue
-                            
-                logger.warning(
-                    "No valid {filename} found in repository clone directory: {clone_path}",
-                    filename=data_filename,
-                    clone_path=clone_path
-                )
-                return {}
+                return load_json_data(data_file)
+
+            # If data file not found in root, try searching subdirectories
+            for root, dirs, files in os.walk(clone_path):
+                if data_filename in files:
+                    data_file = Path(root) / data_filename
+                    logger.info(f"Found {data_filename} at {data_file}")
+                    data = load_json_data(data_file)
+                    if data:  # Return if valid data was loaded
+                        return data
+
+            logger.warning(
+                "No valid {filename} found in repository clone directory: {clone_path}",
+                filename=data_filename,
+                clone_path=clone_path
+            )
+            return {}
 
         except Exception as e:
             logger.error(f"Error in default_all_data: {str(e)}")
             return {}
+
 
 
     @router.post(
