@@ -8,7 +8,7 @@ from fastapi_websocket_pubsub.pub_sub_server import PubSubEndpoint
 from opal_common.logger import logger
 from opal_common.sources.base_policy_source import BasePolicySource
 from opal_server.config import opal_server_config
-from opal_server.metrics import (
+from opal_common.monitoring.prometheus_metrics import (
     policy_update_count,
     policy_update_latency
 )

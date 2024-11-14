@@ -10,7 +10,7 @@ from opal_common.schemas.data import (
     ServerDataSourceConfig,
 )
 from opal_common.topics.publisher import TopicPublisher
-from opal_server.metrics.prometheus_metrics import (
+from opal_common.monitoring.prometheus_metrics import (
     data_update_latency,
     data_update_count_per_topic
 )
