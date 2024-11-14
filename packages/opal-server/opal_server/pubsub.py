@@ -30,7 +30,7 @@ from opal_common.config import opal_common_config
 from opal_common.logger import logger
 from opal_common.monitoring.prometheus_metrics import (
     active_clients,
-    opal_server_data_update_errors
+    client_data_subscriptions
 )
 from opal_server.config import opal_server_config
 from pydantic import BaseModel
@@ -110,6 +110,11 @@ class ClientTracker:
         # on_subscribe is sometimes called for the broadcaster, when there is no "current client"
         if client_info is not None:
             client_info.subscribed_topics.update(topics)
+            for topic in topics:
+                client_data_subscriptions.labels(
+                    client_id=client_info.client_id,
+                    topic=topic
+                ).inc()
 
     async def on_unsubscribe(
         self,
@@ -124,6 +129,11 @@ class ClientTracker:
         # on_subscribe is sometimes called for the broadcaster, when there is no "current client"
         if client_info is not None:
             client_info.subscribed_topics.difference_update(topics)
+            for topic in topics:
+                client_data_subscriptions.labels(
+                    client_id=client_info.client_id,
+                    topic=topic
+                ).dec()
 
 
 class PubSub:

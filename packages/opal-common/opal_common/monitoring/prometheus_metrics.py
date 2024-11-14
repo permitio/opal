@@ -121,3 +121,9 @@ active_clients = Gauge(
     'Number of currently connected OPAL clients',
     ['client_id', 'source']
 )
+
+client_data_subscriptions = Gauge(
+    'opal_client_data_subscriptions',
+    'Number of data topics a client is subscribed to',
+    ['client_id', 'topic']
+)
