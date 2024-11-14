@@ -6,6 +6,8 @@ import tempfile
 import uuid
 from logging import disable
 from typing import Awaitable, Callable, List, Literal, Optional, Union
+from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
+from fastapi.responses import Response
 
 import aiofiles
 import aiofiles.os
@@ -307,6 +309,11 @@ class OpalClient:
                     status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                     content={"status": "unavailable"},
                 )
+        
+        @app.get("/metrics", include_in_schema=False)
+        async def metrics():
+            """Endpoint to expose Prometheus metrics."""
+            return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
         return app
 

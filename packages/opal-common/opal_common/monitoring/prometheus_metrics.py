@@ -115,3 +115,9 @@ token_generated_count = Counter(
     "Total number of tokens successfully generated",
     labelnames=["peer_type"]
 )
+
+active_clients = Gauge(
+    'opal_active_clients_total',
+    'Number of currently connected OPAL clients',
+    ['client_id', 'source']
+)

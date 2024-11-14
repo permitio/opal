@@ -28,6 +28,10 @@ from opal_common.authentication.verifier import Unauthorized
 from opal_common.confi.confi import load_conf_if_none
 from opal_common.config import opal_common_config
 from opal_common.logger import logger
+from opal_common.monitoring.prometheus_metrics import (
+    active_clients,
+    opal_server_data_update_errors
+)
 from opal_server.config import opal_server_config
 from pydantic import BaseModel
 from starlette.datastructures import QueryParams
@@ -79,6 +83,8 @@ class ClientTracker:
                     connect_time=time.time(),
                     query_params=query_params,
                 )
+                source = f"{source_host}:{source_port}" if source_host and source_port else "unknown"
+                active_clients.labels(client_id=client_id, source=source).inc()
             client_info.refcount += 1
             self._clients_by_ids[client_id] = client_info
         yield client_info
@@ -87,6 +93,9 @@ class ClientTracker:
             client_info.refcount -= 1
             if client_info.refcount >= 1:
                 self._clients_by_ids[client_id] = client_info
+            else:
+                source = f"{client_info.source_host}:{client_info.source_port}" if client_info.source_host and client_info.source_port else "unknown"
+                active_clients.labels(client_id=client_id, source=source).dec()
 
     async def on_subscribe(
         self,
