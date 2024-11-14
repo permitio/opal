@@ -1,0 +1,34 @@
+---
+sidebar_position: 2
+title: Deploy OPAL+
+---
+
+With OPAL+, you get access to private Docker images that include additional features and capabilities.
+To apply for Permit OPAL+, [fill in the form available here](https://hello.permit.io/opal-plus)
+
+In order to access the OPAL+ Docker images, you need to have Docker Hub credentials with an access token.
+Those should be received from your Customer Success manager.
+Reach out to us [on Slack](https://bit.ly/permit-slack) if you need assistance.
+
+## Accessing the OPAL+ Docker Images
+
+To access the OPAL+ Docker images, you need to log in to Docker Hub with your credentials.
+You can do this by running the [docker login](https://docs.docker.com/reference/cli/docker/login/) command:
+
+```bash
+docker login -u <username> -p <password>
+```
+
+If you are using Kubernetes, check out the [Kubernetes documentation](https://kubernetes.io/docs/tasks/configure-pod-container/pull-image-private-registry/) on how to pull images from a private registry.
+
+After logging in, you can pull the OPAL+ Docker images using the following commands:
+
+```bash
+docker pull permitio/opal-plus:latest
+```
+
+## Running the OPAL+ Docker Images
+
+Running the OPAL+ Docker images is similar to running the open-source OPAL images.
+
+Check out the [OPAL Docker documentation](/getting-started/running-opal/run-docker-containers) for more information.

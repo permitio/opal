@@ -1,0 +1,54 @@
+---
+sidebar_position: 11
+title: Monitoring OPAL
+---
+
+# Monitoring OPAL
+
+There are multiple ways you can monitor your OPAL deployment:
+
+- **Logs** - Using the structured logs outputted to stderr by both the OPAL-servers and OPAL-clients
+- **Health-checks** - OPAL exposes HTTP health check endpoints ([See below](##health-checks))
+- [**Callbacks**](/tutorials/healthcheck_policy_and_update_callbacks#-data-update-callbacks) - Using the callback webhooks feature - having OPAL-clients report their updates
+- **Statistics** - Using the built-in statistics feature in OPAL ([See below](##opal-statistics))
+
+## Health checks
+
+### OPAL Server
+
+opal-server exposes http health check endpoints on `/` & `/healthcheck`. <br/>
+Currently it returns `200 OK` as long as server is up.
+
+### OPAL Client
+
+opal-client exposes 2 types of http health checks:
+
+- **Readiness** - available on `/ready`. <br/>
+  Returns `200 OK` if the client have loaded policy & data to OPA at least once (from either server, or local backup file), otherwise `503 Unavailable` is returned.
+
+- **Liveness** - available on `/`, `/healthcheck` & `/healthy`. <br/>
+  Returns `200 OK` if the last attempts to load policy & data to OPA were successful, otherwise `503 Unavailable` is returned
+
+**Notice:** if you don't except your opal-client to load any data into OPA, set `OPAL_DATA_UPDATER_ENABLED: False`, so opal-client could report being healthy.
+
+You can also configure opal-client to store dynamic health status as a document in OPA, [Learn more here](/tutorials/healthcheck_policy_and_update_callbacks)
+
+## OPAL Statistics
+
+By enabling `OPAL_STATISTICS_ENABLED=true` (on both servers and clients), the OPAL-Server would start maintaining a unified state of all the clients and which topics they've subscribed to.
+The state can then be retrieved as a JSON object by calling the `/statistics` api route on the server
+
+### Code Reference:
+
+- [opal_server/statistics.py](https://github.com/permitio/opal/blob/master/packages/opal-server/opal_server/statistics.py)
+
+
+## OPAL Client tracker (EAP)
+
+Alternative implementation for the Statistics feature, OPAL-Server tracks all OPAL-clients connected through websocket.
+Gathered information includes connection details (client's source host and port), connection time, and subscribed topics.
+Available through `/pubsub_client_info` api route on the server.
+
+### Caveats:
+- When `UVICORN_NUM_WORKERS > 1`, retrieved information would only include clients connected to the replying server process.
+- This is an early access feature and is likely to change. Backward compatibility is not garaunteed.

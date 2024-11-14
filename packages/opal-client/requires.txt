@@ -1,0 +1,6 @@
+aiofiles>=0.8.0,<1
+aiohttp>=3.9.2,<4
+psutil>=5.9.1,<6
+tenacity>=8.0.1,<9
+dpath>=2.1.5,<3
+jsonpatch>=1.33,<2

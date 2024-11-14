@@ -1,0 +1,113 @@
+# Policy Repository Location
+
+### Step 3: Server config - policy repo location
+
+OPAL server is responsible to track policy changes and push them to OPAL clients.
+
+At the moment, OPAL can tracks a git repository as the **policy source**.
+
+#### (Mandatory) Repo location
+
+<table>
+  <tbody>
+    <tr>
+      <th align="left">Env Var Name</th>
+      <th align="left">Function</th>
+    </tr>
+    <tr>
+      <td valign="top">OPAL_POLICY_REPO_URL</td>
+      <td>
+        <ul>
+          <li>The repo url the policy repo is located at.</li>
+          <li>
+            Must be available from the machine running OPAL (opt for public
+            internet addresses).
+          </li>
+          <li>
+            Supported URI schemes: <code>https://</code> and <code>ssh</code>{" "}
+            (i.e: <code>git@</code>).
+          </li>
+        </ul>
+      </td>
+    </tr>
+  </tbody>
+</table>
+
+#### (Optional) SSH key for private repos
+
+If your tracked policy repo is <strong>private</strong>, you should declare this env var in order to authenticate and successfully clone the repo:
+
+<table>
+  <tbody>
+    <tr>
+      <th align="left">Env Var Name</th>
+      <th align="left">Function</th>
+    </tr>
+    <tr>
+      <td valign="top">OPAL_POLICY_REPO_SSH_KEY</td>
+      <td>
+        <ul>
+          <li>Content of the var is a private crypto key (i.e: SSH key)</li>
+          <li>
+            You will need to register the matching public key with your repo.
+            For example, see the{" "}
+            <a href="https://docs.github.com/en/github/authenticating-to-github/adding-a-new-ssh-key-to-your-github-account">
+              GitHub tutorial
+            </a>{" "}
+            on the subject.
+          </li>
+          <li>
+            The passed value must be the contents of the SSH key in one line
+            (replace new-line with underscore, i.e: <code>\n</code> with{" "}
+            <code>_</code>)
+          </li>
+        </ul>
+      </td>
+    </tr>
+  </tbody>
+</table>
+
+#### (Optional) Clone/pull settings
+
+For these config vars, in most cases you are good with the default values:
+
+<table>
+  <tbody>
+    <tr>
+      <th align="left">Env Var Name</th>
+      <th align="left">Function</th>
+    </tr>
+    <tr>
+      <td valign="top">OPAL_POLICY_REPO_CLONE_PATH</td>
+      <td>
+        Where (i.e: base target path) to clone the repo in your docker
+        filesystem (not important unless you mount a docker volume)
+      </td>
+    </tr>
+    <tr>
+      <td valign="top">OPAL_POLICY_REPO_MAIN_BRANCH</td>
+      <td>
+        Name of the git branch to track for policy files (default: `master`)
+      </td>
+    </tr>
+  </tbody>
+</table>
+
+#### (Optional) Bundle settings
+
+<table>
+  <tbody>
+    <tr>
+      <th align="left">Env Var Name</th>
+      <th align="left">Function</th>
+    </tr>
+    <tr>
+      <td valign="top">OPAL_BUNDLE_IGNORE</td>
+      <td>
+        Comma separated list of glob paths to omit from policy bundle. Note that
+        double asterisks ** do not recursively match; unless at the end, and
+        without other wildcards.
+      </td>
+    </tr>
+  </tbody>
+</table>

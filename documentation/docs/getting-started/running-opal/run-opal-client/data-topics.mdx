@@ -1,0 +1,22 @@
+# Subscribe to Data Topics
+
+### Step 4: Client config - data topics (Optional)
+
+You can configure which topics for data updates the client will subscribe to. This is great if you want more granularity in your data model, for example:
+
+- **Enabling multi-tenancy:** you deploy each customer (tenant) with his own OPA agent, each agent's OPAL client will subscribe only to the relevant tenant's topic.
+- **Sharding large datasets:** you split a big data set (i.e: policies based on user attributes and you have **many** users) to many instances of OPA agent, each agent's OPAL client will subscribe only to the relevant's shard topic.
+
+If you do not specify data topics in your configuration, OPAL client will automatically subscribe to a single topic: `policy_data` (the default).
+
+Use this env var to control which topics the client will subscribe to:
+
+| Env Var Name     | Function                                  |
+| :--------------- | :---------------------------------------- |
+| OPAL_DATA_TOPICS | data topics delimited by comma (i,e: `,`) |
+
+Example value:
+
+```sh
+export OPAL_DATA_TOPICS=topic1,topic2,topic3
+```

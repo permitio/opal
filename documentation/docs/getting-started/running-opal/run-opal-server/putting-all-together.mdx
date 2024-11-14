@@ -1,0 +1,80 @@
+# Running the Server
+
+### Step 7: Putting it all together - running the server
+
+To summarize, the previous steps guided you on how to pick the values of the configuration variables needed to run OPAL server.
+
+We will now recap with a real example.
+
+#### 1) Pull the server container image
+
+```
+docker pull permitio/opal-server
+```
+
+#### 2) Define the environment variables you need
+
+Multiple workers and broadcast channel (example values from step 2):
+
+```
+export OPAL_BROADCAST_URI=postgres://localhost/mydb
+export UVICORN_NUM_WORKERS=4
+```
+
+Policy repo (example values from step 3):
+
+```
+export OPAL_POLICY_REPO_URL=https://github.com/permitio/opal-example-policy-repo
+```
+
+Policy repo syncing with webhook (example values from step 4):
+
+```
+export OPAL_POLICY_REPO_WEBHOOK_SECRET=-cBlFnldg7WCGlj0jsivPWPA5vtfI2GWmp1wVx657Vk
+```
+
+Data sources configuration (example values from step 5):
+
+```
+export OPAL_DATA_CONFIG_SOURCES='{"config": {"entries": [{"url": "https://api.permit.io/v1/policy-config", "topics": ["policy_data"], "config": {"headers": {"Authorization": "Bearer FAKE-SECRET"}}}]}}'
+```
+
+Security parameters (example values from step 6):
+
+```
+export OPAL_AUTH_PRIVATE_KEY=-----BEGIN OPENSSH PRIVATE KEY-----_XXX..._..._...XXX==_-----END OPENSSH PRIVATE KEY-----
+export OPAL_AUTH_PUBLIC_KEY=ssh-rsa XXX ... XXX== some@one.com
+export OPAL_AUTH_MASTER_TOKEN=8MHfUU2rzRB59pdOHNNVVw3XLe3gl9YNw7vIXxJZNJo
+```
+
+#### 3) Run the container (local run example)
+
+```
+docker run -it \
+  --env OPAL_BROADCAST_URI \
+  --env UVICORN_NUM_WORKERS \
+  --env OPAL_POLICY_REPO_URL \
+  --env OPAL_POLICY_REPO_WEBHOOK_SECRET \
+  --env OPAL_DATA_CONFIG_SOURCES \
+  --env OPAL_AUTH_PRIVATE_KEY \
+  --env OPAL_AUTH_PUBLIC_KEY \
+  --env OPAL_AUTH_MASTER_TOKEN \
+  -p 7002:7002 \
+  permitio/opal-server
+```
+
+#### 4) <a name="run-docker-prod"></a> Run the container in production
+
+As we mentioned before, in production you will not use `docker run`.
+
+Deployment looks somewhat like this:
+
+- Declare your container configuration in code, e.g: AWS ECS task definition file, Helm chart, etc.
+- All the secrets and sensitive vars should be fetched from a secrets store.
+- Deploy your task / helm chart, etc to your cloud environment.
+- Expose the server to the internet with HTTPS (i.e: use a valid SSL/TLS certificate).
+- Keep your master token in a safe location (you will need it shortly to generate identity tokens).
+
+## <a name="run-client"></a> How to run OPAL Client
+
+Great! we have OPAL Server up and running. Let's continue and explains how to run OPAL Client.

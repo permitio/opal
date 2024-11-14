@@ -1,0 +1,395 @@
+---
+sidebar_position: 7
+title: Track a Git Repo
+---
+
+# Policy syncing with Git
+
+This document describes the policy syncing feature of OPAL (policy-code and static data).
+
+:::tip
+Before starting this tutorial make sure you cover basic repository configuration :
+
+1. [Git Repository location and basic access (e.g. SSH and branches)](/getting-started/running-opal/run-opal-server/policy-repo-location)
+2. [Git Repository syncing (e.g. Polling and Webhooks)](/getting-started/running-opal/run-opal-server/policy-repo-syncing)
+
+:::
+
+## How policy syncing works
+
+### 1) OPAL Server tracks a Git branch
+
+OPAL server is configured to track a **Git repo**, and in that repo - a specific **branch**. By **tracking** the branch, we mean that OPAL server will always keep the most up-to-date "picture" of this branch.
+
+More technically, OPAL Server will:
+
+- Clone the repo, checked out to the tracked branch.
+- Detect changes in the tracked branch upstream.
+- Upon detecting new commits in the branch upstream, **pull** these changes into its local checkout.
+
+Currently OPAL server supports two ways to detect changes in the tracked repo:
+
+- **Polling in fixed intervals** - checks every `X` seconds if there are new commits in the upstream branch by running `git fetch` internally.
+- **Github Webhooks** - A webhook means that the service storing the repo (e.g: GitHub) will issue an HTTP REST request to OPAL server upon each `push` event.
+
+At the moment, only GitHub-hosted repos support webhooks. We plan to expand to more services (e.g: bitbucket) and/or a generic webhook interface in the near future.
+
+### 2) OPAL Client subscribes to policy update notifications
+
+OPAL client can subscribe to multiple policy topics, topics are based on paths where each path is a **directory** in the policy git repository (**relative path** to the root of the repository).
+
+The policy directories the client will subscribe to are specified by the environment variable `OPAL_POLICY_SUBSCRIPTION_DIRS` passed to the client. The default is `"."` meaning the root directory in the branch (i.e: essentially all `.rego` and `data.json` files in the branch).
+`:` is used by the environment variable parsing as a delimiter between directories.
+
+Let's look at at a more complex example. Let's say we have a multi-tenant application in the cloud with an on-prem component in each customer site. We want to apply the same base policy to all tenants, but also to allow special rules (different policy) per tenant.
+
+Assume our policy repository looks like this:
+
+```
+.
+├── default
+│   ├── data.json
+│   └── rbac.rego
+└── tenants
+    ├── tenant1
+    │   ├── data.json
+    │   └── location.rego
+    ├── tenant2
+    │   ├── billing.rego
+    │   └── data.json
+    └── tenant3
+    │   ├── ...
+    ...
+```
+
+We can see the tenant 1 has a special policy for user location (e.g: special rules for users interacting with the application from outside the US), while tenant 2 has special rules around billing (i.e: allow some access only to paying users, etc).
+
+We'll deploy a different OPAL client as part of our on-prem/edge container in each customer vpc, for simplicity let's call them `edge1`, `edge2` and `edge3`:
+
+- `edge1` will set `OPAL_POLICY_SUBSCRIPTION_DIRS=default:tenants/tenant1` meaning its policy bundles will include both policy files found under the `default` directory as well policy files under `tenants/tenant1`, but not policy files under `tenant2`, etc.
+- Similarly:
+  - `edge2` will set `OPAL_POLICY_SUBSCRIPTION_DIRS=default:tenants/tenant2`.
+  - `edge3` will set `OPAL_POLICY_SUBSCRIPTION_DIRS=default:tenants/tenant3`.
+
+:::note
+When translated from directories to pub/sub topics - each topic is formatted as `{scope}:{policy_topic_prefix}:{path}` where path is the **directory**.
+`policy_topic_prefix` would usually be just "policy" and `scope` "default".
+Relevant code: [packages/opal-client/opal_client/policy/updater.py](https://github.com/permitio/opal/blob/41cd3f33fb6c089fef3eb402c7457012a3526531/packages/opal-client/opal_client/policy/updater.py#L76C13-L76C13)
+:::
+
+#### 2.1) Loading Data.json files
+
+In general `data.json` files are mostly meant for backward as a backward compatibility to vanilla OPA bundles (in OPA the `data.json` in [bundles](https://www.openpolicyagent.org/docs/latest/management-bundles/) is the primary way to load data. For users migrating from plain OPA to OPAL being able to reuse their bundles can be useful).
+We recommend you use dynamic updates with data-sources-config for a more efficient and up-to-date approach.
+However, if you choose to utilize data.json files, here are a few important points to consider:
+
+- The OPAL server looks for any file matching `.*data.json` and not just `data.json`
+- The data from the files will be nested in the policy-store under the path of it's folder (i.e. `/foldername/data.json` in the repo will be loaded under ` /v1/data/foldername`)
+- When loaded into a path the data will override all in that path (it won't merge) - use different folders to avoid overrides
+
+### 3) <a name="policy-update-message"></a>OPAL Server notifies his OPAL clients about policy updates
+
+Upon learning about **new commits** in the tracked branch, and assuming these new commits include changes **that affect rego or data files**, OPAL server will push an update message via pub/sub to its OPAL clients.
+
+- The update message will include the most recent (i.e: top-most) commit hash in the tracked branch.
+- Each OPAL client will only be notified about changes in the directories he is subscribed to.
+
+i.e: example **policy update message** assuming a commit changed the `billing.rego` file:
+
+```
+{
+  "topic": "policy:tenant2",
+  "data": "5cdf36a7510f6ecc9e89cceb0ae0672c67ddb34c"
+}
+```
+
+Notice that the update message **does not** include any actual policy files, the OPAL client is responsible to fetch a new policy bundle upon being notified about relevant updates.
+
+### 4) OPAL Client fetches policy bundles from OPAL Server
+
+OPAL clients fetch policy bundles by calling the `/policy` endpoint on the OPAL server.
+
+The client may present a **base hash** - meaning the client already has the policy files up until the **base hash** commit. If the server is presented with the base hash, the server will return a **delta bundle**, meaning only changes (new, modified, renamed and deleted files) will be included in the bundle.
+
+The client will fetch a new policy bundle upon the following events:
+
+- When first starting up, the client will fetch a **complete** policy bundle.
+- After the initial bundle, the client will ask **delta** policy bundles (only changes):
+  - After a disconnect from the OPAL server (e.g: if the server crashed, etc)
+  - After receiving a [policy update message](#policy-update-message)
+
+#### Policy bundle manifest - serving dependent policy modules
+
+The policy bundle contains a `manifest` list that contains the paths of all the modules (.rego or data.json) that are included
+in the bundle. The `manifest` list is important! It controls the **order** in which the OPAL client will load the policy
+modules into OPA.
+
+OPA rego modules can have dependencies if they use the [import statement](https://www.openpolicyagent.org/docs/latest/policy-language/#imports).
+
+You can control the manifest contents and ensure the correct loading of dependent OPA modules.
+All you have to do is to put a `.manifest` file in the root directory of your policy git repository
+(like shown in [this example repo](https://github.com/permitio/opal-example-policy-repo)).
+
+:::note The `.manifest` file is optional
+If there is no manifest file, OPAL will load the policy modules it finds in alphabetical order.
+:::
+
+The format of the `.manifest` file you should adhere to:
+
+- File encoding should be standard (i.e: UTF-8)
+- Lines should be separated with newlines (`\n` character)
+- Each line should contain a path, relative to the `.manifest` file, which could be one of the following:
+  - A policy / data file (i.e: a `.rego` file or `data.json` file).
+  - A folder, containing another `.manifest` file to be loaded recursively.
+- File paths should appear in the order you want to load them into OPA.
+- If your root `.manifest` file is at another path, you can set another value to the env var `OPAL_POLICY_REPO_MANIFEST_PATH` (either a file path, or a folder path containing a `.manifest` file).
+
+For example, if you look in the [example repo](https://github.com/permitio/opal-example-policy-repo), you would see that the `rbac.rego` module imports the `utils.rego` module (the line `import data.utils` imports the `utils` package). Therefore in the manifest, `utils.rego` appears first because it needs to be loaded into OPA before the `rbac.rego` policy is loaded (otherwise OPA will throw an exception due to the import statement failing).
+
+:::info `OPAL_BUNDLE_IGNORE`
+If you need to omit certain global path from the policy bundle, you can use the optional `OPAL_BUNDLE_IGNORE` environment variable
+to do so. It takes an array of comma separated paths. Note that double asterisks \*\* do not recursively match.
+
+See an example **[here](/getting-started/configuration#opal-server-configuration-variables)**. This is **only for OPAL version 0.5.0 and later**.
+:::
+
+#### Policy bundle API Endpoint
+
+The [policy bundle endpoint](https://opal.permit.io/redoc#operation/get_policy_policy_get) exposes the following params:
+
+- **path** - path to a directory inside the repo, the server will include only policy files under this directory. You can pass the **path** parameter multiple times (i.e: to include files under several directories).
+- **base_hash** - include only policy files that were changed (added, updated, deleted or renamed) after the commit with the **base hash**. If this parameter is included, the server will return a **delta bundle**, otherwise the server will return a **complete bundle**.
+
+Let's look at some real API call examples. The opal server in these example track [our example repo](https://github.com/permitio/opal-example-policy-repo).
+
+Example fetching a complete bundle:
+
+```sh
+curl --request GET 'https://opal.permit.io/policy?path=.'
+```
+
+Response (a complete bundle is returned):
+
+```json
+{
+  "manifest": ["data.json", "rbac.rego"],
+  "hash": "ac16d91b84f578954ccd1c322b1f8f99d44248c0",
+  "old_hash": null,
+  "data_modules": [
+    {
+      "path": ".",
+      "data": "<CONTENTS OF data.json>"
+    }
+  ],
+  "policy_modules": [
+    {
+      "path": "rbac.rego",
+      "package_name": "app.rbac",
+      "rego": "<CONTENTS OF rbac.rego>"
+    }
+  ],
+  "deleted_files": null
+}
+```
+
+Example fetching a delta bundle:
+
+```sh
+curl --request GET 'https://opal.permit.io/policy?base_hash=503e6f9821eb036ce6a4207a45ddbe147f1a0a7b&path=.'
+```
+
+This time the response is a delta bundle, the `envoy.rego` file was deleted and `rbac.rego` and `data.json` were added:
+
+```json
+{
+  "manifest": ["data.json", "rbac.rego"],
+  "hash": "ac16d91b84f578954ccd1c322b1f8f99d44248c0",
+  "old_hash": "503e6f9821eb036ce6a4207a45ddbe147f1a0a7b",
+  "data_modules": [
+    {
+      "path": ".",
+      "data": "<CONTENTS OF data.json>"
+    }
+  ],
+  "policy_modules": [
+    {
+      "path": "rbac.rego",
+      "package_name": "app.rbac",
+      "rego": "<CONTENTS OF rbac.rego>"
+    }
+  ],
+  "deleted_files": {
+    "data_modules": [],
+    "policy_modules": ["envoy.rego"]
+  }
+}
+```
+
+#
+
+## Setting up the OPAL Server - options for policy change detection
+
+### Option 1: Using polling (less recommended)
+
+You may use polling by defining the following environment variable to a value different than `0`:
+
+| Env Var Name                      | Function                                                   |
+| :-------------------------------- | :--------------------------------------------------------- |
+| OPAL_POLICY_REPO_POLLING_INTERVAL | the interval in seconds to use for polling the policy repo |
+
+### Option 2: Using a webhook
+
+If your server is hosted at `https://opal.yourdomain.com`, the URL you must setup with your webhook provider (e.g: github) is `https://opal.yourdomain.com/webhook`. See [GitHub's guide on configuring webhooks](https://docs.github.com/en/developers/webhooks-and-events/creating-webhooks).
+
+Typically you would need to share a secret with your webhook provider (authenticating incoming webhooks). You can use the OPAL CLI to create a cryptographically strong secret to use.
+
+<a name="generate-secret"></a>Let's install the cli to a new python virtualenv: ```
+pyenv virtualenv opal pyenv activate opal pip install opal-server ```
+
+Now let's use the cli to generate a secret:
+
+```
+opal-server generate-secret
+```
+
+You must then configure the appropriate env var:
+
+| Env Var Name                    | Function                                                               |
+| :------------------------------ | :--------------------------------------------------------------------- |
+| OPAL_POLICY_REPO_WEBHOOK_SECRET | the webhook secret generated by the cli (or any other secret you pick) |
+
+#
+
+#### Working with different Git services
+
+Different Git Services configure their webhooks slightly differently.
+OPAL needs to parse a few things from an incoming webhook to:
+
+- A Secret to verify the legitimacy of the incoming event
+- This can be a token (secret to compare) or a signature (secret applied to the request body)
+- The type of the event (e.g. is this a Git push)
+- The repository-url this event refers to, or the repository's full name if the url is not available (e.g. self hosted bitbucket repo)
+
+We can configure OPAL to expect webhooks from different services
+using the `OPAL_POLICY_REPO_WEBHOOK_PARAMS` config variable.
+The variable is a model with the following members:
+
+- secret_header_name : The HTTP header holding the secret - the value found here is compared against `OPAL_POLICY_REPO_WEBHOOK_SECRET`
+- secret_type : "token" or "signature"
+- secret_parsing_regex: The regex used to parse out the actual signature from the header. Use '(.\*)' for the entire value
+- one of:
+  - event_header_name: The HTTP header holding the event information (used instead of event_request_key)
+  - event_request_key: The JSON object key holding the event information (used instead of event_header_name)
+- push_event_value : The event value indicating a Git push
+
+##### Example configuration values for common services:
+
+- Github (Default):
+
+  ```
+  {
+      "secret_header_name": "x-hub-signature-256",
+      "secret_type": "signature",
+      "secret_parsing_regex": "sha256=(.*)",
+      "event_header_name": "X-GitHub-Event",
+      "event_request_key": None,
+      "push_event_value": "push",
+  }
+  ```
+
+- Gitlab:
+
+  ```
+  {
+      "secret_header_name": "X-Gitlab-Token",
+      "secret_type": "token",
+      "secret_parsing_regex": "(.*)",
+      "event_header_name": "X-Gitlab-Event",
+      "push_event_value": "Push Hook",
+  }
+  ```
+
+- Azure-Git:
+
+  ```
+  {
+      "secret_header_name": "x-api-key",
+      "secret_type": "token",
+      "secret_parsing_regex": "(.*)",
+      "event_header_name": None,
+      "event_request_key": "eventType",
+      "push_event_value": "git.push",
+  }
+  ```
+
+- Bitbucket:
+
+  ```
+  {
+    "secret_header_name": "x-hook-uuid",
+    "secret_type": "token",
+    "secret_parsing_regex": "(.*)",
+    "event_header_name": "x-event-key",
+    "event_request_key": None,
+    "push_event_value": "repo:push",
+  }
+  ```
+
+Many more variations can be created using this configuration model.
+That said, if your flavor isn't supported consider one of:
+
+1. Using your CI/CD to send a custom webhook - instead of the built in webhook of your Git service
+2. Opening a Github issue in OPAL's repo to ask for additional features here (include a webhook post example [headers and body])
+
+#
+
+#### Example setting up a webhook (on Github)
+
+Generate a secret:
+
+```
+❯ opal-client generate-secret
+OQ3M81ECbeJEIka4MhgPalSbxVLLe91GBZyiVtPEUsM
+```
+
+Pass the secret as config when [running OPAL Server](/getting-started/running-opal/run-opal-server/putting-all-together):
+
+```sh
+export OPAL_POLICY_REPO_WEBHOOK_SECRET=OQ3M81ECbeJEIka4MhgPalSbxVLLe91GBZyiVtPEUsM
+docker run -it \
+  # more params ...
+  --env OPAL_POLICY_REPO_WEBHOOK_SECRET \
+  # more params ...
+  -p 7002:7002 \
+  permitio/opal-server
+```
+
+On your GitHub project page, go to Settings -> Webhooks:
+
+<img
+  src="https://i.ibb.co/B28b9j1/webhooks1.png"
+  alt="webhooks1"
+  border="0"
+></img>
+
+And then fill the following values:
+
+- The webhook URL exposed by your OPAL server, example: `https://opal.yourdomain.com/webhook`
+- The webhook secret you generated
+- Select only the `push` event
+- And click on **Add webhook**.
+
+<img
+  src="https://i.ibb.co/3CkRrq5/webhooks2.png"
+  alt="webhooks2"
+  border="0"
+></img>
+
+#
+
+## Code References:
+
+- [opal_server/policy/webhook/api.py](https://github.com/permitio/opal/blob/master/packages/opal-server/opal_server/policy/webhook/api.py)
+- [opal_server/policy/webhook/deps.py](https://github.com/permitio/opal/blob/master/packages/opal-server/opal_server/policy/webhook/deps.py)
+- [opal_common/schemas/webhook.py](https://github.com/permitio/opal/blob/master/packages/opal-common/opal_common/schemas/webhook.py)
+- [opal_server/tests/policy_repo_webhook_test.py](https://github.com/permitio/opal/blob/master/packages/opal-server/opal_server/tests/policy_repo_webhook_test.py)

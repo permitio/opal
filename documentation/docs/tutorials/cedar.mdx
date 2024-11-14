@@ -1,0 +1,58 @@
+# Cedar-Agent and Cedar
+
+Cedar is an open-source engine and language created by AWS.
+[Cedar agent](https://github.com/permitio/cedar-agent) is an OSS project from Permit.io - which provides the ability to run Cedar as a standalone agent (Similar to how one would use OPA) which can then be powered by [OPAL](https://github.com/permitio/opal).
+Cedar agent is the easiest way to deploy and run Cedar.
+
+:::info Demo
+Check out our [demo app that uses Cedar-Agent and OPAL here](https://github.com/permitio/tinytodo).
+:::
+
+OPAL can run Cedar instead of OPA. To launch an example configuration with Docker-Compose, do:
+```
+git clone https://github.com/permitio/opal.git
+cd opal
+docker-compose -f docker/docker-compose-example-cedar.yml up -d
+```
+
+You'll then have Cedar's dev web interface at [http://localhost:8180/rapidoc/](http://localhost:8180/rapidoc/), where you can call Cedar-Agent's API routes.
+
+You can show data with GET on **/data**, policy with GET on **/policies**, and you can POST the following authorization to **/is_authorized** request to perform an authorization check:
+```
+{
+  "principal": "User::\"someone@permit.io\"",
+  "action": "Action::\"document:write\"",
+  "resource": "ResourceType::\"document\""
+}
+```
+
+To show how the policy affects the request, set a policy with fewer permissions with a PUT on **/policies**:
+```
+[
+  {
+    "id": "policy.cedar",
+    "content": "permit(\n  principal in Role::\"Editor\",\n  action in [Action::\"document:read\",Action::\"document:delete\"],\n  resource in ResourceType::\"document\"\n) when {\n  true\n};"
+  }
+]
+```
+Then restore the correct policy:
+```
+[
+  {
+    "id": "policy.cedar",
+    "content": "permit(\n  principal in Role::\"Editor\",\n  action in [Action::\"document:read\",Action::\"document:write\",Action::\"document:delete\"],\n  resource in ResourceType::\"document\"\n) when {\n  true\n};"
+  }
+]
+```
+Alternatively, you can also change the Docker-compose config and set your own policy git repo (the **OPAL_POLICY_REPO_URL** variable), and change it on the fly.
+
+
+If you want to see OPAL's logs, you can do:
+```
+docker-compose -f docker/docker-compose-example-cedar.yml logs opal_server
+```
+and
+```
+docker-compose -f docker/docker-compose-example-cedar.yml logs opal_client
+```
+For the server and client, respectively.

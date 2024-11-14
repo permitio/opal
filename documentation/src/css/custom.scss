@@ -1,0 +1,283 @@
+:root {
+  --ifm-font-size-base: 100%;
+  --ifm-code-font-size: 95%;
+
+  /* change primary color to a nicer purple */
+  --ifm-color-primary: #6851ff;
+  --ifm-color-primary-dark: #4b2fff;
+  --ifm-color-primary-darker: #4e3bdb;
+  --ifm-color-primary-darkest: #3728b7;
+  --ifm-color-primary-light: #8573ff;
+  --ifm-color-primary-lighter: #a796ff;
+  --ifm-color-primary-lightest: #f1eeff;
+
+  --ifm-color-secondary: #fff;
+
+  --ifm-color-success: #00c988;
+  --ifm-color-success-lighter: #5feea4;
+  --ifm-color-success-lightest: #c9fcd8;
+  --ifm-color-success-darker: #00ac85;
+  --ifm-color-success-darkest: #00907e;
+
+  --ifm-color-info: #54c7ec;
+
+  --ifm-color-warning: #bf9046;
+  --ifm-color-warning-lighter: #ebd092;
+  --ifm-color-warning-lightest: #fbf4db;
+  --ifm-color-warning-darker: #a47333;
+  --ifm-color-warning-darkest: #895923;
+
+  --ifm-color-danger: #fa383e;
+
+  --ifm-color-danger: #ff5635;
+  --ifm-color-danger-lightest: #fba67f;
+  --ifm-color-danger-darker: #d02f20;
+
+  --doc-sidebar-width: 100%;
+}
+
+html[data-theme="light"] {
+  --ifm-code-background: rgba(0, 0, 0, 0.06);
+  --docsearch-container-background: rgba(32, 35, 42, 0.6);
+}
+
+// For readability concerns, you should choose a lighter palette in dark mode.
+html[data-theme="dark"] {
+  --ifm-code-background: rgba(255, 255, 255, 0.06);
+  --ifm-toc-border-color: var(--dark);
+  --ifm-color-emphasis-300: var(--dark);
+  --ifm-hr-border-color: var(--dark);
+
+  // brighter primary color for dark mode
+  --ifm-color-primary: rgb(197, 185, 255);
+
+  .pagination-nav__item {
+    border: 1px solid rgba(197, 185, 255, 0.3);
+    border-radius: 5px;
+  }
+
+  //invert language label images on dark mode
+  .langLabelImage {
+    filter: invert(1);
+  }
+}
+
+html[data-theme="dark"] .docusaurus-highlight-code-line {
+  background-color: rgba(0, 0, 0, 0.3);
+}
+
+.docusaurus-highlight-code-line {
+  background-color: rgba(0, 0, 0, 0.1);
+  display: block;
+  margin: 0 calc(-1 * var(--ifm-pre-padding));
+  padding: 0 var(--ifm-pre-padding);
+}
+
+// Makes default markdown fonts smaller.
+.markdown {
+  & h1:first-child {
+    --ifm-h1-font-size: 2.5rem;
+  }
+
+  & > h2 {
+    --ifm-h2-font-size: 1.9rem;
+  }
+
+  & > h3 {
+    --ifm-h3-font-size: 1.4rem;
+  }
+
+  // & > h4 {
+  //   --ifm-h4-font-size: 1rem;
+  // }
+
+  // & > h5 {
+  //   --ifm-h5-font-size: 0.875rem;
+  // }
+
+  // & > h6 {
+  //   --ifm-h6-font-size: 0.85rem;
+  // }
+}
+
+// make padding at the top of the document larger
+main > div.container:first-child {
+  &.padding-top--md {
+    padding-top: 2rem !important;
+  }
+
+  // Gives padding to left and right of main content
+  & article {
+    padding: 0 1rem;
+  }
+}
+
+// centered layout - centers the main section (below header) LEFT AND RIGHT PADDING FOR NAV
+.main-wrapper {
+  max-width: 90rem;
+  width: 90rem;
+  margin: 0 auto;
+//   align-self: center;
+
+//   h1[class^="docTitle"] {
+//     font-size: 2.8rem;
+//   }
+}
+
+.container {
+  max-width: inherit;
+}
+
+
+@media (max-width: 1416px) {
+  .main-wrapper {
+    max-width: 100%;
+    width: 100%;
+  }
+}
+
+@media (max-width: 1320px) and (min-width: 997px) {
+  .container {
+    max-width: calc(
+      var(--ifm-container-width) - 125px - var(--ifm-spacing-horizontal) * 2
+    );
+  }
+}
+
+@media (min-width: 1440px) {
+  .container {
+    max-width: auto !important;
+  }
+}
+
+@media (min-width: 997px) {
+  main[class^="docMainContainer"] {
+    width: calc(100% - var(--doc-sidebar-width));
+    display: contents;
+  }
+}
+
+// centers the navbar
+// .navbar {
+//   .navbar__inner {
+//     max-width: 88rem;
+//     margin: 0 auto;
+//     width: 100%;
+//   }
+// }
+
+// makes the sidebar smaller
+aside[class^="theme-doc-sidebar-container"] {
+  --doc-sidebar-width: 280px;
+}
+
+// .navbar__items--right {
+//   .navbar__item {
+//     padding-left: calc(var(--ifm-navbar-item-padding-horizontal) / 2);
+//   }
+// }
+
+// .menu_node_modules-\@docusaurus-theme-classic-lib-next-theme-DocSidebar-styles-module {
+//   padding: 2.8rem 1rem 2.8rem 1rem !important;
+// }
+
+// sidebar children timeline
+.menu__list ul {
+  background-image: linear-gradient(90deg, rgba(167, 150, 255, 0.5) 1px, transparent 0);
+}
+
+
+// sidebar first-level categories should be more separated
+.theme-doc-sidebar-item-category.theme-doc-sidebar-item-category-level-1.menu__list-item:not(:first-child) {
+  > .menu__list-item-collapsible
+  > a {
+    font-weight: bold;
+    text-transform: uppercase;
+    font-size: 0.8rem;
+  }
+
+  margin-top: 1.5rem;
+}
+
+// sidebar item link level 2 appearance
+// .theme-doc-sidebar-item-link-level-2, .theme-doc-sidebar-item-category-level-2, .theme-doc-sidebar-item-category-level-3 {
+//   padding: 0 -0.7rem 0 0;
+// }
+
+// .theme-doc-sidebar-item-link.theme-doc-sidebar-item-link-level-2.menu__list-item {
+//   > .menu__link {
+//     padding-right: 0;
+//   }
+// }
+
+// .theme-doc-sidebar-item-category-level-3 {
+//     padding-right: 1rem;
+// }
+
+.theme-doc-sidebar-item-link-level-1.menu__list-item {
+  > .menu__link {
+    font-weight: bold;
+  }
+}
+
+// .menu {
+//   margin-right: 0.8rem;
+// }
+
+.menu__list {
+  margin: 0 0 0 0.5rem;
+}
+
+// sidebar menu links appearance
+.menu__link {
+  font-size: 0.8rem;
+}
+
+// Adjust the side navbar to be spaced evenly.
+.menu_node_modules-\@docusaurus-theme-classic-lib-theme-DocSidebar-Desktop-Content-styles-module {
+  padding-right: 0.5rem !important;
+  padding-bottom: 2rem !important;
+}
+
+.docsWrapper_node_modules-\@docusaurus-theme-classic-lib-theme-DocPage-Layout-styles-module {
+  max-width: 100vw !important;
+}
+
+// navigation scrollbar width
+.menu::-webkit-scrollbar {
+  width: 3px;
+}
+
+// navigation scrollbar base color
+.menu::-webkit-scrollbar-track {
+  // background-color: #00907e;
+}
+
+.menu::-webkit-scrollbar-thumb {
+  background: var(--ifm-color-primary-lighter);
+}
+
+.footer {
+  height: 70px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.8rem;
+}
+
+.footer > .container {
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+}
+
+.footer__links {
+  margin: 0;
+}
+
+.footer__bottom {
+  margin: 0;
+}

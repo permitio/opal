@@ -1,0 +1,109 @@
+---
+sidebar_position: 2
+slug: /release-updates
+title: What's new in OPAL
+---
+
+Use this page to track the latest updates and releases to OPAL.
+
+---
+
+## OPAL+
+
+<img style={{ maxWidth: "5vw" }} src="/img/opal_plus.png" />{" "}
+
+:::tip NEWS
+**OPAL is and will always be an open-source project free for all**.
+
+**OPAL+** is a way for enterprise users to get more out of OPAL when needed; and is a product of OPAL users approaching
+us and asking for additional capabilities on top of those provided by OPAL.
+
+If you just need a hosted version of OPAL; or you're building application-level permissions consider simply using [Permit.io's PRO tier](https://www.permit.io/pricing).
+
+Read more about **[OPAL+ here](/opal-plus/introduction)**.
+:::
+
+---
+
+## OPAL - 0.5.0
+
+This release contains several small fixes and improvements.
+
+#### New Features - Bundle Ignore
+
+Added support for omitting files in the bundle produced by opal-server. Use the `OPAL_BUNDLE_IGNORE` environment
+variable to specify a list of comma separated glob paths which if matched will ignore a file from being included in
+the policy bundle.
+
+#### Bug fix - [Bitbucket Webhook](https://github.com/permitio/opal/issues/381):
+
+When sending a webhook from Bitbucket to the OPAL server with an secret configured then the the response on the
+request is an 401, no secret was provided. This is unexpected as the configuration looks correct.
+
+#### Bug fix - [Configuration default casting](https://github.com/permitio/opal/pull/371)
+
+#### Improve usability of topics in data updates
+
+1. Have the default topic (policy_data) as a default value for `DataSourceEntry.topics` - To prevent users who have left
+   this empty before from experiencing breaking changes as a result of related bug fixes in `0.4.0`. This also fixes [#375](https://github.com/permitio/opal/issues/375): Uncaught server exception when posting data update without topics.
+
+2. Warn a user at realtime when published entry doesn't have topics, or when client processes data update with no matching entries
+   (this would cover what isn't covered by 1).
+
+3. Fix documentation about topics in data updates.
+
+#### CI Fixes
+
+1. Fixes broken pre commits.
+2. Install `jq` to client and server
+
+#### Documentation Fixes
+
+1.  Updated FAQ for OPAL
+2.  Update feature_request.md
+3.  Update issue templates
+4.  Bump `http-cache-semantics` from `4.1.0` to `4.1.1` in `/documentation`
+5.  Bump `eta`, `@docusaurus/core` and `@docusaurus/preset-classic` in `/documentation`
+6.  Bump `@sideway/formula` from `3.0.0` to `3.0.1` in `/documentation`
+7.  Addition of **[OPAL-plus](/opal-plus/introduction)**
+
+---
+
+## OPAL - 0.4.0
+
+This release contains several small fixes and improvements.
+
+#### Support for custom OPA versions / variants
+
+- Extract OPA executable from opa docker image by `@tibotix` in [#316](https://github.com/permitio/opal/pull/316)
+- Add opa_image Dockerfile build argument by `@tibotix` in [#322](https://github.com/permitio/opal/pull/322)
+
+#### Improved OPAL client healthcheck
+
+OPAL client healthcheck returns the value of the OPA healthcheck policy, based on sync status by `@orishavit` in [#332](https://github.com/permitio/opal/pull/332)
+
+#### Fixed: Hanging redis lock issue
+
+This fix by `@roekatz` solves the issue of the Redis lock (around the policy git clone) staying hanging forever (preventing new workers
+from cloning the repo). Probably because the app crashes with segfault before releasing the lock. [#345](https://github.com/permitio/opal/pull/345)
+
+#### Fixed: Pulling policy from private repo only succeeds for newly cloned repos
+
+Pass SSH environment to BranchTracker by `@orishavit` in [#366](https://github.com/permitio/opal/pull/366)
+
+#### More webhook formats supported
+
+- Webhooks: Support BitBucket webhooks by `@roekatz` in [#361](https://github.com/permitio/opal/pull/361)
+- Check webhook URL properly by `@orishavit` in [#355](https://github.com/permitio/opal/pull/355)
+- Git-webhook-azure by `@orweis` in [#351](https://github.com/permitio/opal/pull/351)
+- Git-webhook-expand by `@orweis` in [#342](https://github.com/permitio/opal/pull/342)
+- Add support to enforce git branch by `@orweis` in [#357](https://github.com/permitio/opal/pull/357)
+
+#### New configuration options
+
+Policy-updater-retry-config by `@orweis` in [#359](https://github.com/permitio/opal/pull/359)
+
+#### Documentation Fixes
+
+This update included docs interlinking, general improvements to the navbar, OPAL statistics docs and the addition of a
+tutorial for OPAL Helm Charts.

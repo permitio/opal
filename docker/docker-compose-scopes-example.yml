@@ -1,0 +1,60 @@
+services:
+  redis:
+    image: redis
+    ports:
+      - "6379:6379"
+
+  opal_server:
+    # by default we run opal-server from latest official image
+    image: permitio/opal-server:latest
+    environment:
+      # the broadcast backbone uri used by opal server workers (see comments above for: broadcast_channel)
+      - OPAL_BROADCAST_URI=redis://redis:6379
+      # number of uvicorn workers to run inside the opal-server container
+      - UVICORN_NUM_WORKERS=4
+      - OPAL_LOG_FORMAT_INCLUDE_PID=true
+      # using scopes requires having a running redis instance
+      - OPAL_REDIS_URL=redis://redis:6379
+      - OPAL_SCOPES=1
+      - OPAL_POLICY_REFRESH_INTERVAL=30
+      - OPAL_BASE_DIR=/opal
+    ports:
+      # exposes opal server on the host machine, you can access the server at: http://localhost:7002
+      - "7002:7002"
+    depends_on:
+      - redis
+
+  my_opal_client:
+    # by default we run opal-client from latest official image
+    image: permitio/opal-client:latest
+    environment:
+      - OPAL_SERVER_URL=http://opal_server:7002
+      - OPAL_LOG_FORMAT_INCLUDE_PID=true
+      - OPAL_INLINE_OPA_LOG_FORMAT=http
+      - OPAL_SCOPE_ID=myscope
+    ports:
+      # exposes opal client on the host machine, you can access the client at: http://localhost:7766
+      - "7766:7000"
+      # exposes the OPA agent (being run by OPAL) on the host machine
+      # you can access the OPA api that you know and love at: http://localhost:8181
+      # OPA api docs are at: https://www.openpolicyagent.org/docs/latest/rest-api/
+      - "8181:8181"
+    depends_on:
+      - opal_server
+    # this command is not necessary when deploying OPAL for real, it is simply a trick for dev environments
+    # to make sure that opal-server is already up before starting the client.
+    command: sh -c "exec ./wait-for.sh opal_server:7002 --timeout=20 -- ./start.sh"
+
+  her_opal_client:
+    image: permitio/opal-client:latest
+    environment:
+      - OPAL_SERVER_URL=http://opal_server:7002
+      - OPAL_LOG_FORMAT_INCLUDE_PID=true
+      - OPAL_INLINE_OPA_LOG_FORMAT=http
+      - OPAL_SCOPE_ID=herscope
+    ports:
+      - "7767:7000"
+      - "8182:8181"
+    depends_on:
+      - opal_server
+    command: sh -c "exec ./wait-for.sh opal_server:7002 --timeout=20 -- ./start.sh"

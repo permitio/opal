@@ -1,0 +1,15 @@
+# Standalone OPA URI
+
+### Step 6: Client config - Standalone OPA uri (Optional)
+
+If OPA is deployed separately from OPAL (i.e: using the standalone image), you should define the URI of the OPA instance you want to manage with OPAL client with this env var:
+
+| Env Var Name          | Function                                                   |
+| :-------------------- | :--------------------------------------------------------- |
+| OPAL_POLICY_STORE_URL | The internet address (uri) of the deployed standalone OPA. |
+
+Example, if the standalone OPA is available at `https://opa.billing.yourdomain.com:8181`:
+
+```sh
+export OPAL_POLICY_STORE_URL=https://opa.billing.yourdomain.com:8181
+```

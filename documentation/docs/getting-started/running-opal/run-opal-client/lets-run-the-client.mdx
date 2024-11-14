@@ -1,0 +1,55 @@
+# Run the OPAL Client
+
+### Step 7: Running the client
+
+Let's recap the previous steps with example values:
+
+#### 1) Get the client image
+
+First, download opal client docker image:
+
+```sh
+docker pull permitio/opal-client
+```
+
+#### 2) Set configuration
+
+Then, declare configuration with environment variables:
+
+```sh
+# let's say this is the (shortened) token we obtained from opal server
+export OPAL_CLIENT_TOKEN=eyJ0...8wsk
+# and this is where we deployed opal server
+export OPAL_SERVER_URL=https://opal.yourdomain.com
+# and let's say we subscribe to a specific tenant's data updates (i.e: `tenant1`)
+export OPAL_DATA_TOPICS=policy_data/tenant1
+```
+
+and let's assume we run opa inline with the default options.
+
+#### 3) Run the container (local run example)
+
+```
+docker run -it \
+  --env OPAL_CLIENT_TOKEN \
+  --env OPAL_SERVER_URL \
+  --env OPAL_DATA_TOPICS \
+  -p 7766:7000 \
+  -p 8181:8181 \
+  permitio/opal-client
+```
+
+Please notice opal client exposes two ports when running opa inline:
+
+- OPAL Client (port `:7766`) - the OPAL client API (i.e: healthcheck, etc).
+- OPA (port `:8181`) - the port of the OPA agent (OPA is running in server mode).
+
+#### 4) Run the container in production
+
+[Same instructions as for OPAL server](#run-docker-prod).
+
+## <a name="push-updates"></a> How to push data updates from an authoritative source
+
+Now that OPAL is live, we can use OPAL server to push updates to OPAL clients in real time.
+
+[We have a separate tutorial on how to trigger updates](/tutorials/trigger_data_updates).

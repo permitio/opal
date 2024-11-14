@@ -1,0 +1,80 @@
+---
+sidebar_position: 3
+title: Advanced Features
+---
+
+OPAL+ has a number of advanced features extending the capabilities of the open-source OPAL.
+These features are available to OPAL+ users only.
+
+To apply for Permit OPAL+, [fill in the form available here](https://hello.permit.io/opal-plus)
+
+
+## Support and SLA
+
+OPAL+ provides dedicated support and a custom SLA to help you get the most out of your OPAL+ deployment.
+Reach out to us [on Slack](https://bit.ly/permit-slack) for more information.
+
+## Licensing Capabilities
+
+OPAL+ provides additional licensing capabilities to help you manage your OPAL+ deployment.
+Reach out to us [on Slack](https://bit.ly/permit-slack) for more information.
+
+## Custom Data Fetcher Providers
+
+OPAL+ provides custom data fetcher providers to help you fetch data from your private data sources.
+
+## Logging and Monitoring
+
+OPAL+ provides advanced logging and monitoring capabilities to help you track and debug your OPAL+ deployment.
+
+#### Connect to logging system
+
+On production, we advise you to connect OPAL+ to your logging system to collect and store the logs.
+Configure the [OPAL_LOG_SERIALIZE](/getting-started/configuration) environment variable to `true` to serialize logs in JSON format.
+
+#### Monitor OPAL Servers and Clients
+
+OPAL+ provides monitoring endpoints to help you track the health of your OPAL+ servers and clients.
+Configure the [OPAL_STATISTICS_ENABLED=true](/getting-started/configuration) environment variable to enable the statistics APIs.
+
+You can then monitor the state of your OPAL+ cluster by calling the `/stats` API route on the server.
+```bash
+curl http://opal_server:8181/stats -H "Authorization: Bearer <token>"
+# { "uptime": "2024-07-14T14:55:02.710Z", "version": "0.7.8", "client_count": 1, "server_count": 1 }
+```
+
+You can also get detailed information about the OPAL+ clients and servers by calling the `/statistics` API route on the server.
+```bash
+curl http://opal_server:8181/statistics -H "Authorization: Bear <token>"
+```
+```json
+{
+  "uptime": "2024-07-14T14:54:09.809Z",
+  "version": "0.7.8",
+  "clients": {
+    "opal-client-1": [
+      {
+        "rpc_id": "7ba198b1329d439faaa79dd7447401dc",
+        "client_id": "693ac1b4d060416eaad50c2bf04121b1",
+        "topics": [
+          "string"
+        ]
+      }
+    ],
+    "opal-client-2": [
+      {
+        "rpc_id": "d343d92292794630994a8a077bcb413a",
+        "client_id": "4d71d88ba16f49e1a0ae89f16c5a55d5",
+        "topics": [
+          "string"
+        ]
+      }
+    ]
+  },
+  "servers": [
+    "774b376fbead49b79f6a9fd42cef2cfd"
+  ]
+}
+```
+
+For more information on monitoring OPAL, see the [Monitoring OPAL](/tutorials/monitoring_opal) tutorial.

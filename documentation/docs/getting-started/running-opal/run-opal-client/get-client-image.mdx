@@ -1,0 +1,21 @@
+# Download the Client Image
+
+### Step 1: Get the client image from docker hub
+
+#### Running with inline OPA (default / recommended)
+
+Run this command to get the image that comes with built-in OPA (recommended if you don't already have OPA installed in your environment):
+
+```
+docker pull permitio/opal-client
+```
+
+If you run in a cloud environment (e.g: AWS ECS), specify `permitio/opal-client` in your task definition or equivalent.
+
+#### Running with standalone OPA
+
+Otherwise, if you are already running OPA in your environment, run this command to get the standalone client image instead:
+
+```
+docker pull permitio/opal-client-standalone
+```

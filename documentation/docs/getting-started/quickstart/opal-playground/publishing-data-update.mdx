@@ -1,0 +1,85 @@
+# Step 4: Publishing a data update via the OPAL Server
+
+The default policy in the [example repo](https://github.com/permitio/opal-example-policy-repo) is a **simple RBAC policy with a twist**.
+
+A user is granted access if:
+
+- One of the **roles** has permissions for the requested `action` and `resource type`.
+- Only users with the **location** set to `US` can access the resource.
+
+The reason we added the **location** to the policy is to show how **pushing an update** via OPAL with a different
+"user location" can **immediately affect access** - demonstrating that realtime updates are needed by most modern applications.
+
+Remember this authorization query we previously run?
+
+```bash
+curl -w '\n' --request POST 'http://localhost:8181/v1/data/app/rbac/allow' \
+--header 'Content-Type: application/json' \
+--data-raw '{"input": {"user": "bob", "action": "read", "object": "id123", "type": "finance"}}'
+```
+
+Bob is granted access because the initial [`data.json`](https://github.com/permitio/opal-example-policy-repo/blob/master/data.json#L13) location is `US`.
+
+```json {3,4}
+"bob": {
+    "roles": ["employee", "billing"],
+    "location": {
+        "country": "US",
+        "ip": "8.8.8.8"
+    }
+}
+```
+
+Therefore, the result of that query is `true`. Now, let's push an update via OPAL and see how poor Bob is denied access.
+
+We can **push an update via the opal-client CLI**. Let's install the CLI to a new python **virtualenv**.
+
+```
+pyenv virtualenv opaldemo
+
+pyenv activate opaldemo
+
+pip install opal-client
+```
+
+Now, let's use the CLI to **push an update to override the user location**.
+
+```bash
+opal-client publish-data-update --src-url https://api.country.is/23.54.6.78 -t policy_data --dst-path /users/bob/location
+```
+
+We expect to receive this output from the CLI:
+
+```bash
+Publishing event:
+entries=[DataSourceEntry(url='https://api.country.is/23.54.6.78', config={}, topics=['policy_data'], dst_path='/users/bob/location', save_method='PUT')] reason=''
+Event Published Successfully
+```
+
+Now let's issue the same authorization query again.
+
+```bash
+curl -w '\n' --request POST 'http://localhost:8181/v1/data/app/rbac/allow' \
+--header 'Content-Type: application/json' \
+--data-raw '{"input": {"user": "bob", "action": "read", "object": "id123", "type": "finance"}}'
+```
+
+And... Bob is denied access.
+
+```bash
+{"result": false}
+```
+
+So what happened when we published our update with the CLI?
+
+Let's analyze the components of this update. **OPAL data updates** are built to support **your specific use case**.
+
+- You can specify a topic (in our example it was `policy_data`, which) to **target only specific OPAL clients**; and by extension **specific OPA agents**.
+  In our example, we used the `policy_data` topic which clients listen to by default (it's also the default topic for updates published with no topics specification).
+  Changing this default is only logical if each microservice you have has an OPA sidecar of its own and thus different policy/data needs.
+
+- OPAL specifies **from where** to fetch the data that changed. In this example we used a free and open API ([`api.country.is`](https://api.country.is))
+  that anyone can access, however, it can be **your specific API**, or a **3rd-party API**.
+
+- OPAL specifies **to where** in the OPA document hierarchy the data should be saved - by **where**, we mean the **destination path**.
+  In this case we override the `/users/bob/location` document with the fetched data.

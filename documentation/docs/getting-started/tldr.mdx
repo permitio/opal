@@ -1,0 +1,31 @@
+# OPAL TL;DR
+
+OPAL is an advanced piece of software with many capabilities and configuration options, hence it has a lot of docs; but if you want just the gist of it - this is the article for you.
+
+## How OPAL works
+
+The OPAL server sends instructions to the OPAL-clients (via pub/sub subscriptions over websockets) to load policy and data into their managed policy-agents (e.g. OPA, Cedar-agent, AWS AVP)
+
+### Policy
+
+OPAL tracks [policies from Git](/tutorials/track_a_git_repo) or from [API bundle servers](/tutorials/track_an_api_bundle_server).
+
+With Git - directories with policy-code (e.g. `.rego` or `.cedar` files) are automatically mapped to topics - which a client can subscribe to with `OPAL_POLICY_SUBSCRIPTION_DIRS`
+Every time you push a change, the OPAL server will notify the subscribing OPAL-clients to load the new policy.
+
+### Data
+
+OPAL tracks data from various sources via webhooks and [Fetch-Providers](/tutorials/write_your_own_fetch_provider) (extensible python modules that teach it to load data from sources).
+
+[Initial data is indicated by the server](getting-started/running-opal/run-opal-server/data-sources) based on `OPAL_DATA_CONFIG_SOURCES`.
+Subsequent data updates are triggered via [the data update webhook](/tutorials/trigger_data_updates).
+Every time the policy agent (or it's managing OPAL-client) restarts, the data and policy are loaded from scratch.
+
+#### Data as part of policy bundle
+
+Data can also be loaded with the policy as part of `data.json` files, located in the folders next to the policy file.
+
+:::note
+The **folder path** is used as the **key path** in the policy engine cache.
+In order to avoid race conditions between policy data updates and regular data updates, make sure the key paths used by your policy-data and the ones used by your data-updates are different.
+:::

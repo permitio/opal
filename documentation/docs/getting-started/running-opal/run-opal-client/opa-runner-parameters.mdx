@@ -1,0 +1,27 @@
+# OPA Runner Parameters
+
+### Step 5: Client config - OPA runner parameters (Optional)
+
+If you are running with inline OPA (meaning OPAL client runs OPA for you in the same docker image), you can change the default parameters used to run OPA.
+
+In order to override default configuration, you'll need to set this env var:
+
+| Env Var Name           | Function                                                                                                                                                                                                                                                                                                                                                                                                          |
+| :--------------------- | :---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| OPAL_INLINE_OPA_CONFIG | The value of this var should be an [OpaServerOptions](https://github.com/permitio/opal/blob/master/packages/opal-client/opal_client/engine/options.py#L19) pydantic model encoded into json string. The process is similar to the one we showed on how to encode the value of [OPAL_DATA_CONFIG_SOURCES](/getting-started/running-opal/run-opal-server/data-sources#encoding-this-value-in-an-environment-variable). |
+
+#### Control how OPAL interacts with the policy store
+
+Use the `POLICY_STORE_*` [config options](/getting-started/configuration) to control how OPAL-client interacts the policy store (e.g. OPA)
+
+- Use `POLICY_STORE_POLICY_PATHS_TO_IGNORE` to have the client ignore instruction to overwrite or delete policies. Accepting a list of glob paths, or parent paths (without wildcards) ending with "/\*\*"
+
+#### Policy store backup
+
+Opal client can be configured to maintain a local backup file, enabling to restore the policy store to its last known state after a restart, even when server is unavailable.
+
+- Use `OPAL_OFFLINE_MODE_ENABLED=true` to enable storing and loading from backup file.
+- The backup file is stored to `OPAL_STORE_BACKUP_PATH` (default value is `/opal/backup/opa.json`) - make sure its directory is mapped to a meaningful mount point
+- The backup is exported on SIGTERM (on container graceful shutdown), and every `OPAL_STORE_BACKUP_INTERVAL` seconds (default is 60s).
+
+When the client successfully loads the backup, it would report being ready even if server connection isn't established (thus considered operating at "offline mode")

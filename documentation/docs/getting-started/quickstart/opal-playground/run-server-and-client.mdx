@@ -1,0 +1,38 @@
+# Step 1: run docker compose to start the opal server and client
+
+Download and run a working configuration of OPAL server and OPAL client on your machine:
+
+```bash
+curl -L https://raw.githubusercontent.com/permitio/opal/master/docker/docker-compose-example.yml \
+> docker-compose.yml && docker-compose up
+```
+
+You can alternatively **clone the OPAL repository** and run the example compose file from your local clone:
+
+```
+git clone https://github.com/permitio/opal.git
+
+cd opal
+
+docker-compose -f docker/docker-compose-example.yml up
+```
+
+The `docker-compose.yml` we just downloaded - [view the file here](https://github.com/permitio/opal/blob/master/docker/docker-compose-example.yml) - is **running 3 containers**:
+
+1. A **Broadcast Channel** Container
+2. An **OPAL Server** Container
+3. An **OPAL Client** Container
+
+We provide a detailed review of exactly **what is running and why** later in this tutorial.
+You can [jump there by clicking this link](#compose-recap) to gain a deeper understanding, and then come back here,
+or you can continue with the hands-on tutorial.
+
+**OPAL** (and also **OPA**) are now running on your machine. You should be aware of the following ports that are exposed on `localhost`:
+
+- **OPAL Server** - PORT `:7002` - the **_OPAL client_** (and potentially the CLI) can connect to this port.
+- **OPAL Client** - PORT `:7766` - the **_OPAL client_** has its own API, but it's irrelevant to this tutorial.
+- **OPA** - PORT `:8181` - the port of the **_OPA Agent_** that is running **running in server mode**.
+
+:::info
+**OPA** is being **run by OPAL client** in its container as a **managed process**.
+:::

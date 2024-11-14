@@ -1,0 +1,15 @@
+# Configure the Server URI
+
+### Step 3: Client config - server uri
+
+Set the following environment variable according to the address of the deployed OPAL server:
+
+| Env Var Name    | Function                                                                                                                |
+| :-------------- | :---------------------------------------------------------------------------------------------------------------------- |
+| OPAL_SERVER_URL | The internet address (uri) of the deployed OPAL server. In production, you must use an `https://` address for security. |
+
+Example, if the OPAL server is available at `https://opal.yourdomain.com`:
+
+```sh
+export OPAL_SERVER_URL=https://opal.yourdomain.com
+```

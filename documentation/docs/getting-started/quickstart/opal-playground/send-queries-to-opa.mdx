@@ -1,0 +1,49 @@
+# Step 2: Sending authorization queries to OPA
+
+As mentioned above, the **_OPA Agent_** & it's **REST API** is running on port `:8181`.
+
+Let's explore the current state and send some authorization queries to the agent.
+
+The default policy in the [example repo](https://github.com/permitio/opal-example-policy-repo) is a simple
+[RBAC](https://en.wikipedia.org/wiki/Role-based_access_control) policy, to which we can issue the below request to get the user's
+**role assignment and metadata**.
+
+```bash
+curl --request GET 'http://localhost:8181/v1/data/users' --header 'Content-Type: application/json' | python -m json.tool
+```
+
+The expected response should be like the one below.
+
+```js showLineNumbers
+{
+    "result": {
+        "alice": {
+            "location": {
+                "country": "US",
+                "ip": "8.8.8.8"
+            },
+            "roles": [
+                "admin"
+            ]
+        },
+
+        ...
+    }
+}
+```
+
+With some user data gathered, let's now issue an **authorization** query. In OPA, an authorization query is a query **with input**.
+
+This below query asks whether the user `bob` can `read` the `finance` resource, where the id of the object is `id123`.
+
+```bash
+curl -w '\n' --request POST 'http://localhost:8181/v1/data/app/rbac/allow' \
+--header 'Content-Type: application/json' \
+--data-raw '{"input": {"user": "bob", "action": "read", "object": "id123", "type": "finance"}}'
+```
+
+The expected result is `true`, meaning the access is granted.
+
+```bash
+{"result": true}
+```

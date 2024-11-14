@@ -1,0 +1,71 @@
+# Running the Server and Client in Secure Mode
+
+## Server Secure Mode
+
+OPAL-server can run in secure mode, signing and verifying [Json Web Tokens](https://en.wikipedia.org/wiki/JSON_Web_Token) for the connecting OPAL-clients.
+To achieve this we need to provide the server with a private and public key pair.
+In addition we need to provide the server with a master-token (random secret) that the CLI (or other tools) could use to connect to ask it and generate the aforementioned signed-JWTs.
+
+- Generating encryption keys
+
+  - Using a utility like [ssh-keygen](https://linux.die.net/man/1/ssh-keygen) we can easily generate the keys (on Windows try [SSH-keys Windows guide](https://phoenixnap.com/kb/generate-ssh-key-windows-10))
+    ```sh
+    ssh-keygen -t rsa -b 4096 -m pem
+    ```
+    follow the instructions to save the keys to two files.
+  - If you created the keys with a passphrase, you can supply the passphrase to the server via the `OPAL_AUTH_PRIVATE_KEY_PASSPHRASE` option
+  - You can provide the keys to OPAL-server via the `OPAL_AUTH_PRIVATE_KEY` and `OPAL_AUTH_PUBLIC_KEY` options
+  - in these vars You can either provide the path to the keys, or the actual strings of the key's content (with newlines replaced with "\_")
+
+- Master-secret
+
+  - You can choose any secret you'd like, but to make life easier OPAL's CLI include the generate-secret command, which you can use to generate cryptographically strong secrets easily.
+    ```sh
+    opal-server generate-secret
+    ```
+  - provide the master-token via `OPAL_AUTH_MASTER_TOKEN`
+
+- run the server with both keys and and master-secret
+
+  ```sh
+  # Run server
+  # in secure mode -verifying client JWTs (Replace secrets with actual secrets ;-) )
+  # (Just to be clear `~` is the user's homedir)
+  export OPAL_AUTH_PRIVATE_KEY=~/opal
+  export OPAL_AUTH_PUBLIC_KEY=~/opal.pub
+  export OPAL_AUTH_MASTER_TOKEN="RANDOM-SECRET-STRING"
+  opal-server run
+  ```
+
+- Once the server is running we can obtain a JWT identifying our client
+  - We can either obtain a JWT with the CLI
+    ```sh
+    opal-client obtain-token $OPAL_AUTH_MASTER_TOKEN --server-url=$YOUR_SERVERS_ADDRESS
+    ```
+  - <a name="obtain-token-api"></a>Or we can obtain the JWT directly from the deployed
+    OPAL server via its REST API:
+
+```
+curl --request POST 'https://opal.yourdomain.com/token' \
+--header 'Authorization: Bearer MY_MASTER_TOKEN' \
+--header 'Content-Type: application/json' \
+--data-raw '{
+  "type": "client",
+}'
+```
+
+This code example assumes your opal server is at https://opal.yourdomain.com and that your master token is `MY_MASTER_TOKEN`. The `/token` API endpoint can receive more parameters, as [documented here](https://opal.permit.io/redoc#operation/generate_new_access_token_token_post).
+
+## Client Secure Mode
+
+- Using the master-token you assigned to the server obtain a client JWT
+  ```sh
+  opal-client obtain-token $OPAL_AUTH_MASTER_TOKEN --server-url=$YOUR_SERVERS_ADDRESS
+  ```
+  You can also use the REST API to obtain the token.
+- run the client with env-var `OPAL_CLIENT_TOKEN` or cmd-option `--client-token` to pass the JWT obtained from the server
+
+  ```sh
+  export OPAL_CLIENT_TOKEN="JWT-TOKEN-VALUE`
+  opal-client run
+  ```

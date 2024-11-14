@@ -1,0 +1,96 @@
+# OPAL Server
+
+There are three important concepts in the configuration of the OPAL Server that should be understood.
+
+```yml showLineNumbers
+services:
+  opal_server:
+    image: permitio/opal-server:latest
+    environment:
+      - OPAL_BROADCAST_URI=postgres://postgres:postgres@broadcast_channel:5432/postgres
+      - UVICORN_NUM_WORKERS=4
+      - OPAL_POLICY_REPO_URL=https://github.com/permitio/opal-example-policy-repo
+      - OPAL_POLICY_REPO_POLLING_INTERVAL=30
+      - OPAL_DATA_CONFIG_SOURCES={"config":{"entries":[{"url":"http://opal_server:7002/policy-data","topics":["policy_data"],"dst_path":"/static"}]}}
+      - OPAL_LOG_FORMAT_INCLUDE_PID=true
+    ports:
+      - "7002:7002"
+    depends_on:
+      - broadcast_channel
+```
+
+### 1. Policy-data basic configuration
+
+The OPAL server provides the **base data source configuration** for the OPAL client. The configuration is structured
+as **directives** for the client.
+
+Each directive specifies:
+
+1. **what to fetch** - the URL
+2. **where to put it in the OPA data document hierarchy** - the destination path
+
+The data sources configured on the server will be fetched **by the client** every time it decides it needs
+to fetch the entire data configuration. This could be when the client **first loads**, after a **period of
+disconnection** from the server etc.
+
+The data sources specified in the server configuration must always return a complete and up-to-date picture.
+In our example `docker-compose.yml` file, the server is configured to return these data sources directives to the client.
+
+Each data source entry has `topics` to help control which clients should process it.
+The default topic is `"policy_data"` and is used as a default in both the client (for subscription) and the server (for publishing).
+(If publishing to another topic - make sure the client is subscribed to it by setting the `OPAL_DATA_TOPICS` envar)
+
+This is what it looks like:
+
+```yml
+OPAL_DATA_CONFIG_SOURCES={"config":{"entries":[{"url":"http://opal_server:7002/policy-data","topics":["policy_data"],"dst_path":"/static"}]}}
+```
+
+We fetch the `/policy-data` route on the OPAL server and **assign it to the root data document on OPA** - `i.e: /`.
+
+### 2. Policy-code realtime updates
+
+The **OPAL server tracks a git repository** and feeds the policy code, or more accurately,
+`.rego` files along with static data files like `data.json` directly to OPA as a policy.
+
+```yml
+OPAL_POLICY_REPO_URL=https://github.com/permitio/opal-example-policy-repo
+```
+
+If new commits will be pushed to this repository that affect `.rego` or data files, the updated policy will be pushed
+to OPA automatically in realtime by OPAL.
+
+The `docker-compose.yml` file declares a **polling interval** to check if new commits are pushed to the repo.
+
+```yml
+OPAL_POLICY_REPO_POLLING_INTERVAL=30
+```
+
+:::tip
+When working in a **production environment**, we recommend you setup a **git webhook** from your repo to the OPAL server.
+
+The only reason we are using polling here is because we want the example `docker-compose.yml` file to work for you as well,
+and webhooks can only hit a public internet address.
+
+If you are working in a **development environment**, you can use a reverse proxy like [ngrok](https://ngrok.com/).
+:::
+
+### 3. Policy-data realtime updates
+
+The **OPAL server can push realtime data updates to the client**. It offers a **REST API** that allows you to push updates
+via the server using a pub/sub channel.
+
+Below is an example why realtime updates are important.
+
+:::info EXAMPLE
+
+- Alice just **invited** Bob to a google drive document.
+- Bob expects to be able to **view the document immediately**.
+- If your authorization layer is implemented with OPA, **you cannot wait for the OPA agent to download a new bundle**,
+  it's too slow for live application.
+- Instead you **push an update via OPAL** and the state of the OPA agent changes immediately.
+
+:::
+
+If you want to learn more about triggering realtime updates via OPAL - please refer
+to [**this**](/tutorials/trigger_data_updates) guide.

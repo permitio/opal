@@ -1,0 +1,51 @@
+# OPAL Client
+
+The OPAL Client has three main functionalities that need to be highlighted.
+
+```yml showLineNumbers
+service:
+  opal_client:
+  image: permitio/opal-client:latest
+  environment:
+    - OPAL_SERVER_URL=http://opal_server:7002
+    - OPAL_LOG_FORMAT_INCLUDE_PID=true
+    - OPAL_INLINE_OPA_LOG_FORMAT=http
+  ports:
+    - "7766:7000"
+    - "8181:8181"
+  depends_on:
+    - opal_server
+  command: sh -c "./wait-for.sh opal_server:7002 --timeout=20 -- ./start.sh"
+```
+
+### 1. The OPAL client can run OPA for you as an inline process
+
+The OPAL client [docker image](https://hub.docker.com/r/permitio/opal-client) contains a built-in OPA agent,
+and can serve as fully-functional **authorization microservice**. OPA is solely responsible for **enforcing** and
+**evaluating authorization queries**.
+
+:::tip FACT
+**OPAL** is solely responsible for state-management, meaning it will keep the **policy** and **data** needed to evaluate queries
+**up-to-date**.
+:::
+
+In our example `docker-compose.yml` file, OPA is enabled and runs on port `:8181` which is exposed on the host machine.
+
+```yml showLineNumbers {3}
+ports:
+  - "7766:7000"
+  - "8181:8181"
+```
+
+**OPAL will manage the OPA process**. If the OPA process fails for some reason, OPAL will restart OPA and
+rehydrate the OPA cache with valid and up-to-date state. By rehydration, we mean that the policies and data
+will be **re-downloaded**.
+
+### 2. The OPAL client syncs OPA with latest policy code
+
+OPAL **listens** to policy code update notifications and **downloads up-to-date policy bundles** from the server.
+
+### 3. The OPAL client syncs OPA with latest policy data
+
+OPAL **listens** to policy data update notifications and **fetches the data from the sources** specified by the instructions
+sent from the server. OPAL can aggregate data from multiple sources. This may include your **APIs**, **databases** and **3rd party SaaS**.
