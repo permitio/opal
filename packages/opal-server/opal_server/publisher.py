@@ -1,41 +1,91 @@
-from fastapi_websocket_pubsub import PubSubClient, Topic
-from opal_common.confi.confi import load_conf_if_none
-from opal_common.topics.publisher import (
-    ClientSideTopicPublisher,
-    PeriodicPublisher,
-    ServerSideTopicPublisher,
-    TopicPublisher,
-)
-from opal_common.utils import get_authorization_header
-from opal_server.config import opal_server_config
+import asyncio
+from typing import Any, Optional
+
+from fastapi_websocket_pubsub import Topic, TopicList
+from opal_common.logger import logger
 
 
-def setup_publisher_task(
-    server_uri: str = None,
-    server_token: str = None,
-) -> TopicPublisher:
-    server_uri = load_conf_if_none(
-        server_uri,
-        opal_server_config.OPAL_WS_LOCAL_URL,
-    )
-    server_token = load_conf_if_none(
-        server_token,
-        opal_server_config.OPAL_WS_TOKEN,
-    )
-    return ClientSideTopicPublisher(
-        client=PubSubClient(extra_headers=[get_authorization_header(server_token)]),
-        server_uri=server_uri,
-    )
+class Publisher:
+    """abstract publisher, base class for client side and server side
+    publisher."""
+
+    async def publish(self, topics: TopicList, data: Any = None):
+        raise NotImplementedError()
+
+    async def publish_sync(self, topics: TopicList, data: Any = None):
+        raise NotImplementedError()
 
 
-def setup_broadcaster_keepalive_task(
-    publisher: ServerSideTopicPublisher,
-    time_interval: int,
-    topic: Topic = "__broadcast_session_keepalive__",
-) -> PeriodicPublisher:
-    """a periodic publisher with the intent to trigger messages on the
-    broadcast channel, so that the session to the backbone won't become idle
-    and close on the backbone end."""
-    return PeriodicPublisher(
-        publisher, time_interval, topic, task_name="broadcaster keepalive task"
-    )
+class PeriodicPublisher:
+    """Wrapper for a task that publishes to topic on fixed interval
+    periodically."""
+
+    def __init__(
+        self,
+        publisher: Publisher,
+        time_interval: int,
+        topic: Topic,
+        message: Any = None,
+        task_name: str = "periodic publish task",
+    ):
+        """inits the publisher.
+
+        Args:
+            publisher (Publisher): can publish messages on the pub/sub channel
+            time_interval (int): the time interval between publishing consecutive messages
+            topic (Topic): the topic to publish on
+            message (Any): the message to publish
+        """
+        self._publisher = publisher
+        self._interval = time_interval
+        self._topic = topic
+        self._message = message
+        self._task_name = task_name
+        self._task: Optional[asyncio.Task] = None
+
+    async def __aenter__(self):
+        self.start()
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb):
+        await self.stop()
+
+    def start(self):
+        """starts the periodic publisher task."""
+        if self._task is not None:
+            logger.warning(f"{self._task_name} already started")
+            return
+
+        logger.info(
+            f"started {self._task_name}: topic is '{self._topic}', interval is {self._interval} seconds"
+        )
+        self._task = asyncio.create_task(self._publish_task())
+
+    async def stop(self):
+        """stops the publisher (cancels any running publishing tasks)"""
+        if self._task is not None:
+            self._task.cancel()
+            try:
+                await self._task
+            except asyncio.CancelledError:
+                pass
+            self._task = None
+            logger.info(f"cancelled {self._task_name} to topic: {self._topic}")
+
+    async def _publish_task(self):
+        while True:
+            await asyncio.sleep(self._interval)
+            logger.info(
+                f"{self._task_name}: publishing message on topic '{self._topic}', next publish is scheduled in {self._interval} seconds"
+            )
+            try:
+                await self._publisher.publish_sync([self._topic], self._message)
+            except asyncio.CancelledError:
+                logger.debug(
+                    f"{self._task_name} for topic '{self._topic}' was cancelled"
+                )
+                break
+            except Exception as e:
+                logger.error(
+                    f"failed to publish periodic message on topic '{self._topic}': {e}"
+                )

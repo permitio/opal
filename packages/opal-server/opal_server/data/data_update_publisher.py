@@ -1,23 +1,18 @@
-import asyncio
 import os
-from typing import List
+from typing import List, Union
 
-from fastapi_utils.tasks import repeat_every
 from opal_common.logger import logger
-from opal_common.schemas.data import (
-    DataSourceEntryWithPollingInterval,
-    DataUpdate,
-    ServerDataSourceConfig,
-)
-from opal_common.topics.publisher import TopicPublisher
+from opal_common.schemas.data import DataUpdate
+from opal_server.pubsub import PubSub
+from opal_server.scopes.scoped_pubsub import ScopedPubSub
 
 TOPIC_DELIMITER = "/"
 PREFIX_DELIMITER = ":"
 
 
 class DataUpdatePublisher:
-    def __init__(self, publisher: TopicPublisher) -> None:
-        self._publisher = publisher
+    def __init__(self, pubsub: Union[PubSub, ScopedPubSub]) -> None:
+        self._pubsub = pubsub
 
     @staticmethod
     def get_topic_combos(topic: str) -> List[str]:
@@ -108,6 +103,4 @@ class DataUpdatePublisher:
             entries=logged_entries,
         )
 
-        await self._publisher.publish(
-            list(all_topic_combos), update.dict(by_alias=True)
-        )
+        await self._pubsub.publish(list(all_topic_combos), update.dict(by_alias=True))
