@@ -9,8 +9,8 @@ from opal_common.logger import logger
 from opal_common.sources.base_policy_source import BasePolicySource
 from opal_server.config import opal_server_config
 from opal_common.monitoring.prometheus_metrics import (
-    policy_update_count,
-    policy_update_latency
+    opal_server_policy_update_count,
+    opal_server_policy_update_latency
 )
 
 
@@ -127,7 +127,7 @@ class PolicyWatcherTask(BasePolicyWatcherTask):
     async def trigger(self, topic: Topic, data: Any):
         """triggers the policy watcher from outside to check for changes (git
         pull)"""
-        policy_update_count.labels(source="webhook").inc()
+        opal_server_policy_update_count.labels(source="webhook").inc()
 
-        with policy_update_latency.labels(source="webhook").time():
+        with opal_server_policy_update_latency.labels(source="webhook").time():
             await self._watcher.check_for_changes()

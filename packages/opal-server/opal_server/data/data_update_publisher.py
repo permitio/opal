@@ -11,8 +11,8 @@ from opal_common.schemas.data import (
 )
 from opal_common.topics.publisher import TopicPublisher
 from opal_common.monitoring.prometheus_metrics import (
-    data_update_latency,
-    data_update_count_per_topic
+    opal_server_data_update_latency,
+    opal_server_data_update_count_per_topic
 )
 
 
@@ -76,7 +76,7 @@ class DataUpdatePublisher:
             update (DataUpdate): update data-source configuration for subscribers to fetch data from
         """
 
-        with data_update_latency.time():
+        with opal_server_data_update_latency.time():
             all_topic_combos = set()
 
             # a nicer format of entries to the log
@@ -101,7 +101,7 @@ class DataUpdatePublisher:
                     all_topic_combos.update(topic_combos)
 
                     for topic in topic_combos:
-                        data_update_count_per_topic.labels(topic).inc()
+                        opal_server_data_update_count_per_topic.labels(topic).inc()
                 else:
                     logger.warning(
                         "[{pid}] No topics were provided for the following entry: {entry}",

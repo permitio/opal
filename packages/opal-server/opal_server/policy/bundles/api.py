@@ -14,9 +14,9 @@ from opal_common.schemas.policy import PolicyBundle
 from opal_server.config import opal_server_config
 from starlette.responses import RedirectResponse
 from opal_common.monitoring.prometheus_metrics import (
-    policy_bundle_request_count,
-    policy_bundle_latency,
-    policy_update_size,
+    opal_server_policy_bundle_request_count,
+    opal_server_policy_bundle_latency,
+    opal_server_policy_update_size,
 )
 
 router = APIRouter()
@@ -105,9 +105,9 @@ async def get_policy(
         description="hash of previous bundle already downloaded, server will return a diff bundle.",
     ),
 ):
-    policy_bundle_request_count.inc()
+    opal_server_policy_bundle_request_count.inc()
 
-    with policy_bundle_latency.time():
+    with opal_server_policy_bundle_latency.time():
         maker = BundleMaker(
             repo,
             in_directories=set(input_paths),
@@ -131,7 +131,7 @@ async def get_policy(
             )
             if bundle.deleted_files:
                 bundle_size += len(bundle.deleted_files.files)
-            policy_update_size.observe(bundle_size)
+            opal_server_policy_update_size.observe(bundle_size)
             return bundle
         try:
             old_commit = repo.commit(base_hash)
@@ -142,7 +142,7 @@ async def get_policy(
             )
             if diff_bundle.deleted_files:
                 diff_bundle_size += len(diff_bundle.deleted_files.files)
-            policy_update_size.observe(diff_bundle_size)
+            opal_server_policy_update_size.observe(diff_bundle_size)
             return diff_bundle
         except ValueError:
             raise HTTPException(
