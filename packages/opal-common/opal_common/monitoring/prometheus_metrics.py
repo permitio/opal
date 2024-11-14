@@ -102,6 +102,7 @@ opal_server_scope_error_count = Counter(
 token_request_count = Counter(
     "opal_token_request_count",
     "Total number of token requests",
+    ['token_type']
 )
 
 token_generation_errors = Counter(

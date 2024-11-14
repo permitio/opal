@@ -7,3 +7,4 @@ slowapi>=0.1.5,<1
 pygit2>=1.14.1,<1.15
 asgiref>=3.5.2,<4
 redis>=4.3.4,<5
+prometheus_client

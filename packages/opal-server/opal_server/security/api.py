@@ -22,7 +22,7 @@ def init_security_router(signer: JWTSigner, authenticator: StaticBearerAuthentic
         dependencies=[Depends(authenticator)],
     )
     async def generate_new_access_token(req: AccessTokenRequest):
-        token_request_count.inc()
+        token_request_count.labels(token_type=req.type.value).inc()
         if not signer.enabled:
             token_generation_errors.labels(error_type="SignerDisabled").inc()
             raise HTTPException(
