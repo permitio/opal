@@ -134,7 +134,7 @@ token_generation_errors = Counter(
     ["error_type", "token_type"]
 )
 
-
+# Client metrics
 active_clients = Gauge(
     'opal_active_clients_total',
     'Number of currently connected OPAL clients',
@@ -145,4 +145,68 @@ client_data_subscriptions = Gauge(
     'opal_client_data_subscriptions',
     'Number of data topics a client is subscribed to',
     ['client_id', 'topic']
+)
+
+# Opal Client metrics
+opal_client_data_update_trigger_count = Counter(
+    'opal_client_data_update_trigger_count',
+    'Number of data update triggers',
+    ['source', 'status']
+)
+
+opal_client_data_update_latency = Histogram(
+    'opal_client_data_update_latency_seconds',
+    'Latency of data update operations',
+    ['source'],
+    buckets=[.01, .025, .05, .075, .1, .25, .5, .75, 1.0, 2.5, 5.0]
+)
+
+opal_client_data_update_errors = Counter(
+    'opal_client_data_update_errors',
+    'Number of errors during data updates',
+    ['error_type', 'source']
+)
+
+opal_client_policy_update_trigger_count = Counter(
+    'opal_client_policy_update_trigger_count',
+    'Number of policy update triggers',
+    ['source', 'status', 'update_type']
+)
+
+opal_client_policy_update_latency = Histogram(
+    'opal_client_policy_update_latency_seconds',
+    'Latency of policy update operations',
+    ['source', 'update_type'],
+    buckets=[.01, .025, .05, .075, .1, .25, .5, .75, 1.0, 2.5, 5.0]
+)
+
+opal_client_policy_update_errors = Counter(
+    'opal_client_policy_update_errors',
+    'Number of errors during policy updates',
+    ['error_type', 'source']
+)
+
+opal_client_policy_store_request_count = Counter(
+    'opal_client_policy_store_request_count',
+    'Number of requests to policy store endpoints',
+    ['endpoint', 'status']
+)
+
+opal_client_policy_store_request_latency = Histogram(
+    'opal_client_policy_store_request_latency_seconds',
+    'Latency of policy store requests',
+    ['endpoint'],
+    buckets=[.01, .025, .05, .075, .1, .25, .5, .75, 1.0]
+)
+
+opal_client_policy_store_auth_errors = Counter(
+    'opal_client_policy_store_auth_errors',
+    'Number of authentication/authorization errors for policy store',
+    ['error_type', 'endpoint']
+)
+
+opal_client_policy_store_status = Gauge(
+    'opal_client_policy_store_status',
+    'Current status of policy store connection',
+    ['auth_type']
 )
