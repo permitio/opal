@@ -105,25 +105,27 @@ async def get_policy(
         description="hash of previous bundle already downloaded, server will return a diff bundle.",
     ),
 ):
-    opal_server_policy_bundle_request_count.inc()
+    """Get the policy bundle from the policy repo."""
 
-    with opal_server_policy_bundle_latency.time():
-        maker = BundleMaker(
-            repo,
-            in_directories=set(input_paths),
-            extensions=opal_server_config.FILTER_FILE_EXTENSIONS,
-            root_manifest_path=opal_server_config.POLICY_REPO_MANIFEST_PATH,
-            bundle_ignore=opal_server_config.BUNDLE_IGNORE,
-        )
-        # check if commit exist in the repo
-        revision = None
-        if base_hash:
-            try:
-                revision = repo.rev_parse(base_hash)
-            except ValueError:
-                logger.warning(f"base_hash {base_hash} not exist in the repo")
+    
+    maker = BundleMaker(
+        repo,
+        in_directories=set(input_paths),
+        extensions=opal_server_config.FILTER_FILE_EXTENSIONS,
+        root_manifest_path=opal_server_config.POLICY_REPO_MANIFEST_PATH,
+        bundle_ignore=opal_server_config.BUNDLE_IGNORE,
+    )
+    # check if commit exist in the repo
+    revision = None
+    if base_hash:
+        try:
+            revision = repo.rev_parse(base_hash)
+        except ValueError:
+            logger.warning(f"base_hash {base_hash} not exist in the repo")
 
-        if revision is None:
+    if revision is None:
+        opal_server_policy_bundle_request_count.labels(type="full").inc()
+        with opal_server_policy_bundle_latency.labels(type="full").time():
             bundle = maker.make_bundle(repo.head.commit)
             bundle_size = (
                 (len(bundle.data_modules) if bundle.data_modules is not None else 0) +
@@ -131,21 +133,24 @@ async def get_policy(
             )
             if bundle.deleted_files:
                 bundle_size += len(bundle.deleted_files.files)
-            opal_server_policy_update_size.observe(bundle_size)
+            opal_server_policy_update_size.labels(type="full").observe(bundle_size)
             return bundle
-        try:
-            old_commit = repo.commit(base_hash)
-            diff_bundle = maker.make_diff_bundle(old_commit, repo.head.commit)
-            diff_bundle_size = (
-                (len(diff_bundle.data_modules) if diff_bundle.data_modules is not None else 0) +
-                (len(diff_bundle.policy_modules) if diff_bundle.policy_modules is not None else 0)
+    else:
+        opal_server_policy_bundle_request_count.labels(type="diff").inc()
+        with opal_server_policy_bundle_latency.labels(type="diff").time():
+            try:
+                old_commit = repo.commit(base_hash)
+                diff_bundle = maker.make_diff_bundle(old_commit, repo.head.commit)
+                diff_bundle_size = (
+                    (len(diff_bundle.data_modules) if diff_bundle.data_modules is not None else 0) +
+                    (len(diff_bundle.policy_modules) if diff_bundle.policy_modules is not None else 0)
+                )
+                if diff_bundle.deleted_files:
+                    diff_bundle_size += len(diff_bundle.deleted_files.files)
+                opal_server_policy_update_size.labels(type="diff").observe(diff_bundle_size)
+                return diff_bundle
+            except ValueError:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail=f"commit with hash {base_hash} was not found in the policy repo!",
             )
-            if diff_bundle.deleted_files:
-                diff_bundle_size += len(diff_bundle.deleted_files.files)
-            opal_server_policy_update_size.observe(diff_bundle_size)
-            return diff_bundle
-        except ValueError:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"commit with hash {base_hash} was not found in the policy repo!",
-        )

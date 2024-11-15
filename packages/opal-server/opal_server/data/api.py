@@ -20,7 +20,10 @@ from opal_common.schemas.security import PeerType
 from opal_common.urls import set_url_query_param
 from opal_server.config import opal_server_config
 from opal_server.data.data_update_publisher import DataUpdatePublisher
-from opal_common.monitoring.prometheus_metrics import opal_server_data_update_total, opal_server_data_update_errors
+from opal_common.monitoring.prometheus_metrics import (
+    opal_server_data_update_total,
+    opal_server_data_update_errors
+)
 
 
 def init_data_updates_router(
@@ -125,13 +128,27 @@ def init_data_updates_router(
             restrict_optional_topics_to_publish(
                 authenticator, claims, update
             )  # may throw Unauthorized
+
+            opal_server_data_update_total.labels(
+                status="success",
+                type="update"
+            ).inc()
+
+            await data_update_publisher.publish_data_updates(update)
+            return {"status": "ok"}
         except Unauthorized as e:
-            opal_server_data_update_errors.inc()
+            opal_server_data_update_errors.labels(
+                error_type="unauthorized",
+                endpoint="update"
+            ).inc()
             logger.error(f"Unauthorized to publish update: {repr(e)}")
             raise
-        opal_server_data_update_total.inc()
-
-        await data_update_publisher.publish_data_updates(update)
-        return {"status": "ok"}
+        except Exception as e:
+            opal_server_data_update_errors.labels(
+                error_type="unknown",
+                endpoint="update"
+            ).inc()
+            logger.error(f"Failed to publish update: {repr(e)}")
+            raise
 
     return router

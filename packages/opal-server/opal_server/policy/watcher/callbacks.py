@@ -117,7 +117,9 @@ async def publish_changed_directories(
     )
 
     if notification:
-        opal_server_policy_update_size.observe(len(notification.update.changed_directories))
+        opal_server_policy_update_size.labels(type="directory").observe(
+            len(notification.update.changed_directories)
+        )
 
         async with publisher:
             await publisher.publish(

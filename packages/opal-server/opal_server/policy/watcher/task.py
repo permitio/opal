@@ -104,6 +104,10 @@ class BasePolicyWatcherTask:
 
     async def _fail(self, exc: Exception):
         """called when the watcher fails, and stops all tasks gracefully."""
+        opal_server_policy_update_count.labels(
+            source="watcher",
+            status="error"
+        ).inc()
         logger.error("policy watcher failed with exception: {err}", err=repr(exc))
         self.signal_stop()
         # trigger uvicorn graceful shutdown
@@ -127,7 +131,24 @@ class PolicyWatcherTask(BasePolicyWatcherTask):
     async def trigger(self, topic: Topic, data: Any):
         """triggers the policy watcher from outside to check for changes (git
         pull)"""
-        opal_server_policy_update_count.labels(source="webhook").inc()
+        try:
+            opal_server_policy_update_count.labels(
+                    source="webhook",
+                    status="started"
+                ).inc()
 
-        with opal_server_policy_update_latency.labels(source="webhook").time():
-            await self._watcher.check_for_changes()
+            with opal_server_policy_update_latency.labels(
+                    source="webhook",
+                    status="success"
+                ).time():
+                    await self._watcher.check_for_changes()
+            opal_server_policy_update_count.labels(
+                source="webhook",
+                status="success"
+            ).inc()
+        except Exception as e:
+            opal_server_policy_update_count.labels(
+                source="webhook",
+                status="error"
+            ).inc()
+            raise

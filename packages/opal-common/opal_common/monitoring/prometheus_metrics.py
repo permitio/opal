@@ -2,50 +2,60 @@ from prometheus_client import Counter, Gauge, Histogram
 
 # Opal Server Data update metrics
 opal_server_data_update_total = Counter(
-    'opal_server_data_update_total', 'Total number of data update events published to opal server'
+    'opal_server_data_update_total',
+    'Total number of data update events published to opal server',
+    ["status"]
 )
 
 opal_server_data_update_errors = Counter(
-    'opal_server_data_update_errors', 'Total number of errors in opal server data update publishing'
+    'opal_server_data_update_errors',
+    'Total number of errors in opal server data update publishing',
+    ["error_type"]
 )
 
 opal_server_data_update_latency = Histogram(
     'opal_opal_server_data_update_latency_seconds',
-    'Latency of data update publishing to opal server in seconds'
+    'Latency of data update publishing to opal server in seconds',
+    buckets=[.001, .005, .01, .025, .05, .075, .1, .25, .5, .75, 1.0, 2.5, 5.0]
 )
 
 opal_server_data_update_count_per_topic = Counter(
     'opal_server_data_update_count_per_topic',
     'Count of data updates published per topic to opal server',
-    labelnames=['topic']
+    ['topic']
 )
 
 # Opal Server Policy update metrics
 opal_server_policy_update_count = Counter(
     'pal_server_policy_update_count',
     'Total number of policy updates triggered to opal server',
-    labelnames=['source']
+    ["source", "status"]
 )
 
 opal_server_policy_update_latency = Histogram(
     'opal_server_policy_update_latency_seconds',
     'Latency of policy bundle generation in seconds',
-    labelnames=['source']
+    ["source", "status"],
+    buckets=[.01, .025, .05, .075, .1, .25, .5, .75, 1.0, 2.5, 5.0]
 )
 
 opal_server_policy_bundle_request_count = Counter(
     'opal_server_policy_bundle_request_count',
-    'Total number of policy bundle requests'
+    'Total number of policy bundle requests',
+    ["type"]
 )
 
 opal_server_policy_bundle_latency = Histogram(
     'opal_server_policy_bundle_latency_seconds',
-    'Latency of serving policy bundles in seconds'
+    'Latency of serving policy bundles in seconds',
+    ["type"],
+    buckets=[.01, .025, .05, .075, .1, .25, .5, .75, 1.0, 2.5, 5.0]
 )
 
 opal_server_policy_update_size = Histogram(
     'opal_server_policy_update_size',
     'Size of policy updates (in number of files)',
+    ["type"],
     buckets=[1, 10, 50, 100, 500, 1000]
 )
 
