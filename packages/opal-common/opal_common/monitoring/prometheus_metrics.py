@@ -112,20 +112,21 @@ opal_server_scope_error_count = Counter(
 token_request_count = Counter(
     "opal_token_request_count",
     "Total number of token requests",
-    ['token_type']
+    ["token_type", "status"]
+)
+
+token_generated_count = Counter(
+    "opal_token_generated_count",
+    "Number of successfully generated tokens",
+    ["peer_type", "ttl"]
 )
 
 token_generation_errors = Counter(
     "opal_token_generation_errors",
     "Total number of errors during token generation",
-    labelnames=["error_type"]
+    ["error_type", "token_type"]
 )
 
-token_generated_count = Counter(
-    "opal_token_generated_count",
-    "Total number of tokens successfully generated",
-    labelnames=["peer_type"]
-)
 
 active_clients = Gauge(
     'opal_active_clients_total',
