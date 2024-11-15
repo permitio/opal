@@ -63,13 +63,14 @@ opal_server_policy_update_size = Histogram(
 opal_server_scope_request_count = Counter(
     'opal_server_scope_request_count',
     'Total number of requests to scope endpoints',
-    labelnames=['endpoint', 'method']
+    ["endpoint", "method", "status"]
 )
 
 opal_server_scope_request_latency = Histogram(
     'opal_server_scope_request_latency',
     'Latency of scope requests in seconds',
-    labelnames=['endpoint', 'method']
+    ["endpoint", "method", "status"],
+    buckets=[.01, .025, .05, .075, .1, .25, .5, .75, 1.0, 2.5, 5.0]
 )
 
 opal_server_scope_data_update_count = Counter(
@@ -105,10 +106,16 @@ opal_server_scope_policy_sync_latency = Histogram(
 opal_server_scope_error_count = Counter(
     'opal_server_scope_error_count',
     'Total count of errors encountered per scope operation',
-    labelnames=['scope_id', 'error_type']
+    ["scope_id", "error_type", "endpoint"]
 )
 
-# Define metrics
+opal_server_scope_operation_count = Counter(
+    "opal_server_scope_operation_count",
+    "Number of scope operations (create/update/delete)",
+    ["operation", "status"]
+)
+
+# Generic metrics
 token_request_count = Counter(
     "opal_token_request_count",
     "Total number of token requests",
