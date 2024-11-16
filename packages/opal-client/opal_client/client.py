@@ -13,6 +13,8 @@ import aiohttp
 import websockets
 from fastapi import FastAPI, status
 from fastapi.responses import JSONResponse
+from fastapi_websocket_pubsub.pub_sub_client import PubSubOnConnectCallback
+from fastapi_websocket_rpc.rpc_channel import OnDisconnectCallback
 from opal_client.callbacks.api import init_callbacks_api
 from opal_client.callbacks.register import CallbacksRegister
 from opal_client.config import PolicyStoreTypes, opal_client_config
@@ -54,6 +56,10 @@ class OpalClient:
         store_backup_interval: Optional[int] = None,
         offline_mode_enabled: bool = False,
         shard_id: Optional[str] = None,
+        on_data_updater_connect: List[PubSubOnConnectCallback] = None,
+        on_data_updater_disconnect: List[OnDisconnectCallback] = None,
+        on_policy_updater_connect: List[PubSubOnConnectCallback] = None,
+        on_policy_updater_disconnect: List[OnDisconnectCallback] = None,
     ) -> None:
         """
         Args:
@@ -119,6 +125,8 @@ class OpalClient:
                     policy_store=self.policy_store,
                     callbacks_register=self._callbacks_register,
                     opal_client_id=opal_client_identifier,
+                    on_connect=on_policy_updater_connect,
+                    on_disconnect=on_policy_updater_disconnect,
                 )
         else:
             self.policy_updater = None
@@ -140,6 +148,8 @@ class OpalClient:
                     callbacks_register=self._callbacks_register,
                     opal_client_id=opal_client_identifier,
                     shard_id=self._shard_id,
+                    on_connect=on_data_updater_connect,
+                    on_disconnect=on_data_updater_disconnect,
                 )
         else:
             self.data_updater = None
