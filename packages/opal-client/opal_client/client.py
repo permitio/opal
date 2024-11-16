@@ -257,6 +257,10 @@ class OpalClient:
         self._configure_lifecycle_callbacks(app)
         return app
 
+    async def _is_ready(self):
+        # Data loaded from file or from server
+        return self._backup_loaded or await self.policy_store.is_ready()
+
     def _configure_api_routes(self, app: FastAPI):
         """Mounts the api routes on the app object."""
 
@@ -281,11 +285,20 @@ class OpalClient:
         async def healthy():
             """Returns 200 if updates keep being successfully fetched from the
             server and applied to the policy store."""
+            # TODO: Client would only report unhealthy if server -> policy-store transactions failed, but not if server connection gets disconnected.
             healthy = await self.policy_store.is_healthy()
 
             if healthy:
                 return JSONResponse(
-                    status_code=status.HTTP_200_OK, content={"status": "ok"}
+                    status_code=status.HTTP_200_OK,
+                    content={"status": "ok", "online": True},
+                )
+            elif self.offline_mode_enabled and await self._is_ready():
+                # Offline Mode is active. That is enabled, client is "ready" (data loaded) but not "healthy" (latest updates failed).
+                # TODO: Maybe if updates were fetched from server, but storing them to OPA wasn't successful, we should return 503 even with offline mode enabled
+                return JSONResponse(
+                    status_code=status.HTTP_200_OK,
+                    content={"status": "ok", "online": False},
                 )
             else:
                 return JSONResponse(
@@ -295,10 +308,8 @@ class OpalClient:
 
         @app.get("/ready", include_in_schema=False)
         async def ready():
-            """Returns 200 if the policy store is ready to serve requests."""
-            ready = self._backup_loaded or await self.policy_store.is_ready()
-
-            if ready:
+            """returns 200 if the policy store is ready to serve requests."""
+            if await self._is_ready():
                 return JSONResponse(
                     status_code=status.HTTP_200_OK, content={"status": "ok"}
                 )

@@ -67,6 +67,9 @@ class AbstractPolicyStore:
     async def is_healthy(self) -> bool:
         raise NotImplementedError()
 
+    async def is_ready(self) -> bool:
+        raise NotImplementedError()
+
     async def full_export(self, writer: AsyncTextIOWrapper) -> None:
         raise NotImplementedError()
 
