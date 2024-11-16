@@ -308,7 +308,7 @@ class OpalClient:
 
         @app.get("/ready", include_in_schema=False)
         async def ready():
-            """returns 200 if the policy store is ready to serve requests."""
+            """Returns 200 if the policy store is ready to serve requests."""
             if await self._is_ready():
                 return JSONResponse(
                     status_code=status.HTTP_200_OK, content={"status": "ok"}
