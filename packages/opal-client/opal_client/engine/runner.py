@@ -9,7 +9,6 @@ from opal_client.config import EngineLogFormat, opal_client_config
 from opal_client.engine.logger import log_engine_output_opa, log_engine_output_simple
 from opal_client.engine.options import CedarServerOptions, OpaServerOptions
 from opal_client.logger import logger
-
 from tenacity import retry, wait_random_exponential
 
 AsyncCallback = Callable[[], Coroutine]
