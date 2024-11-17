@@ -1,7 +1,9 @@
 import asyncio
 import os
+import shutil
 import signal
 import time
+from abc import ABC, abstractmethod
 from typing import Callable, Coroutine, List, Optional
 
 import psutil
@@ -34,7 +36,7 @@ async def wait_until_process_is_up(
         await callback()
 
 
-class PolicyEngineRunner:
+class PolicyEngineRunner(ABC):
     """Runs the policy engine in a supervised subprocess.
 
     - if the process fails, the runner will restart the process.
@@ -56,8 +58,12 @@ class PolicyEngineRunner:
         self._process_was_never_up_before = True
         self._piped_logs_format = piped_logs_format
 
-    @property
-    def command(self) -> str:
+    @abstractmethod
+    def get_executable_path(self) -> str:
+        raise NotImplementedError()
+
+    @abstractmethod
+    def get_arguments(self) -> list[str]:
         raise NotImplementedError()
 
     async def __aenter__(self):
@@ -158,7 +164,6 @@ class PolicyEngineRunner:
 
         it returns only when the process terminates.
         """
-        logger.info("Running policy engine inline: {command}", command=self.command)
 
         logs_sink = (
             asyncio.subprocess.DEVNULL
@@ -166,8 +171,14 @@ class PolicyEngineRunner:
             else asyncio.subprocess.PIPE
         )
 
-        self._process = await asyncio.create_subprocess_shell(
-            self.command,
+        executable_path = self.get_executable_path()
+        arguments = self.get_arguments()
+        logger.info(
+            f"Running policy engine inline: {executable_path} {' '.join(arguments)}"
+        )
+        self._process = await asyncio.create_subprocess_exec(
+            executable_path,
+            *arguments,
             stdout=logs_sink,
             stderr=logs_sink,
             start_new_session=True,
@@ -186,8 +197,7 @@ class PolicyEngineRunner:
 
         return_code = await self._process.wait()
         logger.info(
-            "Policy engine exited with return code: {return_code}",
-            return_code=return_code,
+            f"Policy engine exited with return code: {return_code}",
         )
         if return_code > 0:  # exception in running process
             raise Exception(f"Policy engine exited with return code: {return_code}")
@@ -247,22 +257,27 @@ class OpaRunner(PolicyEngineRunner):
         await log_engine_output_opa(line, self._piped_logs_format)
         return any([substr in line for substr in self.PANIC_DETECTION_SUBSTRINGS])
 
-    @property
-    def command(self) -> str:
+    def get_executable_path(self) -> str:
+        if opal_client_config.INLINE_OPA_EXEC_PATH:
+            return opal_client_config.INLINE_OPA_EXEC_PATH
+        else:
+            logger.warning(
+                "OPA executable path not set, looking for 'opa' binary in system PATH. "
+                "It is recommended to set the INLINE_OPA_EXEC_PATH configuration."
+            )
+            path = shutil.which("opa")
+            if path is None:
+                raise FileNotFoundError("OPA executable not found in PATH")
+            return path
+
+    def get_arguments(self) -> list[str]:
+        args = ["run", "--server"]
         opts = self._options.get_cli_options_dict()
-        opts_string = " ".join([f"{k}={v}" for k, v in opts.items()])
-        startup_files = self._options.get_opa_startup_files()
-        opa_path = self._options.opa_executable_path
+        args.extend(f"{k}={v}" for k, v in opts.items())
+        if self._options.files:
+            args.extend(self._options.files)
 
-        # Check if the OPA executable exists and is a file
-        if not os.path.isfile(opa_path):
-            raise FileNotFoundError(f"OPA executable not found at path: {opa_path}")
-
-        opts = self._options.get_cli_options_dict()
-        opts_string = " ".join([f"{k}={v}" for k, v in opts.items()])
-        startup_files = self._options.get_opa_startup_files()
-
-        return f"{opa_path} run --server {opts_string} {startup_files}".strip()
+        return args
 
     @staticmethod
     def setup_opa_runner(
@@ -279,24 +294,10 @@ class OpaRunner(PolicyEngineRunner):
             that are dependent on the policy store being up (such as PolicyUpdater, DataUpdater).
 
         Rehydration Callbacks:
-            when the engine restarts, its cache is clean and it does not have the state necessary
+            when the engine restarts, its cache is clean, and it does not have the state necessary
             to handle authorization queries. therefore it is necessary that we rehydrate the
             cache with fresh state fetched from the server.
         """
-
-        if options is None:
-            options = OpaServerOptions(
-                opa_executable_path=opal_client_config.INLINE_OPA_EXECUTABLE_PATH
-            )
-        elif options.opa_executable_path == "opa":
-            options.opa_executable_path = opal_client_config.INLINE_OPA_EXECUTABLE_PATH
-
-        # Check if the OPA executable exists and is a file
-        if not os.path.isfile(options.opa_executable_path):
-            raise FileNotFoundError(
-                f"OPA executable not found at path: {options.opa_executable_path}"
-            )
-
         opa_runner = OpaRunner(options=options, piped_logs_format=piped_logs_format)
         if initial_start_callbacks:
             opa_runner.register_process_initial_start_callbacks(initial_start_callbacks)
@@ -314,9 +315,21 @@ class CedarRunner(PolicyEngineRunner):
         super().__init__(piped_logs_format)
         self._options = options or CedarServerOptions()
 
-    @property
-    def command(self) -> str:
-        return self._options.get_cmdline()
+    def get_executable_path(self) -> str:
+        if opal_client_config.INLINE_CEDAR_EXEC_PATH:
+            return opal_client_config.INLINE_CEDAR_EXEC_PATH
+        else:
+            logger.warning(
+                "Cedar executable path not set, looking for 'cedar-agent' binary in system PATH. "
+                "It is recommended to set the INLINE_CEDAR_EXEC_PATH configuration."
+            )
+            path = shutil.which("cedar-agent")
+            if path is None:
+                raise FileNotFoundError("Cedar agent executable not found in PATH")
+            return path
+
+    def get_arguments(self) -> list[str]:
+        return list(self._options.get_args())
 
     @staticmethod
     def setup_cedar_runner(
