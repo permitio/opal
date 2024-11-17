@@ -13,7 +13,7 @@ GetUserDataHandler = Callable[[DataUpdateReport], Awaitable[Dict[str, Any]]]
 
 
 class CallbacksReporter:
-    """can send a report to callbacks registered on the callback register."""
+    """Can send a report to callbacks registered on the callback register."""
 
     def __init__(
         self, register: CallbacksRegister, data_fetcher: DataFetcher = None

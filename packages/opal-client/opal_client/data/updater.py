@@ -9,7 +9,8 @@ from typing import Any, Dict, List, Optional, Tuple
 import aiohttp
 from aiohttp.client import ClientError, ClientSession
 from fastapi_websocket_pubsub import PubSubClient
-from fastapi_websocket_rpc.rpc_channel import RpcChannel
+from fastapi_websocket_pubsub.pub_sub_client import PubSubOnConnectCallback
+from fastapi_websocket_rpc.rpc_channel import OnDisconnectCallback, RpcChannel
 from opal_client.callbacks.register import CallbacksRegister
 from opal_client.callbacks.reporter import CallbacksReporter
 from opal_client.config import opal_client_config
@@ -54,6 +55,8 @@ class DataUpdater:
         callbacks_register: Optional[CallbacksRegister] = None,
         opal_client_id: str = None,
         shard_id: Optional[str] = None,
+        on_connect: List[PubSubOnConnectCallback] = None,
+        on_disconnect: List[OnDisconnectCallback] = None,
     ):
         """Keeps policy-stores (e.g. OPA) up to date with relevant data Obtains
         data configuration on startup from OPAL-server Uses Pub/Sub to
@@ -132,6 +135,8 @@ class DataUpdater:
         self._updates_storing_queue = TakeANumberQueue(logger)
         self._tasks = TasksPool()
         self._polling_update_tasks = []
+        self._on_connect_callbacks = on_connect or []
+        self._on_disconnect_callbacks = on_disconnect or []
 
     async def __aenter__(self):
         await self.start()
@@ -278,7 +283,8 @@ class DataUpdater:
             self._data_topics,
             self._update_policy_data_callback,
             methods_class=TenantAwareRpcEventClientMethods,
-            on_connect=[self.on_connect],
+            on_connect=[self.on_connect, *self._on_connect_callbacks],
+            on_disconnect=[self.on_disconnect, *self._on_disconnect_callbacks],
             extra_headers=self._extra_headers,
             keep_alive=opal_client_config.KEEP_ALIVE_INTERVAL,
             server_uri=self._server_url,
@@ -360,7 +366,7 @@ class DataUpdater:
         update: DataUpdate,
         store_queue_number: TakeANumberQueue.Number,
     ):
-        """fetches policy data (policy configuration) from backend and updates
+        """Fetches policy data (policy configuration) from backend and updates
         it into policy-store (i.e. OPA)"""
 
         if update is None:
