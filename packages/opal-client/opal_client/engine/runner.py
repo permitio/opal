@@ -5,7 +5,7 @@ import time
 from typing import Callable, Coroutine, List, Optional
 
 import psutil
-from opal_client.config import EngineLogFormat
+from opal_client.config import EngineLogFormat, opal_client_config
 from opal_client.engine.logger import log_engine_output_opa, log_engine_output_simple
 from opal_client.engine.options import CedarServerOptions, OpaServerOptions
 from opal_client.logger import logger
@@ -252,7 +252,17 @@ class OpaRunner(PolicyEngineRunner):
         opts = self._options.get_cli_options_dict()
         opts_string = " ".join([f"{k}={v}" for k, v in opts.items()])
         startup_files = self._options.get_opa_startup_files()
-        return f"opa run --server {opts_string} {startup_files}".strip()
+        opa_path = self._options.opa_executable_path
+
+        # Check if the OPA executable exists and is a file
+        if not os.path.isfile(opa_path):
+            raise FileNotFoundError(f"OPA executable not found at path: {opa_path}")
+
+        opts = self._options.get_cli_options_dict()
+        opts_string = " ".join([f"{k}={v}" for k, v in opts.items()])
+        startup_files = self._options.get_opa_startup_files()
+
+        return f"{opa_path} run --server {opts_string} {startup_files}".strip()
 
     @staticmethod
     def setup_opa_runner(
@@ -273,6 +283,20 @@ class OpaRunner(PolicyEngineRunner):
             to handle authorization queries. therefore it is necessary that we rehydrate the
             cache with fresh state fetched from the server.
         """
+
+        if options is None:
+            options = OpaServerOptions(
+                opa_executable_path=opal_client_config.INLINE_OPA_EXECUTABLE_PATH
+            )
+        elif options.opa_executable_path == "opa":
+            options.opa_executable_path = opal_client_config.INLINE_OPA_EXECUTABLE_PATH
+
+        # Check if the OPA executable exists and is a file
+        if not os.path.isfile(options.opa_executable_path):
+            raise FileNotFoundError(
+                f"OPA executable not found at path: {options.opa_executable_path}"
+            )
+
         opa_runner = OpaRunner(options=options, piped_logs_format=piped_logs_format)
         if initial_start_callbacks:
             opa_runner.register_process_initial_start_callbacks(initial_start_callbacks)
@@ -327,4 +351,5 @@ class CedarRunner(PolicyEngineRunner):
 
     async def handle_log_line(self, line: bytes) -> bool:
         await log_engine_output_simple(line)
+
         return False

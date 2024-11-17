@@ -63,6 +63,10 @@ class OpaServerOptions(BaseModel):
         description="list of built-in rego policies and data.json files that must be loaded into OPA on startup. e.g: system.authz policy when using --authorization=basic, see: https://www.openpolicyagent.org/docs/latest/security/#authentication-and-authorization",
     )
 
+    opa_executable_path: str = Field(
+        default="opa", description="Path to the OPA executable"
+    )
+
     class Config:
         use_enum_values = True
         allow_population_by_field_name = True
