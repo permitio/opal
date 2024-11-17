@@ -3,7 +3,7 @@ from opal_client.logger import logger
 
 
 class TenantAwareRpcEventClientMethods(RpcEventClientMethods):
-    """use this methods class when the server uses
+    """Use this methods class when the server uses
     `TenantAwareRpcEventServerMethods`."""
 
     TOPIC_SEPARATOR = "::"

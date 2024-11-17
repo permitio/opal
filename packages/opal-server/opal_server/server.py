@@ -188,7 +188,7 @@ class OpalServer:
         self.app: FastAPI = self._init_fast_api_app()
 
     def _init_fast_api_app(self):
-        """inits the fastapi app object."""
+        """Inits the fastapi app object."""
         app = FastAPI(
             title="Opal Server",
             description="OPAL is an administration layer for Open Policy Agent (OPA), detecting changes"
@@ -218,7 +218,7 @@ class OpalServer:
         )
 
     def _configure_api_routes(self, app: FastAPI):
-        """mounts the api routes on the app object."""
+        """Mounts the api routes on the app object."""
         authenticator = JWTAuthenticator(self.signer)
 
         data_update_publisher: Optional[DataUpdatePublisher] = None
@@ -282,7 +282,7 @@ class OpalServer:
         return app
 
     def _configure_lifecycle_callbacks(self, app: FastAPI):
-        """registers callbacks on app startup and shutdown.
+        """Registers callbacks on app startup and shutdown.
 
         on app startup we launch our long running processes (async
         tasks) on the event loop. on app shutdown we stop these long
@@ -310,7 +310,7 @@ class OpalServer:
         return app
 
     async def start_server_background_tasks(self):
-        """starts the background processes (as asyncio tasks) if such are
+        """Starts the background processes (as asyncio tasks) if such are
         configured.
 
         all workers will start these tasks:

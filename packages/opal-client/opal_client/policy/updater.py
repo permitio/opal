@@ -4,7 +4,8 @@ import json
 import yaml
 import pydantic
 from fastapi_websocket_pubsub import PubSubClient
-from fastapi_websocket_rpc.rpc_channel import RpcChannel
+from fastapi_websocket_pubsub.pub_sub_client import PubSubOnConnectCallback
+from fastapi_websocket_rpc.rpc_channel import OnDisconnectCallback, RpcChannel
 from opal_client.callbacks.register import CallbacksRegister
 from opal_client.callbacks.reporter import CallbacksReporter
 from opal_client.config import opal_client_config
@@ -28,12 +29,12 @@ from opal_common.utils import get_authorization_header
 
 
 class PolicyUpdater:
-    """
-    Keeps policy-stores (e.g. OPA) up to date with relevant policy code
+    """Keeps policy-stores (e.g. OPA) up to date with relevant policy code
     (e.g: rego) and static data (e.g: data.json files like in OPA bundles).
 
     Uses Pub/Sub to subscribe to specific directories in the policy code
-    repository (i.e: git), and fetches bundles containing updated policy code.
+    repository (i.e: git), and fetches bundles containing updated policy
+    code.
     """
 
     def __init__(
@@ -45,8 +46,10 @@ class PolicyUpdater:
         data_fetcher: Optional[DataFetcher] = None,
         callbacks_register: Optional[CallbacksRegister] = None,
         opal_client_id: str = None,
+        on_connect: List[PubSubOnConnectCallback] = None,
+        on_disconnect: List[OnDisconnectCallback] = None,
     ):
-        """inits the policy updater.
+        """Inits the policy updater.
 
         Args:
             token (str, optional): Auth token to include in connections to OPAL server. Defaults to CLIENT_TOKEN.
@@ -106,6 +109,8 @@ class PolicyUpdater:
         )
         self._policy_update_queue = asyncio.Queue()
         self._tasks = TasksPool()
+        self._on_connect_callbacks = on_connect or []
+        self._on_disconnect_callbacks = on_disconnect or []
 
     async def __aenter__(self):
         await self.start()
@@ -206,7 +211,7 @@ class PolicyUpdater:
         logger.info("Disconnected from server")
 
     async def start(self):
-        """launches the policy updater."""
+        """Launches the policy updater."""
         logger.info("Launching policy updater")
         await self._callbacks_reporter.start()
         if self._policy_update_task is None:
@@ -216,7 +221,7 @@ class PolicyUpdater:
             await self._data_fetcher.start()
 
     async def stop(self):
-        """stops the policy updater."""
+        """Stops the policy updater."""
         self._stopping = True
         logger.info("Stopping policy updater")
 
@@ -270,8 +275,8 @@ class PolicyUpdater:
         self._client = PubSubClient(
             topics=self._topics,
             callback=self._update_policy_callback,
-            on_connect=[self._on_connect],
-            on_disconnect=[self._on_disconnect],
+            on_connect=[self._on_connect, *self._on_connect_callbacks],
+            on_disconnect=[self._on_disconnect, *self._on_disconnect_callbacks],
             extra_headers=self._extra_headers,
             keep_alive=opal_client_config.KEEP_ALIVE_INTERVAL,
             server_uri=self._server_url,
@@ -285,7 +290,7 @@ class PolicyUpdater:
         directories: List[str],
         force_full_update: bool,
     ):
-        """fetches policy (code, e.g: rego) from backend and stores it in the
+        """Fetches policy (code, e.g: rego) from backend and stores it in the
         policy store.
 
         Args:
