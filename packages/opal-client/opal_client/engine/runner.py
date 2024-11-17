@@ -351,4 +351,5 @@ class CedarRunner(PolicyEngineRunner):
 
     async def handle_log_line(self, line: bytes) -> bool:
         await log_engine_output_simple(line)
+
         return False
