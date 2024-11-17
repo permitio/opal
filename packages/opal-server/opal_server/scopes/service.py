@@ -23,7 +23,7 @@ from opal_server.scopes.scope_repository import Scope, ScopeRepository
 def is_rego_source_file(
     f: VersionedFile, extensions: Optional[List[str]] = None
 ) -> bool:
-    """filters only rego files or data.json files."""
+    """Filters only rego files or data.json files."""
     REGO = ".rego"
     JSON = ".json"
     OPA_JSON = "data.json"
