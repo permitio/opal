@@ -233,9 +233,9 @@ class OpalServerConfig(Confi):
     POLICY_REPO_DEFAULT_DATA_FILENAME = confi.str(
         "POLICY_REPO_DEFAULT_DATA_FILENAME",
         "data.json",
-        description="Default filename for policy data files in the repository"
+        description="Default filename for policy data files in the repository",
     )
-    
+
     # Git service webhook (Default is Github)
     POLICY_REPO_WEBHOOK_SECRET = confi.str("POLICY_REPO_WEBHOOK_SECRET", None)
     # The topic the event of the webhook will publish
@@ -261,7 +261,9 @@ class OpalServerConfig(Confi):
     POLICY_REPO_POLLING_INTERVAL = confi.int("POLICY_REPO_POLLING_INTERVAL", 0)
 
     ALLOWED_ORIGINS = confi.list("ALLOWED_ORIGINS", ["*"])
-    FILTER_FILE_EXTENSIONS = confi.list("FILTER_FILE_EXTENSIONS", [".rego", ".json", ".yaml"])
+    FILTER_FILE_EXTENSIONS = confi.list(
+        "FILTER_FILE_EXTENSIONS", [".rego", ".json", ".yaml"]
+    )
     BUNDLE_IGNORE = confi.list("BUNDLE_IGNORE", [])
 
     NO_RPC_LOGS = confi.bool("NO_RPC_LOGS", True)

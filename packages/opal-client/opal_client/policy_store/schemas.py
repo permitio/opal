@@ -1,6 +1,8 @@
 from enum import Enum
 from typing import Optional
+
 from pydantic import BaseModel, Field, validator
+
 
 class PolicyStoreTypes(Enum):
     OPA = "OPA"
@@ -8,11 +10,13 @@ class PolicyStoreTypes(Enum):
     OPENFGA = "OPENFGA"
     MOCK = "MOCK"
 
+
 class PolicyStoreAuth(Enum):
     NONE = "none"
     TOKEN = "token"
     OAUTH = "oauth"
     TLS = "tls"
+
 
 class PolicyStoreDetails(BaseModel):
     """
@@ -21,6 +25,7 @@ class PolicyStoreDetails(BaseModel):
     - type
     - credentials
     """
+
     type: PolicyStoreTypes = Field(
         PolicyStoreTypes.OPA,
         description="the type of policy store, currently only OPA is officially supported",
@@ -28,7 +33,7 @@ class PolicyStoreDetails(BaseModel):
     url: str = Field(
         ...,
         description="the url that OPA can be found in. if localhost is the host - "
-                    "it means OPA is on the same hostname as OPAL client.",
+        "it means OPA is on the same hostname as OPAL client.",
     )
     token: Optional[str] = Field(
         None, description="optional access token required by the policy store"

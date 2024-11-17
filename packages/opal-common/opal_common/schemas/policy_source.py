@@ -40,7 +40,7 @@ class BasePolicyScopeSource(BaseSchema):
     )
     directories: List[str] = Field(["."], description="Directories to include")
     extensions: List[str] = Field(
-        [".rego", ".json",".yaml"], description="File extensions to use"
+        [".rego", ".json", ".yaml"], description="File extensions to use"
     )
     bundle_ignore: Optional[List[str]] = Field(
         None, description="glob paths to omit from bundle"

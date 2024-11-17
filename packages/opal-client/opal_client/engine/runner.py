@@ -7,7 +7,11 @@ from typing import Callable, Coroutine, List, Optional
 import psutil
 from opal_client.config import EngineLogFormat
 from opal_client.engine.logger import log_engine_output_opa, log_engine_output_simple
-from opal_client.engine.options import CedarServerOptions, OpaServerOptions, OpenFGAServerOptions
+from opal_client.engine.options import (
+    CedarServerOptions,
+    OpaServerOptions,
+    OpenFGAServerOptions,
+)
 from opal_client.logger import logger
 from tenacity import retry, wait_random_exponential
 
@@ -294,13 +298,12 @@ class OpenFGARunner(PolicyEngineRunner):
         await log_engine_output_simple(line)
         return False
 
-    
     @property
     def command(self) -> str:
         """Get OpenFGA run command."""
-        #return f"openfga run --http-addr=0.0.0.0:8080 --playground-enabled=false"
+        # return f"openfga run --http-addr=0.0.0.0:8080 --playground-enabled=false"
         return f"/usr/local/bin/openfga run --http-addr=0.0.0.0:8080 --playground-enabled=false"
-        
+
     @staticmethod
     def setup_openfga_runner(
         options: Optional[OpenFGAServerOptions] = None,
@@ -308,8 +311,8 @@ class OpenFGARunner(PolicyEngineRunner):
         initial_start_callbacks: Optional[List[AsyncCallback]] = None,
         rehydration_callbacks: Optional[List[AsyncCallback]] = None,
     ):
-        """Factory for OpenFGARunner, accept optional callbacks to run in certain
-        lifecycle events.
+        """Factory for OpenFGARunner, accept optional callbacks to run in
+        certain lifecycle events.
 
         Initial Start Callbacks:
             The first time we start the engine, we might want to do certain actions (like launch tasks)
@@ -320,7 +323,9 @@ class OpenFGARunner(PolicyEngineRunner):
             to handle authorization queries. therefore it is necessary that we rehydrate the
             cache with fresh state fetched from the server.
         """
-        openfga_runner = OpenFGARunner(options=options, piped_logs_format=piped_logs_format)
+        openfga_runner = OpenFGARunner(
+            options=options, piped_logs_format=piped_logs_format
+        )
 
         if initial_start_callbacks:
             openfga_runner.register_process_initial_start_callbacks(
@@ -331,6 +336,7 @@ class OpenFGARunner(PolicyEngineRunner):
             openfga_runner.register_process_restart_callbacks(rehydration_callbacks)
 
         return openfga_runner
+
 
 class CedarRunner(PolicyEngineRunner):
     def __init__(

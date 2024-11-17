@@ -21,7 +21,11 @@ from opal_client.config import PolicyStoreTypes, opal_client_config
 from opal_client.data.api import init_data_router
 from opal_client.data.fetcher import DataFetcher
 from opal_client.data.updater import DataUpdater
-from opal_client.engine.options import CedarServerOptions, OpaServerOptions, OpenFGAServerOptions
+from opal_client.engine.options import (
+    CedarServerOptions,
+    OpaServerOptions,
+    OpenFGAServerOptions,
+)
 from opal_client.engine.runner import CedarRunner, OpaRunner, OpenFGARunner
 from opal_client.limiter import StartupLoadLimiter
 from opal_client.policy.api import init_policy_router
@@ -209,13 +213,13 @@ class OpalClient:
         self,
         inline_opa_enabled: bool,
         inline_cedar_enabled: bool,
-        inline_openfga_enabled: bool, 
+        inline_openfga_enabled: bool,
         inline_opa_options: Optional[OpaServerOptions] = None,
         inline_cedar_options: Optional[CedarServerOptions] = None,
         inline_openfga_options: Optional[OpenFGAServerOptions] = None,
     ) -> Union[OpaRunner, CedarRunner, OpenFGARunner, Literal[False]]:
         """Initialize appropriate engine runner based on policy store type."""
-        
+
         # Setup rehydration callbacks for all policy store types
         rehydration_callbacks = []
         if self.policy_updater:
@@ -256,8 +260,11 @@ class OpalClient:
                 piped_logs_format=opal_client_config.INLINE_CEDAR_LOG_FORMAT,
             )
 
-        # OpenFGA Runner 
-        elif inline_openfga_enabled and self.policy_store_type == PolicyStoreTypes.OPENFGA:
+        # OpenFGA Runner
+        elif (
+            inline_openfga_enabled
+            and self.policy_store_type == PolicyStoreTypes.OPENFGA
+        ):
             inline_openfga_options = (
                 inline_openfga_options or opal_client_config.INLINE_OPENFGA_CONFIG
             )
@@ -266,7 +273,7 @@ class OpalClient:
                 piped_logs_format=opal_client_config.INLINE_OPENFGA_LOG_FORMAT,
                 rehydration_callbacks=rehydration_callbacks,
             )
-                
+
         return False
 
     def _init_fast_api_app(self):

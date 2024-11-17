@@ -1,8 +1,8 @@
 from pathlib import Path
 
-
-
 from opal_common.config import opal_common_config
+
+
 def is_data_module(path: Path) -> bool:
     """Only json files named `data.json` can be included in official OPA
     bundles as static data files.
@@ -13,7 +13,7 @@ def is_data_module(path: Path) -> bool:
 
 
 def is_policy_module(path: Path) -> bool:
-    """Checks if a given path points to a rego file (extension == .rego) or a JSON file for OpenFGA.
-    """
+    """Checks if a given path points to a rego file (extension == .rego) or a
+    JSON file for OpenFGA."""
 
     return path.suffix in opal_common_config.POLICY_REPO_POLICY_EXTENSIONS

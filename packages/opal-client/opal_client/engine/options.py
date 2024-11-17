@@ -84,7 +84,8 @@ class OpaServerOptions(BaseModel):
 
 
 class OpenFGAServerOptions(BaseModel):
-    """Options to configure the OpenFGA server (apply when choosing to run OpenFGA inline)."""
+    """Options to configure the OpenFGA server (apply when choosing to run
+    OpenFGA inline)."""
 
     addr: str = Field(
         ":8080",
@@ -160,6 +161,7 @@ class OpenFGAServerOptions(BaseModel):
                 self.store_id,
             ]
         return " ".join(result)
+
 
 class CedarServerOptions(BaseModel):
     """Options to configure the Cedar agent (apply when choosing to run Cedar

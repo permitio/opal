@@ -21,7 +21,6 @@ from opal_client.policy_store.base_policy_store_client import (
     BasePolicyStoreClient,
     JsonableValue,
 )
-
 from opal_client.policy_store.policy_store_client_factory import (
     DEFAULT_POLICY_STORE_GETTER,
 )
@@ -554,4 +553,3 @@ class DataUpdater:
     @property
     def callbacks_reporter(self) -> CallbacksReporter:
         return self._callbacks_reporter
-        

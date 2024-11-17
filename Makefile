@@ -6,7 +6,7 @@ OPAL_SERVER_URL ?= http://host.docker.internal:7002
 OPAL_AUTH_PRIVATE_KEY ?= /root/ssh/opal_rsa
 OPAL_AUTH_PUBLIC_KEY ?= /root/ssh/opal_rsa.pub
 OPAL_POLICY_STORE_URL ?= http://host.docker.internal:8181
-OPENFGA_STORE_ID ?= 01JAT34GM6T5WRVMXXDYWGSYKN #change id 
+OPENFGA_STORE_ID ?= 01JAT34GM6T5WRVMXXDYWGSYKN #change id
 
 # python packages (pypi)
 clean:
@@ -66,7 +66,7 @@ docker-build-next:
 	@docker build -t permitio/opal-client:next --target client -f docker/Dockerfile .
 	@docker build -t permitio/opal-server:next --target server -f docker/Dockerfile .
 	@docker build -t permitio/opal-client-openfga:next --target client-openfga -f docker/Dockerfile .
-	
+
 
 docker-run-server:
 	@if [[ -z "$(OPAL_POLICY_REPO_SSH_KEY)" ]]; then \

@@ -1,6 +1,10 @@
 from enum import Enum
 
-from opal_client.engine.options import CedarServerOptions, OpaServerOptions, OpenFGAServerOptions
+from opal_client.engine.options import (
+    CedarServerOptions,
+    OpaServerOptions,
+    OpenFGAServerOptions,
+)
 from opal_client.policy.options import ConnRetryOptions
 from opal_client.policy_store.schemas import PolicyStoreAuth, PolicyStoreTypes
 from opal_common.confi import Confi, confi
@@ -24,14 +28,16 @@ class OpalClientConfig(Confi):
     )
     POLICY_STORE_URL = confi.str("POLICY_STORE_URL", "http://localhost:8181")
 
-    #openfga 
+    # openfga
     OPENFGA_URL = confi.str("OPENFGA_URL", "http://localhost:8080")
-    OPENFGA_STORE_ID = confi.str("OPENFGA_STORE_ID", None, description="The OpenFGA store ID to use")
+    OPENFGA_STORE_ID = confi.str(
+        "OPENFGA_STORE_ID", None, description="The OpenFGA store ID to use"
+    )
 
     POLICY_STORE_AUTH_TYPE = confi.enum(
         "POLICY_STORE_AUTH_TYPE", PolicyStoreAuth, PolicyStoreAuth.NONE
     )
-    
+
     POLICY_STORE_AUTH_TOKEN = confi.str(
         "POLICY_STORE_AUTH_TOKEN",
         None,
@@ -170,7 +176,6 @@ class OpalClientConfig(Confi):
         "INLINE_CEDAR_LOG_FORMAT", EngineLogFormat, EngineLogFormat.NONE
     )
 
-
     # OpenFGA runner configuration
     INLINE_OPENFGA_ENABLED = confi.bool("INLINE_OPENFGA_ENABLED", True)
 
@@ -184,7 +189,6 @@ class OpalClientConfig(Confi):
     INLINE_OPENFGA_LOG_FORMAT: EngineLogFormat = confi.enum(
         "INLINE_OPENFGA_LOG_FORMAT", EngineLogFormat, EngineLogFormat.NONE
     )
-
 
     # configuration for fastapi routes
     ALLOWED_ORIGINS = ["*"]
@@ -318,7 +322,6 @@ class OpalClientConfig(Confi):
         description="Path to OPA document that stores the OPA write transactions",
     )
 
-
     # OpenFGA health check configurations
     OPENFGA_HEALTH_CHECK_POLICY_ENABLED = confi.bool(
         "OPENFGA_HEALTH_CHECK_POLICY_ENABLED",
@@ -332,8 +335,6 @@ class OpalClientConfig(Confi):
         "system/opal/transactions",
         description="Path to OpenFGA document that stores the OpenFGA write transactions",
     )
-
-    
 
     OPAL_CLIENT_STAT_ID = confi.str(
         "OPAL_CLIENT_STAT_ID",
@@ -374,19 +375,19 @@ class OpalClientConfig(Confi):
             opal_common_config.LOG_MODULE_EXCLUDE_LIST = (
                 opal_common_config.LOG_MODULE_EXCLUDE_LIST
             )
-        
 
         # Add OpenFGA logger handling
         if self.INLINE_OPENFGA_LOG_FORMAT == EngineLogFormat.NONE:
-            opal_common_config.LOG_MODULE_EXCLUDE_LIST.append("opal_client.openfga.logger")
+            opal_common_config.LOG_MODULE_EXCLUDE_LIST.append(
+                "opal_client.openfga.logger"
+            )
             opal_common_config.LOG_MODULE_EXCLUDE_LIST = (
                 opal_common_config.LOG_MODULE_EXCLUDE_LIST
             )
-            
+
         # Set the appropriate URL based on the policy store type
         if self.POLICY_STORE_TYPE == PolicyStoreTypes.OPENFGA:
             self.POLICY_STORE_URL = self.OPENFGA_URL
-
 
         if self.DATA_STORE_CONN_RETRY is not None:
             # You should use `DATA_UPDATER_CONN_RETRY`, but that's for backwards compatibility
