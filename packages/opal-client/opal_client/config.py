@@ -20,33 +20,38 @@ class EngineLogFormat(str, Enum):
 class OpalClientConfig(Confi):
     # opa client (policy store) configuration
     POLICY_STORE_TYPE = confi.enum(
-        "POLICY_STORE_TYPE", PolicyStoreTypes, PolicyStoreTypes.OPA
+        "POLICY_STORE_TYPE", PolicyStoreTypes, PolicyStoreTypes.OPA,
+        description="The type of policy store to use (e.g., OPA, Cedar, etc.)"
     )
-    POLICY_STORE_URL = confi.str("POLICY_STORE_URL", "http://localhost:8181")
+    POLICY_STORE_URL = confi.str(
+        "POLICY_STORE_URL", "http://localhost:8181",
+        description="The URL of the policy store (e.g., OPA agent)."
+    )
 
     POLICY_STORE_AUTH_TYPE = confi.enum(
-        "POLICY_STORE_AUTH_TYPE", PolicyStoreAuth, PolicyStoreAuth.NONE
+        "POLICY_STORE_AUTH_TYPE", PolicyStoreAuth, PolicyStoreAuth.NONE,
+        description="The authentication type to use for the policy store (e.g., NONE, TOKEN, etc.)"
     )
     POLICY_STORE_AUTH_TOKEN = confi.str(
         "POLICY_STORE_AUTH_TOKEN",
         None,
-        description="the authentication (bearer) token OPAL client will use to "
+        description="The authentication (bearer) token OPAL client will use to "
         "authenticate against the policy store (i.e: OPA agent).",
     )
     POLICY_STORE_AUTH_OAUTH_SERVER = confi.str(
         "POLICY_STORE_AUTH_OAUTH_SERVER",
         None,
-        description="the authentication server OPAL client will use to authenticate against for retrieving the access_token.",
+        description="The authentication server OPAL client will use to authenticate against for retrieving the access_token.",
     )
     POLICY_STORE_AUTH_OAUTH_CLIENT_ID = confi.str(
         "POLICY_STORE_AUTH_OAUTH_CLIENT_ID",
         None,
-        description="the client_id OPAL will use to authenticate against the OAuth server.",
+        description="The client_id OPAL will use to authenticate against the OAuth server.",
     )
     POLICY_STORE_AUTH_OAUTH_CLIENT_SECRET = confi.str(
         "POLICY_STORE_AUTH_OAUTH_CLIENT_SECRET",
         None,
-        description="the client secret OPAL will use to authenticate against the OAuth server.",
+        description="The client secret OPAL will use to authenticate against the OAuth server.",
     )
 
     POLICY_STORE_CONN_RETRY: ConnRetryOptions = confi.model(
@@ -54,7 +59,7 @@ class OpalClientConfig(Confi):
         ConnRetryOptions,
         # defaults are being set according to ConnRetryOptions pydantic definitions (see class)
         {},
-        description="retry options when connecting to the policy store (i.e. the agent that handles the policy, e.g. OPA)",
+        description="Retry options when connecting to the policy store (i.e. the agent that handles the policy, e.g. OPA)",
     )
     POLICY_UPDATER_CONN_RETRY: ConnRetryOptions = confi.model(
         "POLICY_UPDATER_CONN_RETRY",
@@ -65,14 +70,14 @@ class OpalClientConfig(Confi):
             "attempts": 5,
             "wait_time": 1,
         },
-        description="retry options when connecting to the policy source (e.g. the policy bundle server)",
+        description="Retry options when connecting to the policy source (e.g. the policy bundle server)",
     )
 
     DATA_STORE_CONN_RETRY: ConnRetryOptions = confi.model(
         "DATA_STORE_CONN_RETRY",
         ConnRetryOptions,
         None,
-        description="DEPTRECATED - The old confusing name for DATA_UPDATER_CONN_RETRY, kept for backwards compatibilit (for now)",
+        description="DEPRECATED - The old confusing name for DATA_UPDATER_CONN_RETRY, kept for backwards compatibility (for now)",
     )
 
     DATA_UPDATER_CONN_RETRY: ConnRetryOptions = confi.model(
@@ -84,7 +89,7 @@ class OpalClientConfig(Confi):
             "attempts": 5,
             "wait_time": 1,
         },
-        description="retry options when connecting to the base data source (e.g. an external API server which returns data snapshot)",
+        description="Retry options when connecting to the base data source (e.g. an external API server which returns data snapshot)",
     )
 
     POLICY_STORE_POLICY_PATHS_TO_IGNORE = confi.list(
@@ -102,17 +107,17 @@ class OpalClientConfig(Confi):
     POLICY_STORE_TLS_CLIENT_CERT = confi.str(
         "POLICY_STORE_TLS_CLIENT_CERT",
         None,
-        description="path to the client certificate used for tls authentication with the policy store",
+        description="Path to the client certificate used for TLS authentication with the policy store",
     )
     POLICY_STORE_TLS_CLIENT_KEY = confi.str(
         "POLICY_STORE_TLS_CLIENT_KEY",
         None,
-        description="path to the client key used for tls authentication with the policy store",
+        description="Path to the client key used for TLS authentication with the policy store",
     )
     POLICY_STORE_TLS_CA = confi.str(
         "POLICY_STORE_TLS_CA",
         None,
-        description="path to the file containing the ca certificate(s) used for tls authentication with the policy store",
+        description="Path to the file containing the CA certificate(s) used for TLS authentication with the policy store",
     )
 
     EXCLUDE_POLICY_STORE_SECRETS = confi.bool(
@@ -132,7 +137,10 @@ class OpalClientConfig(Confi):
     # opa runner configuration (OPA can optionally be run by OPAL) ----------------
 
     # whether or not OPAL should run OPA by itself in the same container
-    INLINE_OPA_ENABLED = confi.bool("INLINE_OPA_ENABLED", True)
+    INLINE_OPA_ENABLED = confi.bool(
+        "INLINE_OPA_ENABLED", True,
+        description="Whether or not OPAL should run OPA by itself in the same container"
+    )
 
     # if inline OPA is indeed enabled, user can pass cli options
     # (configuration) that affects how OPA will run
@@ -140,17 +148,21 @@ class OpalClientConfig(Confi):
         "INLINE_OPA_CONFIG",
         OpaServerOptions,
         {},  # defaults are being set according to OpaServerOptions pydantic definitions (see class)
-        description="cli options used when running `opa run --server` inline",
+        description="CLI options used when running `opa run --server` inline",
     )
 
     INLINE_OPA_LOG_FORMAT: EngineLogFormat = confi.enum(
-        "INLINE_OPA_LOG_FORMAT", EngineLogFormat, EngineLogFormat.NONE
+        "INLINE_OPA_LOG_FORMAT", EngineLogFormat, EngineLogFormat.NONE,
+        description="The log format to use for inline OPA logs"
     )
 
     # Cedar runner configuration (Cedar-engine can optionally be run by OPAL) ----------------
 
     # whether or not OPAL should run the Cedar agent by itself in the same container
-    INLINE_CEDAR_ENABLED = confi.bool("INLINE_CEDAR_ENABLED", True)
+    INLINE_CEDAR_ENABLED = confi.bool(
+        "INLINE_CEDAR_ENABLED", True,
+        description="Whether or not OPAL should run the Cedar agent by itself in the same container"
+    )
 
     # if inline Cedar is indeed enabled, user can pass cli options
     # (configuration) that affects how the agent will run
@@ -158,23 +170,30 @@ class OpalClientConfig(Confi):
         "INLINE_CEDAR_CONFIG",
         CedarServerOptions,
         {},  # defaults are being set according to CedarServerOptions pydantic definitions (see class)
-        description="cli options used when running the Cedar agent inline",
+        description="CLI options used when running the Cedar agent inline",
     )
 
     INLINE_CEDAR_LOG_FORMAT: EngineLogFormat = confi.enum(
-        "INLINE_CEDAR_LOG_FORMAT", EngineLogFormat, EngineLogFormat.NONE
+        "INLINE_CEDAR_LOG_FORMAT", EngineLogFormat, EngineLogFormat.NONE,
+        description="The log format to use for inline Cedar logs"
     )
 
     # configuration for fastapi routes
     ALLOWED_ORIGINS = ["*"]
 
     # general configuration for pub/sub clients
-    KEEP_ALIVE_INTERVAL = confi.int("KEEP_ALIVE_INTERVAL", 0)
+    KEEP_ALIVE_INTERVAL = confi.int(
+        "KEEP_ALIVE_INTERVAL", 0,
+        description="The interval (in seconds) for sending keep-alive messages"
+    )
 
     # Opal Server general configuration -------------------------------------------
 
     # opal server url
-    SERVER_URL = confi.str("SERVER_URL", "http://localhost:7002", flags=["-s"])
+    SERVER_URL = confi.str(
+        "SERVER_URL", "http://localhost:7002", flags=["-s"],
+        description="The URL of the OPAL server"
+    )
     # opal server pubsub url
     OPAL_WS_ROUTE = "/ws"
     SERVER_WS_URL = confi.str(
@@ -184,16 +203,18 @@ class OpalClientConfig(Confi):
                 "http", "ws"
             )
         ),
+        description="The WebSocket URL of the OPAL server"
     )
     SERVER_PUBSUB_URL = confi.str(
-        "SERVER_PUBSUB_URL", confi.delay("{SERVER_WS_URL}" + f"{OPAL_WS_ROUTE}")
+        "SERVER_PUBSUB_URL", confi.delay("{SERVER_WS_URL}" + f"{OPAL_WS_ROUTE}"),
+        description="The Pub/Sub URL of the OPAL server"
     )
 
     # opal server auth token
     CLIENT_TOKEN = confi.str(
         "CLIENT_TOKEN",
         "THIS_IS_A_DEV_SECRET",
-        description="opal server auth token",
+        description="The authentication token for the OPAL server",
         flags=["-t"],
     )
 
@@ -229,7 +250,7 @@ class OpalClientConfig(Confi):
         "POLICY_SUBSCRIPTION_DIRS",
         ["."],
         delimiter=":",
-        description="directories in policy repo we should subscribe to",
+        description="Directories in the policy repo to subscribe to for policy code (rego) modules",
     )
 
     # Data updater configuration --------------------------------------------------
@@ -272,6 +293,7 @@ class OpalClientConfig(Confi):
             "headers": {"content-type": "application/json"},
             "process_data": False,
         },
+        description="Configuration for the default update callback",
     )
 
     DEFAULT_UPDATE_CALLBACKS = confi.model(
@@ -305,7 +327,10 @@ class OpalClientConfig(Confi):
 
     OPA_HEALTH_CHECK_POLICY_PATH = "engine/healthcheck/opal.rego"
 
-    SCOPE_ID = confi.str("SCOPE_ID", "default", description="OPAL Scope ID")
+    SCOPE_ID = confi.str(
+        "SCOPE_ID", "default",
+        description="OPAL Scope ID"
+    )
 
     STORE_BACKUP_PATH = confi.str(
         "STORE_BACKUP_PATH",
