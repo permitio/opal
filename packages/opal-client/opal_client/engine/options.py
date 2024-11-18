@@ -1,7 +1,12 @@
+import re
 from enum import Enum
-from typing import Any, List, Optional
+from typing import Any, Iterable, List, Optional
 
 from pydantic import BaseModel, Field, validator
+
+HOST_ADDR_PATTERN = re.compile(
+    r"^(?P<addr>(?:\d{1,3}\.){3}\d{1,3}|)(?::(?P<port>\d+))?$"
+)
 
 
 class LogLevel(str, Enum):
@@ -63,10 +68,6 @@ class OpaServerOptions(BaseModel):
         description="list of built-in rego policies and data.json files that must be loaded into OPA on startup. e.g: system.authz policy when using --authorization=basic, see: https://www.openpolicyagent.org/docs/latest/security/#authentication-and-authorization",
     )
 
-    opa_executable_path: str = Field(
-        default="opa", description="Path to the OPA executable"
-    )
-
     class Config:
         use_enum_values = True
         allow_population_by_field_name = True
@@ -81,18 +82,13 @@ class OpaServerOptions(BaseModel):
         """Returns a dict that can be passed to the OPA cli."""
         return self.dict(exclude_none=True, by_alias=True, exclude={"files"})
 
-    def get_opa_startup_files(self) -> str:
-        """Returns a list of startup policies and data."""
-        files = self.files if self.files is not None else []
-        return " ".join(files)
-
 
 class CedarServerOptions(BaseModel):
     """Options to configure the Cedar agent (apply when choosing to run Cedar
     inline)."""
 
     addr: str = Field(
-        ":8181",
+        ":8180",
         description="listening address of the Cedar agent (e.g., [ip]:<port> for TCP)",
     )
     authentication: AuthenticationScheme = Field(
@@ -132,34 +128,23 @@ class CedarServerOptions(BaseModel):
             )
         return v
 
-    def get_cmdline(self) -> str:
-        result = [
-            "cedar-agent",
-        ]
+    def get_args(self) -> Iterable[str]:
         if (
             self.authentication == AuthenticationScheme.token
             and self.authentication_token is not None
         ):
-            result += [
-                "-a",
-                self.authentication_token,
-            ]
-        addr = self.addr.split(":", 1)
-        port = None
-        if len(addr) == 1:
-            listen_address = addr[0]
-        elif len(addr) == 2:
-            listen_address, port = addr
-        if len(listen_address) == 0:
-            listen_address = "0.0.0.0"
-        result += [
-            "--addr",
-            listen_address,
-        ]
-        if port is not None:
-            result += [
-                "--port",
-                port,
-            ]
+            yield "-a"
+            yield self.authentication_token
+
+        match = HOST_ADDR_PATTERN.match(self.addr)
+        if not match:
+            raise ValueError(
+                f"Invalid addr format: {self.addr}. Expected [ip]:<port>, e.g. '0.0.0.0:8180', ':8180'"
+            )
+
+        yield "--addr"
+        yield match.group("addr") or "0.0.0.0"
+        yield "--port"
+        yield match.group("port") or "8180"
+
         # TODO: files
-        return " ".join(result)
