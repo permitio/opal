@@ -100,7 +100,7 @@ Besides Permit, OPAL is being used in Production in **Tesla**, **Walmart**, **Th
 
 ```
 curl -L https://raw.githubusercontent.com/permitio/opal/master/docker/docker-compose-example.yml \
-> docker-compose.yml && docker-compose up
+> docker-compose.yml && docker compose up
 ```
 
 <p>
