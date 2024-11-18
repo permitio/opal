@@ -288,7 +288,7 @@ class OpalServerConfig(Confi):
         "ALLOWED_ORIGINS", ["*"], description="List of allowed origins for CORS"
     )
     FILTER_FILE_EXTENSIONS = confi.list(
-        "FILTER_FILE_EXTENSIONS", [".rego", ".json"], description="List of file extensions to filter"
+        "FILTER_FILE_EXTENSIONS", [".rego", ".json"], description="List of file extensions to filter. Example: ['.rego', '.json']"
     )
     BUNDLE_IGNORE = confi.list(
         "BUNDLE_IGNORE", [], description="List of patterns to ignore in the bundle"
