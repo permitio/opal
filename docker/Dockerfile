@@ -38,8 +38,8 @@ COPY scripts/wait-for.sh .
 RUN chmod +x ./wait-for.sh
 RUN ln -s /opal/wait-for.sh /usr/wait-for.sh
 
-# netcat (nc) is used by the wait-for.sh script
-RUN apt-get update && apt-get install -y netcat-traditional jq && apt-get clean
+# netcat (nc) and wget are used by the wait-for.sh script
+RUN apt-get update && apt-get install -y netcat-traditional jq wget && apt-get clean
 
 # copy startup script (create link at old path to maintain backward compatibility)
 COPY ./scripts/start.sh .
