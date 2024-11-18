@@ -51,6 +51,9 @@ class JWTSigner(JWTVerifier):
         super().__init__(
             public_key=public_key, algorithm=algorithm, audience=audience, issuer=issuer
         )
+
+        logger.info("Initializing JWT Signer")  
+        
         self._private_key = private_key
         self._verify_crypto_keys()
 

@@ -135,6 +135,10 @@ class StaticBearerAuthenticator:
         if authorization is None:
             raise Unauthorized(description="Authorization header is required!")
 
+        """ import debugpy
+        debugpy.listen(("0.0.0.0", 5678))
+        debugpy.wait_for_client() """
+
         token = get_token_from_header(authorization)
         if token is None or token != self._preconfigured_token:
             raise Unauthorized(
