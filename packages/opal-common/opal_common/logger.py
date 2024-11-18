@@ -52,5 +52,5 @@ def configure_logs():
 
 
 def get_logger(name=""):
-    """backward compatibility to old get_logger."""
+    """Backward compatibility to old get_logger."""
     return logger

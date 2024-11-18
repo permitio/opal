@@ -27,7 +27,7 @@ async def create_update_all_directories_in_repo(
     bundle_ignore: Optional[List[str]] = None,
     predicate: Optional[FileFilter] = None,
 ) -> PolicyUpdateMessageNotification:
-    """publishes policy topics matching all relevant directories in tracked
+    """Publishes policy topics matching all relevant directories in tracked
     repo, prompting the client to ask for *all* contents of these directories
     (and not just diffs)."""
     with CommitViewer(new_commit) as viewer:
@@ -108,7 +108,7 @@ async def publish_changed_directories(
     file_extensions: Optional[List[str]] = None,
     bundle_ignore: Optional[List[str]] = None,
 ):
-    """publishes policy topics matching all relevant directories in tracked
+    """Publishes policy topics matching all relevant directories in tracked
     repo, prompting the client to ask for *all* contents of these directories
     (and not just diffs)."""
     notification = await create_policy_update(

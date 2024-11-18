@@ -22,15 +22,16 @@ def save_ssh_key_to_pem_file(key: str) -> Path:
 
 
 def is_ssh_repo_url(repo_url: str):
-    """return True if the repo url uses SSH authentication.
+    """Return True if the repo url uses SSH authentication.
 
-    (see: https://docs.github.com/en/github/authenticating-to-github/connecting-to-github-with-ssh)
+    (see:
+    https://docs.github.com/en/github/authenticating-to-github/connecting-to-github-with-ssh)
     """
     return repo_url.startswith(SSH_PREFIX) or repo_url.startswith(GIT_SSH_USER_PREFIX)
 
 
 def provide_git_ssh_environment(url: str, ssh_key: str):
-    """provides git SSH configuration via GIT_SSH_COMMAND.
+    """Provides git SSH configuration via GIT_SSH_COMMAND.
 
     the git ssh config will be provided only if the following conditions are met:
     - the repo url is a git ssh url

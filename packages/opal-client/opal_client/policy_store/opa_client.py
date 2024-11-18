@@ -54,7 +54,7 @@ def fail_silently(fallback=None):
 
 
 def affects_transaction(func):
-    """mark a method as write (affecting state of transaction) for transaction
+    """Mark a method as write (affecting state of transaction) for transaction
     log."""
     setattr(func, "affects_transaction", True)
     return func
@@ -63,7 +63,7 @@ def affects_transaction(func):
 async def proxy_response_unless_invalid(
     raw_response: aiohttp.ClientResponse, accepted_status_codes: List[int]
 ) -> Response:
-    """throws value error if the http response received has an unexpected
+    """Throws value error if the http response received has an unexpected
     status code."""
     response = await proxy_response(raw_response)
     if response.status_code not in accepted_status_codes:
@@ -80,7 +80,7 @@ async def proxy_response_unless_invalid(
 
 
 class OpaTransactionLogState:
-    """holds a mutatable state of the transaction log.
+    """Holds a mutatable state of the transaction log.
 
     can persist to OPA as hardcoded policy
     """
@@ -181,7 +181,7 @@ class OpaTransactionLogState:
         return transaction.transaction_type == TransactionType.data
 
     def process_transaction(self, transaction: StoreTransaction):
-        """mutates the state into a new state that can be then persisted as
+        """Mutates the state into a new state that can be then persisted as
         hardcoded policy."""
         logger.debug(
             "processing store transaction: {transaction}",
@@ -221,7 +221,7 @@ class OpaTransactionLogPolicyWriter:
         return template.format(**kwargs)
 
     async def persist(self, state: OpaTransactionLogState):
-        """renders the policy template with the current state, and writes it to
+        """Renders the policy template with the current state, and writes it to
         OPA."""
         logger.info(
             "persisting health check policy: ready={ready}, healthy={healthy}",
@@ -288,7 +288,7 @@ class OpaStaticDataCache:
 
 
 class OpaClient(BasePolicyStoreClient):
-    """communicates with OPA via its REST API."""
+    """Communicates with OPA via its REST API."""
 
     POLICY_NAME = "rbac"
 
@@ -878,7 +878,7 @@ class OpaClient(BasePolicyStoreClient):
 
     @retry(**RETRY_CONFIG)
     async def get_data_with_input(self, path: str, input: BaseModel) -> Dict:
-        """evaluates a data document against an input. that is how OPA "runs
+        """Evaluates a data document against an input. that is how OPA "runs
         queries".
 
         see explanation how opa evaluate documents:

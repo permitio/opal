@@ -10,7 +10,7 @@ from opal_common.logger import logger
 
 
 def get_token_from_header(authorization_header: str) -> Optional[str]:
-    """extracts a bearer token from an HTTP Authorization header.
+    """Extracts a bearer token from an HTTP Authorization header.
 
     when provided bearer token via websocket, we cannot use the fastapi
     built-in: oauth2_scheme.
@@ -26,7 +26,7 @@ def get_token_from_header(authorization_header: str) -> Optional[str]:
 
 
 def verify_logged_in(verifier: JWTVerifier, token: Optional[str]) -> JWTClaims:
-    """forces bearer token authentication with valid JWT or throws 401."""
+    """Forces bearer token authentication with valid JWT or throws 401."""
     try:
         if not verifier.enabled:
             logger.debug("JWT verification disabled, cannot verify requests!")
@@ -81,7 +81,7 @@ class _JWTAuthenticator:
 
 
 class JWTAuthenticator(_JWTAuthenticator):
-    """bearer token authentication for http(s) api endpoints.
+    """Bearer token authentication for http(s) api endpoints.
 
     throws 401 if a valid jwt is not provided.
     """
@@ -92,7 +92,7 @@ class JWTAuthenticator(_JWTAuthenticator):
 
 
 class WebsocketJWTAuthenticator(_JWTAuthenticator):
-    """bearer token authentication for websocket endpoints.
+    """Bearer token authentication for websocket endpoints.
 
     with fastapi ws endpoint, we cannot throw http exceptions inside dependencies,
     because no matter the http status code, uvicorn will treat it as http 500.
@@ -119,7 +119,7 @@ class WebsocketJWTAuthenticator(_JWTAuthenticator):
 
 
 class StaticBearerAuthenticator:
-    """bearer token authentication for http(s) api endpoints.
+    """Bearer token authentication for http(s) api endpoints.
 
     throws 401 if token does not match a preconfigured value.
     """

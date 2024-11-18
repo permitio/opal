@@ -5,7 +5,7 @@ import time
 from typing import Callable, Coroutine, List, Optional
 
 import psutil
-from opal_client.config import EngineLogFormat
+from opal_client.config import EngineLogFormat, opal_client_config
 from opal_client.engine.logger import log_engine_output_opa, log_engine_output_simple
 from opal_client.engine.options import CedarServerOptions, OpaServerOptions
 from opal_client.logger import logger
@@ -20,7 +20,7 @@ async def wait_until_process_is_up(
     wait_interval: float = 0.1,
     timeout: Optional[float] = None,
 ):
-    """waits until the pid of the process exists, then optionally runs a
+    """Waits until the pid of the process exists, then optionally runs a
     callback.
 
     optionally receives a timeout to give up.
@@ -68,12 +68,12 @@ class PolicyEngineRunner:
         await self.stop()
 
     def start(self):
-        """starts the runner task, and launches the OPA subprocess."""
+        """Starts the runner task, and launches the OPA subprocess."""
         logger.info("Launching engine runner")
         self._run_task = asyncio.create_task(self._run())
 
     async def stop(self):
-        """stops the runner task (and terminates OPA)"""
+        """Stops the runner task (and terminates OPA)"""
         self._init_events()
         if not self._should_stop.is_set():
             logger.info("Stopping policy engine runner")
@@ -86,7 +86,7 @@ class PolicyEngineRunner:
         self._run_task = None
 
     async def wait_until_done(self):
-        """waits until the engine runner task is complete.
+        """Waits until the engine runner task is complete.
 
         this is great when using engine runner as a context manager.
         """
@@ -108,7 +108,7 @@ class PolicyEngineRunner:
                 break
 
     async def pipe_logs(self):
-        """gets a stream of logs from the opa process, and logs it into the
+        """Gets a stream of logs from the opa process, and logs it into the
         main opal log."""
         self._engine_panicked = False
 
@@ -146,7 +146,7 @@ class PolicyEngineRunner:
             logger.error("restart policy engine due to a detected panic")
 
     async def handle_log_line(self, line: bytes) -> bool:
-        """handles a single line of log from the engine process.
+        """Handles a single line of log from the engine process.
 
         returns True if the engine panicked.
         """
@@ -194,11 +194,11 @@ class PolicyEngineRunner:
         return return_code
 
     def register_process_initial_start_callbacks(self, callbacks: List[AsyncCallback]):
-        """register a callback to run when OPA is started the first time."""
+        """Register a callback to run when OPA is started the first time."""
         self._on_process_initial_start_callbacks.extend(callbacks)
 
     def register_process_restart_callbacks(self, callbacks: List[AsyncCallback]):
-        """register a callback to run when OPA is restarted (i.e: OPA was
+        """Register a callback to run when OPA is restarted (i.e: OPA was
         already up, then got terminated, and now is up again).
 
         this is most often used to keep OPA's cache (policy and data)
@@ -209,7 +209,7 @@ class PolicyEngineRunner:
         self._on_process_restart_callbacks.extend(callbacks)
 
     async def _run_start_callbacks(self):
-        """runs callbacks after OPA process starts."""
+        """Runs callbacks after OPA process starts."""
         # TODO: make policy store expose the /health api of OPA
         await asyncio.sleep(1)
 
@@ -252,7 +252,17 @@ class OpaRunner(PolicyEngineRunner):
         opts = self._options.get_cli_options_dict()
         opts_string = " ".join([f"{k}={v}" for k, v in opts.items()])
         startup_files = self._options.get_opa_startup_files()
-        return f"opa run --server {opts_string} {startup_files}".strip()
+        opa_path = self._options.opa_executable_path
+
+        # Check if the OPA executable exists and is a file
+        if not os.path.isfile(opa_path):
+            raise FileNotFoundError(f"OPA executable not found at path: {opa_path}")
+
+        opts = self._options.get_cli_options_dict()
+        opts_string = " ".join([f"{k}={v}" for k, v in opts.items()])
+        startup_files = self._options.get_opa_startup_files()
+
+        return f"{opa_path} run --server {opts_string} {startup_files}".strip()
 
     @staticmethod
     def setup_opa_runner(
@@ -261,7 +271,7 @@ class OpaRunner(PolicyEngineRunner):
         initial_start_callbacks: Optional[List[AsyncCallback]] = None,
         rehydration_callbacks: Optional[List[AsyncCallback]] = None,
     ):
-        """factory for OpaRunner, accept optional callbacks to run in certain
+        """Factory for OpaRunner, accept optional callbacks to run in certain
         lifecycle events.
 
         Initial Start Callbacks:
@@ -273,6 +283,20 @@ class OpaRunner(PolicyEngineRunner):
             to handle authorization queries. therefore it is necessary that we rehydrate the
             cache with fresh state fetched from the server.
         """
+
+        if options is None:
+            options = OpaServerOptions(
+                opa_executable_path=opal_client_config.INLINE_OPA_EXECUTABLE_PATH
+            )
+        elif options.opa_executable_path == "opa":
+            options.opa_executable_path = opal_client_config.INLINE_OPA_EXECUTABLE_PATH
+
+        # Check if the OPA executable exists and is a file
+        if not os.path.isfile(options.opa_executable_path):
+            raise FileNotFoundError(
+                f"OPA executable not found at path: {options.opa_executable_path}"
+            )
+
         opa_runner = OpaRunner(options=options, piped_logs_format=piped_logs_format)
         if initial_start_callbacks:
             opa_runner.register_process_initial_start_callbacks(initial_start_callbacks)
@@ -327,4 +351,5 @@ class CedarRunner(PolicyEngineRunner):
 
     async def handle_log_line(self, line: bytes) -> bool:
         await log_engine_output_simple(line)
+
         return False
