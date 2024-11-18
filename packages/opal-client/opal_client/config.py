@@ -142,6 +142,12 @@ class OpalClientConfig(Confi):
         description="Whether or not OPAL should run OPA by itself in the same container"
     )
 
+    INLINE_OPA_EXEC_PATH = confi.str(
+        "INLINE_OPA_EXEC_PATH",
+        None,
+        description="Path to the OPA executable. Defaults to searching for 'opa' binary in PATH if not specified.",
+    )
+
     # if inline OPA is indeed enabled, user can pass cli options
     # (configuration) that affects how OPA will run
     INLINE_OPA_CONFIG = confi.model(
@@ -156,18 +162,18 @@ class OpalClientConfig(Confi):
         description="The log format to use for inline OPA logs"
     )
 
-    INLINE_OPA_EXECUTABLE_PATH = confi.str(
-        "INLINE_OPA_EXECUTABLE_PATH",
-        "opa",
-        description="Path to the OPA executable. Defaults to 'opa' if not specified.",
-    )
-
     # Cedar runner configuration (Cedar-engine can optionally be run by OPAL) ----------------
 
     # whether or not OPAL should run the Cedar agent by itself in the same container
     INLINE_CEDAR_ENABLED = confi.bool(
         "INLINE_CEDAR_ENABLED", True,
         description="Whether or not OPAL should run the Cedar agent by itself in the same container"
+    )
+
+    INLINE_CEDAR_EXEC_PATH = confi.str(
+        "INLINE_CEDAR_EXEC_PATH",
+        None,
+        description="Path to the Cedar Agent executable. Defaults to searching for 'cedar-agent' binary in PATH if not specified.",
     )
 
     # if inline Cedar is indeed enabled, user can pass cli options
