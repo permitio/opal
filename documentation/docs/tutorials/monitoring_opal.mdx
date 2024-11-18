@@ -11,6 +11,7 @@ There are multiple ways you can monitor your OPAL deployment:
 - **Health-checks** - OPAL exposes HTTP health check endpoints ([See below](##health-checks))
 - [**Callbacks**](/tutorials/healthcheck_policy_and_update_callbacks#-data-update-callbacks) - Using the callback webhooks feature - having OPAL-clients report their updates
 - **Statistics** - Using the built-in statistics feature in OPAL ([See below](##opal-statistics))
+- **Prometheus Metrics** - OPAL can expose metrics in Prometheus format for monitoring ([See below](#prometheus-metrics)).
 
 ## Health checks
 
@@ -52,3 +53,35 @@ Available through `/pubsub_client_info` api route on the server.
 ### Caveats:
 - When `UVICORN_NUM_WORKERS > 1`, retrieved information would only include clients connected to the replying server process.
 - This is an early access feature and is likely to change. Backward compatibility is not garaunteed.
+
+## Prometheus Metrics
+
+OPAL can expose metrics in Prometheus format, which can be scraped by Prometheus for monitoring and alerting.
+
+### Enabling Prometheus Metrics
+
+Prometheus metrics are enabled by default on both OPAL Server and OPAL Client.
+
+Both the server and client expose a `/metrics` endpoint that returns metrics in Prometheus format.
+
+### Accessing Metrics
+
+- **OPAL Server Metrics Endpoint**: `/metrics`
+- **OPAL Client Metrics Endpoint**: `/metrics`
+
+### Example
+
+To monitor OPAL using Prometheus and Grafana, a ready-to-use Docker Compose configuration is provided in the root directory of the repository under docker/prometheus. The file is named docker-compose-with-prometheus-metrics.yml.
+
+Navigate to the directory containing the Docker Compose file:
+
+```
+cd docker/prometheus
+```
+Run the following command to start Prometheus and Grafana:
+
+```
+docker compose -f docker-compose-with-prometheus-metrics.yml up
+```
+
+This setup will start Prometheus to scrape metrics from OPAL server and client, and Grafana to visualize the metrics.
