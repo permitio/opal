@@ -4,13 +4,13 @@ from prometheus_client import Counter, Gauge, Histogram
 opal_server_data_update_total = Counter(
     'opal_server_data_update_total',
     'Total number of data update events published to opal server',
-    ["status"]
+    ["status", "type"]
 )
 
 opal_server_data_update_errors = Counter(
     'opal_server_data_update_errors',
     'Total number of errors in opal server data update publishing',
-    ["error_type"]
+    ["error_type", "endpoint"]
 )
 
 opal_server_data_update_latency = Histogram(
