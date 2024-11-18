@@ -147,6 +147,12 @@ class OpalClientConfig(Confi):
         "INLINE_OPA_LOG_FORMAT", EngineLogFormat, EngineLogFormat.NONE
     )
 
+    INLINE_OPA_EXECUTABLE_PATH = confi.str(
+        "INLINE_OPA_EXECUTABLE_PATH",
+        "opa",
+        description="Path to the OPA executable. Defaults to 'opa' if not specified.",
+    )
+
     # Cedar runner configuration (Cedar-engine can optionally be run by OPAL) ----------------
 
     # whether or not OPAL should run the Cedar agent by itself in the same container

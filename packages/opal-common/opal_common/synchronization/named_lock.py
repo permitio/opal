@@ -10,7 +10,7 @@ DEFAULT_LOCK_ATTEMPT_INTERVAL = 5.0
 
 
 class NamedLock:
-    """creates a a file-lock (can be a normal file or a named pipe / fifo), and
+    """Creates a a file-lock (can be a normal file or a named pipe / fifo), and
     exposes a context manager to try to acquire the lock asynchronously."""
 
     def __init__(
@@ -21,17 +21,17 @@ class NamedLock:
         self._attempt_interval = attempt_interval
 
     async def __aenter__(self):
-        """using the lock as a context manager will try to acquire the lock
+        """Using the lock as a context manager will try to acquire the lock
         until successful (without timeout)"""
         await self.acquire()
         return self
 
     async def __aexit__(self, exc_type, exc, tb):
-        """releases the lock when exiting the lock context."""
+        """Releases the lock when exiting the lock context."""
         await self.release()
 
     async def acquire(self, timeout: Optional[int] = None):
-        """tries to acquire the lock.
+        """Tries to acquire the lock.
 
         if unsuccessful, will sleep and then try again after the attempt
         interval. an optional timeout can be provided to give up before
@@ -58,7 +58,7 @@ class NamedLock:
                 raise TimeoutError("could not acquire lock")
 
     async def release(self):
-        """releases the lock."""
+        """Releases the lock."""
         logger.debug(
             "[{pid}] releasing lock (lock={lock})",
             pid=os.getpid(),
@@ -75,7 +75,7 @@ class NamedLock:
         return self._lock_file_fd is not None
 
     def _acquire(self) -> bool:
-        """tries to acquire the lock, returns immediately regardless of
+        """Tries to acquire the lock, returns immediately regardless of
         success.
 
         returns True if lock was acquired successfully, False otherwise.
