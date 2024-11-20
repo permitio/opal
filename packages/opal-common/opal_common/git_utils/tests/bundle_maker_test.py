@@ -1,5 +1,6 @@
 import os
 import sys
+
 import pytest
 
 # Add root opal dir to use local src as package for tests (i.e, no need for python -m pytest)
@@ -23,13 +24,15 @@ from opal_common.git_utils.commit_viewer import CommitViewer
 from opal_common.schemas.policy import PolicyBundle, RegoModule
 
 # Support both OPA and OpenFGA policy files
-OPA_FILE_EXTENSIONS = [".rego"]  
+OPA_FILE_EXTENSIONS = [".rego"]
 OPENFGA_FILE_EXTENSIONS = [".json", ".yaml"]
 ALL_POLICY_EXTENSIONS = [".rego", ".json", ".yaml"]
+
 
 def assert_is_complete_bundle(bundle: PolicyBundle):
     assert bundle.old_hash is None
     assert bundle.deleted_files is None
+
 
 def test_bundle_maker_only_includes_opa_files(local_repo: Repo, helpers):
     """Test bundle maker on a repo with non-opa files."""
@@ -41,10 +44,10 @@ def test_bundle_maker_only_includes_opa_files(local_repo: Repo, helpers):
     )
     commit: Commit = repo.head.commit
     bundle: PolicyBundle = maker.make_bundle(commit)
-    
+
     assert_is_complete_bundle(bundle)
     assert bundle.hash == commit.hexsha
-    
+
     # Updated assertions for both OPA and OpenFGA files
     assert len(bundle.manifest) == 6  # Includes both OPA and OpenFGA files
     assert "other/abac.rego" in bundle.manifest
@@ -75,11 +78,13 @@ def test_bundle_maker_only_includes_opa_files(local_repo: Repo, helpers):
     assert policy_modules[4].package_name == "envoy.http.public"
 
     # Verify RBAC content only in OPA modules
-    for module in [m for m in policy_modules if m.path.endswith('.rego')]:
+    for module in [m for m in policy_modules if m.path.endswith(".rego")]:
         assert "Role-based Access Control (RBAC)" in module.rego
 
+
 def test_bundle_maker_can_filter_on_directories(local_repo: Repo, helpers):
-    """Test bundle maker filtered on directory only returns policy files from that directory."""
+    """Test bundle maker filtered on directory only returns policy files from
+    that directory."""
     repo: Repo = local_repo
     commit: Commit = repo.head.commit
 
@@ -90,12 +95,14 @@ def test_bundle_maker_can_filter_on_directories(local_repo: Repo, helpers):
         extensions=ALL_POLICY_EXTENSIONS,
     )
     bundle: PolicyBundle = maker.make_bundle(commit)
-    
+
     assert_is_complete_bundle(bundle)
     assert bundle.hash == commit.hexsha
 
     # Updated assertions for filtered directory
-    assert len(bundle.manifest) == 3  # Includes both OPA and OpenFGA files in 'other' directory
+    assert (
+        len(bundle.manifest) == 3
+    )  # Includes both OPA and OpenFGA files in 'other' directory
     assert "other/abac.rego" in bundle.manifest
     assert "other/data.json" in bundle.manifest
     assert "other/some.json" in bundle.manifest
@@ -112,6 +119,7 @@ def test_bundle_maker_can_filter_on_directories(local_repo: Repo, helpers):
     assert bundle.policy_modules[0].path == "other/abac.rego"
     assert bundle.policy_modules[0].package_name == "app.abac"
     assert bundle.policy_modules[1].path == "other/some.json"
+
 
 def test_bundle_maker_detects_changes_in_source_files(
     repo_with_diffs: Tuple[Repo, Commit, Commit]
@@ -149,6 +157,7 @@ def test_bundle_maker_detects_changes_in_source_files(
     assert len(bundle.data_modules) == 0
     assert len(bundle.policy_modules) == 6  # Updated count for both types
 
+
 def test_bundle_maker_diff_bundle(repo_with_diffs: Tuple[Repo, Commit, Commit]):
     """See that only changes to the repo are returned in a diff bundle."""
     repo, previous_head, new_head = repo_with_diffs
@@ -156,7 +165,7 @@ def test_bundle_maker_diff_bundle(repo_with_diffs: Tuple[Repo, Commit, Commit]):
         repo, in_directories=set([Path(".")]), extensions=ALL_POLICY_EXTENSIONS
     )
     bundle: PolicyBundle = maker.make_diff_bundle(previous_head, new_head)
-    
+
     assert bundle.hash == new_head.hexsha
     assert bundle.old_hash == previous_head.hexsha
 
@@ -182,8 +191,10 @@ def test_bundle_maker_diff_bundle(repo_with_diffs: Tuple[Repo, Commit, Commit]):
     assert len(bundle.deleted_files.data_modules) == 1
     assert bundle.deleted_files.data_modules[0] == Path("other")
 
+
 def test_bundle_maker_sorts_according_to_explicit_manifest(local_repo: Repo, helpers):
-    """Test bundle maker filtered on directory only returns policy files from that directory."""
+    """Test bundle maker filtered on directory only returns policy files from
+    that directory."""
     repo: Repo = local_repo
     root = Path(repo.working_tree_dir)
     manifest_path = root / ".manifest"
@@ -201,7 +212,7 @@ def test_bundle_maker_sorts_according_to_explicit_manifest(local_repo: Repo, hel
         repo, in_directories=set([Path(".")]), extensions=ALL_POLICY_EXTENSIONS
     )
     bundle: PolicyBundle = maker.make_bundle(commit)
-    
+
     assert_is_complete_bundle(bundle)
     assert bundle.hash == commit.hexsha
 
@@ -237,10 +248,12 @@ def test_bundle_maker_sorts_according_to_explicit_manifest(local_repo: Repo, hel
     assert "ignored.json" in bundle.manifest
     assert "other/some.json" in bundle.manifest
 
+
 def test_bundle_maker_sorts_according_to_explicit_manifest_nested(
     local_repo: Repo, helpers
 ):
-    """Test bundle maker with nested manifests handling both OPA and OpenFGA files."""
+    """Test bundle maker with nested manifests handling both OPA and OpenFGA
+    files."""
     repo: Repo = local_repo
     root = Path(repo.working_tree_dir)
 
@@ -270,7 +283,7 @@ def test_bundle_maker_sorts_according_to_explicit_manifest_nested(
         repo, in_directories=set([Path(".")]), extensions=ALL_POLICY_EXTENSIONS
     )
     bundle: PolicyBundle = maker.make_bundle(commit)
-    
+
     assert_is_complete_bundle(bundle)
     assert bundle.hash == commit.hexsha
 
@@ -284,6 +297,7 @@ def test_bundle_maker_sorts_according_to_explicit_manifest_nested(
         "ignored.json",  # Added OpenFGA file
     ]
 
+
 def test_bundle_maker_can_ignore_files_using_a_glob_path(local_repo: Repo, helpers):
     """Test bundle maker with ignore glob for both OPA and OpenFGA files."""
     repo: Repo = local_repo
@@ -296,7 +310,7 @@ def test_bundle_maker_can_ignore_files_using_a_glob_path(local_repo: Repo, helpe
         bundle_ignore=["other/**"],
     )
     bundle: PolicyBundle = maker.make_bundle(commit)
-    
+
     assert_is_complete_bundle(bundle)
     assert bundle.hash == commit.hexsha
 
@@ -327,7 +341,7 @@ def test_bundle_maker_can_ignore_files_using_a_glob_path(local_repo: Repo, helpe
         bundle_ignore=["*.json"],  # Ignore all JSON files
     )
     bundle: PolicyBundle = maker.make_bundle(commit)
-    
+
     assert_is_complete_bundle(bundle)
     assert bundle.hash == commit.hexsha
 
