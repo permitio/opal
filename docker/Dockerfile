@@ -39,7 +39,7 @@ RUN chmod +x ./wait-for.sh
 RUN ln -s /opal/wait-for.sh /usr/wait-for.sh
 
 # netcat (nc) is used by the wait-for.sh script
-RUN apt-get update && apt-get install -y netcat-traditional jq && apt-get clean
+RUN apt-get update && apt-get install -y netcat-traditional jq wget && apt-get clean
 
 # copy startup script (create link at old path to maintain backward compatibility)
 COPY ./scripts/start.sh .
@@ -116,6 +116,7 @@ COPY --from=opa-extractor /opal/opa ./opa
 
 # enable inline OPA
 ENV OPAL_INLINE_OPA_ENABLED=true
+ENV OPAL_INLINE_OPA_EXEC_PATH=/opal/opa
 # expose opa port
 EXPOSE 8181
 USER opal
@@ -134,6 +135,7 @@ COPY --from=cedar-builder /tmp/cedar-agent/target/*/cedar-agent /bin/cedar-agent
 # enable inline Cedar agent
 ENV OPAL_POLICY_STORE_TYPE=CEDAR
 ENV OPAL_INLINE_CEDAR_ENABLED=true
+ENV OPAL_INLINE_CEDAR_EXEC_PATH=/bin/cedar-agent
 ENV OPAL_INLINE_CEDAR_CONFIG='{"addr": "0.0.0.0:8180"}'
 ENV OPAL_POLICY_STORE_URL=http://localhost:8180
 # expose cedar port

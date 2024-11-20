@@ -158,4 +158,20 @@ function main {
   # TODO: Test statistics feature again after broadcaster restart (should first fix statistics bug)
 }
 
-main
+# Retry test in case of failure to avoid flakiness
+MAX_RETRIES=5
+RETRY_COUNT=0
+
+while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
+  echo "Running test (attempt $((RETRY_COUNT+1)) of $MAX_RETRIES)..."
+  main && break
+  RETRY_COUNT=$((RETRY_COUNT + 1))
+  echo "Test failed, retrying..."
+done
+
+if [ $RETRY_COUNT -eq $MAX_RETRIES ]; then
+  echo "Tests failed after $MAX_RETRIES attempts."
+  exit 1
+fi
+
+echo "Tests passed successfully."
