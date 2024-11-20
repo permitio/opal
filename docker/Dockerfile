@@ -169,6 +169,7 @@ USER opal
   ENV OPAL_POLICY_STORE_TYPE=OPENFGA
   ENV OPAL_INLINE_OPENFGA_ENABLED=true
   ENV OPAL_INLINE_OPENFGA_CONFIG='{"addr": "0.0.0.0:8080"}'
+  ENV OPAL_INLINE_OPENFGA_EXEC_PATH=/usr/local/bin/openfga
   ENV OPAL_POLICY_STORE_URL=http://localhost:8080
 
   # Create necessary directories with proper permissions
