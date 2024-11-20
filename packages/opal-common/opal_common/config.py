@@ -162,6 +162,22 @@ class OpalCommonConfig(Confi):
 
     ENABLE_METRICS = confi.bool("ENABLE_METRICS", False)
 
+    ENABLE_OPENTELEMETRY_TRACING = confi.bool (
+        "ENABLE_OPENTELEMETRY_TRACING",
+        False,
+        description="Set if OPAL server should enable tracing with OpenTelemetry",
+    )
+    ENABLE_OPENTELEMETRY_METRICS = confi.bool (
+        "ENABLE_OPENTELEMETRY_METRICS",
+        False,
+        description="Set if OPAL server should enable metrics with OpenTelemetry",
+    )
+    OPENTELEMETRY_OTLP_ENDPOINT = confi.str(
+        "OPENTELEMETRY_OTLP_ENDPOINT",
+        "http://localhost:4317",
+        description="The OpenTelemetry OTLP endpoint to send traces to",
+    )
+
     # optional APM tracing with datadog
     ENABLE_DATADOG_APM = confi.bool(
         "ENABLE_DATADOG_APM",

@@ -9,12 +9,11 @@ from opal_common.schemas.data import (
     DataUpdate,
     ServerDataSourceConfig,
 )
+from opal_common.config import opal_common_config
 from opal_common.topics.publisher import TopicPublisher
-from opal_common.monitoring.prometheus_metrics import (
-    opal_server_data_update_latency,
-    opal_server_data_update_count_per_topic
-)
+from opentelemetry import trace
 
+tracer = trace.get_tracer(__name__)
 
 TOPIC_DELIMITER = "/"
 PREFIX_DELIMITER = ":"
@@ -75,49 +74,51 @@ class DataUpdatePublisher:
             topics (List[str]): topics (with hierarchy) to notify subscribers of
             update (DataUpdate): update data-source configuration for subscribers to fetch data from
         """
+        if opal_common_config.ENABLE_OPENTELEMETRY_TRACING:
+            with tracer.start_as_current_span("opal_server_data_update") as span:
+                await self._publish_data_updates(update)
 
-        with opal_server_data_update_latency.time():
-            all_topic_combos = set()
+                all_topic_combos = set()
 
-            # a nicer format of entries to the log
-            logged_entries = [
-                dict(
-                    url=entry.url,
-                    method=entry.save_method,
-                    path=entry.dst_path or "/",
-                    inline_data=(entry.data is not None),
-                    topics=entry.topics,
-                )
-                for entry in update.entries
-            ]
-
-            # Expand the topics for each event to include sub topic combos (e.g. publish 'a/b/c' as 'a' , 'a/b', and 'a/b/c')
-            for entry in update.entries:
-                topic_combos = []
-                if entry.topics:
-                    for topic in entry.topics:
-                        topic_combos.extend(DataUpdatePublisher.get_topic_combos(topic))
-                    entry.topics = topic_combos  # Update entry with the exhaustive list, so client won't have to expand it again
-                    all_topic_combos.update(topic_combos)
-
-                    for topic in topic_combos:
-                        opal_server_data_update_count_per_topic.labels(topic).inc()
-                else:
-                    logger.warning(
-                        "[{pid}] No topics were provided for the following entry: {entry}",
-                        pid=os.getpid(),
-                        entry=entry,
+                span.set_attribute("topics_count", len(all_topic_combos))
+                span.set_attribute("entries_count", len(update.entries))
+                # a nicer format of entries to the log
+                logged_entries = [
+                    dict(
+                        url=entry.url,
+                        method=entry.save_method,
+                        path=entry.dst_path or "/",
+                        inline_data=(entry.data is not None),
+                        topics=entry.topics,
                     )
+                    for entry in update.entries
+                ]
 
-            # publish all topics with all their sub combinations
-            logger.info(
-                "[{pid}] Publishing data update to topics: {topics}, reason: {reason}, entries: {entries}",
-                pid=os.getpid(),
-                topics=all_topic_combos,
-                reason=update.reason,
-                entries=logged_entries,
-            )
+                # Expand the topics for each event to include sub topic combos (e.g. publish 'a/b/c' as 'a' , 'a/b', and 'a/b/c')
+                for entry in update.entries:
+                    topic_combos = []
+                    if entry.topics:
+                        for topic in entry.topics:
+                            topic_combos.extend(DataUpdatePublisher.get_topic_combos(topic))
+                        entry.topics = topic_combos  # Update entry with the exhaustive list, so client won't have to expand it again
+                        all_topic_combos.update(topic_combos)
 
-            await self._publisher.publish(
-                list(all_topic_combos), update.dict(by_alias=True)
-            )
+                    else:
+                        logger.warning(
+                            "[{pid}] No topics were provided for the following entry: {entry}",
+                            pid=os.getpid(),
+                            entry=entry,
+                        )
+
+                # publish all topics with all their sub combinations
+                logger.info(
+                    "[{pid}] Publishing data update to topics: {topics}, reason: {reason}, entries: {entries}",
+                    pid=os.getpid(),
+                    topics=all_topic_combos,
+                    reason=update.reason,
+                    entries=logged_entries,
+                )
+
+                await self._publisher.publish(
+                    list(all_topic_combos), update.dict(by_alias=True)
+                )

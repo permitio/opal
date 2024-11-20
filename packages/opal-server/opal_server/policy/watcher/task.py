@@ -6,13 +6,12 @@ from typing import Any, Coroutine, List, Optional
 from fastapi_websocket_pubsub import Topic
 from fastapi_websocket_pubsub.pub_sub_server import PubSubEndpoint
 from opal_common.logger import logger
+from opal_common.config import opal_common_config
 from opal_common.sources.base_policy_source import BasePolicySource
 from opal_server.config import opal_server_config
-from opal_common.monitoring.prometheus_metrics import (
-    opal_server_policy_update_count,
-    opal_server_policy_update_latency
-)
+from opentelemetry import trace
 
+tracer = trace.get_tracer(__name__)
 
 class BasePolicyWatcherTask:
     """Manages the asyncio tasks of the policy watcher."""
@@ -104,10 +103,6 @@ class BasePolicyWatcherTask:
 
     async def _fail(self, exc: Exception):
         """called when the watcher fails, and stops all tasks gracefully."""
-        opal_server_policy_update_count.labels(
-            source="watcher",
-            status="error"
-        ).inc()
         logger.error("policy watcher failed with exception: {err}", err=repr(exc))
         self.signal_stop()
         # trigger uvicorn graceful shutdown
@@ -132,23 +127,8 @@ class PolicyWatcherTask(BasePolicyWatcherTask):
         """Triggers the policy watcher from outside to check for changes (git
         pull)"""
         try:
-            opal_server_policy_update_count.labels(
-                    source="webhook",
-                    status="started"
-                ).inc()
-
-            with opal_server_policy_update_latency.labels(
-                    source="webhook",
-                    status="success"
-                ).time():
+            if opal_common_config.ENABLE_OPENTELEMETRY_TRACING:
+                with tracer.start_as_current_span("opal_server_policy_update"):
                     await self._watcher.check_for_changes()
-            opal_server_policy_update_count.labels(
-                source="webhook",
-                status="success"
-            ).inc()
         except Exception as e:
-            opal_server_policy_update_count.labels(
-                source="webhook",
-                status="error"
-            ).inc()
             raise

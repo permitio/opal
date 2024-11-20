@@ -8,16 +8,16 @@ from typing import List, Optional
 
 from fastapi import Depends, FastAPI
 from fastapi_websocket_pubsub.event_broadcaster import EventBroadcasterContextManager
+from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
 from fastapi.responses import Response
-from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
-
 from opal_common.authentication.deps import JWTAuthenticator, StaticBearerAuthenticator
 from opal_common.authentication.signer import JWTSigner
 from opal_common.confi.confi import load_conf_if_none
 from opal_common.config import opal_common_config
 from opal_common.logger import configure_logs, logger
 from opal_common.middleware import configure_middleware
-from opal_common.monitoring import apm, metrics
+from opal_common.monitoring import apm
+import opal_common.monitoring.metrics as opal_dd_metrics
 from opal_common.schemas.data import ServerDataSourceConfig
 from opal_common.synchronization.named_lock import NamedLock
 from opal_common.topics.publisher import (
@@ -42,6 +42,15 @@ from opal_server.scopes.scope_repository import ScopeRepository
 from opal_server.security.api import init_security_router
 from opal_server.security.jwks import JwksStaticEndpoint
 from opal_server.statistics import OpalStatistics, init_statistics_router
+from opentelemetry import trace
+from opentelemetry import metrics
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.resources import Resource
+from opentelemetry.sdk.metrics import MeterProvider
+from opentelemetry.sdk.trace.export import BatchSpanProcessor
+from opentelemetry.exporter.prometheus import PrometheusMetricReader
+from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
+from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 
 
 class OpalServer:
@@ -109,7 +118,7 @@ class OpalServer:
         self._policy_remote_url = policy_remote_url
 
         self._configure_monitoring()
-        metrics.increment("startup")
+        opal_dd_metrics.increment("startup")
 
         self.data_sources_config: ServerDataSourceConfig = (
             data_sources_config
@@ -206,6 +215,16 @@ class OpalServer:
         self._configure_api_routes(app)
         self._configure_lifecycle_callbacks(app)
 
+        if opal_common_config.ENABLE_OPENTELEMETRY_TRACING:
+            FastAPIInstrumentor.instrument_app(app)
+
+        if opal_common_config.ENABLE_OPENTELEMETRY_METRICS:
+            @app.get("/metrics")
+            async def metrics():
+                data = generate_latest()
+                return Response(content=data, media_type=CONTENT_TYPE_LATEST)
+            logger.info("Mounted /metrics endpoint for Prometheus metrics.")
+
         return app
 
     def _configure_monitoring(self):
@@ -213,12 +232,58 @@ class OpalServer:
 
         apm.configure_apm(opal_server_config.ENABLE_DATADOG_APM, "opal-server")
 
-        metrics.configure_metrics(
+        opal_dd_metrics.configure_metrics(
             enable_metrics=opal_common_config.ENABLE_METRICS,
             statsd_host=os.environ.get("DD_AGENT_HOST", "localhost"),
             statsd_port=8125,
             namespace="opal",
         )
+
+        if opal_common_config.ENABLE_OPENTELEMETRY_TRACING:
+            self._initialize_opentelemetry_tracing()
+
+        # log values of the configuration variable ENABLE_OPENTELEMETRY_METRICS
+        logger.info(
+            "OpenTelemetry metrics are enabled: {enabled}",
+            enabled=opal_common_config.ENABLE_OPENTELEMETRY_METRICS,
+        )
+        if opal_common_config.ENABLE_OPENTELEMETRY_METRICS:
+            self._initialize_opentelemetry_metrics()
+
+    def _initialize_opentelemetry_tracing(self):
+        resource = Resource.create({"service.name": "opal-server"})
+        tracer_provider = TracerProvider(resource=resource)
+        trace.set_tracer_provider(tracer_provider)
+
+        otlp_exporter = OTLPSpanExporter(
+            endpoint = opal_common_config.OPENTELEMETRY_OTLP_ENDPOINT,
+            insecure=True
+        )
+
+        span_processor = BatchSpanProcessor(otlp_exporter)
+        tracer_provider.add_span_processor(span_processor)
+
+        self.tracer = trace.get_tracer(__name__)
+        logger.info("OpenTelemetry tracing is enabled.")
+
+    def _initialize_opentelemetry_metrics(self):
+        resource = Resource.create({"service.name": "opal-server"})
+        self.prometheus_metric_reader = PrometheusMetricReader()
+
+        meter_provider = MeterProvider(
+            resource=resource,
+            metric_readers=[self.prometheus_metric_reader]
+        )
+        metrics.set_meter_provider(meter_provider)
+        self.meter = metrics.get_meter(__name__)
+
+        self.startup_counter = self.meter.create_counter(
+            name="startup",
+            description="Number of times the application has started",
+        )
+        self.startup_counter.add(1)
+
+        logger.info("OpenTelemetry metrics are enabled.")
 
     def _configure_api_routes(self, app: FastAPI):
         """Mounts the api routes on the app object."""
@@ -281,11 +346,6 @@ class OpalServer:
         @app.get("/", include_in_schema=False)
         def healthcheck():
             return {"status": "ok"}
-        
-        @app.get("/metrics", include_in_schema=False)
-        def metrics():
-            """Endpoint to expose Prometheus metrics."""
-            return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
         return app
 

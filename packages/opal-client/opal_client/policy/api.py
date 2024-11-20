@@ -1,11 +1,14 @@
 from fastapi import APIRouter, status
 from opal_client.policy.updater import PolicyUpdater
 from opal_common.logger import logger
-from opal_common.monitoring.prometheus_metrics import (
-    opal_client_policy_update_trigger_count,
-    opal_client_policy_update_latency,
-    opal_client_policy_update_errors
-)
+from opal_common.config import opal_common_config
+
+from opentelemetry import trace
+
+if opal_common_config.ENABLE_OPENTELEMETRY_TRACING:
+    tracer = trace.get_tracer(__name__)
+else:
+    tracer = None
 
 def init_policy_router(policy_updater: PolicyUpdater):
     router = APIRouter()
@@ -13,26 +16,22 @@ def init_policy_router(policy_updater: PolicyUpdater):
     @router.post("/policy-updater/trigger", status_code=status.HTTP_200_OK)
     async def trigger_policy_update():
         logger.info("triggered policy update from api")
-        opal_client_policy_update_trigger_count.labels(
-            source="api",
-            status="started",
-            update_type="full"
-        ).inc()
+        if tracer:
+            with tracer.start_as_current_span("opal_client_policy_update_apply") as span:
+                return await _handle_policy_update(span)
+        else:
+            return await _handle_policy_update()
+
+    async def _handle_policy_update(span=None):
         try:
-            with opal_client_policy_update_latency.labels(source="api", update_type="full").time():
-                await policy_updater.trigger_update_policy(force_full_update=True)
-                opal_client_policy_update_trigger_count.labels(
-                    source="api",
-                    status="success",
-                    update_type="full"
-                ).inc()
-                return {"status": "ok"}
+            await policy_updater.trigger_update_policy(force_full_update=True)
+            return {"status": "ok"}
         except Exception as e:
-            opal_client_policy_update_errors.labels(
-                error_type="unknown",
-                source="api"
-            ).inc()
             logger.error(f"Error during policy update: {str(e)}")
+            if span:
+                span.set_status(trace.StatusCode.ERROR)
+                span.set_attribute("error", True)
+                span.record_exception(e)
             raise
 
     return router

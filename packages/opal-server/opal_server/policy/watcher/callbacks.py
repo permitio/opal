@@ -18,7 +18,6 @@ from opal_common.schemas.policy import (
 )
 from opal_common.topics.publisher import TopicPublisher
 from opal_common.topics.utils import policy_topics
-from opal_common.monitoring.prometheus_metrics import opal_server_policy_update_size
 
 
 async def create_update_all_directories_in_repo(
@@ -117,10 +116,6 @@ async def publish_changed_directories(
     )
 
     if notification:
-        opal_server_policy_update_size.labels(type="directory").observe(
-            len(notification.update.changed_directories)
-        )
-
         async with publisher:
             await publisher.publish(
                 topics=notification.topics, data=notification.update.dict()

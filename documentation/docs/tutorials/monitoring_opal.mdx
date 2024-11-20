@@ -11,7 +11,7 @@ There are multiple ways you can monitor your OPAL deployment:
 - **Health-checks** - OPAL exposes HTTP health check endpoints ([See below](##health-checks))
 - [**Callbacks**](/tutorials/healthcheck_policy_and_update_callbacks#-data-update-callbacks) - Using the callback webhooks feature - having OPAL-clients report their updates
 - **Statistics** - Using the built-in statistics feature in OPAL ([See below](##opal-statistics))
-- **Prometheus Metrics** - OPAL can expose metrics in Prometheus format for monitoring ([See below](#prometheus-metrics)).
+- **OpenTelemetry Metrics and Tracing** - OPAL can expose metrics and tracing information using OpenTelemetry for monitoring ([See below](#opentelemetry-metrics-and-tracing)).
 
 ## Health checks
 
@@ -54,34 +54,37 @@ Available through `/pubsub_client_info` api route on the server.
 - When `UVICORN_NUM_WORKERS > 1`, retrieved information would only include clients connected to the replying server process.
 - This is an early access feature and is likely to change. Backward compatibility is not garaunteed.
 
-## Prometheus Metrics
+## OpenTelemetry Metrics and Tracing
 
-OPAL can expose metrics in Prometheus format, which can be scraped by Prometheus for monitoring and alerting.
+OPAL supports exporting metrics and tracing information using OpenTelemetry, which can be integrated with various monitoring and observability tools.
 
-### Enabling Prometheus Metrics
+### Enabling OpenTelemetry Metrics and Tracing
 
-Prometheus metrics are enabled by default on both OPAL Server and OPAL Client.
+To enable OpenTelemetry metrics and tracing, you need to set the following environment variables in both OPAL server and OPAL client:
 
-Both the server and client expose a `/metrics` endpoint that returns metrics in Prometheus format.
+```
+OPAL_ENABLE_OPENTELEMETRY_TRACING=true
+OPAL_ENABLE_OPENTELEMETRY_METRICS=true
+OPAL_OPENTELEMETRY_OTLP_ENDPOINT=<your-otel-collector-endpoint>
+```
 
-### Accessing Metrics
+- OPAL_ENABLE_OPENTELEMETRY_TRACING: Set to `true` to enable tracing.
+- OPAL_ENABLE_OPENTELEMETRY_METRICS: Set to `true` to enable metrics.
+- OPAL_OPENTELEMETRY_OTLP_ENDPOINT: Set the endpoint for the OpenTelemetry Collector
 
-- **OPAL Server Metrics Endpoint**: `/metrics`
-- **OPAL Client Metrics Endpoint**: `/metrics`
+### Exposing Metrics and Traces
+
+- Both the server and client will expose a `/metrics` endpoint that returns metrics in Prometheus format.
+- Traces are exported to the configured OpenTelemetry Collector endpoint using OTLP over gRPC.
 
 ### Example
 
-To monitor OPAL using Prometheus and Grafana, a ready-to-use Docker Compose configuration is provided in the root directory of the repository under docker/prometheus. The file is named docker-compose-with-prometheus-metrics.yml.
+To monitor OPAL using Prometheus and Grafana, a ready-to-use Docker Compose configuration is provided in the root directory of the repository under docker. The file is named docker-compose-with-prometheus-metrics.yml.
 
-Navigate to the directory containing the Docker Compose file:
-
-```
-cd docker/prometheus
-```
 Run the following command to start Prometheus and Grafana:
 
 ```
-docker compose -f docker-compose-with-prometheus-metrics.yml up
+docker compose -f docker/docker-compose-with-prometheus-metrics.yml up
 ```
 
 This setup will start Prometheus to scrape metrics from OPAL server and client, and Grafana to visualize the metrics.

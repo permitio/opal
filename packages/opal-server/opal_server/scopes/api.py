@@ -25,6 +25,7 @@ from opal_common.authentication.deps import JWTAuthenticator, get_token_from_hea
 from opal_common.authentication.types import EncryptionKeyFormat, JWTClaims
 from opal_common.authentication.verifier import Unauthorized
 from opal_common.logger import logger
+from opal_common.config import opal_common_config
 from opal_common.monitoring import metrics
 from opal_common.schemas.data import (
     DataSourceConfig,
@@ -40,22 +41,29 @@ from opal_common.topics.publisher import (
     ServerSideTopicPublisher,
 )
 from opal_common.urls import set_url_query_param
-from opal_common.monitoring.prometheus_metrics import (
-    opal_server_scope_request_count,
-    opal_server_scope_request_latency,
-    opal_server_scope_error_count,
-    opal_server_scope_operation_count,
-    opal_server_scope_data_update_latency,
-    opal_server_scope_data_update_count,
-    opal_server_scope_data_update_errors,
-    opal_server_scope_policy_sync_latency,
-    opal_server_scope_policy_sync_count
-)
 from opal_server.config import opal_server_config
 from opal_server.data.data_update_publisher import DataUpdatePublisher
 from opal_server.git_fetcher import GitPolicyFetcher
 from opal_server.scopes.scope_repository import ScopeNotFoundError, ScopeRepository
 
+from opentelemetry import trace
+from opentelemetry import metrics as otel_metrics
+
+if opal_common_config.ENABLE_OPENTELEMETRY_TRACING:
+    tracer = trace.get_tracer(__name__)
+else:
+    tracer = None
+
+if opal_common_config.ENABLE_OPENTELEMETRY_METRICS:
+    meter = otel_metrics.get_meter(__name__)
+    policy_bundle_size_histogram = meter.create_histogram(
+        name="opal_server_scope_policy_bundle_size",
+        description="Size of the policy bundles served per scope",
+        unit="bytes",
+    )
+else:
+    meter = None
+    policy_bundle_size_histogram = None
 
 def verify_private_key(private_key: str, key_format: EncryptionKeyFormat) -> bool:
     try:
@@ -115,44 +123,37 @@ def init_scope_router(
         scope_in: Scope,
         claims: JWTClaims = Depends(authenticator),
     ):
-        opal_server_scope_request_count.labels(
-            endpoint="put_scope", 
-            method="PUT", 
-            status="started"
-        ).inc()
-        with opal_server_scope_request_latency.labels(
-            endpoint="put_scope", 
-            method="PUT", 
-            status="processing"
-        ).time():
-            try:
-                require_peer_type(authenticator, claims, PeerType.datasource)
-            except Unauthorized as ex:
-                logger.error(f"Unauthorized to PUT scope: {repr(ex)}")
-                opal_server_scope_error_count.labels(
-                    scope_id=scope_in.scope_id, 
-                    error_type="Unauthorized",
-                    endpoint="put_scope"
-                ).inc()
-                raise
+        if tracer:
+            with tracer.start_as_current_span("opal_server_scope_policy_update") as span:
+                span.set_attribute("scope_id", scope_in.scope_id)
+                return await _handle_put_scope(force_fetch, scope_in, claims)
+        else:
+            return await _handle_put_scope(force_fetch, scope_in, claims)
 
-            verify_private_key_or_throw(scope_in)
-            await scopes.put(scope_in)
-            opal_server_scope_operation_count.labels(
-                    operation="create", 
-                    status="success"
-                ).inc()
+    async def _handle_put_scope(
+        force_fetch: bool,
+        scope_in: Scope,
+        claims: JWTClaims,
+    ):
+        try:
+            require_peer_type(authenticator, claims, PeerType.datasource)
+        except Unauthorized as ex:
+            logger.error(f"Unauthorized to PUT scope: {repr(ex)}")
+            raise
 
-            force_fetch_str = " (force fetch)" if force_fetch else ""
-            logger.info(f"Sync scope: {scope_in.scope_id}{force_fetch_str}")
+        verify_private_key_or_throw(scope_in)
+        await scopes.put(scope_in)
 
-            # All server replicas (leaders) should sync the scope.
-            await pubsub_endpoint.publish(
-                opal_server_config.POLICY_REPO_WEBHOOK_TOPIC,
-                {"scope_id": scope_in.scope_id, "force_fetch": force_fetch},
-            )
+        force_fetch_str = " (force fetch)" if force_fetch else ""
+        logger.info(f"Sync scope: {scope_in.scope_id}{force_fetch_str}")
 
-            return Response(status_code=status.HTTP_201_CREATED)
+        # All server replicas (leaders) should sync the scope.
+        await pubsub_endpoint.publish(
+            opal_server_config.POLICY_REPO_WEBHOOK_TOPIC,
+            {"scope_id": scope_in.scope_id, "force_fetch": force_fetch},
+        )
+
+        return Response(status_code=status.HTTP_201_CREATED)
 
     @router.get(
         "",
@@ -160,31 +161,12 @@ def init_scope_router(
         response_model_exclude={"policy": {"auth"}},
     )
     async def get_all_scopes(*, claims: JWTClaims = Depends(authenticator)):
-        opal_server_scope_request_count.labels(
-            endpoint="get_all_scopes", 
-            method="GET", 
-            status="started"
-        ).inc()
-        with opal_server_scope_request_latency.labels(
-            endpoint="get_all_scopes", 
-            method="GET", 
-            status="processing"
-        ).time():
-            try:
-                require_peer_type(authenticator, claims, PeerType.datasource)
-            except Unauthorized as ex:
-                logger.error(f"Unauthorized to get scopes: {repr(ex)}")
-                opal_server_scope_error_count.labels(
-                    scope_id="all_scopes",
-                    error_type="Unauthorized",
-                    endpoint="get_all_scopes"
-                ).inc()
-                raise
-            opal_server_scope_operation_count.labels(
-                operation="get_all",
-                status="success"
-            ).inc()
-            return await scopes.all()
+        try:
+            require_peer_type(authenticator, claims, PeerType.datasource)
+        except Unauthorized as ex:
+            logger.error(f"Unauthorized to get scopes: {repr(ex)}")
+            raise
+        return await scopes.all()
 
     @router.get(
         "/{scope_id}",
@@ -192,43 +174,19 @@ def init_scope_router(
         response_model_exclude={"policy": {"auth"}},
     )
     async def get_scope(*, scope_id: str, claims: JWTClaims = Depends(authenticator)):
-        opal_server_scope_request_count.labels(
-            endpoint="get_scope",
-            method="GET",
-            status="started"
-        ).inc()
-        with opal_server_scope_request_latency.labels(
-            endpoint="get_scope",
-            method="GET",
-            status="processing"
-        ).time():
-            try:
-                require_peer_type(authenticator, claims, PeerType.datasource)
-            except Unauthorized as ex:
-                logger.error(f"Unauthorized to get scope: {repr(ex)}")
-                opal_server_scope_error_count.labels(
-                    scope_id=scope_id,
-                    error_type="Unauthorized",
-                    endpoint="get_scope"
-                ).inc()
-                raise
+        try:
+            require_peer_type(authenticator, claims, PeerType.datasource)
+        except Unauthorized as ex:
+            logger.error(f"Unauthorized to get scope: {repr(ex)}")
+            raise
 
-            try:
-                scope = await scopes.get(scope_id)
-                opal_server_scope_operation_count.labels(
-                    operation="get",
-                    status="success"
-                ).inc()
-                return scope
-            except ScopeNotFoundError:
-                opal_server_scope_error_count.labels(
-                    scope_id=scope_id,
-                    error_type="NotFound",
-                    endpoint="get_scope"
-                ).inc()
-                raise HTTPException(
-                    status.HTTP_404_NOT_FOUND, detail=f"No such scope: {scope_id}"
-                )
+        try:
+            scope = await scopes.get(scope_id)
+            return scope
+        except ScopeNotFoundError:
+            raise HTTPException(
+                status.HTTP_404_NOT_FOUND, detail=f"No such scope: {scope_id}"
+            )
 
     @router.delete(
         "/{scope_id}",
@@ -237,34 +195,15 @@ def init_scope_router(
     async def delete_scope(
         *, scope_id: str, claims: JWTClaims = Depends(authenticator)
     ):
-        opal_server_scope_request_count.labels(
-            endpoint="delete_scope",
-            method="DELETE",
-            status="started"
-        ).inc()
-        with opal_server_scope_request_latency.labels(
-            endpoint="delete_scope",
-            method="DELETE",
-            status="processing"
-        ).time():
-            try:
-                require_peer_type(authenticator, claims, PeerType.datasource)
-            except Unauthorized as ex:
-                logger.error(f"Unauthorized to delete scope: {repr(ex)}")
-                opal_server_scope_error_count.labels(
-                    scope_id=scope_id,
-                    error_type="Unauthorized",
-                    endpoint="delete_scope"
-                ).inc()
-                raise
+        try:
+            require_peer_type(authenticator, claims, PeerType.datasource)
+        except Unauthorized as ex:
+            logger.error(f"Unauthorized to delete scope: {repr(ex)}")
+            raise
 
-            # TODO: This should also asynchronously clean the repo from the disk (if it's not used by other scopes)
-            await scopes.delete(scope_id)
-            opal_server_scope_operation_count.labels(
-                operation="delete", 
-                status="success"
-            ).inc()
-            return Response(status_code=status.HTTP_204_NO_CONTENT)
+        # TODO: This should also asynchronously clean the repo from the disk (if it's not used by other scopes)
+        await scopes.delete(scope_id)
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
 
     @router.post("/{scope_id}/refresh", status_code=status.HTTP_200_OK)
     async def refresh_scope(
@@ -277,72 +216,49 @@ def init_scope_router(
         ),
         claims: JWTClaims = Depends(authenticator),
     ):
-        with opal_server_scope_policy_sync_latency.labels(scope_id=scope_id).time():
-            try:
-                require_peer_type(authenticator, claims, PeerType.datasource)
-            except Unauthorized as ex:
-                logger.error(f"Unauthorized to delete scope: {repr(ex)}")
-                opal_server_scope_error_count.labels(scope_id=scope_id, error_type="Unauthorized").inc()
-                raise
+        try:
+            require_peer_type(authenticator, claims, PeerType.datasource)
+        except Unauthorized as ex:
+            logger.error(f"Unauthorized to delete scope: {repr(ex)}")
+            raise
 
-            try:
-                _ = await scopes.get(scope_id)
+        try:
+            _ = await scopes.get(scope_id)
 
-                logger.info(f"Refresh scope: {scope_id}")
+            logger.info(f"Refresh scope: {scope_id}")
 
-                # If the hinted hash is None, we have no way to know whether we should
-                # re-fetch the remote, so we force fetch, just in case.
-                force_fetch = hinted_hash is None
+            # If the hinted hash is None, we have no way to know whether we should
+            # re-fetch the remote, so we force fetch, just in case.
+            force_fetch = hinted_hash is None
 
-                # All server replicas (leaders) should sync the scope.
-                await pubsub_endpoint.publish(
-                    opal_server_config.POLICY_REPO_WEBHOOK_TOPIC,
-                    {
-                        "scope_id": scope_id,
-                        "force_fetch": force_fetch,
-                        "hinted_hash": hinted_hash,
-                    },
-                )
-                opal_server_scope_policy_sync_count.labels(scope_id=scope_id).inc()
-                return Response(status_code=status.HTTP_200_OK)
+            # All server replicas (leaders) should sync the scope.
+            await pubsub_endpoint.publish(
+                opal_server_config.POLICY_REPO_WEBHOOK_TOPIC,
+                {
+                    "scope_id": scope_id,
+                    "force_fetch": force_fetch,
+                    "hinted_hash": hinted_hash,
+                },
+            )
+            return Response(status_code=status.HTTP_200_OK)
 
-            except ScopeNotFoundError:
-                opal_server_scope_error_count.labels(scope_id=scope_id, error_type="NotFound").inc()
-                raise HTTPException(
-                    status.HTTP_404_NOT_FOUND, detail=f"No such scope: {scope_id}"
-                )
+        except ScopeNotFoundError:
+            raise HTTPException(
+                status.HTTP_404_NOT_FOUND, detail=f"No such scope: {scope_id}"
+            )
 
     @router.post("/refresh", status_code=status.HTTP_200_OK)
     async def sync_all_scopes(claims: JWTClaims = Depends(authenticator)):
         """sync all scopes."""
-        opal_server_scope_request_count.labels(
-            endpoint="sync_all_scopes", 
-            method="POST", 
-            status="started"
-        ).inc()
-        with opal_server_scope_request_latency.labels(
-            endpoint="sync_all_scopes", 
-            method="POST", 
-            status="processing"
-        ).time():
-            try:
-                require_peer_type(authenticator, claims, PeerType.datasource)
-            except Unauthorized as ex:
-                logger.error(f"Unauthorized to refresh all scopes: {repr(ex)}")
-                opal_server_scope_error_count.labels(
-                    scope_id="all_scopes",
-                    error_type="Unauthorized",
-                    endpoint="sync_all_scopes"
-                ).inc()
-                raise
+        try:
+            require_peer_type(authenticator, claims, PeerType.datasource)
+        except Unauthorized as ex:
+            logger.error(f"Unauthorized to refresh all scopes: {repr(ex)}")
+            raise
 
-            # All server replicas (leaders) should sync all scopes.
-            await pubsub_endpoint.publish(opal_server_config.POLICY_REPO_WEBHOOK_TOPIC)
-            opal_server_scope_operation_count.labels(
-                operation="sync_all", 
-                status="success"
-            ).inc()
-            return Response(status_code=status.HTTP_200_OK)
+        # All server replicas (leaders) should sync all scopes.
+        await pubsub_endpoint.publish(opal_server_config.POLICY_REPO_WEBHOOK_TOPIC)
+        return Response(status_code=status.HTTP_200_OK)
 
     @router.get(
         "/{scope_id}/policy",
@@ -358,19 +274,33 @@ def init_scope_router(
             description="hash of previous bundle already downloaded, server will return a diff bundle.",
         ),
     ):
+        if tracer:
+            with tracer.start_as_current_span("opal_server_scope_policy_bundle_request") as span:
+                span.set_attribute("scope_id", scope_id)
+                policy_bundle = await _handle_get_scope_policy(scope_id, base_hash)
+                if policy_bundle_size_histogram and policy_bundle.bundle:
+                    bundle_size = policy_bundle.calculate_size()
+                    policy_bundle_size_histogram.record(
+                        bundle_size,
+                        attributes={"scope_id": scope_id},
+                    )
+                return policy_bundle
+        else:
+            return await _handle_get_scope_policy(scope_id, base_hash)
+
+    async def _handle_get_scope_policy(scope_id: str, base_hash: Optional[str]):
         try:
             scope = await scopes.get(scope_id)
         except ScopeNotFoundError:
             logger.warning(
-                "Requested scope {scope_id} not found, returning default scope",
-                scope_id=scope_id,
+                f"Requested scope {scope_id} not found, returning default scope"
             )
             return await _generate_default_scope_bundle(scope_id)
 
         if not isinstance(scope.policy, GitPolicyScopeSource):
             raise HTTPException(
                 status.HTTP_501_NOT_IMPLEMENTED,
-                detail=f"policy source is not yet implemented: {scope_id}",
+                detail=f"Policy source is not yet implemented for scope: {scope_id}",
             )
 
         fetcher = GitPolicyFetcher(
@@ -383,8 +313,7 @@ def init_scope_router(
             return await run_sync(fetcher.make_bundle, base_hash)
         except (InvalidGitRepositoryError, pygit2.GitError, ValueError):
             logger.warning(
-                "Requested scope {scope_id} has invalid repo, returning default scope",
-                scope_id=scope_id,
+                f"Requested scope {scope_id} has invalid repo, returning default scope"
             )
             return await _generate_default_scope_bundle(scope_id)
 
@@ -452,28 +381,31 @@ def init_scope_router(
         claims: JWTClaims = Depends(authenticator),
         scope_id: str = Path(..., description="Scope ID"),
     ):
-        with opal_server_scope_data_update_latency.labels(scope_id=scope_id).time():
-            try:
-                require_peer_type(authenticator, claims, PeerType.datasource)
+        if tracer:
+            with tracer.start_as_current_span("opal_server_scope_data_update") as span:
+                span.set_attribute("scope_id", scope_id)
+                await _handle_publish_data_update_event(update, claims, scope_id)
+        else:
+            await _handle_publish_data_update_event(update, claims, scope_id)
 
-                restrict_optional_topics_to_publish(authenticator, claims, update)
+    async def _handle_publish_data_update_event(
+        update: DataUpdate,
+        claims: JWTClaims,
+        scope_id: str,
+    ):
+        try:
+            require_peer_type(authenticator, claims, PeerType.datasource)
 
-                for entry in update.entries:
-                    entry.topics = [f"data:{topic}" for topic in entry.topics]
+            restrict_optional_topics_to_publish(authenticator, claims, update)
 
-                await DataUpdatePublisher(
-                    ScopedServerSideTopicPublisher(pubsub_endpoint, scope_id)
-                ).publish_data_updates(update)
+            for entry in update.entries:
+                entry.topics = [f"data:{topic}" for topic in entry.topics]
 
-                opal_server_scope_data_update_count.labels(scope_id=scope_id).inc()
-            except Unauthorized as ex:
-                logger.error(f"Unauthorized to publish update: {repr(ex)}")
-                opal_server_scope_data_update_errors.labels(scope_id=scope_id).inc()
-                opal_server_scope_error_count.labels(
-                    scope_id=scope_id,
-                    error_type="UpdateFailed",
-                    endpoint="data_update"
-                ).inc()
-                raise
+            await DataUpdatePublisher(
+                ScopedServerSideTopicPublisher(pubsub_endpoint, scope_id)
+            ).publish_data_updates(update)
+        except Unauthorized as ex:
+            logger.error(f"Unauthorized to publish update: {repr(ex)}")
+            raise
 
     return router

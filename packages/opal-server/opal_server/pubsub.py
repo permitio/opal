@@ -28,17 +28,32 @@ from opal_common.authentication.verifier import Unauthorized
 from opal_common.confi.confi import load_conf_if_none
 from opal_common.config import opal_common_config
 from opal_common.logger import logger
-from opal_common.monitoring.prometheus_metrics import (
-    active_clients,
-    client_data_subscriptions
-)
 from opal_server.config import opal_server_config
 from pydantic import BaseModel
 from starlette.datastructures import QueryParams
+from opentelemetry import metrics
 
 OPAL_CLIENT_INFO_PARAM_PREFIX = "__opal_"
 OPAL_CLIENT_INFO_CLIENT_ID = f"{OPAL_CLIENT_INFO_PARAM_PREFIX}client_id"
 
+if opal_common_config.ENABLE_OPENTELEMETRY_METRICS:
+    meter = metrics.get_meter(__name__)
+else:
+    meter = None
+
+if opal_common_config.ENABLE_OPENTELEMETRY_METRICS:
+    active_clients_counter = meter.create_counter(
+        name="opal_server_active_clients",
+        description="Number of active clients connected to the OPAL server",
+    )
+
+    client_data_subscriptions_counter = meter.create_up_down_counter(
+        name="opal_client_data_subscriptions",
+        description="Number of data subscriptions per client",
+    )
+else:
+    active_clients_counter = None
+    client_data_subscriptions_counter = None
 
 class ClientInfo(BaseModel):
     client_id: str
@@ -83,8 +98,9 @@ class ClientTracker:
                     connect_time=time.time(),
                     query_params=query_params,
                 )
-                source = f"{source_host}:{source_port}" if source_host and source_port else "unknown"
-                active_clients.labels(client_id=client_id, source=source).inc()
+                if active_clients_counter is not None:
+                    source = f"{source_host}:{source_port}" if source_host and source_port else "unknown"
+                    active_clients_counter.add(1, attributes={"client_id": client_id, "source": source})
             client_info.refcount += 1
             self._clients_by_ids[client_id] = client_info
         yield client_info
@@ -94,8 +110,9 @@ class ClientTracker:
             if client_info.refcount >= 1:
                 self._clients_by_ids[client_id] = client_info
             else:
-                source = f"{client_info.source_host}:{client_info.source_port}" if client_info.source_host and client_info.source_port else "unknown"
-                active_clients.labels(client_id=client_id, source=source).dec()
+                if active_clients_counter is not None:
+                    source = f"{client_info.source_host}:{client_info.source_port}" if client_info.source_host and client_info.source_port else "unknown"
+                    active_clients_counter.add(-1, attributes={"client_id": client_id, "source": source})
 
     async def on_subscribe(
         self,
@@ -110,11 +127,15 @@ class ClientTracker:
         # on_subscribe is sometimes called for the broadcaster, when there is no "current client"
         if client_info is not None:
             client_info.subscribed_topics.update(topics)
-            for topic in topics:
-                client_data_subscriptions.labels(
-                    client_id=client_info.client_id,
-                    topic=topic
-                ).inc()
+            if client_data_subscriptions_counter is not None:
+                for topic in topics:
+                    client_data_subscriptions_counter.add(
+                        1,
+                        attributes={
+                            "client_id": client_info.client_id,
+                            "topic": topic
+                        }
+                    )
 
     async def on_unsubscribe(
         self,
@@ -129,11 +150,15 @@ class ClientTracker:
         # on_subscribe is sometimes called for the broadcaster, when there is no "current client"
         if client_info is not None:
             client_info.subscribed_topics.difference_update(topics)
-            for topic in topics:
-                client_data_subscriptions.labels(
-                    client_id=client_info.client_id,
-                    topic=topic
-                ).dec()
+            if client_data_subscriptions_counter is not None:
+                for topic in topics:
+                    client_data_subscriptions_counter.add(
+                        -1,
+                        attributes={
+                            "client_id": client_info.client_id,
+                            "topic": topic
+                        }
+                    )
 
 
 class PubSub:

@@ -4,12 +4,28 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from opal_common.authentication.deps import StaticBearerAuthenticator
 from opal_common.authentication.signer import JWTSigner
 from opal_common.logger import logger
+from opal_common.config import opal_common_config
 from opal_common.schemas.security import AccessToken, AccessTokenRequest, TokenDetails
-from opal_common.monitoring.prometheus_metrics import (
-    token_generation_errors,
-    token_generated_count,
-    token_request_count,
-)
+from opentelemetry import metrics
+
+if opal_common_config.ENABLE_OPENTELEMETRY_METRICS:
+    meter = metrics.get_meter(__name__)
+else:
+    meter = None
+
+if opal_common_config.ENABLE_OPENTELEMETRY_METRICS:
+    token_requested_counter = meter.create_counter(
+        name="opal_server_token_requested",
+        description="Number of token requests"
+    )
+
+    token_generated_counter = meter.create_up_down_counter(
+        name="opal_client_token_generated",
+        description="Number of tokens generated"
+    )
+else:
+    token_requested_counter = None
+    token_generated_counter = None
 
 
 def init_security_router(signer: JWTSigner, authenticator: StaticBearerAuthenticator):
@@ -22,21 +38,18 @@ def init_security_router(signer: JWTSigner, authenticator: StaticBearerAuthentic
         dependencies=[Depends(authenticator)],
     )
     async def generate_new_access_token(req: AccessTokenRequest):
-        token_request_count.labels(
-            token_type=req.type.value,
-            status="received"
-        ).inc()
+        if token_requested_counter is not None:
+            token_requested_counter.add(1, attributes={
+                'token_type': req.type.value,
+                'status': 'received'
+            })
 
         if not signer.enabled:
-            token_generation_errors.labels(
-                error_type="SignerDisabled",
-                token_type=req.type.value
-            ).inc()
-
-            token_request_count.labels(
-                token_type=req.type.value,
-                status="error"
-            ).inc()
+            if token_requested_counter is not None:
+                token_requested_counter.add(1, attributes={
+                    'token_type': req.type.value,
+                    'status': 'error'
+                })
 
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -47,15 +60,17 @@ def init_security_router(signer: JWTSigner, authenticator: StaticBearerAuthentic
             token = signer.sign(sub=req.id, token_lifetime=req.ttl, custom_claims=claims)
             logger.info(f"Generated opal token: peer_type={req.type.value}")
 
-            token_generated_count.labels(
-                peer_type=req.type.value,
-                ttl=req.ttl
-            ).inc()
+            if token_generated_counter is not None:
+                token_generated_counter.add(1, attributes={
+                    'peer_type': req.type.value,
+                    'ttl': req.ttl.total_seconds() if req.ttl else None
+                })
 
-            token_request_count.labels(
-                token_type=req.type.value,
-                status="success"
-            ).inc()
+            if token_requested_counter is not None:
+                token_requested_counter.add(1, attributes={
+                    'token_type': req.type.value,
+                    'status': 'success'
+                })
 
             return AccessToken(
                 token=token,
@@ -65,7 +80,7 @@ def init_security_router(signer: JWTSigner, authenticator: StaticBearerAuthentic
                     expired=datetime.utcnow() + req.ttl,
                     claims=claims,
                 ),
-         )
+            )
         except Exception as ex:
                 logger.error(f"Failed to generate token: {str(ex)}")
                 error_type = (
@@ -73,14 +88,11 @@ def init_security_router(signer: JWTSigner, authenticator: StaticBearerAuthentic
                     if "token" in str(ex).lower()
                     else "UnexpectedError"
                 )
-                token_generation_errors.labels(
-                    error_type=error_type,
-                    token_type=req.type.value
-                ).inc()
-                token_request_count.labels(
-                    token_type=req.type.value,
-                    status="error"
-                ).inc()
+                if token_requested_counter is not None:
+                    token_requested_counter.add(1, attributes={
+                        'token_type': req.type.value,
+                        'status': 'error'
+                    })
                 raise HTTPException(
                     status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                     detail="Failed to generate token due to server error.",
