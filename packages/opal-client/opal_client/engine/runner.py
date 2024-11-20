@@ -338,7 +338,7 @@ class OpenFGARunner(PolicyEngineRunner):
 
     def get_arguments(self) -> list[str]:
         return ["run", "--http-addr=0.0.0.0:8080", "--playground-enabled=false"]
-        
+
     @staticmethod
     def setup_openfga_runner(
         options: Optional[OpenFGAServerOptions] = None,
