@@ -323,12 +323,22 @@ class OpenFGARunner(PolicyEngineRunner):
         await log_engine_output_simple(line)
         return False
 
-    @property
-    def command(self) -> str:
-        """Get OpenFGA run command."""
-        # return f"openfga run --http-addr=0.0.0.0:8080 --playground-enabled=false"
-        return f"/usr/local/bin/openfga run --http-addr=0.0.0.0:8080 --playground-enabled=false"
+    def get_executable_path(self) -> str:
+        if opal_client_config.INLINE_OPENFGA_EXEC_PATH:
+            return opal_client_config.INLINE_OPENFGA_EXEC_PATH
+        else:
+            logger.warning(
+                "OpenFGA executable path not set, looking for 'openfga' binary in PATH. "
+                "It is recommended to set the INLINE_OPENFGA_EXEC_PATH configuration."
+            )
+            path = shutil.which("openfga")
+            if path is None:
+                raise FileNotFoundError("OpenFGA executable not found in PATH")
+            return path
 
+    def get_arguments(self) -> list[str]:
+        return ["run", "--http-addr=0.0.0.0:8080", "--playground-enabled=false"]
+        
     @staticmethod
     def setup_openfga_runner(
         options: Optional[OpenFGAServerOptions] = None,

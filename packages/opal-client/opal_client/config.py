@@ -191,6 +191,12 @@ class OpalClientConfig(Confi):
     # OpenFGA runner configuration
     INLINE_OPENFGA_ENABLED = confi.bool("INLINE_OPENFGA_ENABLED", True)
 
+    INLINE_OPENFGA_EXEC_PATH = confi.str(
+        "INLINE_OPENFGA_EXEC_PATH", 
+        None,
+        description="Path to the OpenFGA executable. Defaults to searching for 'openfga' binary in PATH if not specified."
+    )
+    
     INLINE_OPENFGA_CONFIG = confi.model(
         "INLINE_OPENFGA_CONFIG",
         OpenFGAServerOptions,
