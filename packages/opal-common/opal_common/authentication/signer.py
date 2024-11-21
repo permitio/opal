@@ -15,13 +15,13 @@ from opal_common.logger import logger
 
 
 class InvalidJWTCryptoKeysException(Exception):
-    """raised when JWT signer provided with invalid crypto keys."""
+    """Raised when JWT signer provided with invalid crypto keys."""
 
     pass
 
 
 class JWTSigner(JWTVerifier):
-    """given cryptographic keys, signs and verifies jwt tokens."""
+    """Given cryptographic keys, signs and verifies jwt tokens."""
 
     def __init__(
         self,
@@ -31,7 +31,7 @@ class JWTSigner(JWTVerifier):
         audience: str,
         issuer: str,
     ):
-        """inits the signer if and only if the keys provided to __init__ were
+        """Inits the signer if and only if the keys provided to __init__ were
         generate together are are valid. otherwise will throw.
 
         JWT signer can be initialized with empty keys (None),
@@ -55,7 +55,7 @@ class JWTSigner(JWTVerifier):
         self._verify_crypto_keys()
 
     def _verify_crypto_keys(self):
-        """verifies whether or not valid crypto keys were provided to the
+        """Verifies whether or not valid crypto keys were provided to the
         signer. if both keys are valid, encodes and decodes a JWT to make sure
         the keys match.
 

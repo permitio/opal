@@ -2,7 +2,7 @@ from typing import List
 
 
 class ModuleFilter:
-    """filter logs by module name."""
+    """Filter logs by module name."""
 
     def __init__(
         self, exclude_list: List[str] = None, include_list: List[str] = None

@@ -1,3 +1,5 @@
+name: opal-security-example
+
 # this docker compose file is relying on external environment variables!
 # run it by running the script: ./run-example-with-security.sh
 services:

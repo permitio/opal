@@ -26,7 +26,7 @@ def force_valid_bundle(bundle) -> PolicyBundle:
 
 
 class PolicyFetcher:
-    """fetches policy from backend."""
+    """Fetches policy from backend."""
 
     def __init__(self, backend_url=None, token=None):
         """

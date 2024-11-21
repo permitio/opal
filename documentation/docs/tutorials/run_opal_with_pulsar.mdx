@@ -1,0 +1,115 @@
+---
+sidebar_position: 12
+title: Run OPAL with Apache Pulsar
+---
+
+# Running OPAL-server with Apache Pulsar
+
+## Introduction
+
+OPAL-server supports multiple backbone pub/sub solutions for connecting distributed server instances. This guide explains how to set up and use Apache Pulsar as the backbone pub/sub (broadcast channel) for OPAL-server.
+
+## Apache Pulsar as the Backbone Pub/Sub
+
+### What is a backbone pub/sub?
+
+OPAL-server can scale out both in number of worker processes per server and across multiple servers. While OPAL provides a lightweight websocket pub/sub for OPAL-clients, multiple servers are linked together by a more robust messaging solution like Apache Pulsar, Kafka, Redis, or Postgres Listen/Notify.
+
+### Broadcaster Module
+
+Support for multiple backbone solutions is provided by the Permit's port of the [Python Broadcaster package](https://pypi.org/project/permit-broadcaster/). To use it with Apache Pulsar, install the `permit-broadcaster[pulsar]` module:
+
+```bash
+pip install permit-broadcaster[pulsar]
+```
+
+## Setting Up OPAL-server with Apache Pulsar
+
+### Configuration
+
+To use Apache Pulsar as the backbone, set the `OPAL_BROADCAST_URI` environment variable:
+
+```bash
+OPAL_BROADCAST_URI=pulsar://pulsar-host-name:6650
+```
+
+The "pulsar://" prefix tells OPAL-server to use Apache Pulsar.
+
+### Pulsar Topic
+
+OPAL-server uses a single Pulsar topic named 'broadcast' for all communication. This topic is automatically created when the producer and consumer are initialized.
+
+## Docker Compose Example
+
+Here's an example `docker-compose.yml` configuration that includes Apache Pulsar:
+
+```yaml
+version: '3'
+services:
+  pulsar:
+    image: apachepulsar/pulsar:3.3.1
+    command: bin/pulsar standalone
+    ports:
+      - 6650:6650
+      - 8080:8080
+    volumes:
+      - pulsardata:/pulsar/data
+      - pulsarconf:/pulsar/conf
+
+  opal-server:
+    image: permitio/opal-server:latest
+    environment:
+      - OPAL_BROADCAST_URI=pulsar://pulsar:6650
+    depends_on:
+      - pulsar
+
+volumes:
+  pulsardata:
+  pulsarconf:
+```
+
+Run this configuration with:
+
+```bash
+docker compose up --force-recreate
+```
+
+Allow a few seconds for Apache Pulsar and OPAL to start up before testing connectivity.
+
+## Triggering Events
+
+You can trigger events using the OPAL CLI:
+
+```bash
+opal-client publish-data-update --src-url https://api.country.is/23.54.6.78 -t policy_data --dst-path /users/bob/location
+```
+
+You should see the effect in:
+- OPAL-server logs: "Broadcasting incoming event"
+- OPAL-client: Receiving and acting on the event
+- Pulsar: Event data in the 'broadcast' topic
+
+## Supported Backends
+
+| Backend  | Environment Variable                                   | Docker Compose Service |
+|----------|---------------------------------------------------------|------------------------|
+| Kafka    | `BROADCAST_URL=kafka://localhost:9092`                  | `docker compose up kafka` |
+| Redis    | `BROADCAST_URL=redis://localhost:6379`                  | `docker compose up redis` |
+| Postgres | `BROADCAST_URL=postgres://localhost:5432/broadcaster`   | `docker compose up postgres` |
+| Pulsar   | `BROADCAST_URL=pulsar://localhost:6650`                 | `docker compose up pulsar` |
+
+## Advanced: Publishing Events Directly to Pulsar
+
+You can trigger events by publishing messages directly to the 'broadcast' topic in Pulsar. Ensure the message format follows the OPAL-server schema for backbone events.
+
+## Conclusion
+
+This guide covered setting up and using Apache Pulsar as the backbone pub/sub for OPAL-server. By following these instructions, you can effectively scale your OPAL deployment across multiple servers.
+
+## Further Resources
+
+- [OPAL Documentation](https://www.opal.ac/docs/)
+- [Apache Pulsar Documentation](https://pulsar.apache.org/docs/en/standalone/)
+- [Python Broadcaster Package](https://pypi.org/project/broadcaster/)
+
+For more information or support, please refer to the OPAL community forums or contact the maintainers.

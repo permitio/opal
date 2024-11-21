@@ -10,12 +10,12 @@ logger = logging.getLogger("opal.authentication")
 
 
 def to_bytes(key: str, encoding: str = "utf-8"):
-    """crypto lib expect 'bytes' keys, convert 'str' keys to 'bytes'."""
+    """Crypto lib expect 'bytes' keys, convert 'str' keys to 'bytes'."""
     return key.encode(encoding)
 
 
 def maybe_decode_multiline_key(key: str) -> bytes:
-    """if key contents are passed via env var, we allow to encode multiline
+    """If key contents are passed via env var, we allow to encode multiline
     keys with a simple replace of each newline (\n) char with underscore (_).
 
     this method detects if the provided key contains such encoding, and
