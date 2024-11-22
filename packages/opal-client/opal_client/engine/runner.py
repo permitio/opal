@@ -312,7 +312,7 @@ class OpaRunner(PolicyEngineRunner):
 
 class OpenFGARunner(PolicyEngineRunner):
     """OpenFGA runner implementation that manages OpenFGA server process."""
-    
+
     def __init__(
         self,
         options: Optional[OpenFGAServerOptions] = None,
@@ -322,7 +322,10 @@ class OpenFGARunner(PolicyEngineRunner):
         self._options = options or OpenFGAServerOptions()
 
     async def handle_log_line(self, line: bytes) -> bool:
-        """Handle OpenFGA log output. Currently no panic detection implemented."""
+        """Handle OpenFGA log output.
+
+        Currently no panic detection implemented.
+        """
         await log_engine_output_simple(line)
         return False
 
@@ -344,14 +347,15 @@ class OpenFGARunner(PolicyEngineRunner):
         """Build command line arguments for OpenFGA server."""
         return ["run", "--http-addr=0.0.0.0:8080", "--playground-enabled=false"]
 
-    @staticmethod 
+    @staticmethod
     def setup_openfga_runner(
         options: Optional[OpenFGAServerOptions] = None,
         piped_logs_format: EngineLogFormat = EngineLogFormat.NONE,
         initial_start_callbacks: Optional[List[AsyncCallback]] = None,
         rehydration_callbacks: Optional[List[AsyncCallback]] = None,
     ):
-        """Factory for OpenFGARunner, accept optional callbacks to run in certain lifecycle events.
+        """Factory for OpenFGARunner, accept optional callbacks to run in
+        certain lifecycle events.
 
         Initial Start Callbacks:
             The first time we start the engine, we might want to do certain actions (like launch tasks)
@@ -363,8 +367,7 @@ class OpenFGARunner(PolicyEngineRunner):
             cache with fresh state fetched from the server.
         """
         openfga_runner = OpenFGARunner(
-            options=options, 
-            piped_logs_format=piped_logs_format
+            options=options, piped_logs_format=piped_logs_format
         )
 
         if initial_start_callbacks:
