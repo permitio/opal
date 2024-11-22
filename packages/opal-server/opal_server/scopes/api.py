@@ -404,7 +404,7 @@ def init_scope_router(
                 entry.topics = [f"data:{topic}" for topic in entry.topics]
                 all_topics.update(entry.topics)
 
-            if span is not None:
+            if span:
                 span.set_attribute("entries_count", len(update.entries))
                 span.set_attribute("topics", list(all_topics))
 
