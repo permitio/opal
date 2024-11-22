@@ -165,12 +165,12 @@ class OpalCommonConfig(Confi):
     ENABLE_OPENTELEMETRY_TRACING = confi.bool (
         "ENABLE_OPENTELEMETRY_TRACING",
         False,
-        description="Set if OPAL server should enable tracing with OpenTelemetry",
+        description="Set if OPAL should enable tracing with OpenTelemetry",
     )
     ENABLE_OPENTELEMETRY_METRICS = confi.bool (
         "ENABLE_OPENTELEMETRY_METRICS",
         False,
-        description="Set if OPAL server should enable metrics with OpenTelemetry",
+        description="Set if OPAL should enable metrics with OpenTelemetry",
     )
     OPENTELEMETRY_OTLP_ENDPOINT = confi.str(
         "OPENTELEMETRY_OTLP_ENDPOINT",
