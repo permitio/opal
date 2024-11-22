@@ -102,7 +102,7 @@ class BasePolicyWatcherTask:
             self._should_stop = asyncio.Event()
 
     async def _fail(self, exc: Exception):
-        """called when the watcher fails, and stops all tasks gracefully."""
+        """Called when the watcher fails, and stops all tasks gracefully."""
         logger.error("policy watcher failed with exception: {err}", err=repr(exc))
         self.signal_stop()
         # trigger uvicorn graceful shutdown

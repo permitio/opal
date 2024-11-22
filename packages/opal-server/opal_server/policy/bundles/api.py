@@ -139,7 +139,7 @@ async def process_policy_bundle(repo, input_paths, base_hash, span=None):
         root_manifest_path=opal_server_config.POLICY_REPO_MANIFEST_PATH,
         bundle_ignore=opal_server_config.BUNDLE_IGNORE,
     )
-
+    # check if commit exist in the repo
     revision = None
     if base_hash:
         try:

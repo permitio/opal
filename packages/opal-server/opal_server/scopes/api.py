@@ -249,7 +249,7 @@ def init_scope_router(
 
     @router.post("/refresh", status_code=status.HTTP_200_OK)
     async def sync_all_scopes(claims: JWTClaims = Depends(authenticator)):
-        """sync all scopes."""
+        """Sync all scopes."""
         try:
             require_peer_type(authenticator, claims, PeerType.datasource)
         except Unauthorized as ex:
@@ -293,7 +293,8 @@ def init_scope_router(
             scope = await scopes.get(scope_id)
         except ScopeNotFoundError:
             logger.warning(
-                f"Requested scope {scope_id} not found, returning default scope"
+                f"Requested scope {scope_id} not found, returning default scope",
+                scope_id=scope_id,
             )
             return await _generate_default_scope_bundle(scope_id)
 
@@ -313,7 +314,8 @@ def init_scope_router(
             return await run_sync(fetcher.make_bundle, base_hash)
         except (InvalidGitRepositoryError, pygit2.GitError, ValueError):
             logger.warning(
-                f"Requested scope {scope_id} has invalid repo, returning default scope"
+                f"Requested scope {scope_id} has invalid repo, returning default scope",
+                scope_id=scope_id,
             )
             return await _generate_default_scope_bundle(scope_id)
 
