@@ -21,7 +21,7 @@ services:
     environment:
       # the broadcast backbone uri used by opal server workers
       - OPAL_BROADCAST_URI=postgres://postgres:postgres@broadcast_channel:5432/postgres
-      # number of uvicorn workers to run inside the opal-server container  
+      # number of uvicorn workers to run inside the opal-server container
       - UVICORN_NUM_WORKERS=4
       # the git repo hosting our OpenFGA policy
       - OPAL_POLICY_REPO_URL=https://github.com/daveads/opal-example-policy-openfga
@@ -51,11 +51,11 @@ services:
       # Enable inline OpenFGA mode
       - OPAL_INLINE_OPENFGA_ENABLED=true
       #- OPAL_LOG_LEVEL=DEBUG
-      
+
     ports:
       # exposes opal client API at: http://localhost:7766
       - "7766:7000"
-      # exposes OpenFGA API at: http://localhost:8080  
+      # exposes OpenFGA API at: http://localhost:8080
       - "8080:8080"
       # Additional port exposure
       - "3000:3000"
