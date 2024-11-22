@@ -57,7 +57,7 @@ else:
 if opal_common_config.ENABLE_OPENTELEMETRY_METRICS:
     meter = otel_metrics.get_meter(__name__)
     policy_bundle_size_histogram = meter.create_histogram(
-        name="opal_server_scope_policy_bundle_size",
+        name="opal_server_policy_bundle_size",
         description="Size of the policy bundles served per scope",
         unit="bytes",
     )
@@ -124,7 +124,7 @@ def init_scope_router(
         claims: JWTClaims = Depends(authenticator),
     ):
         if tracer:
-            with tracer.start_as_current_span("opal_server_scope_policy_update") as span:
+            with tracer.start_as_current_span("opal_server_policy_update") as span:
                 span.set_attribute("scope_id", scope_in.scope_id)
                 return await _handle_put_scope(force_fetch, scope_in, claims)
         else:
@@ -275,7 +275,7 @@ def init_scope_router(
         ),
     ):
         if tracer:
-            with tracer.start_as_current_span("opal_server_scope_policy_bundle_request") as span:
+            with tracer.start_as_current_span("opal_server_policy_bundle_request") as span:
                 span.set_attribute("scope_id", scope_id)
                 policy_bundle = await _handle_get_scope_policy(scope_id, base_hash)
                 if policy_bundle_size_histogram and policy_bundle.bundle:
@@ -382,9 +382,9 @@ def init_scope_router(
         scope_id: str = Path(..., description="Scope ID"),
     ):
         if tracer:
-            with tracer.start_as_current_span("opal_server_scope_data_update") as span:
+            with tracer.start_as_current_span("opal_server_data_update") as span:
                 span.set_attribute("scope_id", scope_id)
-                await _handle_publish_data_update_event(update, claims, scope_id)
+                await _handle_publish_data_update_event(update, claims, scope_id, span)
         else:
             await _handle_publish_data_update_event(update, claims, scope_id)
 
@@ -392,14 +392,22 @@ def init_scope_router(
         update: DataUpdate,
         claims: JWTClaims,
         scope_id: str,
+        span: trace.Span = None,
     ):
         try:
+            all_topics = set()
             require_peer_type(authenticator, claims, PeerType.datasource)
 
             restrict_optional_topics_to_publish(authenticator, claims, update)
 
             for entry in update.entries:
                 entry.topics = [f"data:{topic}" for topic in entry.topics]
+                all_topics.update(entry.topics)
+
+            if span is not None:
+                span.set_attribute("entries_count", len(update.entries))
+                span.set_attribute("topics", list(all_topics))
+
 
             await DataUpdatePublisher(
                 ScopedServerSideTopicPublisher(pubsub_endpoint, scope_id)

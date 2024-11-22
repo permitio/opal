@@ -80,7 +80,6 @@ class DataUpdatePublisher:
 
                 all_topic_combos = set()
 
-                span.set_attribute("topics_count", len(all_topic_combos))
                 span.set_attribute("entries_count", len(update.entries))
                 # a nicer format of entries to the log
                 logged_entries = [
@@ -118,6 +117,7 @@ class DataUpdatePublisher:
                     reason=update.reason,
                     entries=logged_entries,
                 )
+                span.set_attribute("topics", list(all_topic_combos))
 
                 await self._publisher.publish(
                     list(all_topic_combos), update.dict(by_alias=True)
