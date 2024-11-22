@@ -159,12 +159,12 @@ Below is a list of the available metrics and traces in OPAL, along with their ty
 
 ### Example
 
-To monitor OPAL using Prometheus and Grafana, a ready-to-use Docker Compose configuration is provided in the root directory of the repository under docker. The file is named docker-compose-with-prometheus-metrics.yml.
+To monitor OPAL using Prometheus and Grafana, a ready-to-use Docker Compose configuration is provided in the root directory of the repository under docker. The file is named docker-compose-with-prometheus-and-otel.yml.
 
 Run the following command to start Prometheus and Grafana:
 
 ```
-docker compose -f docker/docker-compose-with-prometheus-metrics.yml up
+docker compose -f docker/docker-compose-with-prometheus-and-otel.yml up
 ```
 
 This setup will start Prometheus to scrape metrics from OPAL server and client, and Grafana to visualize the metrics.
