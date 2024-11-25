@@ -178,6 +178,10 @@ class PubSub:
             Authorization Bearer token.
             """
             try:
+                logger.info(
+                    "New connection, remote address: {remote_address}",
+                    remote_address=websocket.client,
+                )
                 if claims is None:
                     logger.info(
                         "Closing connection, remote address: {remote_address}",

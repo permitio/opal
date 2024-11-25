@@ -3,6 +3,7 @@ import json
 
 from contextlib import redirect_stdout
 from os import getenv as _
+import os
 from secrets import token_hex
 
 from opal_common.cli.commands import obtain_token
@@ -11,13 +12,14 @@ from testcontainers.core.generic import DockerContainer
 from testcontainers.core.waiting_utils import wait_for_logs
 
 OPAL_TESTS_DEBUG = _("OPAL_TESTS_DEBUG") is not None
+print(f"OPAL_TESTS_DEBUG={OPAL_TESTS_DEBUG}")
 
 OPAL_TESTS_UNIQ_ID = token_hex(2)
+print(f"OPAL_TESTS_UNIQ_ID={OPAL_TESTS_UNIQ_ID}")
+
 OPAL_TESTS_NETWORK_NAME = f"pytest_opal_{OPAL_TESTS_UNIQ_ID}"
 OPAL_TESTS_SERVER_CONTAINER_NAME = f"pytest_opal_server_{OPAL_TESTS_UNIQ_ID}"
 OPAL_TESTS_CLIENT_CONTAINER_NAME = f"pytest_opal_client_{OPAL_TESTS_UNIQ_ID}"
-
-OPAL_IMAGE_TAG = _("OPAL_IMAGE_TAG", "latest")
 
 OPAL_AUTH_PUBLIC_KEY = _("OPAL_AUTH_PUBLIC_KEY", "")
 OPAL_AUTH_PRIVATE_KEY = _("OPAL_AUTH_PRIVATE_KEY", "")
@@ -26,6 +28,7 @@ OPAL_AUTH_MASTER_TOKEN = _("OPAL_AUTH_MASTER_TOKEN", token_hex(16))
 OPAL_AUTH_JWT_AUDIENCE = _("OPAL_AUTH_JWT_AUDIENCE", "https://api.opal.ac/v1/")
 OPAL_AUTH_JWT_ISSUER = _("OPAL_AUTH_JWT_ISSUER", "https://opal.ac/")
 
+OPAL_IMAGE_TAG = _("OPAL_IMAGE_TAG", "latest")
 # Temporary container to generate the required tokens.
 _container = (
     DockerContainer(f"permitio/opal-server:{OPAL_IMAGE_TAG}")
@@ -65,11 +68,10 @@ with _container:
 UVICORN_NUM_WORKERS = _("UVICORN_NUM_WORKERS", "4")
 OPAL_STATISTICS_ENABLED = _("OPAL_STATISTICS_ENABLED", "true")
 
-OPAL_POLICY_REPO_URL = _(
-    "OPAL_POLICY_REPO_URL", "git@github.com:permitio/opal-tests-policy-repo.git"
-)
+OPAL_POLICY_REPO_URL = os.getenv("OPAL_POLICY_REPO_URL", "git@github.com:permitio/opal-tests-policy-repo.git")
+OPAL_POLICY_REPO_MAIN_BRANCH = os.getenv("OPAL_POLICY_REPO_MAIN_BRANCH", "main")
+
 OPAL_POLICY_REPO_SSH_KEY = _("OPAL_POLICY_REPO_SSH_KEY", "")
-OPAL_POLICY_REPO_MAIN_BRANCH = _("POLICY_REPO_BRANCH", "main")
 OPAL_POLICY_REPO_POLLING_INTERVAL = _("OPAL_POLICY_REPO_POLLING_INTERVAL", "30")
 OPAL_LOG_FORMAT_INCLUDE_PID = _("OPAL_LOG_FORMAT_INCLUDE_PID ", "true")
 OPAL_POLICY_REPO_WEBHOOK_SECRET = _("OPAL_POLICY_REPO_WEBHOOK_SECRET", "xxxxx")
