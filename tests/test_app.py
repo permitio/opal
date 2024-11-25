@@ -139,11 +139,11 @@ def test_sequence():
 
     utils.prepare_policy_repo("-account=iwphonedo")
 
-    return
 
     # Step 1: Publish data for "bob"
     data_publish("bob")
 
+    return
 
     # Step 2: Push a policy named "something"
     push_policy("something")

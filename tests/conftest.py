@@ -18,6 +18,7 @@ def cancel_wait_for_client_after_timeout():
 
 t = threading.Thread(target=cancel_wait_for_client_after_timeout)
 t.start()
+print("Waiting for debugger to attach... 30 seconds timeout")
 debugpy.wait_for_client()
 
 @pytest.fixture(scope="session")

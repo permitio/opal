@@ -142,28 +142,24 @@ def delete_test_branches(repo_path):
         if "permitio" in repo_path:
             return
         
-        # Open the repository
-        repo = Repo(repo_path)
-        
-        # Ensure the repository is not bare
-        if repo.bare:
-            print("Error: Repository is bare and cannot be modified.")
-            return
+        from github import Github
 
-        # Fetch all branches
-        branches = repo.branches
-        
-        # Iterate through branches and delete matching ones
+        # Initialize Github API
+        g = Github(os.getenv('OPAL_POLICY_REPO_SSH_KEY'))
+
+        # Get the repository
+        repo = g.get_repo(repo_path)    
+
+        # Enumerate branches and delete pytest- branches
+        branches = repo.get_branches()
         for branch in branches:
-            branch_name = branch.name
-            if branch_name.startswith("test-"):
-                print(f"Deleting branch: {branch_name}")
-                repo.git.branch("-D", branch_name)  # Use "-D" to force delete
-                # Uncomment the next line if branches might be remote as well
-                # repo.git.push("origin", f":{branch_name}")  # Deletes remote branch
+            if branch.name.startswith('test-'):
+                ref = f"heads/{branch.name}"
+                repo.get_git_ref(ref).delete()
+                print(f"Deleted branch: {branch.name}")
             else:
-                print(f"Skipping branch: {branch_name}")
-                
+                print(f"Skipping branch: {branch.name}")
+            
         print("All test branches have been deleted successfully.")
     except Exception as e:
         print(f"An error occurred: {e}")
