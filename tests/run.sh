@@ -54,6 +54,19 @@ function generate_opal_keys {
   echo "- OPAL keys generated\n"
 }
 
+function install_opal_server_and_client {
+  echo "- Installing opal-server and opal-client from pip..."
+
+  pip install opal-server opal-client
+  
+  if ! command -v opal-server &> /dev/null || ! command -v opal-client &> /dev/null; then
+    echo "Installation failed: opal-server or opal-client is not available."
+    exit 1
+  fi
+
+  echo "- opal-server and opal-client successfully installed."
+}
+
 function main {
   
   # Cleanup before starting, maybe some leftovers from previous runs
@@ -62,6 +75,9 @@ function main {
   # Setup
   generate_opal_keys
 
+  # Install opal-server and opal-client
+  install_opal_server_and_client
+  
   echo "Running tests..."
 
   # pytest -s
