@@ -1,0 +1,105 @@
+# OpenFGA and OPAL
+
+[OpenFGA](https://openfga.dev) is an open-source authorization engine implementing the Zanzibar authorization model created by Google. OPAL provides realtime synchronization and management capabilities for OpenFGA, allowing you to keep your authorization data and relationships up-to-date across distributed OpenFGA instances.
+
+## Quick Start
+
+OPAL can run OpenFGA as a policy engine instead of OPA. To launch an example configuration with Docker-Compose:
+
+```bash
+git clone https://github.com/permitio/opal.git
+cd opal
+docker-compose -f docker/docker-compose-example-openfga.yml up -d
+```
+
+## Interacting with OpenFGA
+
+The OpenFGA API will be available at [http://localhost:8080](http://localhost:8080). Here are some key endpoints and operations:
+
+### Check Current State
+- View relationship tuples: `GET /stores/{store_id}/read`
+- List authorization models: `GET /stores/{store_id}/authorization-models`
+
+### Authorization Checks
+To check permissions, send a POST request to `/stores/{store_id}/check`:
+```json
+{
+  "tuple_key": {
+    "user": "user:anne",
+    "relation": "reader",
+    "object": "document:budget"
+  }
+}
+```
+
+### Setting Up Authorization Models
+Create or update an authorization model with PUT to `/stores/{store_id}/authorization-models`:
+```json
+{
+  "schema_version": "1.1",
+  "type_definitions": [
+    {
+      "type": "user"
+    },
+    {
+      "type": "document",
+      "relations": {
+        "reader": {
+          "this": {}
+        },
+        "writer": {
+          "this": {}
+        }
+      }
+    }
+  ]
+}
+```
+
+### Writing Relationship Tuples
+Add new relationships with a POST to `/stores/{store_id}/write`:
+```json
+{
+  "writes": {
+    "tuple_keys": [
+      {
+        "user": "user:anne",
+        "relation": "reader",
+        "object": "document:budget"
+      }
+    ]
+  }
+}
+```
+
+## Git Integration
+Instead of manually configuring authorization models and relationships, you can set the `OPAL_POLICY_REPO_URL` in your Docker compose configuration to automatically load configuration from a Git repository.
+
+## Key Features
+The OpenFGA integration with OPAL provides:
+- Automatic synchronization of authorization models across OpenFGA instances
+- Real-time updates to relationship tuples
+- Centralized management of authorization rules
+- Support for complex relationship-based authorization patterns
+- Version control integration for authorization configuration
+- Distributed deployment support with synchronization
+
+## Monitoring
+To view OPAL logs:
+```bash
+# Server logs
+docker-compose -f docker/docker-compose-example-openfga.yml logs opal_server
+
+# Client logs
+docker-compose -f docker/docker-compose-example-openfga.yml logs opal_client_openfga
+```
+
+Alternatively, you can also change the Docker-compose config and set your own policy git repo (the **OPAL_POLICY_REPO_URL** variable) to automatically load authorization models and relationship tuples from version control.
+
+For the server and client, respectively.
+
+The OpenFGA integration provides:
+- Automatic synchronization of authorization models across OpenFGA instances
+- Real-time updates to relationship tuples
+- Centralized management of authorization rules
+- Support for complex relationship-based authorization patterns

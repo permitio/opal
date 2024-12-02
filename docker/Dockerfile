@@ -142,6 +142,49 @@ ENV OPAL_POLICY_STORE_URL=http://localhost:8180
 EXPOSE 8180
 USER opal
 
+
+# OPENFGA CLIENT IMAGE --------------------------------
+# Using standalone image as base --------------------
+# ---------------------------------------------------
+  FROM client-standalone AS client-openfga
+
+  # Temporarily move back to root for additional setup
+  USER root
+
+  # Install wget, supervisor and OpenFGA, then cleanup
+  RUN apt-get update && \
+      apt-get install -y wget supervisor && \
+      wget https://github.com/openfga/openfga/releases/download/v1.6.2/openfga_1.6.2_linux_amd64.tar.gz && \
+      tar xzf openfga_1.6.2_linux_amd64.tar.gz && \
+      mv openfga /usr/local/bin/ && \
+      chmod +x /usr/local/bin/openfga && \
+      rm openfga_1.6.2_linux_amd64.tar.gz && \
+      apt-get clean && \
+      rm -rf /var/lib/apt/lists/*
+
+  # Add supervisord configuration
+  COPY ./scripts/supervisord.conf /etc/supervisor/conf.d/supervisord.conf
+
+  # Enable inline OpenFGA
+  ENV OPAL_POLICY_STORE_TYPE=OPENFGA
+  ENV OPAL_INLINE_OPENFGA_ENABLED=true
+  ENV OPAL_INLINE_OPENFGA_CONFIG='{"addr": "0.0.0.0:8080"}'
+  ENV OPAL_INLINE_OPENFGA_EXEC_PATH=/usr/local/bin/openfga
+  ENV OPAL_POLICY_STORE_URL=http://localhost:8080
+
+  # Create necessary directories with proper permissions
+  RUN mkdir -p /var/log/supervisor /var/run/supervisor && \
+      chown -R opal:opal /var/log/supervisor /var/run/supervisor /etc/supervisor/conf.d
+
+  # Expose OpenFGA ports
+  EXPOSE 8080 3000
+
+  USER opal
+
+  # Override CMD to use supervisord
+  CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/conf.d/supervisord.conf"]
+
+
 # SERVER IMAGE --------------------------------------
 # ---------------------------------------------------
 FROM common AS server

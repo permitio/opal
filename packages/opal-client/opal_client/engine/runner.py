@@ -9,7 +9,11 @@ from typing import Callable, Coroutine, List, Optional
 import psutil
 from opal_client.config import EngineLogFormat, opal_client_config
 from opal_client.engine.logger import log_engine_output_opa, log_engine_output_simple
-from opal_client.engine.options import CedarServerOptions, OpaServerOptions
+from opal_client.engine.options import (
+    CedarServerOptions,
+    OpaServerOptions,
+    OpenFGAServerOptions,
+)
 from opal_client.logger import logger
 from tenacity import retry, wait_random_exponential
 
@@ -304,6 +308,77 @@ class OpaRunner(PolicyEngineRunner):
         if rehydration_callbacks:
             opa_runner.register_process_restart_callbacks(rehydration_callbacks)
         return opa_runner
+
+
+class OpenFGARunner(PolicyEngineRunner):
+    """OpenFGA runner implementation that manages OpenFGA server process."""
+
+    def __init__(
+        self,
+        options: Optional[OpenFGAServerOptions] = None,
+        piped_logs_format: EngineLogFormat = EngineLogFormat.NONE,
+    ):
+        super().__init__(piped_logs_format)
+        self._options = options or OpenFGAServerOptions()
+
+    async def handle_log_line(self, line: bytes) -> bool:
+        """Handle OpenFGA log output.
+
+        Currently no panic detection implemented.
+        """
+        await log_engine_output_simple(line)
+        return False
+
+    def get_executable_path(self) -> str:
+        """Gets the path to OpenFGA executable, preferring configured path."""
+        if opal_client_config.INLINE_OPENFGA_EXEC_PATH:
+            return opal_client_config.INLINE_OPENFGA_EXEC_PATH
+        else:
+            logger.warning(
+                "OpenFGA executable path not set, looking for 'openfga' binary in PATH. "
+                "It is recommended to set the INLINE_OPENFGA_EXEC_PATH configuration."
+            )
+            path = shutil.which("openfga")
+            if path is None:
+                raise FileNotFoundError("OpenFGA executable not found in PATH")
+            return path
+
+    def get_arguments(self) -> list[str]:
+        """Build command line arguments for OpenFGA server."""
+        return ["run", "--http-addr=0.0.0.0:8080", "--playground-enabled=false"]
+
+    @staticmethod
+    def setup_openfga_runner(
+        options: Optional[OpenFGAServerOptions] = None,
+        piped_logs_format: EngineLogFormat = EngineLogFormat.NONE,
+        initial_start_callbacks: Optional[List[AsyncCallback]] = None,
+        rehydration_callbacks: Optional[List[AsyncCallback]] = None,
+    ):
+        """Factory for OpenFGARunner, accept optional callbacks to run in
+        certain lifecycle events.
+
+        Initial Start Callbacks:
+            The first time we start the engine, we might want to do certain actions (like launch tasks)
+            that are dependent on the policy store being up (such as PolicyUpdater, DataUpdater).
+
+        Rehydration Callbacks:
+            when the engine restarts, its cache is clean and it does not have the state necessary
+            to handle authorization queries. therefore it is necessary that we rehydrate the
+            cache with fresh state fetched from the server.
+        """
+        openfga_runner = OpenFGARunner(
+            options=options, piped_logs_format=piped_logs_format
+        )
+
+        if initial_start_callbacks:
+            openfga_runner.register_process_initial_start_callbacks(
+                initial_start_callbacks
+            )
+
+        if rehydration_callbacks:
+            openfga_runner.register_process_restart_callbacks(rehydration_callbacks)
+
+        return openfga_runner
 
 
 class CedarRunner(PolicyEngineRunner):
