@@ -20,17 +20,22 @@ class EngineLogFormat(str, Enum):
 class OpalClientConfig(Confi):
     # opa client (policy store) configuration
     POLICY_STORE_TYPE = confi.enum(
-        "POLICY_STORE_TYPE", PolicyStoreTypes, PolicyStoreTypes.OPA,
-        description="The type of policy store to use (e.g., OPA, Cedar, etc.)"
+        "POLICY_STORE_TYPE",
+        PolicyStoreTypes,
+        PolicyStoreTypes.OPA,
+        description="The type of policy store to use (e.g., OPA, Cedar, etc.)",
     )
     POLICY_STORE_URL = confi.str(
-        "POLICY_STORE_URL", "http://localhost:8181",
-        description="The URL of the policy store (e.g., OPA agent)."
+        "POLICY_STORE_URL",
+        "http://localhost:8181",
+        description="The URL of the policy store (e.g., OPA agent).",
     )
 
     POLICY_STORE_AUTH_TYPE = confi.enum(
-        "POLICY_STORE_AUTH_TYPE", PolicyStoreAuth, PolicyStoreAuth.NONE,
-        description="The authentication type to use for the policy store (e.g., NONE, TOKEN, etc.)"
+        "POLICY_STORE_AUTH_TYPE",
+        PolicyStoreAuth,
+        PolicyStoreAuth.NONE,
+        description="The authentication type to use for the policy store (e.g., NONE, TOKEN, etc.)",
     )
     POLICY_STORE_AUTH_TOKEN = confi.str(
         "POLICY_STORE_AUTH_TOKEN",
@@ -138,8 +143,9 @@ class OpalClientConfig(Confi):
 
     # whether or not OPAL should run OPA by itself in the same container
     INLINE_OPA_ENABLED = confi.bool(
-        "INLINE_OPA_ENABLED", True,
-        description="Whether or not OPAL should run OPA by itself in the same container"
+        "INLINE_OPA_ENABLED",
+        True,
+        description="Whether or not OPAL should run OPA by itself in the same container",
     )
 
     INLINE_OPA_EXEC_PATH = confi.str(
@@ -158,16 +164,19 @@ class OpalClientConfig(Confi):
     )
 
     INLINE_OPA_LOG_FORMAT: EngineLogFormat = confi.enum(
-        "INLINE_OPA_LOG_FORMAT", EngineLogFormat, EngineLogFormat.NONE,
-        description="The log format to use for inline OPA logs"
+        "INLINE_OPA_LOG_FORMAT",
+        EngineLogFormat,
+        EngineLogFormat.NONE,
+        description="The log format to use for inline OPA logs",
     )
 
     # Cedar runner configuration (Cedar-engine can optionally be run by OPAL) ----------------
 
     # whether or not OPAL should run the Cedar agent by itself in the same container
     INLINE_CEDAR_ENABLED = confi.bool(
-        "INLINE_CEDAR_ENABLED", True,
-        description="Whether or not OPAL should run the Cedar agent by itself in the same container"
+        "INLINE_CEDAR_ENABLED",
+        True,
+        description="Whether or not OPAL should run the Cedar agent by itself in the same container",
     )
 
     INLINE_CEDAR_EXEC_PATH = confi.str(
@@ -186,8 +195,10 @@ class OpalClientConfig(Confi):
     )
 
     INLINE_CEDAR_LOG_FORMAT: EngineLogFormat = confi.enum(
-        "INLINE_CEDAR_LOG_FORMAT", EngineLogFormat, EngineLogFormat.NONE,
-        description="The log format to use for inline Cedar logs"
+        "INLINE_CEDAR_LOG_FORMAT",
+        EngineLogFormat,
+        EngineLogFormat.NONE,
+        description="The log format to use for inline Cedar logs",
     )
 
     # configuration for fastapi routes
@@ -195,16 +206,19 @@ class OpalClientConfig(Confi):
 
     # general configuration for pub/sub clients
     KEEP_ALIVE_INTERVAL = confi.int(
-        "KEEP_ALIVE_INTERVAL", 0,
-        description="The interval (in seconds) for sending keep-alive messages"
+        "KEEP_ALIVE_INTERVAL",
+        0,
+        description="The interval (in seconds) for sending keep-alive messages",
     )
 
     # Opal Server general configuration -------------------------------------------
 
     # opal server url
     SERVER_URL = confi.str(
-        "SERVER_URL", "http://localhost:7002", flags=["-s"],
-        description="The URL of the OPAL server"
+        "SERVER_URL",
+        "http://localhost:7002",
+        flags=["-s"],
+        description="The URL of the OPAL server",
     )
     # opal server pubsub url
     OPAL_WS_ROUTE = "/ws"
@@ -215,11 +229,12 @@ class OpalClientConfig(Confi):
                 "http", "ws"
             )
         ),
-        description="The WebSocket URL of the OPAL server"
+        description="The WebSocket URL of the OPAL server",
     )
     SERVER_PUBSUB_URL = confi.str(
-        "SERVER_PUBSUB_URL", confi.delay("{SERVER_WS_URL}" + f"{OPAL_WS_ROUTE}"),
-        description="The Pub/Sub URL of the OPAL server"
+        "SERVER_PUBSUB_URL",
+        confi.delay("{SERVER_WS_URL}" + f"{OPAL_WS_ROUTE}"),
+        description="The Pub/Sub URL of the OPAL server",
     )
 
     # opal server auth token
@@ -339,10 +354,7 @@ class OpalClientConfig(Confi):
 
     OPA_HEALTH_CHECK_POLICY_PATH = "engine/healthcheck/opal.rego"
 
-    SCOPE_ID = confi.str(
-        "SCOPE_ID", "default",
-        description="OPAL Scope ID"
-    )
+    SCOPE_ID = confi.str("SCOPE_ID", "default", description="OPAL Scope ID")
 
     STORE_BACKUP_PATH = confi.str(
         "STORE_BACKUP_PATH",

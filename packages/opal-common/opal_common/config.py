@@ -108,27 +108,35 @@ class OpalCommonConfig(Confi):
     # Fetching Providers
     # - where to load providers from
     FETCH_PROVIDER_MODULES = confi.list(
-        "FETCH_PROVIDER_MODULES", ["opal_common.fetcher.providers"],
-        description="List of modules to load fetch providers from"
+        "FETCH_PROVIDER_MODULES",
+        ["opal_common.fetcher.providers"],
+        description="List of modules to load fetch providers from",
     )
 
     # Fetching engine
     # Max number of worker tasks handling fetch events concurrently
     FETCHING_WORKER_COUNT = confi.int(
-        "FETCHING_WORKER_COUNT", 6, description="Max number of worker tasks handling fetch events concurrently"
+        "FETCHING_WORKER_COUNT",
+        6,
+        description="Max number of worker tasks handling fetch events concurrently",
     )
     # Time in seconds to wait on the queued fetch task.
     FETCHING_CALLBACK_TIMEOUT = confi.int(
-        "FETCHING_CALLBACK_TIMEOUT", 10, description="Time in seconds to wait on the queued fetch task"
+        "FETCHING_CALLBACK_TIMEOUT",
+        10,
+        description="Time in seconds to wait on the queued fetch task",
     )
     # Time in seconds to wait for queuing a new task (if the queue is full)
     FETCHING_ENQUEUE_TIMEOUT = confi.int(
-        "FETCHING_ENQUEUE_TIMEOUT", 10, description="Time in seconds to wait for queuing a new task (if the queue is full)"
+        "FETCHING_ENQUEUE_TIMEOUT",
+        10,
+        description="Time in seconds to wait for queuing a new task (if the queue is full)",
     )
 
     GIT_SSH_KEY_FILE = confi.str(
-        "GIT_SSH_KEY_FILE", str(Path.home() / ".ssh/opal_repo_ssh_key"),
-        description="Path to the SSH key file for Git"
+        "GIT_SSH_KEY_FILE",
+        str(Path.home() / ".ssh/opal_repo_ssh_key"),
+        description="Path to the SSH key file for Git",
     )
 
     # Trust self signed certificates (Advanced Usage - only affects OPAL client) -----------------------------
@@ -149,13 +157,17 @@ class OpalCommonConfig(Confi):
 
     # security
     AUTH_PUBLIC_KEY_FORMAT = confi.enum(
-        "AUTH_PUBLIC_KEY_FORMAT", EncryptionKeyFormat, EncryptionKeyFormat.ssh,
-        description="Format of the public key for authentication"
+        "AUTH_PUBLIC_KEY_FORMAT",
+        EncryptionKeyFormat,
+        EncryptionKeyFormat.ssh,
+        description="Format of the public key for authentication",
     )
     AUTH_PUBLIC_KEY = confi.delay(
         lambda AUTH_PUBLIC_KEY_FORMAT=None: confi.public_key(
-            "AUTH_PUBLIC_KEY", default=None, key_format=AUTH_PUBLIC_KEY_FORMAT,
-            description="Public key for authentication"
+            "AUTH_PUBLIC_KEY",
+            default=None,
+            key_format=AUTH_PUBLIC_KEY_FORMAT,
+            description="Public key for authentication",
         )
     )
     AUTH_JWT_ALGORITHM = confi.enum(
@@ -165,12 +177,14 @@ class OpalCommonConfig(Confi):
         description="jwt algorithm, possible values: see: https://pyjwt.readthedocs.io/en/stable/algorithms.html",
     )
     AUTH_JWT_AUDIENCE = confi.str(
-        "AUTH_JWT_AUDIENCE", "https://api.opal.ac/v1/",
-        description="Audience for JWT authentication"
+        "AUTH_JWT_AUDIENCE",
+        "https://api.opal.ac/v1/",
+        description="Audience for JWT authentication",
     )
     AUTH_JWT_ISSUER = confi.str(
-        "AUTH_JWT_ISSUER", f"https://opal.ac/",
-        description="Issuer for JWT authentication"
+        "AUTH_JWT_ISSUER",
+        f"https://opal.ac/",
+        description="Issuer for JWT authentication",
     )
     POLICY_REPO_POLICY_EXTENSIONS = confi.list(
         "POLICY_REPO_POLICY_EXTENSIONS",
