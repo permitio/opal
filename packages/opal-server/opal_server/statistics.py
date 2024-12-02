@@ -68,7 +68,7 @@ SLEEP_TIME_FOR_BROADCASTER_READER_TO_START = 2
 
 
 class OpalStatistics:
-    """manage opal server statistics.
+    """Manage opal server statistics.
 
     Args:
         endpoint:
@@ -153,7 +153,7 @@ class OpalStatistics:
         self._publish_tasks.add_task(self._endpoint.publish([channel], message))
 
     async def run(self):
-        """subscribe to two channels to be able to sync add and delete of
+        """Subscribe to two channels to be able to sync add and delete of
         clients."""
         await self._endpoint.subscribe(
             [opal_server_config.STATISTICS_WAKEUP_CHANNEL],
@@ -198,7 +198,7 @@ class OpalStatistics:
             self._periodic_keepalive_task = None
 
     async def _sync_remove_client(self, subscription: Subscription, rpc_id: str):
-        """helper function to recall remove client in all servers.
+        """Helper function to recall remove client in all servers.
 
         Args:
             subscription (Subscription): not used, we get it from callbacks.
@@ -287,7 +287,7 @@ class OpalStatistics:
             self._state.servers.add(keepalive_message["worker_id"])
 
     async def _add_client(self, subscription: Subscription, stats_message: dict):
-        """add client record to statistics state.
+        """Add client record to statistics state.
 
         Args:
             subscription (Subscription): not used, we get it from callbacks.
@@ -328,7 +328,7 @@ class OpalStatistics:
             logger.exception("Add client to server statistics failed")
 
     async def remove_client(self, rpc_id: str, topics: TopicList, publish=True):
-        """remove client record from statistics state.
+        """Remove client record from statistics state.
 
         Args:
             rpc_id (str): channel id of rpc channel used as identifier to client id
@@ -370,7 +370,7 @@ class OpalStatistics:
 
 
 def init_statistics_router(stats: Optional[OpalStatistics] = None):
-    """initializes a route where a client (or any other network peer) can
+    """Initializes a route where a client (or any other network peer) can
     inquire what opal clients are currently connected to the server and on what
     topics are they registered.
 

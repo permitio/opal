@@ -13,6 +13,8 @@ import aiohttp
 import websockets
 from fastapi import FastAPI, status
 from fastapi.responses import JSONResponse
+from fastapi_websocket_pubsub.pub_sub_client import PubSubOnConnectCallback
+from fastapi_websocket_rpc.rpc_channel import OnDisconnectCallback
 from opal_client.callbacks.api import init_callbacks_api
 from opal_client.callbacks.register import CallbacksRegister
 from opal_client.config import PolicyStoreTypes, opal_client_config
@@ -54,6 +56,10 @@ class OpalClient:
         store_backup_interval: Optional[int] = None,
         offline_mode_enabled: bool = False,
         shard_id: Optional[str] = None,
+        on_data_updater_connect: List[PubSubOnConnectCallback] = None,
+        on_data_updater_disconnect: List[OnDisconnectCallback] = None,
+        on_policy_updater_connect: List[PubSubOnConnectCallback] = None,
+        on_policy_updater_disconnect: List[OnDisconnectCallback] = None,
     ) -> None:
         """
         Args:
@@ -119,6 +125,8 @@ class OpalClient:
                     policy_store=self.policy_store,
                     callbacks_register=self._callbacks_register,
                     opal_client_id=opal_client_identifier,
+                    on_connect=on_policy_updater_connect,
+                    on_disconnect=on_policy_updater_disconnect,
                 )
         else:
             self.policy_updater = None
@@ -140,6 +148,8 @@ class OpalClient:
                     callbacks_register=self._callbacks_register,
                     opal_client_id=opal_client_identifier,
                     shard_id=self._shard_id,
+                    on_connect=on_data_updater_connect,
+                    on_disconnect=on_data_updater_disconnect,
                 )
         else:
             self.data_updater = None
@@ -233,7 +243,7 @@ class OpalClient:
         return False
 
     def _init_fast_api_app(self):
-        """inits the fastapi app object."""
+        """Inits the fastapi app object."""
         app = FastAPI(
             title="OPAL Client",
             description="OPAL is an administration layer for Open Policy Agent (OPA), detecting changes"
@@ -247,8 +257,12 @@ class OpalClient:
         self._configure_lifecycle_callbacks(app)
         return app
 
+    async def _is_ready(self):
+        # Data loaded from file or from server
+        return self._backup_loaded or await self.policy_store.is_ready()
+
     def _configure_api_routes(self, app: FastAPI):
-        """mounts the api routes on the app object."""
+        """Mounts the api routes on the app object."""
 
         authenticator = JWTAuthenticator(self.verifier)
 
@@ -269,13 +283,22 @@ class OpalClient:
         @app.get("/", include_in_schema=False)
         @app.get("/healthy", include_in_schema=False)
         async def healthy():
-            """returns 200 if updates keep being successfully fetched from the
+            """Returns 200 if updates keep being successfully fetched from the
             server and applied to the policy store."""
+            # TODO: Client would only report unhealthy if server -> policy-store transactions failed, but not if server connection gets disconnected.
             healthy = await self.policy_store.is_healthy()
 
             if healthy:
                 return JSONResponse(
-                    status_code=status.HTTP_200_OK, content={"status": "ok"}
+                    status_code=status.HTTP_200_OK,
+                    content={"status": "ok", "online": True},
+                )
+            elif self.offline_mode_enabled and await self._is_ready():
+                # Offline Mode is active. That is enabled, client is "ready" (data loaded) but not "healthy" (latest updates failed).
+                # TODO: Maybe if updates were fetched from server, but storing them to OPA wasn't successful, we should return 503 even with offline mode enabled
+                return JSONResponse(
+                    status_code=status.HTTP_200_OK,
+                    content={"status": "ok", "online": False},
                 )
             else:
                 return JSONResponse(
@@ -285,10 +308,8 @@ class OpalClient:
 
         @app.get("/ready", include_in_schema=False)
         async def ready():
-            """returns 200 if the policy store is ready to serve requests."""
-            ready = self._backup_loaded or await self.policy_store.is_ready()
-
-            if ready:
+            """Returns 200 if the policy store is ready to serve requests."""
+            if await self._is_ready():
                 return JSONResponse(
                     status_code=status.HTTP_200_OK, content={"status": "ok"}
                 )
@@ -301,7 +322,7 @@ class OpalClient:
         return app
 
     def _configure_lifecycle_callbacks(self, app: FastAPI):
-        """registers callbacks on app startup and shutdown.
+        """Registers callbacks on app startup and shutdown.
 
         on app startup we launch our long running processes (async
         tasks) on the event loop. on app shutdown we stop these long
@@ -352,7 +373,7 @@ class OpalClient:
         )
 
     async def stop_client_background_tasks(self):
-        """stops all background tasks (called on shutdown event)"""
+        """Stops all background tasks (called on shutdown event)"""
         logger.info("stopping background tasks...")
 
         # stopping opa runner
@@ -483,7 +504,7 @@ class OpalClient:
             raise
 
     def _trigger_shutdown(self):
-        """this will send SIGTERM (Keyboard interrupt) to the worker, making
+        """This will send SIGTERM (Keyboard interrupt) to the worker, making
         uvicorn send "lifespan.shutdown" event to Starlette via the ASGI
         lifespan interface.
 

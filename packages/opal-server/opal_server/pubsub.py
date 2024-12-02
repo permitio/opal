@@ -171,7 +171,7 @@ class PubSub:
         async def websocket_rpc_endpoint(
             websocket: WebSocket, claims: Optional[JWTClaims] = Depends(authenticator)
         ):
-            """this is the main websocket endpoint the sidecar uses to register
+            """This is the main websocket endpoint the sidecar uses to register
             on policy updates.
 
             as you can see, this endpoint is protected by an HTTP
