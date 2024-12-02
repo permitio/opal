@@ -190,11 +190,16 @@ class GitPolicyFetcher(PolicyFetcher):
                             GitPolicyFetcher.repos_last_fetched[
                                 self.source_id
                             ] = datetime.datetime.now()
-                            await run_sync(
-                                repo.remotes[self._remote].fetch,
-                                callbacks=self._auth_callbacks,
-                            )
-                            logger.debug(f"Fetch completed: {self._source.url}")
+                            try:
+                                await run_sync(
+                                    repo.remotes[self._remote].fetch,
+                                    callbacks=self._auth_callbacks,
+                                )
+                                logger.debug(f"Fetch completed: {self._source.url}")
+                            except Exception as e:
+                                logger.error(f"Fetch failed: {e}")
+                                await self._cleanup_broken_symlinks()
+                                raise e
 
                         # New commits might be present because of a previous fetch made by another scope
                         await self._notify_on_changes(repo)
@@ -365,6 +370,18 @@ class GitPolicyFetcher(PolicyFetcher):
     @staticmethod
     def repo_clone_path(base_dir: Path, source: GitPolicyScopeSource) -> Path:
         return GitPolicyFetcher.base_dir(base_dir) / GitPolicyFetcher.source_id(source)
+
+    async def _cleanup_broken_symlinks(self):
+        """Cleans up broken symbolic links in the /proc directory."""
+        proc_path = Path("/proc")
+        for pid_dir in proc_path.iterdir():
+            exe_path = pid_dir / "exe"
+            if exe_path.is_symlink() and not exe_path.exists():
+                try:
+                    exe_path.unlink()
+                    logger.info(f"Cleaned up broken symlink: {exe_path}")
+                except Exception as e:
+                    logger.error(f"Failed to clean up broken symlink: {exe_path}, error: {e}")
 
 
 class GitCallback(RemoteCallbacks):

@@ -2,6 +2,7 @@ import asyncio
 import os
 import signal
 from typing import Any, Coroutine, List, Optional
+from pathlib import Path
 
 from fastapi_websocket_pubsub import Topic
 from fastapi_websocket_pubsub.pub_sub_server import PubSubEndpoint
@@ -105,6 +106,18 @@ class BasePolicyWatcherTask:
         # trigger uvicorn graceful shutdown
         os.kill(os.getpid(), signal.SIGTERM)
 
+    async def _cleanup_broken_symlinks(self):
+        """Cleans up broken symbolic links in the /proc directory."""
+        proc_path = Path("/proc")
+        for pid_dir in proc_path.iterdir():
+            exe_path = pid_dir / "exe"
+            if exe_path.is_symlink() and not exe_path.exists():
+                try:
+                    exe_path.unlink()
+                    logger.info(f"Cleaned up broken symlink: {exe_path}")
+                except Exception as e:
+                    logger.error(f"Failed to clean up broken symlink: {exe_path}, error: {e}")
+
 
 class PolicyWatcherTask(BasePolicyWatcherTask):
     def __init__(self, policy_source: BasePolicySource, *args, **kwargs):
@@ -124,3 +137,4 @@ class PolicyWatcherTask(BasePolicyWatcherTask):
         """Triggers the policy watcher from outside to check for changes (git
         pull)"""
         await self._watcher.check_for_changes()
+        await self._cleanup_broken_symlinks()
