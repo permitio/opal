@@ -87,10 +87,13 @@ class PathUtils:
         """
         # check if any of our ignore paths match the given path
         for match_path in match_paths:
+            # if the path is the root "/", then it matches any path
+            if match_path == "/" or match_path == "/**":
+                return match_path
             # if the path is indicated as a parent via "/**" at the end
             if match_path.endswith("/**"):
                 # check if the path is under the parent
-                if path.startswith(match_path[:-3]):
+                if (path + "/").startswith((match_path[:-3] + "/")):
                     return match_path
             # otherwise check for simple (non-recursive glob matching)
             else:

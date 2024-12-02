@@ -1,3 +1,4 @@
+name: opal-kafka-example
 
 services:
   # Based on: https://developer.confluent.io/quickstart/kafka-docker/

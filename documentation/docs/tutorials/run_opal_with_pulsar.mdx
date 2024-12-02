@@ -71,7 +71,7 @@ volumes:
 Run this configuration with:
 
 ```bash
-docker-compose up --force-recreate
+docker compose up --force-recreate
 ```
 
 Allow a few seconds for Apache Pulsar and OPAL to start up before testing connectivity.
@@ -93,10 +93,10 @@ You should see the effect in:
 
 | Backend  | Environment Variable                                   | Docker Compose Service |
 |----------|---------------------------------------------------------|------------------------|
-| Kafka    | `BROADCAST_URL=kafka://localhost:9092`                  | `docker-compose up kafka` |
-| Redis    | `BROADCAST_URL=redis://localhost:6379`                  | `docker-compose up redis` |
-| Postgres | `BROADCAST_URL=postgres://localhost:5432/broadcaster`   | `docker-compose up postgres` |
-| Pulsar   | `BROADCAST_URL=pulsar://localhost:6650`                 | `docker-compose up pulsar` |
+| Kafka    | `BROADCAST_URL=kafka://localhost:9092`                  | `docker compose up kafka` |
+| Redis    | `BROADCAST_URL=redis://localhost:6379`                  | `docker compose up redis` |
+| Postgres | `BROADCAST_URL=postgres://localhost:5432/broadcaster`   | `docker compose up postgres` |
+| Pulsar   | `BROADCAST_URL=pulsar://localhost:6650`                 | `docker compose up pulsar` |
 
 ## Advanced: Publishing Events Directly to Pulsar
 
