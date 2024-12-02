@@ -28,7 +28,9 @@ class ServerRole(str, Enum):
 class OpalServerConfig(Confi):
     # ws server
     OPAL_WS_LOCAL_URL = confi.str(
-        "WS_LOCAL_URL", "ws://localhost:7002/ws", description="The local WebSocket URL for OPAL"
+        "WS_LOCAL_URL",
+        "ws://localhost:7002/ws",
+        description="The local WebSocket URL for OPAL",
     )
     OPAL_WS_TOKEN = confi.str(
         "WS_TOKEN", "THIS_IS_A_DEV_SECRET", description="The WebSocket token for OPAL"
@@ -46,18 +48,27 @@ class OpalServerConfig(Confi):
     )
     # The name to be used for segmentation in the backbone pub/sub (e.g. the Kafka topic)
     BROADCAST_CHANNEL_NAME = confi.str(
-        "BROADCAST_CHANNEL_NAME", "EventNotifier", description="The name to be used for segmentation in the backbone pub/sub"
+        "BROADCAST_CHANNEL_NAME",
+        "EventNotifier",
+        description="The name to be used for segmentation in the backbone pub/sub",
     )
     BROADCAST_CONN_LOSS_BUGFIX_EXPERIMENT_ENABLED = confi.bool(
-        "BROADCAST_CONN_LOSS_BUGFIX_EXPERIMENT_ENABLED", True, description="Enable experimental bugfix for broadcast connection loss"
+        "BROADCAST_CONN_LOSS_BUGFIX_EXPERIMENT_ENABLED",
+        True,
+        description="Enable experimental bugfix for broadcast connection loss",
     )
 
     # server security
     AUTH_PRIVATE_KEY_FORMAT = confi.enum(
-        "AUTH_PRIVATE_KEY_FORMAT", EncryptionKeyFormat, EncryptionKeyFormat.pem, description="The format of the private key for authentication"
+        "AUTH_PRIVATE_KEY_FORMAT",
+        EncryptionKeyFormat,
+        EncryptionKeyFormat.pem,
+        description="The format of the private key for authentication",
     )
     AUTH_PRIVATE_KEY_PASSPHRASE = confi.str(
-        "AUTH_PRIVATE_KEY_PASSPHRASE", None, description="The passphrase for the private key"
+        "AUTH_PRIVATE_KEY_PASSPHRASE",
+        None,
+        description="The passphrase for the private key",
     )
 
     AUTH_PRIVATE_KEY = confi.delay(
@@ -66,15 +77,19 @@ class OpalServerConfig(Confi):
             default=None,
             key_format=AUTH_PRIVATE_KEY_FORMAT,
             passphrase=AUTH_PRIVATE_KEY_PASSPHRASE,
-            description="The private key for authentication"
+            description="The private key for authentication",
         )
     )
 
     AUTH_JWKS_URL = confi.str(
-        "AUTH_JWKS_URL", "/.well-known/jwks.json", description="The URL for the JSON Web Key Set (JWKS)"
+        "AUTH_JWKS_URL",
+        "/.well-known/jwks.json",
+        description="The URL for the JSON Web Key Set (JWKS)",
     )
     AUTH_JWKS_STATIC_DIR = confi.str(
-        "AUTH_JWKS_STATIC_DIR", os.path.join(os.getcwd(), "jwks_dir"), description="The directory for static JWKS files"
+        "AUTH_JWKS_STATIC_DIR",
+        os.path.join(os.getcwd(), "jwks_dir"),
+        description="The directory for static JWKS files",
     )
 
     AUTH_MASTER_TOKEN = confi.str(
@@ -115,7 +130,9 @@ class OpalServerConfig(Confi):
         description="Set if OPAL server should use a fixed clone path (and reuse if it already exists) instead of randomizing its suffix on each run",
     )
     POLICY_REPO_MAIN_BRANCH = confi.str(
-        "POLICY_REPO_MAIN_BRANCH", "master", description="The main branch of the policy repository"
+        "POLICY_REPO_MAIN_BRANCH",
+        "master",
+        description="The main branch of the policy repository",
     )
     POLICY_REPO_SSH_KEY = confi.str(
         "POLICY_REPO_SSH_KEY", None, description="The SSH key for the policy repository"
@@ -126,10 +143,14 @@ class OpalServerConfig(Confi):
         description="Path of the directory holding the '.manifest' file (new fashion), or of the manifest file itself (old fashion). Repo's root is used by default",
     )
     POLICY_REPO_CLONE_TIMEOUT = confi.int(
-        "POLICY_REPO_CLONE_TIMEOUT", 0, description="The timeout for cloning the policy repository (0 means wait forever)"
+        "POLICY_REPO_CLONE_TIMEOUT",
+        0,
+        description="The timeout for cloning the policy repository (0 means wait forever)",
     )
     LEADER_LOCK_FILE_PATH = confi.str(
-        "LEADER_LOCK_FILE_PATH", "/tmp/opal_server_leader.lock", description="The path to the leader lock file"
+        "LEADER_LOCK_FILE_PATH",
+        "/tmp/opal_server_leader.lock",
+        description="The path to the leader lock file",
     )
     POLICY_BUNDLE_SERVER_TYPE = confi.enum(
         "POLICY_BUNDLE_SERVER_TYPE",
@@ -263,13 +284,17 @@ class OpalServerConfig(Confi):
 
     # Git service webhook (Default is Github)
     POLICY_REPO_WEBHOOK_SECRET = confi.str(
-        "POLICY_REPO_WEBHOOK_SECRET", None, description="The secret for the policy repository webhook"
+        "POLICY_REPO_WEBHOOK_SECRET",
+        None,
+        description="The secret for the policy repository webhook",
     )
     # The topic the event of the webhook will publish
     POLICY_REPO_WEBHOOK_TOPIC = "webhook"
     # Should we check the incoming webhook mentions the branch by name- and not just in the URL
     POLICY_REPO_WEBHOOK_ENFORCE_BRANCH: bool = confi.bool(
-        "POLICY_REPO_WEBHOOK_ENFORCE_BRANCH", False, description="Enforce branch name in incoming webhook"
+        "POLICY_REPO_WEBHOOK_ENFORCE_BRANCH",
+        False,
+        description="Enforce branch name in incoming webhook",
     )
     # Parameters controlling how the incoming webhook should be read and processed
     POLICY_REPO_WEBHOOK_PARAMS: GitWebhookRequestParams = confi.model(
@@ -287,7 +312,9 @@ class OpalServerConfig(Confi):
     )
 
     POLICY_REPO_POLLING_INTERVAL = confi.int(
-        "POLICY_REPO_POLLING_INTERVAL", 0, description="The polling interval for the policy repository"
+        "POLICY_REPO_POLLING_INTERVAL",
+        0,
+        description="The polling interval for the policy repository",
     )
 
 
@@ -295,15 +322,15 @@ class OpalServerConfig(Confi):
         "ALLOWED_ORIGINS", ["*"], description="List of allowed origins for CORS"
     )
     FILTER_FILE_EXTENSIONS = confi.list(
-        "FILTER_FILE_EXTENSIONS", [".rego", ".json", ".yaml"], description="List of file extensions to filter. Example: ['.rego', '.json', '.yaml']"
+        "FILTER_FILE_EXTENSIONS",
+        [".rego", ".json", ".yaml"],
+        description="List of file extensions to filter. Example: ['.rego', '.json', '.yaml']",
     )
     BUNDLE_IGNORE = confi.list(
         "BUNDLE_IGNORE", [], description="List of patterns to ignore in the bundle"
     )
 
-    NO_RPC_LOGS = confi.bool(
-        "NO_RPC_LOGS", True, description="Disable RPC logs"
-    )
+    NO_RPC_LOGS = confi.bool("NO_RPC_LOGS", True, description="Disable RPC logs")
 
     # client-api server
     SERVER_WORKER_COUNT = confi.int(
@@ -338,9 +365,7 @@ class OpalServerConfig(Confi):
         description="Set if OPAL server should enable tracing with datadog APM",
     )
 
-    SCOPES = confi.bool(
-        "SCOPES", default=False, description="Enable scopes"
-    )
+    SCOPES = confi.bool("SCOPES", default=False, description="Enable scopes")
 
     SCOPES_REPO_CLONES_SHARDS = confi.int(
         "SCOPES_REPO_CLONES_SHARDS",
@@ -349,11 +374,15 @@ class OpalServerConfig(Confi):
     )
 
     REDIS_URL = confi.str(
-        "REDIS_URL", default="redis://localhost", description="The URL for the Redis server"
+        "REDIS_URL",
+        default="redis://localhost",
+        description="The URL for the Redis server",
     )
 
     BASE_DIR = confi.str(
-        "BASE_DIR", default=pathlib.Path.home() / ".local/state/opal", description="The base directory for OPAL"
+        "BASE_DIR",
+        default=pathlib.Path.home() / ".local/state/opal",
+        description="The base directory for OPAL",
     )
 
     POLICY_REFRESH_INTERVAL = confi.int(
