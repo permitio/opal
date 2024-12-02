@@ -42,15 +42,15 @@ class BasePolicySource:
         self._on_failure_callbacks.append(callback)
 
     async def get_initial_policy_state_from_remote(self):
-        """init remote data to local repo."""
+        """Init remote data to local repo."""
         raise NotImplementedError()
 
     async def check_for_changes(self):
-        """trigger check for policy change."""
+        """Trigger check for policy change."""
         raise NotImplementedError()
 
     async def run(self):
-        """potentially starts the polling task."""
+        """Potentially starts the polling task."""
         await self.get_initial_policy_state_from_remote()
 
         if self._polling_interval > 0:
@@ -70,7 +70,7 @@ class BasePolicySource:
             self._polling_task = asyncio.create_task(self._do_polling(polling_task))
 
     async def _do_polling(self, polling_task):
-        """optional task to periodically check the remote for changes (git pull
+        """Optional task to periodically check the remote for changes (git pull
         and compare hash)."""
         while True:
             try:
@@ -92,22 +92,22 @@ class BasePolicySource:
                 pass
 
     async def _on_new_policy(self, old: Commit, new: Commit):
-        """triggers callbacks registered with on_new_policy()."""
+        """Triggers callbacks registered with on_new_policy()."""
         await self._run_callbacks(self._on_new_policy_callbacks, old, new)
 
     async def _on_failed(self, exc: Exception):
-        """will be triggered if a failure occurred.
+        """Will be triggered if a failure occurred.
 
         triggers callbacks registered with on_git_failed().
         """
         await self._run_callbacks(self._on_failure_callbacks, exc)
 
     async def _run_callbacks(self, handlers, *args, **kwargs):
-        """triggers a list of callbacks."""
+        """Triggers a list of callbacks."""
         await asyncio.gather(*(callback(*args, **kwargs) for callback in handlers))
 
     async def _on_git_failed(self, exc: Exception):
-        """will be triggered if a git failure occurred (i.e: repo does not
+        """Will be triggered if a git failure occurred (i.e: repo does not
         exist, can't clone, etc).
 
         triggers callbacks registered with on_git_failed().

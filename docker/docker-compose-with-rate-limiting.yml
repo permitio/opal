@@ -1,3 +1,5 @@
+name: opal-rate-limiting-example
+
 # This docker compose example shows how to configure OPAL's rate limiting feature
 services:
   # When scaling the opal-server to multiple nodes and/or multiple workers, we use

@@ -20,7 +20,7 @@ class Unauthorized(HTTPException):
 
 
 class JWTVerifier:
-    """given a cryptographic public key, can verify jwt tokens."""
+    """Given a cryptographic public key, can verify jwt tokens."""
 
     def __init__(
         self,
@@ -29,7 +29,7 @@ class JWTVerifier:
         audience: str,
         issuer: str,
     ):
-        """inits the signer if and only if the keys provided to __init__ were
+        """Inits the signer if and only if the keys provided to __init__ were
         generate together are are valid. otherwise will throw.
 
         JWT verifier can be initialized without a public key (None)
@@ -53,7 +53,7 @@ class JWTVerifier:
         self._verify_public_key()
 
     def _verify_public_key(self):
-        """verifies whether or not the public key is a valid crypto key
+        """Verifies whether or not the public key is a valid crypto key
         (according to the JWT algorithm)."""
         if self._public_key is not None:
             # save jwk
@@ -68,7 +68,7 @@ class JWTVerifier:
             self._disable()
 
     def get_jwk(self) -> str:
-        """returns the jwk json contents."""
+        """Returns the jwk json contents."""
         algorithm: Optional[Algorithm] = get_default_algorithms().get(self._algorithm)
         if algorithm is None:
             raise ValueError(f"invalid jwt algorithm: {self._algorithm}")
@@ -79,11 +79,11 @@ class JWTVerifier:
 
     @property
     def enabled(self):
-        """whether or not the verifier has valid cryptographic keys."""
+        """Whether or not the verifier has valid cryptographic keys."""
         return self._enabled
 
     def verify(self, token: str) -> JWTClaims:
-        """verifies a JWT token is valid.
+        """Verifies a JWT token is valid.
 
         if valid returns dict with jwt claims, otherwise throws.
         """

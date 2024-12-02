@@ -29,11 +29,13 @@ def get_long_description():
 def get_install_requires():
     """Gets the contents of install_requires from text file.
 
-    Getting the minimum requirements from a text file allows us to pre-install
-    them in docker, speeding up our docker builds and better utilizing the docker layer cache.
+    Getting the minimum requirements from a text file allows us to pre-
+    install them in docker, speeding up our docker builds and better
+    utilizing the docker layer cache.
 
-    The requirements in requires.txt are in fact the minimum set of packages
-    you need to run OPAL (and are thus different from a "requirements.txt" file).
+    The requirements in requires.txt are in fact the minimum set of
+    packages you need to run OPAL (and are thus different from a
+    "requirements.txt" file).
     """
     with open(os.path.join(here, "requires.txt")) as fp:
         return [

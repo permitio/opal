@@ -7,7 +7,9 @@ websockets>=10.3,<14
 gunicorn>=22.0.0,<23
 pydantic[email]>=1.9.1,<2
 typing-extensions;python_version<'3.8'
+starlette>=0.40.0,<1
 uvicorn[standard]>=0.17.6,<1
 fastapi-utils>=0.2.1,<1
 setuptools>=70.0.0 # not directly required, pinned by Snyk to avoid a vulnerability
 anyio>=4.4.0 # not directly required, pinned by Snyk to avoid a vulnerability
+starlette>=0.40.0 # not directly required, pinned by Snyk to avoid a vulnerability
