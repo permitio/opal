@@ -4,7 +4,7 @@ import random
 
 import pytest
 from fastapi import Response, status
-from opal_client.policy_store.opa_client import OpaClient
+from opal_client.policy_store.opa_client import OpaClient, should_ignore_path
 from opal_client.policy_store.schemas import PolicyStoreAuth
 
 TEST_CA_CERT = """-----BEGIN CERTIFICATE-----
@@ -111,3 +111,119 @@ async def test_attempt_operations_with_postponed_failure_retry():
         await OpaClient._attempt_operations_with_postponed_failure_retry(
             order_strict_ops.get_badly_ordered_ops()
         )
+
+
+def test_should_not_ignore_anything_with_no_ignore_paths():
+    ignore_paths = []
+    assert should_ignore_path("myFolder", ignore_paths) == False
+    assert should_ignore_path("myFolder/file.txt", ignore_paths) == False
+    assert should_ignore_path("otherFolder", ignore_paths) == False
+    assert should_ignore_path("otherFolder/file.txt", ignore_paths) == False
+
+
+def test_should_ignore_everything_with_root_as_ignore_paths():
+    ignore_paths = ["/"]
+    assert should_ignore_path("myFolder", ignore_paths) == True
+    assert should_ignore_path("myFolder/file.txt", ignore_paths) == True
+    assert should_ignore_path("otherFolder", ignore_paths) == True
+    assert should_ignore_path("otherFolder/file.txt", ignore_paths) == True
+
+
+def test_should_ignore_everything_with_root_and_asterisks_as_ignore_paths():
+    ignore_paths = ["/**"]
+    assert should_ignore_path("myFolder", ignore_paths) == True
+    assert should_ignore_path("myFolder/file.txt", ignore_paths) == True
+    assert should_ignore_path("otherFolder", ignore_paths) == True
+    assert should_ignore_path("otherFolder/file.txt", ignore_paths) == True
+
+
+def test_should_ignore_path_but_not_his_contents_when_path_is_defined_without_asterisks():
+    ignore_paths = ["myFolder"]
+    assert should_ignore_path("myFolder", ignore_paths) == True
+    assert should_ignore_path("myFolder/file.txt", ignore_paths) == False
+    assert should_ignore_path("otherFolder", ignore_paths) == False
+    assert should_ignore_path("otherFolder/file.txt", ignore_paths) == False
+
+
+def test_should_ignore_path_and_his_contents_when_path_is_defined_with_asterisks():
+    ignore_paths = ["myFolder/**"]
+    assert should_ignore_path("myFolder", ignore_paths) == True
+    assert should_ignore_path("myFolder/file.txt", ignore_paths) == True
+    assert should_ignore_path("otherFolder", ignore_paths) == False
+    assert should_ignore_path("otherFolder/file.txt", ignore_paths) == False
+
+
+def test_should_not_ignore_anything_with_not_ignore_paths_only():
+    ignore_paths = ["!myFolder/**"]
+    assert should_ignore_path("myFolder", ignore_paths) == False
+    assert should_ignore_path("myFolder/file.txt", ignore_paths) == False
+    assert should_ignore_path("otherFolder", ignore_paths) == False
+    assert should_ignore_path("otherFolder/file.txt", ignore_paths) == False
+
+
+def test_should_ignore_path_but_ones_specified_as_not_ignore_paths():
+    ignore_paths = ["/", "!myFolder"]
+    assert should_ignore_path("myFolder", ignore_paths) == False
+    assert should_ignore_path("myFolder/file.txt", ignore_paths) == True
+    assert should_ignore_path("otherFolder", ignore_paths) == True
+    assert should_ignore_path("otherFolder/file.txt", ignore_paths) == True
+
+
+def test_should_ignore_path_but_ones_specified_as_not_ignore_paths_and_his_contents_when_defined_with_asterisks():
+    ignore_paths = ["/", "!myFolder/**"]
+    assert should_ignore_path("myFolder", ignore_paths) == False
+    assert should_ignore_path("myFolder/file.txt", ignore_paths) == False
+    assert should_ignore_path("otherFolder", ignore_paths) == True
+    assert should_ignore_path("otherFolder/file.txt", ignore_paths) == True
+
+
+def test_should_ignore_path_keeping_higher_priority_to_ones_defined_as_not_to_ignore_A():
+    ignore_paths = ["myFolder/**", "!myFolder/subFolder/**"]
+    assert should_ignore_path("myFolder/file.txt", ignore_paths) == True
+    assert should_ignore_path("myFolder/subFolder", ignore_paths) == False
+    assert should_ignore_path("myFolder/subFolder/file.txt", ignore_paths) == False
+    assert should_ignore_path("myFolder/anotherSubFolder", ignore_paths) == True
+    assert (
+        should_ignore_path("myFolder/anotherSubFolder/file.txt", ignore_paths) == True
+    )
+    assert should_ignore_path("otherFolder", ignore_paths) == False
+    assert should_ignore_path("otherFolder/file.txt", ignore_paths) == False
+
+
+def test_should_ignore_path_keeping_higher_priority_to_ones_defined_as_not_to_ignore_B():
+    ignore_paths = ["/", "myFolder/**", "!myFolder/subFolder/**"]
+    assert should_ignore_path("myFolder/file.txt", ignore_paths) == True
+    assert should_ignore_path("myFolder/subFolder", ignore_paths) == False
+    assert should_ignore_path("myFolder/subFolder/file.txt", ignore_paths) == False
+    assert should_ignore_path("myFolder/anotherSubFolder", ignore_paths) == True
+    assert (
+        should_ignore_path("myFolder/anotherSubFolder/file.txt", ignore_paths) == True
+    )
+    assert should_ignore_path("otherFolder", ignore_paths) == True
+    assert should_ignore_path("otherFolder/file.txt", ignore_paths) == True
+
+
+def test_should_ignore_path_keeping_higher_priority_to_ones_defined_as_not_to_ignore_C():
+    ignore_paths = ["!myFolder/**", "myFolder/subFolder/**"]
+    assert should_ignore_path("myFolder/file.txt", ignore_paths) == False
+    assert should_ignore_path("myFolder/subFolder", ignore_paths) == False
+    assert should_ignore_path("myFolder/subFolder/file.txt", ignore_paths) == False
+    assert should_ignore_path("myFolder/anotherSubFolder", ignore_paths) == False
+    assert (
+        should_ignore_path("myFolder/anotherSubFolder/file.txt", ignore_paths) == False
+    )
+    assert should_ignore_path("otherFolder", ignore_paths) == False
+    assert should_ignore_path("otherFolder/file.txt", ignore_paths) == False
+
+
+def test_should_ignore_path_keeping_higher_priority_to_ones_defined_as_not_to_ignore_D():
+    ignore_paths = ["/", "!myFolder/**", "myFolder/subFolder/**"]
+    assert should_ignore_path("myFolder/file.txt", ignore_paths) == False
+    assert should_ignore_path("myFolder/subFolder", ignore_paths) == False
+    assert should_ignore_path("myFolder/subFolder/file.txt", ignore_paths) == False
+    assert should_ignore_path("myFolder/anotherSubFolder", ignore_paths) == False
+    assert (
+        should_ignore_path("myFolder/anotherSubFolder/file.txt", ignore_paths) == False
+    )
+    assert should_ignore_path("otherFolder", ignore_paths) == True
+    assert should_ignore_path("otherFolder/file.txt", ignore_paths) == True
