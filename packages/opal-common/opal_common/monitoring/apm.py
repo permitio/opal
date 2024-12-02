@@ -8,7 +8,7 @@ from loguru import logger
 
 
 def configure_apm(enable_apm: bool, service_name: str):
-    """optionally enable datadog APM / profiler."""
+    """Optionally enable datadog APM / profiler."""
     if enable_apm:
         logger.info("Enabling DataDog APM")
         # logging.getLogger("ddtrace").propagate = False

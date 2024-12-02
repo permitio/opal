@@ -77,7 +77,7 @@ class ApiPolicySource(BasePolicySource):
         )
 
     async def get_initial_policy_state_from_remote(self):
-        """init remote data to local repo."""
+        """Init remote data to local repo."""
         async for attempt in AsyncRetrying(wait=wait_fixed(5)):
             with attempt:
                 try:
