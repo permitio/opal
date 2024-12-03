@@ -12,30 +12,28 @@ from opal_common.git_utils.repo_cloner import RepoClonePathFinder
 from opal_common.logger import logger
 from opal_common.config import opal_common_config
 from opal_common.schemas.policy import PolicyBundle
+from opal_common.monitoring.tracing_utils import start_span
+from opal_common.monitoring.otel_metrics import get_meter
 from opal_server.config import opal_server_config
 from starlette.responses import RedirectResponse
-from opentelemetry import trace, metrics
-from opentelemetry.metrics import get_meter
-from opentelemetry.trace import get_tracer
-
-if opal_common_config.ENABLE_OPENTELEMETRY_TRACING:
-    tracer = trace.get_tracer(__name__)
-else:
-    tracer = None
-
-if opal_common_config.ENABLE_OPENTELEMETRY_METRICS:
-    meter = metrics.get_meter(__name__)
-    bundle_size_histogram = meter.create_histogram(
-        name="opal_server_policy_bundle_size",
-        description="Size of policy bundles served",
-        unit="files",
-    )
-else:
-    meter = None
-    bundle_size_histogram = None
+from opentelemetry import trace
 
 router = APIRouter()
 
+_bundle_size_histogram = None
+
+def get_bundle_size_histogram():
+    global _bundle_size_histogram
+    if _bundle_size_histogram is None:
+        if not opal_common_config.ENABLE_OPENTELEMETRY_METRICS:
+            return None
+        meter = get_meter()
+        _bundle_size_histogram = meter.create_histogram(
+            name="opal_server_policy_bundle_size",
+            description="Size of policy bundles served",
+            unit="files",
+        )
+    return _bundle_size_histogram
 
 async def get_repo(
     base_clone_path: str = None,
@@ -122,62 +120,64 @@ async def get_policy(
 ):
     """Get the policy bundle from the policy repo."""
 
-
-    if tracer is not None:
-        with tracer.start_as_current_span("opal_server_policy_bundle_request") as span:
-            bundle = await process_policy_bundle(repo, input_paths, base_hash, span)
-    else:
-        bundle = await process_policy_bundle(repo, input_paths, base_hash)
+    async with start_span("opal_server_policy_bundle_request") as span:
+        bundle = await process_policy_bundle(repo, input_paths, base_hash, span)
 
     return bundle
 
 async def process_policy_bundle(repo, input_paths, base_hash, span=None):
-    maker = BundleMaker(
-        repo,
-        in_directories=set(input_paths),
-        extensions=opal_server_config.FILTER_FILE_EXTENSIONS,
-        root_manifest_path=opal_server_config.POLICY_REPO_MANIFEST_PATH,
-        bundle_ignore=opal_server_config.BUNDLE_IGNORE,
-    )
-    # check if commit exist in the repo
-    revision = None
-    if base_hash:
-        try:
-            revision = repo.rev_parse(base_hash)
-        except ValueError:
-            logger.warning(f"base_hash {base_hash} does not exist in the repo")
+    async with start_span("opal_server_policy_bundle_processing", parent=span) as processing_span:
+        maker = BundleMaker(
+            repo,
+            in_directories=set(input_paths),
+            extensions=opal_server_config.FILTER_FILE_EXTENSIONS,
+            root_manifest_path=opal_server_config.POLICY_REPO_MANIFEST_PATH,
+            bundle_ignore=opal_server_config.BUNDLE_IGNORE,
+        )
+        # check if commit exist in the repo
+        revision = None
+        if base_hash:
+            try:
+                revision = repo.rev_parse(base_hash)
+            except ValueError:
+                logger.warning(f"base_hash {base_hash} does not exist in the repo")
 
-    if revision is None:
-        bundle = maker.make_bundle(repo.head.commit)
-        bundle_size = bundle.calculate_size()
+        bundle_size_histogram = get_bundle_size_histogram()
 
-        if bundle_size_histogram is not None:
-            bundle_size_histogram.record(bundle_size, {"type": "full"})
-
-        if span is not None:
-            span.set_attribute("bundle.type", "full")
-            span.set_attribute("bundle.size", bundle_size)
-
-        return bundle
-    else:
-        try:
-            old_commit = repo.commit(base_hash)
-            bundle = maker.make_diff_bundle(old_commit, repo.head.commit)
+        if revision is None:
+            bundle = maker.make_bundle(repo.head.commit)
             bundle_size = bundle.calculate_size()
 
             if bundle_size_histogram is not None:
-                bundle_size_histogram.record(bundle_size, {"type": "diff"})
+                bundle_size_histogram.record(bundle_size, {"type": "full"})
 
-            if span is not None:
-                span.set_attribute("bundle.type", "diff")
-                span.set_attribute("bundle.size", bundle_size)
+            if processing_span is not None:
+                processing_span.set_attribute("bundle.type", "full")
+                processing_span.set_attribute("bundle.size", bundle_size)
 
             return bundle
-        except ValueError:
-            if span is not None:
-                span.set_status(trace.Status(trace.StatusCode.ERROR, "Commit not found"))
-                span.record_exception(ValueError(f"Commit {base_hash} not found"))
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Commit with hash {base_hash} was not found in the policy repo!",
-            )
+        else:
+            try:
+                old_commit = repo.commit(base_hash)
+                bundle = maker.make_diff_bundle(old_commit, repo.head.commit)
+                bundle_size = bundle.calculate_size()
+
+                if bundle_size_histogram is not None:
+                    bundle_size_histogram.record(bundle_size, {"type": "diff"})
+
+                if span is not None:
+                    processing_span.set_attribute("bundle.type", "diff")
+                    processing_span.set_attribute("bundle.size", bundle_size)
+
+                return bundle
+            except ValueError as e:
+                if processing_span is not None:
+                    processing_span.set_status(trace.StatusCode.ERROR)
+                    processing_span.set_attribute("error", True)
+                    processing_span.record_exception(e)
+                    processing_span.set_attribute("error_message", str(e))
+                    processing_span.set_attribute("base_hash", base_hash)
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail=f"Commit with hash {base_hash} was not found in the policy repo!",
+                )

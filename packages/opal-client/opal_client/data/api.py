@@ -3,13 +3,8 @@ from typing import Optional
 from fastapi import APIRouter, HTTPException, status
 from opal_client.data.updater import DataUpdater
 from opal_common.logger import logger
-from opal_common.config import opal_common_config
 from opentelemetry import trace
-
-if opal_common_config.ENABLE_OPENTELEMETRY_TRACING:
-    tracer = trace.get_tracer(__name__)
-else:
-    tracer = None
+from opal_common.monitoring.tracing_utils import start_span
 
 def init_data_router(data_updater: Optional[DataUpdater]):
     router = APIRouter()
@@ -17,21 +12,13 @@ def init_data_router(data_updater: Optional[DataUpdater]):
     @router.post("/data-updater/trigger", status_code=status.HTTP_200_OK)
     async def trigger_policy_data_update():
         logger.info("triggered policy data update from api")
-        if tracer:
-            with tracer.start_as_current_span("opal_client_data_update_trigger") as span:
-                return await _handle_policy_data_update(span)
-        else:
-            return await _handle_policy_data_update()
+        async with start_span("opal_client_data_update_trigger") as span:
+            return await _handle_policy_data_update(span)
 
     async def _handle_policy_data_update(span=None):
         try:
             if data_updater:
-                if tracer and span:
-                    with tracer.start_as_current_span("opal_client_data_update_apply"):
-                        await data_updater.get_base_policy_data(
-                            data_fetch_reason="request from sdk"
-                        )
-                else:
+                async with start_span("opal_client_data_update_apply") if span else (await None):
                     await data_updater.get_base_policy_data(
                         data_fetch_reason="request from sdk"
                     )

@@ -9,11 +9,9 @@ from opal_common.schemas.data import (
     DataUpdate,
     ServerDataSourceConfig,
 )
-from opal_common.config import opal_common_config
 from opal_common.topics.publisher import TopicPublisher
-from opentelemetry import trace
+from opal_common.monitoring.tracing_utils import start_span
 
-tracer = trace.get_tracer(__name__)
 
 TOPIC_DELIMITER = "/"
 PREFIX_DELIMITER = ":"
@@ -74,51 +72,54 @@ class DataUpdatePublisher:
             topics (List[str]): topics (with hierarchy) to notify subscribers of
             update (DataUpdate): update data-source configuration for subscribers to fetch data from
         """
-        if opal_common_config.ENABLE_OPENTELEMETRY_TRACING:
-            with tracer.start_as_current_span("opal_server_data_update") as span:
-                await self._publish_data_updates(update)
+        async with start_span("opal_server_data_update") as span:
+            return await self._publish_data_updates(update, span)
 
-                all_topic_combos = set()
+    async def _publish_data_updates(self, update: DataUpdate, span=None):
+        """Internal method to handle data update publishing."""
+        all_topic_combos = set()
 
-                span.set_attribute("entries_count", len(update.entries))
-                # a nicer format of entries to the log
-                logged_entries = [
-                    dict(
-                        url=entry.url,
-                        method=entry.save_method,
-                        path=entry.dst_path or "/",
-                        inline_data=(entry.data is not None),
-                        topics=entry.topics,
-                    )
-                    for entry in update.entries
-                ]
+        # A nicer format of entries to the log
+        logged_entries = [
+            dict(
+                url=entry.url,
+                method=entry.save_method,
+                path=entry.dst_path or "/",
+                inline_data=(entry.data is not None),
+                topics=entry.topics,
+            )
+            for entry in update.entries
+        ]
 
-                # Expand the topics for each event to include sub topic combos (e.g. publish 'a/b/c' as 'a' , 'a/b', and 'a/b/c')
-                for entry in update.entries:
-                    topic_combos = []
-                    if entry.topics:
-                        for topic in entry.topics:
-                            topic_combos.extend(DataUpdatePublisher.get_topic_combos(topic))
-                        entry.topics = topic_combos  # Update entry with the exhaustive list, so client won't have to expand it again
-                        all_topic_combos.update(topic_combos)
-
-                    else:
-                        logger.warning(
-                            "[{pid}] No topics were provided for the following entry: {entry}",
-                            pid=os.getpid(),
-                            entry=entry,
-                        )
-
-                # publish all topics with all their sub combinations
-                logger.info(
-                    "[{pid}] Publishing data update to topics: {topics}, reason: {reason}, entries: {entries}",
+        # Expand the topics for each event to include subtopic combos
+        # (e.g., publish 'a/b/c' as 'a', 'a/b', and 'a/b/c')
+        for entry in update.entries:
+            topic_combos = []
+            if entry.topics:
+                for topic in entry.topics:
+                    topic_combos.extend(self.get_topic_combos(topic))
+                entry.topics = topic_combos  # Update entry with the exhaustive list
+                all_topic_combos.update(topic_combos)
+            else:
+                logger.warning(
+                    "[{pid}] No topics were provided for the following entry: {entry}",
                     pid=os.getpid(),
-                    topics=all_topic_combos,
-                    reason=update.reason,
-                    entries=logged_entries,
+                    entry=entry,
                 )
-                span.set_attribute("topics", list(all_topic_combos))
 
-                await self._publisher.publish(
-                    list(all_topic_combos), update.dict(by_alias=True)
-                )
+        # Publish all topics with all their subcombinations
+        logger.info(
+            "[{pid}] Publishing data update to topics: {topics}, reason: {reason}, entries: {entries}",
+            pid=os.getpid(),
+            topics=all_topic_combos,
+            reason=update.reason,
+            entries=logged_entries,
+        )
+
+        if span is not None:
+            span.set_attribute("entries_count", len(update.entries))
+            span.set_attribute("topics", list(all_topic_combos))
+
+        await self._publisher.publish(
+            list(all_topic_combos), update.dict(by_alias=True)
+        )

@@ -6,27 +6,34 @@ from opal_common.authentication.signer import JWTSigner
 from opal_common.logger import logger
 from opal_common.config import opal_common_config
 from opal_common.schemas.security import AccessToken, AccessTokenRequest, TokenDetails
-from opentelemetry import metrics
+from opal_common.monitoring.otel_metrics import get_meter
 
-if opal_common_config.ENABLE_OPENTELEMETRY_METRICS:
-    meter = metrics.get_meter(__name__)
-else:
-    meter = None
+_token_requested_counter = None
+_token_generated_counter = None
 
-if opal_common_config.ENABLE_OPENTELEMETRY_METRICS:
-    token_requested_counter = meter.create_counter(
-        name="opal_server_token_requested",
-        description="Number of token requests"
-    )
+def get_token_requested_counter():
+    global _token_requested_counter
+    if _token_requested_counter is None:
+        if not opal_common_config.ENABLE_OPENTELEMETRY_METRICS:
+            return None
+        meter = get_meter()
+        _token_requested_counter = meter.create_counter(
+            name="opal_server_token_requested",
+            description="Number of token requests"
+        )
+    return _token_requested_counter
 
-    token_generated_counter = meter.create_up_down_counter(
-        name="opal_client_token_generated",
-        description="Number of tokens generated"
-    )
-else:
-    token_requested_counter = None
-    token_generated_counter = None
-
+def get_token_generated_counter():
+    global _token_generated_counter
+    if _token_generated_counter is None:
+        if not opal_common_config.ENABLE_OPENTELEMETRY_METRICS:
+            return None
+        meter = get_meter()
+        _token_generated_counter = meter.create_up_down_counter(
+            name="opal_client_token_generated",
+            description="Number of tokens generated"
+        )
+    return _token_generated_counter
 
 def init_security_router(signer: JWTSigner, authenticator: StaticBearerAuthenticator):
     router = APIRouter()
@@ -38,6 +45,7 @@ def init_security_router(signer: JWTSigner, authenticator: StaticBearerAuthentic
         dependencies=[Depends(authenticator)],
     )
     async def generate_new_access_token(req: AccessTokenRequest):
+        token_requested_counter = get_token_requested_counter()
         if token_requested_counter is not None:
             token_requested_counter.add(1, attributes={
                 'token_type': req.type.value,
@@ -59,7 +67,7 @@ def init_security_router(signer: JWTSigner, authenticator: StaticBearerAuthentic
             claims = {"peer_type": req.type.value, **req.claims}
             token = signer.sign(sub=req.id, token_lifetime=req.ttl, custom_claims=claims)
             logger.info(f"Generated opal token: peer_type={req.type.value}")
-
+            token_generated_counter = get_token_generated_counter()
             if token_generated_counter is not None:
                 token_generated_counter.add(1, attributes={
                     'peer_type': req.type.value,

@@ -1,14 +1,9 @@
 from fastapi import APIRouter, status
 from opal_client.policy.updater import PolicyUpdater
 from opal_common.logger import logger
-from opal_common.config import opal_common_config
-
 from opentelemetry import trace
+from opal_common.monitoring.tracing_utils import start_span
 
-if opal_common_config.ENABLE_OPENTELEMETRY_TRACING:
-    tracer = trace.get_tracer(__name__)
-else:
-    tracer = None
 
 def init_policy_router(policy_updater: PolicyUpdater):
     router = APIRouter()
@@ -16,15 +11,13 @@ def init_policy_router(policy_updater: PolicyUpdater):
     @router.post("/policy-updater/trigger", status_code=status.HTTP_200_OK)
     async def trigger_policy_update():
         logger.info("triggered policy update from api")
-        if tracer:
-            with tracer.start_as_current_span("opal_client_policy_update_apply") as span:
-                return await _handle_policy_update(span)
-        else:
-            return await _handle_policy_update()
+        async with start_span("opal_client_policy_update_trigger") as span:
+            return await _handle_policy_update(span)
 
     async def _handle_policy_update(span=None):
         try:
-            await policy_updater.trigger_update_policy(force_full_update=True)
+            async with start_span("opal_client_policy_update_apply", parent=span):
+                await policy_updater.trigger_update_policy(force_full_update=True)
             return {"status": "ok"}
         except Exception as e:
             logger.error(f"Error during policy update: {str(e)}")

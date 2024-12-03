@@ -8,6 +8,7 @@ from typing import List, Optional
 
 from fastapi import Depends, FastAPI
 from fastapi_websocket_pubsub.event_broadcaster import EventBroadcasterContextManager
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
 from fastapi.responses import Response
 from opal_common.authentication.deps import JWTAuthenticator, StaticBearerAuthenticator
@@ -25,6 +26,8 @@ from opal_common.topics.publisher import (
     ServerSideTopicPublisher,
     TopicPublisher,
 )
+from opal_common.monitoring.tracer import init_tracer
+from opal_common.monitoring.otel_metrics import init_meter
 from opal_server.config import opal_server_config
 from opal_server.data.api import init_data_updates_router
 from opal_server.data.data_update_publisher import DataUpdatePublisher
@@ -263,7 +266,7 @@ class OpalServer:
         span_processor = BatchSpanProcessor(otlp_exporter)
         tracer_provider.add_span_processor(span_processor)
 
-        self.tracer = trace.get_tracer(__name__)
+        init_tracer(tracer_provider)
         logger.info("OpenTelemetry tracing is enabled.")
 
     def _initialize_opentelemetry_metrics(self):
@@ -275,6 +278,7 @@ class OpalServer:
             metric_readers=[self.prometheus_metric_reader]
         )
         metrics.set_meter_provider(meter_provider)
+        init_meter(meter_provider)
         self.meter = metrics.get_meter(__name__)
 
         self.startup_counter = self.meter.create_counter(

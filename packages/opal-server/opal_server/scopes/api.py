@@ -45,25 +45,24 @@ from opal_server.config import opal_server_config
 from opal_server.data.data_update_publisher import DataUpdatePublisher
 from opal_server.git_fetcher import GitPolicyFetcher
 from opal_server.scopes.scope_repository import ScopeNotFoundError, ScopeRepository
-
+from opal_common.monitoring.tracing_utils import start_span
+from opal_common.monitoring.otel_metrics import get_meter
 from opentelemetry import trace
-from opentelemetry import metrics as otel_metrics
 
-if opal_common_config.ENABLE_OPENTELEMETRY_TRACING:
-    tracer = trace.get_tracer(__name__)
-else:
-    tracer = None
+_policy_bundle_size_histogram = None
 
-if opal_common_config.ENABLE_OPENTELEMETRY_METRICS:
-    meter = otel_metrics.get_meter(__name__)
-    policy_bundle_size_histogram = meter.create_histogram(
-        name="opal_server_policy_bundle_size",
-        description="Size of the policy bundles served per scope",
-        unit="bytes",
-    )
-else:
-    meter = None
-    policy_bundle_size_histogram = None
+def get_policy_bundle_size_histogram():
+    global _policy_bundle_size_histogram
+    if _policy_bundle_size_histogram is None:
+        if not opal_common_config.ENABLE_OPENTELEMETRY_METRICS:
+            return None
+        meter = get_meter()
+        _policy_bundle_size_histogram = meter.create_histogram(
+            name="opal_server_policy_bundle_size",
+            description="Size of the policy bundles served per scope",
+            unit="bytes",
+        )
+    return _policy_bundle_size_histogram
 
 def verify_private_key(private_key: str, key_format: EncryptionKeyFormat) -> bool:
     try:
@@ -123,11 +122,8 @@ def init_scope_router(
         scope_in: Scope,
         claims: JWTClaims = Depends(authenticator),
     ):
-        if tracer:
-            with tracer.start_as_current_span("opal_server_policy_update") as span:
-                span.set_attribute("scope_id", scope_in.scope_id)
-                return await _handle_put_scope(force_fetch, scope_in, claims)
-        else:
+        async with start_span("opal_server_policy_update") as span:
+            span.set_attribute("scope_id", scope_in.scope_id)
             return await _handle_put_scope(force_fetch, scope_in, claims)
 
     async def _handle_put_scope(
@@ -274,19 +270,17 @@ def init_scope_router(
             description="hash of previous bundle already downloaded, server will return a diff bundle.",
         ),
     ):
-        if tracer:
-            with tracer.start_as_current_span("opal_server_policy_bundle_request") as span:
-                span.set_attribute("scope_id", scope_id)
-                policy_bundle = await _handle_get_scope_policy(scope_id, base_hash)
-                if policy_bundle_size_histogram and policy_bundle.bundle:
-                    bundle_size = policy_bundle.calculate_size()
-                    policy_bundle_size_histogram.record(
-                        bundle_size,
-                        attributes={"scope_id": scope_id},
-                    )
-                return policy_bundle
-        else:
-            return await _handle_get_scope_policy(scope_id, base_hash)
+        async with start_span("opal_server_policy_bundle_request") as span:
+            span.set_attribute("scope_id", scope_id)
+            policy_bundle = await _handle_get_scope_policy(scope_id, base_hash)
+            policy_bundle_size_histogram = get_policy_bundle_size_histogram()
+            if policy_bundle_size_histogram and policy_bundle.bundle:
+                bundle_size = policy_bundle.calculate_size()
+                policy_bundle_size_histogram.record(
+                    bundle_size,
+                    attributes={"scope_id": scope_id},
+                )
+            return policy_bundle
 
     async def _handle_get_scope_policy(scope_id: str, base_hash: Optional[str]):
         try:
@@ -383,12 +377,9 @@ def init_scope_router(
         claims: JWTClaims = Depends(authenticator),
         scope_id: str = Path(..., description="Scope ID"),
     ):
-        if tracer:
-            with tracer.start_as_current_span("opal_server_data_update") as span:
-                span.set_attribute("scope_id", scope_id)
-                await _handle_publish_data_update_event(update, claims, scope_id, span)
-        else:
-            await _handle_publish_data_update_event(update, claims, scope_id)
+        async with start_span("opal_server_data_update") as span:
+            span.set_attribute("scope_id", scope_id)
+            await _handle_publish_data_update_event(update, claims, scope_id, span)
 
     async def _handle_publish_data_update_event(
         update: DataUpdate,

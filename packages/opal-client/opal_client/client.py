@@ -13,7 +13,8 @@ import aiofiles
 import aiofiles.os
 import aiohttp
 import websockets
-from fastapi import FastAPI, status
+from fastapi import FastAPI, status, HTTPException, Security, status
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from fastapi.responses import JSONResponse
 from fastapi_websocket_pubsub.pub_sub_client import PubSubOnConnectCallback
 from fastapi_websocket_rpc.rpc_channel import OnDisconnectCallback
@@ -33,13 +34,47 @@ from opal_client.policy_store.base_policy_store_client import BasePolicyStoreCli
 from opal_client.policy_store.policy_store_client_factory import (
     PolicyStoreClientFactory,
 )
+from opal_common.authentication.verifier import Unauthorized
 from opal_common.authentication.deps import JWTAuthenticator
 from opal_common.authentication.verifier import JWTVerifier
 from opal_common.config import opal_common_config
 from opal_common.logger import configure_logs, logger
 from opal_common.middleware import configure_middleware
 from opal_common.security.sslcontext import get_custom_ssl_context
+from opal_common.monitoring.tracer import init_tracer
+from opal_common.monitoring.otel_metrics import init_meter
+from opentelemetry.sdk.resources import Resource
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry import trace
+from opentelemetry import metrics
+from opentelemetry.sdk.metrics import MeterProvider
+from opentelemetry.sdk.trace.export import BatchSpanProcessor
+from opentelemetry.exporter.prometheus import PrometheusMetricReader
+from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
 
+
+security_scheme = HTTPBearer()
+
+def _add_metrics_route(app: FastAPI):
+    """Add a protected metrics endpoint to the FastAPI app."""
+    if opal_common_config.ENABLE_OPENTELEMETRY_METRICS:
+        @app.get("/metrics")
+        async def protected_metrics_endpoint(
+            auth: HTTPAuthorizationCredentials = Security(security_scheme)
+        ):
+            """Protected metrics endpoint."""
+            authenticator = JWTAuthenticator()
+            try:
+                authenticator.verify_token(auth.credentials)
+                data = generate_latest()
+                return Response(content=data, media_type=CONTENT_TYPE_LATEST)
+            except Unauthorized:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Invalid authentication credentials"
+                )
+
+        logger.info("Mounted protected /metrics endpoint for Prometheus metrics.")
 
 class OpalClient:
     def __init__(
@@ -88,7 +123,7 @@ class OpalClient:
         )
         # set logs
         configure_logs()
-
+        self._configure_monitoring()
         self.offline_mode_enabled = (
             offline_mode_enabled or opal_client_config.OFFLINE_MODE_ENABLED
         )
@@ -259,6 +294,49 @@ class OpalClient:
         self._configure_lifecycle_callbacks(app)
         return app
 
+    def _configure_monitoring(self):
+        if opal_common_config.ENABLE_OPENTELEMETRY_TRACING:
+            self._initialize_opentelemetry_tracing()
+
+        if opal_common_config.ENABLE_OPENTELEMETRY_METRICS:
+            self._initialize_opentelemetry_metrics()
+
+    def _initialize_opentelemetry_tracing(self):
+        resource = Resource.create({"service.name": "opal-client"})
+        tracer_provider = TracerProvider(resource=resource)
+        trace.set_tracer_provider(tracer_provider)
+
+        otlp_exporter = OTLPSpanExporter(
+            endpoint = opal_common_config.OPENTELEMETRY_OTLP_ENDPOINT,
+            insecure=True
+        )
+
+        span_processor = BatchSpanProcessor(otlp_exporter)
+        tracer_provider.add_span_processor(span_processor)
+
+        init_tracer(tracer_provider)
+        logger.info("OpenTelemetry tracing is enabled.")
+
+    def _initialize_opentelemetry_metrics(self):
+        resource = Resource.create({"service.name": "opal-client"})
+        self.prometheus_metric_reader = PrometheusMetricReader()
+
+        meter_provider = MeterProvider(
+            resource=resource,
+            metric_readers=[self.prometheus_metric_reader]
+        )
+        metrics.set_meter_provider(meter_provider)
+        init_meter(meter_provider)
+        self.meter = metrics.get_meter(__name__)
+
+        self.startup_counter = self.meter.create_counter(
+            name="startup",
+            description="Number of times the application has started",
+        )
+        self.startup_counter.add(1)
+
+        logger.info("OpenTelemetry metrics are enabled.")
+
     async def _is_ready(self):
         # Data loaded from file or from server
         return self._backup_loaded or await self.policy_store.is_ready()
@@ -320,11 +398,8 @@ class OpalClient:
                     status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                     content={"status": "unavailable"},
                 )
-        
-        @app.get("/metrics", include_in_schema=False)
-        async def metrics():
-            """Endpoint to expose Prometheus metrics."""
-            return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
+
+        _add_metrics_route(app)
 
         return app
 

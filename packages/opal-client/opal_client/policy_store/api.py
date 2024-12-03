@@ -8,31 +8,39 @@ from opal_common.authentication.verifier import Unauthorized
 from opal_common.logger import logger
 from opal_common.schemas.security import PeerType
 from opal_common.config import opal_common_config
-
+from opal_common.monitoring.tracer import get_tracer
+from opal_common.monitoring.otel_metrics import get_meter
 from opentelemetry import metrics
 
-if opal_common_config.ENABLE_OPENTELEMETRY_METRICS:
-    meter = metrics.get_meter(__name__)
+_policy_store_status_metric = None
 
-    def policy_store_status_callback(observable_gauge):
-        auth_type = opal_client_config.POLICY_STORE_AUTH_TYPE or PolicyStoreAuth.NONE
-        observable_gauge.observe(
-            1,
-            attributes={"auth_type": str(auth_type)},
+def get_policy_store_status_metric():
+    global _policy_store_status_metric
+    if _policy_store_status_metric is None:
+        if not opal_common_config.ENABLE_OPENTELEMETRY_METRICS:
+            return None
+        meter = get_meter()
+        _policy_store_status_metric = meter.create_observable_gauge(
+            name="opal_client_policy_store_status",
+            description="Current status of the policy store authentication type",
+            unit="1",
+            callbacks=[_update_policy_store_status]
         )
+    return _policy_store_status_metric
 
-    policy_store_status_metric = meter.create_observable_gauge(
-        name="opal_client_policy_store_status",
-        description="Current status of the policy store authentication type",
-        unit="1",
-        callbacks=[policy_store_status_callback],
-    )
-else:
-    meter = None
-    policy_store_status_metric = None
+def _update_policy_store_status(observer: metrics.ObservableGauge):
+    auth_type = opal_client_config.POLICY_STORE_AUTH_TYPE or PolicyStoreAuth.NONE
+    status_code = {
+        PolicyStoreAuth.NONE: 0,
+        PolicyStoreAuth.TOKEN: 1,
+        PolicyStoreAuth.OAUTH: 2
+    }.get(auth_type, -1)
+    observer.observe(status_code, attributes={"auth_type": auth_type})
+
 
 def init_policy_store_router(authenticator: JWTAuthenticator):
     router = APIRouter()
+    get_policy_store_status_metric()
 
     @router.get(
         "/policy-store/config",
