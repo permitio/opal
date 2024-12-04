@@ -7,8 +7,8 @@ receivers:
 exporters:
   prometheus:
     endpoint: "0.0.0.0:8888"
-  logging:
-    logLevel: debug
+  debug:
+    verbosity: detailed
 
 processors:
   batch:
@@ -18,7 +18,7 @@ service:
     traces:
       receivers: [otlp]
       processors: [batch]
-      exporters: [logging]
+      exporters: [debug]
     metrics:
       receivers: [otlp]
       processors: [batch]
