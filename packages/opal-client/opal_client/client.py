@@ -55,7 +55,7 @@ from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExport
 
 security_scheme = HTTPBearer()
 
-def _add_metrics_route(app: FastAPI):
+def _add_metrics_route(app: FastAPI, authenticator: JWTAuthenticator):
     """Add a protected metrics endpoint to the FastAPI app."""
     if opal_common_config.ENABLE_OPENTELEMETRY_METRICS:
         @app.get("/metrics")
@@ -63,9 +63,8 @@ def _add_metrics_route(app: FastAPI):
             auth: HTTPAuthorizationCredentials = Security(security_scheme)
         ):
             """Protected metrics endpoint."""
-            authenticator = JWTAuthenticator()
             try:
-                authenticator.verify_token(auth.credentials)
+                claims = authenticator(auth.credentials)
                 data = generate_latest()
                 return Response(content=data, media_type=CONTENT_TYPE_LATEST)
             except Unauthorized:
@@ -399,7 +398,7 @@ class OpalClient:
                     content={"status": "unavailable"},
                 )
 
-        _add_metrics_route(app)
+        _add_metrics_route(app, authenticator)
 
         return app
 
