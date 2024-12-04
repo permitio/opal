@@ -18,3 +18,4 @@ opentelemetry-sdk
 opentelemetry-instrumentation
 opentelemetry-instrumentation-fastapi
 opentelemetry-exporter-otlp
+starlette>=0.40.0 # not directly required, pinned by Snyk to avoid a vulnerability
