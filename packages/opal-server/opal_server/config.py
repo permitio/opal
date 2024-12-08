@@ -317,7 +317,6 @@ class OpalServerConfig(Confi):
         description="The polling interval for the policy repository",
     )
 
-
     ALLOWED_ORIGINS = confi.list(
         "ALLOWED_ORIGINS", ["*"], description="List of allowed origins for CORS"
     )
