@@ -1,6 +1,10 @@
 from enum import Enum
 
-from opal_client.engine.options import CedarServerOptions, OpaServerOptions
+from opal_client.engine.options import (
+    CedarServerOptions,
+    OpaServerOptions,
+    OpenFGAServerOptions,
+)
 from opal_client.policy.options import ConnRetryOptions
 from opal_client.policy_store.schemas import PolicyStoreAuth, PolicyStoreTypes
 from opal_common.confi import Confi, confi
@@ -31,12 +35,24 @@ class OpalClientConfig(Confi):
         description="The URL of the policy store (e.g., OPA agent).",
     )
 
+    # openfga
+    OPENFGA_URL = confi.str(
+        "OPENFGA_URL",
+        "http://localhost:8080",
+        description="The URL of the policy store",
+    )
+
+    OPENFGA_STORE_ID = confi.str(
+        "OPENFGA_STORE_ID", None, description="The OpenFGA store ID to use"
+    )
+
     POLICY_STORE_AUTH_TYPE = confi.enum(
         "POLICY_STORE_AUTH_TYPE",
         PolicyStoreAuth,
         PolicyStoreAuth.NONE,
         description="The authentication type to use for the policy store (e.g., NONE, TOKEN, etc.)",
     )
+
     POLICY_STORE_AUTH_TOKEN = confi.str(
         "POLICY_STORE_AUTH_TOKEN",
         None,
@@ -201,6 +217,33 @@ class OpalClientConfig(Confi):
         description="The log format to use for inline Cedar logs",
     )
 
+    # OpenFGA runner configuration
+    INLINE_OPENFGA_ENABLED = confi.bool(
+        "INLINE_OPENFGA_ENABLED",
+        True,
+        description="Whether or not OPAL should run OPENFGA by itself in the same container",
+    )
+
+    INLINE_OPENFGA_EXEC_PATH = confi.str(
+        "INLINE_OPENFGA_EXEC_PATH",
+        None,
+        description="Path to the OpenFGA executable. Defaults to searching for 'openfga' binary in PATH if not specified.",
+    )
+
+    INLINE_OPENFGA_CONFIG = confi.model(
+        "INLINE_OPENFGA_CONFIG",
+        OpenFGAServerOptions,
+        {},  # defaults are being set according to OpenFGAServerOptions pydantic definitions (see class)
+        description="cli options used when running OpenFGA inline",
+    )
+
+    INLINE_OPENFGA_LOG_FORMAT: EngineLogFormat = confi.enum(
+        "INLINE_OPENFGA_LOG_FORMAT",
+        EngineLogFormat,
+        EngineLogFormat.NONE,
+        description="The log format to use for inline OpenFGA logs",  # Added description
+    )
+
     # configuration for fastapi routes
     ALLOWED_ORIGINS = ["*"]
 
@@ -346,6 +389,20 @@ class OpalClientConfig(Confi):
         description="Path to OPA document that stores the OPA write transactions",
     )
 
+    # OpenFGA health check configurations
+    OPENFGA_HEALTH_CHECK_POLICY_ENABLED = confi.bool(
+        "OPENFGA_HEALTH_CHECK_POLICY_ENABLED",
+        False,
+        description="Should we load a special healthcheck policy into OpenFGA that checks "
+        + "that OpenFGA was synced correctly and is ready to answer to authorization queries",
+    )
+
+    OPENFGA_HEALTH_CHECK_TRANSACTION_LOG_PATH = confi.str(
+        "OPENFGA_HEALTH_CHECK_TRANSACTION_LOG_PATH",
+        "system/opal/transactions",
+        description="Path to OpenFGA document that stores the OpenFGA write transactions",
+    )
+
     OPAL_CLIENT_STAT_ID = confi.str(
         "OPAL_CLIENT_STAT_ID",
         None,
@@ -353,6 +410,8 @@ class OpalClientConfig(Confi):
     )
 
     OPA_HEALTH_CHECK_POLICY_PATH = "engine/healthcheck/opal.rego"
+
+    OPENFGA_HEALTH_CHECK_POLICY_PATH = "engine/healthcheck/openfga.json"
 
     SCOPE_ID = confi.str("SCOPE_ID", "default", description="OPAL Scope ID")
 
@@ -383,6 +442,19 @@ class OpalClientConfig(Confi):
             opal_common_config.LOG_MODULE_EXCLUDE_LIST = (
                 opal_common_config.LOG_MODULE_EXCLUDE_LIST
             )
+
+        # Add OpenFGA logger handling
+        if self.INLINE_OPENFGA_LOG_FORMAT == EngineLogFormat.NONE:
+            opal_common_config.LOG_MODULE_EXCLUDE_LIST.append(
+                "opal_client.openfga.logger"
+            )
+            opal_common_config.LOG_MODULE_EXCLUDE_LIST = (
+                opal_common_config.LOG_MODULE_EXCLUDE_LIST
+            )
+
+        # Set the appropriate URL based on the policy store type
+        if self.POLICY_STORE_TYPE == PolicyStoreTypes.OPENFGA:
+            self.POLICY_STORE_URL = self.OPENFGA_URL
 
         if self.DATA_STORE_CONN_RETRY is not None:
             # You should use `DATA_UPDATER_CONN_RETRY`, but that's for backwards compatibility
