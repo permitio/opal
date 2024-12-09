@@ -37,9 +37,9 @@ class OpalClientConfig(Confi):
 
     # openfga
     OPENFGA_URL = confi.str(
-            "OPENFGA_URL", 
-            "http://localhost:8080",
-            description="The URL of the policy store",
+        "OPENFGA_URL",
+        "http://localhost:8080",
+        description="The URL of the policy store",
     )
 
     OPENFGA_STORE_ID = confi.str(
@@ -219,10 +219,10 @@ class OpalClientConfig(Confi):
 
     # OpenFGA runner configuration
     INLINE_OPENFGA_ENABLED = confi.bool(
-        "INLINE_OPENFGA_ENABLED", 
+        "INLINE_OPENFGA_ENABLED",
         True,
         description="Whether or not OPAL should run OPENFGA by itself in the same container",
-        )
+    )
 
     INLINE_OPENFGA_EXEC_PATH = confi.str(
         "INLINE_OPENFGA_EXEC_PATH",
@@ -238,10 +238,10 @@ class OpalClientConfig(Confi):
     )
 
     INLINE_OPENFGA_LOG_FORMAT: EngineLogFormat = confi.enum(
-    "INLINE_OPENFGA_LOG_FORMAT", 
-    EngineLogFormat, 
-    EngineLogFormat.NONE,
-    description="The log format to use for inline OpenFGA logs" # Added description
+        "INLINE_OPENFGA_LOG_FORMAT",
+        EngineLogFormat,
+        EngineLogFormat.NONE,
+        description="The log format to use for inline OpenFGA logs",  # Added description
     )
 
     # configuration for fastapi routes
