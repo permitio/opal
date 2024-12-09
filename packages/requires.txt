@@ -12,3 +12,4 @@ uvicorn[standard]>=0.17.6,<1
 fastapi-utils>=0.2.1,<1
 setuptools>=70.0.0 # not directly required, pinned by Snyk to avoid a vulnerability
 anyio>=4.4.0 # not directly required, pinned by Snyk to avoid a vulnerability
+starlette>=0.40.0 # not directly required, pinned by Snyk to avoid a vulnerability

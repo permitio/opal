@@ -62,6 +62,10 @@ class OpaServerOptions(BaseModel):
     tls_private_key_file: Optional[str] = Field(
         None, description="path of TLS private key file"
     )
+    tls_cert_refresh_period: Optional[str] = Field(
+        None,
+        description="how often OPA should check the TLS certificate and private key file for changes",
+    )
     log_level: LogLevel = Field(LogLevel.info, description="log level for opa logs")
     files: Optional[List[str]] = Field(
         None,
