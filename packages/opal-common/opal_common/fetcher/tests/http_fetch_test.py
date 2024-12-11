@@ -130,10 +130,10 @@ async def test_external_http_get():
     we get a JSON with the data we expected (the IP we queried)"""
     got_data_event = asyncio.Event()
     async with FetchingEngine() as engine:
-        url = "https://httpbin.org/anything"
+        url = "https://dummyjson.com/test"
 
         async def callback(data):
-            assert data["url"] == url
+            assert data["status"] == "ok"
             got_data_event.set()
 
         await engine.queue_url(url, callback)
