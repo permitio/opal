@@ -5,3 +5,10 @@ tenacity>=8.0.1,<9
 dpath>=2.1.5,<3
 jsonpatch>=1.33,<2
 PyYAML==6.0.2
+prometheus_client
+opentelemetry-api>=1.28.2
+opentelemetry-sdk>=1.28.2
+opentelemetry-instrumentation
+opentelemetry-instrumentation-fastapi
+opentelemetry-exporter-otlp
+opentelemetry-exporter-prometheus

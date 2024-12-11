@@ -24,8 +24,11 @@ from opal_common.authentication.casting import cast_private_key
 from opal_common.authentication.deps import JWTAuthenticator, get_token_from_header
 from opal_common.authentication.types import EncryptionKeyFormat, JWTClaims
 from opal_common.authentication.verifier import Unauthorized
+from opal_common.config import opal_common_config
 from opal_common.logger import logger
 from opal_common.monitoring import metrics
+from opal_common.monitoring.otel_metrics import get_meter
+from opal_common.monitoring.tracing_utils import start_span
 from opal_common.schemas.data import (
     DataSourceConfig,
     DataUpdate,
@@ -44,6 +47,23 @@ from opal_server.config import opal_server_config
 from opal_server.data.data_update_publisher import DataUpdatePublisher
 from opal_server.git_fetcher import GitPolicyFetcher
 from opal_server.scopes.scope_repository import ScopeNotFoundError, ScopeRepository
+from opentelemetry import trace
+
+_policy_bundle_size_histogram = None
+
+
+def get_policy_bundle_size_histogram():
+    global _policy_bundle_size_histogram
+    if _policy_bundle_size_histogram is None:
+        if not opal_common_config.ENABLE_OPENTELEMETRY_METRICS:
+            return None
+        meter = get_meter()
+        _policy_bundle_size_histogram = meter.create_histogram(
+            name="opal_server_policy_bundle_size",
+            description="Size of the policy bundles served per scope",
+            unit="bytes",
+        )
+    return _policy_bundle_size_histogram
 
 
 def verify_private_key(private_key: str, key_format: EncryptionKeyFormat) -> bool:
@@ -104,6 +124,15 @@ def init_scope_router(
         scope_in: Scope,
         claims: JWTClaims = Depends(authenticator),
     ):
+        async with start_span("opal_server_policy_update") as span:
+            span.set_attribute("scope_id", scope_in.scope_id)
+            return await _handle_put_scope(force_fetch, scope_in, claims)
+
+    async def _handle_put_scope(
+        force_fetch: bool,
+        scope_in: Scope,
+        claims: JWTClaims,
+    ):
         try:
             require_peer_type(authenticator, claims, PeerType.datasource)
         except Unauthorized as ex:
@@ -135,7 +164,6 @@ def init_scope_router(
         except Unauthorized as ex:
             logger.error(f"Unauthorized to get scopes: {repr(ex)}")
             raise
-
         return await scopes.all()
 
     @router.get(
@@ -173,7 +201,6 @@ def init_scope_router(
 
         # TODO: This should also asynchronously clean the repo from the disk (if it's not used by other scopes)
         await scopes.delete(scope_id)
-
         return Response(status_code=status.HTTP_204_NO_CONTENT)
 
     @router.post("/{scope_id}/refresh", status_code=status.HTTP_200_OK)
@@ -211,7 +238,6 @@ def init_scope_router(
                     "hinted_hash": hinted_hash,
                 },
             )
-
             return Response(status_code=status.HTTP_200_OK)
 
         except ScopeNotFoundError:
@@ -230,7 +256,6 @@ def init_scope_router(
 
         # All server replicas (leaders) should sync all scopes.
         await pubsub_endpoint.publish(opal_server_config.POLICY_REPO_WEBHOOK_TOPIC)
-
         return Response(status_code=status.HTTP_200_OK)
 
     @router.get(
@@ -247,11 +272,24 @@ def init_scope_router(
             description="hash of previous bundle already downloaded, server will return a diff bundle.",
         ),
     ):
+        async with start_span("opal_server_policy_bundle_request") as span:
+            span.set_attribute("scope_id", scope_id)
+            policy_bundle = await _handle_get_scope_policy(scope_id, base_hash)
+            policy_bundle_size_histogram = get_policy_bundle_size_histogram()
+            if policy_bundle_size_histogram and policy_bundle.bundle:
+                bundle_size = policy_bundle.calculate_size()
+                policy_bundle_size_histogram.record(
+                    bundle_size,
+                    attributes={"scope_id": scope_id},
+                )
+            return policy_bundle
+
+    async def _handle_get_scope_policy(scope_id: str, base_hash: Optional[str]):
         try:
             scope = await scopes.get(scope_id)
         except ScopeNotFoundError:
             logger.warning(
-                "Requested scope {scope_id} not found, returning default scope",
+                f"Requested scope {scope_id} not found, returning default scope",
                 scope_id=scope_id,
             )
             return await _generate_default_scope_bundle(scope_id)
@@ -259,7 +297,7 @@ def init_scope_router(
         if not isinstance(scope.policy, GitPolicyScopeSource):
             raise HTTPException(
                 status.HTTP_501_NOT_IMPLEMENTED,
-                detail=f"policy source is not yet implemented: {scope_id}",
+                detail=f"Policy source is not yet implemented for scope: {scope_id}",
             )
 
         fetcher = GitPolicyFetcher(
@@ -272,7 +310,7 @@ def init_scope_router(
             return await run_sync(fetcher.make_bundle, base_hash)
         except (InvalidGitRepositoryError, pygit2.GitError, ValueError):
             logger.warning(
-                "Requested scope {scope_id} has invalid repo, returning default scope",
+                f"Requested scope {scope_id} has invalid repo, returning default scope",
                 scope_id=scope_id,
             )
             return await _generate_default_scope_bundle(scope_id)
@@ -341,13 +379,29 @@ def init_scope_router(
         claims: JWTClaims = Depends(authenticator),
         scope_id: str = Path(..., description="Scope ID"),
     ):
+        async with start_span("opal_server_data_update") as span:
+            span.set_attribute("scope_id", scope_id)
+            await _handle_publish_data_update_event(update, claims, scope_id, span)
+
+    async def _handle_publish_data_update_event(
+        update: DataUpdate,
+        claims: JWTClaims,
+        scope_id: str,
+        span: trace.Span = None,
+    ):
         try:
+            all_topics = set()
             require_peer_type(authenticator, claims, PeerType.datasource)
 
             restrict_optional_topics_to_publish(authenticator, claims, update)
 
             for entry in update.entries:
                 entry.topics = [f"data:{topic}" for topic in entry.topics]
+                all_topics.update(entry.topics)
+
+            if span:
+                span.set_attribute("entries_count", len(update.entries))
+                span.set_attribute("topics", list(all_topics))
 
             await DataUpdatePublisher(
                 ScopedServerSideTopicPublisher(pubsub_endpoint, scope_id)
