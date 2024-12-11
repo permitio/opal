@@ -1,14 +1,17 @@
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator, Optional
-from opentelemetry.trace import Span, set_span_in_context
+
 from opal_common.config import opal_common_config
 from opal_common.monitoring.tracer import get_tracer
-from opentelemetry.trace import Span
+from opentelemetry.trace import Span, set_span_in_context
+
 
 @asynccontextmanager
-async def start_span(name: str, parent: Optional[Span] = None) -> AsyncGenerator[Optional[Span], None]:
-    """
-    Reusable async context manager for starting a span.
+async def start_span(
+    name: str, parent: Optional[Span] = None
+) -> AsyncGenerator[Optional[Span], None]:
+    """Reusable async context manager for starting a span.
+
     Yields the span if tracing is enabled, else None.
     """
     if not opal_common_config.ENABLE_OPENTELEMETRY_TRACING:

@@ -4,14 +4,13 @@ from typing import List
 
 from fastapi_utils.tasks import repeat_every
 from opal_common.logger import logger
+from opal_common.monitoring.tracing_utils import start_span
 from opal_common.schemas.data import (
     DataSourceEntryWithPollingInterval,
     DataUpdate,
     ServerDataSourceConfig,
 )
 from opal_common.topics.publisher import TopicPublisher
-from opal_common.monitoring.tracing_utils import start_span
-
 
 TOPIC_DELIMITER = "/"
 PREFIX_DELIMITER = ":"

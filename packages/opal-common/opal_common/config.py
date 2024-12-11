@@ -196,12 +196,12 @@ class OpalCommonConfig(Confi):
         "ENABLE_METRICS", False, description="Enable metrics collection"
     )
 
-    ENABLE_OPENTELEMETRY_TRACING = confi.bool (
+    ENABLE_OPENTELEMETRY_TRACING = confi.bool(
         "ENABLE_OPENTELEMETRY_TRACING",
         False,
         description="Set if OPAL should enable tracing with OpenTelemetry",
     )
-    ENABLE_OPENTELEMETRY_METRICS = confi.bool (
+    ENABLE_OPENTELEMETRY_METRICS = confi.bool(
         "ENABLE_OPENTELEMETRY_METRICS",
         False,
         description="Set if OPAL should enable metrics with OpenTelemetry",

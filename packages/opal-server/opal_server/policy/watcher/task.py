@@ -7,7 +7,6 @@ from fastapi_websocket_pubsub import Topic
 from fastapi_websocket_pubsub.pub_sub_server import PubSubEndpoint
 from opal_common.logger import logger
 from opal_common.monitoring.tracing_utils import start_span
-from opal_common.config import opal_common_config
 from opal_common.sources.base_policy_source import BasePolicySource
 from opal_server.config import opal_server_config
 

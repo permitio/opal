@@ -24,9 +24,11 @@ from opal_common.authentication.casting import cast_private_key
 from opal_common.authentication.deps import JWTAuthenticator, get_token_from_header
 from opal_common.authentication.types import EncryptionKeyFormat, JWTClaims
 from opal_common.authentication.verifier import Unauthorized
-from opal_common.logger import logger
 from opal_common.config import opal_common_config
+from opal_common.logger import logger
 from opal_common.monitoring import metrics
+from opal_common.monitoring.otel_metrics import get_meter
+from opal_common.monitoring.tracing_utils import start_span
 from opal_common.schemas.data import (
     DataSourceConfig,
     DataUpdate,
@@ -45,11 +47,10 @@ from opal_server.config import opal_server_config
 from opal_server.data.data_update_publisher import DataUpdatePublisher
 from opal_server.git_fetcher import GitPolicyFetcher
 from opal_server.scopes.scope_repository import ScopeNotFoundError, ScopeRepository
-from opal_common.monitoring.tracing_utils import start_span
-from opal_common.monitoring.otel_metrics import get_meter
 from opentelemetry import trace
 
 _policy_bundle_size_histogram = None
+
 
 def get_policy_bundle_size_histogram():
     global _policy_bundle_size_histogram
@@ -63,6 +64,7 @@ def get_policy_bundle_size_histogram():
             unit="bytes",
         )
     return _policy_bundle_size_histogram
+
 
 def verify_private_key(private_key: str, key_format: EncryptionKeyFormat) -> bool:
     try:
@@ -400,7 +402,6 @@ def init_scope_router(
             if span:
                 span.set_attribute("entries_count", len(update.entries))
                 span.set_attribute("topics", list(all_topics))
-
 
             await DataUpdatePublisher(
                 ScopedServerSideTopicPublisher(pubsub_endpoint, scope_id)

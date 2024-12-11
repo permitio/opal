@@ -6,16 +6,14 @@ import tempfile
 import uuid
 from logging import disable
 from typing import Awaitable, Callable, List, Literal, Optional, Union
-from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
-from fastapi.responses import Response
 
 import aiofiles
 import aiofiles.os
 import aiohttp
 import websockets
-from fastapi import FastAPI, status, HTTPException, Security, status
+from fastapi import FastAPI, HTTPException, Security, status
+from fastapi.responses import JSONResponse, Response
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from fastapi.responses import JSONResponse
 from fastapi_websocket_pubsub.pub_sub_client import PubSubOnConnectCallback
 from fastapi_websocket_rpc.rpc_channel import OnDisconnectCallback
 from opal_client.callbacks.api import init_callbacks_api
@@ -34,33 +32,33 @@ from opal_client.policy_store.base_policy_store_client import BasePolicyStoreCli
 from opal_client.policy_store.policy_store_client_factory import (
     PolicyStoreClientFactory,
 )
-from opal_common.authentication.verifier import Unauthorized
 from opal_common.authentication.deps import JWTAuthenticator
-from opal_common.authentication.verifier import JWTVerifier
+from opal_common.authentication.verifier import JWTVerifier, Unauthorized
 from opal_common.config import opal_common_config
 from opal_common.logger import configure_logs, logger
 from opal_common.middleware import configure_middleware
-from opal_common.security.sslcontext import get_custom_ssl_context
-from opal_common.monitoring.tracer import init_tracer
 from opal_common.monitoring.otel_metrics import init_meter
+from opal_common.monitoring.tracer import init_tracer
+from opal_common.security.sslcontext import get_custom_ssl_context
+from opentelemetry import metrics, trace
+from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
+from opentelemetry.exporter.prometheus import PrometheusMetricReader
+from opentelemetry.sdk.metrics import MeterProvider
 from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace import TracerProvider
-from opentelemetry import trace
-from opentelemetry import metrics
-from opentelemetry.sdk.metrics import MeterProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
-from opentelemetry.exporter.prometheus import PrometheusMetricReader
-from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
-
+from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 
 security_scheme = HTTPBearer()
+
 
 def _add_metrics_route(app: FastAPI, authenticator: JWTAuthenticator):
     """Add a protected metrics endpoint to the FastAPI app."""
     if opal_common_config.ENABLE_OPENTELEMETRY_METRICS:
+
         @app.get("/metrics")
         async def protected_metrics_endpoint(
-            auth: HTTPAuthorizationCredentials = Security(security_scheme)
+            auth: HTTPAuthorizationCredentials = Security(security_scheme),
         ):
             """Protected metrics endpoint."""
             try:
@@ -70,10 +68,11 @@ def _add_metrics_route(app: FastAPI, authenticator: JWTAuthenticator):
             except Unauthorized:
                 raise HTTPException(
                     status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail="Invalid authentication credentials"
+                    detail="Invalid authentication credentials",
                 )
 
         logger.info("Mounted protected /metrics endpoint for Prometheus metrics.")
+
 
 class OpalClient:
     def __init__(
@@ -306,8 +305,7 @@ class OpalClient:
         trace.set_tracer_provider(tracer_provider)
 
         otlp_exporter = OTLPSpanExporter(
-            endpoint = opal_common_config.OPENTELEMETRY_OTLP_ENDPOINT,
-            insecure=True
+            endpoint=opal_common_config.OPENTELEMETRY_OTLP_ENDPOINT, insecure=True
         )
 
         span_processor = BatchSpanProcessor(otlp_exporter)
@@ -321,8 +319,7 @@ class OpalClient:
         self.prometheus_metric_reader = PrometheusMetricReader()
 
         meter_provider = MeterProvider(
-            resource=resource,
-            metric_readers=[self.prometheus_metric_reader]
+            resource=resource, metric_readers=[self.prometheus_metric_reader]
         )
         metrics.set_meter_provider(meter_provider)
         init_meter(meter_provider)

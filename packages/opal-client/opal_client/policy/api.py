@@ -1,8 +1,8 @@
 from fastapi import APIRouter, status
 from opal_client.policy.updater import PolicyUpdater
 from opal_common.logger import logger
-from opentelemetry import trace
 from opal_common.monitoring.tracing_utils import start_span
+from opentelemetry import trace
 
 
 def init_policy_router(policy_updater: PolicyUpdater):

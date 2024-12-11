@@ -6,21 +6,22 @@ import fastapi.responses
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response, status
 from git.repo import Repo
 from opal_common.confi.confi import load_conf_if_none
+from opal_common.config import opal_common_config
 from opal_common.git_utils.bundle_maker import BundleMaker
 from opal_common.git_utils.commit_viewer import CommitViewer
 from opal_common.git_utils.repo_cloner import RepoClonePathFinder
 from opal_common.logger import logger
-from opal_common.config import opal_common_config
-from opal_common.schemas.policy import PolicyBundle
-from opal_common.monitoring.tracing_utils import start_span
 from opal_common.monitoring.otel_metrics import get_meter
+from opal_common.monitoring.tracing_utils import start_span
+from opal_common.schemas.policy import PolicyBundle
 from opal_server.config import opal_server_config
-from starlette.responses import RedirectResponse
 from opentelemetry import trace
+from starlette.responses import RedirectResponse
 
 router = APIRouter()
 
 _bundle_size_histogram = None
+
 
 def get_bundle_size_histogram():
     global _bundle_size_histogram
@@ -34,6 +35,7 @@ def get_bundle_size_histogram():
             unit="files",
         )
     return _bundle_size_histogram
+
 
 async def get_repo(
     base_clone_path: str = None,
@@ -125,8 +127,11 @@ async def get_policy(
 
     return bundle
 
+
 async def process_policy_bundle(repo, input_paths, base_hash, span=None):
-    async with start_span("opal_server_policy_bundle_processing", parent=span) as processing_span:
+    async with start_span(
+        "opal_server_policy_bundle_processing", parent=span
+    ) as processing_span:
         maker = BundleMaker(
             repo,
             in_directories=set(input_paths),

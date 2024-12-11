@@ -3,8 +3,9 @@ from typing import Optional
 from fastapi import APIRouter, HTTPException, status
 from opal_client.data.updater import DataUpdater
 from opal_common.logger import logger
-from opentelemetry import trace
 from opal_common.monitoring.tracing_utils import start_span
+from opentelemetry import trace
+
 
 def init_data_router(data_updater: Optional[DataUpdater]):
     router = APIRouter()
@@ -18,7 +19,9 @@ def init_data_router(data_updater: Optional[DataUpdater]):
     async def _handle_policy_data_update(span=None):
         try:
             if data_updater:
-                async with start_span("opal_client_data_update_apply") if span else (await None):
+                async with start_span("opal_client_data_update_apply") if span else (
+                    await None
+                ):
                     await data_updater.get_base_policy_data(
                         data_fetch_reason="request from sdk"
                     )
@@ -40,6 +43,7 @@ def init_data_router(data_updater: Optional[DataUpdater]):
                 span.record_exception(e)
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Failed to update data"
+                detail="Failed to update data",
             )
+
     return router

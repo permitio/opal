@@ -39,6 +39,7 @@ OPAL_CLIENT_INFO_CLIENT_ID = f"{OPAL_CLIENT_INFO_PARAM_PREFIX}client_id"
 _active_clients_counter = None
 _client_data_subscriptions_counter = None
 
+
 def get_active_clients_counter():
     global _active_clients_counter
     if _active_clients_counter is None:
@@ -51,6 +52,7 @@ def get_active_clients_counter():
         )
     return _active_clients_counter
 
+
 def get_client_data_subscriptions_counter():
     global _client_data_subscriptions_counter
     if _client_data_subscriptions_counter is None:
@@ -62,6 +64,7 @@ def get_client_data_subscriptions_counter():
             description="Number of data subscriptions per client",
         )
     return _client_data_subscriptions_counter
+
 
 class ClientInfo(BaseModel):
     client_id: str
@@ -108,8 +111,14 @@ class ClientTracker:
                 )
                 active_clients_counter = get_active_clients_counter()
                 if active_clients_counter is not None:
-                    source = f"{source_host}:{source_port}" if source_host and source_port else "unknown"
-                    active_clients_counter.add(1, attributes={"client_id": client_id, "source": source})
+                    source = (
+                        f"{source_host}:{source_port}"
+                        if source_host and source_port
+                        else "unknown"
+                    )
+                    active_clients_counter.add(
+                        1, attributes={"client_id": client_id, "source": source}
+                    )
             client_info.refcount += 1
             self._clients_by_ids[client_id] = client_info
         yield client_info
@@ -121,8 +130,14 @@ class ClientTracker:
             else:
                 active_clients_counter = get_active_clients_counter()
                 if active_clients_counter is not None:
-                    source = f"{client_info.source_host}:{client_info.source_port}" if client_info.source_host and client_info.source_port else "unknown"
-                    active_clients_counter.add(-1, attributes={"client_id": client_id, "source": source})
+                    source = (
+                        f"{client_info.source_host}:{client_info.source_port}"
+                        if client_info.source_host and client_info.source_port
+                        else "unknown"
+                    )
+                    active_clients_counter.add(
+                        -1, attributes={"client_id": client_id, "source": source}
+                    )
 
     async def on_subscribe(
         self,
@@ -142,10 +157,7 @@ class ClientTracker:
                 for topic in topics:
                     client_data_subscriptions_counter.add(
                         1,
-                        attributes={
-                            "client_id": client_info.client_id,
-                            "topic": topic
-                        }
+                        attributes={"client_id": client_info.client_id, "topic": topic},
                     )
 
     async def on_unsubscribe(
@@ -166,10 +178,7 @@ class ClientTracker:
                 for topic in topics:
                     client_data_subscriptions_counter.add(
                         -1,
-                        attributes={
-                            "client_id": client_info.client_id,
-                            "topic": topic
-                        }
+                        attributes={"client_id": client_info.client_id, "topic": topic},
                     )
 
 
