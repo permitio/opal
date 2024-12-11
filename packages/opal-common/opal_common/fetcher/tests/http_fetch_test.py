@@ -133,7 +133,7 @@ async def test_external_http_get():
         url = "https://dummyjson.com/test"
 
         async def callback(data):
-            assert data["state"] == "ok"
+            assert data["status"] == "ok"
             got_data_event.set()
 
         await engine.queue_url(url, callback)
