@@ -25,6 +25,8 @@ from opal_client.policy_store.policy_store_client_factory import (
     DEFAULT_POLICY_STORE_GETTER,
 )
 from opal_common.async_utils import TakeANumberQueue, TasksPool, repeated_call
+from opal_common.authentication.authenticator import Authenticator
+from opal_common.authentication.authenticator_factory import AuthenticatorFactory
 from opal_common.config import opal_common_config
 from opal_common.fetcher.events import FetcherConfig
 from opal_common.http_utils import is_http_error_response
@@ -42,6 +44,54 @@ from pydantic.json import pydantic_encoder
 
 
 class DataUpdater:
+    async def trigger_data_update(self, update: DataUpdate):
+        raise NotImplementedError()
+
+    async def get_policy_data_config(self, url: str = None) -> DataSourceConfig:
+        raise NotImplementedError()
+
+    async def get_base_policy_data(
+        self, config_url: str = None, data_fetch_reason="Initial load"
+    ):
+        raise NotImplementedError()
+
+    async def on_connect(self, client: PubSubClient, channel: RpcChannel):
+        raise NotImplementedError()
+
+    async def on_disconnect(self, channel: RpcChannel):
+        raise NotImplementedError()
+
+    async def start(self):
+        raise NotImplementedError()
+
+    async def stop(self):
+        raise NotImplementedError()
+
+    async def wait_until_done(self):
+        raise NotImplementedError()
+
+    @staticmethod
+    def calc_hash(data):
+        """Calculate an hash (sah256) on the given data, if data isn't a
+        string, it will be converted to JSON.
+
+        String are encoded as 'utf-8' prior to hash calculation.
+        Returns:
+            the hash of the given data (as a a hexdigit string) or '' on failure to process.
+        """
+        try:
+            if not isinstance(data, str):
+                data = json.dumps(data, default=pydantic_encoder)
+            return hashlib.sha256(data.encode("utf-8")).hexdigest()
+        except:
+            logger.exception("Failed to calculate hash for data {data}", data=data)
+            return ""
+
+    @property
+    def callbacks_reporter(self) -> CallbacksReporter:
+        raise NotImplementedError()
+
+class DefaultDataUpdater(DataUpdater):
     def __init__(
         self,
         token: str = None,
@@ -57,6 +107,7 @@ class DataUpdater:
         shard_id: Optional[str] = None,
         on_connect: List[PubSubOnConnectCallback] = None,
         on_disconnect: List[OnDisconnectCallback] = None,
+        authenticator: Optional[Authenticator] = None,
     ):
         """Keeps policy-stores (e.g. OPA) up to date with relevant data Obtains
         data configuration on startup from OPAL-server Uses Pub/Sub to
@@ -137,6 +188,10 @@ class DataUpdater:
         self._polling_update_tasks = []
         self._on_connect_callbacks = on_connect or []
         self._on_disconnect_callbacks = on_disconnect or []
+        if authenticator is not None:
+            self._authenticator = authenticator
+        else:
+            self._authenticator = AuthenticatorFactory.create()
 
     async def __aenter__(self):
         await self.start()
@@ -182,19 +237,31 @@ class DataUpdater:
         if url is None:
             url = self._data_sources_config_url
         logger.info("Getting data-sources configuration from '{source}'", source=url)
+
+        headers = {}
+        if self._extra_headers is not None:
+            headers = self._extra_headers.copy()
+        headers["Accept"] = "application/json"
+
         try:
-            async with ClientSession(headers=self._extra_headers) as session:
-                response = await session.get(url, **self._ssl_context_kwargs)
-                if response.status == 200:
-                    return DataSourceConfig.parse_obj(await response.json())
-                else:
-                    error_details = await response.json()
-                    raise ClientError(
-                        f"Fetch data sources failed with status code {response.status}, error: {error_details}"
-                    )
+            response = await self._load_policy_data_config(url, headers)
+
+            if response.status == 200:
+                return DataSourceConfig.parse_obj(await response.json())
+            else:
+                error_details = await response.text()
+                raise ClientError(
+                    f"Fetch data sources failed with status code {response.status}, error: {error_details}"
+                )
         except:
             logger.exception(f"Failed to load data sources config")
             raise
+
+    async def _load_policy_data_config(
+        self, url: str, headers
+    ) -> aiohttp.ClientResponse:
+        async with ClientSession(headers=headers) as session:
+            return await session.get(url, **self._ssl_context_kwargs)
 
     async def get_base_policy_data(
         self, config_url: str = None, data_fetch_reason="Initial load"
@@ -279,13 +346,19 @@ class DataUpdater:
         """Coroutine meant to be spunoff with create_task to listen in the
         background for data events and pass them to the data_fetcher."""
         logger.info("Subscribing to topics: {topics}", topics=self._data_topics)
+
+        headers = {}
+        if self._extra_headers is not None:
+            headers = self._extra_headers.copy()
+        await self._authenticator.authenticate(headers)
+
         self._client = PubSubClient(
             self._data_topics,
             self._update_policy_data_callback,
             methods_class=TenantAwareRpcEventClientMethods,
             on_connect=[self.on_connect, *self._on_connect_callbacks],
             on_disconnect=[self.on_disconnect, *self._on_disconnect_callbacks],
-            extra_headers=self._extra_headers,
+            extra_headers=headers,
             keep_alive=opal_client_config.KEEP_ALIVE_INTERVAL,
             server_uri=self._server_url,
             **self._ssl_context_kwargs,
@@ -343,23 +416,6 @@ class DataUpdater:
     async def wait_until_done(self):
         if self._subscriber_task is not None:
             await self._subscriber_task
-
-    @staticmethod
-    def calc_hash(data):
-        """Calculate an hash (sah256) on the given data, if data isn't a
-        string, it will be converted to JSON.
-
-        String are encoded as 'utf-8' prior to hash calculation.
-        Returns:
-            the hash of the given data (as a a hexdigit string) or '' on failure to process.
-        """
-        try:
-            if not isinstance(data, str):
-                data = json.dumps(data, default=pydantic_encoder)
-            return hashlib.sha256(data.encode("utf-8")).hexdigest()
-        except:
-            logger.exception("Failed to calculate hash for data {data}", data=data)
-            return ""
 
     async def _update_policy_data(
         self,
@@ -473,7 +529,9 @@ class DataUpdater:
                     policy_data = result
                     # Create a report on the data-fetching
                     report = DataEntryReport(
-                        entry=entry, hash=self.calc_hash(policy_data), fetched=True
+                        entry=entry,
+                        hash=DataUpdater.calc_hash(policy_data),
+                        fetched=True
                     )
 
                     try:
