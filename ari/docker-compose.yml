@@ -1,0 +1,81 @@
+version: '3.8'
+
+services:
+  opal-client:
+    image: permitio/opal-client:latest
+    container_name: ari-compose-opal-client
+    ports:
+      - "7766:7000"
+      - "8181:8181"
+    environment:
+      - OPAL_DATA_TOPICS=test-topic1
+
+      - OPAL_SERVER_URL=
+      
+      - OPAL_CLIENT_TOKEN=
+
+  opal-server:
+    image: permitio/opal-server:latest
+    container_name: ari-compose-opal-server
+    ports:
+      - "7002:7002"  # Expose OPAL server on port 7002
+    environment:
+      - UVICORN_NUM_WORKERS=1
+
+      - OPAL_POLICY_REPO_URL=https://github.com/permitio/opal-example-policy-repo
+
+      - OPAL_AUTH_PRIVATE_KEY=-----BEGIN RSA PRIVATE KEY-----
+        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
+        -----END RSA PRIVATE KEY-----
+
+      - OPAL_AUTH_PUBLIC_KEY=ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAACAQCfTiBSkcg8EdjQLjMvNADJ1bfIrp5/NT4Vp+/+RB9Ks6ssL++SzgIkyQ4nryhJD8Duh4oup3uFeLrBTGm8Tqmw5flq1NzLqNxXu4D5nF7Oa486oa6MPeyXu499TmyuWbplgKgzwEANHpsR8/NgCYi3PE7nK+VscAhUraIw8DZu8EnCxmTb1lfqZW+lZ3x5tspR4kQgx3Ff/vcrSlqXrh78pVt4aYnMMNRgWH/Wgd1Vb5M0gvkVb8AbgKX1XmBniNu/emwQeIxKGr9YNQslNdfmA6JdvwY55JHkVS7QFVXa2K5LXtgMnBYLkVtfrX717ekKxtsisIzjQpN9QYZCEpslYiokbEKPP4n+bywikqr94k1AXZ2LPeO35YO+bV1+QRNNCyVGOh6nJO0trBbhQcN0ekV3wci2g8naEkPw4MaBlGbE73VKvZSCwt8SbqXU/i7R33xGD3ixIc1BlRFvz0zmY88GsWj+m3+eI1OLySzMegxvBNM3Vw/NIu+Xk9p7u32LswNJUKi2EOrAf1y6L641+RwmmPuUVZUJzWZYfj4z8Wc4Hcs+PIdeRgYIXVsX9EOGLye7ehMNGKY1I/aN7JUHIeDxD9NEnOLScH9JesEavhphhXrqMq/8auHayrehhSdrkbR+7ABCg+Xfxjwy6SHU0sLjuit3RdI/lXdtfm0Mrw== ari@israel-ASUS-EXPERTBOOK-B1500CEAEY-B1500CEAE
+
+      - OPAL_AUTH_MASTER_TOKEN=3gz0JH-nu6w07vEujwiYngyyMEOoZQB9q4RUKbhW1HQ
