@@ -80,6 +80,15 @@ except subprocess.CalledProcessError as e:
 except Exception as e:
     print(f"Unexpected error: {e}")
 
+
+
+OPAL_CLIENT_7000_PORT = (7765 + file_number)
+OPAL_CLIENT_8181_PORT = (8180 + file_number)
+
+OPAL_SERVER_7002_PORT = (7001 + file_number)
+
+
+
 # Initialize Docker client
 client = docker.DockerClient(base_url="unix://var/run/docker.sock")
 
@@ -97,7 +106,7 @@ opal_server_env = {
     "OPAL_AUTH_PRIVATE_KEY": private_key,
     "OPAL_AUTH_PUBLIC_KEY": public_key,
     "OPAL_AUTH_MASTER_TOKEN": OPAL_AUTH_MASTER_TOKEN,
-    "OPAL_DATA_CONFIG_SOURCES": """{"config":{"entries":[{"url":"http://ari_compose_opal_server_""" + str(file_number) + """:7002/policy-data","topics":["policy_data"],"dst_path":"/static"}]}}""",
+    "OPAL_DATA_CONFIG_SOURCES": """{"config":{"entries":[{"url":"http://ari_compose_opal_server_""" + str(file_number) + """:""" + str(OPAL_SERVER_7002_PORT) + """/policy-data","topics":["policy_data"],"dst_path":"/static"}]}}""",
     "OPAL_LOG_FORMAT_INCLUDE_PID": "true"
 }
 
@@ -114,15 +123,15 @@ try:
     server_container = client.containers.run(
         image="permitio/opal-server:latest",
         name=f"ari_compose_opal_server_{file_number}",
-        ports={"7002/tcp": 7002},
+        ports={"7002/tcp": OPAL_SERVER_7002_PORT},
         environment=opal_server_env,
         network=network_name,
         detach=True
     )
-    print(f"OPAL Server container is running with ID: {server_container.id}")
+    print(f"OPAL Server container is running with ID: {server_container.id} | and is listening on port: {OPAL_SERVER_7002_PORT}")
 
     # URL for the OPAL Server token endpoint (using localhost)
-    token_url = "http://localhost:7002/token"
+    token_url = f"http://localhost:{OPAL_SERVER_7002_PORT}/token"
 
     # Authorization headers for the request
     headers = {
@@ -158,7 +167,7 @@ try:
     # Configuration for OPAL Client
     opal_client_env = {
         "OPAL_DATA_TOPICS": "policy_data",
-        "OPAL_SERVER_URL": f"http://ari_compose_opal_server_{file_number}:7002",
+        "OPAL_SERVER_URL": f"http://ari_compose_opal_server_{file_number}:{OPAL_SERVER_7002_PORT}",
         "OPAL_CLIENT_TOKEN": OPAL_CLIENT_TOKEN,
         "OPAL_LOG_FORMAT_INCLUDE_PID": "true",
         "OPAL_INLINE_OPA_LOG_FORMAT": "http"
@@ -168,13 +177,13 @@ try:
     print("Starting OPAL Client container...")
     client_container = client.containers.run(
         image="permitio/opal-client:latest",
-        name="ari-compose-opal-client",
-        ports={"7000/tcp": 7766, "8181/tcp": 8181},
+        name=f"ari_compose_opal_client_{file_number}",
+        ports={"7000/tcp": OPAL_CLIENT_7000_PORT, "8181/tcp": OPAL_CLIENT_8181_PORT},
         environment=opal_client_env,
         network=network_name,
         detach=True
     )
-    print(f"OPAL Client container is running with ID: {client_container.id}")
+    print(f"OPAL Client container is running with ID: {client_container.id} | and is listening on ports {OPAL_CLIENT_7000_PORT}, {OPAL_CLIENT_8181_PORT}")
 
 except requests.exceptions.RequestException as e:
     print(f"HTTP Request failed: {e}")
