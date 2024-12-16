@@ -17,18 +17,18 @@ OPAL solves these challenges by providing a centralized management layer that ha
 
 By integrating OpenFGA with OPAL, you get:
 
-- **Real-time Authorization Model Updates**: 
+- **Real-time Authorization Model Updates**:
   - Automatically synchronize authorization models across multiple OpenFGA instances
   - Push model changes instantly through OPAL's pub/sub system
   - Version control your authorization models through Git
 
-- **Distributed Deployment Support**: 
+- **Distributed Deployment Support**:
   - Scale authorization across multiple regions/clusters while maintaining consistency
   - Each OPAL client can manage its own OpenFGA instance
   - Central management through OPAL server reduces operational complexity
   - Support for blue/green deployments and gradual rollouts
 
-- **Data Source Integration**: 
+- **Data Source Integration**:
   - Pull relationship data from multiple sources:
     - REST APIs
     - Databases
@@ -37,19 +37,19 @@ By integrating OpenFGA with OPAL, you get:
   - Keep relationship tuples synchronized in real-time
   - Transform data automatically to OpenFGA format
 
-- **Git Integration**: 
+- **Git Integration**:
   - Store authorization models in version control
   - Track changes and rollback when needed
   - Use Git workflows for authorization model updates
   - Support for multiple branches and environments
 
-- **Health Monitoring**: 
+- **Health Monitoring**:
   - Built-in health checks for OpenFGA instances
   - Monitor synchronization status
   - Track authorization model updates
   - Alert on issues or inconsistencies
 
-- **Transaction Tracking**: 
+- **Transaction Tracking**:
   - Detailed logging of all model changes
   - Audit trail for authorization updates
   - Performance metrics and analytics
@@ -63,7 +63,7 @@ git clone https://github.com/permitio/opal.git
 cd opal
 docker-compose -f docker/docker-compose-example-openfga.yml up -d
 
-or 
+or
 
 curl -L https://raw.githubusercontent.com/permitio/opal/master/docker/docker-compose-example-openfga.yml -o docker-compose-example-openfga.yml
 docker-compose -f docker-compose-example-openfga.yml up -d
@@ -195,7 +195,7 @@ Best practices:
 - Follow a consistent naming convention for types and relations
 - Use OPAL's manifest file to control loading order
 
-## Using Data Fetchers 
+## Using Data Fetchers
 
 OPAL can fetch relationship tuples from external sources and keep them synchronized with OpenFGA. Here's an example using the HTTP fetcher:
 
