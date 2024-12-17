@@ -152,6 +152,20 @@ class PolicyStoreClientFactory:
                 cedar_auth_token=store_token,
                 auth_type=auth_type,
             )
+
+        # Openfga
+        elif PolicyStoreTypes.OPENFGA == store_type:
+            from opal_client.policy_store.openfga_client import OpenFGAClient
+
+            res = OpenFGAClient(
+                openfga_server_url=url,
+                openfga_auth_token=store_token,
+                auth_type=auth_type,
+                store_id=opal_client_config.OPENFGA_STORE_ID,
+                data_updater_enabled=data_updater_enabled,
+                policy_updater_enabled=policy_updater_enabled,
+            )
+
         # MOCK
         elif PolicyStoreTypes.MOCK == store_type:
             from opal_client.policy_store.mock_policy_store_client import (

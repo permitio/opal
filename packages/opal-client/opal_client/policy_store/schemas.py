@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field, validator
 class PolicyStoreTypes(Enum):
     OPA = "OPA"
     CEDAR = "CEDAR"
+    OPENFGA = "OPENFGA"
     MOCK = "MOCK"
 
 
@@ -19,7 +20,7 @@ class PolicyStoreAuth(Enum):
 
 class PolicyStoreDetails(BaseModel):
     """
-    represents a policy store endpoint - contains the policy store's:
+    Represents a policy store endpoint - contains the policy store's:
     - location (url)
     - type
     - credentials
@@ -37,12 +38,10 @@ class PolicyStoreDetails(BaseModel):
     token: Optional[str] = Field(
         None, description="optional access token required by the policy store"
     )
-
     auth_type: PolicyStoreAuth = Field(
         PolicyStoreAuth.NONE,
         description="the type of authentication is supported for the policy store.",
     )
-
     oauth_client_id: Optional[str] = Field(
         None, description="optional OAuth client id required by the policy store"
     )
