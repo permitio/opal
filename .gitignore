@@ -2,3 +2,5 @@ opal_test_keys/*
 .env
 opal-example-policy-repo/*
 opal-example-policy-repo
+data/
+opal-example-policy-repo

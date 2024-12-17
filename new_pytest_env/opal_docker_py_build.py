@@ -92,8 +92,7 @@ if network_name not in [network.name for network in client.networks.list()]:
 # Configuration for OPAL Server
 opal_server_env = {
     "UVICORN_NUM_WORKERS": "1",
-    #"OPAL_POLICY_REPO_URL": "https://github.com/ariWeinberg/opal-example-policy-repo.git",
-    "OPAL_POLICY_REPO_URL": "http://gitea:3000/ariAdmin2/opal-example-policy-repo.git",
+    "OPAL_POLICY_REPO_URL": "https://github.com/ariWeinberg/opal-example-policy-repo.git",
     "OPAL_POLICY_REPO_POLLING_INTERVAL": "50",
     "OPAL_AUTH_PRIVATE_KEY": private_key,
     "OPAL_AUTH_PUBLIC_KEY": public_key,
@@ -103,24 +102,50 @@ opal_server_env = {
 }
 
 try:
-    # Pull the required images
-    print("Pulling OPAL Server image...")
-    client.images.pull("permitio/opal-server:latest")
+    # Paths to source code and Dockerfile
+    dockerfile_path = "./docker/Dockerfile"  # Path to the Dockerfile
+    source_root_path = "./"           # Root path for the source code
 
-    print("Pulling OPAL Client image...")
-    client.images.pull("permitio/opal-client:latest")
+    # Image names and tags
+    opal_server_image = "local/opal-server:latest"
+    opal_client_image = "local/opal-client:latest"
 
-    # Create and start the OPAL Server container
+    # Docker build function
+    def build_docker_image(image_name, build_target):
+        try:
+            print(f"Building {image_name} ({build_target})...")
+            client.images.build(
+                path=source_root_path,
+                dockerfile=dockerfile_path,
+                tag=image_name,
+                target=build_target,  # Specify the build target (e.g., 'server', 'client')
+                rm=True,  # Clean up intermediate containers
+            )
+            print(f"Successfully built {image_name}")
+        except docker.errors.BuildError as e:
+            print(f"Failed to build {image_name}: {e}")
+            raise
+        except Exception as e:
+            print(f"Unexpected error while building {image_name}: {e}")
+            raise
+
+    # Build OPAL Server and OPAL Client Images
+    build_docker_image(opal_server_image, "server")  # Build 'server' stage
+    build_docker_image(opal_client_image, "client")  # Build 'client' stage
+
+
+
+    # Start the OPAL Server container
     print("Starting OPAL Server container...")
     server_container = client.containers.run(
-        image="permitio/opal-server:latest",
+        image=opal_server_image,
         name=f"ari_compose_opal_server_{file_number}",
         ports={"7002/tcp": 7002},
         environment=opal_server_env,
         network=network_name,
         detach=True
     )
-    print(f"OPAL Server container is running with ID: {server_container.short_id}")
+    print(f"OPAL Server container is running with ID: {server_container.id}")
 
     # URL for the OPAL Server token endpoint (using localhost)
     token_url = "http://localhost:7002/token"
@@ -165,10 +190,10 @@ try:
         "OPAL_INLINE_OPA_LOG_FORMAT": "http"
     }
 
-    # Create and start the OPAL Client container
+    # Start the OPAL Client container
     print("Starting OPAL Client container...")
     client_container = client.containers.run(
-        image="permitio/opal-client:latest",
+        image=opal_client_image,
         name=f"ari-compose-opal-client_{file_number}",
         ports={"7000/tcp": 7766, "8181/tcp": 8181},
         environment=opal_client_env,

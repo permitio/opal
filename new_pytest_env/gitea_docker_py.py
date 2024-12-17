@@ -12,22 +12,18 @@ def setup_gitea():
 
     client = docker.from_env()
 
+    # Create a Docker network named 'opal_test'
+    network_name = "opal_test"
+    if network_name not in [network.name for network in client.networks.list()]:
+        print(f"Creating network: {network_name}")
+        client.networks.create(network_name, driver="bridge")
+
+
     # Pull necessary Docker images
     print("Pulling Docker images...")
     client.images.pull("gitea/gitea:latest")
     client.images.pull("postgres:latest")
     client.images.pull("gitea/gitea:latest-rootless")
-    # Create Docker network for communication
-    print("Creating Docker network...")
-    networks = client.networks.list(names=["gitea-net"])
-    if not networks:
-        try:
-            client.networks.create("gitea-net")
-            print("Network 'gitea-net' created.")
-        except docker.errors.APIError as e:
-            print(f"Error creating network 'gitea-net': {e}")
-    else:
-        print("Network 'gitea-net' already exists, skipping...")
 
     # Run PostgreSQL container
     print("Setting up PostgreSQL container...")
@@ -35,7 +31,7 @@ def setup_gitea():
         print("postgress id: " + client.containers.run(
             "postgres:latest",
             name="gitea-db",
-            network="gitea-net",
+            network=network_name,
             detach=True,
             environment={
                 "POSTGRES_USER": "gitea",
@@ -54,7 +50,7 @@ def setup_gitea():
         gitea = client.containers.run(
             "gitea/gitea:latest-rootless",
             name="gitea",
-            network="gitea-net",
+            network=network_name,
             detach=True,
             ports={"3000/tcp": 3000, "22/tcp": 2222},
             environment={
@@ -67,7 +63,12 @@ def setup_gitea():
                 "DB_PASSWD": "gitea123",
                 "INSTALL_LOCK":"true",
             },
-            volumes={"gitea-data": {"bind": os.path.abspath("./data"), "mode": "rw"}},
+            volumes = {
+    os.path.abspath("./data"): {  # Local directory (X/Y/Z)
+        "bind": "/var/lib/gitea",  # Correct container path
+        "mode": "rw"
+    }
+}
         )
         print(f"gitea id: {gitea.short_id}")
     except docker.errors.APIError:
