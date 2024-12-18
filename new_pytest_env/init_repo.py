@@ -6,6 +6,26 @@ with open("./gitea_access_token.tkn") as gitea_access_token_file:
     ACCESS_TOKEN = gitea_access_token_file.read()  # Replace with your token
 USERNAME = "ariAdmin2"  # Your Gitea username
 
+def repo_exists(repo_name):
+    """
+    Check if a repository exists in Gitea for the user.
+
+    :param repo_name: Name of the repository to check
+    :return: True if the repository exists, False otherwise
+    """
+    url = f"{GITEA_BASE_URL}/repos/{USERNAME}/{repo_name}"
+    headers = {"Authorization": f"token {ACCESS_TOKEN}"}
+
+    response = requests.get(url, headers=headers)
+    if response.status_code == 200:
+        print(f"Repository '{repo_name}' already exists.")
+        return True
+    elif response.status_code == 404:
+        return False
+    else:
+        print(f"Failed to check repository: {response.status_code} {response.text}")
+        response.raise_for_status()
+
 def create_gitea_repo(repo_name, description="", private=False, auto_init=True):
     """
     Create a repository in Gitea using the API.
@@ -50,7 +70,11 @@ description = "This is a test repository created via API."
 private = False
 
 try:
-    repo_info = create_gitea_repo(repo_name, description, private)
-    print("Repository Info:", repo_info)
+    # Check if the repository already exists
+    if repo_exists(repo_name):
+        print(f"Repository '{repo_name}' already exists. Skipping creation.")
+    else:
+        repo_info = create_gitea_repo(repo_name, description, private)
+        print("Repository Info:", repo_info)
 except Exception as e:
     print("Error:", e)
