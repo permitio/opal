@@ -99,7 +99,8 @@ opal_server_env = {
     "OPAL_AUTH_PUBLIC_KEY": public_key,
     "OPAL_AUTH_MASTER_TOKEN": OPAL_AUTH_MASTER_TOKEN,
     "OPAL_DATA_CONFIG_SOURCES": """{"config":{"entries":[{"url":"http://ari_compose_opal_server_""" + str(file_number) + """:7002/policy-data","topics":["policy_data"],"dst_path":"/static"}]}}""",
-    "OPAL_LOG_FORMAT_INCLUDE_PID": "true"
+    "OPAL_LOG_FORMAT_INCLUDE_PID": "true",
+    "OPAL_STATISTICS_ENABLED":"true",
 }
 
 try:
@@ -132,15 +133,19 @@ try:
     }
 
     # Payload for the POST request
-    data = {
+    data_client = {
         "type": "client"
+    }
+        # Payload for the POST request
+    data_datasource = {
+        "type": "datasource"
     }
 
     # Wait for the server to initialize (ensure readiness)
     time.sleep(2)
 
     # Make the POST request to fetch the client token
-    response = requests.post(token_url, headers=headers, json=data)
+    response = requests.post(token_url, headers=headers, json=data_client)
 
     # Raise an exception if the request was not successful
     response.raise_for_status()
@@ -151,9 +156,32 @@ try:
 
     if OPAL_CLIENT_TOKEN:
         print("OPAL_CLIENT_TOKEN successfully fetched:")
+        with open("./OPAL_CLIENT_TOKEN.tkn",'w') as client_token_file:
+            client_token_file.write(OPAL_CLIENT_TOKEN)
         print(OPAL_CLIENT_TOKEN)
     else:
         print("Failed to fetch OPAL_CLIENT_TOKEN. Response:")
+        print(response_json)
+
+
+
+        # Make the POST request to fetch the client token
+    response = requests.post(token_url, headers=headers, json=data_datasource)
+
+    # Raise an exception if the request was not successful
+    response.raise_for_status()
+
+    # Parse the JSON response to extract the token
+    response_json = response.json()
+    OPAL_DATASOURCE_TOKEN = response_json.get("token")
+
+    if OPAL_DATASOURCE_TOKEN:
+        print("OPAL_DATASOURCE_TOKEN successfully fetched:")
+        with open("./OPAL_DATASOURCE_TOKEN.tkn",'w') as datasource_token_file:
+            datasource_token_file.write(OPAL_DATASOURCE_TOKEN)
+        print(OPAL_DATASOURCE_TOKEN)
+    else:
+        print("Failed to fetch OPAL_DATASOURCE_TOKEN. Response:")
         print(response_json)
 
     # Configuration for OPAL Client
