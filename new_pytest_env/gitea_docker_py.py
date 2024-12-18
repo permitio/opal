@@ -83,6 +83,7 @@ def setup_gitea():
         access_token = gitea.exec_run(create_access_token_command)
         access_token = access_token.output.decode("utf-8")
         print(access_token)
+        
         with open("./gitea_access_token.tkn",'w') as gitea_access_token_file:
             gitea_access_token_file.write(access_token)
             gitea_access_token_file.close()
