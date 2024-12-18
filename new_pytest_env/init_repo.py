@@ -1,9 +1,11 @@
 import requests
+from git import Repo
+import os
 
 # Replace these with your Gitea server details and personal access token
 GITEA_BASE_URL = "http://localhost:3000/api/v1"  # Replace with your Gitea server URL
 with open("./gitea_access_token.tkn") as gitea_access_token_file:
-    ACCESS_TOKEN = gitea_access_token_file.read()  # Replace with your token
+    ACCESS_TOKEN = gitea_access_token_file.read().strip()  # Read and strip token
 USERNAME = "ariAdmin2"  # Your Gitea username
 
 def repo_exists(repo_name):
@@ -64,17 +66,47 @@ def create_gitea_repo(repo_name, description="", private=False, auto_init=True):
         print(f"Failed to create repository: {response.status_code} {response.text}")
         response.raise_for_status()
 
+def clone_repo_with_gitpython(repo_name, clone_directory):
+    """
+    Clone a Gitea repository using GitPython.
+
+    :param repo_name: Name of the repository to clone
+    :param clone_directory: Directory where the repository will be cloned
+    """
+    repo_url = f"http://localhost:3000/{USERNAME}/{repo_name}.git"
+
+    # If the repository is private, include authentication in the URL
+    if ACCESS_TOKEN:
+        repo_url = f"http://{USERNAME}:{ACCESS_TOKEN}@localhost:3000/{USERNAME}/{repo_name}.git"
+
+    try:
+        # Ensure the directory does not already exist
+        if os.path.exists(clone_directory):
+            print(f"Directory '{clone_directory}' already exists. Skipping clone.")
+            return
+
+        # Clone the repository
+        Repo.clone_from(repo_url, clone_directory)
+        print(f"Repository '{repo_name}' cloned successfully into '{clone_directory}'.")
+    except Exception as e:
+        print(f"Failed to clone repository '{repo_name}': {e}")
+
 # Example usage
 repo_name = "test-repo"
 description = "This is a test repository created via API."
 private = False
+clone_directory = "./test-repo"  # Directory where the repository will be cloned
 
 try:
     # Check if the repository already exists
     if repo_exists(repo_name):
-        print(f"Repository '{repo_name}' already exists. Skipping creation.")
+        print(f"Repository '{repo_name}' already exists.")
     else:
-        repo_info = create_gitea_repo(repo_name, description, private)
-        print("Repository Info:", repo_info)
+        # Create the repository if it doesn't exist
+        create_gitea_repo(repo_name, description, private)
+
+    # Clone the repository
+    clone_repo_with_gitpython(repo_name, clone_directory)
+
 except Exception as e:
     print("Error:", e)
