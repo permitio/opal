@@ -9,3 +9,4 @@ OPAL_CLIENT_TOKEM.tkn
 OPAL_CLIENT_TOKEN.tkn
 .venv/*
 **/*.pyc
+gitea_access_token.tkn

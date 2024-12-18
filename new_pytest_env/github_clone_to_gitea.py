@@ -97,7 +97,9 @@ if __name__ == "__main__":
     destination_path = f"./{repo_name}"
 
     gitea_base_url = "http://localhost:3000"
-    gitea_api_token = "7585f7b0b3990fd13999d71723a3e9d0504e6c2c"
+    gitea_api_token = ""
+    with open("./gitea_access_token.tkn",'r') as gitea_access_token_file:
+        gitea_api_token = gitea_access_token_file.read()
     gitea_username = "AriAdmin2"
     gitea_password = "Aw123456"
     gitea_repo_url = f"{gitea_base_url}/ariAdmin2/{repo_name}.git"

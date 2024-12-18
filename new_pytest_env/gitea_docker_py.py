@@ -15,6 +15,7 @@ password = "Aw123456"
 add_admin_user_command = f"/usr/local/bin/gitea admin user create --admin --username {user_name} --email {email} --password {password} --must-change-password=false"
 create_access_token_command = f" gitea admin user generate-access-token --username {user_name} --raw --scopes all"
 
+#create_access_token_command = f"sqlite3 /var/lib/gitea/data/gitea.db \"DELETE FROM access_token WHERE name = 'gitea-admin' AND user_id = (SELECT id FROM user WHERE name = '{user_name}');\" && gitea admin user generate-access-token --username {user_name} --raw --scopes all"
 
 # Function to check if Gitea is ready
 def is_gitea_ready(container):
@@ -81,12 +82,12 @@ def setup_gitea():
         print(result.output.decode("utf-8"))
 
         access_token = gitea.exec_run(create_access_token_command)
-        access_token = access_token.output.decode("utf-8")
+        access_token = access_token.output.decode("utf-8").removesuffix("\n")
         print(access_token)
-        
-        with open("./gitea_access_token.tkn",'w') as gitea_access_token_file:
-            gitea_access_token_file.write(access_token)
-            gitea_access_token_file.close()
+        if access_token != "Command error: access token name has been used already":
+            with open("./gitea_access_token.tkn",'w') as gitea_access_token_file:
+                gitea_access_token_file.write(access_token)
+                gitea_access_token_file.close()
     except docker.errors.APIError as e:
         print(f"Error: {e.explanation}")
     except Exception as e:
