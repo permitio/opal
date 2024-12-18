@@ -92,7 +92,7 @@ if network_name not in [network.name for network in client.networks.list()]:
 # Configuration for OPAL Server
 opal_server_env = {
     "UVICORN_NUM_WORKERS": "1",
-    "OPAL_POLICY_REPO_URL": "http://gitea:3000/ariAdmin2/opal-example-policy-repo.git",
+    "OPAL_POLICY_REPO_URL": "http://gitea_permit:3000/ariAdmin2/opal-example-policy-repo.git",
     "OPAL_POLICY_REPO_POLLING_INTERVAL": "50",
     "OPAL_AUTH_PRIVATE_KEY": private_key,
     "OPAL_AUTH_PUBLIC_KEY": public_key,
