@@ -76,7 +76,7 @@ async def test_user_location(user: str, US: bool):
     """Test user location policy based on US or non-US settings."""
     # Update user location based on the provided country flag
     if US:
-        publish_data_user_location("https://api.country.is", user)
+        publish_data_user_location("https://api.country.is/8.8.8.8", user)
         print(f"{user}'s location set to: US. Expected outcome: NOT ALLOWED.")
     else:
         publish_data_user_location("https://api.country.is/23.54.6.78", user)

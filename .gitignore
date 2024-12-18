@@ -7,3 +7,5 @@ opal-example-policy-repo
 OPAL_DATASOURCE_TOKEN.tkn
 OPAL_CLIENT_TOKEM.tkn
 OPAL_CLIENT_TOKEN.tkn
+.venv/*
+**/*.pyc
