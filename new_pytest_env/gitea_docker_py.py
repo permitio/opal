@@ -52,7 +52,13 @@ def setup_gitea():
                 "DB_PATH": "/data/gitea.db",  # Path for the SQLite database
                 "INSTALL_LOCK": "true",
             },
-            volumes={PERSISTENT_VOLUME: {"bind": "/data", "mode": "rw"}},
+            volumes={
+                PERSISTENT_VOLUME: {"bind": "/data", "mode": "rw"},
+                                os.path.abspath("./data"): {  # Local directory for persistence
+                    "bind": "/var/lib/gitea",  # Container path
+                    "mode": "rw"
+                }
+                },
         )
         print(f"Gitea container is running with ID: {gitea.short_id}")
 
