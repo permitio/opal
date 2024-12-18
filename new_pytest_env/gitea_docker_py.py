@@ -1,15 +1,16 @@
 import docker
 
+# Configuration for admin user
 user_name = "ariAdmin2"
 email = "Ari2@gmail.com"
 password = "Aw123456"
 add_admin_user_command = f"/usr/local/bin/gitea admin user create --admin --username {user_name} --email {email} --password {password} --must-change-password=false"
-# docker exec -it ffc52c40e5ce /bin/bash /usr/local/bin/gitea admin user create --username ariAdmin --email Ari@gmail.com --password Aw123456 --admin --must-change-password false
 
-
+# Function to set up Gitea with Docker
 def setup_gitea():
     print("Starting Gitea deployment...")
 
+    # Initialize Docker client
     client = docker.from_env()
 
     # Create a Docker network named 'opal_test'
@@ -18,17 +19,16 @@ def setup_gitea():
         print(f"Creating network: {network_name}")
         client.networks.create(network_name, driver="bridge")
 
-
     # Pull necessary Docker images
     print("Pulling Docker images...")
     client.images.pull("gitea/gitea:latest")
     client.images.pull("postgres:latest")
     client.images.pull("gitea/gitea:latest-rootless")
 
-    # Run PostgreSQL container
+    # Set up PostgreSQL container
     print("Setting up PostgreSQL container...")
     try:
-        print("postgress id: " + client.containers.run(
+        postgres_container = client.containers.run(
             "postgres:latest",
             name="gitea-db",
             network=network_name,
@@ -39,11 +39,12 @@ def setup_gitea():
                 "POSTGRES_DB": "gitea",
             },
             volumes={"gitea-db-data": {"bind": "/var/lib/postgresql/data", "mode": "rw"}},
-        ).short_id)
+        )
+        print(f"PostgreSQL container is running with ID: {postgres_container.short_id}")
     except docker.errors.APIError:
         print("Container 'gitea-db' already exists, skipping...")
 
-    # Run Gitea container
+    # Set up Gitea container
     print("Setting up Gitea container...")
     import os
     try:
@@ -61,24 +62,24 @@ def setup_gitea():
                 "DB_NAME": "gitea",
                 "DB_USER": "gitea",
                 "DB_PASSWD": "gitea123",
-                "INSTALL_LOCK":"true",
+                "INSTALL_LOCK": "true",
             },
-            volumes = {
-    os.path.abspath("./data"): {  # Local directory (X/Y/Z)
-        "bind": "/var/lib/gitea",  # Correct container path
-        "mode": "rw"
-    }
-}
+            volumes={
+                os.path.abspath("./data"): {  # Local directory for persistence
+                    "bind": "/var/lib/gitea",  # Container path
+                    "mode": "rw"
+                }
+            }
         )
-        print(f"gitea id: {gitea.short_id}")
+        print(f"Gitea container is running with ID: {gitea.short_id}")
+
+        # Add admin user to Gitea
+        print("Creating admin user...")
+        print(gitea.exec_run(add_admin_user_command))
     except docker.errors.APIError:
         print("Container 'gitea' already exists, skipping...")
 
     print("Gitea deployment completed. Access Gitea at http://localhost:3000")
-    try:
-        print(gitea.exec_run(add_admin_user_command))
-    except docker.errors.APIError:
-        print("Container 'gitea' already exists, skipping...")    
 
 if __name__ == "__main__":
     setup_gitea()

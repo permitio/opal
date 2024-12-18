@@ -67,8 +67,6 @@ def push_to_gitea_with_credentials(cloned_repo_path, gitea_repo_url, username, p
     try:
         # Embed credentials in the Gitea URL
         auth_repo_url = gitea_repo_url.replace("://", f"://{username}:{password}@")
-        auth_repo_url = 'http://localhost:3000/ariAdmin2/opal-example-policy-repo.git'
-
 
         # Open the existing repository
         repo = Repo(cloned_repo_path)

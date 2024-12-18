@@ -1,0 +1,19 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+      {
+        "name": "Python: Debug with Args",
+        "type": "debugpy", 
+        "request": "launch",
+        "program": "${file}",
+        "args": [
+          "--file_name",
+          "rbac.rego",
+          "--file_content",
+          "package app.rbac\\ndefault allow = false\\n\\n# Allow the action if the user is granted permission to perform the action.\\nallow {\\n\\t# unless user location is outside US\\n\\tcountry := data.users[input.user].location.country\\n\\tcountry == \\\"US\\\"\\n}"
+        ],
+        "console": "integratedTerminal"
+      }
+    ]
+  }
+  

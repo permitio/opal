@@ -92,15 +92,14 @@ if network_name not in [network.name for network in client.networks.list()]:
 # Configuration for OPAL Server
 opal_server_env = {
     "UVICORN_NUM_WORKERS": "1",
-    #"OPAL_POLICY_REPO_URL": "https://github.com/ariWeinberg/opal-example-policy-repo.git",
     "OPAL_POLICY_REPO_URL": "http://gitea:3000/ariAdmin2/opal-example-policy-repo.git",
     "OPAL_POLICY_REPO_POLLING_INTERVAL": "50",
     "OPAL_AUTH_PRIVATE_KEY": private_key,
     "OPAL_AUTH_PUBLIC_KEY": public_key,
     "OPAL_AUTH_MASTER_TOKEN": OPAL_AUTH_MASTER_TOKEN,
-    "OPAL_DATA_CONFIG_SOURCES": """{"config":{"entries":[{"url":"http://ari_compose_opal_server_""" + str(file_number) + """:7002/policy-data","topics":["policy_data"],"dst_path":"/static"}]}}""",
+    "OPAL_DATA_CONFIG_SOURCES": f"""{{"config":{{"entries":[{{"url":"http://ari_compose_opal_server_{file_number}:7002/policy-data","topics":["policy_data"],"dst_path":"/static"}}]}}}}""",
     "OPAL_LOG_FORMAT_INCLUDE_PID": "true",
-    "OPAL_STATISTICS_ENABLED":"true",
+    "OPAL_STATISTICS_ENABLED": "true",
 }
 
 try:
@@ -128,15 +127,16 @@ try:
 
     # Authorization headers for the request
     headers = {
-        "Authorization": f"Bearer {OPAL_AUTH_MASTER_TOKEN}",  # Replace with your server's authorization token
+        "Authorization": f"Bearer {OPAL_AUTH_MASTER_TOKEN}",
         "Content-Type": "application/json"
     }
 
-    # Payload for the POST request
+    # Payload for the POST request to fetch client token
     data_client = {
         "type": "client"
     }
-        # Payload for the POST request
+
+    # Payload for the POST request to fetch datasource token
     data_datasource = {
         "type": "datasource"
     }
@@ -144,40 +144,30 @@ try:
     # Wait for the server to initialize (ensure readiness)
     time.sleep(2)
 
-    # Make the POST request to fetch the client token
+    # Fetch the client token
     response = requests.post(token_url, headers=headers, json=data_client)
-
-    # Raise an exception if the request was not successful
     response.raise_for_status()
-
-    # Parse the JSON response to extract the token
     response_json = response.json()
     OPAL_CLIENT_TOKEN = response_json.get("token")
 
     if OPAL_CLIENT_TOKEN:
         print("OPAL_CLIENT_TOKEN successfully fetched:")
-        with open("./OPAL_CLIENT_TOKEN.tkn",'w') as client_token_file:
+        with open("./OPAL_CLIENT_TOKEN.tkn", 'w') as client_token_file:
             client_token_file.write(OPAL_CLIENT_TOKEN)
         print(OPAL_CLIENT_TOKEN)
     else:
         print("Failed to fetch OPAL_CLIENT_TOKEN. Response:")
         print(response_json)
 
-
-
-        # Make the POST request to fetch the client token
+    # Fetch the datasource token
     response = requests.post(token_url, headers=headers, json=data_datasource)
-
-    # Raise an exception if the request was not successful
     response.raise_for_status()
-
-    # Parse the JSON response to extract the token
     response_json = response.json()
     OPAL_DATASOURCE_TOKEN = response_json.get("token")
 
     if OPAL_DATASOURCE_TOKEN:
         print("OPAL_DATASOURCE_TOKEN successfully fetched:")
-        with open("./OPAL_DATASOURCE_TOKEN.tkn",'w') as datasource_token_file:
+        with open("./OPAL_DATASOURCE_TOKEN.tkn", 'w') as datasource_token_file:
             datasource_token_file.write(OPAL_DATASOURCE_TOKEN)
         print(OPAL_DATASOURCE_TOKEN)
     else:
