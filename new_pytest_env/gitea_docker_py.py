@@ -81,13 +81,11 @@ def setup_gitea():
         result = gitea.exec_run(add_admin_user_command)
         print(result.output.decode("utf-8"))
 
-        access_token = gitea.exec_run(create_access_token_command)
-        access_token = access_token.output.decode("utf-8").removesuffix("\n")
+        access_token = gitea.exec_run(create_access_token_command).output.decode("utf-8").removesuffix("\n")
         print(access_token)
         if access_token != "Command error: access token name has been used already":
             with open("./gitea_access_token.tkn",'w') as gitea_access_token_file:
                 gitea_access_token_file.write(access_token)
-                gitea_access_token_file.close()
     except docker.errors.APIError as e:
         print(f"Error: {e.explanation}")
     except Exception as e:
