@@ -9,9 +9,9 @@ if not os.path.exists(PERSISTENT_VOLUME):
     os.makedirs(PERSISTENT_VOLUME)
 
 # Configuration for admin user
-user_name = "ariAdmin2"
-email = "Ari2@gmail.com"
-password = "Aw123456"
+user_name = "permitAdmin2"
+email = "permit@gmail.com"
+password = "AA123456"
 add_admin_user_command = f"/usr/local/bin/gitea admin user create --admin --username {user_name} --email {email} --password {password} --must-change-password=false"
 create_access_token_command = f" gitea admin user generate-access-token --username {user_name} --raw --scopes all"
 

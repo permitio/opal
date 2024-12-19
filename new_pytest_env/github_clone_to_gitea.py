@@ -92,7 +92,7 @@ def push_to_gitea_with_credentials(cloned_repo_path, gitea_repo_url, username, p
 
 if __name__ == "__main__":
     # Variables
-    repo_url = "https://github.com/ariWeinberg/opal-example-policy-repo.git"
+    repo_url = "https://github.com/permitio/opal-example-policy-repo.git"
     repo_name = "opal-example-policy-repo"
     destination_path = f"./{repo_name}"
 
@@ -100,9 +100,9 @@ if __name__ == "__main__":
     gitea_api_token = ""
     with open("./gitea_access_token.tkn",'r') as gitea_access_token_file:
         gitea_api_token = gitea_access_token_file.read()
-    gitea_username = "AriAdmin2"
-    gitea_password = "Aw123456"
-    gitea_repo_url = f"{gitea_base_url}/ariAdmin2/{repo_name}.git"
+    gitea_username = "permitAdmin2"
+    gitea_password = "AA123456"
+    gitea_repo_url = f"{gitea_base_url}/permitAdmin2/{repo_name}.git"
 
     branch_name = "test_1"
 

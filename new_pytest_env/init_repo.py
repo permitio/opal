@@ -7,7 +7,7 @@ import shutil
 GITEA_BASE_URL = "http://localhost:3000/api/v1"  # Replace with your Gitea server URL
 with open("./gitea_access_token.tkn") as gitea_access_token_file:
     ACCESS_TOKEN = gitea_access_token_file.read().strip()  # Read and strip token
-USERNAME = "ariAdmin2"  # Your Gitea username
+USERNAME = "permitAdmin2"  # Your Gitea username
 
 def repo_exists(repo_name):
     url = f"{GITEA_BASE_URL}/repos/{USERNAME}/{repo_name}"

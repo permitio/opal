@@ -92,12 +92,12 @@ if network_name not in [network.name for network in client.networks.list()]:
 # Configuration for OPAL Server
 opal_server_env = {
     "UVICORN_NUM_WORKERS": "1",
-    "OPAL_POLICY_REPO_URL": "http://gitea_permit:3000/ariAdmin2/opal-example-policy-repo.git",
+    "OPAL_POLICY_REPO_URL": "http://gitea_permit:3000/permitAdmin2/opal-example-policy-repo.git",
     "OPAL_POLICY_REPO_POLLING_INTERVAL": "50",
     "OPAL_AUTH_PRIVATE_KEY": private_key,
     "OPAL_AUTH_PUBLIC_KEY": public_key,
     "OPAL_AUTH_MASTER_TOKEN": OPAL_AUTH_MASTER_TOKEN,
-    "OPAL_DATA_CONFIG_SOURCES": f"""{{"config":{{"entries":[{{"url":"http://ari_compose_opal_server_{file_number}:7002/policy-data","topics":["policy_data"],"dst_path":"/static"}}]}}}}""",
+    "OPAL_DATA_CONFIG_SOURCES": f"""{{"config":{{"entries":[{{"url":"http://permit_test_compose_opal_server_{file_number}:7002/policy-data","topics":["policy_data"],"dst_path":"/static"}}]}}}}""",
     "OPAL_LOG_FORMAT_INCLUDE_PID": "true",
     "OPAL_STATISTICS_ENABLED": "true",
 }
@@ -114,7 +114,7 @@ try:
     print("Starting OPAL Server container...")
     server_container = client.containers.run(
         image="permitio/opal-server:latest",
-        name=f"ari_compose_opal_server_{file_number}",
+        name=f"permit_test_compose_opal_server_{file_number}",
         ports={"7002/tcp": 7002},
         environment=opal_server_env,
         network=network_name,
@@ -177,7 +177,7 @@ try:
     # Configuration for OPAL Client
     opal_client_env = {
         "OPAL_DATA_TOPICS": "policy_data",
-        "OPAL_SERVER_URL": f"http://ari_compose_opal_server_{file_number}:7002",
+        "OPAL_SERVER_URL": f"http://permit_test_compose_opal_server_{file_number}:7002",
         "OPAL_CLIENT_TOKEN": OPAL_CLIENT_TOKEN,
         "OPAL_LOG_FORMAT_INCLUDE_PID": "true",
         "OPAL_INLINE_OPA_LOG_FORMAT": "http"
@@ -187,7 +187,7 @@ try:
     print("Starting OPAL Client container...")
     client_container = client.containers.run(
         image="permitio/opal-client:latest",
-        name=f"ari-compose-opal-client_{file_number}",
+        name=f"permit-compose-opal-client_{file_number}",
         ports={"7000/tcp": 7766, "8181/tcp": 8181},
         environment=opal_client_env,
         network=network_name,
