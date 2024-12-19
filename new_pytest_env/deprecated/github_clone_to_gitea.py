@@ -100,9 +100,9 @@ if __name__ == "__main__":
     gitea_api_token = ""
     with open("./gitea_access_token.tkn",'r') as gitea_access_token_file:
         gitea_api_token = gitea_access_token_file.read()
-    gitea_username = "permitAdmin2"
-    gitea_password = "AA123456"
-    gitea_repo_url = f"{gitea_base_url}/permitAdmin2/{repo_name}.git"
+    gitea_username = "permitAdmin"
+    gitea_password = "Aa123456"
+    gitea_repo_url = f"{gitea_base_url}/permitAdmin/{repo_name}.git"
 
     branch_name = "test_1"
 

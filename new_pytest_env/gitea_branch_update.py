@@ -5,15 +5,15 @@ import argparse
 import codecs
 
 # Configuration
-GITEA_REPO_URL = "http://localhost:3000/ariAdmin2/opal-example-policy-repo.git"  # Replace with your Gitea repository URL
-USERNAME = "ariAdmin2"  # Replace with your Gitea username
-PASSWORD = "AA123456"  # Replace with your Gitea password (or personal access token)
+USER_NAME = "permitAdmin"  # Replace with your Gitea username
+GITEA_REPO_URL = f"http://localhost:3000/{USER_NAME}/opal-example-policy-repo.git"  # Replace with your Gitea repository URL
+PASSWORD = "Aa123456"  # Replace with your Gitea password (or personal access token)
 CLONE_DIR = "./a"  # Local directory to clone the repo into
-BRANCHES = ["master", "test_1"]  # List of branches to handle
+BRANCHES = ["master"]  # List of branches to handle
 COMMIT_MESSAGE = "Automated update commit"  # Commit message
 
 # Append credentials to the repository URL
-authenticated_url = GITEA_REPO_URL.replace("http://", f"http://{USERNAME}:{PASSWORD}@")
+authenticated_url = GITEA_REPO_URL.replace("http://", f"http://{USER_NAME}:{PASSWORD}@")
 
 # Prepare the directory
 def prepare_directory(path):

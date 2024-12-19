@@ -10,3 +10,4 @@ OPAL_CLIENT_TOKEN.tkn
 .venv/*
 **/*.pyc
 gitea_access_token.tkn
+new_pytest_env/temp

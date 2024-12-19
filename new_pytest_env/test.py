@@ -12,11 +12,11 @@ CLIENT_TOKEN = ""
 DATASOURCE_TOKEN = ""
 
 # Read client token from file
-with open("./OPAL_CLIENT_TOKEN.tkn", 'r') as client_token_file:
+with open("/home/ari/Desktop/opal/new_pytest_env/temp/OPAL_CLIENT_TOKEN.tkn", 'r') as client_token_file:
     CLIENT_TOKEN = client_token_file.read().strip()
 
 # Read datasource token from file
-with open("./OPAL_DATASOURCE_TOKEN.tkn", 'r') as datasource_token_file:
+with open("/home/ari/Desktop/opal/new_pytest_env/temp/OPAL_DATASOURCE_TOKEN.tkn", 'r') as datasource_token_file:
     DATASOURCE_TOKEN = datasource_token_file.read().strip()
 
 ############################################
@@ -134,7 +134,9 @@ def update_policy(country_value):
 
     # Allow time for the update to propagate
     import time
-    time.sleep(80)
+    for i in range(80, 0, -1):
+        print(f"waiting for OPAL server to pull the new policy {i} secondes left", end='\r') 
+        time.sleep(1)
 
 async def main(iterations):
     """Main function to run tests with different policy settings."""
