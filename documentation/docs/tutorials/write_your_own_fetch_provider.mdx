@@ -347,11 +347,11 @@ async def _process_(self, records: List[asyncpg.Record]):
 
 
 ### Step 5 - testing locally your fetch provider
-  
+
   When you write a fetch provider, you will want to test it locally before publishing it to PyPI. Here's how you can do it:
-  
+
   You can use the `-e` or `--editable` argument for pip to install your package without building it, letting you use the source code directly, and modify it etc.
-  
+
   ```bash
   pip install -e path/to/your/package
   ```
@@ -361,7 +361,7 @@ async def _process_(self, records: List[asyncpg.Record]):
   There are two main ways to test your fetch provider:
 
   1. **Run the OPAL Client locally** instead of inside a Docker container using the command:
-  
+
   ```bash
   opal-client run
   ```
