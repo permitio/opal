@@ -381,7 +381,8 @@ def main():
     prepare_network()
     pull_OPAL_images()
 
-    prepare_brodcast()
+    if with_brodcast:
+        prepare_brodcast()
 
     prepare_OPAL_server()
 
