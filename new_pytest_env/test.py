@@ -2,22 +2,53 @@ import requests
 import subprocess
 import asyncio
 import os
+import argparse
 
 # Global variable to track errors
 global _error
 _error = False
 
 # Load tokens from files
-CLIENT_TOKEN = ""
-DATASOURCE_TOKEN = ""
+CLIENT_TOKEN = None
+DATASOURCE_TOKEN = None
 
-# Read client token from file
-with open("/home/ari/Desktop/opal/new_pytest_env/temp/OPAL_CLIENT_TOKEN.tkn", 'r') as client_token_file:
-    CLIENT_TOKEN = client_token_file.read().strip()
 
-# Read datasource token from file
-with open("/home/ari/Desktop/opal/new_pytest_env/temp/OPAL_DATASOURCE_TOKEN.tkn", 'r') as datasource_token_file:
-    DATASOURCE_TOKEN = datasource_token_file.read().strip()
+
+ip_to_location_base_url = "https://api.country.is/"
+
+US_ip = "8.8.8.8"
+SE_ip = "23.54.6.78"
+
+
+OPA_base_url = None
+policy_URI = None
+
+
+policy_url = None
+
+
+
+
+policy_file_path = None
+
+ips = None
+countries = None
+
+
+
+# Get the directory of the current script
+current_directory = None
+
+# Path to the external script for policy updates
+second_script_path = None
+
+
+gitea_password = None
+gitea_user_name = None
+gitea_repo_url = None 
+temp_dir = None 
+branches = None
+
 
 ############################################
 
@@ -42,8 +73,8 @@ def publish_data_user_location(src, user):
 
 async def test_authorization(user: str):
     """Test if the user is authorized based on the current policy."""
-    # URL of the OPA endpoint
-    url = "http://localhost:8181/v1/data/app/rbac/allow"
+
+    global policy_url
     
     # HTTP headers and request payload
     headers = {"Content-Type": "application/json"}
@@ -57,7 +88,7 @@ async def test_authorization(user: str):
     }
 
     # Send POST request to OPA
-    response = requests.post(url, headers=headers, json=data)
+    response = requests.post(policy_url, headers=headers, json=data)
 
     allowed = False
     try:
@@ -74,12 +105,13 @@ async def test_authorization(user: str):
 
 async def test_user_location(user: str, US: bool):
     """Test user location policy based on US or non-US settings."""
+    global US_ip, SE_ip, ip_to_location_base_url
     # Update user location based on the provided country flag
     if US:
-        publish_data_user_location("https://api.country.is/8.8.8.8", user)
+        publish_data_user_location(f"{ip_to_location_base_url}{US_ip}", user)
         print(f"{user}'s location set to: US. Expected outcome: NOT ALLOWED.")
     else:
-        publish_data_user_location("https://api.country.is/23.54.6.78", user)
+        publish_data_user_location(f"{ip_to_location_base_url}{SE_ip}", user)
         print(f"{user}'s location set to: SE. Expected outcome: ALLOWED.")
 
     # Allow time for the policy engine to process the update
@@ -89,33 +121,46 @@ async def test_user_location(user: str, US: bool):
     if await test_authorization(user) == US:
         return True
 
-async def test_data(iterations):
+async def test_data(iterations, user):
     """Run the user location policy tests multiple times."""
     for i in range(iterations):
         print(f"\nRunning test iteration {i + 1}...")
         if i % 2 == 0:
             # Test with location set to SE (non-US)
-            if await test_user_location("bob", False):
+            if await test_user_location(user, False):
                 return True
         else:
             # Test with location set to US
-            if await test_user_location("bob", True):
+            if await test_user_location(user, True):
                 return True
 
 def update_policy(country_value):
     """Update the policy file dynamically."""
-    # Get the directory of the current script
-    current_directory = os.path.dirname(os.path.abspath(__file__))
 
-    # Path to the external script for policy updates
-    second_script_path = os.path.join(current_directory, "gitea_branch_update.py")
+    global policy_file_path, second_script_path
+
+    gitea_password, gitea_user_name, gitea_repo_url, temp_dir, branches = ""
 
     # Command arguments to update the policy
     args = [
         "python",  # Python executable
         second_script_path,  # Script path
+        
+        
+        "--user_name",
+        gitea_user_name,
+        "--password",
+        gitea_password,
+        "--gitea_repo_url",
+        gitea_repo_url,
+        "--temp_dir",
+        temp_dir,
+        "--branches",
+        branches,
+
+
         "--file_name", 
-        "rbac.rego",
+        policy_file_path,
         "--file_content",
         (
             "package app.rbac\n"
@@ -139,9 +184,66 @@ def update_policy(country_value):
         time.sleep(1)
 
 async def main(iterations):
-    """Main function to run tests with different policy settings."""
+    """
+    Main function to run tests with different policy settings.
+    
+    This script updates policy configurations and tests access 
+    based on specified settings and locations. It integrates 
+    with Gitea and OPA for policy management and testing.
+    """
+    global gitea_password, gitea_user_name, gitea_repo_url, temp_dir, branches, ips, countries, policy_file_path, OPA_base_url, policy_URI
+    global policy_url, current_directory, second_script_path, CLIENT_TOKEN, DATASOURCE_TOKEN
+
+    # Parse command-line arguments
+    parser = argparse.ArgumentParser(description="Script to test policy updates using Gitea and OPA.")
+    #parser.add_argument("--file_name", type=str, required=True, help="Name of the file to be processed.")
+    #parser.add_argument("--file_content", type=str, required=True, help="Content of the file to be written or updated.")
+
+    parser.add_argument("--gitea_password", type=str, required=True, help="Password for the Gitea account.")
+    parser.add_argument("--gitea_user_name", type=str, required=True, help="Username for the Gitea account.")
+    parser.add_argument("--gitea_repo_url", type=str, required=True, help="URL of the Gitea repository to manage.")
+    parser.add_argument("--temp_dir", type=str, required=True, help="Temporary directory for storing tokens and files.")
+    parser.add_argument("--branches", nargs="+", type=str, required=True, help="List of branches to be processed in the Gitea repository.")
+
+    parser.add_argument("--locations", nargs="+", type=str, required=True, help="List of IP-country pairs (e.g., '192.168.1.1,US').")
+    parser.add_argument("--OPA_base_url", type=str, required=False, default="http://localhost:8181/", help="Base URL for the OPA API.")
+    parser.add_argument("--policy_URI", type=str, required=False, default="v1/data/app/rbac/allow", help="Policy URI to manage RBAC rules in OPA.")
+
+    args = parser.parse_args()
+
+    # Assign parsed arguments to global variables
+    gitea_password = args.gitea_password
+    gitea_user_name = args.gitea_user_name
+    gitea_repo_url = args.gitea_repo_url
+    temp_dir = args.temp_dir
+    branches = args.branches
+
+    # Parse locations into separate lists of IPs and countries
+    ips, countries = zip(*[location.split(',') for location in args.locations])
+    ips = list(ips)
+    countries = list(countries)
+
+    policy_file_path = "rbac.rego"  # Path to the policy file
+
+    # OPA and policy settings
+    OPA_base_url = args.OPA_base_url
+    policy_URI = args.policy_URI
+    policy_url = f"{OPA_base_url}{policy_URI}"
+
+    # Get the directory of the current script
+    current_directory = os.path.dirname(os.path.abspath(__file__))
+
+    # Path to the external script for policy updates
+    second_script_path = os.path.join(current_directory, "gitea_branch_update.py")
+
+    # Read tokens from files
+    with open(os.path.join(temp_dir, "OPAL_CLIENT_TOKEN.tkn"), 'r') as client_token_file:
+        CLIENT_TOKEN = client_token_file.read().strip()
+    with open(os.path.join(temp_dir, "OPAL_DATASOURCE_TOKEN.tkn"), 'r') as datasource_token_file:
+        DATASOURCE_TOKEN = datasource_token_file.read().strip()
+
     # Update policy to allow only non-US users
-    print("Updating policy to allow only users from SE...")
+    print("Updating policy to allow only users from SE (Sweden)...")
     update_policy("SE")
 
     if await test_data(iterations):

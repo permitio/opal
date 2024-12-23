@@ -71,6 +71,7 @@ def main():
     gitea_container_name = "gitea_permit"
     gitea_container_port = 3000
     gitea_username = "permitAdmin"
+    gitea_password = "Aa123456"
     gitea_repo_name = "opal-example-policy-repo"
 
     if args.deploy:
@@ -82,7 +83,7 @@ def main():
             additional_args=[
                 "--user_name", "permitAdmin",
                 "--email", "permit@gmail.com",
-                "--password", "Aa123456",
+                "--password", gitea_password,
                 "--network_name", network_name,
                 "--user_UID", "1000",
                 "--user_GID", "1000"
@@ -107,7 +108,15 @@ def main():
         time.sleep(20)
 
     print("Starting testing...")
-    run_script("test.py", temp_dir)
+    run_script("test.py", 
+               ["--temp_dir", temp_dir,
+               "--branches", "master",
+               "--locations", "8.8.8.8,US 77.53.31.138,SE",
+               "--gitea_user_name", gitea_username,
+               "--gitea_password", gitea_password,
+               "--gitea_repo_url", f"http://localhost:{gitea_container_port}/"
+               ]
+               )
 
     prepare_temp_dir()
 

@@ -4,16 +4,19 @@ import os
 import argparse
 import codecs
 
+
 # Configuration
-USER_NAME = "permitAdmin"  # Replace with your Gitea username
-GITEA_REPO_URL = f"http://localhost:3000/{USER_NAME}/opal-example-policy-repo.git"  # Replace with your Gitea repository URL
-PASSWORD = "Aa123456"  # Replace with your Gitea password (or personal access token)
-CLONE_DIR = "./a"  # Local directory to clone the repo into
-BRANCHES = ["master"]  # List of branches to handle
-COMMIT_MESSAGE = "Automated update commit"  # Commit message
+temp_dir = None
+
+USER_NAME = None
+GITEA_REPO_URL = None
+PASSWORD = None
+CLONE_DIR = None
+BRANCHES = None
+COMMIT_MESSAGE = None
 
 # Append credentials to the repository URL
-authenticated_url = GITEA_REPO_URL.replace("http://", f"http://{USER_NAME}:{PASSWORD}@")
+authenticated_url = None
 
 # Prepare the directory
 def prepare_directory(path):
@@ -60,20 +63,47 @@ def cleanup():
         print("Cleaning up temporary directory...")
         shutil.rmtree(CLONE_DIR)
 
-# Main entry point
-if __name__ == "__main__":
+
+def main():
+
+    global temp_dir, USER_NAME, GITEA_REPO_URL, PASSWORD, CLONE_DIR, BRANCHES, COMMIT_MESSAGE, authenticated_url
+    
     # Parse command-line arguments
     parser = argparse.ArgumentParser(description="Clone, update, and push changes to Gitea branches.")
     parser.add_argument("--file_name", type=str, required=True, help="The name of the file to create or update.")
     parser.add_argument("--file_content", type=str, required=True, help="The content of the file to create or update.")
+    
+    parser.add_argument("--user_name", type=str, required=True)
+    parser.add_argument("--password", type=str, required=True)
+    parser.add_argument("--gitea_repo_url", type=str, required=True)
+    parser.add_argument("--temp_dir", type=str, required=True)
+    parser.add_argument("--branches", nargs='+', type=str, required=True)
 
     args = parser.parse_args()
 
     file_name = args.file_name
-    file_content = args.file_content
+    
+    temp_dir = args.temp_dir
 
     # Decode escape sequences in the file content
     file_content = codecs.decode(args.file_content, 'unicode_escape')
+
+
+
+    GITEA_REPO_URL = args.gitea_repo_url #"http://localhost:3000/{USER_NAME}/opal-example-policy-repo.git"  # Replace with your Gitea repository URL
+    USER_NAME = args.user_name #"permitAdmin"                   # Replace with your Gitea username
+    PASSWORD = args.password #"Aa123456"                       # Replace with your Gitea password (or personal access token)
+    
+    BRANCHES = args.branches #["master"]                       # List of branches to handle
+    
+    CLONE_DIR = os.path.join(temp_dir, "branch_update")                           # Local directory to clone the repo into
+
+    COMMIT_MESSAGE = "Automated update commit"  # Commit message
+
+
+    # Append credentials to the repository URL
+    authenticated_url = GITEA_REPO_URL.replace("http://", f"http://{USER_NAME}:{PASSWORD}@")
+
 
     try:
         # Process each branch in the list
@@ -83,3 +113,7 @@ if __name__ == "__main__":
     finally:
         # Ensure cleanup is performed regardless of success or failure
         cleanup()
+    
+# Main entry point
+if __name__ == "__main__":
+    main()
