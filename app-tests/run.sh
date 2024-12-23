@@ -47,7 +47,7 @@ function prepare_policy_repo {
   echo "- Clone tests policy repo to create test's branch"
   export OPAL_POLICY_REPO_URL
   export POLICY_REPO_BRANCH
-  OPAL_POLICY_REPO_URL=${OPAL_POLICY_REPO_URL:-git@github.com:permitio/opal-tests-policy-repo.git}
+  OPAL_POLICY_REPO_URL=${OPAL_POLICY_REPO_URL:-git@github.com:daveads/opal-example-policy-repo.git}
   POLICY_REPO_BRANCH=test-$RANDOM$RANDOM
   rm -rf ./opal-tests-policy-repo
   git clone "$OPAL_POLICY_REPO_URL"
