@@ -285,7 +285,9 @@ def prepare_args():
     parser.add_argument("--OPAL_server_container_name", default="permit-test-compose-opal-server", help="Container name for OPAL server (default: permit-test-compose-opal-server).")
     parser.add_argument("--OPAL_client_container_name", default="permit-test-compose-opal-client", help="Container name for OPAL client (default: permit-test-compose-opal-client).")
     
+    parser.add_argument("--with_brodcast", action="store_true", help="Use brodcast channel.")
     
+
     # Parse arguments
     args = parser.parse_args()
     

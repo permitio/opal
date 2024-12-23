@@ -11,7 +11,9 @@ current_folder = os.path.dirname(os.path.abspath(__file__))
 uid = 1000
 gid = 1000
 
-
+def cleanup(_temp_dir):
+        if os.path.exists(_temp_dir):
+            shutil.rmtree(_temp_dir)
 
 def prepare_temp_dir():
     """
@@ -21,8 +23,7 @@ def prepare_temp_dir():
     """
     temp_dir = os.path.join(current_folder, 'temp')
 
-    if os.path.exists(temp_dir):
-        shutil.rmtree(temp_dir)
+    cleanup(temp_dir)
 
     os.makedirs(temp_dir)
     data_dir = os.path.join(temp_dir, 'data')
@@ -61,6 +62,7 @@ def run_script(script_name, temp_dir, additional_args=None):
 def main():
     parser = argparse.ArgumentParser(description="Run deployment and testing scripts.")
     parser.add_argument("--deploy", action="store_true", help="Include deployment steps before testing.")
+    parser.add_argument("--with_brodcast", action="store_true", help="Use brodcast channel.")
     args = parser.parse_args()
 
     # Prepare the 'temp' directory
@@ -99,26 +101,35 @@ def main():
                 "--data_dir", current_folder,
             ])
         time.sleep(10)
-
-        run_script("opal_docker_py.py", temp_dir, 
-                additional_args=[
-                "--network_name", network_name,
-                "--OPAL_POLICY_REPO_URL", f"http://{gitea_container_name}:{gitea_container_port}/{gitea_username}/{gitea_repo_name}.git"
-                ])
+        if args.with_brodcast:
+            run_script("opal_docker_py.py", temp_dir, 
+                    additional_args=[
+                    "--network_name", network_name,
+                    "--OPAL_POLICY_REPO_URL", f"http://{gitea_container_name}:{gitea_container_port}/{gitea_username}/{gitea_repo_name}.git"
+                    "--with_brodcast"
+                    ])
+        else:
+            run_script("opal_docker_py.py", temp_dir, 
+                    additional_args=[
+                    "--network_name", network_name,
+                    "--OPAL_POLICY_REPO_URL", f"http://{gitea_container_name}:{gitea_container_port}/{gitea_username}/{gitea_repo_name}.git"
+                    ])
         time.sleep(20)
 
     print("Starting testing...")
-    run_script("test.py", 
-               ["--temp_dir", temp_dir,
+    run_script("test.py", temp_dir,
+               [
                "--branches", "master",
-               "--locations", "8.8.8.8,US 77.53.31.138,SE",
+               "--locations", "8.8.8.8,US", "77.53.31.138,SE",
                "--gitea_user_name", gitea_username,
                "--gitea_password", gitea_password,
-               "--gitea_repo_url", f"http://localhost:{gitea_container_port}/"
+               "--gitea_repo_url", f"http://localhost:{gitea_container_port}/{gitea_username}/{gitea_repo_name}",
+               "--OPA_base_url", "http://localhost:8181/",
+               "--policy_URI", "v1/data/app/rbac/allow"
                ]
                )
 
-    prepare_temp_dir()
+    cleanup(os.path.join(current_folder, 'temp'))
 
 
 if __name__ == "__main__":

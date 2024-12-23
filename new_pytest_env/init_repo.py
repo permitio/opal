@@ -191,7 +191,7 @@ def main():
     private = False
     description = "This is a test repository created via API."
 
-    with open(os.path.join(temp_dir, "./gitea_access_token.tkn")) as gitea_access_token_file:
+    with open(os.path.join(temp_dir, "gitea_access_token.tkn")) as gitea_access_token_file:
         access_token = gitea_access_token_file.read().strip()  # Read and strip token
     try:
         if not repo_exists(repo_name):

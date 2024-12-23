@@ -139,14 +139,17 @@ def update_policy(country_value):
 
     global policy_file_path, second_script_path
 
-    gitea_password, gitea_user_name, gitea_repo_url, temp_dir, branches = ""
+    global gitea_password, gitea_user_name, gitea_repo_url, temp_dir, branches
 
     # Command arguments to update the policy
+    print()
+    print()
+    print(branches)
+    print()
+    print()
     args = [
         "python",  # Python executable
         second_script_path,  # Script path
-        
-        
         "--user_name",
         gitea_user_name,
         "--password",
@@ -157,8 +160,6 @@ def update_policy(country_value):
         temp_dir,
         "--branches",
         branches,
-
-
         "--file_name", 
         policy_file_path,
         "--file_content",
@@ -216,12 +217,16 @@ async def main(iterations):
     gitea_user_name = args.gitea_user_name
     gitea_repo_url = args.gitea_repo_url
     temp_dir = args.temp_dir
-    branches = args.branches
+    branches = " ".join(args.branches)
+
+
 
     # Parse locations into separate lists of IPs and countries
-    ips, countries = zip(*[location.split(',') for location in args.locations])
-    ips = list(ips)
-    countries = list(countries)
+    ips = []
+    countries = []
+    for location in args.locations:
+        ips.append(location.split(',')[0])
+        countries.append(location.split(',')[1])
 
     policy_file_path = "rbac.rego"  # Path to the policy file
 
@@ -246,7 +251,7 @@ async def main(iterations):
     print("Updating policy to allow only users from SE (Sweden)...")
     update_policy("SE")
 
-    if await test_data(iterations):
+    if await test_data(iterations,"bob"):
         return True
 
     print("Policy updated to allow only US users. Re-running tests...")
@@ -254,7 +259,7 @@ async def main(iterations):
     # Update policy to allow only US users
     update_policy("US")
 
-    if not await test_data(iterations):
+    if not await test_data(iterations,"bob"):
         return True
 
 # Run the asyncio event loop
