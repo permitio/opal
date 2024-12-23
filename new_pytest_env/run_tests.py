@@ -105,7 +105,7 @@ def main():
             run_script("opal_docker_py.py", temp_dir, 
                     additional_args=[
                     "--network_name", network_name,
-                    "--OPAL_POLICY_REPO_URL", f"http://{gitea_container_name}:{gitea_container_port}/{gitea_username}/{gitea_repo_name}.git"
+                    "--OPAL_POLICY_REPO_URL", f"http://{gitea_container_name}:{gitea_container_port}/{gitea_username}/{gitea_repo_name}.git",
                     "--with_brodcast"
                     ])
         else:

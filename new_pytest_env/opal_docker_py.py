@@ -3,6 +3,7 @@ import time
 import os
 import subprocess
 import requests
+import argparse
 from dotenv import load_dotenv
 
 # Load .env file if it exists
@@ -43,6 +44,49 @@ public_key = None
 server_container = None
 client_container = None
 
+with_brodcast = False
+
+
+
+POSTGRES_DB="postgres"
+POSTGRES_USER="postgres"
+POSTGRES_PASSWORD="postgres"
+
+broadcast_channel_container_name = "permit_broadcast_channel"
+broadcast_channel_image =  "postgres:alpine"
+
+def prepare_brodcast():
+    global broadcast_channel_container_name, broadcast_channel_image, network_name
+    global POSTGRES_DB, POSTGRES_USER, POSTGRES_PASSWORD
+
+
+    # Configuration for brodcast_container
+    opal_brodcast_env = {
+      "POSTGRES_DB":POSTGRES_DB,
+      "POSTGRES_USER":POSTGRES_USER,
+      "POSTGRES_PASSWORD":POSTGRES_PASSWORD
+    }
+
+    try:
+        # Create and start the brodcast container container
+        print("Starting brodcast channel container...")
+        brodcast_container = client.containers.run(
+            image=broadcast_channel_image,
+            name=f"{broadcast_channel_container_name}",
+            environment=opal_brodcast_env,
+            network=network_name,
+            detach=True
+        )
+        print(f"brodcast channel is running with ID: {brodcast_container.short_id}")
+
+    except requests.exceptions.RequestException as e:
+        print(f"HTTP Request failed: {e}")
+    except docker.errors.APIError as e:
+        print(f"Error with Docker API: {e}")
+    except docker.errors.ImageNotFound as e:
+        print(f"Error pulling images: {e}")
+    except Exception as e:
+        print(f"Unexpected error: {e}")
 
 def prepare_SSH_keys():
     
@@ -118,6 +162,11 @@ def pull_OPAL_images():
 
         print("Pulling OPAL Client image...")
         client.images.pull(OPAL_client_image)
+
+        if with_brodcast:
+            print("Pulling brodcast channel image...")
+            client.images.pull(broadcast_channel_image)
+            
 
     except requests.exceptions.RequestException as e:
         print(f"HTTP Request failed: {e}")
@@ -257,16 +306,9 @@ def prepare_OPAL_client():
     except Exception as e:
         print(f"Unexpected error: {e}")
 
-
-
-
-
-import argparse
-import os
-
 def prepare_args():
     global temp_dir, filename, command, network_name, OPAL_client_8181_port, OPAL_client_7000_port
-    global OPAL_POLICY_REPO_POLLING_INTERVAL, OPAL_server_uvicorn_num_workers, OPAL_POLICY_REPO_URL
+    global OPAL_POLICY_REPO_POLLING_INTERVAL, OPAL_server_uvicorn_num_workers, OPAL_POLICY_REPO_URL, with_brodcast
     global OPAL_server_7002_port, OPAL_DATA_TOPICS, OPAL_SERVER_URL, OPAL_server_container_name, OPAL_client_container_name
 
     # Initialize argument parser
@@ -291,6 +333,10 @@ def prepare_args():
     # Parse arguments
     args = parser.parse_args()
     
+
+    with_brodcast = args.with_brodcast
+    print(f"with_brodcast: {with_brodcast}")
+
     # Set global variables
     network_name = args.network_name
     OPAL_server_container_name = args.OPAL_server_container_name
@@ -334,6 +380,8 @@ def main():
     prepare_keys()
     prepare_network()
     pull_OPAL_images()
+
+    prepare_brodcast()
 
     prepare_OPAL_server()
 
