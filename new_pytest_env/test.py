@@ -121,18 +121,33 @@ async def test_user_location(user: str, US: bool):
     if await test_authorization(user) == US:
         return True
 
-async def test_data(iterations, user):
+async def test_data(iterations, user, current_countrey):
     """Run the user location policy tests multiple times."""
-    for i in range(iterations):
-        print(f"\nRunning test iteration {i + 1}...")
-        if i % 2 == 0:
-            # Test with location set to SE (non-US)
-            if await test_user_location(user, False):
-                return True
+
+    for ip, countrey in zip(ips, countries):
+
+        publish_data_user_location(f"{ip_to_location_base_url}{ip}", user)
+
+        if (current_countrey == countrey):
+            print(f"{user}'s location set to: {countrey}. current_countrey is set to: {current_countrey} Expected outcome: ALLOWED.")
         else:
-            # Test with location set to US
-            if await test_user_location(user, True):
-                return True
+            print(f"{user}'s location set to: {countrey}. current_countrey is set to: {current_countrey} Expected outcome: NOT ALLOWED.")
+
+        await asyncio.sleep(1)
+
+        if await test_authorization(user) == (not (current_countrey == countrey)):
+            return True
+
+    # for i in range(iterations):
+    #     print(f"\nRunning test iteration {i + 1}...")
+    #     if i % 2 == 0:
+    #         # Test with location set to SE (non-US)
+    #         if await test_user_location(user, False):
+    #             return True
+    #     else:
+    #         # Test with location set to US
+    #         if await test_user_location(user, True):
+    #             return True
 
 def update_policy(country_value):
     """Update the policy file dynamically."""
@@ -251,7 +266,7 @@ async def main(iterations):
     print("Updating policy to allow only users from SE (Sweden)...")
     update_policy("SE")
 
-    if await test_data(iterations,"bob"):
+    if await test_data(iterations,"bob", "SE"):
         return True
 
     print("Policy updated to allow only US users. Re-running tests...")
@@ -259,7 +274,7 @@ async def main(iterations):
     # Update policy to allow only US users
     update_policy("US")
 
-    if not await test_data(iterations,"bob"):
+    if await test_data(iterations,"bob", "US"):
         return True
 
 # Run the asyncio event loop

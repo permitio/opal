@@ -120,7 +120,7 @@ def main():
     run_script("test.py", temp_dir,
                [
                "--branches", "master",
-               "--locations", "8.8.8.8,US", "77.53.31.138,SE",
+               "--locations", "8.8.8.8,US", "77.53.31.138,SE", "210.2.4.8,CN",
                "--gitea_user_name", gitea_username,
                "--gitea_password", gitea_password,
                "--gitea_repo_url", f"http://localhost:{gitea_container_port}/{gitea_username}/{gitea_repo_name}",
