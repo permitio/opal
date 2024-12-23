@@ -5,9 +5,9 @@ name: Tests
 
 on:
   push:
-    branches: [ master ]
+    branches: [ failing-app-test0 ]
   pull_request:
-    branches: [ master ]
+    branches: [ failing-app-test0 ]
 
   # Allows you to run this workflow manually from the Actions tab
   workflow_dispatch:
