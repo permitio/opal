@@ -8,7 +8,7 @@ import shutil
 # Define current_folder as a global variable
 current_folder = os.path.dirname(os.path.abspath(__file__))
 
-uid = 1000
+uid = 502
 gid = 1000
 
 def cleanup(_temp_dir):
@@ -29,8 +29,8 @@ def prepare_temp_dir():
     data_dir = os.path.join(temp_dir, 'data')
     os.makedirs(data_dir)
 
-    os.chown(data_dir, uid, gid)
-    os.chmod(data_dir, 755)
+    #os.chown(data_dir, uid, gid)
+    #os.chmod(data_dir, 755)
 
     return temp_dir
 
@@ -62,12 +62,12 @@ def run_script(script_name, temp_dir, additional_args=None):
 def main():
     parser = argparse.ArgumentParser(description="Run deployment and testing scripts.")
     parser.add_argument("--deploy", action="store_true", help="Include deployment steps before testing.")
-    parser.add_argument("--with_brodcast", action="store_true", help="Use brodcast channel.")
+    parser.add_argument("--with_broadcast", action="store_true", help="Use broadcast channel.")
     args = parser.parse_args()
 
     # Prepare the 'temp' directory
     temp_dir = prepare_temp_dir()
-
+    #temp_dir = "/Users/israelw/opal-e2e-tests/opal/new_pytest_env/temp"
 
     network_name = "opal_test"
     gitea_container_name = "gitea_permit"
@@ -87,8 +87,8 @@ def main():
                 "--email", "permit@gmail.com",
                 "--password", gitea_password,
                 "--network_name", network_name,
-                "--user_UID", "1000",
-                "--user_GID", "1000"
+                "--user_UID", str(uid),
+                "--user_GID", str(gid)
             ]
         )
         time.sleep(10)
@@ -101,12 +101,12 @@ def main():
                 "--data_dir", current_folder,
             ])
         time.sleep(10)
-        if args.with_brodcast:
+        if args.with_broadcast:
             run_script("opal_docker_py.py", temp_dir, 
                     additional_args=[
                     "--network_name", network_name,
                     "--OPAL_POLICY_REPO_URL", f"http://{gitea_container_name}:{gitea_container_port}/{gitea_username}/{gitea_repo_name}.git",
-                    "--with_brodcast"
+                    "--with_broadcast"
                     ])
         else:
             run_script("opal_docker_py.py", temp_dir, 

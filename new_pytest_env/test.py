@@ -77,7 +77,9 @@ async def test_authorization(user: str):
     global policy_url
     
     # HTTP headers and request payload
-    headers = {"Content-Type": "application/json"}
+    headers = {"Content-Type": "application/json" }
+    #headers = {"Content-Type": "application/json" , "Authorization": f"Bearer {CLIENT_TOKEN}"}
+    
     data = {
         "input": {
             "user": user,
@@ -121,21 +123,21 @@ async def test_user_location(user: str, US: bool):
     if await test_authorization(user) == US:
         return True
 
-async def test_data(iterations, user, current_countrey):
+async def test_data(iterations, user, current_country):
     """Run the user location policy tests multiple times."""
 
-    for ip, countrey in zip(ips, countries):
+    for ip, country in zip(ips, countries):
 
         publish_data_user_location(f"{ip_to_location_base_url}{ip}", user)
 
-        if (current_countrey == countrey):
-            print(f"{user}'s location set to: {countrey}. current_countrey is set to: {current_countrey} Expected outcome: ALLOWED.")
+        if (current_country == country):
+            print(f"{user}'s location set to: {country}. current_country is set to: {current_country} Expected outcome: ALLOWED.")
         else:
-            print(f"{user}'s location set to: {countrey}. current_countrey is set to: {current_countrey} Expected outcome: NOT ALLOWED.")
+            print(f"{user}'s location set to: {country}. current_country is set to: {current_country} Expected outcome: NOT ALLOWED.")
 
         await asyncio.sleep(1)
 
-        if await test_authorization(user) == (not (current_countrey == countrey)):
+        if await test_authorization(user) == (not (current_country == country)):
             return True
 
     # for i in range(iterations):

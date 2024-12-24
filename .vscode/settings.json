@@ -1,3 +1,4 @@
 {
-    "cmake.ignoreCMakeListsMissing": true
+    "cmake.ignoreCMakeListsMissing": true,
+    "makefile.configureOnOpen": false
 }

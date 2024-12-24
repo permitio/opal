@@ -44,7 +44,7 @@ public_key = None
 server_container = None
 client_container = None
 
-with_brodcast = False
+with_broadcast = False
 
 
 
@@ -163,7 +163,7 @@ def pull_OPAL_images():
         print("Pulling OPAL Client image...")
         client.images.pull(OPAL_client_image)
 
-        if with_brodcast:
+        if with_broadcast:
             print("Pulling brodcast channel image...")
             client.images.pull(broadcast_channel_image)
             
@@ -182,6 +182,8 @@ def prepare_OPAL_server():
     global OPAL_server_uvicorn_num_workers, OPAL_POLICY_REPO_URL, OPAL_POLICY_REPO_POLLING_INTERVAL, server_container
     global OPAL_server_container_name, OPAL_server_7002_port, network_name,OPAL_DATA_TOPICS, private_key, public_key
 
+    if with_broadcast:
+        OPAL_server_uvicorn_num_workers = "4"
 
     # Configuration for OPAL Server
     opal_server_env = {
@@ -195,6 +197,10 @@ def prepare_OPAL_server():
         "OPAL_LOG_FORMAT_INCLUDE_PID": "true",
         "OPAL_STATISTICS_ENABLED": "true"
     }
+
+    if with_broadcast:
+        opal_broadcast_uri = f"postgres://postgres:postgres@{broadcast_channel_container_name}:{5432}/postgres"
+        opal_server_env["OPAL_BROADCAST_URI"] = opal_broadcast_uri
 
     try:
         # Create and start the OPAL Server container
@@ -308,7 +314,7 @@ def prepare_OPAL_client():
 
 def prepare_args():
     global temp_dir, filename, command, network_name, OPAL_client_8181_port, OPAL_client_7000_port
-    global OPAL_POLICY_REPO_POLLING_INTERVAL, OPAL_server_uvicorn_num_workers, OPAL_POLICY_REPO_URL, with_brodcast
+    global OPAL_POLICY_REPO_POLLING_INTERVAL, OPAL_server_uvicorn_num_workers, OPAL_POLICY_REPO_URL, with_broadcast
     global OPAL_server_7002_port, OPAL_DATA_TOPICS, OPAL_SERVER_URL, OPAL_server_container_name, OPAL_client_container_name
 
     # Initialize argument parser
@@ -327,15 +333,15 @@ def prepare_args():
     parser.add_argument("--OPAL_server_container_name", default="permit-test-compose-opal-server", help="Container name for OPAL server (default: permit-test-compose-opal-server).")
     parser.add_argument("--OPAL_client_container_name", default="permit-test-compose-opal-client", help="Container name for OPAL client (default: permit-test-compose-opal-client).")
     
-    parser.add_argument("--with_brodcast", action="store_true", help="Use brodcast channel.")
+    parser.add_argument("--with_broadcast", action="store_true", help="Use brodcast channel.")
     
 
     # Parse arguments
     args = parser.parse_args()
     
 
-    with_brodcast = args.with_brodcast
-    print(f"with_brodcast: {with_brodcast}")
+    with_broadcast = args.with_broadcast
+    print(f"with_broadcast: {with_broadcast}")
 
     # Set global variables
     network_name = args.network_name
@@ -381,7 +387,7 @@ def main():
     prepare_network()
     pull_OPAL_images()
 
-    if with_brodcast:
+    if with_broadcast:
         prepare_brodcast()
 
     prepare_OPAL_server()
