@@ -1,3 +1,16 @@
+opal_test_keys/*
+.env
+opal-example-policy-repo/*
+opal-example-policy-repo
+data/
+opal-example-policy-repo
+OPAL_DATASOURCE_TOKEN.tkn
+OPAL_CLIENT_TOKEM.tkn
+OPAL_CLIENT_TOKEN.tkn
+.venv/*
+**/*.pyc
+gitea_access_token.tkn
+new_pytest_env/temp
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
