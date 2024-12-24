@@ -345,6 +345,52 @@ async def _process_(self, records: List[asyncpg.Record]):
 - The [fetch_worker](https://github.com/permitio/opal/blob/master/packages/opal-common/opal_common/fetcher/engine/fetch_worker.py#L33-L34) invokes a provider's `.fetch()` and `.process()` methods which are simply proxies to its `_fetch_()` and `_process_()` methods.
 - The [fetcher-register](https://github.com/permitio/opal/blob/master/packages/opal-common/opal_common/fetcher/fetcher_register.py) loads the providers when OPAL client first loads and makes them available for fetch-workers.
 
+
+### Step 5 - testing locally your fetch provider
+
+  When you write a fetch provider, you will want to test it locally before publishing it to PyPI. Here's how you can do it:
+
+  You can use the `-e` or `--editable` argument for pip to install your package without building it, letting you use the source code directly, and modify it etc.
+
+  ```bash
+  pip install -e path/to/your/package
+  ```
+
+  [More info on the `--editable` flag](https://pip.pypa.io/en/stable/cli/pip_install/#cmdoption-e)
+
+  There are two main ways to test your fetch provider:
+
+  1. **Run the OPAL Client locally** instead of inside a Docker container using the command:
+
+  ```bash
+  opal-client run
+  ```
+
+  or using `uvicorn` directly:
+
+  ```bash
+  uvicorn opal_client.main:app
+  ```
+
+  This is the easiest way to debug and test your fetch provider.
+
+  2. **Install the custom package inside the Docker container**. You can use `pip install -e` inside the Docker container, then mount the source code at the install directory. This way you can modify it and run it without needing to rebuild the package or the Docker container.
+
+  Here's how you can do it:
+
+  - Create a custom OPAL Client docker image.
+  - Install the custom package using `pip install -e /custom-package`.
+  - Run a container with the source code mounted at `/custom-package`.
+
+  With this setup you can connect a remote debugger to the live Docker container, and run everything inside there.
+
+  If you are using PyCharm, here's a guide for that: [Using Docker as a remote interpreter](https://www.jetbrains.com/help/pycharm/using-docker-as-a-remote-interpreter.html).
+
+
+
+
+
+
 ## <a name="using-providers"></a>Using a custom fetch provider
 
 This section explains how to use a custom OPAL fetch provider in your OPAL setup.
