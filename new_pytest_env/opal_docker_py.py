@@ -328,7 +328,7 @@ def prepare_args():
     parser.add_argument("--OPAL_client_7000_port", default=7766, type=int, help="Port for OPAL client (default: 7766).")
     parser.add_argument("--OPAL_client_8181_port", default=8181, type=int, help="Port for OPAL client API (default: 8181).")
     parser.add_argument("--OPAL_server_uvicorn_num_workers", default="1", help="Number of Uvicorn workers (default: 1).")
-    parser.add_argument("--OPAL_POLICY_REPO_POLLING_INTERVAL", default="50", help="Polling interval for OPAL policy repo (default: 50 seconds).")
+    parser.add_argument("--OPAL_POLICY_REPO_POLLING_INTERVAL", default="10", help="Polling interval for OPAL policy repo (default: 50 seconds).")
     parser.add_argument("--OPAL_DATA_TOPICS", default="policy_data", help="Data topics for OPAL server (default: policy_data).")
     parser.add_argument("--OPAL_server_container_name", default="permit-test-compose-opal-server", help="Container name for OPAL server (default: permit-test-compose-opal-server).")
     parser.add_argument("--OPAL_client_container_name", default="permit-test-compose-opal-client", help="Container name for OPAL client (default: permit-test-compose-opal-client).")
