@@ -1,0 +1,74 @@
+name: Sync branch to OPAL Plus
+
+on:
+  push:
+    branches:
+      - master
+  workflow_dispatch:
+
+jobs:
+  sync:
+    name: Sync branch to OPAL Plus
+    if: github.repository == 'permitio/opal'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Set up Git configuration
+        run: |
+          git config --global user.name 'github-actions[bot]'
+          git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+
+      - name: Get Token
+        id: get_workflow_token
+        uses: peter-murray/workflow-application-token-action@v1
+        with:
+          application_id: ${{ secrets.APPLICATION_ID }}
+          application_private_key: ${{ secrets.APPLICATION_PRIVATE_KEY }}
+
+      - name: Checkout permitio/opal repository
+        uses: actions/checkout@v4
+        with:
+          repository: permitio/opal
+          ref: ${{ github.ref_name }}
+          path: opal
+          fetch-depth: 0
+
+      - name: Checkout permitio/opal-plus repository
+        uses: actions/checkout@v4
+        with:
+          repository: permitio/opal-plus
+          path: opal-plus
+          token: ${{ steps.get_workflow_token.outputs.token }}
+
+      - name: Create public-${{ github.ref_name }} branch in opal repository
+        working-directory: opal
+        run: |
+          git checkout -b public-${{ github.ref_name }}
+
+      - name: Rebase opal-plus/public-${{ github.ref_name }} onto opal/${{ github.ref_name }}
+        working-directory: opal-plus
+        run: |
+          git remote add opal ../opal
+          git fetch opal
+          git checkout public-${{ github.ref_name }}
+          git rebase opal/${{ github.ref_name }}
+
+      - name: Push changes to opal-plus/public-${{ github.ref_name }} branch
+        working-directory: opal-plus
+        run: |
+          git push origin public-${{ github.ref_name }}
+
+      - name: Create Pull Request for opal-plus
+        working-directory: opal-plus
+        run: |
+          set -e
+          PR_NUMBER=$(gh pr list --repo permitio/opal-plus --base master --head public-master --json number --jq '.[0].number')
+          if [ -n "$PR_NUMBER" ]; then
+            echo "PR already exists: #$PR_NUMBER"
+            gh pr edit "$PR_NUMBER" --repo permitio/opal-plus --add-reviewer "$GITHUB_ACTOR" || true
+          else
+            gh pr create --repo permitio/opal-plus --assignee "$GITHUB_ACTOR" --reviewer "$GITHUB_ACTOR" --base master --head public-master --title "Sync changes from public OPAL repository" --body "This PR synchronizes changes from the public OPAL repository to the private OPAL Plus repository." || true
+            echo "New PR created."
+          fi
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ steps.get_workflow_token.outputs.token }}

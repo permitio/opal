@@ -1,0 +1,36 @@
+# Running the OPAL Server and Client in Production
+
+## Production run Server
+
+When running the server in production, we should set the server to work with a production server ([GUNICORN](https://gunicorn.org/))
+and a backbone pub/sub.
+
+### Gunicorn
+
+Simply use the `run` command with the `--engine-type gunicorn` option.
+
+  ```sh
+  opal-server run --engine-type gunicorn
+  ```
+
+  - (run `opal-server run --help` to see more info on the `run` command)
+  - use `--server-worker-count` to control the amount of workers (default is set to cpu-count)
+  - You can of course put another server or proxy (e.g. NGNIX, ENVOY) in front of the OPAL-SERVER, instead of or in addition to Gunicorn
+
+### Backbone Pub/Sub
+
+  - While OPAL-servers provide a lightweight websocket pub/sub channel for the clients; in order for all OPAL-servers (workers of same server, and of course servers on other nodes) to be synced (And in turn their clients to be synced) they need to connect through a shared channel - which we refer to as the backbone pub/sub or broadcast channel.
+  - Backbone Pub/Sub options: Kafka, Postgres LISTEN/NOTIFY, Redis
+  - Use the `broadcast-uri` option (or `OPAL_BROADCAST_URI` env-var) to configure an OPAL-server to work with a backbone.
+  - for example `OPAL_BROADCAST_URI=postgres://localhost/mydb opal-server run`
+
+### Put it all together:
+
+  ```sh
+  OPAL_BROADCAST_URI=postgres://localhost/mydb opal-server run --engine-type gunicorn
+  ```
+
+  ### Production run Client
+
+Unlike the server, the opal-client currently supports working only with a single worker process (so there's no need to run it with Gunicorn).
+This will change in future releases.

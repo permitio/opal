@@ -1,0 +1,39 @@
+# Running the OPAL Docker Containers
+
+## <a name="before-you-begin"></a> Before you begin
+
+### <a name="running-docker"></a> Running docker containers
+
+Since running OPAL is simply spinning docker containers, OPAL is cloud-ready and can fit in many environments: AWS (ECS, EKS, etc), Google Cloud, Azure, Kubernetes, etc.
+
+Each environment has different instructions on how to run container-based applications, and as such, environment-specific instructions are outside the scope of this tutorial. We will show you how to run the container locally with `docker run`, and you can then apply the necessary changes to your runtime environment.
+
+#### Example production setup
+
+We at [Permit.io](https://permit.io) currently run our OPAL production cluster using the following services:
+
+- AWS ECS Fargate - for container runtime.
+- AWS Secrets Manager - to store sensitive OPAL config vars.
+- AWS Certificate Manager - for HTTPS certificates.
+- AWS ELB - for load balancer.
+
+#### <a name="example-docker-run"></a> Example docker run command
+
+Example docker run command (no worries, we will show real commands later):
+
+```
+docker run -it \
+  -v ~/.ssh:/root/ssh \
+  -e "OPAL_AUTH_PRIVATE_KEY=$(OPAL_AUTH_PRIVATE_KEY)" \
+  -e "OPAL_AUTH_PUBLIC_KEY=$(OPAL_AUTH_PUBLIC_KEY)" \
+  -e "OPAL_POLICY_REPO_URL=$(OPAL_POLICY_REPO_URL)" \
+  -p 7002:7002 \
+  permitio/opal-server
+```
+
+| This command                                                                                                                              | In production environments                                                                                                                                  |
+| :---------------------------------------------------------------------------------------------------------------------------------------- | :---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Runs the docker container in interactive mode                                                                                             | Typically no such option                                                                                                                                    |
+| Mounts the `~/.ssh` dir as volume                                                                                                         | Varies between environment, e.g in AWS ECS you would mount volumes via the task definition.                                                                 |
+| Passes the following env vars to the docker container as config: `OPAL_AUTH_PRIVATE_KEY`, `OPAL_AUTH_PUBLIC_KEY`, `OPAL_POLICY_REPO_URL`. | Varies between environment, e.g in AWS ECS you would specify env vars values via the task definition.                                                       |
+| Exposes port 7002 on the host machine.                                                                                                    | Varies between environment, e.g in AWS ECS you would specify exposed ports in the task definition, and will have to expose these ports via a load balancer. |

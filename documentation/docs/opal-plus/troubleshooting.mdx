@@ -1,0 +1,43 @@
+---
+sidebar_position: 10
+title: Troubleshooting
+---
+
+When something goes wrong, we are here to help.
+
+Feel free to reach out to us on Slack on our [community channel](https://bit.ly/opal-slack)
+or in your dedicated OPAL+ support channel, and we will do our best to assist you quickly.
+
+### Seeking Support
+
+When seeking support, please provide as much information as possible to help us understand the issue and resolve it faster.
+This includes:
+* Full description of the problem
+* Steps to reproduce the issue
+* Environment details (OS, Docker, Kubernetes, etc.)
+
+You can also provide the following information:
+
+#### Extract Logs
+
+On production, we advise you to connect OPAL+ to your logging system to collect logs.
+Configure the [OPAL_LOG_SERIALIZE](/getting-started/configuration) environment variable to `true` to serialize logs in JSON format.
+
+When running OPAL+ locally or in a development environment, you can extract logs from the console.
+Alternatively, you can enable logging to file by setting the [OPAL_LOG_TO_FILE](/getting-started/configuration) to `true`.
+
+You can also enable debug logs by setting the [OPAL_LOG_LEVEL](/getting-started/configuration) environment variable to `debug`.
+
+#### Export Configuration
+
+You can export your configuration by running the following command:
+
+```bash
+opal-client print-config
+```
+
+Make sure to censor any sensitive information, like passwords or API keys, before sharing the configuration.
+
+## Common Issues
+
+More common issues and their solutions are available in the [OPAL documentation](/getting-started/running-opal/troubleshooting).

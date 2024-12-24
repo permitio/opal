@@ -1,0 +1,102 @@
+# Setting up the OPAL Server
+
+## Installing the package
+
+As the first step, we need to **install** the OPAL server. Once installed, we will have access to the
+`opal-server` command.
+
+```
+pip install opal-server
+```
+
+If the command continues to be unavailable, please try deactivationg and then activating your virtual-env.
+
+You can run `opal-server --help` to see **all the options and commands** the package provides.
+
+Running the `opal-server print-config` shows you all the possible **configuration keys and their current values**.
+
+#### Demo of successful installation
+
+<p>
+  <a
+    href="https://asciinema.org/a/XyDg1ot2Q6UOsWOkiSxGVSJmx?t=1"
+    target="_blank"
+  >
+    <img src="https://asciinema.org/a/XyDg1ot2Q6UOsWOkiSxGVSJmx.svg" />
+  </a>
+</p>
+
+## Running the server
+
+Running the OPAL server is simple.
+
+:::tip run server
+You can run the server by typing `opal-server run` in your terminal.
+:::
+
+Once the server is running you can check out its **Open-API live docs** at
+[as simple documentation](http://localhost:7002/docs) or [a redoc layout](http://localhost:7002/redoc).
+
+Make sure that your server is running on `localhost:7002` to be able to view the above links.
+
+### Polling Policy from GIT
+
+The most basic way to run the server is just with a GIT repository to watch for policy-changes and have
+the flexibility to get the policy directly.
+
+The simplest of these is using a public repository, and simply polling on it with
+`OPAL_POLICY_REPO_URL` and `OPAL_POLICY_REPO_POLLING_INTERVAL`.
+
+#### Monitor the OPAL Server every 60 seconds
+
+```sh
+OPAL_POLICY_REPO_URL=https://github.com/permitio/opal-example-policy-repo.git  opal-server --policy-repo-polling-interval 60 run
+```
+
+#### A video example of running the above command
+
+<p>
+  <a
+    href="https://asciinema.org/a/4gkfGDR45IeR0Zx3y2zB1Vg9T?t=1"
+    target="_blank"
+  >
+    <img src="https://asciinema.org/a/4gkfGDR45IeR0Zx3y2zB1Vg9T.svg" />
+  </a>
+</p>
+
+### Policy GIT Webhook
+
+A better GIT watching can be achieved via configuring a webhook back to the `OPAL_SERVER`'s webhook route.
+Let's assume your server is hosted on `opal.yourdomain.com`. The **webhook URL** will be `opal.yourdomain.com/webhook`.
+
+:::tip
+If you need more guidance on configuting webhooks, checkout the **[GitHub Guide](https://docs.github.com/en/developers/webhooks-and-events/creating-webhooks)**.
+:::
+
+#### Create a secret you can share with a webhook provider
+
+You can use `opal-server generate-secret` to create a cryptographically strong secret to use.
+
+Then use `OPAL_POLICY_REPO_WEBHOOK_SECRET` to configure a secret you can share with the webhook provider to authenticate incoming webhooks.
+
+### Additional GIT repository settings
+
+Here are some settings that will be useful in adding more control.
+
+#### `POLICY_REPO_SSH_KEY`
+
+This will allow you to authenticate to a **private repository**. You can generate
+a [Github SSH key here](https://docs.github.com/en/github/authenticating-to-github/adding-a-new-ssh-key-to-your-github-account).
+
+The value you pass for the `POLICY_REPO_SSH_KEY` can either be a file path, or the contents of the SSH-key - with newlines replaced with `\_`.
+
+#### `OPAL_POLICY_REPO_CLONE_PATH` & `OPAL_POLICY_REPO_MAIN_BRANCH`
+
+These will allow you to control how the repo is cloned.
+
+### Simple run with Data source configuration
+
+In addition to policy updates as seen in above section, the OPAL Server can also facilitate data updates, directing
+OPAL Clients to fetch the needed data from various sources.
+
+You can learn more about **[triggering data updates here](/tutorials/trigger_data_updates)**.

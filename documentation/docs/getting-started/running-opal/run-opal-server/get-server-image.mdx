@@ -1,0 +1,15 @@
+# Get the Server Image
+
+### Step 1: Get the server image from docker hub
+
+If you run the docker image locally, you need docker installed on your machine.
+
+Run this command to get the image:
+
+```
+docker pull permitio/opal-server
+```
+
+If you run in a cloud environment (e.g: AWS ECS), specify `permitio/opal-server` in your task definition or equivalent.
+
+Running the opal server container is simply a command of [docker run](#example-docker-run), but we need to pipe to the OPAL server container the necessary configuration it needs via **environment variables**. The following sections will explain each class of configuration variables and how to set their values, after which we will demonstrate real examples.

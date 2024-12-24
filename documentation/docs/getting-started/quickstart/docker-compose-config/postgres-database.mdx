@@ -1,0 +1,39 @@
+# Postgres Database acting as a Broadcast Channel
+
+One of the containers that is handled inside the `docker-compose.yml` config is the broadcast channel.
+
+When **scaling** the OPAL Server to **multiple nodes and/or multiple workers**, we use a broadcast channel to **sync
+between all the instances** of the OPAL Server.
+
+```yml showLineNumbers
+services:
+  broadcast_channel:
+    image: postgres:alpine
+    environment:
+      - POSTGRES_DB=postgres
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+```
+
+With this configuration, you can specify **what channel we want to subscribe too**, and in this case, it's a
+**PostgreSQL Database**.
+
+:::tip
+If you run only a **single worker** it is **not necessary to deploy a broadcast backend**.
+
+**We do not recommend running a single worker in production.**
+:::
+
+These are the currently three supported [broadcast backends](https://github.com/encode/broadcaster#available-backends):
+
+1. PostgreSQL
+2. Redis
+3. Kafka
+
+The format of the broadcaster URI string `OPAL_BROADCAST_URI` is specified below for **Postgres**. A similar pattern will apply for
+**Redis** and **Kafka**.
+
+```yml
+environment:
+  - OPAL_BROADCAST_URI=postgres://postgres:postgres@broadcast_channel:5432/postgres
+```

@@ -1,0 +1,46 @@
+# Understanding the Docker Compose Example Configuration
+
+The example file we will be referring to in this guide can be seen **[here](https://github.com/permitio/opal/blob/master/docker/docker-compose-example.yml)**.
+
+This example is running three containers that we have mentioned at the beginning of this guide.
+
+1. **Broadcast Channel**
+2. **OPAL Server**
+3. **OPAL CLient**
+
+Here is an overview of the whole `docker-compose.yml` file, but don't worry, we will be referring to each section separately.
+
+```yml showLineNumbers
+services:
+  broadcast_channel:
+    image: postgres:alpine
+    environment:
+      - POSTGRES_DB=postgres
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+  opal_server:
+    image: permitio/opal-server:latest
+    environment:
+      - OPAL_BROADCAST_URI=postgres://postgres:postgres@broadcast_channel:5432/postgres
+      - UVICORN_NUM_WORKERS=4
+      - OPAL_POLICY_REPO_URL=https://github.com/permitio/opal-example-policy-repo
+      - OPAL_POLICY_REPO_POLLING_INTERVAL=30
+      - OPAL_DATA_CONFIG_SOURCES={"config":{"entries":[{"url":"http://opal_server:7002/policy-data","topics":["policy_data"],"dst_path":"/static"}]}}
+      - OPAL_LOG_FORMAT_INCLUDE_PID=true
+    ports:
+      - "7002:7002"
+    depends_on:
+      - broadcast_channel
+  opal_client:
+    image: permitio/opal-client:latest
+    environment:
+      - OPAL_SERVER_URL=http://opal_server:7002
+      - OPAL_LOG_FORMAT_INCLUDE_PID=true
+      - OPAL_INLINE_OPA_LOG_FORMAT=http
+    ports:
+      - "7766:7000"
+      - "8181:8181"
+    depends_on:
+      - opal_server
+    command: sh -c "./wait-for.sh opal_server:7002 --timeout=20 -- ./start.sh"
+```

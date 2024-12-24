@@ -1,0 +1,86 @@
+# Data Source Configuration
+
+### Step 5: Server config - data sources
+
+The OPAL server serves the **base data source configuration** for OPAL client. The configuration is structured as **directives** for the client, each directive specifies **what to fetch** (url), and **where to put it** in OPA data document hierarchy (destination path).
+
+The data sources configured on the server will be fetched **by the client** every time it decides it needs to fetch the **entire** data configuration (e.g: when the client first loads, after a period of disconnection from the server, etc). This configuration must always point to a complete and up-to-date representation of the data (not a "delta").
+
+You'll need to configure this env var:
+
+| Env Var Name             | Function                                                                                                                       |
+| :----------------------- | :----------------------------------------------------------------------------------------------------------------------------- |
+| OPAL_DATA_CONFIG_SOURCES | Directives on **how to fetch** the data configuration we load into OPA cache when OPAL client starts, and **where to put it**. |
+
+#### <a name="encode-data-sources"></a>Data sources config schema
+
+The **value** of the data sources config variable is a json encoding of the [ServerDataSourceConfig](https://github.com/permitio/opal/blob/master/packages/opal-common/opal_common/schemas/data.py#L31) pydantic model.
+
+#### Example value
+
+```
+{
+    "config": {
+        "entries": [
+            {
+                "url": "https://api.permit.io/v1/policy-config",
+                "topics": [
+                    ...
+                ],
+                "config": {
+                    "headers": {
+                        "Authorization": "Bearer FAKE-SECRET"
+                    }
+                }
+            }
+        ]
+    }
+}
+```
+
+Let's break down this example value (check the [schema](https://github.com/permitio/opal/blob/master/packages/opal-common/opal_common/schemas/data.py#L31) for more options):
+
+Each object in `entries` (schema: [DataSourceEntry](https://github.com/permitio/opal/blob/master/packages/opal-common/opal_common/schemas/data.py#L8)) is a **directive** that tells OPAL client to fetch the data and place it in OPA cache using the [Data API](https://www.openpolicyagent.org/docs/latest/rest-api/#data-api).
+
+- **From where to fetch:** we tell OPAL client to fetch data from the [Permit.io API](https://api.permit.io/redoc) (specifically, from the `policy-config` endpoint).
+- **How to fetch (optional):** we can direct the client to use a specific configuration when fetching the data, for example here we tell the client to use a specific HTTP Authorization header with a bearer token in order to authenticate to the API.
+- **Where to place the data in OPA cache:** although not specified, this entry uses the default of `/` which means at the root of OPA document hierarchy. You can specify another path with `dst_path` (check the [schema](https://github.com/permitio/opal/blob/master/packages/opal-common/opal_common/schemas/data.py#L8)).
+- **Which clients should fetch:** the entry would be processed only by clients subscribed to one of the specified topics. (If unspecified, the default `policy_data` topic would be used).
+- **How often to fetch:** entry that has the `periodic_update_interval` value would be periodically pushed to clients with that interval (in secs), so they can keep refetching the most updated data from specified source.
+#### Encoding this value in an environment variable:
+
+You can use the python method of `json.dumps()` to get a one line string:
+
+```
+❯ ipython
+
+In [1]: x = {
+   ...:     "config": {
+   ...:         "entries": [
+   ...:             ... # removed for brevity
+   ...:         ]
+   ...:     }
+   ...: }
+
+In [2]: import json
+In [3]: json.dumps(x)
+Out[3]: '{"config": {"entries": [{"url": "https://api.permit.io/v1/policy-config", "topics": ["policy_data"], "config": {"headers": {"Authorization": "Bearer FAKE-SECRET"}}}]}}'
+```
+
+Placing this value in an env var:
+
+```
+export OPAL_DATA_CONFIG_SOURCES='{"config": {"entries": [{"url": "https://api.permit.io/v1/policy-config", "topics": ["policy_data"], "config": {"headers": {"Authorization": "Bearer FAKE-SECRET"}}}]}}'
+```
+
+Please be advised, this will not work so great in docker-compose. Docker compose does not know how to deal with env vars that contain spaces, and it treats single quotes (i.e: `''`) as part of the value. But with `docker run` you should be fine.
+
+#### Delegating the sources config to an API server
+
+For more dynamic cases where you'd need different clients to load different sets of data at different times;
+you can have the OPAL-clients be redirected to another server to fetch the configuration.
+See the [details in this tutorial](tutorials/configure_external_data_sources#how-to-configure-an-external-data-source)
+
+#### Security
+
+Since `OPAL_DATA_CONFIG_SOURCES` often contains secrets, in production you should place it in a [secrets store](#security-considerations).

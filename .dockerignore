@@ -1,0 +1,10 @@
+venv/
+documentation/
+rego_clone/
+.github/
+docker/
+Makefile
+Dockerfile
+.dockerignore
+.gitignore
+.pre-commit-config.yaml

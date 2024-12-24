@@ -1,0 +1,46 @@
+# Introduction to OPAL
+
+## What is OPAL?
+
+Modern applications are complex, distributed, multi-tenant and run at scale - often creating overwhelming authorization challenges.
+
+OPA (Open Policy Agent) brings the power of decoupled policy to the infrastructure layer (especially K8s), and light applications.
+
+OPAL supercharges OPA to meet the pace of live applications, where the state relevant to authorization decisions may change with every user click and API call.
+
+- OPAL builds on top of OPA adding realtime updates (via Websocket Pub/Sub) for both policy and data.
+
+- OPAL embraces decoupling of policy and code, and doubles down on decoupling policy (git driven) and data (distributed data-source fetching engines).
+
+### <a name="why-use-opal"></a> Why use OPAL
+
+- OPAL is the easiest way to keep your solution's authorization layer up-to-date in realtime.
+- OPAL aggregates policy and data from across the field and integrates them seamlessly into the authorization layer.
+- OPAL is microservices and cloud-native (see [Key concepts and design](../overview/design))
+
+### Why OPA + OPAL == 💜
+
+OPA (Open Policy Agent) is great! It decouples policy from code in a highly-performant and elegant way. But the challenge of keeping policy agents up-to-date is hard - especially in applications - where each user interaction or API call may affect access-control decisions.
+OPAL runs in the background, supercharging policy-agents, keeping them in sync with events in realtime.
+
+## AWS Cedar + OPAL == 💪
+
+Cedar is a very powerful policy language, which powers AWS' AVP (Amazon Verified Permissions) - but what if you want to enjoy the power of Cedar on another cloud, locally, or on premise?
+This is where [Cedar-Agent](https://github.com/permitio/cedar-agent) and OPAL come in.
+
+### What OPAL _is not_
+
+#### OPAL is not a Policy Engine:
+
+- OPAL uses policy-engines, but isn't one itself -
+- Check out <a href="https://github.com/permitio/cedar-agent" target="_blank">Cedar-Agent</a>, <a href="https://www.openpolicyagent.org/" target="_blank">Open-Policy-Agent</a>, and <a href="https://www.osohq.com/" target="_blank">OSO</a>
+
+#### OPAL is not a database for permission data
+
+- Check out <a href="https://research.google/pubs/pub48190/" target="_blank">Google-Zanzibar</a>
+
+#### Fullstack permissions:
+
+- OPAL + a policy-agent essentially provide microservices for authorization
+- Developers still need to add control interfaces on top (e.g. user-management, api-key-management, audit, impersonation, invites) both as APIs and UIs
+- Check out <a href="https://permit.io" target="_blank">Permit.io</a>

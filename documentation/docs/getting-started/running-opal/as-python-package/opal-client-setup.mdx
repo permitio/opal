@@ -1,0 +1,78 @@
+# Setup up the OPAL Client
+
+## Installing the package
+
+Firstly, let's install the `opal-client`.
+
+```sh
+pip install opal-client
+```
+
+## Installing OPA
+
+Next, we will need to install the policy-agent, or in other words OPA to run alongside the OPAL Client.
+
+For installing OPA, please follow [these instructions](https://www.openpolicyagent.org/docs/latest/#1-download-opa.
+
+If you would like OPAL to execute OPA for you, and act as a watchdog for OPA, we need to make sure it can **find the OPA** program
+and **make it executable**. To do this, please follow the **[guidance here](https://unix.stackexchange.com/questions/3809/how-can-i-make-a-program-executable-from-everywhere)**,
+but below is an example of what needs to be added.
+
+```
+export PATH=$PATH:/path/to/file
+```
+
+If you are currently in the directory where you will be adding OPA, you can run:
+
+```
+export PATH=$PATH:~
+```
+
+:::note
+The client **needs network access** to this agent to be able to **administer updates** to it.
+:::
+
+## Running the OPAL Client and OPA
+
+To view the general commands and options offered by the `opal-client` command, please run:
+
+```sh
+opal-client --help
+```
+
+If you need to learn about specific run option configurations and help, please run:
+
+```sh
+opal-client run --help
+```
+
+Running the OPAL Client:
+
+```sh
+opal-client run
+```
+
+Just like the server, all top-level options can be configured using environment-variables files like
+**[.env / .ini](https://pypi.org/project/python-decouple/#env-file)** and **command-line options**.
+
+#### The key options to be aware of:
+
+- Use options starting with `--server` to control how the client connects to the server. You will mainly need `--server-url` to
+  point at the server.
+
+- Use options starting with `--client-api-` to control how the client's API service is running.
+
+- Use `--data-topics` to control which topics for data updates the client would subscribe to.
+
+- Use `--policy-subscription-dirs` to declare what directories in the repository we should subscribe to.
+
+### Client install & run recording
+
+<p>
+  <a
+    href="https://asciinema.org/a/oy4nA9E7RbOyiUx6evACUuLNd?t=1"
+    target="_blank"
+  >
+    <img src="https://asciinema.org/a/oy4nA9E7RbOyiUx6evACUuLNd.svg" />
+  </a>
+</p>

@@ -1,0 +1,304 @@
+# Setup OPAL as Python Packages using the CLI
+
+This guide will teach you how to setup the OPAL Server & Client as a series of python packages using the CLI.
+
+This guide will give you a great insight into understanding the main configurations of OPAL. If you prefer to run OPAL with
+pre-built docker images, please follow the guide **[here](/getting-started/running-opal/overview)**.
+
+:::warning IMPORTANT
+This guide requires that you have **python 3.7 or greater** installed.
+
+Ideally, install OPAL into a **clean [virtual-env](https://packaging.python.org/guides/installing-using-pip-and-virtual-environments/)**
+would make the workflow easier.
+:::
+
+## Setup up the OPAL Client
+
+### Installing the package
+
+Firstly, let's install the `opal-client`.
+
+```sh
+pip install opal-client
+```
+
+### Installing OPA
+
+Next, we will need to install the policy-agent, or in other words OPA to run alongside the OPAL Client.
+
+For installing OPA, please follow [these instructions](https://www.openpolicyagent.org/docs/latest/#1-download-opa.
+
+If you would like OPAL to execute OPA for you, and act as a watchdog for OPA, we need to make sure it can **find the OPA** program
+and **make it executable**. To do this, please follow the **[guidance here](https://unix.stackexchange.com/questions/3809/how-can-i-make-a-program-executable-from-everywhere)**,
+but below is an example of what needs to be added.
+
+```
+export PATH=$PATH:/path/to/file
+```
+
+If you are currently in the directory where you will be adding OPA, you can run:
+
+```
+export PATH=$PATH:~
+```
+
+:::note
+The client **needs network access** to this agent to be able to **administer updates** to it.
+:::
+
+### Running the OPAL Client and OPA
+
+To view the general commands and options offered by the `opal-client` command, please run:
+
+```sh
+opal-client --help
+```
+
+If you need to learn about specific run option configurations and help, please run:
+
+```sh
+opal-client run --help
+```
+
+Running the OPAL Client:
+
+```sh
+opal-client run
+```
+
+Just like the server, all top-level options can be configured using environment-variables files like
+**[.env / .ini](https://pypi.org/project/python-decouple/#env-file)** and **command-line options**.
+
+##### The key options to be aware of:
+
+- Use options starting with `--server` to control how the client connects to the server. You will mainly need `--server-url` to
+  point at the server.
+
+- Use options starting with `--client-api-` to control how the client's API service is running.
+
+- Use `--data-topics` to control which topics for data updates the client would subscribe to.
+
+- Use `--policy-subscription-dirs` to declare what directories in the repository we should subscribe to.
+
+#### Client install & run recording
+
+<p>
+  <a
+    href="https://asciinema.org/a/oy4nA9E7RbOyiUx6evACUuLNd?t=1"
+    target="_blank"
+  >
+    <img src="https://asciinema.org/a/oy4nA9E7RbOyiUx6evACUuLNd.svg" />
+  </a>
+</p>
+
+## Setting up the OPAL Server
+
+### Installing the package
+
+As the first step, we need to **install** the OPAL server. Once installed, we will have access to the
+`opal-server` command.
+
+```
+pip install opal-server
+```
+
+If the command continues to be unavailable, please try deactivationg and then activating your virtual-env.
+
+You can run `opal-server --help` to see **all the options and commands** the package provides.
+
+Running the `opal-server print-config` shows you all the possible **configuration keys and their current values**.
+
+##### Demo of successful installation
+
+<p>
+  <a
+    href="https://asciinema.org/a/XyDg1ot2Q6UOsWOkiSxGVSJmx?t=1"
+    target="_blank"
+  >
+    <img src="https://asciinema.org/a/XyDg1ot2Q6UOsWOkiSxGVSJmx.svg" />
+  </a>
+</p>
+
+### Running the server
+
+Running the OPAL server is simple.
+
+:::tip run server
+You can run the server by typing `opal-server run` in your terminal.
+:::
+
+Once the server is running you can check out its **Open-API live docs** at
+[as simple documentation](http://localhost:7002/docs) or [a redoc layout](http://localhost:7002/redoc).
+
+Make sure that your server is running on `localhost:7002` to be able to view the above links.
+
+#### Polling Policy from GIT
+
+The most basic way to run the server is just with a GIT repository to watch for policy-changes and have
+the flexibility to get the policy directly.
+
+The simplest of these is using a public repository, and simply polling on it with
+`OPAL_POLICY_REPO_URL` and `OPAL_POLICY_REPO_POLLING_INTERVAL`.
+
+##### Monitor the OPAL Server every 60 seconds
+
+```sh
+OPAL_POLICY_REPO_URL=https://github.com/permitio/opal-example-policy-repo.git  opal-server --policy-repo-polling-interval 60 run
+```
+
+##### A video example of running the above command
+
+<p>
+  <a
+    href="https://asciinema.org/a/4gkfGDR45IeR0Zx3y2zB1Vg9T?t=1"
+    target="_blank"
+  >
+    <img src="https://asciinema.org/a/4gkfGDR45IeR0Zx3y2zB1Vg9T.svg" />
+  </a>
+</p>
+
+#### Policy GIT Webhook
+
+A better GIT watching can be achieved via configuring a webhook back to the `OPAL_SERVER`'s webhook route.
+Let's assume your server is hosted on `opal.yourdomain.com`. The **webhook URL** will be `opal.yourdomain.com/webhook`.
+
+:::tip
+If you need more guidance on configuting webhooks, checkout the **[GitHub Guide](https://docs.github.com/en/developers/webhooks-and-events/creating-webhooks)**.
+:::
+
+##### Create a secret you can share with a webhook provider
+
+You can use `opal-server generate-secret` to create a cryptographically strong secret to use.
+
+Then use `OPAL_POLICY_REPO_WEBHOOK_SECRET` to configure a secret you can share with the webhook provider to authenticate incoming webhooks.
+
+#### Additional GIT repository settings
+
+Here are some settings that will be useful in adding more control.
+
+##### `POLICY_REPO_SSH_KEY`
+
+This will allow you to authenticate to a **private repository**. You can generate
+a [Github SSH key here](https://docs.github.com/en/github/authenticating-to-github/adding-a-new-ssh-key-to-your-github-account).
+
+The value you pass for the `POLICY_REPO_SSH_KEY` can either be a file path, or the contents of the SSH-key - with newlines replaced with `\_`.
+
+##### `OPAL_POLICY_REPO_CLONE_PATH` & `OPAL_POLICY_REPO_MAIN_BRANCH`
+
+These will allow you to control how the repo is cloned.
+
+#### Simple run with Data source configuration
+
+In addition to policy updates as seen in above section, the OPAL Server can also facilitate data updates, directing
+OPAL Clients to fetch the needed data from various sources.
+
+You can learn more about **[triggering data updates here](/tutorials/trigger_data_updates)**.
+
+## Running the Server and Client in Secure Mode
+
+### Server Secure Mode
+
+OPAL-server can run in secure mode, signing and verifying [Json Web Tokens](https://en.wikipedia.org/wiki/JSON_Web_Token) for the connecting OPAL-clients.
+To achieve this we need to provide the server with a private and public key pair.
+In addition we need to provide the server with a master-token (random secret) that the CLI (or other tools) could use to connect to ask it and generate the aforementioned signed-JWTs.
+
+- Generating encryption keys
+
+  - Using a utility like [ssh-keygen](https://linux.die.net/man/1/ssh-keygen) we can easily generate the keys (on Windows try [SSH-keys Windows guide](https://phoenixnap.com/kb/generate-ssh-key-windows-10))
+    ```sh
+    ssh-keygen -t rsa -b 4096 -m pem
+    ```
+    follow the instructions to save the keys to two files.
+  - If you created the keys with a passphrase, you can supply the passphrase to the server via the `OPAL_AUTH_PRIVATE_KEY_PASSPHRASE` option
+  - You can provide the keys to OPAL-server via the `OPAL_AUTH_PRIVATE_KEY` and `OPAL_AUTH_PUBLIC_KEY` options
+  - in these vars You can either provide the path to the keys, or the actual strings of the key's content (with newlines replaced with "\_")
+
+- Master-secret
+
+  - You can choose any secret you'd like, but to make life easier OPAL's CLI include the generate-secret command, which you can use to generate cryptographically strong secrets easily.
+    ```sh
+    opal-server generate-secret
+    ```
+  - provide the master-token via `OPAL_AUTH_MASTER_TOKEN`
+
+- run the server with both keys and and master-secret
+
+  ```sh
+  # Run server
+  # in secure mode -verifying client JWTs (Replace secrets with actual secrets ;-) )
+  # (Just to be clear `~` is the user's homedir)
+  export OPAL_AUTH_PRIVATE_KEY=~/opal
+  export OPAL_AUTH_PUBLIC_KEY=~/opal.pub
+  export OPAL_AUTH_MASTER_TOKEN="RANDOM-SECRET-STRING"
+  opal-server run
+  ```
+
+- Once the server is running we can obtain a JWT identifying our client
+  - We can either obtain a JWT with the CLI
+    ```sh
+    opal-client obtain-token $OPAL_AUTH_MASTER_TOKEN --server-url=$YOUR_SERVERS_ADDRESS
+    ```
+  - <a name="obtain-token-api"></a>Or we can obtain the JWT directly from the deployed
+    OPAL server via its REST API:
+
+```
+curl --request POST 'https://opal.yourdomain.com/token' \
+--header 'Authorization: Bearer MY_MASTER_TOKEN' \
+--header 'Content-Type: application/json' \
+--data-raw '{
+  "type": "client",
+}'
+```
+
+This code example assumes your opal server is at https://opal.yourdomain.com and that your master token is `MY_MASTER_TOKEN`. The `/token` API endpoint can receive more parameters, as [documented here](https://opal.permit.io/redoc#operation/generate_new_access_token_token_post).
+
+### Client Secure Mode
+
+- Using the master-token you assigned to the server obtain a client JWT
+  ```sh
+  opal-client obtain-token $OPAL_AUTH_MASTER_TOKEN --server-url=$YOUR_SERVERS_ADDRESS
+  ```
+  You can also use the REST API to obtain the token.
+- run the client with env-var `OPAL_CLIENT_TOKEN` or cmd-option `--client-token` to pass the JWT obtained from the server
+
+  ```sh
+  export OPAL_CLIENT_TOKEN="JWT-TOKEN-VALUE`
+  opal-client run
+  ```
+
+## Running the OPAL Server and Client in Production
+
+### Production run Server
+
+When running the server in production, we should set the server to work with a production server ([GUNICORN](https://gunicorn.org/))
+and a backbone pub/sub.
+
+#### Gunicorn
+
+Simply use the `run` command with the `--engine-type gunicorn` option.
+
+```sh
+opal-server run --engine-type gunicorn
+```
+
+- (run `opal-server run --help` to see more info on the `run` command)
+- use `--server-worker-count` to control the amount of workers (default is set to cpu-count)
+- You can of course put another server or proxy (e.g. NGNIX, ENVOY) in front of the OPAL-SERVER, instead of or in addition to Gunicorn
+
+#### Backbone Pub/Sub
+
+- While OPAL-servers provide a lightweight websocket pub/sub channel for the clients; in order for all OPAL-servers (workers of same server, and of course servers on other nodes) to be synced (And in turn their clients to be synced) they need to connect through a shared channel - which we refer to as the backbone pub/sub or broadcast channel.
+- Backbone Pub/Sub options: Kafka, Postgres LISTEN/NOTIFY, Redis
+- Use the `broadcast-uri` option (or `OPAL_BROADCAST_URI` env-var) to configure an OPAL-server to work with a backbone.
+- for example `OPAL_BROADCAST_URI=postgres://localhost/mydb opal-server run`
+
+#### Put it all together
+
+```sh
+OPAL_BROADCAST_URI=postgres://localhost/mydb opal-server run --engine-type gunicorn
+```
+
+#### Production run Client
+
+Unlike the server, the opal-client currently supports working only with a single worker process (so there's no need to run it with Gunicorn).
+This will change in future releases.

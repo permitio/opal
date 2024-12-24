@@ -1,0 +1,25 @@
+# Configuring Variables
+
+### <a name="configuration"></a> Configuration Variables
+
+We will now explain how to pass configuration variables to OPAL.
+
+- In its dockerized form, OPAL server and client containers pick up their configuration variables from **environment variables** prefixed with `OPAL_` (e.g: `OPAL_DATA_CONFIG_SOURCES`, `OPAL_POLICY_REPO_URL`, etc).
+- The OPAL CLI can pick up config vars from either **environment variables** prefixed with `OPAL_` or from **CLI arguments** (interchangeable).
+  - Supported CLI options are listed in `--help`.
+  - Each cli argument can match to a **corresponding** environment variable:
+    - Simply convert the cli argument name to [SCREAMING_SNAKE_CASE](<https://en.wikipedia.org/wiki/Naming_convention_(programming)#Multiple-word_identifiers>), and prefix it with `OPAL_`.
+    - Examples:
+      - `--server-url` becomes `OPAL_SERVER_URL`
+      - `--data-config-sources` becomes `OPAL_DATA_CONFIG_SOURCES`
+
+### <a name="security-considerations"></a> Security Considerations (for production environments)
+
+Soon the OPAL Security Model will be available, we have listed the mandatory checklist below:
+
+- OPAL server should **always** be protected with a TLS/SSL certificate (i.e: HTTPS).
+- OPAL server should **always** run in secure mode - meaning JWT token verification should be active.
+- OPAL server should be configured with a **master token**.
+- Sensitive configuration variables (i.e: environment variables with sensitive values) should **always** be stored in a dedicated **Secret Store**
+  - Example secret stores: AWS Secrets Manager, HashiCorp Vault, etc.
+  - **NEVER EVER EVER** store secrets as part of your source code (e.g: in your git repository).

@@ -1,0 +1,13 @@
+idna>=3.3,<4
+typer>=0.4.1,<1
+fastapi>=0.109.1,<1
+fastapi_websocket_pubsub==0.3.7
+fastapi_websocket_rpc==0.1.27
+websockets>=10.3,<14
+gunicorn>=22.0.0,<23
+pydantic[email]>=1.9.1,<2
+typing-extensions;python_version<'3.8'
+uvicorn[standard]>=0.17.6,<1
+fastapi-utils>=0.2.1,<1
+setuptools>=70.0.0 # not directly required, pinned by Snyk to avoid a vulnerability
+anyio>=4.4.0 # not directly required, pinned by Snyk to avoid a vulnerability
