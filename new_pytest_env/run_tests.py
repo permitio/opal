@@ -29,9 +29,6 @@ def prepare_temp_dir():
     data_dir = os.path.join(temp_dir, 'data')
     os.makedirs(data_dir)
 
-    #os.chown(data_dir, uid, gid)
-    #os.chmod(data_dir, 755)
-
     return temp_dir
 
 def run_script(script_name, temp_dir, additional_args=None):

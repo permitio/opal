@@ -78,8 +78,6 @@ async def test_authorization(user: str):
     
     # HTTP headers and request payload
     headers = {"Content-Type": "application/json" }
-    #headers = {"Content-Type": "application/json" , "Authorization": f"Bearer {CLIENT_TOKEN}"}
-    
     data = {
         "input": {
             "user": user,
@@ -140,16 +138,6 @@ async def test_data(iterations, user, current_country):
         if await test_authorization(user) == (not (current_country == country)):
             return True
 
-    # for i in range(iterations):
-    #     print(f"\nRunning test iteration {i + 1}...")
-    #     if i % 2 == 0:
-    #         # Test with location set to SE (non-US)
-    #         if await test_user_location(user, False):
-    #             return True
-    #     else:
-    #         # Test with location set to US
-    #         if await test_user_location(user, True):
-    #             return True
 
 def update_policy(country_value):
     """Update the policy file dynamically."""
