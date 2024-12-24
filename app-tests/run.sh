@@ -16,12 +16,18 @@ function generate_opal_keys {
   rm opal_crypto_key.pub opal_crypto_key
 
   OPAL_AUTH_MASTER_TOKEN="$(openssl rand -hex 16)"
+  # debug
+  echo "Master token: $OPAL_AUTH_MASTER_TOKEN"
+
   OPAL_AUTH_JWT_AUDIENCE=https://api.opal.ac/v1/ OPAL_AUTH_JWT_ISSUER=https://opal.ac/ OPAL_REPO_WATCHER_ENABLED=0 \
     opal-server run &
   sleep 2;
 
   OPAL_CLIENT_TOKEN="$(opal-client obtain-token "$OPAL_AUTH_MASTER_TOKEN" --type client)"
   OPAL_DATA_SOURCE_TOKEN="$(opal-client obtain-token "$OPAL_AUTH_MASTER_TOKEN" --type datasource)"
+  # debug
+  echo "Data source token: $OPAL_DATA_SOURCE_TOKEN"
+
   # shellcheck disable=SC2009
   ps -ef | grep opal-server | grep -v grep | awk '{print $2}' | xargs kill
   sleep 5;
@@ -41,7 +47,7 @@ function prepare_policy_repo {
   echo "- Clone tests policy repo to create test's branch"
   export OPAL_POLICY_REPO_URL
   export POLICY_REPO_BRANCH
-  OPAL_POLICY_REPO_URL=${OPAL_POLICY_REPO_URL:-git@github.com:permitio/opal-tests-policy-repo.git}
+  OPAL_POLICY_REPO_URL=${OPAL_POLICY_REPO_URL:-git@github.com:daveads/opal-example-policy-repo.git}
   POLICY_REPO_BRANCH=test-$RANDOM$RANDOM
   rm -rf ./opal-tests-policy-repo
   git clone "$OPAL_POLICY_REPO_URL"
