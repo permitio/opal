@@ -185,7 +185,7 @@ def update_policy(country_value):
 
     # Allow time for the update to propagate
     import time
-    for i in range(80, 0, -1):
+    for i in range(20, 0, -1):
         print(f"waiting for OPAL server to pull the new policy {i} secondes left", end='\r') 
         time.sleep(1)
 
