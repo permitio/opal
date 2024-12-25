@@ -6,7 +6,7 @@ import shutil
 from git import Repo
 import time
 
-from deploy.gitea import gitea
+from deploy.gitea import Gitea
 
 from testcontainers.core.network import Network
 # Initialize Docker client
@@ -106,10 +106,30 @@ def deploy():
     a = Network().name = "ababa"
     
 
-    
-    c = gitea("gitea_test_1", 3000, 2222, "gitea/gitea:latest-rootless", 1000, 1000, a)
+        
+    # Initialize Gitea with a specific repository
+    gitea_container = Gitea(
+        GITEA_CONTAINER_NAME="test_container",
+        repo_name="test_repo",
+        temp_dir=os.path.join(os.path.dirname(__file__), "temp"),
+        data_dir=os.path.dirname(__file__),
+        gitea_base_url="http://localhost:3000"
+    )
+
+    # Dynamically generate the admin token after deployment
+    gitea_container.deploy_gitea()
+
+    print("Gitea container deployed and running.")
+
+    # Initialize the repository
+    gitea_container.init_repo()
+
+    print("Gitea repo initialized successfully.")
 
 
+    # Container will persist and stay running
+
+    time.sleep(100)
     yield {
         "temp_dir": TEMP_DIR,
         "access_token": ACCESS_TOKEN,

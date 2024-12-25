@@ -57,6 +57,7 @@ def create_gitea_repo(repo_name, description="", private=False, auto_init=True, 
     else:
         print(f"Failed to create repository: {response.status_code} {response.text}")
         response.raise_for_status()
+
 def clone_repo_with_gitpython(repo_name, clone_directory):
     repo_url = f"http://localhost:3000/{user_name}/{repo_name}.git"
     if access_token:
@@ -70,7 +71,6 @@ def clone_repo_with_gitpython(repo_name, clone_directory):
     except Exception as e:
         print(f"Failed to clone repository '{repo_name}': {e}")
 
-
 def get_default_branch(repo):
     try:
         # Fetch the default branch name
@@ -78,7 +78,6 @@ def get_default_branch(repo):
     except Exception as e:
         print(f"Error determining default branch: {e}")
         return None
-
 
 def reset_repo_with_rbac(repo_directory, source_rbac_file):
     try:
