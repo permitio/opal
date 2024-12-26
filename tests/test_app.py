@@ -1,8 +1,12 @@
+import asyncio
 import os
 import subprocess
 import pytest
 import requests
 import time
+from tests.containers.gitea_container import GiteaContainer
+from tests.containers.opal_server_container import OpalServerContainer
+from tests.containers.opal_client_container import OpalClientContainer
 import utils
 
 # TODO: Replace once all fixtures are properly working.
@@ -164,3 +168,100 @@ def test_sequence():
     push_policy("best_one_yet")
 
     print("Test sequence completed successfully.")
+
+
+#############################################################
+
+OPAL_DISTRIBUTION_TIME = 2
+ip_to_location_base_url = "https://api.country.is/"
+ 
+def publish_data_user_location(src, user, DATASOURCE_TOKEN):
+    """Publish user location data to OPAL."""
+    # Construct the command to publish data update
+    publish_data_user_location_command = (
+        f"opal-client publish-data-update --src-url {src} "
+        f"-t policy_data --dst-path /users/{user}/location {DATASOURCE_TOKEN}"
+    )
+    
+    # Execute the command
+    result = subprocess.run(
+        publish_data_user_location_command, shell=True, capture_output=True, text=True
+    )
+
+    # Check command execution result
+    if result.returncode != 0:
+        print("Error: Failed to update user location!")
+    else:
+        print(f"Successfully updated user location with source: {src}")
+
+
+def test_user_location(opal_server_container: OpalServerContainer, opal_client_container: OpalClientContainer):
+    """Test data publishing"""
+
+    publish_data_user_location(f"{ip_to_location_base_url}{"8.8.8.8"}", "bob")
+    print(f"{"bob"}'s location set to: US. Expected outcome: NOT ALLOWED.")
+
+    time.sleep(OPAL_DISTRIBUTION_TIME)
+    assert "ABC" in opal_server_container.get_logs()
+
+    time.sleep(OPAL_DISTRIBUTION_TIME)
+    assert "XYZ" in opal_client_container.get_logs()
+
+async def data_publish_and_test(user, allowed_country, locations, DATASOURCE_TOKEN):
+    """Run the user location policy tests multiple times."""
+
+    for location in locations:
+        ip = location[0]
+        user_country = location[1]
+
+        publish_data_user_location(f"{ip_to_location_base_url}{ip}", user, DATASOURCE_TOKEN)
+
+        if (allowed_country == user_country):
+            print(f"{user}'s location set to: {user_country}. current_country is set to: {allowed_country} Expected outcome: ALLOWED.")
+        else:
+            print(f"{user}'s location set to: {user_country}. current_country is set to: {allowed_country} Expected outcome: NOT ALLOWED.")
+
+        await asyncio.sleep(1)
+
+        assert await utils.opal_authorize(user) == (allowed_country == user_country)
+    return True
+        
+def update_policy(gitea_container: GiteaContainer, opal_server_container: OpalServerContainer, country_value):
+    """Update the policy file dynamically."""
+
+    gitea_container.update_branch(opal_server_container.settings.policy_repo_main_branch,
+             "policies/rbac.rego", 
+             (
+            "package app.rbac\n"
+            "default allow = false\n\n"
+            "# Allow the action if the user is granted permission to perform the action.\n"
+            "allow {\n"
+            "\t# unless user location is outside US\n"
+            "\tcountry := data.users[input.user].location.country\n"
+            "\tcountry == \"" + country_value + "\"\n"
+            "}"
+        ),)
+        
+    utils.wait_policy_repo_polling_interval()
+
+ 
+@pytest.mark.parametrize("location", ["CN", "US", "SE"])
+@pytest.mark.asyncio
+async def test_policy_and_data_updates(gitea_container: GiteaContainer, opal_server_container: OpalServerContainer, temp_dir):
+    """    
+    This script updates policy configurations and tests access 
+    based on specified settings and locations. It integrates 
+    with Gitea and OPA for policy management and testing.
+    """
+    
+    # Parse locations into separate lists of IPs and countries
+    locations = [("8.8.8.8","US"), ("77.53.31.138","SE"), ("210.2.4.8","CN")]
+    DATASOURCE_TOKEN  = opal_server_container.obtain_OPAL_tokens()["datasource"]
+
+
+    for location in locations:    
+        # Update policy to allow only non-US users
+        print(f"Updating policy to allow only users from {location[1]}...")
+        update_policy(gitea_container, opal_server_container, location[1])
+
+        assert await data_publish_and_test(3, "bob", location[1], locations, DATASOURCE_TOKEN)

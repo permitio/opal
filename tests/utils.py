@@ -1,10 +1,16 @@
+import time
 import os
 import random
+import shutil
 import subprocess
+import tempfile
 import requests
 import sys
 import docker
+from tests.containers.opal_server_container  import OpalServerContainer
 from git import Repo
+from cryptography.hazmat.primitives.asymmetric import rsa
+from cryptography.hazmat.primitives import serialization
 
 def compose(*args):
     """
@@ -182,3 +188,64 @@ def remove_pytest_opal_networks():
         print("Cleanup complete!")
     except Exception as e:
         print(f"Error while accessing Docker: {e}")
+
+current_folder = os.path.dirname(os.path.abspath(__file__))
+
+def generate_ssh_key():
+    # Generate a private key
+    private_key = rsa.generate_private_key(
+        public_exponent=65537,  # Standard public exponent
+        key_size=2048,          # Key size in bits
+    )
+    
+    # Serialize the private key in PEM format
+    private_key_pem = private_key.private_bytes(
+        encoding=serialization.Encoding.PEM,
+        format=serialization.PrivateFormat.TraditionalOpenSSL,
+        encryption_algorithm=serialization.NoEncryption(),  # No passphrase
+    )
+    
+    # Generate the corresponding public key
+    public_key = private_key.public_key()
+    
+    # Serialize the public key in OpenSSH format
+    public_key_openssh = public_key.public_bytes(
+        encoding=serialization.Encoding.OpenSSH,
+        format=serialization.PublicFormat.OpenSSH,
+    )
+    
+    # Return the keys as strings
+    return private_key_pem.decode('utf-8'), public_key_openssh.decode('utf-8')
+
+async def opal_authorize(user: str):
+    """Test if the user is authorized based on the current policy."""
+
+    global policy_url
+    
+    # HTTP headers and request payload
+    headers = {"Content-Type": "application/json" }
+    data = {
+        "input": {
+            "user": user,
+            "action": "read",
+            "object": "id123",
+            "type": "finance"
+        }
+    }
+
+    # Send POST request to OPA
+    response = requests.post(policy_url, headers=headers, json=data)
+
+    allowed = False
+    # Parse the JSON response
+    assert "result" in response.json()
+    allowed = response.json()["result"]
+    print(f"Authorization test result: {user} is {'ALLOWED' if allowed else 'NOT ALLOWED'}.")
+    
+    return allowed
+
+def wait_policy_repo_polling_interval(opal_server_container: OpalServerContainer):
+    # Allow time for the update to propagate
+    for i in range(opal_server_container.settings.polling_interval, 0, -1):
+        print(f"waiting for OPAL server to pull the new policy {i} secondes left", end='\r') 
+        time.sleep(1)

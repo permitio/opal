@@ -1,7 +1,7 @@
 from testcontainers.core.generic import DockerContainer
 import docker
 
-from . import settings as s
+from .. import settings as s
 
 class OpalClientContainer(DockerContainer):
     def __init__(
