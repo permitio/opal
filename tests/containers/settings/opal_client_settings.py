@@ -52,11 +52,12 @@ class OpalClientSettings:
     
     def load_from_env(self):    
 
-        self.settings = {
-            "OPAL_DISTRIBUTION_TIME": os.getenv("OPAL_DISTRIBUTION_TIME", 2),
-            "ip_to_location_base_url": os.getenv("IP_TO_LOCATION_BASE_URL", "https://api.country.is/")
-        }
-
+        self.image = os.getenv("OPAL_CLIENT_IMAGE", "opal_client_debug_local")
+        self.container_name = os.getenv("OPAL_CLIENT_CONTAINER_NAME", self.container_name)
+        self.network_name = os.getenv("OPAL_CLIENT_NETWORK_NAME", self.network_name)
+        self.tests_debug = os.getenv("OPAL_TESTS_DEBUG", "true")
+        self.log_diagnose = os.getenv("LOG_DIAGNOSE", "true")
+        self.log_level = os.getenv("OPAL_LOG_LEVEL", "DEBUG")
         self.log_format_include_pid = os.getenv("OPAL_LOG_FORMAT_INCLUDE_PID", "true")
         self.inline_opa_log_format = os.getenv("OPAL_INLINE_OPA_LOG_FORMAT", "false")
         self.should_report_on_data_updates = os.getenv("OPAL_SHOULD_REPORT_ON_DATA_UPDATES", "true")

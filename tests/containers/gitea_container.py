@@ -332,7 +332,7 @@ class GiteaContainer(DockerContainer):
         # Decode escape sequences in the file content
         file_content = codecs.decode(file_content, 'unicode_escape')
 
-        GITEA_REPO_URL = f"http://localhost:3000/{self.settings.user_name}/{self.settings.repo_name}.git"
+        GITEA_REPO_URL = f"http://localhost:{self.settings.gitea_port}/{self.settings.user_name}/{self.settings.repo_name}.git"
         USER_NAME = self.settings.user_name
         PASSWORD = self.settings.password
         CLONE_DIR = os.path.join(temp_dir, "branch_update")
