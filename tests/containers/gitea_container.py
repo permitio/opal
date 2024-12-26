@@ -25,6 +25,18 @@ class GiteaContainer(DockerContainer):
         self.network = network
         self.logger = setup_logger(__name__)
         
+
+
+        #TODO: Ari, need to think about how to retreive the extra kwargs from the __dict__ of the settings class
+        labels = self.kwargs.get("labels", {})
+        labels.update({"com.docker.compose.project": "pytest"})
+        kwargs["labels"] = labels
+
+        # Set container lifecycle properties
+        self.with_kwargs(auto_remove=False, restart_policy={"Name": "always"})
+    
+
+    
         super().__init__(image=self.settings.image, docker_client_kw=docker_client_kw, **kwargs)
        
         self.configure()
@@ -42,14 +54,6 @@ class GiteaContainer(DockerContainer):
             .with_network(self.network) \
             .with_network_aliases("gitea") \
             
-        #TODO: Ari, need to think about how to retreive the extra kwargs from the __dict__ of the settings class
-        # labels = self.kwargs.get("labels", {})
-        # labels.update({"com.docker.compose.project": "pytest"})
-        # kwargs["labels"] = labels
-
-        # Set container lifecycle properties
-        # self.with_kwargs(auto_remove=False, restart_policy={"Name": "always"})
-    
     def is_gitea_ready(self):
         """Check if Gitea is ready by inspecting logs."""
         stdout_logs, stderr_logs = self.get_logs()
