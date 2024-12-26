@@ -2,7 +2,7 @@ import requests
 from testcontainers.core.generic import DockerContainer
 from testcontainers.core.utils import setup_logger
 from testcontainers.core.network import Network
-from tests.containers.opal_server_settings import OpalServerSettings
+from tests.containers.settings.opal_server_settings import OpalServerSettings
 
 class OpalServerContainer(DockerContainer):
     def __init__(

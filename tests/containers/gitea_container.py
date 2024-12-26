@@ -10,7 +10,7 @@ from testcontainers.core.generic import DockerContainer
 from testcontainers.core.network import Network
 from testcontainers.core.utils import setup_logger
 
-from tests.containers.gitea_settings import GiteaSettings
+from tests.containers.settings.gitea_settings import GiteaSettings
 
 class GiteaContainer(DockerContainer):
     def __init__(

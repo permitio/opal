@@ -1,0 +1,34 @@
+{
+    "name": "OPAL Dev Container",
+    "build": {
+      "dockerfile": "Dockerfile",
+      "context": ".."
+    },
+    "customizations": {
+        "vscode": {
+            "settings": {
+                "terminal.integrated.defaultProfile.linux": "/bin/bash"
+            }
+        },
+        "extensions":  [
+          "ms-python.python",           
+          "ms-python.vscode-pylance",   
+          "ms-azuretools.vscode-docker" 
+        ]
+    },
+    "forwardPorts": [8000, 8181],   
+    "postCreateCommand": "pip install -r requirements.txt flake8 black && pytest",
+    "remoteEnv": {
+      "PYTHONPATH": "/workspace"
+    },
+    "mounts": [
+      "source=${localWorkspaceFolder},target=/workspace,type=bind"
+    ],
+    "workspaceFolder": "/workspace",
+    "workspaceMount": "source=${localWorkspaceFolder},target=/workspace,type=bind",
+    "features": {
+        "ghcr.io/devcontainers/features/python:1": {
+            "version": "3.11"
+        }
+    }
+  }
