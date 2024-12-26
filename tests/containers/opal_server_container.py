@@ -13,11 +13,10 @@ class OpalServerContainer(DockerContainer):
         **kwargs,
     ) -> None:
         
-
         self.settings = settings
         self.network = network
 
-        self.log = setup_logger(__name__)
+        self.logger = setup_logger(__name__)
 
         super().__init__(image=self.settings.image, docker_client_kw=docker_client_kw, **kwargs)
 
@@ -63,10 +62,10 @@ class OpalServerContainer(DockerContainer):
         for token_type in ["client", "datasource"]:
             try:
                 data = {"type": token_type}#).replace("'", "\"")
-                self.log.info(f"Fetching OPAL {token_type} token...")
-                self.log.info(f"url: {token_url}")
-                self.log.info(f"headers: {headers}")
-                self.log.info(data)
+                self.logger.info(f"Fetching OPAL {token_type} token...")
+                self.logger.info(f"url: {token_url}")
+                self.logger.info(f"headers: {headers}")
+                self.logger.info(data)
 
                 response = requests.post(token_url, headers=headers, json=data)
                 response.raise_for_status()
@@ -74,12 +73,12 @@ class OpalServerContainer(DockerContainer):
                 token = response.json().get("token")
                 if token:
                     tokens[token_type] = token
-                    self.log.info(f"Successfully fetched OPAL {token_type} token.")
+                    self.logger.info(f"Successfully fetched OPAL {token_type} token.")
                 else:
-                    self.log.error(f"Failed to fetch OPAL {token_type} token: {response.json()}")
+                    self.logger.error(f"Failed to fetch OPAL {token_type} token: {response.json()}")
 
             except requests.exceptions.RequestException as e:
-                self.log.error(f"HTTP Request failed while fetching OPAL {token_type} token: {e}")
+                self.logger.error(f"HTTP Request failed while fetching OPAL {token_type} token: {e}")
 
         return tokens
     
