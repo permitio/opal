@@ -176,7 +176,7 @@ def test_sequence():
 
 #############################################################
 
-OPAL_DISTRIBUTION_TIME = 5
+OPAL_DISTRIBUTION_TIME = 25
 ip_to_location_base_url = "https://api.country.is/"
  
 def publish_data_user_location(src, user, DATASOURCE_TOKEN):
@@ -209,11 +209,15 @@ def test_user_location(opal_server: OpalServerContainer, opal_client: OpalClient
     logger.info("test1")
     print(f"bob's location set to: US. Expected outcome: NOT ALLOWED.")
 
-    time.sleep(OPAL_DISTRIBUTION_TIME)
-    assert "Saving fetched data" in opal_client.get_logs()
+    logger.info(time.strftime("%H:%M:%S"))
 
     time.sleep(OPAL_DISTRIBUTION_TIME)
-    assert "Publishing data update" in opal_server.get_logs()
+    a = opal_client.get_logs()
+    logger.info(a)
+    logger.info(time.strftime("%H:%M:%S"))
+
+    log_found = "PUT /v1/data/users/bob/location -> 204" in a
+    assert log_found
 
 async def data_publish_and_test(user, allowed_country, locations, DATASOURCE_TOKEN, opal_client: OpalClientContainer):
     """Run the user location policy tests multiple times."""

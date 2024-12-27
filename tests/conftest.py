@@ -109,12 +109,6 @@ def opal_server(opal_network: Network, broadcast_channel: BroadcastContainer, gi
     opal_broadcast_uri = f"postgres://test:test@broadcast_channel:5432"
 
 
-
-    print("############################################################")
-    
-    print(f"{gitea_server.settings.gitea_base_url}/{gitea_server.settings.username}/{gitea_server.settings.repo_name}")
-
-    input("Press enter to continue...")
     with OpalServerContainer(
         OpalServerSettings(
         opal_broadcast_uri=opal_broadcast_uri, 
