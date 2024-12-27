@@ -23,9 +23,10 @@ class GiteaContainer(DockerContainer):
         
         self.settings = settings
         self.network = network
+        self.kwargs = kwargs
+        
         self.logger = setup_logger(__name__)
         
-
 
         #TODO: Ari, need to think about how to retreive the extra kwargs from the __dict__ of the settings class
         labels = self.kwargs.get("labels", {})
@@ -37,7 +38,7 @@ class GiteaContainer(DockerContainer):
     
 
 
-        super().__init__(image=self.settings.image, docker_client_kw=docker_client_kw, **kwargs)
+        super().__init__(image=self.settings.image, docker_client_kw=docker_client_kw, **self.kwargs)
        
         self.configure()
 
@@ -49,7 +50,7 @@ class GiteaContainer(DockerContainer):
         # Set container name and ports
         self \
             .with_name(self.settings.container_name) \
-            .with_bind_ports(3000, self.settings.port_3000) \
+            .with_bind_ports(3000, self.settings.port_http) \
             .with_bind_ports(2222, self.settings.port_2222) \
             .with_network(self.network) \
             .with_network_aliases(self.settings.network_aliases) \
@@ -73,9 +74,9 @@ class GiteaContainer(DockerContainer):
         """Create an admin user in the Gitea instance."""
         create_user_command = (
             f"/usr/local/bin/gitea admin user create "
-            f"--admin --username {self.user_name} "
-            f"--email {self.email} "
-            f"--password {self.password} "
+            f"--admin --username {self.settings.username} "
+            f"--email {self.settings.email} "
+            f"--password {self.settings.password} "
             f"--must-change-password=false"
         )
         result = self.exec(create_user_command)
@@ -86,30 +87,23 @@ class GiteaContainer(DockerContainer):
         """Generate an admin access token for the Gitea instance."""
         create_token_command = (
             f"/usr/local/bin/gitea admin user generate-access-token "
-            f"--username {self.user_name} --raw --scopes all"
+            f"--username {self.settings.username} --raw --scopes all"
         )
         result = self.exec(create_token_command)
         token_result = result.output.decode("utf-8").strip()
         if not token_result:
             raise RuntimeError("Failed to create an access token.")
 
-        # Save the token to a file
-        TOKEN_FILE = os.path.join(self.temp_dir, "gitea_access_token.tkn")
-        os.makedirs(self.settings.temp_dir, exist_ok=True)
-        with open(TOKEN_FILE, "w") as token_file:
-            token_file.write(token_result)
-
-        self.logger.info(f"Access token saved to {TOKEN_FILE}")
         return token_result
 
     def deploy_gitea(self):
         """Deploy Gitea container and initialize configuration."""
         self.logger.info("Deploying Gitea container...")
-        self.start()
+        #self.start()
         self.wait_for_gitea()
         self.create_gitea_user()
         self.access_token = self.create_gitea_admin_token()
-        self.logger.info(f"Gitea deployed successfully. Admin access token: {self.settings.access_token}")
+        self.logger.info(f"Gitea deployed successfully. Admin access token: {self.access_token}")
 
     def exec(self, command: str):
         """Execute a command inside the container."""
@@ -120,15 +114,15 @@ class GiteaContainer(DockerContainer):
         return exec_result
     
     def repo_exists(self):
-        url = f"{self.gitea_base_url}/repos/{self.settings.username}/{self.repo_name}"
-        headers = {"Authorization": f"token {self.settings.access_token}"}
+        url = f"{self.settings.gitea_base_url}/repos/{self.settings.username}/{self.settings.repo_name}"
+        headers = {"Authorization": f"token {self.access_token}"}
         response = requests.get(url, headers=headers)
         
         if response.status_code == 200:
-            self.logger.info(f"Repository '{self.repo_name}' already exists.")
+            self.logger.info(f"Repository '{self.settings.repo_name}' already exists.")
             return True
         elif response.status_code == 404:
-            self.logger.info(f"Repository '{self.repo_name}' does not exist.")
+            self.logger.info(f"Repository '{self.settings.repo_name}' does not exist.")
             return False
         else:
             self.logger.error(f"Failed to check repository: {response.status_code} {response.text}")
@@ -137,11 +131,11 @@ class GiteaContainer(DockerContainer):
     def create_gitea_repo(self, description="", private=False, auto_init=True, default_branch="master"):
         url = f"{self.settings.gitea_base_url}/api/v1/user/repos"
         headers = {
-            "Authorization": f"token {self.settings.access_token}",
+            "Authorization": f"token {self.access_token}",
             "Content-Type": "application/json"
         }
         payload = {
-            "name": self.settingsrepo_name,
+            "name": self.settings.repo_name,
             "description": description,
             "private": private,
             "auto_init": auto_init,
@@ -156,9 +150,9 @@ class GiteaContainer(DockerContainer):
             response.raise_for_status()
 
     def clone_repo_with_gitpython(self, clone_directory):
-        repo_url = f"{self.settings.gitea_base_url}/{self.settings.user_name}/{self.settings.repo_name}.git"
+        repo_url = f"{self.settings.gitea_base_url}/{self.settings.username}/{self.settings.repo_name}.git"
         if self.access_token:
-            repo_url = f"http://{self.settings.user_name}:{self.settings.access_token}@{self.settings.gitea_base_url.split('://')[1]}/{self.settings.user_name}/{self.settings.repo_name}.git"
+            repo_url = f"http://{self.settings.username}:{self.access_token}@{self.settings.gitea_base_url.split('://')[1]}/{self.settings.username}/{self.settings.repo_name}.git"
         try:
             if os.path.exists(clone_directory):
                 self.logger.info(f"Directory '{clone_directory}' already exists. Deleting it...")
@@ -333,17 +327,19 @@ class GiteaContainer(DockerContainer):
     def update_branch(self, branch, file_name, file_content):
         temp_dir = self.settings.temp_dir
 
+        self.logger.info(f"Updating branch '{branch}' with file '{file_name}' content...")
+
         # Decode escape sequences in the file content
         file_content = codecs.decode(file_content, 'unicode_escape')
 
-        GITEA_REPO_URL = f"http://localhost:{self.settings.gitea_port}/{self.settings.user_name}/{self.settings.repo_name}.git"
-        USER_NAME = self.settings.user_name
+        GITEA_REPO_URL = f"http://localhost:{self.settings.port_http}/{self.settings.username}/{self.settings.repo_name}.git"
+        username = self.settings.username
         PASSWORD = self.settings.password
         CLONE_DIR = os.path.join(temp_dir, "branch_update")
         COMMIT_MESSAGE = "Automated update commit"
 
         # Append credentials to the repository URL
-        authenticated_url = GITEA_REPO_URL.replace("http://", f"http://{USER_NAME}:{PASSWORD}@")
+        authenticated_url = GITEA_REPO_URL.replace("http://", f"http://{username}:{PASSWORD}@")
 
         try:
             self.clone_and_update(branch, file_name, file_content, CLONE_DIR, authenticated_url, COMMIT_MESSAGE)

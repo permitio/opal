@@ -35,13 +35,14 @@ class OpalClientContainer(DockerContainer):
     
 
         self \
-            .with_name(s.OPAL_TESTS_CLIENT_CONTAINER_NAME) \
-            .with_exposed_ports(7000, 8181) \
+            .with_name(self.settings.container_name) \
+            .with_bind_ports(7000, 7000) \
+            .with_bind_ports(8181, self.settings.opa_port) \
             .with_network(self.network) \
             .with_network_aliases("opal_client") \
             .with_kwargs(labels={"com.docker.compose.project": "pytest"})
 
-        if self.settings.debugEnabled:
+        if self.settings.debug_enabled:
             self.with_bind_ports(5678, 5698)
             
     def reload_with_settings(self, settings: OpalClientSettings | None = None):

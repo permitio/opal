@@ -5,6 +5,7 @@ import threading
 import time
 import debugpy
 import docker
+import json
 import pytest
 from testcontainers.core.waiting_utils import wait_for_logs
 from tests import utils
@@ -15,11 +16,15 @@ from tests.containers.opal_server_container import OpalServerContainer
 
 from tests.containers.settings.gitea_settings import GiteaSettings
 from tests.containers.settings.opal_server_settings import OpalServerSettings
+from tests.containers.settings.opal_client_settings import OpalClientSettings
+
+from testcontainers.core.utils import setup_logger
 
 from testcontainers.core.network import Network
 
 from . import settings as s
 
+logger = setup_logger(__name__)
 s.dump_settings()
 
 # wait up to 30 seconds for the debugger to attach
@@ -68,9 +73,10 @@ def gitea_server(opal_network: Network):
             repo_name="test_repo",
             temp_dir=os.path.join(os.path.dirname(__file__), "temp"),
             network=opal_network,
-            data_dir=os.path.dirname(__file__),
+            data_dir=os.path.join(os.path.dirname(__file__), "policies"),
             gitea_base_url="http://localhost:3000"
-        )
+        ),
+        network=opal_network
         ) as gitea_container: 
         
         gitea_container.deploy_gitea()
@@ -84,7 +90,7 @@ def broadcast_channel(opal_network: Network):
 
 
 @pytest.fixture(scope="session")
-def opal_server(opal_network: Network, broadcast_channel: BroadcastContainer):
+def opal_server(opal_network: Network, broadcast_channel: BroadcastContainer, gitea_server: GiteaContainer):
     
 #    debugpy.breakpoint()
     if not broadcast_channel:
@@ -101,10 +107,21 @@ def opal_server(opal_network: Network, broadcast_channel: BroadcastContainer):
 
     #opal_broadcast_uri = f"http://{ip_address}:{exposed_port}"
     opal_broadcast_uri = f"postgres://test:test@broadcast_channel:5432"
+
+
+
+    print("############################################################")
     
+    print(f"{gitea_server.settings.gitea_base_url}/{gitea_server.settings.username}/{gitea_server.settings.repo_name}")
+
+    input("Press enter to continue...")
     with OpalServerContainer(
         OpalServerSettings(
-        network=opal_network, opal_broadcast_uri=opal_broadcast_uri)
+        opal_broadcast_uri=opal_broadcast_uri, 
+        container_name= "opal_server",
+        statistics_enabled="false",
+        policy_repo_url=f"http://{gitea_server.settings.container_name}:{gitea_server.settings.port_http}/{gitea_server.settings.username}/{gitea_server.settings.repo_name}",
+        image="permitio/opal-server:latest"), network=opal_network
         ).with_network_aliases("opal_server") as container:
 
         container.get_wrapped_container().reload()
@@ -115,9 +132,27 @@ def opal_server(opal_network: Network, broadcast_channel: BroadcastContainer):
 
 @pytest.fixture(scope="session")
 def opal_client(opal_network: Network, opal_server: OpalServerContainer):
-   
-    with OpalClientContainer(network=opal_network).with_network_aliases("opal_client") as container:
-        wait_for_logs(container, "")
+    
+    client_token = opal_server.obtain_OPAL_tokens()["client"]
+    callbacks = json.dumps(
+    {
+        "callbacks": [
+            [
+                f"http://{opal_server.settings.container_name}:{opal_server.settings.port}/data/callback_report",
+                {
+                    "method": "post",
+                    "process_data": False,
+                    "headers": {
+                        "Authorization": f"Bearer {client_token}",
+                        "content-type": "application/json",
+                    },
+                },
+            ]
+        ]
+    })
+
+    with OpalClientContainer(OpalClientSettings(image="permitio/opal-client:latest", client_token = client_token, default_update_callbacks = callbacks), network=opal_network).with_network_aliases("opal_client") as container:
+        #wait_for_logs(container, "")
         yield container
 
 

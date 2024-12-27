@@ -1,5 +1,6 @@
 
 import os
+from testcontainers.core.utils import setup_logger
 
 
 class GiteaSettings:
@@ -36,24 +37,26 @@ class GiteaSettings:
         :param image: Optional - Docker image for Gitea
         :param USER_UID: Optional - User UID for Gitea
         :param USER_GID: Optional - User GID for Gitea
-        :param user_name: Optional - Default admin username for Gitea
+        :param username: Optional - Default admin username for Gitea
         :param email: Optional - Default admin email for Gitea
         :param password: Optional - Default admin password for Gitea
         :param gitea_base_url: Optional - Base URL for the Gitea instance
         """
          
+        self.logger = setup_logger(__name__)
+
         self.load_from_env()
         
         self.image = image if image else self.image
-        self.name = container_name if container_name else self.name
+        self.container_name = container_name if container_name else self.container_name
         self.repo_name = repo_name if repo_name else self.repo_name
-        self.port_3000 = GITEA_3000_PORT if GITEA_3000_PORT else self.port_3000
+        self.port_http = GITEA_3000_PORT if GITEA_3000_PORT else self.port_http
         self.port_2222 = GITEA_2222_PORT if GITEA_2222_PORT else self.port_2222
         self.uid = USER_UID if USER_UID else self.uid
         self.gid = USER_GID if USER_GID else self.gid
         self.network = network_name if network_name else self.network
 
-        self.user_name = username if username else self.user_name
+        self.username = username if username else self.username
         self.email = email if email else self.email
         self.password = password if password else self.password
         self.gitea_base_url = gitea_base_url if gitea_base_url else self.gitea_base_url
@@ -65,32 +68,33 @@ class GiteaSettings:
         self.install_lock = "true"
         
         self.network_aliases = network_aliases if network_aliases else self.network_aliases
-        
+
         self.access_token = None  # Optional, can be set later
         self.__dict__.update(kwargs)
 
     
         # Validate required parameters
         self.validate_dependencies()
+
     
     def validate_dependencies(self):
         """Validate required parameters."""
-        required_params = [self.name, self.port_3000, self.port_2222, self.image, self.uid, self.gid]
+        required_params = [self.container_name, self.port_http, self.port_2222, self.image, self.uid, self.gid]
         if not all(required_params):
             raise ValueError("Missing required parameters for Gitea container initialization.")
 
     def getEnvVars(self):
         return {
-            "GITEA_CONTAINER_NAME": self.name,
+            "GITEA_CONTAINER_NAME": self.container_name,
             "REPO_NAME": self.repo_name,
             "TEMP_DIR": self.temp_dir,
             "DATA_DIR": self.data_dir,
-            "GITEA_3000_PORT": self.port_3000,
+            "GITEA_3000_PORT": self.port_http,
             "GITEA_2222_PORT": self.port_2222,
             "USER_UID": self.uid,
             "USER_GID": self.gid,
             "NETWORK": self.network,
-            "USER_NAME": self.user_name,
+            "username": self.username,
             "EMAIL": self.email,
             "PASSWORD": self.password,
             "GITEA_BASE_URL": self.gitea_base_url,
@@ -101,18 +105,18 @@ class GiteaSettings:
     
     def load_from_env(self):
         self.image = os.getenv("GITEA_IMAGE", "gitea/gitea:latest-rootless")
-        self.name = os.getenv("GITEA_CONTAINER_NAME", "gitea")
+        self.container_name = os.getenv("GITEA_CONTAINER_NAME", "gitea")
         self.repo_name = os.getenv("REPO_NAME", "permit")
         self.temp_dir = os.getenv("TEMP_DIR", "/tmp/permit")
         self.data_dir = os.getenv("DATA_DIR", "/tmp/data")
-        self.port_3000 = int(os.getenv("GITEA_3000_PORT", 3000))                    
+        self.port_http = int(os.getenv("GITEA_3000_PORT", 3000))                    
         self.port_2222 = int(os.getenv("GITEA_2222_PORT", 2222))
         self.uid = int(os.getenv("USER_UID", 1000))
         self.gid = int(os.getenv("USER_GID", 1000))
         self.network = os.getenv("NETWORK", "pytest_opal_network")
-        self.user_name = os.getenv("USER_NAME", "admin")
-        self.email = os.getenv("EMAIL", "")
-        self.password = os.getenv("PASSWORD", "password")
+        self.username = os.getenv("username", "permitAdmin")
+        self.email = os.getenv("EMAIL", "admin@permit.io")
+        self.password = os.getenv("PASSWORD", "Aa123456")
         self.gitea_base_url = os.getenv("GITEA_BASE_URL", "http://localhost:3000")
         self.access_token = os.getenv("GITEA_ACCESS_TOKEN", None)
         self.network_aliases = os.getenv("NETWORK_ALIASES", "gitea")

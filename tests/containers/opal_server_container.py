@@ -34,7 +34,7 @@ class OpalServerContainer(DockerContainer):
             .with_bind_ports(7002, self.settings.port) \
             .with_network(self.network) \
             .with_network_aliases("opal_server") \
-            .with_kwargs(labels={"com.docker.compose.project": "pytest"})
+            .with_kwargs(labels={"com.docker.compose.project": "pytest"}) \
 
         # Bind debug ports if enabled
         if(self.settings.debugEnabled):
@@ -53,7 +53,7 @@ class OpalServerContainer(DockerContainer):
         """Fetch client and datasource tokens from the OPAL server."""
         token_url = f"http://localhost:{self.settings.port}/token"
         headers = {
-            "Authorization": f"Bearer {self.master_token}",
+            "Authorization": f"Bearer {self.settings.master_token}",
             "Content-Type": "application/json",
         }
 

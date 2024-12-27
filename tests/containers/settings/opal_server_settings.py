@@ -97,26 +97,26 @@ class OpalServerSettings:
         # Configure environment variables
         
         env_vars = {
-            "UVICORN_NUM_WORKERS": self.suvicorn_workers,
+            "UVICORN_NUM_WORKERS": self.uvicorn_workers,
             "OPAL_POLICY_REPO_URL": self.policy_repo_url,
             "OPAL_POLICY_REPO_MAIN_BRANCH": self.policy_repo_main_branch,
             "OPAL_POLICY_REPO_POLLING_INTERVAL": self.polling_interval,
             "OPAL_AUTH_PRIVATE_KEY": self.private_key,
             "OPAL_AUTH_PUBLIC_KEY": self.public_key,
             "OPAL_AUTH_MASTER_TOKEN": self.master_token,
-            "OPAL_DATA_CONFIG_SOURCES": f"""{{"config":{{"entries":[{{"url":"http://localhost:{self.port}/policy-data","topics":["{self.data_topics}"],"dst_path":"/static"}}]}}}}""",
+            "OPAL_DATA_CONFIG_SOURCES": f"""{{"config":{{"entries":[{{"url":"http://{self.container_name}:{self.port}/policy-data","topics":["{self.data_topics}"],"dst_path":"/static"}}]}}}}""",
             "OPAL_LOG_FORMAT_INCLUDE_PID": self.log_format_include_pid, 
-            "OPAL_STATISTICS_ENABLED": self.settings.OPAL_STATISTICS_ENABLED, 
+            "OPAL_STATISTICS_ENABLED": self.statistics_enabled, 
             "OPAL_AUTH_JWT_AUDIENCE": self.auth_audience,
             "OPAL_AUTH_JWT_ISSUER": self.auth_issuer
         }
 
-        if(self.settings.tests_debug):
+        if(self.tests_debug):
             env_vars["LOG_DIAGNOSE"] = self.log_diagnose
             env_vars["OPAL_LOG_LEVEL"] = self.log_level
 
-        if(self.settings.auth_private_key_passphrase):
-            env_vars["OPAL_AUTH_PRIVATE_KEY_PASSPHRASE"] = self.settings.auth_private_key_passphrase
+        if(self.auth_private_key_passphrase):
+            env_vars["OPAL_AUTH_PRIVATE_KEY_PASSPHRASE"] = self.auth_private_key_passphrase
 
         if self.broadcast_uri:
             env_vars["OPAL_BROADCAST_URI"] = self.broadcast_uri
@@ -134,7 +134,7 @@ class OpalServerSettings:
         self.private_key = os.getenv("OPAL_AUTH_PRIVATE_KEY", None)
         self.public_key = os.getenv("OPAL_AUTH_PUBLIC_KEY", None)
         self.master_token = os.getenv("OPAL_AUTH_MASTER_TOKEN", token_hex(16))
-        self.data_topics = os.getenv("OPAL_DATA_TOPICS", "ALL_DATA_TOPIC")
+        self.data_topics = os.getenv("OPAL_DATA_TOPICS", "policy_data")
         self.broadcast_uri = os.getenv("OPAL_BROADCAST_URI", None)
         self.auth_audience = os.getenv("OPAL_AUTH_JWT_AUDIENCE", "https://api.opal.ac/v1/")        
         self.auth_issuer = os.getenv("OPAL_AUTH_JWT_ISSUER", "https://opal.ac/")

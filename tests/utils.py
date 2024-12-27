@@ -217,10 +217,9 @@ def generate_ssh_key():
     # Return the keys as strings
     return private_key_pem.decode('utf-8'), public_key_openssh.decode('utf-8')
 
-async def opal_authorize(user: str):
+async def opal_authorize(user: str, policy_url: str):
     """Test if the user is authorized based on the current policy."""
 
-    global policy_url
     
     # HTTP headers and request payload
     headers = {"Content-Type": "application/json" }
@@ -246,6 +245,6 @@ async def opal_authorize(user: str):
 
 def wait_policy_repo_polling_interval(opal_server_container: OpalServerContainer):
     # Allow time for the update to propagate
-    for i in range(opal_server_container.settings.polling_interval, 0, -1):
+    for i in range(int(opal_server_container.settings.polling_interval), 0, -1):
         print(f"waiting for OPAL server to pull the new policy {i} secondes left", end='\r') 
         time.sleep(1)
