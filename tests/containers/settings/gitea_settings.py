@@ -19,6 +19,7 @@ class GiteaSettings:
             password: str = None, 
             gitea_base_url: str = None, 
             gitea_container_port: int = None,
+            network_aliases: str = None,
             image: str = None, 
             **kwargs):
 
@@ -63,8 +64,11 @@ class GiteaSettings:
         self.db_type = "sqlite3"  # Default to SQLite
         self.install_lock = "true"
         
+        self.network_aliases = network_aliases if network_aliases else self.network_aliases
+        
         self.access_token = None  # Optional, can be set later
         self.__dict__.update(kwargs)
+
     
         # Validate required parameters
         self.validate_dependencies()
@@ -111,4 +115,5 @@ class GiteaSettings:
         self.password = os.getenv("PASSWORD", "password")
         self.gitea_base_url = os.getenv("GITEA_BASE_URL", "http://localhost:3000")
         self.access_token = os.getenv("GITEA_ACCESS_TOKEN", None)
+        self.network_aliases = os.getenv("NETWORK_ALIASES", "gitea")
         

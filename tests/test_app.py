@@ -7,7 +7,7 @@ import time
 from tests.containers.gitea_container import GiteaContainer
 from tests.containers.opal_server_container import OpalServerContainer
 from tests.containers.opal_client_container import OpalClientContainer
-import utils
+from tests import utils
 
 # TODO: Replace once all fixtures are properly working.
 def test_trivial():
@@ -198,8 +198,8 @@ def publish_data_user_location(src, user, DATASOURCE_TOKEN):
 def test_user_location(opal_server_container: OpalServerContainer, opal_client_container: OpalClientContainer):
     """Test data publishing"""
 
-    publish_data_user_location(f"{ip_to_location_base_url}{"8.8.8.8"}", "bob")
-    print(f"{"bob"}'s location set to: US. Expected outcome: NOT ALLOWED.")
+    publish_data_user_location(f"{ip_to_location_base_url}8.8.8.8", "bob")
+    print(f"bob's location set to: US. Expected outcome: NOT ALLOWED.")
 
     time.sleep(OPAL_DISTRIBUTION_TIME)
     assert "ABC" in opal_server_container.get_logs()
@@ -245,7 +245,7 @@ def update_policy(gitea_container: GiteaContainer, opal_server_container: OpalSe
     utils.wait_policy_repo_polling_interval()
 
  
-@pytest.mark.parametrize("location", ["CN", "US", "SE"])
+#@pytest.mark.parametrize("location", ["CN", "US", "SE"])
 @pytest.mark.asyncio
 async def test_policy_and_data_updates(gitea_container: GiteaContainer, opal_server_container: OpalServerContainer, temp_dir):
     """    

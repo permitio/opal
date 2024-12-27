@@ -136,3 +136,5 @@ dmypy.json
 
 # System files
 .DS_Store
+pytest_6dbc.env
+tests/pytest_1a09.env

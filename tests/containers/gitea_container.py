@@ -36,7 +36,7 @@ class GiteaContainer(DockerContainer):
         self.with_kwargs(auto_remove=False, restart_policy={"Name": "always"})
     
 
-    
+
         super().__init__(image=self.settings.image, docker_client_kw=docker_client_kw, **kwargs)
        
         self.configure()
@@ -52,7 +52,7 @@ class GiteaContainer(DockerContainer):
             .with_bind_ports(3000, self.settings.port_3000) \
             .with_bind_ports(2222, self.settings.port_2222) \
             .with_network(self.network) \
-            .with_network_aliases("gitea") \
+            .with_network_aliases(self.settings.network_aliases) \
             
     def is_gitea_ready(self):
         """Check if Gitea is ready by inspecting logs."""

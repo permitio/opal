@@ -2,13 +2,14 @@
 import os
 from secrets import token_hex
 
+from testcontainers.core.utils import setup_logger
+
 from tests import utils
 
 class OpalServerSettings:
     def __init__(
         self,
         container_name: str = None,
-        network_name: str = None,
         port: int = None,
         uvicorn_workers: str = None,
         policy_repo_url: str = None,
@@ -54,11 +55,12 @@ class OpalServerSettings:
         :param debug_enabled: Optional flag for enabling debug mode with debugpy.
         """
         
+        self.loger = setup_logger(__name__)
+
         self.load_from_env()
 
         self.image = image if image else self.image
         self.container_name = container_name if container_name else self.container_name
-        self.network_name = network_name if network_name else self.network_name
         self.port = port if port else self.port
         self.uvicorn_workers = uvicorn_workers if uvicorn_workers else self.uvicorn_workers
         self.policy_repo_url = policy_repo_url if policy_repo_url else self.policy_repo_url
@@ -88,7 +90,7 @@ class OpalServerSettings:
             raise ValueError("SSH private and public keys are required.")
         if not self.master_token:
             raise ValueError("OPAL master token is required.")
-        self.log.info("Dependencies validated successfully.")
+        self.loger.info("Dependencies validated successfully.")
         
     def getEnvVars(self):
                
@@ -124,16 +126,16 @@ class OpalServerSettings:
     def load_from_env(self):
 
         self.image = os.getenv("OPAL_SERVER_IMAGE", "opal_server_debug_local")
-        self.container_name = os.getenv("OPAL_SERVER_CONTAINER_NAME", self.container_name)
+        self.container_name = os.getenv("OPAL_SERVER_CONTAINER_NAME", None)
         self.port = os.getenv("OPAL_SERVER_PORT", 7002)
         self.uvicorn_workers = os.getenv("OPAL_SERVER_UVICORN_WORKERS", "1")
-        self.policy_repo_url = os.getenv("OPAL_POLICY_REPO_URL", self.policy_repo_url)
+        self.policy_repo_url = os.getenv("OPAL_POLICY_REPO_URL", None)
         self.polling_interval = os.getenv("OPAL_POLICY_REPO_POLLING_INTERVAL", "30")
-        self.private_key = os.getenv("OPAL_AUTH_PRIVATE_KEY", self.private_key)
-        self.public_key = os.getenv("OPAL_AUTH_PUBLIC_KEY", self.public_key)
+        self.private_key = os.getenv("OPAL_AUTH_PRIVATE_KEY", None)
+        self.public_key = os.getenv("OPAL_AUTH_PUBLIC_KEY", None)
         self.master_token = os.getenv("OPAL_AUTH_MASTER_TOKEN", token_hex(16))
         self.data_topics = os.getenv("OPAL_DATA_TOPICS", "ALL_DATA_TOPIC")
-        self.broadcast_uri = os.getenv("OPAL_BROADCAST_URI", self.broadcast_uri)
+        self.broadcast_uri = os.getenv("OPAL_BROADCAST_URI", None)
         self.auth_audience = os.getenv("OPAL_AUTH_JWT_AUDIENCE", "https://api.opal.ac/v1/")        
         self.auth_issuer = os.getenv("OPAL_AUTH_JWT_ISSUER", "https://opal.ac/")
         self.tests_debug = os.getenv("OPAL_TESTS_DEBUG", "true")        
@@ -142,7 +144,7 @@ class OpalServerSettings:
         self.log_format_include_pid = os.getenv("OPAL_LOG_FORMAT_INCLUDE_PID", "true")    
         self.statistics_enabled = os.getenv("OPAL_STATISTICS_ENABLED", "true")
         self.debugEnabled = os.getenv("OPAL_DEBUG_ENABLED", "false")        
-        self.auth_private_key_passphrase = os.getenv("OPAL_AUTH_PRIVATE_KEY_PASSPHRASE", self.auth_private_key_passphrase)        
+        self.auth_private_key_passphrase = os.getenv("OPAL_AUTH_PRIVATE_KEY_PASSPHRASE", None)        
         self.policy_repo_main_branch = os.getenv("OPAL_POLICY_REPO_MAIN_BRANCH", "master")  
         
         if not self.private_key or not self.public_key:
