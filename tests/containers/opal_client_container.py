@@ -33,9 +33,7 @@ class OpalClientContainer(DockerContainer):
         opal_server_url = f"http://opal_server:7002"
         self.with_env("OPAL_SERVER_URL", opal_server_url)
 
-        client = docker.from_env()
-        network = client.networks.get(kwargs.get("network") or s.OPAL_TESTS_NETWORK_NAME)
-        self.with_network(network)
+        self.with_network(self.network)
     
 
         self \
