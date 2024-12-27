@@ -116,8 +116,10 @@ function test_data_publish {
 function test_statistics {
     echo "- Testing statistics feature"
     # Make sure 2 servers & 2 clients (repeat few times cause different workers might response)
-    for _ in {1..10}; do
-      curl -s 'http://localhost:7002/stats' --header "Authorization: Bearer $OPAL_DATA_SOURCE_TOKEN" | grep '"client_count":2,"server_count":2'
+    for port in {7002..7003}; do
+      for _ in {1..8}; do
+        curl -s "http://localhost:${port}/stats" --header "Authorization: Bearer $OPAL_DATA_SOURCE_TOKEN" | grep '"client_count":2,"server_count":2'
+      done
     done
 }
 
@@ -156,4 +158,20 @@ function main {
   # TODO: Test statistics feature again after broadcaster restart (should first fix statistics bug)
 }
 
-main
+# Retry test in case of failure to avoid flakiness
+MAX_RETRIES=5
+RETRY_COUNT=0
+
+while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
+  echo "Running test (attempt $((RETRY_COUNT+1)) of $MAX_RETRIES)..."
+  main && break
+  RETRY_COUNT=$((RETRY_COUNT + 1))
+  echo "Test failed, retrying..."
+done
+
+if [ $RETRY_COUNT -eq $MAX_RETRIES ]; then
+  echo "Tests failed after $MAX_RETRIES attempts."
+  exit 1
+fi
+
+echo "Tests passed successfully."

@@ -34,9 +34,17 @@ RETRY_CONFIG = opal_client_config.POLICY_STORE_CONN_RETRY.toTenacityConfig()
 
 
 def should_ignore_path(path, ignore_paths):
-    """Helper function to check if the policy-store should ignore to given
+    """Helper function to check if the policy-store should ignore the given
     path."""
-    return PathUtils.glob_style_match_path_to_list(path, ignore_paths) is not None
+    paths_to_ignore = [p for p in ignore_paths if not p.startswith("!")]
+    paths_to_not_ignore = [p[1:] for p in ignore_paths if p.startswith("!")]
+
+    # Check if the path matches any path to not be ignored
+    if PathUtils.glob_style_match_path_to_list(path, paths_to_not_ignore) is not None:
+        return False
+
+    # Check if the path matches any path to be ignored
+    return PathUtils.glob_style_match_path_to_list(path, paths_to_ignore) is not None
 
 
 def fail_silently(fallback=None):
@@ -54,7 +62,7 @@ def fail_silently(fallback=None):
 
 
 def affects_transaction(func):
-    """mark a method as write (affecting state of transaction) for transaction
+    """Mark a method as write (affecting state of transaction) for transaction
     log."""
     setattr(func, "affects_transaction", True)
     return func
@@ -63,7 +71,7 @@ def affects_transaction(func):
 async def proxy_response_unless_invalid(
     raw_response: aiohttp.ClientResponse, accepted_status_codes: List[int]
 ) -> Response:
-    """throws value error if the http response received has an unexpected
+    """Throws value error if the http response received has an unexpected
     status code."""
     response = await proxy_response(raw_response)
     if response.status_code not in accepted_status_codes:
@@ -80,7 +88,7 @@ async def proxy_response_unless_invalid(
 
 
 class OpaTransactionLogState:
-    """holds a mutatable state of the transaction log.
+    """Holds a mutatable state of the transaction log.
 
     can persist to OPA as hardcoded policy
     """
@@ -181,7 +189,7 @@ class OpaTransactionLogState:
         return transaction.transaction_type == TransactionType.data
 
     def process_transaction(self, transaction: StoreTransaction):
-        """mutates the state into a new state that can be then persisted as
+        """Mutates the state into a new state that can be then persisted as
         hardcoded policy."""
         logger.debug(
             "processing store transaction: {transaction}",
@@ -221,7 +229,7 @@ class OpaTransactionLogPolicyWriter:
         return template.format(**kwargs)
 
     async def persist(self, state: OpaTransactionLogState):
-        """renders the policy template with the current state, and writes it to
+        """Renders the policy template with the current state, and writes it to
         OPA."""
         logger.info(
             "persisting health check policy: ready={ready}, healthy={healthy}",
@@ -288,7 +296,7 @@ class OpaStaticDataCache:
 
 
 class OpaClient(BasePolicyStoreClient):
-    """communicates with OPA via its REST API."""
+    """Communicates with OPA via its REST API."""
 
     POLICY_NAME = "rbac"
 
@@ -464,7 +472,7 @@ class OpaClient(BasePolicyStoreClient):
             policy_id, opal_client_config.POLICY_STORE_POLICY_PATHS_TO_IGNORE
         ):
             logger.info(
-                f"Ignoring setting policy - {policy_id}, set in POLICY_PATHS_TO_IGNORE."
+                f"Ignoring setting policy - {policy_id}, set in POLICY_STORE_POLICY_PATHS_TO_IGNORE."
             )
             return
         async with aiohttp.ClientSession() as session:
@@ -533,7 +541,7 @@ class OpaClient(BasePolicyStoreClient):
             policy_id, opal_client_config.POLICY_STORE_POLICY_PATHS_TO_IGNORE
         ):
             logger.info(
-                f"Ignoring deleting policy - {policy_id}, set in POLICY_PATHS_TO_IGNORE."
+                f"Ignoring deleting policy - {policy_id}, set in POLICY_STORE_POLICY_PATHS_TO_IGNORE."
             )
             return
 
@@ -878,7 +886,7 @@ class OpaClient(BasePolicyStoreClient):
 
     @retry(**RETRY_CONFIG)
     async def get_data_with_input(self, path: str, input: BaseModel) -> Dict:
-        """evaluates a data document against an input. that is how OPA "runs
+        """Evaluates a data document against an input. that is how OPA "runs
         queries".
 
         see explanation how opa evaluate documents:

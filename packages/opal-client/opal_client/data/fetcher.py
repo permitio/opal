@@ -12,7 +12,7 @@ from opal_common.utils import get_authorization_header, tuple_to_dict
 
 
 class DataFetcher:
-    """fetches policy data from backend."""
+    """Fetches policy data from backend."""
 
     def __init__(self, default_data_url: str = None, token: str = None):
         """

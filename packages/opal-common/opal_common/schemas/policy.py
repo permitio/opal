@@ -40,6 +40,20 @@ class PolicyBundle(BaseSchema):
     policy_modules: List[RegoModule]
     deleted_files: Optional[DeletedFiles]
 
+    def calculate_size(self) -> int:
+        """Calculates the size of the policy bundle."""
+        size = 0
+        if self.data_modules:
+            size += len(self.data_modules)
+        if self.policy_modules:
+            size += len(self.policy_modules)
+        if self.deleted_files:
+            if self.deleted_files.data_modules:
+                size += len(self.deleted_files.data_modules)
+            if self.deleted_files.policy_modules:
+                size += len(self.deleted_files.policy_modules)
+        return size
+
 
 class PolicyUpdateMessage(BaseSchema):
     old_policy_hash: str

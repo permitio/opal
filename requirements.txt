@@ -10,3 +10,10 @@ twine
 testcontainers
 setuptools>=70.0.0 # not directly required, pinned by Snyk to avoid a vulnerability
 zipp>=3.19.1 # not directly required, pinned by Snyk to avoid a vulnerability
+prometheus_client
+opentelemetry-api>=1.28.2
+opentelemetry-sdk>=1.28.2
+opentelemetry-instrumentation
+opentelemetry-instrumentation-fastapi
+opentelemetry-exporter-otlp
+opentelemetry-exporter-prometheus

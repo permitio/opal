@@ -11,7 +11,7 @@ class BaseFetchingEngine:
 
     @property
     def register(self) -> FetcherRegister:
-        """access to the underlying fetcher providers register."""
+        """Access to the underlying fetcher providers register."""
         raise NotImplementedError()
 
     async def __aenter__(self):

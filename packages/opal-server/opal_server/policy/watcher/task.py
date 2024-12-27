@@ -6,6 +6,7 @@ from typing import Any, Coroutine, List, Optional
 from fastapi_websocket_pubsub import Topic
 from fastapi_websocket_pubsub.pub_sub_server import PubSubEndpoint
 from opal_common.logger import logger
+from opal_common.monitoring.tracing_utils import start_span
 from opal_common.sources.base_policy_source import BasePolicySource
 from opal_server.config import opal_server_config
 
@@ -61,14 +62,14 @@ class BasePolicyWatcherTask:
             await _subscribe_internal()
 
     async def start(self):
-        """starts the policy watcher and registers a failure callback to
+        """Starts the policy watcher and registers a failure callback to
         terminate gracefully."""
         logger.info("Launching policy watcher")
         self._tasks.append(asyncio.create_task(self._listen_to_webhook_notifications()))
         self._init_should_stop()
 
     async def stop(self):
-        """stops all policy watcher tasks."""
+        """Stops all policy watcher tasks."""
         logger.info("Stopping policy watcher")
         for task in self._tasks + self._webhook_tasks:
             if not task.done():
@@ -76,12 +77,12 @@ class BasePolicyWatcherTask:
         await asyncio.gather(*self._tasks, return_exceptions=True)
 
     async def trigger(self, topic: Topic, data: Any):
-        """triggers the policy watcher from outside to check for changes (git
+        """Triggers the policy watcher from outside to check for changes (git
         pull)"""
         raise NotImplementedError()
 
     def wait_until_should_stop(self) -> Coroutine:
-        """waits until self.signal_stop() is called on the watcher.
+        """Waits until self.signal_stop() is called on the watcher.
 
         allows us to keep the repo watcher context alive until signalled
         to stop from outside.
@@ -90,7 +91,7 @@ class BasePolicyWatcherTask:
         return self._should_stop.wait()
 
     def signal_stop(self):
-        """signal the repo watcher it should stop."""
+        """Signal the repo watcher it should stop."""
         self._init_should_stop()
         self._should_stop.set()
 
@@ -99,7 +100,7 @@ class BasePolicyWatcherTask:
             self._should_stop = asyncio.Event()
 
     async def _fail(self, exc: Exception):
-        """called when the watcher fails, and stops all tasks gracefully."""
+        """Called when the watcher fails, and stops all tasks gracefully."""
         logger.error("policy watcher failed with exception: {err}", err=repr(exc))
         self.signal_stop()
         # trigger uvicorn graceful shutdown
@@ -121,6 +122,11 @@ class PolicyWatcherTask(BasePolicyWatcherTask):
         return await super().stop()
 
     async def trigger(self, topic: Topic, data: Any):
-        """triggers the policy watcher from outside to check for changes (git
+        """Triggers the policy watcher from outside to check for changes (git
         pull)"""
-        await self._watcher.check_for_changes()
+        try:
+            async with start_span("opal_server_policy_update") as span:
+                span.set_attribute("topic", str(topic))
+                await self._watcher.check_for_changes()
+        except Exception as e:
+            raise

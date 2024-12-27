@@ -11,6 +11,7 @@ There are multiple ways you can monitor your OPAL deployment:
 - **Health-checks** - OPAL exposes HTTP health check endpoints ([See below](##health-checks))
 - [**Callbacks**](/tutorials/healthcheck_policy_and_update_callbacks#-data-update-callbacks) - Using the callback webhooks feature - having OPAL-clients report their updates
 - **Statistics** - Using the built-in statistics feature in OPAL ([See below](##opal-statistics))
+- **OpenTelemetry Metrics and Tracing** - OPAL can expose metrics and tracing information using OpenTelemetry for monitoring ([See below](#opentelemetry-metrics-and-tracing)).
 
 ## Health checks
 
@@ -52,3 +53,118 @@ Available through `/pubsub_client_info` api route on the server.
 ### Caveats:
 - When `UVICORN_NUM_WORKERS > 1`, retrieved information would only include clients connected to the replying server process.
 - This is an early access feature and is likely to change. Backward compatibility is not garaunteed.
+
+## OpenTelemetry Metrics and Tracing
+
+OPAL supports exporting metrics and tracing information using OpenTelemetry, which can be integrated with various monitoring and observability tools.
+
+### Enabling OpenTelemetry Metrics and Tracing
+
+To enable OpenTelemetry metrics and tracing, you need to set the following environment variables in both OPAL server and OPAL client:
+
+```
+OPAL_ENABLE_OPENTELEMETRY_TRACING=true
+OPAL_ENABLE_OPENTELEMETRY_METRICS=true
+OPAL_OPENTELEMETRY_OTLP_ENDPOINT=<your-otel-collector-endpoint>
+```
+
+- OPAL_ENABLE_OPENTELEMETRY_TRACING: Set to `true` to enable tracing.
+- OPAL_ENABLE_OPENTELEMETRY_METRICS: Set to `true` to enable metrics.
+- OPAL_OPENTELEMETRY_OTLP_ENDPOINT: Set the endpoint for the OpenTelemetry Collector
+
+### Exposing Metrics and Traces
+
+- Both the server and client will expose a `/metrics` endpoint that returns metrics in Prometheus format.
+- Traces are exported to the configured OpenTelemetry Collector endpoint using OTLP over gRPC.
+
+### Available Metrics and Traces
+
+Below is a list of the available metrics and traces in OPAL, along with their types, available tags (attributes), and explanations.
+
+#### OPAL Server Metrics and Traces
+
+##### 1) `opal_server_data_update`
+- **Type**: Trace
+- **Description**: Represents a data update operation in the OPAL server. This trace spans the process of publishing data updates to clients.
+- **Attributes**:
+  - `topics_count`: Number of topics involved in the data update.
+  - `entries_count`: Number of data update entries.
+  - Additional attributes related to errors or execution time.
+
+##### 2) `opal_server_policy_update`
+- **Type**: Trace
+- **Description**: Represents a policy update operation in the OPAL server. This trace spans the process of checking for policy changes and notifying clients.
+- **Attributes**:
+  - Information about the policy repository, such as commit hashes.
+  - Errors encountered during the update process.
+
+##### 3) `opal_server_policy_bundle_request`
+- **Type**: Trace
+- **Description**: Represents a request for a policy bundle from a client. This trace spans the process of generating and serving the policy bundle to the client.
+- **Attributes**:
+  - `bundle.type`: The type of bundle (full or diff).
+  - `bundle.size`: The size of the bundle in number of files or bytes.
+  - `scope_id`: The scope identifier if scopes are used.
+
+##### 4) `opal_server_policy_bundle_size`
+- **Type**: Metric (Histogram)
+- **Unit**: Files
+- **Description**: Records the size of the policy bundles served by the OPAL server. The size is measured in the number of files included in the bundle.
+- **Attributes**:
+  - `type`: The type of bundle (full or diff).
+
+##### 5) `opal_server_active_clients`
+- **Type**: Metric (UpDownCounter)
+- **Description**: Tracks the number of active clients connected to the OPAL server.
+- **Attributes**:
+  - `client_id`: The unique identifier of the client.
+  - `source`: The source host and port of the client (e.g., 192.168.1.10:34567).
+
+#### OPAL Client Metrics and Traces
+
+##### 1) `opal_client_data_subscriptions`
+- **Type**: Metric (UpDownCounter)
+- **Description**: Tracks the number of data subscriptions per client.
+- **Attributes**:
+  - `client_id`: The unique identifier of the client.
+  - `topic`: The topic to which the client is subscribed.
+
+##### 2) `opal_client_data_update_trigger`
+- **Type**: Trace
+- **Description**: Represents the operation of triggering a data update via the API in the OPAL client.
+- **Attributes**:
+  - `source`: The source of the trigger (e.g., API).
+  - Errors encountered during the trigger.
+
+##### 3) `opal_client_data_update_apply`
+- **Type**: Trace
+- **Description**: Represents the application of a data update within the OPAL client. This trace spans the process of fetching and applying data updates from the server.
+- **Attributes**:
+  - Execution time.
+  - Errors encountered during the update.
+
+##### 4) `opal_client_policy_update_apply`
+- **Type**: Trace
+- **Description**: Represents the application of a policy update within the OPAL client. This trace spans the process of fetching and applying policy updates from the server.
+- **Attributes**:
+  - Execution time.
+  - Errors encountered during the update.
+
+##### 5) `opal_client_policy_store_status`
+- **Type**: Metric (Observable Gauge)
+- **Description**: Indicates the current status of the policy store's authentication type used by the OPAL client.
+- **Attributes**:
+  - `auth_type`: The authentication type configured for the policy store (e.g., TOKEN, OAUTH, NONE).
+  - **Value**: The metric has a value of 1 when the policy store is active with the specified authentication type.
+
+### Example
+
+To monitor OPAL using Prometheus and Grafana, a ready-to-use Docker Compose configuration is provided in the root directory of the repository under docker. The file is named docker-compose-with-prometheus-and-otel.yml.
+
+Run the following command to start Prometheus and Grafana:
+
+```
+docker compose -f docker/docker-compose-with-prometheus-and-otel.yml up
+```
+
+This setup will start Prometheus to scrape metrics from OPAL server and client, and Grafana to visualize the metrics.

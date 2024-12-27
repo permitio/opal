@@ -6,7 +6,10 @@ import traceback
 from functools import partial
 from typing import List, Optional
 
+import opal_common.monitoring.metrics as opal_dd_metrics
 from fastapi import Depends, FastAPI
+from fastapi.responses import Response
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from fastapi_websocket_pubsub.event_broadcaster import EventBroadcasterContextManager
 from opal_common.authentication.deps import JWTAuthenticator, StaticBearerAuthenticator
 from opal_common.authentication.signer import JWTSigner
@@ -14,7 +17,9 @@ from opal_common.confi.confi import load_conf_if_none
 from opal_common.config import opal_common_config
 from opal_common.logger import configure_logs, logger
 from opal_common.middleware import configure_middleware
-from opal_common.monitoring import apm, metrics
+from opal_common.monitoring import apm
+from opal_common.monitoring.otel_metrics import init_meter
+from opal_common.monitoring.tracer import init_tracer
 from opal_common.schemas.data import ServerDataSourceConfig
 from opal_common.synchronization.named_lock import NamedLock
 from opal_common.topics.publisher import (
@@ -39,6 +44,15 @@ from opal_server.scopes.scope_repository import ScopeRepository
 from opal_server.security.api import init_security_router
 from opal_server.security.jwks import JwksStaticEndpoint
 from opal_server.statistics import OpalStatistics, init_statistics_router
+from opentelemetry import metrics, trace
+from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
+from opentelemetry.exporter.prometheus import PrometheusMetricReader
+from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
+from opentelemetry.sdk.metrics import MeterProvider
+from opentelemetry.sdk.resources import Resource
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import BatchSpanProcessor
+from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 
 
 class OpalServer:
@@ -106,7 +120,7 @@ class OpalServer:
         self._policy_remote_url = policy_remote_url
 
         self._configure_monitoring()
-        metrics.increment("startup")
+        opal_dd_metrics.increment("startup")
 
         self.data_sources_config: ServerDataSourceConfig = (
             data_sources_config
@@ -188,7 +202,7 @@ class OpalServer:
         self.app: FastAPI = self._init_fast_api_app()
 
     def _init_fast_api_app(self):
-        """inits the fastapi app object."""
+        """Inits the fastapi app object."""
         app = FastAPI(
             title="Opal Server",
             description="OPAL is an administration layer for Open Policy Agent (OPA), detecting changes"
@@ -203,6 +217,18 @@ class OpalServer:
         self._configure_api_routes(app)
         self._configure_lifecycle_callbacks(app)
 
+        if opal_common_config.ENABLE_OPENTELEMETRY_TRACING:
+            FastAPIInstrumentor.instrument_app(app)
+
+        if opal_common_config.ENABLE_OPENTELEMETRY_METRICS:
+
+            @app.get("/metrics")
+            async def metrics():
+                data = generate_latest()
+                return Response(content=data, media_type=CONTENT_TYPE_LATEST)
+
+            logger.info("Mounted /metrics endpoint for Prometheus metrics.")
+
         return app
 
     def _configure_monitoring(self):
@@ -210,15 +236,60 @@ class OpalServer:
 
         apm.configure_apm(opal_server_config.ENABLE_DATADOG_APM, "opal-server")
 
-        metrics.configure_metrics(
+        opal_dd_metrics.configure_metrics(
             enable_metrics=opal_common_config.ENABLE_METRICS,
             statsd_host=os.environ.get("DD_AGENT_HOST", "localhost"),
             statsd_port=8125,
             namespace="opal",
         )
 
+        if opal_common_config.ENABLE_OPENTELEMETRY_TRACING:
+            self._initialize_opentelemetry_tracing()
+
+        # log values of the configuration variable ENABLE_OPENTELEMETRY_METRICS
+        logger.info(
+            "OpenTelemetry metrics are enabled: {enabled}",
+            enabled=opal_common_config.ENABLE_OPENTELEMETRY_METRICS,
+        )
+        if opal_common_config.ENABLE_OPENTELEMETRY_METRICS:
+            self._initialize_opentelemetry_metrics()
+
+    def _initialize_opentelemetry_tracing(self):
+        resource = Resource.create({"service.name": "opal-server"})
+        tracer_provider = TracerProvider(resource=resource)
+        trace.set_tracer_provider(tracer_provider)
+
+        otlp_exporter = OTLPSpanExporter(
+            endpoint=opal_common_config.OPENTELEMETRY_OTLP_ENDPOINT, insecure=True
+        )
+
+        span_processor = BatchSpanProcessor(otlp_exporter)
+        tracer_provider.add_span_processor(span_processor)
+
+        init_tracer(tracer_provider)
+        logger.info("OpenTelemetry tracing is enabled.")
+
+    def _initialize_opentelemetry_metrics(self):
+        resource = Resource.create({"service.name": "opal-server"})
+        self.prometheus_metric_reader = PrometheusMetricReader()
+
+        meter_provider = MeterProvider(
+            resource=resource, metric_readers=[self.prometheus_metric_reader]
+        )
+        metrics.set_meter_provider(meter_provider)
+        init_meter(meter_provider)
+        self.meter = metrics.get_meter(__name__)
+
+        self.startup_counter = self.meter.create_counter(
+            name="startup",
+            description="Number of times the application has started",
+        )
+        self.startup_counter.add(1)
+
+        logger.info("OpenTelemetry metrics are enabled.")
+
     def _configure_api_routes(self, app: FastAPI):
-        """mounts the api routes on the app object."""
+        """Mounts the api routes on the app object."""
         authenticator = JWTAuthenticator(self.signer)
 
         data_update_publisher: Optional[DataUpdatePublisher] = None
@@ -282,7 +353,7 @@ class OpalServer:
         return app
 
     def _configure_lifecycle_callbacks(self, app: FastAPI):
-        """registers callbacks on app startup and shutdown.
+        """Registers callbacks on app startup and shutdown.
 
         on app startup we launch our long running processes (async
         tasks) on the event loop. on app shutdown we stop these long
@@ -310,7 +381,7 @@ class OpalServer:
         return app
 
     async def start_server_background_tasks(self):
-        """starts the background processes (as asyncio tasks) if such are
+        """Starts the background processes (as asyncio tasks) if such are
         configured.
 
         all workers will start these tasks:
