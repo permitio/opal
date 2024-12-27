@@ -2,7 +2,6 @@ import debugpy
 import docker
 from testcontainers.postgres import PostgresContainer
 
-from .. import settings as s
 
 class BroadcastContainer(PostgresContainer):
     def __init__(
