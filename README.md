@@ -143,8 +143,14 @@ If you like our project, please consider giving us a ⭐️
 
 ## Contributing to OPAL
 
-- Pull requests are welcome! (please make sure to include _passing_ tests and docs)
-- Prior to submitting a PR - open an issue on GitHub, or make sure your PR addresses an existing issue well.
+We would love for you to contribute to this project and help make it even better than it is today! 💎
+
+As a contributor, here are the guidelines we would like you to follow:
+ - [Code of Conduct](CODE_OF_CONDUCT.md)
+ - [Question or Problem?](CONTRIBUTING.md#question)
+ - [Issues and Bugs](CONTRIBUTING.md#issue)
+ - [Feature Requests](CONTRIBUTING.md#feature)
+ - [Development Guidelines](CONTRIBUTING.md#development)
 
 [join-slack-link]: https://i.ibb.co/wzrGHQL/Group-749.png
 [badge-slack-link]: https://io.permit.io/join_community
