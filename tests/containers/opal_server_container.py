@@ -3,8 +3,9 @@ from testcontainers.core.generic import DockerContainer
 from testcontainers.core.utils import setup_logger
 from testcontainers.core.network import Network
 from tests.containers.settings.opal_server_settings import OpalServerSettings
+from containers.permitContainer import PermitContainer
 
-class OpalServerContainer(DockerContainer):
+class OpalServerContainer(PermitContainer, DockerContainer):
     def __init__(
         self,
         settings: OpalServerSettings,
@@ -18,7 +19,8 @@ class OpalServerContainer(DockerContainer):
 
         self.logger = setup_logger(__name__)
 
-        super().__init__(image=self.settings.image, docker_client_kw=docker_client_kw, **kwargs)
+        PermitContainer.__init__(self)
+        DockerContainer.__init__(self, image=self.settings.image, docker_client_kw=docker_client_kw, **kwargs)
 
         self.configure()
 

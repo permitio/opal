@@ -9,6 +9,8 @@ import time
 from tests.containers.gitea_container import GiteaContainer
 from tests.containers.opal_server_container import OpalServerContainer
 from tests.containers.opal_client_container import OpalClientContainer
+from tests.containers.opal_client_container import PermitContainer
+
 from tests import utils
 
 from testcontainers.core.utils import setup_logger
@@ -178,8 +180,7 @@ def test_sequence():
 
 #############################################################
 
-# Regex to match any ANSI-escaped timestamp in the format YYYY-MM-DDTHH:MM:SS.mmmmmm+0000
-timestamp_with_ansi = r"\x1b\[.*?(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}\+\d{4})"
+
 OPAL_DISTRIBUTION_TIME = 2
 ip_to_location_base_url = "https://api.country.is/"
  
@@ -197,6 +198,8 @@ def publish_data_user_location(src, user, opal_server: OpalServerContainer):
     result = subprocess.run(publish_data_user_location_command, shell=True)
     result = subprocess.run(publish_data_user_location_command, shell=True)
     result = subprocess.run(publish_data_user_location_command, shell=True)
+    result = subprocess.run(publish_data_user_location_command, shell=True)
+
 
     
     # Check command execution result
@@ -210,8 +213,7 @@ def test_user_location(opal_server: OpalServerContainer, opal_client: OpalClient
     """Test data publishing"""
 
      # Generate the reference timestamp
-    timestamp_string = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f%z")
-    reference_timestamp = datetime.strptime(timestamp_string, "%Y-%m-%dT%H:%M:%S.%f%z")
+    reference_timestamp = datetime.now(timezone.utc)
     logger.info(f"Reference timestamp: {reference_timestamp}")
 
     # Publish data to the OPAL server
@@ -219,29 +221,7 @@ def test_user_location(opal_server: OpalServerContainer, opal_client: OpalClient
     publish_data_user_location(f"{ip_to_location_base_url}8.8.8.8", "bob", opal_server)
     logger.info("Published user location for 'bob'.")
 
-    # Stream logs from the opal_client container
-    log_found = False
-    logs = opal_client._container.logs(stream=True)
-
-    logger.info("Streaming container logs...")
-
-    for line in logs:
-        decoded_line = line.decode("utf-8").strip()
-
-        # Search for the timestamp in the line
-        match = re.search(timestamp_with_ansi, decoded_line)
-        if match:
-            # Print the matched timestamp group
-            #print(f"Timestamp: {match.group(1)}")
-            
-            log_timestamp_string = match.group(1)
-            log_timestamp = datetime.strptime(log_timestamp_string, "%Y-%m-%dT%H:%M:%S.%f%z")
-            if log_timestamp > reference_timestamp:
-                #logger.info(f"Relevant log found after reference timestamp: {decoded_line}")
-                if "PUT /v1/data/users/bob/location -> 204" in decoded_line:
-                    log_found = True
-                    break
-    
+    log_found = opal_client.wait_for_log(reference_timestamp, "PUT /v1/data/users/bob/location -> 204", 30)
     logger.info("Finished processing logs.")
     assert log_found, "Expected log entry not found after the reference timestamp."
 
@@ -304,3 +284,28 @@ async def test_policy_and_data_updates(gitea_server: GiteaContainer, opal_server
         update_policy(gitea_server, opal_server, location[1])
 
         assert await data_publish_and_test("bob", location[1], locations, opal_server, opal_client)
+
+
+@pytest.mark.asyncio
+async def test_policy_update(gitea_server: GiteaContainer, opal_server: OpalServerContainer, opal_client: OpalClientContainer, temp_dir):
+    # Parse locations into separate lists of IPs and countries
+    location = "CN"
+
+
+     # Generate the reference timestamp
+    reference_timestamp = datetime.now(timezone.utc)
+    logger.info(f"Reference timestamp: {reference_timestamp}")
+
+
+    # Update policy to allow only non-US users
+    print(f"Updating policy to allow only users from {location}...")
+    update_policy(gitea_server, opal_server, "location")
+
+    log_found = opal_server.wait_for_log(reference_timestamp, "Found new commits: old HEAD was", 30)
+    logger.info("Finished processing logs.")
+    assert log_found, "Expected log entry not found after the reference timestamp."
+
+
+    log_found = opal_client.wait_for_log(reference_timestamp, "Fetching policy bundle from", 30)
+    logger.info("Finished processing logs.")
+    assert log_found, "Expected log entry not found after the reference timestamp."

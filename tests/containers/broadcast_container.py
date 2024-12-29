@@ -3,8 +3,10 @@ import docker
 from testcontainers.postgres import PostgresContainer
 from testcontainers.core.network import Network
 
+from containers.permitContainer import PermitContainer
 
-class BroadcastContainer(PostgresContainer):
+
+class BroadcastContainer(PermitContainer, PostgresContainer):
     def __init__(
         self,
         network: Network,
@@ -22,7 +24,8 @@ class BroadcastContainer(PostgresContainer):
 
         self.network = network
 
-        super().__init__(image=image, docker_client_kw=docker_client_kw, **kwargs)
+        PermitContainer.__init__(self)
+        PostgresContainer.__init__(self, image=image, docker_client_kw=docker_client_kw, **kwargs)
 
         self.with_network(self.network)
 

@@ -11,8 +11,9 @@ from testcontainers.core.network import Network
 from testcontainers.core.utils import setup_logger
 
 from tests.containers.settings.gitea_settings import GiteaSettings
+from containers.permitContainer import PermitContainer
 
-class GiteaContainer(DockerContainer):
+class GiteaContainer(PermitContainer,DockerContainer):
     def __init__(
         self,
         settings: GiteaSettings,
@@ -37,8 +38,8 @@ class GiteaContainer(DockerContainer):
         self.with_kwargs(auto_remove=False, restart_policy={"Name": "always"})
     
 
-
-        super().__init__(image=self.settings.image, docker_client_kw=docker_client_kw, **self.kwargs)
+        PermitContainer.__init__(self)
+        DockerContainer.__init__(self, image=self.settings.image, docker_client_kw=docker_client_kw, **self.kwargs)
        
         self.configure()
 

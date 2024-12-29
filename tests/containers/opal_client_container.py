@@ -2,9 +2,10 @@ from tests.containers.settings.opal_client_settings import OpalClientSettings
 from testcontainers.core.generic import DockerContainer
 from testcontainers.core.utils import setup_logger
 from testcontainers.core.network import Network
+from containers.permitContainer import PermitContainer
 
 
-class OpalClientContainer(DockerContainer):
+class OpalClientContainer(PermitContainer, DockerContainer):
     def __init__(
         self,
         settings: OpalClientSettings,
@@ -12,15 +13,13 @@ class OpalClientContainer(DockerContainer):
         docker_client_kw: dict | None = None,
         **kwargs,
     ) -> None:
-        
+        PermitContainer.__init__(self)  # Initialize PermitContainer
+        DockerContainer.__init__(self, image=settings.image, docker_client_kw=docker_client_kw, **kwargs)
         self.settings = settings
         self.network = network
-        
         self.logger = setup_logger(__name__)
-
-        super().__init__(image=self.settings.image, docker_client_kw=docker_client_kw, **kwargs)
-
         self.configure()
+
 
     def configure(self):
         for key, value in self.settings.getEnvVars().items():
