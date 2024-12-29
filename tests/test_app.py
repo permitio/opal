@@ -1,5 +1,7 @@
 import asyncio
+from datetime import datetime, timezone
 import os
+import re
 import subprocess
 import pytest
 import requests
@@ -176,24 +178,27 @@ def test_sequence():
 
 #############################################################
 
-OPAL_DISTRIBUTION_TIME = 25
+# Regex to match any ANSI-escaped timestamp in the format YYYY-MM-DDTHH:MM:SS.mmmmmm+0000
+timestamp_with_ansi = r"\x1b\[.*?(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}\+\d{4})"
+OPAL_DISTRIBUTION_TIME = 2
 ip_to_location_base_url = "https://api.country.is/"
  
-def publish_data_user_location(src, user, DATASOURCE_TOKEN):
+def publish_data_user_location(src, user, opal_server: OpalServerContainer):
     """Publish user location data to OPAL."""
     # Construct the command to publish data update
     publish_data_user_location_command = (
         f"opal-client publish-data-update --src-url {src} "
-        f"-t policy_data --dst-path /users/{user}/location {DATASOURCE_TOKEN}"
+        f"-t policy_data --dst-path /users/{user}/location {opal_server.obtain_OPAL_tokens()['datasource']}"
     )
+    logger.info(publish_data_user_location_command)
     logger.info("test")
     
     # Execute the command
-    result = subprocess.run(
-        publish_data_user_location_command, shell=True, capture_output=True, text=True
-    )
-    logger.info("test-1")
+    result = subprocess.run(publish_data_user_location_command, shell=True)
+    result = subprocess.run(publish_data_user_location_command, shell=True)
+    result = subprocess.run(publish_data_user_location_command, shell=True)
 
+    
     # Check command execution result
     if result.returncode != 0:
         logger.error("Error: Failed to update user location!")
@@ -204,29 +209,50 @@ def publish_data_user_location(src, user, DATASOURCE_TOKEN):
 def test_user_location(opal_server: OpalServerContainer, opal_client: OpalClientContainer):
     """Test data publishing"""
 
+     # Generate the reference timestamp
+    timestamp_string = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f%z")
+    reference_timestamp = datetime.strptime(timestamp_string, "%Y-%m-%dT%H:%M:%S.%f%z")
+    logger.info(f"Reference timestamp: {reference_timestamp}")
+
+    # Publish data to the OPAL server
     logger.info(ip_to_location_base_url)
-    publish_data_user_location(f"{ip_to_location_base_url}8.8.8.8", "bob", opal_server.obtain_OPAL_tokens()["datasource"])
-    logger.info("test1")
-    print(f"bob's location set to: US. Expected outcome: NOT ALLOWED.")
+    publish_data_user_location(f"{ip_to_location_base_url}8.8.8.8", "bob", opal_server)
+    logger.info("Published user location for 'bob'.")
 
-    logger.info(time.strftime("%H:%M:%S"))
+    # Stream logs from the opal_client container
+    log_found = False
+    logs = opal_client._container.logs(stream=True)
 
-    time.sleep(OPAL_DISTRIBUTION_TIME)
-    a = opal_client.get_logs()
-    logger.info(a)
-    logger.info(time.strftime("%H:%M:%S"))
+    logger.info("Streaming container logs...")
 
-    log_found = "PUT /v1/data/users/bob/location -> 204" in a
-    assert log_found
+    for line in logs:
+        decoded_line = line.decode("utf-8").strip()
 
-async def data_publish_and_test(user, allowed_country, locations, DATASOURCE_TOKEN, opal_client: OpalClientContainer):
+        # Search for the timestamp in the line
+        match = re.search(timestamp_with_ansi, decoded_line)
+        if match:
+            # Print the matched timestamp group
+            #print(f"Timestamp: {match.group(1)}")
+            
+            log_timestamp_string = match.group(1)
+            log_timestamp = datetime.strptime(log_timestamp_string, "%Y-%m-%dT%H:%M:%S.%f%z")
+            if log_timestamp > reference_timestamp:
+                #logger.info(f"Relevant log found after reference timestamp: {decoded_line}")
+                if "PUT /v1/data/users/bob/location -> 204" in decoded_line:
+                    log_found = True
+                    break
+    
+    logger.info("Finished processing logs.")
+    assert log_found, "Expected log entry not found after the reference timestamp."
+
+async def data_publish_and_test(user, allowed_country, locations, opasl_server: OpalServerContainer, opal_client: OpalClientContainer):
     """Run the user location policy tests multiple times."""
 
     for location in locations:
         ip = location[0]
         user_country = location[1]
 
-        publish_data_user_location(f"{ip_to_location_base_url}{ip}", user, DATASOURCE_TOKEN)
+        publish_data_user_location(f"{ip_to_location_base_url}{ip}", user, opasl_server)
 
         if (allowed_country == user_country):
             print(f"{user}'s location set to: {user_country}. current_country is set to: {allowed_country} Expected outcome: ALLOWED.")
@@ -277,4 +303,4 @@ async def test_policy_and_data_updates(gitea_server: GiteaContainer, opal_server
         print(f"Updating policy to allow only users from {location[1]}...")
         update_policy(gitea_server, opal_server, location[1])
 
-        assert await data_publish_and_test("bob", location[1], locations, DATASOURCE_TOKEN, opal_client)
+        assert await data_publish_and_test("bob", location[1], locations, opal_server, opal_client)
