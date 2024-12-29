@@ -11,8 +11,9 @@ import aiofiles
 import aiofiles.os
 import aiohttp
 import websockets
-from fastapi import FastAPI, status
-from fastapi.responses import JSONResponse
+from fastapi import FastAPI, HTTPException, Security, status
+from fastapi.responses import JSONResponse, Response
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from fastapi_websocket_pubsub.pub_sub_client import PubSubOnConnectCallback
 from fastapi_websocket_rpc.rpc_channel import OnDisconnectCallback
 from opal_client.callbacks.api import init_callbacks_api
@@ -32,11 +33,45 @@ from opal_client.policy_store.policy_store_client_factory import (
     PolicyStoreClientFactory,
 )
 from opal_common.authentication.deps import JWTAuthenticator
-from opal_common.authentication.verifier import JWTVerifier
+from opal_common.authentication.verifier import JWTVerifier, Unauthorized
 from opal_common.config import opal_common_config
 from opal_common.logger import configure_logs, logger
 from opal_common.middleware import configure_middleware
+from opal_common.monitoring.otel_metrics import init_meter
+from opal_common.monitoring.tracer import init_tracer
 from opal_common.security.sslcontext import get_custom_ssl_context
+from opentelemetry import metrics, trace
+from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
+from opentelemetry.exporter.prometheus import PrometheusMetricReader
+from opentelemetry.sdk.metrics import MeterProvider
+from opentelemetry.sdk.resources import Resource
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import BatchSpanProcessor
+from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
+
+security_scheme = HTTPBearer()
+
+
+def _add_metrics_route(app: FastAPI, authenticator: JWTAuthenticator):
+    """Add a protected metrics endpoint to the FastAPI app."""
+    if opal_common_config.ENABLE_OPENTELEMETRY_METRICS:
+
+        @app.get("/metrics")
+        async def protected_metrics_endpoint(
+            auth: HTTPAuthorizationCredentials = Security(security_scheme),
+        ):
+            """Protected metrics endpoint."""
+            try:
+                claims = authenticator(auth.credentials)
+                data = generate_latest()
+                return Response(content=data, media_type=CONTENT_TYPE_LATEST)
+            except Unauthorized:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Invalid authentication credentials",
+                )
+
+        logger.info("Mounted protected /metrics endpoint for Prometheus metrics.")
 
 
 class OpalClient:
@@ -86,7 +121,7 @@ class OpalClient:
         )
         # set logs
         configure_logs()
-
+        self._configure_monitoring()
         self.offline_mode_enabled = (
             offline_mode_enabled or opal_client_config.OFFLINE_MODE_ENABLED
         )
@@ -243,7 +278,7 @@ class OpalClient:
         return False
 
     def _init_fast_api_app(self):
-        """inits the fastapi app object."""
+        """Inits the fastapi app object."""
         app = FastAPI(
             title="OPAL Client",
             description="OPAL is an administration layer for Open Policy Agent (OPA), detecting changes"
@@ -257,8 +292,53 @@ class OpalClient:
         self._configure_lifecycle_callbacks(app)
         return app
 
+    def _configure_monitoring(self):
+        if opal_common_config.ENABLE_OPENTELEMETRY_TRACING:
+            self._initialize_opentelemetry_tracing()
+
+        if opal_common_config.ENABLE_OPENTELEMETRY_METRICS:
+            self._initialize_opentelemetry_metrics()
+
+    def _initialize_opentelemetry_tracing(self):
+        resource = Resource.create({"service.name": "opal-client"})
+        tracer_provider = TracerProvider(resource=resource)
+        trace.set_tracer_provider(tracer_provider)
+
+        otlp_exporter = OTLPSpanExporter(
+            endpoint=opal_common_config.OPENTELEMETRY_OTLP_ENDPOINT, insecure=True
+        )
+
+        span_processor = BatchSpanProcessor(otlp_exporter)
+        tracer_provider.add_span_processor(span_processor)
+
+        init_tracer(tracer_provider)
+        logger.info("OpenTelemetry tracing is enabled.")
+
+    def _initialize_opentelemetry_metrics(self):
+        resource = Resource.create({"service.name": "opal-client"})
+        self.prometheus_metric_reader = PrometheusMetricReader()
+
+        meter_provider = MeterProvider(
+            resource=resource, metric_readers=[self.prometheus_metric_reader]
+        )
+        metrics.set_meter_provider(meter_provider)
+        init_meter(meter_provider)
+        self.meter = metrics.get_meter(__name__)
+
+        self.startup_counter = self.meter.create_counter(
+            name="startup",
+            description="Number of times the application has started",
+        )
+        self.startup_counter.add(1)
+
+        logger.info("OpenTelemetry metrics are enabled.")
+
+    async def _is_ready(self):
+        # Data loaded from file or from server
+        return self._backup_loaded or await self.policy_store.is_ready()
+
     def _configure_api_routes(self, app: FastAPI):
-        """mounts the api routes on the app object."""
+        """Mounts the api routes on the app object."""
 
         authenticator = JWTAuthenticator(self.verifier)
 
@@ -279,13 +359,22 @@ class OpalClient:
         @app.get("/", include_in_schema=False)
         @app.get("/healthy", include_in_schema=False)
         async def healthy():
-            """returns 200 if updates keep being successfully fetched from the
+            """Returns 200 if updates keep being successfully fetched from the
             server and applied to the policy store."""
+            # TODO: Client would only report unhealthy if server -> policy-store transactions failed, but not if server connection gets disconnected.
             healthy = await self.policy_store.is_healthy()
 
             if healthy:
                 return JSONResponse(
-                    status_code=status.HTTP_200_OK, content={"status": "ok"}
+                    status_code=status.HTTP_200_OK,
+                    content={"status": "ok", "online": True},
+                )
+            elif self.offline_mode_enabled and await self._is_ready():
+                # Offline Mode is active. That is enabled, client is "ready" (data loaded) but not "healthy" (latest updates failed).
+                # TODO: Maybe if updates were fetched from server, but storing them to OPA wasn't successful, we should return 503 even with offline mode enabled
+                return JSONResponse(
+                    status_code=status.HTTP_200_OK,
+                    content={"status": "ok", "online": False},
                 )
             else:
                 return JSONResponse(
@@ -295,10 +384,8 @@ class OpalClient:
 
         @app.get("/ready", include_in_schema=False)
         async def ready():
-            """returns 200 if the policy store is ready to serve requests."""
-            ready = self._backup_loaded or await self.policy_store.is_ready()
-
-            if ready:
+            """Returns 200 if the policy store is ready to serve requests."""
+            if await self._is_ready():
                 return JSONResponse(
                     status_code=status.HTTP_200_OK, content={"status": "ok"}
                 )
@@ -308,10 +395,12 @@ class OpalClient:
                     content={"status": "unavailable"},
                 )
 
+        _add_metrics_route(app, authenticator)
+
         return app
 
     def _configure_lifecycle_callbacks(self, app: FastAPI):
-        """registers callbacks on app startup and shutdown.
+        """Registers callbacks on app startup and shutdown.
 
         on app startup we launch our long running processes (async
         tasks) on the event loop. on app shutdown we stop these long
@@ -362,7 +451,7 @@ class OpalClient:
         )
 
     async def stop_client_background_tasks(self):
-        """stops all background tasks (called on shutdown event)"""
+        """Stops all background tasks (called on shutdown event)"""
         logger.info("stopping background tasks...")
 
         # stopping opa runner
@@ -493,7 +582,7 @@ class OpalClient:
             raise
 
     def _trigger_shutdown(self):
-        """this will send SIGTERM (Keyboard interrupt) to the worker, making
+        """This will send SIGTERM (Keyboard interrupt) to the worker, making
         uvicorn send "lifespan.shutdown" event to Starlette via the ASGI
         lifespan interface.
 

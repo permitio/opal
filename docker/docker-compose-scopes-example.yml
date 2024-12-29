@@ -1,3 +1,5 @@
+name: opal-scopes-example
+
 services:
   redis:
     image: redis

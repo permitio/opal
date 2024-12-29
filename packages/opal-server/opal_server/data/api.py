@@ -124,11 +124,14 @@ def init_data_updates_router(
             restrict_optional_topics_to_publish(
                 authenticator, claims, update
             )  # may throw Unauthorized
+
+            await data_update_publisher.publish_data_updates(update)
+            return {"status": "ok"}
         except Unauthorized as e:
             logger.error(f"Unauthorized to publish update: {repr(e)}")
             raise
-
-        await data_update_publisher.publish_data_updates(update)
-        return {"status": "ok"}
+        except Exception as e:
+            logger.error(f"Failed to publish update: {repr(e)}")
+            raise
 
     return router

@@ -6,7 +6,7 @@ REGO_PACKAGE_DECLARATION = re.compile(r"^package\s+([a-zA-Z0-9\.\"\[\]]+)$")
 
 
 def get_rego_package(contents: str) -> Optional[str]:
-    """try to parse the package name from rego file contents.
+    """Try to parse the package name from rego file contents.
 
     return None if failed to parse (probably invalid .rego file)
     """
