@@ -14,7 +14,7 @@ class PermitContainer():
         #self.check_errors()
 
 
-    def wait_for_log(self, reference_timestamp: datetime | None , log_str: str, timeout: int):
+    def wait_for_log(self, log_str: str, timeout: int, reference_timestamp: datetime | None = None):
         """
         Wait for a specific log to appear in the container logs after the reference timestamp.
         

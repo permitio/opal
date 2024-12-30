@@ -142,6 +142,12 @@ def number_of_opal_clients():
     return 2
 
 @pytest.fixture(scope="session")
+def connected_clients(opal_client: List[OpalClientContainer]):
+    for client in opal_client:
+        assert client.wait_for_log(log_str="Connected to PubSub server", timeout=30), f"Client {client.settings.container_name} did not connect to PubSub server."
+    yield opal_client
+
+@pytest.fixture(scope="session")
 def opal_client(opal_network: Network, opal_server: List[OpalServerContainer], request, number_of_opal_clients: int):
     # Get the number of clients from the request parameter
     #num_clients = getattr(request, "number_of_opal_clients", 1)  # Default to 1 if not provided

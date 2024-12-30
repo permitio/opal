@@ -170,11 +170,8 @@ def publish_data_user_location(src, user, opal_server: OpalServerContainer):
     else:
         logger.info(f"Successfully updated user location with source: {src}")
 
-def test_user_location(opal_server: list[OpalServerContainer], opal_client: list[OpalClientContainer]):
+def test_user_location(opal_server: list[OpalServerContainer], connected_clients: list[OpalClientContainer]):
     """Test data publishing"""
-
-    for client in opal_client:
-        client.wait_for_log(reference_timestamp=None, log_str="Connected to PubSub server", timeout=30)
 
      # Generate the reference timestamp
     reference_timestamp = datetime.now(timezone.utc)
@@ -185,7 +182,7 @@ def test_user_location(opal_server: list[OpalServerContainer], opal_client: list
     publish_data_user_location(f"{ip_to_location_base_url}8.8.8.8", "bob", opal_server[0])
     logger.info("Published user location for 'bob'.")
 
-    log_found = opal_client[0].wait_for_log(reference_timestamp, "PUT /v1/data/users/bob/location -> 204", 30)
+    log_found = connected_clients[0].wait_for_log("PUT /v1/data/users/bob/location -> 204", 30, reference_timestamp)
     logger.info("Finished processing logs.")
     assert log_found, "Expected log entry not found after the reference timestamp."
 
@@ -315,12 +312,12 @@ async def test_policy_update(gitea_server: GiteaContainer, opal_server: list[Opa
     print(f"Updating policy to allow only users from {location}...")
     update_policy(gitea_server, opal_server[0], "location")
 
-    log_found = opal_server[0].wait_for_log(reference_timestamp, "Found new commits: old HEAD was", 30)
+    log_found = opal_server[0].wait_for_log("Found new commits: old HEAD was", 30, reference_timestamp)
     logger.info("Finished processing logs.")
     assert log_found, "Expected log entry not found after the reference timestamp."
 
 
-    log_found = opal_client[0].wait_for_log(reference_timestamp, "Fetching policy bundle from", 30)
+    log_found = opal_client[0].wait_for_log("Fetching policy bundle from", 30, reference_timestamp)
     logger.info("Finished processing logs.")
     assert log_found, "Expected log entry not found after the reference timestamp."
 
