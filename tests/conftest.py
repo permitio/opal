@@ -51,6 +51,70 @@ def temp_dir():
 
 repo_name = "opal-example-policy-repo"
 
+import pytest
+import docker
+import os
+
+@pytest.fixture(scope="session")
+def build_docker_server_image():
+
+    docker_client = docker.from_env()
+    image_name = "opal_server_debug_local"
+
+    yield build_docker_image("Dockerfile.server.local", image_name)
+
+    # Optionally, clean up the image after the test session
+    try:
+        docker_client.images.remove(image=image_name, force=True)
+        print(f"Docker image '{image_name}' removed.")
+    except Exception as cleanup_error:
+        print(f"Failed to remove Docker image '{image_name}': {cleanup_error}")
+
+@pytest.fixture(scope="session")
+def build_docker_client_image():
+    
+    docker_client = docker.from_env()
+    image_name = "opal_client_debug_local"
+
+    yield build_docker_image("Dockerfile.client.local", image_name)
+        
+    # Optionally, clean up the image after the test session
+    try:
+        docker_client.images.remove(image=image_name, force=True)
+        print(f"Docker image '{image_name}' removed.")
+    except Exception as cleanup_error:
+        print(f"Failed to remove Docker image '{image_name}': {cleanup_error}")
+
+def build_docker_image(docker_file: str, image_name: str):
+    """
+    Build the Docker image from the Dockerfile.server.local file in the tests/docker directory.
+    """
+    docker_client = docker.from_env()
+    dockerfile_path = os.path.join(os.path.dirname(__file__), "docker", docker_file)
+
+    # Ensure the Dockerfile exists
+    if not os.path.exists(dockerfile_path):
+        raise FileNotFoundError(f"Dockerfile not found at {dockerfile_path}")
+
+    print(f"Building Docker image from {dockerfile_path}...")
+
+    try:
+        # Build the Docker image
+        image, logs = docker_client.images.build(
+            path=os.path.dirname(dockerfile_path),
+            dockerfile=os.path.basename(dockerfile_path),
+            tag=image_name
+        )
+        # Print build logs
+        for log in logs:
+            print(log.get("stream", "").strip())
+    except Exception as e:
+        raise RuntimeError(f"Failed to build Docker image: {e}")
+
+    print(f"Docker image '{image_name}' built successfully.")
+
+    return image_name
+
 @pytest.fixture(scope="session")
 def opal_network():
     
@@ -209,7 +273,13 @@ def opal_client(opal_network: Network, opal_server: List[OpalServerContainer], r
 def setup(opal_server, opal_client):
     yield
     if s.OPAL_TESTS_DEBUG:
-        debugpy.breakpoint()
         s.dump_settings()
-        input("Press enter to shutdown...")
-        #time.sleep(3600)  # Giving us some time to inspect the containers
+        wait_sometime()
+        
+def wait_sometime():
+    if os.getenv("GITHUB_ACTIONS") == "true":
+        print("Running inside GitHub Actions. Sleeping for 30 seconds...")
+        time.sleep(3600)  # Sleep for 30 seconds
+    else:
+        print("Running on the local machine. Press Enter to continue...")
+        input()  # Wait for key press
