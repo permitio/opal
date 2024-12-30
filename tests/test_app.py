@@ -154,7 +154,7 @@ def publish_data_user_location(src, user, opal_server: OpalServerContainer):
     """Publish user location data to OPAL."""
     # Construct the command to publish data update
     publish_data_user_location_command = (
-        f"opal-client publish-data-update --src-url {src} "
+        f"opal-client publish-data-update --server-url http://localhost:{opal_server.settings.port} --src-url {src} "
         f"-t policy_data --dst-path /users/{user}/location {opal_server.obtain_OPAL_tokens()['datasource']}"
     )
     logger.info(publish_data_user_location_command)
@@ -163,11 +163,14 @@ def publish_data_user_location(src, user, opal_server: OpalServerContainer):
     # Execute the command
     result = subprocess.run(publish_data_user_location_command, shell=True)
     
+    
+    input("press enter to continue!")
     # Check command execution result
     if result.returncode != 0:
         logger.error("Error: Failed to update user location!")
     else:
         logger.info(f"Successfully updated user location with source: {src}")
+    input("press enter to continue!")
 
 
 def test_user_location(opal_server: list[OpalServerContainer], opal_client: list[OpalClientContainer]):
