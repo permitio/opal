@@ -7,6 +7,8 @@ import tempfile
 import requests
 import sys
 import docker
+import subprocess
+import platform
 from tests.containers.opal_server_container  import OpalServerContainer
 from git import Repo
 from cryptography.hazmat.primitives.asymmetric import rsa
@@ -248,3 +250,28 @@ def wait_policy_repo_polling_interval(opal_server_container: OpalServerContainer
     for i in range(int(opal_server_container.settings.polling_interval), 0, -1):
         print(f"waiting for OPAL server to pull the new policy {i} secondes left", end='\r') 
         time.sleep(1)
+
+def is_port_available(port):
+    # Determine the platform (Linux or macOS)
+    system_platform = platform.system().lower()
+    
+    # Run the appropriate netstat command based on the platform
+    if system_platform == 'darwin':  # macOS
+        result = subprocess.run(['netstat', '-an'], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        # macOS 'netstat' shows *.<port> format for listening ports
+        if f'.{port} ' in result.stdout:
+            return False  # Port is in use
+    else:  # Linux
+        result = subprocess.run(['netstat', '-an'], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        # Linux 'netstat' shows 0.0.0.0:<port> or :::<port> format for listening ports
+        if f':{port} ' in result.stdout or f'::{port} ' in result.stdout:
+            return False  # Port is in use
+    
+    return True  # Port is available
+
+def find_available_port(starting_port=5001):
+    port = starting_port
+    while True:
+        if is_port_available(port):
+            return port
+        port += 1

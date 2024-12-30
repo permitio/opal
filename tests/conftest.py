@@ -7,6 +7,7 @@ import debugpy
 import docker
 import json
 import pytest
+from typing import List
 from testcontainers.core.waiting_utils import wait_for_logs
 from tests import utils
 from tests.containers.broadcast_container import BroadcastContainer
@@ -68,8 +69,7 @@ def gitea_server(opal_network: Network):
     
     with GiteaContainer(
         GiteaSettings(
-
-            GITEA_CONTAINER_NAME="test_container",
+            container_name="gitea_server",
             repo_name="test_repo",
             temp_dir=os.path.join(os.path.dirname(__file__), "temp"),
             network=opal_network,
@@ -90,65 +90,114 @@ def broadcast_channel(opal_network: Network):
 
 
 @pytest.fixture(scope="session")
-def opal_server(opal_network: Network, broadcast_channel: BroadcastContainer, gitea_server: GiteaContainer):
-    
-#    debugpy.breakpoint()
+def number_of_opal_servers():
+    return 2
+
+@pytest.fixture(scope="session")
+def opal_server(opal_network: Network, broadcast_channel: BroadcastContainer, gitea_server: GiteaContainer, request, number_of_opal_servers: int):
+    # Get the number of containers from the request parameter
+    #num_containers = getattr(request, "number_of_opal_servers", 1)  # Default to 1 if not provided
+
+    print(f"number of opal servers: {number_of_opal_servers}")
+
     if not broadcast_channel:
         raise ValueError("Missing 'broadcast_channel' container.")
-       
-    # Get container IP and exposed port
-    #network_settings = broadcast_channel.attrs['NetworkSettings'] 
-    #ip_address = network_settings['Networks'][list(network_settings['Networks'].keys())[0]]['IPAddress']
-    #ports = network_settings['Ports']
-    #exposed_port = ports['5432/tcp'][0]['HostPort'] if ports and '5432/tcp' in ports else 5432  # Default to 5432
-
+    
     ip_address = broadcast_channel.get_container_host_ip()
     exposed_port = broadcast_channel.get_exposed_port(5432)
 
-    #opal_broadcast_uri = f"http://{ip_address}:{exposed_port}"
     opal_broadcast_uri = f"postgres://test:test@broadcast_channel:5432"
 
+    containers = []  # List to store container instances
 
-    with OpalServerContainer(
-        OpalServerSettings(
-        opal_broadcast_uri=opal_broadcast_uri, 
-        container_name= "opal_server",
-        statistics_enabled="false",
-        policy_repo_url=f"http://{gitea_server.settings.container_name}:{gitea_server.settings.port_http}/{gitea_server.settings.username}/{gitea_server.settings.repo_name}",
-        image="permitio/opal-server:latest"), network=opal_network
-        ).with_network_aliases("opal_server") as container:
+    for i in range(number_of_opal_servers):
+        container_name = f"opal_server_{i+1}"
 
+        container = OpalServerContainer(
+            OpalServerSettings(
+                opal_broadcast_uri=opal_broadcast_uri,
+                container_name=container_name,
+                container_index=i+1,
+                statistics_enabled="false",
+                policy_repo_url=f"http://{gitea_server.settings.container_name}:{gitea_server.settings.port_http}/{gitea_server.settings.username}/{gitea_server.settings.repo_name}",
+                image="permitio/opal-server:latest"
+            ),
+            network=opal_network
+        )
+
+        container.start()
         container.get_wrapped_container().reload()
-        print(container.get_wrapped_container().id) 
+        print(f"Started container: {container_name}, ID: {container.get_wrapped_container().id}")
         wait_for_logs(container, "Clone succeeded")
-        yield container
+        containers.append(container)
 
+    yield containers
+
+    # Cleanup: Stop and remove all containers
+    for container in containers:
+        container.stop()
 
 @pytest.fixture(scope="session")
-def opal_client(opal_network: Network, opal_server: OpalServerContainer):
+def number_of_opal_clients():
+    return 2
+
+@pytest.fixture(scope="session")
+def opal_client(opal_network: Network, opal_server: List[OpalServerContainer], request, number_of_opal_clients: int):
+    # Get the number of clients from the request parameter
+    #num_clients = getattr(request, "number_of_opal_clients", 1)  # Default to 1 if not provided
+
+    print(f"number of opal clients: {number_of_opal_clients}")
+
+    if not opal_server or len(opal_server) == 0:
+        raise ValueError("Missing 'opal_server' container.")
     
-    client_token = opal_server.obtain_OPAL_tokens()["client"]
+    opal_server_url = f"http://{opal_server[0].settings.container_name}:{opal_server[0].settings.port}"
+    client_token = opal_server[0].obtain_OPAL_tokens()["client"]
     callbacks = json.dumps(
-    {
-        "callbacks": [
-            [
-                f"http://{opal_server.settings.container_name}:{opal_server.settings.port}/data/callback_report",
-                {
-                    "method": "post",
-                    "process_data": False,
-                    "headers": {
-                        "Authorization": f"Bearer {client_token}",
-                        "content-type": "application/json",
+        {
+            "callbacks": [
+                [
+                    f"{opal_server_url}/data/callback_report",
+                    {
+                        "method": "post",
+                        "process_data": False,
+                        "headers": {
+                            "Authorization": f"Bearer {client_token}",
+                            "content-type": "application/json",
+                        },
                     },
-                },
+                ]
             ]
-        ]
-    })
+        }
+    )
 
-    with OpalClientContainer(OpalClientSettings(image="permitio/opal-client:latest", client_token = client_token, default_update_callbacks = callbacks), network=opal_network).with_network_aliases("opal_client") as container:
-        #wait_for_logs(container, "")
-        yield container
 
+    containers = []  # List to store OpalClientContainer instances
+
+    for i in range(number_of_opal_clients):
+        container_name = f"opal_client_{i+1}"  # Unique name for each client
+
+        container = OpalClientContainer(
+            OpalClientSettings(
+                image="permitio/opal-client:latest",
+                container_name=container_name,
+                container_index=i+1,
+                opal_server_url=opal_server_url,
+                client_token=client_token,
+                default_update_callbacks=callbacks
+            ),
+            network=opal_network
+        )
+
+        container.start()
+        print(f"Started OpalClientContainer: {container_name}, ID: {container.get_wrapped_container().id}")
+        containers.append(container)
+
+    yield containers
+
+    # Cleanup: Stop and remove all client containers
+    for container in containers:
+        container.stop()
 
 @pytest.fixture(scope="session", autouse=True)
 def setup(opal_server, opal_client):

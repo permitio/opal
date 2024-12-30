@@ -124,4 +124,8 @@ class PermitContainer():
                 self.errors.append(decoded_line)
 
     def __del__(self):
-        assert list.count(self.errors) > 0
+        if len(self.errors) > 0:
+            self.permitLogger.error("Errors found in container logs:")
+            for error in self.errors:
+                self.permitLogger.error(error)
+            assert False, "Errors found in container logs."

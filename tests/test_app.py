@@ -199,9 +199,8 @@ def publish_data_user_location(src, user, opal_server: OpalServerContainer):
     result = subprocess.run(publish_data_user_location_command, shell=True)
     result = subprocess.run(publish_data_user_location_command, shell=True)
     result = subprocess.run(publish_data_user_location_command, shell=True)
+    input("Press Enter to continue...")
 
-
-    
     # Check command execution result
     if result.returncode != 0:
         logger.error("Error: Failed to update user location!")
@@ -209,7 +208,7 @@ def publish_data_user_location(src, user, opal_server: OpalServerContainer):
         logger.info(f"Successfully updated user location with source: {src}")
 
 
-def test_user_location(opal_server: OpalServerContainer, opal_client: OpalClientContainer):
+def test_user_location(opal_server: list[OpalServerContainer], opal_client: list[OpalClientContainer]):
     """Test data publishing"""
 
      # Generate the reference timestamp
@@ -218,10 +217,10 @@ def test_user_location(opal_server: OpalServerContainer, opal_client: OpalClient
 
     # Publish data to the OPAL server
     logger.info(ip_to_location_base_url)
-    publish_data_user_location(f"{ip_to_location_base_url}8.8.8.8", "bob", opal_server)
+    publish_data_user_location(f"{ip_to_location_base_url}8.8.8.8", "bob", opal_server[0])
     logger.info("Published user location for 'bob'.")
 
-    log_found = opal_client.wait_for_log(reference_timestamp, "PUT /v1/data/users/bob/location -> 204", 30)
+    log_found = opal_client[0].wait_for_log(reference_timestamp, "PUT /v1/data/users/bob/location -> 204", 30)
     logger.info("Finished processing logs.")
     assert log_found, "Expected log entry not found after the reference timestamp."
 
@@ -265,7 +264,7 @@ def update_policy(gitea_container: GiteaContainer, opal_server_container: OpalSe
  
 #@pytest.mark.parametrize("location", ["CN", "US", "SE"])
 @pytest.mark.asyncio
-async def test_policy_and_data_updates(gitea_server: GiteaContainer, opal_server: OpalServerContainer, opal_client: OpalClientContainer, temp_dir):
+async def test_policy_and_data_updates(gitea_server: GiteaContainer, opal_server: list[OpalServerContainer], opal_client: list[OpalClientContainer], temp_dir):
     """    
     This script updates policy configurations and tests access 
     based on specified settings and locations. It integrates 
@@ -275,19 +274,19 @@ async def test_policy_and_data_updates(gitea_server: GiteaContainer, opal_server
     
     # Parse locations into separate lists of IPs and countries
     locations = [("8.8.8.8","US"), ("77.53.31.138","SE"), ("210.2.4.8","CN")]
-    DATASOURCE_TOKEN  = opal_server.obtain_OPAL_tokens()["datasource"]
+    DATASOURCE_TOKEN  = opal_server[0].obtain_OPAL_tokens()["datasource"]
 
 
     for location in locations:    
         # Update policy to allow only non-US users
         print(f"Updating policy to allow only users from {location[1]}...")
-        update_policy(gitea_server, opal_server, location[1])
+        update_policy(gitea_server, opal_server[0], location[1])
 
-        assert await data_publish_and_test("bob", location[1], locations, opal_server, opal_client)
+        assert await data_publish_and_test("bob", location[1], locations, opal_server[0], opal_client[0])
 
 
 @pytest.mark.asyncio
-async def test_policy_update(gitea_server: GiteaContainer, opal_server: OpalServerContainer, opal_client: OpalClientContainer, temp_dir):
+async def test_policy_update(gitea_server: GiteaContainer, opal_server: list[OpalServerContainer], opal_client: list[OpalClientContainer], temp_dir):
     # Parse locations into separate lists of IPs and countries
     location = "CN"
 
@@ -299,13 +298,13 @@ async def test_policy_update(gitea_server: GiteaContainer, opal_server: OpalServ
 
     # Update policy to allow only non-US users
     print(f"Updating policy to allow only users from {location}...")
-    update_policy(gitea_server, opal_server, "location")
+    update_policy(gitea_server, opal_server[0], "location")
 
-    log_found = opal_server.wait_for_log(reference_timestamp, "Found new commits: old HEAD was", 30)
+    log_found = opal_server[0].wait_for_log(reference_timestamp, "Found new commits: old HEAD was", 30)
     logger.info("Finished processing logs.")
     assert log_found, "Expected log entry not found after the reference timestamp."
 
 
-    log_found = opal_client.wait_for_log(reference_timestamp, "Fetching policy bundle from", 30)
+    log_found = opal_client[0].wait_for_log(reference_timestamp, "Fetching policy bundle from", 30)
     logger.info("Finished processing logs.")
     assert log_found, "Expected log entry not found after the reference timestamp."

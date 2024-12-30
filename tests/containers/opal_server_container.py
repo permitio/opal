@@ -35,12 +35,12 @@ class OpalServerContainer(PermitContainer, DockerContainer):
             .with_name(self.settings.container_name) \
             .with_bind_ports(7002, self.settings.port) \
             .with_network(self.network) \
-            .with_network_aliases("opal_server") \
             .with_kwargs(labels={"com.docker.compose.project": "pytest"}) \
+            .with_network_aliases(self.settings.container_name) 
 
         # Bind debug ports if enabled
         if(self.settings.debugEnabled):
-            self.with_bind_ports(5678, 5688)
+            self.with_bind_ports(5678, self.settings.debug_port)
 
     def reload_with_settings(self, settings: OpalServerSettings | None = None):
         

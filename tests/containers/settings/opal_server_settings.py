@@ -26,8 +26,12 @@ class OpalServerSettings:
         log_format_include_pid: bool = None,
         statistics_enabled: bool = None,
         debug_enabled: bool = None,
+        debug_port: int = None,
+        auth_private_key_passphrase: str = None,
+        policy_repo_main_branch: str = None,
         image: str = None,
         broadcast_uri: str = None,
+        container_index: int = 1,
         **kwargs):
     
         """
@@ -53,6 +57,11 @@ class OpalServerSettings:
         :param log_format_include_pid: Optional flag for including PID in log format.
         :param statistics_enabled: Optional flag for enabling statistics.
         :param debug_enabled: Optional flag for enabling debug mode with debugpy.
+        :param debug_port: Optional port for debugpy.
+        :param auth_private_key_passphrase: Optional passphrase for the private key.
+        :param policy_repo_main_branch: Optional main branch for the policy repository.
+        :param container_index: Optional index for the container.
+        :param kwargs: Additional keyword arguments.
         """
         
         self.loger = setup_logger(__name__)
@@ -78,7 +87,15 @@ class OpalServerSettings:
         self.log_format_include_pid = log_format_include_pid if log_format_include_pid else self.log_format_include_pid
         self.statistics_enabled = statistics_enabled if statistics_enabled else self.statistics_enabled
         self.debugEnabled = debug_enabled if debug_enabled else self.debugEnabled
+        self.debug_port = debug_port if debug_port else self.debug_port
+        self.auth_private_key_passphrase = auth_private_key_passphrase if auth_private_key_passphrase else self.auth_private_key_passphrase
+        self.policy_repo_main_branch = policy_repo_main_branch if policy_repo_main_branch else self.policy_repo_main_branch
+        self.container_index = container_index if container_index else self.container_index
         self.__dict__.update(kwargs)
+
+        if(container_index > 1):
+            self.port = self.port + container_index - 1
+            self.debug_port = self.debug_port + container_index - 1
     
         self.validate_dependencies()
     
@@ -108,7 +125,7 @@ class OpalServerSettings:
             "OPAL_LOG_FORMAT_INCLUDE_PID": self.log_format_include_pid, 
             "OPAL_STATISTICS_ENABLED": self.statistics_enabled, 
             "OPAL_AUTH_JWT_AUDIENCE": self.auth_audience,
-            "OPAL_AUTH_JWT_ISSUER": self.auth_issuer
+            "OPAL_AUTH_JWT_ISSUER": self.auth_issuer,
         }
 
         if(self.tests_debug):
@@ -127,7 +144,7 @@ class OpalServerSettings:
 
         self.image = os.getenv("OPAL_SERVER_IMAGE", "opal_server_debug_local")
         self.container_name = os.getenv("OPAL_SERVER_CONTAINER_NAME", None)
-        self.port = os.getenv("OPAL_SERVER_PORT", 7002)
+        self.port = os.getenv("OPAL_SERVER_PORT", utils.find_available_port(7002))
         self.uvicorn_workers = os.getenv("OPAL_SERVER_UVICORN_WORKERS", "1")
         self.policy_repo_url = os.getenv("OPAL_POLICY_REPO_URL", None)
         self.polling_interval = os.getenv("OPAL_POLICY_REPO_POLLING_INTERVAL", "30")
@@ -146,6 +163,7 @@ class OpalServerSettings:
         self.debugEnabled = os.getenv("OPAL_DEBUG_ENABLED", "false")        
         self.auth_private_key_passphrase = os.getenv("OPAL_AUTH_PRIVATE_KEY_PASSPHRASE", None)        
         self.policy_repo_main_branch = os.getenv("OPAL_POLICY_REPO_MAIN_BRANCH", "master")  
-        
+        self.debug_port = os.getenv("SERVER_DEBUG_PORT", 5678)
+
         if not self.private_key or not self.public_key:
             self.private_key, self.public_key = utils.generate_ssh_key_pair() 

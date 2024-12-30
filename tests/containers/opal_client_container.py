@@ -24,25 +24,17 @@ class OpalClientContainer(PermitContainer, DockerContainer):
     def configure(self):
         for key, value in self.settings.getEnvVars().items():
             self.with_env(key, value)
-
-        # TODO: Ari: we need to handle these lines
-         #opal_server_url = f"http://{opal_server._name}.{opal_network}:7002"
-        opal_server_url = f"http://opal_server:7002"
-        self.with_env("OPAL_SERVER_URL", opal_server_url)
-
-        self.with_network(self.network)
     
-
         self \
             .with_name(self.settings.container_name) \
-            .with_bind_ports(7000, 7000) \
+            .with_bind_ports(7000, self.settings.port) \
             .with_bind_ports(8181, self.settings.opa_port) \
             .with_network(self.network) \
-            .with_network_aliases("opal_client") \
-            .with_kwargs(labels={"com.docker.compose.project": "pytest"})
+            .with_kwargs(labels={"com.docker.compose.project": "pytest"}) \
+            .with_network_aliases(self.settings.container_name)
 
         if self.settings.debug_enabled:
-            self.with_bind_ports(5678, 5698)
+            self.with_bind_ports(5678, self.settings.debug_port)
             
     def reload_with_settings(self, settings: OpalClientSettings | None = None):
         

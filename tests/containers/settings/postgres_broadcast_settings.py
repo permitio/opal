@@ -1,7 +1,6 @@
 
 import os
 
-
 class PostgresBroadcastSettings:
     def __init__(
         self, 
