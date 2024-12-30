@@ -1,0 +1,389 @@
+# OpenFGA and OPAL
+
+[OpenFGA](https://openfga.dev) is an open-source [Fine-Grained Authorization (FGA)](https://www.permit.io/blog/what-is-fine-grained-authorization-fga) engine implementing the [Zanzibar authorization model created by Google](https://www.permit.io/blog/what-is-google-zanzibar). OPAL provides realtime synchronization and management capabilities for OpenFGA, helping you keep your authorization data and relationships up-to-date across distributed OpenFGA instances.
+
+## Why Use OPAL with OpenFGA?
+
+While OpenFGA provides powerful authorization capabilities on its own, managing authorization at scale across distributed environments presents several challenges:
+
+- **Consistency**: Keeping authorization models and relationship data synchronized across multiple instances
+- **Data Sync**: Integrating authorization data from various sources and systems
+- **Deployment**: Managing updates and changes across distributed OpenFGA deployments
+- **Monitoring**: Tracking the health and status of your authorization infrastructure
+
+OPAL solves these challenges by providing a centralized management layer that handles synchronization, data integration, and monitoring.
+
+## Key Features
+
+By integrating OpenFGA with OPAL, you get:
+
+- **Real-time Authorization Model Updates**:
+  - Automatically synchronize authorization models across multiple OpenFGA instances
+  - Push model changes instantly through OPAL's pub/sub system
+  - Version control your authorization models through Git
+
+- **Distributed Deployment Support**:
+  - Scale authorization across multiple regions/clusters while maintaining consistency
+  - Each OPAL client can manage its own OpenFGA instance
+  - Central management through OPAL server reduces operational complexity
+  - Support for blue/green deployments and gradual rollouts
+
+- **Data Source Integration**:
+  - Pull relationship data from multiple sources:
+    - REST APIs
+    - Databases
+    - Message queues
+    - Custom data sources [via OPAL fetchers](https://opal.ac/fetch-providers)
+  - Keep relationship tuples synchronized in real-time
+  - Transform data automatically to OpenFGA format
+
+- **Git Integration**:
+  - Store authorization models in version control
+  - Track changes and rollback when needed
+  - Use Git workflows for authorization model updates
+  - Support for multiple branches and environments
+
+- **Health Monitoring**:
+  - Built-in health checks for OpenFGA instances
+  - Monitor synchronization status
+  - Track authorization model updates
+  - Alert on issues or inconsistencies
+
+- **Transaction Tracking**:
+  - Detailed logging of all model changes
+  - Audit trail for authorization updates
+  - Performance metrics and analytics
+
+## Quick Start
+
+1. Run OpenFGA with OPAL using docker-compose:
+
+```bash
+git clone https://github.com/permitio/opal.git
+cd opal
+docker-compose -f docker/docker-compose-example-openfga.yml up -d
+
+or
+
+curl -L https://raw.githubusercontent.com/permitio/opal/master/docker/docker-compose-example-openfga.yml -o docker-compose-example-openfga.yml
+docker-compose -f docker-compose-example-openfga.yml up -d
+```
+
+This will start:
+
+- OpenFGA server on port 8080
+- OPAL server on port 7002
+- OPAL client configured for OpenFGA
+
+2. Verify the setup:
+
+```bash
+# Check OPAL server health
+curl http://localhost:7002/healthcheck
+
+# Check OpenFGA API
+curl http://localhost:8080/stores
+
+# Check OPAL client health
+curl http://localhost:7000/healthcheck
+```
+
+Common setup issues:
+- If services don't start, check Docker logs: `docker-compose logs`
+- Ensure ports 7000, 7002, and 8080 are available
+- Verify network connectivity between containers
+
+## Writing OpenFGA Authorization Models
+
+OPAL can track your authorization models directly from Git. Here's how to set it up:
+
+1. Create an authorization model repository with this structure:
+```
+.
+├── authorization_model.json   # Main authorization model
+├── relationships/            # Relationship data
+│   ├── defaults.json
+│   └── seed_data.json
+└── .manifest                 # OPAL manifest file
+```
+
+2. Define your authorization model in `authorization_model.json` or `authorization_model.yaml`:
+
+```json
+{
+  "schema_version": "1.1",
+  "type_definitions": [
+    {
+      "type": "user"
+    },
+    {
+      "type": "document",
+      "relations": {
+        "viewer": {
+          "union": {
+            "child": [
+              {"this": {}},
+              {
+                "computedUserset": {
+                  "relation": "owner"
+                }
+              }
+            ]
+          }
+        },
+        "owner": {
+          "this": {}
+        }
+      },
+      "metadata": {
+        "relations": {
+          "viewer": {
+            "directly_related_user_types": [
+              { "type": "user" }
+            ]
+          },
+          "owner": {
+            "directly_related_user_types": [
+              { "type": "user" }
+            ]
+          }
+        }
+      }
+    }
+  ]
+}
+```
+
+Using yaml format
+```yaml
+schema_version: "1.1"
+type_definitions:
+  - type: user
+  - type: document
+    relations:
+      viewer:
+        union:
+          child:
+            - this: {}
+            - computedUserset:
+                relation: owner
+      owner:
+        this: {}
+    metadata:
+      relations:
+        viewer:
+          directly_related_user_types:
+            - type: user
+        owner:
+          directly_related_user_types:
+            - type: user
+```
+
+
+3. Configure OPAL to track your repository by setting these environment variables:
+
+```yaml
+environment:
+  - OPAL_POLICY_REPO_URL=https://github.com/daveads/opal-example-policy-openfga
+  - OPAL_POLICY_REPO_MAIN_BRANCH=main
+  - OPAL_POLICY_REPO_POLLING_INTERVAL=30
+```
+
+Best practices:
+- Use separate branches for development and production
+- Include clear documentation in your model files
+- Follow a consistent naming convention for types and relations
+- Use OPAL's manifest file to control loading order
+
+## Using Data Fetchers
+
+OPAL can fetch relationship tuples from external sources and keep them synchronized with OpenFGA. Here's an example using the HTTP fetcher:
+
+1. Configure data sources in OPAL server's `OPAL_DATA_CONFIG_SOURCES`:
+
+```json
+{
+  "config": {
+    "entries": [
+      {
+        "url": "https://api.example.com/policy-data",
+        "topics": ["policy_data"],
+        "config": {
+          "fetcher": "HttpFetchProvider",
+          "headers": {
+            "Authorization": "Bearer ${API_TOKEN}"
+          },
+          "method": "GET"
+        },
+        "dst_path": "/static"
+      }
+    ]
+  }
+}
+```
+
+2. Ensure your API returns data in OpenFGA tuple format:
+
+```json
+{
+  "tuples": [
+    {
+      "user": "user:anne",
+      "relation": "viewer",
+      "object": "document:budget"
+    },
+    {
+      "user": "user:bob",
+      "relation": "owner",
+      "object": "document:roadmap"
+    }
+  ]
+}
+```
+
+3. Handle errors and data validation:
+
+```json
+{
+  "config": {
+    "entries": [
+      {
+        "url": "https://api.example.com/policy-data",
+        "topics": ["policy-data"],
+        "config": {
+          "fetcher": "HttpFetchProvider",
+          "headers": {
+            "Authorization": "Bearer ${API_TOKEN}"
+          },
+          "method": "GET",
+          "retry": {
+            "max_attempts": 3,
+            "backoff_seconds": 1
+          },
+          "validate_schema": true
+        },
+        "dst_path": "/static"
+      }
+    ]
+  }
+}
+```
+
+## Running OpenFGA with OPAL
+
+Once your configuration is ready, you can manage OpenFGA through OPAL:
+
+1. **Initialize the Store**:
+```bash
+# Create a new store
+curl -X POST http://localhost:8080/stores \
+  -H "Content-Type: application/json"
+```
+
+2. **Apply Authorization Model**:
+```bash
+# OPAL will automatically sync your model from Git
+# Verify it was applied:
+curl http://localhost:8080/stores/{store_id}/authorization-models
+```
+
+3. **Write Relationship Tuples**:
+```bash
+curl -X POST http://localhost:8080/stores/{store_id}/write \
+-H "Content-Type: application/json" \
+-d '{
+  "writes": {
+    "tuple_keys": [
+      {
+        "user": "user:anne",
+        "relation": "viewer",
+        "object": "document:budget"
+      }
+    ]
+  }
+}'
+```
+
+4. **Check Permissions**:
+```bash
+curl -X POST http://localhost:8080/stores/{store_id}/check \
+-H "Content-Type: application/json" \
+-d '{
+  "tuple_key": {
+    "user": "user:anne",
+    "relation": "viewer",
+    "object": "document:budget"
+  }
+}'
+```
+
+Benefits over standalone OpenFGA:
+- Centralized management of multiple instances
+- Automatic synchronization of models and data
+- Built-in monitoring and health checks
+- Simplified deployment and updates
+
+## Monitoring
+
+OPAL provides comprehensive monitoring for your OpenFGA deployment:
+
+### Health Checks
+
+```bash
+# OPAL Server health
+curl http://localhost:7002/healthcheck
+
+# OPAL Client health
+curl http://localhost:7000/healthcheck
+
+# OpenFGA store status
+curl http://localhost:8080/stores/{store_id}/health
+```
+
+### Metrics
+
+Enable metrics collection by setting:
+```yaml
+environment:
+  - OPAL_STATISTICS_ENABLED=true
+```
+
+Access metrics at:
+```bash
+curl http://localhost:7002/metrics
+```
+
+### Logging
+
+View detailed logs:
+
+```bash
+# OPAL Server logs
+docker-compose logs opal_server
+
+# OPAL Client logs
+docker-compose logs opal_client
+
+# OpenFGA logs
+docker-compose logs openfga
+```
+
+Configure log levels:
+```yaml
+environment:
+  - OPAL_LOG_LEVEL=DEBUG
+```
+
+### Transaction Tracking
+
+View recent transactions:
+```bash
+curl http://localhost:7002/statistics
+```
+
+## Additional Resources
+
+- [OpenFGA Documentation](https://openfga.dev)
+- [OPAL Documentation](https://docs.opal.ac)
+- [Google Zanzibar Paper](https://research.google/pubs/pub48190/)
+- [OPAL GitHub Repository](https://github.com/permitio/opal)
