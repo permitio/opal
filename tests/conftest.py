@@ -115,10 +115,10 @@ def opal_server(opal_network: Network, broadcast_channel: BroadcastContainer, gi
 
         container = OpalServerContainer(
             OpalServerSettings(
-                opal_broadcast_uri=opal_broadcast_uri,
+                broadcast_uri=opal_broadcast_uri,
                 container_name=container_name,
                 container_index=i+1,
-                statistics_enabled="false",
+                uvicorn_workers="4",
                 policy_repo_url=f"http://{gitea_server.settings.container_name}:{gitea_server.settings.port_http}/{gitea_server.settings.username}/{gitea_server.settings.repo_name}",
                 image="permitio/opal-server:latest"
             ),

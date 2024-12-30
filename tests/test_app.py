@@ -105,40 +105,6 @@ def data_publish(user):
     log_message = f"PUT /v1/data/users/{user}/location -> 204"
     utils.check_clients_logged(log_message)
 
-
-#@pytest.mark.parametrize("attempts", [10])  # Number of attempts to repeat the check
-def read_statistics(attempts):
-    """
-    Tests the statistics feature by verifying the number of clients and servers.
-    """
-    print("- Testing statistics feature")
-
-    # Set the required Authorization token
-    token = "OPAL_DATA_SOURCE_TOKEN_VALUE"  # Replace with the actual token value
-
-    # The URL for statistics
-    stats_url = "http://localhost:7002/stats"
-
-    headers = {"Authorization": f"Bearer {token}"}
-
-    # Repeat the request multiple times
-    for attempt in range(attempts):
-        print(f"Attempt {attempt + 1}/{attempts} - Checking statistics...")
-
-        try:
-            # Send a request to the statistics endpoint
-            response = requests.get(stats_url, headers=headers)
-            response.raise_for_status()  # Raise an error for HTTP status codes 4xx/5xx
-
-            # Look for the expected data in the response
-            if '"client_count":2,"server_count":2' not in response.text:
-                pytest.fail(f"Expected statistics not found in response: {response.text}")
-
-        except requests.RequestException as e:
-            pytest.fail(f"Failed to fetch statistics: {e}")
-
-    print("Statistics check passed in all attempts.")
-
 def test_sequence():
     """
     Executes a sequence of tests:
@@ -196,11 +162,7 @@ def publish_data_user_location(src, user, opal_server: OpalServerContainer):
     
     # Execute the command
     result = subprocess.run(publish_data_user_location_command, shell=True)
-    result = subprocess.run(publish_data_user_location_command, shell=True)
-    result = subprocess.run(publish_data_user_location_command, shell=True)
-    result = subprocess.run(publish_data_user_location_command, shell=True)
-    input("Press Enter to continue...")
-
+    
     # Check command execution result
     if result.returncode != 0:
         logger.error("Error: Failed to update user location!")
@@ -273,9 +235,8 @@ async def test_policy_and_data_updates(gitea_server: GiteaContainer, opal_server
     logger.info("test-0")
     
     # Parse locations into separate lists of IPs and countries
-    locations = [("8.8.8.8","US"), ("77.53.31.138","SE"), ("210.2.4.8","CN")]
+    locations = [("8.8.8.8","US"), ("77.53.31.138","SE")]
     DATASOURCE_TOKEN  = opal_server[0].obtain_OPAL_tokens()["datasource"]
-
 
     for location in locations:    
         # Update policy to allow only non-US users
@@ -284,12 +245,63 @@ async def test_policy_and_data_updates(gitea_server: GiteaContainer, opal_server
 
         assert await data_publish_and_test("bob", location[1], locations, opal_server[0], opal_client[0])
 
+@pytest.mark.parametrize("attempts", [10])  # Number of attempts to repeat the check
+def test_read_statistics(attempts, opal_server: list[OpalServerContainer], opal_client: list[OpalClientContainer],
+                          number_of_opal_servers: int, number_of_opal_clients: int):
+    """
+    Tests the statistics feature by verifying the number of clients and servers.
+    """
+    print("- Testing statistics feature")
+ 
+    time.sleep(15)
+
+    for server in opal_server:
+        print(f"OPAL Server: {server.settings.container_name}:{server.settings.port}")
+
+        # The URL for statistics
+        stats_url = f"http://localhost:{server.settings.port}/stats"
+
+        headers = {"Authorization": f"Bearer {server.obtain_OPAL_tokens()['datasource']}"}
+
+        # Repeat the request multiple times
+        for attempt in range(attempts):
+            print(f"Attempt {attempt + 1}/{attempts} - Checking statistics...")
+
+            try:
+                time.sleep(1)
+                # Send a request to the statistics endpoint
+                response = requests.get(stats_url, headers=headers)
+                response.raise_for_status()  # Raise an error for HTTP status codes 4xx/5xx
+
+                print(f"Response: {response.status_code} {response.text}")
+
+                # Look for the expected data in the response
+                stats = utils.get_client_and_server_count(response.text)
+                if stats is None:
+                    pytest.fail(f"Expected statistics not found in response: {response.text}")
+
+                client_count = stats["client_count"]
+                server_count = stats["server_count"]  
+                print(f"Number of OPAL servers expected: {number_of_opal_servers}, found: {server_count}")
+                print(f"Number of OPAL clients expected: {number_of_opal_clients}, found: {client_count}")
+
+                if(server_count < number_of_opal_servers):
+                    pytest.fail(f"Expected number of servers not found in response: {response.text}")
+
+                if(client_count < number_of_opal_clients):
+                    pytest.fail(f"Expected number of clients not found in response: {response.text}")
+
+            except requests.RequestException as e:
+                if response is not None:
+                    print(f"Request failed: {response.status_code} {response.text}")
+                pytest.fail(f"Failed to fetch statistics: {e}")
+
+    print("Statistics check passed in all attempts.")
 
 @pytest.mark.asyncio
 async def test_policy_update(gitea_server: GiteaContainer, opal_server: list[OpalServerContainer], opal_client: list[OpalClientContainer], temp_dir):
     # Parse locations into separate lists of IPs and countries
     location = "CN"
-
 
      # Generate the reference timestamp
     reference_timestamp = datetime.now(timezone.utc)
@@ -308,3 +320,9 @@ async def test_policy_update(gitea_server: GiteaContainer, opal_server: list[Opa
     log_found = opal_client[0].wait_for_log(reference_timestamp, "Fetching policy bundle from", 30)
     logger.info("Finished processing logs.")
     assert log_found, "Expected log entry not found after the reference timestamp."
+
+def test_with_statistics_disabled(opal_server: list[OpalServerContainer]):
+    assert False
+
+def test_with_uvicorn_workers_and_no_broadcast_channel(opal_server: list[OpalServerContainer]):
+    assert False

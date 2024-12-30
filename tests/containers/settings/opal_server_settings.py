@@ -64,7 +64,7 @@ class OpalServerSettings:
         :param kwargs: Additional keyword arguments.
         """
         
-        self.loger = setup_logger(__name__)
+        self.logger = setup_logger(__name__)
 
         self.load_from_env()
 
@@ -107,7 +107,7 @@ class OpalServerSettings:
             raise ValueError("SSH private and public keys are required.")
         if not self.master_token:
             raise ValueError("OPAL master token is required.")
-        self.loger.info("Dependencies validated successfully.")
+        self.logger.info("Dependencies validated successfully.")
         
     def getEnvVars(self):
                

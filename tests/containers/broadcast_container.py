@@ -11,12 +11,10 @@ class BroadcastContainer(PermitContainer, PostgresContainer):
         self,
         network: Network,
         image: str = "postgres:alpine",
-        name: str = "broadcast_channel",
         docker_client_kw: dict | None = None,
         **kwargs,
     ) -> None:
         
-        self.name = name
         # Add custom labels to the kwargs
         labels = kwargs.get("labels", {})
         labels.update({"com.docker.compose.project": "pytest"})
@@ -31,4 +29,4 @@ class BroadcastContainer(PermitContainer, PostgresContainer):
 
         self.with_network_aliases("broadcast_channel")
         # Add a custom name for the container
-        self.with_name(f"pytest_opal_broadcast_channel_{self.name}")
+        self.with_name(f"pytest_opal_broadcast_channel")

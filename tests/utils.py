@@ -1,3 +1,4 @@
+import json
 import time
 import os
 import random
@@ -275,3 +276,25 @@ def find_available_port(starting_port=5001):
         if is_port_available(port):
             return port
         port += 1
+
+def get_client_and_server_count(json_data):
+    """
+    Extracts the client_count and server_count from a given JSON string.
+
+    Args:
+        json_data (str): A JSON string containing the client and server counts.
+
+    Returns:
+        dict: A dictionary with keys 'client_count' and 'server_count'.
+    """
+    try:
+        # Parse the JSON string
+        data = json.loads(json_data)
+        
+        # Extract client and server counts
+        client_count = data.get("client_count", 0)
+        server_count = data.get("server_count", 0)
+        
+        return {"client_count": client_count, "server_count": server_count}
+    except json.JSONDecodeError:
+        raise ValueError("Invalid JSON input.")
