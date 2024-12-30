@@ -185,7 +185,7 @@ def opal_client(opal_network: Network, opal_server: List[OpalServerContainer], r
 
         container = OpalClientContainer(
             OpalClientSettings(
-                #image="permitio/opal-client:latest",
+                image="permitio/opal-client:latest",
                 container_name=container_name,
                 container_index=i+1,
                 opal_server_url=opal_server_url,
