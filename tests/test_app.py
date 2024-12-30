@@ -150,12 +150,12 @@ def test_sequence():
 OPAL_DISTRIBUTION_TIME = 2
 ip_to_location_base_url = "https://api.country.is/"
  
-def publish_data_user_location(src, user, opal_server: OpalServerContainer):
+def publish_data_user_location(src, user, DATASOURCE_TOKEN: str, port: int):
     """Publish user location data to OPAL."""
     # Construct the command to publish data update
     publish_data_user_location_command = (
-        f"opal-client publish-data-update --server-url http://localhost:{opal_server.settings.port} --src-url {src} "
-        f"-t policy_data --dst-path /users/{user}/location {opal_server.obtain_OPAL_tokens()['datasource']}"
+        f"opal-client publish-data-update --server-url http://localhost:{port} --src-url {src} "
+        f"-t policy_data --dst-path /users/{user}/location {DATASOURCE_TOKEN}"
     )
     logger.info(publish_data_user_location_command)
     logger.info("test")
@@ -179,21 +179,21 @@ def test_user_location(opal_server: list[OpalServerContainer], connected_clients
 
     # Publish data to the OPAL server
     logger.info(ip_to_location_base_url)
-    publish_data_user_location(f"{ip_to_location_base_url}8.8.8.8", "bob", opal_server[0])
+    publish_data_user_location(f"{ip_to_location_base_url}8.8.8.8", "bob", opal_server[0].obtain_OPAL_tokens()["datasource"], opal_server[0].settings.port)
     logger.info("Published user location for 'bob'.")
 
     log_found = connected_clients[0].wait_for_log("PUT /v1/data/users/bob/location -> 204", 30, reference_timestamp)
     logger.info("Finished processing logs.")
     assert log_found, "Expected log entry not found after the reference timestamp."
 
-async def data_publish_and_test(user, allowed_country, locations, opasl_server: OpalServerContainer, opal_client: OpalClientContainer):
+async def data_publish_and_test(user, allowed_country, locations, DATASOURCE_TOKEN: str, opal_client: OpalClientContainer, port: int):
     """Run the user location policy tests multiple times."""
 
     for location in locations:
         ip = location[0]
         user_country = location[1]
 
-        publish_data_user_location(f"{ip_to_location_base_url}{ip}", user, opasl_server)
+        publish_data_user_location(f"{ip_to_location_base_url}{ip}", user, DATASOURCE_TOKEN, port)
 
         if (allowed_country == user_country):
             print(f"{user}'s location set to: {user_country}. current_country is set to: {allowed_country} Expected outcome: ALLOWED.")
@@ -236,21 +236,25 @@ async def test_policy_and_data_updates(gitea_server: GiteaContainer, opal_server
     
     # Parse locations into separate lists of IPs and countries
     locations = [("8.8.8.8","US"), ("77.53.31.138","SE")]
-    DATASOURCE_TOKEN  = opal_server[0].obtain_OPAL_tokens()["datasource"]
+    for server in opal_server:
+        DATASOURCE_TOKEN  = server.obtain_OPAL_tokens()["datasource"]
 
-    for location in locations:    
-        # Update policy to allow only non-US users
-        print(f"Updating policy to allow only users from {location[1]}...")
-        update_policy(gitea_server, opal_server[0], location[1])
+        for location in locations:    
+            # Update policy to allow only non-US users
+            print(f"Updating policy to allow only users from {location[1]}...")
+            update_policy(gitea_server, server, location[1])
 
-        assert await data_publish_and_test("bob", location[1], locations, opal_server[0], opal_client[0])
+            for client in opal_client:
+                assert await data_publish_and_test("bob", location[1], locations, DATASOURCE_TOKEN, client, server.settings.port)
+                
+
 
 @pytest.mark.parametrize("attempts", [10])  # Number of attempts to repeat the check
-def test_read_statistics(attempts, opal_server: list[OpalServerContainer], opal_client: list[OpalClientContainer],
-                          number_of_opal_servers: int, number_of_opal_clients: int):
+def test_read_statistics(attempts, opal_server: list[OpalServerContainer], number_of_opal_servers: int, number_of_opal_clients: int):
     """
     Tests the statistics feature by verifying the number of clients and servers.
     """
+
     print("- Testing statistics feature")
  
     time.sleep(15)
@@ -298,6 +302,7 @@ def test_read_statistics(attempts, opal_server: list[OpalServerContainer], opal_
 
     print("Statistics check passed in all attempts.")
 
+
 @pytest.mark.asyncio
 async def test_policy_update(gitea_server: GiteaContainer, opal_server: list[OpalServerContainer], opal_client: list[OpalClientContainer], temp_dir):
     # Parse locations into separate lists of IPs and countries
@@ -308,19 +313,24 @@ async def test_policy_update(gitea_server: GiteaContainer, opal_server: list[Opa
     logger.info(f"Reference timestamp: {reference_timestamp}")
 
 
-    # Update policy to allow only non-US users
-    print(f"Updating policy to allow only users from {location}...")
-    update_policy(gitea_server, opal_server[0], "location")
-
-    log_found = opal_server[0].wait_for_log("Found new commits: old HEAD was", 30, reference_timestamp)
-    logger.info("Finished processing logs.")
-    assert log_found, "Expected log entry not found after the reference timestamp."
+    for server in opal_server:
+        # Update policy to allow only non-US users
+        print(f"Updating policy to allow only users from {location}...")
+        update_policy(gitea_server, opal_server[0], "location")
 
 
-    log_found = opal_client[0].wait_for_log("Fetching policy bundle from", 30, reference_timestamp)
-    logger.info("Finished processing logs.")
-    assert log_found, "Expected log entry not found after the reference timestamp."
+        log_found = server.wait_for_log("Found new commits: old HEAD was", 30, reference_timestamp)
+        logger.info("Finished processing logs.")
+        assert log_found, f"Expected log entry not found in server '{server.settings.container_name}' after the reference timestamp."
 
+    for client in opal_client:
+        log_found = client.wait_for_log("Fetching policy bundle from", 30, reference_timestamp)
+        logger.info("Finished processing logs.")
+        assert log_found, f"Expected log entry not found in client '{client.settings.container_name}' after the reference timestamp."
+
+
+
+# TODO: Add more tests
 def test_with_statistics_disabled(opal_server: list[OpalServerContainer]):
     assert False
 
