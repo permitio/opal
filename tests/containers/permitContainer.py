@@ -14,7 +14,7 @@ class PermitContainer():
         #self.check_errors()
 
 
-    def wait_for_log(self, reference_timestamp: datetime, log_str: str, timeout: int):
+    def wait_for_log(self, reference_timestamp: datetime | None , log_str: str, timeout: int):
         """
         Wait for a specific log to appear in the container logs after the reference timestamp.
         
@@ -49,7 +49,7 @@ class PermitContainer():
                 log_timestamp_string = match.group(1)
                 log_timestamp = datetime.strptime(log_timestamp_string, "%Y-%m-%dT%H:%M:%S.%f%z")
                 
-                if log_timestamp > reference_timestamp:
+                if (reference_timestamp is None) or (log_timestamp > reference_timestamp):
                     #self.permitLogger.info(f"Checking log line: {decoded_line}")
                     if log_str in decoded_line:
                         log_found = True

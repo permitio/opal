@@ -160,21 +160,21 @@ def publish_data_user_location(src, user, opal_server: OpalServerContainer):
     logger.info(publish_data_user_location_command)
     logger.info("test")
     
+        
     # Execute the command
     result = subprocess.run(publish_data_user_location_command, shell=True)
     
-    
-    input("press enter to continue!")
     # Check command execution result
     if result.returncode != 0:
         logger.error("Error: Failed to update user location!")
     else:
         logger.info(f"Successfully updated user location with source: {src}")
-    input("press enter to continue!")
-
 
 def test_user_location(opal_server: list[OpalServerContainer], opal_client: list[OpalClientContainer]):
     """Test data publishing"""
+
+    for client in opal_client:
+        client.wait_for_log(reference_timestamp=None, log_str="Connected to PubSub server", timeout=30)
 
      # Generate the reference timestamp
     reference_timestamp = datetime.now(timezone.utc)
