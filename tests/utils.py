@@ -1,9 +1,12 @@
+import asyncio
+import json
 import time
 import os
 import random
 import shutil
 import subprocess
 import tempfile
+import aiohttp
 import requests
 import sys
 import docker
@@ -275,3 +278,139 @@ def find_available_port(starting_port=5001):
         if is_port_available(port):
             return port
         port += 1
+
+import asyncio
+import aiohttp
+import json
+
+def publish_data_update(
+    server_url: str,
+    server_route: str,
+    token: str,
+    src_url: str = None,
+    reason: str = "",
+    topics: list[str] = ["policy_data"],
+    data: str = None,
+    src_config: dict[str, any] = None,
+    dst_path: str = "",
+    save_method: str = "PUT",
+):
+    """
+    Publish a DataUpdate through an OPAL-server.
+
+    Args:
+        server_url (str): URL of the OPAL-server.
+        server_route (str): Route in the server for updates.
+        token (str): JWT token for authentication.
+        src_url (Optional[str]): URL of the data source.
+        reason (str): Reason for the update.
+        topics (Optional[List[str]]): Topics for the update.
+        data (Optional[str]): Data to include in the update.
+        src_config (Optional[Dict[str, Any]]): Fetching config as JSON.
+        dst_path (str): Destination path in the client data store.
+        save_method (str): Method to save data (e.g., "PUT").
+    """
+    entries = []
+    if src_url:
+        entries.append({
+            "url": src_url,
+            "data": json.loads(data) if data else None,
+            "topics": topics or ["policy_data"],  # Ensure topics is not None
+            "dst_path": dst_path,
+            "save_method": save_method,
+            "config": src_config,
+        })
+
+    update_payload = {"entries": entries, "reason": reason}
+
+    async def send_update():
+        headers = {"content-type": "application/json"}
+        if token:
+            headers["Authorization"] = f"Bearer {token}"
+
+        async with aiohttp.ClientSession(headers=headers) as session:
+            async with session.post(f"{server_url}{server_route}", json=update_payload) as response:
+                if response.status == 200:
+                    return "Event Published Successfully"
+                else:
+                    error_text = await response.text()
+                    raise RuntimeError(f"Failed with status {response.status}: {error_text}")
+
+    return asyncio.run(send_update())
+
+
+
+
+
+import subprocess
+import json
+
+def publish_data_update_with_curl(
+    server_url: str,
+    server_route: str,
+    token: str,
+    src_url: str = None,
+    reason: str = "",
+    topics: list[str] = ["policy_data"],
+    data: str = None,
+    src_config: dict[str, any] = None,
+    dst_path: str = "",
+    save_method: str = "PUT",
+):
+    """
+    Publish a DataUpdate through an OPAL-server using curl.
+
+    Args:
+        server_url (str): URL of the OPAL-server.
+        server_route (str): Route in the server for updates.
+        token (str): JWT token for authentication.
+        src_url (Optional[str]): URL of the data source.
+        reason (str): Reason for the update.
+        topics (Optional[List[str]]): Topics for the update.
+        data (Optional[str]): Data to include in the update.
+        src_config (Optional[Dict[str, Any]]): Fetching config as JSON.
+        dst_path (str): Destination path in the client data store.
+        save_method (str): Method to save data (e.g., "PUT").
+    """
+    entries = []
+    if src_url:
+        entries.append({
+            "url": src_url,
+            "data": json.loads(data) if data else None,
+            "topics": topics or ["policy_data"],  # Ensure topics is not None
+            "dst_path": dst_path,
+            "save_method": save_method,
+            "config": src_config,
+        })
+
+    update_payload = {"entries": entries, "reason": reason}
+
+    # Prepare headers for the curl command
+    headers = [
+        "Content-Type: application/json",
+    ]
+    if token:
+        headers.append(f"Authorization: Bearer {token}")
+
+    # Build the curl command
+    curl_command = [
+    "curl",
+    "-X", "POST",
+    f"{server_url}{server_route}",
+    "-H", " -H ".join([f'"{header}"' for header in headers]),
+    "-d", json.dumps(update_payload),
+]
+
+
+    # Execute the curl command
+    try:
+        result = subprocess.run(curl_command, capture_output=True, text=True, check=True)
+        if result.returncode == 0:
+            return "Event Published Successfully"
+        else:
+            raise RuntimeError(f"Failed with status {result.returncode}: {result.stderr}")
+    except subprocess.CalledProcessError as e:
+        raise RuntimeError(f"Error executing curl: {e.stderr}")
+
+# Example usage
+# publish_data_update_with_curl("http://example.com", "/update", "your-token", src_url="http://data-source")

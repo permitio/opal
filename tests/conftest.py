@@ -151,7 +151,7 @@ def opal_client(opal_network: Network, opal_server: List[OpalServerContainer], r
     if not opal_server or len(opal_server) == 0:
         raise ValueError("Missing 'opal_server' container.")
     
-    opal_server_url = f"http://{opal_server[0].settings.container_name}:{opal_server[0].settings.port}"
+    opal_server_url = f"http://{opal_server[0].settings.container_name}:7002"#{opal_server[0].settings.port}"
     client_token = opal_server[0].obtain_OPAL_tokens()["client"]
     callbacks = json.dumps(
         {

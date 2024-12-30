@@ -121,7 +121,7 @@ class OpalServerSettings:
             "OPAL_AUTH_PRIVATE_KEY": self.private_key,
             "OPAL_AUTH_PUBLIC_KEY": self.public_key,
             "OPAL_AUTH_MASTER_TOKEN": self.master_token,
-            "OPAL_DATA_CONFIG_SOURCES": f"""{{"config":{{"entries":[{{"url":"http://{self.container_name}:{self.port}/policy-data","topics":["{self.data_topics}"],"dst_path":"/static"}}]}}}}""",
+            "OPAL_DATA_CONFIG_SOURCES": f"""{{"config":{{"entries":[{{"url":"http://{self.container_name}:7002/policy-data","topics":["{self.data_topics}"],"dst_path":"/static"}}]}}}}""",
             "OPAL_LOG_FORMAT_INCLUDE_PID": self.log_format_include_pid, 
             "OPAL_STATISTICS_ENABLED": self.statistics_enabled, 
             "OPAL_AUTH_JWT_AUDIENCE": self.auth_audience,
@@ -163,7 +163,7 @@ class OpalServerSettings:
         self.debugEnabled = os.getenv("OPAL_DEBUG_ENABLED", "false")        
         self.auth_private_key_passphrase = os.getenv("OPAL_AUTH_PRIVATE_KEY_PASSPHRASE", None)        
         self.policy_repo_main_branch = os.getenv("OPAL_POLICY_REPO_MAIN_BRANCH", "master")  
-        self.debug_port = os.getenv("SERVER_DEBUG_PORT", 5678)
+        self.debug_port = os.getenv("SERVER_DEBUG_PORT", utils.find_available_port(5678))
 
         if not self.private_key or not self.public_key:
             self.private_key, self.public_key = utils.generate_ssh_key_pair() 

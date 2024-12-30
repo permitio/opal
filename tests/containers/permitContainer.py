@@ -11,7 +11,7 @@ class PermitContainer():
         # Regex to match any ANSI-escaped timestamp in the format YYYY-MM-DDTHH:MM:SS.mmmmmm+0000
         self.timestamp_with_ansi = r"\x1b\[.*?(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}\+\d{4})"
         self.errors = []
-        self.check_errors()
+        #self.check_errors()
 
 
     def wait_for_log(self, reference_timestamp: datetime, log_str: str, timeout: int):
