@@ -326,3 +326,6 @@ def test_with_statistics_disabled(opal_server: list[OpalServerContainer]):
 
 def test_with_uvicorn_workers_and_no_broadcast_channel(opal_server: list[OpalServerContainer]):
     assert False
+
+def test_two_servers_one_worker(opal_server: list[OpalServerContainer]):
+    assert False
