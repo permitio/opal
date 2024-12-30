@@ -50,7 +50,7 @@ class PermitContainer():
                 log_timestamp = datetime.strptime(log_timestamp_string, "%Y-%m-%dT%H:%M:%S.%f%z")
                 
                 if log_timestamp > reference_timestamp:
-                    self.permitLogger.info(f"Checking log line: {decoded_line}")
+                    #self.permitLogger.info(f"Checking log line: {decoded_line}")
                     if log_str in decoded_line:
                         log_found = True
                         self.permitLogger.info("Log found!")
