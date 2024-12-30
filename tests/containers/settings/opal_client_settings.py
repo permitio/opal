@@ -81,6 +81,8 @@ class OpalClientSettings:
             "OPAL_AUTH_JWT_AUDIENCE": self.auth_jwt_audience,
             "OPAL_AUTH_JWT_ISSUER": self.auth_jwt_issuer,
             "OPAL_STATISTICS_ENABLED": self.statistics_enabled,
+            # TODO: make not hardcoded
+            "OPAL_DATA_TOPICS": "policy_data"
         }
         
         if(self.tests_debug):
