@@ -162,7 +162,9 @@ def gitea_server(opal_network: Network, gitea_settings: GiteaSettings):
 
 
 @pytest.fixture(scope="session")
-def policy_repo(gitea_settings: GiteaSettings, request) -> PolicyRepoBase:
+def policy_repo(
+    gitea_settings: GiteaSettings, temp_dir: str, request
+) -> PolicyRepoBase:
     if pytest_settings.policy_repo_provider == SupportedPolicyRepo.GITEA:
         gitea_server = request.getfixturevalue("gitea_server")
 
