@@ -71,6 +71,7 @@ class GithubPolicyRepo:
         self.ssh_key_path = os.getenv(
             "OPAL_PYTEST_POLICY_REPO_SSH_KEY_PATH", "~/.ssh/id_rsa"
         )
+        self.repo = os.getenv("OPAL_TARGET_REPO_NAME", "opal-example-policy-repo")
         self.source_repo_owner = os.getenv("OPAL_SOURCE_ACCOUNT", "permitio")
         self.source_repo_name = os.getenv(
             "OPAL_SOURCE_REPO_NAME", "opal-example-policy-repo"
