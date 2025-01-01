@@ -4,7 +4,8 @@ from secrets import token_hex
 
 from testcontainers.core.utils import setup_logger
 
-from tests import pytest_settings, utils
+from tests.settings import pytest_settings
+from tests.utils import utils
 
 
 class OpalServerSettings:
