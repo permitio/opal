@@ -69,10 +69,10 @@ CMD ["./start_debug.sh"]
     # uvicorn config ------------------------------------
     # install the opal-client package
     RUN cd ./packages/opal-client && python setup.py install
-    
+
     # WARNING: do not change the number of workers on the opal client!
     # only one worker is currently supported for the client.
-    
+
     # number of uvicorn workers
     ENV UVICORN_NUM_WORKERS=1
     # uvicorn asgi app
@@ -81,23 +81,23 @@ CMD ["./start_debug.sh"]
     ENV UVICORN_PORT=7000
     # disable inline OPA
     ENV OPAL_INLINE_OPA_ENABLED=false
-    
+
     # expose opal client port
     EXPOSE 7000
     USER opal
-    
+
     RUN mkdir -p /opal/backup
     VOLUME /opal/backup
-    
-    
+
+
     # IMAGE to extract OPA from official image ----------
     # ---------------------------------------------------
     FROM alpine:latest AS opa-extractor
     USER root
-    
+
     RUN apk update && apk add skopeo tar
     WORKDIR /opal
-    
+
     # copy opa from official docker image
     ARG opa_image=openpolicyagent/opa
     ARG opa_tag=latest-static
@@ -105,22 +105,22 @@ CMD ["./start_debug.sh"]
       mkdir image && tar xf image.tar -C ./image && cat image/*.tar | tar xf - -C ./image -i && \
       find image/ -name "opa*" -type f -executable -print0 | xargs -0 -I "{}" cp {} ./opa && chmod 755 ./opa && \
       rm -r image image.tar
-    
-    
+
+
     # OPA CLIENT IMAGE ----------------------------------
     # Using standalone image as base --------------------
     # ---------------------------------------------------
     FROM client-standalone AS client
-    
+
     # Temporarily move back to root for additional setup
     USER root
-    
+
     # copy opa from opa-extractor
     COPY --from=opa-extractor /opal/opa ./opa
-    
+
     # enable inline OPA
     ENV OPAL_INLINE_OPA_ENABLED=true
     # expose opa port
     EXPOSE 8181
-    
+
     USER opal

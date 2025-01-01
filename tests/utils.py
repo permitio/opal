@@ -1,189 +1,79 @@
 import asyncio
 import json
-import json
-import time
 import os
-import random
-import shutil
+import platform
+import re
 import subprocess
-import tempfile
+import sys
+import time
+
 import aiohttp
 import requests
-import sys
-import docker
-import subprocess
-import platform
-from tests.containers.opal_server_container  import OpalServerContainer
-from git import Repo
-from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric import rsa
+from git import Repo
 
-def compose(*args):
-    """
-    Helper function to run docker compose commands with the given arguments.
+import docker
+from tests.containers.opal_server_container import OpalServerContainer
+
+
+def compose(filename="docker-compose-app-tests.yml", *args):
+    """Helper function to run docker compose commands with the given arguments.
+
     Assumes `docker-compose-app-tests.yml` is the compose file and `.env` is the environment file.
     """
-    command = ["docker", "compose", "-f", "./docker-compose-app-tests.yml", "--env-file", ".env"] + list(args)
-    result = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    command = [
+        "docker",
+        "compose",
+        "-f",
+        filename,
+        "--env-file",
+        ".env",
+    ] + list(args)
+    result = subprocess.run(
+        command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
+    )
     if result.returncode != 0:
         raise RuntimeError(f"Compose command failed: {result.stderr.strip()}")
     return result.stdout
 
 
-def check_clients_logged(log_message):
-    """
-    Checks if a given message is present in the logs of both opal_client containers.
-    """
-    print(f"- Looking for msg '{log_message}' in client's logs")
-    
-    # Check the logs of opal_client container with index 1
-    logs_client_1 = compose("logs", "--index", "1", "opal_client")
-    if log_message not in logs_client_1:
-        raise ValueError(f"Message '{log_message}' not found in opal_client (index 1) logs.")
-    
-    # Check the logs of opal_client container with index 2
-    logs_client_2 = compose("logs", "--index", "2", "opal_client")
-    if log_message not in logs_client_2:
-        raise ValueError(f"Message '{log_message}' not found in opal_client (index 2) logs.")
-    
-    print(f"Message '{log_message}' found in both client logs.")
+def build_docker_image(docker_file: str, image_name: str):
+    """Build the Docker image from the Dockerfile.server.local file in the
+    tests/docker directory."""
+    docker_client = docker.from_env()
+    dockerfile_path = os.path.join(os.path.dirname(__file__), "docker", docker_file)
 
+    # Ensure the Dockerfile exists
+    if not os.path.exists(dockerfile_path):
+        raise FileNotFoundError(f"Dockerfile not found at {dockerfile_path}")
 
-def prepare_policy_repo(account_arg="-account=permitio"):
-    print("- Clone tests policy repo to create test's branch")
+    print(f"Building Docker image from {dockerfile_path}...")
 
-    # Extract OPAL_TARGET_ACCOUNT from the command-line argument
-    if not account_arg.startswith("-account="):
-        raise ValueError("Account argument must be in the format -account=ACCOUNT_NAME")
-    OPAL_TARGET_ACCOUNT = account_arg.split("=")[1]
-    if not OPAL_TARGET_ACCOUNT:
-        raise ValueError("Account name cannot be empty")
-    
-    print(f"OPAL_TARGET_ACCOUNT={OPAL_TARGET_ACCOUNT}")
-
-    # Set or default OPAL_POLICY_REPO_URL
-    OPAL_POLICY_REPO_URL = os.getenv("OPAL_POLICY_REPO_URL", "git@github.com:permitio/opal-example-policy-repo.git")
-    print(f"OPAL_POLICY_REPO_URL={OPAL_POLICY_REPO_URL}")
-
-    # Forking the policy repo
-    ORIGINAL_REPO_NAME = os.path.basename(OPAL_POLICY_REPO_URL).replace(".git", "")
-    NEW_REPO_NAME = ORIGINAL_REPO_NAME
-    FORKED_REPO_URL = f"git@github.com:{OPAL_TARGET_ACCOUNT}/{NEW_REPO_NAME}.git"
-
-    # Check if the forked repository already exists using GitHub CLI
     try:
-        result = subprocess.run(
-            ["gh", "repo", "list", OPAL_TARGET_ACCOUNT, "--json", "name", "-q", ".[].name"],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True
+        # Build the Docker image
+        image, logs = docker_client.images.build(
+            path=os.path.dirname(dockerfile_path),
+            dockerfile=os.path.basename(dockerfile_path),
+            tag=image_name,
         )
-        if NEW_REPO_NAME in result.stdout:
-            print(f"Forked repository {NEW_REPO_NAME} already exists.")
-            OPAL_POLICY_REPO_URL = FORKED_REPO_URL
-            print(f"Using existing forked repository: {OPAL_POLICY_REPO_URL}")
-
-            delete_test_branches(OPAL_POLICY_REPO_URL)
-        else:
-            # Using GitHub API to fork the repository
-            OPAL_TARGET_PAT = os.getenv("pat", "")
-            headers = {"Authorization": f"token {OPAL_TARGET_PAT}"}
-            response = requests.post(
-                f"https://api.github.com/repos/permitio/opal-example-policy-repo/forks",
-                headers=headers
-            )
-            if response.status_code == 202:
-                print("Fork created successfully!")
-            else:
-                print(f"Error creating fork: {response.status_code}")
-                print(response.json())
-            OPAL_POLICY_REPO_URL = FORKED_REPO_URL
-            print(f"Updated OPAL_POLICY_REPO_URL to {OPAL_POLICY_REPO_URL}")
-
+        # Print build logs
+        for log in logs:
+            print(log.get("stream", "").strip())
     except Exception as e:
-        print(f"Error checking or forking repository: {str(e)}")
+        raise RuntimeError(f"Failed to build Docker image: {e}")
 
-    # Create a new branch
-    POLICY_REPO_BRANCH = f"test-{random.randint(1000, 9999)}{random.randint(1000, 9999)}"
-    os.environ["OPAL_POLICY_REPO_BRANCH"] = POLICY_REPO_BRANCH
-    os.environ["OPAL_POLICY_REPO_URL"] = OPAL_POLICY_REPO_URL
+    print(f"Docker image '{image_name}' built successfully.")
 
-    try:
-        # Remove any existing repo directory
-        subprocess.run(["rm", "-rf", "./opal-example-policy-repo"], check=True)
+    return image_name
 
-        # Clone the forked repository
-        subprocess.run(["git", "clone", OPAL_POLICY_REPO_URL], check=True)
-
-        # Create and push a new branch
-        os.chdir("opal-example-policy-repo")
-        subprocess.run(["git", "checkout", "-b", POLICY_REPO_BRANCH], check=True)
-        subprocess.run(["git", "push", "--set-upstream", "origin", POLICY_REPO_BRANCH], check=True)
-        os.chdir("..")
-    except subprocess.CalledProcessError as e:
-        print(f"Git command failed: {e}")
-
-    # Update .env file
-    with open(".env", "a") as env_file:
-        env_file.write(f"OPAL_POLICY_REPO_URL=\"{OPAL_POLICY_REPO_URL}\"\n")
-        env_file.write(f"OPAL_POLICY_REPO_BRANCH=\"{POLICY_REPO_BRANCH}\"\n")
-
-    # Set SSH key
-    OPAL_POLICY_REPO_SSH_KEY_PATH = os.getenv("OPAL_POLICY_REPO_SSH_KEY_PATH", os.path.expanduser("~/.ssh/id_rsa"))
-    with open(OPAL_POLICY_REPO_SSH_KEY_PATH, "r") as ssh_key_file:
-        OPAL_POLICY_REPO_SSH_KEY = ssh_key_file.read().strip()
-    os.environ["OPAL_POLICY_REPO_SSH_KEY"] = OPAL_POLICY_REPO_SSH_KEY
-
-    with open(".env", "a") as env_file:
-        env_file.write(f"OPAL_POLICY_REPO_SSH_KEY=\"{OPAL_POLICY_REPO_SSH_KEY}\"\n")
-
-    print("- OPAL_POLICY_REPO_SSH_KEY set successfully")
-
-
-def delete_test_branches(repo_path):
-    """
-    Deletes all branches starting with 'test-' from the specified repository.
-
-    Args:
-        repo_path (str): Path to the local Git repository.
-    """
-    try:
-
-        print(f"Deleting test branches from {repo_path}")
-
-        if "permitio" in repo_path:
-            return
-        
-        from github import Github
-
-        # Initialize Github API
-        g = Github(os.getenv('OPAL_POLICY_REPO_SSH_KEY'))
-
-        # Get the repository
-        repo = g.get_repo(repo_path)    
-
-        # Enumerate branches and delete pytest- branches
-        branches = repo.get_branches()
-        for branch in branches:
-            if branch.name.startswith('test-'):
-                ref = f"heads/{branch.name}"
-                repo.get_git_ref(ref).delete()
-                print(f"Deleted branch: {branch.name}")
-            else:
-                print(f"Skipping branch: {branch.name}")
-            
-        print("All test branches have been deleted successfully.")
-    except Exception as e:
-        print(f"An error occurred: {e}")
-        
-    return
 
 def remove_pytest_opal_networks():
     """Remove all Docker networks with names starting with 'pytest_opal_'."""
     try:
         client = docker.from_env()
         networks = client.networks.list()
-        
+
         for network in networks:
             if network.name.startswith("pytest_opal_"):
                 try:
@@ -195,47 +85,41 @@ def remove_pytest_opal_networks():
     except Exception as e:
         print(f"Error while accessing Docker: {e}")
 
-current_folder = os.path.dirname(os.path.abspath(__file__))
 
-def generate_ssh_key():
+def generate_ssh_key_pair():
     # Generate a private key
     private_key = rsa.generate_private_key(
         public_exponent=65537,  # Standard public exponent
-        key_size=2048,          # Key size in bits
+        key_size=2048,  # Key size in bits
     )
-    
+
     # Serialize the private key in PEM format
     private_key_pem = private_key.private_bytes(
         encoding=serialization.Encoding.PEM,
         format=serialization.PrivateFormat.TraditionalOpenSSL,
         encryption_algorithm=serialization.NoEncryption(),  # No passphrase
     )
-    
+
     # Generate the corresponding public key
     public_key = private_key.public_key()
-    
+
     # Serialize the public key in OpenSSH format
     public_key_openssh = public_key.public_bytes(
         encoding=serialization.Encoding.OpenSSH,
         format=serialization.PublicFormat.OpenSSH,
     )
-    
+
     # Return the keys as strings
-    return private_key_pem.decode('utf-8'), public_key_openssh.decode('utf-8')
+    return private_key_pem.decode("utf-8"), public_key_openssh.decode("utf-8")
+
 
 async def opal_authorize(user: str, policy_url: str):
     """Test if the user is authorized based on the current policy."""
 
-    
     # HTTP headers and request payload
-    headers = {"Content-Type": "application/json" }
+    headers = {"Content-Type": "application/json"}
     data = {
-        "input": {
-            "user": user,
-            "action": "read",
-            "object": "id123",
-            "type": "finance"
-        }
+        "input": {"user": user, "action": "read", "object": "id123", "type": "finance"}
     }
 
     # Send POST request to OPA
@@ -245,33 +129,54 @@ async def opal_authorize(user: str, policy_url: str):
     # Parse the JSON response
     assert "result" in response.json()
     allowed = response.json()["result"]
-    print(f"Authorization test result: {user} is {'ALLOWED' if allowed else 'NOT ALLOWED'}.")
-    
+    print(
+        f"Authorization test result: {user} is {'ALLOWED' if allowed else 'NOT ALLOWED'}."
+    )
+
     return allowed
+
 
 def wait_policy_repo_polling_interval(opal_server_container: OpalServerContainer):
     # Allow time for the update to propagate
-    for i in range(int(opal_server_container.settings.polling_interval), 0, -1):
-        print(f"waiting for OPAL server to pull the new policy {i} secondes left", end='\r') 
+    propagation_time = 5  # seconds
+    for i in range(
+        int(opal_server_container.settings.polling_interval) + propagation_time, 0, -1
+    ):
+        print(
+            f"waiting for OPAL server to pull the new policy {i} secondes left",
+            end="\r",
+        )
         time.sleep(1)
+
 
 def is_port_available(port):
     # Determine the platform (Linux or macOS)
     system_platform = platform.system().lower()
-    
+
     # Run the appropriate netstat command based on the platform
-    if system_platform == 'darwin':  # macOS
-        result = subprocess.run(['netstat', '-an'], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    if system_platform == "darwin":  # macOS
+        result = subprocess.run(
+            ["netstat", "-an"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
         # macOS 'netstat' shows *.<port> format for listening ports
-        if f'.{port} ' in result.stdout:
+        if f".{port} " in result.stdout:
             return False  # Port is in use
     else:  # Linux
-        result = subprocess.run(['netstat', '-an'], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        result = subprocess.run(
+            ["netstat", "-an"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
         # Linux 'netstat' shows 0.0.0.0:<port> or :::<port> format for listening ports
-        if f':{port} ' in result.stdout or f'::{port} ' in result.stdout:
+        if f":{port} " in result.stdout or f"::{port} " in result.stdout:
             return False  # Port is in use
-    
+
     return True  # Port is available
+
 
 def find_available_port(starting_port=5001):
     port = starting_port
@@ -280,9 +185,6 @@ def find_available_port(starting_port=5001):
             return port
         port += 1
 
-import asyncio
-import aiohttp
-import json
 
 def publish_data_update(
     server_url: str,
@@ -296,8 +198,7 @@ def publish_data_update(
     dst_path: str = "",
     save_method: str = "PUT",
 ):
-    """
-    Publish a DataUpdate through an OPAL-server.
+    """Publish a DataUpdate through an OPAL-server.
 
     Args:
         server_url (str): URL of the OPAL-server.
@@ -313,14 +214,16 @@ def publish_data_update(
     """
     entries = []
     if src_url:
-        entries.append({
-            "url": src_url,
-            "data": json.loads(data) if data else None,
-            "topics": topics or ["policy_data"],  # Ensure topics is not None
-            "dst_path": dst_path,
-            "save_method": save_method,
-            "config": src_config,
-        })
+        entries.append(
+            {
+                "url": src_url,
+                "data": json.loads(data) if data else None,
+                "topics": topics or ["policy_data"],  # Ensure topics is not None
+                "dst_path": dst_path,
+                "save_method": save_method,
+                "config": src_config,
+            }
+        )
 
     update_payload = {"entries": entries, "reason": reason}
 
@@ -330,21 +233,19 @@ def publish_data_update(
             headers["Authorization"] = f"Bearer {token}"
 
         async with aiohttp.ClientSession(headers=headers) as session:
-            async with session.post(f"{server_url}{server_route}", json=update_payload) as response:
+            async with session.post(
+                f"{server_url}{server_route}", json=update_payload
+            ) as response:
                 if response.status == 200:
                     return "Event Published Successfully"
                 else:
                     error_text = await response.text()
-                    raise RuntimeError(f"Failed with status {response.status}: {error_text}")
+                    raise RuntimeError(
+                        f"Failed with status {response.status}: {error_text}"
+                    )
 
     return asyncio.run(send_update())
 
-
-
-
-
-import subprocess
-import json
 
 def publish_data_update_with_curl(
     server_url: str,
@@ -358,8 +259,9 @@ def publish_data_update_with_curl(
     dst_path: str = "",
     save_method: str = "PUT",
 ):
-    """
-    Publish a DataUpdate through an OPAL-server using curl.
+    """Publish a DataUpdate through an OPAL-server using curl.
+    # Example usage
+    # publish_data_update_with_curl("http://example.com", "/update", "your-token", src_url="http://data-source")
 
     Args:
         server_url (str): URL of the OPAL-server.
@@ -375,14 +277,16 @@ def publish_data_update_with_curl(
     """
     entries = []
     if src_url:
-        entries.append({
-            "url": src_url,
-            "data": json.loads(data) if data else None,
-            "topics": topics or ["policy_data"],  # Ensure topics is not None
-            "dst_path": dst_path,
-            "save_method": save_method,
-            "config": src_config,
-        })
+        entries.append(
+            {
+                "url": src_url,
+                "data": json.loads(data) if data else None,
+                "topics": topics or ["policy_data"],  # Ensure topics is not None
+                "dst_path": dst_path,
+                "save_method": save_method,
+                "config": src_config,
+            }
+        )
 
     update_payload = {"entries": entries, "reason": reason}
 
@@ -395,31 +299,33 @@ def publish_data_update_with_curl(
 
     # Build the curl command
     curl_command = [
-    "curl",
-    "-X", "POST",
-    f"{server_url}{server_route}",
-    "-H", " -H ".join([f'"{header}"' for header in headers]),
-    "-d", json.dumps(update_payload),
-]
-
+        "curl",
+        "-X",
+        "POST",
+        f"{server_url}{server_route}",
+        "-H",
+        " -H ".join([f'"{header}"' for header in headers]),
+        "-d",
+        json.dumps(update_payload),
+    ]
 
     # Execute the curl command
     try:
-        result = subprocess.run(curl_command, capture_output=True, text=True, check=True)
+        result = subprocess.run(
+            curl_command, capture_output=True, text=True, check=True
+        )
         if result.returncode == 0:
             return "Event Published Successfully"
         else:
-            raise RuntimeError(f"Failed with status {result.returncode}: {result.stderr}")
+            raise RuntimeError(
+                f"Failed with status {result.returncode}: {result.stderr}"
+            )
     except subprocess.CalledProcessError as e:
         raise RuntimeError(f"Error executing curl: {e.stderr}")
 
-# Example usage
-# publish_data_update_with_curl("http://example.com", "/update", "your-token", src_url="http://data-source")
-
 
 def get_client_and_server_count(json_data):
-    """
-    Extracts the client_count and server_count from a given JSON string.
+    """Extracts the client_count and server_count from a given JSON string.
 
     Args:
         json_data (str): A JSON string containing the client and server counts.
@@ -430,11 +336,117 @@ def get_client_and_server_count(json_data):
     try:
         # Parse the JSON string
         data = json.loads(json_data)
-        
+
         # Extract client and server counts
         client_count = data.get("client_count", 0)
         server_count = data.get("server_count", 0)
-        
+
         return {"client_count": client_count, "server_count": server_count}
     except json.JSONDecodeError:
         raise ValueError("Invalid JSON input.")
+
+
+def install_opal_server_and_client():
+    print("- Installing opal-server and opal-client from pip...")
+
+    try:
+        # Install opal-server and opal-client
+        subprocess.run(
+            [sys.executable, "-m", "pip", "install", "opal-server", "opal-client"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=True,
+        )
+
+        # Verify installation
+        opal_server_installed = (
+            subprocess.run(
+                ["command", "-v", "opal-server"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            ).returncode
+            == 0
+        )
+
+        opal_client_installed = (
+            subprocess.run(
+                ["command", "-v", "opal-client"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            ).returncode
+            == 0
+        )
+
+        if not opal_server_installed or not opal_client_installed:
+            print("Installation failed: opal-server or opal-client is not available.")
+            sys.exit(1)
+
+        print("- opal-server and opal-client successfully installed.")
+
+    except subprocess.CalledProcessError:
+        print("Installation failed: pip command encountered an error.")
+        sys.exit(1)
+
+
+def export_env(varname, value):
+    """Exports an environment variable with a given value and updates the
+    current environment.
+
+    Args:
+        varname (str): The name of the environment variable to set.
+        value (str): The value to assign to the environment variable.
+
+    Returns:
+        str: The value assigned to the environment variable.
+
+    Side Effects:
+        Prints the export statement to the console and sets the environment variable.
+    """
+
+    print(f"export {varname}={value}")
+    os.environ[varname] = value
+
+    return value
+
+
+def remove_env(varname):
+    """Removes an environment variable from the current environment.
+
+    Args:
+        varname (str): The name of the environment variable to remove.
+
+    Returns:
+        None
+
+    Side Effects:
+        Prints the unset statement to the console and removes the environment variable.
+    """
+    print(f"unset {varname}")
+    del os.environ[varname]
+
+    return
+
+
+def create_localtunnel(port=8000):
+    try:
+        # Run the LocalTunnel command
+        process = subprocess.Popen(
+            ["lt", "--port", str(port)],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+
+        # Read output line by line
+        for line in iter(process.stdout.readline, ""):
+            # Match the public URL from LocalTunnel output
+            match = re.search(r"https://[a-z0-9\-]+\.loca\.lt", line)
+            if match:
+                public_url = match.group(0)
+                print(f"Public URL: {public_url}")
+                return public_url
+
+    except Exception as e:
+        print(f"Error starting LocalTunnel: {e}")
+
+    return None

@@ -1,20 +1,25 @@
-
 import os
+
 
 class PostgresBroadcastSettings:
     def __init__(
-        self, 
-        host, 
-        port, 
-        user, 
-        password, 
-        database):
-        
-        self.host = host
-        self.port = port
-        self.user = user
-        self.password = password
-        self.database = database
+        self,
+        container_name: str | None = None,
+        host: str | None = None,
+        port: int | None = None,
+        user: str | None = None,
+        password: str | None = None,
+        database: str | None = None,
+    ):
+        self.load_from_env()
+
+        self.container_name = container_name if container_name else self.container_name
+        self.host = host if host else self.host
+        self.port = port if port else self.port
+        self.user = user if user else self.user
+        self.password = password if password else self.password
+        self.database = database if database else self.database
+        self.protocol = "postgres"
 
         self.validate_dependencies()
 
@@ -30,19 +35,20 @@ class PostgresBroadcastSettings:
             raise ValueError("POSTGRES_PASSWORD is required.")
         if not self.database:
             raise ValueError("POSTGRES_DATABASE is required.")
-        
+
     def getEnvVars(self):
         return {
             "POSTGRES_HOST": self.host,
             "POSTGRES_PORT": self.port,
             "POSTGRES_USER": self.user,
             "POSTGRES_PASSWORD": self.password,
-            "POSTGRES_DATABASE": self.database
+            "POSTGRES_DATABASE": self.database,
         }
-    
+
     def load_from_env(self):
         self.host = os.getenv("POSTGRES_HOST", "localhost")
         self.port = int(os.getenv("POSTGRES_PORT", 5432))
         self.user = os.getenv("POSTGRES_USER", "postgres")
         self.password = os.getenv("POSTGRES_PASSWORD", "postgres")
         self.database = os.getenv("POSTGRES_DATABASE", "postgres")
+        self.container_name = os.getenv("POSTGRES_CONTAINER_NAME", "broadcast_channel")

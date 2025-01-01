@@ -1,20 +1,18 @@
 import debugpy
-import docker
-from testcontainers.postgres import PostgresContainer
-from testcontainers.core.network import Network
-
 from containers.permitContainer import PermitContainer
+from testcontainers.core.network import Network
+from testcontainers.kafka import KafkaContainer
+
+import docker
 
 
-class BroadcastContainer(PermitContainer, PostgresContainer):
+class KafkaBroadcastContainer(PermitContainer, KafkaContainer):
     def __init__(
         self,
         network: Network,
-        image: str = "postgres:alpine",
         docker_client_kw: dict | None = None,
         **kwargs,
     ) -> None:
-        
         # Add custom labels to the kwargs
         labels = kwargs.get("labels", {})
         labels.update({"com.docker.compose.project": "pytest"})
@@ -23,7 +21,7 @@ class BroadcastContainer(PermitContainer, PostgresContainer):
         self.network = network
 
         PermitContainer.__init__(self)
-        PostgresContainer.__init__(self, image=image, docker_client_kw=docker_client_kw, **kwargs)
+        KafkaContainer.__init__(self, docker_client_kw=docker_client_kw, **kwargs)
 
         self.with_network(self.network)
 

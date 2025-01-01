@@ -1,9 +1,11 @@
 import requests
-from testcontainers.core.generic import DockerContainer
-from testcontainers.core.utils import setup_logger
-from testcontainers.core.network import Network
-from tests.containers.settings.opal_server_settings import OpalServerSettings
 from containers.permitContainer import PermitContainer
+from testcontainers.core.generic import DockerContainer
+from testcontainers.core.network import Network
+from testcontainers.core.utils import setup_logger
+
+from tests.containers.settings.opal_server_settings import OpalServerSettings
+
 
 class OpalServerContainer(PermitContainer, DockerContainer):
     def __init__(
@@ -13,44 +15,44 @@ class OpalServerContainer(PermitContainer, DockerContainer):
         docker_client_kw: dict | None = None,
         **kwargs,
     ) -> None:
-        
         self.settings = settings
         self.network = network
 
         self.logger = setup_logger(__name__)
 
         PermitContainer.__init__(self)
-        DockerContainer.__init__(self, image=self.settings.image, docker_client_kw=docker_client_kw, **kwargs)
+        DockerContainer.__init__(
+            self, image=self.settings.image, docker_client_kw=docker_client_kw, **kwargs
+        )
 
         self.configure()
 
     def configure(self):
-      
         # Add environment variables individually
         for key, value in self.settings.getEnvVars().items():
             self.with_env(key, value)
 
         # Configure network and other settings
-        self \
-            .with_name(self.settings.container_name) \
-            .with_bind_ports(7002, self.settings.port) \
-            .with_network(self.network) \
-            .with_kwargs(labels={"com.docker.compose.project": "pytest"}) \
-            .with_network_aliases(self.settings.container_name) 
+        self.with_name(self.settings.container_name).with_bind_ports(
+            7002, self.settings.port
+        ).with_network(self.network).with_kwargs(
+            labels={"com.docker.compose.project": "pytest"}
+        ).with_network_aliases(
+            self.settings.container_name
+        )
 
         # Bind debug ports if enabled
-        if(self.settings.debugEnabled):
+        if self.settings.debugEnabled:
             self.with_bind_ports(5678, self.settings.debug_port)
 
     def reload_with_settings(self, settings: OpalServerSettings | None = None):
-        
         self.stop()
-        
+
         self.settings = settings if settings else self.settings
         self.configure()
 
         self.start()
-        
+
     def obtain_OPAL_tokens(self):
         """Fetch client and datasource tokens from the OPAL server."""
         token_url = f"http://localhost:{self.settings.port}/token"
@@ -63,7 +65,7 @@ class OpalServerContainer(PermitContainer, DockerContainer):
 
         for token_type in ["client", "datasource"]:
             try:
-                data = {"type": token_type}#).replace("'", "\"")
+                data = {"type": token_type}  # ).replace("'", "\"")
                 self.logger.info(f"Fetching OPAL {token_type} token...")
                 self.logger.info(f"url: {token_url}")
                 self.logger.info(f"headers: {headers}")
@@ -77,11 +79,13 @@ class OpalServerContainer(PermitContainer, DockerContainer):
                     tokens[token_type] = token
                     self.logger.info(f"Successfully fetched OPAL {token_type} token.")
                 else:
-                    self.logger.error(f"Failed to fetch OPAL {token_type} token: {response.json()}")
+                    self.logger.error(
+                        f"Failed to fetch OPAL {token_type} token: {response.json()}"
+                    )
 
             except requests.exceptions.RequestException as e:
-                self.logger.error(f"HTTP Request failed while fetching OPAL {token_type} token: {e}")
+                self.logger.error(
+                    f"HTTP Request failed while fetching OPAL {token_type} token: {e}"
+                )
 
         return tokens
-    
-    

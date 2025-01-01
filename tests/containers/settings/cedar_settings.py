@@ -3,7 +3,7 @@ import os
 from tests import utils
 
 
-class OpalClientSettings:
+class CedarSettings:
     def __init__(
         self,
         client_token: str = None,
@@ -12,6 +12,7 @@ class OpalClientSettings:
         opal_server_url: str = None,
         should_report_on_data_updates: str = None,
         log_format_include_pid: str = None,
+        inline_opa_log_format: str = None,
         tests_debug: bool = False,
         log_diagnose: str = None,
         log_level: str = None,
@@ -24,16 +25,6 @@ class OpalClientSettings:
         auth_jwt_audience: str = None,
         auth_jwt_issuer: str = None,
         statistics_enabled: str = None,
-        policy_store_type: str = None,
-        policy_store_url: str = None,
-        iniline_cedar_enabled: str = None,
-        inline_cedar_exec_path: str = None,
-        inline_cedar_config: str = None,
-        inline_cedar_log_format: str = None,
-        inline_opa_enabled: bool = None,
-        inline_opa_exec_path: str = None,
-        inline_opa_config: str = None,
-        inline_opa_log_format: str = None,
         container_index: int = 1,
         **kwargs
     ):
@@ -56,7 +47,11 @@ class OpalClientSettings:
             if log_format_include_pid
             else self.log_format_include_pid
         )
-
+        self.inline_opa_log_format = (
+            inline_opa_log_format
+            if inline_opa_log_format
+            else self.inline_opa_log_format
+        )
         self.tests_debug = tests_debug if tests_debug else self.tests_debug
         self.log_diagnose = log_diagnose if log_diagnose else self.log_diagnose
         self.log_level = log_level if log_level else self.log_level
@@ -87,51 +82,10 @@ class OpalClientSettings:
         self.debug_port = debug_port if debug_port else self.debug_port
         self.__dict__.update(kwargs)
 
-        self.policy_store_type = (
-            policy_store_type if policy_store_type else self.policy_store_type
-        )
-        self.policy_store_url = (
-            policy_store_url if policy_store_url else self.policy_store_url
-        )
-
         if self.container_index > 1:
             self.opa_port += self.container_index - 1
             # self.port += self.container_index - 1
             self.debug_port += self.container_index - 1
-
-        self.iniline_cedar_enabled = (
-            iniline_cedar_enabled
-            if iniline_cedar_enabled
-            else self.iniline_cedar_enabled
-        )
-        self.inline_cedar_exec_path = (
-            inline_cedar_exec_path
-            if inline_cedar_exec_path
-            else self.inline_cedar_exec_path
-        )
-        self.inline_cedar_config = (
-            inline_cedar_config if inline_cedar_config else self.inline_cedar_config
-        )
-        self.inline_cedar_log_format = (
-            inline_cedar_log_format
-            if inline_cedar_log_format
-            else self.inline_cedar_log_format
-        )
-
-        self.inline_opa_enabled = (
-            inline_opa_enabled if inline_opa_enabled else self.inline_opa_enabled
-        )
-        self.inline_opa_exec_path = (
-            inline_opa_exec_path if inline_opa_exec_path else self.inline_opa_exec_path
-        )
-        self.inline_opa_config = (
-            inline_opa_config if inline_opa_config else self.inline_opa_config
-        )
-        self.inline_opa_log_format = (
-            inline_opa_log_format
-            if inline_opa_log_format
-            else self.inline_opa_log_format
-        )
 
         self.validate_dependencies()
 
@@ -163,24 +117,6 @@ class OpalClientSettings:
             env_vars["LOG_DIAGNOSE"] = self.log_diagnose
             env_vars["OPAL_LOG_LEVEL"] = self.log_level
 
-        if self.policy_store_type:
-            env_vars["OPAL_POLICY_STORE_TYPE"] = self.policy_store_type
-
-        if self.policy_store_url:
-            env_vars["OPAL_POLICY_STORE_URL"] = self.policy_store_url
-
-        if self.iniline_cedar_enabled:
-            env_vars["OPAL_INILINE_CEDAR_ENABLED"] = self.iniline_cedar_enabled
-
-        if self.inline_cedar_exec_path:
-            env_vars["OPAL_INILINE_CEDAR_EXEC_PATH"] = self.inline_cedar_exec_path
-
-        if self.inline_cedar_config:
-            env_vars["OPAL_INILINE_CEDAR_CONFIG"] = self.inline_cedar_config
-
-        if self.inline_cedar_log_format:
-            env_vars["OPAL_INILINE_CEDAR_LOG_FORMAT"] = self.inline_cedar_log_format
-
         return env_vars
 
     def load_from_env(self):
@@ -193,6 +129,7 @@ class OpalClientSettings:
         self.log_diagnose = os.getenv("LOG_DIAGNOSE", "true")
         self.log_level = os.getenv("OPAL_LOG_LEVEL", "DEBUG")
         self.log_format_include_pid = os.getenv("OPAL_LOG_FORMAT_INCLUDE_PID", "true")
+        self.inline_opa_log_format = os.getenv("OPAL_INLINE_OPA_LOG_FORMAT", "http")
         self.should_report_on_data_updates = os.getenv(
             "OPAL_SHOULD_REPORT_ON_DATA_UPDATES", "true"
         )
@@ -208,22 +145,14 @@ class OpalClientSettings:
         self.statistics_enabled = os.getenv("OPAL_STATISTICS_ENABLED", "true")
         self.debug_enabled = os.getenv("OPAL_DEBUG_ENABLED", False)
         self.debug_port = os.getenv("CLIENT_DEBUG_PORT", 6678)
-        self.policy_store_url = os.getenv("OPAL_POLICY_STORE_URL", None)
 
-        self.policy_store_type = os.getenv("OPAL_POLICY_STORE_TYPE", "OPA")
+    # TODO: Clean up this code
+    # # Define environment variables for configuration
+    # ENV OPAL_POLICY_STORE_TYPE=CEDAR
+    # ENV OPAL_INLINE_CEDAR_ENABLED=true
+    # ENV OPAL_INLINE_CEDAR_EXEC_PATH=/cedar/cedar-agent
+    # ENV OPAL_INLINE_CEDAR_CONFIG='{"addr": "0.0.0.0:8180"}'
+    # ENV OPAL_POLICY_STORE_URL=http://localhost:8180
 
-        self.iniline_cedar_enabled = os.getenv("OPAL_INILINE_CEDAR_ENABLED", "false")
-        self.inline_cedar_exec_path = os.getenv(
-            "OPAL_INLINE_CEDAR_EXEC_PATH", "/cedar/cedar-agent"
-        )
-        self.inline_cedar_config = os.getenv(
-            "OPAL_INLINE_CEDAR_CONFIG", '{"addr": "0.0.0.0:8180"}'
-        )
-        self.inline_cedar_log_format = os.getenv("OPAL_INLINE_CEDAR_LOG_FORMAT", "http")
-
-        self.inline_opa_enabled = os.getenv("OPAL_INLINE_OPA_ENABLED", "true")
-        self.inline_opa_exec_path = os.getenv("OPAL_INLINE_OPA_EXEC_PATH", "/opa/opa")
-        self.inline_opa_config = os.getenv(
-            "OPAL_INLINE_OPA_CONFIG", '{"addr": "0.0.0.0:8181"}'
-        )
-        self.inline_opa_log_format = os.getenv("OPAL_INLINE_OPA_LOG_FORMAT", "http")
+    # # Expose Cedar agent port
+    # EXPOSE 8180

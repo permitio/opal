@@ -11,12 +11,12 @@
             }
         },
         "extensions":  [
-          "ms-python.python",           
-          "ms-python.vscode-pylance",   
-          "ms-azuretools.vscode-docker" 
+          "ms-python.python",
+          "ms-python.vscode-pylance",
+          "ms-azuretools.vscode-docker"
         ]
     },
-    "forwardPorts": [8000, 8181],   
+    "forwardPorts": [8000, 8181],
     "postCreateCommand": "pip install -r requirements.txt flake8 black && pytest",
     "remoteEnv": {
       "PYTHONPATH": "/workspace"

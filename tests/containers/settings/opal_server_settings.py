@@ -1,10 +1,11 @@
-
+import json
 import os
 from secrets import token_hex
 
 from testcontainers.core.utils import setup_logger
 
 from tests import utils
+
 
 class OpalServerSettings:
     def __init__(
@@ -31,11 +32,12 @@ class OpalServerSettings:
         policy_repo_main_branch: str = None,
         image: str = None,
         broadcast_uri: str = None,
+        webhook_secret: str = None,
+        webhook_params: str = None,
         container_index: int = 1,
-        **kwargs):
-    
-        """
-        Initialize the OPAL Server with the provided parameters.
+        **kwargs,
+    ):
+        """Initialize the OPAL Server with the provided parameters.
 
         :param image: Docker image for the OPAL server.
         :param container_name: Name of the Docker container.
@@ -43,7 +45,8 @@ class OpalServerSettings:
         :param port: Exposed port for the OPAL server.
         :param uvicorn_workers: Number of Uvicorn workers.
         :param policy_repo_url: URL of the policy repository.
-        :param polling_interval: Polling interval for the policy repository.
+        :param polling_interval: Polling interval for the policy
+            repository.
         :param private_key: SSH private key for authentication.
         :param public_key: SSH public key for authentication.
         :param master_token: Master token for OPAL authentication.
@@ -54,16 +57,23 @@ class OpalServerSettings:
         :param tests_debug: Optional flag for tests debug mode.
         :param log_diagnose: Optional flag for log diagnosis.
         :param log_level: Optional log level for the OPAL server.
-        :param log_format_include_pid: Optional flag for including PID in log format.
-        :param statistics_enabled: Optional flag for enabling statistics.
-        :param debug_enabled: Optional flag for enabling debug mode with debugpy.
+        :param log_format_include_pid: Optional flag for including PID
+            in log format.
+        :param statistics_enabled: Optional flag for enabling
+            statistics.
+        :param debug_enabled: Optional flag for enabling debug mode with
+            debugpy.
         :param debug_port: Optional port for debugpy.
-        :param auth_private_key_passphrase: Optional passphrase for the private key.
-        :param policy_repo_main_branch: Optional main branch for the policy repository.
+        :param auth_private_key_passphrase: Optional passphrase for the
+            private key.
+        :param policy_repo_main_branch: Optional main branch for the
+            policy repository.
+        :param webhook_secret: Optional secret for the webhook.
+        :param webhook_params: Optional parameters for the webhook.
         :param container_index: Optional index for the container.
         :param kwargs: Additional keyword arguments.
         """
-        
+
         self.logger = setup_logger(__name__)
 
         self.load_from_env()
@@ -71,9 +81,15 @@ class OpalServerSettings:
         self.image = image if image else self.image
         self.container_name = container_name if container_name else self.container_name
         self.port = port if port else self.port
-        self.uvicorn_workers = uvicorn_workers if uvicorn_workers else self.uvicorn_workers
-        self.policy_repo_url = policy_repo_url if policy_repo_url else self.policy_repo_url
-        self.polling_interval = polling_interval if polling_interval else self.polling_interval
+        self.uvicorn_workers = (
+            uvicorn_workers if uvicorn_workers else self.uvicorn_workers
+        )
+        self.policy_repo_url = (
+            policy_repo_url if policy_repo_url else self.policy_repo_url
+        )
+        self.polling_interval = (
+            polling_interval if polling_interval else self.polling_interval
+        )
         self.private_key = private_key if private_key else self.private_key
         self.public_key = public_key if public_key else self.public_key
         self.master_token = master_token if master_token else self.master_token
@@ -84,21 +100,41 @@ class OpalServerSettings:
         self.tests_debug = tests_debug if tests_debug else self.tests_debug
         self.log_diagnose = log_diagnose if log_diagnose else self.log_diagnose
         self.log_level = log_level if log_level else self.log_level
-        self.log_format_include_pid = log_format_include_pid if log_format_include_pid else self.log_format_include_pid
-        self.statistics_enabled = statistics_enabled if statistics_enabled else self.statistics_enabled
+        self.log_format_include_pid = (
+            log_format_include_pid
+            if log_format_include_pid
+            else self.log_format_include_pid
+        )
+        self.statistics_enabled = (
+            statistics_enabled if statistics_enabled else self.statistics_enabled
+        )
         self.debugEnabled = debug_enabled if debug_enabled else self.debugEnabled
         self.debug_port = debug_port if debug_port else self.debug_port
-        self.auth_private_key_passphrase = auth_private_key_passphrase if auth_private_key_passphrase else self.auth_private_key_passphrase
-        self.policy_repo_main_branch = policy_repo_main_branch if policy_repo_main_branch else self.policy_repo_main_branch
-        self.container_index = container_index if container_index else self.container_index
+        self.auth_private_key_passphrase = (
+            auth_private_key_passphrase
+            if auth_private_key_passphrase
+            else self.auth_private_key_passphrase
+        )
+        self.policy_repo_main_branch = (
+            policy_repo_main_branch
+            if policy_repo_main_branch
+            else self.policy_repo_main_branch
+        )
+        self.container_index = (
+            container_index if container_index else self.container_index
+        )
+
+        self.webhook_secret = webhook_secret if webhook_secret else self.webhook_secret
+        self.webhook_params = webhook_params if webhook_params else self.webhook_params
+
         self.__dict__.update(kwargs)
 
-        if(container_index > 1):
+        if container_index > 1:
             self.port = self.port + container_index - 1
             self.debug_port = self.debug_port + container_index - 1
-    
+
         self.validate_dependencies()
-    
+
     def validate_dependencies(self):
         """Validate required dependencies before starting the server."""
         if not self.policy_repo_url:
@@ -108,11 +144,10 @@ class OpalServerSettings:
         if not self.master_token:
             raise ValueError("OPAL master token is required.")
         self.logger.info("Dependencies validated successfully.")
-        
+
     def getEnvVars(self):
-               
         # Configure environment variables
-        
+
         env_vars = {
             "UVICORN_NUM_WORKERS": self.uvicorn_workers,
             "OPAL_POLICY_REPO_URL": self.policy_repo_url,
@@ -122,26 +157,29 @@ class OpalServerSettings:
             "OPAL_AUTH_PUBLIC_KEY": self.public_key,
             "OPAL_AUTH_MASTER_TOKEN": self.master_token,
             "OPAL_DATA_CONFIG_SOURCES": f"""{{"config":{{"entries":[{{"url":"http://{self.container_name}:7002/policy-data","topics":["{self.data_topics}"],"dst_path":"/static"}}]}}}}""",
-            "OPAL_LOG_FORMAT_INCLUDE_PID": self.log_format_include_pid, 
-            "OPAL_STATISTICS_ENABLED": self.statistics_enabled, 
+            "OPAL_LOG_FORMAT_INCLUDE_PID": self.log_format_include_pid,
+            "OPAL_STATISTICS_ENABLED": self.statistics_enabled,
             "OPAL_AUTH_JWT_AUDIENCE": self.auth_audience,
             "OPAL_AUTH_JWT_ISSUER": self.auth_issuer,
+            "OPAL_WEBHOOK_SECRET": self.webhook_secret,
+            "OPAL_WEBHOOK_PARAMS": self.webhook_params,
         }
 
-        if(self.tests_debug):
+        if self.tests_debug:
             env_vars["LOG_DIAGNOSE"] = self.log_diagnose
             env_vars["OPAL_LOG_LEVEL"] = self.log_level
 
-        if(self.auth_private_key_passphrase):
-            env_vars["OPAL_AUTH_PRIVATE_KEY_PASSPHRASE"] = self.auth_private_key_passphrase
+        if self.auth_private_key_passphrase:
+            env_vars[
+                "OPAL_AUTH_PRIVATE_KEY_PASSPHRASE"
+            ] = self.auth_private_key_passphrase
 
         if self.broadcast_uri:
             env_vars["OPAL_BROADCAST_URI"] = self.broadcast_uri
 
         return env_vars
-    
-    def load_from_env(self):
 
+    def load_from_env(self):
         self.image = os.getenv("OPAL_SERVER_IMAGE", "opal_server_debug_local")
         self.container_name = os.getenv("OPAL_SERVER_CONTAINER_NAME", None)
         self.port = os.getenv("OPAL_SERVER_PORT", utils.find_available_port(7002))
@@ -153,17 +191,38 @@ class OpalServerSettings:
         self.master_token = os.getenv("OPAL_AUTH_MASTER_TOKEN", token_hex(16))
         self.data_topics = os.getenv("OPAL_DATA_TOPICS", "policy_data")
         self.broadcast_uri = os.getenv("OPAL_BROADCAST_URI", None)
-        self.auth_audience = os.getenv("OPAL_AUTH_JWT_AUDIENCE", "https://api.opal.ac/v1/")        
+        self.auth_audience = os.getenv(
+            "OPAL_AUTH_JWT_AUDIENCE", "https://api.opal.ac/v1/"
+        )
         self.auth_issuer = os.getenv("OPAL_AUTH_JWT_ISSUER", "https://opal.ac/")
-        self.tests_debug = os.getenv("OPAL_TESTS_DEBUG", "true")        
-        self.log_diagnose = os.getenv("LOG_DIAGNOSE", "true")        
-        self.log_level = os.getenv("OPAL_LOG_LEVEL", "DEBUG")     
-        self.log_format_include_pid = os.getenv("OPAL_LOG_FORMAT_INCLUDE_PID", "true")    
+        self.tests_debug = os.getenv("OPAL_TESTS_DEBUG", "true")
+        self.log_diagnose = os.getenv("LOG_DIAGNOSE", "true")
+        self.log_level = os.getenv("OPAL_LOG_LEVEL", "DEBUG")
+        self.log_format_include_pid = os.getenv("OPAL_LOG_FORMAT_INCLUDE_PID", "true")
         self.statistics_enabled = os.getenv("OPAL_STATISTICS_ENABLED", "true")
-        self.debugEnabled = os.getenv("OPAL_DEBUG_ENABLED", "false")        
-        self.auth_private_key_passphrase = os.getenv("OPAL_AUTH_PRIVATE_KEY_PASSPHRASE", None)        
-        self.policy_repo_main_branch = os.getenv("OPAL_POLICY_REPO_MAIN_BRANCH", "master")  
-        self.debug_port = os.getenv("SERVER_DEBUG_PORT", utils.find_available_port(5678))
+        self.debugEnabled = os.getenv("OPAL_DEBUG_ENABLED", "false")
+        self.auth_private_key_passphrase = os.getenv(
+            "OPAL_AUTH_PRIVATE_KEY_PASSPHRASE", None
+        )
+        self.policy_repo_main_branch = os.getenv(
+            "OPAL_POLICY_REPO_MAIN_BRANCH", "master"
+        )
+        self.debug_port = os.getenv(
+            "SERVER_DEBUG_PORT", utils.find_available_port(5678)
+        )
+        self.webhook_secret = os.getenv("OPAL_POLICY_REPO_WEBHOOK_SECRET", "P3rm1t10")
+        self.webhook_params = os.getenv(
+            "OPAL_POLICY_REPO_WEBHOOK_PARAMS",
+            json.dumps(
+                {
+                    "secret_header_name": "x-webhook-token",
+                    "secret_type": "token",
+                    "secret_parsing_regex": "(.*)",
+                    "event_request_key": "gitEvent",
+                    "push_event_value": "git.push",
+                }
+            ),
+        )
 
         if not self.private_key or not self.public_key:
-            self.private_key, self.public_key = utils.generate_ssh_key_pair() 
+            self.private_key, self.public_key = utils.generate_ssh_key_pair()

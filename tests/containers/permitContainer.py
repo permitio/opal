@@ -1,28 +1,32 @@
 import re
 import time
 from datetime import datetime
+
 from testcontainers.core.utils import setup_logger
 
 
-class PermitContainer():
+class PermitContainer:
     def __init__(self):
         self.permitLogger = setup_logger(__name__)
 
         # Regex to match any ANSI-escaped timestamp in the format YYYY-MM-DDTHH:MM:SS.mmmmmm+0000
-        self.timestamp_with_ansi = r"\x1b\[.*?(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}\+\d{4})"
+        self.timestamp_with_ansi = (
+            r"\x1b\[.*?(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}\+\d{4})"
+        )
         self.errors = []
-        #self.check_errors()
+        # self.check_errors()
 
+    def wait_for_log(
+        self, log_str: str, timeout: int, reference_timestamp: datetime | None = None
+    ):
+        """Wait for a specific log to appear in the container logs after the
+        reference timestamp.
 
-    def wait_for_log(self, log_str: str, timeout: int, reference_timestamp: datetime | None = None):
-        """
-        Wait for a specific log to appear in the container logs after the reference timestamp.
-        
         Args:
             reference_timestamp (datetime): The timestamp to start checking logs from.
             log_str (str): The string to search for in the logs.
             timeout (int): Maximum time to wait for the log (in seconds).
-            
+
         Returns:
             bool: True if the log was found, False if the timeout was reached.
         """
@@ -47,10 +51,14 @@ class PermitContainer():
             match = re.search(self.timestamp_with_ansi, decoded_line)
             if match:
                 log_timestamp_string = match.group(1)
-                log_timestamp = datetime.strptime(log_timestamp_string, "%Y-%m-%dT%H:%M:%S.%f%z")
-                
-                if (reference_timestamp is None) or (log_timestamp > reference_timestamp):
-                    #self.permitLogger.info(f"Checking log line: {decoded_line}")
+                log_timestamp = datetime.strptime(
+                    log_timestamp_string, "%Y-%m-%dT%H:%M:%S.%f%z"
+                )
+
+                if (reference_timestamp is None) or (
+                    log_timestamp > reference_timestamp
+                ):
+                    # self.permitLogger.info(f"Checking log line: {decoded_line}")
                     if log_str in decoded_line:
                         log_found = True
                         self.permitLogger.info("Log found!")
@@ -58,15 +66,17 @@ class PermitContainer():
 
         return log_found
 
-    def wait_for_error(self, reference_timestamp: datetime, error_str: str = "Error", timeout: int = 30):
-        """
-        Wait for a specific log to appear in the container logs after the reference timestamp.
-        
+    def wait_for_error(
+        self, reference_timestamp: datetime, error_str: str = "Error", timeout: int = 30
+    ):
+        """Wait for a specific log to appear in the container logs after the
+        reference timestamp.
+
         Args:
             reference_timestamp (datetime): The timestamp to start checking logs from.
             log_str (str): The string to search for in the logs.
             timeout (int): Maximum time to wait for the log (in seconds).
-            
+
         Returns:
             bool: True if the log was found, False if the timeout was reached.
         """
@@ -91,8 +101,10 @@ class PermitContainer():
             match = re.search(self.timestamp_with_ansi, decoded_line)
             if match:
                 log_timestamp_string = match.group(1)
-                log_timestamp = datetime.strptime(log_timestamp_string, "%Y-%m-%dT%H:%M:%S.%f%z")
-                
+                log_timestamp = datetime.strptime(
+                    log_timestamp_string, "%Y-%m-%dT%H:%M:%S.%f%z"
+                )
+
                 if log_timestamp > reference_timestamp:
                     self.permitLogger.info(f"Checking log line: {decoded_line}")
                     if error_str in decoded_line:
@@ -104,7 +116,6 @@ class PermitContainer():
                         self.permitLogger.info("err found!")
                         break
         return err_found
-
 
     async def check_errors(self):
         # Stream logs from the opal_client container

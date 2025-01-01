@@ -6,7 +6,7 @@ from testcontainers.core.utils import setup_logger
 from tests.containers.settings.opal_client_settings import OpalClientSettings
 
 
-class OpalClientContainer(PermitContainer, DockerContainer):
+class OpaContainer(PermitContainer, DockerContainer):
     def __init__(
         self,
         settings: OpalClientSettings,

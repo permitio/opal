@@ -3,13 +3,13 @@ from testcontainers.core.generic import DockerContainer
 from testcontainers.core.network import Network
 from testcontainers.core.utils import setup_logger
 
-from tests.containers.settings.opal_client_settings import OpalClientSettings
+from tests.containers.settings.cedar_settings import CedarSettings
 
 
-class OpalClientContainer(PermitContainer, DockerContainer):
+class CedarContainer(PermitContainer, DockerContainer):
     def __init__(
         self,
-        settings: OpalClientSettings,
+        settings: CedarSettings,
         network: Network,
         docker_client_kw: dict | None = None,
         **kwargs,
