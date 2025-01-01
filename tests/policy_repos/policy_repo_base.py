@@ -7,5 +7,13 @@ class PolicyRepoBase(ABC):
         pass
 
     @abstractmethod
+    def setup(self) -> None:
+        pass
+
+    @abstractmethod
+    def cleanup(self) -> None:
+        pass
+
+    @abstractmethod
     def update_branch(self, file_name, file_content) -> None:
         pass
