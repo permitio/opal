@@ -168,7 +168,7 @@ def policy_repo(gitea_settings: GiteaSettings, request) -> PolicyRepoBase:
 
     policy_repo = PolicyRepoFactory(
         pytest_settings.policy_repo_provider
-    ).get_policy_repo()
+    ).get_policy_repo(temp_dir)
     policy_repo.setup(gitea_settings)
     return policy_repo
 

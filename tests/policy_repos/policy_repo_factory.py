@@ -19,14 +19,14 @@ class PolicyRepoFactory:
 
         self.policy_repo = policy_repo
 
-    def get_policy_repo(self) -> PolicyRepoBase:
+    def get_policy_repo(self, temp_dir: str) -> PolicyRepoBase:
         factory = {
             SupportedPolicyRepo.GITEA: GiteaPolicyRepo,
             SupportedPolicyRepo.GITHUB: GithubPolicyRepo,
             SupportedPolicyRepo.GITLAB: GitlabPolicyRepo,
         }
 
-        return factory[SupportedPolicyRepo(self.policy_repo)]()
+        return factory[SupportedPolicyRepo(self.policy_repo)](temp_dir)
 
     def assert_exists(self, policy_repo: str) -> bool:
         try:

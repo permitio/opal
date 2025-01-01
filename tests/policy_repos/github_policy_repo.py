@@ -42,7 +42,7 @@ class GithubPolicyRepo:
         self.ssh_key_name = "OPAL_PYTEST"
 
         self.owner = owner if owner else self.owner
-        self.password = password if password else self.password
+        self.password = password
         self.github_pat = github_pat if github_pat else self.github_pat
         self.repo = repo if repo else self.repo
 
@@ -59,6 +59,9 @@ class GithubPolicyRepo:
         self.webhook_secret = webhook_secret if webhook_secret else self.webhook_secret
         self.webhook_host = webhook_host if webhook_host else self.webhook_host
         self.webhook_port = webhook_port if webhook_port else self.webhook_port
+
+        if not self.password and not self.github_pat and not self.ssh_key_path:
+            print("No password or Github PAT or SSH key provided.")
 
         self.load_ssh_key()
 
