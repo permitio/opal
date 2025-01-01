@@ -116,7 +116,7 @@ class GithubPolicyRepo(PolicyRepoBase):
 
         if self.protocol == "https":
             if self.github_pat:
-                return f"https://{self.owner}:{self.github_pat}@{self.host}/{self.owner}/{self.repo}.git"
+                return f"https://{self.host}/{self.owner}/{self.repo}.git"
 
         if self.password is None and self.github_pat is None and self.ssh_key is None:
             raise Exception("No authentication method set")
