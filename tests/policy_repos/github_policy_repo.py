@@ -39,6 +39,7 @@ class GithubPolicyRepo:
         self.host = "github.com"
         self.port = 22
         self.temp_dir = temp_dir
+        self.ssh_key_name = "OPAL_PYTEST"
 
         self.owner = owner if owner else self.owner
         self.password = password if password else self.password
@@ -229,10 +230,41 @@ class GithubPolicyRepo:
         except subprocess.CalledProcessError as e:
             print(f"Git command failed: {e}")
 
-    def prepare_policy_repo(self):
-        # Remove any existing repo directory
+    def cleanup(self, delete_repo=True, delete_ssh_key=True):
         subprocess.run(["rm", "-rf", "./opal-example-policy-repo"], check=True)
 
+        self.delete_test_branches()
+
+        if delete_repo:
+            self.delete_repo()
+
+        if delete_ssh_key:
+            self.delete_ssh_key()
+
+    def delete_ssh_key(self):
+        gh = Github(self.ssh_key)
+        user = gh.get_user()
+        keys = user.get_keys()
+        for key in keys:
+            if key.title == self.ssh_key_name:
+                key.delete()
+                print(f"SSH key deleted: {key.title}")
+                break
+
+        print("All OPAL SSH keys have been deleted successfully.")
+
+        return
+
+    def delete_repo(self):
+        try:
+            gh = Github(self.ssh_key)
+            repo = gh.get_repo(self.repo_name)
+            repo.delete()
+            print(f"Repository {self.repo_name} deleted successfully.")
+        except Exception as e:
+            print(f"Error deleting repository: {e}")
+
+    def prepare_policy_repo(self):
         self.clone_initial_repo()
 
         if self.should_fork:
@@ -248,10 +280,10 @@ class GithubPolicyRepo:
         user = gh.get_user()
         keys = user.get_keys()
         for key in keys:
-            if key.title == "OPAL":
+            if key.title == self.ssh_key_name:
                 return
 
-        key = user.create_key("OPAL", self.ssh_key)
+        key = user.create_key(self.ssh_key_name, self.ssh_key)
         print(f"SSH key added: {key.title}")
 
     def create_webhook(self):
@@ -270,78 +302,54 @@ class GithubPolicyRepo:
         )
         print("Webhook created successfully.")
 
-    def clone_and_update(
-        self,
-        branch,
-        file_name,
-        file_content,
-        CLONE_DIR,
-        authenticated_url,
-        COMMIT_MESSAGE,
-    ):
-        """Clone the repository, update the specified branch, and push
-        changes."""
-        self.prepare_directory(CLONE_DIR)  # Clean up and prepare the directory
-        print(f"Processing branch: {branch}")
-
-        # Clone the repository for the specified branch
-        print(f"Cloning branch {branch}...")
-        repo = Repo.clone_from(authenticated_url, CLONE_DIR, branch=branch)
-
-        # Create or update the specified file with the provided content
-        file_path = os.path.join(CLONE_DIR, file_name)
-        with open(file_path, "w") as f:
-            f.write(file_content)
-
-        # Stage the changes
-        print(f"Staging changes for branch {branch}...")
-        repo.git.add(A=True)  # Add all changes
-
-        # Commit the changes if there are modifications
-        if repo.is_dirty():
-            print(f"Committing changes for branch {branch}...")
-            repo.index.commit(COMMIT_MESSAGE)
-            repo.git.push("origin", branch)
-
-        # Clean up the cloned repository
-        print(f"Cleaning up branch {branch}...")
-        shutil.rmtree(CLONE_DIR)
-
-        print(f"Branch {branch} processed successfully.")
-
-    def update_branch(self, branch, file_name, file_content):
-        temp_dir = self.settings.temp_dir
-
+    def update_branch(self, file_name, file_content):
         self.logger.info(
-            f"Updating branch '{branch}' with file '{file_name}' content..."
+            f"Updating branch '{self.test_branch}' with file '{file_name}' content..."
         )
 
         # Decode escape sequences in the file content
-        file_content = codecs.decode(file_content, "unicode_escape")
+        if file_content is not None:
+            file_content = codecs.decode(file_content, "unicode_escape")
 
-        GITHUB_REPO_URL = (
-            f"https://github.com/{self.settings.username}/{self.settings.repo_name}.git"
-        )
-        username = self.settings.username
-        PASSWORD = self.settings.password
-        CLONE_DIR = os.path.join(temp_dir, "branch_update")
-        COMMIT_MESSAGE = "Automated update commit"
+            # Create or update the specified file with the provided content
+            file_path = os.path.join(self.local_repo_path, file_name)
+            with open(file_path, "w") as f:
+                f.write(file_content)
 
-        # Append credentials to the repository URL
-        authenticated_url = GITHUB_REPO_URL.replace(
-            "https://", f"https://{username}:{PASSWORD}@"
-        )
+        if file_content is None:
+            with open(file_path, "r") as f:
+                file_content = f.read()
 
         try:
-            self.clone_and_update(
-                branch,
-                file_name,
-                file_content,
-                CLONE_DIR,
-                authenticated_url,
-                COMMIT_MESSAGE,
+            # Stage the changes
+            print(f"Staging changes for branch {self.test_branch}...")
+            gh = Github(self.ssh_key)
+            repo = gh.get_repo(self.repo_name)
+            branch_ref = f"heads/{self.test_branch}"
+            ref = repo.get_git_ref(branch_ref)
+            latest_commit = repo.get_git_commit(ref.object.sha)
+            base_tree = latest_commit.commit.tree
+            new_tree = repo.create_git_tree(
+                [
+                    {
+                        "path": file_name,
+                        "mode": "100644",
+                        "type": "blob",
+                        "content": file_content,
+                    }
+                ],
+                base_tree,
             )
+            new_commit = repo.create_git_commit(
+                f"Commit changes for branch {self.test_branch}",
+                new_tree,
+                [latest_commit],
+            )
+            ref.edit(new_commit.sha)
+            print(f"Changes pushed for branch {self.test_branch}.")
+
         except Exception as e:
             self.logger.error(f"Error updating branch: {e}")
             return False
+
         return True
