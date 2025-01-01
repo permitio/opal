@@ -364,7 +364,7 @@ def install_opal_server_and_client():
                 ["opal-server"],
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
-                shell=True
+                shell=True,
             ).returncode
             == 0
         )
@@ -374,7 +374,7 @@ def install_opal_server_and_client():
                 ["opal-client"],
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
-                shell=True
+                shell=True,
             ).returncode
             == 0
         )
@@ -438,8 +438,6 @@ def create_localtunnel(port=8000):
             stderr=subprocess.PIPE,
             text=True,
         )
-
-        print("\na: {proccess.stdout}\n")
 
         # Read output line by line
         for line in iter(process.stdout.readline, ""):

@@ -36,6 +36,7 @@ class TestSettings:
         )
         self.webhook_secret = os.getenv("OPAL_PYTEST_WEBHOOK_SECRET", "xxxxx")
         self.should_fork = os.getenv("OPAL_PYTEST_SHOULD_FORK", "true")
+        self.use_webhook = os.getenv("OPAL_PYTEST_USE_WEBHOOK", "true")
 
     def dump_settings(self):
         with open(f"pytest_{self.session_id}.env", "w") as envfile:

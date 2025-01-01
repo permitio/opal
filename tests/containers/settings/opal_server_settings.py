@@ -164,7 +164,7 @@ class OpalServerSettings:
             "OPAL_AUTH_JWT_ISSUER": self.auth_issuer,
         }
 
-        if pytest_settings.useWebhook:
+        if pytest_settings.use_webhook:
             env_vars["OPAL_WEBHOOK_SECRET"] = self.webhook_secret
             env_vars["OPAL_WEBHOOK_PARAMS"] = self.webhook_params
 
