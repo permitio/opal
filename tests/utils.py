@@ -361,18 +361,20 @@ def install_opal_server_and_client():
         # Verify installation
         opal_server_installed = (
             subprocess.run(
-                ["command", "-v", "opal-server"],
+                ["opal-server"],
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
+                shell=True
             ).returncode
             == 0
         )
 
         opal_client_installed = (
             subprocess.run(
-                ["command", "-v", "opal-client"],
+                ["opal-client"],
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
+                shell=True
             ).returncode
             == 0
         )
