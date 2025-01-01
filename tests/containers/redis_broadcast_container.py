@@ -1,9 +1,7 @@
-import debugpy
-from containers.permitContainer import PermitContainer
 from testcontainers.core.network import Network
 from testcontainers.redis import RedisContainer
 
-import docker
+from tests.containers.permitContainer import PermitContainer
 
 
 class RedisBroadcastContainer(PermitContainer, RedisContainer):

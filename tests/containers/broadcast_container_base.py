@@ -1,4 +1,4 @@
-from containers.permitContainer import PermitContainer
+from tests.containers.permitContainer import PermitContainer
 
 
 class BroadcastContainerBase(PermitContainer):

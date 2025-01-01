@@ -1,8 +1,8 @@
-from containers.permitContainer import PermitContainer
 from testcontainers.core.generic import DockerContainer
 from testcontainers.core.network import Network
 from testcontainers.core.utils import setup_logger
 
+from tests.containers.permitContainer import PermitContainer
 from tests.containers.settings.cedar_settings import CedarSettings
 
 
@@ -40,7 +40,7 @@ class CedarContainer(PermitContainer, DockerContainer):
         if self.settings.debug_enabled:
             self.with_bind_ports(5678, self.settings.debug_port)
 
-    def reload_with_settings(self, settings: OpalClientSettings | None = None):
+    def reload_with_settings(self, settings: CedarSettings | None = None):
         self.stop()
 
         self.settings = settings if settings else self.settings

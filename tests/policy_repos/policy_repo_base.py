@@ -7,8 +7,9 @@ class PolicyRepoBase(ABC):
         pass
 
     @abstractmethod
-    def setup_webhooks(self, host, port):
+    def setup_webhook(self, host, port):
         pass
+
     @abstractmethod
     def setup(self) -> None:
         pass

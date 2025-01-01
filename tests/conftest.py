@@ -15,12 +15,15 @@ from testcontainers.core.waiting_utils import wait_for_logs
 import docker
 from tests import utils
 from tests.containers.broadcast_container_base import BroadcastContainerBase
+from tests.containers.cedar_container import CedarContainer
 from tests.containers.gitea_container import GiteaContainer
 from tests.containers.kafka_broadcast_container import KafkaBroadcastContainer
+from tests.containers.opa_container import OpaContainer
 from tests.containers.opal_client_container import OpalClientContainer
 from tests.containers.opal_server_container import OpalServerContainer
 from tests.containers.postgres_broadcast_container import PostgresBroadcastContainer
 from tests.containers.redis_broadcast_container import RedisBroadcastContainer
+from tests.containers.settings.cedar_settings import CedarSettings
 from tests.containers.settings.gitea_settings import GiteaSettings
 from tests.containers.settings.opal_client_settings import OpalClientSettings
 from tests.containers.settings.opal_server_settings import OpalServerSettings
@@ -170,7 +173,20 @@ def policy_repo(
 
     policy_repo = PolicyRepoFactory(
         pytest_settings.policy_repo_provider
-    ).get_policy_repo(temp_dir, "1", "2", "3", "4", "5", "6", "7", True, "8")
+    ).get_policy_repo(
+        temp_dir,
+        pytest_settings.repo_owner,
+        pytest_settings.repo_name,
+        pytest_settings.repo_password,
+        pytest_settings.github_pat,
+        pytest_settings.ssh_key_path,
+        pytest_settings.source_repo_owner,
+        pytest_settings.source_repo_name,
+        True,
+        pytest_settings.webhook_secret,
+        logger,
+    )
+
     policy_repo.setup()
     return policy_repo
 
@@ -229,18 +245,59 @@ def opal_server(
 
         container.start()
         container.get_wrapped_container().reload()
-        policy_repo.setup_webhooks(container.get_container_host_ip() ,container.settings.port)
-        policy_repo.create_webhook()
+
+        if i == 0:
+            # Only the first server should setup the webhook
+            policy_repo.setup_webhook(
+                container.get_container_host_ip(), container.settings.port
+            )
+            policy_repo.create_webhook()
+
         print(
             f"Started container: {container_name}, ID: {container.get_wrapped_container().id}"
         )
         container.wait_for_log("Clone succeeded", timeout=30)
         containers.append(container)
 
-
     yield containers
 
     for container in containers:
+        container.stop()
+
+
+@pytest.fixture(scope="session")
+def opa_server(opal_network: Network):
+    with OpaContainer(
+        settings=OpalClientSettings(
+            container_name="opa_server",
+            image="openpolicyagent/opa:latest",
+            port=8181,
+        ),
+        network=opal_network,
+    ) as container:
+        assert container.wait_for_log(
+            log_str="Server started", timeout=30
+        ), "OPA server did not start."
+        yield container
+
+        container.stop()
+
+
+@pytest.fixture(scope="session")
+def cedar_server(opal_network: Network):
+    with CedarContainer(
+        settings=CedarSettings(
+            container_name="cedar_server",
+            image="permitio/cedar:latest",
+            port=8181,
+        ),
+        network=opal_network,
+    ) as container:
+        assert container.wait_for_log(
+            log_str="Server started", timeout=30
+        ), "CEDAR server did not start."
+        yield container
+
         container.stop()
 
 
@@ -262,6 +319,8 @@ def connected_clients(opal_client: List[OpalClientContainer]):
 def opal_client(
     opal_network: Network,
     opal_server: List[OpalServerContainer],
+    opa_server: OpaContainer,
+    cedar_server: CedarContainer,
     request,
     number_of_opal_clients: int,
 ):

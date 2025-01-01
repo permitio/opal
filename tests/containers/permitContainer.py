@@ -34,8 +34,6 @@ class PermitContainer:
         log_found = False
         logs = self._container.logs(stream=True)
 
-        self.permitLogger.info("Streaming container logs...")
-
         start_time = time.time()  # Record the start time
 
         for line in logs:
@@ -58,10 +56,8 @@ class PermitContainer:
                 if (reference_timestamp is None) or (
                     log_timestamp > reference_timestamp
                 ):
-                    # self.permitLogger.info(f"Checking log line: {decoded_line}")
                     if log_str in decoded_line:
                         log_found = True
-                        self.permitLogger.info("Log found!")
                         break
 
         return log_found
@@ -83,8 +79,6 @@ class PermitContainer:
         # Stream logs from the opal_client container
         err_found = False
         logs = self._container.logs(stream=True)
-
-        self.permitLogger.info("Streaming container logs...")
 
         start_time = time.time()  # Record the start time
 
@@ -123,7 +117,6 @@ class PermitContainer:
 
         log_str = "ERROR"
 
-        self.permitLogger.info("Streaming container logs...")
         for line in logs:
             decoded_line = line.decode("utf-8").strip()
             self.permitLogger.info(f"Checking log line: {decoded_line}")

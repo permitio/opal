@@ -4,13 +4,13 @@ import shutil
 import time
 
 import requests
-from containers.permitContainer import PermitContainer
 from git import GitCommandError, Repo
 from testcontainers.core.generic import DockerContainer
 from testcontainers.core.network import Network
 from testcontainers.core.utils import setup_logger
 
 import docker
+from tests.containers.permitContainer import PermitContainer
 from tests.containers.settings.gitea_settings import GiteaSettings
 
 

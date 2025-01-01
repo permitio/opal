@@ -8,6 +8,7 @@ import requests
 from testcontainers.core.utils import setup_logger
 
 from tests import utils
+from tests.containers.broadcast_container_base import BroadcastContainerBase
 from tests.containers.gitea_container import GiteaContainer
 from tests.containers.opal_client_container import OpalClientContainer, PermitContainer
 from tests.containers.opal_server_container import OpalServerContainer
@@ -270,14 +271,68 @@ async def test_policy_update(
 
 # TODO: Add more tests
 def test_with_statistics_disabled(opal_server: list[OpalServerContainer]):
-    assert True
+    assert False
 
 
 def test_with_uvicorn_workers_and_no_broadcast_channel(
     opal_server: list[OpalServerContainer],
 ):
-    assert True
+    assert False
 
 
 def test_two_servers_one_worker(opal_server: list[OpalServerContainer]):
-    assert True
+    assert False
+
+
+def test_switch_to_kafka_broadcast_channel(
+    broadcast_channel: BroadcastContainerBase,
+    opal_servers: list[OpalServerContainer],
+    request,
+):
+    broadcast_channel.shutdown()
+
+    kafka_broadcaster = request.getfixturevalue("kafka_broadcast_channel")
+
+    kafka_broadcaster.start()
+
+    for server in opal_servers:
+        success = server.wait_for_log("broadcast channel is ready", 30)
+        assert success, "Broadcast channel is not ready"
+
+    assert False
+
+
+def test_switch_to_postgres_broadcast_channel(
+    broadcast_channel: BroadcastContainerBase,
+    opal_servers: list[OpalServerContainer],
+    request,
+):
+    broadcast_channel.shutdown()
+
+    postgres_broadcaster = request.getfixturevalue("postgres_broadcast_channel")
+
+    postgres_broadcaster.start()
+
+    for server in opal_servers:
+        success = server.wait_for_log("broadcast channel is ready", 30)
+        assert success, "Broadcast channel is not ready"
+
+    assert False
+
+
+def test_switch__to_redis_broadcast_channel(
+    broadcast_channel: BroadcastContainerBase,
+    opal_servers: list[OpalServerContainer],
+    request,
+):
+    broadcast_channel.shutdown()
+
+    redis_broadcaster = request.getfixturevalue("redis_broadcast_channel")
+
+    redis_broadcaster.start()
+
+    for server in opal_servers:
+        success = server.wait_for_log("broadcast channel is ready", 30)
+        assert success, "Broadcast channel is not ready"
+
+    assert False

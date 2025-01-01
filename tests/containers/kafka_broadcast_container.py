@@ -1,9 +1,9 @@
 import debugpy
-from containers.permitContainer import PermitContainer
 from testcontainers.core.network import Network
 from testcontainers.kafka import KafkaContainer
 
 import docker
+from tests.containers.permitContainer import PermitContainer
 
 
 class KafkaBroadcastContainer(PermitContainer, KafkaContainer):

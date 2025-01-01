@@ -1,8 +1,8 @@
-from containers.permitContainer import PermitContainer
 from testcontainers.core.generic import DockerContainer
 from testcontainers.core.network import Network
 from testcontainers.core.utils import setup_logger
 
+from tests.containers.permitContainer import PermitContainer
 from tests.containers.settings.opal_client_settings import OpalClientSettings
 
 
