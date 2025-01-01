@@ -43,3 +43,6 @@ class TestSettings:
             for key, val in globals().items():
                 if key.startswith("OPAL") or key.startswith("UVICORN"):
                     envfile.write(f"export {key}='{val}'\n\n")
+
+
+pytest_settings = TestSettings()

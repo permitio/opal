@@ -35,11 +35,9 @@ from tests.policy_repos.policy_repo_factory import (
     PolicyRepoFactory,
     SupportedPolicyRepo,
 )
-from tests.settings import TestSettings
+from tests.settings import pytest_settings
 
 logger = setup_logger(__name__)
-
-pytest_settings = TestSettings()
 
 # wait some seconds for the debugger to attach
 debugger_wait_time = 5  # seconds

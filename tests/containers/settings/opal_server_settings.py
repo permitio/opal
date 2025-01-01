@@ -4,7 +4,7 @@ from secrets import token_hex
 
 from testcontainers.core.utils import setup_logger
 
-from tests import utils
+from tests import pytest_settings, utils
 
 
 class OpalServerSettings:
@@ -161,9 +161,11 @@ class OpalServerSettings:
             "OPAL_STATISTICS_ENABLED": self.statistics_enabled,
             "OPAL_AUTH_JWT_AUDIENCE": self.auth_audience,
             "OPAL_AUTH_JWT_ISSUER": self.auth_issuer,
-            "OPAL_WEBHOOK_SECRET": self.webhook_secret,
-            "OPAL_WEBHOOK_PARAMS": self.webhook_params,
         }
+
+        if pytest_settings.useWebhook:
+            env_vars["OPAL_WEBHOOK_SECRET"] = self.webhook_secret
+            env_vars["OPAL_WEBHOOK_PARAMS"] = self.webhook_params
 
         if self.tests_debug:
             env_vars["LOG_DIAGNOSE"] = self.log_diagnose
