@@ -170,8 +170,8 @@ def policy_repo(
 
     policy_repo = PolicyRepoFactory(
         pytest_settings.policy_repo_provider
-    ).get_policy_repo(temp_dir)
-    policy_repo.setup(gitea_settings)
+    ).get_policy_repo(temp_dir, "1", "2", "3", "4", "5", "6", "7", True, "8")
+    policy_repo.setup()
     return policy_repo
 
 
@@ -229,11 +229,14 @@ def opal_server(
 
         container.start()
         container.get_wrapped_container().reload()
+        policy_repo.setup_webhooks(container.get_container_host_ip() ,container.settings.port)
+        policy_repo.create_webhook()
         print(
             f"Started container: {container_name}, ID: {container.get_wrapped_container().id}"
         )
         container.wait_for_log("Clone succeeded", timeout=30)
         containers.append(container)
+
 
     yield containers
 

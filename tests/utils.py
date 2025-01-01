@@ -439,6 +439,8 @@ def create_localtunnel(port=8000):
             text=True,
         )
 
+        print("\na: {proccess.stdout}\n")
+
         # Read output line by line
         for line in iter(process.stdout.readline, ""):
             # Match the public URL from LocalTunnel output

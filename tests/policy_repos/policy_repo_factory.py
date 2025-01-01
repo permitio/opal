@@ -19,14 +19,25 @@ class PolicyRepoFactory:
 
         self.policy_repo = policy_repo
 
-    def get_policy_repo(self, temp_dir: str) -> PolicyRepoBase:
+    def get_policy_repo(self,
+        temp_dir: str,
+        owner: str | None = None,
+        repo: str | None = None,
+        password: str | None = None,
+        github_pat: str | None = None,
+        ssh_key_path: str | None = None,
+        source_repo_owner: str | None = None,
+        source_repo_name: str | None = None,
+        should_fork: bool = False,
+        webhook_secret: str | None = None,) -> PolicyRepoBase:
+        
         factory = {
             SupportedPolicyRepo.GITEA: GiteaPolicyRepo,
             SupportedPolicyRepo.GITHUB: GithubPolicyRepo,
             SupportedPolicyRepo.GITLAB: GitlabPolicyRepo,
         }
 
-        return factory[SupportedPolicyRepo(self.policy_repo)](temp_dir)
+        return factory[SupportedPolicyRepo(self.policy_repo)](temp_dir, owner, repo, password, github_pat, ssh_key_path, source_repo_owner, source_repo_name, should_fork, webhook_secret)
 
     def assert_exists(self, policy_repo: str) -> bool:
         try:

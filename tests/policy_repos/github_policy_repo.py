@@ -1,3 +1,5 @@
+from git import Repo, GitCommandError
+from tests.policy_repos.policy_repo_base import PolicyRepoBase
 import codecs
 import os
 import random
@@ -5,7 +7,6 @@ import shutil
 import subprocess
 
 import requests
-from git import Repo
 from github import Auth, Github
 
 from tests import utils
@@ -17,7 +18,7 @@ from tests import utils
 # OPAL_POLICY_REPO_SSH_KEY=${OPAL_POLICY_REPO_SSH_KEY:-$(cat "$OPAL_POLICY_REPO_SSH_KEY_PATH")}
 
 
-class GithubPolicyRepo:
+class GithubPolicyRepo (PolicyRepoBase):
     def __init__(
         self,
         temp_dir: str,
@@ -30,8 +31,6 @@ class GithubPolicyRepo:
         source_repo_name: str | None = None,
         should_fork: bool = False,
         webhook_secret: str | None = None,
-        webhook_host: str | None = None,
-        webhook_port: int | None = None,
     ):
         self.load_from_env()
 
@@ -57,8 +56,7 @@ class GithubPolicyRepo:
         self.ssh_key_path = ssh_key_path if ssh_key_path else self.ssh_key_path
         self.should_fork = should_fork
         self.webhook_secret = webhook_secret if webhook_secret else self.webhook_secret
-        self.webhook_host = webhook_host if webhook_host else self.webhook_host
-        self.webhook_port = webhook_port if webhook_port else self.webhook_port
+
 
         if not self.password and not self.github_pat and not self.ssh_key_path:
             print("No password or Github PAT or SSH key provided.")
@@ -76,7 +74,7 @@ class GithubPolicyRepo:
         self.source_repo_name = os.getenv(
             "OPAL_SOURCE_REPO_NAME", "opal-example-policy-repo"
         )
-        self.webhook_secret = os.getenv("OPAL_WEBHOOK_SECRET", "xxxxx")
+        self.webhook_secret: str = os.getenv("OPAL_WEBHOOK_SECRET", "xxxxx")
 
     def load_ssh_key(self):
         if self.ssh_key_path.startswith("~"):
@@ -98,6 +96,10 @@ class GithubPolicyRepo:
         except Exception as e:
             print(f"Error loading SSH key: {e}")
 
+    def setup_webhooks(self, host, port):
+        self.webhook_host = host
+        self.webhook_port = port
+    
     def set_envvars(self):
         # Update .env file
         with open(".env", "a") as env_file:
@@ -111,7 +113,7 @@ class GithubPolicyRepo:
         if self.owner is None:
             raise Exception("Owner not set")
 
-        if self.portocol == "ssh":
+        if self.protocol == "ssh":
             return f"git@{self.host}:{self.owner}/{self.repo}.git"
 
         if self.protocol == "https":
@@ -134,8 +136,8 @@ class GithubPolicyRepo:
             gh = Github(self.ssh_key)
             repo_list = gh.get_repos()
             for repo in repo_list:
-                if repo.full_name == self.repo_name:
-                    print(f"Repository {self.repo_name} already exists.")
+                if repo.full_name == self.repo:
+                    print(f"Repository {self.repo} already exists.")
                     return True
 
         except Exception as e:
@@ -193,13 +195,13 @@ class GithubPolicyRepo:
         repository."""
 
         try:
-            print(f"Deleting test branches from {self.repo_name}...")
+            print(f"Deleting test branches from {self.repo}...")
 
             # Initialize Github API
             gh = Github(self.ssh_key)
 
             # Get the repository
-            repo = gh.get_repo(self.repo_name)
+            repo = gh.get_repo(self.repo)
 
             # Enumerate branches and delete pytest- branches
             branches = repo.get_branches()
@@ -225,14 +227,36 @@ class GithubPolicyRepo:
 
     def create_test_branch(self):
         try:
-            os.chdir(self.local_repo_path)
-            subprocess.run(["git", "checkout", "-b", self.test_branch], check=True)
-            subprocess.run(
-                ["git", "push", "--set-upstream", "origin", self.test_branch],
-                check=True,
-            )
-        except subprocess.CalledProcessError as e:
+            # Initialize the repository
+            repo = Repo(self.local_repo_path)
+            
+            # Ensure the repository is clean
+            if repo.is_dirty(untracked_files=True):
+                raise RuntimeError("The repository has uncommitted changes. Commit or stash them before proceeding.")
+            
+            # Set the origin remote URL
+            remote_url = f"https://github.com/{self.owner}/{self.repo}.git"
+            if "origin" in repo.remotes:
+                origin = repo.remote(name="origin")
+                origin.set_url(remote_url)  # Update origin URL if it exists
+            else:
+                origin = repo.create_remote("origin", remote_url)  # Create origin remote if it doesn't exist
+            
+            print(f"Origin set to: {remote_url}")
+            
+            # Create and checkout the new branch
+            new_branch = repo.create_head(self.test_branch)  # Create branch
+            new_branch.checkout()  # Switch to the new branch
+
+            # Push the new branch to the remote
+            origin.push(refspec=f"{self.test_branch}:{self.test_branch}")
+
+            print(f"Branch '{self.test_branch}' successfully created and pushed.")
+        except GitCommandError as e:
             print(f"Git command failed: {e}")
+        except Exception as e:
+            print(f"An error occurred: {e}")
+
 
     def cleanup(self, delete_repo=True, delete_ssh_key=True):
         subprocess.run(["rm", "-rf", "./opal-example-policy-repo"], check=True)
@@ -262,13 +286,13 @@ class GithubPolicyRepo:
     def delete_repo(self):
         try:
             gh = Github(self.ssh_key)
-            repo = gh.get_repo(self.repo_name)
+            repo = gh.get_repo(self.repo)
             repo.delete()
-            print(f"Repository {self.repo_name} deleted successfully.")
+            print(f"Repository {self.repo} deleted successfully.")
         except Exception as e:
             print(f"Error deleting repository: {e}")
 
-    def prepare_policy_repo(self):
+    def setup(self):
         self.clone_initial_repo()
 
         if self.should_fork:
@@ -291,14 +315,16 @@ class GithubPolicyRepo:
         print(f"SSH key added: {key.title}")
 
     def create_webhook(self):
-        gh = Github(self.ssh_key)
-        repo = gh.get_repo(self.repo_name)
+        gh = Github(auth = Auth.Token(self.github_pat))
+        repo = gh.get_repo(f"{self.owner}/{self.repo}")
+        url = utils.create_localtunnel(self.webhook_port)
+        print(f"\n\n\n\n\n\n\n\n\n\nWebhook URL: {url}\n\n\n\n\n\n\n")
         repo.create_hook(
             "web",
             {
-                "url": f"http://{self.webhook_host}:{self.webhook_port}/webhook",
+                "url": f"{url}/webhook",
                 "content_type": "json",
-                f"secret": {self.webhook_secret},
+                f"secret": "abc123",
                 "insecure_ssl": "1",
             },
             events=["push"],
@@ -328,7 +354,7 @@ class GithubPolicyRepo:
             # Stage the changes
             print(f"Staging changes for branch {self.test_branch}...")
             gh = Github(self.ssh_key)
-            repo = gh.get_repo(self.repo_name)
+            repo = gh.get_repo(self.repo)
             branch_ref = f"heads/{self.test_branch}"
             ref = repo.get_git_ref(branch_ref)
             latest_commit = repo.get_git_commit(ref.object.sha)
