@@ -11,3 +11,4 @@ opentelemetry-instrumentation
 opentelemetry-instrumentation-fastapi
 opentelemetry-exporter-otlp
 opentelemetry-exporter-prometheus
+debugpy
