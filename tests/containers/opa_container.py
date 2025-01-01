@@ -2,14 +2,37 @@ from testcontainers.core.generic import DockerContainer
 from testcontainers.core.network import Network
 from testcontainers.core.utils import setup_logger
 
+from tests import utils
 from tests.containers.permitContainer import PermitContainer
 from tests.containers.settings.opal_client_settings import OpalClientSettings
+
+
+class OpaSettings:
+    def __init__(
+        self,
+        image: str | None = None,
+        port: int | None = None,
+        container_name: str | None = None,
+    ) -> None:
+        self.image = image if image else "openpolicyagent/opa:0.29.0"
+        self.container_name = "opa"
+
+        if port is None:
+            self.port = utils.find_available_port(8181)
+        else:
+            if utils.is_port_available(port):
+                self.port = port
+            else:
+                self.port = utils.find_available_port(8181)
+
+    def getEnvVars(self):
+        return {}
 
 
 class OpaContainer(PermitContainer, DockerContainer):
     def __init__(
         self,
-        settings: OpalClientSettings,
+        settings: OpaSettings,
         network: Network,
         docker_client_kw: dict | None = None,
         **kwargs,
@@ -28,19 +51,14 @@ class OpaContainer(PermitContainer, DockerContainer):
             self.with_env(key, value)
 
         self.with_name(self.settings.container_name).with_bind_ports(
-            7000, self.settings.port
-        ).with_bind_ports(8181, self.settings.opa_port).with_network(
-            self.network
-        ).with_kwargs(
+            8181, self.settings.port
+        ).with_network(self.network).with_kwargs(
             labels={"com.docker.compose.project": "pytest"}
         ).with_network_aliases(
             self.settings.container_name
         )
 
-        if self.settings.debug_enabled:
-            self.with_bind_ports(5678, self.settings.debug_port)
-
-    def reload_with_settings(self, settings: OpalClientSettings | None = None):
+    def reload_with_settings(self, settings: OpaSettings | None = None):
         self.stop()
 
         self.settings = settings if settings else self.settings

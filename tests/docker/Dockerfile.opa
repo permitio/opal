@@ -20,7 +20,7 @@
     # STANDALONE OPA CONTAINER ----------------------------
     # This is the final image with the extracted OPA binary
     # -----------------------------------------------------
-    FROM alpine:latest
+    FROM alpine:latest AS opa
 
     # Create a non-root user for running OPA
     RUN adduser -D opa && mkdir -p /opa && chown opa:opa /opa
@@ -31,9 +31,6 @@
 
     # Set the working directory
     WORKDIR /opa
-
-    # Expose the default OPA port
-    EXPOSE 8181
 
     # Set the default command to run the OPA server
     CMD ["/opa/opa", "run", "--server", "--log-level", "info"]

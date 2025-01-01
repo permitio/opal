@@ -18,7 +18,7 @@ from tests.containers.broadcast_container_base import BroadcastContainerBase
 from tests.containers.cedar_container import CedarContainer
 from tests.containers.gitea_container import GiteaContainer
 from tests.containers.kafka_broadcast_container import KafkaBroadcastContainer
-from tests.containers.opa_container import OpaContainer
+from tests.containers.opa_container import OpaContainer, OpaSettings
 from tests.containers.opal_client_container import OpalClientContainer
 from tests.containers.opal_server_container import OpalServerContainer
 from tests.containers.postgres_broadcast_container import PostgresBroadcastContainer
@@ -222,6 +222,7 @@ def opal_server(
     broadcast_channel: BroadcastContainerBase,
     policy_repo: PolicyRepoBase,
     number_of_opal_servers: int,
+    # build_docker_server_image,
 ):
     if not broadcast_channel:
         raise ValueError("Missing 'broadcast_channel' container.")
@@ -266,12 +267,11 @@ def opal_server(
 
 
 @pytest.fixture(scope="session")
-def opa_server(opal_network: Network):
+def opa_server(opal_network: Network, build_docker_opa_image):
     with OpaContainer(
-        settings=OpalClientSettings(
-            container_name="opa_server",
-            image="openpolicyagent/opa:latest",
-            port=8181,
+        settings=OpaSettings(
+            container_name="opa",
+            image="opa",
         ),
         network=opal_network,
     ) as container:
@@ -284,12 +284,11 @@ def opa_server(opal_network: Network):
 
 
 @pytest.fixture(scope="session")
-def cedar_server(opal_network: Network):
+def cedar_server(opal_network: Network, build_docker_cedar_image):
     with CedarContainer(
         settings=CedarSettings(
-            container_name="cedar_server",
-            image="permitio/cedar:latest",
-            port=8181,
+            container_name="cedar",
+            image="cedar-agent",
         ),
         network=opal_network,
     ) as container:
@@ -319,10 +318,11 @@ def connected_clients(opal_client: List[OpalClientContainer]):
 def opal_client(
     opal_network: Network,
     opal_server: List[OpalServerContainer],
-    opa_server: OpaContainer,
-    cedar_server: CedarContainer,
+    # opa_server: OpaContainer,
+    # cedar_server: CedarContainer,
     request,
     number_of_opal_clients: int,
+    # build_docker_client_image,
 ):
     if not opal_server or len(opal_server) == 0:
         raise ValueError("Missing 'opal_server' container.")
