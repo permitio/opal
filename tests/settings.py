@@ -28,7 +28,7 @@ class TestSettings:
         self.repo_owner = os.getenv("OPAL_PYTEST_REPO_OWNER", "iwphonedo")
         self.repo_name = os.getenv("OPAL_PYTEST_REPO_NAME", "opal-example-policy-repo")
         self.repo_password = os.getenv("OPAL_PYTEST_REPO_PASSWORD")
-        self.github_pat = os.getenv("OPAL_PYTEST_GITHUB_PAT", None)
+        self.github_pat = os.getenv("OPAL_PYTEST_GITHUB_PAT")
         self.ssh_key_path = os.getenv("OPAL_PYTEST_SSH_KEY_PATH")
         self.source_repo_owner = os.getenv("OPAL_PYTEST_SOURCE_ACCOUNT", "permitio")
         self.source_repo_name = os.getenv(
