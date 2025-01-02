@@ -8,7 +8,7 @@ from tests.policy_repos.policy_repo_base import PolicyRepoBase
 
 
 class GiteaPolicyRepo(PolicyRepoBase):
-    def __init__(self):
+    def __init__(self, *args):
         super().__init__()
 
     def setup(self, gitea_settings: GiteaSettings):
@@ -93,3 +93,12 @@ class GiteaPolicyRepo(PolicyRepoBase):
         finally:
             # Ensure cleanup is performed regardless of success or failure
             self.cleanup(CLONE_DIR)
+
+    def cleanup(self):
+        return super().cleanup()
+    
+    def setup_webhook(self, host, port):
+        return super().setup_webhook(host, port)
+    
+    def create_webhook(self):
+        return super().create_webhook()

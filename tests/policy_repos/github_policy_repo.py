@@ -443,3 +443,6 @@ class GithubPolicyRepo(PolicyRepoBase):
             return False
 
         return True
+
+    def remove_webhook(self):
+        self.github_webhook.delete()

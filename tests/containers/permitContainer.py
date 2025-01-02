@@ -40,7 +40,7 @@ class PermitContainer:
             # Check if the timeout has been exceeded
             elapsed_time = time.time() - start_time
             if elapsed_time > timeout:
-                self.permitLogger.warning("Timeout reached while waiting for the log.")
+                self.permitLogger.warning(f"{self.settings.container_name} | Timeout reached while waiting for the log. | {log_str}")
                 break
 
             decoded_line = line.decode("utf-8").strip()
