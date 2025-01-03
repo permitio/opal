@@ -108,23 +108,26 @@ class GithubPolicyRepo(PolicyRepoBase):
             env_file.write(f'OPAL_POLICY_REPO_SSH_KEY="{self.ssh_key}"\n')
 
     def get_repo_url(self):
-        if self.owner is None:
+        return self.build_repo_url(self.owner, self.repo)
+
+    def build_repo_url(self, owner, repo) -> str:
+        if owner is None:
             raise Exception("Owner not set")
 
-        if self.protocol == "ssh":
-            return f"git@{self.host}:{self.owner}/{self.repo}.git"
+        if self.protocol == "ssh" or self.protocol == "git":
+            return f"git@{self.host}:{owner}/{repo}.git"
 
-        if self.protocol == "https":
+        if self.protocol == "http" or self.protocol == "https":
             if self.github_pat:
-                return f"https://{self.host}/{self.owner}/{self.repo}.git"
+                return f"{self.protocol}://{self.host}/{owner}/{repo}.git"
 
         if self.password is None and self.github_pat is None and self.ssh_key is None:
             raise Exception("No authentication method set")
 
-        return f"https://{self.owner}:{self.password}@{self.host}:{self.port}/{self.owner}/{self.repo}.git"
+        return f"{self.protocol}://{self.owner}:{self.password}@{self.host}:{self.port}/{owner}/{repo}"
 
     def get_source_repo_url(self):
-        return f"git@{self.host}:{self.source_repo_owner}/{self.source_repo_name}.git"
+        return self.build_repo_url(self.source_repo_owner, self.source_repo_name)
 
     def clone_initial_repo(self):
         Repo.clone_from(self.get_source_repo_url(), self.local_repo_path)
