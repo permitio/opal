@@ -124,7 +124,7 @@ def test_topiced_user_location(opal_server: list[OpalServerContainer], topiced_c
             assert log_found, "Expected log entry not found after the reference timestamp."
 
 
-def TD_test_user_location(opal_server: list[OpalServerContainer], connected_clients: list[OpalClientContainer]):
+def test_user_location(opal_server: list[OpalServerContainer], connected_clients: list[OpalClientContainer]):
     """Test data publishing."""
 
     # Generate the reference timestamp
@@ -150,7 +150,7 @@ def TD_test_user_location(opal_server: list[OpalServerContainer], connected_clie
 
 # @pytest.mark.parametrize("location", ["CN", "US", "SE"])
 @pytest.mark.asyncio
-async def TD_test_policy_and_data_updates(
+async def test_policy_and_data_updates(
     gitea_server: GiteaContainer,
     opal_server: list[OpalServerContainer],
     opal_client: list[OpalClientContainer],
@@ -184,7 +184,7 @@ async def TD_test_policy_and_data_updates(
 
 
 @pytest.mark.parametrize("attempts", [10])  # Number of attempts to repeat the check
-def TD_test_read_statistics(
+def test_read_statistics(
     attempts,
     opal_server: list[OpalServerContainer],
     number_of_opal_servers: int,
@@ -253,7 +253,7 @@ def TD_test_read_statistics(
     print("Statistics check passed in all attempts.")
 
 @pytest.mark.asyncio
-async def TD_test_policy_update(
+async def test_policy_update(
     gitea_server: GiteaContainer,
     opal_server: list[OpalServerContainer],
     opal_client: list[OpalClientContainer],
@@ -288,10 +288,10 @@ async def TD_test_policy_update(
             log_found
         ), f"Expected log entry not found in client '{client.settings.container_name}' after the reference timestamp."
 
-def TD_test_with_statistics_disabled(opal_server: list[OpalServerContainer]):
+def test_with_statistics_disabled(opal_server: list[OpalServerContainer]):
     assert True
 
-def TD_test_with_uvicorn_workers_and_no_broadcast_channel(
+def test_with_uvicorn_workers_and_no_broadcast_channel(
     opal_server: list[OpalServerContainer],
 ):
     assert True
