@@ -1,5 +1,6 @@
 from typing import Optional
 
+import debugpy
 from fastapi import APIRouter, Depends, Header, HTTPException, status
 from fastapi.responses import RedirectResponse
 from opal_common.authentication.authz import (
@@ -86,6 +87,8 @@ def init_data_updates_router(
         token = get_token_from_header(authorization)
         if data_sources_config.config is not None:
             logger.info("Serving source configuration")
+            logger.info("Source config: {config}", config=data_sources_config.config)
+            debugpy.breakpoint()
             return data_sources_config.config
         elif data_sources_config.external_source_url is not None:
             url = str(data_sources_config.external_source_url)

@@ -1,0 +1,118 @@
+# Dockerfile.server
+
+# BUILD IMAGE
+FROM python:3.10-bookworm AS build-stage
+# from now on, work in the /app directory
+WORKDIR /app/
+# Layer dependency install (for caching)
+COPY ../packages/requires.txt ./base_requires.txt
+COPY ../packages/opal-common/requires.txt ./common_requires.txt
+COPY ../packages/opal-client/requires.txt ./client_requires.txt
+COPY ../packages/opal-server/requires.txt ./server_requires.txt
+
+RUN apt-get update && apt-get install -y gcc python3-dev procps sudo && apt-get clean
+
+# install python deps
+RUN pip install --no-cache-dir --upgrade pip && pip install --no-cache-dir -r ./base_requires.txt -r ./common_requires.txt -r ./client_requires.txt -r ./server_requires.txt
+
+# COMMON IMAGE
+FROM python:3.10-slim-bookworm AS common
+
+# copy libraries from build stage (This won't copy redundant libraries we used in build-stage)
+# also remove the default python site-packages that has older versions of packages that won't be overridden
+RUN rm -r /usr/local/lib/python3.10/site-packages
+COPY --from=build-stage /usr/local /usr/local
+
+# Add non-root user (with home dir at /opal)
+RUN useradd -m -b / -s /bin/bash opal
+WORKDIR /opal
+
+# copy wait-for script (create link at old path to maintain backward compatibility)
+COPY ../scripts/wait-for.sh .
+RUN chmod +x ./wait-for.sh
+RUN ln -s /opal/wait-for.sh /usr/wait-for.sh
+
+# netcat (nc) is used by the wait-for.sh script
+RUN apt-get update && apt-get install -y netcat-traditional jq && apt-get clean
+# Install sudo for Debian/Ubuntu-based images
+RUN apt-get update && apt-get install -y sudo && apt-get clean
+
+# copy startup script (create link at old path to maintain backward compatibility)
+COPY ../scripts/start.sh .
+RUN chmod +x ./start.sh
+RUN ln -s /opal/start.sh /start.sh
+# copy gunicorn_config
+COPY ../scripts/gunicorn_conf.py .
+# copy app code
+
+COPY ../README.md .
+COPY ../packages ./packages/
+# install the opal-common package
+RUN cd ./packages/opal-common && python setup.py install
+# Make sure scripts in .local are usable:
+ENV PATH=/opal:/root/.local/bin:$PATH
+# run gunicorn
+CMD ["./start.sh"]
+
+
+# STANDALONE IMAGE ----------------------------------
+# ---------------------------------------------------
+    FROM common AS client-standalone
+    # uvicorn config ------------------------------------
+    # install the opal-client package
+    RUN cd ./packages/opal-client && python setup.py install
+    
+    # WARNING: do not change the number of workers on the opal client!
+    # only one worker is currently supported for the client.
+    
+    # number of uvicorn workers
+    ENV UVICORN_NUM_WORKERS=1
+    # uvicorn asgi app
+    ENV UVICORN_ASGI_APP=opal_client.main:app
+    # uvicorn port
+    ENV UVICORN_PORT=7000
+    # disable inline OPA
+    ENV OPAL_INLINE_OPA_ENABLED=false
+    
+    # expose opal client port
+    EXPOSE 7000
+    USER opal
+    
+    RUN mkdir -p /opal/backup
+    VOLUME /opal/backup
+    
+    
+    # IMAGE to extract OPA from official image ----------
+    # ---------------------------------------------------
+    FROM alpine:latest AS opa-extractor
+    USER root
+    
+    RUN apk update && apk add skopeo tar
+    WORKDIR /opal
+    
+    # copy opa from official docker image
+    ARG opa_image=openpolicyagent/opa
+    ARG opa_tag=latest-static
+    RUN skopeo copy "docker://${opa_image}:${opa_tag}" docker-archive:./image.tar && \
+      mkdir image && tar xf image.tar -C ./image && cat image/*.tar | tar xf - -C ./image -i && \
+      find image/ -name "opa*" -type f -executable -print0 | xargs -0 -I "{}" cp {} ./opa && chmod 755 ./opa && \
+      rm -r image image.tar
+    
+    
+    # OPA CLIENT IMAGE ----------------------------------
+    # Using standalone image as base --------------------
+    # ---------------------------------------------------
+    FROM client-standalone AS client
+    
+    # Temporarily move back to root for additional setup
+    USER root
+    
+    # copy opa from opa-extractor
+    COPY --from=opa-extractor /opal/opa ./opa
+    
+    # enable inline OPA
+    ENV OPAL_INLINE_OPA_ENABLED=true
+    # expose opa port
+    EXPOSE 8181
+    
+    USER opal

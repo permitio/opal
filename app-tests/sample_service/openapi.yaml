@@ -1,0 +1,88 @@
+openapi: 3.0.0
+info:
+  title: Flask REST API with OPAL Authorization
+  description: A simple API with three endpoints (`/a`, `/b`, and `/c`), where `/c` requires OPAL authorization.
+  version: 1.0.0
+servers:
+  - url: http://localhost:5500  # Modify with actual server URL and port
+
+paths:
+  /a:
+    get:
+      summary: Endpoint A
+      description: A simple, unauthenticated endpoint.
+      responses:
+        '200':
+          description: Success
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: "Endpoint A"
+
+  /b:
+    get:
+      summary: Endpoint B
+      description: Another unauthenticated endpoint.
+      responses:
+        '200':
+          description: Success
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: "Endpoint B"
+
+  /c:
+    get:
+      summary: Endpoint C with Authorization
+      description: |
+        This endpoint requires authorization. The client must provide a JWT token in the Authorization header. 
+        The endpoint checks with an OPAL server to authorize the user based on the token.
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Authorized access to endpoint C
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: "Endpoint C - Authorized"
+        '401':
+          description: Unauthorized - Missing or invalid JWT token
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: "Unauthorized, missing Authorization header"
+        '403':
+          description: Forbidden - Authorization denied by OPAL
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: "Forbidden, authorization denied"
+        '500':
+          description: Error contacting OPAL client
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: "Error contacting OPAL client: Connection error"
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT  # Indicates the use of JWT for bearer token
