@@ -447,7 +447,7 @@ def topiced_clients(topics, opal_network: Network, opal_server: list[OpalServerC
             )
             containers[topic] = containers.get(topic, [])
             
-            assert client.wait_for_log(
+            assert container.wait_for_log(
             log_str="Connected to PubSub server", timeout=30
         ), f"Client {client.settings.container_name} did not connect to PubSub server."
             
