@@ -108,9 +108,6 @@ class GiteaContainer(PermitContainer, DockerContainer):
         self.wait_for_gitea()
         self.create_gitea_user()
         self.access_token = self.create_gitea_admin_token()
-        self.logger.info(
-            f"Gitea deployed successfully. Admin access token: {self.access_token}"
-        )
 
     def exec(self, command: str):
         """Execute a command inside the container."""
@@ -170,12 +167,12 @@ class GiteaContainer(PermitContainer, DockerContainer):
             repo_url = f"http://{self.settings.username}:{self.access_token}@{self.settings.gitea_base_url.split('://')[1]}/{self.settings.username}/{self.settings.repo_name}.git"
         try:
             if os.path.exists(clone_directory):
-                self.logger.info(
+                self.logger.debug(
                     f"Directory '{clone_directory}' already exists. Deleting it..."
                 )
                 shutil.rmtree(clone_directory)
             Repo.clone_from(repo_url, clone_directory)
-            self.logger.info(
+            self.logger.debug(
                 f"Repository '{self.settings.repo_name}' cloned successfully into '{clone_directory}'."
             )
         except Exception as e:
@@ -232,7 +229,7 @@ class GiteaContainer(PermitContainer, DockerContainer):
             repo.git.add(all=True)
             repo.index.commit("Reset repository to only include 'rbac.rego'")
 
-            self.logger.info(
+            self.logger.debug(
                 f"Repository reset successfully. 'rbac.rego' is the only file and changes are committed."
             )
         except Exception as e:
@@ -272,11 +269,11 @@ class GiteaContainer(PermitContainer, DockerContainer):
         try:
             if os.path.exists(repo_directory):
                 shutil.rmtree(repo_directory)
-                self.logger.info(
+                self.logger.debug(
                     f"Local repository '{repo_directory}' has been cleaned up."
                 )
             else:
-                self.logger.info(
+                self.logger.debug(
                     f"Local repository '{repo_directory}' does not exist. No cleanup needed."
                 )
         except Exception as e:

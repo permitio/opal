@@ -66,10 +66,10 @@ class OpalServerContainer(PermitContainer, DockerContainer):
         for token_type in ["client", "datasource"]:
             try:
                 data = {"type": token_type}  # ).replace("'", "\"")
-                self.logger.info(f"Fetching OPAL {token_type} token...")
-                self.logger.info(f"url: {token_url}")
-                self.logger.info(f"headers: {headers}")
-                self.logger.info(data)
+                self.logger.debug(f"Fetching OPAL {token_type} token...")
+                self.logger.debug(f"url: {token_url}")
+                self.logger.debug(f"headers: {headers}")
+                self.logger.debug(data)
 
                 response = requests.post(token_url, headers=headers, json=data)
                 response.raise_for_status()

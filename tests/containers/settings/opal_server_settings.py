@@ -200,7 +200,7 @@ class OpalServerSettings:
         self.auth_issuer = os.getenv("OPAL_AUTH_JWT_ISSUER", "https://opal.ac/")
         self.tests_debug = os.getenv("OPAL_TESTS_DEBUG", "true")
         self.log_diagnose = os.getenv("LOG_DIAGNOSE", "true")
-        self.log_level = os.getenv("OPAL_LOG_LEVEL", "DEBUG")
+        self.log_level = os.getenv("OPAL_LOG_LEVEL", "INFO")
         self.log_format_include_pid = os.getenv("OPAL_LOG_FORMAT_INCLUDE_PID", "true")
         self.statistics_enabled = os.getenv("OPAL_STATISTICS_ENABLED", "true")
         self.debugEnabled = os.getenv("OPAL_DEBUG_ENABLED", "false")
