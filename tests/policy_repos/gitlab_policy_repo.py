@@ -51,7 +51,7 @@ class GitlabPolicyRepo(PolicyRepoBase):
     def update_branch(self, branch, file_name, file_content):
         temp_dir = self.settings.temp_dir
 
-        self.logger.info(
+        self.logger.debug(
             f"Updating branch '{branch}' with file '{file_name}' content..."
         )
 

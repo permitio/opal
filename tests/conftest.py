@@ -185,7 +185,7 @@ def policy_repo(
         logger,
     )
 
-    policy_repo.setup()
+    policy_repo.setup(gitea_settings)
     return policy_repo
 
 
@@ -221,6 +221,8 @@ def opal_server(
     policy_repo: PolicyRepoBase,
     number_of_opal_servers: int,
     # build_docker_server_image,
+    topics: dict[str, int]
+
 ):
     if not broadcast_channel:
         raise ValueError("Missing 'broadcast_channel' container.")
@@ -238,6 +240,7 @@ def opal_server(
                 uvicorn_workers="4",
                 policy_repo_url=policy_repo.get_repo_url(),
                 image="permitio/opal-server:latest",
+                data_topics=" ".join(topics.keys())
             ),
             network=opal_network,
         )
@@ -380,6 +383,81 @@ def setup(opal_server, opal_client):
 
     utils.remove_env("OPAL_TESTS_DEBUG")
     wait_sometime()
+
+###########################################################
+
+@pytest.fixture(scope="session")
+def topics():
+    topics = {
+        "topic_1": 1,
+        "topic_2": 1
+    }
+    return topics
+
+@pytest.fixture(scope="session")
+def topiced_clients(topics, opal_network: Network, opal_server: list[OpalServerContainer]):
+
+    if not opal_server or len(opal_server) == 0:
+        raise ValueError("Missing 'opal_server' container.")
+
+    opal_server_url = f"http://{opal_server[0].settings.container_name}:{opal_server[0].settings.port}" 
+    containers = {}  # List to store OpalClientContainer instances
+
+    client_token = opal_server[0].obtain_OPAL_tokens()["client"]
+    callbacks = json.dumps(
+        {
+            "callbacks": [
+                [
+                    f"{opal_server_url}/data/callback_report",
+                    {
+                        "method": "post",
+                        "process_data": False,
+                        "headers": {
+                            "Authorization": f"Bearer {client_token}",
+                            "content-type": "application/json",
+                        },
+                    },
+                ]
+            ]
+        }
+    )
+
+
+    for topic, number_of_clients in topics.items():
+
+        for i in range(number_of_clients):
+            container_name = f"opal_client_{topic}_{i+1}"  # Unique name for each client
+
+            container = OpalClientContainer(
+                OpalClientSettings(
+                    image="permitio/opal-client:latest",
+                    container_name=container_name,
+                    container_index=i + 1,
+                    opal_server_url=opal_server_url,
+                    client_token=client_token,
+                    default_update_callbacks=callbacks,
+                    topics=topic,
+                ),
+                network=opal_network,
+            )
+
+            container.start()
+            logger.info(
+                f"Started OpalClientContainer: {container_name}, ID: {container.get_wrapped_container().id} - on topic: {topic}"
+            )
+            containers[topic] = containers.get(topic, [])
+            
+            assert client.wait_for_log(
+            log_str="Connected to PubSub server", timeout=30
+        ), f"Client {client.settings.container_name} did not connect to PubSub server."
+            
+            containers[topic].append(container)
+
+    yield containers
+
+    for _, clients in containers.items:
+            for client in clients:
+                client.stop()
 
 
 def wait_sometime():

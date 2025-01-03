@@ -131,11 +131,7 @@ class GithubPolicyRepo(PolicyRepoBase):
 
     def check_repo_exists(self):
         try:
-            gh = (
-                Github(auth=Auth.Token(self.github_pat))
-                if self.github_pat
-                else Github(self.ssh_key)
-            )
+            gh = Github(auth=Auth.Token(self.github_pat))
             repo_list = gh.get_user().get_repos()
             for repo in repo_list:
                 if repo.full_name == self.repo:
@@ -152,11 +148,7 @@ class GithubPolicyRepo(PolicyRepoBase):
             return
 
         try:
-            gh = (
-                Github(auth=Auth.Token(self.github_pat))
-                if self.github_pat
-                else Github(self.ssh_key)
-            )
+            gh = Github(auth=Auth.Token(self.github_pat))
             gh.get_user().create_repo(self.repo)
             self.logger.info(f"Repository {self.repo} created successfully.")
         except Exception as e:
@@ -170,11 +162,7 @@ class GithubPolicyRepo(PolicyRepoBase):
 
         if self.github_pat is None:
             try:
-                gh = (
-                    Github(auth=Auth.Token(self.github_pat))
-                    if self.github_pat
-                    else Github(self.ssh_key)
-                )
+                gh = Github(auth=Auth.Token(self.github_pat))
                 gh.get_user().create_fork(self.source_repo_owner, self.source_repo_name)
                 self.logger.info(
                     f"Repository {self.source_repo_name} forked successfully."
@@ -210,11 +198,7 @@ class GithubPolicyRepo(PolicyRepoBase):
             self.logger.info(f"Deleting test branches from {self.repo}...")
 
             # Initialize Github API
-            gh = (
-                Github(auth=Auth.Token(self.github_pat))
-                if self.github_pat
-                else Github(self.ssh_key)
-            )
+            gh = Github(auth=Auth.Token(self.github_pat))
 
             # Get the repository
             repo = gh.get_user().get_repo(self.repo)
@@ -291,11 +275,7 @@ class GithubPolicyRepo(PolicyRepoBase):
             self.delete_ssh_key()
 
     def delete_ssh_key(self):
-        gh = (
-            Github(auth=Auth.Token(self.github_pat))
-            if self.github_pat
-            else Github(self.ssh_key)
-        )
+        gh = Github(auth=Auth.Token(self.github_pat))
         user = gh.get_user()
         keys = user.get_keys()
         for key in keys:
@@ -310,11 +290,7 @@ class GithubPolicyRepo(PolicyRepoBase):
 
     def delete_repo(self):
         try:
-            gh = (
-                Github(auth=Auth.Token(self.github_pat))
-                if self.github_pat
-                else Github(self.ssh_key)
-            )
+            gh = Github(auth=Auth.Token(self.github_pat))
             repo = gh.get_user().get_repo(self.repo)
             repo.delete()
             self.logger.debug(f"Repository {self.repo} deleted successfully.")
@@ -333,11 +309,7 @@ class GithubPolicyRepo(PolicyRepoBase):
         self.create_test_branch()
 
     def add_ssh_key(self):
-        gh = (
-            Github(auth=Auth.Token(self.github_pat))
-            if self.github_pat
-            else Github(self.ssh_key)
-        )
+        gh = Github(auth=Auth.Token(self.github_pat))
         user = gh.get_user()
         keys = user.get_keys()
         for key in keys:
@@ -349,11 +321,7 @@ class GithubPolicyRepo(PolicyRepoBase):
 
     def create_webhook(self):
         try:
-            gh = (
-                Github(auth=Auth.Token(self.github_pat))
-                if self.github_pat
-                else Github(self.ssh_key)
-            )
+            gh = Github(auth=Auth.Token(self.github_pat))
             self.logger.info(
                 f"Creating webhook for repository {self.owner}/{self.repo}"
             )
@@ -377,11 +345,7 @@ class GithubPolicyRepo(PolicyRepoBase):
 
     def delete_webhook(self):
         try:
-            gh = (
-                Github(auth=Auth.Token(self.github_pat))
-                if self.github_pat
-                else Github(self.ssh_key)
-            )
+            gh = Github(auth=Auth.Token(self.github_pat))
             repo = gh.get_user().get_repo(f"{self.repo}")
             repo.delete_hook(self.github_webhook.id)
             self.logger.info("Webhook deleted successfully.")
@@ -409,11 +373,7 @@ class GithubPolicyRepo(PolicyRepoBase):
         try:
             # Stage the changes
             self.logger.debug(f"Staging changes for branch {self.test_branch}...")
-            gh = (
-                Github(auth=Auth.Token(self.github_pat))
-                if self.github_pat
-                else Github(self.ssh_key)
-            )
+            gh = Github(auth=Auth.Token(self.github_pat))
             repo = gh.get_user().get_repo(self.repo)
             branch_ref = f"heads/{self.test_branch}"
             ref = repo.get_git_ref(branch_ref)

@@ -6,35 +6,36 @@ from tests import utils
 class OpalClientSettings:
     def __init__(
         self,
-        client_token: str = None,
-        container_name: str = None,
-        port: int = None,
-        opal_server_url: str = None,
-        should_report_on_data_updates: str = None,
-        log_format_include_pid: str = None,
-        tests_debug: bool = False,
-        log_diagnose: str = None,
-        log_level: str = None,
-        debug_enabled: bool = None,
-        debug_port: int = None,
-        image: str = None,
-        opa_port: int = None,
-        default_update_callbacks: str = None,
-        opa_health_check_policy_enabled: str = None,
-        auth_jwt_audience: str = None,
-        auth_jwt_issuer: str = None,
-        statistics_enabled: str = None,
-        policy_store_type: str = None,
-        policy_store_url: str = None,
-        iniline_cedar_enabled: str = None,
-        inline_cedar_exec_path: str = None,
-        inline_cedar_config: str = None,
-        inline_cedar_log_format: str = None,
-        inline_opa_enabled: bool = None,
-        inline_opa_exec_path: str = None,
-        inline_opa_config: str = None,
-        inline_opa_log_format: str = None,
+        client_token: str | None  = None,
+        container_name: str | None  = None,
+        port: int | None  = None,
+        opal_server_url: str | None  = None,
+        should_report_on_data_updates: str | None  = None,
+        log_format_include_pid: str | None  = None,
+        tests_debug: bool | None  = False,
+        log_diagnose: str | None  = None,
+        log_level: str | None  = None,
+        debug_enabled: bool | None  = None,
+        debug_port: int | None  = None,
+        image: str | None  = None,
+        opa_port: int | None  = None,
+        default_update_callbacks: str | None  = None,
+        opa_health_check_policy_enabled: str | None  = None,
+        auth_jwt_audience: str | None  = None,
+        auth_jwt_issuer: str | None  = None,
+        statistics_enabled: str | None  = None,
+        policy_store_type: str | None  = None,
+        policy_store_url: str | None  = None,
+        iniline_cedar_enabled: str | None  = None,
+        inline_cedar_exec_path: str | None  = None,
+        inline_cedar_config: str | None  = None,
+        inline_cedar_log_format: str | None  = None,
+        inline_opa_enabled: bool | None  = None,
+        inline_opa_exec_path: str | None  = None,
+        inline_opa_config: str | None  = None,
+        inline_opa_log_format: str | None = None,
         container_index: int = 1,
+        topics: str | None = None,
         **kwargs
     ):
         self.load_from_env()
@@ -132,6 +133,7 @@ class OpalClientSettings:
             if inline_opa_log_format
             else self.inline_opa_log_format
         )
+        self.topics = topics if topics else self.topics
 
         self.validate_dependencies()
 
@@ -156,7 +158,7 @@ class OpalClientSettings:
             "OPAL_AUTH_JWT_ISSUER": self.auth_jwt_issuer,
             "OPAL_STATISTICS_ENABLED": self.statistics_enabled,
             # TODO: make not hardcoded
-            "OPAL_DATA_TOPICS": "policy_data",
+            "OPAL_DATA_TOPICS": self.topics,
         }
 
         if self.tests_debug:
@@ -227,3 +229,4 @@ class OpalClientSettings:
             "OPAL_INLINE_OPA_CONFIG", '{"addr": "0.0.0.0:8181"}'
         )
         self.inline_opa_log_format = os.getenv("OPAL_INLINE_OPA_LOG_FORMAT", "http")
+        self.topics = os.getenv("OPAL_DATA_TOPICS", "policy_data")

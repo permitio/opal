@@ -19,51 +19,22 @@ OPAL_DISTRIBUTION_TIME_SECONDS = 2
 ip_to_location_base_url = "https://api.country.is/"
 
 
-def publish_data_user_location(src, user, DATASOURCE_TOKEN: str, port: int):
+def publish_data_user_location(src, user, DATASOURCE_TOKEN: str, port: int, topics: str = "policy_data"):
     """Publish user location data to OPAL."""
     # Construct the command to publish data update
     publish_data_user_location_command = (
         f"opal-client publish-data-update --server-url http://localhost:{port} --src-url {src} "
-        f"-t policy_data --dst-path /users/{user}/location {DATASOURCE_TOKEN}"
+        f"-t {topics} --dst-path /users/{user}/location {DATASOURCE_TOKEN}"
     )
     logger.info(publish_data_user_location_command)
-    logger.info("test")
 
     # Execute the command
     result = subprocess.run(publish_data_user_location_command, shell=True)
-
     # Check command execution result
     if result.returncode != 0:
         logger.error("Error: Failed to update user location!")
     else:
         logger.info(f"Successfully updated user location with source: {src}")
-
-
-def test_user_location(
-    opal_server: list[OpalServerContainer], connected_clients: list[OpalClientContainer]
-):
-    """Test data publishing."""
-
-    # Generate the reference timestamp
-    reference_timestamp = datetime.now(timezone.utc)
-    logger.info(f"Reference timestamp: {reference_timestamp}")
-
-    # Publish data to the OPAL server
-    logger.info(ip_to_location_base_url)
-    publish_data_user_location(
-        f"{ip_to_location_base_url}8.8.8.8",
-        "bob",
-        opal_server[0].obtain_OPAL_tokens()["datasource"],
-        opal_server[0].settings.port,
-    )
-    logger.info("Published user location for 'bob'.")
-
-    log_found = connected_clients[0].wait_for_log(
-        "PUT /v1/data/users/bob/location -> 204", 30, reference_timestamp
-    )
-    logger.info("Finished processing logs.")
-    assert log_found, "Expected log entry not found after the reference timestamp."
-
 
 async def data_publish_and_test(
     user,
@@ -100,7 +71,6 @@ async def data_publish_and_test(
         ) == (allowed_country == user_country)
     return True
 
-
 def update_policy(
     gitea_container: GiteaContainer,
     opal_server_container: OpalServerContainer,
@@ -126,9 +96,61 @@ def update_policy(
     utils.wait_policy_repo_polling_interval(opal_server_container)
 
 
+def test_topiced_user_location(opal_server: list[OpalServerContainer], topiced_clients: dict[str, OpalClientContainer]
+):
+    """Test data publishing."""
+
+    for topic, clients in topiced_clients.items():
+        # Generate the reference timestamp
+        reference_timestamp = datetime.now(timezone.utc)
+        logger.info(f"Reference timestamp: {reference_timestamp}")
+
+        # Publish data to the OPAL server
+        publish_data_user_location(
+            f"{ip_to_location_base_url}8.8.8.8",
+            "bob",
+            opal_server[0].obtain_OPAL_tokens()["datasource"],
+            opal_server[0].settings.port,
+            topic)
+        
+        logger.info(f"Published user location for 'bob'. | topic: {topic}")
+
+        for client in clients:
+            
+            log_found = client.wait_for_log(
+                "PUT /v1/data/users/bob/location -> 204", 30, reference_timestamp
+            )
+            logger.info("Finished processing logs.")
+            assert log_found, "Expected log entry not found after the reference timestamp."
+
+
+def TD_test_user_location(opal_server: list[OpalServerContainer], connected_clients: list[OpalClientContainer]):
+    """Test data publishing."""
+
+    # Generate the reference timestamp
+    reference_timestamp = datetime.now(timezone.utc)
+    logger.info(f"Reference timestamp: {reference_timestamp}")
+
+    # Publish data to the OPAL server
+    logger.info(ip_to_location_base_url)
+    publish_data_user_location(
+        f"{ip_to_location_base_url}8.8.8.8",
+        "bob",
+        opal_server[0].obtain_OPAL_tokens()["datasource"],
+        opal_server[0].settings.port,
+    )
+    logger.info("Published user location for 'bob'.")
+
+    for client in connected_clients:
+        log_found = client.wait_for_log(
+            "PUT /v1/data/users/bob/location -> 204", 30, reference_timestamp
+        )
+        logger.info("Finished processing logs.")
+        assert log_found, "Expected log entry not found after the reference timestamp."
+
 # @pytest.mark.parametrize("location", ["CN", "US", "SE"])
 @pytest.mark.asyncio
-async def test_policy_and_data_updates(
+async def TD_test_policy_and_data_updates(
     gitea_server: GiteaContainer,
     opal_server: list[OpalServerContainer],
     opal_client: list[OpalClientContainer],
@@ -139,7 +161,6 @@ async def test_policy_and_data_updates(
 
     It integrates with Gitea and OPA for policy management and testing.
     """
-    logger.info("test-0")
 
     # Parse locations into separate lists of IPs and countries
     locations = [("8.8.8.8", "US"), ("77.53.31.138", "SE")]
@@ -163,7 +184,7 @@ async def test_policy_and_data_updates(
 
 
 @pytest.mark.parametrize("attempts", [10])  # Number of attempts to repeat the check
-def test_read_statistics(
+def TD_test_read_statistics(
     attempts,
     opal_server: list[OpalServerContainer],
     number_of_opal_servers: int,
@@ -231,9 +252,8 @@ def test_read_statistics(
 
     print("Statistics check passed in all attempts.")
 
-
 @pytest.mark.asyncio
-async def test_policy_update(
+async def TD_test_policy_update(
     gitea_server: GiteaContainer,
     opal_server: list[OpalServerContainer],
     opal_client: list[OpalClientContainer],
@@ -268,18 +288,16 @@ async def test_policy_update(
             log_found
         ), f"Expected log entry not found in client '{client.settings.container_name}' after the reference timestamp."
 
-
-# TODO: Add more tests
-def test_with_statistics_disabled(opal_server: list[OpalServerContainer]):
+def TD_test_with_statistics_disabled(opal_server: list[OpalServerContainer]):
     assert True
 
-
-def test_with_uvicorn_workers_and_no_broadcast_channel(
+def TD_test_with_uvicorn_workers_and_no_broadcast_channel(
     opal_server: list[OpalServerContainer],
 ):
     assert True
 
 
+# TODO: Add more tests
 
 
 

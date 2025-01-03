@@ -23,7 +23,7 @@ class TestSettings:
         load_dotenv()
 
         self.policy_repo_provider = os.getenv(
-            "OPAL_PYTEST_POLICY_REPO_PROVIDER", SupportedPolicyRepo.GITHUB
+            "OPAL_PYTEST_POLICY_REPO_PROVIDER", SupportedPolicyRepo.GITEA
         )
         self.repo_owner = os.getenv("OPAL_PYTEST_REPO_OWNER", "iwphonedo")
         self.repo_name = os.getenv("OPAL_PYTEST_REPO_NAME", "opal-example-policy-repo")
