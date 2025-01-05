@@ -5,14 +5,16 @@ from git import GitCommandError, Repo
 
 from tests.containers.settings.gitea_settings import GiteaSettings
 from tests.policy_repos.policy_repo_base import PolicyRepoBase
+from tests.policy_repos.policy_repo_settings import PolicyRepoSettings
 
 
 class GiteaPolicyRepo(PolicyRepoBase):
-    def __init__(self, *args):
+    def __init__(self, settings: PolicyRepoSettings, *args):
         super().__init__()
+        self.settings = settings
 
-    def setup(self, gitea_settings: GiteaSettings):
-        self.settings = gitea_settings
+    def setup(self, settings: PolicyRepoSettings):
+        self.settings = settings
 
     def get_repo_url(self):
         if self.settings is None:
@@ -60,7 +62,7 @@ class GiteaPolicyRepo(PolicyRepoBase):
             print(f"Error pushing branch {branch}: {e}")
 
     def update_branch(self, branch, file_name, file_content):
-        temp_dir = self.settings.temp_dir
+        temp_dir = self.settings.local_clone_path
 
         self.logger.info(
             f"Updating branch '{branch}' with file '{file_name}' content..."
@@ -69,8 +71,8 @@ class GiteaPolicyRepo(PolicyRepoBase):
         # Decode escape sequences in the file content
         file_content = codecs.decode(file_content, "unicode_escape")
 
-        GITEA_REPO_URL = f"http://localhost:{self.settings.port_http}/{self.settings.username}/{self.settings.repo_name}.git"
-        username = self.settings.username
+        GITEA_REPO_URL = f"http://localhost:{self.settings.repo_port}/{self.settings.owner}/{self.settings.repo_name}.git"
+        username = self.settings.owner
         PASSWORD = self.settings.password
         CLONE_DIR = os.path.join(temp_dir, "branch_update")
         COMMIT_MESSAGE = "Automated update commit"
@@ -96,9 +98,9 @@ class GiteaPolicyRepo(PolicyRepoBase):
 
     def cleanup(self):
         return super().cleanup()
-    
+
     def setup_webhook(self, host, port):
         return super().setup_webhook(host, port)
-    
+
     def create_webhook(self):
         return super().create_webhook()

@@ -6,8 +6,9 @@ if [[ -f ".env" ]]; then
   source .env
 fi
 
+
+# Deletes pytest-generated .env files so they don't interfere with other tests.
 function cleanup {
-  rm -rf ./opal-tests-policy-repo
 
   PATTERN="pytest_[a-f,0-9]*.env"
   echo "Looking for auto-generated .env files matching pattern '$PATTERN'..."

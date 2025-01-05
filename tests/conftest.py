@@ -35,6 +35,7 @@ from tests.policy_repos.policy_repo_factory import (
     PolicyRepoFactory,
     SupportedPolicyRepo,
 )
+from tests.policy_repos.policy_repo_settings import PolicyRepoSettings
 from tests.settings import pytest_settings
 
 logger = setup_logger(__name__)
@@ -44,14 +45,20 @@ debugger_wait_time = 5  # seconds
 
 
 def cancel_wait_for_client_after_timeout():
-    time.sleep(debugger_wait_time)
-    debugpy.wait_for_client.cancel()
+    try:
+        time.sleep(debugger_wait_time)
+        debugpy.wait_for_client.cancel()
+    except Exception as e:
+        print(f"Failed to cancel wait for client: {e}")
 
 
-t = threading.Thread(target=cancel_wait_for_client_after_timeout)
-t.start()
-print(f"Waiting for debugger to attach... {debugger_wait_time} seconds timeout")
-debugpy.wait_for_client()
+try:
+    t = threading.Thread(target=cancel_wait_for_client_after_timeout)
+    t.start()
+    print(f"Waiting for debugger to attach... {debugger_wait_time} seconds timeout")
+    debugpy.wait_for_client()
+except Exception as e:
+    print(f"Failed to attach debugger: {e}")
 
 utils.export_env("OPAL_TESTS_DEBUG", "true")
 utils.install_opal_server_and_client()
@@ -70,66 +77,6 @@ def temp_dir():
 
 
 @pytest.fixture(scope="session")
-def build_docker_server_image():
-    docker_client = docker.from_env()
-    image_name = "opal_server_debug_local"
-
-    yield utils.build_docker_image("Dockerfile.server.local", image_name)
-
-    # Optionally, clean up the image after the test session
-    try:
-        docker_client.images.remove(image=image_name, force=True)
-        print(f"Docker image '{image_name}' removed.")
-    except Exception as cleanup_error:
-        print(f"Failed to remove Docker image '{image_name}': {cleanup_error}")
-
-
-@pytest.fixture(scope="session")
-def build_docker_opa_image():
-    docker_client = docker.from_env()
-    image_name = "opa"
-
-    yield utils.build_docker_image("Dockerfile.opa", image_name)
-
-    # Optionally, clean up the image after the test session
-    try:
-        docker_client.images.remove(image=image_name, force=True)
-        print(f"Docker image '{image_name}' removed.")
-    except Exception as cleanup_error:
-        print(f"Failed to remove Docker image '{image_name}': {cleanup_error}")
-
-
-@pytest.fixture(scope="session")
-def build_docker_cedar_image():
-    docker_client = docker.from_env()
-    image_name = "cedar"
-
-    yield utils.build_docker_image("Dockerfile.cedar", image_name)
-
-    # Optionally, clean up the image after the test session
-    try:
-        docker_client.images.remove(image=image_name, force=True)
-        print(f"Docker image '{image_name}' removed.")
-    except Exception as cleanup_error:
-        print(f"Failed to remove Docker image '{image_name}': {cleanup_error}")
-
-
-@pytest.fixture(scope="session")
-def build_docker_client_image():
-    docker_client = docker.from_env()
-    image_name = "opal_client_debug_local"
-
-    yield utils.build_docker_image("Dockerfile.client.local", image_name)
-
-    # Optionally, clean up the image after the test session
-    try:
-        docker_client.images.remove(image=image_name, force=True)
-        print(f"Docker image '{image_name}' removed.")
-    except Exception as cleanup_error:
-        print(f"Failed to remove Docker image '{image_name}': {cleanup_error}")
-
-
-@pytest.fixture(scope="session")
 def opal_network():
     network = Network().create()
 
@@ -142,87 +89,23 @@ def opal_network():
 
 
 @pytest.fixture(scope="session")
-def gitea_settings():
-    return GiteaSettings(
-        container_name="gitea_server",
-        repo_name="test_repo",
-        temp_dir=os.path.join(os.path.dirname(__file__), "temp"),
-        data_dir=os.path.join(os.path.dirname(__file__), "policies"),
-    )
-
-
-@pytest.fixture(scope="session")
-def gitea_server(opal_network: Network, gitea_settings: GiteaSettings):
-    with GiteaContainer(
-        settings=gitea_settings,
-        network=opal_network,
-    ) as gitea_container:
-        gitea_container.deploy_gitea()
-        gitea_container.init_repo()
-        yield gitea_container
-
-
-@pytest.fixture(scope="session")
-def policy_repo(
-    gitea_settings: GiteaSettings, temp_dir: str, request
-) -> PolicyRepoBase:
-    if pytest_settings.policy_repo_provider == SupportedPolicyRepo.GITEA:
-        gitea_server = request.getfixturevalue("gitea_server")
-
-    policy_repo = PolicyRepoFactory(
-        pytest_settings.policy_repo_provider
-    ).get_policy_repo(
-        temp_dir,
-        pytest_settings.repo_owner,
-        pytest_settings.repo_name,
-        pytest_settings.repo_password,
-        pytest_settings.github_pat,
-        pytest_settings.ssh_key_path,
-        pytest_settings.source_repo_owner,
-        pytest_settings.source_repo_name,
-        True,
-        pytest_settings.webhook_secret,
-        logger,
-    )
-
-    policy_repo.setup(gitea_settings)
-    return policy_repo
-
-
-@pytest.fixture(scope="session")
-def broadcast_channel(opal_network: Network):
-    with PostgresBroadcastContainer(
-        network=opal_network, settings=PostgresBroadcastSettings()
-    ) as container:
-        yield container
-
-
-@pytest.fixture(scope="session")
-def kafka_broadcast_channel(opal_network: Network):
-    with KafkaBroadcastContainer(opal_network) as container:
-        yield container
-
-
-@pytest.fixture(scope="session")
-def redis_broadcast_channel(opal_network: Network):
-    with RedisBroadcastContainer(opal_network) as container:
-        yield container
-
-
-@pytest.fixture(scope="session")
 def number_of_opal_servers():
     return 2
 
 
+from fixtures.broadcasters import broadcast_channel, postgres_broadcast_channel
+from fixtures.images import opal_server_image
+from fixtures.policy_repos import gitea_server, gitea_settings, policy_repo
+
+
 @pytest.fixture(scope="session")
-def opal_server(
+def opal_servers(
     opal_network: Network,
     broadcast_channel: BroadcastContainerBase,
     policy_repo: PolicyRepoBase,
     number_of_opal_servers: int,
-    # build_docker_server_image,
-    topics: dict[str, int]
-
+    # opal_server_image: str,
+    topics: dict[str, int],
 ):
     if not broadcast_channel:
         raise ValueError("Missing 'broadcast_channel' container.")
@@ -239,8 +122,9 @@ def opal_server(
                 container_index=i + 1,
                 uvicorn_workers="4",
                 policy_repo_url=policy_repo.get_repo_url(),
+                # image=opal_server_image,
                 image="permitio/opal-server:latest",
-                data_topics=" ".join(topics.keys())
+                data_topics=" ".join(topics.keys()),
             ),
             network=opal_network,
         )
@@ -268,68 +152,37 @@ def opal_server(
 
 
 @pytest.fixture(scope="session")
-def opa_server(opal_network: Network, build_docker_opa_image):
-    with OpaContainer(
-        settings=OpaSettings(
-            container_name="opa",
-            image="opa",
-        ),
-        network=opal_network,
-    ) as container:
-        assert container.wait_for_log(
-            log_str="Server started", timeout=30
-        ), "OPA server did not start."
-        yield container
-
-        container.stop()
-
-
-@pytest.fixture(scope="session")
-def cedar_server(opal_network: Network, build_docker_cedar_image):
-    with CedarContainer(
-        settings=CedarSettings(
-            container_name="cedar",
-            image="cedar-agent",
-        ),
-        network=opal_network,
-    ) as container:
-        assert container.wait_for_log(
-            log_str="Server started", timeout=30
-        ), "CEDAR server did not start."
-        yield container
-
-        container.stop()
-
-
-@pytest.fixture(scope="session")
 def number_of_opal_clients():
     return 2
 
 
 @pytest.fixture(scope="session")
-def connected_clients(opal_client: List[OpalClientContainer]):
-    for client in opal_client:
+def connected_clients(opal_clients: List[OpalClientContainer]):
+    for client in opal_clients:
         assert client.wait_for_log(
             log_str="Connected to PubSub server", timeout=30
         ), f"Client {client.settings.container_name} did not connect to PubSub server."
-    yield opal_client
+    yield opal_clients
+
+
+from fixtures.images import opal_client_image
 
 
 @pytest.fixture(scope="session")
-def opal_client(
+def opal_clients(
     opal_network: Network,
-    opal_server: List[OpalServerContainer],
+    opal_servers: List[OpalServerContainer],
     # opa_server: OpaContainer,
     # cedar_server: CedarContainer,
     request,
     number_of_opal_clients: int,
-    # build_docker_client_image,
+    # opal_client_image,
 ):
-    if not opal_server or len(opal_server) == 0:
+    if not opal_servers or len(opal_servers) == 0:
         raise ValueError("Missing 'opal_server' container.")
 
-    opal_server_url = f"http://{opal_server[0].settings.container_name}:{opal_server[0].settings.port}"
-    client_token = opal_server[0].obtain_OPAL_tokens()["client"]
+    opal_server_url = f"http://{opal_servers[0].settings.container_name}:{opal_servers[0].settings.port}"
+    client_token = opal_servers[0].obtain_OPAL_tokens()["client"]
     callbacks = json.dumps(
         {
             "callbacks": [
@@ -355,6 +208,7 @@ def opal_client(
 
         container = OpalClientContainer(
             OpalClientSettings(
+                # image=opal_client_image,
                 image="permitio/opal-client:latest",
                 container_name=container_name,
                 container_index=i + 1,
@@ -378,32 +232,33 @@ def opal_client(
 
 
 @pytest.fixture(scope="session", autouse=True)
-def setup(opal_server, opal_client):
+def setup(opal_servers, opal_clients):
     yield
 
     utils.remove_env("OPAL_TESTS_DEBUG")
     wait_sometime()
 
+
 ###########################################################
+
 
 @pytest.fixture(scope="session")
 def topics():
-    topics = {
-        "topic_1": 1,
-        "topic_2": 1
-    }
+    topics = {"topic_1": 1, "topic_2": 1}
     return topics
 
-@pytest.fixture(scope="session")
-def topiced_clients(topics, opal_network: Network, opal_server: list[OpalServerContainer]):
 
-    if not opal_server or len(opal_server) == 0:
+@pytest.fixture(scope="session")
+def topiced_clients(
+    topics, opal_network: Network, opal_servers: list[OpalServerContainer]
+):
+    if not opal_servers or len(opal_servers) == 0:
         raise ValueError("Missing 'opal_server' container.")
 
-    opal_server_url = f"http://{opal_server[0].settings.container_name}:{opal_server[0].settings.port}" 
+    opal_server_url = f"http://{opal_servers[0].settings.container_name}:{opal_servers[0].settings.port}"
     containers = {}  # List to store OpalClientContainer instances
 
-    client_token = opal_server[0].obtain_OPAL_tokens()["client"]
+    client_token = opal_servers[0].obtain_OPAL_tokens()["client"]
     callbacks = json.dumps(
         {
             "callbacks": [
@@ -422,9 +277,7 @@ def topiced_clients(topics, opal_network: Network, opal_server: list[OpalServerC
         }
     )
 
-
     for topic, number_of_clients in topics.items():
-
         for i in range(number_of_clients):
             container_name = f"opal_client_{topic}_{i+1}"  # Unique name for each client
 
@@ -446,18 +299,18 @@ def topiced_clients(topics, opal_network: Network, opal_server: list[OpalServerC
                 f"Started OpalClientContainer: {container_name}, ID: {container.get_wrapped_container().id} - on topic: {topic}"
             )
             containers[topic] = containers.get(topic, [])
-            
+
             assert container.wait_for_log(
-            log_str="Connected to PubSub server", timeout=30
-        ), f"Client {client.settings.container_name} did not connect to PubSub server."
-            
+                log_str="Connected to PubSub server", timeout=30
+            ), f"Client {client.settings.container_name} did not connect to PubSub server."
+
             containers[topic].append(container)
 
     yield containers
 
     for _, clients in containers.items:
-            for client in clients:
-                client.stop()
+        for client in clients:
+            client.stop()
 
 
 def wait_sometime():

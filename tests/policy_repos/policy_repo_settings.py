@@ -1,101 +1,36 @@
-# class PolicyRepoSettings:
-#     repo_name = "opal-example-policy-repo"
-#     branch_name = "main"
-#     temp_dir = "/tmp/opal-example-policy-repo"
-#     username = "opal"
-#     port_http = 3000
-#     port_ssh = 3001
-#     gitea_base_url = f"http://localhost:{port_http}"
-#     github_base_url = "https://github.com"
-#     github_token = "ghp_abc123"
-#     github_owner = "opal"
-#     github_repo = "opal-examaple-policy-repo"
-#     gitea_owner = "opal"
-#     gitea_repo = "opal-example-policy-repo"
-#     gitea_token
-#     gitea_username = "opal"
-#     gitea_password = "password"
-#     github_username = "opal"
-#     github_password = "password"
-#     gitea_repo_url = f"{gitea_base_url}/{gitea_owner}/{gitea_repo}.git"
-#     github_repo_url = f"{github_base_url}/{github_owner}/{github_repo}.git"
-#     github_repo_url_with_token = f"{github_base_url}/{github_owner}/{github_repo}.git"
-#     gitea_repo_url_with_token = f"{gitea_base_url}/{gitea_owner}/{gitea_repo}.git"
-#     commit_message = "Update policy"
-#     file_name = "policy.json"
-#     file_content = """
-#     {
-#         "source_type": "git",
-#         "url": "https://github.com/permitio/opal-example-policy-repo",
-#         "auth": {
-#             "auth_type": "none"
-#         },
-#         "extensions": [
-#             {
-#                 "name": "cedar",
-#                 "source_type": "git",
-#                 "url": "https://github.com/permitio/opal-example-policy-repo",
-#                 "auth": {
-#                     "auth_type": "none"
-#                 }
-#             }
-#         ]
-#     }
-#     """
-#     file_content_gitea = """
-#     {
-#         "source_type": "git",
-#         "url": "https://localhost:3000/opal/opal-example-policy-repo",
-#         "auth": {
-#             "auth_type": "none"
-#         },
-#         "extensions": [
-#             {
-#                 "name": "cedar",
-#                 "source_type": "git",
-#                 "url": "https://localhost:3000/opal/opal-example-policy-repo",
-#                 "auth": {
-#                     "auth_type": "none"
-#                 }
-#             }
-#         ]
-#     }
-#     """
-#     file_content_github = """
-#     {
-#         "source_type": "git",
-#         "url": "https://github.com/opal/opal-example-policy-repo",
-#         "auth": {
-#             "auth_type": "none"
-#         },
-#         "extensions": [
-#             {
-#                 "name": "cedar",
-#                 "source_type": "git",
-#                 "url": "https://github.com/opal/opal-example-policy-repo",
-#                 "auth": {
-#                     "auth_type": "none"
-#                 }
-#             }
-#         ]
-#     }
-#     """
-#     file_content_github_with_token = """
-#     {
-#         "source_type": "git",
-#         "url": "https://github.com/opal/opal-example-policy-repo",
-#         "auth": {
-#             "auth_type": "github_token",
-#             "token": "ghp_abc123"
-#         },
-#         "extensions": [
-#             {
-#                 "name": "cedar",
-#                 "source_type": "git",
-#                 "url": "https://github.com/opal/opal-example-policy-repo",
-#                 "auth": {
-#                     "auth_type": "github_token",
-#                     "token": "ghp_abc123"
-#                 }
-#             }]
-#                 }
+class PolicyRepoSettings:
+    def __init__(
+        self,
+        local_clone_path: str | None = None,
+        owner: str | None = None,
+        repo_name: str | None = None,
+        branch_name: str | None = None,
+        repo_host: str | None = None,
+        repo_port_http: int | None = None,
+        repo_port_ssh: int | None = None,
+        password: str | None = None,
+        pat: str | None = None,
+        ssh_key_path: str | None = None,
+        source_repo_owner: str | None = None,
+        source_repo_name: str | None = None,
+        should_fork: bool = False,
+        should_create_repo: bool = False,  # if True, will create the repo, if the should_fork is False.
+        # If should_fork is True, it will fork and not create the repo from scratch.
+        # if False, the an existing repository is expected
+        webhook_secret: str | None = None,
+    ):
+        self.local_clone_path = local_clone_path
+        self.owner = owner
+        self.repo_name = repo_name
+        self.branch_name = branch_name
+        self.repo_host = repo_host
+        self.repo_port_http = repo_port_http
+        self.repo_port_ssh = repo_port_ssh
+        self.password = password
+        self.pat = pat
+        self.ssh_key_path = ssh_key_path
+        self.source_repo_owner = source_repo_owner
+        self.source_repo_name = source_repo_name
+        self.should_fork = should_fork
+        self.should_create_repo = should_create_repo
+        self.webhook_secret = webhook_secret

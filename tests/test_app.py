@@ -12,6 +12,7 @@ from tests.containers.broadcast_container_base import BroadcastContainerBase
 from tests.containers.gitea_container import GiteaContainer
 from tests.containers.opal_client_container import OpalClientContainer, PermitContainer
 from tests.containers.opal_server_container import OpalServerContainer
+from tests.policy_repos.policy_repo_factory import SupportedPolicyRepo
 
 logger = setup_logger(__name__)
 
@@ -19,7 +20,9 @@ OPAL_DISTRIBUTION_TIME_SECONDS = 2
 ip_to_location_base_url = "https://api.country.is/"
 
 
-def publish_data_user_location(src, user, DATASOURCE_TOKEN: str, port: int, topics: str = "policy_data"):
+def publish_data_user_location(
+    src, user, DATASOURCE_TOKEN: str, port: int, topics: str = "policy_data"
+):
     """Publish user location data to OPAL."""
     # Construct the command to publish data update
     publish_data_user_location_command = (
@@ -35,6 +38,7 @@ def publish_data_user_location(src, user, DATASOURCE_TOKEN: str, port: int, topi
         logger.error("Error: Failed to update user location!")
     else:
         logger.info(f"Successfully updated user location with source: {src}")
+
 
 async def data_publish_and_test(
     user,
@@ -71,6 +75,7 @@ async def data_publish_and_test(
         ) == (allowed_country == user_country)
     return True
 
+
 def update_policy(
     gitea_container: GiteaContainer,
     opal_server_container: OpalServerContainer,
@@ -96,7 +101,9 @@ def update_policy(
     utils.wait_policy_repo_polling_interval(opal_server_container)
 
 
-def test_topiced_user_location(opal_server: list[OpalServerContainer], topiced_clients: dict[str, OpalClientContainer]
+def test_topiced_user_location(
+    opal_server: list[OpalServerContainer],
+    topiced_clients: dict[str, OpalClientContainer],
 ):
     """Test data publishing."""
 
@@ -111,20 +118,25 @@ def test_topiced_user_location(opal_server: list[OpalServerContainer], topiced_c
             "bob",
             opal_server[0].obtain_OPAL_tokens()["datasource"],
             opal_server[0].settings.port,
-            topic)
-        
+            topic,
+        )
+
         logger.info(f"Published user location for 'bob'. | topic: {topic}")
 
         for client in clients:
-            
             log_found = client.wait_for_log(
                 "PUT /v1/data/users/bob/location -> 204", 30, reference_timestamp
             )
             logger.info("Finished processing logs.")
-            assert log_found, "Expected log entry not found after the reference timestamp."
+            assert (
+                log_found
+            ), "Expected log entry not found after the reference timestamp."
 
 
-def test_user_location(opal_server: list[OpalServerContainer], connected_clients: list[OpalClientContainer]):
+def test_user_location(
+    opal_servers: list[OpalServerContainer],
+    connected_clients: list[OpalClientContainer],
+):
     """Test data publishing."""
 
     # Generate the reference timestamp
@@ -136,8 +148,8 @@ def test_user_location(opal_server: list[OpalServerContainer], connected_clients
     publish_data_user_location(
         f"{ip_to_location_base_url}8.8.8.8",
         "bob",
-        opal_server[0].obtain_OPAL_tokens()["datasource"],
-        opal_server[0].settings.port,
+        opal_servers[0].obtain_OPAL_tokens()["datasource"],
+        opal_servers[0].settings.port,
     )
     logger.info("Published user location for 'bob'.")
 
@@ -148,12 +160,13 @@ def test_user_location(opal_server: list[OpalServerContainer], connected_clients
         logger.info("Finished processing logs.")
         assert log_found, "Expected log entry not found after the reference timestamp."
 
+
 # @pytest.mark.parametrize("location", ["CN", "US", "SE"])
 @pytest.mark.asyncio
 async def test_policy_and_data_updates(
     gitea_server: GiteaContainer,
-    opal_server: list[OpalServerContainer],
-    opal_client: list[OpalClientContainer],
+    opal_servers: list[OpalServerContainer],
+    opal_clients: list[OpalClientContainer],
     temp_dir,
 ):
     """This script updates policy configurations and tests access based on
@@ -252,6 +265,7 @@ def test_read_statistics(
 
     print("Statistics check passed in all attempts.")
 
+
 @pytest.mark.asyncio
 async def test_policy_update(
     gitea_server: GiteaContainer,
@@ -288,8 +302,10 @@ async def test_policy_update(
             log_found
         ), f"Expected log entry not found in client '{client.settings.container_name}' after the reference timestamp."
 
+
 def test_with_statistics_disabled(opal_server: list[OpalServerContainer]):
     assert True
+
 
 def test_with_uvicorn_workers_and_no_broadcast_channel(
     opal_server: list[OpalServerContainer],
@@ -298,7 +314,6 @@ def test_with_uvicorn_workers_and_no_broadcast_channel(
 
 
 # TODO: Add more tests
-
 
 
 def TD_test_two_servers_one_worker(opal_server: list[OpalServerContainer]):

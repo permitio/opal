@@ -12,21 +12,13 @@ from testcontainers.core.utils import setup_logger
 
 from tests import utils
 from tests.policy_repos.policy_repo_base import PolicyRepoBase
+from tests.policy_repos.policy_repo_settings import PolicyRepoSettings
 
 
 class GithubPolicyRepo(PolicyRepoBase):
     def __init__(
         self,
-        temp_dir: str,
-        owner: str | None = None,
-        repo: str | None = None,
-        password: str | None = None,
-        github_pat: str | None = None,
-        ssh_key_path: str | None = None,
-        source_repo_owner: str | None = None,
-        source_repo_name: str | None = None,
-        should_fork: bool = False,
-        webhook_secret: str | None = None,
+        settings: PolicyRepoSettings,
         logger: logging.Logger = setup_logger(__name__),
     ):
         self.logger = logger
@@ -35,25 +27,33 @@ class GithubPolicyRepo(PolicyRepoBase):
         self.protocol = "git"
         self.host = "github.com"
         self.port = 22
-        self.temp_dir = temp_dir
+        self.temp_dir = settings.local_clone_path
         self.ssh_key_name = "OPAL_PYTEST"
 
-        self.owner = owner if owner else self.owner
-        self.password = password
-        self.github_pat = github_pat if github_pat else self.github_pat
-        self.repo = repo if repo else self.repo
+        self.owner = settings.owner if settings.owner else self.owner
+        self.password = settings.password
+        self.github_pat = settings.pat if settings.pat else self.github_pat
+        self.repo = settings.repo_name if settings.repo_name else self.repo
 
         self.source_repo_owner = (
-            source_repo_owner if source_repo_owner else self.source_repo_owner
+            settings.source_repo_owner
+            if settings.source_repo_owner
+            else self.source_repo_owner
         )
         self.source_repo_name = (
-            source_repo_name if source_repo_name else self.source_repo_name
+            settings.source_repo_name
+            if settings.source_repo_name
+            else self.source_repo_name
         )
 
         self.local_repo_path = os.path.join(self.temp_dir, self.source_repo_name)
-        self.ssh_key_path = ssh_key_path if ssh_key_path else self.ssh_key_path
-        self.should_fork = should_fork
-        self.webhook_secret = webhook_secret if webhook_secret else self.webhook_secret
+        self.ssh_key_path = (
+            settings.ssh_key_path if settings.ssh_key_path else self.ssh_key_path
+        )
+        self.should_fork = settings.should_fork
+        self.webhook_secret = (
+            settings.webhook_secret if settings.webhook_secret else self.webhook_secret
+        )
 
         if not self.password and not self.github_pat and not self.ssh_key_path:
             self.logger.error("No password or Github PAT or SSH key provided.")

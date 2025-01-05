@@ -8,6 +8,7 @@ from tests.policy_repos.gitea_policy_repo import GiteaPolicyRepo
 from tests.policy_repos.github_policy_repo import GithubPolicyRepo
 from tests.policy_repos.gitlab_policy_repo import GitlabPolicyRepo
 from tests.policy_repos.policy_repo_base import PolicyRepoBase
+from tests.policy_repos.policy_repo_settings import PolicyRepoSettings
 
 
 class SupportedPolicyRepo(Enum):
@@ -30,16 +31,7 @@ class PolicyRepoFactory:
 
     def get_policy_repo(
         self,
-        temp_dir: str,
-        owner: str | None = None,
-        repo: str | None = None,
-        password: str | None = None,
-        github_pat: str | None = None,
-        ssh_key_path: str | None = None,
-        source_repo_owner: str | None = None,
-        source_repo_name: str | None = None,
-        should_fork: bool = False,
-        webhook_secret: str | None = None,
+        settings: PolicyRepoSettings,
         logger: logging.Logger = setup_logger(__name__),
     ) -> PolicyRepoBase:
         factory = {
@@ -48,18 +40,7 @@ class PolicyRepoFactory:
             SupportedPolicyRepo.GITLAB: GitlabPolicyRepo,
         }
 
-        return factory[SupportedPolicyRepo(self.policy_repo)](
-            temp_dir,
-            owner,
-            repo,
-            password,
-            github_pat,
-            ssh_key_path,
-            source_repo_owner,
-            source_repo_name,
-            should_fork,
-            webhook_secret,
-        )
+        return factory[SupportedPolicyRepo(self.policy_repo)](settings)
 
     def assert_exists(self, policy_repo: str) -> bool:
         try:
