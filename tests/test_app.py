@@ -102,7 +102,7 @@ def update_policy(
 
 
 def test_topiced_user_location(
-    opal_server: list[OpalServerContainer],
+    opal_servers: list[OpalServerContainer],
     topiced_clients: dict[str, OpalClientContainer],
 ):
     """Test data publishing."""
@@ -116,8 +116,8 @@ def test_topiced_user_location(
         publish_data_user_location(
             f"{ip_to_location_base_url}8.8.8.8",
             "bob",
-            opal_server[0].obtain_OPAL_tokens()["datasource"],
-            opal_server[0].settings.port,
+            opal_servers[0].obtain_OPAL_tokens()["datasource"],
+            opal_servers[0].settings.port,
             topic,
         )
 
@@ -177,7 +177,7 @@ async def test_policy_and_data_updates(
 
     # Parse locations into separate lists of IPs and countries
     locations = [("8.8.8.8", "US"), ("77.53.31.138", "SE")]
-    for server in opal_server:
+    for server in opal_servers:
         DATASOURCE_TOKEN = server.obtain_OPAL_tokens()["datasource"]
 
         for location in locations:
@@ -185,7 +185,7 @@ async def test_policy_and_data_updates(
             print(f"Updating policy to allow only users from {location[1]}...")
             update_policy(gitea_server, server, location[1])
 
-            for client in opal_client:
+            for client in opal_clients:
                 assert await data_publish_and_test(
                     "bob",
                     location[1],
@@ -199,7 +199,7 @@ async def test_policy_and_data_updates(
 @pytest.mark.parametrize("attempts", [10])  # Number of attempts to repeat the check
 def test_read_statistics(
     attempts,
-    opal_server: list[OpalServerContainer],
+    opal_servers: list[OpalServerContainer],
     number_of_opal_servers: int,
     number_of_opal_clients: int,
 ):
@@ -210,7 +210,7 @@ def test_read_statistics(
 
     time.sleep(15)
 
-    for server in opal_server:
+    for server in opal_servers:
         print(f"OPAL Server: {server.settings.container_name}:{server.settings.port}")
 
         # The URL for statistics
@@ -269,8 +269,8 @@ def test_read_statistics(
 @pytest.mark.asyncio
 async def test_policy_update(
     gitea_server: GiteaContainer,
-    opal_server: list[OpalServerContainer],
-    opal_client: list[OpalClientContainer],
+    opal_servers: list[OpalServerContainer],
+    opal_clients: list[OpalClientContainer],
     temp_dir,
 ):
     # Parse locations into separate lists of IPs and countries
@@ -280,20 +280,18 @@ async def test_policy_update(
     reference_timestamp = datetime.now(timezone.utc)
     logger.info(f"Reference timestamp: {reference_timestamp}")
 
-    for server in opal_server:
+    for server in opal_servers:
         # Update policy to allow only non-US users
         print(f"Updating policy to allow only users from {location}...")
-        update_policy(gitea_server, opal_server[0], "location")
+        update_policy(gitea_server, server, "location")
 
-        log_found = server.wait_for_log(
-            "Found new commits: old HEAD was", 30, reference_timestamp
-        )
+        log_found = server.wait_for_log("Found new commits: old HEAD was", 30, reference_timestamp)
         logger.info("Finished processing logs.")
         assert (
             log_found
         ), f"Expected log entry not found in server '{server.settings.container_name}' after the reference timestamp."
 
-    for client in opal_client:
+    for client in opal_clients:
         log_found = client.wait_for_log(
             "Fetching policy bundle from", 30, reference_timestamp
         )
@@ -303,28 +301,22 @@ async def test_policy_update(
         ), f"Expected log entry not found in client '{client.settings.container_name}' after the reference timestamp."
 
 
-def test_with_statistics_disabled(opal_server: list[OpalServerContainer]):
+def test_with_statistics_disabled(opal_servers: list[OpalServerContainer]):
     assert True
 
 
-def test_with_uvicorn_workers_and_no_broadcast_channel(
-    opal_server: list[OpalServerContainer],
-):
+def test_with_uvicorn_workers_and_no_broadcast_channel(opal_servers: list[OpalServerContainer]):
     assert True
 
 
 # TODO: Add more tests
 
 
-def TD_test_two_servers_one_worker(opal_server: list[OpalServerContainer]):
+def TD_test_two_servers_one_worker(opal_servers: list[OpalServerContainer]):
     assert True
 
 
-def TD_test_switch_to_kafka_broadcast_channel(
-    broadcast_channel: BroadcastContainerBase,
-    opal_servers: list[OpalServerContainer],
-    request,
-):
+def TD_test_switch_to_kafka_broadcast_channel(broadcast_channel: BroadcastContainerBase, opal_servers: list[OpalServerContainer], request):
     return True
 
     broadcast_channel.shutdown()
