@@ -64,7 +64,12 @@ Please follow these guidelines:
     ```
 6. **Submit PR**: Open a pull request, linking to the issue and explaining your changes clearly.
 
-We aim to review all PRs promptly. Make sure to respond to any comments and update your PR as needed.
+We aim to review all PRs promptly. After you submit a PR, here’s what you can expect:
+1. **Initial Review:** A maintainer will review your PR within a few days. If there are any issues, they will provide feedback.
+2. **Feedback:** If changes are needed, please make the necessary updates and push them to your branch. The PR will be updated automatically.
+3. **Approval:** Once your PR is approved, it will be merged into the main branch.
+4. **Release:** Your changes will be included in the next release of OPAL. We will update the changelog and release notes accordingly.
+5. **Announcement:** We will announce your contribution in our community channels and give you a shoutout! 🎉
 
 ### Contributor Checklist
 
@@ -103,6 +108,15 @@ We are excited to have you onboard as a contributor to OPAL! 🎉
 ### Running OPAL Servers and Clients
 
 You can run the OPAL server and client locally using the OPAL CLI or using uvicorn directly.
+### Configuring OPAL
+Configure OPAL by setting environment variables:
+```bash
+export OPAL_POLICY_REPO_URL=https://github.com/permitio/opal-example-policy-repo
+export OPAL_DATA_CONFIG_SOURCES={"config":{"entries":[{"url":"http://localhost:7002/policy-data","topics":["policy_data"],"dst_path":"/static"}]}}
+export OPAL_SERVER_URL=http://localhost:7002
+```
+
+More information about the available configurations can be found in the [OPAL documentation](https://opal.ac/getting-started/configuration).
 
 #### Using OPAL CLI
 ```bash
