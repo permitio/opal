@@ -79,8 +79,14 @@ class PyTestSessionSettings(List):
         self.current_mode = 0
 
     def __iter__(self):
+        return self
+
+    def __next__(self):
         print("Iterating over PyTestSessionSettings...")
         logger = setup_logger(__name__)
+
+        if self.current_broadcaster >= len(self.broadcasters):
+            raise StopIteration
 
         while self.current_broadcaster < len(self.broadcasters):
             # Update settings
@@ -92,11 +98,6 @@ class PyTestSessionSettings(List):
             logger.info(self.repo_provider)
             logger.info(self.mode)
 
-            # Yield the session matrix (self) with the updated settings
-            yield PyTestSessionSettings(
-                self.session_id, self.repo_provider, self.broadcaster, self.mode
-            )
-
             # Move to the next combination
             self.current_mode += 1
             if self.current_mode >= len(self.modes):
@@ -105,6 +106,10 @@ class PyTestSessionSettings(List):
                 if self.current_repo_provider >= len(self.repo_providers):
                     self.current_repo_provider = 0
                     self.current_broadcaster += 1
+
+            return PyTestSessionSettings(
+                self.session_id, self.repo_provider, self.broadcaster, self.mode
+            )
 
         print("Finished iterating over PyTestSessionSettings...")
 

@@ -2,6 +2,7 @@ import asyncio
 import subprocess
 import time
 from datetime import datetime, timezone
+from typing import List
 
 import pytest
 import requests
@@ -137,7 +138,7 @@ def test_topiced_user_location(
 from settings import session_matrix
 
 
-@pytest.mark.parametrize("session_matrix", [None], indirect=True)
+@pytest.mark.parametrize("session_matrix", list(PyTestSessionSettings()), indirect=True)
 def test_matrix(session_matrix: PyTestSessionSettings):
     logger.info(session_matrix.broadcaster)
     logger.info(session_matrix.mode)
@@ -297,7 +298,9 @@ async def test_policy_update(
         print(f"Updating policy to allow only users from {location}...")
         update_policy(gitea_server, server, "location")
 
-        log_found = server.wait_for_log("Found new commits: old HEAD was", 30, reference_timestamp)
+        log_found = server.wait_for_log(
+            "Found new commits: old HEAD was", 30, reference_timestamp
+        )
         logger.info("Finished processing logs.")
         assert (
             log_found
@@ -317,7 +320,9 @@ def test_with_statistics_disabled(opal_servers: list[OpalServerContainer]):
     assert True
 
 
-def test_with_uvicorn_workers_and_no_broadcast_channel(opal_servers: list[OpalServerContainer]):
+def test_with_uvicorn_workers_and_no_broadcast_channel(
+    opal_servers: list[OpalServerContainer],
+):
     assert True
 
 
@@ -328,7 +333,11 @@ def TD_test_two_servers_one_worker(opal_servers: list[OpalServerContainer]):
     assert True
 
 
-def TD_test_switch_to_kafka_broadcast_channel(broadcast_channel: BroadcastContainerBase, opal_servers: list[OpalServerContainer], request):
+def TD_test_switch_to_kafka_broadcast_channel(
+    broadcast_channel: BroadcastContainerBase,
+    opal_servers: list[OpalServerContainer],
+    request,
+):
     return True
 
     broadcast_channel.shutdown()
