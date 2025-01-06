@@ -12,9 +12,12 @@ import requests
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from git import Repo
+from testcontainers.core.utils import setup_logger
 
 import docker
 from tests.containers.opal_server_container import OpalServerContainer
+
+logger = setup_logger(__name__)
 
 
 def compose(filename="docker-compose-app-tests.yml", *args):
@@ -42,28 +45,32 @@ def build_docker_image(docker_file: str, image_name: str):
     """Build the Docker image from the Dockerfile.server.local file in the
     tests/docker directory."""
     docker_client = docker.from_env()
+    # context_path=os.path.join(os.path.dirname(__file__), ".."),  # Expands the context
+    context_path = ".."
     dockerfile_path = os.path.join(os.path.dirname(__file__), "docker", docker_file)
+    logger.info(f"Context path: {context_path}, Dockerfile path: {dockerfile_path}")
 
     # Ensure the Dockerfile exists
     if not os.path.exists(dockerfile_path):
         raise FileNotFoundError(f"Dockerfile not found at {dockerfile_path}")
 
-    print(f"Building Docker image from {dockerfile_path}...")
+    logger.debug(f"Building Docker image from {dockerfile_path}...")
 
     try:
         # Build the Docker image
         image, logs = docker_client.images.build(
-            path=os.path.dirname(dockerfile_path),
-            dockerfile=os.path.basename(dockerfile_path),
+            path=context_path,
+            dockerfile=dockerfile_path,
             tag=image_name,
+            rm=True,
         )
         # Print build logs
         for log in logs:
-            print(log.get("stream", "").strip())
+            logger.debug(log.get("stream", "").strip())
     except Exception as e:
         raise RuntimeError(f"Failed to build Docker image: {e}")
 
-    print(f"Docker image '{image_name}' built successfully.")
+    logger.debug(f"Docker image '{image_name}' built successfully.")
 
     return image_name
 
@@ -77,13 +84,13 @@ def remove_pytest_opal_networks():
         for network in networks:
             if network.name.startswith("pytest_opal_"):
                 try:
-                    print(f"Removing network: {network.name}")
+                    logger.debug(f"Removing network: {network.name}")
                     network.remove()
                 except Exception as e:
-                    print(f"Failed to remove network {network.name}: {e}")
-        print("Cleanup complete!")
+                    logger.debug(f"Failed to remove network {network.name}: {e}")
+        logger.debug("Cleanup complete!")
     except Exception as e:
-        print(f"Error while accessing Docker: {e}")
+        logger.debug(f"Error while accessing Docker: {e}")
 
 
 def generate_ssh_key_pair():
@@ -129,7 +136,7 @@ async def opal_authorize(user: str, policy_url: str):
     # Parse the JSON response
     assert "result" in response.json()
     allowed = response.json()["result"]
-    print(
+    logger.debug(
         f"Authorization test result: {user} is {'ALLOWED' if allowed else 'NOT ALLOWED'}."
     )
 
@@ -142,7 +149,7 @@ def wait_policy_repo_polling_interval(opal_server_container: OpalServerContainer
     for i in range(
         int(opal_server_container.settings.polling_interval) + propagation_time, 0, -1
     ):
-        print(
+        logger.debug(
             f"waiting for OPAL server to pull the new policy {i} secondes left",
             end="\r",
         )
@@ -347,7 +354,7 @@ def get_client_and_server_count(json_data):
 
 
 def install_opal_server_and_client():
-    print("- Installing opal-server and opal-client from pip...")
+    logger.debug("- Installing opal-server and opal-client from pip...")
 
     try:
         # Install opal-server and opal-client
@@ -380,13 +387,15 @@ def install_opal_server_and_client():
         )
 
         if not opal_server_installed or not opal_client_installed:
-            print("Installation failed: opal-server or opal-client is not available.")
+            logger.debug(
+                "Installation failed: opal-server or opal-client is not available."
+            )
             sys.exit(1)
 
-        print("- opal-server and opal-client successfully installed.")
+        logger.debug("- opal-server and opal-client successfully installed.")
 
     except subprocess.CalledProcessError:
-        print("Installation failed: pip command encountered an error.")
+        logger.debug("Installation failed: pip command encountered an error.")
         sys.exit(1)
 
 
@@ -405,7 +414,7 @@ def export_env(varname, value):
         Prints the export statement to the console and sets the environment variable.
     """
 
-    print(f"export {varname}={value}")
+    logger.debug(f"export {varname}={value}")
     os.environ[varname] = value
 
     return value
@@ -423,7 +432,7 @@ def remove_env(varname):
     Side Effects:
         Prints the unset statement to the console and removes the environment variable.
     """
-    print(f"unset {varname}")
+    logger.debug(f"unset {varname}")
     del os.environ[varname]
 
     return
@@ -445,11 +454,11 @@ def create_localtunnel(port=8000):
             match = re.search(r"https://[a-z0-9\-]+\.loca\.lt", line)
             if match:
                 public_url = match.group(0)
-                print(f"Public URL: {public_url}")
+                logger.debug(f"Public URL: {public_url}")
                 return public_url
 
     except Exception as e:
-        print(f"Error starting LocalTunnel: {e}")
+        logger.debug(f"Error starting LocalTunnel: {e}")
 
     return None
 
@@ -464,7 +473,7 @@ def global_exception_handler(exc_type, exc_value, exc_traceback):
         return
 
     # Log or print the exception details
-    print(f"Uncaught exception: {exc_type.__name__}: {exc_value}")
+    logger.debug(f"Uncaught exception: {exc_type.__name__}: {exc_value}")
 
 
 # Set the global exception handler

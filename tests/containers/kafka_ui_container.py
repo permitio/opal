@@ -1,15 +1,15 @@
-import debugpy
 from testcontainers.core.container import DockerContainer
 from testcontainers.core.network import Network
 
-import docker
+from tests.containers.kafka_broadcast_container import KafkaBroadcastContainer
 from tests.containers.permitContainer import PermitContainer
 
 
-class ZookeeperContainer(PermitContainer, DockerContainer):
+class KafkaUIContainer(PermitContainer, DockerContainer):
     def __init__(
         self,
         network: Network,
+        kafka_container: KafkaBroadcastContainer,
         docker_client_kw: dict | None = None,
         **kwargs,
     ) -> None:
@@ -18,23 +18,19 @@ class ZookeeperContainer(PermitContainer, DockerContainer):
         labels.update({"com.docker.compose.project": "pytest"})
         kwargs["labels"] = labels
 
+        self.kafka_container = kafka_container
         self.network = network
+
+        self.image = "provectuslabs/kafka-ui:latest"
 
         PermitContainer.__init__(self)
         DockerContainer.__init__(
-            self,
-            image="confluentinc/cp-zookeeper:latest",
-            docker_client_kw=docker_client_kw,
-            **kwargs,
+            self, image=self.image, docker_client_kw=docker_client_kw, **kwargs
         )
 
-        self.with_bind_ports(2181, 2181)
-        self.with_env("ZOOKEEPER_CLIENT_PORT", "2181")
-        self.with_env("ZOOKEEPER_TICK_TIME", "2000")
-        self.with_env("ALLOW_ANONYMOUS_LOGIN", "yes")
+        self.with_name("kafka-ui")
+        self.with_bind_ports(8080, 8080)
+        self.with_env("KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS", "kafka:9092")
 
         self.with_network(self.network)
-
-        self.with_network_aliases("zookeper")
-        # Add a custom name for the container
-        self.with_name(f"zookeeper")
+        self.with_network_aliases("Kafka_ui")

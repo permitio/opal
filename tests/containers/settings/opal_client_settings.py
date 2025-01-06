@@ -8,34 +8,35 @@ from tests import utils
 class OpalClientSettings:
     def __init__(
         self,
-        client_token: str | None  = None,
-        container_name: str | None  = None,
-        port: int | None  = None,
-        opal_server_url: str | None  = None,
-        should_report_on_data_updates: str | None  = None,
-        log_format_include_pid: str | None  = None,
-        tests_debug: bool | None  = False,
-        log_diagnose: str | None  = None,
-        log_level: str | None  = None,
-        debug_enabled: bool | None  = None,
-        debug_port: int | None  = None,
-        image: str | None  = None,
-        opa_port: int | None  = None,
-        default_update_callbacks: str | None  = None,
-        opa_health_check_policy_enabled: str | None  = None,
-        auth_jwt_audience: str | None  = None,
-        auth_jwt_issuer: str | None  = None,
-        statistics_enabled: str | None  = None,
-        policy_store_type: str | None  = None,
-        policy_store_url: str | None  = None,
-        iniline_cedar_enabled: str | None  = None,
-        inline_cedar_exec_path: str | None  = None,
-        inline_cedar_config: str | None  = None,
-        inline_cedar_log_format: str | None  = None,
-        inline_opa_enabled: bool | None  = None,
-        inline_opa_exec_path: str | None  = None,
-        inline_opa_config: str | None  = None,
+        client_token: str | None = None,
+        container_name: str | None = None,
+        port: int | None = None,
+        opal_server_url: str | None = None,
+        should_report_on_data_updates: str | None = None,
+        log_format_include_pid: str | None = None,
+        tests_debug: bool | None = False,
+        log_diagnose: str | None = None,
+        log_level: str | None = None,
+        debug_enabled: bool | None = None,
+        debug_port: int | None = None,
+        image: str | None = None,
+        opa_port: int | None = None,
+        default_update_callbacks: str | None = None,
+        opa_health_check_policy_enabled: str | None = None,
+        auth_jwt_audience: str | None = None,
+        auth_jwt_issuer: str | None = None,
+        statistics_enabled: str | None = None,
+        policy_store_type: str | None = None,
+        policy_store_url: str | None = None,
+        iniline_cedar_enabled: str | None = None,
+        inline_cedar_exec_path: str | None = None,
+        inline_cedar_config: str | None = None,
+        inline_cedar_log_format: str | None = None,
+        inline_opa_enabled: bool | None = None,
+        inline_opa_exec_path: str | None = None,
+        inline_opa_config: str | None = None,
         inline_opa_log_format: str | None = None,
+        uvicorn_asgi_app: str | None = None,
         container_index: int = 1,
         topics: str | None = None,
         **kwargs
@@ -98,6 +99,10 @@ class OpalClientSettings:
         )
         self.policy_store_url = (
             policy_store_url if policy_store_url else self.policy_store_url
+        )
+
+        self.uvicorn_asgi_app = (
+            uvicorn_asgi_app if uvicorn_asgi_app else self.uvicorn_asgi_app
         )
 
         if self.container_index > 1:
@@ -167,6 +172,10 @@ class OpalClientSettings:
             "OPAL_STATISTICS_ENABLED": self.statistics_enabled,
             # TODO: make not hardcoded
             "OPAL_DATA_TOPICS": self.topics,
+            "UVICORN_ASGI_APP": self.uvicorn_asgi_app,
+            "UVICORN_NUM_WORKERS": "1",
+            "UVICORN_PORT": str(self.port),
+            "OPAL_INLINE_OPA_ENABLED": self.inline_opa_enabled,
         }
 
         if self.tests_debug:
@@ -221,6 +230,8 @@ class OpalClientSettings:
         self.policy_store_url = os.getenv("OPAL_POLICY_STORE_URL", None)
 
         self.policy_store_type = os.getenv("OPAL_POLICY_STORE_TYPE", "OPA")
+
+        self.uvicorn_asgi_app = os.getenv("UVICORN_ASGI_APP", "opal_client.main:app")
 
         self.iniline_cedar_enabled = os.getenv("OPAL_INILINE_CEDAR_ENABLED", "false")
         self.inline_cedar_exec_path = os.getenv(

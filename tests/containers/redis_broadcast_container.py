@@ -25,4 +25,4 @@ class RedisBroadcastContainer(PermitContainer, RedisContainer):
 
         self.with_network_aliases("broadcast_channel")
         # Add a custom name for the container
-        self.with_name(f"pytest_opal_broadcast_channel")
+        self.with_name(f"redis_broadcast_channel")

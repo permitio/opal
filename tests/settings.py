@@ -39,6 +39,7 @@ class TestSettings:
         self.webhook_secret = os.getenv("OPAL_PYTEST_WEBHOOK_SECRET", "xxxxx")
         self.should_fork = os.getenv("OPAL_PYTEST_SHOULD_FORK", "true")
         self.use_webhook = os.getenv("OPAL_PYTEST_USE_WEBHOOK", "true")
+        self.wait_for_debugger = os.getenv("OPAL_PYTEST_WAIT_FOR_DEBUGGER", "false")
 
     def dump_settings(self):
         with open(f"pytest_{self.session_id}.env", "w") as envfile:
@@ -104,8 +105,11 @@ class PyTestSessionSettings(List):
                 "repo_provider": self.repo_provider,
                 "broadcaster": self.broadcaster,
                 "mode": self.mode,
-                "is_final": ((self.current_broadcaster >= len(self.broadcasters)) and (self.current_repo_provider >= len(self.repo_providers)) and (self.current_mode >= len(self.modes))),
-                "is_final": ((self.current_broadcaster <= 0) and (self.current_repo_provider <= 0) and (self.current_mode <= 0)),
+                "is_final": (
+                    (self.current_broadcaster >= len(self.broadcasters))
+                    and (self.current_repo_provider >= len(self.repo_providers))
+                    and (self.current_mode >= len(self.modes))
+                ),
             }
 
         print("Finished iterating over PyTestSessionSettings...")
@@ -115,7 +119,3 @@ class PyTestSessionSettings(List):
 def session_matrix(request):
     print
     return request.param
-
-    # settings = PyTestSessionSettings()
-    # for setting in settings:
-    #     yield setting

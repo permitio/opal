@@ -22,13 +22,6 @@
     # Copy the Cedar agent binary from the build stage
     COPY --from=cedar-builder /tmp/cedar-agent/target/*/cedar-agent /cedar/cedar-agent
 
-    # Define environment variables for configuration
-    ENV OPAL_POLICY_STORE_TYPE=CEDAR
-    ENV OPAL_INLINE_CEDAR_ENABLED=true
-    ENV OPAL_INLINE_CEDAR_EXEC_PATH=/cedar/cedar-agent
-    ENV OPAL_INLINE_CEDAR_CONFIG='{"addr": "0.0.0.0:8180"}'
-    ENV OPAL_POLICY_STORE_URL=http://localhost:8180
-
     # Expose Cedar agent port
     EXPOSE 8180
 
