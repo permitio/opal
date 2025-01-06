@@ -17,11 +17,48 @@ from tests.policy_repos.policy_repo_factory import SupportedPolicyRepo
 
 class TestSettings:
     def __init__(self):
+        """Initialize settings for the test session.
+
+        This method creates a new session ID, then loads settings from environment
+        variables. The session ID is a 2-character hexadecimal string, and is used to
+        identify the test session for logging and debugging purposes.
+
+        The settings loaded from environment variables are as follows:
+
+        - OPAL_PYTEST_POLICY_REPO_PROVIDER: The policy repository provider to use
+          for the test session. Valid values are 'GITEA' and 'GITHUB'. If not set,
+          defaults to 'GITEA'.
+        """
         self.session_id = token_hex(2)
 
         self.load_from_env()
 
     def load_from_env(self):
+        """Loads environment variables into the test settings.
+
+        This function loads the environment variables using the `load_dotenv` function
+        and assigns them to various attributes of the settings object. The environment
+        variables control various aspects of the test session, such as the policy
+        repository provider, repository details, authentication credentials, and
+        configuration options for the test environment.
+
+        Attributes set by this function:
+        - policy_repo_provider: The provider for the policy repository. Defaults to GITEA.
+        - repo_owner: The owner of the policy repository. Defaults to "iwphonedo".
+        - repo_name: The name of the policy repository. Defaults to "opal-example-policy-repo".
+        - repo_password: The password for accessing the policy repository.
+        - github_pat: The GitHub personal access token for accessing the repository.
+        - ssh_key_path: The path to the SSH key used for repository access.
+        - source_repo_owner: The owner of the source repository. Defaults to "permitio".
+        - source_repo_name: The name of the source repository. Defaults to "opal-example-policy-repo".
+        - webhook_secret: The secret used for authenticating webhooks. Defaults to "xxxxx".
+        - should_fork: Whether to fork the repository. Defaults to "true".
+        - use_webhook: Whether to use webhooks for triggering updates. Defaults to "true".
+        - wait_for_debugger: Whether to wait for a debugger. Defaults to "false".
+        - skip_rebuild_images: Whether to skip rebuilding Docker images. Defaults to "false".
+        - keep_images: Whether to keep Docker images after tests. Defaults to "true".
+        """
+
         load_dotenv()
 
         self.policy_repo_provider = os.getenv(
@@ -40,6 +77,9 @@ class TestSettings:
         self.should_fork = os.getenv("OPAL_PYTEST_SHOULD_FORK", "true")
         self.use_webhook = os.getenv("OPAL_PYTEST_USE_WEBHOOK", "true")
         self.wait_for_debugger = os.getenv("OPAL_PYTEST_WAIT_FOR_DEBUGGER", "false")
+
+        self.skip_rebuild_images = os.getenv("OPAL_PYTEST_SKIP_REBUILD_IMAGES", "true")
+        self.keep_images = os.getenv("OPAL_PYTEST_KEEP_IMAGES", "true")
 
     def dump_settings(self):
         with open(f"pytest_{self.session_id}.env", "w") as envfile:

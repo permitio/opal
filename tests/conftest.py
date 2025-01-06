@@ -371,7 +371,7 @@ def setup(opal_servers, opal_clients, session_matrix):
     yield
 
     if session_matrix["is_final"]:
-        print("Finalizing test session...")
+        logger.info("Finalizing test session...")
         utils.remove_env("OPAL_TESTS_DEBUG")
         wait_sometime()
 

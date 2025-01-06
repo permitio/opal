@@ -72,7 +72,7 @@ def build_docker_image(docker_file: str, image_name: str):
 
     logger.debug(f"Docker image '{image_name}' built successfully.")
 
-    return image_name
+    return image
 
 
 def remove_pytest_opal_networks():

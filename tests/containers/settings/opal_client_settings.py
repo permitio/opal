@@ -39,9 +39,8 @@ class OpalClientSettings:
         uvicorn_asgi_app: str | None = None,
         container_index: int = 1,
         topics: str | None = None,
-        **kwargs
+        **kwargs,
     ):
-        
         self.logger = setup_logger("OpalClientSettings")
 
         self.load_from_env()
@@ -154,15 +153,15 @@ class OpalClientSettings:
             raise ValueError("OPAL_CLIENT_CONTAINER_NAME is required.")
         if not self.opal_server_url:
             raise ValueError("OPAL_SERVER_URL is required.")
-        
-        self.logger.info(f"{self.container_name} | Dependencies validated successfully.")
-    
+
+        self.logger.info(
+            f"{self.container_name} | Dependencies validated successfully."
+        )
 
     def getEnvVars(self):
         env_vars = {
             "OPAL_SERVER_URL": self.opal_server_url,
             "OPAL_LOG_FORMAT_INCLUDE_PID": self.log_format_include_pid,
-            "OPAL_INLINE_OPA_LOG_FORMAT": self.inline_opa_log_format,
             "OPAL_SHOULD_REPORT_ON_DATA_UPDATES": self.should_report_on_data_updates,
             "OPAL_DEFAULT_UPDATE_CALLBACKS": self.default_update_callbacks,
             "OPAL_OPA_HEALTH_CHECK_POLICY_ENABLED": self.opa_health_check_policy_enabled,
@@ -175,7 +174,6 @@ class OpalClientSettings:
             "UVICORN_ASGI_APP": self.uvicorn_asgi_app,
             "UVICORN_NUM_WORKERS": "1",
             "UVICORN_PORT": str(self.port),
-            "OPAL_INLINE_OPA_ENABLED": self.inline_opa_enabled,
         }
 
         if self.tests_debug:
@@ -188,16 +186,16 @@ class OpalClientSettings:
         if self.policy_store_url:
             env_vars["OPAL_POLICY_STORE_URL"] = self.policy_store_url
 
+        if self.inline_opa_enabled:
+            env_vars["OPAL_INLINE_OPA_ENABLED"] = self.inline_opa_enabled
+            env_vars["OPAL_INLINE_OPA_EXEC_PATH"] = self.inline_opa_exec_path
+            env_vars["OPAL_INLINE_OPA_CONFIG"] = self.inline_opa_config
+            env_vars["OPAL_INLINE_OPA_LOG_FORMAT"] = self.inline_opa_log_format
+
         if self.iniline_cedar_enabled:
             env_vars["OPAL_INILINE_CEDAR_ENABLED"] = self.iniline_cedar_enabled
-
-        if self.inline_cedar_exec_path:
             env_vars["OPAL_INILINE_CEDAR_EXEC_PATH"] = self.inline_cedar_exec_path
-
-        if self.inline_cedar_config:
             env_vars["OPAL_INILINE_CEDAR_CONFIG"] = self.inline_cedar_config
-
-        if self.inline_cedar_log_format:
             env_vars["OPAL_INILINE_CEDAR_LOG_FORMAT"] = self.inline_cedar_log_format
 
         return env_vars

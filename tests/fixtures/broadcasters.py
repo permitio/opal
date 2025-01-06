@@ -29,7 +29,8 @@ def postgres_broadcast_channel(opal_network: Network):
         yield container
 
         try:
-            container.stop()
+            if container.get_wrapped_container().status == "running":
+                container.stop()
         except Exception:
             logger.error(f"Failed to stop containers: {container}")
             pass
