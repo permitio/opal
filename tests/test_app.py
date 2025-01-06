@@ -31,7 +31,6 @@ def publish_data_user_location(
         f"opal-client publish-data-update --server-url http://localhost:{port} --src-url {src} "
         f"-t {topics} --dst-path /users/{user}/location {DATASOURCE_TOKEN}"
     )
-    logger.info(publish_data_user_location_command)
 
     # Execute the command
     result = subprocess.run(publish_data_user_location_command, shell=True)
