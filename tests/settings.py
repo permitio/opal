@@ -82,9 +82,6 @@ class PyTestSessionSettings(List):
         return self
 
     def __next__(self):
-        print("Iterating over PyTestSessionSettings...")
-        logger = setup_logger(__name__)
-
         if self.current_broadcaster >= len(self.broadcasters):
             raise StopIteration
 
@@ -93,11 +90,6 @@ class PyTestSessionSettings(List):
             self.broadcaster = self.broadcasters[self.current_broadcaster]
             self.repo_provider = self.repo_providers[self.current_repo_provider]
             self.mode = self.modes[self.current_mode]
-
-            logger.info(self.broadcaster)
-            logger.info(self.repo_provider)
-            logger.info(self.mode)
-
             # Move to the next combination
             self.current_mode += 1
             if self.current_mode >= len(self.modes):
