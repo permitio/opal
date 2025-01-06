@@ -36,7 +36,7 @@ function main {
   # Check if a specific test is provided
   if [[ -n "$1" ]]; then
     echo "Running specific test: $1"
-    python -Xfrozen_modules=off -m debugpy --listen 5678 -m pytest -s "$1"
+    python -Xfrozen_modules=off -m debugpy --listen 5678 -m pytest -s "$@"
   else
     echo "Running all tests..."
     python -Xfrozen_modules=off -m debugpy --listen 5678 -m pytest -s

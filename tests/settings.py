@@ -114,8 +114,10 @@ class PyTestSessionSettings(List):
         print("Finished iterating over PyTestSessionSettings...")
 
 
-@pytest.fixture(scope="session")
-def session_matrix():
-    settings = PyTestSessionSettings()
-    for setting in settings:
-        yield setting
+@pytest.fixture(params=list(PyTestSessionSettings()), scope="session")
+def session_matrix(request):
+    return request.param
+
+    # settings = PyTestSessionSettings()
+    # for setting in settings:
+    #     yield setting

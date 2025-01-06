@@ -138,8 +138,14 @@ def test_topiced_user_location(
 from settings import session_matrix
 
 
-@pytest.mark.parametrize("session_matrix", list(PyTestSessionSettings()), indirect=True)
+# @pytest.mark.parametrize("session_matrix", list(PyTestSessionSettings())) #, indirect=True)
 def test_matrix(session_matrix: PyTestSessionSettings):
+    logger.info(session_matrix.broadcaster)
+    logger.info(session_matrix.mode)
+    logger.info(session_matrix.repo_provider)
+
+
+def test_matrix2(session_matrix: PyTestSessionSettings):
     logger.info(session_matrix.broadcaster)
     logger.info(session_matrix.mode)
     logger.info(session_matrix.repo_provider)
