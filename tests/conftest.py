@@ -106,7 +106,20 @@ def opal_servers(
     number_of_opal_servers: int,
     # opal_server_image: str,
     topics: dict[str, int],
+    session_matrix,
 ):
+    
+    logger.info("\n\n\n\n\n\n\n")
+    logger.info("Starting OPAL servers...")
+    logger.info(f"context: {session_matrix}")
+    logger.info(f"topics: {topics}")
+    logger.info(f"broadcast_channel: {broadcast_channel}")
+    logger.info(f"policy_repo: {policy_repo}")
+    logger.info(f"number_of_opal_servers: {number_of_opal_servers}")
+    logger.info(f"opal_network: {opal_network}")
+    logger.info(f"opal_server_image: {opal_server_image}")
+    logger.info("\n\n\n\n\n\n\n")
+
     if not broadcast_channel:
         raise ValueError("Missing 'broadcast_channel' container.")
 
