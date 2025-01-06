@@ -13,6 +13,7 @@ from tests.containers.gitea_container import GiteaContainer
 from tests.containers.opal_client_container import OpalClientContainer, PermitContainer
 from tests.containers.opal_server_container import OpalServerContainer
 from tests.policy_repos.policy_repo_factory import SupportedPolicyRepo
+from tests.settings import PyTestSessionSettings
 
 logger = setup_logger(__name__)
 
@@ -133,9 +134,20 @@ def test_topiced_user_location(
             ), "Expected log entry not found after the reference timestamp."
 
 
+from settings import session_matrix
+
+
+@pytest.mark.parametrize("session_matrix", [None], indirect=True)
+def test_matrix(session_matrix: PyTestSessionSettings):
+    logger.info(session_matrix.broadcaster)
+    logger.info(session_matrix.mode)
+    logger.info(session_matrix.repo_provider)
+
+
 def test_user_location(
     opal_servers: list[OpalServerContainer],
     connected_clients: list[OpalClientContainer],
+    session_matrix: PyTestSessionSettings,
 ):
     """Test data publishing."""
 

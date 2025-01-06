@@ -3,7 +3,9 @@ import json
 import os
 from contextlib import redirect_stdout
 from secrets import token_hex
+from typing import List
 
+import pytest
 from dotenv import load_dotenv
 from opal_common.cli.commands import obtain_token
 from opal_common.schemas.security import PeerType
@@ -47,3 +49,68 @@ class TestSettings:
 
 
 pytest_settings = TestSettings()
+from testcontainers.core.utils import setup_logger
+
+
+class PyTestSessionSettings(List):
+    repo_providers = ["gitea", "github", "gitlab"]
+    modes = ["with_webhook", "without_webhook"]
+    broadcasters = ["postgres", "kafka", "redis"]
+    broadcaster = "fgsfdg"
+    repo_provider = "fdgdfg"
+    mode = "rgrtre"
+
+    def __init__(
+        self,
+        session_id: str = None,
+        repo_provider: str = None,
+        broadcaster: str = None,
+        mode: str = None,
+    ):
+        super().__init__()
+
+        self.session_id = session_id
+        self.repo_provider = repo_provider
+        self.broadcaster = broadcaster
+        self.mode = mode
+
+        self.current_broadcaster = 0
+        self.current_repo_provider = 0
+        self.current_mode = 0
+
+    def __iter__(self):
+        print("Iterating over PyTestSessionSettings...")
+        logger = setup_logger(__name__)
+
+        while self.current_broadcaster < len(self.broadcasters):
+            # Update settings
+            self.broadcaster = self.broadcasters[self.current_broadcaster]
+            self.repo_provider = self.repo_providers[self.current_repo_provider]
+            self.mode = self.modes[self.current_mode]
+
+            logger.info(self.broadcaster)
+            logger.info(self.repo_provider)
+            logger.info(self.mode)
+
+            # Yield the session matrix (self) with the updated settings
+            yield PyTestSessionSettings(
+                self.session_id, self.repo_provider, self.broadcaster, self.mode
+            )
+
+            # Move to the next combination
+            self.current_mode += 1
+            if self.current_mode >= len(self.modes):
+                self.current_mode = 0
+                self.current_repo_provider += 1
+                if self.current_repo_provider >= len(self.repo_providers):
+                    self.current_repo_provider = 0
+                    self.current_broadcaster += 1
+
+        print("Finished iterating over PyTestSessionSettings...")
+
+
+@pytest.fixture(scope="session")
+def session_matrix():
+    settings = PyTestSessionSettings()
+    for setting in settings:
+        yield setting
