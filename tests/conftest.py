@@ -308,7 +308,7 @@ def topiced_clients(
 
     yield containers
 
-    for _, clients in containers.items:
+    for _, clients in containers.items():
         for client in clients:
             client.stop()
 
