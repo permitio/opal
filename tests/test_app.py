@@ -139,16 +139,16 @@ from settings import session_matrix
 
 
 # @pytest.mark.parametrize("session_matrix", list(PyTestSessionSettings())) #, indirect=True)
-def test_matrix(session_matrix: PyTestSessionSettings):
-    logger.info(session_matrix.broadcaster)
-    logger.info(session_matrix.mode)
-    logger.info(session_matrix.repo_provider)
+def test_matrix(session_matrix):
+    logger.info(session_matrix["broadcaster"])
+    logger.info(session_matrix["mode"])
+    logger.info(session_matrix["repo_provider"])
 
 
-def test_matrix2(session_matrix: PyTestSessionSettings):
-    logger.info(session_matrix.broadcaster)
-    logger.info(session_matrix.mode)
-    logger.info(session_matrix.repo_provider)
+def test_matrix2(session_matrix):
+    logger.info(session_matrix["broadcaster"])
+    logger.info(session_matrix["mode"])
+    logger.info(session_matrix["repo_provider"])
 
 
 def test_user_location(

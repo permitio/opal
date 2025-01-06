@@ -107,9 +107,12 @@ class PyTestSessionSettings(List):
                     self.current_repo_provider = 0
                     self.current_broadcaster += 1
 
-            return PyTestSessionSettings(
-                self.session_id, self.repo_provider, self.broadcaster, self.mode
-            )
+            return {
+                "session_id": self.session_id,
+                "repo_provider": self.repo_provider,
+                "broadcaster": self.broadcaster,
+                "mode": self.mode,
+            }
 
         print("Finished iterating over PyTestSessionSettings...")
 
