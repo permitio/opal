@@ -110,6 +110,11 @@ class PyTestSessionSettings(List):
                     and (self.current_repo_provider >= len(self.repo_providers))
                     and (self.current_mode >= len(self.modes))
                 ),
+                "is_first": (
+                    (self.current_broadcaster <= 0)
+                    and (self.current_repo_provider <= 0)
+                    and (self.current_mode <= 0)
+                ),
             }
 
         print("Finished iterating over PyTestSessionSettings...")
