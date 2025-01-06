@@ -14,6 +14,9 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 from git import Repo
 from testcontainers.core.utils import setup_logger
 
+from settings import pytest_settings
+
+
 import docker
 from tests.containers.opal_server_container import OpalServerContainer
 
@@ -41,38 +44,56 @@ def compose(filename="docker-compose-app-tests.yml", *args):
     return result.stdout
 
 
-def build_docker_image(docker_file: str, image_name: str):
+def build_docker_image(docker_file: str, image_name: str, session_matrix: dict):
     """Build the Docker image from the Dockerfile.server.local file in the
     tests/docker directory."""
     docker_client = docker.from_env()
-    # context_path=os.path.join(os.path.dirname(__file__), ".."),  # Expands the context
-    context_path = ".."
-    dockerfile_path = os.path.join(os.path.dirname(__file__), "docker", docker_file)
-    logger.info(f"Context path: {context_path}, Dockerfile path: {dockerfile_path}")
 
-    # Ensure the Dockerfile exists
-    if not os.path.exists(dockerfile_path):
-        raise FileNotFoundError(f"Dockerfile not found at {dockerfile_path}")
+    image = None
+    if (not session_matrix["is_first"]) or pytest_settings["skip_rebuild_images"]:
+        exists = any(image_name in image.tags for image in docker_client.images.list())
+        if exists:
+            image = docker_client.images.get(image_name)
 
-    logger.debug(f"Building Docker image from {dockerfile_path}...")
+    if not image:
+        # context_path=os.path.join(os.path.dirname(__file__), ".."),  # Expands the context
+        context_path = ".."
+        dockerfile_path = os.path.join(os.path.dirname(__file__), "docker", docker_file)
+        logger.info(f"Context path: {context_path}, Dockerfile path: {dockerfile_path}")
 
-    try:
-        # Build the Docker image
-        image, logs = docker_client.images.build(
-            path=context_path,
-            dockerfile=dockerfile_path,
-            tag=image_name,
-            rm=True,
-        )
-        # Print build logs
-        for log in logs:
-            logger.debug(log.get("stream", "").strip())
-    except Exception as e:
-        raise RuntimeError(f"Failed to build Docker image: {e}")
+        # Ensure the Dockerfile exists
+        if not os.path.exists(dockerfile_path):
+            raise FileNotFoundError(f"Dockerfile not found at {dockerfile_path}")
 
-    logger.debug(f"Docker image '{image_name}' built successfully.")
+        logger.debug(f"Building Docker image from {dockerfile_path}...")
 
-    return image
+        try:
+            # Build the Docker image
+            image, logs = docker_client.images.build(
+                path=context_path,
+                dockerfile=dockerfile_path,
+                tag=image_name,
+                rm=True,
+            )
+            # Print build logs
+            for log in logs:
+                logger.debug(log.get("stream", "").strip())
+        except Exception as e:
+            raise RuntimeError(f"Failed to build Docker image: {e}")
+
+        logger.debug(f"Docker image '{image_name}' built successfully.")
+
+    yield image_name
+
+    if session_matrix["is_final"]:
+        # Optionally, clean up the image after the test session
+        try:
+            image.remove(force=True)
+            print(f"Docker image '{image.id}' removed.")
+        except Exception as cleanup_error:
+            print(
+                f"Failed to remove Docker image '{image_name}'{image.id}: {cleanup_error}"
+            )
 
 
 def remove_pytest_opal_networks():
