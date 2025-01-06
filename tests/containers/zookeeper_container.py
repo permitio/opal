@@ -1,6 +1,6 @@
 import debugpy
 from containers.permitContainer import PermitContainer
-from testcontainers.core import DockerContainer
+from testcontainers.core.container import DockerContainer
 from testcontainers.core.network import Network
 
 import docker
@@ -21,7 +21,17 @@ class ZookeeperContainer(PermitContainer, DockerContainer):
         self.network = network
 
         PermitContainer.__init__(self)
-        DockerContainer.__init__(self, docker_client_kw=docker_client_kw, **kwargs)
+        DockerContainer.__init__(
+            self,
+            image="confluentinc/cp-zookeeper:latest",
+            docker_client_kw=docker_client_kw,
+            **kwargs,
+        )
+
+        self.with_bind_ports(2181, 2181)
+        self.with_env("ZOOKEEPER_CLIENT_PORT", "2181")
+        self.with_env("ZOOKEEPER_TICK_TIME", "2000")
+        self.with_env("ALLOW_ANONYMOUS_LOGIN", "yes")
 
         self.with_network(self.network)
 

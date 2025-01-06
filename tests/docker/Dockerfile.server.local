@@ -5,10 +5,10 @@ FROM python:3.10-bookworm AS build-stage
 # from now on, work in the /app directory
 WORKDIR /app/
 # Layer dependency install (for caching)
-COPY ../packages/requires.txt ./base_requires.txt
-COPY ../packages/opal-common/requires.txt ./common_requires.txt
-COPY ../packages/opal-client/requires.txt ./client_requires.txt
-COPY ../packages/opal-server/requires.txt ./server_requires.txt
+COPY packages/requires.txt ./base_requires.txt
+COPY packages/opal-common/requires.txt ./common_requires.txt
+COPY packages/opal-client/requires.txt ./client_requires.txt
+COPY packages/opal-server/requires.txt ./server_requires.txt
 
 RUN apt-get update && apt-get install -y gcc python3-dev procps sudo && apt-get clean
 
@@ -31,7 +31,7 @@ RUN useradd -m -b / -s /bin/bash opal
 WORKDIR /opal
 
 # copy wait-for script (create link at old path to maintain backward compatibility)
-COPY ../scripts/wait-for.sh .
+COPY scripts/wait-for.sh .
 RUN chmod +x ./wait-for.sh
 RUN ln -s /opal/wait-for.sh /usr/wait-for.sh
 
@@ -41,16 +41,16 @@ RUN apt-get update && apt-get install -y netcat-traditional jq && apt-get clean
 RUN apt-get update && apt-get install -y sudo && apt-get clean
 
 # copy startup script (create link at old path to maintain backward compatibility)
-COPY ../scripts/start.sh .
+COPY scripts/start.sh .
 RUN chmod +x ./start.sh
 RUN ln -s /opal/start.sh /start.sh
 
 # copy gunicorn_config
-COPY ../scripts/gunicorn_conf.py .
+COPY scripts/gunicorn_conf.py .
 
 # copy app code
-COPY ../README.md .
-COPY ../packages ./packages/
+COPY README.md .
+COPY packages ./packages/
 # install the opal-common package
 RUN cd ./packages/opal-common && python setup.py install
 # Make sure scripts in .local are usable:
@@ -99,28 +99,4 @@ USER root
 # install the opal-server package
 RUN cd ./packages/opal-server && python setup.py install
 
-# uvicorn config ------------------------------------
-
-# number of uvicorn workers
-ENV UVICORN_NUM_WORKERS=1
-# uvicorn asgi app
-ENV UVICORN_ASGI_APP=opal_server.main:app
-# uvicorn port
-ENV UVICORN_PORT=7002
-
-# opal configuration --------------------------------
-# if you are not setting OPAL_DATA_CONFIG_SOURCES for some reason,
-# override this env var with the actual public address of the server
-# container (i.e: if you are running in docker compose and the server
-# host is `opalserver`, the value will be: http://opalserver:7002/policy-data)
-# `host.docker.internal` value will work better than `localhost` if you are
-# running dockerized opal server and client on the same machine
-# ENV OPAL_ALL_DATA_URL=http://host.docker.internal:7002/policy-data
-ENV OPAL_ALL_DATA_URL=http://opal_server:7002/policy-data
-# Use fixed path for the policy repo - so new leader would use the same directory without re-cloning it.
-# That's ok when running in docker and fs is ephemeral (repo in a bad state would be fixed by restarting container).
-ENV OPAL_POLICY_REPO_REUSE_CLONE_PATH=true
-
-# expose opal server port
-EXPOSE 7002
 USER opal

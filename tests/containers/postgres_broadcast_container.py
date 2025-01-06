@@ -39,4 +39,4 @@ class PostgresBroadcastContainer(BroadcastContainerBase, PostgresContainer):
         self.with_network(self.network)
 
         self.with_network_aliases("broadcast_channel")
-        self.with_name(f"pytest_opal_broadcast_channel")
+        self.with_name(f"postgres_broadcast_channel")

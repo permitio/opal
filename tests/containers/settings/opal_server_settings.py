@@ -35,6 +35,10 @@ class OpalServerSettings:
         broadcast_uri: str = None,
         webhook_secret: str = None,
         webhook_params: str = None,
+        uvicorn_asgi_app: str = None,
+        uvicorn_port: int = None,
+        all_data_url: str = None,
+        policy_repo_reuse_clone_path: bool = None,
         container_index: int = 1,
         **kwargs,
     ):
@@ -71,6 +75,11 @@ class OpalServerSettings:
             policy repository.
         :param webhook_secret: Optional secret for the webhook.
         :param webhook_params: Optional parameters for the webhook.
+        :param uvicorn_asgi_app: Optional ASGI app for Uvicorn.
+        :param uvicorn_port: Optional port for Uvicorn.
+        :param all_data_url: Optional URL for all data.
+        :param policy_repo_reuse_clone_path: Optional flag for reusing
+            the clone path for the policy repository.
         :param container_index: Optional index for the container.
         :param kwargs: Additional keyword arguments.
         """
@@ -121,6 +130,18 @@ class OpalServerSettings:
             if policy_repo_main_branch
             else self.policy_repo_main_branch
         )
+
+        self.uvicorn_asgi_app = (
+            uvicorn_asgi_app if uvicorn_asgi_app else self.uvicorn_asgi_app
+        )
+        self.uvicorn_port = uvicorn_port if uvicorn_port else self.uvicorn_port
+        self.all_data_url = all_data_url if all_data_url else self.all_data_url
+        self.policy_repo_reuse_clone_path = (
+            policy_repo_reuse_clone_path
+            if policy_repo_reuse_clone_path
+            else self.policy_repo_reuse_clone_path
+        )
+
         self.container_index = (
             container_index if container_index else self.container_index
         )
@@ -162,6 +183,10 @@ class OpalServerSettings:
             "OPAL_STATISTICS_ENABLED": self.statistics_enabled,
             "OPAL_AUTH_JWT_AUDIENCE": self.auth_audience,
             "OPAL_AUTH_JWT_ISSUER": self.auth_issuer,
+            "UVICORN_ASGI_APP": self.uvicorn_asgi_app,
+            "UVICORN_PORT": self.uvicorn_port,
+            "OPAL_ALL_DATA_URL": self.all_data_url,
+            "OPAL_POLICY_REPO_REUSE_CLONE_PATH": self.policy_repo_reuse_clone_path,
         }
 
         if pytest_settings.use_webhook:
@@ -226,6 +251,14 @@ class OpalServerSettings:
                 }
             ),
         )
+        self.all_data_url = os.getenv("OPAL_ALL_DATA_URL", None)
+        self.policy_repo_reuse_clone_path = os.getenv(
+            "OPAL_POLICY_REPO_REUSE_CLONE_PATH", "true"
+        )
+        self.uvicorn_asgi_app = os.getenv(
+            "OPAL_SERVER_UVICORN_ASGI_APP", "opal_server.main:app"
+        )
+        self.uvicorn_port = self.port
 
         if not self.private_key or not self.public_key:
             self.private_key, self.public_key = utils.generate_ssh_key_pair()

@@ -53,10 +53,11 @@ def cancel_wait_for_client_after_timeout():
 
 
 try:
-    t = threading.Thread(target=cancel_wait_for_client_after_timeout)
-    t.start()
-    print(f"Waiting for debugger to attach... {debugger_wait_time} seconds timeout")
-    debugpy.wait_for_client()
+    if pytest_settings.wait_for_debugger:
+        t = threading.Thread(target=cancel_wait_for_client_after_timeout)
+        t.start()
+        print(f"Waiting for debugger to attach... {debugger_wait_time} seconds timeout")
+        debugpy.wait_for_client()
 except Exception as e:
     print(f"Failed to attach debugger: {e}")
 
@@ -93,7 +94,12 @@ def number_of_opal_servers():
     return 2
 
 
-from fixtures.broadcasters import broadcast_channel, postgres_broadcast_channel
+from fixtures.broadcasters import (
+    broadcast_channel,
+    kafka_broadcast_channel,
+    postgres_broadcast_channel,
+    redis_broadcast_channel,
+)
 from fixtures.images import opal_server_image
 from fixtures.policy_repos import gitea_server, gitea_settings, policy_repo
 
@@ -104,11 +110,12 @@ def opal_servers(
     broadcast_channel: BroadcastContainerBase,
     policy_repo: PolicyRepoBase,
     number_of_opal_servers: int,
-    # opal_server_image: str,
+    opal_server_image: str,
     topics: dict[str, int],
+    kafka_broadcast_channel: KafkaBroadcastContainer,
+    redis_broadcast_channel: RedisBroadcastContainer,
     session_matrix,
 ):
-
     if not broadcast_channel:
         raise ValueError("Missing 'broadcast_channel' container.")
 
@@ -124,8 +131,8 @@ def opal_servers(
                 container_index=i + 1,
                 uvicorn_workers="4",
                 policy_repo_url=policy_repo.get_repo_url(),
-                # image=opal_server_image,
-                image="permitio/opal-server:latest",
+                image=opal_server_image,
+                # image="permitio/opal-server:latest",
                 data_topics=" ".join(topics.keys()),
             ),
             network=opal_network,
@@ -174,11 +181,11 @@ from fixtures.images import opal_client_image
 def opal_clients(
     opal_network: Network,
     opal_servers: List[OpalServerContainer],
-    # opa_server: OpaContainer,
-    # cedar_server: CedarContainer,
+    opa_server: OpaContainer,
+    cedar_server: CedarContainer,
     request,
     number_of_opal_clients: int,
-    # opal_client_image,
+    opal_client_image,
 ):
     if not opal_servers or len(opal_servers) == 0:
         raise ValueError("Missing 'opal_server' container.")
@@ -210,8 +217,8 @@ def opal_clients(
 
         container = OpalClientContainer(
             OpalClientSettings(
-                # image=opal_client_image,
-                image="permitio/opal-client:latest",
+                image=opal_client_image,
+                # image="permitio/opal-client:latest",
                 container_name=container_name,
                 container_index=i + 1,
                 opal_server_url=opal_server_url,
@@ -242,6 +249,7 @@ def setup(opal_servers, opal_clients, session_matrix):
         utils.remove_env("OPAL_TESTS_DEBUG")
         wait_sometime()
 
+
 ###########################################################
 
 
@@ -261,7 +269,9 @@ def topiced_clients(
     opal_server_url = f"http://{opal_servers[0].settings.container_name}:{opal_servers[0].settings.port}"
     containers = {}  # List to store OpalClientContainer instances
 
-    client_token = opal_servers[0].obtain_OPAL_tokens("topiced_opal_client_?x?")["client"]
+    client_token = opal_servers[0].obtain_OPAL_tokens("topiced_opal_client_?x?")[
+        "client"
+    ]
     callbacks = json.dumps(
         {
             "callbacks": [

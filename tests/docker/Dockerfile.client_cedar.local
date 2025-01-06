@@ -18,6 +18,15 @@ RUN pip install --no-cache-dir --upgrade pip && pip install --no-cache-dir -r ./
 # Install debugpy
 RUN pip install debugpy
 
+FROM rust:1.79 AS cedar-builder
+
+# Copy Cedar agent source code
+COPY ./cedar-agent /tmp/cedar-agent
+WORKDIR /tmp/cedar-agent
+
+# Build the Cedar agent in release mode
+RUN CARGO_REGISTRIES_CRATES_IO_PROTOCOL=sparse cargo build --release
+
 # COMMON IMAGE
 FROM python:3.10-slim-bookworm AS common
 
@@ -65,12 +74,38 @@ CMD ["./start_debug.sh"]
 
 # STANDALONE IMAGE ----------------------------------
 # ---------------------------------------------------
-FROM common AS client-standalone
+    FROM common AS client-standalone
 
-# install the opal-client package
-RUN cd ./packages/opal-client && python setup.py install
+    # install the opal-client package
+    RUN cd ./packages/opal-client && python setup.py install
 
+    USER opal
+
+    RUN mkdir -p /opal/backup
+    VOLUME /opal/backup
+
+  # CEDAR CLIENT IMAGE --------------------------------
+# Using standalone image as base --------------------
+# ---------------------------------------------------
+FROM client-standalone AS client-cedar
+
+# Temporarily move back to root for additional setup
+USER root
+
+# Copy cedar from its build stage
+COPY --from=cedar-builder /tmp/cedar-agent/target/*/cedar-agent /bin/cedar-agent
+
+ENV UVICORN_NUM_WORKERS=1
+ENV UVICORN_ASGI_APP=opal_client.main:app
+ENV UVICORN_PORT=7000
+
+# enable inline Cedar agent
+ENV OPAL_POLICY_STORE_TYPE=CEDAR
+ENV OPAL_INLINE_CEDAR_ENABLED=true
+ENV OPAL_INLINE_CEDAR_EXEC_PATH=/bin/cedar-agent
+ENV OPAL_INLINE_CEDAR_CONFIG='{"addr": "0.0.0.0:8180"}'
+ENV OPAL_POLICY_STORE_URL=http://localhost:8180
+
+# expose cedar port
+EXPOSE 8180
 USER opal
-
-RUN mkdir -p /opal/backup
-VOLUME /opal/backup

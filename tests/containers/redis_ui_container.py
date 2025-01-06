@@ -1,13 +1,15 @@
+from testcontainers.core.container import DockerContainer
 from testcontainers.core.network import Network
 from testcontainers.redis import RedisContainer
 
 from tests.containers.permitContainer import PermitContainer
 
 
-class RedisBroadcastContainer(PermitContainer, RedisContainer):
+class RedisUIContainer(PermitContainer, DockerContainer):
     def __init__(
         self,
         network: Network,
+        redis_container: RedisContainer,
         docker_client_kw: dict | None = None,
         **kwargs,
     ) -> None:
@@ -16,13 +18,17 @@ class RedisBroadcastContainer(PermitContainer, RedisContainer):
         labels.update({"com.docker.compose.project": "pytest"})
         kwargs["labels"] = labels
 
+        self.redis_container = redis_container
         self.network = network
+        self.name = "redis-ui"
+        self.image = "redislabs/redisinsight:latest"
 
         PermitContainer.__init__(self)
-        RedisContainer.__init__(self, docker_client_kw=docker_client_kw, **kwargs)
+        DockerContainer.__init__(
+            self, image=self.image, docker_client_kw=docker_client_kw, **kwargs
+        )
 
         self.with_network(self.network)
+        self.with_bind_ports(5540, 5540)
 
-        self.with_network_aliases("broadcast_channel")
-        # Add a custom name for the container
-        self.with_name(f"redis_broadcast_channel")
+        self.with_network_aliases("redis_ui")
