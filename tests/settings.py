@@ -112,6 +112,7 @@ class PyTestSessionSettings(List):
                 "repo_provider": self.repo_provider,
                 "broadcaster": self.broadcaster,
                 "mode": self.mode,
+                "is_final": ((self.current_broadcaster >= len(self.broadcasters)) and (self.current_repo_provider >= len(self.repo_providers)) and (self.current_mode >= len(self.modes))),
             }
 
         print("Finished iterating over PyTestSessionSettings...")

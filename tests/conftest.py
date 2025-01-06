@@ -245,12 +245,13 @@ def opal_clients(
 
 
 @pytest.fixture(scope="session", autouse=True)
-def setup(opal_servers, opal_clients):
+def setup(opal_servers, opal_clients, session_matrix):
     yield
 
-    utils.remove_env("OPAL_TESTS_DEBUG")
-    wait_sometime()
-
+    if session_matrix["is_final"]:
+        print("Finalizing test session...")
+        utils.remove_env("OPAL_TESTS_DEBUG")
+        wait_sometime()
 
 ###########################################################
 
