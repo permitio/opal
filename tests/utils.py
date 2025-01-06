@@ -452,3 +452,20 @@ def create_localtunnel(port=8000):
         print(f"Error starting LocalTunnel: {e}")
 
     return None
+
+
+import sys
+
+
+def global_exception_handler(exc_type, exc_value, exc_traceback):
+    if issubclass(exc_type, KeyboardInterrupt):
+        # Allow Ctrl+C to exit the program without a traceback
+        sys.__excepthook__(exc_type, exc_value, exc_traceback)
+        return
+
+    # Log or print the exception details
+    print(f"Uncaught exception: {exc_type.__name__}: {exc_value}")
+
+
+# Set the global exception handler
+sys.excepthook = global_exception_handler
