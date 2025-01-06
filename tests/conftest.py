@@ -127,6 +127,7 @@ def opal_servers(
                 # image=opal_server_image,
                 image="permitio/opal-server:latest",
                 data_topics=" ".join(topics.keys()),
+                polling_interval=3,
             ),
             network=opal_network,
         )

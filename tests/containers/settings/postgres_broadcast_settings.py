@@ -1,4 +1,5 @@
 import os
+from testcontainers.core.utils import setup_logger
 
 
 class PostgresBroadcastSettings:
@@ -11,6 +12,9 @@ class PostgresBroadcastSettings:
         password: str | None = None,
         database: str | None = None,
     ):
+        
+        self.logger = setup_logger("PostgresBroadcastSettings")
+
         self.load_from_env()
 
         self.container_name = container_name if container_name else self.container_name
@@ -35,6 +39,9 @@ class PostgresBroadcastSettings:
             raise ValueError("POSTGRES_PASSWORD is required.")
         if not self.database:
             raise ValueError("POSTGRES_DATABASE is required.")
+        
+        self.logger.info(f"{self.container_name} | Dependencies validated successfully.")
+
 
     def getEnvVars(self):
         return {

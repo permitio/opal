@@ -1,8 +1,11 @@
 import os
-
+from testcontainers.core.utils import setup_logger
 
 class KafkaBroadcastSettings:
     def __init__(self, host, port, user, password, database):
+
+        self.logger = setup_logger("KafkaBroadcastSettings")
+
         self.host = host
         self.port = port
         self.user = user
@@ -23,6 +26,9 @@ class KafkaBroadcastSettings:
             raise ValueError("POSTGRES_PASSWORD is required.")
         if not self.database:
             raise ValueError("POSTGRES_DATABASE is required.")
+        
+        self.logger.info(f"{self.kafka_container_name} | Dependencies validated successfully.")
+
 
     def getEnvVars(self):
         return {

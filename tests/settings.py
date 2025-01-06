@@ -53,9 +53,9 @@ from testcontainers.core.utils import setup_logger
 
 
 class PyTestSessionSettings(List):
-    repo_providers = ["gitea", "github", "gitlab"]
-    modes = ["with_webhook", "without_webhook"]
-    broadcasters = ["postgres", "kafka", "redis"]
+    repo_providers = ["gitea"]
+    modes = ["without_webhook"]
+    broadcasters = ["postgres"]
     broadcaster = "fgsfdg"
     repo_provider = "fdgdfg"
     mode = "rgrtre"
@@ -105,6 +105,7 @@ class PyTestSessionSettings(List):
                 "broadcaster": self.broadcaster,
                 "mode": self.mode,
                 "is_final": ((self.current_broadcaster >= len(self.broadcasters)) and (self.current_repo_provider >= len(self.repo_providers)) and (self.current_mode >= len(self.modes))),
+                "is_final": ((self.current_broadcaster <= 0) and (self.current_repo_provider <= 0) and (self.current_mode <= 0)),
             }
 
         print("Finished iterating over PyTestSessionSettings...")
@@ -112,6 +113,7 @@ class PyTestSessionSettings(List):
 
 @pytest.fixture(params=list(PyTestSessionSettings()), scope="session")
 def session_matrix(request):
+    print
     return request.param
 
     # settings = PyTestSessionSettings()

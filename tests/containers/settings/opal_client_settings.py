@@ -1,5 +1,7 @@
 import os
 
+from testcontainers.core.utils import setup_logger
+
 from tests import utils
 
 
@@ -38,6 +40,9 @@ class OpalClientSettings:
         topics: str | None = None,
         **kwargs
     ):
+        
+        self.logger = setup_logger("OpalClientSettings")
+
         self.load_from_env()
 
         self.image = image if image else self.image
@@ -144,6 +149,9 @@ class OpalClientSettings:
             raise ValueError("OPAL_CLIENT_CONTAINER_NAME is required.")
         if not self.opal_server_url:
             raise ValueError("OPAL_SERVER_URL is required.")
+        
+        self.logger.info(f"{self.container_name} | Dependencies validated successfully.")
+    
 
     def getEnvVars(self):
         env_vars = {

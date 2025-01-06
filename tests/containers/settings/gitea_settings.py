@@ -74,6 +74,7 @@ class GiteaSettings:
         self.validate_dependencies()
 
         self.gitea_internal_base_url = f"http://{self.container_name}:{self.port_http}"
+        
 
     def validate_dependencies(self):
         """Validate required parameters."""
@@ -89,6 +90,9 @@ class GiteaSettings:
             raise ValueError(
                 "Missing required parameters for Gitea container initialization."
             )
+        
+        self.logger.info(f"{self.container_name} | Dependencies validated successfully.")
+    
 
     def getEnvVars(self):
         return {
