@@ -117,7 +117,7 @@ def test_topiced_user_location(
         publish_data_user_location(
             f"{ip_to_location_base_url}8.8.8.8",
             "bob",
-            opal_servers[0].obtain_OPAL_tokens()["datasource"],
+            opal_servers[0].obtain_OPAL_tokens("test_user_location")["datasource"],
             opal_servers[0].settings.port,
             topic,
         )
@@ -166,7 +166,7 @@ def test_user_location(
     publish_data_user_location(
         f"{ip_to_location_base_url}8.8.8.8",
         "bob",
-        opal_servers[0].obtain_OPAL_tokens()["datasource"],
+        opal_servers[0].obtain_OPAL_tokens("test_user_locaation")["datasource"],
         opal_servers[0].settings.port,
     )
     logger.info("Published user location for 'bob'.")
@@ -196,7 +196,7 @@ async def test_policy_and_data_updates(
     # Parse locations into separate lists of IPs and countries
     locations = [("8.8.8.8", "US"), ("77.53.31.138", "SE")]
     for server in opal_servers:
-        DATASOURCE_TOKEN = server.obtain_OPAL_tokens()["datasource"]
+        DATASOURCE_TOKEN = server.obtain_OPAL_tokens("test_policy_and_data_updates")["datasource"]
 
         for location in locations:
             # Update policy to allow only non-US users
@@ -235,7 +235,7 @@ def test_read_statistics(
         stats_url = f"http://localhost:{server.settings.port}/stats"
 
         headers = {
-            "Authorization": f"Bearer {server.obtain_OPAL_tokens()['datasource']}"
+            "Authorization": f"Bearer {server.obtain_OPAL_tokens('test_read_statistics')['datasource']}"
         }
 
         # Repeat the request multiple times

@@ -184,7 +184,7 @@ def opal_clients(
         raise ValueError("Missing 'opal_server' container.")
 
     opal_server_url = f"http://{opal_servers[0].settings.container_name}:{opal_servers[0].settings.port}"
-    client_token = opal_servers[0].obtain_OPAL_tokens()["client"]
+    client_token = opal_servers[0].obtain_OPAL_tokens("opal_client_?x?")["client"]
     callbacks = json.dumps(
         {
             "callbacks": [
@@ -261,7 +261,7 @@ def topiced_clients(
     opal_server_url = f"http://{opal_servers[0].settings.container_name}:{opal_servers[0].settings.port}"
     containers = {}  # List to store OpalClientContainer instances
 
-    client_token = opal_servers[0].obtain_OPAL_tokens()["client"]
+    client_token = opal_servers[0].obtain_OPAL_tokens("topiced_opal_client_?x?")["client"]
     callbacks = json.dumps(
         {
             "callbacks": [

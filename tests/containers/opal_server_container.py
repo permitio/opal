@@ -53,7 +53,7 @@ class OpalServerContainer(PermitContainer, DockerContainer):
 
         self.start()
 
-    def obtain_OPAL_tokens(self):
+    def obtain_OPAL_tokens(self, caller: str = "Unkonwn caller") -> dict:
         """Fetch client and datasource tokens from the OPAL server."""
         token_url = f"http://localhost:{self.settings.port}/token"
         headers = {
@@ -77,15 +77,15 @@ class OpalServerContainer(PermitContainer, DockerContainer):
                 token = response.json().get("token")
                 if token:
                     tokens[token_type] = token
-                    self.logger.info(f"Successfully fetched OPAL {token_type} token.")
+                    self.logger.info(f"{caller} | Successfully fetched OPAL {token_type} token.")
                 else:
                     self.logger.error(
-                        f"Failed to fetch OPAL {token_type} token: {response.json()}"
+                        f"{caller} | Failed to fetch OPAL {token_type} token: {response.json()}"
                     )
 
             except requests.exceptions.RequestException as e:
                 self.logger.error(
-                    f"HTTP Request failed while fetching OPAL {token_type} token: {e}"
+                    f"{caller} | HTTP Request failed while fetching OPAL {token_type} token: {e}"
                 )
 
         return tokens
