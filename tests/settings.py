@@ -127,6 +127,12 @@ class PyTestSessionSettings(List):
             raise StopIteration
 
         while self.current_broadcaster < len(self.broadcasters):
+            is_first = (
+                (self.current_broadcaster <= 0)
+                and (self.current_repo_provider <= 0)
+                and (self.current_mode <= 0)
+            )
+
             # Update settings
             self.broadcaster = self.broadcasters[self.current_broadcaster]
             self.repo_provider = self.repo_providers[self.current_repo_provider]
@@ -150,11 +156,7 @@ class PyTestSessionSettings(List):
                     and (self.current_repo_provider >= len(self.repo_providers))
                     and (self.current_mode >= len(self.modes))
                 ),
-                "is_first": (
-                    (self.current_broadcaster <= 0)
-                    and (self.current_repo_provider <= 0)
-                    and (self.current_mode <= 0)
-                ),
+                "is_first": is_first,
             }
 
         print("Finished iterating over PyTestSessionSettings...")
@@ -162,5 +164,4 @@ class PyTestSessionSettings(List):
 
 @pytest.fixture(params=list(PyTestSessionSettings()), scope="session")
 def session_matrix(request):
-    print
     return request.param
