@@ -16,7 +16,7 @@ You can:
 - Raise questions in our [GitHub discussions](https://github.com/permitio/opal/discussions)
 - Report issues and ask for features in [GitHub issues](https://github.com/permitio/opal/issues)
 - Follow us on [Twitter](https://twitter.com/opal_ac) to get the latest OPAL updates
-- Join our [Slack community](https://bit.ly/opal-slack) to chat about authorization, open-source, realtime communication, tech or anything else! We are super available on Slack ;)
+- Join our [Slack community](https://io.permit.io/slack) to chat about authorization, open-source, realtime communication, tech or anything else! We are super available on Slack ;)
 
 If you are using our project, please consider giving us a ⭐️
 </br>
