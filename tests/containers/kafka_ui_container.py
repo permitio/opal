@@ -21,7 +21,6 @@ class KafkaUIContainer(PermitContainer, DockerContainer):
         self.kafka_container = kafka_container
         self.network = network
 
-        self.with_name("kafka-ui")
         self.image = "provectuslabs/kafka-ui:latest"
 
         PermitContainer.__init__(self)
@@ -29,6 +28,7 @@ class KafkaUIContainer(PermitContainer, DockerContainer):
             self, image=self.image, docker_client_kw=docker_client_kw, **kwargs
         )
 
+        self.with_name("kafka-ui")
         self.with_bind_ports(8080, 8080)
         self.with_env("KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS", "kafka:9092")
 

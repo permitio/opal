@@ -8,8 +8,8 @@ class CedarSettings:
         port: int | None = None,
         container_name: str | None = None,
     ) -> None:
-        self.image = image | "permitio/cedar:latest"
-        self.container_name = container_name | "cedar"
+        self.image = image if image else "permitio/cedar:latest"
+        self.container_name = container_name if container_name else "cedar"
 
         if port is None:
             self.port = utils.find_available_port(8180)

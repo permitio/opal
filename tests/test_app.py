@@ -134,7 +134,7 @@ def test_topiced_user_location(
             ), "Expected log entry not found after the reference timestamp."
 
 
-from settings import session_matrix
+from tests.settings import session_matrix
 
 
 # @pytest.mark.parametrize("session_matrix", list(PyTestSessionSettings())) #, indirect=True)
@@ -196,7 +196,9 @@ async def test_policy_and_data_updates(
     # Parse locations into separate lists of IPs and countries
     locations = [("8.8.8.8", "US"), ("77.53.31.138", "SE")]
     for server in opal_servers:
-        DATASOURCE_TOKEN = server.obtain_OPAL_tokens("test_policy_and_data_updates")["datasource"]
+        DATASOURCE_TOKEN = server.obtain_OPAL_tokens("test_policy_and_data_updates")[
+            "datasource"
+        ]
 
         for location in locations:
             # Update policy to allow only non-US users

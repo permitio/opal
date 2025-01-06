@@ -6,6 +6,14 @@ from tests import utils
 
 @pytest.fixture(scope="session")
 def opal_server_image():
+    """Builds a Docker image for the OPAL server in debug mode.
+
+    Yields the name of the built image.
+
+    This fixture is used to provide a working OPAL server image for the
+    tests.
+    """
+
     docker_client = docker.from_env()
     image_name = "opal_server_debug_local"
 
@@ -21,6 +29,12 @@ def opal_server_image():
 
 @pytest.fixture(scope="session")
 def opa_image():
+    """Builds a Docker image containing the Open Policy Agent (OPA) binary.
+
+    Yields the name of the built image.
+
+    This fixture is used to provide a working OPA image for the tests.
+    """
     docker_client = docker.from_env()
     image_name = "opa"
 
@@ -36,6 +50,12 @@ def opa_image():
 
 @pytest.fixture(scope="session")
 def cedar_image():
+    """Builds a Docker image containing the Cedar binary.
+
+    Yields the name of the built image.
+
+    This fixture is used to provide a working Cedar image for the tests.
+    """
     docker_client = docker.from_env()
     image_name = "cedar"
 
@@ -51,6 +71,13 @@ def cedar_image():
 
 @pytest.fixture(scope="session")
 def opal_client_image():
+    """Builds a Docker image containing the OPAL client binary.
+
+    Yields the name of the built image.
+
+    This fixture is used to provide a working OPAL client image for the
+    tests.
+    """
     docker_client = docker.from_env()
     image_name = "opal_client_debug_local"
 

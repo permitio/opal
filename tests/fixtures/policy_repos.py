@@ -19,6 +19,14 @@ logger = setup_logger(__name__)
 
 @pytest.fixture(scope="session")
 def gitea_settings():
+    """Returns a GiteaSettings object with default values for the Gitea
+    container name, repository name, temporary directory, and data directory.
+
+    This fixture is used to create a Gitea container for testing and to
+    initialize the repository settings for the policy repository.
+
+    :return: A GiteaSettings object with default settings.
+    """
     return GiteaSettings(
         container_name="gitea_server",
         repo_name="test_repo",
@@ -29,6 +37,20 @@ def gitea_settings():
 
 @pytest.fixture(scope="session")
 def gitea_server(opal_network: Network, gitea_settings: GiteaSettings):
+    """Creates a Gitea container and initializes a test repository.
+
+    The Gitea container is created with the default settings for the
+    container name, repository name, temporary directory, and data
+    directory. The container is then started and the test repository is
+    initialized.
+
+    The fixture yields the GiteaContainer object, which can be used to
+    interact with the Gitea container.
+
+    :param opal_network: The network to create the container on.
+    :param gitea_settings: The settings for the Gitea container.
+    :return: The GiteaContainer object.
+    """
     with GiteaContainer(
         settings=gitea_settings,
         network=opal_network,
@@ -42,6 +64,22 @@ def gitea_server(opal_network: Network, gitea_settings: GiteaSettings):
 def policy_repo(
     gitea_settings: GiteaSettings, temp_dir: str, request
 ) -> PolicyRepoBase:
+    """Creates a policy repository for testing.
+
+    This fixture creates a policy repository based on the configuration
+    specified in pytest.ini. The repository is created with the default
+    branch name "master" and is initialized with the policies from the
+    source repository specified in pytest.ini.
+
+    The fixture yields the PolicyRepoBase object, which can be used to
+    interact with the policy repository.
+
+    :param gitea_settings: The settings for the Gitea container.
+    :param temp_dir: The temporary directory to use for the policy
+        repository.
+    :param request: The pytest request object.
+    :return: The PolicyRepoBase object.
+    """
     if pytest_settings.policy_repo_provider == SupportedPolicyRepo.GITEA:
         gitea_server = request.getfixturevalue("gitea_server")
 

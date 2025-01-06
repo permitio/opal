@@ -1,9 +1,9 @@
 import debugpy
-from containers.permitContainer import PermitContainer
 from testcontainers.core.container import DockerContainer
 from testcontainers.core.network import Network
 
 import docker
+from tests.containers.permitContainer import PermitContainer
 
 
 class ZookeeperContainer(PermitContainer, DockerContainer):
