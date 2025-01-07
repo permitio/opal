@@ -49,6 +49,8 @@ def build_docker_image(docker_file: str, image_name: str, session_matrix: dict):
     tests/docker directory."""
     docker_client = docker.from_env()
 
+    print(f"Building Docker image '{image_name}'...")
+
     image = None
     if (not session_matrix["is_first"]) or pytest_settings["skip_rebuild_images"]:
         exists = any(image_name in image.tags for image in docker_client.images.list())

@@ -15,12 +15,15 @@ def opal_server_image(session_matrix):
     tests.
     """
     image_name = "opal_server_debug_local:latest"
-    yield utils.build_docker_image("Dockerfile.server.local", image_name)
+    image_name = f"permitio/opal-server"
+    yield from utils.build_docker_image("Dockerfile.client.local", image_name, session_matrix)
+    return
+    yield from utils.build_docker_image("Dockerfile.server.local", image_name, session_matrix)
 
 
 
 @pytest.fixture(scope="session")
-def opa_image():
+def opa_image(session_matrix):
     """Builds a Docker image containing the Open Policy Agent (OPA) binary.
 
     Yields the name of the built image.
@@ -28,12 +31,14 @@ def opa_image():
     This fixture is used to provide a working OPA image for the tests.
     """
     image_name = "opa"
-
-    yield utils.build_docker_image("Dockerfile.opa", image_name)
+    image_name = f"openpolicyagent/opa"
+    yield from utils.build_docker_image("Dockerfile.client.local", image_name, session_matrix)
+    return
+    yield from utils.build_docker_image("Dockerfile.opa", image_name, session_matrix)
 
 
 @pytest.fixture(scope="session")
-def cedar_image():
+def cedar_image(session_matrix):
     """Builds a Docker image containing the Cedar binary.
 
     Yields the name of the built image.
@@ -41,11 +46,13 @@ def cedar_image():
     This fixture is used to provide a working Cedar image for the tests.
     """
     image_name = "cedar"
-
-    yield utils.build_docker_image("Dockerfile.cedar", image_name)
+    image_name = f"heroku/cedar:14"
+    yield from utils.build_docker_image("Dockerfile.client.local", image_name, session_matrix)
+    return
+    yield from utils.build_docker_image("Dockerfile.cedar", image_name, session_matrix)
 
 @pytest.fixture(scope="session")
-def opal_client_image():
+def opal_client_image(session_matrix):
     """Builds a Docker image containing the OPAL client binary.
 
     Yields the name of the built image.
@@ -54,5 +61,8 @@ def opal_client_image():
     tests.
     """
     image_name = "opal_client_debug_local"
+    image_name = f"permitio/opal-client"
+    yield from utils.build_docker_image("Dockerfile.client.local", image_name, session_matrix)
+    return
 
-    yield utils.build_docker_image("Dockerfile.client.local", image_name)
+    yield from utils.build_docker_image("Dockerfile.client.local", image_name, session_matrix)
