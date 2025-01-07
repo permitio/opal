@@ -23,17 +23,22 @@ def postgres_broadcast_channel(opal_network: Network):
     test session. It is stopped once all tests have finished running,
     unless an exception is raised during teardown.
     """
-    with PostgresBroadcastContainer(
-        network=opal_network, settings=PostgresBroadcastSettings()
-    ) as container:
-        yield container
+    try:
+        with PostgresBroadcastContainer(
+            network=opal_network, settings=PostgresBroadcastSettings()
+        ) as container:
+            yield container
 
-        try:
-            if container.get_wrapped_container().status == "running":
-                container.stop()
-        except Exception:
-            logger.error(f"Failed to stop containers: {container}")
-            pass
+            try:
+                if container.get_wrapped_container().status == "running":
+                    container.stop()
+            except Exception:
+                logger.error(f"Failed to stop containers: {container}")
+                return
+
+    except Exception as e:
+        logger.error(f"Failed to start containers: {container} with error: {e}")
+        return
 
 
 @pytest.fixture(scope="session")
@@ -61,7 +66,7 @@ def kafka_broadcast_channel(opal_network: Network):
                         container.stop()
                     except Exception:
                         logger.error(f"Failed to stop container: {container}")
-                        pass
+                        return
 
 
 @pytest.fixture(scope="session")
@@ -82,7 +87,7 @@ def redis_broadcast_channel(opal_network: Network):
                     container.stop()
                 except Exception:
                     logger.error(f"Failed to stop containers: {container}")
-                    pass
+                    return
 
 
 @pytest.fixture(scope="session")
@@ -100,4 +105,4 @@ def broadcast_channel(opal_network: Network, postgres_broadcast_channel):
         postgres_broadcast_channel.stop()
     except Exception:
         logger.error(f"Failed to stop containers: {postgres_broadcast_channel}")
-        pass
+        return

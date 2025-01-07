@@ -243,7 +243,7 @@ class OpalClientSettings:
         self.inline_opa_enabled = os.getenv("OPAL_INLINE_OPA_ENABLED", "true")
         self.inline_opa_exec_path = os.getenv("OPAL_INLINE_OPA_EXEC_PATH", "/opa/opa")
         self.inline_opa_config = os.getenv(
-            "OPAL_INLINE_OPA_CONFIG", '{"addr": "0.0.0.0:8181"}'
+            "OPAL_INLINE_OPA_CONFIG", None  #'{"addr": "0.0.0.0:8181"}'
         )
         self.inline_opa_log_format = os.getenv("OPAL_INLINE_OPA_LOG_FORMAT", "http")
         self.topics = os.getenv("OPAL_DATA_TOPICS", "policy_data")

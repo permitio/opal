@@ -134,8 +134,8 @@ def opal_servers(
     number_of_opal_servers: int,
     opal_server_image: str,
     topics: dict[str, int],
-    kafka_broadcast_channel: KafkaBroadcastContainer,
-    redis_broadcast_channel: RedisBroadcastContainer,
+    # kafka_broadcast_channel: KafkaBroadcastContainer,
+    # redis_broadcast_channel: RedisBroadcastContainer,
     session_matrix,
 ):
     """Fixture that initializes and manages OPAL server containers for testing.
@@ -177,8 +177,9 @@ def opal_servers(
                 container_index=i + 1,
                 uvicorn_workers="4",
                 policy_repo_url=policy_repo.get_repo_url(),
-                image=opal_server_image,
-                # image="permitio/opal-server:latest",
+                # image=opal_server_image,
+                image="permitio/opal-server:latest",
+                log_level="DEBUG",
                 data_topics=" ".join(topics.keys()),
                 polling_interval=3,
             ),
@@ -319,8 +320,8 @@ def opal_clients(
 
         container = OpalClientContainer(
             OpalClientSettings(
-                image=opal_client_image,
-                # image="permitio/opal-client:latest",
+                # image=opal_client_image,
+                image="permitio/opal-client:latest",
                 container_name=container_name,
                 container_index=i + 1,
                 opal_server_url=opal_server_url,
@@ -344,39 +345,6 @@ def opal_clients(
     except Exception:
         logger.error(f"Failed to stop containers: {container}")
         pass
-
-
-@pytest.fixture(scope="session", autouse=True)
-def setup(opal_servers, opal_clients, session_matrix):
-    """A setup fixture that is run once per test session.
-
-    This fixture is automatically used by all tests, and is used to set up the
-    environment for the test session. The fixture yields, allowing the tests to
-    execute, and then is used to tear down the environment when the test session
-    is finished.
-
-    Parameters
-    ----------
-    opal_servers : List[OpalServerContainer]
-        A list of OPAL server containers.
-    opal_clients : List[OpalClientContainer]
-        A list of OPAL client containers.
-    session_matrix : dict
-        A dictionary containing information about the test session.
-
-    Yields
-    ------
-    None
-    """
-    yield
-
-    if session_matrix["is_final"]:
-        logger.info("Finalizing test session...")
-        utils.remove_env("OPAL_TESTS_DEBUG")
-        wait_sometime()
-
-
-###########################################################
 
 
 @pytest.fixture(scope="session")
@@ -502,3 +470,33 @@ def wait_sometime():
     else:
         print("Running on the local machine. Press Enter to continue...")
         input()  # Wait for key press
+
+
+@pytest.fixture(scope="session", autouse=True)
+def setup(opal_clients, session_matrix):
+    """A setup fixture that is run once per test session.
+
+    This fixture is automatically used by all tests, and is used to set up the
+    environment for the test session. The fixture yields, allowing the tests to
+    execute, and then is used to tear down the environment when the test session
+    is finished.
+
+    Parameters
+    ----------
+    opal_servers : List[OpalServerContainer]
+        A list of OPAL server containers.
+    opal_clients : List[OpalClientContainer]
+        A list of OPAL client containers.
+    session_matrix : dict
+        A dictionary containing information about the test session.
+
+    Yields
+    ------
+    None
+    """
+    yield
+
+    if session_matrix["is_final"]:
+        logger.info("Finalizing test session...")
+        utils.remove_env("OPAL_TESTS_DEBUG")
+        wait_sometime()

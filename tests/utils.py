@@ -14,11 +14,9 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 from git import Repo
 from testcontainers.core.utils import setup_logger
 
-from settings import pytest_settings
-
-
 import docker
 from tests.containers.opal_server_container import OpalServerContainer
+from tests.settings import pytest_settings
 
 logger = setup_logger(__name__)
 
@@ -47,10 +45,11 @@ def compose(filename="docker-compose-app-tests.yml", *args):
 def build_docker_image(docker_file: str, image_name: str, session_matrix: dict):
     """Build the Docker image from the Dockerfile.server.local file in the
     tests/docker directory."""
+
     docker_client = docker.from_env()
 
     image = None
-    if (not session_matrix["is_first"]) or pytest_settings["skip_rebuild_images"]:
+    if (not session_matrix["is_first"]) or (pytest_settings.skip_rebuild_images):
         exists = any(image_name in image.tags for image in docker_client.images.list())
         if exists:
             image = docker_client.images.get(image_name)
@@ -88,6 +87,9 @@ def build_docker_image(docker_file: str, image_name: str, session_matrix: dict):
     if session_matrix["is_final"]:
         # Optionally, clean up the image after the test session
         try:
+            if pytest_settings.keep_images:
+                return
+
             image.remove(force=True)
             print(f"Docker image '{image.id}' removed.")
         except Exception as cleanup_error:

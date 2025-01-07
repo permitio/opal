@@ -78,6 +78,7 @@ class TestSettings:
         self.use_webhook = os.getenv("OPAL_PYTEST_USE_WEBHOOK", "true")
         self.wait_for_debugger = os.getenv("OPAL_PYTEST_WAIT_FOR_DEBUGGER", "false")
 
+        self.do_not_build_images = os.getenv("OPAL_PYTEST_DO_NOT_BUILD_IMAGES", "true")
         self.skip_rebuild_images = os.getenv("OPAL_PYTEST_SKIP_REBUILD_IMAGES", "true")
         self.keep_images = os.getenv("OPAL_PYTEST_KEEP_IMAGES", "true")
 
@@ -151,11 +152,7 @@ class PyTestSessionSettings(List):
                 "repo_provider": self.repo_provider,
                 "broadcaster": self.broadcaster,
                 "mode": self.mode,
-                "is_final": (
-                    (self.current_broadcaster >= len(self.broadcasters))
-                    and (self.current_repo_provider >= len(self.repo_providers))
-                    and (self.current_mode >= len(self.modes))
-                ),
+                "is_final": (self.current_broadcaster >= len(self.broadcasters)),
                 "is_first": is_first,
             }
 
