@@ -76,11 +76,18 @@ class TestSettings:
         self.webhook_secret = os.getenv("OPAL_PYTEST_WEBHOOK_SECRET", "xxxxx")
         self.should_fork = os.getenv("OPAL_PYTEST_SHOULD_FORK", "true")
         self.use_webhook = os.getenv("OPAL_PYTEST_USE_WEBHOOK", "true")
-        self.wait_for_debugger = os.getenv("OPAL_PYTEST_WAIT_FOR_DEBUGGER", "false")
+        self.wait_for_debugger = os.getenv("OPAL_PYTEST_WAIT_FOR_DEBUGGER", False)
 
-        self.do_not_build_images = os.getenv("OPAL_PYTEST_DO_NOT_BUILD_IMAGES", "true")
-        self.skip_rebuild_images = os.getenv("OPAL_PYTEST_SKIP_REBUILD_IMAGES", "true")
-        self.keep_images = os.getenv("OPAL_PYTEST_KEEP_IMAGES", "true")
+        # This will fallback to the official permitio images of opal-server and opal-client, you could use it to fallback also opa and cedar
+        self.do_not_build_images = os.getenv("OPAL_PYTEST_DO_NOT_BUILD_IMAGES", False)
+
+        # This will use the same image between test sessions. Otherwise, it will rebuild the images with every execution.
+        # Don't use it if you changed the code, as your changes won't be deployed.
+        # In order to use this flag, you should first set the keep_images flag to true, and for the following execution you will have the images.
+        self.skip_rebuild_images = os.getenv("OPAL_PYTEST_SKIP_REBUILD_IMAGES", False)
+
+        # This will keep the images after the test session. If you use it, you will be able to use skip_rebuild_images the next time.
+        self.keep_images = os.getenv("OPAL_PYTEST_KEEP_IMAGES", True)
 
     def dump_settings(self):
         with open(f"pytest_{self.session_id}.env", "w") as envfile:

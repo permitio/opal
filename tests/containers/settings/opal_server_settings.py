@@ -165,7 +165,9 @@ class OpalServerSettings:
             raise ValueError("SSH private and public keys are required.")
         if not self.master_token:
             raise ValueError("OPAL master token is required.")
-        self.logger.info(f"{self.container_name} | Dependencies validated successfully.")
+        self.logger.info(
+            f"{self.container_name} | Dependencies validated successfully."
+        )
 
     def getEnvVars(self):
         # Configure environment variables
@@ -228,7 +230,7 @@ class OpalServerSettings:
         self.log_level = os.getenv("OPAL_LOG_LEVEL", "INFO")
         self.log_format_include_pid = os.getenv("OPAL_LOG_FORMAT_INCLUDE_PID", "true")
         self.statistics_enabled = os.getenv("OPAL_STATISTICS_ENABLED", "true")
-        self.debugEnabled = os.getenv("OPAL_DEBUG_ENABLED", "false")
+        self.debugEnabled = os.getenv("OPAL_DEBUG_ENABLED", "true")
         self.auth_private_key_passphrase = os.getenv(
             "OPAL_AUTH_PRIVATE_KEY_PASSPHRASE", None
         )

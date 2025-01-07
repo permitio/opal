@@ -37,7 +37,9 @@ def postgres_broadcast_channel(opal_network: Network):
                 return
 
     except Exception as e:
-        logger.error(f"Failed to start containers: {container} with error: {e}")
+        logger.error(
+            f"Failed on container: {container} with error: {e} {e.__traceback__}"
+        )
         return
 
 

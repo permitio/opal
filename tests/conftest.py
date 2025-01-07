@@ -177,8 +177,7 @@ def opal_servers(
                 container_index=i + 1,
                 uvicorn_workers="4",
                 policy_repo_url=policy_repo.get_repo_url(),
-                # image=opal_server_image,
-                image="permitio/opal-server:latest",
+                image=opal_server_image,
                 log_level="DEBUG",
                 data_topics=" ".join(topics.keys()),
                 polling_interval=3,
@@ -246,7 +245,12 @@ def connected_clients(opal_clients: List[OpalClientContainer]):
     yield opal_clients
 
 
-from tests.fixtures.images import cedar_image, opa_image, opal_client_image
+from tests.fixtures.images import (
+    cedar_image,
+    opa_image,
+    opal_client_image,
+    opal_client_with_opa_image,
+)
 from tests.fixtures.policy_stores import cedar_server, opa_server
 
 
@@ -258,7 +262,7 @@ def opal_clients(
     # cedar_server: CedarContainer,
     request,
     number_of_opal_clients: int,
-    opal_client_image,
+    opal_client_with_opa_image,
 ):
     """A fixture that starts and manages multiple OPAL client containers.
 
@@ -320,8 +324,7 @@ def opal_clients(
 
         container = OpalClientContainer(
             OpalClientSettings(
-                # image=opal_client_image,
-                image="permitio/opal-client:latest",
+                image=opal_client_with_opa_image,
                 container_name=container_name,
                 container_index=i + 1,
                 opal_server_url=opal_server_url,

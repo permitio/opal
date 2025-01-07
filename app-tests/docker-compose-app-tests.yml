@@ -1,8 +1,6 @@
-env_file:
-  - path: ./.env
-    required: false
 
 services:
+
   broadcast_channel:
     image: postgres:alpine
     environment:

@@ -39,8 +39,57 @@ class OpalClientSettings:
         uvicorn_asgi_app: str | None = None,
         container_index: int = 1,
         topics: str | None = None,
+        public_key: str | None = None,
+        private_key: str | None = None,
         **kwargs,
     ):
+        """
+        Args:
+            client_token: The client token to use for authentication.
+            container_name: The name of the container.
+            port: The port to use for the server.
+            opal_server_url: The URL of the server.
+            should_report_on_data_updates: Whether to report on data updates.
+            log_format_include_pid: Whether to include the process ID in the log format.
+            tests_debug: Whether to run the tests in debug mode.
+            log_diagnose: Whether to log diagnose information.
+            log_level: The log level to use.
+            debug_enabled: Whether to enable debug mode.
+            debug_port: The port to use for the debug server.
+            image: The image to use for the container.
+            opa_port: The port to use for the OPA server.
+            default_update_callbacks: The default update callbacks to use.
+            opa_health_check_policy_enabled: Whether to enable the OPA health check policy.
+            auth_jwt_audience: The JWT audience to use for authentication.
+            auth_jwt_issuer: The JWT issuer to use for authentication.
+            statistics_enabled: Whether to enable statistics.
+            policy_store_type: The policy store type to use.
+            policy_store_url: The URL of the policy store.
+            iniline_cedar_enabled: Whether to enable inline Cedar.
+            inline_cedar_exec_path: The path to the Cedar executable.
+            inline_cedar_config: The configuration to use for Cedar.
+            inline_cedar_log_format: The log format to use for Cedar.
+            inline_opa_enabled: Whether to enable inline OPA.
+            inline_opa_exec_path: The path to the OPA executable.
+            inline_opa_config: The configuration to use for OPA.
+            inline_opa_log_format: The log format to use for OPA.
+            uvicorn_asgi_app: The ASGI app to use for the server.
+            container_index: The index of the container.
+            topics: The topics to use for the server.
+            public_key: The public key to use for authentication.
+            private_key: The private key to use for authentication.
+            **kwargs: Additional keyword arguments.
+
+            Instructions:
+            To add a setting, add it to the constructor and update the load_from_env() method.
+            That will initialize the settings from environment variables, or
+            from a fallback value in the getenv() method.
+            Then assign your settings to the corresponding variables in the constructor.
+
+            If your var should be passed on to the container as an environment variable
+            make sure to also add it in the getEnvVars() method
+        """
+
         self.logger = setup_logger("OpalClientSettings")
 
         self.load_from_env()
@@ -99,6 +148,9 @@ class OpalClientSettings:
         self.policy_store_url = (
             policy_store_url if policy_store_url else self.policy_store_url
         )
+
+        self.public_key = public_key if public_key else self.public_key
+        self.private_key = private_key if private_key else self.private_key
 
         self.uvicorn_asgi_app = (
             uvicorn_asgi_app if uvicorn_asgi_app else self.uvicorn_asgi_app
@@ -174,6 +226,7 @@ class OpalClientSettings:
             "UVICORN_ASGI_APP": self.uvicorn_asgi_app,
             "UVICORN_NUM_WORKERS": "1",
             "UVICORN_PORT": str(self.port),
+            "OPAL_AUTH_PUBLIC_KEY": self.public_key,
         }
 
         if self.tests_debug:
@@ -209,6 +262,8 @@ class OpalClientSettings:
         self.tests_debug = os.getenv("OPAL_TESTS_DEBUG", "true")
         self.log_diagnose = os.getenv("LOG_DIAGNOSE", "true")
         self.log_level = os.getenv("OPAL_LOG_LEVEL", "DEBUG")
+        self.public_key = os.getenv("OPAL_AUTH_PUBLIC_KEY", None)
+        self.private_key = os.getenv("OPAL_AUTH_PRIVATE_KEY", None)
         self.log_format_include_pid = os.getenv("OPAL_LOG_FORMAT_INCLUDE_PID", "true")
         self.should_report_on_data_updates = os.getenv(
             "OPAL_SHOULD_REPORT_ON_DATA_UPDATES", "true"
@@ -223,7 +278,7 @@ class OpalClientSettings:
         )
         self.auth_jwt_issuer = os.getenv("OPAL_AUTH_JWT_ISSUER", "https://opal.ac/")
         self.statistics_enabled = os.getenv("OPAL_STATISTICS_ENABLED", "true")
-        self.debug_enabled = os.getenv("OPAL_DEBUG_ENABLED", False)
+        self.debug_enabled = os.getenv("OPAL_DEBUG_ENABLED", True)
         self.debug_port = os.getenv("CLIENT_DEBUG_PORT", 6678)
         self.policy_store_url = os.getenv("OPAL_POLICY_STORE_URL", None)
 
@@ -241,9 +296,12 @@ class OpalClientSettings:
         self.inline_cedar_log_format = os.getenv("OPAL_INLINE_CEDAR_LOG_FORMAT", "http")
 
         self.inline_opa_enabled = os.getenv("OPAL_INLINE_OPA_ENABLED", "true")
-        self.inline_opa_exec_path = os.getenv("OPAL_INLINE_OPA_EXEC_PATH", "/opa/opa")
+        self.inline_opa_exec_path = os.getenv("OPAL_INLINE_OPA_EXEC_PATH", "/opal/opa")
         self.inline_opa_config = os.getenv(
             "OPAL_INLINE_OPA_CONFIG", None  #'{"addr": "0.0.0.0:8181"}'
         )
         self.inline_opa_log_format = os.getenv("OPAL_INLINE_OPA_LOG_FORMAT", "http")
         self.topics = os.getenv("OPAL_DATA_TOPICS", "policy_data")
+
+        if not self.private_key or not self.public_key:
+            self.private_key, self.public_key = utils.generate_ssh_key_pair()
