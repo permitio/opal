@@ -1,0 +1,4 @@
+PyGithub
+debugpy
+pytest
+testcontainers

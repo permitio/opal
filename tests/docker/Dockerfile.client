@@ -1,0 +1,17 @@
+FROM permitio/opal-client:latest
+
+# Install debugpy
+RUN pip install debugpy
+
+# Set up Gunicorn to include debugpy (or switch to Uvicorn for debugging)
+USER root
+
+WORKDIR /opal
+
+COPY start_debug.sh .
+RUN chmod +x start_debug.sh
+RUN ln -s /opal/start_debug.sh /start_debug.sh
+
+USER opal
+
+CMD ["./start_debug.sh"]
