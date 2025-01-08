@@ -1,10 +1,10 @@
 from testcontainers.core.network import Network
 from testcontainers.redis import RedisContainer
 
-from tests.containers.permitContainer import PermitContainer
+from tests.containers.opal_test_container import OpalTestContainer
 
 
-class RedisBroadcastContainer(PermitContainer, RedisContainer):
+class RedisBroadcastContainer(OpalTestContainer, RedisContainer):
     def __init__(
         self,
         network: Network,
@@ -18,7 +18,7 @@ class RedisBroadcastContainer(PermitContainer, RedisContainer):
 
         self.network = network
 
-        PermitContainer.__init__(self)
+        OpalTestContainer.__init__(self)
         RedisContainer.__init__(self, docker_client_kw=docker_client_kw, **kwargs)
 
         self.with_network(self.network)

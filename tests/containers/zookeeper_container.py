@@ -3,10 +3,10 @@ from testcontainers.core.container import DockerContainer
 from testcontainers.core.network import Network
 
 import docker
-from tests.containers.permitContainer import PermitContainer
+from tests.containers.opal_test_container import OpalTestContainer
 
 
-class ZookeeperContainer(PermitContainer, DockerContainer):
+class ZookeeperContainer(OpalTestContainer, DockerContainer):
     def __init__(
         self,
         network: Network,
@@ -20,7 +20,7 @@ class ZookeeperContainer(PermitContainer, DockerContainer):
 
         self.network = network
 
-        PermitContainer.__init__(self)
+        OpalTestContainer.__init__(self)
         DockerContainer.__init__(
             self,
             image="confluentinc/cp-zookeeper:latest",

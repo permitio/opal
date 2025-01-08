@@ -1,12 +1,12 @@
 import debugpy
-from containers.permitContainer import PermitContainer
 from testcontainers.core.container import DockerContainer
 from testcontainers.core.network import Network
 
 import docker
+from tests.containers.opal_test_container import OpalTestContainer
 
 
-class PulsarBroadcastContainer(PermitContainer, DockerContainer):
+class PulsarBroadcastContainer(OpalTestContainer, DockerContainer):
     def __init__(
         self,
         network: Network,
@@ -20,7 +20,7 @@ class PulsarBroadcastContainer(PermitContainer, DockerContainer):
 
         self.network = network
 
-        PermitContainer.__init__(self)
+        OpalTestContainer.__init__(self)
         DockerContainer.__init__(
             self, image="pulsar:latest", docker_client_kw=docker_client_kw, **kwargs
         )

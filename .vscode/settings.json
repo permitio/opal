@@ -2,6 +2,7 @@
     "cmake.ignoreCMakeListsMissing": true,
     "makefile.configureOnOpen": false,
     "python.analysis.extraPaths": [
-        "./packages/opal-common"
+        "./packages/opal-common",
+        "./packages/opal-server"
     ]
 }

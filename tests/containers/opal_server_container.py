@@ -3,11 +3,11 @@ from testcontainers.core.generic import DockerContainer
 from testcontainers.core.network import Network
 from testcontainers.core.utils import setup_logger
 
-from tests.containers.permitContainer import PermitContainer
+from tests.containers.opal_test_container import OpalTestContainer
 from tests.containers.settings.opal_server_settings import OpalServerSettings
 
 
-class OpalServerContainer(PermitContainer, DockerContainer):
+class OpalServerContainer(OpalTestContainer, DockerContainer):
     def __init__(
         self,
         settings: OpalServerSettings,
@@ -20,7 +20,7 @@ class OpalServerContainer(PermitContainer, DockerContainer):
 
         self.logger = setup_logger(__name__)
 
-        PermitContainer.__init__(self)
+        OpalTestContainer.__init__(self)
         DockerContainer.__init__(
             self, image=self.settings.image, docker_client_kw=docker_client_kw, **kwargs
         )
@@ -53,7 +53,7 @@ class OpalServerContainer(PermitContainer, DockerContainer):
 
         self.start()
 
-    def obtain_OPAL_tokens(self, caller: str = "Unkonwn caller") -> dict:
+    def obtain_OPAL_tokens(self, caller: str = "Unknown caller") -> dict:
         """Fetch client and datasource tokens from the OPAL server."""
         token_url = f"http://localhost:{self.settings.port}/token"
         headers = {
@@ -77,7 +77,9 @@ class OpalServerContainer(PermitContainer, DockerContainer):
                 token = response.json().get("token")
                 if token:
                     tokens[token_type] = token
-                    self.logger.info(f"{caller} | Successfully fetched OPAL {token_type} token.")
+                    self.logger.info(
+                        f"{caller} | Successfully fetched OPAL {token_type} token."
+                    )
                 else:
                     self.logger.error(
                         f"{caller} | Failed to fetch OPAL {token_type} token: {response.json()}"

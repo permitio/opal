@@ -3,7 +3,7 @@ from testcontainers.core.network import Network
 from testcontainers.core.utils import setup_logger
 
 from tests import utils
-from tests.containers.permitContainer import PermitContainer
+from tests.containers.opal_test_container import OpalTestContainer
 from tests.containers.settings.opal_client_settings import OpalClientSettings
 
 
@@ -29,7 +29,7 @@ class OpaSettings:
         return {}
 
 
-class OpaContainer(PermitContainer, DockerContainer):
+class OpaContainer(OpalTestContainer, DockerContainer):
     def __init__(
         self,
         settings: OpaSettings,
@@ -37,7 +37,7 @@ class OpaContainer(PermitContainer, DockerContainer):
         docker_client_kw: dict | None = None,
         **kwargs,
     ) -> None:
-        PermitContainer.__init__(self)  # Initialize PermitContainer
+        OpalTestContainer.__init__(self)  # Initialize OpalTestContainer
         DockerContainer.__init__(
             self, image=settings.image, docker_client_kw=docker_client_kw, **kwargs
         )

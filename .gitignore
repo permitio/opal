@@ -1,10 +1,8 @@
 # OPAL specific
-opal_test_keys/*
 .env
+*.env
 opal-example-policy-repo/*
-data/
-OPAL_DATASOURCE_TOKEN.tkn
-OPAL_CLIENT_TOKEN.tkn
+
 
 # Temporary and Python cache files
 **/*.pyc
@@ -63,7 +61,6 @@ coverage.xml
 *.py,cover
 .hypothesis/
 .pytest_cache/
-new_pytest_env/temp
 
 # Translations
 *.mo
@@ -136,5 +133,3 @@ dmypy.json
 
 # System files
 .DS_Store
-pytest_6dbc.env
-tests/pytest_1a09.env

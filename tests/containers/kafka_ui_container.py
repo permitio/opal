@@ -2,10 +2,10 @@ from testcontainers.core.container import DockerContainer
 from testcontainers.core.network import Network
 
 from tests.containers.kafka_broadcast_container import KafkaBroadcastContainer
-from tests.containers.permitContainer import PermitContainer
+from tests.containers.opal_test_container import OpalTestContainer
 
 
-class KafkaUIContainer(PermitContainer, DockerContainer):
+class KafkaUIContainer(OpalTestContainer, DockerContainer):
     def __init__(
         self,
         network: Network,
@@ -23,7 +23,7 @@ class KafkaUIContainer(PermitContainer, DockerContainer):
 
         self.image = "provectuslabs/kafka-ui:latest"
 
-        PermitContainer.__init__(self)
+        OpalTestContainer.__init__(self)
         DockerContainer.__init__(
             self, image=self.image, docker_client_kw=docker_client_kw, **kwargs
         )

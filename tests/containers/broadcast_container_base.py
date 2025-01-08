@@ -1,9 +1,9 @@
-from tests.containers.permitContainer import PermitContainer
+from tests.containers.opal_test_container import OpalTestContainer
 
 
-class BroadcastContainerBase(PermitContainer):
-    def __init__(self):
-        PermitContainer.__init__(self)
+class BroadcastContainerBase(OpalTestContainer):
+    def __init__(self, **kwargs):
+        OpalTestContainer.__init__(self, **kwargs)
 
     def get_url(self) -> str:
         url = (

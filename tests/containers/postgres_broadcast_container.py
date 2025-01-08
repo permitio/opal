@@ -16,15 +16,10 @@ class PostgresBroadcastContainer(BroadcastContainerBase, PostgresContainer):
         docker_client_kw: dict | None = None,
         **kwargs,
     ) -> None:
-        # Add custom labels to the kwargs
-        labels = kwargs.get("labels", {})
-        labels.update({"com.docker.compose.project": "pytest"})
-        kwargs["labels"] = labels
-
         self.network = network
         self.settings = settings
 
-        BroadcastContainerBase.__init__(self)
+        BroadcastContainerBase.__init__(self, **kwargs)
         PostgresContainer.__init__(
             self,
             image,

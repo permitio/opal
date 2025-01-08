@@ -11,7 +11,10 @@ from testcontainers.core.utils import setup_logger
 from tests import utils
 from tests.containers.broadcast_container_base import BroadcastContainerBase
 from tests.containers.gitea_container import GiteaContainer
-from tests.containers.opal_client_container import OpalClientContainer, PermitContainer
+from tests.containers.opal_client_container import (
+    OpalClientContainer,
+    OpalTestContainer,
+)
 from tests.containers.opal_server_container import OpalServerContainer
 from tests.policy_repos.policy_repo_factory import SupportedPolicyRepo
 from tests.settings import PyTestSessionSettings, session_matrix

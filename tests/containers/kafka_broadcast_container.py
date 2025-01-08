@@ -3,11 +3,11 @@ from testcontainers.core.network import Network
 from testcontainers.kafka import KafkaContainer
 
 import docker
-from tests.containers.permitContainer import PermitContainer
+from tests.containers.opal_test_container import OpalTestContainer
 from tests.containers.zookeeper_container import ZookeeperContainer
 
 
-class KafkaBroadcastContainer(PermitContainer, KafkaContainer):
+class KafkaBroadcastContainer(OpalTestContainer, KafkaContainer):
     def __init__(
         self,
         network: Network,
@@ -23,7 +23,7 @@ class KafkaBroadcastContainer(PermitContainer, KafkaContainer):
         self.zookeeper_container = zookeeper_container
         self.network = network
 
-        PermitContainer.__init__(self)
+        OpalTestContainer.__init__(self)
         KafkaContainer.__init__(self, docker_client_kw=docker_client_kw, **kwargs)
 
         self.with_network(self.network)

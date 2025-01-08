@@ -10,11 +10,11 @@ from testcontainers.core.network import Network
 from testcontainers.core.utils import setup_logger
 
 import docker
-from tests.containers.permitContainer import PermitContainer
+from tests.containers.opal_test_container import OpalTestContainer
 from tests.containers.settings.gitea_settings import GiteaSettings
 
 
-class GiteaContainer(PermitContainer, DockerContainer):
+class GiteaContainer(OpalTestContainer, DockerContainer):
     def __init__(
         self,
         settings: GiteaSettings,
@@ -35,7 +35,7 @@ class GiteaContainer(PermitContainer, DockerContainer):
         # Set container lifecycle properties
         self.with_kwargs(auto_remove=False, restart_policy={"Name": "always"})
 
-        PermitContainer.__init__(self)
+        OpalTestContainer.__init__(self)
         DockerContainer.__init__(
             self,
             image=self.settings.image,
