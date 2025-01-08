@@ -126,3 +126,8 @@ jobs:
           git config --global user.email "<>"
 
           ./run.sh
+
+      - name: e2e tests
+        working-directory: ./tests
+        run: |
+          ./run.sh
