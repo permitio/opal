@@ -1,3 +1,5 @@
+# This is utility script to generate OPAL keys - Use it for your needs
+
 # This function generates a pair of RSA keys using ssh-keygen, extracts the public key into OPAL_AUTH_PUBLIC_KEY,
 # formats the private key by replacing newlines with underscores and stores it in OPAL_AUTH_PRIVATE_KEY,
 # and then removes the key files. It outputs messages indicating the start and completion of key generation.

@@ -1,7 +1,8 @@
+# This is a helper script to install opal-server and opal-client
 
-  # Installs opal-server and opal-client using pip.
-  # If the installation fails or the commands are not available,
-  # it exits with an error message.
+# Installs opal-server and opal-client using pip.
+# If the installation fails or the commands are not available,
+# it exits with an error message.
 
 function install_opal_server_and_client {
   echo "- Installing opal-server and opal-client from pip..."

@@ -1,10 +1,10 @@
 import pytest
-from images import cedar_image, opa_image
 from testcontainers.core.network import Network
 
 from tests.containers.cedar_container import CedarContainer
 from tests.containers.opa_container import OpaContainer, OpaSettings
 from tests.containers.settings.cedar_settings import CedarSettings
+from tests.fixtures.images import cedar_image, opa_image
 
 
 @pytest.fixture(scope="session")

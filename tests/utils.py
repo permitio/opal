@@ -57,8 +57,13 @@ def build_docker_image(docker_file: str, image_name: str, session_matrix: dict):
             image = docker_client.images.get(image_name)
 
     if not image:
-        # context_path=os.path.join(os.path.dirname(__file__), ".."),  # Expands the context
-        context_path = ".."
+        if "tests" in os.path.abspath(__file__):
+            logger.info(f"Right now the file is {os.path.abspath(__file__)}")
+            context_path = os.path.abspath(
+                os.path.join(os.path.dirname(__file__), "..", "..", "opal")
+            )
+        else:
+            context_path = ".."
         dockerfile_path = os.path.join(os.path.dirname(__file__), "docker", docker_file)
         logger.info(f"Context path: {context_path}, Dockerfile path: {dockerfile_path}")
 
