@@ -274,8 +274,8 @@ def test_read_statistics(
     print("Statistics check passed in all attempts.")
 
 
-@pytest.mark.asyncio
-async def test_policy_update(
+#@pytest.mark.asyncio
+def test_policy_update(
     gitea_server: GiteaContainer,
     opal_servers: list[OpalServerContainer],
     opal_clients: list[OpalClientContainer],
