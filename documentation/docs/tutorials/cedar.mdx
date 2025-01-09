@@ -8,11 +8,11 @@ Cedar agent is the easiest way to deploy and run Cedar.
 Check out our [demo app that uses Cedar-Agent and OPAL here](https://github.com/permitio/tinytodo).
 :::
 
-OPAL can run Cedar instead of OPA. To launch an example configuration with Docker-Compose, do:
+OPAL can run Cedar instead of OPA. To launch an example configuration with Docker Compose, do:
 ```
 git clone https://github.com/permitio/opal.git
 cd opal
-docker-compose -f docker/docker-compose-example-cedar.yml up -d
+docker compose -f docker/docker-compose-example-cedar.yml up -d
 ```
 
 You'll then have Cedar's dev web interface at [http://localhost:8180/rapidoc/](http://localhost:8180/rapidoc/), where you can call Cedar-Agent's API routes.
@@ -44,15 +44,15 @@ Then restore the correct policy:
   }
 ]
 ```
-Alternatively, you can also change the Docker-compose config and set your own policy git repo (the **OPAL_POLICY_REPO_URL** variable), and change it on the fly.
+Alternatively, you can also change the Docker compose config and set your own policy git repo (the **OPAL_POLICY_REPO_URL** variable), and change it on the fly.
 
 
 If you want to see OPAL's logs, you can do:
 ```
-docker-compose -f docker/docker-compose-example-cedar.yml logs opal_server
+docker compose -f docker/docker-compose-example-cedar.yml logs opal_server
 ```
 and
 ```
-docker-compose -f docker/docker-compose-example-cedar.yml logs opal_client
+docker compose -f docker/docker-compose-example-cedar.yml logs opal_client
 ```
 For the server and client, respectively.
