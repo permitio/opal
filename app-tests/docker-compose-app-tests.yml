@@ -24,6 +24,7 @@ services:
       - OPAL_POLICY_REPO_WEBHOOK_PARAMS={"secret_header_name":"x-webhook-token","secret_type":"token","secret_parsing_regex":"(.*)","event_request_key":"gitEvent","push_event_value":"git.push"}
       - OPAL_AUTH_PUBLIC_KEY=${OPAL_AUTH_PUBLIC_KEY}
       - OPAL_AUTH_PRIVATE_KEY=${OPAL_AUTH_PRIVATE_KEY}
+      - OPAL_AUTH_PRIVATE_KEY_PASSPHRASE=${OPAL_AUTH_PRIVATE_KEY_PASSPHRASE}
       - OPAL_AUTH_MASTER_TOKEN=${OPAL_AUTH_MASTER_TOKEN}
       - OPAL_AUTH_JWT_AUDIENCE=https://api.opal.ac/v1/
       - OPAL_AUTH_JWT_ISSUER=https://opal.ac/
