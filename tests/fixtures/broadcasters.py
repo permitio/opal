@@ -24,21 +24,22 @@ def postgres_broadcast_channel(opal_network: Network):
     unless an exception is raised during teardown.
     """
     try:
-        with PostgresBroadcastContainer(
-            network=opal_network, settings=PostgresBroadcastSettings()
-        ) as container:
-            yield container
+        container = PostgresBroadcastContainer(
+            network=opal_network,
+            settings=PostgresBroadcastSettings()
+        )
+        yield container
 
-            try:
-                if container.get_wrapped_container().status == "running":
-                    container.stop()
-            except Exception:
-                logger.error(f"Failed to stop containers: {container}")
-                return
+        try:
+            if container.get_wrapped_container().status == "running":
+                container.stop()
+        except Exception:
+            logger.error(f"Failed to stop containers: {container.settings.container_name}")
+            return
 
     except Exception as e:
         logger.error(
-            f"Failed on container: {container if container is not None else None} with error: {e} {e.__traceback__}"
+            f"Failed on container: {container.settings.container_name} with error: {e} {e.__traceback__}"
         )
         return
 
