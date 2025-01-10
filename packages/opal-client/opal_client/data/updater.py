@@ -137,6 +137,9 @@ class DataUpdater:
         self._polling_update_tasks = []
         self._on_connect_callbacks = on_connect or []
         self._on_disconnect_callbacks = on_disconnect or []
+        self._aiohttp_client_session_args = {}
+        if opal_client_config.DATA_FETCHER_PROXY_URL:
+            _aiohttp_client_session_args['proxy'] = opal_client_config.DATA_FETCHER_PROXY_URL
 
     async def __aenter__(self):
         await self.start()
@@ -183,7 +186,8 @@ class DataUpdater:
             url = self._data_sources_config_url
         logger.info("Getting data-sources configuration from '{source}'", source=url)
         try:
-            async with ClientSession(headers=self._extra_headers) as session:
+            _aiohttp_client_session_args['headers'] = self._extra_headers
+            async with ClientSession(**self._aiohttp_client_session_args) as session:
                 response = await session.get(url, **self._ssl_context_kwargs)
                 if response.status == 200:
                     return DataSourceConfig.parse_obj(await response.json())
