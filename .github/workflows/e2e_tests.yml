@@ -3,10 +3,10 @@ name: Run Tests
 on:
   push:
     branches:
-      - e2e-deploy
+      - master
   pull_request:
     branches:
-      - e2e-deploy
+      - master
 
 jobs:
   test:
