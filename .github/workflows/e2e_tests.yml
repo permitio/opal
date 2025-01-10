@@ -1,4 +1,4 @@
-name: Run Tests
+name: E2E Tests
 
 on:
   push:
@@ -7,6 +7,10 @@ on:
   pull_request:
     branches:
       - master
+  workflow_run:
+    workflows: ["Tests"]
+    types:
+      - completed
 
 jobs:
   test:
