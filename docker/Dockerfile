@@ -34,7 +34,7 @@ RUN useradd -m -b / -s /bin/bash opal
 WORKDIR /opal
 
 # copy wait-for script (create link at old path to maintain backward compatibility)
-COPY ./scripts/wait-for.sh .
+COPY scripts/wait-for.sh .
 RUN chmod +x ./wait-for.sh
 RUN ln -s /opal/wait-for.sh /usr/wait-for.sh
 
@@ -119,8 +119,6 @@ ENV OPAL_INLINE_OPA_ENABLED=true
 ENV OPAL_INLINE_OPA_EXEC_PATH=/opal/opa
 # expose opa port
 EXPOSE 8181
-EXPOSE 5678
-
 USER opal
 
 # CEDAR CLIENT IMAGE --------------------------------
