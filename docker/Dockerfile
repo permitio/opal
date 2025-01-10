@@ -5,10 +5,10 @@ FROM python:3.10-bookworm AS build-stage
 # from now on, work in the /app directory
 WORKDIR /app/
 # Layer dependency install (for caching)
-COPY ../packages/requires.txt ./base_requires.txt
-COPY ../packages/opal-common/requires.txt ./common_requires.txt
-COPY ../packages/opal-client/requires.txt ./client_requires.txt
-COPY ../packages/opal-server/requires.txt ./server_requires.txt
+COPY ./packages/requires.txt ./base_requires.txt
+COPY ./packages/opal-common/requires.txt ./common_requires.txt
+COPY ./packages/opal-client/requires.txt ./client_requires.txt
+COPY ./packages/opal-server/requires.txt ./server_requires.txt
 # install python deps
 RUN pip install --no-cache-dir --upgrade pip && pip install --no-cache-dir -r ./base_requires.txt -r ./common_requires.txt -r ./client_requires.txt -r ./server_requires.txt
 
@@ -16,7 +16,7 @@ RUN pip install --no-cache-dir --upgrade pip && pip install --no-cache-dir -r ./
 # split this stage to save time and reduce image size
 # ---------------------------------------------------
 FROM rust:1.79 AS cedar-builder
-COPY ../cedar-agent /tmp/cedar-agent
+COPY ./cedar-agent /tmp/cedar-agent
 WORKDIR /tmp/cedar-agent
 RUN CARGO_REGISTRIES_CRATES_IO_PROTOCOL=sparse cargo build --release
 
@@ -34,7 +34,7 @@ RUN useradd -m -b / -s /bin/bash opal
 WORKDIR /opal
 
 # copy wait-for script (create link at old path to maintain backward compatibility)
-COPY ../scripts/wait-for.sh .
+COPY ./scripts/wait-for.sh .
 RUN chmod +x ./wait-for.sh
 RUN ln -s /opal/wait-for.sh /usr/wait-for.sh
 
@@ -42,15 +42,15 @@ RUN ln -s /opal/wait-for.sh /usr/wait-for.sh
 RUN apt-get update && apt-get install -y netcat-traditional jq wget && apt-get clean
 
 # copy startup script (create link at old path to maintain backward compatibility)
-COPY ../scripts/start.sh .
+COPY ./scripts/start.sh .
 RUN chmod +x ./start.sh
 RUN ln -s /opal/start.sh /start.sh
 # copy gunicorn_config
-COPY ../scripts/gunicorn_conf.py .
+COPY ./scripts/gunicorn_conf.py .
 # copy app code
 
-COPY ../README.md .
-COPY ../packages ./packages/
+COPY ./README.md .
+COPY ./packages ./packages/
 # install the opal-common package
 RUN cd ./packages/opal-common && python setup.py install
 # Make sure scripts in .local are usable:
