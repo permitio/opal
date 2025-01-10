@@ -33,7 +33,7 @@ jobs:
 
     # cd into the tests directory
     - name: cd into tests directory
-      run: cd tests  
+      run: cd ./tests  
 
     # Install test dependencies
     - name: Install dependencies
@@ -41,4 +41,4 @@ jobs:
 
     # Run the tests using the script
     - name: Run tests
-      run: ./run.sh
+      run: ls -la && ./run.sh
