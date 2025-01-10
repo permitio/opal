@@ -60,7 +60,7 @@ def build_docker_image(docker_file: str, image_name: str, session_matrix: dict):
         if "tests" in os.path.abspath(__file__):
             logger.info(f"Right now the file is {os.path.abspath(__file__)}")
             context_path = os.path.abspath(
-                os.path.join(os.path.dirname(__file__), "..", "..", "opal")
+                os.path.join(os.path.dirname(__file__), "..")
             )
         else:
             context_path = ".."

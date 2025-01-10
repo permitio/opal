@@ -1,0 +1,44 @@
+name: Run Tests
+
+on:
+  push:
+    branches:
+      - e2e-deploy
+  pull_request:
+    branches:
+      - e2e-deploy
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+    # Checkout the repository
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    # Set up Python
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.x'  # Adjust the version as needed
+
+    # Install opal dependencies
+    - name: Install dependencies
+      run: pip install -r requirements.txt
+
+    # Ensure Docker is installed and running
+    - name: Set up Docker
+      uses: docker/setup-buildx-action@v2
+
+    # cd into the tests directory
+    - name: cd into tests directory
+      run: cd tests  
+
+    # Install test dependencies
+    - name: Install dependencies
+      run: pip install -r requirements.txt
+
+    # Run the tests using the script
+    - name: Run tests
+      run: ./run.sh
