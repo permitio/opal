@@ -1,6 +1,5 @@
 from typing import Optional
 
-import debugpy
 from fastapi import APIRouter, Depends, Header, HTTPException, status
 from fastapi.responses import RedirectResponse
 from opal_common.authentication.authz import (
