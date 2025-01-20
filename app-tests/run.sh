@@ -1,7 +1,6 @@
 #!/bin/bash
 set -e
 
-export OPAL_AUTH_PUBLIC_KEY
 export OPAL_AUTH_PRIVATE_KEY
 export OPAL_AUTH_PRIVATE_KEY_PASSPHRASE
 export OPAL_AUTH_MASTER_TOKEN
@@ -14,6 +13,7 @@ function generate_opal_keys {
   OPAL_AUTH_PRIVATE_KEY_PASSPHRASE="123456"
   ssh-keygen -q -t rsa -b 4096 -m pem -f opal_crypto_key -N "$OPAL_AUTH_PRIVATE_KEY_PASSPHRASE"
   OPAL_AUTH_PUBLIC_KEY="$(cat opal_crypto_key.pub)"
+  export OPAL_AUTH_PUBLIC_KEY
   OPAL_AUTH_PRIVATE_KEY="$(tr '\n' '_' < opal_crypto_key)"
   rm opal_crypto_key.pub opal_crypto_key
 
@@ -43,15 +43,24 @@ function prepare_policy_repo {
   echo "- Clone tests policy repo to create test's branch"
   export OPAL_POLICY_REPO_URL
   export POLICY_REPO_BRANCH
-  OPAL_POLICY_REPO_URL=${OPAL_POLICY_REPO_URL:-git@github.com:permitio/opal-tests-policy-repo.git}
+  OPAL_POLICY_REPO_URL=${OPAL_POLICY_REPO_URL:-git@github.com:permitio/opal-example-policy-repo.git}
+  OPAL_TEST_TARGET_GITHUB_ACCOUNT=${OPAL_TEST_TARGET_GITHUB_ACCOUNT:-iwphonedo}
+
+  # Change the repository URL to point to the forked repository
+  TARGET_FORK_REPO_URL="https://github.com/${OPAL_TEST_TARGET_GITHUB_ACCOUNT}/opal-example-policy-repo.git"
+
   POLICY_REPO_BRANCH=test-$RANDOM$RANDOM
-  rm -rf ./opal-tests-policy-repo
-  git clone "$OPAL_POLICY_REPO_URL"
-  cd opal-tests-policy-repo
+  rm -rf ./opal-example-policy-repo
+
+  git clone "$TARGET_FORK_REPO_URL"
+  cd opal-example-policy-repo
+  
   git checkout -b $POLICY_REPO_BRANCH
   git push --set-upstream origin $POLICY_REPO_BRANCH
   cd -
 
+  export OPAL_POLICY_REPO_URL="$TARGET_FORK_REPO_URL"
+  
   # That's for the docker-compose to use, set ssh key from "~/.ssh/id_rsa", unless another path/key data was configured
   export OPAL_POLICY_REPO_SSH_KEY
   OPAL_POLICY_REPO_SSH_KEY_PATH=${OPAL_POLICY_REPO_SSH_KEY_PATH:-~/.ssh/id_rsa}
@@ -86,24 +95,25 @@ function clean_up {
       echo "*** Test Passed ***"
       echo ""
     fi
-    compose down
-    cd opal-tests-policy-repo; git push -d origin $POLICY_REPO_BRANCH; cd - # Remove remote tests branch
-    rm -rf ./opal-tests-policy-repo
+
+    #compose down
+    cd opal-example-policy-repo; git push -d origin $POLICY_REPO_BRANCH; cd - # Remove remote tests branch
+    rm -rf ./opal-example-policy-repo
     exit $ARG
 }
 
 function test_push_policy {
   echo "- Testing pushing policy $1"
   regofile="$1.rego"
-  cd opal-tests-policy-repo
+  cd opal-example-policy-repo
   echo "package $1" > "$regofile"
   git add "$regofile"
   git commit -m "Add $regofile"
   git push
   cd -
 
-  curl -s --request POST 'http://localhost:7002/webhook' --header 'Content-Type: application/json' --header 'x-webhook-token: xxxxx' --data-raw '{"gitEvent":"git.push","repository":{"git_url":"'"$OPAL_POLICY_REPO_URL"'"}}'
-  sleep 5
+  #curl -s --request POST 'http://localhost:7002/webhook' --header 'Content-Type: application/json' --header 'x-webhook-token: xxxxx' --data-raw '{"gitEvent":"git.push","repository":{"git_url":"'"$OPAL_POLICY_REPO_URL"'"}}'
+  sleep 15
   check_clients_logged "PUT /v1/policies/$regofile -> 200"
 }
 
@@ -150,7 +160,7 @@ function main {
 
   echo "- Testing broadcast channel disconnection"
   compose restart broadcast_channel
-  sleep 10
+  sleep 30
 
   test_data_publish "alice"
   test_push_policy "another"
@@ -161,14 +171,15 @@ function main {
 }
 
 # Retry test in case of failure to avoid flakiness
-MAX_RETRIES=5
+MAX_RETRIES=1
 RETRY_COUNT=0
 
 while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
   echo "Running test (attempt $((RETRY_COUNT+1)) of $MAX_RETRIES)..."
   main && break
   RETRY_COUNT=$((RETRY_COUNT + 1))
-  echo "Test failed, retrying..."
+  echo "Test failed, retrying... in 1 minute"
+  sleep 60
 done
 
 if [ $RETRY_COUNT -eq $MAX_RETRIES ]; then

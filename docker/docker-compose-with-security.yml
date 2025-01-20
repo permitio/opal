@@ -58,6 +58,7 @@ services:
       # as the opal server that checks the tokens in the docker compose setup
       - OPAL_AUTH_JWT_AUDIENCE=https://api.opal.ac/v1/
       - OPAL_AUTH_JWT_ISSUER=https://opal.ac/
+      - OPAL_LOG_LEVEL=DEBUG
     ports:
       # exposes opal server on the host machine, you can access the server at: http://localhost:7002
       - "7002:7002"

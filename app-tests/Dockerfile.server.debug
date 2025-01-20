@@ -1,0 +1,17 @@
+FROM permitio/opal-server:latest AS baseimage
+
+# Switch to root user to install dependencies
+USER root
+
+# Ensure pip is up-to-date and install debugpy globally
+RUN pip install --upgrade pip && pip install debugpy
+
+
+COPY ./start_debug.sh .
+RUN chmod +x start_debug.sh
+RUN ln -s /opal/start_debug.sh /start_debug.sh
+
+# Switch to opal user for remaining steps
+USER opal
+
+CMD ["./start_debug.sh"]
