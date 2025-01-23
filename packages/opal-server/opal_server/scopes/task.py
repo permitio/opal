@@ -24,7 +24,7 @@ class ScopesPolicyWatcherTask(BasePolicyWatcherTask):
 
     async def start(self):
         await super().start()
-        self._tasks.append(asyncio.create_task(self._service.sync_scopes()))
+        # self._tasks.append(asyncio.create_task(self._service.sync_scopes()))
 
         if opal_server_config.POLICY_REFRESH_INTERVAL > 0:
             self._tasks.append(asyncio.create_task(self._periodic_polling()))
