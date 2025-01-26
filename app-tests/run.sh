@@ -43,17 +43,22 @@ function prepare_policy_repo {
   echo "- Clone tests policy repo to create test's branch"
   export OPAL_POLICY_REPO_URL
   export POLICY_REPO_BRANCH
-  OPAL_POLICY_REPO_URL=${OPAL_POLICY_REPO_URL:-git@github.com:permitio/opal-example-policy-repo.git}
-  OPAL_TEST_TARGET_GITHUB_ACCOUNT=${OPAL_TEST_TARGET_GITHUB_ACCOUNT:-iwphonedo}
 
-  # Change the repository URL to point to the forked repository
-  TARGET_FORK_REPO_URL="https://github.com/${OPAL_TEST_TARGET_GITHUB_ACCOUNT}/opal-example-policy-repo.git"
+  OPAL_REPO_NAME="opal-example-policy-repo"  # for CI use opal-test-policy-repo
+  OPAL_POLICY_REPO_URL=${OPAL_POLICY_REPO_URL:-git@github.com:permitio/${OPAL_REPO_NAME}.git}  
+
+  if [ -n "$GITHUB_ACTIONS" ]; then
+    TARGET_FORK_REPO_URL="$OPAL_POLICY_REPO_URL"
+  else
+    OPAL_TEST_TARGET_GITHUB_ACCOUNT=${OPAL_TEST_TARGET_GITHUB_ACCOUNT:-iwphonedo}
+    TARGET_FORK_REPO_URL="https://github.com/${OPAL_TEST_TARGET_GITHUB_ACCOUNT}/${OPAL_REPO_NAME}.git"
+  fi
 
   POLICY_REPO_BRANCH=test-$RANDOM$RANDOM
-  rm -rf ./opal-example-policy-repo
+  rm -rfd ./${OPAL_REPO_NAME}
 
   git clone "$TARGET_FORK_REPO_URL"
-  cd opal-example-policy-repo
+  cd "$OPAL_REPO_NAME"
   
   git checkout -b $POLICY_REPO_BRANCH
   git push --set-upstream origin $POLICY_REPO_BRANCH
@@ -96,23 +101,23 @@ function clean_up {
       echo ""
     fi
 
-    #compose down
-    cd opal-example-policy-repo; git push -d origin $POLICY_REPO_BRANCH; cd - # Remove remote tests branch
-    rm -rf ./opal-example-policy-repo
+    compose down
+    cd $OPAL_REPO_NAME; git push -d origin $POLICY_REPO_BRANCH; cd - # Remove remote tests branch
+    rm -rf ./$OPAL_REPO_NAME
     exit $ARG
 }
 
 function test_push_policy {
   echo "- Testing pushing policy $1"
   regofile="$1.rego"
-  cd opal-example-policy-repo
+  cd $OPAL_REPO_NAME
   echo "package $1" > "$regofile"
   git add "$regofile"
   git commit -m "Add $regofile"
   git push
   cd -
 
-  #curl -s --request POST 'http://localhost:7002/webhook' --header 'Content-Type: application/json' --header 'x-webhook-token: xxxxx' --data-raw '{"gitEvent":"git.push","repository":{"git_url":"'"$OPAL_POLICY_REPO_URL"'"}}'
+  curl -s --request POST 'http://localhost:7002/webhook' --header 'Content-Type: application/json' --header 'x-webhook-token: xxxxx' --data-raw '{"gitEvent":"git.push","repository":{"git_url":"'"$OPAL_POLICY_REPO_URL"'"}}'
   sleep 15
   check_clients_logged "PUT /v1/policies/$regofile -> 200"
 }
@@ -171,7 +176,7 @@ function main {
 }
 
 # Retry test in case of failure to avoid flakiness
-MAX_RETRIES=1
+MAX_RETRIES=5
 RETRY_COUNT=0
 
 while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
