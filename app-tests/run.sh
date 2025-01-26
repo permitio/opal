@@ -44,12 +44,15 @@ function prepare_policy_repo {
   export OPAL_POLICY_REPO_URL
   export POLICY_REPO_BRANCH
 
-  OPAL_REPO_NAME="opal-test-policy-repo"  # for CI use opal-test-policy-repo
-  OPAL_POLICY_REPO_URL=${OPAL_POLICY_REPO_URL:-git@github.com:permitio/${OPAL_REPO_NAME}.git}  
+  OPAL_REPO_NAME="opal-tests-policy-repo"
+  OPAL_POLICY_REPO_URL=${OPAL_POLICY_REPO_URL:-git@github.com:permitio/${OPAL_REPO_NAME}.git}
 
   if [ -n "$GITHUB_ACTIONS" ]; then
+    echo "Running inside GitHub Actions CI"
     TARGET_FORK_REPO_URL="$OPAL_POLICY_REPO_URL"
   else
+    echo "Running outside GitHub Actions CI"
+    OPAL_REPO_NAME="opal-example-policy-repo"
     OPAL_TEST_TARGET_GITHUB_ACCOUNT=${OPAL_TEST_TARGET_GITHUB_ACCOUNT:-iwphonedo}
     TARGET_FORK_REPO_URL="https://github.com/${OPAL_TEST_TARGET_GITHUB_ACCOUNT}/${OPAL_REPO_NAME}.git"
   fi
@@ -59,13 +62,13 @@ function prepare_policy_repo {
 
   git clone "$TARGET_FORK_REPO_URL"
   cd "$OPAL_REPO_NAME"
-  
+
   git checkout -b $POLICY_REPO_BRANCH
   git push --set-upstream origin $POLICY_REPO_BRANCH
   cd -
 
   export OPAL_POLICY_REPO_URL="$TARGET_FORK_REPO_URL"
-  
+
   # That's for the docker-compose to use, set ssh key from "~/.ssh/id_rsa", unless another path/key data was configured
   export OPAL_POLICY_REPO_SSH_KEY
   OPAL_POLICY_REPO_SSH_KEY_PATH=${OPAL_POLICY_REPO_SSH_KEY_PATH:-~/.ssh/id_rsa}
