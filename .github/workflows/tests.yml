@@ -117,7 +117,7 @@ jobs:
           OPAL_TESTS_POLICY_REPO_DEPLOY_KEY: ${{ secrets.OPAL_TESTS_POLICY_REPO_DEPLOY_KEY }}
         run: |
           # Prepare git for using tests policy repo
-          export OPAL_POLICY_REPO_SSH_KEY_PATH=$(realpath .)/opal-tests-policy-repo-key
+          export OPAL_POLICY_REPO_SSH_KEY_PATH=$(realpath ./opal-tests-policy-repo-key | sed 's:/*/:/:g')
           echo "$OPAL_TESTS_POLICY_REPO_DEPLOY_KEY" > $OPAL_POLICY_REPO_SSH_KEY_PATH
           chmod 400 $OPAL_POLICY_REPO_SSH_KEY_PATH
 
