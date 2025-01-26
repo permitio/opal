@@ -44,7 +44,7 @@ function prepare_policy_repo {
   export OPAL_POLICY_REPO_URL
   export POLICY_REPO_BRANCH
 
-  OPAL_REPO_NAME="opal-example-policy-repo"  # for CI use opal-test-policy-repo
+  OPAL_REPO_NAME="opal-test-policy-repo"  # for CI use opal-test-policy-repo
   OPAL_POLICY_REPO_URL=${OPAL_POLICY_REPO_URL:-git@github.com:permitio/${OPAL_REPO_NAME}.git}  
 
   if [ -n "$GITHUB_ACTIONS" ]; then
