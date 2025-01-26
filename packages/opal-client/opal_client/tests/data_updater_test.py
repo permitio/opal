@@ -44,6 +44,7 @@ DATA_ROUTE = "/fetchable_data"
 DATA_URL = f"http://localhost:{PORT}{DATA_ROUTE}"
 DATA_CONFIG_URL = f"http://localhost:{PORT}{opal_server_config.DATA_CONFIG_ROUTE}"
 DATA_TOPICS = ["policy_data"]
+DATA_TOPICS_TEST_RACE = ["test_data"]
 TEST_DATA = {"hello": "world"}
 
 DATA_UPDATE_CALLBACK_ROUTE = "/data/callback_report_for_test"
@@ -309,3 +310,74 @@ async def test_client_get_initial_data(server):
     # cleanup
     finally:
         await updater.stop()
+
+
+DATA_UPDATE_1 = [JSONPatchAction(op="add", path="/", value={"user":"1"})]
+DATA_UPDATE_2 = [JSONPatchAction(op="add", path="/", value={"user":"2"})]
+
+
+
+ENTRIES = [
+    DataSourceEntry(
+        url="",
+        data=PATCH_DATA_UPDATE,
+        dst_path="test",
+        topics=DATA_TOPICS_TEST_RACE,
+        config =  {"fetcher":"TestsFetchProvider", "timeout": 10}
+    ),
+    DataSourceEntry(
+        url="",
+        data=PATCH_DATA_UPDATE,
+        dst_path="test",
+        topics=DATA_TOPICS_TEST_RACE,
+        config = {"fetcher":"TestsFetchProvider", "timeout": 1}
+    )
+]
+
+def trigger_update_race(entry: DataSourceEntry):
+    async def run():
+        # trigger an update
+        entries = [entry]
+        update = DataUpdate(reason="Test", entries=entries)
+        async with PubSubClient(
+            server_uri=UPDATES_URL,
+            extra_headers=[get_authorization_header(opal_client_config.CLIENT_TOKEN)],
+        ) as client:
+            # Channel must be ready before we can publish on it
+            await asyncio.wait_for(client.wait_until_ready(), 5)
+            logging.info("Publishing data event")
+            await client.publish(DATA_TOPICS_TEST_RACE, data=update)
+
+    asyncio.run(run())
+
+
+@pytest.mark.asyncio
+async def test_data_updater_race(server):
+    """Disable auto-update on connect (fetch_on_connect=False) Connect to OPAL-
+    server trigger a Data-update and check our policy store gets the update."""
+    # config to use mock OPA
+    policy_store = PolicyStoreClientFactory.create(store_type=PolicyStoreTypes.MOCK)
+    updater = DataUpdater(
+        pubsub_url=UPDATES_URL,
+        policy_store=policy_store,
+        fetch_on_connect=False,
+        data_topics=DATA_TOPICS,
+        should_send_reports=False,
+    )
+    # start the updater (terminate on exit)
+    await updater.start()
+    try:
+        proc_1 = multiprocessing.Process(target=trigger_update_race(entry=ENTRIES[0]), daemon=True)
+        proc_1.start()
+        await asyncio.sleep(3)
+        proc_2 = multiprocessing.Process(target=trigger_update_race(entry=ENTRIES[1]), daemon=True)
+        proc_2.start()
+        await asyncio.wait_for(policy_store.wait_for_data(), 60)
+    # cleanup
+    finally:
+        await updater.stop()
+        if proc_1:
+            proc_1.terminate()
+        if proc_2:
+            proc_2.terminate()
+
