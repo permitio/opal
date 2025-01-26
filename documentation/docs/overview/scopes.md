@@ -17,7 +17,7 @@ API (`/scopes`)
 > #### Prerequisites
 >
 > Scopes are supported in OPAL 0.2.0 and above. Use the
-> [provided docker-compose example](https://github.com/permitio/opal/blob/master/docker/docker-compose-scopes-example.yml)
+> [provided docker compose example](https://github.com/permitio/opal/blob/master/docker/docker-compose-scopes-example.yml)
 > to quickly get started.
 >
 > The server must be started with the environment variable
