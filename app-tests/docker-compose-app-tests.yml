@@ -29,7 +29,6 @@ services:
       - OPAL_AUTH_JWT_AUDIENCE=https://api.opal.ac/v1/
       - OPAL_AUTH_JWT_ISSUER=https://opal.ac/
       - OPAL_STATISTICS_ENABLED=true
-      - OPAL_LOG_LEVEL=DEBUG
       - OPAL_POLICY_REPO_POLLING_INTERVAL=10
     ports:
       - "7002-7003:7002"
@@ -53,7 +52,6 @@ services:
       - OPAL_AUTH_JWT_AUDIENCE=https://api.opal.ac/v1/
       - OPAL_AUTH_JWT_ISSUER=https://opal.ac/
       - OPAL_STATISTICS_ENABLED=true
-      - OPAL_LOG_LEVEL=DEBUG
     ports:
       - "7766-7767:7000"
       - "8181-8182:8181"
