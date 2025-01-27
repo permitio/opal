@@ -224,7 +224,7 @@ async def test_data_updater(server):
         data=json.dumps(update, default=pydantic_encoder),
         headers=headers,
     )
-    assert res.status_code == 422
+    assert res.status_code == 422, res.text
 
 
 @pytest.mark.asyncio

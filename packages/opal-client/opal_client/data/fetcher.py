@@ -1,5 +1,5 @@
 import asyncio
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, List, Optional, Tuple
 
 from opal_client.config import opal_client_config
 from opal_client.policy_store.base_policy_store_client import JsonableValue
@@ -58,8 +58,8 @@ class DataFetcher:
         await self._engine.terminate_workers()
 
     async def handle_url(
-        self, url: str, config: FetcherConfig, data: Optional[JsonableValue]
-    ):
+        self, url: str, config: dict, data: Optional[JsonableValue]
+    ) -> JsonableValue | None:
         """Helper function wrapping self._engine.handle_url."""
         if data is not None:
             logger.info("Data provided inline for url: {url}", url=url)
@@ -107,7 +107,7 @@ class DataFetcher:
         results_with_url_and_config = [
             (url, config, result)
             for (url, config, data), result in zip(urls, results)
-            if result is not None
+            if result is not None  # FIXME ignores None results
         ]
 
         # return results

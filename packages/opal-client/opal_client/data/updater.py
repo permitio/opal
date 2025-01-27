@@ -1,10 +1,9 @@
 import asyncio
 import hashlib
-import itertools
 import json
 import uuid
 from functools import partial
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
 import aiohttp
 from aiohttp.client import ClientError, ClientSession
@@ -20,18 +19,17 @@ from opal_client.logger import logger
 from opal_client.policy_store.base_policy_store_client import (
     BasePolicyStoreClient,
     JsonableValue,
+    PolicyStoreTransactionContextManager,
 )
 from opal_client.policy_store.policy_store_client_factory import (
     DEFAULT_POLICY_STORE_GETTER,
 )
-from opal_common.async_utils import TakeANumberQueue, TasksPool, repeated_call
+from opal_common.async_utils import repeated_call
 from opal_common.config import opal_common_config
-from opal_common.fetcher.events import FetcherConfig
 from opal_common.http_utils import is_http_error_response
 from opal_common.schemas.data import (
     DataEntryReport,
     DataSourceConfig,
-    DataSourceEntry,
     DataUpdate,
     DataUpdateReport,
 )
@@ -39,6 +37,8 @@ from opal_common.schemas.store import TransactionType
 from opal_common.security.sslcontext import get_custom_ssl_context
 from opal_common.utils import get_authorization_header
 from pydantic.json import pydantic_encoder
+from schemas.data import DataSourceEntry
+from synchronization.hierarchical_lock import HierarchicalLock
 
 
 class DataUpdater:
@@ -132,8 +132,8 @@ class DataUpdater:
             if self._custom_ssl_context is not None
             else {}
         )
-        self._updates_storing_queue = TakeANumberQueue(logger)
-        self._tasks = TasksPool()
+        self._tasks = asyncio.TaskGroup()
+        self._dst_lock = HierarchicalLock()
         self._polling_update_tasks = []
         self._on_connect_callbacks = on_connect or []
         self._on_disconnect_callbacks = on_disconnect or []
@@ -147,7 +147,7 @@ class DataUpdater:
         if not self._stopping:
             await self.stop()
 
-    async def _update_policy_data_callback(self, data: dict = None, topic=""):
+    async def _update_policy_data_callback(self, data: dict | None = None, topic=""):
         """
         Pub/Sub callback - triggering data updates
         will run when we get notifications on the policy_data topic.
@@ -167,9 +167,7 @@ class DataUpdater:
             update.id = uuid.uuid4().hex
         logger.info("Triggering data update with id: {id}", id=update.id)
 
-        # Fetching should be concurrent, but storing should be done in the original order
-        store_queue_number = await self._updates_storing_queue.take_a_number()
-        self._tasks.add_task(self._update_policy_data(update, store_queue_number))
+        self._tasks.create_task(self._update_policy_data(update))
 
     async def get_policy_data_config(self, url: str = None) -> DataSourceConfig:
         """
@@ -268,9 +266,7 @@ class DataUpdater:
     async def start(self):
         logger.info("Launching data updater")
         await self._callbacks_reporter.start()
-        await self._updates_storing_queue.start_queue_handling(
-            self._store_fetched_update
-        )
+        await self._tasks.__aenter__()
         if self._subscriber_task is None:
             self._subscriber_task = asyncio.create_task(self._subscriber())
             await self._data_fetcher.start()
@@ -334,195 +330,183 @@ class DataUpdater:
         logger.debug("Stopping data fetcher")
         await self._data_fetcher.stop()
 
-        # stop queue handling
-        await self._updates_storing_queue.stop_queue_handling()
-
         # stop the callbacks reporter
         await self._callbacks_reporter.stop()
+        await self._tasks.__aexit__(None, None, None)
 
     async def wait_until_done(self):
         if self._subscriber_task is not None:
             await self._subscriber_task
 
     @staticmethod
-    def calc_hash(data):
-        """Calculate an hash (sah256) on the given data, if data isn't a
-        string, it will be converted to JSON.
+    def calc_hash(data: JsonableValue) -> str:
+        """Calculate a hash (sah256) on the given data, if data isn't a string,
+        it will be converted to JSON.
 
         String are encoded as 'utf-8' prior to hash calculation.
         Returns:
-            the hash of the given data (as a a hexdigit string) or '' on failure to process.
+            the hash of the given data (as a hexdigit string) or '' on failure to process.
         """
         try:
             if not isinstance(data, str):
                 data = json.dumps(data, default=pydantic_encoder)
             return hashlib.sha256(data.encode("utf-8")).hexdigest()
-        except:
-            logger.exception("Failed to calculate hash for data {data}", data=data)
+        except Exception as e:
+            logger.exception(f"Failed to calculate hash for data {data}: {e}")
             return ""
 
-    async def _update_policy_data(
-        self,
-        update: DataUpdate,
-        store_queue_number: TakeANumberQueue.Number,
-    ):
+    async def _update_policy_data(self, update: DataUpdate) -> None:
         """Fetches policy data (policy configuration) from backend and updates
         it into policy-store (i.e. OPA)"""
+        reports: list[DataEntryReport] = []
+        for entry in update.entries:
+            if not entry.topics:
+                logger.debug("Data entry {entry} has no topics, skipping", entry=entry)
+                continue
 
-        if update is None:
-            return
-
-        # types / defaults
-        urls: List[Tuple[str, FetcherConfig, Optional[JsonableValue]]] = None
-        entries: List[DataSourceEntry] = []
-        # if we have an actual specification for the update
-        if update is not None:
-            # Check each entry's topics to only process entries designated to us
-            entries = [
-                entry
-                for entry in update.entries
-                if entry.topics
-                and not set(entry.topics).isdisjoint(set(self._data_topics))
-            ]
-            urls = []
-            for entry in entries:
-                config = entry.config
-                if self._shard_id is not None:
-                    headers = config.get("headers", {})
-                    headers.update({"X-Shard-ID": self._shard_id})
-                    config["headers"] = headers
-                urls.append((entry.url, config, entry.data))
-
-        if len(entries) > 0:
-            logger.info("Fetching policy data", urls=repr(urls))
-        else:
-            logger.warning(
-                "None of the update's entries are designated to subscribed topics"
-            )
-
-        # Urls may be None - handle_urls has a default for None
-        policy_data_with_urls = await self._data_fetcher.handle_urls(urls)
-        store_queue_number.put((update, entries, policy_data_with_urls))
-
-    async def _store_fetched_update(self, update_item):
-        (update, entries, policy_data_with_urls) = update_item
-
-        # track the result of each url in order to report back
-        reports: List[DataEntryReport] = []
-
-        # Save the data from the update
-        # We wrap our interaction with the policy store with a transaction
-        async with self._policy_store.transaction_context(
-            update.id, transaction_type=TransactionType.data
-        ) as store_transaction:
-            # for intellisense treat store_transaction as a PolicyStoreClient (which it proxies)
-            store_transaction: BasePolicyStoreClient
-            error_content = None
-            for (url, fetch_config, result), entry in itertools.zip_longest(
-                policy_data_with_urls, entries
-            ):
-                fetched_data_successfully = True
-
-                if isinstance(result, Exception):
-                    fetched_data_successfully = False
-                    logger.error(
-                        "Failed to fetch url {url}, got exception: {exc}",
-                        url=url,
-                        exc=result,
-                    )
-
-                if isinstance(
-                    result, aiohttp.ClientResponse
-                ) and is_http_error_response(
-                    result
-                ):  # error responses
-                    fetched_data_successfully = False
-                    try:
-                        error_content = await result.json()
-                        logger.error(
-                            "Failed to fetch url {url}, got response code {status} with error: {error}",
-                            url=url,
-                            status=result.status,
-                            error=error_content,
-                        )
-                    except json.JSONDecodeError:
-                        error_content = await result.text()
-                        logger.error(
-                            "Failed to decode response from url:{url}, got response code {status} with response: {error}",
-                            url=url,
-                            status=result.status,
-                            error=error_content,
-                        )
-                store_transaction._update_remote_status(
-                    url=url,
-                    status=fetched_data_successfully,
-                    error=str(error_content),
+            if set(entry.topics).isdisjoint(set(self._data_topics)):
+                logger.debug(
+                    "Data entry {entry} has no topics matching the data topics, skipping",
+                    entry=entry,
                 )
+                continue
 
-                if fetched_data_successfully:
-                    # get path to store the URL data (default mode (None) is as "" - i.e. as all the data at root)
-                    policy_store_path = "" if entry is None else entry.dst_path
-                    # None is not valid - use "" (protect from missconfig)
-                    if policy_store_path is None:
-                        policy_store_path = ""
-                    # fix opa_path (if not empty must start with "/" to be nested under data)
-                    if policy_store_path != "" and not policy_store_path.startswith(
-                        "/"
-                    ):
-                        policy_store_path = f"/{policy_store_path}"
-                    policy_data = result
-                    # Create a report on the data-fetching
-                    report = DataEntryReport(
-                        entry=entry, hash=self.calc_hash(policy_data), fetched=True
-                    )
+            # add shard id to headers
+            if self._shard_id:
+                headers = entry.config.get("headers", {})
+                headers["X-Shard-ID"] = self._shard_id
+                entry.config["headers"] = headers
 
-                    try:
-                        if (
-                            opal_client_config.SPLIT_ROOT_DATA
-                            and policy_store_path in ("/", "")
-                            and isinstance(policy_data, dict)
-                        ):
-                            await self._set_split_policy_data(
-                                store_transaction,
-                                url=url,
-                                save_method=entry.save_method,
-                                data=policy_data,
-                            )
-                        else:
-                            await self._set_policy_data(
-                                store_transaction,
-                                url=url,
-                                path=policy_store_path,
-                                save_method=entry.save_method,
-                                data=policy_data,
-                            )
-                        # No exception we we're able to save to the policy-store
-                        report.saved = True
-                        # save the report for the entry
-                        reports.append(report)
-                    except Exception:
-                        logger.exception("Failed to save data update to policy-store")
-                        # we failed to save to policy-store
-                        report.saved = False
-                        # save the report for the entry
-                        reports.append(report)
-                        # re-raise so the context manager will be aware of the failure
-                        raise
-                else:
-                    report = DataEntryReport(entry=entry, fetched=False, saved=False)
-                    # save the report for the entry
-                    reports.append(report)
-        # should we send a report to defined callbackers?
+            transaction_context = self._policy_store.transaction_context(
+                update.id, transaction_type=TransactionType.data
+            )
+            async with (
+                transaction_context as store_transaction,
+                self._dst_lock.lock(
+                    entry.dst_path
+                ),  # lock the destination path to prevent concurrent writes
+            ):
+                report = await self._fetch_and_save_data(entry, store_transaction)
+
+            reports.append(report)
+
+        await self._send_reports(reports, update)
+
+    async def _send_reports(self, reports: list[DataEntryReport], update: DataUpdate):
         if self._should_send_reports:
             # spin off reporting (no need to wait on it)
             whole_report = DataUpdateReport(update_id=update.id, reports=reports)
             extra_callbacks = self._callbacks_register.normalize_callbacks(
                 update.callback.callbacks
             )
-            self._tasks.add_task(
+            self._tasks.create_task(
                 self._callbacks_reporter.report_update_results(
                     whole_report, extra_callbacks
                 )
+            )
+
+    async def _fetch_and_save_data(
+        self,
+        entry: DataSourceEntry,
+        store_transaction: PolicyStoreTransactionContextManager,
+    ) -> DataEntryReport:
+        """Fetches data from the given entry and saves it to the policy store.
+
+        :param entry: The data source entry
+        :param store_transaction: The policy store transaction
+        :return: The data entry report
+        """
+        try:
+            result = await self._data_fetcher.handle_url(
+                url=entry.url,
+                config=entry.config,
+                data=entry.data,
+            )
+        except Exception as e:
+            logger.exception(
+                "Failed to fetch data for entry {entry} with exception {exc}",
+                entry=entry,
+                exc=e,
+            )
+            store_transaction._update_remote_status(
+                url=entry.url, status=False, error=f"Failed to fetch data: {e}"
+            )
+            return DataEntryReport(entry=entry, fetched=False, saved=False)
+
+        if result is None:
+            store_transaction._update_remote_status(
+                url=entry.url, status=False, error="Fetched data is empty"
+            )
+            return DataEntryReport(entry=entry, fetched=False, saved=False)
+
+        if isinstance(result, aiohttp.ClientResponse) and is_http_error_response(
+            result
+        ):
+            error_content = await result.text()
+            logger.error(
+                "Failed to decode response from url: '{url}', got response code {status} with response: {error}",
+                url=entry.url,
+                status=result.status,
+                error=error_content,
+            )
+            store_transaction._update_remote_status(
+                url=entry.url, status=False, error=str(error_content)
+            )
+            return DataEntryReport(entry=entry, fetched=False, saved=False)
+
+        try:
+            await self._store_fetched_data(entry, result, store_transaction)
+            store_transaction._update_remote_status(
+                url=entry.url, status=True, error=""
+            )
+            return DataEntryReport(
+                entry=entry, hash=self.calc_hash(result), fetched=True, saved=True
+            )
+        except Exception as e:
+            logger.exception("Failed to save data update to policy-store: {exc}", exc=e)
+            store_transaction._update_remote_status(
+                url=entry.url,
+                status=False,
+                error=f"Failed to save data to policy store: {e}",
+            )
+            return DataEntryReport(
+                entry=entry, hash=self.calc_hash(result), fetched=True, saved=False
+            )
+
+    async def _store_fetched_data(
+        self,
+        entry: DataSourceEntry,
+        result: JsonableValue,
+        store_transaction: PolicyStoreTransactionContextManager,
+    ) -> None:
+        """Store the fetched data in the policy store.
+
+        :param entry: The data source entry
+        :param result: The fetched data
+        :param store_transaction: The policy store transaction
+        """
+        policy_store_path = entry.dst_path or ""
+        if policy_store_path and not policy_store_path.startswith("/"):
+            policy_store_path = f"/{policy_store_path}"
+
+        if (
+            opal_client_config.SPLIT_ROOT_DATA
+            and policy_store_path in ("/", "")
+            and isinstance(result, dict)
+        ):
+            await self._set_split_policy_data(
+                store_transaction,
+                url=entry.url,
+                save_method=entry.save_method,
+                data=result,
+            )
+        else:
+            await self._set_policy_data(
+                store_transaction,
+                url=entry.url,
+                path=policy_store_path,
+                save_method=entry.save_method,
+                data=result,
             )
 
     async def _set_split_policy_data(
