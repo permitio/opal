@@ -102,7 +102,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v2
         with:
-          python-version: "3.10"
+          python-version: "3.12"
 
       - name: Install opal packages
         run: |
@@ -116,6 +116,12 @@ jobs:
           OPAL_IMAGE_TAG: test
           OPAL_TESTS_POLICY_REPO_DEPLOY_KEY: ${{ secrets.OPAL_TESTS_POLICY_REPO_DEPLOY_KEY }}
         run: |
+          sudo add-apt-repository ppa:git-core/ppa -y
+          sudo apt-get update
+          sudo apt-get install git -y
+          git --version
+          ssh -T git@github.com || echo "SSH authentication failed"
+
           # Prepare git for using tests policy repo
           export OPAL_POLICY_REPO_SSH_KEY_PATH=$(realpath ./opal-tests-policy-repo-key | sed 's:/*/:/:g')
           echo "$OPAL_TESTS_POLICY_REPO_DEPLOY_KEY" > $OPAL_POLICY_REPO_SSH_KEY_PATH
