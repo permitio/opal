@@ -242,7 +242,7 @@ jobs:
         run: |
           version_tag=${{ github.event.release.tag_name }}
           version_tag=${version_tag#v}  # Remove the leading 'v'
-          
+
           # Handle RC versions
           if [[ $version_tag =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)[-.]?rc([0-9]+)$ ]]; then
             # For RC versions (PEP 440 format)
@@ -255,7 +255,7 @@ jobs:
             # Regular versions
             version_tuple=$(echo $version_tag | sed 's/\./, /g')
           fi
-          
+
           sed -i "s/VERSION = (.*/VERSION = (${version_tuple})/" packages/__packaging__.py
 
       - name: Cleanup setup.py and Build every sub-packages
