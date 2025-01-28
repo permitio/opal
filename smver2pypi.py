@@ -15,8 +15,8 @@ Usage:
 
 import sys
 
-from semver import Version as SemVerVersion
 from packaging.version import Version as PyPIVersion
+from semver import Version as SemVerVersion
 
 semver_version = SemVerVersion.parse(sys.argv[1])
 finalized_version = semver_version.finalize_version()
