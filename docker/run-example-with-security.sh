@@ -22,7 +22,8 @@ echo "keys and run OPAL in *secure mode*."
 echo "------------------------------------------------------------------"
 
 echo "generating opal crypto keys..."
-ssh-keygen -q -t rsa -b 4096 -m pem -f opal_crypto_key -N ""
+export OPAL_AUTH_PRIVATE_KEY_PASSPHRASE="123456"
+ssh-keygen -q -t rsa -b 4096 -m pem -f opal_crypto_key -N "$OPAL_AUTH_PRIVATE_KEY_PASSPHRASE"
 
 echo "saving crypto keys to env vars and removing temp key files..."
 export OPAL_AUTH_PUBLIC_KEY=`cat opal_crypto_key.pub`

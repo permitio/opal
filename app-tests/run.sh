@@ -3,6 +3,7 @@ set -e
 
 export OPAL_AUTH_PUBLIC_KEY
 export OPAL_AUTH_PRIVATE_KEY
+export OPAL_AUTH_PRIVATE_KEY_PASSPHRASE
 export OPAL_AUTH_MASTER_TOKEN
 export OPAL_CLIENT_TOKEN
 export OPAL_DATA_SOURCE_TOKEN
@@ -10,7 +11,8 @@ export OPAL_DATA_SOURCE_TOKEN
 function generate_opal_keys {
   echo "- Generating OPAL keys"
 
-  ssh-keygen -q -t rsa -b 4096 -m pem -f opal_crypto_key -N ""
+  OPAL_AUTH_PRIVATE_KEY_PASSPHRASE="123456"
+  ssh-keygen -q -t rsa -b 4096 -m pem -f opal_crypto_key -N "$OPAL_AUTH_PRIVATE_KEY_PASSPHRASE"
   OPAL_AUTH_PUBLIC_KEY="$(cat opal_crypto_key.pub)"
   OPAL_AUTH_PRIVATE_KEY="$(tr '\n' '_' < opal_crypto_key)"
   rm opal_crypto_key.pub opal_crypto_key
