@@ -101,7 +101,8 @@ jobs:
       # pushes the *same* docker images that were previously tested as part of e2e sanity test.
       # each image is pushed with the versioned tag first, if it succeeds the image is pushed with the latest tag as well.
       - name: Build & Push client
-        id: build_push_client
+        if: ${{ github.event.release.prerelease == false }}
+        id: build_push_client_regular
         uses: docker/build-push-action@v4
         with:
           file: docker/Dockerfile
@@ -114,8 +115,24 @@ jobs:
             permitio/opal-client:latest
             permitio/opal-client:${{ github.event.release.tag_name }}
 
+      - name: Build & Push client (prerelease)
+        if: ${{ github.event.release.prerelease == true }}
+        id: build_push_client_prerelease
+        uses: docker/build-push-action@v4
+        with:
+          file: docker/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          target: client
+          cache-from: type=registry,ref=permitio/opal-client:latest
+          cache-to: type=inline
+          tags: |
+            permitio/opal-client:${{ github.event.release.tag_name }}
+
+
       - name: Build client-standalone
-        id: build_push_client_standalone
+        if: ${{ github.event.release.prerelease == false }}
+        id: build_push_client_standalone_regular
         uses: docker/build-push-action@v4
         with:
           file: docker/Dockerfile
@@ -128,8 +145,23 @@ jobs:
             permitio/opal-client-standalone:latest
             permitio/opal-client-standalone:${{ github.event.release.tag_name }}
 
+      - name: Build client-standalone (prerelease)
+        if: ${{ github.event.release.prerelease == true }}
+        id: build_push_client_standalone_prerelease
+        uses: docker/build-push-action@v4
+        with:
+          file: docker/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          target: client-standalone
+          cache-from: type=registry,ref=permitio/opal-client-standalone:latest
+          cache-to: type=inline
+          tags: |
+            permitio/opal-client-standalone:${{ github.event.release.tag_name }}
+
       - name: Build server
-        id: build_push_server
+        if: ${{ github.event.release.prerelease == false }}
+        id: build_push_server_regular
         uses: docker/build-push-action@v4
         with:
           file: docker/Dockerfile
@@ -141,6 +173,50 @@ jobs:
           tags: |
             permitio/opal-server:latest
             permitio/opal-server:${{ github.event.release.tag_name }}
+
+      - name: Build server (prerelease)
+        if: ${{ github.event.release.prerelease == true }}
+        id: build_push_server_prerelease
+        uses: docker/build-push-action@v4
+        with:
+          file: docker/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          target: server
+          cache-from: type=registry,ref=permitio/opal-server:latest
+          cache-to: type=inline
+          tags: |
+            permitio/opal-server:${{ github.event.release.tag_name }}
+
+      - name: Build & Push client cedar
+        if: ${{ github.event.release.prerelease == false }}
+        id: build_push_client_cedar_regular
+        uses: docker/build-push-action@v4
+        with:
+          file: docker/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          target: client-cedar
+          cache-from: type=registry,ref=permitio/opal-client-cedar:latest
+          cache-to: type=inline
+          tags: |
+            permitio/opal-client-cedar:latest
+            permitio/opal-client-cedar:${{ github.event.release.tag_name }}
+
+      - name: Build & Push client cedar (prerelease)
+        if: ${{ github.event.release.prerelease == true }}
+        id: build_push_client_cedar_prerelease
+        uses: docker/build-push-action@v4
+        with:
+          file: docker/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          target: client-cedar
+          cache-from: type=registry,ref=permitio/opal-client-cedar:latest
+          cache-to: type=inline
+          tags: |
+            permitio/opal-client-cedar:${{ github.event.release.tag_name }}
+
 
       - name: Build & Push client cedar
         id: build_push_client_cedar
@@ -165,10 +241,22 @@ jobs:
       - name: Bump version - packaging__.py
         run: |
           version_tag=${{ github.event.release.tag_name }}
-          version_tag=${version_tag#v} # Remove the leading 'v'
-          version_tuple=$(echo $version_tag | sed 's/\./, /g')
+          version_tag=${version_tag#v}  # Remove the leading 'v'
+          
+          # Handle RC versions
+          if [[ $version_tag =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)[-.]?rc([0-9]+)$ ]]; then
+            # For RC versions (PEP 440 format)
+            major="${BASH_REMATCH[1]}"
+            minor="${BASH_REMATCH[2]}"
+            patch="${BASH_REMATCH[3]}"
+            rc_num="${BASH_REMATCH[4]}"
+            version_tuple="$major, $minor, $patch, 'rc', $rc_num"  # Will become "1.2.3rc1"
+          else
+            # Regular versions
+            version_tuple=$(echo $version_tag | sed 's/\./, /g')
+          fi
+          
           sed -i "s/VERSION = (.*/VERSION = (${version_tuple})/" packages/__packaging__.py
-          cat packages/__packaging__.py
 
       - name: Cleanup setup.py and Build every sub-packages
         run: |
