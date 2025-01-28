@@ -241,7 +241,7 @@ jobs:
       - name: Bump version - packaging__.py
         run: |
           # Install required packages
-          pip install semver
+          pip install semver packaging
 
           # Get version tag and remove 'v' prefix
           version_tag=${{ github.event.release.tag_name }}
