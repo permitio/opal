@@ -320,13 +320,14 @@ DATA_UPDATE_2 = [JSONPatchAction(op="add", path="/", value={"user": "2"})]
 async def test_data_updater_race(server):
     """Disable auto-update on connect (fetch_on_connect=False) Connect to OPAL-
     server trigger a Data-update and check our policy store gets the update."""
-    # config to use mock OPA
-    policy_store = PolicyStoreClientFactory.create(store_type=PolicyStoreTypes.MOCK)
+
+    # NEED TO RUN OPA- "opa run server" in the terminal
+    policy_store = PolicyStoreClientFactory.create()
     updater = DataUpdater(
         pubsub_url=UPDATES_URL,
         policy_store=policy_store,
         fetch_on_connect=False,
-        data_topics=DATA_TOPICS,
+        data_topics=DATA_TOPICS_TEST_RACE,
         should_send_reports=False,
     )
     # start the updater (terminate on exit)
@@ -339,7 +340,7 @@ async def test_data_updater_race(server):
             entries=[
                 DataSourceEntry(
                     url="",
-                    data=PATCH_DATA_UPDATE,
+                    data=DATA_UPDATE_1,
                     dst_path="test",
                     topics=DATA_TOPICS_TEST_RACE,
                     config={"fetcher": "TestsFetchProvider", "timeout": 10},
@@ -356,7 +357,7 @@ async def test_data_updater_race(server):
             entries=[
                 DataSourceEntry(
                     url="",
-                    data=PATCH_DATA_UPDATE,
+                    data=DATA_UPDATE_2,
                     dst_path="test",
                     topics=DATA_TOPICS_TEST_RACE,
                     config={"fetcher": "TestsFetchProvider", "timeout": 1},
@@ -365,4 +366,7 @@ async def test_data_updater_race(server):
             ],
         )
     )
-    # await asyncio.wait_for(policy_store.wait_for_data(), 60)
+    await asyncio.sleep(10)
+    data = await policy_store.get_data("test")
+    assert data[0].get("value") == {"user": "2"}
+
