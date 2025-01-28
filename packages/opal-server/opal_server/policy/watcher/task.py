@@ -126,7 +126,8 @@ class PolicyWatcherTask(BasePolicyWatcherTask):
         pull)"""
         try:
             async with start_span("opal_server_policy_update") as span:
-                span.set_attribute("topic", str(topic))
+                if span is not None:
+                    span.set_attribute("topic", str(topic))
                 await self._watcher.check_for_changes()
         except Exception as e:
             raise

@@ -27,7 +27,7 @@ def init_data_router(data_updater: Optional[DataUpdater]):
                     )
                 return {"status": "ok"}
             else:
-                if span:
+                if span is not None:
                     span.set_status(trace.StatusCode.ERROR)
                     span.set_attribute("error", True)
                     span.set_attribute("error_type", "updater_disabled")
@@ -37,7 +37,7 @@ def init_data_router(data_updater: Optional[DataUpdater]):
                 )
         except Exception as e:
             logger.error(f"Error during data update: {str(e)}")
-            if span:
+            if span is not None:
                 span.set_status(trace.StatusCode.ERROR)
                 span.set_attribute("error", True)
                 span.record_exception(e)
