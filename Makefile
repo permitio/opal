@@ -65,6 +65,11 @@ docker-build-next:
 	@docker build -t permitio/opal-client:next --target client -f docker/Dockerfile .
 	@docker build -t permitio/opal-server:next --target server -f docker/Dockerfile .
 
+docker-build-latest:
+	@docker build -t permitio/opal-client-standalone:latest --target client-standalone -f docker/Dockerfile .
+	@docker build -t permitio/opal-client:latest --target client -f docker/Dockerfile .
+	@docker build -t permitio/opal-server:latest --target server -f docker/Dockerfile .
+
 docker-run-server:
 	@if [[ -z "$(OPAL_POLICY_REPO_SSH_KEY)" ]]; then \
 		docker run -it \
