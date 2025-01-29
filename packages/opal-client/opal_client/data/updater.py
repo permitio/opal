@@ -42,6 +42,20 @@ from synchronization.hierarchical_lock import HierarchicalLock
 
 
 class DataUpdater:
+    """The DataUpdater is responsible for synchronizing data sources with the
+    policy store (e.g. OPA). It listens to Pub/Sub topics for data updates,
+    fetches the updated data, and writes it into the policy store. The updater
+    also supports a "base fetch" flow on startup or reconnection, pulling data
+    from a configuration endpoint.
+
+    Key Responsibilities:
+      - Subscribe to data update topics.
+      - Fetch new or changed data (using Fetchers, e.g. HTTP)
+      - Write updates to the policy store, ensuring concurrency safety.
+      - Periodically poll data sources (if configured).
+      - Report or callback the outcome of data updates (if configured).
+    """
+
     def __init__(
         self,
         token: str = None,
@@ -50,7 +64,7 @@ class DataUpdater:
         fetch_on_connect: bool = True,
         data_topics: List[str] = None,
         policy_store: BasePolicyStoreClient = None,
-        should_send_reports=None,
+        should_send_reports: bool | None = None,
         data_fetcher: Optional[DataFetcher] = None,
         callbacks_register: Optional[CallbacksRegister] = None,
         opal_client_id: str = None,
@@ -58,18 +72,23 @@ class DataUpdater:
         on_connect: List[PubSubOnConnectCallback] = None,
         on_disconnect: List[OnDisconnectCallback] = None,
     ):
-        """Keeps policy-stores (e.g. OPA) up to date with relevant data Obtains
-        data configuration on startup from OPAL-server Uses Pub/Sub to
-        subscribe to data update events, and fetches (using FetchingEngine)
-        data from sources.
+        """Initializes the DataUpdater with the necessary configuration and
+        clients.
 
         Args:
             token (str, optional): Auth token to include in connections to OPAL server. Defaults to CLIENT_TOKEN.
             pubsub_url (str, optional): URL for Pub/Sub updates for data. Defaults to OPAL_SERVER_PUBSUB_URL.
             data_sources_config_url (str, optional): URL to retrieve base data configuration. Defaults to DEFAULT_DATA_SOURCES_CONFIG_URL.
-            fetch_on_connect (bool, optional): Should the update fetch basic data immediately upon connection/reconnection. Defaults to True.
-            data_topics (List[str], optional): Topics of data to fetch and subscribe to. Defaults to DATA_TOPICS.
-            policy_store (BasePolicyStoreClient, optional): Policy store client to use to store data. Defaults to DEFAULT_POLICY_STORE.
+            fetch_on_connect (bool, optional): Whether to fetch all data immediately upon connection.
+            data_topics (List[str], optional): Pub/Sub topics to subscribe to. Defaults to DATA_TOPICS.
+            policy_store (BasePolicyStoreClient, optional): The client used to store data. Defaults to DEFAULT_POLICY_STORE.
+            should_send_reports (bool, optional): Whether to report on data updates to callbacks. Defaults to SHOULD_REPORT_ON_DATA_UPDATES.
+            data_fetcher (DataFetcher, optional): Custom data fetching engine.
+            callbacks_register (CallbacksRegister, optional): Manages user-defined callbacks.
+            opal_client_id (str, optional): A unique identifier for this OPAL client.
+            shard_id (str, optional): A partition/shard identifier. Translates to an HTTP header.
+            on_connect (List[PubSubOnConnectCallback], optional): Extra on-connect callbacks.
+            on_disconnect (List[OnDisconnectCallback], optional): Extra on-disconnect callbacks.
         """
         # Defaults
         token: str = token or opal_client_config.CLIENT_TOKEN
@@ -88,13 +107,14 @@ class DataUpdater:
             data_sources_config_url = (
                 f"{opal_client_config.SERVER_URL}/scopes/{self._scope_id}/data"
             )
+            # Namespacing the data topics for the specific scope
             self._data_topics = [
                 f"{self._scope_id}:data:{topic}" for topic in self._data_topics
             ]
 
-        # Should the client use the default data source to fetch on connect
+        # Should the client fetch data when it first connects (or reconnects)
         self._fetch_on_connect = fetch_on_connect
-        # The policy store we'll save data updates into
+        # Policy store client
         self._policy_store = policy_store or DEFAULT_POLICY_STORE_GETTER()
 
         self._should_send_reports = (
@@ -102,21 +122,23 @@ class DataUpdater:
             if should_send_reports is not None
             else opal_client_config.SHOULD_REPORT_ON_DATA_UPDATES
         )
-        # The pub/sub client for data updates
-        self._client = None
-        # The task running the Pub/Sub subscribing client
-        self._subscriber_task = None
-        # Data fetcher
+
+        # Will be set once we subscribe and connect
+        self._client: Optional[PubSubClient] = None
+        self._subscriber_task: Optional[asyncio.Task] = None
+
+        # DataFetcher is a helper that can handle different data sources (HTTP, local, etc.)
         self._data_fetcher = data_fetcher or DataFetcher()
         self._callbacks_register = callbacks_register or CallbacksRegister()
-        self._callbacks_reporter = CallbacksReporter(
-            self._callbacks_register,
-        )
+        self._callbacks_reporter = CallbacksReporter(self._callbacks_register)
+
         self._token = token
         self._shard_id = shard_id
         self._server_url = pubsub_url
         self._data_sources_config_url = data_sources_config_url
         self._opal_client_id = opal_client_id
+
+        # Prepare any extra headers (token, shard id, etc.)
         self._extra_headers = []
         if self._token is not None:
             self._extra_headers.append(get_authorization_header(self._token))
@@ -124,17 +146,23 @@ class DataUpdater:
             self._extra_headers.append(("X-Shard-ID", self._shard_id))
         if len(self._extra_headers) == 0:
             self._extra_headers = None
+
         self._stopping = False
-        # custom SSL context (for self-signed certificates)
         self._custom_ssl_context = get_custom_ssl_context()
         self._ssl_context_kwargs = (
-            {"ssl": self._custom_ssl_context}
-            if self._custom_ssl_context is not None
-            else {}
+            {"ssl": self._custom_ssl_context} if self._custom_ssl_context else {}
         )
+
+        # TaskGroup to manage data updates and callbacks background tasks (with graceful shutdown)
         self._tasks = asyncio.TaskGroup()
+
+        # Lock to prevent multiple concurrent writes to the same path
         self._dst_lock = HierarchicalLock()
+
+        # References to repeated polling tasks (periodic data fetch)
         self._polling_update_tasks = []
+
+        # Optional user-defined hooks for connection lifecycle
         self._on_connect_callbacks = on_connect or []
         self._on_disconnect_callbacks = on_disconnect or []
 
@@ -143,43 +171,65 @@ class DataUpdater:
         return self
 
     async def __aexit__(self, exc_type, exc, tb):
-        """Context handler to terminate internal tasks."""
         if not self._stopping:
             await self.stop()
 
     async def _update_policy_data_callback(self, data: dict | None = None, topic=""):
-        """
-        Pub/Sub callback - triggering data updates
-        will run when we get notifications on the policy_data topic.
-        i.e: when new roles are added, changes to permissions, etc.
+        """Callback invoked by the Pub/Sub client whenever a data update is
+        published on one of our subscribed topics.
+
+        Calls trigger_data_update() with the DataUpdate object extracted
+        from 'data'.
         """
         if data is not None:
             reason = data.get("reason", "")
         else:
             reason = "Periodic update"
+
         logger.info("Updating policy data, reason: {reason}", reason=reason)
         update = DataUpdate.parse_obj(data)
         await self.trigger_data_update(update)
 
     async def trigger_data_update(self, update: DataUpdate):
-        # make sure the id has a unique id for tracking
+        """Queues up a data update to run in the background. If no update ID is
+        provided, generate one for tracking/logging.
+
+        Note:
+            Line 172 explanation:
+            We spin off the data update in the background so that multiple updates
+            can run concurrently. Internally, the `_update_policy_data` method uses
+            a hierarchical lock to avoid race conditions when multiple updates try
+            to write to the same destination path.
+        """
+        # Ensure we have a unique update ID
         if update.id is None:
             update.id = uuid.uuid4().hex
+
         logger.info("Triggering data update with id: {id}", id=update.id)
 
+        # Run the update in the background concurrently with other updates
+        # The TaskGroup will manage the lifecycle of this task,
+        # managing graceful shutdown of the updater without losing running data updates
         self._tasks.create_task(self._update_policy_data(update))
 
     async def get_policy_data_config(self, url: str = None) -> DataSourceConfig:
-        """
-        Get the configuration for
+        """Fetches the DataSourceConfig (list of DataSourceEntry) from the
+        provided URL.
+
         Args:
-            url: the URL to query for the config, Defaults to self._data_sources_config_url
+            url (str, optional): The URL to fetch data sources config from. Defaults to
+                                 self._data_sources_config_url if None is given.
+
+        Raises:
+            ClientError: If the server responds with an error status.
+
         Returns:
-            DataSourceConfig: the data sources config
+            DataSourceConfig: The parsed config containing data entries.
         """
         if url is None:
             url = self._data_sources_config_url
         logger.info("Getting data-sources configuration from '{source}'", source=url)
+
         try:
             async with ClientSession(headers=self._extra_headers) as session:
                 response = await session.get(url, **self._ssl_context_kwargs)
@@ -191,39 +241,47 @@ class DataUpdater:
                         f"Fetch data sources failed with status code {response.status}, error: {error_details}"
                     )
         except:
-            logger.exception(f"Failed to load data sources config")
+            logger.exception("Failed to load data sources config")
             raise
 
     async def get_base_policy_data(
         self, config_url: str = None, data_fetch_reason="Initial load"
     ):
-        """Load data into the policy store according to the data source's
-        config provided in the config URL.
+        """Fetches an initial (or base) set of data from the configuration URL
+        and stores it in the policy store.
+
+        This method also sets up any periodic data polling tasks for entries
+        that specify a 'periodic_update_interval'.
 
         Args:
-            config_url (str, optional): URL to retrieve data sources config from. Defaults to None ( self._data_sources_config_url).
-            data_fetch_reason (str, optional): Reason to log for the update operation. Defaults to "Initial load".
+            config_url (str, optional): A specific config URL to fetch from. If not given,
+                                        uses self._data_sources_config_url.
+            data_fetch_reason (str, optional): Reason for logging this fetch. Defaults to
+                                               "Initial load".
         """
         logger.info(
             "Performing data configuration, reason: {reason}", reason=data_fetch_reason
         )
-        await self._stop_polling_update_tasks()  # If this is a reconnect - should stop previously received periodic updates
+
+        # If we're reconnecting, stop any old periodic tasks before fetching anew
+        await self._stop_polling_update_tasks()
+
+        # Fetch the base config with all data entries
         sources_config = await self.get_policy_data_config(url=config_url)
 
         init_entries, periodic_entries = [], []
         for entry in sources_config.entries:
-            (
-                periodic_entries
-                if (entry.periodic_update_interval is not None)
-                else init_entries
-            ).append(entry)
+            if entry.periodic_update_interval is not None:
+                periodic_entries.append(entry)
+            else:
+                init_entries.append(entry)
 
-        # Process one time entries now
+        # Process one-time entries now
         update = DataUpdate(reason=data_fetch_reason, entries=init_entries)
         await self.trigger_data_update(update)
 
-        # Schedule repeated processing of periodic polling entries
-        async def _trigger_update_with_entry(entry):
+        # Schedule repeated processing (polling) of periodic entries
+        async def _trigger_update_with_entry(entry: DataSourceEntry):
             await self.trigger_data_update(
                 DataUpdate(reason="Periodic Update", entries=[entry])
             )
@@ -237,20 +295,18 @@ class DataUpdater:
             self._polling_update_tasks.append(asyncio.create_task(repeat_process_entry))
 
     async def on_connect(self, client: PubSubClient, channel: RpcChannel):
-        """Pub/Sub on_connect callback On connection to backend, whether its
-        the first connection, or reconnecting after downtime, refetch the state
-        opa needs.
+        """Invoked when the Pub/Sub client establishes a connection to the
+        server.
 
-        As long as the connection is alive we know we are in sync with
-        the server, when the connection is lost we assume we need to
-        start from scratch.
+        By default, this re-fetches base policy data. Also publishes a
+        statistic event if statistics are enabled.
         """
         logger.info("Connected to server")
         if self._fetch_on_connect:
             await self.get_base_policy_data()
         if opal_common_config.STATISTICS_ENABLED:
+            # Publish stats about the newly connected client
             await self._client.wait_until_ready()
-            # publish statistics to the server about new connection from client (only if STATISTICS_ENABLED is True, default to False)
             await self._client.publish(
                 [opal_common_config.STATISTICS_ADD_CLIENT_CHANNEL],
                 data={
@@ -261,19 +317,31 @@ class DataUpdater:
             )
 
     async def on_disconnect(self, channel: RpcChannel):
+        """Invoked when the Pub/Sub client disconnects from the server."""
         logger.info("Disconnected from server")
 
     async def start(self):
+        """
+        Starts the DataUpdater:
+          - Begins listening for Pub/Sub data update events.
+          - Starts the callbacks reporter for asynchronous callback tasks.
+          - Starts the DataFetcher if not already running.
+        """
         logger.info("Launching data updater")
         await self._callbacks_reporter.start()
-        await self._tasks.__aenter__()
+        await self._tasks.__aenter__()  # Enter the TaskGroup context
+
         if self._subscriber_task is None:
+            # The subscriber task runs in the background, receiving data update events
             self._subscriber_task = asyncio.create_task(self._subscriber())
             await self._data_fetcher.start()
 
     async def _subscriber(self):
-        """Coroutine meant to be spunoff with create_task to listen in the
-        background for data events and pass them to the data_fetcher."""
+        """The main loop for subscribing to Pub/Sub topics.
+
+        Waits for data update notifications and dispatches them to our
+        callback.
+        """
         logger.info("Subscribing to topics: {topics}", topics=self._data_topics)
         self._client = PubSubClient(
             self._data_topics,
@@ -290,17 +358,28 @@ class DataUpdater:
             await self._client.wait_until_done()
 
     async def _stop_polling_update_tasks(self):
-        if len(self._polling_update_tasks) > 0:
+        """Cancels all periodic polling tasks (if any).
+
+        Used on reconnection or shutdown to ensure we don't have stale
+        tasks still running.
+        """
+        if self._polling_update_tasks:
             for task in self._polling_update_tasks:
                 task.cancel()
             await asyncio.gather(*self._polling_update_tasks, return_exceptions=True)
             self._polling_update_tasks = []
 
     async def stop(self):
+        """
+        Cleanly shuts down the DataUpdater:
+          - Disconnects the Pub/Sub client.
+          - Stops polling tasks.
+          - Cancels the subscriber background task.
+          - Stops the data fetcher and callback reporter.
+        """
         self._stopping = True
         logger.info("Stopping data updater")
 
-        # disconnect from Pub/Sub
         if self._client is not None:
             try:
                 await asyncio.wait_for(self._client.disconnect(), timeout=3)
@@ -309,10 +388,9 @@ class DataUpdater:
                     "Timeout waiting for DataUpdater pubsub client to disconnect"
                 )
 
-        # stop periodic updates
         await self._stop_polling_update_tasks()
 
-        # stop subscriber task
+        # Cancel the subscriber task
         if self._subscriber_task is not None:
             logger.debug("Cancelling DataUpdater subscriber task")
             self._subscriber_task.cancel()
@@ -326,26 +404,36 @@ class DataUpdater:
             self._subscriber_task = None
             logger.debug("DataUpdater subscriber task was cancelled")
 
-        # stop the data fetcher
+        # Stop the DataFetcher
         logger.debug("Stopping data fetcher")
         await self._data_fetcher.stop()
 
-        # stop the callbacks reporter
+        # Stop the callbacks reporter
         await self._callbacks_reporter.stop()
+
+        # Exit the TaskGroup context
         await self._tasks.__aexit__(None, None, None)
 
     async def wait_until_done(self):
+        """Blocks until the Pub/Sub subscriber task completes.
+
+        Typically, this runs indefinitely unless a stop/shutdown event
+        occurs.
+        """
         if self._subscriber_task is not None:
             await self._subscriber_task
 
     @staticmethod
     def calc_hash(data: JsonableValue) -> str:
-        """Calculate a hash (sah256) on the given data, if data isn't a string,
-        it will be converted to JSON.
+        """Calculates a SHA-256 hash of the given data. If 'data' is not a
+        string, it is first serialized to JSON. Returns an empty string on
+        failure.
 
-        String are encoded as 'utf-8' prior to hash calculation.
+        Args:
+            data (JsonableValue): The data to be hashed.
+
         Returns:
-            the hash of the given data (as a hexdigit string) or '' on failure to process.
+            str: The hexadecimal representation of the SHA-256 hash.
         """
         try:
             if not isinstance(data, str):
@@ -356,14 +444,32 @@ class DataUpdater:
             return ""
 
     async def _update_policy_data(self, update: DataUpdate) -> None:
-        """Fetches policy data (policy configuration) from backend and updates
-        it into policy-store (i.e. OPA)"""
+        """Performs the core data update process for the given DataUpdate
+        object.
+
+        Steps:
+          1. Iterate over the DataUpdate entries.
+          2. For each entry, check if any of its topics match our client's topics.
+          3. Acquire a lock for the destination path, so we don't overwrite concurrently.
+          4. Fetch the data from the source (if applicable).
+          5. Write the data into the policy store.
+          6. Collect a report (success/failure, hash of the data, etc.).
+          7. Send a consolidated report after processing all entries.
+
+        Args:
+            update (DataUpdate): The data update instructions (entries, reason, etc.).
+
+        Returns:
+            None
+        """
         reports: list[DataEntryReport] = []
+
         for entry in update.entries:
             if not entry.topics:
                 logger.debug("Data entry {entry} has no topics, skipping", entry=entry)
                 continue
 
+            # Only process entries that match one of our subscribed data topics
             if set(entry.topics).isdisjoint(set(self._data_topics)):
                 logger.debug(
                     "Data entry {entry} has no topics matching the data topics, skipping",
@@ -371,20 +477,14 @@ class DataUpdater:
                 )
                 continue
 
-            # add shard id to headers
-            if self._shard_id:
-                headers = entry.config.get("headers", {})
-                headers["X-Shard-ID"] = self._shard_id
-                entry.config["headers"] = headers
-
             transaction_context = self._policy_store.transaction_context(
                 update.id, transaction_type=TransactionType.data
             )
+
+            # Acquire a per-destination lock to avoid overwriting the same path concurrently
             async with (
                 transaction_context as store_transaction,
-                self._dst_lock.lock(
-                    entry.dst_path
-                ),  # lock the destination path to prevent concurrent writes
+                self._dst_lock.lock(entry.dst_path),
             ):
                 report = await self._fetch_and_save_data(entry, store_transaction)
 
@@ -393,12 +493,19 @@ class DataUpdater:
         await self._send_reports(reports, update)
 
     async def _send_reports(self, reports: list[DataEntryReport], update: DataUpdate):
+        """Handles the reporting of completed data updates back to callbacks.
+
+        Args:
+            reports (List[DataEntryReport]): List of individual entry reports.
+            update (DataUpdate): The overall DataUpdate object (contains reason, etc.).
+        """
         if self._should_send_reports:
-            # spin off reporting (no need to wait on it)
+            # Merge into a single DataUpdateReport
             whole_report = DataUpdateReport(update_id=update.id, reports=reports)
             extra_callbacks = self._callbacks_register.normalize_callbacks(
                 update.callback.callbacks
             )
+            # Asynchronously send the report to any configured callbacks
             self._tasks.create_task(
                 self._callbacks_reporter.report_update_results(
                     whole_report, extra_callbacks
@@ -410,11 +517,23 @@ class DataUpdater:
         entry: DataSourceEntry,
         store_transaction: PolicyStoreTransactionContextManager,
     ) -> DataEntryReport:
-        """Fetches data from the given entry and saves it to the policy store.
+        """Orchestrates fetching data from a source and saving it into the
+        policy store.
 
-        :param entry: The data source entry
-        :param store_transaction: The policy store transaction
-        :return: The data entry report
+        Flow:
+          1. Attempt to fetch data via the data fetcher (e.g., HTTP).
+          2. Handle any fetch errors.
+          3. If data is fetched successfully, store it in the policy store.
+          4. Return a DataEntryReport indicating success/failure of each step.
+
+        Args:
+            entry (DataSourceEntry): The configuration details of the data source entry.
+            store_transaction (PolicyStoreTransactionContextManager): An active
+                transaction to the policy store.
+
+        Returns:
+            DataEntryReport: Includes information about whether data was fetched,
+                saved, and the computed hash for the data if successfully saved.
         """
         try:
             result = await self._data_fetcher.handle_url(
@@ -479,16 +598,24 @@ class DataUpdater:
         result: JsonableValue,
         store_transaction: PolicyStoreTransactionContextManager,
     ) -> None:
-        """Store the fetched data in the policy store.
+        """Decides how to store fetched data (entirely or split by root keys)
+        in the policy store based on the configuration.
 
-        :param entry: The data source entry
-        :param result: The fetched data
-        :param store_transaction: The policy store transaction
+        Args:
+            entry (DataSourceEntry): The configuration specifying how and where to store data.
+            result (JsonableValue): The fetched data to be stored.
+            store_transaction (PolicyStoreTransactionContextManager): The policy store
+                transaction under which to perform the write operations.
+
+        Raises:
+            Exception: If storing data fails for any reason.
         """
         policy_store_path = entry.dst_path or ""
         if policy_store_path and not policy_store_path.startswith("/"):
             policy_store_path = f"/{policy_store_path}"
 
+        # If splitting root-level data is enabled and the path is "/", each top-level key
+        # is stored individually to avoid overwriting the entire data root.
         if (
             opal_client_config.SPLIT_ROOT_DATA
             and policy_store_path in ("/", "")
@@ -510,20 +637,52 @@ class DataUpdater:
             )
 
     async def _set_split_policy_data(
-        self, tx, url: str, save_method: str, data: Dict[str, Any]
+        self,
+        tx: PolicyStoreTransactionContextManager,
+        url: str,
+        save_method: str,
+        data: Dict[str, Any],
     ):
-        """Split data writes to root ("/") path, so they won't overwrite other
-        sources."""
+        """Splits data writes for root path ("/") so we don't overwrite
+        existing keys.
+
+        For each top-level key in the dictionary, we create a sub-path under "/<key>"
+        and save the corresponding value.
+
+        Args:
+            tx (PolicyStoreTransactionContextManager): The active store transaction.
+            url (str): The data source URL (used for logging/reporting).
+            save_method (str): Either "PUT" (full overwrite) or "PATCH" (merge).
+            data (Dict[str, Any]): The dictionary to be split and stored.
+        """
         logger.info("Splitting root data to {n} keys", n=len(data))
 
         for prefix, obj in data.items():
             await self._set_policy_data(
-                tx, url=url, path=f"/{prefix}", save_method=save_method, data=obj
+                tx,
+                url=url,
+                path=f"/{prefix}",
+                save_method=save_method,
+                data=obj,
             )
 
     async def _set_policy_data(
-        self, tx, url: str, path: str, save_method: str, data: JsonableValue
+        self,
+        tx: PolicyStoreTransactionContextManager,
+        url: str,
+        path: str,
+        save_method: str,
+        data: JsonableValue,
     ):
+        """Persists data to a specific path in the policy store.
+
+        Args:
+            tx (PolicyStoreTransactionContextManager): The active store transaction.
+            url (str): The URL of the source data (used for logging/reporting).
+            path (str): The policy store path where data will be stored (e.g. "/roles").
+            save_method (str): Either "PUT" (full overwrite) or "PATCH" (partial merge).
+            data (JsonableValue): The data to be written.
+        """
         logger.info(
             "Saving fetched data to policy-store: source url='{url}', destination path='{path}'",
             url=url,
@@ -536,4 +695,11 @@ class DataUpdater:
 
     @property
     def callbacks_reporter(self) -> CallbacksReporter:
+        """Provides external access to the CallbacksReporter instance, so that
+        users of DataUpdater can register custom callbacks or manipulate
+        reporting flows.
+
+        Returns:
+            CallbacksReporter: The internal callbacks reporter.
+        """
         return self._callbacks_reporter
