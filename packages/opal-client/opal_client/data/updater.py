@@ -195,7 +195,6 @@ class DataUpdater:
         provided, generate one for tracking/logging.
 
         Note:
-            Line 172 explanation:
             We spin off the data update in the background so that multiple updates
             can run concurrently. Internally, the `_update_policy_data` method uses
             a hierarchical lock to avoid race conditions when multiple updates try
