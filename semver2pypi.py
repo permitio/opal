@@ -5,11 +5,11 @@ A semver prerelease will be converted into prerelease of PyPI.
 A semver build will be converted into a development part of PyPI
 
 Usage:
-    python smver2pypi.py 0.1.0-rc1
+    python semver2pypi.py 0.1.0-rc1
     0.1.0rc1
-    python smver2pypi.py 0.1.0-dev1
+    python semver2pypi.py 0.1.0-dev1
     0.1.0.dev1
-    python smver2pypi.py 0.1.0
+    python semver2pypi.py 0.1.0
     0.1.0
 """
 

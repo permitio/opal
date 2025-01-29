@@ -248,7 +248,7 @@ jobs:
           version_tag=${version_tag#v}
 
           # Convert semver to PyPI version using the script
-          pypi_version=$(python smver2pypi.py $version_tag)
+          pypi_version=$(python semver2pypi.py $version_tag)
 
           # Update only the __version__ in __packaging__.py
           sed -i "s/__version__ = VERSION_STRING/__version__ = \"$pypi_version\"/" packages/__packaging__.py
