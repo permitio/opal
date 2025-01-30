@@ -1,8 +1,8 @@
 name: Build and publish to Docker Hub
-on:
-  release:
-    # job will automatically run after a new "release" is create on github.
-    types: [published]
+on: push
+  # release:
+  #   # job will automatically run after a new "release" is create on github.
+  #   types: [published]
 
 jobs:
   # this job will build, test and (potentially) push the docker images to docker hub
