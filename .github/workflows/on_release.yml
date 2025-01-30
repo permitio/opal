@@ -20,7 +20,7 @@ jobs:
   # - Runs only if test phase completes with no errors.
   # - Pushes images (built at BUILD PHASE) to docker hub.
   docker_build_and_publish:
-    runs-on: ubuntu-latest-4-cores
+    runs-on: ubuntu-latest
     env:
       github_token: ${{ secrets.TOKEN_GITHUB }}
     permissions:
