@@ -20,7 +20,7 @@ jobs:
   # - Runs only if test phase completes with no errors.
   # - Pushes images (built at BUILD PHASE) to docker hub.
   docker_build_and_publish:
-    runs-on: ubuntu-latest-4-cores
+    runs-on: ubuntu-latest
     env:
       github_token: ${{ secrets.TOKEN_GITHUB }}
     permissions:
@@ -215,21 +215,6 @@ jobs:
           cache-from: type=registry,ref=permitio/opal-client-cedar:latest
           cache-to: type=inline
           tags: |
-            permitio/opal-client-cedar:${{ github.event.release.tag_name }}
-
-
-      - name: Build & Push client cedar
-        id: build_push_client_cedar
-        uses: docker/build-push-action@v6
-        with:
-          file: docker/Dockerfile
-          platforms: linux/amd64,linux/arm64
-          push: true
-          target: client-cedar
-          cache-from: type=registry,ref=permitio/opal-client-cedar:latest
-          cache-to: type=inline
-          tags: |
-            permitio/opal-client-cedar:latest
             permitio/opal-client-cedar:${{ github.event.release.tag_name }}
 
       - name: Python setup
