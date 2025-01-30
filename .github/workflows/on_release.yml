@@ -244,7 +244,7 @@ jobs:
           pip install semver packaging
 
           # Get version tag and remove 'v' prefix
-          version_tag=v0.7.16
+          version_tag=0.7.16
           version_tag=${version_tag#v}
 
           # Convert semver to PyPI version using the script
