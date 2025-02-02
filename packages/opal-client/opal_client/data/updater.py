@@ -30,15 +30,15 @@ from opal_common.http_utils import is_http_error_response
 from opal_common.schemas.data import (
     DataEntryReport,
     DataSourceConfig,
+    DataSourceEntry,
     DataUpdate,
     DataUpdateReport,
 )
 from opal_common.schemas.store import TransactionType
 from opal_common.security.sslcontext import get_custom_ssl_context
+from opal_common.synchronization.hierarchical_lock import HierarchicalLock
 from opal_common.utils import get_authorization_header
 from pydantic.json import pydantic_encoder
-from schemas.data import DataSourceEntry
-from synchronization.hierarchical_lock import HierarchicalLock
 
 
 class DataUpdater:
