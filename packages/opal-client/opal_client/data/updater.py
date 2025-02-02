@@ -448,7 +448,9 @@ class DataUpdater:
         Steps:
           1. Iterate over the DataUpdate entries.
           2. For each entry, check if any of its topics match our client's topics.
-          3. Acquire a lock for the destination path, so we don't overwrite concurrently.
+          3. Acquire a lock for the destination path, so we don't fetch and overwrite concurrently.
+             - Note: This means that fetches that can technically happen concurrently wait on one another.
+                          This can be improved with  a Fetcher-Writer Lock ( a la Reader-Writer Lock ) pattern
           4. Fetch the data from the source (if applicable).
           5. Write the data into the policy store.
           6. Collect a report (success/failure, hash of the data, etc.).
