@@ -196,17 +196,18 @@ async def test_data_updater(server):
         proc.terminate()
 
     # test PATCH update event via API
-    entries = [
-        DataSourceEntry(
-            url="",
-            data=PATCH_DATA_UPDATE,
-            dst_path="/",
-            topics=DATA_TOPICS,
-            save_method="PATCH",
-        )
-    ]
     update = DataUpdate(
-        reason="Test_Patch", entries=entries, callback=UpdateCallback(callbacks=[])
+        reason="Test_Patch",
+        entries=[
+            DataSourceEntry(
+                url="",
+                data=PATCH_DATA_UPDATE,
+                dst_path="/",
+                topics=DATA_TOPICS,
+                save_method="PATCH",
+            )
+        ],
+        callback=UpdateCallback(callbacks=[]),
     )
 
     headers = {"content-type": "application/json"}
@@ -218,10 +219,23 @@ async def test_data_updater(server):
     )
     assert res.status_code == 200
     # value field is not specified for add operation should fail
-    entries[0].data = [{"op": "add", "path": "/"}]
     res = requests.post(
         DATA_UPDATE_ROUTE,
-        data=json.dumps(update, default=pydantic_encoder),
+        data=json.dumps(
+            {
+                "reason": "Test_Patch",
+                "entries": [
+                    {
+                        "url": "",
+                        "data": [{"op": "add", "path": "/"}],
+                        "dst_path": "/",
+                        "topics": DATA_TOPICS,
+                        "save_method": "PATCH",
+                    }
+                ],
+            },
+            default=pydantic_encoder,
+        ),
         headers=headers,
     )
     assert res.status_code == 422, res.text
