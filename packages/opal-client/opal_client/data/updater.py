@@ -64,7 +64,7 @@ class DataUpdater:
         fetch_on_connect: bool = True,
         data_topics: List[str] = None,
         policy_store: BasePolicyStoreClient = None,
-        should_send_reports: bool | None = None,
+        should_send_reports: Optional[bool] = None,
         data_fetcher: Optional[DataFetcher] = None,
         callbacks_register: Optional[CallbacksRegister] = None,
         opal_client_id: str = None,

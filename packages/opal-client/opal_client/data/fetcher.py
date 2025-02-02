@@ -59,7 +59,7 @@ class DataFetcher:
 
     async def handle_url(
         self, url: str, config: dict, data: Optional[JsonableValue]
-    ) -> JsonableValue | None:
+    ) -> Optional[JsonableValue]:
         """Helper function wrapping self._engine.handle_url."""
         if data is not None:
             logger.info("Data provided inline for url: {url}", url=url)
