@@ -423,9 +423,10 @@ class DataUpdater:
 
     @staticmethod
     def calc_hash(data: JsonableValue) -> str:
-        """Calculates a SHA-256 hash of the given data to be used to identify the updates (e.g. in logging reports on the transactions)  . If 'data' is not a
-        string, it is first serialized to JSON. Returns an empty string on
-        failure.
+        """Calculates a SHA-256 hash of the given data to be used to identify
+        the updates (e.g. in logging reports on the transactions)  . If 'data'
+        is not a string, it is first serialized to JSON. Returns an empty
+        string on failure.
 
         Args:
             data (JsonableValue): The data to be hashed.
