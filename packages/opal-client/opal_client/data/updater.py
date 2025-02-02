@@ -7,7 +7,6 @@ from typing import Any, Dict, List, Optional
 
 import aiohttp
 from aiohttp.client import ClientError, ClientSession
-from async_utils import TasksPool
 from fastapi_websocket_pubsub import PubSubClient
 from fastapi_websocket_pubsub.pub_sub_client import PubSubOnConnectCallback
 from fastapi_websocket_rpc.rpc_channel import OnDisconnectCallback, RpcChannel
@@ -25,7 +24,7 @@ from opal_client.policy_store.base_policy_store_client import (
 from opal_client.policy_store.policy_store_client_factory import (
     DEFAULT_POLICY_STORE_GETTER,
 )
-from opal_common.async_utils import repeated_call
+from opal_common.async_utils import TasksPool, repeated_call
 from opal_common.config import opal_common_config
 from opal_common.http_utils import is_http_error_response
 from opal_common.schemas.data import (
