@@ -7,6 +7,7 @@ from typing import Any, Dict, List, Optional
 
 import aiohttp
 from aiohttp.client import ClientError, ClientSession
+from async_utils import TasksPool
 from fastapi_websocket_pubsub import PubSubClient
 from fastapi_websocket_pubsub.pub_sub_client import PubSubOnConnectCallback
 from fastapi_websocket_rpc.rpc_channel import OnDisconnectCallback, RpcChannel
@@ -154,7 +155,7 @@ class DataUpdater:
         )
 
         # TaskGroup to manage data updates and callbacks background tasks (with graceful shutdown)
-        self._tasks = asyncio.TaskGroup()
+        self._tasks = TasksPool()
 
         # Lock to prevent multiple concurrent writes to the same path
         self._dst_lock = HierarchicalLock()
@@ -209,7 +210,7 @@ class DataUpdater:
         # Run the update in the background concurrently with other updates
         # The TaskGroup will manage the lifecycle of this task,
         # managing graceful shutdown of the updater without losing running data updates
-        self._tasks.create_task(self._update_policy_data(update))
+        self._tasks.add_task(self._update_policy_data(update))
 
     async def get_policy_data_config(self, url: str = None) -> DataSourceConfig:
         """Fetches the DataSourceConfig (list of DataSourceEntry) from the
@@ -328,7 +329,6 @@ class DataUpdater:
         """
         logger.info("Launching data updater")
         await self._callbacks_reporter.start()
-        await self._tasks.__aenter__()  # Enter the TaskGroup context
 
         if self._subscriber_task is None:
             # The subscriber task runs in the background, receiving data update events
@@ -411,7 +411,7 @@ class DataUpdater:
         await self._callbacks_reporter.stop()
 
         # Exit the TaskGroup context
-        await self._tasks.__aexit__(None, None, None)
+        await self._tasks.shutdown()
 
     async def wait_until_done(self):
         """Blocks until the Pub/Sub subscriber task completes.
@@ -505,7 +505,7 @@ class DataUpdater:
                 update.callback.callbacks
             )
             # Asynchronously send the report to any configured callbacks
-            self._tasks.create_task(
+            self._tasks.add_task(
                 self._callbacks_reporter.report_update_results(
                     whole_report, extra_callbacks
                 )
