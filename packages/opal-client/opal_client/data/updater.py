@@ -174,7 +174,7 @@ class DataUpdater:
         if not self._stopping:
             await self.stop()
 
-    async def _update_policy_data_callback(self, data: dict | None = None, topic=""):
+    async def _update_policy_data_callback(self, data: Optional[dict] = None, topic=""):
         """Callback invoked by the Pub/Sub client whenever a data update is
         published on one of our subscribed topics.
 
