@@ -34,7 +34,7 @@ Open Policy Administration Layer
 
 ## What is OPAL?
 
-OPAL is an administration layer for Policy Engines such as <a target="_blank" href="https://www.openpolicyagent.org/">Open Policy Agent (OPA)</a>, and <a target="_blank" href="https://github.com/permitio/cedar-agent">AWS' Cedar Agent</a> detecting changes to both policy and policy data in realtime and pushing live updates to your agents. OPAL brings open-policy up to the speed needed by live applications.
+OPAL is an administration layer for Policy Engines such as <a target="_blank" href="https://www.openpolicyagent.org/">Open Policy Agent (OPA)</a>, <a target="_blank" href="https://github.com/permitio/cedar-agent">AWS' Cedar Agent</a> and <a target="_blank" href="https://openfga.dev">OpenFGA</a> detecting changes to both policy and policy data in realtime and pushing live updates to your agents. OPAL brings open-policy up to the speed needed by live applications.
 
 As your app's data state changes (whether it's via your APIs, DBs, git, S3 or 3rd-party SaaS services), OPAL will make sure your services are always in sync with the authorization data and policy they need (and only those they need).
 
@@ -67,6 +67,11 @@ Cedar is a very powerful policy language, which powers AWS' AVP (Amazon Verified
 This is where [Cedar-Agent](https://github.com/permitio/cedar-agent) and OPAL come in.
 
 This [video](https://youtu.be/tG8jrdcc7Zo) briefly explains OPAL and how it works with OPA, and a deeper dive into it at [this OWASP DevSlop talk](https://www.youtube.com/watch?v=1_Iz0tRQCH4).
+
+
+### OpenFGA + OPAL == 🔑
+
+OpenFGA provides a high-performance implementation of Google's Zanzibar authorization model, and OPAL makes it easy to keep your OpenFGA instances up-to-date in real-time. Whether you're managing complex relationship-based permissions or implementing fine-grained access control, OPAL ensures your OpenFGA agents stay synchronized with your application's state changes.
 
 ## Who's Using OPAL?
 OPAL is being used as the core engine of Permit.io Authorization Service and serves in production:

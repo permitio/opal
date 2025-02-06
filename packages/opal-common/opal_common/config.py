@@ -188,7 +188,7 @@ class OpalCommonConfig(Confi):
     )
     POLICY_REPO_POLICY_EXTENSIONS = confi.list(
         "POLICY_REPO_POLICY_EXTENSIONS",
-        [".rego"],
+        [".rego", ".json", ".yaml"],
         description="List of extensions to serve as policy modules",
     )
 
