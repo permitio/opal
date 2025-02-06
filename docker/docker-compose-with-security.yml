@@ -39,6 +39,7 @@ services:
       # private key (used for signing on new JWT tokens).
       - OPAL_AUTH_PUBLIC_KEY=${OPAL_AUTH_PUBLIC_KEY}
       - OPAL_AUTH_PRIVATE_KEY=${OPAL_AUTH_PRIVATE_KEY}
+      - OPAL_AUTH_PRIVATE_KEY_PASSPHRASE=${OPAL_AUTH_PRIVATE_KEY_PASSPHRASE}
       # the master token is used in only one scenario - when we want to generate a new JWT token.
       # the /token api endpoint on the OPAL server is the only endpoint that requires the master token.
       - OPAL_AUTH_MASTER_TOKEN=${OPAL_AUTH_MASTER_TOKEN}

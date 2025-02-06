@@ -21,7 +21,7 @@ def init_policy_router(policy_updater: PolicyUpdater):
             return {"status": "ok"}
         except Exception as e:
             logger.error(f"Error during policy update: {str(e)}")
-            if span:
+            if span is not None:
                 span.set_status(trace.StatusCode.ERROR)
                 span.set_attribute("error", True)
                 span.record_exception(e)

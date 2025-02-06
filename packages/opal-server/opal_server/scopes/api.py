@@ -125,7 +125,8 @@ def init_scope_router(
         claims: JWTClaims = Depends(authenticator),
     ):
         async with start_span("opal_server_policy_update") as span:
-            span.set_attribute("scope_id", scope_in.scope_id)
+            if span is not None:
+                span.set_attribute("scope_id", scope_in.scope_id)
             return await _handle_put_scope(force_fetch, scope_in, claims)
 
     async def _handle_put_scope(
@@ -273,7 +274,8 @@ def init_scope_router(
         ),
     ):
         async with start_span("opal_server_policy_bundle_request") as span:
-            span.set_attribute("scope_id", scope_id)
+            if span is not None:
+                span.set_attribute("scope_id", scope_id)
             policy_bundle = await _handle_get_scope_policy(scope_id, base_hash)
             policy_bundle_size_histogram = get_policy_bundle_size_histogram()
             if policy_bundle_size_histogram and policy_bundle.bundle:
@@ -380,7 +382,8 @@ def init_scope_router(
         scope_id: str = Path(..., description="Scope ID"),
     ):
         async with start_span("opal_server_data_update") as span:
-            span.set_attribute("scope_id", scope_id)
+            if span is not None:
+                span.set_attribute("scope_id", scope_id)
             await _handle_publish_data_update_event(update, claims, scope_id, span)
 
     async def _handle_publish_data_update_event(
@@ -399,7 +402,7 @@ def init_scope_router(
                 entry.topics = [f"data:{topic}" for topic in entry.topics]
                 all_topics.update(entry.topics)
 
-            if span:
+            if span is not None:
                 span.set_attribute("entries_count", len(update.entries))
                 span.set_attribute("topics", list(all_topics))
 

@@ -71,6 +71,10 @@ class OpaServerOptions(BaseModel):
         None,
         description="list of built-in rego policies and data.json files that must be loaded into OPA on startup. e.g: system.authz policy when using --authorization=basic, see: https://www.openpolicyagent.org/docs/latest/security/#authentication-and-authorization",
     )
+    v0_compatible: bool = Field(
+        False,
+        description="set to true to enable the OPA v0 compatibility mode (default false)",
+    )
 
     class Config:
         use_enum_values = True

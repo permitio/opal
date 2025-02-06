@@ -35,10 +35,10 @@ jobs:
           fetch-depth: 0
 
       - name: Set up QEMU
-        uses: docker/setup-qemu-action@v2
+        uses: docker/setup-qemu-action@v3
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v2
+        uses: docker/setup-buildx-action@v3
 
       - name: Login to DockerHub
         uses: docker/login-action@v2
@@ -57,7 +57,7 @@ jobs:
 
       - name: Build client for testing
         id: build_client
-        uses: docker/build-push-action@v4
+        uses: docker/build-push-action@v6
         with:
           file: docker/Dockerfile
           push: false
@@ -70,7 +70,7 @@ jobs:
 
       - name: Build server for testing
         id: build_server
-        uses: docker/build-push-action@v4
+        uses: docker/build-push-action@v6
         with:
           file: docker/Dockerfile
           push: false
@@ -101,8 +101,9 @@ jobs:
       # pushes the *same* docker images that were previously tested as part of e2e sanity test.
       # each image is pushed with the versioned tag first, if it succeeds the image is pushed with the latest tag as well.
       - name: Build & Push client
-        id: build_push_client
-        uses: docker/build-push-action@v4
+        if: ${{ github.event.release.prerelease == false }}
+        id: build_push_client_regular
+        uses: docker/build-push-action@v6
         with:
           file: docker/Dockerfile
           platforms: linux/amd64,linux/arm64
@@ -114,9 +115,25 @@ jobs:
             permitio/opal-client:latest
             permitio/opal-client:${{ github.event.release.tag_name }}
 
+      - name: Build & Push client (prerelease)
+        if: ${{ github.event.release.prerelease == true }}
+        id: build_push_client_prerelease
+        uses: docker/build-push-action@v6
+        with:
+          file: docker/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          target: client
+          cache-from: type=registry,ref=permitio/opal-client:latest
+          cache-to: type=inline
+          tags: |
+            permitio/opal-client:${{ github.event.release.tag_name }}
+
+
       - name: Build client-standalone
-        id: build_push_client_standalone
-        uses: docker/build-push-action@v4
+        if: ${{ github.event.release.prerelease == false }}
+        id: build_push_client_standalone_regular
+        uses: docker/build-push-action@v6
         with:
           file: docker/Dockerfile
           platforms: linux/amd64,linux/arm64
@@ -128,9 +145,24 @@ jobs:
             permitio/opal-client-standalone:latest
             permitio/opal-client-standalone:${{ github.event.release.tag_name }}
 
+      - name: Build client-standalone (prerelease)
+        if: ${{ github.event.release.prerelease == true }}
+        id: build_push_client_standalone_prerelease
+        uses: docker/build-push-action@v6
+        with:
+          file: docker/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          target: client-standalone
+          cache-from: type=registry,ref=permitio/opal-client-standalone:latest
+          cache-to: type=inline
+          tags: |
+            permitio/opal-client-standalone:${{ github.event.release.tag_name }}
+
       - name: Build server
-        id: build_push_server
-        uses: docker/build-push-action@v4
+        if: ${{ github.event.release.prerelease == false }}
+        id: build_push_server_regular
+        uses: docker/build-push-action@v6
         with:
           file: docker/Dockerfile
           platforms: linux/amd64,linux/arm64
@@ -142,9 +174,24 @@ jobs:
             permitio/opal-server:latest
             permitio/opal-server:${{ github.event.release.tag_name }}
 
+      - name: Build server (prerelease)
+        if: ${{ github.event.release.prerelease == true }}
+        id: build_push_server_prerelease
+        uses: docker/build-push-action@v6
+        with:
+          file: docker/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          target: server
+          cache-from: type=registry,ref=permitio/opal-server:latest
+          cache-to: type=inline
+          tags: |
+            permitio/opal-server:${{ github.event.release.tag_name }}
+
       - name: Build & Push client cedar
-        id: build_push_client_cedar
-        uses: docker/build-push-action@v4
+        if: ${{ github.event.release.prerelease == false }}
+        id: build_push_client_cedar_regular
+        uses: docker/build-push-action@v6
         with:
           file: docker/Dockerfile
           platforms: linux/amd64,linux/arm64
@@ -156,6 +203,20 @@ jobs:
             permitio/opal-client-cedar:latest
             permitio/opal-client-cedar:${{ github.event.release.tag_name }}
 
+      - name: Build & Push client cedar (prerelease)
+        if: ${{ github.event.release.prerelease == true }}
+        id: build_push_client_cedar_prerelease
+        uses: docker/build-push-action@v6
+        with:
+          file: docker/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          target: client-cedar
+          cache-from: type=registry,ref=permitio/opal-client-cedar:latest
+          cache-to: type=inline
+          tags: |
+            permitio/opal-client-cedar:${{ github.event.release.tag_name }}
+
       - name: Python setup
         uses: actions/setup-python@v5
         with:
@@ -164,10 +225,22 @@ jobs:
       # This is the root file representing the package for all the sub-packages.
       - name: Bump version - packaging__.py
         run: |
+          # Install required packages
+          pip install semver packaging
+
+          # Get version tag and remove 'v' prefix
           version_tag=${{ github.event.release.tag_name }}
-          version_tag=${version_tag#v} # Remove the leading 'v'
-          version_tuple=$(echo $version_tag | sed 's/\./, /g')
-          sed -i "s/VERSION = (.*/VERSION = (${version_tuple})/" packages/__packaging__.py
+          version_tag=${version_tag#v}
+
+          # Convert semver to PyPI version using the script
+          pypi_version=$(python semver2pypi.py $version_tag)
+
+          # Update only the __version__ in __packaging__.py
+          sed -i "s/__version__ = VERSION_STRING/__version__ = \"$pypi_version\"/" packages/__packaging__.py
+
+          # Print the result for verification
+          echo "Original version tag: $version_tag"
+          echo "PyPI version: $pypi_version"
           cat packages/__packaging__.py
 
       - name: Cleanup setup.py and Build every sub-packages
