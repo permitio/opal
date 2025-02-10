@@ -45,6 +45,8 @@ def get_active_clients_counter():
     if _active_clients_counter is None:
         if not opal_common_config.ENABLE_OPENTELEMETRY_METRICS:
             return None
+        if not opal_server_config.INCLUDE_PUBSUB_METRICS:
+            return None
         meter = get_meter()
         _active_clients_counter = meter.create_counter(
             name="opal_server_active_clients",
@@ -57,6 +59,8 @@ def get_client_data_subscriptions_counter():
     global _client_data_subscriptions_counter
     if _client_data_subscriptions_counter is None:
         if not opal_common_config.ENABLE_OPENTELEMETRY_METRICS:
+            return None
+        if not opal_server_config.INCLUDE_PUBSUB_METRICS:
             return None
         meter = get_meter()
         _client_data_subscriptions_counter = meter.create_up_down_counter(
