@@ -384,6 +384,12 @@ class OpalServerConfig(Confi):
         description="Policy polling refresh interval",
     )
 
+    INCLUDE_PUBSUB_METRICS = confi.bool(
+        "INCLUDE_PUBSUB_METRICS",
+        True,
+        description="Set if OPAL should include pubsub info in OpenTelemetry metrics",
+    )
+
     def on_load(self):
         if self.SERVER_PORT is not None and self.SERVER_PORT.isdigit():
             # Backward compatibility - if SERVER_PORT is set with a valid value, use it as SERVER_BIND_PORT

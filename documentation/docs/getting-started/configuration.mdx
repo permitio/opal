@@ -121,6 +121,9 @@ Please use this table as a reference.
 | OPAL_POLICY_REPO_CLONE_PATH                   | Where (i.e: base target path) to clone the repo in your docker filesystem (not important unless you mount a docker volume).                                                                                                                                                                                                 |                                          |
 | OPAL_POLICY_REPO_MAIN_BRANCH                  | Name of the git branch to track for policy files (default: `master`).                                                                                                                                                                                                                                                       |                                          |
 | OPAL_BUNDLE_IGNORE                            | Paths to omit from policy bundle. List of glob style paths, or paths without wildcards but ending with "/\*\*" indicating a parent path (ignoring all under it).                                                                                                                                                            | `bundle_ignore: Optional[List[str]]`     |
+| INCLUDE_PUBSUB_METRICS                        | Set if OPAL should include pubsub info in OpenTelemetry metrics                     |                                          |
+
+
 
 ## OPAL Client Configuration Variables
 
