@@ -66,6 +66,9 @@ services:
       - OPAL_SERVER_URL=http://opal_server:7002
       - OPAL_LOG_FORMAT_INCLUDE_PID=true
       - OPAL_INLINE_OPA_LOG_FORMAT=http
+      - OPAL_ENABLE_OPENTELEMETRY_TRACING=true
+      - OPAL_ENABLE_OPENTELEMETRY_METRICS=true
+      - OPAL_OPENTELEMETRY_OTLP_ENDPOINT=otel-collector:4317
     ports:
       - "7766:7000"
       - "8181:8181"
