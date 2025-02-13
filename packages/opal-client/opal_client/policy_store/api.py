@@ -5,43 +5,32 @@ from opal_common.authentication.authz import require_peer_type
 from opal_common.authentication.deps import JWTAuthenticator
 from opal_common.authentication.types import JWTClaims
 from opal_common.authentication.verifier import Unauthorized
-from opal_common.config import opal_common_config
 from opal_common.logger import logger
-from opal_common.monitoring.otel_metrics import get_meter
 from opal_common.schemas.security import PeerType
-from opentelemetry import metrics
+from prometheus_client import Gauge
 
-_policy_store_status_metric = None
-
-
-def get_policy_store_status_metric():
-    global _policy_store_status_metric
-    if _policy_store_status_metric is None:
-        if not opal_common_config.ENABLE_OPENTELEMETRY_METRICS:
-            return None
-        meter = get_meter()
-        _policy_store_status_metric = meter.create_observable_gauge(
-            name="opal_client_policy_store_status",
-            description="Current status of the policy store authentication type",
-            unit="1",
-            callbacks=[_update_policy_store_status],
-        )
-    return _policy_store_status_metric
+policy_store_status = Gauge(
+    'opal_client_policy_store_status',
+    'Current status of the policy store authentication type',
+    ['auth_type']
+)
 
 
-def _update_policy_store_status(observer: metrics.ObservableGauge):
+def _update_policy_store_status():
+    """Update the policy store status metric"""
     auth_type = opal_client_config.POLICY_STORE_AUTH_TYPE or PolicyStoreAuth.NONE
     status_code = {
         PolicyStoreAuth.NONE: 0,
         PolicyStoreAuth.TOKEN: 1,
         PolicyStoreAuth.OAUTH: 2,
     }.get(auth_type, -1)
-    observer.observe(status_code, attributes={"auth_type": auth_type})
+    
+    policy_store_status.labels(auth_type=auth_type).set(status_code)
 
 
 def init_policy_store_router(authenticator: JWTAuthenticator):
     router = APIRouter()
-    get_policy_store_status_metric()
+    _update_policy_store_status()
 
     @router.get(
         "/policy-store/config",
