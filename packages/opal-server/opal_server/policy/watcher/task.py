@@ -6,7 +6,6 @@ from typing import Any, Coroutine, List, Optional
 from fastapi_websocket_pubsub import Topic
 from fastapi_websocket_pubsub.pub_sub_server import PubSubEndpoint
 from opal_common.logger import logger
-from opal_common.monitoring.tracing_utils import start_span
 from opal_common.sources.base_policy_source import BasePolicySource
 from opal_server.config import opal_server_config
 
@@ -124,10 +123,4 @@ class PolicyWatcherTask(BasePolicyWatcherTask):
     async def trigger(self, topic: Topic, data: Any):
         """Triggers the policy watcher from outside to check for changes (git
         pull)"""
-        try:
-            async with start_span("opal_server_policy_update") as span:
-                if span is not None:
-                    span.set_attribute("topic", str(topic))
-                await self._watcher.check_for_changes()
-        except Exception as e:
-            raise
+        await self._watcher.check_for_changes()
