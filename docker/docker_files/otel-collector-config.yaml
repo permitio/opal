@@ -6,7 +6,7 @@ receivers:
 
 exporters:
   prometheus:
-    endpoint: "0.0.0.0:8888"
+    endpoint: "0.0.0.0:8889"
   debug:
     verbosity: detailed
 

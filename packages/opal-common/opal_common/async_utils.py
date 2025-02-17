@@ -3,9 +3,10 @@ from __future__ import annotations
 import asyncio
 import sys
 from functools import partial
-from typing import Any, Callable, Coroutine, List, Optional, Tuple, TypeVar
+from typing import Any, Callable, Coroutine, Optional, Set, Tuple, TypeVar
 
 import loguru
+from loguru import logger
 
 if sys.version_info < (3, 10):
     from typing_extensions import ParamSpec
@@ -94,15 +95,39 @@ class TakeANumberQueue:
 
 class TasksPool:
     def __init__(self):
-        self._tasks: List[asyncio.Task] = []
+        self._tasks: Set[asyncio.Task] = set()
+        self._running = True
 
     def _cleanup_task(self, done_task):
         self._tasks.remove(done_task)
 
     def add_task(self, f):
+        if not self._running:
+            raise RuntimeError("TasksPool is already shutdown")
         t = asyncio.create_task(f)
-        self._tasks.append(t)
+        self._tasks.add(t)
         t.add_done_callback(self._cleanup_task)
+
+    async def shutdown(self, force: bool = False):
+        """Wait for them to finish.
+
+        :param force: If True, cancel all tasks immediately.
+        """
+        self._running = False
+        if force:
+            for t in self._tasks:
+                t.cancel()
+
+        results = await asyncio.gather(
+            *self._tasks,
+            return_exceptions=True,
+        )
+        for result in results:
+            if isinstance(result, Exception):
+                logger.exception(
+                    "Error on task during shutdown of TasksPool: {result}",
+                    result=result,
+                )
 
 
 async def repeated_call(

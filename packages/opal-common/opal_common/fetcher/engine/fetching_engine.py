@@ -124,7 +124,7 @@ class FetchingEngine(BaseFetchingEngine):
         self,
         url: str,
         callback: Coroutine,
-        config: Union[FetcherConfig, dict] = None,
+        config: Union[FetcherConfig, dict, None] = None,
         fetcher="HttpFetchProvider",
     ) -> FetchEvent:
         """Simplified default fetching handler for queuing a fetch task.
