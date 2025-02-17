@@ -2,6 +2,8 @@ import asyncio
 from contextlib import asynccontextmanager
 from typing import Set
 
+from loguru import logger
+
 
 class HierarchicalLock:
     """A hierarchical lock for asyncio.
@@ -43,6 +45,10 @@ class HierarchicalLock:
 
             # Wait until there is no conflict with existing locked paths
             while any(self._is_conflicting(path, lp) for lp in self._locked_paths):
+                logger.debug(
+                    f"Found conflicting path with {path!r}, waiting for release to check again..."
+                )
+                # Condition.wait() releases the lock and waits for notify_all()
                 await self._cond.wait()
 
             # Acquire the path
@@ -50,6 +56,7 @@ class HierarchicalLock:
             if task not in self._task_locks:
                 self._task_locks[task] = set()
             self._task_locks[task].add(path)
+            logger.debug("Acquired lock for path: {}", path)
 
     async def release(self, path: str):
         """Release the lock for the given path and notify waiting tasks."""
@@ -74,6 +81,7 @@ class HierarchicalLock:
 
             # Notify all tasks that something was released
             self._cond.notify_all()
+            logger.debug("Released lock for path: {}", path)
 
     @asynccontextmanager
     async def lock(self, path: str) -> "HierarchicalLock":
