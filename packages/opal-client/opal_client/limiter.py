@@ -27,11 +27,14 @@ class StartupLoadLimiter:
             if self._custom_ssl_context is not None
             else {}
         )
+        self._aiohttp_client_session_args = {}
+        if opal_client_config.LIMITER_SERVER_PROXY_URL:
+            _aiohttp_client_session_args['proxy'] = opal_client_config.LIMITER_SERVER_PROXY_URL
 
     @retry(wait=wait_random_exponential(max=10), stop=stop.stop_never, reraise=True)
     async def wait_for_server_ready(self):
         logger.info("Trying to get server's load limit pass")
-        async with aiohttp.ClientSession() as session:
+        async with aiohttp.ClientSession(**self._aiohttp_client_session_args) as session:
             try:
                 async with session.get(
                     self._loadlimit_endpoint_url,

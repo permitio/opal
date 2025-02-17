@@ -57,6 +57,9 @@ class PolicyFetcher:
             if self._custom_ssl_context is not None
             else {}
         )
+        self._aiohttp_client_session_args = {}
+        if opal_client_config.POLICY_PROXY_URL:
+            _aiohttp_client_session_args['proxy'] = opal_client_config.POLICY_PROXY_URL
 
     @property
     def policy_endpoint_url(self):
@@ -85,7 +88,7 @@ class PolicyFetcher:
         params = {"path": directories}
         if base_hash is not None:
             params["base_hash"] = base_hash
-        async with aiohttp.ClientSession() as session:
+        async with aiohttp.ClientSession(**self._aiohttp_client_session_args) as session:
             logger.info(
                 "Fetching policy bundle from {url}",
                 url=self._policy_endpoint_url,

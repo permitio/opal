@@ -43,6 +43,9 @@ class CedarClient(BasePolicyStoreClient):
         self._had_successful_policy_transaction = False
         self._most_recent_data_transaction: Optional[StoreTransaction] = None
         self._most_recent_policy_transaction: Optional[StoreTransaction] = None
+        self._aiohttp_client_session_args = {}
+        if opal_client_config.POLICY_STORE_PROXY_URL:
+            _aiohttp_client_session_args['proxy'] = opal_client_config.POLICY_STORE_PROXY_URL
 
         if auth_type == PolicyStoreAuth.TOKEN:
             if self._token is None:
@@ -75,7 +78,7 @@ class CedarClient(BasePolicyStoreClient):
                 f"Ignoring setting policy - {policy_id}, set in POLICY_STORE_POLICY_PATHS_TO_IGNORE."
             )
             return
-        async with aiohttp.ClientSession() as session:
+        async with aiohttp.ClientSession(**self._aiohttp_client_session_args) as session:
             try:
                 headers = await self._get_auth_headers()
                 async with session.put(
@@ -99,7 +102,7 @@ class CedarClient(BasePolicyStoreClient):
     @fail_silently()
     @retry(**RETRY_CONFIG)
     async def get_policy(self, policy_id: str) -> Optional[str]:
-        async with aiohttp.ClientSession() as session:
+        async with aiohttp.ClientSession(**self._aiohttp_client_session_args) as session:
             try:
                 headers = await self._get_auth_headers()
 
@@ -116,7 +119,7 @@ class CedarClient(BasePolicyStoreClient):
     @fail_silently()
     @retry(**RETRY_CONFIG)
     async def get_policies(self) -> Optional[Dict[str, str]]:
-        async with aiohttp.ClientSession() as session:
+        async with aiohttp.ClientSession(**self._aiohttp_client_session_args) as session:
             try:
                 headers = await self._get_auth_headers()
 
@@ -140,8 +143,7 @@ class CedarClient(BasePolicyStoreClient):
                 f"Ignoring deleting policy - {policy_id}, set in POLICY_STORE_POLICY_PATHS_TO_IGNORE."
             )
             return
-
-        async with aiohttp.ClientSession() as session:
+        async with aiohttp.ClientSession(**self._aiohttp_client_session_args) as session:
             try:
                 headers = await self._get_auth_headers()
 
@@ -175,8 +177,7 @@ class CedarClient(BasePolicyStoreClient):
             logger.warning(
                 "OPAL client was instructed to put something that is not a list on Cedar. This will probably not work."
             )
-
-        async with aiohttp.ClientSession() as session:
+        async with aiohttp.ClientSession(**self._aiohttp_client_session_args) as session:
             try:
                 headers = await self._get_auth_headers()
                 async with session.put(
@@ -204,8 +205,7 @@ class CedarClient(BasePolicyStoreClient):
     ):
         if path != "":
             raise ValueError("Cedar can only change the entire data structure at once.")
-
-        async with aiohttp.ClientSession() as session:
+        async with aiohttp.ClientSession(**self._aiohttp_client_session_args) as session:
             try:
                 headers = await self._get_auth_headers()
 
@@ -237,8 +237,7 @@ class CedarClient(BasePolicyStoreClient):
             raise ValueError("Cedar can only change the entire data structure at once.")
         try:
             headers = await self._get_auth_headers()
-
-            async with aiohttp.ClientSession() as session:
+            async with aiohttp.ClientSession(**self._aiohttp_client_session_args) as session:
                 async with session.get(
                     f"{self._cedar_url}/data", headers=headers
                 ) as cedar_response:

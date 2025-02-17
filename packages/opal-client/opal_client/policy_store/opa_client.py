@@ -111,6 +111,9 @@ class OpaTransactionLogState:
         self._last_failed_policy_transaction: Optional[StoreTransaction] = None
         self._last_data_transaction: Optional[StoreTransaction] = None
         self._last_failed_data_transaction: Optional[StoreTransaction] = None
+        self._aiohttp_client_session_args = {}
+        if opal_client_config.POLICY_STORE_PROXY_URL:
+            self._aiohttp_client_session_args['proxy'] = opal_client_config.POLICY_STORE_PROXY_URL
 
     @property
     def ready(self) -> bool:
@@ -410,8 +413,7 @@ class OpaClient(BasePolicyStoreClient):
     @retry(**RETRY_CONFIG)
     async def _get_oauth_token(self):
         logger.info("Retrieving a new OAuth access_token.")
-
-        async with aiohttp.ClientSession() as session:
+        async with aiohttp.ClientSession(**self._aiohttp_client_session_args) as session:
             try:
                 async with session.post(
                     self._oauth_server,
@@ -475,7 +477,7 @@ class OpaClient(BasePolicyStoreClient):
                 f"Ignoring setting policy - {policy_id}, set in POLICY_STORE_POLICY_PATHS_TO_IGNORE."
             )
             return
-        async with aiohttp.ClientSession() as session:
+        async with aiohttp.ClientSession(**self._aiohttp_client_session_args) as session:
             try:
                 headers = await self._get_auth_headers()
 
@@ -500,7 +502,7 @@ class OpaClient(BasePolicyStoreClient):
     @fail_silently()
     @retry(**RETRY_CONFIG)
     async def get_policy(self, policy_id: str) -> Optional[str]:
-        async with aiohttp.ClientSession() as session:
+        async with aiohttp.ClientSession(**self._aiohttp_client_session_args) as session:
             try:
                 headers = await self._get_auth_headers()
 
@@ -518,7 +520,7 @@ class OpaClient(BasePolicyStoreClient):
     @fail_silently()
     @retry(**RETRY_CONFIG)
     async def get_policies(self) -> Optional[Dict[str, str]]:
-        async with aiohttp.ClientSession() as session:
+        async with aiohttp.ClientSession(**self._aiohttp_client_session_args) as session:
             try:
                 headers = await self._get_auth_headers()
 
@@ -544,8 +546,7 @@ class OpaClient(BasePolicyStoreClient):
                 f"Ignoring deleting policy - {policy_id}, set in POLICY_STORE_POLICY_PATHS_TO_IGNORE."
             )
             return
-
-        async with aiohttp.ClientSession() as session:
+        async with aiohttp.ClientSession(**self._aiohttp_client_session_args) as session:
             try:
                 headers = await self._get_auth_headers()
 
@@ -758,8 +759,7 @@ class OpaClient(BasePolicyStoreClient):
                 "OPAL client was instructed to put a list on OPA's root document. In OPA the root document must be an object so the original value was wrapped."
             )
             policy_data = {"items": policy_data}
-
-        async with aiohttp.ClientSession() as session:
+        async with aiohttp.ClientSession(**self._aiohttp_client_session_args) as session:
             try:
                 headers = await self._get_auth_headers()
                 data = json.dumps(exclude_none_fields(policy_data))
@@ -799,8 +799,7 @@ class OpaClient(BasePolicyStoreClient):
                 "OPAL client was instructed to put a list on OPA's root document. In OPA the root document must be an object so the original value was wrapped."
             )
             policy_data = {"items": policy_data}
-
-        async with aiohttp.ClientSession() as session:
+        async with aiohttp.ClientSession(**self._aiohttp_client_session_args) as session:
             try:
                 headers = await self._get_auth_headers()
                 headers["Content-Type"] = "application/json-patch+json"
@@ -833,8 +832,7 @@ class OpaClient(BasePolicyStoreClient):
         path = self._safe_data_module_path(path)
         if not path:
             return await self.set_policy_data({})
-
-        async with aiohttp.ClientSession() as session:
+        async with aiohttp.ClientSession(**self._aiohttp_client_session_args) as session:
             try:
                 headers = await self._get_auth_headers()
 
@@ -871,8 +869,7 @@ class OpaClient(BasePolicyStoreClient):
             path = "/" + path
         try:
             headers = await self._get_auth_headers()
-
-            async with aiohttp.ClientSession() as session:
+            async with aiohttp.ClientSession(**self._aiohttp_client_session_args) as session:
                 async with session.get(
                     f"{self._opa_url}/data{path}",
                     headers=headers,
@@ -901,8 +898,7 @@ class OpaClient(BasePolicyStoreClient):
             path = path[1:]
         try:
             headers = await self._get_auth_headers()
-
-            async with aiohttp.ClientSession() as session:
+            async with aiohttp.ClientSession(**self._aiohttp_client_session_args) as session:
                 async with session.post(
                     f"{self._opa_url}/data/{path}",
                     data=json.dumps(opa_input),
