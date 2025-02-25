@@ -124,13 +124,20 @@ USER opal
 # CEDAR CLIENT IMAGE --------------------------------
 # Using standalone image as base --------------------
 # ---------------------------------------------------
+# Extract the Cedar Agent binary from the existing image
+FROM permitio/opal-client-cedar:latest AS cedar-extractor
+
 FROM client-standalone AS client-cedar
 
 # Temporarily move back to root for additional setup
 USER root
 
-# Copy cedar from its build stage
-COPY --from=cedar-builder /tmp/cedar-agent/target/*/cedar-agent /bin/cedar-agent
+# # Copy cedar from its build stage
+# COPY --from=cedar-builder /tmp/cedar-agent/target/*/cedar-agent /bin/cedar-agent
+
+# Copy cedar agent from the existing image
+COPY --from=cedar-extractor /bin/cedar-agent /bin/cedar-agent
+RUN chmod +x /bin/cedar-agent
 
 # enable inline Cedar agent
 ENV OPAL_POLICY_STORE_TYPE=CEDAR
