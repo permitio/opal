@@ -132,9 +132,6 @@ FROM client-standalone AS client-cedar
 # Temporarily move back to root for additional setup
 USER root
 
-# # Copy cedar from its build stage
-# COPY --from=cedar-builder /tmp/cedar-agent/target/*/cedar-agent /bin/cedar-agent
-
 # Copy cedar agent from the existing image
 COPY --from=cedar-extractor /bin/cedar-agent /bin/cedar-agent
 RUN chmod +x /bin/cedar-agent
