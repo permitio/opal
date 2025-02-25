@@ -215,7 +215,7 @@ jobs:
           cache-from: type=registry,ref=permitio/opal-client-cedar:latest
           cache-to: type=inline
           tags: |
-            permitio/opal-client-cedar:${{ github.event.release.tag_name }}
+            permitio/opal-client-cedar:1.1.1
 
       # - name: Python setup
       #   uses: actions/setup-python@v5
