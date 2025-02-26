@@ -125,7 +125,7 @@ USER opal
 # Using standalone image as base --------------------
 # ---------------------------------------------------
 # Extract the Cedar Agent binary from the existing image
-FROM permitio/opal-client-cedar:latest AS cedar-extractor
+FROM permitio/cedar-agent:latest AS cedar-extractor
 
 FROM client-standalone AS client-cedar
 
