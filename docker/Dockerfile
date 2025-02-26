@@ -125,16 +125,38 @@ USER opal
 # Using standalone image as base --------------------
 # ---------------------------------------------------
 # Extract the Cedar Agent binary from the existing image
-FROM permitio/cedar-agent:latest AS cedar-extractor
+# CEDAR AGENT DOWNLOAD STAGE -----------------------
+FROM alpine:latest AS cedar-downloader
+WORKDIR /tmp
+
+# Install necessary tools
+RUN apk add --no-cache curl tar
+
+# Set the Cedar Agent version
+ARG CEDAR_AGENT_VERSION=0.2.1-alpha.5
+
+# Download the appropriate architecture binary based on build platform
+ARG TARGETARCH
+RUN if [ "$TARGETARCH" = "amd64" ]; then \
+        ARCH="x86_64-unknown-linux-gnu"; \
+    elif [ "$TARGETARCH" = "arm64" ]; then \
+        ARCH="aarch64-unknown-linux-gnu"; \
+    else \
+        echo "Unsupported architecture: $TARGETARCH"; \
+        exit 1; \
+    fi && \
+    curl -L "https://github.com/permitio/cedar-agent/releases/download/${CEDAR_AGENT_VERSION}/cedar-agent-${ARCH}.tar.gz" -o cedar-agent.tar.gz && \
+    tar -xzf cedar-agent.tar.gz && \
+    chmod +x cedar-agent
+
 
 FROM client-standalone AS client-cedar
 
 # Temporarily move back to root for additional setup
 USER root
 
-# Copy cedar agent from the existing image
-COPY --from=cedar-extractor /bin/cedar-agent /bin/cedar-agent
-RUN chmod +x /bin/cedar-agent
+# Copy cedar agent from the downloader stage
+COPY --from=cedar-downloader /tmp/cedar-agent /bin/cedar-agent
 
 # enable inline Cedar agent
 ENV OPAL_POLICY_STORE_TYPE=CEDAR
