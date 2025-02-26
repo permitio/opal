@@ -126,37 +126,25 @@ USER opal
 # ---------------------------------------------------
 # Extract the Cedar Agent binary from the existing image
 # CEDAR AGENT DOWNLOAD STAGE -----------------------
-FROM alpine:latest AS cedar-downloader
+# Stage to locate and extract the cedar-agent binary
+FROM permitio/cedar-agent:latest AS cedar-finder
 WORKDIR /tmp
-
-# Install necessary tools
-RUN apk add --no-cache curl tar
-
-# Set the Cedar Agent version
-ARG CEDAR_AGENT_VERSION=0.2.1-alpha.5
-
-# Download the appropriate architecture binary based on build platform
-ARG TARGETARCH
-RUN if [ "$TARGETARCH" = "amd64" ]; then \
-        ARCH="x86_64-unknown-linux-gnu"; \
-    elif [ "$TARGETARCH" = "arm64" ]; then \
-        ARCH="aarch64-unknown-linux-gnu"; \
-    else \
-        echo "Unsupported architecture: $TARGETARCH"; \
-        exit 1; \
-    fi && \
-    curl -L "https://github.com/permitio/cedar-agent/releases/download/${CEDAR_AGENT_VERSION}/cedar-agent-${ARCH}.tar.gz" -o cedar-agent.tar.gz && \
-    tar -xzf cedar-agent.tar.gz && \
-    chmod +x cedar-agent
-
+# Create a script to find the binary (the exact location might vary)
+RUN find / -name cedar-agent -type f -executable 2>/dev/null > /tmp/cedar-path.txt || echo "Binary not found"
+# Ensure we found something
+RUN if [ ! -s /tmp/cedar-path.txt ]; then echo "Cedar agent binary not found"; exit 1; fi
+# Copy the first found instance to a known location
+RUN cp $(head -1 /tmp/cedar-path.txt) /tmp/cedar-agent
+# Make sure it's executable
+RUN chmod +x /tmp/cedar-agent
 
 FROM client-standalone AS client-cedar
 
 # Temporarily move back to root for additional setup
 USER root
 
-# Copy cedar agent from the downloader stage
-COPY --from=cedar-downloader /tmp/cedar-agent /bin/cedar-agent
+# Copy cedar agent from the finder stage
+COPY --from=cedar-finder /tmp/cedar-agent /bin/cedar-agent
 
 # enable inline Cedar agent
 ENV OPAL_POLICY_STORE_TYPE=CEDAR
