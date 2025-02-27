@@ -127,16 +127,7 @@ USER opal
 # Extract the Cedar Agent binary from the existing image
 # CEDAR AGENT DOWNLOAD STAGE -----------------------
 # Stage to locate and extract the cedar-agent binary
-FROM permitio/cedar-agent:latest AS cedar-finder
-WORKDIR /tmp
-# Create a script to find the binary (the exact location might vary)
-RUN find / -name cedar-agent -type f -executable 2>/dev/null > /tmp/cedar-path.txt || echo "Binary not found"
-# Ensure we found something
-RUN if [ ! -s /tmp/cedar-path.txt ]; then echo "Cedar agent binary not found"; exit 1; fi
-# Copy the first found instance to a known location
-RUN cp $(head -1 /tmp/cedar-path.txt) /tmp/cedar-agent
-# Make sure it's executable
-RUN chmod +x /tmp/cedar-agent
+FROM permitio/cedar-agent:0.2.0 AS cedar-extractor
 
 FROM client-standalone AS client-cedar
 
@@ -144,7 +135,10 @@ FROM client-standalone AS client-cedar
 USER root
 
 # Copy cedar agent from the finder stage
-COPY --from=cedar-finder /tmp/cedar-agent /bin/cedar-agent
+COPY --from=cedar-extractor /usr/local/bin/cedar-agent /bin/cedar-agent
+
+# Make sure it's executable
+RUN chmod +x /bin/cedar-agent
 
 # enable inline Cedar agent
 ENV OPAL_POLICY_STORE_TYPE=CEDAR
