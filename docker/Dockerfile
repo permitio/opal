@@ -128,16 +128,18 @@ USER opal
 # CEDAR AGENT DOWNLOAD STAGE -----------------------
 # Stage to locate and extract the cedar-agent binary
 FROM permitio/cedar-agent:0.2.0 AS cedar-extractor
-
+# Find the cedar-agent binary (this will print it in build logs)
+RUN find / -name cedar-agent -type f -executable 2>/dev/null || echo "Binary not found"
 FROM client-standalone AS client-cedar
 
 # Temporarily move back to root for additional setup
 USER root
 
-# Copy cedar agent from the finder stage
-COPY --from=cedar-extractor /usr/local/bin/cedar-agent /bin/cedar-agent 2>/dev/null || \
-     COPY --from=cedar-extractor /usr/bin/cedar-agent /bin/cedar-agent 2>/dev/null || \
-     COPY --from=cedar-extractor /bin/cedar-agent /bin/cedar-agent
+COPY --from=cedar-extractor /usr/local/bin/cedar-agent /bin/cedar-agent 2>/dev/null || true
+COPY --from=cedar-extractor /usr/bin/cedar-agent /bin/cedar-agent 2>/dev/null || true
+COPY --from=cedar-extractor /bin/cedar-agent /bin/cedar-agent 2>/dev/null || true
+
+RUN ls -la /bin/cedar-agent && chmod +x /bin/cedar-agent
 
 # enable inline Cedar agent
 ENV OPAL_POLICY_STORE_TYPE=CEDAR
