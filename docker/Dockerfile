@@ -135,7 +135,9 @@ FROM client-standalone AS client-cedar
 USER root
 
 # Copy cedar agent from the finder stage
-COPY --from=cedar-extractor /usr/local/bin/cedar-agent /bin/cedar-agent
+COPY --from=cedar-extractor /usr/local/bin/cedar-agent /bin/cedar-agent 2>/dev/null || \
+     COPY --from=cedar-extractor /usr/bin/cedar-agent /bin/cedar-agent 2>/dev/null || \
+     COPY --from=cedar-extractor /bin/cedar-agent /bin/cedar-agent
 
 # enable inline Cedar agent
 ENV OPAL_POLICY_STORE_TYPE=CEDAR
