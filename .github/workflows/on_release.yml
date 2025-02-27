@@ -204,7 +204,7 @@ jobs:
 #             permitio/opal-client-cedar:${{ github.event.release.tag_name }}
 
       - name: Build & Push client cedar (prerelease)
-        if: ${{ github.event.release.prerelease == true }}
+        # if: ${{ github.event.release.prerelease == true }}
         id: build_push_client_cedar_prerelease
         uses: docker/build-push-action@v6
         with:
