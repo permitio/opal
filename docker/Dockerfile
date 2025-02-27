@@ -12,6 +12,14 @@ COPY ./packages/opal-server/requires.txt ./server_requires.txt
 # install python deps
 RUN pip install --no-cache-dir --upgrade pip && pip install --no-cache-dir -r ./base_requires.txt -r ./common_requires.txt -r ./client_requires.txt -r ./server_requires.txt
 
+# CEDAR AGENT BUILD STAGE ---------------------------
+# split this stage to save time and reduce image size
+# ---------------------------------------------------
+FROM rust:1.79 AS cedar-builder
+COPY ./cedar-agent /tmp/cedar-agent
+WORKDIR /tmp/cedar-agent
+RUN CARGO_REGISTRIES_CRATES_IO_PROTOCOL=sparse cargo build --release
+
 # COMMON IMAGE --------------------------------------
 # ---------------------------------------------------
 FROM python:3.10-slim-bookworm AS common
@@ -128,9 +136,6 @@ USER root
 
 # Copy cedar agent from the finder stage
 COPY --from=cedar-extractor /usr/local/bin/cedar-agent /bin/cedar-agent
-
-# Make sure it's executable
-RUN chmod +x /bin/cedar-agent
 
 # enable inline Cedar agent
 ENV OPAL_POLICY_STORE_TYPE=CEDAR
