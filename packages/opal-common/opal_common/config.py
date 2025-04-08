@@ -208,10 +208,10 @@ class OpalCommonConfig(Confi):
         description="The client to use for fetching data, can be either aiohttp or httpx."
         "if provided different value, aiohttp will be used.",
     )
-    HTTPX_FETCHER_TIMEOUT = confi.int(
-        "HTTPX_FETCHER_TIMEOUT",
+    HTTP_FETCHER_TIMEOUT = confi.float(
+        "HTTP_FETCHER_TIMEOUT",
         5,
-        description="The timeout for the httpx fetcher provider, in seconds. "
+        description="The timeout for the httpx or aiohttp fetcher provider, in seconds. "
         "if provided different value, 5 seconds will be used.",
     )
 
