@@ -4,7 +4,7 @@ from enum import Enum
 from typing import Any, Union, cast
 
 import httpx
-from aiohttp import ClientResponse, ClientSession
+from aiohttp import ClientResponse, ClientSession, ClientTimeout
 from opal_common.config import opal_common_config
 from opal_common.fetcher.events import FetcherConfig, FetchEvent
 from opal_common.fetcher.fetch_provider import BaseFetchProvider
@@ -77,7 +77,8 @@ class HttpFetchProvider(BaseFetchProvider):
             self._session = httpx.AsyncClient(headers=headers, timeout=timeout)
         else:
             self._session = ClientSession(
-                headers=headers, raise_for_status=True, timeout=timeout
+                headers=headers, raise_for_status=True, 
+                timeout=ClientTimeout(total=timeout)
             )
         self._session = await self._session.__aenter__()
         return self
