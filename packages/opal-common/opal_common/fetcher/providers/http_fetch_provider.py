@@ -79,7 +79,7 @@ class HttpFetchProvider(BaseFetchProvider):
             self._session = ClientSession(
                 headers=headers,
                 raise_for_status=True,
-                timeout=ClientTimeout(total=timeout)
+                timeout=ClientTimeout(total=timeout),
             )
         self._session = await self._session.__aenter__()
         return self
