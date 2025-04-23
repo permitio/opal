@@ -77,7 +77,8 @@ class HttpFetchProvider(BaseFetchProvider):
             self._session = httpx.AsyncClient(headers=headers, timeout=timeout)
         else:
             self._session = ClientSession(
-                headers=headers, raise_for_status=True, 
+                headers=headers,
+                raise_for_status=True,
                 timeout=ClientTimeout(total=timeout)
             )
         self._session = await self._session.__aenter__()
