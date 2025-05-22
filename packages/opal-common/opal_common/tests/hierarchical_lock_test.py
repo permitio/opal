@@ -58,6 +58,32 @@ async def test_siblings_do_not_block():
 
 
 @pytest.mark.asyncio
+async def test_conflict_do_not_block_unrelated():
+    lock = HierarchicalLock()
+
+    # Acquire two sibling paths concurrently
+    # They should not block each other
+    async def lock_sibling(path: str, delay: float = 0.1):
+        async with lock.lock(path):
+            await asyncio.sleep(delay)
+            return path
+
+    parent = asyncio.create_task(lock_sibling("parent", 0.2))
+    child = lock_sibling("parent.child", 0.1)
+    unrelated = lock_sibling("unrelated", 0.1)
+
+    # Wait for all tasks to complete, in the order they complete
+    order = []
+    for coro in asyncio.as_completed([child, parent, unrelated], timeout=10):
+        order.append(await coro)
+    assert order == [
+        "unrelated",
+        "parent",
+        "parent.child",
+    ], "Unrelated paths should not block"
+
+
+@pytest.mark.asyncio
 async def test_parent_blocks_child():
     lock = HierarchicalLock()
 

@@ -4,7 +4,6 @@ from typing import List
 
 from fastapi_utils.tasks import repeat_every
 from opal_common.logger import logger
-from opal_common.monitoring.tracing_utils import start_span
 from opal_common.schemas.data import (
     DataSourceEntryWithPollingInterval,
     DataUpdate,
@@ -71,14 +70,9 @@ class DataUpdatePublisher:
             topics (List[str]): topics (with hierarchy) to notify subscribers of
             update (DataUpdate): update data-source configuration for subscribers to fetch data from
         """
-        async with start_span("opal_server_data_update") as span:
-            return await self._publish_data_updates(update, span)
-
-    async def _publish_data_updates(self, update: DataUpdate, span=None):
-        """Internal method to handle data update publishing."""
         all_topic_combos = set()
 
-        # A nicer format of entries to the log
+        # a nicer format of entries to the log
         logged_entries = [
             dict(
                 url=entry.url,
@@ -90,14 +84,13 @@ class DataUpdatePublisher:
             for entry in update.entries
         ]
 
-        # Expand the topics for each event to include subtopic combos
-        # (e.g., publish 'a/b/c' as 'a', 'a/b', and 'a/b/c')
+        # Expand the topics for each event to include sub topic combos (e.g. publish 'a/b/c' as 'a' , 'a/b', and 'a/b/c')
         for entry in update.entries:
             topic_combos = []
             if entry.topics:
                 for topic in entry.topics:
-                    topic_combos.extend(self.get_topic_combos(topic))
-                entry.topics = topic_combos  # Update entry with the exhaustive list
+                    topic_combos.extend(DataUpdatePublisher.get_topic_combos(topic))
+                entry.topics = topic_combos  # Update entry with the exhaustive list, so client won't have to expand it again
                 all_topic_combos.update(topic_combos)
             else:
                 logger.warning(
@@ -106,7 +99,7 @@ class DataUpdatePublisher:
                     entry=entry,
                 )
 
-        # Publish all topics with all their subcombinations
+        # publish all topics with all their sub combinations
         logger.info(
             "[{pid}] Publishing data update to topics: {topics}, reason: {reason}, entries: {entries}",
             pid=os.getpid(),
@@ -114,10 +107,6 @@ class DataUpdatePublisher:
             reason=update.reason,
             entries=logged_entries,
         )
-
-        if span is not None:
-            span.set_attribute("entries_count", len(update.entries))
-            span.set_attribute("topics", list(all_topic_combos))
 
         await self._publisher.publish(
             list(all_topic_combos), update.dict(by_alias=True)
