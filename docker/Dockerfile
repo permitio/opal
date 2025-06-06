@@ -14,7 +14,7 @@ RUN pip install --no-cache-dir --upgrade pip && pip install --no-cache-dir -r ./
 
 # COMMON IMAGE --------------------------------------
 # ---------------------------------------------------
-FROM python:3.10-slim-bookworm AS common
+FROM python:3.13.4-slim-bookworm AS common
 
 # copy libraries from build stage (This won't copy redundant libraries we used in build-stage)
 # also remove the default python site-packages that has older versions of packages that won't be overridden
