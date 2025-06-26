@@ -23,7 +23,9 @@ def setup_publisher_task(
         opal_server_config.OPAL_WS_TOKEN,
     )
     return ClientSideTopicPublisher(
-        client=PubSubClient(extra_headers=[get_authorization_header(server_token)]),
+        client=PubSubClient(
+            additional_headers=[get_authorization_header(server_token)]
+        ),
         server_uri=server_uri,
     )
 
