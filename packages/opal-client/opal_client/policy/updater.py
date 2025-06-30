@@ -250,7 +250,7 @@ class PolicyUpdater:
             callback=self._update_policy_callback,
             on_connect=[self._on_connect, *self._on_connect_callbacks],
             on_disconnect=[self._on_disconnect, *self._on_disconnect_callbacks],
-            extra_headers=self._extra_headers,
+            additional_headers=self._extra_headers,
             keep_alive=opal_client_config.KEEP_ALIVE_INTERVAL,
             server_uri=self._server_url,
             **self._ssl_context_kwargs,

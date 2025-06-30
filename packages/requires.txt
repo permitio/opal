@@ -1,10 +1,10 @@
 idna>=3.3,<4
 typer>=0.4.1,<1
 fastapi>=0.109.1,<1
-fastapi_websocket_pubsub==0.3.7
-fastapi_websocket_rpc==0.1.28
-websockets>=10.3,<14
-gunicorn>=22.0.0,<23
+fastapi_websocket_pubsub[all]>=1.0.0,<2
+fastapi_websocket_rpc>=0.1.28,<1
+websockets>=10.3
+gunicorn>=23.0.0
 pydantic[email]>=1.9.1,<2
 typing-extensions;python_version<'3.8'
 starlette>=0.40.0,<1
