@@ -90,6 +90,10 @@ verify_opa_data() {
     
     local response=$(curl -s "http://localhost:8181/v1/data/acl/$tenant" 2>/dev/null)
     
+    # Debug: show full response
+    echo "DEBUG: Full OPA response for $tenant:"
+    echo "$response" | jq . 2>/dev/null || echo "$response"
+    
     if echo "$response" | jq -e '.result.users' > /dev/null 2>&1; then
         print_success "Data for $tenant found in OPA"
         echo "$response" | jq '.result.users'
@@ -139,7 +143,7 @@ main() {
     
     if [ $? -eq 0 ]; then
         print_success "Tenant1 data source added successfully"
-        sleep 5
+        sleep 10
         verify_opa_data "tenant1"
     else
         print_error "Failed to add tenant1 data source"
@@ -161,7 +165,7 @@ main() {
     
     if [ $? -eq 0 ]; then
         print_success "Tenant2 data source added successfully - NO RESTART NEEDED!"
-        sleep 5
+        sleep 10
         verify_opa_data "tenant2"
     else
         print_error "Failed to add tenant2 data source"
