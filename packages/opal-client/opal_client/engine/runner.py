@@ -2,12 +2,10 @@ import asyncio
 import os
 import shutil
 import signal
-import time
 from abc import ABC, abstractmethod
 from typing import Callable, Coroutine, List, Optional
 
 import aiohttp
-import psutil
 from opal_client.config import EngineLogFormat, opal_client_config
 from opal_client.engine.logger import log_engine_output_opa, log_engine_output_simple
 from opal_client.engine.options import CedarServerOptions, OpaServerOptions
@@ -15,26 +13,6 @@ from opal_client.logger import logger
 from tenacity import retry, stop_after_attempt, wait_exponential
 
 AsyncCallback = Callable[[], Coroutine]
-
-
-async def wait_until_process_is_up(
-    process_pid: int,
-    callback: Optional[AsyncCallback],
-    wait_interval: float = 0.1,
-    timeout: Optional[float] = None,
-):
-    """Waits until the pid of the process exists, then optionally runs a
-    callback.
-
-    optionally receives a timeout to give up.
-    """
-    start_time = time.time()
-    while not psutil.pid_exists(process_pid):
-        if timeout is not None and start_time - time.time() > timeout:
-            break
-        await asyncio.sleep(wait_interval)
-    if callback is not None:
-        await callback()
 
 
 class PolicyEngineRunner(ABC):
@@ -210,22 +188,19 @@ class PolicyEngineRunner(ABC):
             start_new_session=True,
         )
 
-        # waits until the process is up, then runs a callback
-        asyncio.create_task(
-            wait_until_process_is_up(
-                self._process.pid, callback=self._run_start_callbacks
-            )
-        )
-
-        # After the process is up (PID exists) we also want to make sure the
+        # After the process is up, we also want to make sure the
         # engine reports as healthy before we continue. We run the health
-        # check in the background and set an event so __aenter__ can await it.
+        # check in the background and set an event, so __aenter__ can await it.
         async def _set_ready_when_healthy():
             try:
                 await self._wait_for_engine_health()
-                self._engine_ready.set()
             except Exception as e:
                 logger.error("Engine failed health check: {err}", err=e)
+            else:
+                self._engine_ready.set()
+                # Now that the engine is confirmed healthy, run the
+                # lifecycle callbacks (initial start or rehydration).
+                await self._run_start_callbacks()
 
         asyncio.create_task(_set_ready_when_healthy())
 
