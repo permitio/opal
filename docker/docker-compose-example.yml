@@ -47,7 +47,6 @@ services:
       - OPAL_SERVER_URL=http://opal_server:7002
       - OPAL_LOG_FORMAT_INCLUDE_PID=true
       - OPAL_INLINE_OPA_LOG_FORMAT=http
-      - OPAL_INLINE_OPA_CONFIG={"config_file":"/tmp/opa.conf"}
 
       # Uncomment the following lines to enable storing & loading OPA data from a backup file:
       # - OPAL_OFFLINE_MODE_ENABLED=true
