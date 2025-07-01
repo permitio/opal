@@ -40,6 +40,11 @@ class OpalCommonConfig(Confi):
     LOG_SERIALIZE = confi.bool(
         "LOG_SERIALIZE", False, description="Serialize log messages"
     )
+    LOG_PIPE_TO_STDERR = confi.bool(
+        "LOG_PIPE_TO_STDERR",
+        True,
+        description="Should we send logs to stderr? otherwise to stdout",
+    )
     LOG_SHOW_CODE_LINE = confi.bool(
         "LOG_SHOW_CODE_LINE", True, description="Show code line in log messages"
     )
@@ -68,6 +73,7 @@ class OpalCommonConfig(Confi):
     LOG_TO_FILE = confi.bool(
         "LOG_TO_FILE", False, description="Should we log to a file"
     )
+
     LOG_FILE_PATH = confi.str(
         "LOG_FILE_PATH",
         f"opal_{PROCESS_NAME}{{time}}.log",

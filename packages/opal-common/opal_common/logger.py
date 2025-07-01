@@ -29,8 +29,9 @@ def configure_logs():
     # Clean slate
     logger.remove()
     # Logger configuration
+    pipe = sys.stderr if opal_common_config.LOG_PIPE_TO_STDERR else sys.stdout
     logger.add(
-        sys.stderr,
+        pipe,
         filter=filter.filter,
         format=formatter.format,
         level=opal_common_config.LOG_LEVEL,
