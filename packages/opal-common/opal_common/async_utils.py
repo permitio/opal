@@ -86,6 +86,7 @@ class TakeANumberQueue:
 
     async def start_queue_handling(self, handler: Coroutine):
         self._handler_task = asyncio.create_task(self._handle_queue(handler))
+        await asyncio.sleep(0)  # Let the task start
 
     async def stop_queue_handling(self):
         if self._handler_task:
