@@ -30,7 +30,11 @@ class OpalClientConfig(Confi):
         "http://localhost:8181",
         description="The URL of the policy store (e.g., OPA agent).",
     )
-
+    POLICY_STORE_PROXY_URL = confi.str(
+        "POLICY_STORE_PROXY_URL",
+        None,
+        description="The URL of the proxy to use for the policy store.",
+    )
     POLICY_STORE_AUTH_TYPE = confi.enum(
         "POLICY_STORE_AUTH_TYPE",
         PolicyStoreAuth,
@@ -96,7 +100,21 @@ class OpalClientConfig(Confi):
         },
         description="Retry options when connecting to the base data source (e.g. an external API server which returns data snapshot)",
     )
-
+    DATA_FETCHER_PROXY_URL = confi.str(
+        "DATA_FETCHER_PROXY_URL",
+        None,
+        description="The URL of the proxy to use for the data fetcher.",
+    )
+    POLICY_PROXY_URL = confi.str(
+        "POLICY_PROXY_URL",
+        None,
+        description="The URL of the proxy to use for the policy.",
+    )
+    LIMITER_SERVER_PROXY_URL = confi.str(
+        "LIMITER_PROXY_URL",
+        None,
+        description="The URL of the proxy to use for the limiter.",
+    )
     POLICY_STORE_POLICY_PATHS_TO_IGNORE = confi.list(
         "POLICY_STORE_POLICY_PATHS_TO_IGNORE",
         [],
