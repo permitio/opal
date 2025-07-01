@@ -1,0 +1,341 @@
+---
+sidebar_position: 12
+title: Single-Topic Multi-Tenant Configuration
+---
+
+# Single-Topic Multi-Tenant Configuration
+
+This document describes how to configure OPAL for multi-tenant environments using a single topic approach. This configuration allows adding new tenants without restarting OPAL services.
+
+## Understanding Single-Topic Multi-Tenancy
+
+### Traditional multi-tenant configuration
+
+In traditional OPAL setups, each tenant requires its own data topic:
+
+```
+Tenant 1: OPAL_DATA_TOPICS=tenant_1_data
+Tenant 2: OPAL_DATA_TOPICS=tenant_1_data,tenant_2_data  # requires restart
+Tenant 3: OPAL_DATA_TOPICS=tenant_1_data,tenant_2_data,tenant_3_data  # requires restart
+```
+
+This traditional approach creates several challenges:
+
+- **Event-driven vs polling limitations** - When you need event-driven data updates instead of interval-based polling, managing multiple topics becomes complex and resource-intensive.
+
+- **Bundle scalability issues** - For thousands of tenants with large datasets, updating data through undivided bundles becomes impractical. This forces you to implement data sharding or tenant-specific bundle divisions, which are difficult to prepare and maintain.
+
+- **State management complexity** - Divided bundles introduce problems with state management, particularly around bundle ordering and ensuring consistent data application across tenants.
+
+- **Topic proliferation** - Achieving tenant isolation through separate data sources results in an ever-growing number of topics, making the system difficult to manage and scale.
+
+- **Configuration management overhead** - Each new tenant requires configuration changes and service restarts, making dynamic tenant onboarding cumbersome.
+
+The single-topic configuration described below addresses these issues by providing a simpler, more scalable approach.
+
+### Single-topic configuration
+
+With single-topic configuration, all tenants share one topic:
+
+```
+All tenants: OPAL_DATA_TOPICS=tenant_data  # no restart needed when adding tenants
+```
+
+The key insight is that instead of creating separate topics for each tenant, this approach dynamically registers **multiple external data sources** under a single topic. Each tenant gets its own data source configuration, but all sources publish to the same `tenant_data` topic:
+
+- **Tenant 1**: External data source A → `tenant_data` topic → `/acl/tenant1` path
+- **Tenant 2**: External data source B → `tenant_data` topic → `/acl/tenant2` path  
+- **Tenant N**: External data source N → `tenant_data` topic → `/acl/tenantN` path
+
+This allows for:
+- **Dynamic data source registration** via `/data/config` API calls
+- **Tenant isolation** through unique destination paths in OPA
+- **Unified topic management** while maintaining separate data sources
+- **Real-time tenant onboarding** without service restarts
+
+## Benefits
+
+- **No service restarts required when adding new tenants** - Unlike configurations with static data sources where `OPAL_DATA_CONFIG_SOURCES` is fixed at startup, this approach uses dynamic data source management via the `/data/config` API endpoint.
+
+- **Better resource utilization** - Compared to PATCH-based approaches that require maintaining incremental state changes, this configuration always recreates the complete data state for each tenant, eliminating the complexity of managing partial updates and potential inconsistencies.
+
+- **Simplified topic management** - Single topic eliminates the need to manage an ever-growing list of tenant-specific topics.
+
+- **Real-time data source notifications** - Changes to tenant data can be immediately propagated using `/data/config` API calls, which notify all subscribed clients without requiring bundle regeneration or service restarts.
+
+- **Complete state reconstruction** - Unlike bundle-based methods that may require complex state merging, each data update via `/data/config` ensures full data consistency by reconstructing the complete tenant state.
+
+- **Faster tenant onboarding** - New tenants can be added instantly through API calls rather than configuration file changes and service restarts.
+
+## Prerequisites
+
+- Docker and Docker Compose
+- `jq` for JSON processing
+
+## Configuration
+
+### OPAL Client Configuration
+
+```yaml
+opal_client:
+  environment:
+    - OPAL_DATA_TOPICS=tenant_data  # single topic for all tenants
+    - OPAL_DATA_UPDATER_ENABLED=true
+```
+
+### OPAL Server Configuration
+
+```yaml
+opal_server:
+  environment:
+    # Initially empty - tenants added via API
+    - 'OPAL_DATA_CONFIG_SOURCES={"config": {"entries": []}}'
+    
+    # Policy repository configuration
+    - OPAL_POLICY_REPO_URL=https://github.com/plduser/opa-zero-poll-single-topic-multi-tenant.git
+    - OPAL_POLICY_REPO_PATH=docker/docker_files/policies
+```
+
+## How it works
+
+### Data source entries
+
+Each tenant's data is configured as a separate data source entry with:
+- **url**: Endpoint serving tenant data
+- **topics**: Always `["tenant_data"]` for all tenants
+- **dst_path**: Unique path for tenant data isolation (e.g., `/acl/tenant1`)
+
+### Topic publishing
+
+When any tenant data is updated:
+1. OPAL server publishes to the single `tenant_data` topic
+2. All OPAL clients subscribed to `tenant_data` receive the notification
+3. Clients fetch and update only the specific tenant data that changed
+
+### Data isolation
+
+Tenant isolation is achieved through OPA path hierarchy:
+- Tenant 1 data: `/acl/tenant1`
+- Tenant 2 data: `/acl/tenant2`
+- Tenant N data: `/acl/tenantN`
+
+## Running the Example
+
+### Using the provided script
+
+```bash
+cd docker
+./run-example-with-single-topic-multi-tenant.sh
+```
+
+### Manual setup
+
+Start the services:
+
+```bash
+docker compose -f docker-compose-single-topic-multi-tenant.yml up -d
+```
+
+Verify services are running:
+
+```bash
+curl http://localhost:7002/healthcheck   # OPAL Server
+curl http://localhost:8181/health        # OPA
+curl http://localhost:8090/acl/tenant1   # External Data Provider
+```
+
+## Adding Tenants
+
+### Add first tenant
+
+```bash
+curl -X POST http://localhost:7002/data/config \
+  -H "Content-Type: application/json" \
+  -d '{
+    "entries": [{
+      "url": "http://example_external_data_provider:80/acl/tenant1",
+      "topics": ["tenant_data"],
+      "dst_path": "/acl/tenant1"
+    }],
+    "reason": "Add tenant1 data source"
+  }'
+```
+
+### Add additional tenants
+
+```bash
+curl -X POST http://localhost:7002/data/config \
+  -H "Content-Type: application/json" \
+  -d '{
+    "entries": [{
+      "url": "http://example_external_data_provider:80/acl/tenant2",
+      "topics": ["tenant_data"],
+      "dst_path": "/acl/tenant2"
+    }],
+    "reason": "Add tenant2 data source"
+  }'
+```
+
+Note: No service restart is required when adding new tenants.
+
+## Verification
+
+### Check data isolation
+
+```bash
+# Tenant 1 data
+curl -s http://localhost:8181/v1/data/acl/tenant1 | jq .
+
+# Tenant 2 data
+curl -s http://localhost:8181/v1/data/acl/tenant2 | jq .
+
+# All tenant data
+curl -s http://localhost:8181/v1/data/acl | jq .
+```
+
+### Monitor OPAL logs
+
+OPAL Server logs:
+```bash
+docker compose -f docker-compose-single-topic-multi-tenant.yml logs -f opal_server
+```
+
+OPAL Client logs:
+```bash
+docker compose -f docker-compose-single-topic-multi-tenant.yml logs -f opal_client
+```
+
+Look for these log patterns:
+
+**Server side:**
+```
+Publishing data update to topics: {'tenant_data'}
+Broadcasting incoming event: {'topic': 'tenant_data'}
+```
+
+**Client side:**
+```
+Received notification of event: tenant_data
+Fetching data from url: http://example_external_data_provider:80/acl/tenant1
+Saving fetched data to policy-store: destination path='/acl/tenant1'
+```
+
+## Data Updates
+
+### Update existing tenant data
+
+```bash
+curl -X POST http://localhost:7002/data/config \
+  -H "Content-Type: application/json" \
+  -d '{
+    "entries": [{
+      "url": "http://example_external_data_provider:80/acl/tenant1",
+      "topics": ["tenant_data"],
+      "dst_path": "/acl/tenant1"
+    }],
+    "reason": "Refresh tenant1 data"
+  }'
+```
+
+## Testing Authorization
+
+### Test tenant-specific policies
+
+```bash
+curl -X POST http://localhost:8181/v1/data/policies/rbac/allow \
+  -H "Content-Type: application/json" \
+  -d '{
+    "input": {
+      "user": "alice",
+      "action": "read",
+      "resource": "document1",
+      "tenant_id": "tenant1"
+    }
+  }' | jq .
+```
+
+## Production Considerations
+
+### Use webhooks instead of polling
+
+For production environments, configure webhooks for immediate policy updates:
+
+```yaml
+opal_server:
+  environment:
+    - OPAL_POLICY_REPO_WEBHOOK_SECRET=your-secure-secret
+```
+
+### Secure data sources
+
+Configure authentication for external data APIs:
+
+```bash
+curl -X POST http://localhost:7002/data/config \
+  -H "Content-Type: application/json" \
+  -d '{
+    "entries": [{
+      "url": "https://secure-api.yourdomain.com/tenant-data/tenant1",
+      "config": {
+        "headers": {
+          "Authorization": "Bearer your-secure-token"
+        }
+      },
+      "topics": ["tenant_data"],
+      "dst_path": "/acl/tenant1"
+    }]
+  }'
+```
+
+### Scale horizontally
+
+Increase worker count for higher load:
+
+```yaml
+opal_server:
+  environment:
+    - UVICORN_NUM_WORKERS=4
+```
+
+## Troubleshooting
+
+### Tenant not receiving data
+
+Check:
+1. Topic configuration: `OPAL_DATA_TOPICS=tenant_data`
+2. External data provider endpoint availability
+3. OPAL Client logs for connection errors
+
+```bash
+# Test data endpoint
+curl http://localhost:8090/acl/tenant1
+
+# Check client logs
+docker logs $(docker compose ps -q opal_client)
+```
+
+### Data isolation issues
+
+Verify:
+1. Unique `dst_path` for each tenant
+2. Policies correctly handle `tenant_id` in input
+
+```bash
+# Check OPA data structure
+curl -s http://localhost:8181/v1/data | jq .
+```
+
+## Comparison with Traditional Approach
+
+| Aspect | Traditional | Single-Topic |
+|--------|-------------|--------------|
+| Topics per 1000 tenants | 1000 | 1 |
+| Service restart required | Yes | No |
+| Memory usage growth | O(N²) | O(N) |
+| Configuration complexity | High | Low |
+
+## Related Documentation
+
+- [Configure External Data Sources](/tutorials/configure_external_data_sources)
+- [Trigger Data Updates](/tutorials/trigger_data_updates)
+- [Track a Git Repository](/tutorials/track_a_git_repo) 
