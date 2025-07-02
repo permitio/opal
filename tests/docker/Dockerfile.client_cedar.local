@@ -1,0 +1,111 @@
+# Dockerfile.client
+
+# BUILD IMAGE
+FROM python:3.10-bookworm AS build-stage
+# from now on, work in the /app directory
+WORKDIR /app/
+# Layer dependency install (for caching)
+COPY packages/requires.txt ./base_requires.txt
+COPY packages/opal-common/requires.txt ./common_requires.txt
+COPY packages/opal-client/requires.txt ./client_requires.txt
+COPY packages/opal-server/requires.txt ./server_requires.txt
+
+RUN apt-get update && apt-get install -y gcc python3-dev procps sudo && apt-get clean
+
+# install python deps
+RUN pip install --no-cache-dir --upgrade pip && pip install --no-cache-dir -r ./base_requires.txt -r ./common_requires.txt -r ./client_requires.txt -r ./server_requires.txt
+
+# Install debugpy
+RUN pip install debugpy
+
+FROM rust:1.79 AS cedar-builder
+
+# Copy Cedar agent source code
+COPY ./cedar-agent /tmp/cedar-agent
+WORKDIR /tmp/cedar-agent
+
+# Build the Cedar agent in release mode
+RUN CARGO_REGISTRIES_CRATES_IO_PROTOCOL=sparse cargo build --release
+
+# COMMON IMAGE
+FROM python:3.10-slim-bookworm AS common
+
+# copy libraries from build stage (This won't copy redundant libraries we used in build-stage)
+# also remove the default python site-packages that has older versions of packages that won't be overridden
+RUN rm -r /usr/local/lib/python3.10/site-packages
+COPY --from=build-stage /usr/local /usr/local
+
+# Add non-root user (with home dir at /opal)
+RUN useradd -m -b / -s /bin/bash opal
+WORKDIR /opal
+
+# copy wait-for script (create link at old path to maintain backward compatibility)
+COPY scripts/wait-for.sh .
+RUN chmod +x ./wait-for.sh
+RUN ln -s /opal/wait-for.sh /usr/wait-for.sh
+
+# netcat (nc) is used by the wait-for.sh script
+RUN apt-get update && apt-get install -y netcat-traditional jq && apt-get clean
+# Install sudo for Debian/Ubuntu-based images
+RUN apt-get update && apt-get install -y sudo && apt-get clean
+
+# copy startup script (create link at old path to maintain backward compatibility)
+COPY scripts/start.sh .
+RUN chmod +x ./start.sh
+RUN ln -s /opal/start.sh /start.sh
+# copy gunicorn_config
+COPY scripts/gunicorn_conf.py .
+# copy app code
+
+COPY README.md .
+COPY packages ./packages/
+# install the opal-common package
+RUN cd ./packages/opal-common && python setup.py install
+# Make sure scripts in .local are usable:
+ENV PATH=/opal:/root/.local/bin:$PATH
+
+#add on top of the regular start script the debug one
+COPY ./tests/start_debug.sh .
+RUN chmod +x start_debug.sh
+RUN ln -s /opal/start_debug.sh /start_debug.sh
+
+# run gunicorn
+CMD ["./start_debug.sh"]
+
+# STANDALONE IMAGE ----------------------------------
+# ---------------------------------------------------
+    FROM common AS client-standalone
+
+    # install the opal-client package
+    RUN cd ./packages/opal-client && python setup.py install
+
+    USER opal
+
+    RUN mkdir -p /opal/backup
+    VOLUME /opal/backup
+
+  # CEDAR CLIENT IMAGE --------------------------------
+# Using standalone image as base --------------------
+# ---------------------------------------------------
+FROM client-standalone AS client-cedar
+
+# Temporarily move back to root for additional setup
+USER root
+
+# Copy cedar from its build stage
+COPY --from=cedar-builder /tmp/cedar-agent/target/*/cedar-agent /bin/cedar-agent
+
+ENV UVICORN_NUM_WORKERS=1
+ENV UVICORN_ASGI_APP=opal_client.main:app
+ENV UVICORN_PORT=7000
+
+# enable inline Cedar agent
+ENV OPAL_POLICY_STORE_TYPE=CEDAR
+ENV OPAL_INLINE_CEDAR_ENABLED=true
+ENV OPAL_INLINE_CEDAR_EXEC_PATH=/bin/cedar-agent
+ENV OPAL_INLINE_CEDAR_CONFIG='{"addr": "0.0.0.0:8180"}'
+ENV OPAL_POLICY_STORE_URL=http://localhost:8180
+
+# expose cedar port
+EXPOSE 8180
+USER opal

@@ -1,4 +1,6 @@
+
 services:
+
   broadcast_channel:
     image: postgres:alpine
     environment:
@@ -7,15 +9,19 @@ services:
       - POSTGRES_PASSWORD=postgres
 
   opal_server:
-    image: permitio/opal-server:${OPAL_IMAGE_TAG:-latest}
+    #image: permitio/opal-server:${OPAL_IMAGE_TAG:-latest}
+    build:
+      context: ../  # Point to the directory containing your Dockerfile
+      dockerfile: ./docker/Dockerfile.server  # Specify your Dockerfile if it's not named 'Dockerfile'
     deploy:
       mode: replicated
-      replicas: 2
+      replicas: 1
       endpoint_mode: vip
     environment:
       - OPAL_BROADCAST_URI=postgres://postgres:postgres@broadcast_channel:5432/postgres
-      - UVICORN_NUM_WORKERS=4
-      - OPAL_POLICY_REPO_URL=${OPAL_POLICY_REPO_URL:-git@github.com:permitio/opal-tests-policy-repo.git}
+      - UVICORN_NUM_WORKERS=0
+      #- OPAL_POLICY_REPO_URL=${OPAL_POLICY_REPO_URL:-git@github.com:permitio/opal-tests-policy-repo.git}
+      - OPAL_POLICY_REPO_URL=${OPAL_POLICY_REPO_URL:-git@github.com:permitio/opal-example-policy-repo.git}
       - OPAL_POLICY_REPO_MAIN_BRANCH=${POLICY_REPO_BRANCH}
       - OPAL_POLICY_REPO_SSH_KEY=${OPAL_POLICY_REPO_SSH_KEY}
       - OPAL_DATA_CONFIG_SOURCES={"config":{"entries":[{"url":"http://opal_server:7002/policy-data","config":{"headers":{"Authorization":"Bearer ${OPAL_CLIENT_TOKEN}"}},"topics":["policy_data"],"dst_path":"/static"}]}}
@@ -36,6 +42,7 @@ services:
 
   opal_client:
     image: permitio/opal-client:${OPAL_IMAGE_TAG:-latest}
+    scale: 2
     deploy:
       mode: replicated
       replicas: 2
