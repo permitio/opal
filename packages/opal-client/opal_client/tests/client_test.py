@@ -37,7 +37,7 @@ def mock_policy_store_not_ready():
 @pytest.fixture
 def opal_client_ready(mock_policy_store_ready):
     """Create an OpalClient with a ready policy store."""
-    with patch('opal_client.client.PolicyStoreClientFactory.create') as mock_factory:
+    with patch("opal_client.client.PolicyStoreClientFactory.create") as mock_factory:
         mock_factory.return_value = mock_policy_store_ready
 
         client = OpalClient(
@@ -54,7 +54,7 @@ def opal_client_ready(mock_policy_store_ready):
 @pytest.fixture
 def opal_client_not_ready(mock_policy_store_not_ready):
     """Create an OpalClient with a policy store that is not ready."""
-    with patch('opal_client.client.PolicyStoreClientFactory.create') as mock_factory:
+    with patch("opal_client.client.PolicyStoreClientFactory.create") as mock_factory:
         mock_factory.return_value = mock_policy_store_not_ready
 
         client = OpalClient(
@@ -82,7 +82,9 @@ def test_client_not_ready(opal_client_not_ready):
 
 def test_ready_endpoint_when_ready(test_client_ready, opal_client_ready):
     """Test that /ready endpoint returns 200 when policy store is ready and _is_ready is called with correct arguments."""
-    with patch.object(opal_client_ready, '_is_ready', return_value=True) as mock_is_ready:
+    with patch.object(
+        opal_client_ready, "_is_ready", return_value=True
+    ) as mock_is_ready:
         response = test_client_ready.get("/ready")
 
         assert response.status_code == status.HTTP_200_OK
@@ -92,7 +94,9 @@ def test_ready_endpoint_when_ready(test_client_ready, opal_client_ready):
 
 def test_ready_endpoint_when_not_ready(test_client_not_ready, opal_client_not_ready):
     """Test that /ready endpoint returns 503 when policy store is not ready and _is_ready is called with correct arguments."""
-    with patch.object(opal_client_not_ready, '_is_ready', return_value=False) as mock_is_ready:
+    with patch.object(
+        opal_client_not_ready, "_is_ready", return_value=False
+    ) as mock_is_ready:
         response = test_client_not_ready.get("/ready")
 
         assert response.status_code == status.HTTP_503_SERVICE_UNAVAILABLE
@@ -102,7 +106,9 @@ def test_ready_endpoint_when_not_ready(test_client_not_ready, opal_client_not_re
 
 def test_ready_endpoint_with_query_parameter_true(test_client_ready, opal_client_ready):
     """Test that /ready endpoint works with wait_for_all_data_sources_loaded parameter and _is_ready is called with correct arguments."""
-    with patch.object(opal_client_ready, '_is_ready', return_value=True) as mock_is_ready:
+    with patch.object(
+        opal_client_ready, "_is_ready", return_value=True
+    ) as mock_is_ready:
         response = test_client_ready.get("/ready?wait_for_all_data_sources_loaded=true")
 
         assert response.status_code == status.HTTP_200_OK
@@ -110,10 +116,16 @@ def test_ready_endpoint_with_query_parameter_true(test_client_ready, opal_client
         mock_is_ready.assert_called_once_with(wait_for_all_data_sources_loaded=True)
 
 
-def test_ready_endpoint_with_query_parameter_false(test_client_ready, opal_client_ready):
+def test_ready_endpoint_with_query_parameter_false(
+    test_client_ready, opal_client_ready
+):
     """Test that /ready endpoint works with wait_for_all_data_sources_loaded=false and _is_ready is called with correct arguments."""
-    with patch.object(opal_client_ready, '_is_ready', return_value=True) as mock_is_ready:
-        response = test_client_ready.get("/ready?wait_for_all_data_sources_loaded=false")
+    with patch.object(
+        opal_client_ready, "_is_ready", return_value=True
+    ) as mock_is_ready:
+        response = test_client_ready.get(
+            "/ready?wait_for_all_data_sources_loaded=false"
+        )
 
         assert response.status_code == status.HTTP_200_OK
         assert response.json() == {"status": "ok"}

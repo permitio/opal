@@ -107,26 +107,27 @@ class OpaTransactionLogState:
         self._num_failed_policy_transactions = 0
         self._num_successful_data_transactions = 0
         self._num_failed_data_transactions = 0
-        self._num_expected_data_transactions = 0  # Track total expected data transactions
+        self._num_expected_data_transactions = None  # Track total expected data transactions (None = not set)
         self._last_policy_transaction: Optional[StoreTransaction] = None
         self._last_failed_policy_transaction: Optional[StoreTransaction] = None
         self._last_data_transaction: Optional[StoreTransaction] = None
         self._last_failed_data_transaction: Optional[StoreTransaction] = None
 
-    @property
-    def ready(self, wait_for_all_data_sources_loaded: bool = False) -> bool:
+    def is_ready(self, wait_for_all_data_sources_loaded: bool = False) -> bool:
         if wait_for_all_data_sources_loaded:
             # require all expected data transactions to be successful
             is_ready: bool = self._num_successful_policy_transactions > 0 and (
                 self._data_updater_disabled or
-                self._num_successful_data_transactions == self._num_expected_data_transactions
+                (self._num_expected_data_transactions is not None and
+                 self._num_successful_data_transactions == self._num_expected_data_transactions)
             )
         else:
             # Default behavior
             is_ready: bool = self._num_successful_policy_transactions > 0 and (
                 self._data_updater_disabled or
                 self._num_successful_data_transactions > 0 or
-                self._num_expected_data_transactions == 0
+                (self._num_expected_data_transactions is not None and
+                 self._num_expected_data_transactions == 0)
             )
         return is_ready
 
@@ -253,7 +254,7 @@ class OpaTransactionLogPolicyWriter:
         OPA."""
         logger.info(
             "persisting health check policy: ready={ready}, healthy={healthy}",
-            ready=state.ready,
+            ready=state.is_ready(),
             healthy=state.healthy,
         )
         logger.info(
@@ -265,7 +266,7 @@ class OpaTransactionLogPolicyWriter:
         )
         policy_code = self._format_with_json(
             self._policy_template,
-            ready=state.ready,
+            ready=state.is_ready(),
             healthy=state.healthy,
             last_policy_transaction=state.last_policy_transaction,
             last_failed_policy_transaction=state.last_failed_policy_transaction,
@@ -966,7 +967,7 @@ class OpaClient(BasePolicyStoreClient):
                 )
 
     async def is_ready(self, wait_for_all_data_sources_loaded: bool = False) -> bool:
-        return self._transaction_state.ready(wait_for_all_data_sources_loaded=wait_for_all_data_sources_loaded)
+        return self._transaction_state.is_ready(wait_for_all_data_sources_loaded=wait_for_all_data_sources_loaded)
 
     async def is_healthy(self) -> bool:
         return self._transaction_state.healthy
