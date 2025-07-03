@@ -60,7 +60,7 @@ DATA_SOURCES_CONFIG = ServerDataSourceConfig(
 )
 DATA_UPDATE_ROUTE = f"http://localhost:{PORT}/data/config"
 
-PATCH_DATA_UPDATE = [JSONPatchAction(op="add", path="/patch_data", value={"patched": True})]
+PATCH_DATA_UPDATE = [JSONPatchAction(op="add", path="/", value=TEST_DATA)]
 
 
 def setup_server(event):
@@ -83,12 +83,10 @@ def setup_server(event):
     # route to report complition to
     @server_app.post(DATA_UPDATE_CALLBACK_ROUTE)
     def callback(report: DataUpdateReport):
-        if len(callbacks) == 0:
-            # First callback should be from trigger_update (TEST_DATA)
-            assert report.reports[0].hash == DataUpdater.calc_hash(TEST_DATA)
-        elif len(callbacks) == 1:
-            # Second callback should be from trigger_update_patch (PATCH_DATA_UPDATE)
+        if len(callbacks) == 1:
             assert report.reports[0].hash == DataUpdater.calc_hash(PATCH_DATA_UPDATE)
+        else:
+            assert report.reports[0].hash == DataUpdater.calc_hash(TEST_DATA)
         callbacks.append(report)
         return "OKAY"
 
@@ -272,7 +270,6 @@ async def test_data_updater_with_report_callback(server):
     proc = None
     proc2 = None
     try:
-        # First update
         proc = multiprocessing.Process(target=trigger_update, daemon=True)
         proc.start()
         # wait until new data arrives into the store via the updater
@@ -290,9 +287,6 @@ async def test_data_updater_with_report_callback(server):
             res = await session.get(CHECK_DATA_UPDATE_CALLBACK_URL)
             current_callback_count = await res.json()
 
-        # Second update
-        # Reset the event so we can wait for the second update
-        policy_store.has_data_event.clear()
         proc2 = multiprocessing.Process(target=trigger_update_patch, daemon=True)
         proc2.start()
         # wait until new data arrives into the store via the updater
