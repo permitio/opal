@@ -107,16 +107,27 @@ class OpaTransactionLogState:
         self._num_failed_policy_transactions = 0
         self._num_successful_data_transactions = 0
         self._num_failed_data_transactions = 0
+        self._num_expected_data_transactions = 0  # Track total expected data transactions
         self._last_policy_transaction: Optional[StoreTransaction] = None
         self._last_failed_policy_transaction: Optional[StoreTransaction] = None
         self._last_data_transaction: Optional[StoreTransaction] = None
         self._last_failed_data_transaction: Optional[StoreTransaction] = None
 
     @property
-    def ready(self) -> bool:
-        is_ready: bool = self._num_successful_policy_transactions > 0 and (
-            self._data_updater_disabled or self._num_successful_data_transactions > 0
-        )
+    def ready(self, wait_for_all_data_sources_loaded: bool = False) -> bool:
+        if wait_for_all_data_sources_loaded:
+            # require all expected data transactions to be successful
+            is_ready: bool = self._num_successful_policy_transactions > 0 and (
+                self._data_updater_disabled or
+                self._num_successful_data_transactions == self._num_expected_data_transactions
+            )
+        else:
+            # Default behavior
+            is_ready: bool = self._num_successful_policy_transactions > 0 and (
+                self._data_updater_disabled or
+                self._num_successful_data_transactions > 0 or
+                self._num_expected_data_transactions == 0
+            )
         return is_ready
 
     @property
@@ -187,6 +198,15 @@ class OpaTransactionLogState:
 
     def _is_data_transaction(self, transaction: StoreTransaction):
         return transaction.transaction_type == TransactionType.data
+
+    def set_expected_data_transaction_count(self, count: int) -> None:
+        """Set the expected number of data transactions for readiness checking.
+        Args:
+            count (int): The total number of data transactions expected to be processed
+                        before the policy store can be considered fully ready (determined
+                        by data sources config).
+        """
+        self._num_expected_data_transactions = count
 
     def process_transaction(self, transaction: StoreTransaction):
         """Mutates the state into a new state that can be then persisted as
@@ -440,7 +460,7 @@ class OpaClient(BasePolicyStoreClient):
                 logger.warning("OAuth server connection error: {err}", err=repr(e))
                 raise
 
-    async def _get_auth_headers(self) -> {}:
+    async def _get_auth_headers(self) -> dict:
         headers = {}
         if self._auth_type == PolicyStoreAuth.TOKEN:
             if self._token is not None:
@@ -945,11 +965,20 @@ class OpaClient(BasePolicyStoreClient):
                     data=transaction_data,
                 )
 
-    async def is_ready(self) -> bool:
-        return self._transaction_state.ready
+    async def is_ready(self, wait_for_all_data_sources_loaded: bool = False) -> bool:
+        return self._transaction_state.ready(wait_for_all_data_sources_loaded=wait_for_all_data_sources_loaded)
 
     async def is_healthy(self) -> bool:
         return self._transaction_state.healthy
+
+    async def set_expected_data_transaction_count(self, count: int) -> None:
+        """Set the expected number of data transactions for readiness checking.
+        Args:
+            count (int): The total number of data transactions expected to be processed
+                        before the policy store can be considered fully ready (determined
+                        by the data sources config).
+        """
+        self._transaction_state.set_expected_data_transaction_count(count)
 
     async def full_export(self, writer: AsyncTextIOWrapper) -> None:
         policies = await self.get_policies()

@@ -26,6 +26,7 @@ from opal_client.policy_store.policy_store_client_factory import (
     PolicyStoreClientFactory,
 )
 from opal_client.policy_store.schemas import PolicyStoreTypes
+from opal_client.policy_store.opa_client import OpaClient
 from opal_common.schemas.data import (
     DataSourceConfig,
     DataUpdateReport,
@@ -327,3 +328,77 @@ async def test_client_get_initial_data(server):
     # cleanup
     finally:
         await updater.stop()
+
+
+@pytest.mark.asyncio
+async def test_data_updater_sets_expected_data_transaction_count(server):
+    """Test that DataUpdater sets the expected data transaction count correctly when fetching initial data.
+
+    This test verifies that:
+    1. The DataUpdater correctly calls set_expected_data_transaction_count() on the OPA policy store
+    2. The _num_expected_data_transactions property in OpaTransactionLogState is set to the correct value
+    3. The count equals the number of data source entries in the config
+    5. The count is updated when the configuration changes
+    """
+    # config to use OPA client (not mock) to test the OpaTransactionLogState
+    policy_store = PolicyStoreClientFactory.create(
+        store_type=PolicyStoreTypes.OPA,
+        url="http://localhost:8181",  # dummy URL
+        data_updater_enabled=True,
+        policy_updater_enabled=True,
+    )
+
+    assert isinstance(policy_store, OpaClient)
+
+    updater = DataUpdater(
+        data_sources_config_url=DATA_CONFIG_URL,
+        policy_store=policy_store,
+        fetch_on_connect=False,  # Don't fetch on connect
+        data_topics=DATA_TOPICS,
+        should_send_reports=False,
+    )
+
+    # Verify initial state
+    initial_count = policy_store._transaction_state._num_expected_data_transactions
+    assert initial_count == 0, f"Expected initial count to be 0 but got {initial_count}"
+
+    # Mock the get_policy_data_config method to return a DataSourceConfig directly
+    # This avoids the actual fetching which would fail due to network setup
+    test_config = DataSourceConfig(entries=[
+        {"url": DATA_URL, "topics": DATA_TOPICS},
+    ])
+
+    import unittest.mock
+    with unittest.mock.patch.object(updater, 'get_policy_data_config', return_value=test_config):
+        # Mock the trigger_data_update method to avoid actual data fetching
+        with unittest.mock.patch.object(updater, 'trigger_data_update') as mock_trigger:
+            await updater.get_base_policy_data()
+
+            mock_trigger.assert_called_once()
+
+    # Verify that the expected data transaction count was set correctly
+    expected_count = len(test_config.entries)
+    actual_count = policy_store._transaction_state._num_expected_data_transactions
+
+    assert actual_count == expected_count, f"Expected {expected_count} but got {actual_count}"
+
+    # Test with multiple data sources to ensure count is set correctly
+    multi_source_config = DataSourceConfig(entries=[
+        {"url": DATA_URL, "topics": DATA_TOPICS},
+        {"url": DATA_URL, "topics": DATA_TOPICS},
+        {"url": DATA_URL, "topics": DATA_TOPICS}
+    ])
+
+    # Mock the get_policy_data_config method to return our multi-source config
+    with unittest.mock.patch.object(updater, 'get_policy_data_config', return_value=multi_source_config):
+        # Mock the trigger_data_update method to avoid actual data fetching
+        with unittest.mock.patch.object(updater, 'trigger_data_update') as mock_trigger:
+            await updater.get_base_policy_data()
+
+            mock_trigger.assert_called_once()
+
+    # Verify that the expected count was updated to match the number of entries
+    expected_multi_count = len(multi_source_config.entries)
+    actual_multi_count = policy_store._transaction_state._num_expected_data_transactions
+
+    assert actual_multi_count == expected_multi_count, f"Expected {expected_multi_count} but got {actual_multi_count}"
