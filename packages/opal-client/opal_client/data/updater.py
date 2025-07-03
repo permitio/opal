@@ -268,6 +268,16 @@ class DataUpdater:
         # Fetch the base config with all data entries
         sources_config = await self.get_policy_data_config(url=config_url)
 
+        # Set the expected data transaction count for readiness checking
+        # This count represents all data sources that will be loaded initially
+        total_expected_data_transactions = len(sources_config.entries)
+        if hasattr(self._policy_store, 'set_expected_data_transaction_count'):
+            await self._policy_store.set_expected_data_transaction_count(total_expected_data_transactions)
+            logger.info(
+                "Set expected data transaction count to {count}",
+                count=total_expected_data_transactions
+            )
+
         init_entries, periodic_entries = [], []
         for entry in sources_config.entries:
             if entry.periodic_update_interval is not None:
