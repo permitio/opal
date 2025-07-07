@@ -105,7 +105,7 @@ Each tenant's data is configured as a separate data source entry with:
 - **topics**: Always `["tenant_data"]` for all tenants
 - **dst_path**: Unique path for tenant data isolation (e.g., `/acl/tenant1`)
 
-### Topic publishing
+#### 2. Topic publishing
 
 When any tenant data is updated:
 1. OPAL server publishes to the single `tenant_data` topic
