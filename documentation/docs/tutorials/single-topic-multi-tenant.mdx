@@ -325,14 +325,6 @@ Verify:
 curl -s http://localhost:8181/v1/data | jq .
 ```
 
-## Comparison with Traditional Approach
-
-| Aspect | Traditional | Single-Topic |
-|--------|-------------|--------------|
-| Topics per 1000 tenants | 1000 | 1 |
-| Service restart required | Yes | No |
-| Memory usage growth | O(N²) | O(N) |
-| Configuration complexity | High | Low |
 
 ## Related Documentation
 
