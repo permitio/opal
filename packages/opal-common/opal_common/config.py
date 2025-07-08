@@ -191,6 +191,68 @@ class OpalCommonConfig(Confi):
         [".rego"],
         description="List of extensions to serve as policy modules",
     )
+    AUTH_TYPE = confi.str(
+        "AUTH_TYPE",
+        None,
+        description="Authentication type. Available options are oauth2 for validating access token via either OAUTH2_INTROSPECT_URL or OPAL_OAUTH2_OPENID_CONFIGURATION_URL or anything else if you prefer OPAL to do the job.",
+    )
+    OAUTH2_CLIENT_ID = confi.str(
+        "OAUTH2_CLIENT_ID", None, description="OAuth2 Client ID."
+    )
+    OAUTH2_CLIENT_SECRET = confi.str(
+        "OAUTH2_CLIENT_SECRET", None, description="OAuth2 Client Secret."
+    )
+    OAUTH2_TOKEN_URL = confi.str(
+        "OAUTH2_TOKEN_URL", None, description="OAuth2 Token URL."
+    )
+    OAUTH2_INTROSPECT_URL = confi.str(
+        "OAUTH2_INTROSPECT_URL", None, description="OAuth2 introspect URL."
+    )
+    OAUTH2_OPENID_CONFIGURATION_URL = confi.str(
+        "OAUTH2_OPENID_CONFIGURATION_URL",
+        None,
+        description="OAuth2 OpenID configuration URL.",
+    )
+    OAUTH2_TOKEN_VERIFY_CACHE_MAXSIZE = confi.int(
+        "OAUTH2_TOKEN_VERIFY_CACHE_MAXSIZE",
+        100,
+        description="OAuth2 token validation cache maxsize.",
+    )
+    OAUTH2_TOKEN_VERIFY_CACHE_TTL = confi.int(
+        "OAUTH2_TOKEN_VERIFY_CACHE_TTL",
+        5 * 60,
+        description="OAuth2 token validation cache TTL.",
+    )
+
+    OAUTH2_EXP_MARGIN = confi.int(
+        "OAUTH2_EXP_MARGIN", 5 * 60, description="OAuth2 expiration margin."
+    )
+    OAUTH2_EXACT_MATCH_CLAIMS = confi.str(
+        "OAUTH2_EXACT_MATCH_CLAIMS", None, description="OAuth2 exact match claims."
+    )
+    OAUTH2_REQUIRED_CLAIMS = confi.str(
+        "OAUTH2_REQUIRED_CLAIMS",
+        None,
+        description="Comma separated list of required claims.",
+    )
+    OAUTH2_JWT_ALGORITHM = confi.enum(
+        "OAUTH2_JWT_ALGORITHM",
+        JWTAlgorithm,
+        getattr(JWTAlgorithm, "RS256"),
+        description="jwt algorithm, possible values: see: https://pyjwt.readthedocs.io/en/stable/algorithms.html",
+    )
+    OAUTH2_JWT_AUDIENCE = confi.str(
+        "OAUTH2_JWT_AUDIENCE", None, description="OAuth2 required audience"
+    )
+    OAUTH2_JWT_ISSUER = confi.str(
+        "OAUTH2_JWT_ISSUER", None, description="OAuth2 required issuer"
+    )
+    OAUTH2_JWK_CACHE_MAXSIZE = confi.int(
+        "OAUTH2_JWK_CACHE_MAXSIZE", 100, description="OAuth2 JWKS cache maxsize."
+    )
+    OAUTH2_JWK_CACHE_TTL = confi.int(
+        "OAUTH2_JWK_CACHE_TTL", 7 * 24 * 60 * 60, description="OAuth2 JWKS cache TTL."
+    )
 
     ENABLE_METRICS = confi.bool(
         "ENABLE_METRICS", False, description="Enable metrics collection"
