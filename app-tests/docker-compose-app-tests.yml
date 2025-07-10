@@ -8,6 +8,7 @@ services:
 
   opal_server:
     image: permitio/opal-server:${OPAL_IMAGE_TAG:-latest}
+    env_file: .env
     deploy:
       mode: replicated
       replicas: 2
