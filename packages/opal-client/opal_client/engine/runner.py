@@ -376,12 +376,12 @@ class CedarRunner(PolicyEngineRunner):
         """Performs a health check on the Cedar agent by calling its health
         endpoint."""
         try:
-            health_url = f"{opal_client_config.POLICY_STORE_URL}/health"
+            health_url = f"{opal_client_config.POLICY_STORE_URL}/v1/"
             timeout_seconds = opal_client_config.POLICY_STORE_CONN_RETRY.wait_time
             timeout = aiohttp.ClientTimeout(total=timeout_seconds)
             async with aiohttp.ClientSession(timeout=timeout) as session:
                 response = await session.get(health_url)
-                return response.status == 200
+                return response.status in [200, 204]
         except Exception as e:
             logger.debug(f"Cedar health check failed: {e}")
             return False
