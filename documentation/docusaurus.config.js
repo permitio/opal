@@ -1,7 +1,6 @@
 // @ts-check
 // Note: type annotations allow type checking and IDEs autocompletion
 
-
 /** @type {import('@docusaurus/types').Config} */
 const config = {
   title: "OPAL",
@@ -35,14 +34,40 @@ const config = {
         },
         blog: false, // disabled docusaurus default blog
         theme: {
-          customCss:[ require.resolve("./src/css/custom.scss")
-          ]
+          customCss: [require.resolve("./src/css/custom.scss")],
         },
       }),
     ],
   ],
 
-  plugins: ["docusaurus-plugin-sass"],
+  plugins: [
+    "docusaurus-plugin-sass",
+    [
+      "@inkeep/cxkit-docusaurus",
+      {
+        SearchBar: {
+          baseSettings: {
+            apiKey: "9dd2bdb17ba542ea0a61822dd03ea78a3eb3d32be7285cc9",
+            primaryBrandColor: "#6851ff",
+            organizationDisplayName: "OPAL",
+          },
+          aiChatSettings: {
+            aiAssistantAvatar: "/img/opal.png",
+          },
+        },
+        ChatButton: {
+          baseSettings: {
+            apiKey: "9dd2bdb17ba542ea0a61822dd03ea78a3eb3d32be7285cc9",
+            primaryBrandColor: "#6851ff",
+            organizationDisplayName: "OPAL",
+          },
+          aiChatSettings: {
+            aiAssistantAvatar: "/img/opal.png",
+          },
+        },
+      },
+    ],
+  ],
 
   themeConfig:
     /** @type {import('@docusaurus/preset-classic').ThemeConfig} */
@@ -72,8 +97,8 @@ const config = {
         copyright: `Copyright © ${new Date().getFullYear()} Permit, Inc.`,
       },
       prism: {
-            theme: require('prism-react-renderer').themes.nightOwl,
-            additionalLanguages: ['bash']
+        theme: require("prism-react-renderer").themes.nightOwl,
+        additionalLanguages: ["bash"],
       },
       announcementBar: {
         id: "support_us",
