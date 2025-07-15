@@ -1,0 +1,70 @@
+name: opal-proxy-example
+
+networks:
+  server-network:
+    driver: bridge
+  client-network:
+    driver: bridge
+
+services:
+  # Proxy server bridges between networks
+  proxy:
+    image: ubuntu/squid:latest
+    networks:
+      - server-network
+      - client-network
+    ports:
+      - "3128:3128"
+    volumes:
+      - ./docker_files/squid.conf:/etc/squid/squid.conf:ro
+
+
+  # PostgreSQL for OPAL Server broadcast channel
+  postgres:
+    image: postgres:alpine
+    networks:
+      - server-network
+    environment:
+      - POSTGRES_DB=postgres
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+
+  # OPAL Server - only on server-network
+  opal_server:
+    image: permitio/opal-server:latest
+    networks:
+      - server-network
+    ports:
+      - "7002:7002"
+    environment:
+      - OPAL_BROADCAST_URI=postgres://postgres:postgres@postgres:5432/postgres
+      - OPAL_POLICY_REPO_URL=https://github.com/permitio/opal-example-policy-repo
+      - OPAL_POLICY_REPO_POLLING_INTERVAL=30
+      - OPAL_DATA_CONFIG_SOURCES={"config":{"entries":[{"url":"http://opal_server:7002/policy-data","topics":["policy_data"],"dst_path":"/static"}]}}
+    depends_on:
+      - postgres
+
+  # OPAL Client - on both networks, uses proxy for HTTP traffic
+  opal_client:
+    image: permitio/opal-client:latest
+    networks:
+      - client-network
+      - server-network
+    ports:
+      - "7766:7000"
+      - "8181:8181"
+    environment:
+      # Proxy configuration
+      - HTTP_PROXY=http://proxy:3128
+      - HTTPS_PROXY=http://proxy:3128
+      - ALL_PROXY=http://proxy:3128
+      - NO_PROXY=localhost,127.0.0.1,::1
+
+      # OPAL configuration
+      - OPAL_SERVER_URL=http://opal_server:7002
+      - OPAL_INLINE_OPA_ENABLED=true
+      - OPAL_LOG_FORMAT_INCLUDE_PID=true
+    command: sh -c "exec ./start.sh"
+    depends_on:
+      - opal_server
+      - proxy
