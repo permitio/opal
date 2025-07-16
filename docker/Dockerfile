@@ -119,7 +119,7 @@ USER opal
 # Extract the Cedar Agent binary from the existing image
 # CEDAR AGENT DOWNLOAD STAGE -----------------------
 # Stage to locate and extract the cedar-agent binary
-FROM permitio/cedar-agent:0.2.0 AS cedar-extractor
+FROM permitio/cedar-agent:0.2.1 AS cedar-extractor
 
 FROM client-standalone AS client-cedar
 
