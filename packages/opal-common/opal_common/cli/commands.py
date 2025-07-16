@@ -67,7 +67,8 @@ def obtain_token(
 
     async def fetch():
         async with ClientSession(
-            headers={"Authorization": f"bearer {master_token}"}
+            headers={"Authorization": f"bearer {master_token}"},
+            trust_env=True,
         ) as session:
             details = AccessTokenRequest(type=type, ttl=ttl, claims=claims).json()
             res = await session.post(
@@ -175,7 +176,7 @@ def publish_data_update(
         headers = {"content-type": "application/json"}
         if token is not None:
             headers.update({"Authorization": f"bearer {token}"})
-        async with ClientSession(headers=headers) as session:
+        async with ClientSession(headers=headers, trust_env=True) as session:
             body = update.json()
             res = await session.post(server_url, data=body)
             return res

@@ -2,6 +2,20 @@
 
 .DEFAULT_GOAL := help
 
+help:
+	@echo "Available commands:"
+	@echo "  docs-dev              - Start the documentation site in development mode"
+	@echo "  clean                 - Clean Python package build artifacts"
+	@echo "  build-packages        - Build Python packages"
+	@echo "  publish               - Clean, build, and publish packages to PyPI"
+	@echo "  install-client-from-src - Install opal-client from source"
+	@echo "  install-server-from-src - Install opal-server from source"
+	@echo "  install-develop       - Install development dependencies"
+	@echo "  docker-build-client   - Build opal-client Docker image"
+	@echo "  docker-build-server   - Build opal-server Docker image"
+	@echo "  docker-run-client     - Run opal-client in Docker"
+	@echo "  docker-run-server     - Run opal-server in Docker"
+
 OPAL_SERVER_URL ?= http://host.docker.internal:7002
 OPAL_AUTH_PRIVATE_KEY ?= /root/ssh/opal_rsa
 OPAL_AUTH_PUBLIC_KEY ?= /root/ssh/opal_rsa.pub
@@ -36,6 +50,10 @@ install-server-from-src:
 
 install-develop:
 	pip install -r requirements.txt
+
+# docs
+docs-dev:
+	@cd documentation && npm start
 
 # docker
 docker-build-client:

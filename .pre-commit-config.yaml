@@ -17,7 +17,7 @@ repos:
     rev: v2.2.4
     hooks:
       - id: codespell
-        args: [--skip, "*.json"]
+        args: [--skip, "*.json,*.lock"]
   - repo: https://github.com/PyCQA/docformatter
     rev: v1.7.5
     hooks:

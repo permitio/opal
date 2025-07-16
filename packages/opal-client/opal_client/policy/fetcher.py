@@ -104,7 +104,10 @@ class PolicyFetcher:
         params = {"path": directories}
         if base_hash is not None:
             params["base_hash"] = base_hash
-        async with aiohttp.ClientSession(headers=headers) as session:
+        async with aiohttp.ClientSession(
+            headers=headers,
+            trust_env=True,
+        ) as session:
             logger.info(
                 "Fetching policy bundle from {url}",
                 url=self._policy_endpoint_url,
