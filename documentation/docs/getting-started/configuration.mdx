@@ -210,6 +210,14 @@ Default: `True`
 
 Take over Uvicorn's logs so they appear in the main logger.
 
+#### OPAL_LOG_PIPE_TO_STDERR
+
+Default: `True`
+
+Whether to send logs to stderr instead of stdout.
+
+_Added in OPAL v0.8.2_
+
 #### OPAL_LOG_TO_FILE
 
 Default: `False`
@@ -392,7 +400,7 @@ Default: `False`
 
 Enable scopes for multi-tenancy.
 
-_Added in OPAL v0.7.16_
+_Added in OPAL v0.2.0_
 
 #### OPAL_SCOPES_REPO_CLONES_SHARDS
 
@@ -766,7 +774,7 @@ Default: `[]`
 
 Paths to omit from policy bundle. List of glob-style paths, or paths without wildcards but ending with "/**" indicating a parent path (ignoring all under it).
 
-_Added in OPAL v0.7.16_
+_Added in OPAL v0.5.0_
 
 ### Data Configuration
 
@@ -1064,7 +1072,7 @@ Default: `True`
 
 Whether OPAL should run Cedar agent by itself in the same container.
 
-_Added in OPAL v0.7.16_
+_Added in OPAL v0.7.0_
 
 For more information, see [Cedar and OPAL](/tutorials/cedar).
 
