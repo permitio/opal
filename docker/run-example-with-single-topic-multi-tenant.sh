@@ -89,7 +89,7 @@ curl -s -X POST http://localhost:8181/v1/data/multi_tenant_rbac/allow \
   -d '{
     "input": {
       "user": "alice",
-      "action": "read", 
+      "action": "read",
       "resource": "documents"
     }
   }' | jq '.result'
@@ -123,7 +123,7 @@ curl -s -X POST http://localhost:8181/v1/data/multi_tenant_rbac/allow \
   -H "Content-Type: application/json" \
   -d '{
     "input": {
-      "user": "diana", 
+      "user": "diana",
       "action": "edit",
       "resource": "files"
     }
@@ -135,11 +135,11 @@ echo "📊 All data in OPA (isolated by paths):"
 curl -s http://localhost:8181/v1/data/acl | jq '.'
 
 echo ""
-echo "📊 Data for tenant1 only:" 
+echo "📊 Data for tenant1 only:"
 curl -s http://localhost:8181/v1/data/acl/tenant1 | jq '.'
 
 echo ""
-echo "📊 Data for tenant2 only:" 
+echo "📊 Data for tenant2 only:"
 curl -s http://localhost:8181/v1/data/acl/tenant2 | jq '.'
 
 echo ""
@@ -148,8 +148,8 @@ echo "🎉 Single-Topic Multi-Tenant OPAL works with remote policy repo!"
 echo ""
 echo "📖 Key features:"
 echo "   • 1 topic (tenant_data) for all tenants"
-echo "   • N external data sources for N tenants"  
+echo "   • N external data sources for N tenants"
 echo "   • Data isolation through OPA paths (/acl/tenant1, /acl/tenant2)"
 echo "   • Policies from official repo subfolder: single-topic-multi-tenant"
 echo "   • No restarts needed when adding new tenants"
-echo "   • Policies compatible with older OPA versions" 
+echo "   • Policies compatible with older OPA versions"

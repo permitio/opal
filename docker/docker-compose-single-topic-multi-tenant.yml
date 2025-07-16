@@ -25,11 +25,11 @@ services:
       - OPAL_BROADCAST_URI=postgres://postgres:postgres@broadcast_channel:5432/postgres
       # number of uvicorn workers to run inside the opal-server container
       - UVICORN_NUM_WORKERS=4
-      
+
       # Policy repository configuration - using GitHub for reliable policy sync
       # This is the RECOMMENDED approach for OPAL demonstrations as it ensures:
       # - Reliable policy loading and sync mechanism
-      # - Real-time policy updates via OPAL's designed workflow  
+      # - Real-time policy updates via OPAL's designed workflow
       # - Consistent behavior across different environments
       # The repo demonstrates single-topic multi-tenant approach
       - OPAL_POLICY_REPO_URL=https://github.com/permitio/opal-example-policy-repo
@@ -38,18 +38,18 @@ services:
       - OPAL_POLICY_REPO_POLLING_INTERVAL=30
       - OPAL_POLICY_REPO_SSH_KEY=""
       - OPAL_POLICY_SUBSCRIPTION_DIRS=single-topic-multi-tenant
-      
+
       # Data sources configuration - using single topic approach
       # Initially empty - tenants will be added dynamically via API
       # This is the KEY to our revolutionary approach: one topic handles all tenants
       - 'OPAL_DATA_CONFIG_SOURCES={"config": {"entries": []}}'
-      
+
       # Server configuration
       - OPAL_LOG_LEVEL=INFO
       - OPAL_SERVER_URL=http://opal_server:7002
       - OPAL_LOG_FORMAT_INCLUDE_PID=true
     # Note: No volume mount needed - policies are loaded from GitHub repo
-    # OPAL will clone the repo and sync policies automatically  
+    # OPAL will clone the repo and sync policies automatically
     ports:
       # exposes opal server on the host machine, you can access the server at: http://localhost:7002
       - "7002:7002"
@@ -66,26 +66,26 @@ services:
       - OPAL_SERVER_URL=http://opal_server:7002
       - OPAL_LOG_FORMAT_INCLUDE_PID=true
       - OPAL_INLINE_OPA_LOG_FORMAT=http
-      
-      # OPA configuration with v0 compatibility for old rego syntax  
+
+      # OPA configuration with v0 compatibility for old rego syntax
       # Using inline OPA instead of external opa container
       - OPAL_POLICY_STORE_URL=http://localhost:8181
       - 'OPAL_INLINE_OPA_CONFIG={"v0_compatible": true}'
-      
+
       # Policy subscription configuration
       - OPAL_POLICY_SUBSCRIPTION_DIRS=single-topic-multi-tenant
-      
+
       # REVOLUTIONARY SINGLE TOPIC CONFIGURATION
       # Traditional approach: OPAL_DATA_TOPICS=tenant_1_data,tenant_2_data,tenant_3_data (requires restart)
       # Our breakthrough: OPAL_DATA_TOPICS=tenant_data (NO restart needed!)
       # The key insight: one topic + multiple dynamic data sources = infinite scalability
       - OPAL_DATA_UPDATER_ENABLED=true
       - OPAL_DATA_TOPICS=tenant_data
-      
+
       # Data fetcher configuration
       - OPAL_FETCH_WORKER_POOLS=1
       - OPAL_FETCH_TIMEOUT=30
-      
+
       # Logging configuration
       - OPAL_LOG_LEVEL=DEBUG
     extra_hosts:
@@ -118,7 +118,7 @@ services:
 
 
 # Usage Instructions for Single Topic Multi-Tenant OPAL:
-# 
+#
 # 1. Navigate to docker directory and start all services:
 #    cd docker
 #    docker compose -f docker-compose-single-topic-multi-tenant.yml up -d
@@ -155,15 +155,15 @@ services:
 # 5. Monitor logs to see real-time OPAL reactions (open separate terminals):
 #    # Watch OPAL Server logs (shows data config updates and broadcasting):
 #    docker compose -f docker-compose-single-topic-multi-tenant.yml logs -f opal_server
-#    
+#
 #    # Watch OPAL Client logs (shows data fetching and OPA updates):
 #    docker compose -f docker-compose-single-topic-multi-tenant.yml logs -f opal_client
-#    
+#
 #    # Key log messages you should see:
-#    # OPAL Server: 
+#    # OPAL Server:
 #    # - "Publishing data update to topics: {'tenant_data'}, reason: Load tenant1..."
 #    # - "Broadcasting incoming event: {'topic': 'tenant_data', 'notifier_id': ...}"
-#    # 
+#    #
 #    # OPAL Client:
 #    # - "Received notification of event: tenant_data"
 #    # - "Updating policy data, reason: Load tenant1 data via single topic"
@@ -181,7 +181,7 @@ services:
 #      -d '{
 #        "input": {
 #          "user": "alice",
-#          "action": "read", 
+#          "action": "read",
 #          "resource": "document1",
 #          "tenant_id": "tenant1"
 #        }
@@ -208,7 +208,7 @@ services:
 # 9. Monitor live update logs (same monitoring as step 5):
 #    # OPAL Server will show:
 #    # - "Publishing data update to topics: {'tenant_data'}, reason: Live data refresh..."
-#    # 
+#    #
 #    # OPAL Client will show:
 #    # - "Received event on topic: tenant_data"
 #    # - "Fetching data from: http://example_external_data_provider:80/acl/tenant1"
@@ -219,7 +219,7 @@ services:
 #
 # Key Benefits Demonstrated:
 # - ✅ Single topic 'tenant_data' handles unlimited tenants
-# - ✅ Zero downtime when adding new tenants  
+# - ✅ Zero downtime when adding new tenants
 # - ✅ Zero downtime when updating existing tenant data
 # - ✅ Real-time data synchronization across all tenants
 # - ✅ Perfect tenant isolation through OPA path hierarchy (/acl/tenant1, /acl/tenant2)
@@ -234,4 +234,4 @@ services:
 # Demo Architecture:
 # - Policies loaded from GitHub repo (demonstrates OPAL's designed workflow)
 # - All data served by local nginx container (no external APIs beyond repo)
-# - Reliable operation with standard OPAL policy sync mechanism 
+# - Reliable operation with standard OPAL policy sync mechanism

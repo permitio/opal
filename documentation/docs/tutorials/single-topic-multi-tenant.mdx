@@ -45,7 +45,7 @@ All tenants: OPAL_DATA_TOPICS=tenant_data  # no restart needed when adding tenan
 The key insight is that instead of creating separate topics for each tenant, this approach dynamically registers **multiple external data sources** under a single topic. Each tenant gets its own data source configuration, but all sources publish to the same `tenant_data` topic:
 
 - **Tenant 1**: External data source A → `tenant_data` topic → `/acl/tenant1` path
-- **Tenant 2**: External data source B → `tenant_data` topic → `/acl/tenant2` path  
+- **Tenant 2**: External data source B → `tenant_data` topic → `/acl/tenant2` path
 - **Tenant N**: External data source N → `tenant_data` topic → `/acl/tenantN` path
 
 ### Benefits
@@ -102,7 +102,7 @@ opal_server:
   environment:
     # Initially empty - tenants added via API
     - 'OPAL_DATA_CONFIG_SOURCES={"config": {"entries": []}}'
-    
+
     # Policy repository configuration
     - OPAL_POLICY_REPO_URL=https://github.com/permitio/opal-example-policy-repo
     - OPAL_POLICY_SUBSCRIPTION_DIRS=single-topic-multi-tenant
@@ -357,4 +357,4 @@ curl -s http://localhost:8181/v1/data | jq .
 
 - [Configure External Data Sources](/tutorials/configure_external_data_sources)
 - [Trigger Data Updates](/tutorials/trigger_data_updates)
-- [Track a Git Repository](/tutorials/track_a_git_repo) 
+- [Track a Git Repository](/tutorials/track_a_git_repo)
