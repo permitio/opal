@@ -1,51 +1,62 @@
-# OPAL Application Tests
+# OPAL E2E Tests
 
-To fully test OPAL's core features as part of our CI flow,
-We're using a bash script and a docker-compose configuration that enables most of OPAL's important features.
+This directory contains end-to-end tests for OPAL using a local Gitea git server instead of relying on external services like GitHub.
 
-## How To Run Locally
+## Overview
 
-### Controlling the image tag
+The tests spin up a complete OPAL environment including:
+- A local Gitea git server to host the policy repository
+- Multiple OPAL server instances (2 replicas)
+- Multiple OPAL client instances (2 replicas)
+- A PostgreSQL database for broadcast communication
+- Policy files loaded from `opal-tests-policy-repo-main/`
 
-By default, tests would run with the `latest` image tag (for both server & client).
+## Prerequisites
 
-To configure another specific version:
+- Docker and Docker Compose
+- Bash shell
+- Basic Unix tools (curl, git, openssl, ssh-keygen)
 
+## Running the Tests
+
+Simply run:
 ```bash
-export OPAL_IMAGE_TAG=0.7.1
-```
-
-Or if you want to test locally built images
-```bash
-make docker-build-next
-export OPAL_IMAGE_TAG=next
-```
-
-### Using a policy repo
-
-To test opal's git tracking capabilities, `run.sh` uses a dedicated GitHub repo ([opal-tests-policy-repo](https://github.com/permitio/opal-tests-policy-repo)) in which it creates branches and pushes new commits.
-
-If you're not accessible to that repo (not in `Permit.io`), Please fork our public [opal-example-policy-repo](https://github.com/permitio/opal-example-policy-repo), and override the repo URL to be used:
-```bash
-export OPAL_POLICY_REPO_URL=git@github.com:your-org/your-repo.git
-```
-
-As `run.sh` requires push permissions, and as `opal-server` itself might need to authenticate GitHub (if your repo is private). If your GitHub ssh private key is not stored at `~/.ssh/id_rsa`, provide it using:
-```bash
-# Use an absolute path
-export OPAL_POLICY_REPO_SSH_KEY_PATH=$(realpath ./your_github_ssh_private_key)
-```
-
-
-### Putting it all together
-
-```bash
-make docker-build-next # To locally build opal images
-export OPAL_IMAGE_TAG=next # Otherwise would default to "latest"
-
-export OPAL_POLICY_REPO_URL=git@github.com:your-org/your-repo.git # To use your own repo for testing (if you're not an Permit.io employee yet...)
-export OPAL_POLICY_REPO_SSH_KEY_PATH=$(realpath ./your_github_ssh_private_key) # If your GitHub ssh key isn't in "~.ssh/id_rsa"
-
-cd app-tests
 ./run.sh
+```
+
+The script will:
+1. Generate authentication keys and tokens
+2. Start a local Gitea server
+3. Create a test repository with initial policy files
+4. Start OPAL servers and clients
+5. Run various tests including:
+   - Policy updates via git push
+   - Data updates via API
+   - Statistics verification
+   - Broadcast channel disconnection handling
+
+## Test Policy Files
+
+The test policies are stored in `opal-tests-policy-repo-main/` and include:
+- `rbac.rego` - Role-based access control policies
+- `utils.rego` - Utility functions
+- `policy.cedar` - Cedar policy examples
+- `data.json` - Initial data
+- `.manifest` - Repository manifest
+
+## Troubleshooting
+
+If tests fail:
+1. Check Docker logs: `docker compose -f docker-compose-app-tests.yml logs`
+2. Ensure ports 3000, 7002-7003, 7766-7767, 8181-8182 are available
+3. Clean up and retry: `docker compose -f docker-compose-app-tests.yml down -v`
+
+The script automatically retries up to 5 times to handle transient failures.
+
+## Cleanup
+
+The script automatically cleans up all resources on exit. Manual cleanup:
+```bash
+docker compose -f docker-compose-app-tests.yml down -v
+rm -rf opal-tests-policy-repo temp-repo gitea-data git-repos .env
 ```
