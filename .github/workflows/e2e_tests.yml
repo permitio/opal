@@ -1,0 +1,44 @@
+name: E2E Tests
+
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+    branches:
+      - master
+  workflow_run:
+    workflows: ["Tests"]
+    types:
+      - completed
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+    # Checkout the repository
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    # Set up Python
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.x'  # Adjust the version as needed
+
+    # Install opal dependencies
+    - name: Install opal dependencies
+      run: pip install -r requirements.txt
+
+    # Ensure Docker is installed and running
+    - name: Set up Docker
+      uses: docker/setup-buildx-action@v2
+
+    # Install test dependencies
+    - name: Install test dependencies
+      run: cd ./tests && pip install -r requirements.txt
+
+    # Run the tests using the script
+    - name: Run tests
+      run: cd ./tests && ./run.sh

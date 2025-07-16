@@ -1,4 +1,11 @@
-# Byte-compiled / optimized / DLL files
+# OPAL specific
+.env
+*.env
+opal-example-policy-repo/*
+
+
+# Temporary and Python cache files
+**/*.pyc
 __pycache__/
 *.py[cod]
 *$py.class
@@ -6,10 +13,17 @@ __pycache__/
 # C extensions
 *.so
 
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+
 # Distribution / packaging
 .Python
 build/
-develop-eggs/
 dist/
 downloads/
 eggs/
@@ -18,7 +32,6 @@ lib/
 lib64/
 parts/
 sdist/
-var/
 wheels/
 pip-wheel-metadata/
 share/python-wheels/
@@ -27,15 +40,13 @@ share/python-wheels/
 *.egg
 MANIFEST
 
-# PyInstaller
-#  Usually these files are written by a python script from a template
-#  before PyInstaller builds the exe, so as to inject date/other infos into it.
-*.manifest
-*.spec
-
 # Installer logs
 pip-log.txt
 pip-delete-this-directory.txt
+
+# PyInstaller
+*.manifest
+*.spec
 
 # Unit test / coverage reports
 htmlcov/
@@ -55,17 +66,17 @@ coverage.xml
 *.mo
 *.pot
 
-# Django stuff:
+# Django
 *.log
 local_settings.py
 db.sqlite3
 db.sqlite3-journal
 
-# Flask stuff:
+# Flask
 instance/
 .webassets-cache
 
-# Scrapy stuff:
+# Scrapy
 .scrapy
 
 # Sphinx documentation
@@ -84,53 +95,41 @@ ipython_config.py
 # pyenv
 .python-version
 
-# pipenv
-#   According to pypa/pipenv#598, it is recommended to include Pipfile.lock in version control.
-#   However, in case of collaboration, if having platform-specific dependencies or dependencies
-#   having no cross-platform support, pipenv may install dependencies that don't work, or not
-#   install all needed dependencies.
+# Pipenv
 #Pipfile.lock
 
-# PEP 582; used by e.g. github.com/David-OConnor/pyflow
+# PEP 582
 __pypackages__/
 
-# Celery stuff
+# Celery
 celerybeat-schedule
 celerybeat.pid
 
-# SageMath parsed files
+# SageMath
 *.sage.py
 
-# Environments
-.env
-.venv
-env/
-venv/
-ENV/
-env.bak/
-venv.bak/
+# Editors
+.vscode/
+.idea
+*.iml
 
-# Spyder project settings
+# Spyder
 .spyderproject
 .spyproject
 
-# Rope project settings
+# Rope
 .ropeproject
 
-# mkdocs documentation
-/site
+# mkdocs
+docs/_build/
 
 # mypy
 .mypy_cache/
 .dmypy.json
 dmypy.json
 
-# Pyre type checker
+# Pyre
 .pyre/
 
-# editors
-.vscode/
-.idea
-*.iml
-
+# System files
 .DS_Store
