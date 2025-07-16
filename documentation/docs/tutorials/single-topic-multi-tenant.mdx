@@ -5,7 +5,8 @@ title: Single-Topic Multi-Tenant Configuration
 
 # Single-Topic Multi-Tenant Configuration
 
-This document describes how to configure OPAL for multi-tenant environments using a single topic approach. This configuration allows adding new tenants without restarting OPAL services or configuring stateful [OPAL Scopes](https://opal.ac/overview/scopes).
+This guide explains how to set up OPAL for multi-tenant environments using a single-topic approach.
+With this configuration, you can onboard new tenants seamlessly—without restarting OPAL services or managing stateful [OPAL Scopes](https://opal.ac/overview/scopes).
 
 ## Understanding Multi-Tenancy Topologies
 
@@ -17,6 +18,21 @@ In traditional OPAL setups, each tenant requires its own data topic:
 Tenant 1: OPAL_DATA_TOPICS=tenant_1_data
 Tenant 2: OPAL_DATA_TOPICS=tenant_1_data,tenant_2_data  # requires restart
 Tenant 3: OPAL_DATA_TOPICS=tenant_1_data,tenant_2_data,tenant_3_data  # requires restart
+```
+
+```mermaid
+flowchart
+  subgraph "Multi-scope"
+    DS1["Data source: Tenant 1"]
+    DS2["Data source: Tenant 2"]
+    DSN["Data source: Tenant N"]
+    DS1 --> OC1["OPAL Client: Scope 1"]
+    DS2 --> OC2["OPAL Client: Scope 2"]
+    DSN --> OCN["OPAL Client: Scope N"]
+    OC1 <--> SVC["Application services"]
+    OC2 <--> SVC
+    OCN <--> SVC
+end
 ```
 
 #### Benefits
@@ -42,8 +58,7 @@ With single-topic configuration, all tenants share one topic:
 All tenants: OPAL_DATA_TOPICS=tenant_data  # no restart needed when adding tenants
 ```
 
-The key insight is that instead of creating separate topics for each tenant, this approach dynamically registers **multiple external data sources** under a single topic. Each tenant gets its own data source configuration, but all sources publish to the same `tenant_data` topic:
-
+The key insight is using **multiple external data sources** under a single topic. Each tenant gets its own data source, but all publish to the same topic with different destination paths:
 - **Tenant 1**: External data source A → `tenant_data` topic → `/acl/tenant1` path
 - **Tenant 2**: External data source B → `tenant_data` topic → `/acl/tenant2` path
 - **Tenant N**: External data source N → `tenant_data` topic → `/acl/tenantN` path
@@ -64,49 +79,43 @@ The key insight is that instead of creating separate topics for each tenant, thi
 - **Horizontal-scaling Tenants** - supporting more tenants would require larger OPAL Client instances.
 
 ```mermaid
-flowchart TD
-subgraph "Single-topic"
-DS1["Data source: Tenant 1"]
-DS2["Data source: Tenant 2"]
-DSN["Data source: Tenant N"]
-DS1 --> OCA["OPAL Client: All tenants"]
-DS2 --> OCA
-DSN --> OCA
-OCA <--> SVC["Application services"]
+flowchart
+  subgraph "Single-topic"
+    DS1["Data source: Tenant 1"]
+    DS2["Data source: Tenant 2"]
+    DSN["Data source: Tenant N"]
+    DS1 --> OCA["OPAL Client: All tenants"]
+    DS2 --> OCA
+    DSN --> OCA
+    OCA <--> SVC["Application services"]
 end
 ```
 
-## Example Setup - Docker Compose
+## Demo Setup with Docker Compose
 
 Provided a docker compose to show an example setup of a single-topic multi-tenant architecture.
 
-### Prerequisites
+#### Prerequisites
 
-- Docker and Docker Compose
-- `jq` for JSON processing
+- Docker and Docker Compose ([Install instructions](https://docs.docker.com/get-docker/))
+- `jq` for JSON processing ([Install instructions](https://stedolan.github.io/jq/download/))
 
-### Configurations
-#### OPAL Client Configuration
+### Running the demo script
 
-```yaml
-opal_client:
-  environment:
-    - OPAL_DATA_TOPICS=tenant_data  # single topic for all tenants
-    - OPAL_DATA_UPDATER_ENABLED=true
+This demo script shows the entire setup of a single-topic multi-tenant architecture.
+
+```bash
+cd docker
+./run-example-with-single-topic-multi-tenant.sh
 ```
 
-#### OPAL Server Configuration
+This script will:
+1. Start the OPAL Server, Client, and an external data provider.
+2. Configure data sources for two tenants using the single topic approach.
+3. Test authorization queries for both tenants.
+4. Verify data isolation between tenants.
 
-```yaml
-opal_server:
-  environment:
-    # Initially empty - tenants added via API
-    - 'OPAL_DATA_CONFIG_SOURCES={"config": {"entries": []}}'
-
-    # Policy repository configuration
-    - OPAL_POLICY_REPO_URL=https://github.com/permitio/opal-example-policy-repo
-    - OPAL_POLICY_SUBSCRIPTION_DIRS=single-topic-multi-tenant
-```
+### How it works
 
 ```mermaid
 flowchart TD
@@ -116,14 +125,12 @@ client["OPAL Client"]
 opa["OPA (policy engine)"]
 end
 GitHub["Policy Repo (GitHub)"] --> server
-server -- broadcast updates --> broadcast["Postgres"]
-server -- trigger data update /acl/{tenant} --> client
-client -- fetch /acl/{tenant} data --> provider["NGINX external API"]
-client -- store data at /acl/{tenant} --> opa
-opa <-- authz query from /acl/{tenant} --> App{"Your services / API"}
+server -- Broadcast updates --> broadcast["Postgres"]
+server -- Trigger data update /acl/{tenant} --> client
+client -- Fetch /acl/{tenant} data --> provider["NGINX external API"]
+client -- Store data at /acl/{tenant} --> opa
+opa <-- AuthZ query from /acl/{tenant} --> App{"Your service / API"}
 ```
-
-### How it works
 
 #### 1. Data source entries
 
@@ -146,35 +153,24 @@ Tenant isolation is achieved through OPA path hierarchy:
 - Tenant 2 data: `/acl/tenant2`
 - Tenant N data: `/acl/tenantN`
 
-## Running the Example
+### Manually running the demo
 
-### Using the provided script
-
-```bash
-cd docker
-./run-example-with-single-topic-multi-tenant.sh
-```
-
-### Manual setup
-
-Start the services:
+#### 1. Starting the services
 
 ```bash
-docker compose -f docker-compose-single-topic-multi-tenant.yml up -d
+docker compose -f docker/docker-compose-single-topic-multi-tenant.yml up -d
 ```
 
 Verify services are running:
-
 ```bash
 curl http://localhost:7002/healthcheck   # OPAL Server
 curl http://localhost:8181/health        # OPA
 curl http://localhost:8090/acl/tenant1   # External Data Provider
 ```
 
-## Adding Tenants
+#### 2. Adding Tenants
 
-### Add first tenant
-
+Add first tenant:
 ```bash
 curl -X POST http://localhost:7002/data/config \
   -H "Content-Type: application/json" \
@@ -188,8 +184,7 @@ curl -X POST http://localhost:7002/data/config \
   }'
 ```
 
-### Add additional tenants
-
+Add second tenant:
 ```bash
 curl -X POST http://localhost:7002/data/config \
   -H "Content-Type: application/json" \
@@ -205,9 +200,7 @@ curl -X POST http://localhost:7002/data/config \
 
 Note: No service restart is required when adding new tenants.
 
-## Verification
-
-### Check data isolation
+#### 3. Check data isolation
 
 ```bash
 # Tenant 1 data
@@ -220,37 +213,57 @@ curl -s http://localhost:8181/v1/data/acl/tenant2 | jq .
 curl -s http://localhost:8181/v1/data/acl | jq .
 ```
 
-### Monitor OPAL logs
+#### 4. Monitor OPAL logs
 
-OPAL Server logs:
+**OPAL Server logs:**
 ```bash
-docker compose -f docker-compose-single-topic-multi-tenant.yml logs -f opal_server
+docker compose -f docker/docker-compose-single-topic-multi-tenant.yml logs -f opal_server
 ```
 
-OPAL Client logs:
+You should see the following logs:
+```
+Publishing data update to topics: {'tenant_data'}, reason: Add tenant1 data source, entries: [{'url': 'http://example_external_data_provider:80/acl/tenant1', 'method': 'PUT', 'path': '/acl/tenant1', 'inline_data': False, 'topics': ['tenant_data']}]
+185.199.109.133:55981 - "POST /data/config HTTP/1.1" 200
+Broadcasting incoming event: {'topic': 'tenant_data', 'notifier_id': '7a4b55cd27d34df8a1e4ff5fc5c7516f'}
+```
+
+Then again for tenant 2:
+```
+Publishing data update to topics: {'tenant_data'}, reason: Add tenant2 data source, entries: [{'url': 'http://example_external_data_provider:80/acl/tenant2', 'method': 'PUT', 'path': '/acl/tenant2', 'inline_data': False, 'topics': ['tenant_data']}]
+185.199.109.133:59019 - "POST /data/config HTTP/1.1" 200
+Broadcasting incoming event: {'topic': 'tenant_data', 'notifier_id': '4dd064469d75485c9d3547c7dda55215'}
+```
+
+**OPAL Client logs:**
 ```bash
-docker compose -f docker-compose-single-topic-multi-tenant.yml logs -f opal_client
+docker compose -f docker/docker-compose-single-topic-multi-tenant.yml logs -f opal_client
 ```
 
-Look for these log patterns:
-
-**Server side:**
-```
-Publishing data update to topics: {'tenant_data'}
-Broadcasting incoming event: {'topic': 'tenant_data'}
-```
-
-**Client side:**
+You should see the following logs:
 ```
 Received notification of event: tenant_data
+Updating policy data, reason: Add tenant1 data source
+Triggering data update with id: 51fc5aa4905e4f62a88be058b6572991
 Fetching data from url: http://example_external_data_provider:80/acl/tenant1
-Saving fetched data to policy-store: destination path='/acl/tenant1'
+Saving fetched data to policy-store: source url='http://example_external_data_provider:80/acl/tenant1', destination path='/acl/tenant1'
+Received request.    PUT /v1/data/acl/tenant1
+Sent response.       PUT /v1/data/acl/tenant1 -> 204
 ```
 
-## Data Updates
+Then again for tenant 2:
+```
+Received notification of event: tenant_data
+Updating policy data, reason: Add tenant2 data source
+Triggering data update with id: 1f355993f9334f35b781232c591e65e5
+Fetching data from url: http://example_external_data_provider:80/acl/tenant2
+Saving fetched data to policy-store: source url='http://example_external_data_provider:80/acl/tenant2', destination path='/acl/tenant2'
+Received request.    PUT /v1/data/acl/tenant2
+Sent response.       PUT /v1/data/acl/tenant2 -> 204
+```
 
-### Update existing tenant data
+#### 5. Update existing tenant data
 
+Update tenant 1 data:
 ```bash
 curl -X POST http://localhost:7002/data/config \
   -H "Content-Type: application/json" \
@@ -264,9 +277,7 @@ curl -X POST http://localhost:7002/data/config \
   }'
 ```
 
-## Testing Authorization
-
-### Test tenant-specific policies
+#### 6. Test tenant-specific policies
 
 ```bash
 curl -X POST http://localhost:8181/v1/data/policies/rbac/allow \
@@ -293,6 +304,8 @@ opal_server:
     - OPAL_POLICY_REPO_WEBHOOK_SECRET=your-secure-secret
 ```
 
+Read more about [Policy Repo webhooks](/tutorials/track_a_git_repo#option-2-using-a-webhook).
+
 ### Secure data sources
 
 Configure authentication for external data APIs:
@@ -312,16 +325,6 @@ curl -X POST http://localhost:7002/data/config \
       "dst_path": "/acl/tenant1"
     }]
   }'
-```
-
-### Scale horizontally
-
-Increase worker count for higher load:
-
-```yaml
-opal_server:
-  environment:
-    - UVICORN_NUM_WORKERS=4
 ```
 
 ## Troubleshooting
