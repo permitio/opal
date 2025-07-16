@@ -173,7 +173,9 @@ class ApiPolicySource(BasePolicySource):
 
         full_url = f"{url}/{path}"
 
-        async with aiohttp.ClientSession() as session:
+        async with aiohttp.ClientSession(
+            trust_env=True,
+        ) as session:
             try:
                 async with session.get(
                     f"{full_url}",

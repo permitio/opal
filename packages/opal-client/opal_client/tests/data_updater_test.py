@@ -123,7 +123,9 @@ def trigger_update():
         async with PubSubClient(
             server_uri=UPDATES_URL,
             methods_class=TenantAwareRpcEventClientMethods,
-            extra_headers=[get_authorization_header(opal_client_config.CLIENT_TOKEN)],
+            additional_headers=[
+                get_authorization_header(opal_client_config.CLIENT_TOKEN)
+            ],
         ) as client:
             # Channel must be ready before we can publish on it
             await asyncio.wait_for(client.wait_until_ready(), 5)
@@ -150,7 +152,9 @@ def trigger_update_patch():
         async with PubSubClient(
             server_uri=UPDATES_URL,
             methods_class=TenantAwareRpcEventClientMethods,
-            extra_headers=[get_authorization_header(opal_client_config.CLIENT_TOKEN)],
+            additional_headers=[
+                get_authorization_header(opal_client_config.CLIENT_TOKEN)
+            ],
         ) as client:
             # Channel must be ready before we can publish on it
             await asyncio.wait_for(client.wait_until_ready(), 5)

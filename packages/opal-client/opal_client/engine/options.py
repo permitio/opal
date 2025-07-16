@@ -40,7 +40,7 @@ class OpaServerOptions(BaseModel):
     """
 
     addr: str = Field(
-        ":8181",
+        "0.0.0.0:8181",
         description="listening address of the opa server (e.g., [ip]:<port> for TCP)",
     )
     authentication: AuthenticationScheme = Field(
@@ -96,7 +96,7 @@ class CedarServerOptions(BaseModel):
     inline)."""
 
     addr: str = Field(
-        ":8180",
+        "0.0.0.0:8180",
         description="listening address of the Cedar agent (e.g., [ip]:<port> for TCP)",
     )
     authentication: AuthenticationScheme = Field(
