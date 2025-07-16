@@ -116,4 +116,9 @@ jobs:
         env:
           OPAL_IMAGE_TAG: test
         run: |
+          # Prepare git for using tests policy repo
+          export OPAL_POLICY_REPO_SSH_KEY_PATH=$(realpath .)/opal-tests-policy-repo-key
+          echo "$OPAL_TESTS_POLICY_REPO_DEPLOY_KEY" > $OPAL_POLICY_REPO_SSH_KEY_PATH
+          chmod 400 $OPAL_POLICY_REPO_SSH_KEY_PATH
+
           ./run.sh
