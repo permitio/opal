@@ -19,17 +19,18 @@ Tenant 2: OPAL_DATA_TOPICS=tenant_1_data,tenant_2_data  # requires restart
 Tenant 3: OPAL_DATA_TOPICS=tenant_1_data,tenant_2_data,tenant_3_data  # requires restart
 ```
 
-This traditional approach creates several challenges:
+#### Benefits
+- **Per-tenant resource isolation** – each OPAL client (and its embedded OPA) only stores the data that belongs to its tenant, keeping memory/CPU usage proportional to tenant size.
+- **Horizontal scalability for heavy tenants** – if one tenant's data set balloons, you can spin up a dedicated client/OPA pair for it without affecting everyone else.
+- **Reduced blast-radius** – data or policy errors are contained to the tenant's own topic and client.
 
-- **Event-driven vs polling limitations** - When you need event-driven data updates instead of interval-based polling, managing multiple topics becomes complex and resource-intensive.
+#### Challenges
 
-- **Bundle scalability issues** - For thousands of tenants with large datasets, updating data through undivided bundles becomes impractical. This forces you to implement data sharding or tenant-specific bundle divisions, which are difficult to prepare and maintain.
-
-- **State management complexity** - Divided bundles introduce problems with state management, particularly around bundle ordering and ensuring consistent data application across tenants.
-
-- **Topic proliferation** - Achieving tenant isolation through separate data sources results in an ever-growing number of topics, making the system difficult to manage and scale.
-
-- **Configuration management overhead** - Each new tenant requires configuration changes and service restarts, making dynamic tenant onboarding cumbersome.
+- **Operational overhead** – deployment automation must track one topic per tenant and keep ACLs, scopes, and monitoring in sync.
+- **Increased resource utilization** - each tenant requiring a dedicated OPAL Client instance/s.
+- **Higher broker cost** – more topics/partitions increases metadata and connection overhead on Kafka/Redis/Postgres back-ends.
+- **Cross-tenant queries require fan-out** – cross-tenant admin tasks need to fetch data from every topic.
+- **On-boarding friction** – adding a tenant still demands a scope or a rolling configuration update.
 
 The single-topic configuration described below addresses these issues by providing a simpler, more scalable approach.
 
@@ -47,34 +48,45 @@ The key insight is that instead of creating separate topics for each tenant, thi
 - **Tenant 2**: External data source B → `tenant_data` topic → `/acl/tenant2` path  
 - **Tenant N**: External data source N → `tenant_data` topic → `/acl/tenantN` path
 
-This allows for:
-- **Dynamic data source registration** via `/data/config` API calls
-- **Tenant isolation** through unique destination paths in OPA
-- **Unified topic management** while maintaining separate data sources
-- **Real-time tenant onboarding** without service restarts
+### Benefits
 
-## Benefits
+- **No service restarts required when adding new tenants** - does not require `OPAL_DATA_CONFIG_SOURCES` configuration changes, with a rolling restart.
+- **Better resource utilization** - tenants are accessible from all OPAL Clients (i.e. OPA instances).
+- **Simplified topic management** - no need to manage new topics or scopes being in sync with tenants.
+- **Real-time data source notifications** - Changes to tenant data can be immediately propagated using triggered data updates, propagating to all OPAL Clients without requiring restarts.
+- **Faster tenant onboarding** - New tenants can be added instantly without configuration changes or new deployments.
 
-- **No service restarts required when adding new tenants** - Unlike configurations with static data sources where `OPAL_DATA_CONFIG_SOURCES` is fixed at startup, this approach uses dynamic data source management via the `/data/config` API endpoint.
+### Challenges
 
-- **Better resource utilization** - Compared to PATCH-based approaches that require maintaining incremental state changes, this configuration always recreates the complete data state for each tenant, eliminating the complexity of managing partial updates and potential inconsistencies.
+- **Higher memory footprint per client** - every OPAL Client must hold *all* tenants' data, which can reduce performance from OPA, or exceed it limits for larger tenants.
+- **Increased Data Source load** - all OPAL Clients would need to fetch the tenants' data, even when it is used by only some of them.
+- **Horizontal-scaling Data** - supporting tenants with larger datasets may exceed OPA's data capacity.
+- **Horizontal-scaling Tenants** - supporting more tenants would require larger OPAL Client instances.
 
-- **Simplified topic management** - Single topic eliminates the need to manage an ever-growing list of tenant-specific topics.
+```mermaid
+flowchart TD
+subgraph "Single-topic"
+DS1["Data source: Tenant 1"]
+DS2["Data source: Tenant 2"]
+DSN["Data source: Tenant N"]
+DS1 --> OCA["OPAL Client: All tenants"]
+DS2 --> OCA
+DSN --> OCA
+OCA <--> SVC["Application services"]
+end
+```
 
-- **Real-time data source notifications** - Changes to tenant data can be immediately propagated using `/data/config` API calls, which notify all subscribed clients without requiring bundle regeneration or service restarts.
+## Example Setup - Docker Compose
 
-- **Complete state reconstruction** - Unlike bundle-based methods that may require complex state merging, each data update via `/data/config` ensures full data consistency by reconstructing the complete tenant state.
+Provided a docker compose to show an example setup of a single-topic multi-tenant architecture.
 
-- **Faster tenant onboarding** - New tenants can be added instantly through API calls rather than configuration file changes and service restarts.
-
-## Prerequisites
+### Prerequisites
 
 - Docker and Docker Compose
 - `jq` for JSON processing
 
-## Configuration
-
-### OPAL Client Configuration
+### Configurations
+#### OPAL Client Configuration
 
 ```yaml
 opal_client:
@@ -83,7 +95,7 @@ opal_client:
     - OPAL_DATA_UPDATER_ENABLED=true
 ```
 
-### OPAL Server Configuration
+#### OPAL Server Configuration
 
 ```yaml
 opal_server:
@@ -92,13 +104,28 @@ opal_server:
     - 'OPAL_DATA_CONFIG_SOURCES={"config": {"entries": []}}'
     
     # Policy repository configuration
-    - OPAL_POLICY_REPO_URL=https://github.com/plduser/opa-zero-poll-single-topic-multi-tenant.git
-    - OPAL_POLICY_REPO_PATH=docker/docker_files/policies
+    - OPAL_POLICY_REPO_URL=https://github.com/permitio/opal-example-policy-repo
+    - OPAL_POLICY_SUBSCRIPTION_DIRS=single-topic-multi-tenant
 ```
 
-## How it works
+```mermaid
+flowchart TD
+subgraph OPAL["OPAL control plane"]
+server["OPAL Server"]
+client["OPAL Client"]
+opa["OPA (policy engine)"]
+end
+GitHub["Policy Repo (GitHub)"] --> server
+server -- broadcast updates --> broadcast["Postgres"]
+server -- trigger data update /acl/{tenant} --> client
+client -- fetch /acl/{tenant} data --> provider["NGINX external API"]
+client -- store data at /acl/{tenant} --> opa
+opa <-- authz query from /acl/{tenant} --> App{"Your services / API"}
+```
 
-### Data source entries
+### How it works
+
+#### 1. Data source entries
 
 Each tenant's data is configured as a separate data source entry with:
 - **url**: Endpoint serving tenant data
@@ -112,7 +139,7 @@ When any tenant data is updated:
 2. All OPAL clients subscribed to `tenant_data` receive the notification
 3. Clients fetch and update only the specific tenant data that changed
 
-#### 3. Tenant Data isolation
+#### 3. Data isolation
 
 Tenant isolation is achieved through OPA path hierarchy:
 - Tenant 1 data: `/acl/tenant1`

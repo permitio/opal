@@ -1,52 +1,52 @@
 #!/bin/bash
 
-# Skrypt demo dla Single-Topic Multi-Tenant OPAL
-# Używa zdalnego repo polityk z subfolder single-topic-multi-tenant
+# Demo script for Single-Topic Multi-Tenant OPAL
+# Uses remote policy repo with single-topic-multi-tenant subfolder
 
 set -e
 
-echo "🚀 Uruchamianie Single-Topic Multi-Tenant OPAL Demo..."
-echo "📋 Polityki z zdalnego repo: github.com/plduser/opal-example-policy-repo"
+echo "🚀 Starting Single-Topic Multi-Tenant OPAL Demo..."
+echo "📋 Policies from official repo: github.com/permitio/opal-example-policy-repo"
 echo "📁 Subfolder: single-topic-multi-tenant"
 
-# Zatrzymaj istniejące kontenery
-echo "🧹 Czyszczenie istniejących kontenerów..."
+# Stop existing containers
+echo "🧹 Cleaning up existing containers..."
 docker-compose -f docker-compose-single-topic-multi-tenant.yml down -v
 
-# Uruchom usługi
-echo "🆙 Uruchamianie usług OPAL..."
+# Start services
+echo "🆙 Starting OPAL services..."
 docker-compose -f docker-compose-single-topic-multi-tenant.yml up -d
 
-# Poczekaj na uruchomienie
-echo "⏳ Oczekiwanie na uruchomienie usług..."
+# Wait for startup
+echo "⏳ Waiting for services to start..."
 sleep 15
 
-# Sprawdź status usług
-echo "🔍 Sprawdzanie statusu usług..."
+# Check service status
+echo "🔍 Checking service status..."
 for i in {1..30}; do
     if curl -s http://localhost:7002/healthcheck > /dev/null 2>&1; then
-        echo "✅ OPAL Server jest gotowy"
+        echo "✅ OPAL Server is ready"
         break
     fi
-    echo "⏳ Oczekiwanie na OPAL Server... ($i/30)"
+    echo "⏳ Waiting for OPAL Server... ($i/30)"
     sleep 2
 done
 
-# Sprawdź OPA
+# Check OPA
 for i in {1..30}; do
     if curl -s http://localhost:8181/health > /dev/null 2>&1; then
-        echo "✅ OPA jest gotowe"
+        echo "✅ OPA is ready"
         break
     fi
-    echo "⏳ Oczekiwanie na OPA... ($i/30)"
+    echo "⏳ Waiting for OPA... ($i/30)"
     sleep 2
 done
 
 echo ""
-echo "🎯 Konfiguracja External Data Sources dla Multi-Tenant..."
+echo "🎯 Configuring External Data Sources for Multi-Tenant..."
 
-# Dodaj dane dla Tenant 1 (firma TechCorp)
-echo "📊 Dodawanie danych dla Tenant 1 (TechCorp)..."
+# Add data for Tenant 1 (TechCorp company)
+echo "📊 Adding data for Tenant 1 (TechCorp)..."
 curl -X POST http://localhost:7002/data/config \
   -H "Content-Type: application/json" \
   -d '{
@@ -58,8 +58,8 @@ curl -X POST http://localhost:7002/data/config \
     "reason": "Load tenant1 data via single topic - DEMO"
   }'
 
-# Dodaj dane dla Tenant 2 (firma DataFlow)  
-echo "📊 Dodawanie danych dla Tenant 2 (DataFlow)..."
+# Add data for Tenant 2 (DataFlow company)
+echo "📊 Adding data for Tenant 2 (DataFlow)..."
 curl -X POST http://localhost:7002/data/config \
   -H "Content-Type: application/json" \
   -d '{
@@ -71,18 +71,18 @@ curl -X POST http://localhost:7002/data/config \
     "reason": "Load tenant2 data via single topic - NO RESTART!"
   }'
 
-echo "⏳ Oczekiwanie na propagację konfiguracji..."
+echo "⏳ Waiting for configuration propagation..."
 sleep 10
 
 echo ""
-echo "📋 Stan External Data Sources:"
+echo "📋 External Data Sources status:"
 curl -s http://localhost:7002/data/config | jq '.'
 
 echo ""
-echo "🧪 Testowanie zapytań autoryzacyjnych..."
+echo "🧪 Testing authorization queries..."
 
 echo ""
-echo "🏢 TENANT 1 (TechCorp) - OPA na porcie 8181:"
+echo "🏢 TENANT 1 (TechCorp) - OPA on port 8181:"
 echo "👤 alice (admin) -> documents/read:"
 curl -s -X POST http://localhost:8181/v1/data/multi_tenant_rbac/allow \
   -H "Content-Type: application/json" \
@@ -106,7 +106,7 @@ curl -s -X POST http://localhost:8181/v1/data/multi_tenant_rbac/allow \
   }' | jq '.result'
 
 echo ""
-echo "🏢 TENANT 2 (DataFlow) - Ten sam OPA, różne dane:"
+echo "🏢 TENANT 2 (DataFlow) - Same OPA, different data:"
 echo "👤 charlie (viewer) -> files/read:"
 curl -s -X POST http://localhost:8181/v1/data/multi_tenant_rbac/allow \
   -H "Content-Type: application/json" \
@@ -130,26 +130,26 @@ curl -s -X POST http://localhost:8181/v1/data/multi_tenant_rbac/allow \
   }' | jq '.result'
 
 echo ""
-echo "🔍 Weryfikacja izolacji danych:"
-echo "📊 Wszystkie dane w OPA (izolowane przez ścieżki):"
+echo "🔍 Verifying data isolation:"
+echo "📊 All data in OPA (isolated by paths):"
 curl -s http://localhost:8181/v1/data/acl | jq '.'
 
 echo ""
-echo "📊 Dane tylko dla tenant1:" 
+echo "📊 Data for tenant1 only:" 
 curl -s http://localhost:8181/v1/data/acl/tenant1 | jq '.'
 
 echo ""
-echo "📊 Dane tylko dla tenant2:" 
+echo "📊 Data for tenant2 only:" 
 curl -s http://localhost:8181/v1/data/acl/tenant2 | jq '.'
 
 echo ""
-echo "✅ Demo zakończone!"
-echo "🎉 Single-Topic Multi-Tenant OPAL działa z zdalnym repo polityk!"
+echo "✅ Demo completed!"
+echo "🎉 Single-Topic Multi-Tenant OPAL works with remote policy repo!"
 echo ""
-echo "📖 Kluczowe cechy:"
-echo "   • 1 temat (tenant_data) dla wszystkich tenantów"
-echo "   • N external data sources dla N tenantów"  
-echo "   • Izolacja danych przez ścieżki OPA (/acl/tenant1, /acl/tenant2)"
-echo "   • Polityki z zdalnego repo subfolder: single-topic-multi-tenant"
-echo "   • Brak restartów przy dodawaniu nowych tenantów"
-echo "   • Polityki kompatybilne ze starszymi wersjami OPA" 
+echo "📖 Key features:"
+echo "   • 1 topic (tenant_data) for all tenants"
+echo "   • N external data sources for N tenants"  
+echo "   • Data isolation through OPA paths (/acl/tenant1, /acl/tenant2)"
+echo "   • Policies from official repo subfolder: single-topic-multi-tenant"
+echo "   • No restarts needed when adding new tenants"
+echo "   • Policies compatible with older OPA versions" 

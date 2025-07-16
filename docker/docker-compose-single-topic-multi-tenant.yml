@@ -32,7 +32,7 @@ services:
       # - Real-time policy updates via OPAL's designed workflow  
       # - Consistent behavior across different environments
       # The repo demonstrates single-topic multi-tenant approach
-      - OPAL_POLICY_REPO_URL=https://github.com/plduser/opal-example-policy-repo
+      - OPAL_POLICY_REPO_URL=https://github.com/permitio/opal-example-policy-repo
       - OPAL_POLICY_REPO_MAIN_BRANCH=master
       # Polling interval for policy updates (30 seconds for demo, use webhooks in production)
       - OPAL_POLICY_REPO_POLLING_INTERVAL=30
