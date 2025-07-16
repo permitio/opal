@@ -115,4 +115,5 @@ jobs:
         working-directory: ./app-tests
         env:
           OPAL_IMAGE_TAG: test
-        run: ./run.sh
+        run: |
+          ./run.sh
