@@ -73,7 +73,7 @@ class HttpFetchProvider(BaseFetchProvider):
         if self._event.config.headers is not None:
             headers = self._event.config.headers
         if opal_common_config.HTTP_FETCHER_PROVIDER_CLIENT == "httpx":
-            self._session = httpx.AsyncClient(headers=headers)
+            self._session = httpx.AsyncClient(headers=headers, trust_env=True)
         else:
             self._session = ClientSession(headers=headers, raise_for_status=True)
         self._session = await self._session.__aenter__()

@@ -1,0 +1,150 @@
+---
+sidebar_position: 15
+title: Setup OPAL Behind a Proxy
+---
+
+# Setup OPAL Client Behind a Proxy
+
+## Introduction
+
+OPAL Client can be configured to communicate with OPAL Server through an HTTP proxy. This is useful when the client and server are on different networks or when corporate security policies require proxy usage.
+
+OPAL uses three HTTP client libraries that all support standard proxy environment variables:
+- **aiohttp** - for general HTTP requests
+- **httpx** - for specific data fetchers requests
+- **websockets** - for WebSocket connections to OPAL Server
+
+## Proxy Environment Variables
+
+Configure the proxy by setting these environment variables on the OPAL Client:
+
+```bash
+# HTTP proxy for http:// URLs
+HTTP_PROXY=http://proxy.example.com:8080
+
+# HTTPS proxy for https:// URLs
+HTTPS_PROXY=http://proxy.example.com:8080
+
+# Proxy for all protocols (fallback if protocol-specific not set)
+ALL_PROXY=http://proxy.example.com:8080
+
+# Comma-separated list of hosts to bypass proxy
+NO_PROXY=localhost,127.0.0.1,::1
+```
+
+### Authentication
+
+If your proxy requires authentication:
+
+```bash
+HTTP_PROXY=http://username:password@proxy.example.com:8080
+HTTPS_PROXY=http://username:password@proxy.example.com:8080
+```
+
+## Important: Inline OPA/Cedar Configuration
+
+⚠️ **Critical for inline setups**: If you run OPA or Cedar Agent in the same pod as OPAL Client (inline mode), you **must** exclude localhost from proxy routing:
+
+```bash
+NO_PROXY=localhost,127.0.0.1,::1,0.0.0.0
+```
+
+Without this configuration, OPAL Client's requests to the local policy engine will fail as they attempt to route through the proxy.
+This is **not** required for external OPA/Cedar Agent deployments.
+
+**Note**: If you are using Data Fetchers that are accessible in the same network as OPAL Client, you should add the data fetcher's host to the `NO_PROXY` environment variable.
+This will prevent the client from trying to route through the proxy to reach the data fetcher, impacting performance.
+
+## Docker Compose Example
+
+A complete example with OPAL Server and Client on separate networks, connected via a Squid proxy, is available in the OPAL repository at `docker/docker-compose-with-proxy-example.yml`.
+
+### Running the Example
+
+To run the proxy example locally:
+
+```bash
+docker compose -f docker/docker-compose-with-proxy-example.yml up
+```
+
+This will start:
+- A Squid proxy server bridging the networks
+- OPAL Server with PostgreSQL (isolated on server-network)
+- OPAL Client inside an isolated network, using proxy environment variables for HTTP traffic to reach the OPAL Server
+
+The example demonstrates how to configure proxy environment variables for HTTP traffic while maintaining network connectivity for direct connections.
+
+## Configuration Reference
+
+### Client Environment Variables
+
+| Variable | Description | Example |
+|----------|-------------|---------|
+| `HTTP_PROXY` | Proxy for HTTP requests | `http://proxy:3128` |
+| `HTTPS_PROXY` | Proxy for HTTPS requests | `http://proxy:3128` |
+| `WS_PROXY` | Proxy for WebSocket requests | `http://proxy:3128` |
+| `WSS_PROXY` | Proxy for WebSocket Secure requests | `http://proxy:3128` |
+| `ALL_PROXY` | Fallback proxy for all protocols | `http://proxy:3128` |
+| `NO_PROXY` | Hosts to bypass proxy | `localhost,127.0.0.1,::1` |
+
+You should see the client establishing connections through the proxy to reach the OPAL Server.
+
+**Note**: The proxy environment variables only affect HTTP/HTTPS requests made by the applications (aiohttp, httpx, websockets).
+
+**WebSocket Support**: OPAL uses WebSocket connections for real-time updates. Ensure your proxy supports WebSocket upgrades (CONNECT method) for the OPAL server port (typically 7002).
+
+## Advanced Proxy Configurations
+
+### SOCKS Proxy
+
+For SOCKS5 proxy support:
+
+```bash
+ALL_PROXY=socks5://proxy.example.com:1080
+```
+
+### Custom CA Certificates
+
+If your proxy uses custom certificates, mount them into the container:
+
+```yaml
+volumes:
+  - ./custom-ca.crt:/usr/local/share/ca-certificates/custom-ca.crt
+```
+
+And set:
+```bash
+SSL_CERT_DIR=/usr/local/share/ca-certificates
+```
+
+### Client Specific Configuration
+
+For more advanced configurations, you can check the Proxy Configuration section for each client library used by OPAL:
+
+- [websockets](https://websockets.readthedocs.io/en/stable/topics/proxies.html)
+- [aiohttp](https://docs.aiohttp.org/en/stable/client_advanced.html#proxy-support)
+- [httpx](https://www.python-httpx.org/environment_variables/#proxies)
+
+
+## Troubleshooting
+
+### Connection Timeouts
+
+If experiencing timeouts, ensure:
+1. Proxy allows WebSocket connections (for OPAL real-time updates)
+2. Proxy timeout is set high enough for long-polling connections
+3. Network policies allow traffic between proxy and both networks
+
+### Authentication Errors
+
+For proxy authentication issues:
+1. Verify credentials are URL-encoded if they contain special characters
+2. Check proxy logs for authentication failures
+3. Ensure proxy supports the authentication method used
+
+### Inline OPA/Cedar Issues
+
+If OPAL Client cannot reach inline OPA/Cedar:
+1. Verify `NO_PROXY` includes all local addresses
+2. Check that the policy engine is listening on the expected address
+3. Use `curl` from within the OPAL Client container to test connectivity

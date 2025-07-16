@@ -411,7 +411,9 @@ class OpaClient(BasePolicyStoreClient):
     async def _get_oauth_token(self):
         logger.info("Retrieving a new OAuth access_token.")
 
-        async with aiohttp.ClientSession() as session:
+        async with aiohttp.ClientSession(
+            trust_env=True,
+        ) as session:
             try:
                 async with session.post(
                     self._oauth_server,
@@ -475,7 +477,9 @@ class OpaClient(BasePolicyStoreClient):
                 f"Ignoring setting policy - {policy_id}, set in POLICY_STORE_POLICY_PATHS_TO_IGNORE."
             )
             return
-        async with aiohttp.ClientSession() as session:
+        async with aiohttp.ClientSession(
+            trust_env=True,
+        ) as session:
             try:
                 headers = await self._get_auth_headers()
 
@@ -500,7 +504,9 @@ class OpaClient(BasePolicyStoreClient):
     @fail_silently()
     @retry(**RETRY_CONFIG)
     async def get_policy(self, policy_id: str) -> Optional[str]:
-        async with aiohttp.ClientSession() as session:
+        async with aiohttp.ClientSession(
+            trust_env=True,
+        ) as session:
             try:
                 headers = await self._get_auth_headers()
 
@@ -518,7 +524,9 @@ class OpaClient(BasePolicyStoreClient):
     @fail_silently()
     @retry(**RETRY_CONFIG)
     async def get_policies(self) -> Optional[Dict[str, str]]:
-        async with aiohttp.ClientSession() as session:
+        async with aiohttp.ClientSession(
+            trust_env=True,
+        ) as session:
             try:
                 headers = await self._get_auth_headers()
 
@@ -545,7 +553,9 @@ class OpaClient(BasePolicyStoreClient):
             )
             return
 
-        async with aiohttp.ClientSession() as session:
+        async with aiohttp.ClientSession(
+            trust_env=True,
+        ) as session:
             try:
                 headers = await self._get_auth_headers()
 
@@ -759,7 +769,9 @@ class OpaClient(BasePolicyStoreClient):
             )
             policy_data = {"items": policy_data}
 
-        async with aiohttp.ClientSession() as session:
+        async with aiohttp.ClientSession(
+            trust_env=True,
+        ) as session:
             try:
                 headers = await self._get_auth_headers()
                 data = json.dumps(exclude_none_fields(policy_data))
@@ -800,7 +812,9 @@ class OpaClient(BasePolicyStoreClient):
             )
             policy_data = {"items": policy_data}
 
-        async with aiohttp.ClientSession() as session:
+        async with aiohttp.ClientSession(
+            trust_env=True,
+        ) as session:
             try:
                 headers = await self._get_auth_headers()
                 headers["Content-Type"] = "application/json-patch+json"
@@ -834,7 +848,9 @@ class OpaClient(BasePolicyStoreClient):
         if not path:
             return await self.set_policy_data({})
 
-        async with aiohttp.ClientSession() as session:
+        async with aiohttp.ClientSession(
+            trust_env=True,
+        ) as session:
             try:
                 headers = await self._get_auth_headers()
 
@@ -872,7 +888,9 @@ class OpaClient(BasePolicyStoreClient):
         try:
             headers = await self._get_auth_headers()
 
-            async with aiohttp.ClientSession() as session:
+            async with aiohttp.ClientSession(
+                trust_env=True,
+            ) as session:
                 async with session.get(
                     f"{self._opa_url}/data{path}",
                     headers=headers,
@@ -902,7 +920,9 @@ class OpaClient(BasePolicyStoreClient):
         try:
             headers = await self._get_auth_headers()
 
-            async with aiohttp.ClientSession() as session:
+            async with aiohttp.ClientSession(
+                trust_env=True,
+            ) as session:
                 async with session.post(
                     f"{self._opa_url}/data/{path}",
                     data=json.dumps(opa_input),
