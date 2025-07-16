@@ -1,4 +1,46 @@
 services:
+  # Minimal Gitea for testing - no authentication, stateless
+  gitea:
+    image: gitea/gitea:latest-rootless
+    container_name: gitea
+    environment:
+      - GITEA__server__DOMAIN=localhost
+      - GITEA__server__HTTP_PORT=3000
+      - GITEA__server__ROOT_URL=http://localhost:3000/
+      - GITEA__server__OFFLINE_MODE=true
+      # Security settings - disable all authentication
+      - GITEA__security__INSTALL_LOCK=true
+      - GITEA__security__SECRET_KEY=not-so-secret
+      - GITEA__security__INTERNAL_TOKEN=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9
+      # Service settings - allow anonymous access
+      - GITEA__service__DISABLE_REGISTRATION=true
+      - GITEA__service__REQUIRE_SIGNIN_VIEW=false
+      - GITEA__service__ENABLE_NOTIFY_MAIL=false
+      - GITEA__service__ENABLE_CAPTCHA=false
+      - GITEA__service__DEFAULT_ALLOW_CREATE_ORGANIZATION=true
+      - GITEA__service__DEFAULT_ENABLE_DEPENDENCIES=false
+      # Repository settings
+      - GITEA__repository__ENABLE_PUSH_CREATE_USER=true
+      - GITEA__repository__ENABLE_PUSH_CREATE_ORG=true
+      - GITEA__repository__DEFAULT_BRANCH=main
+      - GITEA__repository__DEFAULT_PRIVATE=false
+      # Disable features we don't need
+      - GITEA__webhook__ALLOWED_HOST_LIST=*
+      - GITEA__migrations__ALLOWED_DOMAINS=*
+      - GITEA__federation__ENABLED=false
+      - GITEA__packages__ENABLED=false
+      - GITEA__actions__ENABLED=false
+      # Allow anonymous git operations
+      - GITEA__repository__ENABLE_PUSH_CREATE_USER=true
+      - GITEA__repository__ENABLE_PUSH_CREATE_ORG=true
+      - GITEA__repository__FORCE_PRIVATE=false
+      - GITEA__server__ENABLE_GZIP=false
+    ports:
+      - "3000:3000"
+      - "2222:2222"
+    networks:
+      - default
+
   broadcast_channel:
     image: postgres:alpine
     environment:
@@ -15,9 +57,8 @@ services:
     environment:
       - OPAL_BROADCAST_URI=postgres://postgres:postgres@broadcast_channel:5432/postgres
       - UVICORN_NUM_WORKERS=4
-      - OPAL_POLICY_REPO_URL=${OPAL_POLICY_REPO_URL:-git@github.com:permitio/opal-tests-policy-repo.git}
-      - OPAL_POLICY_REPO_MAIN_BRANCH=${POLICY_REPO_BRANCH}
-      - OPAL_POLICY_REPO_SSH_KEY=${OPAL_POLICY_REPO_SSH_KEY}
+      - OPAL_POLICY_REPO_URL=http://gitea:3000/gitea_admin/policy-repo.git
+      - OPAL_POLICY_REPO_MAIN_BRANCH=${POLICY_REPO_BRANCH:-main}
       - OPAL_DATA_CONFIG_SOURCES={"config":{"entries":[{"url":"http://opal_server:7002/policy-data","config":{"headers":{"Authorization":"Bearer ${OPAL_CLIENT_TOKEN}"}},"topics":["policy_data"],"dst_path":"/static"}]}}
       - OPAL_LOG_FORMAT_INCLUDE_PID=true
       - OPAL_POLICY_REPO_WEBHOOK_SECRET=xxxxx
@@ -33,6 +74,7 @@ services:
       - "7002-7003:7002"
     depends_on:
       - broadcast_channel
+      - gitea
 
   opal_client:
     image: permitio/opal-client:${OPAL_IMAGE_TAG:-latest}
