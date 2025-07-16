@@ -258,7 +258,7 @@ class DataUpdater:
     async def _load_policy_data_config(
         self, url: str, headers
     ) -> aiohttp.ClientResponse:
-        async with ClientSession(headers=headers) as session:
+        async with ClientSession(headers=headers, trust_env=True) as session:
             return await session.get(url, **self._ssl_context_kwargs)
 
     async def get_base_policy_data(
