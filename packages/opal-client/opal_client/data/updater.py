@@ -230,7 +230,9 @@ class DataUpdater:
         logger.info("Getting data-sources configuration from '{source}'", source=url)
 
         try:
-            async with ClientSession(headers=self._extra_headers) as session:
+            async with ClientSession(
+                headers=self._extra_headers, trust_env=True
+            ) as session:
                 response = await session.get(url, **self._ssl_context_kwargs)
                 if response.status == 200:
                     return DataSourceConfig.parse_obj(await response.json())
