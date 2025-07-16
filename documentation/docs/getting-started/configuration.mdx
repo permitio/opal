@@ -1,180 +1,1225 @@
-# OPAL Configuration Variables
+# OPAL Configuration Guide
 
-Provided on this page is a full list of all the OPAL configuration variabls for the OPAL Client and the OPAL Server.
-Please use this table as a reference.
+## How to Configure OPAL
 
-## Common OPAL Configuration Variables
+#### Environment Variables (Recommended)
+Set environment variables prefixed with `OPAL_`:
 
-| Variables                               | Description                                                                                                                                                                     | Example |
-| --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- |
-| ALLOWED_ORIGINS                         |                                                                                                                                                                                 |         |
-| PROCESS_NAME                            | The process name to be shown in logs.                                                                                                                                           |         |
-| LOG_FORMAT_INCLUDE_PID                  |                                                                                                                                                                                 |         |
-| LOG_FORMAT                              |                                                                                                                                                                                 |         |
-| LOG_TRACEBACK                           |                                                                                                                                                                                 |         |
-| LOG_SERIALIZE                           | Serialize log messages into json format (useful for log aggregation platforms)                                                                                                  |         |
-| LOG_SHOW_CODE_LINE                      |                                                                                                                                                                                 |         |
-| LOG_LEVEL                               |                                                                                                                                                                                 |         |
-| LOG_MODULE_EXCLUDE_LIST                 |                                                                                                                                                                                 |         |
-| LOG_MODULE_INCLUDE_LIST                 |                                                                                                                                                                                 |         |
-| LOG_PATCH_UVICORN_LOGS                  | Takeover UVICORN's logs so they appear in the main logger.                                                                                                                      |         |
-| LOG_TO_FILE                             |                                                                                                                                                                                 |         |
-| LOG_FILE_PATH                           | Path to define where to save the log file.                                                                                                                                      |         |
-| LOG_FILE_ROTATION                       |                                                                                                                                                                                 |         |
-| LOG_FILE_RETENTION                      |                                                                                                                                                                                 |         |
-| LOG_FILE_COMPRESSION                    |                                                                                                                                                                                 |         |
-| LOG_FILE_SERIALIZE                      | Serialize log messages in file into json format (useful for log aggregation platforms)                                                                                          |         |
-| LOG_FILE_LEVEL                          |
-| LOG_DIAGNOSE                            | Include diagnosis in log messages                                                                                                                                                                               |         |
-| STATISTICS_ENABLED                      | Collect statistics about OPAL clients.                                                                                                                                          |         |
-| STATISTICS_ADD_CLIENT_CHANNEL           | The topic to update about the new OPAL clients connection.                                                                                                                      |         |
-| STATISTICS_REMOVE_CLIENT_CHANNEL        | The topic to update about the OPAL clients disconnection.                                                                                                                       |         |
-| FETCH_PROVIDER_MODULES                  |                                                                                                                                                                                 |         |
-| FETCHING_WORKER_COUNT                   |                                                                                                                                                                                 |         |
-| FETCHING_CALLBACK_TIMEOUT               |                                                                                                                                                                                 |         |
-| FETCHING_ENQUEUE_TIMEOUT                |                                                                                                                                                                                 |         |
-| GIT_SSH_KEY_FILE                        |                                                                                                                                                                                 |         |
-| CLIENT_SELF_SIGNED_CERTIFICATES_ALLOWED | Whether or not OPAL Client will trust HTTPs connections protected by self signed certificates. Not to be used in Production.                                                    |         |
-| CLIENT_SSL_CONTEXT_TRUSTED_CA_FILE      | A path to your own CA public certificate file (usually a .crt or a .pem file). Certificates signed by this issuer will be trusted by OPAL Client. Not to be used in Production. |         |
-| AUTH_PUBLIC_KEY_FORMAT                  |                                                                                                                                                                                 |         |
-| AUTH_PUBLIC_KEY                         |                                                                                                                                                                                 |         |
-| AUTH_JWT_ALGORITHM                      | JWT algorithm. See possible values [here](https://pyjwt.readthedocs.io/en/stable/algorithms.html).                                                                              |         |
-| AUTH_JWT_AUDIENCE                       |                                                                                                                                                                                 |         |
-| AUTH_JWT_ISSUER                         |                                                                                                                                                                                 |                           |
-| DD_TRACE_ENABLED                        | DataDog environment variable to globally enable/disable APM tracing. Set to `false` to disable tracing when using ddtrace v3.0.0+.                                          | false   |
-| HTTP_FETCHER_PROVIDER_CLIENT            | The client to use for fetching data, can be either aiohttp or httpx.                                                                                                            |         |
-| HTTP_FETCHER_TIMEOUT                    | The timeout for the data fetcher, in seconds.                                                                                                                         |         |
+```bash
+export OPAL_SERVER_URL=http://localhost:7002
+export OPAL_POLICY_REPO_URL=https://github.com/your-org/policy-repo.git
+export OPAL_CLIENT_TOKEN=your-secret-token
+```
 
-## OPAL Server Configuration Variables
+#### Configuration Sources
 
-| Variables                                     | Description                                                                                                                                                                                                                                                                                                                 | Example                                  |
-| --------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------- |
-| AUTH_JWT_ISSUER                               |                                                                                                                                                                                                                                                                                                                             |                                          |
-| AUTH_JWT_ISSUER                               |                                                                                                                                                                                                                                                                                                                             |                                          |
-| CLIENT_LOAD_LIMIT_NOTATION                    | If supplied, rate limit would be enforced on the servers websocket endpoint. Format is `limits`-style notation (e.g. 10 per second). [Learn more](https://limits.readthedocs.io/en/stable/quickstart.html#rate-limit-string-notation).                                                                                      |                                          |
-| BROADCAST_URI                                 |                                                                                                                                                                                                                                                                                                                             |                                          |
-| BROADCAST_CHANNEL_NAME                        |                                                                                                                                                                                                                                                                                                                             |                                          |
-| BROADCAST_CONN_LOSS_BUGFIX_EXPERIMENT_ENABLED |                                                                                                                                                                                                                                                                                                                             |                                          |
-| AUTH_PRIVATE_KEY_FORMAT                       |                                                                                                                                                                                                                                                                                                                             |                                          |
-| AUTH_PRIVATE_KEY_PASSPHRASE                   |                                                                                                                                                                                                                                                                                                                             |                                          |
-| AUTH_PRIVATE_KEY                              |                                                                                                                                                                                                                                                                                                                             |                                          |
-| AUTH_JWKS_URL                                 |                                                                                                                                                                                                                                                                                                                             |                                          |
-| AUTH_JWKS_STATIC_DIR                          |                                                                                                                                                                                                                                                                                                                             |                                          |
-| AUTH_MASTER_TOKEN                             |                                                                                                                                                                                                                                                                                                                             |                                          |
-| POLICY_SOURCE_TYPE                            | Set your policy source, this can be GIT / API.                                                                                                                                                                                                                                                                              |                                          |
-| POLICY_REPO_URL                               | Set your remote repo URL - this is relevant only to GIT source type E.g. [view example](https://github.com/permitio/opal-example-policy-repo.git).                                                                                                                                                                          |                                          |
-| POLICY_BUNDLE_URL                             | Set your API bundle URL, this is relevant only to API source type.                                                                                                                                                                                                                                                          |                                          |
-| POLICY_REPO_CLONE_PATH                        | Base path to create local git folder inside this path, that manages policy change.                                                                                                                                                                                                                                          |                                          |
-| POLICY_REPO_CLONE_FOLDER_PREFIX               | Prefix for the local git folder.                                                                                                                                                                                                                                                                                            |                                          |
-| POLICY_REPO_REUSE_CLONE_PATH                  | Set if OPAL server should use a fixed clone path (and reuse if it already exists) instead of randomizing its suffix on each run.                                                                                                                                                                                            |                                          |
-| POLICY_REPO_MAIN_BRANCH                       |                                                                                                                                                                                                                                                                                                                             |                                          |
-| POLICY_REPO_SSH_KEY                           |                                                                                                                                                                                                                                                                                                                             |                                          |
-| POLICY_REPO_MANIFEST_PATH                     | Path of the directory holding the '.manifest' file (updated way), or of the manifest file itself (old way). Repo's root is used by default.                                                                                                                                                                                 |                                          |
-| POLICY_REPO_CLONE_TIMEOUT                     | If set to 0, waits forever until successful clone.                                                                                                                                                                                                                                                                          |                                          |
-| LEADER_LOCK_FILE_PATH                         |                                                                                                                                                                                                                                                                                                                             |                                          |
-| POLICY_BUNDLE_SERVER_TYPE                     | `HTTP` (authenticated with bearer token, or nothing), `AWS-S3`(Authenticated with [AWS REST Auth](https://docs.aws.amazon.com/AmazonS3/latest/userguide/RESTAuthentication.html)                                                                                                                                            | AWS-S3                                   |
-| POLICY_BUNDLE_SERVER_TOKEN_ID                 | The Secret Token Id (AKA user id, AKA access-key) sent to the API bundle server.                                                                                                                                                                                                                                            | AKIAIOSFODNN7EXAMPLE                     |
-| POLICY_BUNDLE_SERVER_TOKEN                    | The Secret Token (AKA password, AKA secret-key) sent to the API bundle server.                                                                                                                                                                                                                                              | wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY |
-| POLICY_BUNDLE_TMP_PATH                        | Path for temp policy file. It needs to be writable.                                                                                                                                                                                                                                                                         |                                          |
-| POLICY_BUNDLE_GIT_ADD_PATTERN                 | File pattern to add files to all the git default files.                                                                                                                                                                                                                                                                     |                                          |
-| REPO_WATCHER_ENABLED                          |                                                                                                                                                                                                                                                                                                                             |                                          |
-| PUBLISHER_ENABLED                             |                                                                                                                                                                                                                                                                                                                             |                                          |
-| BROADCAST_KEEPALIVE_INTERVAL                  | The time to wait between sending two consecutive broadcaster keepalive messages.                                                                                                                                                                                                                                            |                                          |
-| BROADCAST_KEEPALIVE_TOPIC                     | The topic on which we should send broadcaster keepalive messages.                                                                                                                                                                                                                                                           |                                          |
-| MAX_CHANNELS_PER_CLIENT                       | Max number of records per client, after this number it will not be added to statistics, relevant only if `STATISTICS_ENABLED`.                                                                                                                                                                                              |                                          |
-| STATISTICS_WAKEUP_CHANNEL                     | The topic a waking-up OPAL server uses to notify others he needs their statistics data.                                                                                                                                                                                                                                     |                                          |
-| STATISTICS_STATE_SYNC_CHANNEL                 | The topic other servers with statistics provide their state to a waking-up server.                                                                                                                                                                                                                                          |                                          |
-| ALL_DATA_TOPIC                                | Top level topic for data.                                                                                                                                                                                                                                                                                                   |                                          |
-| ALL_DATA_ROUTE                                |                                                                                                                                                                                                                                                                                                                             |                                          |
-| ALL_DATA_URL                                  | URL for all data config [If you choose to have it all at one place].                                                                                                                                                                                                                                                        |                                          |
-| DATA_CONFIG_ROUTE                             | URL to fetch the full basic configuration of data.                                                                                                                                                                                                                                                                          |                                          |
-| DATA_CALLBACK_DEFAULT_ROUTE                   | Exists as a sane default in case the user did not set `OPAL_DEFAULT_UPDATE_CALLBACKS`.                                                                                                                                                                                                                                      |                                          |
-| DATA_CONFIG_SOURCES                           | Configuration of data sources by topics.                                                                                                                                                                                                                                                                                    |                                          |
-| DATA_UPDATE_TRIGGER_ROUTE                     | URL to trigger data update events.                                                                                                                                                                                                                                                                                          |                                          |
-| POLICY_REPO_WEBHOOK_SECRET                    |                                                                                                                                                                                                                                                                                                                             |                                          |
-| POLICY_REPO_WEBHOOK_TOPIC                     |                                                                                                                                                                                                                                                                                                                             |                                          |
-| POLICY_REPO_WEBHOOK_ENFORCE_BRANCH            |                                                                                                                                                                                                                                                                                                                             |                                          |
-| POLICY_REPO_WEBHOOK_PARAMS                    |                                                                                                                                                                                                                                                                                                                             |                                          |
-| POLICY_REPO_POLLING_INTERVAL                  |                                                                                                                                                                                                                                                                                                                             |                                          |
-| ALLOWED_ORIGINS                               |                                                                                                                                                                                                                                                                                                                             |                                          |
-| FILTER_FILE_EXTENSIONS                        |                                                                                                                                                                                                                                                                                                                             |                                          |
-| NO_RPC_LOGS                                   |                                                                                                                                                                                                                                                                                                                             |                                          |
-| SERVER_WORKER_COUNT                           | (If run using the CLI) - Worker count for the server [Default calculated to CPU-cores].                                                                                                                                                                                                                                     |                                          |
-| SERVER_HOST                                   | (If run using the CLI) - Address for the server to bind.                                                                                                                                                                                                                                                                    |                                          |
-| SERVER_BIND_PORT                              | (If run using the CLI) - Port for the server to bind. (replaces deprecated SERVER_PORT)                                                                                                                                                                                                                                     |                                          |
-| ENABLE_DATADOG_APM                            | Set if OPAL server should enable tracing with datadog APM. **Note:** OPAL uses ddtrace v3.0.0+ which requires Python 3.8+. To disable APM when this is set to false, use the `DD_TRACE_ENABLED=false` environment variable.                                                                                                                                                                                                                                                                                                                                                  |                                          |
-| SCOPES                                        |                                                                                                                                                                                                                                                                                                                             |                                          |
-| REDIS_URL                                     |                                                                                                                                                                                                                                                                                                                             |                                          |
-| BASE_DIR                                      |                                                                                                                                                                                                                                                                                                                             |                                          |
-| POLICY_REFRESH_INTERVAL                       |                                                                                                                                                                                                                                                                                                                             |                                          |
-| OPAL_WS_ROUTE                                 |                                                                                                                                                                                                                                                                                                                             |                                          |
-| SERVER_WS_URL                                 |                                                                                                                                                                                                                                                                                                                             |                                          |
-| SERVER_PUBSUB_URL                             |                                                                                                                                                                                                                                                                                                                             |                                          |
-| CLIENT_TOKEN                                  | The OPAL Server Auth Token.                                                                                                                                                                                                                                                                                                 |                                          |
-| CLIENT_API_SERVER_WORKER_COUNT                | (If run using the CLI) - Worker count for the opal-client's internal server.                                                                                                                                                                                                                                                |                                          |
-| CLIENT_API_SERVER_HOST                        | (If run using the CLI) - Address for the opal-client's internal server to bind.                                                                                                                                                                                                                                             |                                          |
-| CLIENT_API_SERVER_PORT                        | (If run using the CLI) - Port for the opal-client's internal server to bind.                                                                                                                                                                                                                                                |                                          |
-| WAIT_ON_SERVER_LOAD                           | If set, client would wait for 200 from server's loadlimit endpoint before starting background tasks.                                                                                                                                                                                                                        |                                          |
-| OPAL_POLICY_REPO_URL                          | The repo url the policy repo is located at. Must be available from the machine running OPAL (opt for public internet addresses). Supported URI schemes: https:// and ssh{" "} (i.e: git@).                                                                                                                                  |                                          |
-| OPAL_POLICY_REPO_SSH_KEY                      | The content of the var is a private crypto key (i.e: SSH key). You will need to register the matching public key with your repo. For example, see the{" "} GitHub tutorial {" "} on the subject. The passed value must be the contents of the SSH key in one line (replace new-line with underscore, i.e: \n with{" "} \_). |                                          |
-| OPAL_POLICY_REPO_CLONE_PATH                   | Where (i.e: base target path) to clone the repo in your docker filesystem (not important unless you mount a docker volume).                                                                                                                                                                                                 |                                          |
-| OPAL_POLICY_REPO_MAIN_BRANCH                  | Name of the git branch to track for policy files (default: `master`).                                                                                                                                                                                                                                                       |                                          |
-| OPAL_BUNDLE_IGNORE                            | Paths to omit from policy bundle. List of glob style paths, or paths without wildcards but ending with "/\*\*" indicating a parent path (ignoring all under it).                                                                                                                                                            | `bundle_ignore: Optional[List[str]]`     |
+In order of precedence:
+1. **Command line arguments** (highest priority)
+2. **Environment variables** (prefixed with `OPAL_`)
+3. **Configuration files** (`.env` or `.ini`)
+4. **Default values** (lowest priority)
 
-## OPAL Client Configuration Variables
+#### CLI Arguments
+Convert CLI arguments to environment variables:
+- `--server-url` → `OPAL_SERVER_URL`
+- `--data-config-sources` → `OPAL_DATA_CONFIG_SOURCES`
 
-| Variables                             | Description                                                                                                                                                                                                                                                                                                                                                                                                                            | Example                              |
-| ------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------ |
-| POLICY_STORE_TYPE                     |                                                                                                                                                                                                                                                                                                                                                                                                                                        |                                      |
-| POLICY_STORE_AUTH_TYPE                | The authentication method for connecting to the policy store. Possible values are `oauth` or `token`                                                                                                                                                                                                                                                                                                                                   |                                      |
-| POLICY_STORE_AUTH_TOKEN               | The authentication (bearer) token OPAL client will use to authenticate against the policy store (i.e: OPA agent).                                                                                                                                                                                                                                                                                                                      |                                      |
-| POLICY_STORE_AUTH_OAUTH_SERVER        | The authentication server OPAL client will use to authenticate against for retrieving the access_token.                                                                                                                                                                                                                                                                                                                                |                                      |
-| POLICY_STORE_AUTH_OAUTH_CLIENT_ID     | The client id OPAL will use to authenticate against the OAuth server.                                                                                                                                                                                                                                                                                                                                                                  |                                      |
-| POLICY_STORE_AUTH_OAUTH_CLIENT_SECRET | The client secret OPAL will use to authenticate against the OAuth server.                                                                                                                                                                                                                                                                                                                                                              |                                      |
-| POLICY_STORE_CONN_RETRY               | Retry options when connecting to the policy store (i.e. the agent that handles the policy, e.g. OPA).                                                                                                                                                                                                                                                                                                                                  |                                      |
-| POLICY_STORE_POLICY_PATHS_TO_IGNORE   | Which policy paths pushed to the client should be ignored. List of glob style paths, or paths without wildcards but ending with "/\*\*" indicating a parent path (ignoring all under it). It does support paths starting with '!' to force to not ignore them: a negated path would always take precedence, so if, e.g., both `!myFolder/**` and `myFolder/subFolder/**` are defined then `myFolder/subFolder/**` will not be ignored. |                                      |
-| INLINE_OPA_ENABLED                    | Whether or not OPAL should run OPA by itself in the same container.                                                                                                                                                                                                                                                                                                                                                                    |                                      |
-| INLINE_OPA_EXEC_PATH                  | The path to the OPA executable.                                                                                                                                                                                                                                                                                                                                                                                                        |                                      |
-| INLINE_OPA_CONFIG                     | If inline OPA is indeed enabled, the user can set the [server configuration options](https://docs.opal.ac/getting-started/running-opal/run-opal-client/opa-runner-parameters) that affects how OPA will start when running `opa run --server` inline.  Watch escaping quotes.                                                                                                                                                          | \{"config_file":"/mnt/opa/config"\}  |
-| INLINE_OPA_LOG_FORMAT                 |                                                                                                                                                                                                                                                                                                                                                                                                                                        |                                      |
-| INLINE_CEDAR_ENABLED                  | Whether or not OPAL should run Cedar agent by itself in the same container.                                                                                                                                                                                                                                                                                                                                                            |                                      |
-| INLINE_CEDAR_EXEC_PATH                | The path to the Cedar agent executable.                                                                                                                                                                                                                                                                                                                                                                                                |                                      |
-| INLINE_CEDAR_CONFIG                   | If inline Cedar is indeed enabled, provide options for running the Cedar agent                                                                                                                                                                                                                                                                                                                                                         |                                      |
-| INLINE_CEDAR_LOG_FORMAT               |                                                                                                                                                                                                                                                                                                                                                                                                                                        |                                      |
-| KEEP_ALIVE_INTERVAL                   |                                                                                                                                                                                                                                                                                                                                                                                                                                        |                                      |
-| OFFLINE_MODE_ENABLED                  | If set, opal client will try to load policy store from backup file and operate even if server is unreachable. Ignored if INLINE_OPA_ENABLED=False                                                                                                                                                                                                                                                                                      |                                      |
-| STORE_BACKUP_PATH                     | Path to backup policy store's data to                                                                                                                                                                                                                                                                                                                                                                                                  |                                      |
-| STORE_BACKUP_INTERVAL                 | Interval in seconds to backup policy store's data                                                                                                                                                                                                                                                                                                                                                                                      |                                      |
-| POLICY_UPDATER_ENABLED                | If set to `FALSE`, OPAL Client will not fetch policies or listen to policy updates.                                                                                                                                                                                                                                                                                                                                                    |                                      |
+#### Production Security Checklist
 
-## Policy Updater Configuration Variables
+:::danger
+- **Always use HTTPS** for OPAL server
+- **Enable JWT verification** with proper keys
+- **Set a master token** for authentication
+- **Store secrets in a secure vault** (AWS Secrets Manager, HashiCorp Vault, etc.)
+- **Never commit secrets** to your repository
+:::
 
-| Variables                 | Description                                                                             | Example |
-| ------------------------- | --------------------------------------------------------------------------------------- | ------- |
-| POLICY_SUBSCRIPTION_DIRS  | The directories in a policy repo we should subscribe to for policy code (rego) modules. |         |
-| POLICY_UPDATER_CONN_RETRY | Retry options when connecting to the policy source (e.g. the policy bundle server       |         |
+Read more about [running the OPAL Server & Client in Secure Mode](/getting-started/running-opal/as-python-package/secure-mode-setup.mdx).
 
-## Data Updater Configuration Variables
+# Configuration Reference
 
-| Variables                       | Description                                                                                                       | Example |
-| ------------------------------- | ----------------------------------------------------------------------------------------------------------------- | ------- |
-| DATA_UPDATER_ENABLED            | If set to `FALSE`, OPAL Client will not listen to dynamic data updates.                                           |         |
-| DATA_TOPICS                     | Data topics to subscribe to.                                                                                      |         |
-| DEFAULT_DATA_SOURCES_CONFIG_URL | Default URL to fetch data configuration from.                                                                     |         |
-| DEFAULT_DATA_URL                | Default URL to fetch data from.                                                                                   |         |
-| SHOULD_REPORT_ON_DATA_UPDATES   | Should the client report on updates to callbacks defined in DEFAULT_UPDATE_CALLBACKS or within the given updates. |         |
-| DEFAULT_UPDATE_CALLBACK_CONFIG  |                                                                                                                   |         |
-| DEFAULT_UPDATE_CALLBACKS        | Where/How the client should report on the completion of data updates.                                             |         |
-| DATA_UPDATER_CONN_RETRY         | Retry options when connecting to the base data source (e.g. an external API server which returns data snapshot).  |         |
-| DATA_STORE_CONN_RETRY           | DEPTRECATED - The old confusing name for DATA_UPDATER_CONN_RETRY, kept for backwards compatibilit (for now)       |         |
+## Common OPAL Configs
 
+These configuration variables are shared between OPAL Client and OPAL Server.
 
-## OPA Transaction Log / Healthcheck Configuration Variables
+### General Configuration
 
-| Variables                             | Description                                                                                                                                     | Example |
-| ------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- | ------- |
-| OPA_HEALTH_CHECK_POLICY_ENABLED       | Should we load a special healthcheck policy into OPA that checks that opa was synced correctly and is ready to answer to authorization queries. |         |
-| OPA_HEALTH_CHECK_TRANSACTION_LOG_PATH | Path to OPA document that stores the OPA write transactions.                                                                                    |         |
-| OPAL_CLIENT_STAT_ID                   | Unique client statistics identifier.                                                                                                            |         |
-| OPA_HEALTH_CHECK_POLICY_PATH          |                                                                                                                                                 |         |
-| SCOPE_ID                              |                                                                                                                                                 |         |
+#### OPAL_ALLOWED_ORIGINS
+
+Default: `*`
+
+Comma-separated list of allowed origins for CORS. Use `*` to allow all origins.
+
+#### OPAL_PROCESS_NAME
+
+Default: `opal`
+
+The process name to be shown in logs.
+
+#### OPAL_CLIENT_SELF_SIGNED_CERTIFICATES_ALLOWED
+
+Default: `False`
+
+Whether OPAL Client will trust HTTPS connections protected by self-signed certificates. **Not recommended for production use.**
+
+Read more about [using self-signed certificates](/tutorials/use_self_signed_certificates).
+
+#### OPAL_CLIENT_SSL_CONTEXT_TRUSTED_CA_FILE
+
+Default: `None`
+
+Path to your own CA public certificate file (usually a .crt or .pem file). Certificates signed by this issuer will be trusted by OPAL Client.
+
+Read more about [using self-signed certificates](/tutorials/use_self_signed_certificates).
+
+#### OPAL_POLICY_REPO_POLICY_EXTENSIONS
+
+Default: `[".rego"]`
+
+List of file extensions to serve as policy modules.
+
+#### OPAL_ENABLE_METRICS
+
+Default: `False`
+
+Enable metrics collection.
+
+For more information, see [monitoring OPAL](/tutorials/monitoring_opal).
+
+#### OPAL_ENABLE_DATADOG_APM
+
+Default: `False`
+
+Enable tracing with DataDog APM. **Note:** OPAL uses ddtrace v3.0.0+ which requires Python 3.8+.
+
+For more information, see [monitoring OPAL](/tutorials/monitoring_opal).
+
+#### OPAL_HTTP_FETCHER_PROVIDER_CLIENT
+
+Default: `aiohttp`
+
+The client to use for fetching data. Options: `aiohttp`, `httpx`.
+
+_Added in OPAL v0.7.7_
+
+#### OPAL_GIT_SSH_KEY_FILE
+
+Default: `~/.ssh/opal_repo_ssh_key`
+
+Path to the SSH key file for Git operations.
+
+For more information, see [tracking a Git repository](/tutorials/track_a_git_repo).
+
+#### OPAL_STATISTICS_ENABLED
+
+Default: `False`
+
+Collect statistics about OPAL clients.
+
+For more information, see [monitoring OPAL](/tutorials/monitoring_opal).
+
+#### OPAL_STATISTICS_ADD_CLIENT_CHANNEL
+
+Default: `__opal_stats_add`
+
+The topic to update about new OPAL client connections.
+
+For more information, see [monitoring OPAL](/tutorials/monitoring_opal).
+
+#### OPAL_STATISTICS_REMOVE_CLIENT_CHANNEL
+
+Default: `__opal_stats_rm`
+
+The topic to update about OPAL client disconnections.
+
+For more information, see [monitoring OPAL](/tutorials/monitoring_opal).
+
+### Logging Configuration
+
+#### OPAL_LOG_FORMAT_INCLUDE_PID
+
+Default: `False`
+
+Whether to include the process ID in log messages.
+
+#### OPAL_LOG_FORMAT
+
+Default: `{time} | {process} | {name} | {level} | {message}`
+
+The format string for log messages.
+
+#### OPAL_LOG_TRACEBACK
+
+Default: `True`
+
+Whether to include traceback information in log messages.
+
+#### OPAL_LOG_DIAGNOSE
+
+Default: `True`
+
+Include diagnosis in log messages.
+
+_Added in OPAL v0.6.0_
+
+:::danger
+When `OPAL_LOG_DIAGNOSE` is enabled, logs may contain sensitive information such as secrets.
+:::
+
+#### OPAL_LOG_COLORIZE
+
+Default: `True`
+
+Whether to colorize log messages.
+
+#### OPAL_LOG_SERIALIZE
+
+Default: `False`
+
+Serialize log messages into JSON format (useful for log aggregation platforms).
+
+_Added in OPAL v0.6.0_
+
+#### OPAL_LOG_SHOW_CODE_LINE
+
+Default: `True`
+
+Whether to include the source code line number in log messages.
+
+#### OPAL_LOG_LEVEL
+
+Default: `INFO`
+
+The minimum log level to display. Options: `DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL`.
+
+#### OPAL_LOG_MODULE_EXCLUDE_LIST
+
+Default: `["uvicorn"]`
+
+List of module names to exclude from logging.
+
+#### OPAL_LOG_MODULE_INCLUDE_LIST
+
+Default: `["uvicorn.protocols.http"]`
+
+List of module names to include in logging (if empty, all modules are included).
+
+#### OPAL_LOG_PATCH_UVICORN_LOGS
+
+Default: `True`
+
+Take over Uvicorn's logs so they appear in the main logger.
+
+#### OPAL_LOG_TO_FILE
+
+Default: `False`
+
+Whether to write logs to a file in addition to console output.
+
+#### OPAL_LOG_FILE_PATH
+
+Default: `opal_{process_name}{time}.log`
+
+Path to define where to save the log file.
+
+#### OPAL_LOG_FILE_ROTATION
+
+Default: `250 MB`
+
+Log file rotation size (e.g., "10 MB", "1 GB").
+
+#### OPAL_LOG_FILE_RETENTION
+
+Default: `10 days`
+
+How long to keep rotated log files (e.g., "30 days", "1 week").
+
+#### OPAL_LOG_FILE_COMPRESSION
+
+Default: `None`
+
+Compression format for rotated log files.
+
+#### OPAL_LOG_FILE_SERIALIZE
+
+Default: `True`
+
+Serialize log messages in file into JSON format (useful for log aggregation platforms).
+
+#### OPAL_LOG_FILE_LEVEL
+
+Default: `INFO`
+
+The minimum log level for file logging.
+
+### Authentication Configuration
+
+#### OPAL_AUTH_PUBLIC_KEY_FORMAT
+
+Default: `SSH`
+
+Format of the public key. Options: `PEM`, `JWK`, `SSH`.
+
+Read more about [secure mode setup](/getting-started/running-opal/as-python-package/secure-mode-setup).
+
+#### OPAL_AUTH_PUBLIC_KEY
+
+Default: `None`
+
+The public key for JWT verification.
+
+Read more about [secure mode setup](/getting-started/running-opal/as-python-package/secure-mode-setup).
+
+#### OPAL_AUTH_JWT_ALGORITHM
+
+Default: `RS256`
+
+JWT algorithm for token verification. See possible values [here](https://pyjwt.readthedocs.io/en/stable/algorithms.html).
+
+Read more about [secure mode setup](/getting-started/running-opal/as-python-package/secure-mode-setup).
+
+#### OPAL_AUTH_JWT_AUDIENCE
+
+Default: `https://api.opal.ac/v1/`
+
+The expected audience in JWT tokens.
+
+Read more about [secure mode setup](/getting-started/running-opal/as-python-package/secure-mode-setup).
+
+#### OPAL_AUTH_JWT_ISSUER
+
+Default: `https://opal.ac/`
+
+The expected issuer in JWT tokens.
+
+Read more about [secure mode setup](/getting-started/running-opal/as-python-package/secure-mode-setup).
+
+### Fetching Configuration
+
+#### OPAL_FETCH_PROVIDER_MODULES
+
+Default: `["opal_common.fetcher.providers"]`
+
+List of custom fetch provider modules to load.
+
+For more information, see [writing your own fetch provider](/tutorials/write_your_own_fetch_provider) and [available fetch providers](/fetch-providers).
+
+#### OPAL_FETCHING_WORKER_COUNT
+
+Default: `6`
+
+The number of workers to use for fetching data concurrently.
+
+#### OPAL_FETCHING_CALLBACK_TIMEOUT
+
+Default: `10`
+
+The timeout for fetching callbacks, in seconds.
+
+#### OPAL_FETCHING_ENQUEUE_TIMEOUT
+
+Default: `10`
+
+The timeout for enqueueing a fetch operation, in seconds.
+
+## OPAL Server Configs
+
+These configuration variables are specific to the OPAL Server.
+
+### Server Configuration
+
+#### OPAL_SERVER_WORKER_COUNT
+
+Default: `auto` (calculated based on CPU cores)
+
+Worker count for the server (when run using CLI).
+
+#### OPAL_SERVER_HOST
+
+Default: `127.0.0.1`
+
+Address for the server to bind to (when run using CLI).
+
+#### OPAL_SERVER_PORT
+
+Default: `None`
+
+:::note
+**DEPRECATED** - Use [OPAL_SERVER_BIND_PORT](#opal_server_bind_port) instead.
+:::
+
+#### OPAL_SERVER_BIND_PORT
+
+Default: `7002`
+
+Port for the server to bind to (when run using CLI).
+
+_Added in OPAL v0.6.0_
+
+#### OPAL_BASE_DIR
+
+Default: `~/.local/state/opal`
+
+Base directory for OPAL server.
+
+#### OPAL_NO_RPC_LOGS
+
+Default: `True`
+
+Disable RPC logging.
+
+#### OPAL_WS_LOCAL_URL
+
+Default: `ws://localhost:7002/ws`
+
+The local WebSocket URL for OPAL.
+
+#### OPAL_WS_TOKEN
+
+Default: `THIS_IS_A_DEV_SECRET`
+
+The WebSocket token for OPAL.
+
+#### OPAL_CLIENT_LOAD_LIMIT_NOTATION
+
+Default: `None`
+
+If supplied, rate limiting will be enforced on the server's WebSocket endpoint. Format is `limits`-style notation (e.g., "10 per second"). [Learn more](https://limits.readthedocs.io/en/stable/quickstart.html#rate-limit-string-notation).
+
+#### OPAL_SCOPES
+
+Default: `False`
+
+Enable scopes for multi-tenancy.
+
+_Added in OPAL v0.7.16_
+
+#### OPAL_SCOPES_REPO_CLONES_SHARDS
+
+Default: `1`
+
+The max number of local clones to use for the same repo (reused across scopes).
+
+#### OPAL_LEADER_LOCK_FILE_PATH
+
+Default: `/tmp/opal_server_leader.lock`
+
+Path to the leader lock file for distributed deployments.
+
+#### OPAL_MAX_CHANNELS_PER_CLIENT
+
+Default: `15`
+
+Maximum number of records per client. After this number, it will not be added to statistics (relevant only if `OPAL_STATISTICS_ENABLED` is true).
+
+#### OPAL_STATISTICS_WAKEUP_CHANNEL
+
+Default: `__opal_stats_wakeup`
+
+The topic a waking-up OPAL server uses to notify others it needs their statistics data.
+
+#### OPAL_STATISTICS_STATE_SYNC_CHANNEL
+
+Default: `__opal_stats_state_sync`
+
+The topic other servers with statistics provide their state to a waking-up server.
+
+#### OPAL_STATISTICS_SERVER_KEEPALIVE_CHANNEL
+
+Default: `__opal_stats_server_keepalive`
+
+The topic workers use to signal they exist and are alive.
+
+#### OPAL_STATISTICS_SERVER_KEEPALIVE_TIMEOUT
+
+Default: `20`
+
+Timeout for forgetting a server from which a keep-alive haven't been seen (keep-alive frequency would be half of this value).
+
+### Broadcasting Configuration
+
+#### OPAL_BROADCAST_URI
+
+Default: `None`
+
+URI for the broadcast backend (Redis, PostgreSQL, etc.).
+
+For more information, see [running OPAL with Kafka](/tutorials/run_opal_with_kafka) and [running OPAL with Apache Pulsar](/tutorials/run_opal_with_pulsar).
+
+#### OPAL_BROADCAST_CHANNEL_NAME
+
+Default: `EventNotifier`
+
+The channel name for broadcasting messages.
+
+For more information, see [running OPAL with Kafka](/tutorials/run_opal_with_kafka) and [running OPAL with Apache Pulsar](/tutorials/run_opal_with_pulsar).
+
+#### OPAL_BROADCAST_CONN_LOSS_BUGFIX_EXPERIMENT_ENABLED
+
+Default: `True`
+
+Enable experimental fix for broadcast connection loss issues.
+
+#### OPAL_BROADCAST_KEEPALIVE_INTERVAL
+
+Default: `3600`
+
+The time to wait between sending two consecutive broadcaster keepalive messages, in seconds.
+
+#### OPAL_BROADCAST_KEEPALIVE_TOPIC
+
+Default: `__broadcast_session_keepalive__`
+
+The topic on which to send broadcaster keepalive messages.
+
+#### OPAL_PUBLISHER_ENABLED
+
+Default: `True`
+
+Enable the publisher for broadcasting updates.
+
+#### OPAL_REDIS_URL
+
+Default: `redis://localhost`
+
+Redis connection URL.
+
+### Authentication Configuration
+
+#### OPAL_AUTH_PRIVATE_KEY_FORMAT
+
+Default: `PEM`
+
+Format of the private key. Options: `PEM`, `JWK`.
+
+Read more about [secure mode setup](/getting-started/running-opal/as-python-package/secure-mode-setup).
+
+#### OPAL_AUTH_PRIVATE_KEY_PASSPHRASE
+
+Default: `None`
+
+Passphrase for the private key (if encrypted).
+
+Read more about [secure mode setup](/getting-started/running-opal/as-python-package/secure-mode-setup).
+
+#### OPAL_AUTH_PRIVATE_KEY
+
+Default: `None`
+
+The private key for JWT signing.
+
+Read more about [secure mode setup](/getting-started/running-opal/as-python-package/secure-mode-setup).
+
+#### OPAL_AUTH_JWKS_URL
+
+Default: `/.well-known/jwks.json`
+
+URL to fetch JSON Web Key Set (JWKS).
+
+Read more about [secure mode setup](/getting-started/running-opal/as-python-package/secure-mode-setup).
+
+#### OPAL_AUTH_JWKS_STATIC_DIR
+
+Default: `./jwks_dir`
+
+Directory containing static JWKS files.
+
+Read more about [secure mode setup](/getting-started/running-opal/as-python-package/secure-mode-setup).
+
+#### OPAL_AUTH_MASTER_TOKEN
+
+Default: `None`
+
+Master token for authentication (bypasses JWT verification).
+
+Read more about [secure mode setup](/getting-started/running-opal/as-python-package/secure-mode-setup).
+
+### Policy Configuration
+
+#### OPAL_POLICY_SOURCE_TYPE
+
+Default: `GIT`
+
+Set your policy source type. Options: `GIT`, `API`.
+
+For more information, see [tracking a Git repository](/tutorials/track_a_git_repo) and [tracking an API bundle server](/tutorials/track_an_api_bundle_server).
+
+#### OPAL_POLICY_REPO_URL
+
+Default: `None`
+
+Set your remote repository URL - relevant only for GIT source type. Example: `https://github.com/permitio/opal-example-policy-repo.git`.
+
+For more information, see [tracking a Git repository](/tutorials/track_a_git_repo).
+
+#### OPAL_POLICY_REPO_CLONE_PATH
+
+Default: `./regoclone`
+
+Base path to create local git folder for managing policy changes.
+
+For more information, see [tracking a Git repository](/tutorials/track_a_git_repo).
+
+#### OPAL_POLICY_REPO_CLONE_FOLDER_PREFIX
+
+Default: `opal_repo_clone`
+
+Prefix for the local git folder.
+
+#### OPAL_POLICY_REPO_REUSE_CLONE_PATH
+
+Default: `False`
+
+Set if OPAL server should use a fixed clone path (and reuse if it already exists) instead of randomizing its suffix on each run.
+
+#### OPAL_POLICY_REPO_MAIN_BRANCH
+
+Default: `master`
+
+The main branch to track for policy files.
+
+For more information, see [tracking a Git repository](/tutorials/track_a_git_repo).
+
+#### OPAL_POLICY_REPO_SSH_KEY
+
+Default: `None`
+
+SSH private key content for Git repository access.
+
+For more information, see [tracking a Git repository](/tutorials/track_a_git_repo).
+
+#### OPAL_POLICY_REPO_MANIFEST_PATH
+
+Default: `""`
+
+Path of the directory holding the '.manifest' file (updated way), or of the manifest file itself (old way). Repository root is used by default.
+
+For more information, see [tracking a Git repository](/tutorials/track_a_git_repo).
+
+#### OPAL_POLICY_REPO_CLONE_TIMEOUT
+
+Default: `0`
+
+Timeout for Git clone operations in seconds. If set to 0, waits indefinitely until successful clone.
+
+#### OPAL_REPO_WATCHER_ENABLED
+
+Default: `True`
+
+Enable repository watching for policy changes.
+
+#### OPAL_POLICY_REFRESH_INTERVAL
+
+Default: `0`
+
+Interval in seconds for refreshing policies. If set to 0, automatic refresh is disabled.
+
+#### OPAL_POLICY_REPO_POLLING_INTERVAL
+
+Default: `0`
+
+Interval in seconds for polling the policy repository for changes. If set to 0, polling is disabled.
+
+For more information, see [tracking a Git repository](/tutorials/track_a_git_repo).
+
+#### OPAL_FILTER_FILE_EXTENSIONS
+
+Default: `[".rego", ".json"]`
+
+List of file extensions to filter when processing policy files.
+
+#### OPAL_BUNDLE_IGNORE
+
+Default: `[]`
+
+List of patterns to ignore in the bundle.
+
+For more information, see [tracking a Git repository](/tutorials/track_a_git_repo).
+
+#### OPAL_POLICY_BUNDLE_GIT_ADD_PATTERN
+
+Default: `*`
+
+File pattern to add files to all git default files.
+
+#### OPAL_POLICY_BUNDLE_URL
+
+Default: `None`
+
+Set your API bundle URL - relevant only for API source type.
+
+For more information, see [tracking an API bundle server](/tutorials/track_an_api_bundle_server).
+
+#### OPAL_POLICY_BUNDLE_SERVER_TYPE
+
+Default: `HTTP`
+
+Type of policy bundle server. Options: `HTTP` (authenticated with bearer token), `AWS-S3` (authenticated with [AWS REST Auth](https://docs.aws.amazon.com/AmazonS3/latest/userguide/RESTAuthentication.html)).
+
+For more information, see [tracking an API bundle server](/tutorials/track_an_api_bundle_server).
+
+#### OPAL_POLICY_BUNDLE_SERVER_TOKEN_ID
+
+Default: `None`
+
+The Secret Token ID (AKA user ID, AKA access-key) sent to the API bundle server.
+
+For more information, see [tracking an API bundle server](/tutorials/track_an_api_bundle_server).
+
+#### OPAL_POLICY_BUNDLE_SERVER_TOKEN
+
+Default: `None`
+
+The Secret Token (AKA password, AKA secret-key) sent to the API bundle server.
+
+For more information, see [tracking an API bundle server](/tutorials/track_an_api_bundle_server).
+
+#### OPAL_POLICY_BUNDLE_SERVER_AWS_REGION
+
+Default: `us-east-1`
+
+The AWS region of the S3 bucket.
+
+For more information, see [tracking an API bundle server](/tutorials/track_an_api_bundle_server).
+
+#### OPAL_POLICY_BUNDLE_TMP_PATH
+
+Default: `/tmp/bundle.tar.gz`
+
+Path for temporary policy files. Must be writable.
+
+#### OPAL_POLICY_REPO_WEBHOOK_SECRET
+
+Default: `None`
+
+Secret for validating webhook requests from the policy repository.
+
+For more information, see [tracking a Git repository](/tutorials/track_a_git_repo).
+
+#### OPAL_POLICY_REPO_WEBHOOK_TOPIC
+
+Default: `webhook`
+
+Topic for policy repository webhook events.
+
+#### OPAL_POLICY_REPO_WEBHOOK_ENFORCE_BRANCH
+
+Default: `False`
+
+Enforce webhook events only from a specific branch.
+
+#### OPAL_POLICY_REPO_WEBHOOK_PARAMS
+
+Default: `{"secret_header_name": "x-hub-signature-256", "secret_type": "signature", "secret_parsing_regex": "sha256=(.*)", "event_header_name": "X-GitHub-Event", "event_request_key": null, "push_event_value": "push"}`
+
+Additional parameters for webhook processing.
+
+For more information, see [tracking a Git repository](/tutorials/track_a_git_repo).
+
+#### OPAL_OPAL_POLICY_REPO_URL
+
+Default: `None`
+
+:::note
+**DEPRECATED** - Use [OPAL_POLICY_REPO_URL](#opal_policy_repo_url) instead.
+:::
+
+The repository URL where the policy repository is located. Must be available from the machine running OPAL (prefer public internet addresses). Supported URI schemes: `https://` and `ssh` (i.e., `git@`).
+
+#### OPAL_OPAL_POLICY_REPO_SSH_KEY
+
+Default: `None`
+
+:::note
+**DEPRECATED** - Use [OPAL_POLICY_REPO_SSH_KEY](#opal_policy_repo_ssh_key) instead.
+:::
+
+The content of the SSH private key. You will need to register the matching public key with your repository. The passed value must be the contents of the SSH key in one line (replace newlines with underscores, i.e., `\n` with `_`).
+
+#### OPAL_OPAL_POLICY_REPO_CLONE_PATH
+
+Default: `/tmp/opal_policy_repo`
+
+:::note
+**DEPRECATED** - Use [OPAL_POLICY_REPO_CLONE_PATH](#opal_policy_repo_clone_path) instead.
+:::
+
+Where to clone the repository in your Docker filesystem (not important unless you mount a Docker volume).
+
+#### OPAL_OPAL_POLICY_REPO_MAIN_BRANCH
+
+Default: `main`
+
+:::note
+**DEPRECATED** - Use [OPAL_POLICY_REPO_MAIN_BRANCH](#opal_policy_repo_main_branch) instead.
+:::
+
+Name of the git branch to track for policy files.
+
+#### OPAL_OPAL_BUNDLE_IGNORE
+
+Default: `[]`
+
+:::note
+**DEPRECATED** - Use [OPAL_BUNDLE_IGNORE](#opal_bundle_ignore) instead.
+:::
+
+Paths to omit from policy bundle. List of glob-style paths, or paths without wildcards but ending with "/**" indicating a parent path (ignoring all under it).
+
+_Added in OPAL v0.7.16_
+
+### Data Configuration
+
+#### OPAL_ALL_DATA_TOPIC
+
+Default: `data`
+
+Top-level topic for data updates.
+
+#### OPAL_ALL_DATA_ROUTE
+
+Default: `/policy-data`
+
+Route for all data configuration.
+
+#### OPAL_ALL_DATA_URL
+
+Default: `http://localhost:7002/policy-data`
+
+URL for all data configuration (if you choose to have it all in one place).
+
+#### OPAL_DATA_CONFIG_ROUTE
+
+Default: `/data/config`
+
+URL to fetch the full basic configuration of data.
+
+#### OPAL_DATA_CALLBACK_DEFAULT_ROUTE
+
+Default: `/data/callback_report`
+
+Default route for data callbacks (exists as a sane default in case the user did not set `OPAL_DEFAULT_UPDATE_CALLBACKS`).
+
+#### OPAL_DATA_CONFIG_SOURCES
+
+Default: `{"config": {"entries": [{"url": "http://localhost:7002/policy-data", "topics": ["data"]}]}}`
+
+Configuration of data sources by topics.
+
+For more information, see [configuring external data sources](/tutorials/configure_external_data_sources) and [data source configuration](/getting-started/running-opal/run-opal-server/data-sources).
+
+#### OPAL_DATA_UPDATE_TRIGGER_ROUTE
+
+Default: `/data/update`
+
+URL to trigger data update events.
+
+For more information, see [triggering data updates](/tutorials/trigger_data_updates).
+
+## OPAL Client Configs
+
+These configuration variables are specific to the OPAL Client.
+
+### Client Configuration
+
+#### OPAL_SERVER_URL
+
+Default: `http://localhost:7002`
+
+The URL of the OPAL server.
+
+#### OPAL_SERVER_WS_URL
+
+Default: `ws://localhost:7002/ws`
+
+The WebSocket URL of the OPAL server.
+
+#### OPAL_SERVER_PUBSUB_URL
+
+Default: `ws://localhost:7002/ws`
+
+The Pub/Sub URL of the OPAL server.
+
+#### OPAL_CLIENT_TOKEN
+
+Default: `THIS_IS_A_DEV_SECRET`
+
+The OPAL Server Auth Token.
+
+For more information, see [obtaining a JWT token](/getting-started/running-opal/run-opal-client/obtain-jwt-token).
+
+#### OPAL_WAIT_ON_SERVER_LOAD
+
+Default: `False`
+
+If set, client will wait for 200 response from server's loadlimit endpoint before starting background tasks.
+
+#### OPAL_CLIENT_API_SERVER_WORKER_COUNT
+
+Default: `1`
+
+Worker count for the opal-client's internal server (when run using CLI).
+
+#### OPAL_CLIENT_API_SERVER_HOST
+
+Default: `127.0.0.1`
+
+Address for the opal-client's internal server to bind to (when run using CLI).
+
+#### OPAL_CLIENT_API_SERVER_PORT
+
+Default: `7000`
+
+Port for the opal-client's internal server to bind to (when run using CLI).
+
+#### OPAL_KEEP_ALIVE_INTERVAL
+
+Default: `0`
+
+Interval in seconds for keep-alive messages.
+
+#### OPAL_SCOPE_ID
+
+Default: `default`
+
+Scope identifier for multi-tenancy.
+
+For more information, see [OPAL scopes](/overview/scopes).
+
+#### OPAL_OPAL_CLIENT_STAT_ID
+
+Default: `auto-generated`
+
+Unique client statistics identifier.
+
+For more information, see [monitoring OPAL](/tutorials/monitoring_opal).
+
+#### OPAL_OFFLINE_MODE_ENABLED
+
+Default: `False`
+
+If set, OPAL client will try to load policy store from backup file and operate even if server is unreachable. Ignored if `OPAL_INLINE_OPA_ENABLED=False`.
+
+_Added in OPAL v0.6.0_
+
+#### OPAL_STORE_BACKUP_PATH
+
+Default: `/opal/backup/opa.json`
+
+Path to backup policy store's data to.
+
+_Added in OPAL v0.6.0_
+
+#### OPAL_STORE_BACKUP_INTERVAL
+
+Default: `60`
+
+Interval in seconds to backup policy store's data.
+
+_Added in OPAL v0.6.0_
+
+### Policy Store Configuration
+
+#### OPAL_POLICY_STORE_TYPE
+
+Default: `opa`
+
+Type of policy store to use. Options: `opa`, `cedar`.
+
+For more information, see [Cedar and OPAL](/tutorials/cedar).
+
+#### OPAL_POLICY_STORE_URL
+
+Default: `http://localhost:8181`
+
+The URL of the policy store (e.g., OPA agent).
+
+#### OPAL_POLICY_STORE_AUTH_TYPE
+
+Default: `none`
+
+The authentication method for connecting to the policy store. Options: `none`, `oauth`, `token`.
+
+#### OPAL_POLICY_STORE_AUTH_TOKEN
+
+Default: `None`
+
+The authentication (bearer) token OPAL client will use to authenticate against the policy store (i.e., OPA agent).
+
+#### OPAL_POLICY_STORE_AUTH_OAUTH_SERVER
+
+Default: `None`
+
+The authentication server OPAL client will use to authenticate against for retrieving the access token.
+
+#### OPAL_POLICY_STORE_AUTH_OAUTH_CLIENT_ID
+
+Default: `None`
+
+The client ID OPAL will use to authenticate against the OAuth server.
+
+#### OPAL_POLICY_STORE_AUTH_OAUTH_CLIENT_SECRET
+
+Default: `None`
+
+The client secret OPAL will use to authenticate against the OAuth server.
+
+#### OPAL_POLICY_STORE_TLS_CLIENT_CERT
+
+Default: `None`
+
+Path to the client certificate used for TLS authentication with the policy store.
+
+_Added in OPAL v0.7.2_
+
+#### OPAL_POLICY_STORE_TLS_CLIENT_KEY
+
+Default: `None`
+
+Path to the client key used for TLS authentication with the policy store.
+
+_Added in OPAL v0.7.2_
+
+#### OPAL_POLICY_STORE_TLS_CA
+
+Default: `None`
+
+Path to the file containing the CA certificate(s) used for TLS authentication with the policy store.
+
+_Added in OPAL v0.7.2_
+
+#### OPAL_EXCLUDE_POLICY_STORE_SECRETS
+
+Default: `False`
+
+If set, policy store secrets will be excluded from the `/policy-store/config` route.
+
+_Added in OPAL v0.7.8_
+
+#### OPAL_POLICY_STORE_CONN_RETRY
+
+Default: `{"retries": 3, "backoff_factor": 0.3}`
+
+Retry options when connecting to the policy store (i.e., the agent that handles the policy, e.g., OPA).
+
+#### OPAL_POLICY_STORE_POLICY_PATHS_TO_IGNORE
+
+Default: `[]`
+
+Which policy paths pushed to the client should be ignored. List of glob-style paths, or paths without wildcards but ending with "/**" indicating a parent path (ignoring all under it). Supports paths starting with '!' to force not ignoring them: a negated path always takes precedence.
+
+#### OPAL_OPA_HEALTH_CHECK_POLICY_ENABLED
+
+Default: `False`
+
+Should we load a special healthcheck policy into OPA that checks that OPA was synced correctly and is ready to answer authorization queries.
+
+For more information, see [monitoring OPAL](/tutorials/monitoring_opal).
+
+#### OPAL_OPA_HEALTH_CHECK_TRANSACTION_LOG_PATH
+
+Default: `system/opal/transactions`
+
+Path to OPA document that stores the OPA write transactions.
+
+For more information, see [monitoring OPAL](/tutorials/monitoring_opal).
+
+#### OPAL_OPA_HEALTH_CHECK_POLICY_PATH
+
+Default: `engine/healthcheck/opal.rego`
+
+Path to the custom healthcheck policy file.
+
+For more information, see [monitoring OPAL](/tutorials/monitoring_opal).
+
+### Inline Engines Configuration
+
+#### OPAL_INLINE_OPA_ENABLED
+
+Default: `True`
+
+Whether OPAL should run OPA by itself in the same container.
+
+#### OPAL_INLINE_OPA_EXEC_PATH
+
+Default: `None`
+
+The path to the OPA executable. Defaults to searching for 'opa' binary in PATH if not specified.
+
+#### OPAL_INLINE_OPA_CONFIG
+
+Default: `{}`
+
+If inline OPA is enabled, the user can set the [server configuration options](https://docs.opal.ac/getting-started/running-opal/run-opal-client/opa-runner-parameters) that affect how OPA will start when running `opa run --server` inline. Watch escaping quotes.
+
+#### OPAL_INLINE_OPA_LOG_FORMAT
+
+Default: `none`
+
+The log format for inline OPA. Options: `none`, `minimal`, `http`, `full`.
+
+#### OPAL_INLINE_CEDAR_ENABLED
+
+Default: `True`
+
+Whether OPAL should run Cedar agent by itself in the same container.
+
+_Added in OPAL v0.7.16_
+
+For more information, see [Cedar and OPAL](/tutorials/cedar).
+
+#### OPAL_INLINE_CEDAR_EXEC_PATH
+
+Default: `None`
+
+The path to the Cedar agent executable. Defaults to searching for 'cedar-agent' binary in PATH if not specified.
+
+_Added in OPAL v0.7.0_
+
+For more information, see [Cedar and OPAL](/tutorials/cedar).
+
+#### OPAL_INLINE_CEDAR_CONFIG
+
+Default: `{}`
+
+If inline Cedar is enabled, provide options for running the Cedar agent.
+
+_Added in OPAL v0.7.0_
+
+For more information, see [Cedar and OPAL](/tutorials/cedar).
+
+#### OPAL_INLINE_CEDAR_LOG_FORMAT
+
+Default: `none`
+
+The log format for inline Cedar. Options: `none`, `minimal`, `http`, `full`.
+
+_Added in OPAL v0.7.0_
+
+For more information, see [Cedar and OPAL](/tutorials/cedar).
+
+### Policy Updates Configuration
+
+#### OPAL_POLICY_UPDATER_ENABLED
+
+Default: `True`
+
+If set to `FALSE`, OPAL Client will not fetch policies or listen to policy updates.
+
+#### OPAL_SPLIT_ROOT_DATA
+
+Default: `False`
+
+Split writing data updates to root path.
+
+#### OPAL_POLICY_SUBSCRIPTION_DIRS
+
+Default: `["."]`
+
+The directories in a policy repository to subscribe to for policy code (rego) modules.
+
+For more information, see [tracking a Git repository](/tutorials/track_a_git_repo).
+
+#### OPAL_POLICY_UPDATER_CONN_RETRY
+
+Default: `{"wait_strategy": "random_exponential", "max_wait": 10, "attempts": 5, "wait_time": 1}`
+
+Retry options when connecting to the policy source (e.g., the policy bundle server).
+
+### Data Updates Configuration
+
+#### OPAL_DATA_UPDATER_ENABLED
+
+Default: `True`
+
+If set to `FALSE`, OPAL Client will not listen to dynamic data updates.
+
+#### OPAL_DATA_TOPICS
+
+Default: `["data"]`
+
+Data topics to subscribe to.
+
+For more information, see [subscribing to data topics](/getting-started/running-opal/run-opal-client/data-topics).
+
+#### OPAL_DEFAULT_DATA_SOURCES_CONFIG_URL
+
+Default: `{SERVER_URL}/data/config`
+
+Default URL to fetch data configuration from.
+
+For more information, see [configuring external data sources](/tutorials/configure_external_data_sources).
+
+#### OPAL_DEFAULT_DATA_URL
+
+Default: `http://localhost:8000/policy-config`
+
+Default URL to fetch data from.
+
+#### OPAL_SHOULD_REPORT_ON_DATA_UPDATES
+
+Default: `False`
+
+Should the client report on updates to callbacks defined in `OPAL_DEFAULT_UPDATE_CALLBACKS` or within the given updates.
+
+For more information, see [monitoring OPAL](/tutorials/monitoring_opal).
+
+#### OPAL_DEFAULT_UPDATE_CALLBACK_CONFIG
+
+Default: `{"method": "POST", "headers": {"content-type": "application/json"}, "process_data": false}`
+
+Default configuration for update callbacks.
+
+For more information, see [monitoring OPAL](/tutorials/monitoring_opal).
+
+#### OPAL_DEFAULT_UPDATE_CALLBACKS
+
+Default: `{"callbacks": ["{SERVER_URL}/data/callback_report"]}`
+
+Where/how the client should report on the completion of data updates.
+
+For more information, see [monitoring OPAL](/tutorials/monitoring_opal).
+
+#### OPAL_DATA_UPDATER_CONN_RETRY
+
+Default: `{"wait_strategy": "random_exponential", "max_wait": 10, "attempts": 5, "wait_time": 1}`
+
+Retry options when connecting to the base data source (e.g., an external API server which returns data snapshot).
+
+#### OPAL_DATA_STORE_CONN_RETRY
+
+Default: `None`
+
+:::note
+**DEPRECATED** - The old confusing name for [OPAL_DATA_UPDATER_CONN_RETRY](#opal_data_updater_conn_retry), kept for backwards compatibility.
+:::
+
+_Added in OPAL v0.7.5_
+
+## Advanced Configuration Options
+
+#### CLI Help
+```bash
+# View all options
+opal-server --help
+opal-client --help
+
+# View specific command options
+opal-server run --help
+opal-client run --help
+```
+
+#### Kubernetes Deployment
+For Kubernetes deployments, see [OPAL Helm Chart for Kubernetes](/tutorials/helm-chart-for-kubernetes).
+
+#### Proxy Configuration
+For proxy configurations, see [Setup OPAL Behind a Proxy](/tutorials/setup_opal_behind_proxy).
+
+#### Source Code
+- [Common config](https://github.com/permitio/opal/blob/master/packages/opal-common/opal_common/config.py) - Shared variables
+- [Server config](https://github.com/permitio/opal/blob/master/packages/opal-server/opal_server/config.py) - Server-specific variables
+- [Client config](https://github.com/permitio/opal/blob/master/packages/opal-client/opal_client/config.py) - Client-specific variables
+
+#### Configuration Architecture
+
+OPAL's configuration is based on our very own `Confi` module, which in turn is based on [Decouple](https://pypi.org/project/python-decouple/), and adds complex value parsing with Pydantic, and command line arguments via Typer/Click.

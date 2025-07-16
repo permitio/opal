@@ -151,11 +151,7 @@ const sidebars = {
               id: "getting-started/running-opal/run-docker-containers",
               label: "Run Docker Containers",
             },
-            {
-              type: "doc",
-              id: "getting-started/running-opal/config-variables",
-              label: "Configuration Variables",
-            },
+
             {
               type: "category",
               collapsible: true,
