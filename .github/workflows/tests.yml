@@ -55,7 +55,7 @@ jobs:
   e2e-tests:
     runs-on: ubuntu-latest
     timeout-minutes: 60
-    name: E2E Tests (Docker)
+    name: E2E Tests
     steps:
       # BUILD PHASE
       - name: Checkout
@@ -115,10 +115,15 @@ jobs:
         working-directory: ./app-tests
         env:
           OPAL_IMAGE_TAG: test
+          OPAL_TESTS_POLICY_REPO_DEPLOY_KEY: ${{ secrets.OPAL_TESTS_POLICY_REPO_DEPLOY_KEY }}
         run: |
           # Prepare git for using tests policy repo
           export OPAL_POLICY_REPO_SSH_KEY_PATH=$(realpath .)/opal-tests-policy-repo-key
           echo "$OPAL_TESTS_POLICY_REPO_DEPLOY_KEY" > $OPAL_POLICY_REPO_SSH_KEY_PATH
           chmod 400 $OPAL_POLICY_REPO_SSH_KEY_PATH
+
+          git config --global core.sshCommand "ssh -i $OPAL_POLICY_REPO_SSH_KEY_PATH -o IdentitiesOnly=yes"
+          git config --global user.name "$GITHUB_ACTOR"
+          git config --global user.email "<>"
 
           ./run.sh
