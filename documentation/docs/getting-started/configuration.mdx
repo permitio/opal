@@ -1,40 +1,96 @@
 # OPAL Configuration Guide
 
-## How to Configure OPAL
+## Getting Started with OPAL Configuration
 
-#### Environment Variables (Recommended)
-Set environment variables prefixed with `OPAL_`:
+OPAL supports multiple ways to configure your deployment:
 
+- **Environment Variables** (recommended) - `export OPAL_SERVER_URL=http://localhost:7002`
+- **Command Line Arguments** - `opal-server run --server-url http://localhost:7002`
+- **Configuration Files** - `.env` or `.ini` files in your project
+
+### Essential Configuration
+
+Let's get OPAL running! You'll need to set a few environment variables that tell OPAL where to find your policies and how to connect everything together.
+
+#### OPAL Server
 ```bash
-export OPAL_SERVER_URL=http://localhost:7002
+# Where your policies are stored (Git repo)
 export OPAL_POLICY_REPO_URL=https://github.com/your-org/policy-repo.git
-export OPAL_CLIENT_TOKEN=your-secret-token
+
+# Where clients get initial data
+export OPAL_DATA_CONFIG_SOURCES='{"config":{"entries":[{"url":"http://localhost:7002/policy-data","topics":["policy_data"],"dst_path":"/static"}]}}'
+
+# Broadcast channel for scaling (use Redis or PostgreSQL)
+export OPAL_BROADCAST_URI=postgres://postgres:postgres@localhost:5432/postgres
 ```
 
-#### Configuration Sources
+#### OPAL Client
+```bash
+# Connect to your OPAL server
+export OPAL_SERVER_URL=http://localhost:7002
 
-In order of precedence:
-1. **Command line arguments** (highest priority)
-2. **Environment variables** (prefixed with `OPAL_`)
-3. **Configuration files** (`.env` or `.ini`)
-4. **Default values** (lowest priority)
+# Authentication token (change in production!)
+export OPAL_CLIENT_TOKEN=your-secret-token
 
-#### CLI Arguments
-Convert CLI arguments to environment variables:
-- `--server-url` → `OPAL_SERVER_URL`
-- `--data-config-sources` → `OPAL_DATA_CONFIG_SOURCES`
+# Policy engine type (OPA is default, Cedar also available)
+export OPAL_POLICY_STORE_TYPE=opa
+```
 
-#### Production Security Checklist
+### Production Configuration
 
-:::danger
-- **Always use HTTPS** for OPAL server
-- **Enable JWT verification** with proper keys
-- **Set a master token** for authentication
-- **Store secrets in a secure vault** (AWS Secrets Manager, HashiCorp Vault, etc.)
-- **Never commit secrets** to your repository
-:::
+When you're ready to deploy to production, you'll need to configure a few more things to ensure security and reliability.
 
-Read more about [running the OPAL Server & Client in Secure Mode](/getting-started/running-opal/as-python-package/secure-mode-setup.mdx).
+- **Use HTTPS** for all OPAL server communication
+- **Generate strong cryptographic keys** for JWT authentication
+- **Store secrets securely** (never commit to repositories)
+- **Use webhooks** instead of polling for policy updates
+
+### Common Configuration
+
+Below are some common configuration options that you may want to consider:
+
+<details>
+<summary><strong>🔐 Security Configuration</strong></summary>
+
+```bash
+# Enable secure mode with proper authentication
+export OPAL_AUTH_PRIVATE_KEY="your-rsa-private-key"
+export OPAL_AUTH_PUBLIC_KEY="your-rsa-public-key"
+export OPAL_AUTH_MASTER_TOKEN="secure-random-token"
+
+# Use HTTPS
+export OPAL_SERVER_URL=https://opal.your-domain.com
+```
+
+</details>
+
+<details>
+<summary><strong>⚡ Performance & Scaling</strong></summary>
+
+```bash
+# Scale with multiple server workers
+export UVICORN_NUM_WORKERS=4
+
+# Use webhooks instead of polling for better performance
+export OPAL_POLICY_REPO_POLLING_INTERVAL=0
+export OPAL_POLICY_REPO_WEBHOOK_SECRET=your-webhook-secret
+```
+
+</details>
+
+<details>
+<summary><strong>📊 Monitoring & Logging</strong></summary>
+
+```bash
+# Enhanced logging and statistics
+export OPAL_LOG_FORMAT_INCLUDE_PID=true
+export OPAL_LOG_LEVEL=INFO
+export OPAL_STATISTICS_ENABLED=true
+```
+
+</details>
+
+Read more about [secure mode setup](/getting-started/running-opal/as-python-package/secure-mode-setup.mdx).
 
 # Configuration Reference
 
