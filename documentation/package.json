@@ -16,6 +16,7 @@
   "dependencies": {
     "@docusaurus/core": "3.0.0",
     "@docusaurus/preset-classic": "3.0.0",
+    "@docusaurus/theme-mermaid": "3.0.0",
     "@inkeep/cxkit-docusaurus": "^0.5.94",
     "@mdx-js/react": "^3.0.0",
     "axios": "^1.7.5",
