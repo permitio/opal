@@ -29,16 +29,7 @@
   },
   {
     "attrs": {},
-    "parents": [
-      {
-        "id": "document",
-        "type": "ResourceType"
-      },
-      {
-        "id": "Editor",
-        "type": "Role"
-      }
-    ],
+    "parents": [],
     "uid": {
       "id": "document:delete",
       "type": "Action"
@@ -46,16 +37,7 @@
   },
   {
     "attrs": {},
-    "parents": [
-      {
-        "id": "document",
-        "type": "ResourceType"
-      },
-      {
-        "id": "Editor",
-        "type": "Role"
-      }
-    ],
+    "parents": [],
     "uid": {
       "id": "document:create",
       "type": "Action"
@@ -71,16 +53,7 @@
   },
   {
     "attrs": {},
-    "parents": [
-      {
-        "id": "Editor",
-        "type": "Role"
-      },
-      {
-        "id": "document",
-        "type": "ResourceType"
-      }
-    ],
+    "parents": [],
     "uid": {
       "id": "document:update",
       "type": "Action"
@@ -88,16 +61,7 @@
   },
   {
     "attrs": {},
-    "parents": [
-      {
-        "id": "document",
-        "type": "ResourceType"
-      },
-      {
-        "id": "Editor",
-        "type": "Role"
-      }
-    ],
+    "parents": [],
     "uid": {
       "id": "document:list",
       "type": "Action"
@@ -105,16 +69,7 @@
   },
   {
     "attrs": {},
-    "parents": [
-      {
-        "id": "document",
-        "type": "ResourceType"
-      },
-      {
-        "id": "Editor",
-        "type": "Role"
-      }
-    ],
+    "parents": [],
     "uid": {
       "id": "document:get",
       "type": "Action"
