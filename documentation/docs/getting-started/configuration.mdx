@@ -18,7 +18,15 @@ Let's get OPAL running! You'll need to set a few environment variables that tell
 export OPAL_POLICY_REPO_URL=https://github.com/your-org/policy-repo.git
 
 # Where clients get initial data
-export OPAL_DATA_CONFIG_SOURCES='{"config":{"entries":[{"url":"http://localhost:7002/policy-data","topics":["policy_data"],"dst_path":"/static"}]}}'
+export OPAL_DATA_CONFIG_SOURCES='{
+  "config": {
+    "entries": [{
+      "url": "http://localhost:7002/policy-data",
+      "topics": ["policy_data"],
+      "dst_path": "/static"
+    }]
+  }
+}'
 
 # Broadcast channel for scaling (use Redis or PostgreSQL)
 export OPAL_BROADCAST_URI=postgres://postgres:postgres@localhost:5432/postgres
@@ -774,7 +782,17 @@ Enforce webhook events only from a specific branch.
 
 #### OPAL_POLICY_REPO_WEBHOOK_PARAMS
 
-Default: `{"secret_header_name": "x-hub-signature-256", "secret_type": "signature", "secret_parsing_regex": "sha256=(.*)", "event_header_name": "X-GitHub-Event", "event_request_key": null, "push_event_value": "push"}`
+Default:
+```json
+{
+  "secret_header_name": "x-hub-signature-256",
+  "secret_type": "signature",
+  "secret_parsing_regex": "sha256=(.*)",
+  "event_header_name": "X-GitHub-Event",
+  "event_request_key": null,
+  "push_event_value": "push"
+}
+```
 
 Additional parameters for webhook processing.
 
@@ -866,7 +884,17 @@ Default route for data callbacks (exists as a sane default in case the user did 
 
 #### OPAL_DATA_CONFIG_SOURCES
 
-Default: `{"config": {"entries": [{"url": "http://localhost:7002/policy-data", "topics": ["data"]}]}}`
+Default:
+```json
+{
+  "config": {
+    "entries": [{
+      "url": "http://localhost:7002/policy-data",
+      "topics": ["data"]
+    }]
+  }
+}
+```
 
 Configuration of data sources by topics.
 
@@ -1186,7 +1214,15 @@ For more information, see [tracking a Git repository](/tutorials/track_a_git_rep
 
 #### OPAL_POLICY_UPDATER_CONN_RETRY
 
-Default: `{"wait_strategy": "random_exponential", "max_wait": 10, "attempts": 5, "wait_time": 1}`
+Default:
+```json
+{
+  "wait_strategy": "random_exponential",
+  "max_wait": 10,
+  "attempts": 5,
+  "wait_time": 1
+}
+```
 
 Retry options when connecting to the policy source (e.g., the policy bundle server).
 
@@ -1230,7 +1266,16 @@ For more information, see [monitoring OPAL](/tutorials/monitoring_opal).
 
 #### OPAL_DEFAULT_UPDATE_CALLBACK_CONFIG
 
-Default: `{"method": "POST", "headers": {"content-type": "application/json"}, "process_data": false}`
+Default:
+```json
+{
+  "method": "POST",
+  "headers": {
+    "content-type": "application/json"
+  },
+  "process_data": false
+}
+```
 
 Default configuration for update callbacks.
 
@@ -1246,7 +1291,15 @@ For more information, see [monitoring OPAL](/tutorials/monitoring_opal).
 
 #### OPAL_DATA_UPDATER_CONN_RETRY
 
-Default: `{"wait_strategy": "random_exponential", "max_wait": 10, "attempts": 5, "wait_time": 1}`
+Default:
+```json
+{
+  "wait_strategy": "random_exponential",
+  "max_wait": 10,
+  "attempts": 5,
+  "wait_time": 1
+}
+```
 
 Retry options when connecting to the base data source (e.g., an external API server which returns data snapshot).
 
