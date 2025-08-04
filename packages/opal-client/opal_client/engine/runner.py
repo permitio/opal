@@ -2,38 +2,17 @@ import asyncio
 import os
 import shutil
 import signal
-import time
 from abc import ABC, abstractmethod
 from typing import Callable, Coroutine, List, Optional
 
-import psutil
+import aiohttp
 from opal_client.config import EngineLogFormat, opal_client_config
 from opal_client.engine.logger import log_engine_output_opa, log_engine_output_simple
 from opal_client.engine.options import CedarServerOptions, OpaServerOptions
 from opal_client.logger import logger
-from tenacity import retry, wait_random_exponential
+from tenacity import retry, stop_after_attempt, wait_exponential
 
 AsyncCallback = Callable[[], Coroutine]
-
-
-async def wait_until_process_is_up(
-    process_pid: int,
-    callback: Optional[AsyncCallback],
-    wait_interval: float = 0.1,
-    timeout: Optional[float] = None,
-):
-    """Waits until the pid of the process exists, then optionally runs a
-    callback.
-
-    optionally receives a timeout to give up.
-    """
-    start_time = time.time()
-    while not psutil.pid_exists(process_pid):
-        if timeout is not None and start_time - time.time() > timeout:
-            break
-        await asyncio.sleep(wait_interval)
-    if callback is not None:
-        await callback()
 
 
 class PolicyEngineRunner(ABC):
@@ -57,6 +36,11 @@ class PolicyEngineRunner(ABC):
         self._on_process_restart_callbacks: List[AsyncCallback] = []
         self._process_was_never_up_before = True
         self._piped_logs_format = piped_logs_format
+        # Event that signals when the engine process is fully up **and** healthy.
+        # It will be awaited by context-managers (__aenter__) so callers only
+        # proceed once the underlying policy engine is ready to accept
+        # requests.
+        self._engine_ready: asyncio.Event = asyncio.Event()
 
     @abstractmethod
     def get_executable_path(self) -> str:
@@ -66,8 +50,24 @@ class PolicyEngineRunner(ABC):
     def get_arguments(self) -> list[str]:
         raise NotImplementedError()
 
+    @abstractmethod
+    async def health_check(self) -> bool:
+        """Performs a health check on the policy engine.
+
+        Returns:
+            bool: True if the engine is healthy and ready to accept requests, False otherwise.
+        """
+        raise NotImplementedError()
+
     async def __aenter__(self):
+        # Launch the supervised engine process.
         self.start()
+
+        # Wait until the engine process signals it is healthy and ready.
+        # The signal is set from within the runner loop once a successful
+        # health-check completes.
+        await self._engine_ready.wait()
+
         return self
 
     async def __aexit__(self, exc_type, exc, tb):
@@ -75,6 +75,10 @@ class PolicyEngineRunner(ABC):
 
     def start(self):
         """Starts the runner task, and launches the OPA subprocess."""
+        # Make sure the ready flag is cleared before launching a fresh
+        # engine instance so that callers do not receive a stale ready
+        # signal from a previous run.
+        self._engine_ready.clear()
         logger.info("Launching engine runner")
         self._run_task = asyncio.create_task(self._run())
 
@@ -158,7 +162,7 @@ class PolicyEngineRunner(ABC):
         """
         raise NotImplementedError()
 
-    @retry(wait=wait_random_exponential(multiplier=0.5, max=10))
+    @retry(wait=wait_exponential(multiplier=0.5, max=10))
     async def _run_process_until_terminated(self) -> int:
         """This function runs the policy engine as a subprocess.
 
@@ -184,12 +188,21 @@ class PolicyEngineRunner(ABC):
             start_new_session=True,
         )
 
-        # waits until the process is up, then runs a callback
-        asyncio.create_task(
-            wait_until_process_is_up(
-                self._process.pid, callback=self._run_start_callbacks
-            )
-        )
+        # After the process is up, we also want to make sure the
+        # engine reports as healthy before we continue. We run the health
+        # check in the background and set an event, so __aenter__ can await it.
+        async def _set_ready_when_healthy():
+            try:
+                await self._wait_for_engine_health()
+            except Exception as e:
+                logger.error("Engine failed health check: {err}", err=e)
+            else:
+                self._engine_ready.set()
+                # Now that the engine is confirmed healthy, run the
+                # lifecycle callbacks (initial start or rehydration).
+                await self._run_start_callbacks()
+
+        asyncio.create_task(_set_ready_when_healthy())
 
         if self._piped_logs_format != EngineLogFormat.NONE:
             # TODO: Won't detect panic if logs aren't piped
@@ -234,6 +247,20 @@ class PolicyEngineRunner(ABC):
             logger.info("Running policy engine rehydration callbacks")
             asyncio.create_task(self._run_callbacks(self._on_process_restart_callbacks))
 
+    @retry(
+        stop=stop_after_attempt(30),
+        wait=wait_exponential(multiplier=0.5, min=0.1, max=2),
+        reraise=True,
+    )
+    async def _wait_for_engine_health(self):
+        """Waits for the policy engine to be healthy with exponential
+        backoff."""
+        logger.debug("Checking policy engine health...")
+        is_healthy = await self.health_check()
+        if not is_healthy:
+            raise Exception("Policy engine not healthy yet")
+        logger.info("Policy engine is healthy and ready")
+
     async def _run_callbacks(self, callbacks: List[AsyncCallback]):
         return await asyncio.gather(*(callback() for callback in callbacks))
 
@@ -256,6 +283,22 @@ class OpaRunner(PolicyEngineRunner):
     async def handle_log_line(self, line: bytes) -> bool:
         await log_engine_output_opa(line, self._piped_logs_format)
         return any([substr in line for substr in self.PANIC_DETECTION_SUBSTRINGS])
+
+    async def health_check(self) -> bool:
+        """Performs a health check on the OPA server by calling its health
+        endpoint."""
+        try:
+            health_url = f"{opal_client_config.POLICY_STORE_URL}/health"
+            timeout_seconds = opal_client_config.POLICY_STORE_CONN_RETRY.wait_time
+            timeout = aiohttp.ClientTimeout(total=timeout_seconds)
+            async with aiohttp.ClientSession(
+                trust_env=True, timeout=timeout
+            ) as session:
+                response = await session.get(health_url)
+                return response.status == 200
+        except Exception as e:
+            logger.debug(f"OPA health check failed: {e}")
+            return False
 
     def get_executable_path(self) -> str:
         if opal_client_config.INLINE_OPA_EXEC_PATH:
@@ -330,6 +373,22 @@ class CedarRunner(PolicyEngineRunner):
 
     def get_arguments(self) -> list[str]:
         return list(self._options.get_args())
+
+    async def health_check(self) -> bool:
+        """Performs a health check on the Cedar agent by calling its health
+        endpoint."""
+        try:
+            health_url = f"{opal_client_config.POLICY_STORE_URL}/v1/"
+            timeout_seconds = opal_client_config.POLICY_STORE_CONN_RETRY.wait_time
+            timeout = aiohttp.ClientTimeout(total=timeout_seconds)
+            async with aiohttp.ClientSession(
+                trust_env=True, timeout=timeout
+            ) as session:
+                response = await session.get(health_url)
+                return response.status in [200, 204]
+        except Exception as e:
+            logger.debug(f"Cedar health check failed: {e}")
+            return False
 
     @staticmethod
     def setup_cedar_runner(

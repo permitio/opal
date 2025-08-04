@@ -2,8 +2,8 @@ import logging
 from typing import Optional
 from urllib.parse import urlparse
 
-from ddtrace import Span, config, patch, tracer
-from ddtrace.filters import TraceFilter
+from ddtrace import config, patch, tracer
+from ddtrace.trace import Span, TraceFilter
 from loguru import logger
 
 
@@ -44,7 +44,10 @@ def configure_apm(enable_apm: bool, service_name: str):
 
     else:
         logger.info("DataDog APM disabled")
-        tracer.configure(enabled=False)
+        # Note: In ddtrace v3.0.0+, the 'enabled' parameter is no longer supported
+        # APM should be disabled via environment variable DD_TRACE_ENABLED=false
+        # or by not patching any integrations at all
+        pass
 
 
 def fix_ddtrace_logging():

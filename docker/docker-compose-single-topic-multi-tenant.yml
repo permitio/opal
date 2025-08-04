@@ -1,0 +1,237 @@
+name: opal-single-topic-multi-tenant-example
+
+services:
+  # When scaling the opal-server to multiple nodes and/or multiple workers, we use
+  # a *broadcast* channel to sync between all the instances of opal-server.
+  # Under the hood, this channel is implemented by encode/broadcaster (see link below).
+  # At the moment, the broadcast channel can be either: postgresdb, redis or kafka.
+  # The format of the broadcaster URI string (the one we pass to opal server as `OPAL_BROADCAST_URI`) is specified here:
+  # https://github.com/encode/broadcaster#available-backends
+  broadcast_channel:
+    image: postgres:alpine
+    environment:
+      - POSTGRES_DB=postgres
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+
+  # OPAL Server - manages policy and data distribution
+  # This example demonstrates the revolutionary single-topic approach for multi-tenancy
+  # that eliminates the need for system restarts when adding new tenants
+  opal_server:
+    # by default we run opal-server from latest official image
+    image: permitio/opal-server:latest
+    environment:
+      # the broadcast backbone uri used by opal server workers (see comments above for: broadcast_channel)
+      - OPAL_BROADCAST_URI=postgres://postgres:postgres@broadcast_channel:5432/postgres
+      # number of uvicorn workers to run inside the opal-server container
+      - UVICORN_NUM_WORKERS=4
+
+      # Policy repository configuration - using GitHub for reliable policy sync
+      # This is the RECOMMENDED approach for OPAL demonstrations as it ensures:
+      # - Reliable policy loading and sync mechanism
+      # - Real-time policy updates via OPAL's designed workflow
+      # - Consistent behavior across different environments
+      # The repo demonstrates single-topic multi-tenant approach
+      - OPAL_POLICY_REPO_URL=https://github.com/permitio/opal-example-policy-repo
+      - OPAL_POLICY_REPO_MAIN_BRANCH=master
+      # Polling interval for policy updates (30 seconds for demo, use webhooks in production)
+      - OPAL_POLICY_REPO_POLLING_INTERVAL=30
+      - OPAL_POLICY_REPO_SSH_KEY=""
+      - OPAL_POLICY_SUBSCRIPTION_DIRS=single-topic-multi-tenant
+
+      # Data sources configuration - using single topic approach
+      # Initially empty - tenants will be added dynamically via API
+      # This is the KEY to our revolutionary approach: one topic handles all tenants
+      - 'OPAL_DATA_CONFIG_SOURCES={"config": {"entries": []}}'
+
+      # Server configuration
+      - OPAL_LOG_LEVEL=INFO
+      - OPAL_SERVER_URL=http://opal_server:7002
+      - OPAL_LOG_FORMAT_INCLUDE_PID=true
+    # Note: No volume mount needed - policies are loaded from GitHub repo
+    # OPAL will clone the repo and sync policies automatically
+    ports:
+      # exposes opal server on the host machine, you can access the server at: http://localhost:7002
+      - "7002:7002"
+    depends_on:
+      - broadcast_channel
+
+  # OPAL Client - fetches policies and data, manages OPA
+  # Configured with REVOLUTIONARY SINGLE TOPIC approach
+  opal_client:
+    # by default we run opal-client from latest official image
+    image: permitio/opal-client:latest
+    environment:
+      # Server connection
+      - OPAL_SERVER_URL=http://opal_server:7002
+      - OPAL_LOG_FORMAT_INCLUDE_PID=true
+      - OPAL_INLINE_OPA_LOG_FORMAT=http
+
+      # OPA configuration with v0 compatibility for old rego syntax
+      # Using inline OPA instead of external opa container
+      - OPAL_POLICY_STORE_URL=http://localhost:8181
+      - 'OPAL_INLINE_OPA_CONFIG={"v0_compatible": true}'
+
+      # Policy subscription configuration
+      - OPAL_POLICY_SUBSCRIPTION_DIRS=single-topic-multi-tenant
+
+      # REVOLUTIONARY SINGLE TOPIC CONFIGURATION
+      # Traditional approach: OPAL_DATA_TOPICS=tenant_1_data,tenant_2_data,tenant_3_data (requires restart)
+      # Our breakthrough: OPAL_DATA_TOPICS=tenant_data (NO restart needed!)
+      # The key insight: one topic + multiple dynamic data sources = infinite scalability
+      - OPAL_DATA_UPDATER_ENABLED=true
+      - OPAL_DATA_TOPICS=tenant_data
+
+      # Data fetcher configuration
+      - OPAL_FETCH_WORKER_POOLS=1
+      - OPAL_FETCH_TIMEOUT=30
+
+      # Logging configuration
+      - OPAL_LOG_LEVEL=DEBUG
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      # exposes opal client on the host machine, you can access the client at: http://localhost:7001
+      - "7001:7000"
+      # exposes inline OPA on the host machine, you can access OPA at: http://localhost:8181
+      - "8181:8181"
+    depends_on:
+      - opal_server
+    # this command is not necessary when deploying OPAL for real, it is simply a trick for dev environments
+    # to make sure that opal-server is already up before starting the client.
+    command: sh -c "exec ./wait-for.sh opal_server:7002 --timeout=20 -- ./start.sh"
+
+# Note: OPA is now running inline within OPAL Client container with v0-compatibility
+  # No separate OPA container needed - OPAL Client handles OPA lifecycle
+
+  # Example External Data Provider - serves tenant-specific data
+  # Renamed from 'simple-api-provider' to follow OPAL naming conventions
+  # This nginx server provides mock tenant data endpoints for demonstration
+  example_external_data_provider:
+    image: nginx:alpine
+    ports:
+      # exposes the data provider on the host machine at: http://localhost:8090
+      - "8090:80"
+    volumes:
+      # Mount nginx configuration with inline JSON data (no external files needed)
+      - ./docker_files/example-external-data-provider/nginx.conf:/etc/nginx/nginx.conf:ro
+
+
+# Usage Instructions for Single Topic Multi-Tenant OPAL:
+#
+# 1. Navigate to docker directory and start all services:
+#    cd docker
+#    docker compose -f docker-compose-single-topic-multi-tenant.yml up -d
+#
+# 2. Wait for services to be ready (check health endpoints):
+#    curl http://localhost:7002/healthcheck   # OPAL Server
+#    curl http://localhost:8181/health        # OPA
+#    curl http://localhost:8090/acl/tenant1   # Data Provider
+#
+# 3. Add tenant1 data (initial tenant - no restart needed):
+#    curl -X POST http://localhost:7002/data/config \
+#      -H "Content-Type: application/json" \
+#      -d '{
+#        "entries": [{
+#          "url": "http://example_external_data_provider:80/acl/tenant1",
+#          "topics": ["tenant_data"],
+#          "dst_path": "/acl/tenant1"
+#        }],
+#        "reason": "Load tenant1 data via single topic"
+#      }'
+#
+# 4. Add tenant2 data (NO RESTART NEEDED! - This is the breakthrough):
+#    curl -X POST http://localhost:7002/data/config \
+#      -H "Content-Type: application/json" \
+#      -d '{
+#        "entries": [{
+#          "url": "http://example_external_data_provider:80/acl/tenant2",
+#          "topics": ["tenant_data"],
+#          "dst_path": "/acl/tenant2"
+#        }],
+#        "reason": "Load tenant2 data via single topic - NO RESTART"
+#      }'
+#
+# 5. Monitor logs to see real-time OPAL reactions (open separate terminals):
+#    # Watch OPAL Server logs (shows data config updates and broadcasting):
+#    docker compose -f docker-compose-single-topic-multi-tenant.yml logs -f opal_server
+#
+#    # Watch OPAL Client logs (shows data fetching and OPA updates):
+#    docker compose -f docker-compose-single-topic-multi-tenant.yml logs -f opal_client
+#
+#    # Key log messages you should see:
+#    # OPAL Server:
+#    # - "Publishing data update to topics: {'tenant_data'}, reason: Load tenant1..."
+#    # - "Broadcasting incoming event: {'topic': 'tenant_data', 'notifier_id': ...}"
+#    #
+#    # OPAL Client:
+#    # - "Received notification of event: tenant_data"
+#    # - "Updating policy data, reason: Load tenant1 data via single topic"
+#    # - "Fetching data from url: http://example_external_data_provider:80/acl/tenant1"
+#    # - "Saving fetched data to policy-store: source url=..., destination path='/acl/tenant1'"
+#
+# 6. Verify data isolation and tenant separation:
+#    curl -s http://localhost:8181/v1/data/acl/tenant1 | jq .
+#    curl -s http://localhost:8181/v1/data/acl/tenant2 | jq .
+#    curl -s http://localhost:8181/v1/data/acl | jq .
+#
+# 7. Test authorization policies with tenant context:
+#    curl -X POST http://localhost:8181/v1/data/policies/rbac/allow \
+#      -H "Content-Type: application/json" \
+#      -d '{
+#        "input": {
+#          "user": "alice",
+#          "action": "read",
+#          "resource": "document1",
+#          "tenant_id": "tenant1"
+#        }
+#      }' | jq .
+#
+# 8. LIVE DATA UPDATES - Update existing tenant data without restart:
+#    curl -X POST http://localhost:7002/data/config \
+#      -H "Content-Type: application/json" \
+#      -d '{
+#        "entries": [{
+#          "url": "http://example_external_data_provider:80/acl/tenant1",
+#          "topics": ["tenant_data"],
+#          "dst_path": "/acl/tenant1",
+#          "config": {
+#            "tenant_id": "tenant1",
+#            "action": "update",
+#            "change_type": "live_refresh",
+#            "timestamp": "2025-01-18T12:00:00.000000"
+#          }
+#        }],
+#        "reason": "Live data refresh for tenant1 - demonstrating real-time updates"
+#      }'
+#
+# 9. Monitor live update logs (same monitoring as step 5):
+#    # OPAL Server will show:
+#    # - "Publishing data update to topics: {'tenant_data'}, reason: Live data refresh..."
+#    #
+#    # OPAL Client will show:
+#    # - "Received event on topic: tenant_data"
+#    # - "Fetching data from: http://example_external_data_provider:80/acl/tenant1"
+#    # - "processing store transaction: {'success': True, ...}"
+#
+# 10. Verify live data synchronization:
+#     curl -s http://localhost:8181/v1/data/acl/tenant1 | jq .
+#
+# Key Benefits Demonstrated:
+# - ✅ Single topic 'tenant_data' handles unlimited tenants
+# - ✅ Zero downtime when adding new tenants
+# - ✅ Zero downtime when updating existing tenant data
+# - ✅ Real-time data synchronization across all tenants
+# - ✅ Perfect tenant isolation through OPA path hierarchy (/acl/tenant1, /acl/tenant2)
+# - ✅ Linear scalability: O(1) topics, O(N) tenants
+# - ✅ Simplified configuration management
+# - ✅ Real-time tenant provisioning
+#
+# Revolutionary Architecture:
+# Traditional: N tenants = N topics = restart required
+# Our approach: N tenants = 1 topic + N data sources = NO restart!
+#
+# Demo Architecture:
+# - Policies loaded from GitHub repo (demonstrates OPAL's designed workflow)
+# - All data served by local nginx container (no external APIs beyond repo)
+# - Reliable operation with standard OPAL policy sync mechanism

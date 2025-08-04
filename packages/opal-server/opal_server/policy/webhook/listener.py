@@ -25,7 +25,9 @@ def setup_webhook_listener(
     server_token = load_conf_if_none(server_token, opal_server_config.OPAL_WS_TOKEN)
 
     return TopicListener(
-        client=PubSubClient(extra_headers=[get_authorization_header(server_token)]),
+        client=PubSubClient(
+            additional_headers=[get_authorization_header(server_token)]
+        ),
         server_uri=server_uri,
         topics=[topic],
         callback=callback,

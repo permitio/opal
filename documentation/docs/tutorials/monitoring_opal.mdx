@@ -11,6 +11,7 @@ There are multiple ways you can monitor your OPAL deployment:
 - **Health-checks** - OPAL exposes HTTP health check endpoints ([See below](##health-checks))
 - [**Callbacks**](/tutorials/healthcheck_policy_and_update_callbacks#-data-update-callbacks) - Using the callback webhooks feature - having OPAL-clients report their updates
 - **Statistics** - Using the built-in statistics feature in OPAL ([See below](##opal-statistics))
+- **DataDog APM** - OPAL supports DataDog APM tracing (requires ddtrace v3.0.0+ and Python 3.8+)
 
 ## Health checks
 
@@ -41,6 +42,32 @@ The state can then be retrieved as a JSON object by calling the `/statistics` ap
 ### Code Reference:
 
 - [opal_server/statistics.py](https://github.com/permitio/opal/blob/master/packages/opal-server/opal_server/statistics.py)
+
+## DataDog APM Monitoring
+
+OPAL supports DataDog APM (Application Performance Monitoring) for observing your OPAL deployment's performance and traces.
+
+### Requirements
+
+- **ddtrace v3.0.0 or higher** - OPAL has been upgraded to use the latest ddtrace version
+- **Python 3.8 or higher** - ddtrace v3.0.0+ dropped support for Python 3.7
+
+### Configuration
+
+To enable DataDog APM monitoring:
+
+1. Set the `ENABLE_DATADOG_APM=true` environment variable for both OPAL server and client
+2. (Optional) To disable APM when needed, set `DD_TRACE_ENABLED=false`
+
+### Breaking Changes in ddtrace v3.0.0
+
+The following changes were made to support ddtrace v3.0.0:
+
+- The `ddtrace.filters.TraceFilter` import has been moved to `ddtrace.trace.TraceFilter`
+- Programmatic APM disabling via `tracer.configure(enabled=False)` is no longer supported
+- APM should now be disabled using the `DD_TRACE_ENABLED=false` environment variable
+
+For more information about ddtrace v3.0.0 changes, see the [official migration guide](https://github.com/DataDog/dd-trace-py/releases/tag/v3.0.0).
 
 
 ## OPAL Client tracker (EAP)

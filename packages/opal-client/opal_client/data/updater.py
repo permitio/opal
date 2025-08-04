@@ -230,7 +230,9 @@ class DataUpdater:
         logger.info("Getting data-sources configuration from '{source}'", source=url)
 
         try:
-            async with ClientSession(headers=self._extra_headers) as session:
+            async with ClientSession(
+                headers=self._extra_headers, trust_env=True
+            ) as session:
                 response = await session.get(url, **self._ssl_context_kwargs)
                 if response.status == 200:
                     return DataSourceConfig.parse_obj(await response.json())
@@ -347,7 +349,7 @@ class DataUpdater:
             methods_class=TenantAwareRpcEventClientMethods,
             on_connect=[self.on_connect, *self._on_connect_callbacks],
             on_disconnect=[self.on_disconnect, *self._on_disconnect_callbacks],
-            extra_headers=self._extra_headers,
+            additional_headers=self._extra_headers,
             keep_alive=opal_client_config.KEEP_ALIVE_INTERVAL,
             server_uri=self._server_url,
             **self._ssl_context_kwargs,
