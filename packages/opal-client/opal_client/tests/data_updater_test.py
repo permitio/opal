@@ -44,6 +44,7 @@ DATA_ROUTE = "/fetchable_data"
 DATA_URL = f"http://localhost:{PORT}{DATA_ROUTE}"
 DATA_CONFIG_URL = f"http://localhost:{PORT}{opal_server_config.DATA_CONFIG_ROUTE}"
 DATA_TOPICS = ["policy_data"]
+DATA_TOPICS_TEST_RACE = ["test_data"]
 TEST_DATA = {"hello": "world"}
 
 DATA_UPDATE_CALLBACK_ROUTE = "/data/callback_report_for_test"
@@ -327,3 +328,63 @@ async def test_client_get_initial_data(server):
     # cleanup
     finally:
         await updater.stop()
+
+
+DATA_UPDATE_1 = [JSONPatchAction(op="add", path="/", value={"user": "1"})]
+DATA_UPDATE_2 = [JSONPatchAction(op="add", path="/", value={"user": "2"})]
+
+
+@pytest.mark.asyncio
+async def test_data_updater_race(server):
+    """Disable auto-update on connect (fetch_on_connect=False) Connect to OPAL-
+    server trigger a Data-update and check our policy store gets the update."""
+
+    # NEED TO RUN OPA- "opa run server" in the terminal
+    policy_store = PolicyStoreClientFactory.create()
+    updater = DataUpdater(
+        pubsub_url=UPDATES_URL,
+        policy_store=policy_store,
+        fetch_on_connect=False,
+        data_topics=DATA_TOPICS_TEST_RACE,
+        should_send_reports=False,
+    )
+    # start the updater (terminate on exit)
+    await updater.start()
+
+    await updater.trigger_data_update(
+        DataUpdate(
+            id="alice",
+            reason="Alice",
+            entries=[
+                DataSourceEntry(
+                    url="",
+                    data=DATA_UPDATE_1,
+                    dst_path="test",
+                    topics=DATA_TOPICS_TEST_RACE,
+                    config={"fetcher": "TestsFetchProvider", "timeout": 10},
+                    save_method="PUT",
+                ),
+            ],
+        )
+    )
+    await asyncio.sleep(3)
+    await updater.trigger_data_update(
+        DataUpdate(
+            id="bob",
+            reason="Bob",
+            entries=[
+                DataSourceEntry(
+                    url="",
+                    data=DATA_UPDATE_2,
+                    dst_path="test",
+                    topics=DATA_TOPICS_TEST_RACE,
+                    config={"fetcher": "TestsFetchProvider", "timeout": 1},
+                    save_method="PUT",
+                ),
+            ],
+        )
+    )
+    await asyncio.sleep(10)
+    data = await policy_store.get_data("test")
+    assert data[0].get("value") == {"user": "2"}
+
