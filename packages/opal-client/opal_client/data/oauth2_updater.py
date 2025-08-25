@@ -13,7 +13,7 @@ class OAuth2DataUpdater(DefaultDataUpdater):
     ) -> aiohttp.ClientResponse:
         await self._authenticator.authenticate(headers)
 
-        async with ClientSession(headers=headers) as session:
+        async with ClientSession(headers=headers, trust_env=True) as session:
             response = await session.get(
                 url, **self._ssl_context_kwargs, allow_redirects=False
             )
@@ -32,7 +32,7 @@ class OAuth2DataUpdater(DefaultDataUpdater):
             "Redirecting to data-sources configuration '{source}'", source=redirect_url
         )
 
-        async with ClientSession(headers=headers) as session:
+        async with ClientSession(headers=headers, trust_env=True) as session:
             return await session.get(
                 redirect_url, **self._ssl_context_kwargs, allow_redirects=False
             )
