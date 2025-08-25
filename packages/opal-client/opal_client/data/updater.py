@@ -39,11 +39,45 @@ from opal_common.schemas.data import (
 from opal_common.schemas.store import TransactionType
 from opal_common.security.sslcontext import get_custom_ssl_context
 from opal_common.synchronization.hierarchical_lock import HierarchicalLock
-from opal_common.utils import get_authorization_header
+from opal_common.utils import get_authorization_header, tuple_to_dict
 from pydantic.json import pydantic_encoder
 
 
 class DataUpdater:
+    async def get_base_policy_data(
+        self, config_url: str = None, data_fetch_reason="Initial load"
+    ):
+        pass
+
+    async def stop(self):
+        pass
+
+    async def wait_until_done(self):
+        pass
+
+    @staticmethod
+    def calc_hash(data: JsonableValue) -> str:
+        """Calculates a SHA-256 hash of the given data to be used to identify
+        the updates (e.g. in logging reports on the transactions)  . If 'data'
+        is not a string, it is first serialized to JSON. Returns an empty
+        string on failure.
+
+        Args:
+            data (JsonableValue): The data to be hashed.
+
+        Returns:
+            str: The hexadecimal representation of the SHA-256 hash.
+        """
+        try:
+            if not isinstance(data, str):
+                data = json.dumps(data, default=pydantic_encoder)
+            return hashlib.sha256(data.encode("utf-8")).hexdigest()
+        except Exception as e:
+            logger.exception(f"Failed to calculate hash for data {data}: {e}")
+            return ""
+
+
+class DefaultDataUpdater(DataUpdater):
     """The DataUpdater is responsible for synchronizing data sources with the
     policy store (e.g. OPA). It listens to Pub/Sub topics for data updates,
     fetches the updated data, and writes it into the policy store. The updater
@@ -142,11 +176,11 @@ class DataUpdater:
         self._opal_client_id = opal_client_id
 
         # Prepare any extra headers (token, shard id, etc.)
-        self._extra_headers = []
-        if self._token is not None:
-            self._extra_headers.append(get_authorization_header(self._token))
+        self._extra_headers = {}
+        if self._token is not None and opal_common_config.AUTH_TYPE != "oauth2":
+            self._extra_headers = tuple_to_dict(get_authorization_header(self._token))
         if self._shard_id is not None:
-            self._extra_headers.append(("X-Shard-ID", self._shard_id))
+            self._extra_headers["X-Shard-ID"] = self._shard_id
         if len(self._extra_headers) == 0:
             self._extra_headers = None
 
@@ -236,11 +270,11 @@ class DataUpdater:
             url = self._data_sources_config_url
         logger.info("Getting data-sources configuration from '{source}'", source=url)
 
-
         headers = {}
         if self._extra_headers is not None:
             headers = self._extra_headers.copy()
-        headers['Accept'] = "application/json"
+        headers["Accept"] = "application/json"
+        await self._authenticator.authenticate(headers)
 
         try:
             response = await self._load_policy_data_config(url, headers)
@@ -256,7 +290,9 @@ class DataUpdater:
             logger.exception("Failed to load data sources config")
             raise
 
-    async def _load_policy_data_config(self, url: str, headers) -> aiohttp.ClientResponse:
+    async def _load_policy_data_config(
+        self, url: str, headers
+    ) -> aiohttp.ClientResponse:
         async with ClientSession(headers=headers, trust_env=True) as session:
             return await session.get(url, **self._ssl_context_kwargs)
 
@@ -370,8 +406,7 @@ class DataUpdater:
             methods_class=TenantAwareRpcEventClientMethods,
             on_connect=[self.on_connect, *self._on_connect_callbacks],
             on_disconnect=[self.on_disconnect, *self._on_disconnect_callbacks],
-            additional_headers=self._extra_headers,
-            extra_headers=headers,
+            additional_headers=headers,
             keep_alive=opal_client_config.KEEP_ALIVE_INTERVAL,
             server_uri=self._server_url,
             **self._ssl_context_kwargs,
@@ -444,27 +479,6 @@ class DataUpdater:
         """
         if self._subscriber_task is not None:
             await self._subscriber_task
-
-    @staticmethod
-    def calc_hash(data: JsonableValue) -> str:
-        """Calculates a SHA-256 hash of the given data to be used to identify
-        the updates (e.g. in logging reports on the transactions)  . If 'data'
-        is not a string, it is first serialized to JSON. Returns an empty
-        string on failure.
-
-        Args:
-            data (JsonableValue): The data to be hashed.
-
-        Returns:
-            str: The hexadecimal representation of the SHA-256 hash.
-        """
-        try:
-            if not isinstance(data, str):
-                data = json.dumps(data, default=pydantic_encoder)
-            return hashlib.sha256(data.encode("utf-8")).hexdigest()
-        except Exception as e:
-            logger.exception(f"Failed to calculate hash for data {data}: {e}")
-            return ""
 
     async def _update_policy_data(self, update: DataUpdate) -> None:
         """Performs the core data update process for the given DataUpdate

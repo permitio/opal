@@ -78,10 +78,11 @@ class _JWTAuthenticator(Authenticator):
         return self._verifier
 
     def signer(self) -> Optional[JWTSigner]:
+        logger.info("!!!!! signer == _verifier")
         return self._verifier
 
     @property
-    def enabled(self) -> JWTVerifier:
+    def enabled(self) -> bool:
         return self._verifier.enabled
 
     async def authenticate(self, headers):

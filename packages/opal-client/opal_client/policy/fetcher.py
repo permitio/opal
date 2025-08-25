@@ -6,6 +6,7 @@ from opal_client.config import opal_client_config
 from opal_client.logger import logger
 from opal_common.authentication.authenticator import Authenticator
 from opal_common.authentication.authenticator_factory import AuthenticatorFactory
+from opal_common.config import opal_common_config
 from opal_common.schemas.policy import PolicyBundle
 from opal_common.security.sslcontext import get_custom_ssl_context
 from opal_common.utils import (
@@ -47,7 +48,7 @@ class PolicyFetcher:
             self._authenticator = AuthenticatorFactory.create()
         self._token = token or opal_client_config.CLIENT_TOKEN
         self._backend_url = backend_url or opal_client_config.SERVER_URL
-        if self._token is not None:
+        if self._token is not None and opal_common_config.AUTH_TYPE != "oauth2":
             self._auth_headers = tuple_to_dict(get_authorization_header(self._token))
         else:
             self._auth_headers = dict()

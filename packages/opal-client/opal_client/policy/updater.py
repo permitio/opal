@@ -17,13 +17,15 @@ from opal_client.policy_store.policy_store_client_factory import (
     DEFAULT_POLICY_STORE_GETTER,
 )
 from opal_common.async_utils import TakeANumberQueue, TasksPool
+from opal_common.authentication.authenticator import Authenticator
+from opal_common.authentication.authenticator_factory import AuthenticatorFactory
 from opal_common.config import opal_common_config
 from opal_common.schemas.data import DataUpdateReport
 from opal_common.schemas.policy import PolicyBundle, PolicyUpdateMessage
 from opal_common.schemas.store import TransactionType
 from opal_common.security.sslcontext import get_custom_ssl_context
 from opal_common.topics.utils import pubsub_topics_from_directories
-from opal_common.utils import get_authorization_header
+from opal_common.utils import get_authorization_header, tuple_to_dict
 
 
 class PolicyUpdater:
@@ -77,10 +79,11 @@ class PolicyUpdater:
         # pub/sub server url and authentication data
         self._server_url = pubsub_url
         self._token = token
-        if self._token is None:
+        self._extra_headers = {}
+        if self._token is not None and opal_common_config.AUTH_TYPE != "oauth2":
+            self._extra_headers = tuple_to_dict(get_authorization_header(self._token))
+        if len(self._extra_headers) == 0:
             self._extra_headers = None
-        else:
-            self._extra_headers = [get_authorization_header(self._token)]
         # Pub/Sub topics we subscribe to for policy updates
         if self._scope_id == "default":
             self._topics = pubsub_topics_from_directories(
@@ -261,7 +264,7 @@ class PolicyUpdater:
             callback=self._update_policy_callback,
             on_connect=[self._on_connect, *self._on_connect_callbacks],
             on_disconnect=[self._on_disconnect, *self._on_disconnect_callbacks],
-            extra_headers=headers,
+            additional_headers=headers,
             keep_alive=opal_client_config.KEEP_ALIVE_INTERVAL,
             server_uri=self._server_url,
             **self._ssl_context_kwargs,

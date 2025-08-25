@@ -155,7 +155,7 @@ class CachedOAuth2Authenticator(_OAuth2Authenticator):
             claims = self._delegate.verify(token)
 
             self._token = token
-            self._exp = claims["exp"]
+            self._exp = claims.get("exp")
 
             return self._token
 
