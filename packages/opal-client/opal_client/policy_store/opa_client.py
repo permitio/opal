@@ -430,7 +430,7 @@ class OpaClient(BasePolicyStoreClient):
                 ) as oauth_response:
                     response = await oauth_response.json()
                     logger.info(
-                        f"got access_token, expires in {response['expires_in']} seconds"
+                        f"Got access_token, expires in {response['expires_in']} seconds"
                     )
 
                     return {
