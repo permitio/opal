@@ -350,7 +350,7 @@ def init_scope_router(
                 entry.topics = [f"{scope_id}:data:{topic}" for topic in entry.topics]
 
             await DataUpdatePublisher(
-                ScopedServerSideTopicPublisher(pubsub_endpoint, scope_id)
+                ServerSideTopicPublisher(pubsub_endpoint)
             ).publish_data_updates(update)
         except Unauthorized as ex:
             logger.error(f"Unauthorized to publish update: {repr(ex)}")
