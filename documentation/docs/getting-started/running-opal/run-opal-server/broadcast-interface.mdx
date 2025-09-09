@@ -4,7 +4,7 @@
 
 #### 1) Deploying the broadcast channel backbone service (optional)
 
-When scaling the OPAL Server to **multiple workers** and/or **multiple containers**, we use a **broadcast channel** to sync between all the instances of OPAL Server. In order words, communication on the broadcast channel is **communication between OPAL servers**, and is not related to the OPAL client.
+When scaling the OPAL Server to **multiple workers** and/or **multiple containers**, we use a **broadcast channel** to sync between all the instances of OPAL Server. In other words, communication on the broadcast channel is **communication between OPAL servers**, and is not related to the OPAL client.
 
 Under the hood, our interface to the broadcast channel **backbone service** is implemented by [encode/broadcaster](https://github.com/encode/broadcaster).
 
@@ -14,9 +14,9 @@ At the moment, the supported broadcast channel backbones are:
 - Redis
 - Kafka
 
-Deploying the actual service used for broadcast (i.e: Redis) is outside the scope of this tutorial. The easiest way is to use a managed service (e.g: AWS RDS, AWS ElastiCache, etc), but you can also deploy your own dockers.
+Deploying the actual service used for broadcast (e.g., Redis) is outside the scope of this tutorial. The easiest way is to use a managed service (e.g., AWS RDS, AWS ElastiCache, etc.), but you can also deploy your own dockers.
 
-When running in production, you **should** run with multiple workers per server instance (i.e: container/node), if not multiple containers, and thus deploying the backbone service becomes **mandatory** for production environments.
+When running in production, you **should** run with multiple workers per server instance (i.e., container/node), if not multiple containers, and thus deploying the backbone service becomes **mandatory** for production environments.
 
 #### 2) Declaring the broadcast uri environment variable
 
