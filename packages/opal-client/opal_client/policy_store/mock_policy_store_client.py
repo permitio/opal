@@ -18,7 +18,7 @@ class MockPolicyStoreClient(BasePolicyStoreClient):
 
     def __init__(self) -> None:
         super().__init__()
-        self._has_data_event: asyncio.Event() = None
+        self._has_data_event: Optional[asyncio.Event] = None
         self._data = {}
 
     @property
@@ -102,5 +102,11 @@ class MockPolicyStoreClient(BasePolicyStoreClient):
     async def log_transaction(self, transaction: StoreTransaction):
         pass
 
+    async def is_ready(self, wait_for_all_data_sources_loaded: bool = False) -> bool:
+        return self.has_data_event.is_set()
+
     async def is_healthy(self) -> bool:
         return self.has_data_event.is_set()
+
+    async def set_expected_data_transaction_count(self, count: int) -> None:
+        pass
