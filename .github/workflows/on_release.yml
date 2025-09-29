@@ -217,6 +217,35 @@ jobs:
           tags: |
             permitio/opal-client-cedar:${{ github.event.release.tag_name }}
 
+      - name: Build & Push EOPA
+        if: ${{ github.event.release.prerelease == false }}
+        id: build_push_eopa_regular
+        uses: docker/build-push-action@v6
+        with:
+          file: docker/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          target: client-eopa
+          cache-from: type=registry,ref=permitio/opal-client-eopa:latest
+          cache-to: type=inline
+          tags: |
+            permitio/opal-client-eopa:latest
+            permitio/opal-client-eopa:${{ github.event.release.tag_name }}
+
+      - name: Build & Push EOPA (prerelease)
+        if: ${{ github.event.release.prerelease == true }}
+        id: build_push_eopa_prerelease
+        uses: docker/build-push-action@v6
+        with:
+          file: docker/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          target: client-eopa
+          cache-from: type=registry,ref=permitio/opal-client-eopa:latest
+          cache-to: type=inline
+          tags: |
+            permitio/opal-client-eopa:${{ github.event.release.tag_name }}
+
       - name: Python setup
         uses: actions/setup-python@v5
         with:

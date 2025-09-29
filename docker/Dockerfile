@@ -88,7 +88,7 @@ WORKDIR /opal
 
 # copy opa from official docker image
 ARG opa_image=openpolicyagent/opa
-ARG opa_tag=0.70.0-static
+ARG opa_tag=1.9.0-static
 RUN skopeo copy "docker://${opa_image}:${opa_tag}" docker-archive:./image.tar && \
   mkdir image && tar xf image.tar -C ./image && cat image/*.tar | tar xf - -C ./image -i && \
   find image/ -name "opa*" -type f -executable -print0 | xargs -0 -I "{}" cp {} ./opa && chmod 755 ./opa && \
@@ -109,7 +109,46 @@ COPY --from=opa-extractor /opal/opa ./opa
 # enable inline OPA
 ENV OPAL_INLINE_OPA_ENABLED=true
 ENV OPAL_INLINE_OPA_EXEC_PATH=/opal/opa
-# expose opa port
+
+# EOPA BINARY DOWNLOAD STAGE ------------------------
+# ---------------------------------------------------
+FROM alpine:latest AS eopa-extractor
+USER root
+
+# Install download dependencies
+RUN apk add --no-cache wget
+
+# Set working directory
+WORKDIR /download
+
+# Download pre-built EOPA binary based on architecture
+ARG eopa_tag=v1.43.2
+ARG TARGETARCH
+RUN case "${TARGETARCH}" in \
+        "amd64") EOPA_ARCH="x86_64" ;; \
+        "arm64") EOPA_ARCH="arm64" ;; \
+        *) echo "Unsupported architecture: ${TARGETARCH}" && exit 1 ;; \
+    esac && \
+    echo "Downloading EOPA for Linux_${EOPA_ARCH}" && \
+    wget -O eopa "https://github.com/open-policy-agent/eopa/releases/download/${eopa_tag}/eopa_Linux_${EOPA_ARCH}" && \
+    chmod +x eopa
+
+# EOPA CLIENT IMAGE ---------------------------------
+# Using standalone image as base --------------------
+# ---------------------------------------------------
+FROM client-standalone AS client-eopa
+
+# Temporarily move back to root for additional setup
+USER root
+
+# copy eopa from eopa-extractor
+COPY --from=eopa-extractor /download/eopa ./eopa
+
+# enable inline EOPA
+ENV OPAL_POLICY_STORE_TYPE=OPA
+ENV OPAL_INLINE_OPA_ENABLED=true
+ENV OPAL_INLINE_OPA_EXEC_PATH=/opal/eopa
+# expose eopa port (same as OPA)
 EXPOSE 8181
 USER opal
 
