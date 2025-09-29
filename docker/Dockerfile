@@ -122,7 +122,7 @@ RUN apk add --no-cache wget
 WORKDIR /download
 
 # Download pre-built EOPA binary based on architecture
-ARG eopa_tag=v1.43.2
+ARG eopa_tag=v1.44.0
 ARG TARGETARCH
 RUN case "${TARGETARCH}" in \
         "amd64") EOPA_ARCH="x86_64" ;; \
