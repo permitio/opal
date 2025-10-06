@@ -316,6 +316,19 @@ class OpaRunner(PolicyEngineRunner):
     def get_arguments(self) -> list[str]:
         args = ["run", "--server"]
         opts = self._options.get_cli_options_dict()
+
+        # Check if v0 compatibility mode should be enabled
+        # Either the top-level OPAL_OPA_V0_COMPAT setting or the inline OPA config v0_compatible setting
+        v0_compatible_enabled = (
+            opal_client_config.OPA_V0_COMPAT or self._options.v0_compatible
+        )
+
+        # If v0 compatibility is enabled, add the --v0-compatible flag
+        if v0_compatible_enabled:
+            args.append("--v0-compatible")
+            # Override the v0_compatible option in the dict to ensure consistency
+            opts["v0-compatible"] = True
+
         args.extend(f"{k}={v}" for k, v in opts.items())
         if self._options.files:
             args.extend(self._options.files)
