@@ -326,8 +326,6 @@ class OpaRunner(PolicyEngineRunner):
         # If v0 compatibility is enabled, add the --v0-compatible flag
         if v0_compatible_enabled:
             args.append("--v0-compatible")
-            # Override the v0_compatible option in the dict to ensure consistency
-            opts["v0-compatible"] = True
 
         args.extend(f"{k}={v}" for k, v in opts.items())
         if self._options.files:
