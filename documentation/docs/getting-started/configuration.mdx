@@ -1144,6 +1144,14 @@ Default: `{}`
 
 If inline OPA is enabled, the user can set the [server configuration options](https://docs.opal.ac/getting-started/running-opal/run-opal-client/opa-runner-parameters) that affect how OPA will start when running `opa run --server` inline. Watch escaping quotes.
 
+#### OPAL_OPA_V0_COMPAT
+
+Default: `True` (for OPAL v0.9.x, will be changed to unconfigured in v0.10.0)
+
+Set to `true` to enable OPA v0 compatibility mode (`--v0-compatible` flag).
+This setting merges with `OPAL_INLINE_OPA_CONFIG.v0_compatible` - if either is enabled, the flag will be added to OPA.
+This allows for easier migration from OPA v0 to OPA v1 by enabling the compatibility mode by default until everyone migrates.
+
 #### OPAL_INLINE_OPA_LOG_FORMAT
 
 Default: `none`

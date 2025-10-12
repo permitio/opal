@@ -163,6 +163,12 @@ class OpalClientConfig(Confi):
         description="CLI options used when running `opa run --server` inline",
     )
 
+    OPA_V0_COMPAT = confi.bool(
+        "OPA_V0_COMPAT",
+        True,  # Enabled by default for OPAL v0.9.x, will be changed to unconfigured in v0.10.0
+        description="Set to true to enable OPA v0 compatibility mode (--v0-compatible flag). This merges with INLINE_OPA_CONFIG.v0_compatible - if either is enabled, the flag will be added to OPA",
+    )
+
     INLINE_OPA_LOG_FORMAT: EngineLogFormat = confi.enum(
         "INLINE_OPA_LOG_FORMAT",
         EngineLogFormat,
