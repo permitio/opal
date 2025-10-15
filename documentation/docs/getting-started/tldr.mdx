@@ -17,7 +17,7 @@ Every time you push a change, the OPAL server will notify the subscribing OPAL-c
 
 OPAL tracks data from various sources via webhooks and [Fetch-Providers](/tutorials/write_your_own_fetch_provider) (extensible python modules that teach it to load data from sources).
 
-[Initial data is indicated by the server](getting-started/running-opal/run-opal-server/data-sources) based on `OPAL_DATA_CONFIG_SOURCES`.
+[Initial data is indicated by the server](/getting-started/running-opal/run-opal-server/data-sources) based on `OPAL_DATA_CONFIG_SOURCES`.
 Subsequent data updates are triggered via [the data update webhook](/tutorials/trigger_data_updates).
 Every time the policy agent (or it's managing OPAL-client) restarts, the data and policy are loaded from scratch.
 
