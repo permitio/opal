@@ -1,0 +1,188 @@
+# OPA Version Migration Guide
+
+## Overview
+
+Starting with OPAL v0.9.x, OPAL now ships with OPA v1 by default and supports both OPA v0 and OPA v1 compatibility modes.
+This guide explains how to migrate your Rego policies from OPA v0 to OPA v1 while ensuring a smooth transition.
+
+## What's Changed in OPA v1
+
+OPA v1 introduces several breaking changes that affect how Rego policies are written:
+
+- **Package declarations**: In OPA v0, you could write `package authz` or just `package authz`. In OPA v1, you must use `package authz.v1` (with a version suffix).
+- **Rule declarations**: Rules now require explicit package versioning.
+- **Import statements**: Import paths have changed to be more explicit.
+- **Built-in functions**: Some built-in functions have been renamed or deprecated.
+
+For more information, see [OPA v1 Migration Guide](https://www.openpolicyagent.org/docs/v0-upgrade).
+
+## Migration Strategy
+
+OPAL provides a gradual migration path:
+
+1. **Enable v0 compatibility mode** (default in OPAL v0.9.x)
+2. **Test your policies** with v0 compatibility enabled
+3. **Migrate your policies** to OPA v1 format
+4. **Disable v0 compatibility mode** when ready
+
+## Step 1: Enable v0 Compatibility Mode
+
+By default, OPAL v0.9.x enables v0 compatibility mode automatically. This means:
+
+- OPA will accept both v0 and v1 syntax
+- You can run your existing policies without immediate changes
+- The `--v0-compatible` flag is automatically added to OPA
+
+### Configuration
+
+The v0 compatibility mode is controlled by the `OPAL_OPA_V0_COMPAT` setting:
+
+```bash
+# Enable v0 compatibility (default in v0.9.x)
+export OPAL_OPA_V0_COMPAT=true
+
+# Disable v0 compatibility
+export OPAL_OPA_V0_COMPAT=false
+```
+
+This setting merges with the inline OPA configuration:
+
+```bash
+# You can also set it in the inline OPA config
+export OPAL_INLINE_OPA_CONFIG='{"v0_compatible": true}'
+```
+
+**Note**: If either `OPAL_OPA_V0_COMPAT` or `OPAL_INLINE_OPA_CONFIG.v0_compatible` is `true`, the `--v0-compatible` flag will be added to OPA.
+
+## Step 2: Test Your Current Policies
+
+With v0 compatibility enabled, verify that your existing policies work correctly:
+
+1. Start OPAL with your current policies
+2. Test authorization queries
+3. Check that all expected functionality works
+
+## Step 3: Migrate Your Policies
+
+### Basic Package Migration
+
+**OPA v0 syntax:**
+```rego
+package authz
+
+default allow = false
+
+allow {
+    input.user == "admin"
+}
+```
+
+**OPA v1 syntax:**
+```rego
+package authz.v1
+
+default allow := false
+
+allow if {
+    input.user == "admin"
+}
+```
+
+### Key Changes to Make:
+
+1. **Add `.v1` suffix** to package declarations
+2. **Replace `=` with `:=`** for assignments
+3. **Replace `if` statements** with guard syntax
+4. **Update import paths** to include version suffixes
+
+### Example Migration
+
+Here's a more complex example:
+
+**Before (OPA v0):**
+```rego
+package authz
+
+import data.users
+
+default allow = false
+
+allow {
+    user := data.users[input.user]
+    user.role == "admin"
+    input.action == "delete"
+}
+
+has_permission[user] {
+    user := data.users[input.user]
+    user.role == "admin"
+}
+```
+
+**After (OPA v1):**
+```rego
+package authz.v1
+
+import data.users
+
+default allow := false
+
+allow if {
+    user := data.users[input.user]
+    user.role == "admin"
+    input.action == "delete"
+}
+
+has_permission contains user if {
+    user := data.users[input.user]
+    user.role == "admin"
+}
+```
+
+## Step 4: Disable v0 Compatibility Mode
+
+Once you've migrated all your policies:
+
+1. **Set `OPAL_OPA_V0_COMPAT=false`** or remove the setting (it defaults to `false` in v0.10.0+)
+2. **Remove `v0_compatible: true`** from your `OPAL_INLINE_OPA_CONFIG`
+3. **Restart OPAL** to apply the changes
+
+## Migration Timeline
+
+- **OPAL v0.9.x**: `OPAL_OPA_V0_COMPAT` defaults to `true` for easier migration
+- **OPAL v0.10.0+**: `OPAL_OPA_V0_COMPAT` will be unconfigured (effectively `false`) by default
+
+## Troubleshooting
+
+### Common Migration Issues
+
+1. **Package not found errors**: Make sure to add `.v1` suffix to package declarations
+2. **Syntax errors**: Update `=` to `:=` and use guard syntax for `if` statements
+3. **Import errors**: Update import paths to include version suffixes
+
+### Debugging Tips
+
+1. **Check OPA logs** for detailed error messages
+2. **Use OPA's playground** to test individual policies
+3. **Enable verbose logging** during migration:
+   ```bash
+   export OPAL_INLINE_OPA_LOG_FORMAT=full
+   ```
+
+### Rollback Plan
+
+If you encounter issues:
+
+1. Re-enable v0 compatibility mode:
+   ```bash
+   export OPAL_OPA_V0_COMPAT=true
+   ```
+2. Restart OPAL
+3. Fix any remaining policy issues
+4. Try migration again
+
+## Resources
+
+- [OPA v1 Migration Guide](https://www.openpolicyagent.org/docs/v0-upgrade)
+- [OPA v1 Playground](https://play.openpolicyagent.org/)
+- [Rego Language Reference](https://www.openpolicyagent.org/docs/latest/policy-language/)

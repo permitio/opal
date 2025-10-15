@@ -53,7 +53,7 @@ install-develop:
 
 # docs
 docs-dev:
-	@cd documentation && npm start
+	@cd documentation && yarn start
 
 # docker
 docker-build-client:

@@ -88,7 +88,9 @@ class OpaServerOptions(BaseModel):
 
     def get_cli_options_dict(self):
         """Returns a dict that can be passed to the OPA cli."""
-        return self.dict(exclude_none=True, by_alias=True, exclude={"files"})
+        return self.dict(
+            exclude_none=True, by_alias=True, exclude={"files", "v0_compatible"}
+        )
 
 
 class CedarServerOptions(BaseModel):
