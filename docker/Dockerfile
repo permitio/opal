@@ -109,6 +109,9 @@ COPY --from=opa-extractor /opal/opa ./opa
 # enable inline OPA
 ENV OPAL_INLINE_OPA_ENABLED=true
 ENV OPAL_INLINE_OPA_EXEC_PATH=/opal/opa
+# expose opa port
+EXPOSE 8181
+USER opal
 
 # EOPA BINARY DOWNLOAD STAGE ------------------------
 # ---------------------------------------------------
