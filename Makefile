@@ -15,6 +15,7 @@ help:
 	@echo "  docker-build-server   - Build opal-server Docker image"
 	@echo "  docker-run-client     - Run opal-client in Docker"
 	@echo "  docker-run-server     - Run opal-server in Docker"
+	@echo "  docker-build-client-eopa - Build opal-client-eopa Docker image"
 
 OPAL_SERVER_URL ?= http://host.docker.internal:7002
 OPAL_AUTH_PRIVATE_KEY ?= /root/ssh/opal_rsa
@@ -59,6 +60,9 @@ docs-dev:
 docker-build-client:
 	@docker build -t permitio/opal-client --target client -f docker/Dockerfile .
 
+docker-build-client-eopa:
+	@docker build -t permitio/opal-client-eopa --target client-eopa -f docker/Dockerfile .
+
 docker-build-client-cedar:
 	@docker build -t permitio/opal-client-cedar --target client-cedar -f docker/Dockerfile .
 
@@ -82,11 +86,13 @@ docker-build-next:
 	@docker build -t permitio/opal-client-standalone:next --target client-standalone -f docker/Dockerfile .
 	@docker build -t permitio/opal-client:next --target client -f docker/Dockerfile .
 	@docker build -t permitio/opal-server:next --target server -f docker/Dockerfile .
+	@docker build -t permitio/opal-client-eopa:next --target client-eopa -f docker/Dockerfile .
 
 docker-build-latest:
 	@docker build -t permitio/opal-client-standalone:latest --target client-standalone -f docker/Dockerfile .
 	@docker build -t permitio/opal-client:latest --target client -f docker/Dockerfile .
 	@docker build -t permitio/opal-server:latest --target server -f docker/Dockerfile .
+	@docker build -t permitio/opal-client-eopa:latest --target client-eopa -f docker/Dockerfile .
 
 docker-run-server:
 	@if [[ -z "$(OPAL_POLICY_REPO_SSH_KEY)" ]]; then \
