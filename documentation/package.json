@@ -23,14 +23,13 @@
     "clsx": "2.1.1",
     "docusaurus-plugin-sass": "0.2.6",
     "micromatch": "^4.0.8",
-    "node": "18.20.8",
     "prism-react-renderer": "2.3.1",
     "react": "18.3.1",
     "react-dom": "18.3.1",
     "sass": "1.93.2"
   },
   "devDependencies": {
-    "@docusaurus/module-type-aliases": "3.0.0"
+    "@docusaurus/module-type-aliases": "3.9.1"
   },
   "browserslist": {
     "production": [
@@ -45,7 +44,7 @@
     ]
   },
   "engines": {
-    "node": ">=18.0"
+    "node": ">=20.0"
   },
   "overrides": {
     "got": "11.8.5",
