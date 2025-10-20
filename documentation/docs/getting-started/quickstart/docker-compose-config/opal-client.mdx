@@ -49,3 +49,17 @@ OPAL **listens** to policy code update notifications and **downloads up-to-date 
 
 OPAL **listens** to policy data update notifications and **fetches the data from the sources** specified by the instructions
 sent from the server. OPAL can aggregate data from multiple sources. This may include your **APIs**, **databases** and **3rd party SaaS**.
+
+
+### eOPA variant
+
+OPAL Client supports running eOPA as the inline engine.
+
+```yml showLineNumbers {3}
+service:
+  opal_client:
+    image: permitio/opal-client-eopa:latest
+```
+
+See `docker/docker-compose-example-eopa.yml` for a full example. The engine exposes the same OPA-compatible HTTP API on `:8181` while OPAL keeps policies and data synchronized.
+Read more about eOPA [here](https://github.com/open-policy-agent/eopa).
