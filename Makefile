@@ -94,6 +94,35 @@ docker-build-latest:
 	@docker build -t permitio/opal-server:latest --target server -f docker/Dockerfile .
 	@docker build -t permitio/opal-client-eopa:latest --target client-eopa -f docker/Dockerfile .
 
+docker-build-alpine:
+	@docker build -t permitio/opal-client:latest-alpine --target client-alpine -f docker/Dockerfile .
+	@docker build -t permitio/opal-server:latest-alpine --target server-alpine -f docker/Dockerfile .
+
+docker-build-client-alpine:
+	@docker build -t permitio/opal-client:next-alpine --target client-alpine -f docker/Dockerfile .
+
+docker-build-client-standalone-alpine:
+	@docker build -t permitio/opal-client-standalone:next-alpine --target client-standalone-alpine -f docker/Dockerfile .
+
+docker-build-client-cedar-alpine:
+	@docker build -t permitio/opal-client-cedar:next-alpine --target client-cedar-alpine -f docker/Dockerfile .
+
+docker-build-client-next-alpine:
+	@docker build -t permitio/opal-client-standalone:next-alpine --target client-standalone-alpine -f docker/Dockerfile .
+	@docker build -t permitio/opal-client:next-alpine --target client-alpine -f docker/Dockerfile .
+	@docker build -t permitio/opal-client-cedar:next-alpine --target client-cedar-alpine -f docker/Dockerfile .
+
+docker-build-client-latest-alpine:
+	@docker build -t permitio/opal-client-standalone:latest-alpine --target client-standalone-alpine -f docker/Dockerfile .
+	@docker build -t permitio/opal-client:latest-alpine --target client-alpine -f docker/Dockerfile .
+	@docker build -t permitio/opal-client-cedar:latest-alpine --target client-cedar-alpine -f docker/Dockerfile .
+
+docker-build-server-next-alpine:
+	@docker build -t permitio/opal-server:next-alpine --target server-alpine -f docker/Dockerfile .
+
+docker-build-server-latest-alpine:
+	@docker build -t permitio/opal-server:latest-alpine --target server-alpine -f docker/Dockerfile .
+
 docker-run-server:
 	@if [[ -z "$(OPAL_POLICY_REPO_SSH_KEY)" ]]; then \
 		docker run -it \
