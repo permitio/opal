@@ -159,6 +159,35 @@ jobs:
           tags: |
             permitio/opal-client-standalone:${{ github.event.release.tag_name }}
 
+      - name: Build & Push client alpine
+        if: ${{ github.event.release.prerelease == false }}
+        id: build_push_client_alpine_regular
+        uses: docker/build-push-action@v6
+        with:
+          file: docker/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          target: client-alpine
+          cache-from: type=registry,ref=permitio/opal-client:latest-alpine
+          cache-to: type=inline
+          tags: |
+            permitio/opal-client:latest-alpine
+            permitio/opal-client:${{ github.event.release.tag_name }}-alpine
+
+      - name: Build & Push client alpine (prerelease)
+        if: ${{ github.event.release.prerelease == true }}
+        id: build_push_client_alpine_prerelease
+        uses: docker/build-push-action@v6
+        with:
+          file: docker/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          target: client-alpine
+          cache-from: type=registry,ref=permitio/opal-client:latest-alpine
+          cache-to: type=inline
+          tags: |
+            permitio/opal-client:${{ github.event.release.tag_name }}-alpine
+
       - name: Build server
         if: ${{ github.event.release.prerelease == false }}
         id: build_push_server_regular
@@ -187,6 +216,35 @@ jobs:
           cache-to: type=inline
           tags: |
             permitio/opal-server:${{ github.event.release.tag_name }}
+
+      - name: Build & Push server alpine
+        if: ${{ github.event.release.prerelease == false }}
+        id: build_push_server_alpine_regular
+        uses: docker/build-push-action@v6
+        with:
+          file: docker/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          target: server-alpine
+          cache-from: type=registry,ref=permitio/opal-server:latest-alpine
+          cache-to: type=inline
+          tags: |
+            permitio/opal-server:latest-alpine
+            permitio/opal-server:${{ github.event.release.tag_name }}-alpine
+
+      - name: Build & Push server alpine (prerelease)
+        if: ${{ github.event.release.prerelease == true }}
+        id: build_push_server_alpine_prerelease
+        uses: docker/build-push-action@v6
+        with:
+          file: docker/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          target: server-alpine
+          cache-from: type=registry,ref=permitio/opal-server:latest-alpine
+          cache-to: type=inline
+          tags: |
+            permitio/opal-server:${{ github.event.release.tag_name }}-alpine
 
       - name: Build & Push client cedar
         if: ${{ github.event.release.prerelease == false }}
@@ -245,6 +303,35 @@ jobs:
           cache-to: type=inline
           tags: |
             permitio/opal-client-eopa:${{ github.event.release.tag_name }}
+
+      - name: Build & Push client cedar alpine
+        if: ${{ github.event.release.prerelease == false }}
+        id: build_push_client_cedar_alpine_regular
+        uses: docker/build-push-action@v6
+        with:
+          file: docker/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          target: client-cedar-alpine
+          cache-from: type=registry,ref=permitio/opal-client-cedar:latest-alpine
+          cache-to: type=inline
+          tags: |
+            permitio/opal-client-cedar:latest-alpine
+            permitio/opal-client-cedar:${{ github.event.release.tag_name }}-alpine
+
+      - name: Build & Push client cedar alpine (prerelease)
+        if: ${{ github.event.release.prerelease == true }}
+        id: build_push_client_cedar_alpine_prerelease
+        uses: docker/build-push-action@v6
+        with:
+          file: docker/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          target: client-cedar-alpine
+          cache-from: type=registry,ref=permitio/opal-client-cedar:latest-alpine
+          cache-to: type=inline
+          tags: |
+            permitio/opal-client-cedar:${{ github.event.release.tag_name }}-alpine
 
       - name: Python setup
         if: ${{ github.event.release.prerelease == false }}

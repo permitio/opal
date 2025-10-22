@@ -127,3 +127,62 @@ jobs:
           git config --global user.email "<>"
 
           ./run.sh
+
+  e2e-tests-alpine:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    name: E2E Tests (Alpine)
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+        with:
+          fetch-depth: 0
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v1
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v1
+
+      - name: Docker Compose install
+        run: |
+          curl -L "https://github.com/docker/compose/releases/download/1.29.2/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+          chmod +x /usr/local/bin/docker-compose
+
+      - name: Build client (alpine)
+        id: build_client_alpine
+        uses: docker/build-push-action@v2
+        with:
+          file: docker/Dockerfile
+          push: false
+          target: client-alpine
+          cache-from: type=registry,ref=permitio/opal-client:latest-alpine
+          cache-to: type=inline
+          load: true
+          tags: |
+            permitio/opal-client:test-alpine
+
+      - name: Build server (alpine)
+        id: build_server_alpine
+        uses: docker/build-push-action@v2
+        with:
+          file: docker/Dockerfile
+          push: false
+          target: server-alpine
+          cache-from: type=registry,ref=permitio/opal-server:latest-alpine
+          cache-to: type=inline
+          load: true
+          tags: |
+            permitio/opal-server:test-alpine
+
+      - name: Create alpine docker compose file
+        run: sed 's/:latest-alpine/:test-alpine/g' docker/docker-compose-example-alpine.yml > docker/docker-compose-test-alpine.yml
+
+      - name: Bring up alpine stack
+        run: docker compose -f docker/docker-compose-test-alpine.yml up -d
+
+      - name: Check if inline OPA is healthy (alpine)
+        run: ./scripts/wait-for.sh -t 60 http://localhost:8181/v1/data/users -- sleep 10 && curl -s "http://localhost:8181/v1/data/users" | jq '.result.bob.location.country == "US"'
+
+      - name: Output container logs (alpine)
+        run: docker compose -f docker/docker-compose-test-alpine.yml logs
