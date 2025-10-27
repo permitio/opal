@@ -159,6 +159,35 @@ jobs:
           tags: |
             permitio/opal-client-standalone:${{ github.event.release.tag_name }}
 
+      - name: Build & Push client-standalone alpine
+        if: ${{ github.event.release.prerelease == false }}
+        id: build_push_client_standalone_alpine_regular
+        uses: docker/build-push-action@v6
+        with:
+          file: docker/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          target: client-standalone-alpine
+          cache-from: type=registry,ref=permitio/opal-client-standalone:latest-alpine
+          cache-to: type=inline
+          tags: |
+            permitio/opal-client-standalone:latest-alpine
+            permitio/opal-client-standalone:${{ github.event.release.tag_name }}-alpine
+
+      - name: Build & Push client-standalone alpine (prerelease)
+        if: ${{ github.event.release.prerelease == true }}
+        id: build_push_client_standalone_alpine_prerelease
+        uses: docker/build-push-action@v6
+        with:
+          file: docker/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          target: client-standalone-alpine
+          cache-from: type=registry,ref=permitio/opal-client-standalone:latest-alpine
+          cache-to: type=inline
+          tags: |
+            permitio/opal-client-standalone:${{ github.event.release.tag_name }}-alpine
+
       - name: Build & Push client alpine
         if: ${{ github.event.release.prerelease == false }}
         id: build_push_client_alpine_regular
@@ -303,6 +332,35 @@ jobs:
           cache-to: type=inline
           tags: |
             permitio/opal-client-eopa:${{ github.event.release.tag_name }}
+
+      - name: Build & Push EOPA alpine
+        if: ${{ github.event.release.prerelease == false }}
+        id: build_push_eopa_alpine_regular
+        uses: docker/build-push-action@v6
+        with:
+          file: docker/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          target: client-eopa-alpine
+          cache-from: type=registry,ref=permitio/opal-client-eopa:latest-alpine
+          cache-to: type=inline
+          tags: |
+            permitio/opal-client-eopa:latest-alpine
+            permitio/opal-client-eopa:${{ github.event.release.tag_name }}-alpine
+
+      - name: Build & Push EOPA alpine (prerelease)
+        if: ${{ github.event.release.prerelease == true }}
+        id: build_push_eopa_alpine_prerelease
+        uses: docker/build-push-action@v6
+        with:
+          file: docker/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          target: client-eopa-alpine
+          cache-from: type=registry,ref=permitio/opal-client-eopa:latest-alpine
+          cache-to: type=inline
+          tags: |
+            permitio/opal-client-eopa:${{ github.event.release.tag_name }}-alpine
 
       - name: Build & Push client cedar alpine
         if: ${{ github.event.release.prerelease == false }}
