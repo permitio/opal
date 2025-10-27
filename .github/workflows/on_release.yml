@@ -183,7 +183,6 @@ jobs:
   publish_python_packages:
     needs:
       - build_and_test
-      - publish_docker_images
     if: ${{ github.event.release.prerelease == false }}
     runs-on: ubuntu-latest
     permissions:
