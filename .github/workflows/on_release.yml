@@ -5,30 +5,16 @@ on:
     types: [published]
 
 jobs:
-  # this job will build, test and (potentially) push the docker images to docker hub
-  #
-  # BUILD PHASE:
-  # - will auto tag the image according to the release tag / `git describe`.
-  #
-  # TEST PHASE:
-  # - will run an e2e test with a modified docker compose.
-  # - queries OPA data to check its state matches an expected value.
-  # - state will match only if OPAL client successfully synced to OPAL server.
-  # - outputs the docker compose logs to more easily investigate errors.
-  #
-  # PUSH PHASE:
-  # - Runs only if test phase completes with no errors.
-  # - Pushes images (built at BUILD PHASE) to docker hub.
-  docker_build_and_publish:
+  # Build once, run e2e validation, and only then fan out to publish variants
+  build_and_test:
     runs-on: ubuntu-latest
     env:
       github_token: ${{ secrets.TOKEN_GITHUB }}
     permissions:
       id-token: write
-      contents: write           # 'write' access to repository contents
-      pull-requests: write      # 'write' access to pull requests
+      contents: write
+      pull-requests: write
     steps:
-      # BUILD PHASE
       - name: Checkout
         uses: actions/checkout@v2
         with:
@@ -81,7 +67,6 @@ jobs:
           tags: |
             permitio/opal-server:test
 
-      # TEST PHASE
       - name: Create modified docker compose file
         run: sed 's/:latest/:test/g' docker/docker-compose-example.yml > docker/docker-compose-test.yml
 
@@ -94,333 +79,140 @@ jobs:
       - name: Output container logs
         run: docker compose -f docker/docker-compose-test.yml logs
 
-      # PUSH PHASE
       - name: Output local docker images
         run: docker image ls --digests | grep opal
 
-      # pushes the *same* docker images that were previously tested as part of e2e sanity test.
-      # each image is pushed with the versioned tag first, if it succeeds the image is pushed with the latest tag as well.
-      - name: Build & Push client
-        if: ${{ github.event.release.prerelease == false }}
-        id: build_push_client_regular
+  publish_docker_images:
+    needs: build_and_test
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: write
+      pull-requests: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: client
+            repository: permitio/opal-client
+            target: client
+            version_suffix: ""
+          - name: client-alpine
+            repository: permitio/opal-client
+            target: client-alpine
+            version_suffix: "-alpine"
+          - name: client-standalone
+            repository: permitio/opal-client-standalone
+            target: client-standalone
+            version_suffix: ""
+          - name: client-standalone-alpine
+            repository: permitio/opal-client-standalone
+            target: client-standalone-alpine
+            version_suffix: "-alpine"
+          - name: client-cedar
+            repository: permitio/opal-client-cedar
+            target: client-cedar
+            version_suffix: ""
+          - name: client-cedar-alpine
+            repository: permitio/opal-client-cedar
+            target: client-cedar-alpine
+            version_suffix: "-alpine"
+          - name: client-eopa
+            repository: permitio/opal-client-eopa
+            target: client-eopa
+            version_suffix: ""
+          - name: client-eopa-alpine
+            repository: permitio/opal-client-eopa
+            target: client-eopa-alpine
+            version_suffix: "-alpine"
+          - name: server
+            repository: permitio/opal-server
+            target: server
+            version_suffix: ""
+          - name: server-alpine
+            repository: permitio/opal-server
+            target: server-alpine
+            version_suffix: "-alpine"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+        with:
+          fetch-depth: 0
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to DockerHub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Prepare tags
+        id: tags
+        run: |
+          version_tag="${{ github.event.release.tag_name }}"
+          repo="${{ matrix.repository }}"
+          suffix="${{ matrix.version_suffix }}"
+          latest_tag="latest${suffix}"
+          tags="${repo}:${version_tag}${suffix}"
+          if [ "${{ github.event.release.prerelease }}" != "true" ]; then
+            tags="${repo}:${latest_tag}"$'\n'"${tags}"
+          fi
+          {
+            echo "tags<<EOF"
+            echo "${tags}"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+          echo "cache_ref=${repo}:${latest_tag}" >> "$GITHUB_OUTPUT"
+
+      - name: Build and push ${{ matrix.name }}
         uses: docker/build-push-action@v6
         with:
           file: docker/Dockerfile
           platforms: linux/amd64,linux/arm64
           push: true
-          target: client
-          cache-from: type=registry,ref=permitio/opal-client:latest
+          target: ${{ matrix.target }}
+          cache-from: type=registry,ref=${{ steps.tags.outputs.cache_ref }}
           cache-to: type=inline
-          tags: |
-            permitio/opal-client:latest
-            permitio/opal-client:${{ github.event.release.tag_name }}
+          tags: ${{ steps.tags.outputs.tags }}
 
-      - name: Build & Push client (prerelease)
-        if: ${{ github.event.release.prerelease == true }}
-        id: build_push_client_prerelease
-        uses: docker/build-push-action@v6
+  publish_python_packages:
+    needs:
+      - build_and_test
+      - publish_docker_images
+    if: ${{ github.event.release.prerelease == false }}
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
         with:
-          file: docker/Dockerfile
-          platforms: linux/amd64,linux/arm64
-          push: true
-          target: client
-          cache-from: type=registry,ref=permitio/opal-client:latest
-          cache-to: type=inline
-          tags: |
-            permitio/opal-client:${{ github.event.release.tag_name }}
-
-
-      - name: Build client-standalone
-        if: ${{ github.event.release.prerelease == false }}
-        id: build_push_client_standalone_regular
-        uses: docker/build-push-action@v6
-        with:
-          file: docker/Dockerfile
-          platforms: linux/amd64,linux/arm64
-          push: true
-          target: client-standalone
-          cache-from: type=registry,ref=permitio/opal-client-standalone:latest
-          cache-to: type=inline
-          tags: |
-            permitio/opal-client-standalone:latest
-            permitio/opal-client-standalone:${{ github.event.release.tag_name }}
-
-      - name: Build client-standalone (prerelease)
-        if: ${{ github.event.release.prerelease == true }}
-        id: build_push_client_standalone_prerelease
-        uses: docker/build-push-action@v6
-        with:
-          file: docker/Dockerfile
-          platforms: linux/amd64,linux/arm64
-          push: true
-          target: client-standalone
-          cache-from: type=registry,ref=permitio/opal-client-standalone:latest
-          cache-to: type=inline
-          tags: |
-            permitio/opal-client-standalone:${{ github.event.release.tag_name }}
-
-      - name: Build & Push client-standalone alpine
-        if: ${{ github.event.release.prerelease == false }}
-        id: build_push_client_standalone_alpine_regular
-        uses: docker/build-push-action@v6
-        with:
-          file: docker/Dockerfile
-          platforms: linux/amd64,linux/arm64
-          push: true
-          target: client-standalone-alpine
-          cache-from: type=registry,ref=permitio/opal-client-standalone:latest-alpine
-          cache-to: type=inline
-          tags: |
-            permitio/opal-client-standalone:latest-alpine
-            permitio/opal-client-standalone:${{ github.event.release.tag_name }}-alpine
-
-      - name: Build & Push client-standalone alpine (prerelease)
-        if: ${{ github.event.release.prerelease == true }}
-        id: build_push_client_standalone_alpine_prerelease
-        uses: docker/build-push-action@v6
-        with:
-          file: docker/Dockerfile
-          platforms: linux/amd64,linux/arm64
-          push: true
-          target: client-standalone-alpine
-          cache-from: type=registry,ref=permitio/opal-client-standalone:latest-alpine
-          cache-to: type=inline
-          tags: |
-            permitio/opal-client-standalone:${{ github.event.release.tag_name }}-alpine
-
-      - name: Build & Push client alpine
-        if: ${{ github.event.release.prerelease == false }}
-        id: build_push_client_alpine_regular
-        uses: docker/build-push-action@v6
-        with:
-          file: docker/Dockerfile
-          platforms: linux/amd64,linux/arm64
-          push: true
-          target: client-alpine
-          cache-from: type=registry,ref=permitio/opal-client:latest-alpine
-          cache-to: type=inline
-          tags: |
-            permitio/opal-client:latest-alpine
-            permitio/opal-client:${{ github.event.release.tag_name }}-alpine
-
-      - name: Build & Push client alpine (prerelease)
-        if: ${{ github.event.release.prerelease == true }}
-        id: build_push_client_alpine_prerelease
-        uses: docker/build-push-action@v6
-        with:
-          file: docker/Dockerfile
-          platforms: linux/amd64,linux/arm64
-          push: true
-          target: client-alpine
-          cache-from: type=registry,ref=permitio/opal-client:latest-alpine
-          cache-to: type=inline
-          tags: |
-            permitio/opal-client:${{ github.event.release.tag_name }}-alpine
-
-      - name: Build server
-        if: ${{ github.event.release.prerelease == false }}
-        id: build_push_server_regular
-        uses: docker/build-push-action@v6
-        with:
-          file: docker/Dockerfile
-          platforms: linux/amd64,linux/arm64
-          push: true
-          target: server
-          cache-from: type=registry,ref=permitio/opal-server:latest
-          cache-to: type=inline
-          tags: |
-            permitio/opal-server:latest
-            permitio/opal-server:${{ github.event.release.tag_name }}
-
-      - name: Build server (prerelease)
-        if: ${{ github.event.release.prerelease == true }}
-        id: build_push_server_prerelease
-        uses: docker/build-push-action@v6
-        with:
-          file: docker/Dockerfile
-          platforms: linux/amd64,linux/arm64
-          push: true
-          target: server
-          cache-from: type=registry,ref=permitio/opal-server:latest
-          cache-to: type=inline
-          tags: |
-            permitio/opal-server:${{ github.event.release.tag_name }}
-
-      - name: Build & Push server alpine
-        if: ${{ github.event.release.prerelease == false }}
-        id: build_push_server_alpine_regular
-        uses: docker/build-push-action@v6
-        with:
-          file: docker/Dockerfile
-          platforms: linux/amd64,linux/arm64
-          push: true
-          target: server-alpine
-          cache-from: type=registry,ref=permitio/opal-server:latest-alpine
-          cache-to: type=inline
-          tags: |
-            permitio/opal-server:latest-alpine
-            permitio/opal-server:${{ github.event.release.tag_name }}-alpine
-
-      - name: Build & Push server alpine (prerelease)
-        if: ${{ github.event.release.prerelease == true }}
-        id: build_push_server_alpine_prerelease
-        uses: docker/build-push-action@v6
-        with:
-          file: docker/Dockerfile
-          platforms: linux/amd64,linux/arm64
-          push: true
-          target: server-alpine
-          cache-from: type=registry,ref=permitio/opal-server:latest-alpine
-          cache-to: type=inline
-          tags: |
-            permitio/opal-server:${{ github.event.release.tag_name }}-alpine
-
-      - name: Build & Push client cedar
-        if: ${{ github.event.release.prerelease == false }}
-        id: build_push_client_cedar_regular
-        uses: docker/build-push-action@v6
-        with:
-          file: docker/Dockerfile
-          platforms: linux/amd64,linux/arm64
-          push: true
-          target: client-cedar
-          cache-from: type=registry,ref=permitio/opal-client-cedar:latest
-          cache-to: type=inline
-          tags: |
-            permitio/opal-client-cedar:latest
-            permitio/opal-client-cedar:${{ github.event.release.tag_name }}
-
-      - name: Build & Push client cedar (prerelease)
-        if: ${{ github.event.release.prerelease == true }}
-        id: build_push_client_cedar_prerelease
-        uses: docker/build-push-action@v6
-        with:
-          file: docker/Dockerfile
-          platforms: linux/amd64,linux/arm64
-          push: true
-          target: client-cedar
-          cache-from: type=registry,ref=permitio/opal-client-cedar:latest
-          cache-to: type=inline
-          tags: |
-            permitio/opal-client-cedar:${{ github.event.release.tag_name }}
-
-      - name: Build & Push EOPA
-        if: ${{ github.event.release.prerelease == false }}
-        id: build_push_eopa_regular
-        uses: docker/build-push-action@v6
-        with:
-          file: docker/Dockerfile
-          platforms: linux/amd64,linux/arm64
-          push: true
-          target: client-eopa
-          cache-from: type=registry,ref=permitio/opal-client-eopa:latest
-          cache-to: type=inline
-          tags: |
-            permitio/opal-client-eopa:latest
-            permitio/opal-client-eopa:${{ github.event.release.tag_name }}
-
-      - name: Build & Push EOPA (prerelease)
-        if: ${{ github.event.release.prerelease == true }}
-        id: build_push_eopa_prerelease
-        uses: docker/build-push-action@v6
-        with:
-          file: docker/Dockerfile
-          platforms: linux/amd64,linux/arm64
-          push: true
-          target: client-eopa
-          cache-from: type=registry,ref=permitio/opal-client-eopa:latest
-          cache-to: type=inline
-          tags: |
-            permitio/opal-client-eopa:${{ github.event.release.tag_name }}
-
-      - name: Build & Push EOPA alpine
-        if: ${{ github.event.release.prerelease == false }}
-        id: build_push_eopa_alpine_regular
-        uses: docker/build-push-action@v6
-        with:
-          file: docker/Dockerfile
-          platforms: linux/amd64,linux/arm64
-          push: true
-          target: client-eopa-alpine
-          cache-from: type=registry,ref=permitio/opal-client-eopa:latest-alpine
-          cache-to: type=inline
-          tags: |
-            permitio/opal-client-eopa:latest-alpine
-            permitio/opal-client-eopa:${{ github.event.release.tag_name }}-alpine
-
-      - name: Build & Push EOPA alpine (prerelease)
-        if: ${{ github.event.release.prerelease == true }}
-        id: build_push_eopa_alpine_prerelease
-        uses: docker/build-push-action@v6
-        with:
-          file: docker/Dockerfile
-          platforms: linux/amd64,linux/arm64
-          push: true
-          target: client-eopa-alpine
-          cache-from: type=registry,ref=permitio/opal-client-eopa:latest-alpine
-          cache-to: type=inline
-          tags: |
-            permitio/opal-client-eopa:${{ github.event.release.tag_name }}-alpine
-
-      - name: Build & Push client cedar alpine
-        if: ${{ github.event.release.prerelease == false }}
-        id: build_push_client_cedar_alpine_regular
-        uses: docker/build-push-action@v6
-        with:
-          file: docker/Dockerfile
-          platforms: linux/amd64,linux/arm64
-          push: true
-          target: client-cedar-alpine
-          cache-from: type=registry,ref=permitio/opal-client-cedar:latest-alpine
-          cache-to: type=inline
-          tags: |
-            permitio/opal-client-cedar:latest-alpine
-            permitio/opal-client-cedar:${{ github.event.release.tag_name }}-alpine
-
-      - name: Build & Push client cedar alpine (prerelease)
-        if: ${{ github.event.release.prerelease == true }}
-        id: build_push_client_cedar_alpine_prerelease
-        uses: docker/build-push-action@v6
-        with:
-          file: docker/Dockerfile
-          platforms: linux/amd64,linux/arm64
-          push: true
-          target: client-cedar-alpine
-          cache-from: type=registry,ref=permitio/opal-client-cedar:latest-alpine
-          cache-to: type=inline
-          tags: |
-            permitio/opal-client-cedar:${{ github.event.release.tag_name }}-alpine
+          fetch-depth: 0
 
       - name: Python setup
-        if: ${{ github.event.release.prerelease == false }}
         uses: actions/setup-python@v5
         with:
           python-version: '3.11.8'
 
-      # This is the root file representing the package for all the sub-packages.
       - name: Bump version - packaging__.py
-        if: ${{ github.event.release.prerelease == false }}
         run: |
-          # Install required packages
           pip install semver packaging
-
-          # Get version tag and remove 'v' prefix
           version_tag=${{ github.event.release.tag_name }}
           version_tag=${version_tag#v}
-
-          # Convert semver to PyPI version using the script
-          pypi_version=$(python semver2pypi.py $version_tag)
-
-          # Update only the __version__ in __packaging__.py
+          pypi_version=$(python semver2pypi.py "$version_tag")
           sed -i "s/__version__ = VERSION_STRING/__version__ = \"$pypi_version\"/" packages/__packaging__.py
-
-          # Print the result for verification
           echo "Original version tag: $version_tag"
           echo "PyPI version: $pypi_version"
           cat packages/__packaging__.py
 
       - name: Cleanup setup.py and Build every sub-packages
-        if: ${{ github.event.release.prerelease == false }}
         run: |
           pip install wheel
           cd packages/opal-common/ ; rm -rf *.egg-info build/ dist/
@@ -433,9 +225,7 @@ jobs:
           python setup.py sdist bdist_wheel
           cd ../..
 
-      # Upload package distributions to the release - All assets in one step
       - name: Upload assets to release
-        if: ${{ github.event.release.prerelease == false }}
         uses: shogo82148/actions-upload-release-asset@v1.7.5
         with:
           upload_url: ${{ github.event.release.upload_url }}
@@ -444,42 +234,29 @@ jobs:
             packages/opal-client/dist/*
             packages/opal-server/dist/*
 
-      # Publish package distributions to PyPI
       - name: Publish package distributions to PyPI - Opal-Common
-        if: ${{ github.event.release.prerelease == false }}
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           password: ${{ secrets.PYPI_TOKEN }}
           packages-dir: packages/opal-common/dist/
-          # For Test only !
-          # password: ${{ secrets.TEST_PYPI_TOKEN }}
-          # repository-url: https://test.pypi.org/legacy/
         env:
           name: pypi
           url: https://pypi.org/p/opal-common/
 
       - name: Publish package distributions to PyPI - Opal-Client
-        if: ${{ github.event.release.prerelease == false }}
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           password: ${{ secrets.PYPI_TOKEN }}
           packages-dir: packages/opal-client/dist/
-          # For Test only !
-          # password: ${{ secrets.TEST_PYPI_TOKEN }}
-          # repository-url: https://test.pypi.org/legacy/
         env:
           name: pypi
           url: https://pypi.org/p/opal-client/
 
       - name: Publish package distributions to PyPI - Opal-Server
-        if: ${{ github.event.release.prerelease == false }}
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           password: ${{ secrets.PYPI_TOKEN }}
           packages-dir: packages/opal-server/dist/
-          # For Test only !
-          # password: ${{ secrets.TEST_PYPI_TOKEN }}
-          # repository-url: https://test.pypi.org/legacy/
         env:
           name: pypi
           url: https://pypi.org/p/opal-server/
