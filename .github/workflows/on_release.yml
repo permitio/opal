@@ -202,11 +202,20 @@ jobs:
 
       - name: Bump version - packaging__.py
         run: |
+          # Install required packages
           pip install semver packaging
+
+          # Get version tag and remove 'v' prefix
           version_tag=${{ github.event.release.tag_name }}
           version_tag=${version_tag#v}
-          pypi_version=$(python semver2pypi.py "$version_tag")
+
+          # Convert semver to PyPI version using the script
+          pypi_version=$(python semver2pypi.py $version_tag)
+
+          # Update only the __version__ in __packaging__.py
           sed -i "s/__version__ = VERSION_STRING/__version__ = \"$pypi_version\"/" packages/__packaging__.py
+
+          # Print the result for verification
           echo "Original version tag: $version_tag"
           echo "PyPI version: $pypi_version"
           cat packages/__packaging__.py
@@ -224,6 +233,7 @@ jobs:
           python setup.py sdist bdist_wheel
           cd ../..
 
+      # Upload package distributions to the release - All assets in one step
       - name: Upload assets to release
         uses: shogo82148/actions-upload-release-asset@v1.7.5
         with:
@@ -233,11 +243,16 @@ jobs:
             packages/opal-client/dist/*
             packages/opal-server/dist/*
 
+      # Publish package distributions to PyPI
       - name: Publish package distributions to PyPI - Opal-Common
+        if: ${{ github.event.release.prerelease == false }}
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           password: ${{ secrets.PYPI_TOKEN }}
           packages-dir: packages/opal-common/dist/
+          # For Test only!
+          # password: ${{ secrets.TEST_PYPI_TOKEN }}
+          # repository-url: https://test.pypi.org/legacy/
         env:
           name: pypi
           url: https://pypi.org/p/opal-common/
@@ -247,6 +262,9 @@ jobs:
         with:
           password: ${{ secrets.PYPI_TOKEN }}
           packages-dir: packages/opal-client/dist/
+          # For Test only!
+          # password: ${{ secrets.TEST_PYPI_TOKEN }}
+          # repository-url: https://test.pypi.org/legacy/
         env:
           name: pypi
           url: https://pypi.org/p/opal-client/
@@ -256,6 +274,9 @@ jobs:
         with:
           password: ${{ secrets.PYPI_TOKEN }}
           packages-dir: packages/opal-server/dist/
+          # For Test only!
+          # password: ${{ secrets.TEST_PYPI_TOKEN }}
+          # repository-url: https://test.pypi.org/legacy/
         env:
           name: pypi
           url: https://pypi.org/p/opal-server/
