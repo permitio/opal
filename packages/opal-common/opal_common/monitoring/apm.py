@@ -1,58 +1,73 @@
 import logging
-from typing import Optional
 from urllib.parse import urlparse
 
-from ddtrace import config, patch, tracer
-from ddtrace.trace import Span, TraceFilter
+from ddtrace import patch, tracer
+from ddtrace.trace import TraceFilter
 from loguru import logger
 
 
+class DropRootPathTraces(TraceFilter):
+    """
+    TraceFilter that drops any trace whose root HTTP route/path is "/".
+
+    Per ddtrace docs:
+      - process_trace receives a list of spans (one trace)
+      - return None to drop it, or the (optionally modified) list to keep it
+    We examine only the root span (parent_id is None).
+    """
+
+    def process_trace(self, trace):
+        # Locate root span
+        root = next((s for s in trace if getattr(s, "parent_id", None) is None), None)
+        if root is None:
+            return trace  # Keep if we can't identify a root
+
+        # Prefer normalized route (framework-provided)
+        route = root.get_tag("http.route")
+        if route == "/":
+            return None
+
+        # Fallback: parse raw URL if present
+        url = root.get_tag("http.url")
+        if url:
+            try:
+                if urlparse(url).path == "/":
+                    return None
+            except Exception:
+                # Fail-open: keep the trace if parsing fails
+                pass
+
+        return trace
+
+
 def configure_apm(enable_apm: bool, service_name: str):
-    """Optionally enable datadog APM / profiler."""
-    if enable_apm:
-        logger.info("Enabling DataDog APM")
-        # logging.getLogger("ddtrace").propagate = False
+    """
+    Enable Datadog APM and install the DropRootPathTraces filter.
+    """
+    if not enable_apm:
+        logger.info("Datadog APM disabled")
+        return
 
-        class FilterRootPathTraces(TraceFilter):
-            def process_trace(self, trace: list[Span]) -> Optional[list[Span]]:
-                for span in trace:
-                    if span.parent_id is not None:
-                        return trace
+    logger.info("Enabling Datadog APM")
 
-                    if url := span.get_tag("http.url"):
-                        parsed_url = urlparse(url)
+    patch(
+        fastapi=True,
+        redis=True,
+        asyncpg=True,
+        aiohttp=True,
+        loguru=True,
+    )
 
-                        if parsed_url.path == "/":
-                            return None
-
-                return trace
-
-        patch(
-            fastapi=True,
-            redis=True,
-            asyncpg=True,
-            aiohttp=True,
-            loguru=True,
-        )
-        tracer.configure(
-            settings={
-                "FILTERS": [
-                    FilterRootPathTraces(),
-                ]
-            }
-        )
-
-    else:
-        logger.info("DataDog APM disabled")
-        # Note: In ddtrace v3.0.0+, the 'enabled' parameter is no longer supported
-        # APM should be disabled via environment variable DD_TRACE_ENABLED=false
-        # or by not patching any integrations at all
-        pass
+    tracer.configure(
+        trace_processors=[DropRootPathTraces()],
+    )
 
 
 def fix_ddtrace_logging():
+    """
+    Reduce ddtrace logger verbosity and remove its handlers so our logging setup controls output.
+    """
     logging.getLogger("ddtrace").setLevel(logging.WARNING)
-
     ddtrace_logger = logging.getLogger("ddtrace")
-    for handler in ddtrace_logger.handlers:
+    for handler in list(ddtrace_logger.handlers):
         ddtrace_logger.removeHandler(handler)
