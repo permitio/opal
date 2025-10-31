@@ -7,8 +7,7 @@ from loguru import logger
 
 
 class DropRootPathTraces(TraceFilter):
-    """
-    TraceFilter that drops any trace whose root HTTP route/path is "/".
+    """TraceFilter that drops any trace whose root HTTP route/path is "/".
 
     Per ddtrace docs:
       - process_trace receives a list of spans (one trace)
@@ -41,9 +40,7 @@ class DropRootPathTraces(TraceFilter):
 
 
 def configure_apm(enable_apm: bool, service_name: str):
-    """
-    Enable Datadog APM and install the DropRootPathTraces filter.
-    """
+    """Enable Datadog APM and install the DropRootPathTraces filter."""
     if not enable_apm:
         logger.info("Datadog APM disabled")
         return
@@ -64,9 +61,8 @@ def configure_apm(enable_apm: bool, service_name: str):
 
 
 def fix_ddtrace_logging():
-    """
-    Reduce ddtrace logger verbosity and remove its handlers so our logging setup controls output.
-    """
+    """Reduce ddtrace logger verbosity and remove its handlers so our logging
+    setup controls output."""
     logging.getLogger("ddtrace").setLevel(logging.WARNING)
     ddtrace_logger = logging.getLogger("ddtrace")
     for handler in list(ddtrace_logger.handlers):
