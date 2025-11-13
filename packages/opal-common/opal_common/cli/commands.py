@@ -196,4 +196,11 @@ def publish_data_update(
         typer.echo(text)
 
 
-all_commands = [obtain_token, generate_secret, publish_data_update]
+def version():
+    """Print the OPAL version."""
+    from importlib.metadata import version
+
+    typer.echo(version("opal_common"))
+
+
+all_commands = [obtain_token, generate_secret, publish_data_update, version]
