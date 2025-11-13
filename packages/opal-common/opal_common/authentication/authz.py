@@ -1,4 +1,4 @@
-from opal_common.authentication.deps import JWTAuthenticator
+from opal_common.authentication.authenticator import Authenticator
 from opal_common.authentication.types import JWTClaims
 from opal_common.authentication.verifier import Unauthorized
 from opal_common.schemas.data import DataUpdate
@@ -6,7 +6,7 @@ from opal_common.schemas.security import PeerType
 
 
 def require_peer_type(
-    authenticator: JWTAuthenticator, claims: JWTClaims, required_type: PeerType
+    authenticator: Authenticator, claims: JWTClaims, required_type: PeerType
 ):
     if not authenticator.enabled:
         return
@@ -28,7 +28,7 @@ def require_peer_type(
 
 
 def restrict_optional_topics_to_publish(
-    authenticator: JWTAuthenticator, claims: JWTClaims, update: DataUpdate
+    authenticator: Authenticator, claims: JWTClaims, update: DataUpdate
 ):
     if not authenticator.enabled:
         return
