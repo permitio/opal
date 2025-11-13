@@ -257,9 +257,9 @@ class OpalClient:
         self._configure_lifecycle_callbacks(app)
         return app
 
-    async def _is_ready(self):
+    async def _is_ready(self, wait_for_all_data_sources_loaded: bool = False):
         # Data loaded from file or from server
-        return self._backup_loaded or await self.policy_store.is_ready()
+        return self._backup_loaded or await self.policy_store.is_ready(wait_for_all_data_sources_loaded=wait_for_all_data_sources_loaded)
 
     def _configure_api_routes(self, app: FastAPI):
         """Mounts the api routes on the app object."""
@@ -307,9 +307,9 @@ class OpalClient:
                 )
 
         @app.get("/ready", include_in_schema=False)
-        async def ready():
+        async def ready(wait_for_all_data_sources_loaded: bool = False):
             """Returns 200 if the policy store is ready to serve requests."""
-            if await self._is_ready():
+            if await self._is_ready(wait_for_all_data_sources_loaded=wait_for_all_data_sources_loaded):
                 return JSONResponse(
                     status_code=status.HTTP_200_OK, content={"status": "ok"}
                 )
