@@ -169,6 +169,31 @@ jobs:
           } >> "$GITHUB_OUTPUT"
           echo "cache_ref=${repo}:${latest_tag}" >> "$GITHUB_OUTPUT"
 
+      - name: Python setup
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11.8'
+
+      - name: Bump version - packaging__.py
+        run: |
+          # Install required packages
+          pip install semver packaging
+
+          # Get version tag and remove 'v' prefix
+          version_tag=${{ github.event.release.tag_name }}
+          version_tag=${version_tag#v}
+
+          # Convert semver to PyPI version using the script
+          pypi_version=$(python semver2pypi.py $version_tag)
+
+          # Update only the __version__ in __packaging__.py
+          sed -i "s/__version__ = VERSION_STRING/__version__ = \"$pypi_version\"/" packages/__packaging__.py
+
+          # Print the result for verification
+          echo "Original version tag: $version_tag"
+          echo "PyPI version: $pypi_version"
+          cat packages/__packaging__.py
+
       - name: Build and push ${{ matrix.name }}
         uses: docker/build-push-action@v6
         with:
