@@ -1,3 +1,4 @@
+import asyncio
 from typing import Optional
 
 from git import Repo
@@ -24,6 +25,8 @@ class GitPolicySource(BasePolicySource):
         ssh_key (str, optional): private ssh key used to gain access to the cloned repo
         polling_interval(int):  how many seconds need to wait between polling
         request_timeout(int):  how many seconds need to wait until timeout
+        initial_clone_max_attempts(int, optional): number of initial clone attempts before failing. None/0 retries indefinitely
+        initial_clone_retry_interval(float): delay between clone retries when initial clone fails
     """
 
     def __init__(
@@ -34,6 +37,8 @@ class GitPolicySource(BasePolicySource):
         ssh_key: Optional[str] = None,
         polling_interval: int = 0,
         request_timeout: int = 0,
+        initial_clone_max_attempts: Optional[int] = None,
+        initial_clone_retry_interval: float = 5.0,
     ):
         super().__init__(
             remote_source_url=remote_source_url,
@@ -51,40 +56,71 @@ class GitPolicySource(BasePolicySource):
         )
         self._branch_name = branch_name
         self._tracker = None
+        self._initial_clone_max_attempts = (
+            initial_clone_max_attempts
+            if initial_clone_max_attempts not in (None, 0)
+            else None
+        )
+        self._initial_clone_retry_interval = max(0.0, initial_clone_retry_interval)
 
     async def get_initial_policy_state_from_remote(self):
         """Init remote data to local repo."""
-        try:
+        clone_attempt = 0
+
+        while True:
             try:
-                # Check if path already contains valid repo
                 repo = Repo(self._cloner.path)
-            except:
-                # If it doesn't - clone it
-                result = await self._cloner.clone()
-                repo = result.repo
+            except Exception:
+                try:
+                    result = await self._cloner.clone()
+                    repo = result.repo
+                except GitFailed as e:
+                    clone_attempt += 1
+                    if not self._should_retry_initial_clone(clone_attempt):
+                        await self._on_git_failed(e)
+                        return
+
+                    wait_time = self._initial_clone_retry_interval
+                    logger.warning(
+                        "Failed to clone policy repo (attempt {attempt}{suffix}), retrying in {wait_time}s",
+                        attempt=clone_attempt,
+                        suffix=(
+                            f"/{self._initial_clone_max_attempts}"
+                            if self._initial_clone_max_attempts is not None
+                            else ""
+                        ),
+                        wait_time=wait_time,
+                    )
+                    if wait_time > 0:
+                        await asyncio.sleep(wait_time)
+                    continue
             else:
-                # If it does - validate remote url is correct and checkout required branch
                 remote_urls = list(repo.remote().urls)
-                if not self._cloner.url in remote_urls:
-                    # Don't bother with remove and reclone because this case shouldn't happen on reasobable usage
-                    raise GitFailed(
-                        RuntimeError(
-                            f"Existing repo has wrong remote url: {remote_urls}"
+                if self._cloner.url not in remote_urls:
+                    await self._on_git_failed(
+                        GitFailed(
+                            RuntimeError(
+                                f"Existing repo has wrong remote url: {remote_urls}"
+                            )
                         )
                     )
-                else:
-                    logger.info(
-                        "SKIPPED cloning policy repo, found existing repo at '{path}' with remotes: {remote_urls})",
-                        path=self._cloner.path,
-                        remote_urls=remote_urls,
-                    )
-        except GitFailed as e:
-            await self._on_git_failed(e)
-            return
+                    return
+                logger.info(
+                    "SKIPPED cloning policy repo, found existing repo at '{path}' with remotes: {remote_urls})",
+                    path=self._cloner.path,
+                    remote_urls=remote_urls,
+                )
+
+            break
 
         self._tracker = BranchTracker(
             repo=repo, branch_name=self._branch_name, ssh_key=self._ssh_key
         )
+
+    def _should_retry_initial_clone(self, attempt: int) -> bool:
+        if self._initial_clone_max_attempts is None:
+            return True
+        return attempt < self._initial_clone_max_attempts
 
     async def check_for_changes(self):
         """Calling this method will trigger a git pull from the tracked remote.
