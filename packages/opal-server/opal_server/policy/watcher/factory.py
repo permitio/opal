@@ -24,6 +24,8 @@ def setup_watcher_task(
     ssh_key: Optional[str] = None,
     polling_interval: int = None,
     request_timeout: int = None,
+    initial_clone_max_attempts: Optional[int] = None,
+    initial_clone_retry_interval: Optional[int] = None,
     policy_bundle_token: str = None,
     policy_bundle_token_id: str = None,
     policy_bundle_server_type: str = None,
@@ -79,6 +81,16 @@ def setup_watcher_task(
     request_timeout = load_conf_if_none(
         request_timeout, opal_server_config.POLICY_REPO_CLONE_TIMEOUT
     )
+    initial_clone_max_attempts = load_conf_if_none(
+        initial_clone_max_attempts,
+        opal_server_config.POLICY_REPO_INITIAL_CLONE_MAX_ATTEMPTS,
+    )
+    if initial_clone_max_attempts == 0:
+        initial_clone_max_attempts = None
+    initial_clone_retry_interval = load_conf_if_none(
+        initial_clone_retry_interval,
+        opal_server_config.POLICY_REPO_INITIAL_CLONE_RETRY_INTERVAL,
+    )
     policy_bundle_token = load_conf_if_none(
         policy_bundle_token, opal_server_config.POLICY_BUNDLE_SERVER_TOKEN
     )
@@ -101,6 +113,8 @@ def setup_watcher_task(
             ssh_key=ssh_key,
             polling_interval=polling_interval,
             request_timeout=request_timeout,
+            initial_clone_max_attempts=initial_clone_max_attempts,
+            initial_clone_retry_interval=initial_clone_retry_interval,
         )
     elif source_type == PolicySourceTypes.Api:
         remote_source_url = load_conf_if_none(
