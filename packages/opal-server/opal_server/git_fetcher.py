@@ -190,10 +190,19 @@ class GitPolicyFetcher(PolicyFetcher):
                             GitPolicyFetcher.repos_last_fetched[
                                 self.source_id
                             ] = datetime.datetime.now()
-                            await run_sync(
-                                repo.remotes[self._remote].fetch,
-                                callbacks=self._auth_callbacks,
-                            )
+                            try:
+                                await run_sync(
+                                    repo.remotes[self._remote].fetch,
+                                    callbacks=self._auth_callbacks,
+                                )
+                            except Exception:
+                                # If fetch fails, we clear the repo from the cache to avoid keeping
+                                # potentially corrupted or leaking objects in memory.
+                                # This helps with issues where pygit2/libgit2 might leak resources on failure.
+                                path = str(self._repo_path)
+                                if path in GitPolicyFetcher.repos:
+                                    del GitPolicyFetcher.repos[path]
+                                raise
                             logger.debug(f"Fetch completed: {self._source.url}")
 
                         # New commits might be present because of a previous fetch made by another scope
