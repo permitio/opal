@@ -5,7 +5,9 @@ import random
 import pytest
 from fastapi import Response, status
 from opal_client.policy_store.opa_client import OpaClient, should_ignore_path
+from opal_client.policy_store.opa_client import OpaTransactionLogState
 from opal_client.policy_store.schemas import PolicyStoreAuth
+from opal_common.schemas.store import StoreTransaction, TransactionType
 
 TEST_CA_CERT = """-----BEGIN CERTIFICATE-----
 MIIBdjCCAR2gAwIBAgIUaQ/M1qL0GzsTMChEAJsLLFgz7a4wCgYIKoZIzj0EAwIw
@@ -227,3 +229,137 @@ def test_should_ignore_path_keeping_higher_priority_to_ones_defined_as_not_to_ig
     )
     assert should_ignore_path("otherFolder", ignore_paths) == True
     assert should_ignore_path("otherFolder/file.txt", ignore_paths) == True
+
+
+def test_opa_transaction_log_state_ready_with_wait_for_all_data_sources_loaded_false():
+    """Test OpaTransactionLogState ready behavior with wait_for_all_data_sources_loaded=False.
+
+    When wait_for_all_data_sources_loaded=False (default behavior):
+    - Ready if there's at least one successful policy transaction AND
+    - (data updater is disabled OR at least one successful data transaction OR no data transactions expected)
+    """
+    # Test initial state - should not be ready
+    state = OpaTransactionLogState(data_updater_enabled=True, policy_updater_enabled=True)
+    assert state.is_ready(wait_for_all_data_sources_loaded=False) == False
+
+    # Add successful policy transaction
+    policy_transaction = StoreTransaction(
+        id="policy-123",
+        actions=["set_policy"],
+        transaction_type=TransactionType.policy,
+        success=True,
+        creation_time="2025-01-01T00:00:00",
+        end_time="2025-01-01T00:00:01"
+    )
+    state.process_transaction(policy_transaction)
+
+    # Should not be ready yet because we need at least one data transaction or none expected
+    assert state.is_ready(wait_for_all_data_sources_loaded=False) == False
+
+    # Add successful data transaction
+    data_transaction = StoreTransaction(
+        id="data-123",
+        actions=["set_policy_data"],
+        transaction_type=TransactionType.data,
+        success=True,
+        creation_time="2025-01-01T00:00:00",
+        end_time="2025-01-01T00:00:01"
+    )
+    state.process_transaction(data_transaction)
+
+    # Should be ready now
+    assert state.is_ready(wait_for_all_data_sources_loaded=False) == True
+
+    #### Test case where no data transactions are expected ####
+    state_no_data = OpaTransactionLogState(data_updater_enabled=True, policy_updater_enabled=True)
+    state_no_data.set_expected_data_transaction_count(0)
+    state_no_data.process_transaction(policy_transaction)
+
+    # Should be ready because no data transactions are expected
+    assert state_no_data.is_ready(wait_for_all_data_sources_loaded=False) == True
+
+    #### Test case where data updater is disabled ####
+    state_data_disabled = OpaTransactionLogState(data_updater_enabled=False, policy_updater_enabled=True)
+    state_data_disabled.process_transaction(policy_transaction)
+
+    # Should be ready because data updater is disabled
+    assert state_data_disabled.is_ready(wait_for_all_data_sources_loaded=False) == True
+
+
+def test_opa_transaction_log_state_ready_with_wait_for_all_data_sources_loaded_true():
+    """Test OpaTransactionLogState ready behavior with wait_for_all_data_sources_loaded=True.
+
+    When wait_for_all_data_sources_loaded=True:
+    - Ready if there's at least one successful policy transaction AND
+    - (data updater is disabled OR successful data transactions == expected data transactions)
+    """
+    # Test initial state - should not be ready
+    state = OpaTransactionLogState(data_updater_enabled=True, policy_updater_enabled=True)
+    state.set_expected_data_transaction_count(2)  # Expect 2 data transactions
+    assert state.is_ready(wait_for_all_data_sources_loaded=True) == False
+
+    # Add successful policy transaction
+    policy_transaction = StoreTransaction(
+        id="policy-123",
+        actions=["set_policy"],
+        transaction_type=TransactionType.policy,
+        success=True,
+        creation_time="2025-01-01T00:00:00",
+        end_time="2025-01-01T00:00:01"
+    )
+    state.process_transaction(policy_transaction)
+
+    assert state.is_ready(wait_for_all_data_sources_loaded=True) == False
+
+    # Add one successful data transaction
+    data_transaction_1 = StoreTransaction(
+        id="data-123",
+        actions=["set_policy_data"],
+        transaction_type=TransactionType.data,
+        success=True,
+        creation_time="2025-01-01T00:00:00",
+        end_time="2025-01-01T00:00:01"
+    )
+    state.process_transaction(data_transaction_1)
+
+    assert state.is_ready(wait_for_all_data_sources_loaded=True) == False
+
+    # Add second successful data transaction
+    data_transaction_2 = StoreTransaction(
+        id="data-456",
+        actions=["set_policy_data"],
+        transaction_type=TransactionType.data,
+        success=True,
+        creation_time="2025-01-01T00:00:00",
+        end_time="2025-01-01T00:00:01"
+    )
+    state.process_transaction(data_transaction_2)
+
+    assert state.is_ready(wait_for_all_data_sources_loaded=True) == True
+
+    #### Test case where data updater is disabled ####
+    state_data_disabled = OpaTransactionLogState(data_updater_enabled=False, policy_updater_enabled=True)
+    state_data_disabled.set_expected_data_transaction_count(5)
+    # Add successful policy transaction
+    state_data_disabled.process_transaction(policy_transaction)
+
+    assert state_data_disabled.is_ready(wait_for_all_data_sources_loaded=True) == True
+
+    #### Test failed data transaction - should not count towards successful count ####
+    failed_data_transaction = StoreTransaction(
+        id="data-failed",
+        actions=["set_policy_data"],
+        transaction_type=TransactionType.data,
+        success=False,
+        error="Test error",
+        creation_time="2025-01-01T00:00:00",
+        end_time="2025-01-01T00:00:01"
+    )
+
+    state_with_failure = OpaTransactionLogState(data_updater_enabled=True, policy_updater_enabled=True)
+    state_with_failure.set_expected_data_transaction_count(1)  # Expect 1 successful transaction
+    state_with_failure.process_transaction(policy_transaction)
+    state_with_failure.process_transaction(failed_data_transaction)
+
+    # Should not be ready because failed transaction doesn't count as successful
+    assert state_with_failure.is_ready(wait_for_all_data_sources_loaded=True) == False
