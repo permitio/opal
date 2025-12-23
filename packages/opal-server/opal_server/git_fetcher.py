@@ -4,6 +4,7 @@ import datetime
 import hashlib
 import shutil
 import time
+import os
 from pathlib import Path
 from typing import Optional, cast
 
@@ -169,47 +170,75 @@ class GitPolicyFetcher(PolicyFetcher):
         """
         repo_lock = await self._get_repo_lock()
         async with repo_lock:
-            with tracer.trace(
-                "git_policy_fetcher.fetch_and_notify_on_changes",
-                resource=self._scope_id,
-            ):
-                if self._discover_repository(self._repo_path):
-                    logger.debug("Repo found at {path}", path=self._repo_path)
-                    repo = self._get_valid_repo()
-                    if repo is not None:
-                        should_fetch = await self._should_fetch(
-                            repo,
-                            hinted_hash=hinted_hash,
-                            force_fetch=force_fetch,
-                            req_time=req_time,
-                        )
-                        if should_fetch:
-                            logger.debug(
-                                f"Fetching remote (force_fetch={force_fetch}): {self._remote} ({self._source.url})"
+            try:
+                with tracer.trace(
+                    "git_policy_fetcher.fetch_and_notify_on_changes",
+                    resource=self._scope_id,
+                ):
+                    if self._discover_repository(self._repo_path):
+                        logger.debug("Repo found at {path}", path=self._repo_path)
+                        repo = self._get_valid_repo()
+                        if repo is not None:
+                            should_fetch = await self._should_fetch(
+                                repo,
+                                hinted_hash=hinted_hash,
+                                force_fetch=force_fetch,
+                                req_time=req_time,
                             )
-                            GitPolicyFetcher.repos_last_fetched[
-                                self.source_id
-                            ] = datetime.datetime.now()
-                            await run_sync(
-                                repo.remotes[self._remote].fetch,
-                                callbacks=self._auth_callbacks,
-                            )
-                            logger.debug(f"Fetch completed: {self._source.url}")
+                            if should_fetch:
+                                logger.debug(
+                                    f"Fetching remote (force_fetch={force_fetch}): {self._remote} ({self._source.url})"
+                                )
+                                GitPolicyFetcher.repos_last_fetched[
+                                    self.source_id
+                                ] = datetime.datetime.now()
+                                await run_sync(
+                                    repo.remotes[self._remote].fetch,
+                                    callbacks=self._auth_callbacks,
+                                )
+                                logger.debug(f"Fetch completed: {self._source.url}")
 
-                        # New commits might be present because of a previous fetch made by another scope
-                        await self._notify_on_changes(repo)
-                        return
+                            # New commits might be present because of a previous fetch made by another scope
+                            await self._notify_on_changes(repo)
+                            return
+                        else:
+                            # repo dir exists but invalid -> we must delete the directory
+                            logger.warning(
+                                "Deleting invalid repo: {path}", path=self._repo_path
+                            )
+                            shutil.rmtree(self._repo_path)
                     else:
-                        # repo dir exists but invalid -> we must delete the directory
-                        logger.warning(
-                            "Deleting invalid repo: {path}", path=self._repo_path
-                        )
-                        shutil.rmtree(self._repo_path)
-                else:
-                    logger.info("Repo not found at {path}", path=self._repo_path)
+                        logger.info("Repo not found at {path}", path=self._repo_path)
 
-                # fallthrough to clean clone
-                await self._clone()
+                    # fallthrough to clean clone
+                    await self._clone()
+            
+            except Exception as e:
+                logger.error(f"Failed to sync repo: {e}")
+                
+                # --- FIX FOR ISSUE #634: Robust Cleanup ---
+                # Ensure we clean up ANY leftovers (directories or symbolic links)
+                # to prevent "zombie" locks or corrupted states.
+                if self._repo_path.exists() or os.path.islink(self._repo_path):
+                    logger.warning(f"Cleaning up corrupted repo at {self._repo_path} due to failure")
+                    try:
+                        if self._repo_path.is_symlink():
+                            self._repo_path.unlink() # Removes the symlink
+                        elif self._repo_path.is_dir():
+                            shutil.rmtree(self._repo_path) # Removes the directory
+                        else:
+                            self._repo_path.unlink(missing_ok=True) # Removes file
+                    except Exception as cleanup_error:
+                        logger.error(f"Failed to clean up path {self._repo_path}: {cleanup_error}")
+
+                # Clean up the internal memory cache to avoid using stale object references
+                repo_path_str = str(self._repo_path)
+                if repo_path_str in GitPolicyFetcher.repos:
+                    del GitPolicyFetcher.repos[repo_path_str]
+                    logger.info(f"Removed {repo_path_str} from internal repo cache")
+                
+                # Re-raise the exception so the caller knows the operation failed
+                raise e
 
     def _discover_repository(self, path: Path) -> bool:
         git_path: Path = path / ".git"
@@ -230,6 +259,8 @@ class GitPolicyFetcher(PolicyFetcher):
             )
         except pygit2.GitError:
             logger.exception(f"Could not clone repo at {self._source.url}")
+            # Re-raise to trigger the cleanup in the caller
+            raise 
         else:
             logger.info(f"Clone completed: {self._source.url}")
             await self._notify_on_changes(repo)
