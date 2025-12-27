@@ -52,6 +52,16 @@ install-server-from-src:
 install-develop:
 	pip install -r requirements.txt
 
+test-e2e:
+	@echo "Running E2E tests..."
+	@if [ ! -d "e2e-tests/.venv" ]; then \
+		echo "Creating virtual environment for E2E tests..."; \
+		python -m venv e2e-tests/.venv; \
+	fi
+	@source e2e-tests/.venv/bin/activate && \
+	pip install -r e2e-tests/requirements.txt && \
+	python -m pytest e2e-tests/
+
 # docs
 docs-dev:
 	@cd documentation && yarn start
