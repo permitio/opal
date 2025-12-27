@@ -60,7 +60,7 @@ test-e2e:
 	fi
 	@source e2e-tests/.venv/bin/activate && \
 	pip install -r e2e-tests/requirements.txt && \
-	python -m pytest e2e-tests/
+	python -m pytest --cov=packages/opal-client --cov=packages/opal-server --cov-report=term-missing e2e-tests/
 
 # docs
 docs-dev:

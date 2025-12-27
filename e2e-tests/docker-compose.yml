@@ -27,4 +27,4 @@ services:
       - "8181:8181"
     depends_on:
       - opal_server
-    command: sh -c "exec ./wait-for.sh opal_server:7002 --timeout=20"
+    command: sh -c "./wait-for.sh opal_server:7002 --timeout=20 && uvicorn opal_client.main:app --host 0.0.0.0 --port 7000"
