@@ -5,6 +5,7 @@ import hashlib
 import shutil
 import time
 import os
+import subprocess
 from pathlib import Path
 from typing import Optional, cast
 
@@ -140,8 +141,6 @@ class GitPolicyFetcher(PolicyFetcher):
         )
 
     async def _get_repo_lock(self):
-        # Previous file based implementation worked across multiple processes/threads, but wasn't fair (next acquiree is random)
-        # This implementation works only within the same process/thread, but is fair (next acquiree is the earliest to enter the lock)
         src_id = GitPolicyFetcher.source_id(self._source)
         lock = GitPolicyFetcher.repo_locks[src_id] = GitPolicyFetcher.repo_locks.get(
             src_id, asyncio.Lock()
@@ -154,20 +153,72 @@ class GitPolicyFetcher(PolicyFetcher):
             return False
         return last_fetched > t
 
+    async def _attempt_atomic_sync(self, repo_path: Path, hinted_hash: Optional[str], force_fetch: bool, req_time: datetime.datetime):
+        """
+        Inner atomic function to handle the sync logic.
+        Isolating this allows for specific 'rollback' behaviors.
+        """
+        if self._discover_repository(repo_path):
+            logger.debug("Repo found at {path}", path=repo_path)
+            repo = self._get_valid_repo()
+
+            if repo is not None:
+                should_fetch = await self._should_fetch(
+                    repo,
+                    hinted_hash=hinted_hash,
+                    force_fetch=force_fetch,
+                    req_time=req_time,
+                )
+                if should_fetch:
+                    logger.debug(f"Fetching remote: {self._remote} ({self._source.url})")
+                    GitPolicyFetcher.repos_last_fetched[self.source_id] = datetime.datetime.now()
+
+                    await run_sync(
+                        repo.remotes[self._remote].fetch,
+                        callbacks=self._auth_callbacks,
+                    )
+
+                await self._notify_on_changes(repo)
+                return
+            else:
+                raise pygit2.GitError("Invalid repository metadata")
+        else:
+            await self._clone()
+
+    def _perform_soft_cleanup(self, repo_path: Path):
+        """
+        Targets specific corrupted states like stale lock files or broken symlinks.
+        Avoids expensive full re-clones.
+        """
+        logger.info(f"Attempting soft cleanup for repo at {repo_path}")
+
+        # 1. Handle Symlinks specifically (Issue #634)
+        if os.path.islink(repo_path):
+            logger.warning(f"Removing broken or stale symlink at {repo_path}")
+            repo_path.unlink()
+            return
+
+        # 2. Handle Git Lock Files - fixing the state instead of deleting
+        lock_files = [
+            repo_path / ".git" / "index.lock",
+            repo_path / ".git" / "shallow.lock",
+            repo_path / ".git" / "config.lock",
+        ]
+
+        for lock_file in lock_files:
+            if lock_file.exists():
+                try:
+                    lock_file.unlink()
+                    logger.info(f"Removed stale git lock file: {lock_file}")
+                except Exception as e:
+                    logger.error(f"Could not remove lock file {lock_file}: {e}")
+
     async def fetch_and_notify_on_changes(
         self,
         hinted_hash: Optional[str] = None,
         force_fetch: bool = False,
         req_time: datetime.datetime = None,
     ):
-        """Makes sure the repo is already fetched and is up to date.
-
-        - if no repo is found, the repo will be cloned.
-        - if the repo is found and it is deemed out-of-date, the configured remote will be fetched.
-        - if after a fetch new commits are detected, a callback will be triggered.
-        - if the hinted commit hash is provided and is already found in the local clone
-        we use this hint to avoid an necessary fetch.
-        """
         repo_lock = await self._get_repo_lock()
         async with repo_lock:
             try:
@@ -175,69 +226,26 @@ class GitPolicyFetcher(PolicyFetcher):
                     "git_policy_fetcher.fetch_and_notify_on_changes",
                     resource=self._scope_id,
                 ):
-                    if self._discover_repository(self._repo_path):
-                        logger.debug("Repo found at {path}", path=self._repo_path)
-                        repo = self._get_valid_repo()
-                        if repo is not None:
-                            should_fetch = await self._should_fetch(
-                                repo,
-                                hinted_hash=hinted_hash,
-                                force_fetch=force_fetch,
-                                req_time=req_time,
-                            )
-                            if should_fetch:
-                                logger.debug(
-                                    f"Fetching remote (force_fetch={force_fetch}): {self._remote} ({self._source.url})"
-                                )
-                                GitPolicyFetcher.repos_last_fetched[
-                                    self.source_id
-                                ] = datetime.datetime.now()
-                                await run_sync(
-                                    repo.remotes[self._remote].fetch,
-                                    callbacks=self._auth_callbacks,
-                                )
-                                logger.debug(f"Fetch completed: {self._source.url}")
+                    # Call atomic helper
+                    await self._attempt_atomic_sync(self._repo_path, hinted_hash, force_fetch, req_time)
 
-                            # New commits might be present because of a previous fetch made by another scope
-                            await self._notify_on_changes(repo)
-                            return
-                        else:
-                            # repo dir exists but invalid -> we must delete the directory
-                            logger.warning(
-                                "Deleting invalid repo: {path}", path=self._repo_path
-                            )
-                            shutil.rmtree(self._repo_path)
-                    else:
-                        logger.info("Repo not found at {path}", path=self._repo_path)
+            except (pygit2.GitError, KeyError, subprocess.CalledProcessError) as git_err:
+                # Dedicated rollback: try to fix corrupted state instead of deleting
+                logger.warning(f"Git error detected: {git_err}. Attempting soft recovery.")
+                self._perform_soft_cleanup(self._repo_path)
+                raise git_err
 
-                    # fallthrough to clean clone
-                    await self._clone()
-            
             except Exception as e:
-                logger.error(f"Failed to sync repo: {e}")
-                
-                # --- FIX FOR ISSUE #634: Robust Cleanup ---
-                # Ensure we clean up ANY leftovers (directories or symbolic links)
-                # to prevent "zombie" locks or corrupted states.
+                # Broad rollback only as a last resort
+                logger.error(f"Critical failure syncing repo: {e}. Falling back to full cleanup.")
                 if self._repo_path.exists() or os.path.islink(self._repo_path):
-                    logger.warning(f"Cleaning up corrupted repo at {self._repo_path} due to failure")
-                    try:
-                        if self._repo_path.is_symlink():
-                            self._repo_path.unlink() # Removes the symlink
-                        elif self._repo_path.is_dir():
-                            shutil.rmtree(self._repo_path) # Removes the directory
-                        else:
-                            self._repo_path.unlink(missing_ok=True) # Removes file
-                    except Exception as cleanup_error:
-                        logger.error(f"Failed to clean up path {self._repo_path}: {cleanup_error}")
+                    if self._repo_path.is_symlink():
+                        self._repo_path.unlink()
+                    else:
+                        shutil.rmtree(self._repo_path, ignore_errors=True)
 
-                # Clean up the internal memory cache to avoid using stale object references
                 repo_path_str = str(self._repo_path)
-                if repo_path_str in GitPolicyFetcher.repos:
-                    del GitPolicyFetcher.repos[repo_path_str]
-                    logger.info(f"Removed {repo_path_str} from internal repo cache")
-                
-                # Re-raise the exception so the caller knows the operation failed
+                GitPolicyFetcher.repos.pop(repo_path_str, None)
                 raise e
 
     def _discover_repository(self, path: Path) -> bool:
@@ -259,8 +267,7 @@ class GitPolicyFetcher(PolicyFetcher):
             )
         except pygit2.GitError:
             logger.exception(f"Could not clone repo at {self._source.url}")
-            # Re-raise to trigger the cleanup in the caller
-            raise 
+            raise
         else:
             logger.info(f"Clone completed: {self._source.url}")
             await self._notify_on_changes(repo)
@@ -293,39 +300,34 @@ class GitPolicyFetcher(PolicyFetcher):
                     "Repo was fetched after refresh request, override force_fetch with False"
                 )
             else:
-                return True  # must fetch
+                return True
 
         if not RepoInterface.has_remote_branch(repo, self._source.branch, self._remote):
             logger.info(
                 "Target branch was not found in local clone, re-fetching the remote"
             )
-            return True  # missing branch
+            return True
 
         if hinted_hash is not None:
             try:
                 _ = repo.revparse_single(hinted_hash)
-                return False  # hinted commit was found, no need to fetch
+                return False
             except KeyError:
                 logger.info(
                     "Hinted commit hash was not found in local clone, re-fetching the remote"
                 )
-                return True  # hinted commit was not found
+                return True
 
-        # by default, we try to avoid re-fetching the repo for performance
         return False
 
     @property
     def local_branch_name(self) -> str:
-        # Use the scope id as local branch name, so different scopes could track the same remote branch separately
         branch_name_unescaped = f"scopes/{self._scope_id}"
         if reference_is_valid_name(branch_name_unescaped):
             return branch_name_unescaped
-
-        # if scope id can't be used as a gitref (e.g invalid chars), use its hex representation
         return f"scopes/{self._scope_id.encode().hex()}"
 
     async def _notify_on_changes(self, repo: Repository):
-        # Get the latest commit hash of the target branch
         new_revision = RepoInterface.get_commit_hash(
             repo, self._source.branch, self._remote
         )
@@ -333,10 +335,8 @@ class GitPolicyFetcher(PolicyFetcher):
             logger.error(f"Did not find target branch on remote: {self._source.branch}")
             return
 
-        # Get the previous commit hash of the target branch
         local_branch = RepoInterface.get_local_branch(repo, self.local_branch_name)
         if local_branch is None:
-            # First sync of a new branch (the first synced branch in this repo was set by the clone (see `checkout_branch`))
             old_revision = None
             local_branch = RepoInterface.create_local_branch_ref(
                 repo, self.local_branch_name, self._remote, self._source.branch
@@ -345,8 +345,6 @@ class GitPolicyFetcher(PolicyFetcher):
             old_revision = local_branch.target.hex
 
         await self.callbacks.on_update(old_revision, new_revision)
-
-        # Bring forward local branch (a bit like "pull"), so we won't detect changes again
         local_branch.set_target(new_revision)
 
     def _get_current_branch_head(self) -> str:
@@ -406,7 +404,6 @@ class GitCallback(RemoteCallbacks):
     def credentials(self, url, username_from_url, allowed_types):
         if isinstance(self._source.auth, SSHAuthData):
             auth = cast(SSHAuthData, self._source.auth)
-
             ssh_key = dict(
                 username=username_from_url,
                 pubkey=auth.public_key or "",
@@ -416,7 +413,5 @@ class GitCallback(RemoteCallbacks):
             return KeypairFromMemory(**ssh_key)
         if isinstance(self._source.auth, GitHubTokenAuthData):
             auth = cast(GitHubTokenAuthData, self._source.auth)
-
             return UserPass(username="git", password=auth.token)
-
         return Username(username_from_url)
