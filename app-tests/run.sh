@@ -12,6 +12,13 @@ export OPAL_DATA_SOURCE_TOKEN
 INITIAL_DIR=$(pwd)
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 
+# Configure git identity globally for the test environment
+function configure_git_identity {
+  echo "- Configuring git identity"
+  git config --global user.email "matias.magni@gmail.com"
+  git config --global user.name "Matias J. Magni"
+}
+
 function generate_opal_keys {
   echo "- Generating OPAL keys"
 
@@ -65,8 +72,16 @@ function generate_opal_keys {
     exit 1
   fi
 
-  # Extract token from JSON response
-  OPAL_CLIENT_TOKEN="$(echo "$OPAL_CLIENT_TOKEN_RESPONSE" | grep -o '"token":"[^"]*"' | cut -d'"' -f4)"
+  # Extract token from JSON response - improved parsing
+  # Try method 1: sed-based extraction
+  OPAL_CLIENT_TOKEN="$(echo "$OPAL_CLIENT_TOKEN_RESPONSE" | sed -n 's/.*"token":"\([^"]*\)".*/\1/p')"
+  
+  # If that fails, try Python as fallback
+  if [ -z "$OPAL_CLIENT_TOKEN" ]; then
+    echo "    Trying Python-based JSON parsing for client token..."
+    OPAL_CLIENT_TOKEN="$(echo "$OPAL_CLIENT_TOKEN_RESPONSE" | python3 -c "import sys, json; data = json.load(sys.stdin); print(data.get('token', ''))" 2>/dev/null)"
+  fi
+  
   if [ -z "$OPAL_CLIENT_TOKEN" ]; then
     echo "Failed to extract client token from response:"
     echo "$OPAL_CLIENT_TOKEN_RESPONSE"
@@ -86,8 +101,16 @@ function generate_opal_keys {
     exit 1
   fi
 
-  # Extract token from JSON response
-  OPAL_DATA_SOURCE_TOKEN="$(echo "$OPAL_DATA_SOURCE_TOKEN_RESPONSE" | grep -o '"token":"[^"]*"' | cut -d'"' -f4)"
+  # Extract token from JSON response - improved parsing
+  # Try method 1: sed-based extraction
+  OPAL_DATA_SOURCE_TOKEN="$(echo "$OPAL_DATA_SOURCE_TOKEN_RESPONSE" | sed -n 's/.*"token":"\([^"]*\)".*/\1/p')"
+  
+  # If that fails, try Python as fallback
+  if [ -z "$OPAL_DATA_SOURCE_TOKEN" ]; then
+    echo "    Trying Python-based JSON parsing for datasource token..."
+    OPAL_DATA_SOURCE_TOKEN="$(echo "$OPAL_DATA_SOURCE_TOKEN_RESPONSE" | python3 -c "import sys, json; data = json.load(sys.stdin); print(data.get('token', ''))" 2>/dev/null)"
+  fi
+  
   if [ -z "$OPAL_DATA_SOURCE_TOKEN" ]; then
     echo "Failed to extract datasource token from response:"
     echo "$OPAL_DATA_SOURCE_TOKEN_RESPONSE"
@@ -157,9 +180,9 @@ function prepare_policy_repo {
   cd temp-repo
   git init
 
-  # Configure git
-  git config user.email "test@opal.local"
-  git config user.name "OPAL Test"
+  # Configure git (redundant but ensures it's set)
+  git config user.email "matias.magni@gmail.com"
+  git config user.name "Matias J. Magni"
 
   # Copy the policy files from opal-tests-policy-repo-main
   echo "  Copying policy files..."
@@ -215,6 +238,11 @@ function prepare_policy_repo {
   rm -rf ./opal-tests-policy-repo
   git clone "$OPAL_POLICY_REPO_URL" opal-tests-policy-repo
   cd opal-tests-policy-repo
+  
+  # Configure git identity in the cloned repo as well
+  git config user.email "matias.magni@gmail.com"
+  git config user.name "Matias J. Magni"
+  
   git checkout $POLICY_REPO_BRANCH
   cd ..
 }
@@ -260,6 +288,11 @@ function test_push_policy {
   echo "- Testing pushing policy $1"
   regofile="$1.rego"
   cd opal-tests-policy-repo
+  
+  # Ensure git identity is configured (in case global config didn't work)
+  git config user.email "matias.magni@gmail.com" 2>/dev/null || true
+  git config user.name "Matias J. Magni" 2>/dev/null || true
+  
   echo "package $1" > "$regofile"
   git add "$regofile"
   git commit -m "Add $regofile"
@@ -312,6 +345,9 @@ function test_statistics {
 function main {
   # Ensure we're in the correct directory
   cd "$SCRIPT_DIR"
+
+  # Configure git identity first
+  configure_git_identity
 
   # Setup
   generate_opal_keys
