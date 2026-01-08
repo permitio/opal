@@ -16,6 +16,9 @@ help:
 	@echo "  docker-run-client     - Run opal-client in Docker"
 	@echo "  docker-run-server     - Run opal-server in Docker"
 	@echo "  docker-build-client-eopa - Build opal-client-eopa Docker image"
+	@echo "  e2e-test              - Run E2E tests"
+	@echo "  e2e-test-verbose      - Run E2E tests with verbose output"
+	@echo "  e2e-test-clean        - Clean up E2E test environment"
 
 OPAL_SERVER_URL ?= http://host.docker.internal:7002
 OPAL_AUTH_PRIVATE_KEY ?= /root/ssh/opal_rsa
@@ -145,3 +148,23 @@ docker-run-server-secure:
 		-e "OPAL_POLICY_REPO_URL=$(OPAL_POLICY_REPO_URL)" \
 		-p 7002:7002 \
 		permitio/opal-server
+
+# E2E tests
+.PHONY: e2e-test
+e2e-test:
+	@echo "Running E2E tests..."
+	@cd tests/e2e && pytest -v --tb=short --log-cli-level=INFO
+
+.PHONY: e2e-test-verbose
+e2e-test-verbose:
+	@echo "Running E2E tests with verbose output..."
+	@cd tests/e2e && pytest -vv --tb=long --log-cli-level=DEBUG --capture=no
+
+.PHONY: e2e-test-clean
+e2e-test-clean:
+	@echo "Cleaning up E2E test environment..."
+	@docker compose -f tests/e2e/docker_compose.yml -p opal-e2e-tests down -v
+
+.PHONY: e2e-test-reset
+e2e-test-reset: e2e-test-clean e2e-test
+	@echo "E2E tests completed with clean environment"

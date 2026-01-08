@@ -1,0 +1,14 @@
+# Core testing
+pytest>=7.4.0
+pytest-asyncio>=0.21.0
+pytest-timeout>=2.1.0
+
+# Docker management
+docker>=6.1.0
+
+# HTTP client
+requests>=2.31.0
+urllib3>=2.0.0
+
+# Utilities
+pyyaml>=6.0
