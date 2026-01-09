@@ -1,0 +1,53 @@
+name: opal-e2e-tests
+
+services:
+  broadcast_channel:
+    image: postgres:alpine
+    environment:
+      - POSTGRES_DB=postgres
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  opal_server:
+    image: permitio/opal-server:${OPAL_IMAGE_TAG:-latest}
+    environment:
+      - OPAL_BROADCAST_URI=postgres://postgres:postgres@broadcast_channel:5432/postgres
+      - OPAL_POLICY_REPO_URL=https://github.com/permitio/opal-example-policy-repo
+      - OPAL_STATISTICS_ENABLED=true
+      - OPAL_LOG_LEVEL=INFO
+      - OPAL_DATA_CONFIG_SOURCES={"config":{"entries":[{"url":"http://opal_server:7002/policy-data","topics":["policy_data"],"dst_path":"/static"}]}}
+    ports:
+      - "17002:7002"
+    depends_on:
+      broadcast_channel:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:7002/healthcheck')\" || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  opal_client:
+    image: permitio/opal-client:${OPAL_IMAGE_TAG:-latest}
+    environment:
+      - OPAL_SERVER_URL=http://opal_server:7002
+      - OPAL_LOG_LEVEL=INFO
+      - OPAL_INLINE_OPA_LOG_FORMAT=http
+      - OPAL_STATISTICS_ENABLED=true
+    ports:
+      - "17000:7000"
+      - "18181:8181"
+    depends_on:
+      opal_server:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:7000/healthcheck')\" || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    command: sh -c "./wait-for.sh opal_server:7002 --timeout=20 -- ./start.sh"
