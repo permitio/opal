@@ -1,0 +1,13 @@
+# Core testing framework
+pytest>=7.0.0
+pytest-cov>=4.0.0
+
+# HTTP client for API testing
+requests>=2.28.0
+
+# Additional testing utilities
+pytest-timeout>=2.1.0          # Timeout for long-running tests
+pytest-html>=3.1.0             # HTML test reports
+
+# Logging
+colorlog>=6.7.0                # Colored logging output

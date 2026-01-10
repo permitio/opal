@@ -184,6 +184,7 @@ class PubSub:
                         remote_address=websocket.client,
                         reason="Authentication failed",
                     )
+                    await websocket.close(code=1008)  # Policy violation
                     return
 
                 source_host = None
@@ -191,16 +192,28 @@ class PubSub:
                 if websocket.client is not None:
                     source_host = websocket.client.host
                     source_port = websocket.client.port
+                
+                # Don't accept the websocket here - main_loop will handle acceptance
+                # main_loop's ConnectionManager.connect() will call websocket.accept()
                 with self.client_tracker.new_client(
                     source_host, source_port, websocket.query_params
                 ) as client_info:
                     token = current_client.set(client_info)
                     try:
+                        # main_loop will accept the websocket and manage the connection lifecycle
                         await self.endpoint.main_loop(websocket, claims=claims)
                     finally:
                         current_client.reset(token)
-            finally:
-                await websocket.close()
+            except Exception as e:
+                logger.exception(
+                    "Error in websocket endpoint: {error}",
+                    error=str(e),
+                )
+                # Try to close on error, but don't fail if already closed
+                try:
+                    await websocket.close(code=1011)  # Internal error
+                except Exception:
+                    pass  # Connection may already be closed by main_loop
 
     @staticmethod
     async def _verify_permitted_topics(

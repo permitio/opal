@@ -66,7 +66,6 @@ setup(
     packages=find_packages(include=("opal_server*",)),
     classifiers=[
         "Operating System :: OS Independent",
-        "License :: OSI Approved :: Apache Software License",
         "Programming Language :: Python",
         "Programming Language :: Python :: 3",
         "Programming Language :: Python :: 3.9",

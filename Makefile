@@ -29,14 +29,14 @@ clean:
 	cd packages/opal-server/ ; rm -rf *.egg-info build/ dist/
 
 build-packages:
-	cd packages/opal-common/ ; python setup.py sdist bdist_wheel
-	cd packages/opal-client/ ; python setup.py sdist bdist_wheel
-	cd packages/opal-server/ ; python setup.py sdist bdist_wheel
+	cd packages/opal-common/ ; python3 setup.py sdist bdist_wheel
+	cd packages/opal-client/ ; python3 setup.py sdist bdist_wheel
+	cd packages/opal-server/ ; python3 setup.py sdist bdist_wheel
 
 publish-to-pypi:
-	cd packages/opal-common/ ; python -m twine upload dist/*
-	cd packages/opal-client/ ; python -m twine upload dist/*
-	cd packages/opal-server/ ; python -m twine upload dist/*
+	cd packages/opal-common/ ; python3 -m twine upload dist/*
+	cd packages/opal-client/ ; python3 -m twine upload dist/*
+	cd packages/opal-server/ ; python3 -m twine upload dist/*
 
 publish:
 	$(MAKE) clean
@@ -52,6 +52,10 @@ install-server-from-src:
 install-develop:
 	pip install -r requirements.txt
 
+test-e2e: docker-build-opal-client-local docker-build-opal-server-local
+	@echo "Running E2E tests..."
+	@python e2e-tests/run_tests.py
+
 # docs
 docs-dev:
 	@cd documentation && yarn start
@@ -62,6 +66,29 @@ docker-build-client:
 
 docker-build-client-eopa:
 	@docker build -t permitio/opal-client-eopa --target client-eopa -f docker/Dockerfile .
+
+# Detect Windows
+ifeq ($(OS),Windows_NT)
+  IS_WINDOWS := 1
+else ifdef COMSPEC
+  IS_WINDOWS := 1
+else
+  IS_WINDOWS := 0
+endif
+
+docker-build-opal-client-local:
+ifeq ($(IS_WINDOWS),1)
+	@powershell.exe -Command "$$env:DOCKER_BUILDKIT='1'; docker build -t opal-client-local:latest --target client -f docker/Dockerfile ."
+else
+	@DOCKER_BUILDKIT=1 docker build -t opal-client-local:latest --target client -f docker/Dockerfile .
+endif
+
+docker-build-opal-server-local:
+ifeq ($(IS_WINDOWS),1)
+	@powershell.exe -Command "$$env:DOCKER_BUILDKIT='1'; docker build -t opal-server-local:latest --target server -f docker/Dockerfile ."
+else
+	@DOCKER_BUILDKIT=1 docker build -t opal-server-local:latest --target server -f docker/Dockerfile .
+endif
 
 docker-build-client-cedar:
 	@docker build -t permitio/opal-client-cedar --target client-cedar -f docker/Dockerfile .
@@ -124,7 +151,7 @@ docker-build-server-latest-alpine:
 	@docker build -t permitio/opal-server:latest-alpine --target server-alpine -f docker/Dockerfile .
 
 docker-run-server:
-	@if [[ -z "$(OPAL_POLICY_REPO_SSH_KEY)" ]]; then \
+	@if [ -z "$(OPAL_POLICY_REPO_SSH_KEY)" ]; then \
 		docker run -it \
 			-e "OPAL_POLICY_REPO_URL=$(OPAL_POLICY_REPO_URL)" \
 			-p 7002:7002 \
