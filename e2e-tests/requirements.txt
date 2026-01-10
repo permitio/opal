@@ -1,6 +1,5 @@
 # Core testing framework
 pytest>=7.0.0
-pytest-docker>=2.0.0
 pytest-cov>=4.0.0
 
 # HTTP client for API testing
@@ -8,18 +7,7 @@ requests>=2.28.0
 
 # Additional testing utilities
 pytest-timeout>=2.1.0          # Timeout for long-running tests
-pytest-xdist>=3.0.0            # Parallel test execution
 pytest-html>=3.1.0             # HTML test reports
-pytest-json-report>=1.5.0      # JSON test reports
 
-# Performance testing
-pytest-benchmark>=4.0.0        # Performance benchmarking
-
-# Better assertions and debugging
-pytest-clarity>=1.0.0          # Better assertion error messages
-
-# Test data and fixtures
-faker>=18.0.0                  # Generate fake test data
-
-# Logging and monitoring
+# Logging
 colorlog>=6.7.0                # Colored logging output

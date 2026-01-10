@@ -15,7 +15,7 @@ VERSION_STRING = ".".join(map(str, VERSION))
 __version__ = VERSION_STRING
 __author__ = "Or Weis, Asaf Cohen"
 __author_email__ = "or@permit.io"
-__license__ = "Apache 2.0"
+__license__ = "Apache-2.0"
 __copyright__ = "Copyright 2021 Or Weis and Asaf Cohen"
 
 

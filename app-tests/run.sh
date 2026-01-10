@@ -31,7 +31,26 @@ function generate_opal_keys {
   # Generate tokens without requiring local OPAL installation
   echo "    Starting OPAL server for keygen"
   OPAL_AUTH_MASTER_TOKEN="$(openssl rand -hex 16)"
+  
+  # Clean up any existing containers using port 7002
+  echo "    Cleaning up any existing containers on port 7002..."
   docker rm -f --wait opal-server-keygen >/dev/null 2>&1 || true
+  # Find and stop any container using port 7002
+  EXISTING_CONTAINER=$(docker ps -a --filter "publish=7002" --format "{{.ID}}" | head -1)
+  if [ -n "$EXISTING_CONTAINER" ]; then
+    echo "    Stopping existing container $EXISTING_CONTAINER using port 7002..."
+    docker stop "$EXISTING_CONTAINER" >/dev/null 2>&1 || true
+    docker rm "$EXISTING_CONTAINER" >/dev/null 2>&1 || true
+  fi
+  # Also check for containers with name containing opal-server
+  docker ps -a --filter "name=opal-server" --format "{{.ID}}" | while read -r cid; do
+    if [ -n "$cid" ]; then
+      echo "    Stopping container $cid..."
+      docker stop "$cid" >/dev/null 2>&1 || true
+      docker rm "$cid" >/dev/null 2>&1 || true
+    fi
+  done
+  
   docker run --rm -d \
     --name opal-server-keygen \
     -e OPAL_AUTH_PUBLIC_KEY="$OPAL_AUTH_PUBLIC_KEY" \
@@ -61,32 +80,85 @@ function generate_opal_keys {
     sleep 1
   done
 
+  # Unset any existing token values to ensure we get fresh tokens
+  unset OPAL_CLIENT_TOKEN
+  unset OPAL_DATA_SOURCE_TOKEN
+
   OPAL_CLIENT_TOKEN_RESPONSE="$(curl -s --request POST 'http://localhost:7002/token' \
     --header "Authorization: Bearer $OPAL_AUTH_MASTER_TOKEN" \
     --header 'Content-Type: application/json' \
     --data-raw '{"type": "client"}' 2>&1)"
 
-  if [ $? -ne 0 ]; then
-    echo "Failed to obtain OPAL_CLIENT_TOKEN:"
+  CURL_EXIT_CODE=$?
+  if [ $CURL_EXIT_CODE -ne 0 ]; then
+    echo "Failed to obtain OPAL_CLIENT_TOKEN (curl exit code: $CURL_EXIT_CODE):"
     echo "$OPAL_CLIENT_TOKEN_RESPONSE"
     exit 1
   fi
 
+  # Check if the response contains an error
+  if echo "$OPAL_CLIENT_TOKEN_RESPONSE" | grep -q '"error"'; then
+    echo "ERROR: Server returned an error response:"
+    echo "$OPAL_CLIENT_TOKEN_RESPONSE"
+    echo ""
+    echo "This usually means:"
+    echo "  1. The OPAL server is not properly configured"
+    echo "  2. The master token is incorrect"
+    echo "  3. Port 7002 is still in use by another container"
+    exit 1
+  fi
+
+  # Debug: Show the response (first 200 chars)
+  echo "    Token response preview: ${OPAL_CLIENT_TOKEN_RESPONSE:0:200}"
+
   # Extract token from JSON response - improved parsing
-  # Try method 1: sed-based extraction
-  OPAL_CLIENT_TOKEN="$(echo "$OPAL_CLIENT_TOKEN_RESPONSE" | sed -n 's/.*"token":"\([^"]*\)".*/\1/p')"
+  # Use Python for reliable JSON parsing (avoid extracting from error messages)
+  OPAL_CLIENT_TOKEN="$(echo "$OPAL_CLIENT_TOKEN_RESPONSE" | python3 -c "
+import sys, json
+try:
+    data = json.load(sys.stdin)
+    # Check if this is an error response
+    if 'detail' in data and 'error' in data.get('detail', {}):
+        print('', file=sys.stderr)
+        sys.exit(1)
+    # Extract token from top-level or nested structure
+    token = data.get('token', '')
+    if not token and 'detail' in data:
+        token = data['detail'].get('token', '')
+    print(token)
+except Exception as e:
+    print('', file=sys.stderr)
+    sys.exit(1)
+" 2>/dev/null)"
   
-  # If that fails, try Python as fallback
-  if [ -z "$OPAL_CLIENT_TOKEN" ]; then
-    echo "    Trying Python-based JSON parsing for client token..."
-    OPAL_CLIENT_TOKEN="$(echo "$OPAL_CLIENT_TOKEN_RESPONSE" | python3 -c "import sys, json; data = json.load(sys.stdin); print(data.get('token', ''))" 2>/dev/null)"
+  # If Python extraction failed, try sed as fallback (but validate it's not an error)
+  if [ -z "$OPAL_CLIENT_TOKEN" ] || [ "$OPAL_CLIENT_TOKEN" = "None" ]; then
+    echo "    Trying sed-based extraction as fallback..."
+    OPAL_CLIENT_TOKEN="$(echo "$OPAL_CLIENT_TOKEN_RESPONSE" | sed -n 's/.*"token":"\([^"]*\)".*/\1/p' | head -1)"
   fi
   
-  if [ -z "$OPAL_CLIENT_TOKEN" ]; then
-    echo "Failed to extract client token from response:"
+  # Validate that we got a token and it's not the master token
+  if [ -z "$OPAL_CLIENT_TOKEN" ] || [ "$OPAL_CLIENT_TOKEN" = "None" ]; then
+    echo "ERROR: Failed to extract client token from response:"
     echo "$OPAL_CLIENT_TOKEN_RESPONSE"
     exit 1
   fi
+  
+  # Validate that the token is a JWT (starts with "eyJ") and is not the master token
+  if [ "$OPAL_CLIENT_TOKEN" = "$OPAL_AUTH_MASTER_TOKEN" ]; then
+    echo "ERROR: Extracted token is the same as master token! This indicates token extraction failed."
+    echo "Response was: $OPAL_CLIENT_TOKEN_RESPONSE"
+    exit 1
+  fi
+  
+  if [ "${OPAL_CLIENT_TOKEN:0:3}" != "eyJ" ]; then
+    echo "ERROR: Extracted token does not appear to be a JWT (should start with 'eyJ'):"
+    echo "Token: ${OPAL_CLIENT_TOKEN:0:50}..."
+    echo "Full response: $OPAL_CLIENT_TOKEN_RESPONSE"
+    exit 1
+  fi
+  
+  echo "    Successfully obtained client JWT token (length: ${#OPAL_CLIENT_TOKEN})"
 
   # Obtain datasource token using curl
   echo "    Obtaining datasource token..."
@@ -95,27 +167,66 @@ function generate_opal_keys {
     --header 'Content-Type: application/json' \
     --data-raw '{"type": "datasource"}' 2>&1)"
 
-  if [ $? -ne 0 ]; then
-    echo "Failed to obtain OPAL_DATA_SOURCE_TOKEN:"
+  CURL_EXIT_CODE=$?
+  if [ $CURL_EXIT_CODE -ne 0 ]; then
+    echo "Failed to obtain OPAL_DATA_SOURCE_TOKEN (curl exit code: $CURL_EXIT_CODE):"
     echo "$OPAL_DATA_SOURCE_TOKEN_RESPONSE"
     exit 1
   fi
 
-  # Extract token from JSON response - improved parsing
-  # Try method 1: sed-based extraction
-  OPAL_DATA_SOURCE_TOKEN="$(echo "$OPAL_DATA_SOURCE_TOKEN_RESPONSE" | sed -n 's/.*"token":"\([^"]*\)".*/\1/p')"
-  
-  # If that fails, try Python as fallback
-  if [ -z "$OPAL_DATA_SOURCE_TOKEN" ]; then
-    echo "    Trying Python-based JSON parsing for datasource token..."
-    OPAL_DATA_SOURCE_TOKEN="$(echo "$OPAL_DATA_SOURCE_TOKEN_RESPONSE" | python3 -c "import sys, json; data = json.load(sys.stdin); print(data.get('token', ''))" 2>/dev/null)"
-  fi
-  
-  if [ -z "$OPAL_DATA_SOURCE_TOKEN" ]; then
-    echo "Failed to extract datasource token from response:"
+  # Check if the response contains an error
+  if echo "$OPAL_DATA_SOURCE_TOKEN_RESPONSE" | grep -q '"error"'; then
+    echo "ERROR: Server returned an error response:"
     echo "$OPAL_DATA_SOURCE_TOKEN_RESPONSE"
     exit 1
   fi
+
+  # Extract token from JSON response using Python for reliable parsing
+  OPAL_DATA_SOURCE_TOKEN="$(echo "$OPAL_DATA_SOURCE_TOKEN_RESPONSE" | python3 -c "
+import sys, json
+try:
+    data = json.load(sys.stdin)
+    # Check if this is an error response
+    if 'detail' in data and 'error' in data.get('detail', {}):
+        print('', file=sys.stderr)
+        sys.exit(1)
+    # Extract token from top-level or nested structure
+    token = data.get('token', '')
+    if not token and 'detail' in data:
+        token = data['detail'].get('token', '')
+    print(token)
+except Exception as e:
+    print('', file=sys.stderr)
+    sys.exit(1)
+" 2>/dev/null)"
+  
+  # If Python extraction failed, try sed as fallback
+  if [ -z "$OPAL_DATA_SOURCE_TOKEN" ] || [ "$OPAL_DATA_SOURCE_TOKEN" = "None" ]; then
+    echo "    Trying sed-based extraction as fallback..."
+    OPAL_DATA_SOURCE_TOKEN="$(echo "$OPAL_DATA_SOURCE_TOKEN_RESPONSE" | sed -n 's/.*"token":"\([^"]*\)".*/\1/p' | head -1)"
+  fi
+  
+  # Validate that we got a token and it's not the master token
+  if [ -z "$OPAL_DATA_SOURCE_TOKEN" ] || [ "$OPAL_DATA_SOURCE_TOKEN" = "None" ]; then
+    echo "ERROR: Failed to extract datasource token from response:"
+    echo "$OPAL_DATA_SOURCE_TOKEN_RESPONSE"
+    exit 1
+  fi
+  
+  # Validate that the token is a JWT (starts with "eyJ") and is not the master token
+  if [ "$OPAL_DATA_SOURCE_TOKEN" = "$OPAL_AUTH_MASTER_TOKEN" ]; then
+    echo "ERROR: Extracted datasource token is the same as master token! This indicates token extraction failed."
+    echo "Response was: $OPAL_DATA_SOURCE_TOKEN_RESPONSE"
+    exit 1
+  fi
+  
+  if [ "${OPAL_DATA_SOURCE_TOKEN:0:3}" != "eyJ" ]; then
+    echo "ERROR: Extracted datasource token does not appear to be a JWT (should start with 'eyJ'):"
+    echo "Token: ${OPAL_DATA_SOURCE_TOKEN:0:50}..."
+    exit 1
+  fi
+  
+  echo "    Successfully obtained datasource JWT token (length: ${#OPAL_DATA_SOURCE_TOKEN})"
 
   set +o pipefail
 
@@ -126,13 +237,39 @@ function generate_opal_keys {
 
   echo "- Create .env file"
   rm -f .env
-  (
-    echo "OPAL_AUTH_PUBLIC_KEY=\"$OPAL_AUTH_PUBLIC_KEY\"";
-    echo "OPAL_AUTH_PRIVATE_KEY=\"$OPAL_AUTH_PRIVATE_KEY\"";
-    echo "OPAL_AUTH_MASTER_TOKEN=\"$OPAL_AUTH_MASTER_TOKEN\"";
-    echo "OPAL_CLIENT_TOKEN=\"$OPAL_CLIENT_TOKEN\"";
-    echo "OPAL_AUTH_PRIVATE_KEY_PASSPHRASE=\"$OPAL_AUTH_PRIVATE_KEY_PASSPHRASE\""
-  ) > .env
+  # Build OPAL_DEFAULT_UPDATE_CALLBACKS JSON with the client token
+  # Use Python to properly escape the JSON for .env file format
+  export OPAL_CLIENT_TOKEN
+  OPAL_DEFAULT_UPDATE_CALLBACKS=$(python3 <<'PYTHON_EOF'
+import json, os
+token = os.environ.get('OPAL_CLIENT_TOKEN', '')
+callbacks = {
+    'callbacks': [[
+        'http://opal_server:7002/data/callback_report',
+        {
+            'method': 'post',
+            'process_data': False,
+            'headers': {
+                'Authorization': f'Bearer {token}',
+                'content-type': 'application/json'
+            }
+        }
+    ]]
+}
+print(json.dumps(callbacks))
+PYTHON_EOF
+)
+  # Write .env file using printf to avoid shell escaping issues
+  {
+    printf 'OPAL_AUTH_PUBLIC_KEY="%s"\n' "$OPAL_AUTH_PUBLIC_KEY"
+    printf 'OPAL_AUTH_PRIVATE_KEY="%s"\n' "$OPAL_AUTH_PRIVATE_KEY"
+    printf 'OPAL_AUTH_MASTER_TOKEN="%s"\n' "$OPAL_AUTH_MASTER_TOKEN"
+    printf 'OPAL_CLIENT_TOKEN="%s"\n' "$OPAL_CLIENT_TOKEN"
+    printf 'CLIENT_TOKEN="%s"\n' "$OPAL_CLIENT_TOKEN"
+    printf 'OPAL_AUTH_PRIVATE_KEY_PASSPHRASE="%s"\n' "$OPAL_AUTH_PRIVATE_KEY_PASSPHRASE"
+    # Write JSON without quotes - docker-compose will handle it
+    printf 'OPAL_DEFAULT_UPDATE_CALLBACKS=%s\n' "$OPAL_DEFAULT_UPDATE_CALLBACKS"
+  } > .env
 }
 
 function prepare_policy_repo {

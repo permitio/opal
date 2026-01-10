@@ -47,8 +47,8 @@ USAGE
 wait_for() {
   case "$PROTOCOL" in
     tcp)
-      if ! command -v nc >/dev/null; then
-        echoerr 'nc command is missing!'
+      if ! command -v wget >/dev/null; then
+        echoerr 'wget command is missing!'
         exit 1
       fi
       ;;

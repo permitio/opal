@@ -303,6 +303,18 @@ This E2E test framework implements the requirements from [Issue #677](https://gi
 - ✅ Check client and server are connected using Statistics API
 - ✅ Single test command to run all assertions
 
+### Statistics API Testing
+
+The framework now includes comprehensive Statistics API testing:
+
+- **`test_statistics_endpoint_accessible`**: Verifies the statistics endpoint is accessible on the server
+- **`test_client_server_connection_via_statistics`**: Core test that verifies client-server connection using the Statistics API (as required by issue #677)
+
+Statistics are enabled by default in the test configuration (`OPAL_STATISTICS_ENABLED=true`). The tests verify that:
+1. The statistics endpoint is accessible
+2. Clients are properly registered in the server statistics
+3. The connection between client and server is active and functional
+
 ## Contributing
 
 To improve these tests:
