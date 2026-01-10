@@ -31,7 +31,7 @@ RUN chmod +x ./wait-for.sh
 RUN ln -s /opal/wait-for.sh /usr/wait-for.sh
 
 # netcat (nc) is used by the wait-for.sh script
-RUN apt-get update && apt-get install -y netcat-traditional jq wget && apt-get clean
+RUN apt-get update && apt-get install -y netcat-traditional jq wget curl && apt-get clean
 
 # copy startup script (create link at old path to maintain backward compatibility)
 COPY ./scripts/start.sh .
@@ -44,7 +44,7 @@ COPY ./scripts/gunicorn_conf.py .
 COPY ./README.md .
 COPY ./packages ./packages/
 # install the opal-common package
-RUN cd ./packages/opal-common && python setup.py install
+RUN cd ./packages/opal-common && pip install .
 # Make sure scripts in .local are usable:
 ENV PATH=/opal:/root/.local/bin:$PATH
 # run gunicorn
@@ -56,7 +56,7 @@ CMD ["./start.sh"]
 FROM common AS client-standalone
 # uvicorn config ------------------------------------
 # install the opal-client package
-RUN cd ./packages/opal-client && python setup.py install
+RUN cd ./packages/opal-client && pip install .
 
 # WARNING: do not change the number of workers on the opal client!
 # only one worker is currently supported for the client.
@@ -127,7 +127,16 @@ WORKDIR /download
 # Download pre-built EOPA binary based on architecture
 ARG eopa_tag=v1.44.0
 ARG TARGETARCH
-RUN case "${TARGETARCH}" in \
+# Auto-detect architecture if TARGETARCH is not set (e.g., when BuildKit is disabled)
+RUN if [ -z "${TARGETARCH}" ]; then \
+        DETECTED_ARCH=$(uname -m); \
+        case "${DETECTED_ARCH}" in \
+            x86_64) TARGETARCH="amd64" ;; \
+            aarch64|arm64) TARGETARCH="arm64" ;; \
+            *) TARGETARCH="amd64" ;; \
+        esac; \
+    fi && \
+    case "${TARGETARCH}" in \
         "amd64") EOPA_ARCH="x86_64" ;; \
         "arm64") EOPA_ARCH="arm64" ;; \
         *) echo "Unsupported architecture: ${TARGETARCH}" && exit 1 ;; \
@@ -214,7 +223,7 @@ RUN if [ "$TRUST_POLICY_REPO_HOST_SSH_FINGERPRINT" = "true" ] ; then \
 USER root
 
 # install the opal-server package
-RUN cd ./packages/opal-server && python setup.py install
+RUN cd ./packages/opal-server && pip install .
 
 # uvicorn config ------------------------------------
 
@@ -284,7 +293,7 @@ RUN pip install --no-cache-dir --upgrade pip && pip install --no-cache-dir -r ./
 FROM python:3.10-alpine AS common-alpine
 RUN rm -r /usr/local/lib/python3.10/site-packages || true
 COPY --from=build-stage-alpine /usr/local /usr/local
-RUN adduser -D -h /opal -s /bin/bash opal && apk add --no-cache bash netcat-openbsd jq wget
+RUN adduser -D -h /opal -s /bin/bash opal && apk add --no-cache bash netcat-openbsd jq wget curl
 RUN apk add --no-cache libssh2 http-parser
 WORKDIR /opal
 COPY scripts/wait-for.sh .
@@ -296,7 +305,7 @@ RUN ln -s /opal/start.sh /start.sh
 COPY ./scripts/gunicorn_conf.py .
 COPY ./README.md .
 COPY ./packages ./packages/
-RUN cd ./packages/opal-common && python setup.py install
+RUN cd ./packages/opal-common && pip install .
 ENV PATH=/opal:/root/.local/bin:$PATH
 CMD ["./start.sh"]
 
@@ -304,7 +313,7 @@ CMD ["./start.sh"]
 # STANDALONE IMAGE (ALPINE) ---------------------------------
 # -----------------------------------------------------------
 FROM common-alpine AS client-standalone-alpine
-RUN cd ./packages/opal-client && python setup.py install
+RUN cd ./packages/opal-client && pip install .
 ENV UVICORN_NUM_WORKERS=1
 ENV UVICORN_ASGI_APP=opal_client.main:app
 ENV UVICORN_PORT=7000
@@ -367,7 +376,7 @@ RUN if [ "$TRUST_POLICY_REPO_HOST_SSH_FINGERPRINT" = "true" ] ; then \
   chmod 0700 ~/.ssh && \
   ssh-keyscan -t rsa ${POLICY_REPO_HOST} >> ~/.ssh/known_hosts ; fi
 USER root
-RUN cd ./packages/opal-server && python setup.py install
+RUN cd ./packages/opal-server && pip install .
 ENV UVICORN_NUM_WORKERS=1
 ENV UVICORN_ASGI_APP=opal_server.main:app
 ENV UVICORN_PORT=7002

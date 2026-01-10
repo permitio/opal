@@ -54,11 +54,14 @@ services:
       mode: replicated
       replicas: 2
       endpoint_mode: vip
+    env_file:
+      - .env
     environment:
       - OPAL_BROADCAST_URI=postgres://postgres:postgres@broadcast_channel:5432/postgres
       - UVICORN_NUM_WORKERS=4
       - OPAL_POLICY_REPO_URL=http://gitea:3000/gitea_admin/policy-repo.git
       - OPAL_POLICY_REPO_MAIN_BRANCH=${POLICY_REPO_BRANCH:-main}
+      - OPAL_POLICY_REPO_POLLING_INTERVAL=5
       - 'OPAL_DATA_CONFIG_SOURCES={"config":{"entries":[{"url":"http://opal_server:7002/policy-data","config":{"headers":{"Authorization":"Bearer ${OPAL_CLIENT_TOKEN}"}},"topics":["policy_data"],"dst_path":"/static"}]}}'
       - OPAL_LOG_FORMAT_INCLUDE_PID=true
       - OPAL_POLICY_REPO_WEBHOOK_SECRET=xxxxx
@@ -67,6 +70,7 @@ services:
       - OPAL_AUTH_PRIVATE_KEY=${OPAL_AUTH_PRIVATE_KEY}
       - OPAL_AUTH_PRIVATE_KEY_PASSPHRASE=${OPAL_AUTH_PRIVATE_KEY_PASSPHRASE}
       - OPAL_AUTH_MASTER_TOKEN=${OPAL_AUTH_MASTER_TOKEN}
+      - OPAL_WS_TOKEN=${OPAL_CLIENT_TOKEN}
       - OPAL_AUTH_JWT_AUDIENCE=https://api.opal.ac/v1/
       - OPAL_AUTH_JWT_ISSUER=https://opal.ac/
       - OPAL_STATISTICS_ENABLED=false
@@ -84,14 +88,14 @@ services:
       mode: replicated
       replicas: 2
       endpoint_mode: vip
+    env_file:
+      - .env
     environment:
       - OPAL_SERVER_URL=http://opal_server:7002
       - OPAL_LOG_FORMAT_INCLUDE_PID=true
       - OPAL_INLINE_OPA_LOG_FORMAT=http
       - OPAL_SHOULD_REPORT_ON_DATA_UPDATES=True
-      - 'OPAL_DEFAULT_UPDATE_CALLBACKS={"callbacks":[["http://opal_server:7002/data/callback_report",{"method":"post","process_data":false,"headers":{"Authorization":"Bearer ${OPAL_CLIENT_TOKEN}","content-type":"application/json"}}]]}'
       - OPAL_OPA_HEALTH_CHECK_POLICY_ENABLED=True
-      - OPAL_CLIENT_TOKEN=${OPAL_CLIENT_TOKEN}
       - OPAL_AUTH_JWT_AUDIENCE=https://api.opal.ac/v1/
       - OPAL_AUTH_JWT_ISSUER=https://opal.ac/
       - OPAL_STATISTICS_ENABLED=false

@@ -1,10 +1,71 @@
+# Virtual environments
 venv/
+.venv/
+e2e-tests/.venv/
+e2e-tests/venv/
+**/__pycache__/
+**/*.pyc
+**/*.pyo
+**/*.pyd
+.Python
+
+# Documentation and non-essential files
 documentation/
 rego_clone/
 .github/
-docker/
+.benchmarks
+*.md
+!README.md
+
+# Build artifacts
+*.egg-info/
+dist/
+build/
+*.egg
+*.whl
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Git and version control
+.git/
+.gitignore
+.gitattributes
+
+# CI/CD and config files
+.dockerignore
+.pre-commit-config.yaml
 Makefile
 Dockerfile
-.dockerignore
-.gitignore
-.pre-commit-config.yaml
+docker-compose*.yml
+*.bat
+*.sh
+!scripts/*.sh
+
+# Test files and coverage
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.hypothesis/
+
+# Logs and temporary files
+*.log
+*.tmp
+tmp/
+temp/
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# Node modules (if any)
+node_modules/
+package-lock.json
+yarn.lock
