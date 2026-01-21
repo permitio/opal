@@ -31,7 +31,13 @@ RUN chmod +x ./wait-for.sh
 RUN ln -s /opal/wait-for.sh /usr/wait-for.sh
 
 # netcat (nc) is used by the wait-for.sh script
-RUN apt-get update && apt-get install -y netcat-traditional jq wget && apt-get clean
+# Upgrade security-sensitive packages to fix CVEs:
+# - libexpat1: CVE-2024-45491, CVE-2024-45492 (integer overflow)
+# - libkrb5-3, libgssapi-krb5-2: CVE-2024-37371 (invalid memory reads)
+RUN apt-get update && \
+    apt-get install -y netcat-traditional jq wget && \
+    apt-get upgrade -y libexpat1 libkrb5-3 libgssapi-krb5-2 && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # copy startup script (create link at old path to maintain backward compatibility)
 COPY ./scripts/start.sh .
@@ -185,7 +191,10 @@ USER opal
 # ---------------------------------------------------
 FROM common AS server
 
-RUN apt-get update && apt-get install -y openssh-client git && apt-get clean
+# Install git and upgrade to fix CVE-2024-32002 (RCE via malicious submodules)
+RUN apt-get update && apt-get install -y openssh-client git && \
+    apt-get upgrade -y git && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
 RUN git config --global core.symlinks false # Mitigate CVE-2024-32002
 
 USER opal
@@ -284,8 +293,12 @@ RUN pip install --no-cache-dir --upgrade pip && pip install --no-cache-dir -r ./
 FROM python:3.10-alpine AS common-alpine
 RUN rm -r /usr/local/lib/python3.10/site-packages || true
 COPY --from=build-stage-alpine /usr/local /usr/local
-RUN adduser -D -h /opal -s /bin/bash opal && apk add --no-cache bash netcat-openbsd jq wget
-RUN apk add --no-cache libssh2 http-parser
+# Install packages and upgrade security-sensitive ones to fix CVEs:
+# - expat: CVE-2024-45491, CVE-2024-45492 (integer overflow)
+# - krb5-libs: CVE-2024-37371 (invalid memory reads)
+RUN adduser -D -h /opal -s /bin/bash opal && \
+    apk add --no-cache bash netcat-openbsd jq wget libssh2 http-parser && \
+    apk upgrade --no-cache expat krb5-libs
 WORKDIR /opal
 COPY scripts/wait-for.sh .
 RUN chmod +x ./wait-for.sh
@@ -357,7 +370,12 @@ USER opal
 # SERVER IMAGE (ALPINE) -----------------------------
 # ---------------------------------------------------
 FROM common-alpine AS server-alpine
-RUN apk add --no-cache openssh-client git libssh2
+# Install and upgrade packages to fix CVEs:
+# - git: CVE-2024-32002 (RCE via malicious submodules)
+# - expat: CVE-2024-45491, CVE-2024-45492 (integer overflow)
+# - krb5-libs: CVE-2024-37371 (invalid memory reads)
+RUN apk add --no-cache openssh-client git libssh2 && \
+    apk upgrade --no-cache git expat krb5-libs
 RUN git config --global core.symlinks false
 USER opal
 ARG TRUST_POLICY_REPO_HOST_SSH_FINGERPRINT="true"
