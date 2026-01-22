@@ -16,26 +16,18 @@ jobs:
       pull-requests: write
     steps:
       - name: Checkout
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
-
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
       - name: Login to DockerHub
-        uses: docker/login-action@v2
+        uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
-
-      - name: Docker Compose install
-        run: |
-          curl -L "https://github.com/docker/compose/releases/download/1.29.2/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
-          chmod +x /usr/local/bin/docker-compose
 
       - name: Echo version tag
         run: |
@@ -48,8 +40,8 @@ jobs:
           file: docker/Dockerfile
           push: false
           target: client
-          cache-from: type=registry,ref=permitio/opal-client:latest
-          cache-to: type=inline
+          cache-from: type=gha,scope=client
+          cache-to: type=gha,scope=client,mode=max
           load: true
           tags: |
             permitio/opal-client:test
@@ -61,8 +53,8 @@ jobs:
           file: docker/Dockerfile
           push: false
           target: server
-          cache-from: type=registry,ref=permitio/opal-server:latest
-          cache-to: type=inline
+          cache-from: type=gha,scope=server
+          cache-to: type=gha,scope=server,mode=max
           load: true
           tags: |
             permitio/opal-server:test
@@ -79,12 +71,9 @@ jobs:
       - name: Output container logs
         run: docker compose -f docker/docker-compose-test.yml logs
 
-      - name: Output local docker images
-        run: docker image ls --digests | grep opal
-
+  # Build each architecture natively, then merge into multi-arch manifests
   publish_docker_images:
     needs: build_and_test
-    runs-on: ubuntu-latest
     permissions:
       id-token: write
       contents: write
@@ -92,82 +81,68 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include:
+        arch: [amd64, arm64]
+        target:
           - name: client
             repository: permitio/opal-client
-            target: client
+            dockerfile_target: client
             version_suffix: ""
           - name: client-alpine
             repository: permitio/opal-client
-            target: client-alpine
+            dockerfile_target: client-alpine
             version_suffix: "-alpine"
           - name: client-standalone
             repository: permitio/opal-client-standalone
-            target: client-standalone
+            dockerfile_target: client-standalone
             version_suffix: ""
           - name: client-standalone-alpine
             repository: permitio/opal-client-standalone
-            target: client-standalone-alpine
+            dockerfile_target: client-standalone-alpine
             version_suffix: "-alpine"
           - name: client-cedar
             repository: permitio/opal-client-cedar
-            target: client-cedar
+            dockerfile_target: client-cedar
             version_suffix: ""
           - name: client-cedar-alpine
             repository: permitio/opal-client-cedar
-            target: client-cedar-alpine
+            dockerfile_target: client-cedar-alpine
             version_suffix: "-alpine"
           - name: client-eopa
             repository: permitio/opal-client-eopa
-            target: client-eopa
+            dockerfile_target: client-eopa
             version_suffix: ""
           - name: client-eopa-alpine
             repository: permitio/opal-client-eopa
-            target: client-eopa-alpine
+            dockerfile_target: client-eopa-alpine
             version_suffix: "-alpine"
           - name: server
             repository: permitio/opal-server
-            target: server
+            dockerfile_target: server
             version_suffix: ""
           - name: server-alpine
             repository: permitio/opal-server
-            target: server-alpine
+            dockerfile_target: server-alpine
             version_suffix: "-alpine"
+        include:
+          - arch: amd64
+            runner: ubuntu-latest
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
-
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
       - name: Login to DockerHub
-        uses: docker/login-action@v2
+        uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
-
-      - name: Prepare tags
-        id: tags
-        run: |
-          version_tag="${{ github.event.release.tag_name }}"
-          repo="${{ matrix.repository }}"
-          suffix="${{ matrix.version_suffix }}"
-          latest_tag="latest${suffix}"
-          tags="${repo}:${version_tag}${suffix}"
-          if [ "${{ github.event.release.prerelease }}" != "true" ]; then
-            tags="${repo}:${latest_tag}"$'\n'"${tags}"
-          fi
-          {
-            echo "tags<<EOF"
-            echo "${tags}"
-            echo "EOF"
-          } >> "$GITHUB_OUTPUT"
-          echo "cache_ref=${repo}:${latest_tag}" >> "$GITHUB_OUTPUT"
 
       - name: Python setup
         uses: actions/setup-python@v5
@@ -176,34 +151,78 @@ jobs:
 
       - name: Bump version - packaging__.py
         run: |
-          # Install required packages
           pip install semver packaging
-
-          # Get version tag and remove 'v' prefix
           version_tag=${{ github.event.release.tag_name }}
           version_tag=${version_tag#v}
-
-          # Convert semver to PyPI version using the script
           pypi_version=$(python semver2pypi.py $version_tag)
-
-          # Update only the __version__ in __packaging__.py
           sed -i "s/__version__ = VERSION_STRING/__version__ = \"$pypi_version\"/" packages/__packaging__.py
 
-          # Print the result for verification
-          echo "Original version tag: $version_tag"
-          echo "PyPI version: $pypi_version"
-          cat packages/__packaging__.py
-
-      - name: Build and push ${{ matrix.name }}
+      - name: Build and push ${{ matrix.target.name }}-${{ matrix.arch }}
         uses: docker/build-push-action@v6
         with:
           file: docker/Dockerfile
-          platforms: linux/amd64,linux/arm64
+          platforms: linux/${{ matrix.arch }}
           push: true
-          target: ${{ matrix.target }}
-          cache-from: type=registry,ref=${{ steps.tags.outputs.cache_ref }}
-          cache-to: type=inline
-          tags: ${{ steps.tags.outputs.tags }}
+          target: ${{ matrix.target.dockerfile_target }}
+          cache-from: type=gha,scope=${{ matrix.target.dockerfile_target }}-${{ matrix.arch }}
+          cache-to: type=gha,scope=${{ matrix.target.dockerfile_target }}-${{ matrix.arch }},mode=max
+          tags: ${{ matrix.target.repository }}:${{ github.event.release.tag_name }}${{ matrix.target.version_suffix }}-${{ matrix.arch }}
+
+  # Merge architecture-specific images into multi-arch manifests
+  create_manifests:
+    needs: publish_docker_images
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - repository: permitio/opal-client
+            version_suffix: ""
+          - repository: permitio/opal-client
+            version_suffix: "-alpine"
+          - repository: permitio/opal-client-standalone
+            version_suffix: ""
+          - repository: permitio/opal-client-standalone
+            version_suffix: "-alpine"
+          - repository: permitio/opal-client-cedar
+            version_suffix: ""
+          - repository: permitio/opal-client-cedar
+            version_suffix: "-alpine"
+          - repository: permitio/opal-client-eopa
+            version_suffix: ""
+          - repository: permitio/opal-client-eopa
+            version_suffix: "-alpine"
+          - repository: permitio/opal-server
+            version_suffix: ""
+          - repository: permitio/opal-server
+            version_suffix: "-alpine"
+    steps:
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to DockerHub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Create and push manifest for ${{ matrix.repository }}${{ matrix.version_suffix }}
+        run: |
+          VERSION_TAG="${{ github.event.release.tag_name }}"
+          REPO="${{ matrix.repository }}"
+          SUFFIX="${{ matrix.version_suffix }}"
+
+          # Create versioned multi-arch manifest
+          docker buildx imagetools create -t ${REPO}:${VERSION_TAG}${SUFFIX} \
+            ${REPO}:${VERSION_TAG}${SUFFIX}-amd64 \
+            ${REPO}:${VERSION_TAG}${SUFFIX}-arm64
+
+          # Create latest manifest (only for non-prerelease)
+          if [ "${{ github.event.release.prerelease }}" != "true" ]; then
+            docker buildx imagetools create -t ${REPO}:latest${SUFFIX} \
+              ${REPO}:${VERSION_TAG}${SUFFIX}-amd64 \
+              ${REPO}:${VERSION_TAG}${SUFFIX}-arm64
+          fi
 
   publish_python_packages:
     needs:
@@ -216,7 +235,7 @@ jobs:
       pull-requests: write
     steps:
       - name: Checkout
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
