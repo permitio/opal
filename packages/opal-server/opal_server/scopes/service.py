@@ -12,6 +12,7 @@ from opal_common.logger import logger
 from opal_common.schemas.policy import PolicyUpdateMessageNotification
 from opal_common.schemas.policy_source import GitPolicyScopeSource
 from opal_common.topics.publisher import ScopedServerSideTopicPublisher
+from opal_server.config import opal_server_config
 from opal_server.git_fetcher import GitPolicyFetcher, PolicyFetcherCallbacks
 from opal_server.policy.watcher.callbacks import (
     create_policy_update,
@@ -147,6 +148,7 @@ class ScopesService:
                 scope.scope_id,
                 source,
                 callbacks=callbacks,
+                clone_timeout=opal_server_config.POLICY_REPO_CLONE_TIMEOUT,
             )
 
             try:

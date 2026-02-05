@@ -35,6 +35,23 @@ async def run_sync(
     )
 
 
+async def run_sync_with_timeout(
+    func: Callable[P_args, T_result],
+    *args: P_args.args,
+    timeout: Optional[float] = None,
+    **kwargs: P_args.kwargs,
+) -> T_result:
+    """Like run_sync, but with an optional timeout.
+
+    If timeout is None or 0, behaves identically to run_sync (no timeout).
+    If timeout > 0, wraps the call in asyncio.wait_for with the given timeout.
+    Raises asyncio.TimeoutError if the operation exceeds the timeout.
+    """
+    if timeout:
+        return await asyncio.wait_for(run_sync(func, *args, **kwargs), timeout=timeout)
+    return await run_sync(func, *args, **kwargs)
+
+
 class TakeANumberQueue:
     """Enables a task to hold a place in queue prior to having the actual item
     to be sent over the queue.

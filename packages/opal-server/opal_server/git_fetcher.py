@@ -11,7 +11,7 @@ import aiofiles.os
 import pygit2
 from ddtrace import tracer
 from git import Repo
-from opal_common.async_utils import run_sync
+from opal_common.async_utils import run_sync, run_sync_with_timeout
 from opal_common.git_utils.bundle_maker import BundleMaker
 from opal_common.logger import logger
 from opal_common.schemas.policy import PolicyBundle
@@ -60,7 +60,7 @@ class RepoInterface:
         if branch_name not in repo.branches.local:
             base_remote_branch = f"{remote_name}/{base_branch}"
             if repo.branches.remote.get(base_remote_branch) is not None:
-                (commit, _) = repo.resolve_refish(base_remote_branch)
+                commit, _ = repo.resolve_refish(base_remote_branch)
             else:
                 raise RuntimeError("Base branch was not found on remote")
             logger.debug(
@@ -91,7 +91,7 @@ class RepoInterface:
     @staticmethod
     def get_commit_hash(repo: Repository, branch: str, remote: str) -> Optional[str]:
         try:
-            (commit, _) = repo.resolve_refish(f"{remote}/{branch}")
+            commit, _ = repo.resolve_refish(f"{remote}/{branch}")
             return commit.hex
         except (pygit2.GitError, KeyError):
             return None
@@ -109,7 +109,9 @@ class RepoInterface:
                     f"found target repo url is referred by remote: {remote.name}, url={remote.url}"
                 )
                 return
-        error: str = f"Repo mismatch! No remote matches target url: {expected_remote_url}, found urls: {[remote.url for remote in repo.remotes]}"
+        error: str = (
+            f"Repo mismatch! No remote matches target url: {expected_remote_url}, found urls: {[remote.url for remote in repo.remotes]}"
+        )
         logger.error(error)
         raise ValueError(error)
 
@@ -126,6 +128,7 @@ class GitPolicyFetcher(PolicyFetcher):
         source: GitPolicyScopeSource,
         callbacks=PolicyFetcherCallbacks(),
         remote_name: str = "origin",
+        clone_timeout: int = 0,
     ):
         super().__init__(callbacks)
         self._base_dir = GitPolicyFetcher.base_dir(base_dir)
@@ -134,6 +137,7 @@ class GitPolicyFetcher(PolicyFetcher):
         self._repo_path = GitPolicyFetcher.repo_clone_path(base_dir, self._source)
         self._remote = remote_name
         self._scope_id = scope_id
+        self._clone_timeout = clone_timeout
         logger.debug(
             f"Initializing git fetcher: scope_id={scope_id}, url={source.url}, branch={self._source.branch}, path={GitPolicyFetcher.source_id(source)}"
         )
@@ -187,13 +191,22 @@ class GitPolicyFetcher(PolicyFetcher):
                             logger.debug(
                                 f"Fetching remote (force_fetch={force_fetch}): {self._remote} ({self._source.url})"
                             )
-                            GitPolicyFetcher.repos_last_fetched[
-                                self.source_id
-                            ] = datetime.datetime.now()
-                            await run_sync(
-                                repo.remotes[self._remote].fetch,
-                                callbacks=self._auth_callbacks,
+                            GitPolicyFetcher.repos_last_fetched[self.source_id] = (
+                                datetime.datetime.now()
                             )
+                            try:
+                                await run_sync_with_timeout(
+                                    repo.remotes[self._remote].fetch,
+                                    callbacks=self._auth_callbacks,
+                                    timeout=self._clone_timeout or None,
+                                )
+                            except asyncio.TimeoutError:
+                                logger.error(
+                                    "Fetch operation timed out after {timeout}s for {url}",
+                                    timeout=self._clone_timeout,
+                                    url=self._source.url,
+                                )
+                                raise
                             logger.debug(f"Fetch completed: {self._source.url}")
 
                         # New commits might be present because of a previous fetch made by another scope
@@ -222,14 +235,23 @@ class GitPolicyFetcher(PolicyFetcher):
             path=self._repo_path,
         )
         try:
-            repo: Repository = await run_sync(
+            repo: Repository = await run_sync_with_timeout(
                 clone_repository,
                 self._source.url,
                 str(self._repo_path),
                 callbacks=self._auth_callbacks,
+                timeout=self._clone_timeout or None,
             )
+        except asyncio.TimeoutError:
+            logger.error(
+                "Clone operation timed out after {timeout}s for {url}",
+                timeout=self._clone_timeout,
+                url=self._source.url,
+            )
+            raise
         except pygit2.GitError:
             logger.exception(f"Could not clone repo at {self._source.url}")
+            raise
         else:
             logger.info(f"Clone completed: {self._source.url}")
             await self._notify_on_changes(repo)
