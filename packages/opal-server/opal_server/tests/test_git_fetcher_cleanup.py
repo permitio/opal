@@ -138,7 +138,8 @@ class TestFetchCleanup:
         fetcher._should_fetch = _fake_should_fetch
 
         with patch("opal_server.git_fetcher.run_sync", side_effect=pygit2_mock.GitError("500")):
-            await fetcher.fetch_and_notify_on_changes(force_fetch=True)
+            with pytest.raises(pygit2_mock.GitError):
+                await fetcher.fetch_and_notify_on_changes(force_fetch=True)
 
         assert str(repo_path) not in GitPolicyFetcher.repos
 

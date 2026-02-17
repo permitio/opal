@@ -202,7 +202,7 @@ class GitPolicyFetcher(PolicyFetcher):
                                     "cleaning up cached repository to release file descriptors"
                                 )
                                 self._cleanup_repo_from_cache()
-                                return  # Exit early, don't re-raise
+                                raise
 
                         # New commits might be present because of a previous fetch made by another scope
                         await self._notify_on_changes(repo)
