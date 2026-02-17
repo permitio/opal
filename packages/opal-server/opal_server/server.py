@@ -329,7 +329,7 @@ class OpalServer:
                         await self.broadcast_listening_context.__aenter__()
                         # if the broadcast channel is closed, we want to restart worker process because statistics can't be reliable anymore
                         self.broadcast_listening_context._event_broadcaster.get_reader_task().add_done_callback(
-                            lambda _: self._graceful_shutdown()
+                            self._on_broadcaster_disconnected
                         )
                     asyncio.create_task(self.opal_statistics.run())
                     self.pubsub.endpoint.notifier.register_unsubscribe_event(
@@ -397,6 +397,29 @@ class OpalServer:
             await asyncio.gather(*tasks)
         except Exception:
             logger.exception("exception while shutting down background tasks")
+
+    def _on_broadcaster_disconnected(self, task: asyncio.Task):
+        """Callback fired when the broadcast listener task finishes.
+
+        Logs the underlying exception (e.g. ``gaierror``) at ERROR level
+        so that operators can diagnose misconfigured broadcast URIs
+        instead of having the error silently swallowed at DEBUG level.
+        """
+        try:
+            exc = task.exception()
+        except (asyncio.CancelledError, asyncio.InvalidStateError):
+            exc = None
+
+        if exc is not None:
+            logger.error(
+                "Broadcast channel connection failed: {error}. "
+                "Check your OPAL_BROADCAST_URI configuration.",
+                error=exc,
+            )
+        else:
+            logger.warning("Broadcast channel disconnected.")
+
+        self._graceful_shutdown()
 
     def _graceful_shutdown(self):
         logger.info("Trigger worker graceful shutdown")
