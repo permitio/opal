@@ -190,11 +190,19 @@ class GitPolicyFetcher(PolicyFetcher):
                             GitPolicyFetcher.repos_last_fetched[
                                 self.source_id
                             ] = datetime.datetime.now()
-                            await run_sync(
-                                repo.remotes[self._remote].fetch,
-                                callbacks=self._auth_callbacks,
-                            )
-                            logger.debug(f"Fetch completed: {self._source.url}")
+                            try:
+                                await run_sync(
+                                    repo.remotes[self._remote].fetch,
+                                    callbacks=self._auth_callbacks,
+                                )
+                                logger.debug(f"Fetch completed: {self._source.url}")
+                            except pygit2.GitError:
+                                logger.exception(
+                                    f"Fetch failed for {self._source.url}, "
+                                    "cleaning up cached repository to release file descriptors"
+                                )
+                                self._cleanup_repo_from_cache()
+                                return  # Exit early, don't re-raise
 
                         # New commits might be present because of a previous fetch made by another scope
                         await self._notify_on_changes(repo)
@@ -204,6 +212,7 @@ class GitPolicyFetcher(PolicyFetcher):
                         logger.warning(
                             "Deleting invalid repo: {path}", path=self._repo_path
                         )
+                        self._cleanup_repo_from_cache()
                         shutil.rmtree(self._repo_path)
                 else:
                     logger.info("Repo not found at {path}", path=self._repo_path)
@@ -230,6 +239,13 @@ class GitPolicyFetcher(PolicyFetcher):
             )
         except pygit2.GitError:
             logger.exception(f"Could not clone repo at {self._source.url}")
+            self._cleanup_repo_from_cache()
+            # Clean up any partially created repository directory
+            if self._repo_path.exists():
+                logger.warning(
+                    "Cleaning up partial clone at {path}", path=self._repo_path
+                )
+                shutil.rmtree(self._repo_path, ignore_errors=True)
         else:
             logger.info(f"Clone completed: {self._source.url}")
             await self._notify_on_changes(repo)
@@ -247,7 +263,25 @@ class GitPolicyFetcher(PolicyFetcher):
             return repo
         except pygit2.GitError:
             logger.warning("Invalid repo at: {path}", path=self._repo_path)
+            self._cleanup_repo_from_cache()
             return None
+
+    def _cleanup_repo_from_cache(self):
+        """Remove repository from cache and free its native resources.
+        
+        When git operations fail (e.g. remote is down), pygit2 Repository
+        objects may hold open file descriptors that appear as symbolic links
+        in /proc. Freeing the object and removing it from the cache allows
+        the OS to reclaim those descriptors.
+        """
+        path = str(self._repo_path)
+        repo = GitPolicyFetcher.repos.pop(path, None)
+        if repo is not None:
+            try:
+                repo.free()
+            except Exception:
+                pass  # Gracefully handle any errors during free
+            logger.debug("Cleaned up cached repository: {path}", path=path)
 
     async def _should_fetch(
         self,
