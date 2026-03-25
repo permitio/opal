@@ -96,6 +96,11 @@ class OpalClient:
             )
             self.offline_mode_enabled = False
 
+        self.offline_mode_isolated = (
+            self.offline_mode_enabled
+            and opal_client_config.OFFLINE_MODE_ISOLATED
+        )
+
         # Init policy store client
         self.policy_store_type: PolicyStoreTypes = policy_store_type
         self.policy_store: BasePolicyStoreClient = (
@@ -208,22 +213,27 @@ class OpalClient:
                 inline_opa_options or opal_client_config.INLINE_OPA_CONFIG
             )
             rehydration_callbacks = []
-            if self.policy_updater:
-                rehydration_callbacks.append(
-                    # refetches policy code (e.g: rego) and static data from server
-                    functools.partial(
-                        self.policy_updater.trigger_update_policy,
-                        force_full_update=True,
-                    ),
-                )
 
-            if self.data_updater:
-                rehydration_callbacks.append(
-                    functools.partial(
-                        self.data_updater.get_base_policy_data,
-                        data_fetch_reason="policy store rehydration",
+            if self.offline_mode_enabled:
+                rehydration_callbacks.append(self.load_store_from_backup)
+
+            if not self.offline_mode_isolated:
+                if self.policy_updater:
+                    rehydration_callbacks.append(
+                        # refetches policy code (e.g: rego) and static data from server
+                        functools.partial(
+                            self.policy_updater.trigger_update_policy,
+                            force_full_update=True,
+                        ),
                     )
-                )
+
+                if self.data_updater:
+                    rehydration_callbacks.append(
+                        functools.partial(
+                            self.data_updater.get_base_policy_data,
+                            data_fetch_reason="policy store rehydration",
+                        )
+                    )
 
             return OpaRunner.setup_opa_runner(
                 options=inline_opa_options,
@@ -366,7 +376,11 @@ class OpalClient:
         If there is a policy store to run, we wait until its up before launching dependent tasks.
         """
         if self._startup_wait:
-            await self._startup_wait()
+            if not (
+                self.offline_mode_isolated
+                and os.path.isfile(self.store_backup_path)
+            ):
+                await self._startup_wait()
 
         await self._run_or_delay_for_engine_runner(
             self.launch_policy_store_dependent_tasks
@@ -451,6 +465,19 @@ class OpalClient:
             # Immediately attempt loading from backup (waiting for failure loading from server would delay availability)
             await self.load_store_from_backup()
             asyncio.create_task(self.periodically_backup_store())
+
+            if self.offline_mode_isolated:
+                if self._backup_loaded:
+                    logger.warning(
+                        "Offline mode: isolated mode enabled and backup loaded, "
+                        "the client will not receive any updates and is in complete isolated mode"
+                    )
+                    return
+
+                logger.warning(
+                    "Offline mode: isolated mode enabled but a valid backup could not be loaded, "
+                    "falling back to server connection"
+                )
 
         try:
             for task in asyncio.as_completed(
