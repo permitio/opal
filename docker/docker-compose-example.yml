@@ -50,8 +50,8 @@ services:
 
       # Uncomment the following lines to enable storing & loading OPA data from a backup file:
       # - OPAL_OFFLINE_MODE_ENABLED=true
-      # Uncomment the following line to run in isolated mode (no control plane connection when backup is loaded):
-      # - OPAL_OFFLINE_MODE_ISOLATED=true
+      # Uncomment the following line to disable control plane connectivity when backup is loaded:
+      # - OPAL_DEFAULT_CONTROL_PLANE_CONNECTIVITY_DISABLED=true
     # volumes:
     #  - opa_backup:/opal/backup:rw
 

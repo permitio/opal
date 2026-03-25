@@ -96,9 +96,9 @@ class OpalClient:
             )
             self.offline_mode_enabled = False
 
-        self.offline_mode_isolated = (
+        self.control_plane_connectivity_disabled = (
             self.offline_mode_enabled
-            and opal_client_config.OFFLINE_MODE_ISOLATED
+            and opal_client_config.DEFAULT_CONTROL_PLANE_CONNECTIVITY_DISABLED
         )
 
         # Init policy store client
@@ -217,7 +217,7 @@ class OpalClient:
             if self.offline_mode_enabled:
                 rehydration_callbacks.append(self.load_store_from_backup)
 
-            if not self.offline_mode_isolated:
+            if not self.control_plane_connectivity_disabled:
                 if self.policy_updater:
                     rehydration_callbacks.append(
                         # refetches policy code (e.g: rego) and static data from server
@@ -377,7 +377,7 @@ class OpalClient:
         """
         if self._startup_wait:
             if not (
-                self.offline_mode_isolated
+                self.control_plane_connectivity_disabled
                 and os.path.isfile(self.store_backup_path)
             ):
                 await self._startup_wait()
@@ -466,16 +466,16 @@ class OpalClient:
             await self.load_store_from_backup()
             asyncio.create_task(self.periodically_backup_store())
 
-            if self.offline_mode_isolated:
+            if self.control_plane_connectivity_disabled:
                 if self._backup_loaded:
                     logger.warning(
-                        "Offline mode: isolated mode enabled and backup loaded, "
+                        "Offline mode: control plane connectivity disabled and backup loaded, "
                         "the client will not receive any updates and is in complete isolated mode"
                     )
                     return
 
                 logger.warning(
-                    "Offline mode: isolated mode enabled but a valid backup could not be loaded, "
+                    "Offline mode: control plane connectivity disabled but a valid backup could not be loaded, "
                     "falling back to server connection"
                 )
 
