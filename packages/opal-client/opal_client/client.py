@@ -16,6 +16,7 @@ from fastapi.responses import JSONResponse
 from fastapi_websocket_pubsub.pub_sub_client import PubSubOnConnectCallback
 from fastapi_websocket_rpc.rpc_channel import OnDisconnectCallback
 from opal_client.callbacks.api import init_callbacks_api
+from opal_client.connectivity.api import init_connectivity_router
 from opal_client.callbacks.register import CallbacksRegister
 from opal_client.config import PolicyStoreTypes, opal_client_config
 from opal_client.data.api import init_data_router
@@ -100,6 +101,7 @@ class OpalClient:
             self.offline_mode_enabled
             and opal_client_config.DEFAULT_CONTROL_PLANE_CONNECTIVITY_DISABLED
         )
+        self._updater_tasks: List[asyncio.Task] = []
 
         # Init policy store client
         self.policy_store_type: PolicyStoreTypes = policy_store_type
@@ -281,12 +283,14 @@ class OpalClient:
         data_router = init_data_router(data_updater=self.data_updater)
         policy_store_router = init_policy_store_router(authenticator)
         callbacks_router = init_callbacks_api(authenticator, self._callbacks_register)
+        connectivity_router = init_connectivity_router(client=self, authenticator=authenticator)
 
         # mount the api routes on the app object
         app.include_router(policy_router, tags=["Policy Updater"])
         app.include_router(data_router, tags=["Data Updater"])
         app.include_router(policy_store_router, tags=["Policy Store"])
         app.include_router(callbacks_router, tags=["Callbacks"])
+        app.include_router(connectivity_router, tags=["Control Plane Connectivity"])
 
         # top level routes (i.e: healthchecks)
         @app.get("/healthcheck", include_in_schema=False)
@@ -396,16 +400,7 @@ class OpalClient:
 
         # stopping updater tasks (each updater runs a pub/sub client)
         logger.info("trying to shutdown DataUpdater and PolicyUpdater gracefully...")
-        tasks: List[asyncio.Task] = []
-        if self.data_updater:
-            tasks.append(asyncio.create_task(self.data_updater.stop()))
-        if self.policy_updater:
-            tasks.append(asyncio.create_task(self.policy_updater.stop()))
-
-        try:
-            await asyncio.gather(*tasks)
-        except Exception:
-            logger.exception("exception while shutting down updaters")
+        await self._stop_updaters()
 
     async def load_store_from_backup(self):
         """Imports the backup file, if exists, to the policy store."""
@@ -453,6 +448,67 @@ class OpalClient:
             await asyncio.sleep(self.store_backup_interval)
             await self.backup_store()
 
+    async def _start_updaters(self):
+        """Start policy and data updaters as tracked background tasks."""
+        try:
+            tasks = []
+            if self.policy_updater:
+                tasks.append(asyncio.create_task(self.launch_policy_updater()))
+            if self.data_updater:
+                tasks.append(asyncio.create_task(self.launch_data_updater()))
+            self._updater_tasks = tasks
+            for task in asyncio.as_completed(tasks):
+                await task
+        except websockets.exceptions.InvalidStatusCode as err:
+            logger.error("Failed to launch background task -- {err}", err=repr(err))
+            self._trigger_shutdown()
+
+    async def _stop_updaters(self):
+        """Stop running updaters and cancel their tasks."""
+        tasks = []
+        if self.data_updater:
+            tasks.append(asyncio.create_task(self.data_updater.stop()))
+        if self.policy_updater:
+            tasks.append(asyncio.create_task(self.policy_updater.stop()))
+        try:
+            await asyncio.gather(*tasks)
+        except Exception:
+            logger.exception("exception while shutting down updaters")
+
+        for task in self._updater_tasks:
+            if not task.done():
+                task.cancel()
+                try:
+                    await task
+                except asyncio.CancelledError:
+                    pass
+        self._updater_tasks = []
+
+    async def disable_control_plane_connectivity(self):
+        """Runtime disable: stop updaters, enter isolated mode."""
+        if self.control_plane_connectivity_disabled:
+            return
+        logger.warning("Disabling control plane connectivity at runtime")
+        self.control_plane_connectivity_disabled = True
+        await self._stop_updaters()
+        if self.offline_mode_enabled:
+            await self.backup_store()
+
+    async def enable_control_plane_connectivity(self):
+        """Runtime enable: restart updaters, trigger rehydration."""
+        if not self.control_plane_connectivity_disabled:
+            return
+        logger.warning("Enabling control plane connectivity at runtime")
+        self.control_plane_connectivity_disabled = False
+        # Reset stopping flags so updaters can start again
+        if self.policy_updater:
+            self.policy_updater._stopping = False
+        if self.data_updater:
+            self.data_updater._stopping = False
+        # Launch updaters in background (they block forever via pub/sub)
+        # Rehydration happens automatically via on_connect callbacks
+        asyncio.create_task(self._start_updaters())
+
     async def launch_policy_store_dependent_tasks(self):
         try:
             await self.maybe_init_healthcheck_policy()
@@ -479,14 +535,7 @@ class OpalClient:
                     "falling back to server connection"
                 )
 
-        try:
-            for task in asyncio.as_completed(
-                [self.launch_policy_updater(), self.launch_data_updater()]
-            ):
-                await task
-        except websockets.exceptions.InvalidStatusCode as err:
-            logger.error("Failed to launch background task -- {err}", err=repr(err))
-            self._trigger_shutdown()
+        await self._start_updaters()
 
     async def maybe_init_healthcheck_policy(self):
         """This function only runs if OPA_HEALTH_CHECK_POLICY_ENABLED is true.
