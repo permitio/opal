@@ -16,9 +16,9 @@ from fastapi.responses import JSONResponse
 from fastapi_websocket_pubsub.pub_sub_client import PubSubOnConnectCallback
 from fastapi_websocket_rpc.rpc_channel import OnDisconnectCallback
 from opal_client.callbacks.api import init_callbacks_api
-from opal_client.connectivity.api import init_connectivity_router
 from opal_client.callbacks.register import CallbacksRegister
 from opal_client.config import PolicyStoreTypes, opal_client_config
+from opal_client.connectivity.api import init_connectivity_router
 from opal_client.data.api import init_data_router
 from opal_client.data.fetcher import DataFetcher
 from opal_client.data.updater import DataUpdater
@@ -283,7 +283,9 @@ class OpalClient:
         data_router = init_data_router(data_updater=self.data_updater)
         policy_store_router = init_policy_store_router(authenticator)
         callbacks_router = init_callbacks_api(authenticator, self._callbacks_register)
-        connectivity_router = init_connectivity_router(client=self, authenticator=authenticator)
+        connectivity_router = init_connectivity_router(
+            client=self, authenticator=authenticator
+        )
 
         # mount the api routes on the app object
         app.include_router(policy_router, tags=["Policy Updater"])
