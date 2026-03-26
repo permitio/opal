@@ -99,7 +99,7 @@ class TasksPool:
         self._running = True
 
     def _cleanup_task(self, done_task):
-        self._tasks.remove(done_task)
+        self._tasks.discard(done_task)
 
     def add_task(self, f):
         if not self._running:

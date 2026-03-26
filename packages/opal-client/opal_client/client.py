@@ -102,6 +102,7 @@ class OpalClient:
         self._updater_tasks: List[asyncio.Task] = []
         self._enable_task: Optional[asyncio.Task] = None
         self._backup_lock = asyncio.Lock()
+        self._connectivity_lock = asyncio.Lock()
 
         # Init policy store client
         self.policy_store_type: PolicyStoreTypes = policy_store_type
@@ -510,36 +511,38 @@ class OpalClient:
 
     async def disable_opal_server_connectivity(self):
         """Runtime disable: stop updaters, enter isolated mode."""
-        if self.opal_server_connectivity_disabled:
-            return
-        logger.warning("Disabling OPAL server connectivity at runtime")
-        self.opal_server_connectivity_disabled = True
-        # Cancel pending enable task if it hasn't started yet
-        if self._enable_task and not self._enable_task.done():
-            self._enable_task.cancel()
-            try:
-                await self._enable_task
-            except asyncio.CancelledError:
-                pass
-            self._enable_task = None
-        await self._stop_updaters()
-        if self.offline_mode_enabled:
-            await self.backup_store()
+        async with self._connectivity_lock:
+            if self.opal_server_connectivity_disabled:
+                return
+            logger.warning("Disabling OPAL server connectivity at runtime")
+            self.opal_server_connectivity_disabled = True
+            # Cancel pending enable task if it hasn't started yet
+            if self._enable_task and not self._enable_task.done():
+                self._enable_task.cancel()
+                try:
+                    await self._enable_task
+                except asyncio.CancelledError:
+                    pass
+                self._enable_task = None
+            await self._stop_updaters()
+            if self.offline_mode_enabled:
+                await self.backup_store()
 
     async def enable_opal_server_connectivity(self):
         """Runtime enable: restart updaters, trigger rehydration."""
-        if not self.opal_server_connectivity_disabled:
-            return
-        logger.warning("Enabling OPAL server connectivity at runtime")
-        self.opal_server_connectivity_disabled = False
-        # Reset updater state so they can be started again
-        if self.policy_updater:
-            self.policy_updater.reset()
-        if self.data_updater:
-            self.data_updater.reset()
-        # Launch updaters in background (they block forever via pub/sub)
-        # Rehydration happens automatically via on_connect callbacks
-        self._enable_task = asyncio.create_task(self._start_updaters())
+        async with self._connectivity_lock:
+            if not self.opal_server_connectivity_disabled:
+                return
+            logger.warning("Enabling OPAL server connectivity at runtime")
+            self.opal_server_connectivity_disabled = False
+            # Reset updater state so they can be started again
+            if self.policy_updater:
+                self.policy_updater.reset()
+            if self.data_updater:
+                self.data_updater.reset()
+            # Launch updaters in background (they block forever via pub/sub)
+            # Rehydration happens automatically via on_connect callbacks
+            self._enable_task = asyncio.create_task(self._start_updaters())
 
     async def launch_policy_store_dependent_tasks(self):
         try:
