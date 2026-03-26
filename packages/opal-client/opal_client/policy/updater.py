@@ -184,7 +184,8 @@ class PolicyUpdater:
         logger.info("Disconnected from server")
 
     def reset(self):
-        """Resets internal state so the updater can be started again after being stopped."""
+        """Resets internal state so the updater can be started again after
+        being stopped."""
         self._stopping = False
 
     async def start(self):
