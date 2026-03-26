@@ -95,9 +95,9 @@ class OpalClient:
             )
             self.offline_mode_enabled = False
 
-        self.control_plane_connectivity_disabled = (
+        self.opal_server_connectivity_disabled = (
             self.offline_mode_enabled
-            and opal_client_config.DEFAULT_CONTROL_PLANE_CONNECTIVITY_DISABLED
+            and opal_client_config.DEFAULT_OPAL_SERVER_CONNECTIVITY_DISABLED
         )
         self._updater_tasks: List[asyncio.Task] = []
         self._enable_task: Optional[asyncio.Task] = None
@@ -224,7 +224,7 @@ class OpalClient:
             if self.policy_updater:
 
                 async def _rehydrate_policy():
-                    if not self.control_plane_connectivity_disabled:
+                    if not self.opal_server_connectivity_disabled:
                         await self.policy_updater.trigger_update_policy(
                             force_full_update=True,
                         )
@@ -234,7 +234,7 @@ class OpalClient:
             if self.data_updater:
 
                 async def _rehydrate_data():
-                    if not self.control_plane_connectivity_disabled:
+                    if not self.opal_server_connectivity_disabled:
                         await self.data_updater.get_base_policy_data(
                             data_fetch_reason="policy store rehydration",
                         )
@@ -296,7 +296,7 @@ class OpalClient:
         app.include_router(data_router, tags=["Data Updater"])
         app.include_router(policy_store_router, tags=["Policy Store"])
         app.include_router(callbacks_router, tags=["Callbacks"])
-        app.include_router(connectivity_router, tags=["Control Plane Connectivity"])
+        app.include_router(connectivity_router, tags=["OPAL Server Connectivity"])
 
         # top level routes (i.e: healthchecks)
         @app.get("/healthcheck", include_in_schema=False)
@@ -387,7 +387,7 @@ class OpalClient:
         """
         if self._startup_wait:
             if not (
-                self.control_plane_connectivity_disabled
+                self.opal_server_connectivity_disabled
                 and os.path.isfile(self.store_backup_path)
             ):
                 await self._startup_wait()
@@ -464,9 +464,9 @@ class OpalClient:
     async def _start_updaters(self):
         """Start policy and data updaters as tracked background tasks."""
         # Guard against race: if disable was called before this task ran
-        if self.control_plane_connectivity_disabled:
+        if self.opal_server_connectivity_disabled:
             logger.debug(
-                "_start_updaters: skipping because control plane connectivity is disabled"
+                "_start_updaters: skipping because OPAL server connectivity is disabled"
             )
             return
         try:
@@ -481,6 +481,9 @@ class OpalClient:
         except asyncio.CancelledError:
             raise
         except Exception:
+            # Intentionally broad: any connection failure (InvalidStatusCode,
+            # ConnectionRefusedError, etc.) or updater bug should trigger shutdown,
+            # matching the original behavior for websocket status errors.
             logger.exception("Failed to launch background task")
             self._trigger_shutdown()
 
@@ -505,12 +508,12 @@ class OpalClient:
                     pass
         self._updater_tasks = []
 
-    async def disable_control_plane_connectivity(self):
+    async def disable_opal_server_connectivity(self):
         """Runtime disable: stop updaters, enter isolated mode."""
-        if self.control_plane_connectivity_disabled:
+        if self.opal_server_connectivity_disabled:
             return
-        logger.warning("Disabling control plane connectivity at runtime")
-        self.control_plane_connectivity_disabled = True
+        logger.warning("Disabling OPAL server connectivity at runtime")
+        self.opal_server_connectivity_disabled = True
         # Cancel pending enable task if it hasn't started yet
         if self._enable_task and not self._enable_task.done():
             self._enable_task.cancel()
@@ -523,12 +526,12 @@ class OpalClient:
         if self.offline_mode_enabled:
             await self.backup_store()
 
-    async def enable_control_plane_connectivity(self):
+    async def enable_opal_server_connectivity(self):
         """Runtime enable: restart updaters, trigger rehydration."""
-        if not self.control_plane_connectivity_disabled:
+        if not self.opal_server_connectivity_disabled:
             return
-        logger.warning("Enabling control plane connectivity at runtime")
-        self.control_plane_connectivity_disabled = False
+        logger.warning("Enabling OPAL server connectivity at runtime")
+        self.opal_server_connectivity_disabled = False
         # Reset updater state so they can be started again
         if self.policy_updater:
             self.policy_updater.reset()
@@ -551,19 +554,19 @@ class OpalClient:
             await self.load_store_from_backup()
             asyncio.create_task(self.periodically_backup_store())
 
-            if self.control_plane_connectivity_disabled:
+            if self.opal_server_connectivity_disabled:
                 if self._backup_loaded:
                     logger.warning(
-                        "Offline mode: control plane connectivity disabled and backup loaded, "
+                        "Offline mode: OPAL server connectivity disabled and backup loaded, "
                         "the client will not receive any updates and is in complete isolated mode"
                     )
                     return
 
                 logger.warning(
-                    "Offline mode: control plane connectivity disabled but a valid backup could not be loaded, "
+                    "Offline mode: OPAL server connectivity disabled but a valid backup could not be loaded, "
                     "falling back to server connection"
                 )
-                self.control_plane_connectivity_disabled = False
+                self.opal_server_connectivity_disabled = False
 
         await self._start_updaters()
 
