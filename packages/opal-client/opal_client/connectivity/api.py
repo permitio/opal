@@ -19,7 +19,7 @@ def init_connectivity_router(client: OpalClient, authenticator: JWTAuthenticator
         try:
             require_peer_type(authenticator, claims, PeerType.listener)
         except Unauthorized as e:
-            logger.error(f"Unauthorized connectivity request: {repr(e)}")
+            logger.error("Unauthorized connectivity request: {err}", err=repr(e))
             raise
 
     router = APIRouter(

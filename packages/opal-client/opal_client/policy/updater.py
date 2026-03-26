@@ -183,6 +183,10 @@ class PolicyUpdater:
         """Pub/Sub on_disconnect callback."""
         logger.info("Disconnected from server")
 
+    def reset(self):
+        """Resets internal state so the updater can be started again after being stopped."""
+        self._stopping = False
+
     async def start(self):
         """Launches the policy updater."""
         logger.info("Launching policy updater")

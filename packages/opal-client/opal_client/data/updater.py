@@ -321,12 +321,16 @@ class DataUpdater:
         """Invoked when the Pub/Sub client disconnects from the server."""
         logger.info("Disconnected from server")
 
+    def reset(self):
+        """Resets internal state so the updater can be started again after being stopped."""
+        self._stopping = False
+
     async def start(self):
-        """
-        Starts the DataUpdater:
-          - Begins listening for Pub/Sub data update events.
-          - Starts the callbacks reporter for asynchronous callback tasks.
-          - Starts the DataFetcher if not already running.
+        """Starts the DataUpdater:
+
+        - Begins listening for Pub/Sub data update events.
+        - Starts the callbacks reporter for asynchronous callback tasks.
+        - Starts the DataFetcher if not already running.
         """
         logger.info("Launching data updater")
         await self._callbacks_reporter.start()

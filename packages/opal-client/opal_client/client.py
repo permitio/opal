@@ -1,5 +1,4 @@
 import asyncio
-import functools
 import os
 import signal
 import tempfile
@@ -10,7 +9,6 @@ from typing import Awaitable, Callable, List, Literal, Optional, Union
 import aiofiles
 import aiofiles.os
 import aiohttp
-import websockets
 from fastapi import FastAPI, status
 from fastapi.responses import JSONResponse
 from fastapi_websocket_pubsub.pub_sub_client import PubSubOnConnectCallback
@@ -102,6 +100,8 @@ class OpalClient:
             and opal_client_config.DEFAULT_CONTROL_PLANE_CONNECTIVITY_DISABLED
         )
         self._updater_tasks: List[asyncio.Task] = []
+        self._enable_task: Optional[asyncio.Task] = None
+        self._backup_lock = asyncio.Lock()
 
         # Init policy store client
         self.policy_store_type: PolicyStoreTypes = policy_store_type
@@ -219,23 +219,27 @@ class OpalClient:
             if self.offline_mode_enabled:
                 rehydration_callbacks.append(self.load_store_from_backup)
 
-            if not self.control_plane_connectivity_disabled:
-                if self.policy_updater:
-                    rehydration_callbacks.append(
-                        # refetches policy code (e.g: rego) and static data from server
-                        functools.partial(
-                            self.policy_updater.trigger_update_policy,
-                            force_full_update=True,
-                        ),
-                    )
+            # Rehydration callbacks check connectivity flag at execution time
+            # so they work correctly after runtime enable/disable toggles
+            if self.policy_updater:
 
-                if self.data_updater:
-                    rehydration_callbacks.append(
-                        functools.partial(
-                            self.data_updater.get_base_policy_data,
+                async def _rehydrate_policy():
+                    if not self.control_plane_connectivity_disabled:
+                        await self.policy_updater.trigger_update_policy(
+                            force_full_update=True,
+                        )
+
+                rehydration_callbacks.append(_rehydrate_policy)
+
+            if self.data_updater:
+
+                async def _rehydrate_data():
+                    if not self.control_plane_connectivity_disabled:
+                        await self.data_updater.get_base_policy_data(
                             data_fetch_reason="policy store rehydration",
                         )
-                    )
+
+                rehydration_callbacks.append(_rehydrate_data)
 
             return OpaRunner.setup_opa_runner(
                 options=inline_opa_options,
@@ -400,6 +404,15 @@ class OpalClient:
         if self.engine_runner:
             await self.engine_runner.stop()
 
+        # cancel pending enable task if any
+        if self._enable_task and not self._enable_task.done():
+            self._enable_task.cancel()
+            try:
+                await self._enable_task
+            except asyncio.CancelledError:
+                pass
+            self._enable_task = None
+
         # stopping updater tasks (each updater runs a pub/sub client)
         logger.info("trying to shutdown DataUpdater and PolicyUpdater gracefully...")
         await self._stop_updaters()
@@ -443,8 +456,6 @@ class OpalClient:
             logger.exception("failed to backup policy store")
 
     async def periodically_backup_store(self):
-        self._backup_lock = asyncio.Lock()
-
         # Backup store periodically
         while True:
             await asyncio.sleep(self.store_backup_interval)
@@ -452,6 +463,12 @@ class OpalClient:
 
     async def _start_updaters(self):
         """Start policy and data updaters as tracked background tasks."""
+        # Guard against race: if disable was called before this task ran
+        if self.control_plane_connectivity_disabled:
+            logger.debug(
+                "_start_updaters: skipping because control plane connectivity is disabled"
+            )
+            return
         try:
             tasks = []
             if self.policy_updater:
@@ -461,7 +478,7 @@ class OpalClient:
             self._updater_tasks = tasks
             for task in asyncio.as_completed(tasks):
                 await task
-        except websockets.exceptions.InvalidStatusCode as err:
+        except Exception as err:
             logger.error("Failed to launch background task -- {err}", err=repr(err))
             self._trigger_shutdown()
 
@@ -492,6 +509,14 @@ class OpalClient:
             return
         logger.warning("Disabling control plane connectivity at runtime")
         self.control_plane_connectivity_disabled = True
+        # Cancel pending enable task if it hasn't started yet
+        if self._enable_task and not self._enable_task.done():
+            self._enable_task.cancel()
+            try:
+                await self._enable_task
+            except asyncio.CancelledError:
+                pass
+            self._enable_task = None
         await self._stop_updaters()
         if self.offline_mode_enabled:
             await self.backup_store()
@@ -502,14 +527,14 @@ class OpalClient:
             return
         logger.warning("Enabling control plane connectivity at runtime")
         self.control_plane_connectivity_disabled = False
-        # Reset stopping flags so updaters can start again
+        # Reset updater state so they can be started again
         if self.policy_updater:
-            self.policy_updater._stopping = False
+            self.policy_updater.reset()
         if self.data_updater:
-            self.data_updater._stopping = False
+            self.data_updater.reset()
         # Launch updaters in background (they block forever via pub/sub)
         # Rehydration happens automatically via on_connect callbacks
-        asyncio.create_task(self._start_updaters())
+        self._enable_task = asyncio.create_task(self._start_updaters())
 
     async def launch_policy_store_dependent_tasks(self):
         try:
@@ -536,6 +561,7 @@ class OpalClient:
                     "Offline mode: control plane connectivity disabled but a valid backup could not be loaded, "
                     "falling back to server connection"
                 )
+                self.control_plane_connectivity_disabled = False
 
         await self._start_updaters()
 
