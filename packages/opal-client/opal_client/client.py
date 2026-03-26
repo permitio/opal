@@ -478,8 +478,10 @@ class OpalClient:
             self._updater_tasks = tasks
             for task in asyncio.as_completed(tasks):
                 await task
-        except Exception as err:
-            logger.error("Failed to launch background task -- {err}", err=repr(err))
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("Failed to launch background task")
             self._trigger_shutdown()
 
     async def _stop_updaters(self):
