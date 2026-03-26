@@ -108,6 +108,11 @@ class TasksPool:
         self._tasks.add(t)
         t.add_done_callback(self._cleanup_task)
 
+    def restart(self):
+        """Re-arms the pool so new tasks can be added after a shutdown."""
+        self._running = True
+        self._tasks = set()
+
     async def shutdown(self, force: bool = False):
         """Wait for them to finish.
 

@@ -324,6 +324,7 @@ class DataUpdater:
     def reset(self):
         """Resets internal state so the updater can be started again after being stopped."""
         self._stopping = False
+        self._tasks.restart()
 
     async def start(self):
         """Starts the DataUpdater:
