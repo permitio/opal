@@ -299,14 +299,13 @@ jobs:
             packages/opal-server/dist/*
 
       # Publish package distributions to PyPI
+      # skip-existing allows re-runs to succeed if some files were already uploaded
       - name: Publish package distributions to PyPI - Opal-Common
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           password: ${{ secrets.PYPI_TOKEN }}
           packages-dir: packages/opal-common/dist/
-          # For Test only!
-          # password: ${{ secrets.TEST_PYPI_TOKEN }}
-          # repository-url: https://test.pypi.org/legacy/
+          skip-existing: true
         env:
           name: pypi
           url: https://pypi.org/p/opal-common/
@@ -316,9 +315,7 @@ jobs:
         with:
           password: ${{ secrets.PYPI_TOKEN }}
           packages-dir: packages/opal-client/dist/
-          # For Test only!
-          # password: ${{ secrets.TEST_PYPI_TOKEN }}
-          # repository-url: https://test.pypi.org/legacy/
+          skip-existing: true
         env:
           name: pypi
           url: https://pypi.org/p/opal-client/
@@ -328,9 +325,7 @@ jobs:
         with:
           password: ${{ secrets.PYPI_TOKEN }}
           packages-dir: packages/opal-server/dist/
-          # For Test only!
-          # password: ${{ secrets.TEST_PYPI_TOKEN }}
-          # repository-url: https://test.pypi.org/legacy/
+          skip-existing: true
         env:
           name: pypi
           url: https://pypi.org/p/opal-server/
