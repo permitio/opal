@@ -275,17 +275,17 @@ jobs:
           echo "PyPI version: $pypi_version"
           cat packages/__packaging__.py
 
-      - name: Cleanup setup.py and Build every sub-packages
+      - name: Build every sub-packages
         run: |
-          pip install wheel
+          pip install build
           cd packages/opal-common/ ; rm -rf *.egg-info build/ dist/
-          python setup.py sdist bdist_wheel
+          python -m build
           cd ../..
           cd packages/opal-client/ ; rm -rf *.egg-info build/ dist/
-          python setup.py sdist bdist_wheel
+          python -m build
           cd ../..
           cd packages/opal-server/ ; rm -rf *.egg-info build/ dist/
-          python setup.py sdist bdist_wheel
+          python -m build
           cd ../..
 
       # Upload package distributions to the release - All assets in one step
