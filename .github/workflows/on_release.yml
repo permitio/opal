@@ -277,15 +277,33 @@ jobs:
 
       - name: Build every sub-packages
         run: |
-          pip install build
+          pip install wheel
+
+          # Helper: rename sdist to use underscores in package name (PEP 625)
+          normalize_sdist() {
+            for f in dist/*.tar.gz; do
+              nf=$(echo "$f" | python3 -c "
+          import sys, re
+          f = sys.stdin.read().strip()
+          # Replace hyphens in package name portion only (before version number)
+          nf = re.sub(r'^(dist/)([a-zA-Z][a-zA-Z0-9_-]*?)(-\d)', lambda m: m.group(1) + m.group(2).replace('-', '_') + m.group(3), f)
+          print(nf)
+          ")
+              [ "$f" != "$nf" ] && mv "$f" "$nf" && echo "Renamed $f -> $nf"
+            done
+          }
+
           cd packages/opal-common/ ; rm -rf *.egg-info build/ dist/
-          python -m build --sdist --wheel --no-isolation
+          python setup.py sdist bdist_wheel
+          normalize_sdist
           cd ../..
           cd packages/opal-client/ ; rm -rf *.egg-info build/ dist/
-          python -m build --sdist --wheel --no-isolation
+          python setup.py sdist bdist_wheel
+          normalize_sdist
           cd ../..
           cd packages/opal-server/ ; rm -rf *.egg-info build/ dist/
-          python -m build --sdist --wheel --no-isolation
+          python setup.py sdist bdist_wheel
+          normalize_sdist
           cd ../..
 
       # Upload package distributions to the release - All assets in one step
