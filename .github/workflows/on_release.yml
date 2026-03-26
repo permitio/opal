@@ -279,13 +279,13 @@ jobs:
         run: |
           pip install build
           cd packages/opal-common/ ; rm -rf *.egg-info build/ dist/
-          python -m build
+          python -m build --sdist --wheel --no-isolation
           cd ../..
           cd packages/opal-client/ ; rm -rf *.egg-info build/ dist/
-          python -m build
+          python -m build --sdist --wheel --no-isolation
           cd ../..
           cd packages/opal-server/ ; rm -rf *.egg-info build/ dist/
-          python -m build
+          python -m build --sdist --wheel --no-isolation
           cd ../..
 
       # Upload package distributions to the release - All assets in one step
