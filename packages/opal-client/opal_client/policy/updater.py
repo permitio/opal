@@ -187,6 +187,7 @@ class PolicyUpdater:
         """Resets internal state so the updater can be started again after
         being stopped."""
         self._stopping = False
+        self._tasks.restart()
 
     async def start(self):
         """Launches the policy updater."""
@@ -239,6 +240,8 @@ class PolicyUpdater:
 
         # stop the callbacks reporter
         await self._callbacks_reporter.stop()
+
+        await self._tasks.shutdown()
 
     async def wait_until_done(self):
         if self._subscriber_task is not None:

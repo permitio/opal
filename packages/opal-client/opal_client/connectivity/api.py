@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from opal_common.authentication.authz import require_peer_type
@@ -21,7 +21,12 @@ class ConnectivityStatus(BaseModel):
 
 
 class ConnectivityActionResult(BaseModel):
-    status: str
+    status: Literal[
+        "disabled",
+        "already_disabled",
+        "enabled",
+        "already_enabled",
+    ]
 
 
 def init_connectivity_router(client: OpalClient, authenticator: JWTAuthenticator):
@@ -64,11 +69,10 @@ def init_connectivity_router(client: OpalClient, authenticator: JWTAuthenticator
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Cannot disable OPAL server connectivity: offline mode is not enabled",
             )
-        if client.opal_server_connectivity_disabled:
-            return ConnectivityActionResult(status="already_disabled")
-
-        await client.disable_opal_server_connectivity()
-        return ConnectivityActionResult(status="disabled")
+        changed = await client.disable_opal_server_connectivity()
+        return ConnectivityActionResult(
+            status="disabled" if changed else "already_disabled"
+        )
 
     @router.post(
         "/connectivity/enable",
@@ -85,10 +89,9 @@ def init_connectivity_router(client: OpalClient, authenticator: JWTAuthenticator
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Cannot enable OPAL server connectivity: offline mode is not enabled",
             )
-        if not client.opal_server_connectivity_disabled:
-            return ConnectivityActionResult(status="already_enabled")
-
-        await client.enable_opal_server_connectivity()
-        return ConnectivityActionResult(status="enabled")
+        changed = await client.enable_opal_server_connectivity()
+        return ConnectivityActionResult(
+            status="enabled" if changed else "already_enabled"
+        )
 
     return router
