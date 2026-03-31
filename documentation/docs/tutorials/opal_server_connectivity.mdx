@@ -1,0 +1,107 @@
+---
+sidebar_position: 18
+title: OPAL Server Connectivity Control
+---
+
+# OPAL Server Connectivity Control
+
+OPAL client supports controlling its connectivity to the OPAL server, allowing you to run in a fully isolated mode using a local backup or toggle connectivity at runtime via HTTP API.
+
+## When to use this
+
+- **Air-gapped / offline deployments**: Run the OPAL client without any connection to the server, serving policies and data from a local backup.
+- **Controlled connectivity windows**: Start disconnected and enable connectivity only during maintenance windows.
+- **Graceful degradation**: Disconnect from the server at runtime while continuing to serve cached policies.
+
+## Prerequisites
+
+- `OPAL_OFFLINE_MODE_ENABLED=true` — required for both default and runtime connectivity control.
+- A valid backup file at `OPAL_STORE_BACKUP_PATH` (default: `/opal/backup/opa.json`). If no valid backup exists, the client falls back to connecting to the server regardless of the connectivity setting.
+
+## Default connectivity via environment variable
+
+Set `OPAL_DEFAULT_OPAL_SERVER_CONNECTIVITY_DISABLED=true` to start the client in disconnected mode:
+
+```yaml
+environment:
+  - OPAL_OFFLINE_MODE_ENABLED=true
+  - OPAL_DEFAULT_OPAL_SERVER_CONNECTIVITY_DISABLED=true
+volumes:
+  - opa_backup:/opal/backup:rw
+```
+
+On startup, the client will:
+1. Load policies and data from the backup file
+2. Skip connecting to the OPAL server
+3. Serve requests from the loaded backup
+
+If the backup file is missing or invalid, the client logs a warning and falls back to connecting to the server.
+
+## Runtime connectivity control via HTTP API
+
+Three endpoints are available under `/opal-server/connectivity`:
+
+### Get current status
+
+```bash
+curl http://localhost:7000/opal-server/connectivity
+```
+
+Response:
+```json
+{
+  "opal_server_connectivity_disabled": true,
+  "offline_mode_enabled": true
+}
+```
+
+### Enable connectivity
+
+```bash
+curl -X POST http://localhost:7000/opal-server/connectivity/enable
+```
+
+This starts the policy and data updaters and triggers a full rehydration — the same process that occurs on a reconnect:
+- Policy updater connects and fetches the full policy bundle
+- Data updater connects and fetches base policy data
+- Pub/Sub subscriptions are established for real-time updates
+
+Response:
+```json
+{"status": "enabled"}
+```
+
+### Disable connectivity
+
+```bash
+curl -X POST http://localhost:7000/opal-server/connectivity/disable
+```
+
+This stops the policy and data updaters, disconnecting from the server. The policy store continues serving from its current state, and a backup is saved.
+
+Response:
+```json
+{"status": "disabled"}
+```
+
+### Idempotency
+
+Both enable and disable are idempotent. Calling enable when already enabled returns `{"status": "already_enabled"}`, and similarly for disable.
+
+## Authentication
+
+When OPAL authentication is enabled (via `OPAL_AUTH_PUBLIC_KEY`), all connectivity endpoints require a valid JWT token with `peer_type: listener`. Include the token as a Bearer token:
+
+```bash
+curl -H "Authorization: Bearer $TOKEN" \
+  -X POST http://localhost:7000/opal-server/connectivity/enable
+```
+
+## Behavior on OPA restart
+
+If the OPA process restarts (e.g., crash recovery), rehydration callbacks check the current connectivity state dynamically:
+
+- **Connectivity enabled**: Policies and data are refetched from the server
+- **Connectivity disabled**: Only the local backup is loaded (if offline mode is enabled)
+
+This ensures consistent behavior regardless of when OPA restarts relative to a connectivity toggle.

@@ -50,6 +50,10 @@ services:
 
       # Uncomment the following lines to enable storing & loading OPA data from a backup file:
       # - OPAL_OFFLINE_MODE_ENABLED=true
+      # Uncomment the following line to disable OPAL server connectivity by default.
+      # Requires OPAL_OFFLINE_MODE_ENABLED=true and a valid backup file; otherwise falls back to server connection.
+      # Can be toggled at runtime via authenticated POST to /opal-server/connectivity/enable or /disable.
+      # - OPAL_DEFAULT_OPAL_SERVER_CONNECTIVITY_DISABLED=true
     # volumes:
     #  - opa_backup:/opal/backup:rw
 

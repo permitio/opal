@@ -377,6 +377,11 @@ class OpalClientConfig(Confi):
         False,
         description="If set, opal client will try to load policy store from backup file and operate even if server is unreachable. Ignored if INLINE_OPA_ENABLED=False",
     )
+    DEFAULT_OPAL_SERVER_CONNECTIVITY_DISABLED = confi.bool(
+        "DEFAULT_OPAL_SERVER_CONNECTIVITY_DISABLED",
+        False,
+        description="If set together with OFFLINE_MODE_ENABLED, the client will not connect to the OPAL server when a valid backup is loaded. Can be toggled at runtime via the /opal-server/connectivity endpoints.",
+    )
     SPLIT_ROOT_DATA = confi.bool(
         "SPLIT_ROOT_DATA", False, description="Split writing data updates to root path"
     )

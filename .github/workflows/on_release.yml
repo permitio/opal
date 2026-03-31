@@ -5,8 +5,38 @@ on:
     types: [published]
 
 jobs:
+  # Validate that the release tag and prerelease flag are consistent.
+  # Pre-releases must have a semver prerelease identifier (rc, beta, alpha, dev)
+  # and GA releases must not.
+  validate_release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate release tag matches prerelease flag
+        run: |
+          TAG="${{ github.event.release.tag_name }}"
+          IS_PRERELEASE="${{ github.event.release.prerelease }}"
+          # Strip optional 'v' prefix for checking
+          VERSION="${TAG#v}"
+          # Check if the tag contains a prerelease identifier (hyphen after version numbers)
+          if echo "$VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+-.+'; then
+            TAG_IS_PRERELEASE="true"
+          else
+            TAG_IS_PRERELEASE="false"
+          fi
+          echo "Tag: $TAG, tag_is_prerelease: $TAG_IS_PRERELEASE, release_is_prerelease: $IS_PRERELEASE"
+          if [ "$IS_PRERELEASE" = "true" ] && [ "$TAG_IS_PRERELEASE" = "false" ]; then
+            echo "::error::Release is marked as pre-release but tag '$TAG' has no pre-release identifier (e.g. -rc1, -beta1, -alpha1). Pre-release tags must include a semver pre-release suffix."
+            exit 1
+          fi
+          if [ "$IS_PRERELEASE" = "false" ] && [ "$TAG_IS_PRERELEASE" = "true" ]; then
+            echo "::error::Tag '$TAG' has a pre-release identifier but the release is not marked as pre-release. Either mark the release as pre-release or use a GA tag (e.g. 0.8.0)."
+            exit 1
+          fi
+          echo "Validation passed."
+
   # Build once, run e2e validation, and only then fan out to publish variants
   build_and_test:
+    needs: validate_release
     runs-on: ubuntu-latest
     env:
       github_token: ${{ secrets.TOKEN_GITHUB }}
@@ -83,7 +113,8 @@ jobs:
         run: docker image ls --digests | grep opal
 
   publish_docker_images:
-    needs: build_and_test
+    needs:
+      - build_and_test
     runs-on: ubuntu-latest
     permissions:
       id-token: write
@@ -208,7 +239,6 @@ jobs:
   publish_python_packages:
     needs:
       - build_and_test
-    if: ${{ github.event.release.prerelease == false }}
     runs-on: ubuntu-latest
     permissions:
       id-token: write
@@ -245,17 +275,35 @@ jobs:
           echo "PyPI version: $pypi_version"
           cat packages/__packaging__.py
 
-      - name: Cleanup setup.py and Build every sub-packages
+      - name: Build every sub-packages
         run: |
           pip install wheel
+
+          # Helper: rename sdist to use underscores in package name (PEP 625)
+          normalize_sdist() {
+            for f in dist/*.tar.gz; do
+              nf=$(echo "$f" | python3 -c "
+          import sys, re
+          f = sys.stdin.read().strip()
+          # Replace hyphens in package name portion only (before version number)
+          nf = re.sub(r'^(dist/)([a-zA-Z][a-zA-Z0-9_-]*?)(-\d)', lambda m: m.group(1) + m.group(2).replace('-', '_') + m.group(3), f)
+          print(nf)
+          ")
+              [ "$f" != "$nf" ] && mv "$f" "$nf" && echo "Renamed $f -> $nf"
+            done
+          }
+
           cd packages/opal-common/ ; rm -rf *.egg-info build/ dist/
           python setup.py sdist bdist_wheel
+          normalize_sdist
           cd ../..
           cd packages/opal-client/ ; rm -rf *.egg-info build/ dist/
           python setup.py sdist bdist_wheel
+          normalize_sdist
           cd ../..
           cd packages/opal-server/ ; rm -rf *.egg-info build/ dist/
           python setup.py sdist bdist_wheel
+          normalize_sdist
           cd ../..
 
       # Upload package distributions to the release - All assets in one step
@@ -269,15 +317,15 @@ jobs:
             packages/opal-server/dist/*
 
       # Publish package distributions to PyPI
+      # skip-existing allows re-runs to succeed if some files were already uploaded
+      # verbose enables detailed error messages from PyPI for debugging upload failures
       - name: Publish package distributions to PyPI - Opal-Common
-        if: ${{ github.event.release.prerelease == false }}
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           password: ${{ secrets.PYPI_TOKEN }}
           packages-dir: packages/opal-common/dist/
-          # For Test only!
-          # password: ${{ secrets.TEST_PYPI_TOKEN }}
-          # repository-url: https://test.pypi.org/legacy/
+          skip-existing: true
+          verbose: true
         env:
           name: pypi
           url: https://pypi.org/p/opal-common/
@@ -287,9 +335,8 @@ jobs:
         with:
           password: ${{ secrets.PYPI_TOKEN }}
           packages-dir: packages/opal-client/dist/
-          # For Test only!
-          # password: ${{ secrets.TEST_PYPI_TOKEN }}
-          # repository-url: https://test.pypi.org/legacy/
+          skip-existing: true
+          verbose: true
         env:
           name: pypi
           url: https://pypi.org/p/opal-client/
@@ -299,9 +346,8 @@ jobs:
         with:
           password: ${{ secrets.PYPI_TOKEN }}
           packages-dir: packages/opal-server/dist/
-          # For Test only!
-          # password: ${{ secrets.TEST_PYPI_TOKEN }}
-          # repository-url: https://test.pypi.org/legacy/
+          skip-existing: true
+          verbose: true
         env:
           name: pypi
           url: https://pypi.org/p/opal-server/

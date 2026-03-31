@@ -99,7 +99,7 @@ class TasksPool:
         self._running = True
 
     def _cleanup_task(self, done_task):
-        self._tasks.remove(done_task)
+        self._tasks.discard(done_task)
 
     def add_task(self, f):
         if not self._running:
@@ -107,6 +107,15 @@ class TasksPool:
         t = asyncio.create_task(f)
         self._tasks.add(t)
         t.add_done_callback(self._cleanup_task)
+
+    def restart(self):
+        """Re-arms the pool so new tasks can be added after a shutdown.
+
+        Must only be called after shutdown() has completed, ensuring all
+        previous tasks have finished and their done-callbacks have run.
+        """
+        self._running = True
+        self._tasks = set()
 
     async def shutdown(self, force: bool = False):
         """Wait for them to finish.
