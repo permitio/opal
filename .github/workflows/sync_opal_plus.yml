@@ -16,6 +16,8 @@ jobs:
         run: |
           git config --global user.name 'github-actions[bot]'
           git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+          # Configure the "ours" merge driver so .gitattributes merge=ours works
+          git config --global merge.ours.driver true
 
       - name: Get Token
         id: get_workflow_token
@@ -40,24 +42,30 @@ jobs:
           token: ${{ steps.get_workflow_token.outputs.token }}
           fetch-depth: 0
 
-      - name: Mirror opal/master to public-master
+      - name: Merge opal/master into public-master
         working-directory: opal-plus
         run: |
           git remote add opal ../opal
           git fetch opal master
 
-          # Point public-master to exactly match opal/master
-          if git rev-parse --verify public-master >/dev/null 2>&1; then
+          # Start from opal-plus/master so all customizations are preserved
+          if git rev-parse --verify origin/public-master >/dev/null 2>&1; then
             git checkout public-master
-            git reset --hard opal/master
+            # Ensure public-master is up to date with master
+            git merge origin/master --no-edit || true
           else
-            git checkout -b public-master opal/master
+            git checkout -b public-master master
           fi
+
+          # Merge upstream opal changes
+          # .gitattributes merge=ours protects on_release.yml, tests.yml, README.md
+          git merge opal/master --no-edit \
+            -m "Merge opal/master ($(git rev-parse --short opal/master)) into public-master"
 
       - name: Push public-master branch
         working-directory: opal-plus
         run: |
-          git push --force-with-lease origin public-master
+          git push origin public-master
 
       - name: Create or update Pull Request
         working-directory: opal-plus
@@ -73,7 +81,7 @@ jobs:
               --title "Sync opal/master (${OPAL_SHORT_SHA}) into opal-plus" \
               --body "Syncing opal/master (${OPAL_SHORT_SHA}) into opal-plus/master.
 
-          When merging, preserve opal-plus customizations (banner, Docker image names, CI release workflow)." \
+          Protected files (via .gitattributes): on_release.yml, tests.yml, README.md — kept as opal-plus versions." \
               --add-reviewer "$GITHUB_ACTOR" || true
           else
             gh pr create --repo permitio/opal-plus \
@@ -84,7 +92,7 @@ jobs:
               --title "Sync opal/master (${OPAL_SHORT_SHA}) into opal-plus" \
               --body "Syncing opal/master (${OPAL_SHORT_SHA}) into opal-plus/master.
 
-          When merging, preserve opal-plus customizations (banner, Docker image names, CI release workflow)." || true
+          Protected files (via .gitattributes): on_release.yml, tests.yml, README.md — kept as opal-plus versions." || true
             echo "New PR created."
           fi
         shell: bash
