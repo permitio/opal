@@ -30,6 +30,7 @@ jobs:
           repository: permitio/opal
           ref: master
           path: opal
+          fetch-depth: 0
 
       - name: Checkout permitio/opal-plus repository
         uses: actions/checkout@v4
