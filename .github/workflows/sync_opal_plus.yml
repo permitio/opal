@@ -30,7 +30,6 @@ jobs:
           repository: permitio/opal
           ref: master
           path: opal
-          fetch-depth: 0
 
       - name: Checkout permitio/opal-plus repository
         uses: actions/checkout@v4
@@ -40,28 +39,24 @@ jobs:
           token: ${{ steps.get_workflow_token.outputs.token }}
           fetch-depth: 0
 
-      - name: Merge opal/master into public-master
+      - name: Mirror opal/master to public-master
         working-directory: opal-plus
         run: |
           git remote add opal ../opal
           git fetch opal master
 
-          # Start from opal-plus/master so customizations are preserved
-          if git rev-parse --verify origin/public-master >/dev/null 2>&1; then
+          # Point public-master to exactly match opal/master
+          if git rev-parse --verify public-master >/dev/null 2>&1; then
             git checkout public-master
+            git reset --hard opal/master
           else
-            git checkout -b public-master master
+            git checkout -b public-master opal/master
           fi
-
-          # Merge upstream opal changes — fail the workflow if there are conflicts
-          # so they can be resolved manually
-          git merge opal/master --no-edit \
-            -m "Merge opal/master ($(git rev-parse --short opal/master)) into public-master"
 
       - name: Push public-master branch
         working-directory: opal-plus
         run: |
-          git push origin public-master
+          git push --force-with-lease origin public-master
 
       - name: Create or update Pull Request
         working-directory: opal-plus
@@ -74,9 +69,10 @@ jobs:
           if [ -n "$PR_NUMBER" ]; then
             echo "PR already exists: #$PR_NUMBER — updating."
             gh pr edit "$PR_NUMBER" --repo permitio/opal-plus \
+              --title "Sync opal/master (${OPAL_SHORT_SHA}) into opal-plus" \
               --body "Syncing opal/master (${OPAL_SHORT_SHA}) into opal-plus/master.
 
-          Review for conflicts with opal-plus customizations (banner, Docker image names, CI)." \
+          When merging, preserve opal-plus customizations (banner, Docker image names, CI release workflow)." \
               --add-reviewer "$GITHUB_ACTOR" || true
           else
             gh pr create --repo permitio/opal-plus \
@@ -87,7 +83,7 @@ jobs:
               --title "Sync opal/master (${OPAL_SHORT_SHA}) into opal-plus" \
               --body "Syncing opal/master (${OPAL_SHORT_SHA}) into opal-plus/master.
 
-          Review for conflicts with opal-plus customizations (banner, Docker image names, CI)." || true
+          When merging, preserve opal-plus customizations (banner, Docker image names, CI release workflow)." || true
             echo "New PR created."
           fi
         shell: bash
