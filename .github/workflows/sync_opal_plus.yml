@@ -28,9 +28,8 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: permitio/opal
-          ref: ${{ github.ref_name }}
+          ref: master
           path: opal
-          fetch-depth: 0
 
       - name: Checkout permitio/opal-plus repository
         uses: actions/checkout@v4
@@ -38,35 +37,56 @@ jobs:
           repository: permitio/opal-plus
           path: opal-plus
           token: ${{ steps.get_workflow_token.outputs.token }}
+          fetch-depth: 0
 
-      - name: Create public-${{ github.ref_name }} branch in opal repository
-        working-directory: opal
-        run: |
-          git checkout -b public-${{ github.ref_name }}
-
-      - name: Rebase opal-plus/public-${{ github.ref_name }} onto opal/${{ github.ref_name }}
+      - name: Merge opal/master into public-master
         working-directory: opal-plus
         run: |
           git remote add opal ../opal
-          git fetch opal
-          git checkout public-${{ github.ref_name }}
-          git rebase opal/${{ github.ref_name }}
+          git fetch opal master
 
-      - name: Push changes to opal-plus/public-${{ github.ref_name }} branch
+          # Start from opal-plus/master so customizations are preserved
+          if git rev-parse --verify origin/public-master >/dev/null 2>&1; then
+            git checkout public-master
+          else
+            git checkout -b public-master master
+          fi
+
+          # Merge upstream opal changes — fail the workflow if there are conflicts
+          # so they can be resolved manually
+          git merge opal/master --no-edit \
+            -m "Merge opal/master ($(git rev-parse --short opal/master)) into public-master"
+
+      - name: Push public-master branch
         working-directory: opal-plus
         run: |
-          git push origin public-${{ github.ref_name }}
+          git push origin public-master
 
-      - name: Create Pull Request for opal-plus
+      - name: Create or update Pull Request
         working-directory: opal-plus
         run: |
           set -e
+
+          OPAL_SHORT_SHA=$(git rev-parse --short opal/master)
+
           PR_NUMBER=$(gh pr list --repo permitio/opal-plus --base master --head public-master --json number --jq '.[0].number')
           if [ -n "$PR_NUMBER" ]; then
-            echo "PR already exists: #$PR_NUMBER"
-            gh pr edit "$PR_NUMBER" --repo permitio/opal-plus --add-reviewer "$GITHUB_ACTOR" || true
+            echo "PR already exists: #$PR_NUMBER — updating."
+            gh pr edit "$PR_NUMBER" --repo permitio/opal-plus \
+              --body "Syncing opal/master (${OPAL_SHORT_SHA}) into opal-plus/master.
+
+          Review for conflicts with opal-plus customizations (banner, Docker image names, CI)." \
+              --add-reviewer "$GITHUB_ACTOR" || true
           else
-            gh pr create --repo permitio/opal-plus --assignee "$GITHUB_ACTOR" --reviewer "$GITHUB_ACTOR" --base master --head public-master --title "Sync changes from public OPAL repository" --body "This PR synchronizes changes from the public OPAL repository to the private OPAL Plus repository." || true
+            gh pr create --repo permitio/opal-plus \
+              --assignee "$GITHUB_ACTOR" \
+              --reviewer "$GITHUB_ACTOR" \
+              --base master \
+              --head public-master \
+              --title "Sync opal/master (${OPAL_SHORT_SHA}) into opal-plus" \
+              --body "Syncing opal/master (${OPAL_SHORT_SHA}) into opal-plus/master.
+
+          Review for conflicts with opal-plus customizations (banner, Docker image names, CI)." || true
             echo "New PR created."
           fi
         shell: bash
