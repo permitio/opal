@@ -1,0 +1,18 @@
+# Requirements for OPAL E2E Testing Framework
+
+# Core testing framework
+pytest>=7.0.0
+pytest-asyncio>=0.21.0
+pytest-rerunfailures>=11.0
+
+# HTTP requests
+requests>=2.28.0
+
+# Optional: Parallel test execution
+# pytest-xdist>=3.0.0
+
+# Optional: HTML test reports
+# pytest-html>=3.1.0
+
+# Optional: Coverage reporting
+# pytest-cov>=4.0.0
