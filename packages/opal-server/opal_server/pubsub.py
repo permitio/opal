@@ -1,8 +1,10 @@
+import socket
 import time
 from contextlib import contextmanager
 from contextvars import ContextVar
 from threading import Lock
 from typing import Dict, Generator, List, Optional, Set, Tuple, Union, cast
+from urllib.parse import urlparse
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, WebSocket
@@ -141,7 +143,12 @@ class PubSub:
 
         self.broadcaster = None
         if broadcaster_uri is not None:
-            logger.info(f"Initializing broadcaster for server<->server communication")
+            safe_uri = self._mask_uri_password(broadcaster_uri)
+            logger.info(
+                "Initializing broadcaster for server<->server communication, uri={uri}",
+                uri=safe_uri,
+            )
+            self._validate_broadcast_uri(broadcaster_uri)
             self.broadcaster = EventBroadcaster(
                 broadcaster_uri,
                 notifier=self.notifier,
@@ -201,6 +208,39 @@ class PubSub:
                         current_client.reset(token)
             finally:
                 await websocket.close()
+
+    @staticmethod
+    def _mask_uri_password(uri: str) -> str:
+        """Return the URI with password masked."""
+        parsed = urlparse(uri)
+        if parsed.password:
+            masked = parsed._replace(
+                netloc=f"{parsed.username}:***@{parsed.hostname}"
+                + (f":{parsed.port}" if parsed.port else "")
+            )
+            return masked.geturl()
+        return uri
+
+    @staticmethod
+    def _validate_broadcast_uri(uri: str):
+        """Validate the broadcast URI hostname can be resolved. Logs ERROR on
+        failure but does not raise."""
+        parsed = urlparse(uri)
+        hostname = parsed.hostname
+        if not hostname:
+            logger.error(
+                "Broadcast URI has no hostname: {uri}. Check your BROADCAST_URI configuration.",
+                uri=uri,
+            )
+            return
+        try:
+            socket.getaddrinfo(hostname, None)
+        except socket.gaierror as e:
+            logger.error(
+                "Cannot resolve broadcast URI hostname '{hostname}': {error}. Check your BROADCAST_URI configuration.",
+                hostname=hostname,
+                error=str(e),
+            )
 
     @staticmethod
     async def _verify_permitted_topics(

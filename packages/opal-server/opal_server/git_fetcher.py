@@ -190,10 +190,21 @@ class GitPolicyFetcher(PolicyFetcher):
                             GitPolicyFetcher.repos_last_fetched[
                                 self.source_id
                             ] = datetime.datetime.now()
-                            await run_sync(
-                                repo.remotes[self._remote].fetch,
-                                callbacks=self._auth_callbacks,
-                            )
+                            try:
+                                await run_sync(
+                                    repo.remotes[self._remote].fetch,
+                                    callbacks=self._auth_callbacks,
+                                )
+                            except pygit2.GitError:
+                                logger.exception(
+                                    "Failed to fetch remote {remote} for {url}, "
+                                    "cleaning up invalid repo",
+                                    remote=self._remote,
+                                    url=self._source.url,
+                                )
+                                self._invalidate_repo_cache()
+                                self._cleanup_repo_path(self._repo_path)
+                                return
                             logger.debug(f"Fetch completed: {self._source.url}")
 
                         # New commits might be present because of a previous fetch made by another scope
@@ -204,7 +215,8 @@ class GitPolicyFetcher(PolicyFetcher):
                         logger.warning(
                             "Deleting invalid repo: {path}", path=self._repo_path
                         )
-                        shutil.rmtree(self._repo_path)
+                        self._invalidate_repo_cache()
+                        self._cleanup_repo_path(self._repo_path)
                 else:
                     logger.info("Repo not found at {path}", path=self._repo_path)
 
@@ -214,6 +226,26 @@ class GitPolicyFetcher(PolicyFetcher):
     def _discover_repository(self, path: Path) -> bool:
         git_path: Path = path / ".git"
         return discover_repository(str(path)) and git_path.exists()
+
+    @staticmethod
+    def _cleanup_repo_path(repo_path: Path):
+        """Safely remove a repository path, handling broken symlinks and
+        partial directories left behind by failed operations."""
+        path = Path(repo_path)
+        if path.is_symlink() or path.exists():
+            logger.info(
+                "Cleaning up repo path: {path}",
+                path=repo_path,
+            )
+            shutil.rmtree(str(repo_path), ignore_errors=True)
+
+    def _invalidate_repo_cache(self):
+        """Remove this repo from the class-level caches if present."""
+        path = str(self._repo_path)
+        GitPolicyFetcher.repos.pop(path, None)
+        GitPolicyFetcher.repos_last_fetched.pop(
+            GitPolicyFetcher.source_id(self._source), None
+        )
 
     async def _clone(self):
         logger.info(
@@ -230,6 +262,8 @@ class GitPolicyFetcher(PolicyFetcher):
             )
         except pygit2.GitError:
             logger.exception(f"Could not clone repo at {self._source.url}")
+            self._cleanup_repo_path(self._repo_path)
+            self._invalidate_repo_cache()
         else:
             logger.info(f"Clone completed: {self._source.url}")
             await self._notify_on_changes(repo)
