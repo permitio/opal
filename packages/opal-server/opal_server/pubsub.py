@@ -1,8 +1,10 @@
+import socket
 import time
 from contextlib import contextmanager
 from contextvars import ContextVar
 from threading import Lock
 from typing import Dict, Generator, List, Optional, Set, Tuple, Union, cast
+from urllib.parse import urlparse
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, WebSocket
@@ -141,7 +143,10 @@ class PubSub:
 
         self.broadcaster = None
         if broadcaster_uri is not None:
-            logger.info(f"Initializing broadcaster for server<->server communication")
+            logger.info(
+                "Initializing broadcaster for server<->server communication"
+            )
+            self._validate_broadcast_uri(broadcaster_uri)
             self.broadcaster = EventBroadcaster(
                 broadcaster_uri,
                 notifier=self.notifier,
@@ -201,6 +206,35 @@ class PubSub:
                         current_client.reset(token)
             finally:
                 await websocket.close()
+
+    @staticmethod
+    def _validate_broadcast_uri(uri: str):
+        """Validate that the broadcast URI hostname can be resolved.
+
+        Logs an ERROR if DNS resolution fails so that operators can
+        quickly diagnose a misconfigured BROADCAST_URI.  Does not raise
+        -- the broadcaster is still created so existing behaviour is
+        preserved.
+        """
+        parsed = urlparse(uri)
+        hostname = parsed.hostname
+        if not hostname:
+            logger.error(
+                "Broadcast URI has no hostname: {uri}. "
+                "Check your OPAL_BROADCAST_URI configuration.",
+                uri=uri,
+            )
+            return
+        try:
+            socket.getaddrinfo(hostname, None)
+        except socket.gaierror as exc:
+            logger.error(
+                "Cannot resolve broadcast URI hostname '{hostname}': {error}. "
+                "Broadcasting will fail. "
+                "Check your OPAL_BROADCAST_URI configuration.",
+                hostname=hostname,
+                error=str(exc),
+            )
 
     @staticmethod
     async def _verify_permitted_topics(
