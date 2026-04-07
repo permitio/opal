@@ -31,11 +31,12 @@ jobs:
         python-version: ["3.9", "3.10", "3.11", "3.12"]
 
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v4
     - name: Set up Python ${{ matrix.python-version }}
-      uses: actions/setup-python@v2
+      uses: actions/setup-python@v5
       with:
         python-version: ${{ matrix.python-version }}
+        cache: 'pip'
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
@@ -59,24 +60,19 @@ jobs:
     steps:
       # BUILD PHASE
       - name: Checkout
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
       - name: Set up QEMU
-        uses: docker/setup-qemu-action@v1
+        uses: docker/setup-qemu-action@v3
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v1
-
-      - name: Docker Compose install
-        run: |
-          curl -L "https://github.com/docker/compose/releases/download/1.29.2/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
-          chmod +x /usr/local/bin/docker-compose
+        uses: docker/setup-buildx-action@v3
 
       - name: Build client
         id: build_client
-        uses: docker/build-push-action@v2
+        uses: docker/build-push-action@v6
         with:
           file: docker/Dockerfile
           push: false
@@ -89,7 +85,7 @@ jobs:
 
       - name: Build server
         id: build_server
-        uses: docker/build-push-action@v2
+        uses: docker/build-push-action@v6
         with:
           file: docker/Dockerfile
           push: false
@@ -101,7 +97,7 @@ jobs:
             permitio/opal-server:test
 
       - name: Set up Python
-        uses: actions/setup-python@v2
+        uses: actions/setup-python@v5
         with:
           python-version: "3.10"
 
@@ -134,24 +130,19 @@ jobs:
     name: E2E Tests (Alpine)
     steps:
       - name: Checkout
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
       - name: Set up QEMU
-        uses: docker/setup-qemu-action@v1
+        uses: docker/setup-qemu-action@v3
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v1
-
-      - name: Docker Compose install
-        run: |
-          curl -L "https://github.com/docker/compose/releases/download/1.29.2/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
-          chmod +x /usr/local/bin/docker-compose
+        uses: docker/setup-buildx-action@v3
 
       - name: Build client (alpine)
         id: build_client_alpine
-        uses: docker/build-push-action@v2
+        uses: docker/build-push-action@v6
         with:
           file: docker/Dockerfile
           push: false
@@ -164,7 +155,7 @@ jobs:
 
       - name: Build server (alpine)
         id: build_server_alpine
-        uses: docker/build-push-action@v2
+        uses: docker/build-push-action@v6
         with:
           file: docker/Dockerfile
           push: false
