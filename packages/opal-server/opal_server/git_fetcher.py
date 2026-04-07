@@ -190,11 +190,23 @@ class GitPolicyFetcher(PolicyFetcher):
                             GitPolicyFetcher.repos_last_fetched[
                                 self.source_id
                             ] = datetime.datetime.now()
-                            await run_sync(
-                                repo.remotes[self._remote].fetch,
-                                callbacks=self._auth_callbacks,
-                            )
-                            logger.debug(f"Fetch completed: {self._source.url}")
+                            try:
+                                await run_sync(
+                                    repo.remotes[self._remote].fetch,
+                                    callbacks=self._auth_callbacks,
+                                )
+                                logger.debug(f"Fetch completed: {self._source.url}")
+                            except pygit2.GitError as e:
+                                # When GitHub is down or returns errors, pygit2 may leave
+                                # file descriptors open. Clean up the repo from cache to
+                                # prevent symbolic links from accumulating in /proc.
+                                logger.warning(
+                                    f"Fetch failed for {self._source.url}: {e}. "
+                                    "Cleaning up repository from cache to prevent file descriptor leaks."
+                                )
+                                self._cleanup_repo_from_cache()
+                                # Re-raise to allow retry logic to handle it
+                                raise
 
                         # New commits might be present because of a previous fetch made by another scope
                         await self._notify_on_changes(repo)
@@ -204,6 +216,8 @@ class GitPolicyFetcher(PolicyFetcher):
                         logger.warning(
                             "Deleting invalid repo: {path}", path=self._repo_path
                         )
+                        # Clean up from cache before deleting directory
+                        self._cleanup_repo_from_cache()
                         shutil.rmtree(self._repo_path)
                 else:
                     logger.info("Repo not found at {path}", path=self._repo_path)
@@ -228,8 +242,25 @@ class GitPolicyFetcher(PolicyFetcher):
                 str(self._repo_path),
                 callbacks=self._auth_callbacks,
             )
-        except pygit2.GitError:
+        except pygit2.GitError as e:
             logger.exception(f"Could not clone repo at {self._source.url}")
+            # When GitHub is down or returns errors, pygit2 may leave file descriptors
+            # or partially created repository directories. Clean up to prevent
+            # symbolic links from accumulating in /proc.
+            self._cleanup_repo_from_cache()
+            # Clean up any partially created repository directory
+            if self._repo_path.exists():
+                try:
+                    logger.warning(
+                        f"Cleaning up partially created repository at {self._repo_path}"
+                    )
+                    shutil.rmtree(self._repo_path)
+                except Exception as cleanup_error:
+                    logger.warning(
+                        f"Failed to clean up partial repository at {self._repo_path}: {cleanup_error}"
+                    )
+            # Re-raise to allow retry logic to handle it
+            raise
         else:
             logger.info(f"Clone completed: {self._source.url}")
             await self._notify_on_changes(repo)
@@ -247,7 +278,26 @@ class GitPolicyFetcher(PolicyFetcher):
             return repo
         except pygit2.GitError:
             logger.warning("Invalid repo at: {path}", path=self._repo_path)
+            # Remove invalid repo from cache to prevent holding file descriptors
+            self._cleanup_repo_from_cache()
             return None
+    
+    def _cleanup_repo_from_cache(self):
+        """Remove repository from cache to ensure proper cleanup of file descriptors.
+        
+        This is important when GitHub is down and operations fail, as pygit2
+        Repository objects may hold file descriptors that can leave symbolic
+        links in /proc if not properly cleaned up.
+        """
+        path = str(self._repo_path)
+        if path in GitPolicyFetcher.repos:
+            try:
+                # Explicitly remove from cache to allow garbage collection
+                # This helps prevent file descriptors from being held open
+                del GitPolicyFetcher.repos[path]
+                logger.debug(f"Removed invalid repo from cache: {path}")
+            except KeyError:
+                pass  # Already removed
 
     async def _should_fetch(
         self,
