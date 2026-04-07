@@ -5,6 +5,8 @@ ipython>=8.10.0
 pytest
 pytest-asyncio
 pytest-rerunfailures
+pytest-timeout
+requests
 wheel>=0.38.0
 twine
 setuptools>=70.0.0 # not directly required, pinned by Snyk to avoid a vulnerability
