@@ -142,11 +142,19 @@ class PubSub:
         self.broadcaster = None
         if broadcaster_uri is not None:
             logger.info(f"Initializing broadcaster for server<->server communication")
-            self.broadcaster = EventBroadcaster(
-                broadcaster_uri,
-                notifier=self.notifier,
-                channel=opal_server_config.BROADCAST_CHANNEL_NAME,
-            )
+            try:
+                self.broadcaster = EventBroadcaster(
+                    broadcaster_uri,
+                    notifier=self.notifier,
+                    channel=opal_server_config.BROADCAST_CHANNEL_NAME,
+                )
+            except Exception as e:
+                logger.error(
+                    "Failed to initialize EventBroadcaster with uri: {broadcaster_uri}. Exception: {e}",
+                    broadcaster_uri=broadcaster_uri,
+                    e=e,
+                )
+                self.broadcaster = None
         else:
             logger.info("Pub/Sub broadcaster is off")
 
