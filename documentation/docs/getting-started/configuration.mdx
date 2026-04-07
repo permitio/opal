@@ -674,6 +674,18 @@ Default: `0`
 
 Timeout for Git clone operations in seconds. If set to 0, waits indefinitely until successful clone.
 
+#### OPAL_POLICY_REPO_INITIAL_CLONE_MAX_ATTEMPTS
+
+Default: `0`
+
+Maximum number of attempts allowed when cloning the policy repository at startup. `0` means retry forever until the repository becomes available.
+
+#### OPAL_POLICY_REPO_INITIAL_CLONE_RETRY_INTERVAL
+
+Default: `5`
+
+Number of seconds to wait between initial clone attempts while the policy repository is still unavailable.
+
 #### OPAL_REPO_WATCHER_ENABLED
 
 Default: `True`

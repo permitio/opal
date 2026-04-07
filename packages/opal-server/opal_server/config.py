@@ -147,6 +147,16 @@ class OpalServerConfig(Confi):
         0,
         description="The timeout for cloning the policy repository (0 means wait forever)",
     )
+    POLICY_REPO_INITIAL_CLONE_MAX_ATTEMPTS = confi.int(
+        "POLICY_REPO_INITIAL_CLONE_MAX_ATTEMPTS",
+        0,
+        description="Maximum number of attempts allowed while cloning the policy repository at startup (0 means retry forever)",
+    )
+    POLICY_REPO_INITIAL_CLONE_RETRY_INTERVAL = confi.int(
+        "POLICY_REPO_INITIAL_CLONE_RETRY_INTERVAL",
+        5,
+        description="Seconds to wait between policy repo clone retries while the initial clone keeps failing",
+    )
     LEADER_LOCK_FILE_PATH = confi.str(
         "LEADER_LOCK_FILE_PATH",
         "/tmp/opal_server_leader.lock",

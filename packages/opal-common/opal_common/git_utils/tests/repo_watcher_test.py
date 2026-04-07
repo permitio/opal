@@ -48,6 +48,7 @@ async def test_repo_watcher_git_failed_callback(tmp_path):
         remote_source_url=INVALID_REPO_REMOTE_URL,
         local_clone_path=target_path,
         request_timeout=3,
+        initial_clone_max_attempts=1,
     )
     # configure the error callback
     watcher.add_on_failure_callback(failure_callback)
@@ -58,6 +59,35 @@ async def test_repo_watcher_git_failed_callback(tmp_path):
     # assert the error callback is called
     await asyncio.wait_for(got_error.wait(), 25)
     assert got_error.is_set()
+
+
+@pytest.mark.asyncio
+async def test_repo_watcher_initial_clone_retries_indefinitely(tmp_path):
+    got_error = asyncio.Event()
+
+    async def failure_callback(e: Exception):
+        got_error.set()
+
+    target_path: Path = tmp_path / "target_retry_forever"
+
+    watcher = GitPolicySource(
+        remote_source_url=INVALID_REPO_REMOTE_URL,
+        local_clone_path=target_path,
+        request_timeout=1,
+        initial_clone_max_attempts=None,
+        initial_clone_retry_interval=0.1,
+    )
+    watcher.add_on_failure_callback(failure_callback)
+
+    run_task = asyncio.create_task(watcher.run())
+
+    await asyncio.sleep(2)
+    assert not got_error.is_set()
+    assert not run_task.done()
+
+    run_task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await run_task
 
 
 @pytest.mark.asyncio

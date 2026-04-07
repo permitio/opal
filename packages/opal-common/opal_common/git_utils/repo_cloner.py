@@ -203,10 +203,29 @@ class RepoCloner:
             return CloneResult(repo)
 
     def _clone(self, env) -> Repo:
+        self._cleanup_clone_path()
         try:
             return Repo.clone_from(
                 url=self.url, to_path=self.path, branch=self.branch_name, env=env
             )
         except (GitError, GitCommandError) as e:
             logger.error("cannot clone policy repo: {error}", error=e)
+            # Best effort cleanup to avoid leaving half-written repositories around
+            self._cleanup_clone_path()
             raise
+
+    def _cleanup_clone_path(self):
+        path_obj = Path(self.path)
+        if not path_obj.exists():
+            return
+
+        try:
+            shutil.rmtree(path_obj)
+        except FileNotFoundError:
+            return
+        except Exception as exc:
+            logger.warning(
+                "failed to cleanup clone path '{path}': {error}",
+                path=self.path,
+                error=exc,
+            )
