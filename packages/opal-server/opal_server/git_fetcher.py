@@ -230,6 +230,10 @@ class GitPolicyFetcher(PolicyFetcher):
             )
         except pygit2.GitError:
             logger.exception(f"Could not clone repo at {self._source.url}")
+            # Fix: Cleanup failed clone directly to prevent "directory not empty" or symlink leftovers
+            if self._repo_path.exists():
+                logger.warning(f"Cleaning up failed clone directory: {self._repo_path}")
+                shutil.rmtree(self._repo_path)
         else:
             logger.info(f"Clone completed: {self._source.url}")
             await self._notify_on_changes(repo)

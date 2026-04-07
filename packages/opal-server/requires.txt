@@ -4,6 +4,6 @@ gitpython>=3.1.32,<4
 pyjwt[crypto]>=2.1.0,<3
 slowapi>=0.1.5,<1
 # slowapi is stuck on and old `redis`, so fix that and switch from aioredis to redis
-pygit2>=1.14.1,<1.15
+pygit2>=1.14.1
 asgiref>=3.5.2,<4
 redis>=4.3.4,<5
