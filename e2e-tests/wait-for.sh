@@ -22,7 +22,7 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-set -- "$@" -- "$TIMEOUT" "$QUIET" "$PROTOCOL" "$HOST" "$PORT" "$result"
+set -- "$@" "$TIMEOUT" "$QUIET" "$PROTOCOL" "$HOST" "$PORT" "$result"
 TIMEOUT=15
 QUIET=0
 # The protocol to make the request with, either "tcp" or "http"
@@ -47,8 +47,8 @@ USAGE
 wait_for() {
   case "$PROTOCOL" in
     tcp)
-      if ! command -v wget >/dev/null; then
-        echoerr 'wget command is missing!'
+      if ! command -v nc >/dev/null; then
+        echoerr 'nc command is missing!'
         exit 1
       fi
       ;;
@@ -77,7 +77,7 @@ wait_for() {
     result=$?
 
     if [ $result -eq 0 ] ; then
-      if [ $# -gt 7 ] ; then
+      if [ "$#" -gt 7 ] ; then
         for result in $(seq $(($# - 7))); do
           result=$1
           shift
@@ -104,60 +104,60 @@ wait_for() {
 
 while :; do
   case "$1" in
-    http://*|https://*)
+    http://*|https://*) 
     HOST="$1"
     PROTOCOL="http"
     shift 1
-    ;;
-    *:* )
+    ;; 
+    *:* ) 
     HOST=$(printf "%s\n" "$1"| cut -d : -f 1)
     PORT=$(printf "%s\n" "$1"| cut -d : -f 2)
     shift 1
-    ;;
+    ;; 
     -q | --quiet)
     QUIET=1
     shift 1
-    ;;
+    ;; 
     -q-*)
     QUIET=0
     echoerr "Unknown option: $1"
     usage 1
-    ;;
+    ;; 
     -q*)
     QUIET=1
     result=$1
     shift 1
     set -- -"${result#-q}" "$@"
-    ;;
+    ;; 
     -t | --timeout)
     TIMEOUT="$2"
     shift 2
-    ;;
+    ;; 
     -t*)
     TIMEOUT="${1#-t}"
     shift 1
-    ;;
+    ;; 
     --timeout=*)
     TIMEOUT="${1#*=}"
     shift 1
-    ;;
+    ;; 
     --)
     shift
     break
-    ;;
+    ;; 
     --help)
     usage 0
-    ;;
+    ;; 
     -*)
     QUIET=0
     echoerr "Unknown option: $1"
     usage 1
-    ;;
+    ;; 
     *)
     QUIET=0
     echoerr "Unknown argument: $1"
     usage 1
-    ;;
+    ;; 
   esac
 done
 
@@ -167,18 +167,18 @@ if ! [ "$TIMEOUT" -ge 0 ] 2>/dev/null; then
 fi
 
 case "$PROTOCOL" in
-  tcp)
+  tcp) 
     if [ "$HOST" = "" ] || [ "$PORT" = "" ]; then
       echoerr "Error: you need to provide a host and port to test."
       usage 2
     fi
-  ;;
+  ;; 
   http)
     if [ "$HOST" = "" ]; then
       echoerr "Error: you need to provide a host to test."
       usage 2
     fi
-  ;;
+  ;; 
 esac
 
 wait_for "$@"

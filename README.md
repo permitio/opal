@@ -141,6 +141,36 @@ If you like our project, please consider giving us a ⭐️
 
 [![Button][join-slack-link]][badge-slack-link] </br> [![Button][follow-twitter-link]][badge-twitter-link]
 
+## Testing OPAL
+
+OPAL includes a comprehensive end-to-end (E2E) test suite to ensure reliability and quality:
+
+### Running E2E Tests
+
+```bash
+# From the project root
+make test-e2e
+```
+
+The E2E test framework:
+- 🐳 Automatically spins up OPAL Server, Client, and OPA using Docker Compose
+- 🏥 Verifies health checks for all services
+- 🔗 Confirms client-server connectivity via Statistics API
+- 📝 Validates logs for errors and critical alerts
+- ✅ Ensures successful policy and data synchronization
+
+For detailed testing documentation, see the [E2E Tests README](e2e-tests/README.md).
+
+### Manual Testing
+
+```bash
+cd e2e-tests
+python -m venv .venv
+source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+pip install -r requirements.txt
+pytest -v
+```
+
 ## Contributing to OPAL
 
 We would love for you to contribute to this project and help make it even better than it is today! 💎

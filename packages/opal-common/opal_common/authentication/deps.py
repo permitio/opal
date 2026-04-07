@@ -110,7 +110,7 @@ class WebsocketJWTAuthenticator(_JWTAuthenticator):
     thus we return a the claims or None and the endpoint can use it to potentially call websocket.close()
     """
 
-    def __call__(self, authorization: Optional[str] = Header(None)) -> bool:
+    def __call__(self, authorization: Optional[str] = Header(None)) -> Optional[JWTClaims]:
         token = get_token_from_header(authorization)
         try:
             return verify_logged_in(self._verifier, token)
