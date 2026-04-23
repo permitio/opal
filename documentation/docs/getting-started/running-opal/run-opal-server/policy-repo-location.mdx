@@ -87,7 +87,13 @@ For these config vars, in most cases you are good with the default values:
     <tr>
       <td valign="top">OPAL_POLICY_REPO_MAIN_BRANCH</td>
       <td>
-        Name of the git branch to track for policy files (default: `master`)
+        Name of the git branch to track for policy files (default: `master`, unless `OPAL_POLICY_REPO_TAG` is set)
+      </td>
+    </tr>
+    <tr>
+      <td valign="top">OPAL_POLICY_REPO_TAG</td>
+      <td>
+        Name of the git tag to track for policy files (default: `None`).
       </td>
     </tr>
   </tbody>

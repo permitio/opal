@@ -69,15 +69,19 @@ async def get_input_paths_or_throw(
     paths = paths or []
     paths = [normalize_path(p) for p in paths]
 
-    # if the repo is currently being cloned - the repo.heads is empty
-    if len(repo.heads) == 0:
+    # if the repo is currently being cloned or HEAD is invalid, the repo is
+    # not ready.  A tag checkout produces a detached HEAD with no local
+    # branches, so we cannot rely on repo.heads being non-empty.
+    try:
+        head_commit = repo.head.commit
+    except (TypeError, ValueError):
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="policy repo is not ready",
         )
 
     # verify all input paths exists under the commit hash
-    with CommitViewer(repo.head.commit) as viewer:
+    with CommitViewer(head_commit) as viewer:
         for path in paths:
             if not viewer.exists(path):
                 raise HTTPException(

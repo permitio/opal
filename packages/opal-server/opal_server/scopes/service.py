@@ -129,8 +129,9 @@ class ScopesService:
                 return
             source = cast(GitPolicyScopeSource, scope.policy)
 
+            ref = source.tag if source.tag is not None else source.branch
             logger.debug(
-                f"Sync scope: {scope.scope_id} (remote: {source.url}, branch: {source.branch}, req_time: {req_time})"
+                f"Sync scope: {scope.scope_id} (remote: {source.url}, ref: {ref}, req_time: {req_time})"
             )
 
             callbacks = PolicyFetcherCallbacks()

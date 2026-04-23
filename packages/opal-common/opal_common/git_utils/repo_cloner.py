@@ -139,7 +139,8 @@ class RepoCloner:
         self,
         repo_url: str,
         clone_path: str,
-        branch_name: str = "master",
+        branch_name: Optional[str] = "master",
+        tag_name: Optional[str] = None,
         retry_config=None,
         ssh_key: Optional[str] = None,
         ssh_key_file_path: Optional[str] = None,
@@ -151,6 +152,10 @@ class RepoCloner:
             repo_url (str): the url to the remote repo we want to clone
             clone_path (str): the target local path in our file system we want the
                 repo to be cloned to
+            branch_name (str, optional): branch to clone. git clone --branch accepts
+                both branch and tag names.
+            tag_name (str, optional): tag to clone. Used as the --branch value when
+                branch_name is not set.
             retry_config (dict): Tenacity.retry config (@see https://tenacity.readthedocs.io/en/latest/api.html#retry-main-api)
             ssh_key (str, optional): private ssh key used to gain access to the cloned repo
             ssh_key_file_path (str, optional): local path to save the private ssh key contents
@@ -160,7 +165,8 @@ class RepoCloner:
 
         self.url = repo_url
         self.path = os.path.expanduser(clone_path)
-        self.branch_name = branch_name
+        # git clone --branch accepts both branch and tag names
+        self.clone_ref = branch_name or tag_name
         self._ssh_key = ssh_key
         self._ssh_key_file_path = (
             ssh_key_file_path or opal_common_config.GIT_SSH_KEY_FILE
@@ -178,10 +184,10 @@ class RepoCloner:
         - finds a cloned repo locally and does not clone from remote.
         """
         logger.info(
-            "Cloning repo from '{url}' to '{to_path}' (branch: '{branch}')",
+            "Cloning repo from '{url}' to '{to_path}' (ref: '{ref}')",
             url=self.url,
             to_path=self.path,
-            branch=self.branch_name,
+            ref=self.clone_ref,
         )
         loop = asyncio.get_running_loop()
         return await loop.run_in_executor(None, self._attempt_clone_from_url)
@@ -204,9 +210,10 @@ class RepoCloner:
 
     def _clone(self, env) -> Repo:
         try:
-            return Repo.clone_from(
-                url=self.url, to_path=self.path, branch=self.branch_name, env=env
-            )
+            kwargs = dict(url=self.url, to_path=self.path, env=env)
+            if self.clone_ref is not None:
+                kwargs["branch"] = self.clone_ref
+            return Repo.clone_from(**kwargs)
         except (GitError, GitCommandError) as e:
             logger.error("cannot clone policy repo: {error}", error=e)
             raise

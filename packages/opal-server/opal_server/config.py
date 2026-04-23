@@ -131,8 +131,11 @@ class OpalServerConfig(Confi):
     )
     POLICY_REPO_MAIN_BRANCH = confi.str(
         "POLICY_REPO_MAIN_BRANCH",
-        "master",
+        None,
         description="The main branch of the policy repository",
+    )
+    POLICY_REPO_TAG = confi.str(
+        "POLICY_REPO_TAG", None, description="The tag of the policy repository"
     )
     POLICY_REPO_SSH_KEY = confi.str(
         "POLICY_REPO_SSH_KEY", None, description="The SSH key for the policy repository"

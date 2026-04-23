@@ -7,7 +7,7 @@ except ImportError:
     from typing_extensions import Literal
 
 from opal_common.schemas.policy import BaseSchema
-from pydantic import Field
+from pydantic import Field, root_validator
 
 
 class NoAuthData(BaseSchema):
@@ -52,4 +52,17 @@ class BasePolicyScopeSource(BaseSchema):
 
 
 class GitPolicyScopeSource(BasePolicyScopeSource):
-    branch: str = Field("main", description="Git branch to track")
+    branch: Optional[str] = Field(None, description="Git branch to track")
+    tag: Optional[str] = Field(None, description="Git tag to track")
+
+    @root_validator
+    def validate_branch_or_tag(cls, values):
+        branch = values.get("branch") or None
+        tag = values.get("tag") or None
+        values["branch"] = branch
+        values["tag"] = tag
+        if branch is None and tag is None:
+            raise ValueError("Must provide either 'branch' or 'tag'")
+        if branch is not None and tag is not None:
+            raise ValueError("Must provide either 'branch' or 'tag', not both")
+        return values

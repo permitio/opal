@@ -35,13 +35,22 @@ async def _load_env_scope(repo: ScopeRepository):
 
             auth = SSHAuthData(username="git", private_key=private_ssh_key)
 
+        branch = opal_server_config.POLICY_REPO_MAIN_BRANCH
+        tag = opal_server_config.POLICY_REPO_TAG
+        if branch is None and tag is None:
+            logger.info(
+                "No branch or tag specified for default scope, falling back to branch 'master'"
+            )
+            branch = "master"
+
         scope = Scope(
             scope_id=DEFAULT_SCOPE_ID,
             policy=GitPolicyScopeSource(
                 source_type=opal_server_config.POLICY_SOURCE_TYPE.lower(),
                 url=opal_server_config.POLICY_REPO_URL,
                 manifest=opal_server_config.POLICY_REPO_MANIFEST_PATH,
-                branch=opal_server_config.POLICY_REPO_MAIN_BRANCH,
+                branch=branch,
+                tag=tag,
                 auth=auth,
             ),
         )

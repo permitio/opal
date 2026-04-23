@@ -64,9 +64,9 @@ class RepoInterface:
             else:
                 raise RuntimeError("Base branch was not found on remote")
             logger.debug(
-                f"Created local branch '{branch_name}', pointing to: {commit.hex}"
+                f"Created local branch '{branch_name}', pointing to: {str(commit.id)}"
             )
-            return repo.create_reference(f"refs/heads/{branch_name}", commit.hex)
+            return repo.create_reference(f"refs/heads/{branch_name}", str(commit.id))
         else:
             logger.debug(
                 f"No need to create local branch '{branch_name}': already exists!"
@@ -92,9 +92,29 @@ class RepoInterface:
     def get_commit_hash(repo: Repository, branch: str, remote: str) -> Optional[str]:
         try:
             (commit, _) = repo.resolve_refish(f"{remote}/{branch}")
-            return commit.hex
+            return str(commit.id)
         except (pygit2.GitError, KeyError):
             return None
+
+    @staticmethod
+    def get_tag_commit_hash(repo: Repository, tag_name: str) -> Optional[str]:
+        try:
+            ref = repo.lookup_reference(f"refs/tags/{tag_name}")
+            commit = repo.get(ref.target)
+            # If the tag is annotated, dereference to the commit
+            if commit.type == pygit2.GIT_OBJECT_TAG:
+                commit = commit.peel(pygit2.Commit)
+            return str(commit.id)
+        except (KeyError, pygit2.GitError):
+            return None
+
+    @staticmethod
+    def has_tag(repo: Repository, tag_name: str) -> bool:
+        try:
+            repo.lookup_reference(f"refs/tags/{tag_name}")
+            return True
+        except KeyError:
+            return False
 
     @staticmethod
     def verify_found_repo_matches_remote(
@@ -135,7 +155,7 @@ class GitPolicyFetcher(PolicyFetcher):
         self._remote = remote_name
         self._scope_id = scope_id
         logger.debug(
-            f"Initializing git fetcher: scope_id={scope_id}, url={source.url}, branch={self._source.branch}, path={GitPolicyFetcher.source_id(source)}"
+            f"Initializing git fetcher: scope_id={scope_id}, url={source.url}, ref={self._ref_name}, path={GitPolicyFetcher.source_id(source)}"
         )
 
     async def _get_repo_lock(self):
@@ -190,9 +210,13 @@ class GitPolicyFetcher(PolicyFetcher):
                             GitPolicyFetcher.repos_last_fetched[
                                 self.source_id
                             ] = datetime.datetime.now()
+                            fetch_kwargs = dict(callbacks=self._auth_callbacks)
+                            if self._is_tag:
+                                # Force-update tags so moved tags are detected
+                                fetch_kwargs["refspecs"] = ["+refs/tags/*:refs/tags/*"]
                             await run_sync(
                                 repo.remotes[self._remote].fetch,
-                                callbacks=self._auth_callbacks,
+                                **fetch_kwargs,
                             )
                             logger.debug(f"Fetch completed: {self._source.url}")
 
@@ -249,6 +273,16 @@ class GitPolicyFetcher(PolicyFetcher):
             logger.warning("Invalid repo at: {path}", path=self._repo_path)
             return None
 
+    @property
+    def _is_tag(self) -> bool:
+        return self._source.tag is not None
+
+    @property
+    def _ref_name(self) -> str:
+        if self._is_tag:
+            return self._source.tag
+        return self._source.branch
+
     async def _should_fetch(
         self,
         repo: Repository,
@@ -264,11 +298,20 @@ class GitPolicyFetcher(PolicyFetcher):
             else:
                 return True  # must fetch
 
-        if not RepoInterface.has_remote_branch(repo, self._source.branch, self._remote):
-            logger.info(
-                "Target branch was not found in local clone, re-fetching the remote"
-            )
-            return True  # missing branch
+        if self._is_tag:
+            if not RepoInterface.has_tag(repo, self._source.tag):
+                logger.info(
+                    "Target tag was not found in local clone, re-fetching the remote"
+                )
+                return True  # missing tag
+        else:
+            if not RepoInterface.has_remote_branch(
+                repo, self._source.branch, self._remote
+            ):
+                logger.info(
+                    "Target branch was not found in local clone, re-fetching the remote"
+                )
+                return True  # missing branch
 
         if hinted_hash is not None:
             try:
@@ -279,6 +322,10 @@ class GitPolicyFetcher(PolicyFetcher):
                     "Hinted commit hash was not found in local clone, re-fetching the remote"
                 )
                 return True  # hinted commit was not found
+
+        # Tags can be moved silently (no webhook), so always re-fetch to detect changes
+        if self._is_tag:
+            return True
 
         # by default, we try to avoid re-fetching the repo for performance
         return False
@@ -294,38 +341,56 @@ class GitPolicyFetcher(PolicyFetcher):
         return f"scopes/{self._scope_id.encode().hex()}"
 
     async def _notify_on_changes(self, repo: Repository):
-        # Get the latest commit hash of the target branch
-        new_revision = RepoInterface.get_commit_hash(
-            repo, self._source.branch, self._remote
-        )
-        if new_revision is None:
-            logger.error(f"Did not find target branch on remote: {self._source.branch}")
-            return
+        # Get the latest commit hash of the target ref (branch or tag)
+        if self._is_tag:
+            new_revision = RepoInterface.get_tag_commit_hash(repo, self._source.tag)
+            if new_revision is None:
+                logger.error(f"Did not find target tag: {self._source.tag}")
+                return
+        else:
+            new_revision = RepoInterface.get_commit_hash(
+                repo, self._source.branch, self._remote
+            )
+            if new_revision is None:
+                logger.error(
+                    f"Did not find target branch on remote: {self._source.branch}"
+                )
+                return
 
-        # Get the previous commit hash of the target branch
+        # Get the previous commit hash of the target ref
         local_branch = RepoInterface.get_local_branch(repo, self.local_branch_name)
         if local_branch is None:
-            # First sync of a new branch (the first synced branch in this repo was set by the clone (see `checkout_branch`))
+            # First sync of a new ref (the first synced branch in this repo was set by the clone (see `checkout_branch`))
             old_revision = None
-            local_branch = RepoInterface.create_local_branch_ref(
-                repo, self.local_branch_name, self._remote, self._source.branch
-            )
+            if self._is_tag:
+                # For tags, create a local branch pointing at the tag's commit
+                ref = repo.create_reference(
+                    f"refs/heads/{self.local_branch_name}", new_revision
+                )
+                local_branch = ref
+            else:
+                local_branch = RepoInterface.create_local_branch_ref(
+                    repo, self.local_branch_name, self._remote, self._source.branch
+                )
         else:
-            old_revision = local_branch.target.hex
+            old_revision = str(local_branch.target)
 
         await self.callbacks.on_update(old_revision, new_revision)
 
         # Bring forward local branch (a bit like "pull"), so we won't detect changes again
         local_branch.set_target(new_revision)
 
-    def _get_current_branch_head(self) -> str:
+    def _get_current_head(self) -> str:
         repo = self._get_repo()
-        head_commit_hash = RepoInterface.get_commit_hash(
-            repo, self._source.branch, self._remote
-        )
+        if self._is_tag:
+            head_commit_hash = RepoInterface.get_tag_commit_hash(repo, self._source.tag)
+        else:
+            head_commit_hash = RepoInterface.get_commit_hash(
+                repo, self._source.branch, self._remote
+            )
         if not head_commit_hash:
-            logger.error("Could not find current branch head")
-            raise ValueError("Could not find current branch head")
+            logger.error("Could not find current head")
+            raise ValueError("Could not find current head")
         return head_commit_hash
 
     @tracer.wrap("git_policy_fetcher.make_bundle")
@@ -338,7 +403,7 @@ class GitPolicyFetcher(PolicyFetcher):
             root_manifest_path=self._source.manifest,
             bundle_ignore=self._source.bundle_ignore,
         )
-        current_head_commit = repo.commit(self._get_current_branch_head())
+        current_head_commit = repo.commit(self._get_current_head())
 
         if not base_hash:
             return bundle_maker.make_bundle(current_head_commit)
@@ -352,8 +417,9 @@ class GitPolicyFetcher(PolicyFetcher):
     @staticmethod
     def source_id(source: GitPolicyScopeSource) -> str:
         base = hashlib.sha256(source.url.encode("utf-8")).hexdigest()
+        ref = source.tag if source.tag is not None else source.branch
         index = (
-            hashlib.sha256(source.branch.encode("utf-8")).digest()[0]
+            hashlib.sha256(ref.encode("utf-8")).digest()[0]
             % opal_server_config.SCOPES_REPO_CLONES_SHARDS
         )
         return f"{base}-{index}"

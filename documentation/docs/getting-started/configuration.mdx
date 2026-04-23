@@ -13,6 +13,7 @@ OPAL supports multiple ways to configure your deployment:
 Let's get OPAL running! You'll need to set a few environment variables that tell OPAL where to find your policies and how to connect everything together.
 
 #### OPAL Server
+
 ```bash
 # Where your policies are stored (Git repo)
 export OPAL_POLICY_REPO_URL=https://github.com/your-org/policy-repo.git
@@ -33,6 +34,7 @@ export OPAL_BROADCAST_URI=postgres://postgres:postgres@localhost:5432/postgres
 ```
 
 #### OPAL Client
+
 ```bash
 # Connect to your OPAL server
 export OPAL_SERVER_URL=http://localhost:7002
@@ -646,9 +648,17 @@ Set if OPAL server should use a fixed clone path (and reuse if it already exists
 
 #### OPAL_POLICY_REPO_MAIN_BRANCH
 
-Default: `master`
+Default: `None`
 
-The main branch to track for policy files.
+The git branch to track for policy files. If neither `OPAL_POLICY_REPO_MAIN_BRANCH` nor `OPAL_POLICY_REPO_TAG` is set, defaults to `master`. Cannot be used together with `OPAL_POLICY_REPO_TAG`.
+
+For more information, see [tracking a Git repository](/tutorials/track_a_git_repo).
+
+#### OPAL_POLICY_REPO_TAG
+
+Default: `None`
+
+The git tag to track for policy files. When set, OPAL will track the specified tag instead of a branch. This is useful for pinning policies to a specific release. Cannot be used together with `OPAL_POLICY_REPO_MAIN_BRANCH`.
 
 For more information, see [tracking a Git repository](/tutorials/track_a_git_repo).
 
@@ -783,6 +793,7 @@ Enforce webhook events only from a specific branch.
 #### OPAL_POLICY_REPO_WEBHOOK_PARAMS
 
 Default:
+
 ```json
 {
   "secret_header_name": "x-hub-signature-256",
@@ -846,7 +857,7 @@ Default: `[]`
 **DEPRECATED** - Use [OPAL_BUNDLE_IGNORE](#opal_bundle_ignore) instead.
 :::
 
-Paths to omit from policy bundle. List of glob-style paths, or paths without wildcards but ending with "/**" indicating a parent path (ignoring all under it).
+Paths to omit from policy bundle. List of glob-style paths, or paths without wildcards but ending with "/\*\*" indicating a parent path (ignoring all under it).
 
 _Added in OPAL v0.5.0_
 
@@ -885,13 +896,16 @@ Default route for data callbacks (exists as a sane default in case the user did 
 #### OPAL_DATA_CONFIG_SOURCES
 
 Default:
+
 ```json
 {
   "config": {
-    "entries": [{
-      "url": "http://localhost:7002/policy-data",
-      "topics": ["data"]
-    }]
+    "entries": [
+      {
+        "url": "http://localhost:7002/policy-data",
+        "topics": ["data"]
+      }
+    ]
   }
 }
 ```
@@ -1098,7 +1112,7 @@ Retry options when connecting to the policy store (i.e., the agent that handles 
 
 Default: `[]`
 
-Which policy paths pushed to the client should be ignored. List of glob-style paths, or paths without wildcards but ending with "/**" indicating a parent path (ignoring all under it). Supports paths starting with '!' to force not ignoring them: a negated path always takes precedence.
+Which policy paths pushed to the client should be ignored. List of glob-style paths, or paths without wildcards but ending with "/\*\*" indicating a parent path (ignoring all under it). Supports paths starting with '!' to force not ignoring them: a negated path always takes precedence.
 
 #### OPAL_OPA_HEALTH_CHECK_POLICY_ENABLED
 
@@ -1223,6 +1237,7 @@ For more information, see [tracking a Git repository](/tutorials/track_a_git_rep
 #### OPAL_POLICY_UPDATER_CONN_RETRY
 
 Default:
+
 ```json
 {
   "wait_strategy": "random_exponential",
@@ -1275,6 +1290,7 @@ For more information, see [monitoring OPAL](/tutorials/monitoring_opal).
 #### OPAL_DEFAULT_UPDATE_CALLBACK_CONFIG
 
 Default:
+
 ```json
 {
   "method": "POST",
@@ -1300,6 +1316,7 @@ For more information, see [monitoring OPAL](/tutorials/monitoring_opal).
 #### OPAL_DATA_UPDATER_CONN_RETRY
 
 Default:
+
 ```json
 {
   "wait_strategy": "random_exponential",
@@ -1324,6 +1341,7 @@ _Added in OPAL v0.7.5_
 ## Advanced Configuration Options
 
 #### CLI Help
+
 ```bash
 # View all options
 opal-server --help
@@ -1335,12 +1353,15 @@ opal-client run --help
 ```
 
 #### Kubernetes Deployment
+
 For Kubernetes deployments, see [OPAL Helm Chart for Kubernetes](/tutorials/helm-chart-for-kubernetes).
 
 #### Proxy Configuration
+
 For proxy configurations, see [Setup OPAL Behind a Proxy](/tutorials/setup_opal_behind_proxy).
 
 #### Source Code
+
 - [Common config](https://github.com/permitio/opal/blob/master/packages/opal-common/opal_common/config.py) - Shared variables
 - [Server config](https://github.com/permitio/opal/blob/master/packages/opal-server/opal_server/config.py) - Server-specific variables
 - [Client config](https://github.com/permitio/opal/blob/master/packages/opal-client/opal_client/config.py) - Client-specific variables
