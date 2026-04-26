@@ -130,13 +130,13 @@ class GitPolicyFetcher(PolicyFetcher):
         super().__init__(callbacks)
         self._base_dir = GitPolicyFetcher.base_dir(base_dir)
         self._source = source
-        self._auth_callbacks = GitCallback(self._source)
-        self._repo_path = GitPolicyFetcher.repo_clone_path(base_dir, self._source)
         self._source_id = GitPolicyFetcher.source_id(self._source)
+        self._auth_callbacks = GitCallback(self._source)
+        self._repo_path = self._base_dir / self._source_id
         self._remote = remote_name
         self._scope_id = scope_id
         logger.debug(
-            f"Initializing git fetcher: scope_id={scope_id}, url={source.url}, branch={self._source.branch}, path={self._source_id}"
+            f"Initializing git fetcher: scope_id={scope_id}, url={source.url}, branch={self._source.branch}, source_id={self._source_id}"
         )
 
     async def _get_repo_lock(self):
