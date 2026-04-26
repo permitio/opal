@@ -132,23 +132,23 @@ class GitPolicyFetcher(PolicyFetcher):
         self._source = source
         self._auth_callbacks = GitCallback(self._source)
         self._repo_path = GitPolicyFetcher.repo_clone_path(base_dir, self._source)
+        self._source_id = GitPolicyFetcher.source_id(self._source)
         self._remote = remote_name
         self._scope_id = scope_id
         logger.debug(
-            f"Initializing git fetcher: scope_id={scope_id}, url={source.url}, branch={self._source.branch}, path={GitPolicyFetcher.source_id(source)}"
+            f"Initializing git fetcher: scope_id={scope_id}, url={source.url}, branch={self._source.branch}, path={self._source_id}"
         )
 
     async def _get_repo_lock(self):
         # Previous file based implementation worked across multiple processes/threads, but wasn't fair (next acquiree is random)
         # This implementation works only within the same process/thread, but is fair (next acquiree is the earliest to enter the lock)
-        src_id = GitPolicyFetcher.source_id(self._source)
-        lock = GitPolicyFetcher.repo_locks[src_id] = GitPolicyFetcher.repo_locks.get(
-            src_id, asyncio.Lock()
+        lock = GitPolicyFetcher.repo_locks[self._source_id] = GitPolicyFetcher.repo_locks.get(
+            self._source_id, asyncio.Lock()
         )
         return lock
 
     async def _was_fetched_after(self, t: datetime.datetime):
-        last_fetched = GitPolicyFetcher.repos_last_fetched.get(self.source_id, None)
+        last_fetched = GitPolicyFetcher.repos_last_fetched.get(self._source_id, None)
         if last_fetched is None:
             return False
         return last_fetched > t
@@ -188,7 +188,7 @@ class GitPolicyFetcher(PolicyFetcher):
                                 f"Fetching remote (force_fetch={force_fetch}): {self._remote} ({self._source.url})"
                             )
                             GitPolicyFetcher.repos_last_fetched[
-                                self.source_id
+                                self._source_id
                             ] = datetime.datetime.now()
                             await run_sync(
                                 repo.remotes[self._remote].fetch,
