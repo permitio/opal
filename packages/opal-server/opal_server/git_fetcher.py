@@ -142,9 +142,9 @@ class GitPolicyFetcher(PolicyFetcher):
     async def _get_repo_lock(self):
         # Previous file based implementation worked across multiple processes/threads, but wasn't fair (next acquiree is random)
         # This implementation works only within the same process/thread, but is fair (next acquiree is the earliest to enter the lock)
-        lock = GitPolicyFetcher.repo_locks[self._source_id] = GitPolicyFetcher.repo_locks.get(
-            self._source_id, asyncio.Lock()
-        )
+        lock = GitPolicyFetcher.repo_locks[
+            self._source_id
+        ] = GitPolicyFetcher.repo_locks.get(self._source_id, asyncio.Lock())
         return lock
 
     async def _was_fetched_after(self, t: datetime.datetime):
