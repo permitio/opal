@@ -581,11 +581,21 @@ class OpalClient:
 
         # Start the background liveness probe alongside the policy/data updater
         # tasks. At this point the engine runner (if any) has already confirmed
-        # the policy store is up, so the probe starts from a known-good state.
+        # the policy store is up, but for external engines we have no such
+        # guarantee — `start_liveness_probe` runs an initial probe synchronously
+        # so the first reported reachability reflects reality, not the
+        # optimistic default.
         try:
             await self.policy_store.start_liveness_probe()
         except Exception:
-            logger.exception("failed to start policy store liveness probe")
+            # Non-fatal: keep booting, but warn loudly so operators know
+            # /healthy will fall back to the transaction-only signal until
+            # they intervene.
+            logger.error(
+                "Policy store liveness probe failed to start; "
+                "/healthy will not reflect engine reachability."
+            )
+            logger.exception("liveness probe start failure detail")
 
         if self.offline_mode_enabled:
             # Immediately attempt loading from backup (waiting for failure loading from server would delay availability)

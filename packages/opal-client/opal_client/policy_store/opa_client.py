@@ -17,6 +17,7 @@ from opal_client.policy_store.base_policy_store_client import (
     BasePolicyStoreClient,
     JsonableValue,
 )
+from opal_client.policy_store.liveness_probe import LivenessProbeMixin
 from opal_client.policy_store.schemas import PolicyStoreAuth
 from opal_client.utils import exclude_none_fields, proxy_response
 from opal_common.engine.parsing import get_rego_package
@@ -148,14 +149,13 @@ class OpaTransactionLogState:
         ) and (self._data_updater_disabled or data_updater_is_healthy)
         is_healthy: bool = transactions_healthy and self._engine_reachable
 
-        if is_healthy:
-            logger.debug(
-                f"OPA client health: {is_healthy} (policy: {policy_updater_is_healthy}, data: {data_updater_is_healthy}, engine_reachable: {self._engine_reachable})"
-            )
-        else:
-            logger.warning(
-                f"OPA client health: {is_healthy} (policy: {policy_updater_is_healthy}, data: {data_updater_is_healthy}, engine_reachable: {self._engine_reachable})"
-            )
+        # Logged at DEBUG in both branches: with the background liveness
+        # probe in place, /healthy can be polled at high frequency while
+        # the engine is down. The probe loop already logs INFO on
+        # transitions, so we don't need a per-evaluation WARNING here.
+        logger.debug(
+            f"OPA client health: {is_healthy} (policy: {policy_updater_is_healthy}, data: {data_updater_is_healthy}, engine_reachable: {self._engine_reachable})"
+        )
 
         return is_healthy
 
@@ -310,7 +310,7 @@ class OpaStaticDataCache:
         return self._root_data
 
 
-class OpaClient(BasePolicyStoreClient):
+class OpaClient(LivenessProbeMixin, BasePolicyStoreClient):
     """Communicates with OPA via its REST API."""
 
     POLICY_NAME = "rbac"
@@ -404,9 +404,7 @@ class OpaClient(BasePolicyStoreClient):
         if cache_policy_data:
             self._policy_data_cache = OpaStaticDataCache()
 
-        # Background liveness probe state.
-        self._liveness_probe_task: Optional[asyncio.Task] = None
-        self._liveness_probe_stop_event: Optional[asyncio.Event] = None
+        self._init_liveness_probe()
 
     def _get_custom_ssl_context(self) -> Optional[ssl.SSLContext]:
         if not self._tls_ca:
@@ -994,135 +992,34 @@ class OpaClient(BasePolicyStoreClient):
         # live responsiveness of the policy store.
         return self._transaction_state.healthy
 
-    async def _probe_engine_reachable(self) -> bool:
-        """Issue a single GET against OPA's `/health` endpoint.
+    @property
+    def _probe_log_label(self) -> str:
+        return "OPA"
 
-        Returns True iff OPA responds 2xx within the configured timeout.
-        Honors POLICY_STORE_AUTH_* (bearer / OAuth) and TLS settings.
+    async def _probe_engine_reachable(
+        self, session: aiohttp.ClientSession
+    ) -> bool:
+        """Issue a single GET against OPA's `/health` endpoint via the
+        long-lived session owned by `LivenessProbeMixin`.
+
+        OPA's `/health` is unauthenticated by default, so the probe sends no
+        auth headers — keeping the reachability sample independent of the
+        OAuth / token issuer.
         """
-        # `_opa_url` already has `/v1` appended; the health endpoint sits
-        # at the root, so we strip the trailing `/v1`.
-        health_url = f"{self._opa_url[:-3]}/health"
-        timeout_seconds = (
-            opal_client_config.POLICY_STORE_LIVENESS_PROBE_TIMEOUT_SECONDS
-        )
-        timeout = aiohttp.ClientTimeout(total=timeout_seconds)
-        try:
-            headers = await self._get_auth_headers()
-            async with aiohttp.ClientSession(
-                trust_env=True, timeout=timeout
-            ) as session:
-                async with session.get(
-                    health_url,
-                    headers=headers,
-                    **self._ssl_context_kwargs,
-                ) as response:
-                    return 200 <= response.status < 300
-        except (aiohttp.ClientError, asyncio.TimeoutError) as e:
-            logger.debug(
-                "OPA liveness probe failed: {err}", err=repr(e)
-            )
-            return False
-        except Exception as e:
-            # Defensive: the probe must never crash the client.
-            logger.debug(
-                "OPA liveness probe failed with unexpected error: {err}",
-                err=repr(e),
-            )
-            return False
+        # `_opa_url` carries the `/v1` API prefix; the health endpoint sits
+        # at the root, so strip the suffix and any trailing slash explicitly.
+        opa_base_url = self._opa_url.rstrip("/").removesuffix("/v1")
+        health_url = f"{opa_base_url}/health"
+        async with session.get(
+            health_url, **self._ssl_context_kwargs
+        ) as response:
+            return 200 <= response.status < 300
 
-    async def _liveness_probe_loop(self):
-        """Periodically samples OPA reachability and updates the transaction
-        state's `engine_reachable` flag.
+    def _set_engine_reachable(self, value: bool) -> None:
+        self._transaction_state.set_engine_reachable(value)
 
-        - Logs at INFO only on transitions (healthy <-> unhealthy).
-        - Logs at DEBUG for steady-state samples.
-        - Uses a stop event so cancellation is graceful.
-        """
-        interval_seconds = max(
-            1,
-            opal_client_config.POLICY_STORE_LIVENESS_PROBE_INTERVAL_SECONDS,
-        )
-        stop_event = self._liveness_probe_stop_event
-        # Keep track of the last reported state so we only log on transitions.
-        # Initialize to the current state so we don't emit a misleading
-        # "transition" on the very first probe.
-        last_reachable: bool = self._transaction_state.engine_reachable
-
-        logger.info(
-            "Starting OPA liveness probe (interval={interval}s, timeout={timeout}s)",
-            interval=interval_seconds,
-            timeout=opal_client_config.POLICY_STORE_LIVENESS_PROBE_TIMEOUT_SECONDS,
-        )
-
-        while not stop_event.is_set():
-            try:
-                reachable = await self._probe_engine_reachable()
-            except asyncio.CancelledError:
-                raise
-            except Exception as e:
-                # Should not happen — _probe_engine_reachable swallows
-                # ClientError/Timeout — but be defensive so the loop keeps
-                # running.
-                logger.debug(
-                    "OPA liveness probe loop caught unexpected error: {err}",
-                    err=repr(e),
-                )
-                reachable = False
-
-            self._transaction_state.set_engine_reachable(reachable)
-
-            if reachable != last_reachable:
-                if reachable:
-                    logger.info(
-                        "OPA liveness probe: policy store became reachable"
-                    )
-                else:
-                    logger.info(
-                        "OPA liveness probe: policy store became unreachable"
-                    )
-                last_reachable = reachable
-            else:
-                logger.debug(
-                    "OPA liveness probe sample: reachable={reachable}",
-                    reachable=reachable,
-                )
-
-            try:
-                await asyncio.wait_for(stop_event.wait(), timeout=interval_seconds)
-            except asyncio.TimeoutError:
-                # Expected — interval elapsed, take another sample.
-                continue
-            except asyncio.CancelledError:
-                raise
-
-    async def start_liveness_probe(self) -> None:
-        """Spawn the background liveness probe task (idempotent)."""
-        if not opal_client_config.POLICY_STORE_LIVENESS_PROBE_ENABLED:
-            logger.info(
-                "OPA liveness probe disabled via POLICY_STORE_LIVENESS_PROBE_ENABLED"
-            )
-            return
-        if self._liveness_probe_task is not None and not self._liveness_probe_task.done():
-            return
-        self._liveness_probe_stop_event = asyncio.Event()
-        self._liveness_probe_task = asyncio.create_task(self._liveness_probe_loop())
-
-    async def stop_liveness_probe(self) -> None:
-        """Cancel and await the background liveness probe task (idempotent)."""
-        if self._liveness_probe_stop_event is not None:
-            self._liveness_probe_stop_event.set()
-        task = self._liveness_probe_task
-        if task is not None and not task.done():
-            task.cancel()
-            try:
-                await task
-            except asyncio.CancelledError:
-                pass
-            except Exception:
-                logger.exception("Error while stopping OPA liveness probe task")
-        self._liveness_probe_task = None
-        self._liveness_probe_stop_event = None
+    def _get_engine_reachable(self) -> bool:
+        return self._transaction_state.engine_reachable
 
     async def full_export(self, writer: AsyncTextIOWrapper) -> None:
         policies = await self.get_policies()

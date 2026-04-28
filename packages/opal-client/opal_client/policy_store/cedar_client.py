@@ -12,6 +12,7 @@ from opal_client.policy_store.base_policy_store_client import (
     BasePolicyStoreClient,
     JsonableValue,
 )
+from opal_client.policy_store.liveness_probe import LivenessProbeMixin
 from opal_client.policy_store.opa_client import (
     RETRY_CONFIG,
     affects_transaction,
@@ -25,7 +26,7 @@ from opal_common.schemas.store import StoreTransaction, TransactionType
 from tenacity import retry
 
 
-class CedarClient(BasePolicyStoreClient):
+class CedarClient(LivenessProbeMixin, BasePolicyStoreClient):
     def __init__(
         self,
         cedar_server_url=None,
@@ -44,13 +45,11 @@ class CedarClient(BasePolicyStoreClient):
         self._most_recent_data_transaction: Optional[StoreTransaction] = None
         self._most_recent_policy_transaction: Optional[StoreTransaction] = None
 
-        # Background liveness probe state. `_engine_reachable` defaults to True
-        # so /healthy preserves historical behavior immediately after startup
-        # (before the first probe completes). The probe will flip this to False
-        # if Cedar becomes unreachable.
+        # `_engine_reachable` defaults to True so /healthy preserves historical
+        # behavior; `start_liveness_probe()` runs an initial sample synchronously
+        # and overwrites this before the probe loop begins.
         self._engine_reachable: bool = True
-        self._liveness_probe_task: Optional[asyncio.Task] = None
-        self._liveness_probe_stop_event: Optional[asyncio.Event] = None
+        self._init_liveness_probe()
 
         if auth_type == PolicyStoreAuth.TOKEN:
             if self._token is None:
@@ -296,110 +295,28 @@ class CedarClient(BasePolicyStoreClient):
         )
         return transactions_healthy and self._engine_reachable
 
-    async def _probe_engine_reachable(self) -> bool:
-        """Issue a single GET against Cedar's `/v1/` endpoint.
+    @property
+    def _probe_log_label(self) -> str:
+        return "Cedar"
 
-        Returns True iff Cedar responds 2xx within the configured timeout.
-        Honors POLICY_STORE_AUTH_TOKEN if configured.
+    async def _probe_engine_reachable(
+        self, session: aiohttp.ClientSession
+    ) -> bool:
+        """Issue a single GET against the Cedar agent's `/v1/` endpoint.
+
+        Mirrors `CedarRunner.health_check()`'s precedent — cedar-agent
+        responds 2xx on `/v1/`. The probe sends no auth headers, matching the
+        runner's approach and keeping reachability decoupled from auth.
         """
         health_url = f"{self._cedar_url}/"
-        timeout_seconds = (
-            opal_client_config.POLICY_STORE_LIVENESS_PROBE_TIMEOUT_SECONDS
-        )
-        timeout = aiohttp.ClientTimeout(total=timeout_seconds)
-        try:
-            headers = await self._get_auth_headers()
-            async with aiohttp.ClientSession(
-                trust_env=True, timeout=timeout
-            ) as session:
-                async with session.get(health_url, headers=headers) as response:
-                    return 200 <= response.status < 300
-        except (aiohttp.ClientError, asyncio.TimeoutError) as e:
-            logger.debug("Cedar liveness probe failed: {err}", err=repr(e))
-            return False
-        except Exception as e:
-            logger.debug(
-                "Cedar liveness probe failed with unexpected error: {err}",
-                err=repr(e),
-            )
-            return False
+        async with session.get(health_url) as response:
+            return 200 <= response.status < 300
 
-    async def _liveness_probe_loop(self):
-        interval_seconds = max(
-            1,
-            opal_client_config.POLICY_STORE_LIVENESS_PROBE_INTERVAL_SECONDS,
-        )
-        stop_event = self._liveness_probe_stop_event
-        last_reachable: bool = self._engine_reachable
+    def _set_engine_reachable(self, value: bool) -> None:
+        self._engine_reachable = value
 
-        logger.info(
-            "Starting Cedar liveness probe (interval={interval}s, timeout={timeout}s)",
-            interval=interval_seconds,
-            timeout=opal_client_config.POLICY_STORE_LIVENESS_PROBE_TIMEOUT_SECONDS,
-        )
-
-        while not stop_event.is_set():
-            try:
-                reachable = await self._probe_engine_reachable()
-            except asyncio.CancelledError:
-                raise
-            except Exception as e:
-                logger.debug(
-                    "Cedar liveness probe loop caught unexpected error: {err}",
-                    err=repr(e),
-                )
-                reachable = False
-
-            self._engine_reachable = reachable
-
-            if reachable != last_reachable:
-                if reachable:
-                    logger.info(
-                        "Cedar liveness probe: policy store became reachable"
-                    )
-                else:
-                    logger.info(
-                        "Cedar liveness probe: policy store became unreachable"
-                    )
-                last_reachable = reachable
-            else:
-                logger.debug(
-                    "Cedar liveness probe sample: reachable={reachable}",
-                    reachable=reachable,
-                )
-
-            try:
-                await asyncio.wait_for(stop_event.wait(), timeout=interval_seconds)
-            except asyncio.TimeoutError:
-                continue
-            except asyncio.CancelledError:
-                raise
-
-    async def start_liveness_probe(self) -> None:
-        if not opal_client_config.POLICY_STORE_LIVENESS_PROBE_ENABLED:
-            logger.info(
-                "Cedar liveness probe disabled via POLICY_STORE_LIVENESS_PROBE_ENABLED"
-            )
-            return
-        if self._liveness_probe_task is not None and not self._liveness_probe_task.done():
-            return
-        self._liveness_probe_stop_event = asyncio.Event()
-        self._liveness_probe_task = asyncio.create_task(self._liveness_probe_loop())
-
-    async def stop_liveness_probe(self) -> None:
-        if self._liveness_probe_stop_event is not None:
-            self._liveness_probe_stop_event.set()
-        task = self._liveness_probe_task
-        if task is not None and not task.done():
-            task.cancel()
-            try:
-                await task
-            except asyncio.CancelledError:
-                pass
-            except Exception:
-                logger.exception("Error while stopping Cedar liveness probe task")
-        self._liveness_probe_task = None
-        self._liveness_probe_stop_event = None
+    def _get_engine_reachable(self) -> bool:
+        return self._engine_reachable
 
     async def full_export(self, writer: AsyncTextIOWrapper) -> None:
         policies = await self.get_policies()
