@@ -20,6 +20,23 @@ curl -L https://raw.githubusercontent.com/permitio/opal/master/docker/docker-com
 
 ## <a name="healthcheck"></a> OPA healthcheck policy
 
+:::tip
+The OPAL Client also exposes its own HTTP `GET /healthy` endpoint, which is the
+recommended target for kubernetes liveness probes and supervisors. By default,
+that endpoint combines:
+
+1. the success of the last `OPAL server -> policy-store` transaction, **and**
+2. live reachability of the policy store, sampled in the background by
+   `OPAL_POLICY_STORE_LIVENESS_PROBE_ENABLED` (default `True`,
+   interval `OPAL_POLICY_STORE_LIVENESS_PROBE_INTERVAL_SECONDS=10`,
+   timeout `OPAL_POLICY_STORE_LIVENESS_PROBE_TIMEOUT_SECONDS=2`).
+
+This means `/healthy` will report unhealthy within one probe interval if OPA
+hangs, drops its listener, or otherwise becomes unreachable, and recovers
+automatically once OPA returns — without any restart of the OPAL Client.
+See the [configuration reference](/getting-started/configuration#opal_policy_store_liveness_probe_enabled).
+:::
+
 #### What is the healthcheck policy?
 
 A special OPA policy that (if activated) is loaded into OPA as the `system.opal` rego package.

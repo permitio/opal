@@ -70,6 +70,24 @@ class AbstractPolicyStore:
     async def is_ready(self) -> bool:
         raise NotImplementedError()
 
+    async def start_liveness_probe(self) -> None:
+        """Optionally start a background task that periodically probes the
+        policy store for reachability.
+
+        Concrete clients (e.g. OPA) override this to keep `is_healthy()`
+        in sync with the policy store's live responsiveness. Default is
+        a no-op so non-supporting stores remain unaffected.
+        """
+        return None
+
+    async def stop_liveness_probe(self) -> None:
+        """Cancel the background liveness probe started by
+        `start_liveness_probe`, if any.
+
+        Default is a no-op.
+        """
+        return None
+
     async def full_export(self, writer: AsyncTextIOWrapper) -> None:
         raise NotImplementedError()
 

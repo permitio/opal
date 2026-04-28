@@ -17,6 +17,7 @@ from opal_client.policy_store.base_policy_store_client import (
     BasePolicyStoreClient,
     JsonableValue,
 )
+from opal_client.policy_store.liveness_probe import LivenessProbeMixin
 from opal_client.policy_store.schemas import PolicyStoreAuth
 from opal_client.utils import exclude_none_fields, proxy_response
 from opal_common.engine.parsing import get_rego_package
@@ -111,6 +112,13 @@ class OpaTransactionLogState:
         self._last_failed_policy_transaction: Optional[StoreTransaction] = None
         self._last_data_transaction: Optional[StoreTransaction] = None
         self._last_failed_data_transaction: Optional[StoreTransaction] = None
+        # Live reachability of the underlying policy engine, maintained by an
+        # external background sampler (see OpaClient liveness probe). Default
+        # is True so that, before the first probe completes, /healthy reflects
+        # only the transaction state — preserving the historical behavior
+        # immediately after startup. The probe will flip this to False if OPA
+        # becomes unreachable.
+        self._engine_reachable: bool = True
 
     @property
     def ready(self) -> bool:
@@ -118,6 +126,13 @@ class OpaTransactionLogState:
             self._data_updater_disabled or self._num_successful_data_transactions > 0
         )
         return is_ready
+
+    @property
+    def engine_reachable(self) -> bool:
+        return self._engine_reachable
+
+    def set_engine_reachable(self, value: bool) -> None:
+        self._engine_reachable = value
 
     @property
     def healthy(self) -> bool:
@@ -129,18 +144,18 @@ class OpaTransactionLogState:
             self._last_data_transaction is not None
             and self._last_data_transaction.success
         )
-        is_healthy: bool = (
+        transactions_healthy: bool = (
             self._policy_updater_disabled or policy_updater_is_healthy
         ) and (self._data_updater_disabled or data_updater_is_healthy)
+        is_healthy: bool = transactions_healthy and self._engine_reachable
 
-        if is_healthy:
-            logger.debug(
-                f"OPA client health: {is_healthy} (policy: {policy_updater_is_healthy}, data: {data_updater_is_healthy})"
-            )
-        else:
-            logger.warning(
-                f"OPA client health: {is_healthy} (policy: {policy_updater_is_healthy}, data: {data_updater_is_healthy})"
-            )
+        # Logged at DEBUG in both branches: with the background liveness
+        # probe in place, /healthy can be polled at high frequency while
+        # the engine is down. The probe loop already logs INFO on
+        # transitions, so we don't need a per-evaluation WARNING here.
+        logger.debug(
+            f"OPA client health: {is_healthy} (policy: {policy_updater_is_healthy}, data: {data_updater_is_healthy}, engine_reachable: {self._engine_reachable})"
+        )
 
         return is_healthy
 
@@ -295,7 +310,7 @@ class OpaStaticDataCache:
         return self._root_data
 
 
-class OpaClient(BasePolicyStoreClient):
+class OpaClient(LivenessProbeMixin, BasePolicyStoreClient):
     """Communicates with OPA via its REST API."""
 
     POLICY_NAME = "rbac"
@@ -388,6 +403,8 @@ class OpaClient(BasePolicyStoreClient):
         self._policy_data_cache: Optional[OpaStaticDataCache] = None
         if cache_policy_data:
             self._policy_data_cache = OpaStaticDataCache()
+
+        self._init_liveness_probe()
 
     def _get_custom_ssl_context(self) -> Optional[ssl.SSLContext]:
         if not self._tls_ca:
@@ -969,7 +986,36 @@ class OpaClient(BasePolicyStoreClient):
         return self._transaction_state.ready
 
     async def is_healthy(self) -> bool:
+        # `_transaction_state.healthy` already factors in the engine reachability
+        # flag maintained by the background liveness probe, so /healthy reflects
+        # both the success of the last server -> policy-store transaction and the
+        # live responsiveness of the policy store.
         return self._transaction_state.healthy
+
+    @property
+    def _probe_log_label(self) -> str:
+        return "OPA"
+
+    async def _probe_engine_reachable(self, session: aiohttp.ClientSession) -> bool:
+        """Issue a single GET against OPA's `/health` endpoint via the long-
+        lived session owned by `LivenessProbeMixin`.
+
+        OPA's `/health` is unauthenticated by default, so the probe
+        sends no auth headers — keeping the reachability sample
+        independent of the OAuth / token issuer.
+        """
+        # `_opa_url` carries the `/v1` API prefix; the health endpoint sits
+        # at the root, so strip the suffix and any trailing slash explicitly.
+        opa_base_url = self._opa_url.rstrip("/").removesuffix("/v1")
+        health_url = f"{opa_base_url}/health"
+        async with session.get(health_url, **self._ssl_context_kwargs) as response:
+            return 200 <= response.status < 300
+
+    def _set_engine_reachable(self, value: bool) -> None:
+        self._transaction_state.set_engine_reachable(value)
+
+    def _get_engine_reachable(self) -> bool:
+        return self._transaction_state.engine_reachable
 
     async def full_export(self, writer: AsyncTextIOWrapper) -> None:
         policies = await self.get_policies()
