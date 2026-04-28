@@ -31,7 +31,10 @@ class LivenessProbeMixin:
     _liveness_probe_session: Optional[aiohttp.ClientSession]
 
     def _init_liveness_probe(self) -> None:
-        """Initialize mixin state. Call from the subclass `__init__`."""
+        """Initialize mixin state.
+
+        Call from the subclass `__init__`.
+        """
         self._liveness_probe_task = None
         self._liveness_probe_lock = asyncio.Lock()
         self._liveness_probe_session = None
@@ -41,9 +44,7 @@ class LivenessProbeMixin:
         return "policy store"
 
     @abstractmethod
-    async def _probe_engine_reachable(
-        self, session: aiohttp.ClientSession
-    ) -> bool:
+    async def _probe_engine_reachable(self, session: aiohttp.ClientSession) -> bool:
         raise NotImplementedError
 
     @abstractmethod
@@ -144,9 +145,9 @@ class LivenessProbeMixin:
     async def _sample_reachable(self, session: aiohttp.ClientSession) -> bool:
         """Issue a single probe request, classifying expected failures.
 
-        Network/timeout errors are folded into a False return at DEBUG. Any
-        other exception propagates and is treated as an unexpected error by
-        the loop.
+        Network/timeout errors are folded into a False return at DEBUG.
+        Any other exception propagates and is treated as an unexpected
+        error by the loop.
         """
         try:
             return await self._probe_engine_reachable(session)

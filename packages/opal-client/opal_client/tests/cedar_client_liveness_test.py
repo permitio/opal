@@ -36,9 +36,7 @@ def _record_successful_transactions(client: CedarClient) -> None:
     client._most_recent_policy_transaction = _make_transaction(
         True, TransactionType.policy
     )
-    client._most_recent_data_transaction = _make_transaction(
-        True, TransactionType.data
-    )
+    client._most_recent_data_transaction = _make_transaction(True, TransactionType.data)
 
 
 class _ToggleCedarServer:

@@ -76,8 +76,8 @@ def _reserve_unused_port() -> int:
 class _ToggleHealthServer:
     """Tiny aiohttp server that exposes `/health`.
 
-    The handler can be flipped between healthy (200), broken (503) or hanging
-    (sleeps long enough to exceed the probe timeout) at runtime.
+    The handler can be flipped between healthy (200), broken (503) or
+    hanging (sleeps long enough to exceed the probe timeout) at runtime.
     """
 
     HEALTHY = "healthy"
@@ -147,7 +147,8 @@ async def _override_config(**overrides):
 async def _wait_for_engine_reachable(
     client: OpaClient, expected: bool, timeout: float = 5.0
 ) -> None:
-    """Poll until the transaction state's `engine_reachable` matches `expected`."""
+    """Poll until the transaction state's `engine_reachable` matches
+    `expected`."""
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         if client._transaction_state.engine_reachable is expected:
@@ -227,7 +228,8 @@ async def test_unhealthy_when_transactions_failed_even_if_engine_reachable():
 async def test_unhealthy_when_transactions_ok_but_engine_unreachable_5xx():
     """Matrix cell (c): transactions OK + OPA returns 5xx -> unhealthy.
 
-    This simulates an OPA that is process-up but answering errors on /health.
+    This simulates an OPA that is process-up but answering errors on
+    /health.
     """
     async with _toggle_server() as (server, base_url):
         async with _override_config(
@@ -250,8 +252,8 @@ async def test_unhealthy_when_transactions_ok_but_engine_unreachable_5xx():
 async def test_unhealthy_when_engine_hangs_then_recovers():
     """Matrix cell (c) with hang + cell (d) recovery.
 
-    The probe must trip to unhealthy when OPA stops responding within the
-    configured timeout, then automatically recover when OPA returns.
+    The probe must trip to unhealthy when OPA stops responding within
+    the configured timeout, then automatically recover when OPA returns.
     """
     async with _toggle_server() as (server, base_url):
         async with _override_config(
@@ -359,9 +361,10 @@ async def test_start_is_idempotent_and_reuses_same_task():
 async def test_probe_ignores_oauth_failures():
     """The probe must not couple to the OAuth token-fetch path.
 
-    With OAuth configured against an unreachable IdP, the probe should still
-    report OPA as reachable when OPA itself is up, because OPA's `/health`
-    is unauthenticated by default and the probe sends no auth headers.
+    With OAuth configured against an unreachable IdP, the probe should
+    still report OPA as reachable when OPA itself is up, because OPA's
+    `/health` is unauthenticated by default and the probe sends no auth
+    headers.
     """
     async with _toggle_server() as (_server, base_url):
         # Point OAuth at an obviously-broken host. If the probe were calling

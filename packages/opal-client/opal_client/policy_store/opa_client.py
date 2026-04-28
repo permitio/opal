@@ -996,23 +996,19 @@ class OpaClient(LivenessProbeMixin, BasePolicyStoreClient):
     def _probe_log_label(self) -> str:
         return "OPA"
 
-    async def _probe_engine_reachable(
-        self, session: aiohttp.ClientSession
-    ) -> bool:
-        """Issue a single GET against OPA's `/health` endpoint via the
-        long-lived session owned by `LivenessProbeMixin`.
+    async def _probe_engine_reachable(self, session: aiohttp.ClientSession) -> bool:
+        """Issue a single GET against OPA's `/health` endpoint via the long-
+        lived session owned by `LivenessProbeMixin`.
 
-        OPA's `/health` is unauthenticated by default, so the probe sends no
-        auth headers — keeping the reachability sample independent of the
-        OAuth / token issuer.
+        OPA's `/health` is unauthenticated by default, so the probe
+        sends no auth headers — keeping the reachability sample
+        independent of the OAuth / token issuer.
         """
         # `_opa_url` carries the `/v1` API prefix; the health endpoint sits
         # at the root, so strip the suffix and any trailing slash explicitly.
         opa_base_url = self._opa_url.rstrip("/").removesuffix("/v1")
         health_url = f"{opa_base_url}/health"
-        async with session.get(
-            health_url, **self._ssl_context_kwargs
-        ) as response:
+        async with session.get(health_url, **self._ssl_context_kwargs) as response:
             return 200 <= response.status < 300
 
     def _set_engine_reachable(self, value: bool) -> None:

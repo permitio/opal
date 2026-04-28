@@ -299,14 +299,13 @@ class CedarClient(LivenessProbeMixin, BasePolicyStoreClient):
     def _probe_log_label(self) -> str:
         return "Cedar"
 
-    async def _probe_engine_reachable(
-        self, session: aiohttp.ClientSession
-    ) -> bool:
+    async def _probe_engine_reachable(self, session: aiohttp.ClientSession) -> bool:
         """Issue a single GET against the Cedar agent's `/v1/` endpoint.
 
         Mirrors `CedarRunner.health_check()`'s precedent — cedar-agent
-        responds 2xx on `/v1/`. The probe sends no auth headers, matching the
-        runner's approach and keeping reachability decoupled from auth.
+        responds 2xx on `/v1/`. The probe sends no auth headers,
+        matching the runner's approach and keeping reachability
+        decoupled from auth.
         """
         health_url = f"{self._cedar_url}/"
         async with session.get(health_url) as response:
