@@ -15,6 +15,7 @@ to control reachability deterministically.
 import asyncio
 import contextlib
 import socket
+import time
 from typing import AsyncIterator, Optional, Tuple
 
 import pytest
@@ -56,7 +57,14 @@ def _record_failed_data_transaction(client: OpaClient) -> None:
     )
 
 
-def _find_free_port() -> int:
+def _reserve_unused_port() -> int:
+    """Reserve a port that's likely free.
+
+    Used only by tests that need a *deliberately unbound* port (e.g. to
+    simulate connection-refused). For tests that bind a server, prefer the
+    `_ToggleHealthServer` flow which lets aiohttp pick the port and reads
+    it back — there is no race window between bind and connect there.
+    """
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     try:
         s.bind(("127.0.0.1", 0))
@@ -87,9 +95,14 @@ class _ToggleHealthServer:
         app.router.add_get("/health", self._handle)
         self._runner = web.AppRunner(app)
         await self._runner.setup()
-        self.port = _find_free_port()
-        self._site = web.TCPSite(self._runner, "127.0.0.1", self.port)
+        # Let aiohttp bind to an ephemeral port; reading the bound port back
+        # avoids the bind-then-close-then-rebind race that
+        # `_reserve_unused_port` would have.
+        self._site = web.TCPSite(self._runner, "127.0.0.1", 0)
         await self._site.start()
+        sockets = self._site._server.sockets  # type: ignore[union-attr]
+        assert sockets, "aiohttp site started without a bound socket"
+        self.port = sockets[0].getsockname()[1]
         return f"http://127.0.0.1:{self.port}"
 
     async def stop(self) -> None:
@@ -135,8 +148,8 @@ async def _wait_for_engine_reachable(
     client: OpaClient, expected: bool, timeout: float = 5.0
 ) -> None:
     """Poll until the transaction state's `engine_reachable` matches `expected`."""
-    deadline = asyncio.get_event_loop().time() + timeout
-    while asyncio.get_event_loop().time() < deadline:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
         if client._transaction_state.engine_reachable is expected:
             return
         await asyncio.sleep(0.05)
@@ -146,14 +159,21 @@ async def _wait_for_engine_reachable(
     )
 
 
-def _make_client(opa_base_url: str) -> OpaClient:
+def _make_client(
+    opa_base_url: str,
+    *,
+    auth_type: PolicyStoreAuth = PolicyStoreAuth.NONE,
+    oauth_client_id: Optional[str] = None,
+    oauth_client_secret: Optional[str] = None,
+    oauth_server: Optional[str] = None,
+) -> OpaClient:
     return OpaClient(
         opa_server_url=opa_base_url,
         opa_auth_token=None,
-        auth_type=PolicyStoreAuth.NONE,
-        oauth_client_id=None,
-        oauth_client_secret=None,
-        oauth_server=None,
+        auth_type=auth_type,
+        oauth_client_id=oauth_client_id,
+        oauth_client_secret=oauth_client_secret,
+        oauth_server=oauth_server,
         data_updater_enabled=True,
         policy_updater_enabled=True,
         cache_policy_data=False,
@@ -176,9 +196,9 @@ async def test_healthy_when_transactions_ok_and_engine_reachable():
             _record_successful_transactions(client)
             try:
                 await client.start_liveness_probe()
-                # Wait for at least one successful sample to confirm the
-                # probe is actually running and contacting the server.
-                await _wait_for_engine_reachable(client, True)
+                # The first probe runs synchronously inside
+                # `start_liveness_probe`, so reachability is already true here.
+                assert client._transaction_state.engine_reachable is True
                 assert await client.is_healthy() is True
             finally:
                 await client.stop_liveness_probe()
@@ -263,7 +283,7 @@ async def test_unhealthy_when_engine_hangs_then_recovers():
 @pytest.mark.asyncio
 async def test_unhealthy_when_engine_url_unreachable_connection_refused():
     """OPA process gone (connection refused) -> probe trips to unhealthy."""
-    free_port = _find_free_port()
+    free_port = _reserve_unused_port()
     async with _override_config(
         POLICY_STORE_LIVENESS_PROBE_ENABLED=True,
         POLICY_STORE_LIVENESS_PROBE_INTERVAL_SECONDS=1,
@@ -308,3 +328,62 @@ async def test_stop_is_idempotent_and_does_not_raise():
         await client.stop_liveness_probe()
         await client.stop_liveness_probe()
         assert client._liveness_probe_task is None
+
+
+@pytest.mark.asyncio
+async def test_start_is_idempotent_and_reuses_same_task():
+    """A second `start_liveness_probe` while one is running must be a no-op."""
+    async with _toggle_server() as (_server, base_url):
+        async with _override_config(
+            POLICY_STORE_LIVENESS_PROBE_ENABLED=True,
+            POLICY_STORE_LIVENESS_PROBE_INTERVAL_SECONDS=1,
+            POLICY_STORE_LIVENESS_PROBE_TIMEOUT_SECONDS=1,
+        ):
+            client = _make_client(base_url)
+            try:
+                await client.start_liveness_probe()
+                first_task = client._liveness_probe_task
+                first_session = client._liveness_probe_session
+                assert first_task is not None
+                assert first_session is not None
+
+                # Second call must not spawn a second task or session.
+                await client.start_liveness_probe()
+                assert client._liveness_probe_task is first_task
+                assert client._liveness_probe_session is first_session
+            finally:
+                await client.stop_liveness_probe()
+
+
+@pytest.mark.asyncio
+async def test_probe_ignores_oauth_failures():
+    """The probe must not couple to the OAuth token-fetch path.
+
+    With OAuth configured against an unreachable IdP, the probe should still
+    report OPA as reachable when OPA itself is up, because OPA's `/health`
+    is unauthenticated by default and the probe sends no auth headers.
+    """
+    async with _toggle_server() as (_server, base_url):
+        # Point OAuth at an obviously-broken host. If the probe were calling
+        # `_get_auth_headers()` the token fetch would hang or fail and the
+        # probe would (incorrectly) report unreachable.
+        unreachable_oauth_port = _reserve_unused_port()
+        async with _override_config(
+            POLICY_STORE_LIVENESS_PROBE_ENABLED=True,
+            POLICY_STORE_LIVENESS_PROBE_INTERVAL_SECONDS=1,
+            POLICY_STORE_LIVENESS_PROBE_TIMEOUT_SECONDS=1,
+        ):
+            client = _make_client(
+                base_url,
+                auth_type=PolicyStoreAuth.OAUTH,
+                oauth_client_id="id",
+                oauth_client_secret="secret",
+                oauth_server=f"http://127.0.0.1:{unreachable_oauth_port}/oauth",
+            )
+            _record_successful_transactions(client)
+            try:
+                await client.start_liveness_probe()
+                await _wait_for_engine_reachable(client, True, timeout=5.0)
+                assert await client.is_healthy() is True
+            finally:
+                await client.stop_liveness_probe()
