@@ -305,8 +305,8 @@ class OpalClient:
         @app.get("/healthy", include_in_schema=False)
         async def healthy():
             """Returns 200 if updates keep being successfully fetched from the
-            server and applied to the policy store."""
-            # TODO: Client would only report unhealthy if server -> policy-store transactions failed, but not if server connection gets disconnected.
+            server and applied to the policy store, AND the policy store is
+            reachable (when the background liveness probe is enabled)."""
             healthy = await self.policy_store.is_healthy()
 
             if healthy:
@@ -400,6 +400,12 @@ class OpalClient:
     async def stop_client_background_tasks(self):
         """Stops all background tasks (called on shutdown event)"""
         logger.info("stopping background tasks...")
+
+        # stop the policy store's background liveness probe, if any
+        try:
+            await self.policy_store.stop_liveness_probe()
+        except Exception:
+            logger.exception("error while stopping policy store liveness probe")
 
         # stopping opa runner
         if self.engine_runner:
@@ -572,6 +578,14 @@ class OpalClient:
             logger.critical("healthcheck policy enabled but could not be initialized!")
             self._trigger_shutdown()
             return
+
+        # Start the background liveness probe alongside the policy/data updater
+        # tasks. At this point the engine runner (if any) has already confirmed
+        # the policy store is up, so the probe starts from a known-good state.
+        try:
+            await self.policy_store.start_liveness_probe()
+        except Exception:
+            logger.exception("failed to start policy store liveness probe")
 
         if self.offline_mode_enabled:
             # Immediately attempt loading from backup (waiting for failure loading from server would delay availability)
