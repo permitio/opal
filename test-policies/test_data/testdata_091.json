@@ -1,0 +1,108 @@
+{
+  "test_id": 91,
+  "metadata": {
+    "environment": "prod",
+    "region": "us-east-1",
+    "version": "1.4.16"
+  },
+  "users": [
+    {
+      "id": "user_000",
+      "name": "User 0",
+      "role": "editor",
+      "active": true,
+      "risk_score": 12
+    },
+    {
+      "id": "user_001",
+      "name": "User 1",
+      "role": "viewer",
+      "active": true,
+      "risk_score": 25
+    },
+    {
+      "id": "user_002",
+      "name": "User 2",
+      "role": "viewer",
+      "active": true,
+      "risk_score": 90
+    },
+    {
+      "id": "user_003",
+      "name": "User 3",
+      "role": "viewer",
+      "active": true,
+      "risk_score": 15
+    },
+    {
+      "id": "user_004",
+      "name": "User 4",
+      "role": "admin",
+      "active": true,
+      "risk_score": 94
+    },
+    {
+      "id": "user_005",
+      "name": "User 5",
+      "role": "viewer",
+      "active": true,
+      "risk_score": 7
+    },
+    {
+      "id": "user_006",
+      "name": "User 6",
+      "role": "viewer",
+      "active": false,
+      "risk_score": 49
+    },
+    {
+      "id": "user_007",
+      "name": "User 7",
+      "role": "viewer",
+      "active": true,
+      "risk_score": 11
+    },
+    {
+      "id": "user_008",
+      "name": "User 8",
+      "role": "admin",
+      "active": false,
+      "risk_score": 43
+    }
+  ],
+  "resources": [
+    {
+      "id": "res_000",
+      "type": "api",
+      "public": false,
+      "owner_id": "user_078",
+      "sensitivity": "secret"
+    },
+    {
+      "id": "res_001",
+      "type": "file",
+      "public": false,
+      "owner_id": "user_020",
+      "sensitivity": "confidential"
+    }
+  ],
+  "system": {
+    "health": 0.78,
+    "load": 89.81,
+    "uptime_days": 182
+  },
+  "policies": {
+    "security": {
+      "enabled": false
+    },
+    "compliance": {
+      "enabled": false
+    },
+    "access": {
+      "enabled": true
+    },
+    "audit": {
+      "enabled": true
+    }
+  }
+}

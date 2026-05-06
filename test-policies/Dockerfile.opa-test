@@ -1,0 +1,32 @@
+FROM python:3.11-slim
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    ca-certificates \
+    bash \
+    && rm -rf /var/lib/apt/lists/*
+
+# Download OPA binary
+RUN curl -L https://openpolicyagent.org/downloads/latest/opa_linux_$(uname -m | sed 's/x86_64/amd64/' | sed 's/aarch64/arm64/') -o /usr/local/bin/opa && \
+    chmod +x /usr/local/bin/opa
+
+# Install pytest and test dependencies
+RUN pip install --no-cache-dir pytest pytest-json-report
+
+# Create app directory
+WORKDIR /app
+
+# Copy policies, test data, and tests
+COPY policies/ /app/policies/
+COPY test_data/ /app/test_data/
+COPY policy_tests/ /app/policy_tests/
+
+# Create results directory
+RUN mkdir -p /app/results
+
+# Copy and make entrypoint executable
+COPY docker-entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+ENTRYPOINT ["/entrypoint.sh"]

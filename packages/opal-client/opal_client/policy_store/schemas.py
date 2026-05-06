@@ -10,6 +10,21 @@ class PolicyStoreTypes(Enum):
     MOCK = "MOCK"
 
 
+class InitialPolicyLoadMode(str, Enum):
+    """Controls how a full (non-delta) policy bundle is applied to the policy
+    store on startup or after a Pub/Sub reconnect.
+
+    per_module (default): one PUT per rego/data module — preserves legacy
+        behaviour and is compatible with any OPA version.
+    single_transaction: all modules are written inside a single OPA write
+        transaction so OPA compiles exactly once.  Falls back to per_module
+        automatically if the OPA version does not support the transaction API.
+    """
+
+    PER_MODULE = "per_module"
+    SINGLE_TRANSACTION = "single_transaction"
+
+
 class PolicyStoreAuth(Enum):
     NONE = "none"
     TOKEN = "token"

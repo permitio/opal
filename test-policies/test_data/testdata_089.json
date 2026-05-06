@@ -1,0 +1,52 @@
+{
+  "test_id": 89,
+  "metadata": {
+    "environment": "dev",
+    "region": "us-east-1",
+    "version": "1.5.8"
+  },
+  "users": [
+    {
+      "id": "user_000",
+      "name": "User 0",
+      "role": "viewer",
+      "active": true,
+      "risk_score": 42
+    }
+  ],
+  "resources": [
+    {
+      "id": "res_000",
+      "type": "api",
+      "public": false,
+      "owner_id": "user_099",
+      "sensitivity": "internal"
+    },
+    {
+      "id": "res_001",
+      "type": "database",
+      "public": true,
+      "owner_id": "user_095",
+      "sensitivity": "internal"
+    }
+  ],
+  "system": {
+    "health": 0.63,
+    "load": 46.2,
+    "uptime_days": 150
+  },
+  "policies": {
+    "security": {
+      "enabled": true
+    },
+    "compliance": {
+      "enabled": true
+    },
+    "access": {
+      "enabled": true
+    },
+    "audit": {
+      "enabled": false
+    }
+  }
+}

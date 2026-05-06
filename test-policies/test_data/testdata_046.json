@@ -1,0 +1,59 @@
+{
+  "test_id": 46,
+  "metadata": {
+    "environment": "staging",
+    "region": "eu-west-1",
+    "version": "1.3.0"
+  },
+  "users": [
+    {
+      "id": "user_000",
+      "name": "User 0",
+      "role": "admin",
+      "active": false,
+      "risk_score": 92
+    },
+    {
+      "id": "user_001",
+      "name": "User 1",
+      "role": "viewer",
+      "active": false,
+      "risk_score": 85
+    }
+  ],
+  "resources": [
+    {
+      "id": "res_000",
+      "type": "api",
+      "public": false,
+      "owner_id": "user_013",
+      "sensitivity": "internal"
+    },
+    {
+      "id": "res_001",
+      "type": "service",
+      "public": false,
+      "owner_id": "user_045",
+      "sensitivity": "internal"
+    }
+  ],
+  "system": {
+    "health": 0.77,
+    "load": 57.27,
+    "uptime_days": 339
+  },
+  "policies": {
+    "security": {
+      "enabled": false
+    },
+    "compliance": {
+      "enabled": true
+    },
+    "access": {
+      "enabled": true
+    },
+    "audit": {
+      "enabled": false
+    }
+  }
+}

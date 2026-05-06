@@ -1,0 +1,66 @@
+{
+  "test_id": 16,
+  "metadata": {
+    "environment": "prod",
+    "region": "us-west-2",
+    "version": "1.2.14"
+  },
+  "users": [
+    {
+      "id": "user_000",
+      "name": "User 0",
+      "role": "auditor",
+      "active": false,
+      "risk_score": 65
+    }
+  ],
+  "resources": [
+    {
+      "id": "res_000",
+      "type": "database",
+      "public": true,
+      "owner_id": "user_006",
+      "sensitivity": "internal"
+    },
+    {
+      "id": "res_001",
+      "type": "api",
+      "public": false,
+      "owner_id": "user_074",
+      "sensitivity": "internal"
+    },
+    {
+      "id": "res_002",
+      "type": "service",
+      "public": false,
+      "owner_id": "user_000",
+      "sensitivity": "secret"
+    },
+    {
+      "id": "res_003",
+      "type": "service",
+      "public": false,
+      "owner_id": "user_082",
+      "sensitivity": "secret"
+    }
+  ],
+  "system": {
+    "health": 0.85,
+    "load": 16.76,
+    "uptime_days": 104
+  },
+  "policies": {
+    "security": {
+      "enabled": false
+    },
+    "compliance": {
+      "enabled": false
+    },
+    "access": {
+      "enabled": false
+    },
+    "audit": {
+      "enabled": true
+    }
+  }
+}

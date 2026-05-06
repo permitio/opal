@@ -357,3 +357,11 @@ class CedarClient(LivenessProbeMixin, BasePolicyStoreClient):
             print(module_id)
             await self.delete_policy(policy_id=module_id)
         self._policy_version = bundle.hash
+
+    @affects_transaction
+    async def set_policies_atomic(
+        self, bundle: PolicyBundle, transaction_id: Optional[str] = None
+    ):
+        """Cedar has no per-module compile cost, so the atomic path is identical
+        to the standard path."""
+        return await self.set_policies(bundle, transaction_id=transaction_id)

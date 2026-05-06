@@ -769,6 +769,222 @@ class OpaClient(LivenessProbeMixin, BasePolicyStoreClient):
                 bundle_hash=hash,
             )
 
+    # ------------------------------------------------------------------
+    # OPA write-transaction helpers (used by set_policies_atomic)
+    # ------------------------------------------------------------------
+
+    async def _engine_create_transaction(self) -> str:
+        """Opens an OPA write transaction and returns the transaction id."""
+        async with aiohttp.ClientSession(trust_env=True) as session:
+            headers = await self._get_auth_headers()
+            async with session.post(
+                f"{self._opa_url}/transactions",
+                headers=headers,
+                **self._ssl_context_kwargs,
+            ) as resp:
+                if resp.status != status.HTTP_200_OK:
+                    raise ValueError(
+                        f"OPA transactions API returned unexpected status {resp.status}"
+                    )
+                body = await resp.json()
+                return body["result"]["id"]
+
+    async def _engine_commit_transaction(self, txn_id: str) -> None:
+        """Commits an open OPA write transaction, triggering a single compile."""
+        async with aiohttp.ClientSession(trust_env=True) as session:
+            headers = await self._get_auth_headers()
+            async with session.post(
+                f"{self._opa_url}/transactions/{txn_id}/commit",
+                headers=headers,
+                **self._ssl_context_kwargs,
+            ) as resp:
+                if resp.status not in (
+                    status.HTTP_200_OK,
+                    status.HTTP_204_NO_CONTENT,
+                ):
+                    raise ValueError(
+                        f"OPA transaction commit returned unexpected status {resp.status}"
+                    )
+
+    async def _engine_abort_transaction(self, txn_id: str) -> None:
+        """Aborts (rolls back) an open OPA write transaction."""
+        try:
+            async with aiohttp.ClientSession(trust_env=True) as session:
+                headers = await self._get_auth_headers()
+                async with session.delete(
+                    f"{self._opa_url}/transactions/{txn_id}",
+                    headers=headers,
+                    **self._ssl_context_kwargs,
+                ) as resp:
+                    if resp.status not in (
+                        status.HTTP_200_OK,
+                        status.HTTP_204_NO_CONTENT,
+                        status.HTTP_404_NOT_FOUND,
+                    ):
+                        logger.warning(
+                            "OPA transaction abort returned unexpected status {status}",
+                            status=resp.status,
+                        )
+        except Exception as e:
+            logger.warning(
+                "Failed to abort OPA transaction {txn_id}: {err}",
+                txn_id=txn_id,
+                err=repr(e),
+            )
+
+    async def _set_policy_in_txn(
+        self, policy_id: str, policy_code: str, txn_id: str
+    ) -> None:
+        """PUT a single rego module inside an open OPA write transaction."""
+        if should_ignore_path(
+            policy_id, opal_client_config.POLICY_STORE_POLICY_PATHS_TO_IGNORE
+        ):
+            logger.info(
+                f"Ignoring setting policy - {policy_id}, set in POLICY_STORE_POLICY_PATHS_TO_IGNORE."
+            )
+            return
+        async with aiohttp.ClientSession(trust_env=True) as session:
+            headers = await self._get_auth_headers()
+            async with session.put(
+                f"{self._opa_url}/policies/{policy_id}",
+                params={"txn": txn_id},
+                data=policy_code,
+                headers={"content-type": "text/plain", **headers},
+                **self._ssl_context_kwargs,
+            ) as resp:
+                await proxy_response_unless_invalid(
+                    resp,
+                    accepted_status_codes=[
+                        status.HTTP_200_OK,
+                        status.HTTP_400_BAD_REQUEST,
+                    ],
+                )
+
+    async def _set_policy_data_in_txn(
+        self, path: str, policy_data: Any, txn_id: str
+    ) -> None:
+        """PUT a data document inside an open OPA write transaction."""
+        path = self._safe_data_module_path(path)
+        if not path and isinstance(policy_data, list):
+            policy_data = {"items": policy_data}
+        async with aiohttp.ClientSession(trust_env=True) as session:
+            headers = await self._get_auth_headers()
+            async with session.put(
+                f"{self._opa_url}/data{path}",
+                params={"txn": txn_id},
+                data=json.dumps(exclude_none_fields(policy_data)),
+                headers=headers,
+                **self._ssl_context_kwargs,
+            ) as resp:
+                await proxy_response_unless_invalid(
+                    resp,
+                    accepted_status_codes=[
+                        status.HTTP_204_NO_CONTENT,
+                        status.HTTP_304_NOT_MODIFIED,
+                    ],
+                )
+
+    async def _delete_policy_in_txn(self, policy_id: str, txn_id: str) -> None:
+        """DELETE a policy module inside an open OPA write transaction."""
+        if should_ignore_path(
+            policy_id, opal_client_config.POLICY_STORE_POLICY_PATHS_TO_IGNORE
+        ):
+            return
+        async with aiohttp.ClientSession(trust_env=True) as session:
+            headers = await self._get_auth_headers()
+            async with session.delete(
+                f"{self._opa_url}/policies/{policy_id}",
+                params={"txn": txn_id},
+                headers=headers,
+                **self._ssl_context_kwargs,
+            ) as resp:
+                await proxy_response_unless_invalid(
+                    resp,
+                    accepted_status_codes=[
+                        status.HTTP_200_OK,
+                        status.HTTP_404_NOT_FOUND,
+                    ],
+                )
+
+    # set_policies_atomic is flagged as affects_transaction so the wrapping
+    # PolicyStoreTransactionContextManager records it in the action log.
+    @affects_transaction
+    async def set_policies_atomic(
+        self, bundle: PolicyBundle, transaction_id: Optional[str] = None
+    ):
+        """Apply a complete (non-delta) bundle to OPA using a single write
+        transaction so that OPA compiles exactly once.
+
+        If OPA does not support the transaction API (old version or custom
+        engine), falls back to the standard per-module ``set_policies`` path
+        and logs a one-time warning.
+        """
+        if bundle.old_hash is not None:
+            # Safety valve: never use the atomic path for delta bundles.
+            return await self._set_policies_from_delta_bundle(bundle)
+
+        async with self._lock:
+            # Capture the current set of modules BEFORE starting the OPA
+            # transaction so we know what to delete (parity with the complete-
+            # bundle path).
+            module_ids_in_store: Set[str] = set(await self.get_policy_module_ids())
+            module_ids_in_bundle: Set[str] = {
+                m.path for m in bundle.policy_modules
+            }
+            module_ids_to_delete: Set[str] = module_ids_in_store - module_ids_in_bundle
+
+            txn_id: Optional[str] = None
+            try:
+                txn_id = await self._engine_create_transaction()
+            except Exception as e:
+                logger.warning(
+                    "OPA transaction API unavailable, falling back to per-module "
+                    "policy load. Error: {err}",
+                    err=repr(e),
+                )
+                return await self._set_policies_from_complete_bundle(bundle)
+
+            try:
+                # data modules
+                for module in BundleUtils.sorted_data_modules_to_load(bundle):
+                    path = self._safe_data_module_path(module.path)
+                    try:
+                        data = json.loads(module.data)
+                    except json.JSONDecodeError as e:
+                        logger.warning(
+                            "bundle contains non-json data module: {path}",
+                            err=repr(e),
+                            path=path,
+                        )
+                        continue
+                    await self._set_policy_data_in_txn(path, data, txn_id)
+
+                # policy modules — use the same retry helper as the standard path
+                # but wrap each txn call so it matches the (policy_id, policy_code) API
+                await OpaClient._attempt_operations_with_postponed_failure_retry(
+                    [
+                        functools.partial(
+                            self._set_policy_in_txn,
+                            policy_id=m.path,
+                            policy_code=m.rego,
+                            txn_id=txn_id,
+                        )
+                        for m in BundleUtils.sorted_policy_modules_to_load(bundle)
+                    ]
+                )
+
+                # remove stale modules
+                for stale_id in module_ids_to_delete:
+                    await self._delete_policy_in_txn(stale_id, txn_id)
+
+                await self._engine_commit_transaction(txn_id)
+
+            except Exception:
+                await self._engine_abort_transaction(txn_id)
+                raise
+
+            self._policy_version = bundle.hash
+
     @affects_transaction
     @retry(**RETRY_CONFIG)
     async def set_policy_data(

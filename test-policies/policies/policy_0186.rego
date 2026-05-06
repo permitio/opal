@@ -1,0 +1,20 @@
+package governance.monitoring.action.validate.policy_0186
+
+# Auto-generated policy 186 (Rego v1 syntax)
+# Package: governance.monitoring.action.validate
+
+# Metadata
+metadata := {
+    "policy_id": "0186",
+    "version": "1.0",
+    "created": "2026-05-06",
+}
+
+# Rules
+policy_0186_allowed if {
+    input.user.role == "admin"
+}
+policy_0186_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
+}

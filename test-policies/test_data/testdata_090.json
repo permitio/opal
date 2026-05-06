@@ -1,0 +1,66 @@
+{
+  "test_id": 90,
+  "metadata": {
+    "environment": "staging",
+    "region": "ap-northeast-1",
+    "version": "1.1.1"
+  },
+  "users": [
+    {
+      "id": "user_000",
+      "name": "User 0",
+      "role": "viewer",
+      "active": true,
+      "risk_score": 85
+    }
+  ],
+  "resources": [
+    {
+      "id": "res_000",
+      "type": "bucket",
+      "public": true,
+      "owner_id": "user_085",
+      "sensitivity": "public"
+    },
+    {
+      "id": "res_001",
+      "type": "file",
+      "public": false,
+      "owner_id": "user_081",
+      "sensitivity": "public"
+    },
+    {
+      "id": "res_002",
+      "type": "file",
+      "public": false,
+      "owner_id": "user_094",
+      "sensitivity": "public"
+    },
+    {
+      "id": "res_003",
+      "type": "bucket",
+      "public": true,
+      "owner_id": "user_041",
+      "sensitivity": "public"
+    }
+  ],
+  "system": {
+    "health": 0.93,
+    "load": 59.51,
+    "uptime_days": 354
+  },
+  "policies": {
+    "security": {
+      "enabled": false
+    },
+    "compliance": {
+      "enabled": false
+    },
+    "access": {
+      "enabled": false
+    },
+    "audit": {
+      "enabled": false
+    }
+  }
+}

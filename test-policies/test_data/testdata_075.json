@@ -1,0 +1,52 @@
+{
+  "test_id": 75,
+  "metadata": {
+    "environment": "prod",
+    "region": "eu-west-1",
+    "version": "1.4.0"
+  },
+  "users": [
+    {
+      "id": "user_000",
+      "name": "User 0",
+      "role": "admin",
+      "active": true,
+      "risk_score": 87
+    },
+    {
+      "id": "user_001",
+      "name": "User 1",
+      "role": "editor",
+      "active": true,
+      "risk_score": 63
+    }
+  ],
+  "resources": [
+    {
+      "id": "res_000",
+      "type": "api",
+      "public": false,
+      "owner_id": "user_011",
+      "sensitivity": "public"
+    }
+  ],
+  "system": {
+    "health": 0.89,
+    "load": 81.64,
+    "uptime_days": 126
+  },
+  "policies": {
+    "security": {
+      "enabled": true
+    },
+    "compliance": {
+      "enabled": false
+    },
+    "access": {
+      "enabled": false
+    },
+    "audit": {
+      "enabled": true
+    }
+  }
+}

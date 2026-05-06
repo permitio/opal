@@ -1,0 +1,27 @@
+package access.authorization.policy.validate.policy_0361
+
+# Auto-generated policy 361 (Rego v1 syntax)
+# Package: access.authorization.policy.validate
+
+# Metadata
+metadata := {
+    "policy_id": "0361",
+    "version": "1.0",
+    "created": "2026-05-06",
+}
+
+# Rules
+policy_0361_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
+}
+policy_0361_allowed if {
+    data.policies.access.enabled
+}
+policy_0361_allowed if {
+    input.user.role == "admin"
+}
+policy_0361_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
+}

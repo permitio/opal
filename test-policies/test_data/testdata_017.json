@@ -1,0 +1,80 @@
+{
+  "test_id": 17,
+  "metadata": {
+    "environment": "dev",
+    "region": "eu-west-1",
+    "version": "1.2.18"
+  },
+  "users": [
+    {
+      "id": "user_000",
+      "name": "User 0",
+      "role": "user",
+      "active": false,
+      "risk_score": 99
+    },
+    {
+      "id": "user_001",
+      "name": "User 1",
+      "role": "admin",
+      "active": false,
+      "risk_score": 16
+    }
+  ],
+  "resources": [
+    {
+      "id": "res_000",
+      "type": "service",
+      "public": true,
+      "owner_id": "user_075",
+      "sensitivity": "confidential"
+    },
+    {
+      "id": "res_001",
+      "type": "database",
+      "public": false,
+      "owner_id": "user_099",
+      "sensitivity": "internal"
+    },
+    {
+      "id": "res_002",
+      "type": "file",
+      "public": false,
+      "owner_id": "user_052",
+      "sensitivity": "internal"
+    },
+    {
+      "id": "res_003",
+      "type": "service",
+      "public": true,
+      "owner_id": "user_031",
+      "sensitivity": "internal"
+    },
+    {
+      "id": "res_004",
+      "type": "service",
+      "public": false,
+      "owner_id": "user_026",
+      "sensitivity": "secret"
+    }
+  ],
+  "system": {
+    "health": 0.57,
+    "load": 41.76,
+    "uptime_days": 328
+  },
+  "policies": {
+    "security": {
+      "enabled": true
+    },
+    "compliance": {
+      "enabled": true
+    },
+    "access": {
+      "enabled": false
+    },
+    "audit": {
+      "enabled": false
+    }
+  }
+}

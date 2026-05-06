@@ -1,0 +1,129 @@
+{
+  "test_id": 69,
+  "metadata": {
+    "environment": "staging",
+    "region": "ap-northeast-1",
+    "version": "1.4.12"
+  },
+  "users": [
+    {
+      "id": "user_000",
+      "name": "User 0",
+      "role": "user",
+      "active": true,
+      "risk_score": 32
+    },
+    {
+      "id": "user_001",
+      "name": "User 1",
+      "role": "viewer",
+      "active": true,
+      "risk_score": 94
+    },
+    {
+      "id": "user_002",
+      "name": "User 2",
+      "role": "viewer",
+      "active": false,
+      "risk_score": 65
+    },
+    {
+      "id": "user_003",
+      "name": "User 3",
+      "role": "viewer",
+      "active": false,
+      "risk_score": 98
+    },
+    {
+      "id": "user_004",
+      "name": "User 4",
+      "role": "auditor",
+      "active": true,
+      "risk_score": 92
+    },
+    {
+      "id": "user_005",
+      "name": "User 5",
+      "role": "editor",
+      "active": false,
+      "risk_score": 48
+    },
+    {
+      "id": "user_006",
+      "name": "User 6",
+      "role": "editor",
+      "active": false,
+      "risk_score": 66
+    },
+    {
+      "id": "user_007",
+      "name": "User 7",
+      "role": "admin",
+      "active": false,
+      "risk_score": 64
+    },
+    {
+      "id": "user_008",
+      "name": "User 8",
+      "role": "viewer",
+      "active": true,
+      "risk_score": 8
+    }
+  ],
+  "resources": [
+    {
+      "id": "res_000",
+      "type": "database",
+      "public": true,
+      "owner_id": "user_000",
+      "sensitivity": "confidential"
+    },
+    {
+      "id": "res_001",
+      "type": "bucket",
+      "public": true,
+      "owner_id": "user_035",
+      "sensitivity": "public"
+    },
+    {
+      "id": "res_002",
+      "type": "bucket",
+      "public": false,
+      "owner_id": "user_005",
+      "sensitivity": "public"
+    },
+    {
+      "id": "res_003",
+      "type": "bucket",
+      "public": false,
+      "owner_id": "user_091",
+      "sensitivity": "secret"
+    },
+    {
+      "id": "res_004",
+      "type": "database",
+      "public": true,
+      "owner_id": "user_034",
+      "sensitivity": "public"
+    }
+  ],
+  "system": {
+    "health": 0.68,
+    "load": 79.59,
+    "uptime_days": 188
+  },
+  "policies": {
+    "security": {
+      "enabled": true
+    },
+    "compliance": {
+      "enabled": false
+    },
+    "access": {
+      "enabled": true
+    },
+    "audit": {
+      "enabled": true
+    }
+  }
+}

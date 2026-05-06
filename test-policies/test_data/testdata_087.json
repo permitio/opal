@@ -1,0 +1,101 @@
+{
+  "test_id": 87,
+  "metadata": {
+    "environment": "prod",
+    "region": "us-west-2",
+    "version": "1.3.10"
+  },
+  "users": [
+    {
+      "id": "user_000",
+      "name": "User 0",
+      "role": "auditor",
+      "active": true,
+      "risk_score": 33
+    },
+    {
+      "id": "user_001",
+      "name": "User 1",
+      "role": "viewer",
+      "active": false,
+      "risk_score": 64
+    },
+    {
+      "id": "user_002",
+      "name": "User 2",
+      "role": "editor",
+      "active": true,
+      "risk_score": 74
+    },
+    {
+      "id": "user_003",
+      "name": "User 3",
+      "role": "viewer",
+      "active": false,
+      "risk_score": 35
+    },
+    {
+      "id": "user_004",
+      "name": "User 4",
+      "role": "auditor",
+      "active": true,
+      "risk_score": 83
+    },
+    {
+      "id": "user_005",
+      "name": "User 5",
+      "role": "viewer",
+      "active": true,
+      "risk_score": 75
+    }
+  ],
+  "resources": [
+    {
+      "id": "res_000",
+      "type": "api",
+      "public": true,
+      "owner_id": "user_039",
+      "sensitivity": "secret"
+    },
+    {
+      "id": "res_001",
+      "type": "file",
+      "public": false,
+      "owner_id": "user_059",
+      "sensitivity": "confidential"
+    },
+    {
+      "id": "res_002",
+      "type": "bucket",
+      "public": false,
+      "owner_id": "user_031",
+      "sensitivity": "public"
+    },
+    {
+      "id": "res_003",
+      "type": "database",
+      "public": true,
+      "owner_id": "user_038",
+      "sensitivity": "confidential"
+    }
+  ],
+  "system": {
+    "health": 0.76,
+    "load": 56.56,
+    "uptime_days": 274
+  },
+  "policies": {
+    "security": {
+      "enabled": true
+    },
+    "compliance": {
+      "enabled": false
+    },
+    "access": {
+      "enabled": false
+    },
+    "audit": {
+      "enabled": false
+    }
+  }
+}

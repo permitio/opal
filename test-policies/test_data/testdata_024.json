@@ -1,0 +1,45 @@
+{
+  "test_id": 24,
+  "metadata": {
+    "environment": "dev",
+    "region": "us-east-1",
+    "version": "1.2.11"
+  },
+  "users": [
+    {
+      "id": "user_000",
+      "name": "User 0",
+      "role": "user",
+      "active": false,
+      "risk_score": 47
+    }
+  ],
+  "resources": [
+    {
+      "id": "res_000",
+      "type": "service",
+      "public": false,
+      "owner_id": "user_046",
+      "sensitivity": "confidential"
+    }
+  ],
+  "system": {
+    "health": 0.54,
+    "load": 68.12,
+    "uptime_days": 101
+  },
+  "policies": {
+    "security": {
+      "enabled": false
+    },
+    "compliance": {
+      "enabled": true
+    },
+    "access": {
+      "enabled": false
+    },
+    "audit": {
+      "enabled": true
+    }
+  }
+}

@@ -1,0 +1,59 @@
+{
+  "test_id": 19,
+  "metadata": {
+    "environment": "dev",
+    "region": "ap-northeast-1",
+    "version": "1.1.16"
+  },
+  "users": [
+    {
+      "id": "user_000",
+      "name": "User 0",
+      "role": "user",
+      "active": false,
+      "risk_score": 22
+    }
+  ],
+  "resources": [
+    {
+      "id": "res_000",
+      "type": "file",
+      "public": false,
+      "owner_id": "user_034",
+      "sensitivity": "public"
+    },
+    {
+      "id": "res_001",
+      "type": "file",
+      "public": false,
+      "owner_id": "user_037",
+      "sensitivity": "internal"
+    },
+    {
+      "id": "res_002",
+      "type": "database",
+      "public": false,
+      "owner_id": "user_016",
+      "sensitivity": "secret"
+    }
+  ],
+  "system": {
+    "health": 0.72,
+    "load": 38.16,
+    "uptime_days": 171
+  },
+  "policies": {
+    "security": {
+      "enabled": true
+    },
+    "compliance": {
+      "enabled": false
+    },
+    "access": {
+      "enabled": false
+    },
+    "audit": {
+      "enabled": false
+    }
+  }
+}

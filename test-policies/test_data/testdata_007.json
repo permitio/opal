@@ -1,0 +1,45 @@
+{
+  "test_id": 7,
+  "metadata": {
+    "environment": "staging",
+    "region": "us-east-1",
+    "version": "1.2.13"
+  },
+  "users": [
+    {
+      "id": "user_000",
+      "name": "User 0",
+      "role": "user",
+      "active": true,
+      "risk_score": 24
+    }
+  ],
+  "resources": [
+    {
+      "id": "res_000",
+      "type": "database",
+      "public": false,
+      "owner_id": "user_069",
+      "sensitivity": "secret"
+    }
+  ],
+  "system": {
+    "health": 0.55,
+    "load": 87.69,
+    "uptime_days": 326
+  },
+  "policies": {
+    "security": {
+      "enabled": false
+    },
+    "compliance": {
+      "enabled": false
+    },
+    "access": {
+      "enabled": true
+    },
+    "audit": {
+      "enabled": false
+    }
+  }
+}

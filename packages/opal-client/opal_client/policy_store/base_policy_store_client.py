@@ -36,6 +36,19 @@ class AbstractPolicyStore:
     ):
         raise NotImplementedError()
 
+    async def set_policies_atomic(
+        self, bundle: PolicyBundle, transaction_id: Optional[str] = None
+    ):
+        """Apply a complete (non-delta) bundle in a single engine-level
+        activation that triggers at most one compile.
+
+        Engines that support atomic batch writes (e.g. OPA write transactions)
+        override this.  The default implementation falls back to
+        :meth:`set_policies` so stores that do not override it keep working
+        without any changes.
+        """
+        return await self.set_policies(bundle, transaction_id=transaction_id)
+
     async def get_policy_version(self) -> Optional[str]:
         raise NotImplementedError()
 

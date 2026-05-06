@@ -2,7 +2,7 @@ from enum import Enum
 
 from opal_client.engine.options import CedarServerOptions, OpaServerOptions
 from opal_client.policy.options import ConnRetryOptions
-from opal_client.policy_store.schemas import PolicyStoreAuth, PolicyStoreTypes
+from opal_client.policy_store.schemas import InitialPolicyLoadMode, PolicyStoreAuth, PolicyStoreTypes
 from opal_common.confi import Confi, confi
 from opal_common.config import opal_common_config
 from opal_common.fetcher.providers.http_fetch_provider import HttpFetcherConfig
@@ -98,6 +98,23 @@ class OpalClientConfig(Confi):
             "wait_time": 1,
         },
         description="Retry options when connecting to the policy source (e.g. the policy bundle server)",
+    )
+
+    INITIAL_POLICY_LOAD_MODE: InitialPolicyLoadMode = confi.enum(
+        "INITIAL_POLICY_LOAD_MODE",
+        InitialPolicyLoadMode,
+        InitialPolicyLoadMode.PER_MODULE,
+        description=(
+            "How a full (non-delta) policy bundle is applied to the policy store "
+            "on startup and after a Pub/Sub reconnect. "
+            "'per_module' (default) sends one PUT per rego/data module — preserves "
+            "legacy behaviour and is compatible with any OPA version. "
+            "'single_transaction' writes all modules inside a single OPA write "
+            "transaction so OPA compiles exactly once, reducing time-to-readiness "
+            "for large policy repos. Falls back to 'per_module' automatically if the "
+            "connected OPA version does not support the transaction API. "
+            "Delta (patched) updates received over Pub/Sub are unaffected by this setting."
+        ),
     )
 
     DATA_STORE_CONN_RETRY: ConnRetryOptions = confi.model(

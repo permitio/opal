@@ -1,0 +1,115 @@
+{
+  "test_id": 73,
+  "metadata": {
+    "environment": "prod",
+    "region": "us-west-2",
+    "version": "1.4.5"
+  },
+  "users": [
+    {
+      "id": "user_000",
+      "name": "User 0",
+      "role": "viewer",
+      "active": true,
+      "risk_score": 37
+    },
+    {
+      "id": "user_001",
+      "name": "User 1",
+      "role": "admin",
+      "active": true,
+      "risk_score": 44
+    },
+    {
+      "id": "user_002",
+      "name": "User 2",
+      "role": "admin",
+      "active": true,
+      "risk_score": 6
+    },
+    {
+      "id": "user_003",
+      "name": "User 3",
+      "role": "user",
+      "active": false,
+      "risk_score": 44
+    },
+    {
+      "id": "user_004",
+      "name": "User 4",
+      "role": "viewer",
+      "active": true,
+      "risk_score": 15
+    },
+    {
+      "id": "user_005",
+      "name": "User 5",
+      "role": "auditor",
+      "active": false,
+      "risk_score": 2
+    },
+    {
+      "id": "user_006",
+      "name": "User 6",
+      "role": "user",
+      "active": false,
+      "risk_score": 99
+    },
+    {
+      "id": "user_007",
+      "name": "User 7",
+      "role": "admin",
+      "active": false,
+      "risk_score": 48
+    },
+    {
+      "id": "user_008",
+      "name": "User 8",
+      "role": "viewer",
+      "active": false,
+      "risk_score": 79
+    },
+    {
+      "id": "user_009",
+      "name": "User 9",
+      "role": "user",
+      "active": false,
+      "risk_score": 14
+    }
+  ],
+  "resources": [
+    {
+      "id": "res_000",
+      "type": "api",
+      "public": false,
+      "owner_id": "user_081",
+      "sensitivity": "secret"
+    },
+    {
+      "id": "res_001",
+      "type": "bucket",
+      "public": true,
+      "owner_id": "user_005",
+      "sensitivity": "confidential"
+    }
+  ],
+  "system": {
+    "health": 0.65,
+    "load": 71.75,
+    "uptime_days": 275
+  },
+  "policies": {
+    "security": {
+      "enabled": true
+    },
+    "compliance": {
+      "enabled": true
+    },
+    "access": {
+      "enabled": false
+    },
+    "audit": {
+      "enabled": false
+    }
+  }
+}
