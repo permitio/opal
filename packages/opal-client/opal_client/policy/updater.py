@@ -16,6 +16,7 @@ from opal_client.policy_store.base_policy_store_client import BasePolicyStoreCli
 from opal_client.policy_store.policy_store_client_factory import (
     DEFAULT_POLICY_STORE_GETTER,
 )
+from opal_client.policy_store.schemas import InitialPolicyLoadMode
 from opal_common.async_utils import TakeANumberQueue, TasksPool
 from opal_common.config import opal_common_config
 from opal_common.schemas.data import DataUpdateReport
@@ -334,6 +335,18 @@ class PolicyUpdater:
 
         bundle_hash = None if bundle is None else bundle.hash
 
+        # Choose apply strategy for full (non-delta) bundles.
+        # base_hash is None means we asked for the full repo (cold start OR
+        # reconnect-triggered full reload).  Delta bundles always go through
+        # the standard set_policies path regardless of the flag.
+        use_atomic = (
+            base_hash is None
+            and bundle is not None
+            and bundle.old_hash is None
+            and opal_client_config.INITIAL_POLICY_LOAD_MODE
+            == InitialPolicyLoadMode.SINGLE_TRANSACTION
+        )
+
         # store policy bundle in OPA cache
         # We wrap our interaction with the policy store with a transaction, so that
         # if the write-op fails, we will mark the transaction as failed.
@@ -346,7 +359,50 @@ class PolicyUpdater:
                 error=bundle_error,
             )
             if bundle:
-                await store_transaction.set_policies(bundle)
+                apply_start = asyncio.get_event_loop().time()
+                if use_atomic:
+                    logger.info(
+                        "Applying full policy bundle atomically "
+                        "(mode=single_transaction, rego_files={rego_files}, "
+                        "data_files={data_files}, commit_hash={commit_hash})",
+                        rego_files=len(bundle.policy_modules),
+                        data_files=len(bundle.data_modules),
+                        commit_hash=bundle.hash,
+                    )
+                    await store_transaction.set_policies_atomic(bundle)
+                else:
+                    await store_transaction.set_policies(bundle)
+                apply_duration_ms = int(
+                    (asyncio.get_event_loop().time() - apply_start) * 1000
+                )
+                load_mode = (
+                    InitialPolicyLoadMode.SINGLE_TRANSACTION.value
+                    if use_atomic
+                    else InitialPolicyLoadMode.PER_MODULE.value
+                )
+                logger.info(
+                    "policy_full_load_duration_ms={duration_ms} "
+                    "mode={mode} rego_files={rego_files} data_files={data_files}",
+                    duration_ms=apply_duration_ms,
+                    mode=load_mode,
+                    rego_files=len(bundle.policy_modules),
+                    data_files=len(bundle.data_modules),
+                )
+                if opal_common_config.STATISTICS_ENABLED and self._client is not None:
+                    self._tasks.add_task(
+                        self._client.publish(
+                            [opal_common_config.STATISTICS_ADD_CLIENT_CHANNEL],
+                            data={
+                                "event": "policy_full_load_duration",
+                                "client_id": self._opal_client_id,
+                                "duration_ms": apply_duration_ms,
+                                "mode": load_mode,
+                                "rego_files": len(bundle.policy_modules),
+                                "data_files": len(bundle.data_modules),
+                                "commit_hash": bundle.hash,
+                            },
+                        )
+                    )
                 # if we got here, we did not throw during the transaction
                 if self._should_send_reports:
                     # spin off reporting (no need to wait on it)

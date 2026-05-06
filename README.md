@@ -161,3 +161,7 @@ As a contributor, here are the guidelines we would like you to follow:
 
 - Check out [OPToggles](https://github.com/permitio/OPToggles), which enables you to create user targeted feature flags/toggles based on Open Policy managed authorization rules!
 - Check out [Cedar-Agent](https://github.com/permitio/cedar-agent), the easiest way to deploy & run AWS Cedar.
+
+## Performance & Optimization
+
+- 🚀 [Fast Cold-Start Policy Load](FAST-COLD-START.md) — Reduce policy engine time-to-readiness on startup by loading the entire policy bundle in a single OPA transaction instead of per-module. Recommended for large policy repositories (50+ modules).

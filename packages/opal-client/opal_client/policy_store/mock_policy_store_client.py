@@ -46,6 +46,16 @@ class MockPolicyStoreClient(BasePolicyStoreClient):
     ):
         pass
 
+    async def set_policies_atomic(
+        self, bundle: PolicyBundle, transaction_id: Optional[str] = None
+    ):
+        """Records that the atomic path was used, then delegates to set_policies.
+        The ``atomic_load_calls`` counter on the instance can be inspected by
+        tests to assert the correct code path was taken.
+        """
+        self.atomic_load_calls = getattr(self, "atomic_load_calls", 0) + 1
+        return await self.set_policies(bundle, transaction_id=transaction_id)
+
     async def get_policy_version(self) -> Optional[str]:
         return None
 

@@ -137,3 +137,5 @@ dmypy.json
 *.iml
 
 .DS_Store
+
+temp.log
