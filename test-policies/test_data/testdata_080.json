@@ -1,0 +1,115 @@
+{
+  "test_id": 80,
+  "metadata": {
+    "environment": "staging",
+    "region": "ap-northeast-1",
+    "version": "1.0.5"
+  },
+  "users": [
+    {
+      "id": "user_000",
+      "name": "User 0",
+      "role": "editor",
+      "active": false,
+      "risk_score": 82
+    },
+    {
+      "id": "user_001",
+      "name": "User 1",
+      "role": "editor",
+      "active": false,
+      "risk_score": 70
+    },
+    {
+      "id": "user_002",
+      "name": "User 2",
+      "role": "editor",
+      "active": false,
+      "risk_score": 86
+    },
+    {
+      "id": "user_003",
+      "name": "User 3",
+      "role": "editor",
+      "active": true,
+      "risk_score": 97
+    },
+    {
+      "id": "user_004",
+      "name": "User 4",
+      "role": "auditor",
+      "active": false,
+      "risk_score": 48
+    },
+    {
+      "id": "user_005",
+      "name": "User 5",
+      "role": "user",
+      "active": false,
+      "risk_score": 6
+    },
+    {
+      "id": "user_006",
+      "name": "User 6",
+      "role": "auditor",
+      "active": true,
+      "risk_score": 92
+    },
+    {
+      "id": "user_007",
+      "name": "User 7",
+      "role": "editor",
+      "active": true,
+      "risk_score": 47
+    },
+    {
+      "id": "user_008",
+      "name": "User 8",
+      "role": "admin",
+      "active": false,
+      "risk_score": 37
+    }
+  ],
+  "resources": [
+    {
+      "id": "res_000",
+      "type": "file",
+      "public": false,
+      "owner_id": "user_000",
+      "sensitivity": "public"
+    },
+    {
+      "id": "res_001",
+      "type": "file",
+      "public": false,
+      "owner_id": "user_057",
+      "sensitivity": "confidential"
+    },
+    {
+      "id": "res_002",
+      "type": "bucket",
+      "public": true,
+      "owner_id": "user_080",
+      "sensitivity": "public"
+    }
+  ],
+  "system": {
+    "health": 0.59,
+    "load": 10.93,
+    "uptime_days": 238
+  },
+  "policies": {
+    "security": {
+      "enabled": false
+    },
+    "compliance": {
+      "enabled": true
+    },
+    "access": {
+      "enabled": false
+    },
+    "audit": {
+      "enabled": false
+    }
+  }
+}

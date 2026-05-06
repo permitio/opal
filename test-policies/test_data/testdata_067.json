@@ -1,0 +1,66 @@
+{
+  "test_id": 67,
+  "metadata": {
+    "environment": "staging",
+    "region": "ap-northeast-1",
+    "version": "1.1.4"
+  },
+  "users": [
+    {
+      "id": "user_000",
+      "name": "User 0",
+      "role": "viewer",
+      "active": false,
+      "risk_score": 25
+    }
+  ],
+  "resources": [
+    {
+      "id": "res_000",
+      "type": "file",
+      "public": true,
+      "owner_id": "user_007",
+      "sensitivity": "internal"
+    },
+    {
+      "id": "res_001",
+      "type": "file",
+      "public": true,
+      "owner_id": "user_069",
+      "sensitivity": "internal"
+    },
+    {
+      "id": "res_002",
+      "type": "service",
+      "public": false,
+      "owner_id": "user_028",
+      "sensitivity": "internal"
+    },
+    {
+      "id": "res_003",
+      "type": "file",
+      "public": false,
+      "owner_id": "user_094",
+      "sensitivity": "internal"
+    }
+  ],
+  "system": {
+    "health": 0.82,
+    "load": 84.86,
+    "uptime_days": 228
+  },
+  "policies": {
+    "security": {
+      "enabled": false
+    },
+    "compliance": {
+      "enabled": false
+    },
+    "access": {
+      "enabled": true
+    },
+    "audit": {
+      "enabled": false
+    }
+  }
+}

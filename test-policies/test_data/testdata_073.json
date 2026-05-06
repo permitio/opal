@@ -1,0 +1,122 @@
+{
+  "test_id": 73,
+  "metadata": {
+    "environment": "dev",
+    "region": "us-east-1",
+    "version": "1.4.20"
+  },
+  "users": [
+    {
+      "id": "user_000",
+      "name": "User 0",
+      "role": "viewer",
+      "active": true,
+      "risk_score": 58
+    },
+    {
+      "id": "user_001",
+      "name": "User 1",
+      "role": "user",
+      "active": true,
+      "risk_score": 78
+    },
+    {
+      "id": "user_002",
+      "name": "User 2",
+      "role": "auditor",
+      "active": true,
+      "risk_score": 62
+    },
+    {
+      "id": "user_003",
+      "name": "User 3",
+      "role": "editor",
+      "active": true,
+      "risk_score": 49
+    },
+    {
+      "id": "user_004",
+      "name": "User 4",
+      "role": "auditor",
+      "active": false,
+      "risk_score": 57
+    },
+    {
+      "id": "user_005",
+      "name": "User 5",
+      "role": "user",
+      "active": true,
+      "risk_score": 85
+    },
+    {
+      "id": "user_006",
+      "name": "User 6",
+      "role": "admin",
+      "active": false,
+      "risk_score": 17
+    },
+    {
+      "id": "user_007",
+      "name": "User 7",
+      "role": "auditor",
+      "active": false,
+      "risk_score": 13
+    },
+    {
+      "id": "user_008",
+      "name": "User 8",
+      "role": "editor",
+      "active": false,
+      "risk_score": 17
+    },
+    {
+      "id": "user_009",
+      "name": "User 9",
+      "role": "auditor",
+      "active": true,
+      "risk_score": 39
+    }
+  ],
+  "resources": [
+    {
+      "id": "res_000",
+      "type": "service",
+      "public": false,
+      "owner_id": "user_036",
+      "sensitivity": "internal"
+    },
+    {
+      "id": "res_001",
+      "type": "api",
+      "public": true,
+      "owner_id": "user_097",
+      "sensitivity": "confidential"
+    },
+    {
+      "id": "res_002",
+      "type": "service",
+      "public": false,
+      "owner_id": "user_086",
+      "sensitivity": "confidential"
+    }
+  ],
+  "system": {
+    "health": 0.68,
+    "load": 99.76,
+    "uptime_days": 237
+  },
+  "policies": {
+    "security": {
+      "enabled": false
+    },
+    "compliance": {
+      "enabled": true
+    },
+    "access": {
+      "enabled": false
+    },
+    "audit": {
+      "enabled": false
+    }
+  }
+}

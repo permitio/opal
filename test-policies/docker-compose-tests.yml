@@ -1,0 +1,23 @@
+version: '3.8'
+
+services:
+  opa-test-runner:
+    build:
+      context: .
+      dockerfile: Dockerfile.opa-test
+    container_name: opal-policy-tests
+    volumes:
+      - ./policies:/app/policies:ro
+      - ./test_data:/app/test_data:ro
+      - ./policy_tests:/app/policy_tests:ro
+      - ./results:/app/results:rw
+    environment:
+      - OPA_LOG_LEVEL=debug
+    working_dir: /app
+    command: /entrypoint.sh
+    networks:
+      - test-network
+
+networks:
+  test-network:
+    driver: bridge

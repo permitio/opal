@@ -1,0 +1,52 @@
+{
+  "test_id": 52,
+  "metadata": {
+    "environment": "prod",
+    "region": "ap-northeast-1",
+    "version": "1.0.20"
+  },
+  "users": [
+    {
+      "id": "user_000",
+      "name": "User 0",
+      "role": "auditor",
+      "active": true,
+      "risk_score": 89
+    },
+    {
+      "id": "user_001",
+      "name": "User 1",
+      "role": "viewer",
+      "active": true,
+      "risk_score": 92
+    }
+  ],
+  "resources": [
+    {
+      "id": "res_000",
+      "type": "api",
+      "public": true,
+      "owner_id": "user_098",
+      "sensitivity": "confidential"
+    }
+  ],
+  "system": {
+    "health": 0.56,
+    "load": 64.05,
+    "uptime_days": 337
+  },
+  "policies": {
+    "security": {
+      "enabled": false
+    },
+    "compliance": {
+      "enabled": false
+    },
+    "access": {
+      "enabled": true
+    },
+    "audit": {
+      "enabled": false
+    }
+  }
+}

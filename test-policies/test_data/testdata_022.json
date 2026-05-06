@@ -1,0 +1,108 @@
+{
+  "test_id": 22,
+  "metadata": {
+    "environment": "prod",
+    "region": "us-west-2",
+    "version": "1.2.11"
+  },
+  "users": [
+    {
+      "id": "user_000",
+      "name": "User 0",
+      "role": "user",
+      "active": true,
+      "risk_score": 40
+    },
+    {
+      "id": "user_001",
+      "name": "User 1",
+      "role": "auditor",
+      "active": false,
+      "risk_score": 83
+    },
+    {
+      "id": "user_002",
+      "name": "User 2",
+      "role": "user",
+      "active": true,
+      "risk_score": 60
+    },
+    {
+      "id": "user_003",
+      "name": "User 3",
+      "role": "auditor",
+      "active": false,
+      "risk_score": 33
+    },
+    {
+      "id": "user_004",
+      "name": "User 4",
+      "role": "editor",
+      "active": true,
+      "risk_score": 89
+    },
+    {
+      "id": "user_005",
+      "name": "User 5",
+      "role": "editor",
+      "active": true,
+      "risk_score": 68
+    }
+  ],
+  "resources": [
+    {
+      "id": "res_000",
+      "type": "api",
+      "public": true,
+      "owner_id": "user_089",
+      "sensitivity": "public"
+    },
+    {
+      "id": "res_001",
+      "type": "api",
+      "public": true,
+      "owner_id": "user_078",
+      "sensitivity": "confidential"
+    },
+    {
+      "id": "res_002",
+      "type": "bucket",
+      "public": false,
+      "owner_id": "user_039",
+      "sensitivity": "public"
+    },
+    {
+      "id": "res_003",
+      "type": "database",
+      "public": true,
+      "owner_id": "user_058",
+      "sensitivity": "public"
+    },
+    {
+      "id": "res_004",
+      "type": "bucket",
+      "public": true,
+      "owner_id": "user_049",
+      "sensitivity": "secret"
+    }
+  ],
+  "system": {
+    "health": 0.96,
+    "load": 21.0,
+    "uptime_days": 190
+  },
+  "policies": {
+    "security": {
+      "enabled": true
+    },
+    "compliance": {
+      "enabled": false
+    },
+    "access": {
+      "enabled": false
+    },
+    "audit": {
+      "enabled": false
+    }
+  }
+}

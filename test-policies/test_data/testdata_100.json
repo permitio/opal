@@ -1,0 +1,101 @@
+{
+  "test_id": 100,
+  "metadata": {
+    "environment": "staging",
+    "region": "eu-west-1",
+    "version": "1.4.2"
+  },
+  "users": [
+    {
+      "id": "user_000",
+      "name": "User 0",
+      "role": "user",
+      "active": false,
+      "risk_score": 57
+    },
+    {
+      "id": "user_001",
+      "name": "User 1",
+      "role": "auditor",
+      "active": true,
+      "risk_score": 39
+    },
+    {
+      "id": "user_002",
+      "name": "User 2",
+      "role": "viewer",
+      "active": true,
+      "risk_score": 84
+    },
+    {
+      "id": "user_003",
+      "name": "User 3",
+      "role": "editor",
+      "active": false,
+      "risk_score": 89
+    },
+    {
+      "id": "user_004",
+      "name": "User 4",
+      "role": "auditor",
+      "active": false,
+      "risk_score": 31
+    },
+    {
+      "id": "user_005",
+      "name": "User 5",
+      "role": "editor",
+      "active": false,
+      "risk_score": 56
+    },
+    {
+      "id": "user_006",
+      "name": "User 6",
+      "role": "admin",
+      "active": true,
+      "risk_score": 55
+    }
+  ],
+  "resources": [
+    {
+      "id": "res_000",
+      "type": "file",
+      "public": false,
+      "owner_id": "user_090",
+      "sensitivity": "confidential"
+    },
+    {
+      "id": "res_001",
+      "type": "database",
+      "public": false,
+      "owner_id": "user_098",
+      "sensitivity": "public"
+    },
+    {
+      "id": "res_002",
+      "type": "database",
+      "public": true,
+      "owner_id": "user_073",
+      "sensitivity": "public"
+    }
+  ],
+  "system": {
+    "health": 0.62,
+    "load": 22.95,
+    "uptime_days": 51
+  },
+  "policies": {
+    "security": {
+      "enabled": false
+    },
+    "compliance": {
+      "enabled": false
+    },
+    "access": {
+      "enabled": false
+    },
+    "audit": {
+      "enabled": true
+    }
+  }
+}

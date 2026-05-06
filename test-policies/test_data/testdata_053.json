@@ -1,0 +1,94 @@
+{
+  "test_id": 53,
+  "metadata": {
+    "environment": "dev",
+    "region": "ap-northeast-1",
+    "version": "1.2.1"
+  },
+  "users": [
+    {
+      "id": "user_000",
+      "name": "User 0",
+      "role": "auditor",
+      "active": false,
+      "risk_score": 84
+    },
+    {
+      "id": "user_001",
+      "name": "User 1",
+      "role": "viewer",
+      "active": false,
+      "risk_score": 94
+    },
+    {
+      "id": "user_002",
+      "name": "User 2",
+      "role": "auditor",
+      "active": false,
+      "risk_score": 2
+    },
+    {
+      "id": "user_003",
+      "name": "User 3",
+      "role": "user",
+      "active": true,
+      "risk_score": 55
+    },
+    {
+      "id": "user_004",
+      "name": "User 4",
+      "role": "viewer",
+      "active": true,
+      "risk_score": 3
+    },
+    {
+      "id": "user_005",
+      "name": "User 5",
+      "role": "user",
+      "active": false,
+      "risk_score": 86
+    },
+    {
+      "id": "user_006",
+      "name": "User 6",
+      "role": "user",
+      "active": true,
+      "risk_score": 83
+    },
+    {
+      "id": "user_007",
+      "name": "User 7",
+      "role": "auditor",
+      "active": false,
+      "risk_score": 52
+    }
+  ],
+  "resources": [
+    {
+      "id": "res_000",
+      "type": "bucket",
+      "public": false,
+      "owner_id": "user_046",
+      "sensitivity": "internal"
+    }
+  ],
+  "system": {
+    "health": 0.63,
+    "load": 81.01,
+    "uptime_days": 108
+  },
+  "policies": {
+    "security": {
+      "enabled": false
+    },
+    "compliance": {
+      "enabled": true
+    },
+    "access": {
+      "enabled": true
+    },
+    "audit": {
+      "enabled": true
+    }
+  }
+}

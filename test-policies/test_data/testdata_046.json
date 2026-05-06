@@ -1,0 +1,108 @@
+{
+  "test_id": 46,
+  "metadata": {
+    "environment": "dev",
+    "region": "us-east-1",
+    "version": "1.2.16"
+  },
+  "users": [
+    {
+      "id": "user_000",
+      "name": "User 0",
+      "role": "editor",
+      "active": true,
+      "risk_score": 8
+    },
+    {
+      "id": "user_001",
+      "name": "User 1",
+      "role": "auditor",
+      "active": true,
+      "risk_score": 53
+    },
+    {
+      "id": "user_002",
+      "name": "User 2",
+      "role": "viewer",
+      "active": false,
+      "risk_score": 5
+    },
+    {
+      "id": "user_003",
+      "name": "User 3",
+      "role": "viewer",
+      "active": true,
+      "risk_score": 25
+    },
+    {
+      "id": "user_004",
+      "name": "User 4",
+      "role": "user",
+      "active": false,
+      "risk_score": 56
+    },
+    {
+      "id": "user_005",
+      "name": "User 5",
+      "role": "viewer",
+      "active": true,
+      "risk_score": 7
+    },
+    {
+      "id": "user_006",
+      "name": "User 6",
+      "role": "user",
+      "active": true,
+      "risk_score": 52
+    }
+  ],
+  "resources": [
+    {
+      "id": "res_000",
+      "type": "service",
+      "public": false,
+      "owner_id": "user_012",
+      "sensitivity": "public"
+    },
+    {
+      "id": "res_001",
+      "type": "bucket",
+      "public": false,
+      "owner_id": "user_051",
+      "sensitivity": "secret"
+    },
+    {
+      "id": "res_002",
+      "type": "bucket",
+      "public": false,
+      "owner_id": "user_026",
+      "sensitivity": "internal"
+    },
+    {
+      "id": "res_003",
+      "type": "file",
+      "public": false,
+      "owner_id": "user_013",
+      "sensitivity": "internal"
+    }
+  ],
+  "system": {
+    "health": 0.52,
+    "load": 21.73,
+    "uptime_days": 364
+  },
+  "policies": {
+    "security": {
+      "enabled": false
+    },
+    "compliance": {
+      "enabled": false
+    },
+    "access": {
+      "enabled": true
+    },
+    "audit": {
+      "enabled": true
+    }
+  }
+}

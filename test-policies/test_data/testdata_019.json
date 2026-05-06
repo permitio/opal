@@ -1,0 +1,52 @@
+{
+  "test_id": 19,
+  "metadata": {
+    "environment": "dev",
+    "region": "us-east-1",
+    "version": "1.5.18"
+  },
+  "users": [
+    {
+      "id": "user_000",
+      "name": "User 0",
+      "role": "user",
+      "active": true,
+      "risk_score": 5
+    },
+    {
+      "id": "user_001",
+      "name": "User 1",
+      "role": "auditor",
+      "active": true,
+      "risk_score": 8
+    }
+  ],
+  "resources": [
+    {
+      "id": "res_000",
+      "type": "file",
+      "public": false,
+      "owner_id": "user_072",
+      "sensitivity": "secret"
+    }
+  ],
+  "system": {
+    "health": 0.63,
+    "load": 41.34,
+    "uptime_days": 70
+  },
+  "policies": {
+    "security": {
+      "enabled": false
+    },
+    "compliance": {
+      "enabled": false
+    },
+    "access": {
+      "enabled": true
+    },
+    "audit": {
+      "enabled": true
+    }
+  }
+}

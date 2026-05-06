@@ -1,0 +1,94 @@
+{
+  "test_id": 57,
+  "metadata": {
+    "environment": "prod",
+    "region": "us-west-2",
+    "version": "1.5.0"
+  },
+  "users": [
+    {
+      "id": "user_000",
+      "name": "User 0",
+      "role": "viewer",
+      "active": true,
+      "risk_score": 24
+    },
+    {
+      "id": "user_001",
+      "name": "User 1",
+      "role": "user",
+      "active": false,
+      "risk_score": 45
+    },
+    {
+      "id": "user_002",
+      "name": "User 2",
+      "role": "auditor",
+      "active": false,
+      "risk_score": 62
+    },
+    {
+      "id": "user_003",
+      "name": "User 3",
+      "role": "auditor",
+      "active": false,
+      "risk_score": 36
+    }
+  ],
+  "resources": [
+    {
+      "id": "res_000",
+      "type": "file",
+      "public": false,
+      "owner_id": "user_014",
+      "sensitivity": "public"
+    },
+    {
+      "id": "res_001",
+      "type": "database",
+      "public": false,
+      "owner_id": "user_084",
+      "sensitivity": "internal"
+    },
+    {
+      "id": "res_002",
+      "type": "service",
+      "public": true,
+      "owner_id": "user_067",
+      "sensitivity": "internal"
+    },
+    {
+      "id": "res_003",
+      "type": "api",
+      "public": true,
+      "owner_id": "user_031",
+      "sensitivity": "internal"
+    },
+    {
+      "id": "res_004",
+      "type": "api",
+      "public": true,
+      "owner_id": "user_028",
+      "sensitivity": "secret"
+    }
+  ],
+  "system": {
+    "health": 0.53,
+    "load": 23.62,
+    "uptime_days": 201
+  },
+  "policies": {
+    "security": {
+      "enabled": true
+    },
+    "compliance": {
+      "enabled": true
+    },
+    "access": {
+      "enabled": false
+    },
+    "audit": {
+      "enabled": true
+    }
+  }
+}

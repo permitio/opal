@@ -1,0 +1,80 @@
+{
+  "test_id": 35,
+  "metadata": {
+    "environment": "staging",
+    "region": "ap-northeast-1",
+    "version": "1.1.20"
+  },
+  "users": [
+    {
+      "id": "user_000",
+      "name": "User 0",
+      "role": "admin",
+      "active": true,
+      "risk_score": 41
+    },
+    {
+      "id": "user_001",
+      "name": "User 1",
+      "role": "editor",
+      "active": true,
+      "risk_score": 92
+    },
+    {
+      "id": "user_002",
+      "name": "User 2",
+      "role": "admin",
+      "active": false,
+      "risk_score": 72
+    },
+    {
+      "id": "user_003",
+      "name": "User 3",
+      "role": "auditor",
+      "active": true,
+      "risk_score": 64
+    },
+    {
+      "id": "user_004",
+      "name": "User 4",
+      "role": "editor",
+      "active": false,
+      "risk_score": 73
+    },
+    {
+      "id": "user_005",
+      "name": "User 5",
+      "role": "viewer",
+      "active": true,
+      "risk_score": 90
+    }
+  ],
+  "resources": [
+    {
+      "id": "res_000",
+      "type": "database",
+      "public": false,
+      "owner_id": "user_043",
+      "sensitivity": "internal"
+    }
+  ],
+  "system": {
+    "health": 0.72,
+    "load": 68.35,
+    "uptime_days": 88
+  },
+  "policies": {
+    "security": {
+      "enabled": true
+    },
+    "compliance": {
+      "enabled": false
+    },
+    "access": {
+      "enabled": true
+    },
+    "audit": {
+      "enabled": false
+    }
+  }
+}

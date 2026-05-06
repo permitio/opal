@@ -1,0 +1,160 @@
+╔════════════════════════════════════════════════════════════════════════════╗
+║                  OPAL TEST POLICIES - DOCKER TEST REPORT                   ║
+╚════════════════════════════════════════════════════════════════════════════╝
+
+Test Execution Start: 2026-05-06 11:17:16
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📊 ASSET INVENTORY
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Total Policies: 1000
+Total Test Data Files: 100
+Policies Directory Size: 4.0M
+Test Data Directory Size: 400K
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+✓ OPA INFORMATION
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Version: 1.16.1
+Build Commit: a72f9fa5e7c5e10a614f44dbe40700f90816d59d-dirty
+Build Timestamp: 2026-05-01T11:58:59Z
+Build Hostname: 
+Go Version: go1.26.2
+Platform: linux/arm64
+Rego Version: v1
+WebAssembly: available
+
+Testing OPA compilation...
+  ✓ Compilation successful
+  Output WASM file size: 52K
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+✓ RUNNING PYTEST TEST SUITE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+============================= test session starts ==============================
+platform linux -- Python 3.11.15, pytest-9.0.3, pluggy-1.6.0 -- /usr/local/bin/python3
+cachedir: .pytest_cache
+metadata: {'Python': '3.11.15', 'Platform': 'Linux-6.12.76-linuxkit-aarch64-with-glibc2.41', 'Packages': {'pytest': '9.0.3', 'pluggy': '1.6.0'}, 'Plugins': {'json-report': '1.5.0', 'metadata': '3.1.1'}}
+rootdir: /app/policy_tests
+plugins: json-report-1.5.0, metadata-3.1.1
+collecting ... collected 9 items
+
+test_policies.py::TestREGOPolicies::test_policies_exist PASSED           [ 11%]
+test_policies.py::TestREGOPolicies::test_test_data_exists PASSED         [ 22%]
+test_policies.py::TestREGOPolicies::test_policies_have_valid_rego_syntax PASSED [ 33%]
+test_policies.py::TestREGOPolicies::test_policies_compile PASSED         [ 44%]
+test_policies.py::TestREGOPolicies::test_policies_have_package_names PASSED [ 55%]
+test_policies.py::TestREGOPolicies::test_sample_policy_evaluation PASSED [ 66%]
+test_policies.py::TestREGOPolicies::test_policies_are_deterministic PASSED [ 77%]
+test_policies.py::TestDataQuality::test_all_data_files_are_valid_json PASSED [ 88%]
+test_policies.py::TestDataQuality::test_data_files_have_required_fields PASSED [100%]
+
+=============================== warnings summary ===============================
+../../usr/local/lib/python3.11/site-packages/_pytest/cacheprovider.py:475
+  /usr/local/lib/python3.11/site-packages/_pytest/cacheprovider.py:475: PytestCacheWarning: could not create cache path /app/policy_tests/.pytest_cache/v/cache/nodeids: [Errno 30] Read-only file system: '/app/policy_tests/pytest-cache-files-arjidl_8'
+    config.cache.set("cache/nodeids", sorted(self.cached_nodeids))
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+========================= 9 passed, 1 warning in 3.05s =========================
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📋 TEST SUMMARY
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Asset Inventory:
+  Policies: 
+  Test Data Files: 
+
+╔════════════════════════════════════════════════════════════════════════════╗
+║                        ✅ ALL TESTS PASSED ✅                              ║
+╚════════════════════════════════════════════════════════════════════════════╝
+
+Test Execution End: 2026-05-06 11:17:19
+
+Reports generated:
+  - Text report: /app/results/test_report.txt
+  - WASM output: /app/results/policies.wasm
+
+╔════════════════════════════════════════════════════════════════════════════╗
+║                  OPAL TEST POLICIES - DOCKER TEST REPORT                   ║
+╚════════════════════════════════════════════════════════════════════════════╝
+
+Test Execution Start: 2026-05-06 11:18:59
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📊 ASSET INVENTORY
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Total Policies: 1000
+Total Test Data Files: 100
+Policies Directory Size: 4.0M
+Test Data Directory Size: 400K
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+✓ OPA INFORMATION
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Version: 1.16.1
+Build Commit: a72f9fa5e7c5e10a614f44dbe40700f90816d59d-dirty
+Build Timestamp: 2026-05-01T11:58:59Z
+Build Hostname: 
+Go Version: go1.26.2
+Platform: linux/arm64
+Rego Version: v1
+WebAssembly: available
+
+Testing OPA compilation...
+  ✓ Compilation successful
+  Output WASM file size: 52K
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+✓ RUNNING PYTEST TEST SUITE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+============================= test session starts ==============================
+platform linux -- Python 3.11.15, pytest-9.0.3, pluggy-1.6.0 -- /usr/local/bin/python3
+cachedir: .pytest_cache
+metadata: {'Python': '3.11.15', 'Platform': 'Linux-6.12.76-linuxkit-aarch64-with-glibc2.41', 'Packages': {'pytest': '9.0.3', 'pluggy': '1.6.0'}, 'Plugins': {'json-report': '1.5.0', 'metadata': '3.1.1'}}
+rootdir: /app/policy_tests
+plugins: json-report-1.5.0, metadata-3.1.1
+collecting ... collected 9 items
+
+test_policies.py::TestREGOPolicies::test_policies_exist PASSED           [ 11%]
+test_policies.py::TestREGOPolicies::test_test_data_exists PASSED         [ 22%]
+test_policies.py::TestREGOPolicies::test_policies_have_valid_rego_syntax PASSED [ 33%]
+test_policies.py::TestREGOPolicies::test_policies_compile PASSED         [ 44%]
+test_policies.py::TestREGOPolicies::test_policies_have_package_names PASSED [ 55%]
+test_policies.py::TestREGOPolicies::test_sample_policy_evaluation PASSED [ 66%]
+test_policies.py::TestREGOPolicies::test_policies_are_deterministic PASSED [ 77%]
+test_policies.py::TestDataQuality::test_all_data_files_are_valid_json PASSED [ 88%]
+test_policies.py::TestDataQuality::test_data_files_have_required_fields PASSED [100%]
+
+=============================== warnings summary ===============================
+../../usr/local/lib/python3.11/site-packages/_pytest/cacheprovider.py:475
+  /usr/local/lib/python3.11/site-packages/_pytest/cacheprovider.py:475: PytestCacheWarning: could not create cache path /app/policy_tests/.pytest_cache/v/cache/nodeids: [Errno 30] Read-only file system: '/app/policy_tests/pytest-cache-files-41r8w0my'
+    config.cache.set("cache/nodeids", sorted(self.cached_nodeids))
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+========================= 9 passed, 1 warning in 3.33s =========================
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📋 TEST SUMMARY
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Asset Inventory:
+  Policies: 
+  Test Data Files: 
+
+╔════════════════════════════════════════════════════════════════════════════╗
+║                        ✅ ALL TESTS PASSED ✅                              ║
+╚════════════════════════════════════════════════════════════════════════════╝
+
+Test Execution End: 2026-05-06 11:19:03
+
+Reports generated:
+  - Text report: /app/results/test_report.txt
+  - WASM output: /app/results/policies.wasm
+

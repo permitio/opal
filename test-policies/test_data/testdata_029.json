@@ -1,0 +1,45 @@
+{
+  "test_id": 29,
+  "metadata": {
+    "environment": "staging",
+    "region": "eu-west-1",
+    "version": "1.4.5"
+  },
+  "users": [
+    {
+      "id": "user_000",
+      "name": "User 0",
+      "role": "auditor",
+      "active": false,
+      "risk_score": 85
+    }
+  ],
+  "resources": [
+    {
+      "id": "res_000",
+      "type": "api",
+      "public": false,
+      "owner_id": "user_084",
+      "sensitivity": "internal"
+    }
+  ],
+  "system": {
+    "health": 0.81,
+    "load": 15.83,
+    "uptime_days": 47
+  },
+  "policies": {
+    "security": {
+      "enabled": true
+    },
+    "compliance": {
+      "enabled": false
+    },
+    "access": {
+      "enabled": false
+    },
+    "audit": {
+      "enabled": false
+    }
+  }
+}

@@ -1,0 +1,101 @@
+{
+  "test_id": 32,
+  "metadata": {
+    "environment": "staging",
+    "region": "us-east-1",
+    "version": "1.4.13"
+  },
+  "users": [
+    {
+      "id": "user_000",
+      "name": "User 0",
+      "role": "viewer",
+      "active": false,
+      "risk_score": 76
+    },
+    {
+      "id": "user_001",
+      "name": "User 1",
+      "role": "user",
+      "active": true,
+      "risk_score": 86
+    },
+    {
+      "id": "user_002",
+      "name": "User 2",
+      "role": "user",
+      "active": false,
+      "risk_score": 40
+    },
+    {
+      "id": "user_003",
+      "name": "User 3",
+      "role": "auditor",
+      "active": false,
+      "risk_score": 63
+    },
+    {
+      "id": "user_004",
+      "name": "User 4",
+      "role": "auditor",
+      "active": true,
+      "risk_score": 84
+    },
+    {
+      "id": "user_005",
+      "name": "User 5",
+      "role": "viewer",
+      "active": false,
+      "risk_score": 85
+    },
+    {
+      "id": "user_006",
+      "name": "User 6",
+      "role": "editor",
+      "active": false,
+      "risk_score": 31
+    },
+    {
+      "id": "user_007",
+      "name": "User 7",
+      "role": "editor",
+      "active": false,
+      "risk_score": 65
+    },
+    {
+      "id": "user_008",
+      "name": "User 8",
+      "role": "user",
+      "active": true,
+      "risk_score": 97
+    }
+  ],
+  "resources": [
+    {
+      "id": "res_000",
+      "type": "service",
+      "public": true,
+      "owner_id": "user_054",
+      "sensitivity": "confidential"
+    }
+  ],
+  "system": {
+    "health": 0.67,
+    "load": 13.75,
+    "uptime_days": 358
+  },
+  "policies": {
+    "security": {
+      "enabled": false
+    },
+    "compliance": {
+      "enabled": false
+    },
+    "access": {
+      "enabled": false
+    },
+    "audit": {
+      "enabled": true
+    }
+  }
+}

@@ -1,0 +1,73 @@
+{
+  "test_id": 42,
+  "metadata": {
+    "environment": "prod",
+    "region": "eu-west-1",
+    "version": "1.1.2"
+  },
+  "users": [
+    {
+      "id": "user_000",
+      "name": "User 0",
+      "role": "viewer",
+      "active": false,
+      "risk_score": 58
+    },
+    {
+      "id": "user_001",
+      "name": "User 1",
+      "role": "user",
+      "active": true,
+      "risk_score": 31
+    },
+    {
+      "id": "user_002",
+      "name": "User 2",
+      "role": "user",
+      "active": false,
+      "risk_score": 3
+    },
+    {
+      "id": "user_003",
+      "name": "User 3",
+      "role": "user",
+      "active": false,
+      "risk_score": 4
+    },
+    {
+      "id": "user_004",
+      "name": "User 4",
+      "role": "auditor",
+      "active": false,
+      "risk_score": 66
+    }
+  ],
+  "resources": [
+    {
+      "id": "res_000",
+      "type": "service",
+      "public": false,
+      "owner_id": "user_088",
+      "sensitivity": "confidential"
+    }
+  ],
+  "system": {
+    "health": 0.95,
+    "load": 16.39,
+    "uptime_days": 215
+  },
+  "policies": {
+    "security": {
+      "enabled": true
+    },
+    "compliance": {
+      "enabled": true
+    },
+    "access": {
+      "enabled": false
+    },
+    "audit": {
+      "enabled": false
+    }
+  }
+}

@@ -1,0 +1,32 @@
+package governance.validation.action.check.data.policy_0095
+
+# Auto-generated policy 95
+# Package: governance.validation.action.check.data
+
+# Metadata
+metadata := {
+    "policy_id": "0095",
+    "version": "1.0",
+    "created": "2026-05-06",
+}
+
+# Rules
+policy_0095_allowed if {
+    input.user.role == "admin"
+}
+policy_0095_allowed if {
+    input.user.active
+    input.resource.public
+}
+policy_0095_allowed if {
+    data.policies.governance.enabled
+}
+
+# Utility function for user info
+get_user_info if {
+    user := {
+        "id": input.user.id,
+        "role": input.user.role,
+        "active": input.user.active,
+    }
+}

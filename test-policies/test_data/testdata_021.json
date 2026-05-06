@@ -1,0 +1,87 @@
+{
+  "test_id": 21,
+  "metadata": {
+    "environment": "dev",
+    "region": "eu-west-1",
+    "version": "1.4.7"
+  },
+  "users": [
+    {
+      "id": "user_000",
+      "name": "User 0",
+      "role": "admin",
+      "active": true,
+      "risk_score": 52
+    },
+    {
+      "id": "user_001",
+      "name": "User 1",
+      "role": "admin",
+      "active": false,
+      "risk_score": 31
+    },
+    {
+      "id": "user_002",
+      "name": "User 2",
+      "role": "user",
+      "active": false,
+      "risk_score": 57
+    },
+    {
+      "id": "user_003",
+      "name": "User 3",
+      "role": "user",
+      "active": true,
+      "risk_score": 2
+    },
+    {
+      "id": "user_004",
+      "name": "User 4",
+      "role": "viewer",
+      "active": true,
+      "risk_score": 95
+    },
+    {
+      "id": "user_005",
+      "name": "User 5",
+      "role": "admin",
+      "active": false,
+      "risk_score": 20
+    },
+    {
+      "id": "user_006",
+      "name": "User 6",
+      "role": "admin",
+      "active": false,
+      "risk_score": 85
+    }
+  ],
+  "resources": [
+    {
+      "id": "res_000",
+      "type": "bucket",
+      "public": false,
+      "owner_id": "user_042",
+      "sensitivity": "confidential"
+    }
+  ],
+  "system": {
+    "health": 0.67,
+    "load": 98.91,
+    "uptime_days": 238
+  },
+  "policies": {
+    "security": {
+      "enabled": false
+    },
+    "compliance": {
+      "enabled": false
+    },
+    "access": {
+      "enabled": false
+    },
+    "audit": {
+      "enabled": false
+    }
+  }
+}

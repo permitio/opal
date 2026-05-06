@@ -1,0 +1,73 @@
+{
+  "test_id": 94,
+  "metadata": {
+    "environment": "prod",
+    "region": "us-east-1",
+    "version": "1.2.17"
+  },
+  "users": [
+    {
+      "id": "user_000",
+      "name": "User 0",
+      "role": "admin",
+      "active": false,
+      "risk_score": 71
+    },
+    {
+      "id": "user_001",
+      "name": "User 1",
+      "role": "admin",
+      "active": true,
+      "risk_score": 12
+    },
+    {
+      "id": "user_002",
+      "name": "User 2",
+      "role": "editor",
+      "active": true,
+      "risk_score": 85
+    },
+    {
+      "id": "user_003",
+      "name": "User 3",
+      "role": "auditor",
+      "active": true,
+      "risk_score": 38
+    },
+    {
+      "id": "user_004",
+      "name": "User 4",
+      "role": "viewer",
+      "active": false,
+      "risk_score": 31
+    }
+  ],
+  "resources": [
+    {
+      "id": "res_000",
+      "type": "database",
+      "public": true,
+      "owner_id": "user_065",
+      "sensitivity": "internal"
+    }
+  ],
+  "system": {
+    "health": 0.73,
+    "load": 20.48,
+    "uptime_days": 95
+  },
+  "policies": {
+    "security": {
+      "enabled": true
+    },
+    "compliance": {
+      "enabled": false
+    },
+    "access": {
+      "enabled": false
+    },
+    "audit": {
+      "enabled": false
+    }
+  }
+}

@@ -1,0 +1,59 @@
+{
+  "test_id": 75,
+  "metadata": {
+    "environment": "dev",
+    "region": "eu-west-1",
+    "version": "1.1.17"
+  },
+  "users": [
+    {
+      "id": "user_000",
+      "name": "User 0",
+      "role": "auditor",
+      "active": true,
+      "risk_score": 10
+    },
+    {
+      "id": "user_001",
+      "name": "User 1",
+      "role": "viewer",
+      "active": false,
+      "risk_score": 62
+    }
+  ],
+  "resources": [
+    {
+      "id": "res_000",
+      "type": "bucket",
+      "public": true,
+      "owner_id": "user_086",
+      "sensitivity": "confidential"
+    },
+    {
+      "id": "res_001",
+      "type": "bucket",
+      "public": false,
+      "owner_id": "user_093",
+      "sensitivity": "secret"
+    }
+  ],
+  "system": {
+    "health": 0.72,
+    "load": 7.82,
+    "uptime_days": 4
+  },
+  "policies": {
+    "security": {
+      "enabled": false
+    },
+    "compliance": {
+      "enabled": true
+    },
+    "access": {
+      "enabled": true
+    },
+    "audit": {
+      "enabled": true
+    }
+  }
+}
