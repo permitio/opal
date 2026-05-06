@@ -1,7 +1,7 @@
-package governance.authentication.action.deny.policy_0054
+package access.validation.context.verify.data.policy_0054
 
-# Auto-generated policy 54
-# Package: governance.authentication.action.deny
+# Auto-generated policy 54 (Rego v1 syntax)
+# Package: access.validation.context.verify.data
 
 # Metadata
 metadata := {
@@ -11,16 +11,14 @@ metadata := {
 }
 
 # Rules
-allowed_0054 {
-    input.user.role == "admin"
+default policy_0054_allowed = false
+policy_0054_allowed if {
+    data.policies.access.enabled
 }
-default allowed_0054 = false
-allowed_0054 {
-    data.policies.governance.enabled
-}
-allowed_0054 {
+policy_0054_allowed if {
     input.user.active
     input.resource.public
 }
-
-# Utility function for user info
+policy_0054_allowed if {
+    input.user.role == "admin"
+}

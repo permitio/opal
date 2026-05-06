@@ -1,7 +1,7 @@
-package audit.authorization.context.allow.policy_0153
+package compliance.monitoring.policy.deny.helpers.policy_0153
 
-# Auto-generated policy 153
-# Package: audit.authorization.context.allow
+# Auto-generated policy 153 (Rego v1 syntax)
+# Package: compliance.monitoring.policy.deny.helpers
 
 # Metadata
 metadata := {
@@ -11,19 +11,10 @@ metadata := {
 }
 
 # Rules
-allowed_0153 {
+policy_0153_allowed if {
     input.user.role == "admin"
 }
-allowed_0153 {
-    input.user.active
-    input.resource.public
+policy_0153_allowed if {
+    data.policies.compliance.enabled
 }
-approved_0153 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
-}
-allowed_0153 {
-    data.policies.audit.enabled
-}
-
-# Utility function for user info
+default policy_0153_allowed = false

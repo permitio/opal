@@ -1,7 +1,7 @@
-package risk.authorization.action.allow.utils.policy_0900
+package risk.validation.user.verify.logic.policy_0900
 
-# Auto-generated policy 900
-# Package: risk.authorization.action.allow.utils
+# Auto-generated policy 900 (Rego v1 syntax)
+# Package: risk.validation.user.verify.logic
 
 # Metadata
 metadata := {
@@ -11,13 +11,7 @@ metadata := {
 }
 
 # Rules
-approved_0900 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
+policy_0900_allowed if {
+    data.policies.risk.enabled
 }
-allowed_0900 {
-    input.user.active
-    input.resource.public
-}
-
-# Utility function for user info
+default policy_0900_allowed = false

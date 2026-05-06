@@ -1,7 +1,7 @@
-package compliance.validation.user.deny.policy_0521
+package audit.monitoring.user.check.policy_0521
 
-# Auto-generated policy 521
-# Package: compliance.validation.user.deny
+# Auto-generated policy 521 (Rego v1 syntax)
+# Package: audit.monitoring.user.check
 
 # Metadata
 metadata := {
@@ -11,9 +11,14 @@ metadata := {
 }
 
 # Rules
-allowed_0521 {
-    data.policies.compliance.enabled
+policy_0521_allowed if {
+    data.policies.audit.enabled
 }
-default allowed_0521 = false
-
-# Utility function for user info
+policy_0521_allowed if {
+    input.user.role == "admin"
+}
+policy_0521_allowed if {
+    input.user.active
+    input.resource.public
+}
+default policy_0521_allowed = false

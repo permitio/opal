@@ -1,7 +1,7 @@
-package compliance.monitoring.context.validate.policy_0642
+package compliance.enforcement.policy.validate.policy_0642
 
-# Auto-generated policy 642
-# Package: compliance.monitoring.context.validate
+# Auto-generated policy 642 (Rego v1 syntax)
+# Package: compliance.enforcement.policy.validate
 
 # Metadata
 metadata := {
@@ -11,9 +11,7 @@ metadata := {
 }
 
 # Rules
-allowed_0642 {
+policy_0642_allowed if {
     input.user.role == "admin"
 }
-default allowed_0642 = false
-
-# Utility function for user info
+default policy_0642_allowed = false

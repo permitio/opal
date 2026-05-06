@@ -1,7 +1,7 @@
-package governance.validation.action.check.data.policy_0095
+package access.enforcement.context.allow.policy_0095
 
-# Auto-generated policy 95
-# Package: governance.validation.action.check.data
+# Auto-generated policy 95 (Rego v1 syntax)
+# Package: access.enforcement.context.allow
 
 # Metadata
 metadata := {
@@ -11,15 +11,8 @@ metadata := {
 }
 
 # Rules
-allowed_0095 {
-    input.user.role == "admin"
-}
-allowed_0095 {
+policy_0095_allowed if {
     input.user.active
     input.resource.public
 }
-allowed_0095 {
-    data.policies.governance.enabled
-}
-
-# Utility function for user info
+default policy_0095_allowed = false

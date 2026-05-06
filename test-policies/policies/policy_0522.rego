@@ -1,7 +1,7 @@
-package audit.authentication.resource.validate.policy_0522
+package security.validation.user.check.helpers.policy_0522
 
-# Auto-generated policy 522
-# Package: audit.authentication.resource.validate
+# Auto-generated policy 522 (Rego v1 syntax)
+# Package: security.validation.user.check.helpers
 
 # Metadata
 metadata := {
@@ -11,17 +11,15 @@ metadata := {
 }
 
 # Rules
-allowed_0522 {
-    input.user.active
-    input.resource.public
-}
-allowed_0522 {
-    data.policies.audit.enabled
-}
-approved_0522 {
+policy_0522_approved if {
     input.user.risk_score < 50
     input.system.health > 0.8
 }
-default allowed_0522 = false
-
-# Utility function for user info
+policy_0522_allowed if {
+    input.user.role == "admin"
+}
+default policy_0522_allowed = false
+policy_0522_allowed if {
+    input.user.active
+    input.resource.public
+}

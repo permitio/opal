@@ -1,7 +1,7 @@
-package governance.enforcement.action.validate.policy_0354
+package governance.enforcement.context.validate.policy_0354
 
-# Auto-generated policy 354
-# Package: governance.enforcement.action.validate
+# Auto-generated policy 354 (Rego v1 syntax)
+# Package: governance.enforcement.context.validate
 
 # Metadata
 metadata := {
@@ -11,12 +11,11 @@ metadata := {
 }
 
 # Rules
-denied_0354 {
-    input.action == "delete"
-    input.user.role != "admin"
-}
-allowed_0354 {
+policy_0354_allowed if {
     input.user.role == "admin"
 }
-
-# Utility function for user info
+policy_0354_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
+}
+default policy_0354_allowed = false

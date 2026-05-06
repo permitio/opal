@@ -1,7 +1,7 @@
-package governance.enforcement.resource.check.policy_0169
+package risk.authentication.context.validate.policy_0169
 
-# Auto-generated policy 169
-# Package: governance.enforcement.resource.check
+# Auto-generated policy 169 (Rego v1 syntax)
+# Package: risk.authentication.context.validate
 
 # Metadata
 metadata := {
@@ -11,13 +11,10 @@ metadata := {
 }
 
 # Rules
-default allowed_0169 = false
-approved_0169 {
+policy_0169_allowed if {
+    data.policies.risk.enabled
+}
+policy_0169_approved if {
     input.user.risk_score < 50
     input.system.health > 0.8
 }
-allowed_0169 {
-    data.policies.governance.enabled
-}
-
-# Utility function for user info

@@ -1,7 +1,7 @@
-package security.enforcement.resource.verify.policy_0694
+package compliance.validation.context.allow.policy_0694
 
-# Auto-generated policy 694
-# Package: security.enforcement.resource.verify
+# Auto-generated policy 694 (Rego v1 syntax)
+# Package: compliance.validation.context.allow
 
 # Metadata
 metadata := {
@@ -11,10 +11,14 @@ metadata := {
 }
 
 # Rules
-allowed_0694 {
-    input.user.active
-    input.resource.public
+default policy_0694_allowed = false
+policy_0694_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
 }
-default allowed_0694 = false
-
-# Utility function for user info
+policy_0694_allowed if {
+    input.user.role == "admin"
+}
+policy_0694_allowed if {
+    data.policies.compliance.enabled
+}

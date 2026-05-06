@@ -1,7 +1,7 @@
-package governance.authorization.context.check.logic.policy_0987
+package risk.enforcement.policy.allow.logic.policy_0987
 
-# Auto-generated policy 987
-# Package: governance.authorization.context.check.logic
+# Auto-generated policy 987 (Rego v1 syntax)
+# Package: risk.enforcement.policy.allow.logic
 
 # Metadata
 metadata := {
@@ -11,13 +11,14 @@ metadata := {
 }
 
 # Rules
-denied_0987 {
+policy_0987_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-approved_0987 {
+policy_0987_allowed if {
+    input.user.role == "admin"
+}
+policy_0987_approved if {
     input.user.risk_score < 50
     input.system.health > 0.8
 }
-
-# Utility function for user info

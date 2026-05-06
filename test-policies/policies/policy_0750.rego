@@ -1,7 +1,7 @@
-package audit.authentication.policy.deny.utils.policy_0750
+package audit.monitoring.user.allow.policy_0750
 
-# Auto-generated policy 750
-# Package: audit.authentication.policy.deny.utils
+# Auto-generated policy 750 (Rego v1 syntax)
+# Package: audit.monitoring.user.allow
 
 # Metadata
 metadata := {
@@ -11,12 +11,15 @@ metadata := {
 }
 
 # Rules
-allowed_0750 {
+policy_0750_allowed if {
+    input.user.active
+    input.resource.public
+}
+default policy_0750_allowed = false
+policy_0750_allowed if {
     data.policies.audit.enabled
 }
-approved_0750 {
+policy_0750_approved if {
     input.user.risk_score < 50
     input.system.health > 0.8
 }
-
-# Utility function for user info

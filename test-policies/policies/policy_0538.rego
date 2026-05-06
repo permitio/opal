@@ -1,7 +1,7 @@
-package compliance.authorization.policy.check.policy_0538
+package audit.validation.user.allow.policy_0538
 
-# Auto-generated policy 538
-# Package: compliance.authorization.policy.check
+# Auto-generated policy 538 (Rego v1 syntax)
+# Package: audit.validation.user.allow
 
 # Metadata
 metadata := {
@@ -11,10 +11,11 @@ metadata := {
 }
 
 # Rules
-allowed_0538 {
-    input.user.active
-    input.resource.public
+policy_0538_allowed if {
+    input.user.role == "admin"
 }
-default allowed_0538 = false
-
-# Utility function for user info
+policy_0538_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
+}
+default policy_0538_allowed = false

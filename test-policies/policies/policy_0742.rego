@@ -1,7 +1,7 @@
-package risk.enforcement.policy.validate.policy_0742
+package access.authorization.action.deny.policy_0742
 
-# Auto-generated policy 742
-# Package: risk.enforcement.policy.validate
+# Auto-generated policy 742 (Rego v1 syntax)
+# Package: access.authorization.action.deny
 
 # Metadata
 metadata := {
@@ -11,17 +11,18 @@ metadata := {
 }
 
 # Rules
-denied_0742 {
-    input.action == "delete"
-    input.user.role != "admin"
-}
-default allowed_0742 = false
-allowed_0742 {
+policy_0742_allowed if {
     input.user.role == "admin"
 }
-approved_0742 {
+policy_0742_approved if {
     input.user.risk_score < 50
     input.system.health > 0.8
 }
-
-# Utility function for user info
+policy_0742_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
+}
+policy_0742_allowed if {
+    input.user.active
+    input.resource.public
+}

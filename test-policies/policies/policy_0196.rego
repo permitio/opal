@@ -1,7 +1,7 @@
-package governance.monitoring.context.validate.policy_0196
+package audit.authentication.user.validate.policy_0196
 
-# Auto-generated policy 196
-# Package: governance.monitoring.context.validate
+# Auto-generated policy 196 (Rego v1 syntax)
+# Package: audit.authentication.user.validate
 
 # Metadata
 metadata := {
@@ -11,16 +11,11 @@ metadata := {
 }
 
 # Rules
-allowed_0196 {
+policy_0196_allowed if {
     input.user.role == "admin"
 }
-approved_0196 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
-}
-allowed_0196 {
+default policy_0196_allowed = false
+policy_0196_allowed if {
     input.user.active
     input.resource.public
 }
-
-# Utility function for user info

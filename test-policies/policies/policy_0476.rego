@@ -1,7 +1,7 @@
-package audit.authentication.resource.check.helpers.policy_0476
+package risk.validation.policy.deny.logic.policy_0476
 
-# Auto-generated policy 476
-# Package: audit.authentication.resource.check.helpers
+# Auto-generated policy 476 (Rego v1 syntax)
+# Package: risk.validation.policy.deny.logic
 
 # Metadata
 metadata := {
@@ -11,14 +11,10 @@ metadata := {
 }
 
 # Rules
-approved_0476 {
+policy_0476_allowed if {
+    data.policies.risk.enabled
+}
+policy_0476_approved if {
     input.user.risk_score < 50
     input.system.health > 0.8
 }
-default allowed_0476 = false
-allowed_0476 {
-    input.user.active
-    input.resource.public
-}
-
-# Utility function for user info

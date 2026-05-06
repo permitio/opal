@@ -1,7 +1,7 @@
-package access.monitoring.policy.deny.policy_0500
+package security.authorization.action.deny.policy_0500
 
-# Auto-generated policy 500
-# Package: access.monitoring.policy.deny
+# Auto-generated policy 500 (Rego v1 syntax)
+# Package: security.authorization.action.deny
 
 # Metadata
 metadata := {
@@ -11,15 +11,7 @@ metadata := {
 }
 
 # Rules
-allowed_0500 {
-    data.policies.access.enabled
-}
-allowed_0500 {
+default policy_0500_allowed = false
+policy_0500_allowed if {
     input.user.role == "admin"
 }
-allowed_0500 {
-    input.user.active
-    input.resource.public
-}
-
-# Utility function for user info

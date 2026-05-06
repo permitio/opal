@@ -1,7 +1,7 @@
-package risk.authentication.policy.allow.core.policy_0546
+package access.monitoring.resource.validate.logic.policy_0546
 
-# Auto-generated policy 546
-# Package: risk.authentication.policy.allow.core
+# Auto-generated policy 546 (Rego v1 syntax)
+# Package: access.monitoring.resource.validate.logic
 
 # Metadata
 metadata := {
@@ -11,10 +11,16 @@ metadata := {
 }
 
 # Rules
-approved_0546 {
+policy_0546_allowed if {
+    input.user.active
+    input.resource.public
+}
+default policy_0546_allowed = false
+policy_0546_approved if {
     input.user.risk_score < 50
     input.system.health > 0.8
 }
-default allowed_0546 = false
-
-# Utility function for user info
+policy_0546_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
+}

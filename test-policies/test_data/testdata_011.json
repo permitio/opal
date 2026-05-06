@@ -1,9 +1,9 @@
 {
   "test_id": 11,
   "metadata": {
-    "environment": "prod",
-    "region": "us-west-2",
-    "version": "1.5.9"
+    "environment": "staging",
+    "region": "us-east-1",
+    "version": "1.1.20"
   },
   "users": [
     {
@@ -11,63 +11,98 @@
       "name": "User 0",
       "role": "editor",
       "active": false,
-      "risk_score": 18
+      "risk_score": 65
     },
     {
       "id": "user_001",
       "name": "User 1",
+      "role": "admin",
+      "active": true,
+      "risk_score": 12
+    },
+    {
+      "id": "user_002",
+      "name": "User 2",
       "role": "viewer",
       "active": false,
       "risk_score": 36
     },
     {
-      "id": "user_002",
-      "name": "User 2",
-      "role": "editor",
-      "active": true,
-      "risk_score": 90
-    },
-    {
       "id": "user_003",
       "name": "User 3",
       "role": "viewer",
-      "active": false,
-      "risk_score": 68
+      "active": true,
+      "risk_score": 4
     },
     {
       "id": "user_004",
       "name": "User 4",
       "role": "auditor",
+      "active": false,
+      "risk_score": 3
+    },
+    {
+      "id": "user_005",
+      "name": "User 5",
+      "role": "viewer",
       "active": true,
-      "risk_score": 11
+      "risk_score": 47
+    },
+    {
+      "id": "user_006",
+      "name": "User 6",
+      "role": "editor",
+      "active": true,
+      "risk_score": 48
     }
   ],
   "resources": [
     {
       "id": "res_000",
-      "type": "bucket",
+      "type": "database",
       "public": true,
-      "owner_id": "user_027",
+      "owner_id": "user_024",
+      "sensitivity": "confidential"
+    },
+    {
+      "id": "res_001",
+      "type": "bucket",
+      "public": false,
+      "owner_id": "user_058",
+      "sensitivity": "confidential"
+    },
+    {
+      "id": "res_002",
+      "type": "database",
+      "public": false,
+      "owner_id": "user_087",
+      "sensitivity": "public"
+    },
+    {
+      "id": "res_003",
+      "type": "api",
+      "public": false,
+      "owner_id": "user_015",
       "sensitivity": "internal"
     }
   ],
   "system": {
-    "health": 0.61,
-    "load": 13.03,
-    "uptime_days": 223
+    "health": 0.74,
+    "load": 6.42,
+    "uptime_days": 154
   },
   "policies": {
     "security": {
-      "enabled": false
+      "enabled": true
     },
     "compliance": {
-      "enabled": false
+      "enabled": true
     },
     "access": {
-      "enabled": false
+      "enabled": true
     },
     "audit": {
-      "enabled": true
+      "enabled": false
     }
   }
 }

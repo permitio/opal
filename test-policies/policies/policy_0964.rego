@@ -1,7 +1,7 @@
-package audit.authentication.user.deny.policy_0964
+package risk.monitoring.policy.check.policy_0964
 
-# Auto-generated policy 964
-# Package: audit.authentication.user.deny
+# Auto-generated policy 964 (Rego v1 syntax)
+# Package: risk.monitoring.policy.check
 
 # Metadata
 metadata := {
@@ -11,16 +11,15 @@ metadata := {
 }
 
 # Rules
-approved_0964 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
+policy_0964_allowed if {
+    input.user.role == "admin"
 }
-denied_0964 {
+default policy_0964_allowed = false
+policy_0964_allowed if {
+    input.user.active
+    input.resource.public
+}
+policy_0964_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-allowed_0964 {
-    input.user.role == "admin"
-}
-
-# Utility function for user info

@@ -1,7 +1,7 @@
-package compliance.validation.action.verify.policy_0630
+package governance.validation.resource.allow.policy_0630
 
-# Auto-generated policy 630
-# Package: compliance.validation.action.verify
+# Auto-generated policy 630 (Rego v1 syntax)
+# Package: governance.validation.resource.allow
 
 # Metadata
 metadata := {
@@ -11,14 +11,12 @@ metadata := {
 }
 
 # Rules
-denied_0630 {
+default policy_0630_allowed = false
+policy_0630_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-allowed_0630 {
+policy_0630_allowed if {
     input.user.active
     input.resource.public
 }
-default allowed_0630 = false
-
-# Utility function for user info

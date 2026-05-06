@@ -1,7 +1,7 @@
-package risk.enforcement.context.allow.core.policy_0174
+package governance.authentication.action.allow.utils.policy_0174
 
-# Auto-generated policy 174
-# Package: risk.enforcement.context.allow.core
+# Auto-generated policy 174 (Rego v1 syntax)
+# Package: governance.authentication.action.allow.utils
 
 # Metadata
 metadata := {
@@ -11,19 +11,11 @@ metadata := {
 }
 
 # Rules
-allowed_0174 {
-    data.policies.risk.enabled
+policy_0174_allowed if {
+    data.policies.governance.enabled
 }
-allowed_0174 {
-    input.user.active
-    input.resource.public
+policy_0174_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
 }
-allowed_0174 {
-    input.user.role == "admin"
-}
-approved_0174 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
-}
-
-# Utility function for user info
+default policy_0174_allowed = false

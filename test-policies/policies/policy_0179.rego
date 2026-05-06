@@ -1,7 +1,7 @@
-package access.authorization.action.validate.policy_0179
+package governance.monitoring.user.check.policy_0179
 
-# Auto-generated policy 179
-# Package: access.authorization.action.validate
+# Auto-generated policy 179 (Rego v1 syntax)
+# Package: governance.monitoring.user.check
 
 # Metadata
 metadata := {
@@ -11,12 +11,8 @@ metadata := {
 }
 
 # Rules
-approved_0179 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
+policy_0179_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
 }
-allowed_0179 {
-    data.policies.access.enabled
-}
-
-# Utility function for user info
+default policy_0179_allowed = false

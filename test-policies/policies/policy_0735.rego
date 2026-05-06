@@ -1,7 +1,7 @@
-package risk.authorization.policy.verify.utils.policy_0735
+package audit.enforcement.policy.deny.policy_0735
 
-# Auto-generated policy 735
-# Package: risk.authorization.policy.verify.utils
+# Auto-generated policy 735 (Rego v1 syntax)
+# Package: audit.enforcement.policy.deny
 
 # Metadata
 metadata := {
@@ -11,12 +11,11 @@ metadata := {
 }
 
 # Rules
-allowed_0735 {
+policy_0735_allowed if {
     input.user.active
     input.resource.public
 }
-allowed_0735 {
-    data.policies.risk.enabled
+policy_0735_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
 }
-
-# Utility function for user info

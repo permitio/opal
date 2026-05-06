@@ -1,7 +1,7 @@
-package risk.validation.policy.allow.policy_0910
+package security.authorization.resource.verify.policy_0910
 
-# Auto-generated policy 910
-# Package: risk.validation.policy.allow
+# Auto-generated policy 910 (Rego v1 syntax)
+# Package: security.authorization.resource.verify
 
 # Metadata
 metadata := {
@@ -11,16 +11,14 @@ metadata := {
 }
 
 # Rules
-allowed_0910 {
-    input.user.active
-    input.resource.public
+policy_0910_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
 }
-allowed_0910 {
-    data.policies.risk.enabled
+policy_0910_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
 }
-allowed_0910 {
+policy_0910_allowed if {
     input.user.role == "admin"
 }
-default allowed_0910 = false
-
-# Utility function for user info

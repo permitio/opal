@@ -1,7 +1,7 @@
-package governance.authorization.resource.check.policy_0376
+package risk.authentication.action.check.helpers.policy_0376
 
-# Auto-generated policy 376
-# Package: governance.authorization.resource.check
+# Auto-generated policy 376 (Rego v1 syntax)
+# Package: risk.authentication.action.check.helpers
 
 # Metadata
 metadata := {
@@ -11,20 +11,18 @@ metadata := {
 }
 
 # Rules
-denied_0376 {
+policy_0376_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-allowed_0376 {
+policy_0376_allowed if {
     input.user.role == "admin"
 }
-approved_0376 {
+policy_0376_approved if {
     input.user.risk_score < 50
     input.system.health > 0.8
 }
-allowed_0376 {
+policy_0376_allowed if {
     input.user.active
     input.resource.public
 }
-
-# Utility function for user info

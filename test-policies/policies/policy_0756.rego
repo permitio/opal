@@ -1,7 +1,7 @@
-package access.enforcement.resource.check.policy_0756
+package compliance.enforcement.action.allow.policy_0756
 
-# Auto-generated policy 756
-# Package: access.enforcement.resource.check
+# Auto-generated policy 756 (Rego v1 syntax)
+# Package: compliance.enforcement.action.allow
 
 # Metadata
 metadata := {
@@ -11,17 +11,11 @@ metadata := {
 }
 
 # Rules
-approved_0756 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
-}
-denied_0756 {
+policy_0756_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-allowed_0756 {
-    data.policies.access.enabled
+policy_0756_allowed if {
+    input.user.active
+    input.resource.public
 }
-default allowed_0756 = false
-
-# Utility function for user info

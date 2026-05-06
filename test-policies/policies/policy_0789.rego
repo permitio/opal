@@ -1,7 +1,7 @@
-package risk.authentication.policy.check.core.policy_0789
+package audit.monitoring.action.deny.policy_0789
 
-# Auto-generated policy 789
-# Package: risk.authentication.policy.check.core
+# Auto-generated policy 789 (Rego v1 syntax)
+# Package: audit.monitoring.action.deny
 
 # Metadata
 metadata := {
@@ -11,13 +11,14 @@ metadata := {
 }
 
 # Rules
-approved_0789 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
+policy_0789_allowed if {
+    input.user.role == "admin"
 }
-denied_0789 {
-    input.action == "delete"
-    input.user.role != "admin"
+policy_0789_allowed if {
+    input.user.active
+    input.resource.public
 }
-
-# Utility function for user info
+default policy_0789_allowed = false
+policy_0789_allowed if {
+    data.policies.audit.enabled
+}

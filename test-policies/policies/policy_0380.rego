@@ -1,7 +1,7 @@
-package access.validation.policy.allow.policy_0380
+package compliance.enforcement.resource.check.policy_0380
 
-# Auto-generated policy 380
-# Package: access.validation.policy.allow
+# Auto-generated policy 380 (Rego v1 syntax)
+# Package: compliance.enforcement.resource.check
 
 # Metadata
 metadata := {
@@ -11,15 +11,11 @@ metadata := {
 }
 
 # Rules
-allowed_0380 {
-    input.user.active
-    input.resource.public
+policy_0380_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
 }
-allowed_0380 {
+default policy_0380_allowed = false
+policy_0380_allowed if {
     input.user.role == "admin"
 }
-allowed_0380 {
-    data.policies.access.enabled
-}
-
-# Utility function for user info

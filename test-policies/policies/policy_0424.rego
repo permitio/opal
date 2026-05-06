@@ -1,7 +1,7 @@
-package risk.enforcement.resource.validate.helpers.policy_0424
+package audit.validation.resource.validate.core.policy_0424
 
-# Auto-generated policy 424
-# Package: risk.enforcement.resource.validate.helpers
+# Auto-generated policy 424 (Rego v1 syntax)
+# Package: audit.validation.resource.validate.core
 
 # Metadata
 metadata := {
@@ -11,10 +11,12 @@ metadata := {
 }
 
 # Rules
-denied_0424 {
+policy_0424_allowed if {
+    input.user.active
+    input.resource.public
+}
+default policy_0424_allowed = false
+policy_0424_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-default allowed_0424 = false
-
-# Utility function for user info

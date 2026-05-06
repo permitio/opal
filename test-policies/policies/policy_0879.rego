@@ -1,7 +1,7 @@
-package governance.monitoring.user.deny.utils.policy_0879
+package security.authentication.action.check.policy_0879
 
-# Auto-generated policy 879
-# Package: governance.monitoring.user.deny.utils
+# Auto-generated policy 879 (Rego v1 syntax)
+# Package: security.authentication.action.check
 
 # Metadata
 metadata := {
@@ -11,13 +11,7 @@ metadata := {
 }
 
 # Rules
-allowed_0879 {
-    data.policies.governance.enabled
+policy_0879_allowed if {
+    data.policies.security.enabled
 }
-default allowed_0879 = false
-denied_0879 {
-    input.action == "delete"
-    input.user.role != "admin"
-}
-
-# Utility function for user info
+default policy_0879_allowed = false

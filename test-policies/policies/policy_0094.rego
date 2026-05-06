@@ -1,7 +1,7 @@
-package governance.monitoring.user.validate.logic.policy_0094
+package security.enforcement.resource.allow.policy_0094
 
-# Auto-generated policy 94
-# Package: governance.monitoring.user.validate.logic
+# Auto-generated policy 94 (Rego v1 syntax)
+# Package: security.enforcement.resource.allow
 
 # Metadata
 metadata := {
@@ -11,16 +11,7 @@ metadata := {
 }
 
 # Rules
-allowed_0094 {
-    input.user.active
-    input.resource.public
+policy_0094_allowed if {
+    data.policies.security.enabled
 }
-approved_0094 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
-}
-allowed_0094 {
-    input.user.role == "admin"
-}
-
-# Utility function for user info
+default policy_0094_allowed = false

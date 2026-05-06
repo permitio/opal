@@ -1,7 +1,7 @@
-package risk.enforcement.context.validate.data.policy_0114
+package access.authorization.user.validate.policy_0114
 
-# Auto-generated policy 114
-# Package: risk.enforcement.context.validate.data
+# Auto-generated policy 114 (Rego v1 syntax)
+# Package: access.authorization.user.validate
 
 # Metadata
 metadata := {
@@ -11,12 +11,12 @@ metadata := {
 }
 
 # Rules
-allowed_0114 {
-    input.user.role == "admin"
-}
-denied_0114 {
+default policy_0114_allowed = false
+policy_0114_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-
-# Utility function for user info
+policy_0114_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
+}

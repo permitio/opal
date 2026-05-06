@@ -1,7 +1,7 @@
-package access.authorization.action.verify.logic.policy_0655
+package governance.authorization.action.allow.policy_0655
 
-# Auto-generated policy 655
-# Package: access.authorization.action.verify.logic
+# Auto-generated policy 655 (Rego v1 syntax)
+# Package: governance.authorization.action.allow
 
 # Metadata
 metadata := {
@@ -11,13 +11,8 @@ metadata := {
 }
 
 # Rules
-allowed_0655 {
-    input.user.role == "admin"
+default policy_0655_allowed = false
+policy_0655_allowed if {
+    input.user.active
+    input.resource.public
 }
-approved_0655 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
-}
-default allowed_0655 = false
-
-# Utility function for user info

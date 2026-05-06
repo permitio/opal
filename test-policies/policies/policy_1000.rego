@@ -1,7 +1,7 @@
-package audit.monitoring.action.deny.policy_1000
+package access.enforcement.resource.deny.policy_1000
 
-# Auto-generated policy 1000
-# Package: audit.monitoring.action.deny
+# Auto-generated policy 1000 (Rego v1 syntax)
+# Package: access.enforcement.resource.deny
 
 # Metadata
 metadata := {
@@ -11,20 +11,10 @@ metadata := {
 }
 
 # Rules
-allowed_1000 {
+policy_1000_allowed if {
     input.user.role == "admin"
 }
-approved_1000 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
-}
-allowed_1000 {
+policy_1000_allowed if {
     input.user.active
     input.resource.public
 }
-denied_1000 {
-    input.action == "delete"
-    input.user.role != "admin"
-}
-
-# Utility function for user info

@@ -1,7 +1,7 @@
-package security.authorization.context.deny.utils.policy_0728
+package compliance.enforcement.policy.verify.logic.policy_0728
 
-# Auto-generated policy 728
-# Package: security.authorization.context.deny.utils
+# Auto-generated policy 728 (Rego v1 syntax)
+# Package: compliance.enforcement.policy.verify.logic
 
 # Metadata
 metadata := {
@@ -11,13 +11,13 @@ metadata := {
 }
 
 # Rules
-allowed_0728 {
+policy_0728_allowed if {
+    input.user.active
+    input.resource.public
+}
+policy_0728_allowed if {
     input.user.role == "admin"
 }
-default allowed_0728 = false
-denied_0728 {
-    input.action == "delete"
-    input.user.role != "admin"
+policy_0728_allowed if {
+    data.policies.compliance.enabled
 }
-
-# Utility function for user info

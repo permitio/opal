@@ -1,7 +1,7 @@
-package risk.authentication.action.deny.policy_0870
+package security.enforcement.user.check.core.policy_0870
 
-# Auto-generated policy 870
-# Package: risk.authentication.action.deny
+# Auto-generated policy 870 (Rego v1 syntax)
+# Package: security.enforcement.user.check.core
 
 # Metadata
 metadata := {
@@ -11,14 +11,8 @@ metadata := {
 }
 
 # Rules
-approved_0870 {
+policy_0870_approved if {
     input.user.risk_score < 50
     input.system.health > 0.8
 }
-default allowed_0870 = false
-allowed_0870 {
-    input.user.active
-    input.resource.public
-}
-
-# Utility function for user info
+default policy_0870_allowed = false

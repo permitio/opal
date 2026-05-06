@@ -1,7 +1,7 @@
-package risk.monitoring.resource.check.policy_0111
+package audit.authentication.policy.deny.policy_0111
 
-# Auto-generated policy 111
-# Package: risk.monitoring.resource.check
+# Auto-generated policy 111 (Rego v1 syntax)
+# Package: audit.authentication.policy.deny
 
 # Metadata
 metadata := {
@@ -11,17 +11,11 @@ metadata := {
 }
 
 # Rules
-default allowed_0111 = false
-allowed_0111 {
-    input.user.role == "admin"
-}
-approved_0111 {
+policy_0111_approved if {
     input.user.risk_score < 50
     input.system.health > 0.8
 }
-allowed_0111 {
-    input.user.active
-    input.resource.public
+policy_0111_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
 }
-
-# Utility function for user info

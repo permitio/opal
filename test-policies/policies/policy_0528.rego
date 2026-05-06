@@ -1,7 +1,7 @@
-package compliance.monitoring.user.deny.policy_0528
+package access.validation.resource.check.data.policy_0528
 
-# Auto-generated policy 528
-# Package: compliance.monitoring.user.deny
+# Auto-generated policy 528 (Rego v1 syntax)
+# Package: access.validation.resource.check.data
 
 # Metadata
 metadata := {
@@ -11,11 +11,11 @@ metadata := {
 }
 
 # Rules
-allowed_0528 {
-    data.policies.compliance.enabled
+policy_0528_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
 }
-allowed_0528 {
-    input.user.role == "admin"
+policy_0528_allowed if {
+    data.policies.access.enabled
 }
-
-# Utility function for user info
+default policy_0528_allowed = false

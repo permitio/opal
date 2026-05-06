@@ -1,7 +1,7 @@
-package governance.authentication.user.deny.policy_0788
+package audit.monitoring.context.validate.policy_0788
 
-# Auto-generated policy 788
-# Package: governance.authentication.user.deny
+# Auto-generated policy 788 (Rego v1 syntax)
+# Package: audit.monitoring.context.validate
 
 # Metadata
 metadata := {
@@ -11,19 +11,10 @@ metadata := {
 }
 
 # Rules
-allowed_0788 {
-    input.user.active
-    input.resource.public
+policy_0788_allowed if {
+    data.policies.audit.enabled
 }
-allowed_0788 {
-    input.user.role == "admin"
+policy_0788_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
 }
-denied_0788 {
-    input.action == "delete"
-    input.user.role != "admin"
-}
-allowed_0788 {
-    data.policies.governance.enabled
-}
-
-# Utility function for user info

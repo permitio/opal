@@ -1,7 +1,7 @@
-package access.authentication.policy.validate.data.policy_0382
+package governance.authentication.user.validate.core.policy_0382
 
-# Auto-generated policy 382
-# Package: access.authentication.policy.validate.data
+# Auto-generated policy 382 (Rego v1 syntax)
+# Package: governance.authentication.user.validate.core
 
 # Metadata
 metadata := {
@@ -11,12 +11,14 @@ metadata := {
 }
 
 # Rules
-allowed_0382 {
-    data.policies.access.enabled
+policy_0382_allowed if {
+    input.user.role == "admin"
 }
-allowed_0382 {
+policy_0382_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
+}
+policy_0382_allowed if {
     input.user.active
     input.resource.public
 }
-
-# Utility function for user info

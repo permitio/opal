@@ -1,7 +1,7 @@
-package access.monitoring.user.validate.policy_0460
+package security.authorization.action.verify.policy_0460
 
-# Auto-generated policy 460
-# Package: access.monitoring.user.validate
+# Auto-generated policy 460 (Rego v1 syntax)
+# Package: security.authorization.action.verify
 
 # Metadata
 metadata := {
@@ -11,16 +11,7 @@ metadata := {
 }
 
 # Rules
-allowed_0460 {
+policy_0460_allowed if {
     input.user.role == "admin"
 }
-allowed_0460 {
-    input.user.active
-    input.resource.public
-}
-denied_0460 {
-    input.action == "delete"
-    input.user.role != "admin"
-}
-
-# Utility function for user info
+default policy_0460_allowed = false

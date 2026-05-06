@@ -1,7 +1,7 @@
-package governance.monitoring.action.allow.policy_0692
+package risk.authentication.resource.deny.policy_0692
 
-# Auto-generated policy 692
-# Package: governance.monitoring.action.allow
+# Auto-generated policy 692 (Rego v1 syntax)
+# Package: risk.authentication.resource.deny
 
 # Metadata
 metadata := {
@@ -11,17 +11,11 @@ metadata := {
 }
 
 # Rules
-default allowed_0692 = false
-allowed_0692 {
-    input.user.role == "admin"
-}
-allowed_0692 {
-    input.user.active
-    input.resource.public
-}
-denied_0692 {
+policy_0692_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-
-# Utility function for user info
+default policy_0692_allowed = false
+policy_0692_allowed if {
+    input.user.role == "admin"
+}

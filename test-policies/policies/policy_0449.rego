@@ -1,7 +1,7 @@
-package access.monitoring.policy.validate.data.policy_0449
+package access.monitoring.resource.deny.utils.policy_0449
 
-# Auto-generated policy 449
-# Package: access.monitoring.policy.validate.data
+# Auto-generated policy 449 (Rego v1 syntax)
+# Package: access.monitoring.resource.deny.utils
 
 # Metadata
 metadata := {
@@ -11,16 +11,14 @@ metadata := {
 }
 
 # Rules
-default allowed_0449 = false
-allowed_0449 {
+policy_0449_allowed if {
     input.user.active
     input.resource.public
 }
-allowed_0449 {
+policy_0449_allowed if {
     data.policies.access.enabled
 }
-allowed_0449 {
+policy_0449_allowed if {
     input.user.role == "admin"
 }
-
-# Utility function for user info
+default policy_0449_allowed = false

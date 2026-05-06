@@ -1,7 +1,7 @@
-package audit.enforcement.action.verify.core.policy_0075
+package audit.authorization.resource.verify.policy_0075
 
-# Auto-generated policy 75
-# Package: audit.enforcement.action.verify.core
+# Auto-generated policy 75 (Rego v1 syntax)
+# Package: audit.authorization.resource.verify
 
 # Metadata
 metadata := {
@@ -11,11 +11,8 @@ metadata := {
 }
 
 # Rules
-allowed_0075 {
-    data.policies.audit.enabled
+default policy_0075_allowed = false
+policy_0075_allowed if {
+    input.user.active
+    input.resource.public
 }
-allowed_0075 {
-    input.user.role == "admin"
-}
-
-# Utility function for user info

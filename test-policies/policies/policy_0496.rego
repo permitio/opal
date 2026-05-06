@@ -1,7 +1,7 @@
-package security.authorization.policy.allow.logic.policy_0496
+package governance.enforcement.policy.allow.policy_0496
 
-# Auto-generated policy 496
-# Package: security.authorization.policy.allow.logic
+# Auto-generated policy 496 (Rego v1 syntax)
+# Package: governance.enforcement.policy.allow
 
 # Metadata
 metadata := {
@@ -11,17 +11,7 @@ metadata := {
 }
 
 # Rules
-allowed_0496 {
+policy_0496_allowed if {
     input.user.role == "admin"
 }
-denied_0496 {
-    input.action == "delete"
-    input.user.role != "admin"
-}
-default allowed_0496 = false
-allowed_0496 {
-    input.user.active
-    input.resource.public
-}
-
-# Utility function for user info
+default policy_0496_allowed = false

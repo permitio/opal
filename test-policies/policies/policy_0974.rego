@@ -1,7 +1,7 @@
-package compliance.monitoring.user.allow.data.policy_0974
+package access.validation.context.validate.policy_0974
 
-# Auto-generated policy 974
-# Package: compliance.monitoring.user.allow.data
+# Auto-generated policy 974 (Rego v1 syntax)
+# Package: access.validation.context.validate
 
 # Metadata
 metadata := {
@@ -11,16 +11,11 @@ metadata := {
 }
 
 # Rules
-allowed_0974 {
-    data.policies.compliance.enabled
-}
-denied_0974 {
+default policy_0974_allowed = false
+policy_0974_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-allowed_0974 {
-    input.user.role == "admin"
+policy_0974_allowed if {
+    data.policies.access.enabled
 }
-default allowed_0974 = false
-
-# Utility function for user info

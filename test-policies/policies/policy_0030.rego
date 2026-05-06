@@ -1,7 +1,7 @@
-package access.monitoring.user.validate.logic.policy_0030
+package security.validation.policy.deny.policy_0030
 
-# Auto-generated policy 30
-# Package: access.monitoring.user.validate.logic
+# Auto-generated policy 30 (Rego v1 syntax)
+# Package: security.validation.policy.deny
 
 # Metadata
 metadata := {
@@ -11,13 +11,13 @@ metadata := {
 }
 
 # Rules
-allowed_0030 {
+policy_0030_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
+}
+policy_0030_allowed if {
+    data.policies.security.enabled
+}
+policy_0030_allowed if {
     input.user.role == "admin"
 }
-default allowed_0030 = false
-approved_0030 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
-}
-
-# Utility function for user info

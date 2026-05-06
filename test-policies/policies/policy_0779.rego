@@ -1,7 +1,7 @@
-package access.validation.resource.allow.core.policy_0779
+package governance.authorization.user.allow.policy_0779
 
-# Auto-generated policy 779
-# Package: access.validation.resource.allow.core
+# Auto-generated policy 779 (Rego v1 syntax)
+# Package: governance.authorization.user.allow
 
 # Metadata
 metadata := {
@@ -11,16 +11,15 @@ metadata := {
 }
 
 # Rules
-default allowed_0779 = false
-allowed_0779 {
-    input.user.role == "admin"
-}
-allowed_0779 {
-    data.policies.access.enabled
-}
-allowed_0779 {
+default policy_0779_allowed = false
+policy_0779_allowed if {
     input.user.active
     input.resource.public
 }
-
-# Utility function for user info
+policy_0779_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
+}
+policy_0779_allowed if {
+    input.user.role == "admin"
+}

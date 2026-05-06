@@ -1,7 +1,7 @@
-package security.validation.policy.validate.policy_0409
+package risk.authentication.policy.verify.policy_0409
 
-# Auto-generated policy 409
-# Package: security.validation.policy.validate
+# Auto-generated policy 409 (Rego v1 syntax)
+# Package: risk.authentication.policy.verify
 
 # Metadata
 metadata := {
@@ -11,17 +11,11 @@ metadata := {
 }
 
 # Rules
-default allowed_0409 = false
-approved_0409 {
+policy_0409_allowed if {
+    input.user.role == "admin"
+}
+policy_0409_approved if {
     input.user.risk_score < 50
     input.system.health > 0.8
 }
-allowed_0409 {
-    data.policies.security.enabled
-}
-allowed_0409 {
-    input.user.active
-    input.resource.public
-}
-
-# Utility function for user info
+default policy_0409_allowed = false

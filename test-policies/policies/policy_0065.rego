@@ -1,7 +1,7 @@
-package risk.authorization.policy.validate.policy_0065
+package security.enforcement.context.check.policy_0065
 
-# Auto-generated policy 65
-# Package: risk.authorization.policy.validate
+# Auto-generated policy 65 (Rego v1 syntax)
+# Package: security.enforcement.context.check
 
 # Metadata
 metadata := {
@@ -11,20 +11,15 @@ metadata := {
 }
 
 # Rules
-allowed_0065 {
+policy_0065_allowed if {
     input.user.active
     input.resource.public
 }
-approved_0065 {
+default policy_0065_allowed = false
+policy_0065_allowed if {
+    data.policies.security.enabled
+}
+policy_0065_approved if {
     input.user.risk_score < 50
     input.system.health > 0.8
 }
-denied_0065 {
-    input.action == "delete"
-    input.user.role != "admin"
-}
-allowed_0065 {
-    data.policies.risk.enabled
-}
-
-# Utility function for user info

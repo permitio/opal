@@ -1,7 +1,7 @@
-package access.authentication.policy.deny.policy_0271
+package governance.validation.policy.validate.helpers.policy_0271
 
-# Auto-generated policy 271
-# Package: access.authentication.policy.deny
+# Auto-generated policy 271 (Rego v1 syntax)
+# Package: governance.validation.policy.validate.helpers
 
 # Metadata
 metadata := {
@@ -11,20 +11,17 @@ metadata := {
 }
 
 # Rules
-denied_0271 {
+policy_0271_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-approved_0271 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
-}
-allowed_0271 {
+policy_0271_allowed if {
     input.user.role == "admin"
 }
-allowed_0271 {
+policy_0271_allowed if {
+    data.policies.governance.enabled
+}
+policy_0271_allowed if {
     input.user.active
     input.resource.public
 }
-
-# Utility function for user info

@@ -1,7 +1,7 @@
-package audit.authorization.action.verify.logic.policy_0976
+package governance.validation.resource.allow.policy_0976
 
-# Auto-generated policy 976
-# Package: audit.authorization.action.verify.logic
+# Auto-generated policy 976 (Rego v1 syntax)
+# Package: governance.validation.resource.allow
 
 # Metadata
 metadata := {
@@ -11,16 +11,14 @@ metadata := {
 }
 
 # Rules
-allowed_0976 {
+default policy_0976_allowed = false
+policy_0976_allowed if {
+    input.user.active
+    input.resource.public
+}
+policy_0976_allowed if {
+    data.policies.governance.enabled
+}
+policy_0976_allowed if {
     input.user.role == "admin"
 }
-allowed_0976 {
-    data.policies.audit.enabled
-}
-approved_0976 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
-}
-default allowed_0976 = false
-
-# Utility function for user info

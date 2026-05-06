@@ -1,7 +1,7 @@
-package compliance.authentication.user.allow.policy_0566
+package risk.validation.resource.verify.logic.policy_0566
 
-# Auto-generated policy 566
-# Package: compliance.authentication.user.allow
+# Auto-generated policy 566 (Rego v1 syntax)
+# Package: risk.validation.resource.verify.logic
 
 # Metadata
 metadata := {
@@ -11,10 +11,8 @@ metadata := {
 }
 
 # Rules
-allowed_0566 {
-    input.user.active
-    input.resource.public
+policy_0566_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
 }
-default allowed_0566 = false
-
-# Utility function for user info
+default policy_0566_allowed = false

@@ -1,7 +1,7 @@
-package access.authorization.user.validate.policy_0433
+package risk.authorization.resource.check.helpers.policy_0433
 
-# Auto-generated policy 433
-# Package: access.authorization.user.validate
+# Auto-generated policy 433 (Rego v1 syntax)
+# Package: risk.authorization.resource.check.helpers
 
 # Metadata
 metadata := {
@@ -11,10 +11,10 @@ metadata := {
 }
 
 # Rules
-approved_0433 {
+policy_0433_approved if {
     input.user.risk_score < 50
     input.system.health > 0.8
 }
-default allowed_0433 = false
-
-# Utility function for user info
+policy_0433_allowed if {
+    data.policies.risk.enabled
+}

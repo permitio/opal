@@ -1,7 +1,7 @@
-package audit.enforcement.resource.deny.policy_0914
+package security.authentication.policy.deny.policy_0914
 
-# Auto-generated policy 914
-# Package: audit.enforcement.resource.deny
+# Auto-generated policy 914 (Rego v1 syntax)
+# Package: security.authentication.policy.deny
 
 # Metadata
 metadata := {
@@ -11,13 +11,10 @@ metadata := {
 }
 
 # Rules
-allowed_0914 {
-    input.user.active
-    input.resource.public
+policy_0914_allowed if {
+    input.user.role == "admin"
 }
-approved_0914 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
+default policy_0914_allowed = false
+policy_0914_allowed if {
+    data.policies.security.enabled
 }
-
-# Utility function for user info

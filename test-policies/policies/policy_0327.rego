@@ -1,7 +1,7 @@
-package risk.monitoring.user.validate.policy_0327
+package audit.authentication.context.verify.utils.policy_0327
 
-# Auto-generated policy 327
-# Package: risk.monitoring.user.validate
+# Auto-generated policy 327 (Rego v1 syntax)
+# Package: audit.authentication.context.verify.utils
 
 # Metadata
 metadata := {
@@ -11,13 +11,14 @@ metadata := {
 }
 
 # Rules
-default allowed_0327 = false
-denied_0327 {
+policy_0327_allowed if {
+    data.policies.audit.enabled
+}
+policy_0327_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-allowed_0327 {
-    data.policies.risk.enabled
+policy_0327_allowed if {
+    input.user.role == "admin"
 }
-
-# Utility function for user info
+default policy_0327_allowed = false

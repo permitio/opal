@@ -1,7 +1,7 @@
-package access.authentication.resource.deny.core.policy_0731
+package governance.validation.policy.validate.utils.policy_0731
 
-# Auto-generated policy 731
-# Package: access.authentication.resource.deny.core
+# Auto-generated policy 731 (Rego v1 syntax)
+# Package: governance.validation.policy.validate.utils
 
 # Metadata
 metadata := {
@@ -11,15 +11,14 @@ metadata := {
 }
 
 # Rules
-allowed_0731 {
-    data.policies.access.enabled
+policy_0731_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
 }
-allowed_0731 {
-    input.user.role == "admin"
-}
-allowed_0731 {
+policy_0731_allowed if {
     input.user.active
     input.resource.public
 }
-
-# Utility function for user info
+policy_0731_allowed if {
+    data.policies.governance.enabled
+}

@@ -1,7 +1,7 @@
-package security.enforcement.action.validate.helpers.policy_0506
+package compliance.authorization.user.verify.helpers.policy_0506
 
-# Auto-generated policy 506
-# Package: security.enforcement.action.validate.helpers
+# Auto-generated policy 506 (Rego v1 syntax)
+# Package: compliance.authorization.user.verify.helpers
 
 # Metadata
 metadata := {
@@ -11,16 +11,14 @@ metadata := {
 }
 
 # Rules
-allowed_0506 {
+policy_0506_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
+}
+policy_0506_allowed if {
+    input.user.role == "admin"
+}
+policy_0506_allowed if {
     input.user.active
     input.resource.public
 }
-default allowed_0506 = false
-allowed_0506 {
-    data.policies.security.enabled
-}
-allowed_0506 {
-    input.user.role == "admin"
-}
-
-# Utility function for user info

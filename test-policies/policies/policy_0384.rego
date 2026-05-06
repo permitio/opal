@@ -1,7 +1,7 @@
-package risk.validation.policy.validate.policy_0384
+package compliance.validation.user.allow.policy_0384
 
-# Auto-generated policy 384
-# Package: risk.validation.policy.validate
+# Auto-generated policy 384 (Rego v1 syntax)
+# Package: compliance.validation.user.allow
 
 # Metadata
 metadata := {
@@ -11,16 +11,10 @@ metadata := {
 }
 
 # Rules
-approved_0384 {
+policy_0384_approved if {
     input.user.risk_score < 50
     input.system.health > 0.8
 }
-allowed_0384 {
-    input.user.role == "admin"
+policy_0384_allowed if {
+    data.policies.compliance.enabled
 }
-default allowed_0384 = false
-allowed_0384 {
-    data.policies.risk.enabled
-}
-
-# Utility function for user info

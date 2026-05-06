@@ -1,7 +1,7 @@
-package audit.enforcement.context.verify.policy_0057
+package risk.monitoring.policy.validate.policy_0057
 
-# Auto-generated policy 57
-# Package: audit.enforcement.context.verify
+# Auto-generated policy 57 (Rego v1 syntax)
+# Package: risk.monitoring.policy.validate
 
 # Metadata
 metadata := {
@@ -11,12 +11,11 @@ metadata := {
 }
 
 # Rules
-allowed_0057 {
-    data.policies.audit.enabled
+policy_0057_allowed if {
+    input.user.role == "admin"
 }
-allowed_0057 {
-    input.user.active
-    input.resource.public
+default policy_0057_allowed = false
+policy_0057_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
 }
-
-# Utility function for user info

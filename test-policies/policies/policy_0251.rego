@@ -1,7 +1,7 @@
-package compliance.authorization.user.allow.data.policy_0251
+package governance.authentication.action.allow.policy_0251
 
-# Auto-generated policy 251
-# Package: compliance.authorization.user.allow.data
+# Auto-generated policy 251 (Rego v1 syntax)
+# Package: governance.authentication.action.allow
 
 # Metadata
 metadata := {
@@ -11,14 +11,14 @@ metadata := {
 }
 
 # Rules
-allowed_0251 {
+policy_0251_allowed if {
+    input.user.role == "admin"
+}
+policy_0251_allowed if {
     input.user.active
     input.resource.public
 }
-default allowed_0251 = false
-approved_0251 {
+policy_0251_approved if {
     input.user.risk_score < 50
     input.system.health > 0.8
 }
-
-# Utility function for user info

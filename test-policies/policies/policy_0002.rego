@@ -1,7 +1,7 @@
-package compliance.validation.policy.deny.utils.policy_0002
+package access.validation.policy.validate.data.policy_0002
 
-# Auto-generated policy 2
-# Package: compliance.validation.policy.deny.utils
+# Auto-generated policy 2 (Rego v1 syntax)
+# Package: access.validation.policy.validate.data
 
 # Metadata
 metadata := {
@@ -11,16 +11,15 @@ metadata := {
 }
 
 # Rules
-denied_0002 {
+policy_0002_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-allowed_0002 {
-    data.policies.compliance.enabled
+policy_0002_allowed if {
+    input.user.active
+    input.resource.public
 }
-approved_0002 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
+policy_0002_allowed if {
+    data.policies.access.enabled
 }
-
-# Utility function for user info
+default policy_0002_allowed = false

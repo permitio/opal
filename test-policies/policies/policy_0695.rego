@@ -1,7 +1,7 @@
-package security.authentication.user.allow.utils.policy_0695
+package access.authentication.policy.deny.policy_0695
 
-# Auto-generated policy 695
-# Package: security.authentication.user.allow.utils
+# Auto-generated policy 695 (Rego v1 syntax)
+# Package: access.authentication.policy.deny
 
 # Metadata
 metadata := {
@@ -11,17 +11,8 @@ metadata := {
 }
 
 # Rules
-allowed_0695 {
-    input.user.active
-    input.resource.public
-}
-denied_0695 {
-    input.action == "delete"
-    input.user.role != "admin"
-}
-approved_0695 {
+default policy_0695_allowed = false
+policy_0695_approved if {
     input.user.risk_score < 50
     input.system.health > 0.8
 }
-
-# Utility function for user info

@@ -1,7 +1,7 @@
-package governance.authorization.context.deny.utils.policy_0013
+package security.enforcement.action.verify.policy_0013
 
-# Auto-generated policy 13
-# Package: governance.authorization.context.deny.utils
+# Auto-generated policy 13 (Rego v1 syntax)
+# Package: security.enforcement.action.verify
 
 # Metadata
 metadata := {
@@ -11,16 +11,10 @@ metadata := {
 }
 
 # Rules
-approved_0013 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
+policy_0013_allowed if {
+    data.policies.security.enabled
 }
-denied_0013 {
-    input.action == "delete"
-    input.user.role != "admin"
+policy_0013_allowed if {
+    input.user.role == "admin"
 }
-allowed_0013 {
-    data.policies.governance.enabled
-}
-
-# Utility function for user info
+default policy_0013_allowed = false

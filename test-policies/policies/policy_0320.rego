@@ -1,7 +1,7 @@
-package audit.authentication.resource.allow.policy_0320
+package risk.monitoring.action.verify.utils.policy_0320
 
-# Auto-generated policy 320
-# Package: audit.authentication.resource.allow
+# Auto-generated policy 320 (Rego v1 syntax)
+# Package: risk.monitoring.action.verify.utils
 
 # Metadata
 metadata := {
@@ -11,13 +11,14 @@ metadata := {
 }
 
 # Rules
-allowed_0320 {
-    input.user.role == "admin"
+policy_0320_allowed if {
+    input.user.active
+    input.resource.public
 }
-approved_0320 {
+policy_0320_approved if {
     input.user.risk_score < 50
     input.system.health > 0.8
 }
-default allowed_0320 = false
-
-# Utility function for user info
+policy_0320_allowed if {
+    input.user.role == "admin"
+}

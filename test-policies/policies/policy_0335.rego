@@ -1,7 +1,7 @@
-package security.authentication.action.validate.utils.policy_0335
+package audit.authorization.policy.deny.logic.policy_0335
 
-# Auto-generated policy 335
-# Package: security.authentication.action.validate.utils
+# Auto-generated policy 335 (Rego v1 syntax)
+# Package: audit.authorization.policy.deny.logic
 
 # Metadata
 metadata := {
@@ -11,12 +11,14 @@ metadata := {
 }
 
 # Rules
-approved_0335 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
+policy_0335_allowed if {
+    input.user.role == "admin"
 }
-allowed_0335 {
-    data.policies.security.enabled
+policy_0335_allowed if {
+    input.user.active
+    input.resource.public
 }
-
-# Utility function for user info
+policy_0335_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
+}

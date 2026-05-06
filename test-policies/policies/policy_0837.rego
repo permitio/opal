@@ -1,7 +1,7 @@
-package compliance.enforcement.user.deny.policy_0837
+package access.authentication.resource.validate.data.policy_0837
 
-# Auto-generated policy 837
-# Package: compliance.enforcement.user.deny
+# Auto-generated policy 837 (Rego v1 syntax)
+# Package: access.authentication.resource.validate.data
 
 # Metadata
 metadata := {
@@ -11,12 +11,18 @@ metadata := {
 }
 
 # Rules
-approved_0837 {
+policy_0837_allowed if {
+    data.policies.access.enabled
+}
+policy_0837_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
+}
+policy_0837_approved if {
     input.user.risk_score < 50
     input.system.health > 0.8
 }
-allowed_0837 {
-    data.policies.compliance.enabled
+policy_0837_allowed if {
+    input.user.active
+    input.resource.public
 }
-
-# Utility function for user info

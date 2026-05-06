@@ -1,7 +1,7 @@
-package governance.enforcement.context.validate.core.policy_0982
+package compliance.authentication.user.deny.logic.policy_0982
 
-# Auto-generated policy 982
-# Package: governance.enforcement.context.validate.core
+# Auto-generated policy 982 (Rego v1 syntax)
+# Package: compliance.authentication.user.deny.logic
 
 # Metadata
 metadata := {
@@ -11,13 +11,10 @@ metadata := {
 }
 
 # Rules
-allowed_0982 {
-    data.policies.governance.enabled
+policy_0982_allowed if {
+    data.policies.compliance.enabled
 }
-allowed_0982 {
-    input.user.active
-    input.resource.public
+policy_0982_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
 }
-default allowed_0982 = false
-
-# Utility function for user info

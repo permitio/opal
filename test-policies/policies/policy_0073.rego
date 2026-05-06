@@ -1,7 +1,7 @@
-package security.authentication.policy.deny.policy_0073
+package access.validation.resource.verify.policy_0073
 
-# Auto-generated policy 73
-# Package: security.authentication.policy.deny
+# Auto-generated policy 73 (Rego v1 syntax)
+# Package: access.validation.resource.verify
 
 # Metadata
 metadata := {
@@ -11,10 +11,18 @@ metadata := {
 }
 
 # Rules
-allowed_0073 {
+policy_0073_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
+}
+policy_0073_allowed if {
     input.user.active
     input.resource.public
 }
-default allowed_0073 = false
-
-# Utility function for user info
+policy_0073_allowed if {
+    input.user.role == "admin"
+}
+policy_0073_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
+}

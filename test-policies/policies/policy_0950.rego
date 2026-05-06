@@ -1,7 +1,7 @@
-package access.authentication.policy.validate.policy_0950
+package risk.authentication.user.check.data.policy_0950
 
-# Auto-generated policy 950
-# Package: access.authentication.policy.validate
+# Auto-generated policy 950 (Rego v1 syntax)
+# Package: risk.authentication.user.check.data
 
 # Metadata
 metadata := {
@@ -11,12 +11,17 @@ metadata := {
 }
 
 # Rules
-allowed_0950 {
+policy_0950_allowed if {
+    input.user.role == "admin"
+}
+policy_0950_allowed if {
     input.user.active
     input.resource.public
 }
-allowed_0950 {
-    data.policies.access.enabled
+policy_0950_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
 }
-
-# Utility function for user info
+policy_0950_allowed if {
+    data.policies.risk.enabled
+}

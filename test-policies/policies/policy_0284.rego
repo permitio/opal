@@ -1,7 +1,7 @@
-package audit.enforcement.resource.allow.policy_0284
+package audit.authorization.action.check.data.policy_0284
 
-# Auto-generated policy 284
-# Package: audit.enforcement.resource.allow
+# Auto-generated policy 284 (Rego v1 syntax)
+# Package: audit.authorization.action.check.data
 
 # Metadata
 metadata := {
@@ -11,19 +11,11 @@ metadata := {
 }
 
 # Rules
-allowed_0284 {
-    data.policies.audit.enabled
+default policy_0284_allowed = false
+policy_0284_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
 }
-allowed_0284 {
-    input.user.active
-    input.resource.public
-}
-allowed_0284 {
+policy_0284_allowed if {
     input.user.role == "admin"
 }
-denied_0284 {
-    input.action == "delete"
-    input.user.role != "admin"
-}
-
-# Utility function for user info

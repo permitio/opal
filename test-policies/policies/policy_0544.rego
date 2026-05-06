@@ -1,7 +1,7 @@
-package audit.validation.resource.verify.utils.policy_0544
+package security.authentication.context.verify.policy_0544
 
-# Auto-generated policy 544
-# Package: audit.validation.resource.verify.utils
+# Auto-generated policy 544 (Rego v1 syntax)
+# Package: security.authentication.context.verify
 
 # Metadata
 metadata := {
@@ -11,13 +11,10 @@ metadata := {
 }
 
 # Rules
-default allowed_0544 = false
-approved_0544 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
+policy_0544_allowed if {
+    input.user.active
+    input.resource.public
 }
-allowed_0544 {
-    data.policies.audit.enabled
+policy_0544_allowed if {
+    data.policies.security.enabled
 }
-
-# Utility function for user info

@@ -1,7 +1,7 @@
-package compliance.authorization.context.check.policy_0401
+package security.monitoring.user.verify.policy_0401
 
-# Auto-generated policy 401
-# Package: compliance.authorization.context.check
+# Auto-generated policy 401 (Rego v1 syntax)
+# Package: security.monitoring.user.verify
 
 # Metadata
 metadata := {
@@ -11,10 +11,8 @@ metadata := {
 }
 
 # Rules
-default allowed_0401 = false
-allowed_0401 {
-    input.user.active
-    input.resource.public
+default policy_0401_allowed = false
+policy_0401_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
 }
-
-# Utility function for user info

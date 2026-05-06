@@ -1,7 +1,7 @@
-package audit.validation.user.deny.utils.policy_0656
+package risk.enforcement.action.allow.policy_0656
 
-# Auto-generated policy 656
-# Package: audit.validation.user.deny.utils
+# Auto-generated policy 656 (Rego v1 syntax)
+# Package: risk.enforcement.action.allow
 
 # Metadata
 metadata := {
@@ -11,19 +11,8 @@ metadata := {
 }
 
 # Rules
-allowed_0656 {
-    input.user.role == "admin"
-}
-allowed_0656 {
-    data.policies.audit.enabled
-}
-allowed_0656 {
+default policy_0656_allowed = false
+policy_0656_allowed if {
     input.user.active
     input.resource.public
 }
-denied_0656 {
-    input.action == "delete"
-    input.user.role != "admin"
-}
-
-# Utility function for user info

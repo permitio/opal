@@ -1,7 +1,7 @@
-package access.validation.resource.deny.policy_0265
+package compliance.authorization.policy.allow.policy_0265
 
-# Auto-generated policy 265
-# Package: access.validation.resource.deny
+# Auto-generated policy 265 (Rego v1 syntax)
+# Package: compliance.authorization.policy.allow
 
 # Metadata
 metadata := {
@@ -11,14 +11,11 @@ metadata := {
 }
 
 # Rules
-approved_0265 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
+policy_0265_allowed if {
+    input.user.active
+    input.resource.public
 }
-default allowed_0265 = false
-denied_0265 {
+policy_0265_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-
-# Utility function for user info

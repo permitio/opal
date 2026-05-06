@@ -1,7 +1,7 @@
-package risk.authorization.policy.verify.data.policy_0203
+package compliance.validation.action.deny.logic.policy_0203
 
-# Auto-generated policy 203
-# Package: risk.authorization.policy.verify.data
+# Auto-generated policy 203 (Rego v1 syntax)
+# Package: compliance.validation.action.deny.logic
 
 # Metadata
 metadata := {
@@ -11,13 +11,11 @@ metadata := {
 }
 
 # Rules
-default allowed_0203 = false
-allowed_0203 {
-    input.user.role == "admin"
+policy_0203_allowed if {
+    data.policies.compliance.enabled
 }
-denied_0203 {
-    input.action == "delete"
-    input.user.role != "admin"
+default policy_0203_allowed = false
+policy_0203_allowed if {
+    input.user.active
+    input.resource.public
 }
-
-# Utility function for user info

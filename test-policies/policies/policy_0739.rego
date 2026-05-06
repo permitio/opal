@@ -1,7 +1,7 @@
-package compliance.authentication.context.check.policy_0739
+package governance.validation.user.allow.utils.policy_0739
 
-# Auto-generated policy 739
-# Package: compliance.authentication.context.check
+# Auto-generated policy 739 (Rego v1 syntax)
+# Package: governance.validation.user.allow.utils
 
 # Metadata
 metadata := {
@@ -11,19 +11,16 @@ metadata := {
 }
 
 # Rules
-approved_0739 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
+default policy_0739_allowed = false
+policy_0739_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
 }
-allowed_0739 {
+policy_0739_allowed if {
     input.user.active
     input.resource.public
 }
-allowed_0739 {
-    input.user.role == "admin"
+policy_0739_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
 }
-allowed_0739 {
-    data.policies.compliance.enabled
-}
-
-# Utility function for user info

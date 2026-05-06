@@ -1,7 +1,7 @@
-package compliance.validation.policy.deny.policy_0909
+package security.authentication.context.deny.policy_0909
 
-# Auto-generated policy 909
-# Package: compliance.validation.policy.deny
+# Auto-generated policy 909 (Rego v1 syntax)
+# Package: security.authentication.context.deny
 
 # Metadata
 metadata := {
@@ -11,17 +11,11 @@ metadata := {
 }
 
 # Rules
-allowed_0909 {
-    input.user.role == "admin"
+policy_0909_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
 }
-default allowed_0909 = false
-approved_0909 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
+default policy_0909_allowed = false
+policy_0909_allowed if {
+    data.policies.security.enabled
 }
-allowed_0909 {
-    input.user.active
-    input.resource.public
-}
-
-# Utility function for user info

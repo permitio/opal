@@ -1,7 +1,7 @@
-package audit.enforcement.resource.allow.policy_0119
+package risk.monitoring.action.allow.utils.policy_0119
 
-# Auto-generated policy 119
-# Package: audit.enforcement.resource.allow
+# Auto-generated policy 119 (Rego v1 syntax)
+# Package: risk.monitoring.action.allow.utils
 
 # Metadata
 metadata := {
@@ -11,20 +11,11 @@ metadata := {
 }
 
 # Rules
-approved_0119 {
+default policy_0119_allowed = false
+policy_0119_approved if {
     input.user.risk_score < 50
     input.system.health > 0.8
 }
-allowed_0119 {
-    input.user.active
-    input.resource.public
+policy_0119_allowed if {
+    input.user.role == "admin"
 }
-denied_0119 {
-    input.action == "delete"
-    input.user.role != "admin"
-}
-allowed_0119 {
-    data.policies.audit.enabled
-}
-
-# Utility function for user info

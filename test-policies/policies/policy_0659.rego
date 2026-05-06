@@ -1,7 +1,7 @@
-package security.authorization.resource.allow.helpers.policy_0659
+package access.authentication.context.deny.core.policy_0659
 
-# Auto-generated policy 659
-# Package: security.authorization.resource.allow.helpers
+# Auto-generated policy 659 (Rego v1 syntax)
+# Package: access.authentication.context.deny.core
 
 # Metadata
 metadata := {
@@ -11,12 +11,11 @@ metadata := {
 }
 
 # Rules
-allowed_0659 {
+policy_0659_allowed if {
     input.user.role == "admin"
 }
-allowed_0659 {
+policy_0659_allowed if {
     input.user.active
     input.resource.public
 }
-
-# Utility function for user info
+default policy_0659_allowed = false

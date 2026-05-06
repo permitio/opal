@@ -1,7 +1,7 @@
-package governance.monitoring.resource.check.logic.policy_0537
+package audit.authorization.context.check.policy_0537
 
-# Auto-generated policy 537
-# Package: governance.monitoring.resource.check.logic
+# Auto-generated policy 537 (Rego v1 syntax)
+# Package: audit.authorization.context.check
 
 # Metadata
 metadata := {
@@ -11,19 +11,10 @@ metadata := {
 }
 
 # Rules
-allowed_0537 {
+policy_0537_allowed if {
+    input.user.role == "admin"
+}
+policy_0537_allowed if {
     input.user.active
     input.resource.public
 }
-allowed_0537 {
-    input.user.role == "admin"
-}
-approved_0537 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
-}
-allowed_0537 {
-    data.policies.governance.enabled
-}
-
-# Utility function for user info

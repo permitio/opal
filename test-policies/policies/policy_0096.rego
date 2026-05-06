@@ -1,7 +1,7 @@
-package security.authorization.user.deny.policy_0096
+package security.monitoring.policy.verify.data.policy_0096
 
-# Auto-generated policy 96
-# Package: security.authorization.user.deny
+# Auto-generated policy 96 (Rego v1 syntax)
+# Package: security.monitoring.policy.verify.data
 
 # Metadata
 metadata := {
@@ -11,10 +11,12 @@ metadata := {
 }
 
 # Rules
-allowed_0096 {
-    input.user.active
-    input.resource.public
+policy_0096_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
 }
-default allowed_0096 = false
-
-# Utility function for user info
+default policy_0096_allowed = false
+policy_0096_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
+}

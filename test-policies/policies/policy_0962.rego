@@ -1,7 +1,7 @@
-package compliance.enforcement.user.verify.utils.policy_0962
+package governance.authentication.policy.verify.policy_0962
 
-# Auto-generated policy 962
-# Package: compliance.enforcement.user.verify.utils
+# Auto-generated policy 962 (Rego v1 syntax)
+# Package: governance.authentication.policy.verify
 
 # Metadata
 metadata := {
@@ -11,16 +11,17 @@ metadata := {
 }
 
 # Rules
-allowed_0962 {
-    data.policies.compliance.enabled
+policy_0962_allowed if {
+    input.user.active
+    input.resource.public
 }
-default allowed_0962 = false
-approved_0962 {
+policy_0962_allowed if {
+    input.user.role == "admin"
+}
+policy_0962_approved if {
     input.user.risk_score < 50
     input.system.health > 0.8
 }
-allowed_0962 {
-    input.user.role == "admin"
+policy_0962_allowed if {
+    data.policies.governance.enabled
 }
-
-# Utility function for user info

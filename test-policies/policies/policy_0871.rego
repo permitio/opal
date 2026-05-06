@@ -1,7 +1,7 @@
-package security.monitoring.user.check.helpers.policy_0871
+package audit.monitoring.resource.deny.policy_0871
 
-# Auto-generated policy 871
-# Package: security.monitoring.user.check.helpers
+# Auto-generated policy 871 (Rego v1 syntax)
+# Package: audit.monitoring.resource.deny
 
 # Metadata
 metadata := {
@@ -11,16 +11,14 @@ metadata := {
 }
 
 # Rules
-denied_0871 {
-    input.action == "delete"
-    input.user.role != "admin"
+policy_0871_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
 }
-allowed_0871 {
+policy_0871_allowed if {
     input.user.active
     input.resource.public
 }
-allowed_0871 {
-    data.policies.security.enabled
+policy_0871_allowed if {
+    input.user.role == "admin"
 }
-
-# Utility function for user info

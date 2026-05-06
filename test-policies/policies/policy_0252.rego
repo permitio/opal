@@ -1,7 +1,7 @@
-package compliance.monitoring.resource.validate.policy_0252
+package compliance.enforcement.action.validate.data.policy_0252
 
-# Auto-generated policy 252
-# Package: compliance.monitoring.resource.validate
+# Auto-generated policy 252 (Rego v1 syntax)
+# Package: compliance.enforcement.action.validate.data
 
 # Metadata
 metadata := {
@@ -11,17 +11,8 @@ metadata := {
 }
 
 # Rules
-approved_0252 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
-}
-allowed_0252 {
+default policy_0252_allowed = false
+policy_0252_allowed if {
     input.user.active
     input.resource.public
 }
-default allowed_0252 = false
-allowed_0252 {
-    input.user.role == "admin"
-}
-
-# Utility function for user info

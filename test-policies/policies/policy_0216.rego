@@ -1,7 +1,7 @@
-package compliance.validation.action.verify.data.policy_0216
+package access.validation.action.validate.policy_0216
 
-# Auto-generated policy 216
-# Package: compliance.validation.action.verify.data
+# Auto-generated policy 216 (Rego v1 syntax)
+# Package: access.validation.action.validate
 
 # Metadata
 metadata := {
@@ -11,15 +11,16 @@ metadata := {
 }
 
 # Rules
-allowed_0216 {
+policy_0216_allowed if {
     input.user.active
     input.resource.public
 }
-allowed_0216 {
-    data.policies.compliance.enabled
+default policy_0216_allowed = false
+policy_0216_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
 }
-allowed_0216 {
-    input.user.role == "admin"
+policy_0216_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
 }
-
-# Utility function for user info

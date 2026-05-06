@@ -1,7 +1,7 @@
-package audit.enforcement.resource.deny.policy_0535
+package risk.authorization.action.deny.logic.policy_0535
 
-# Auto-generated policy 535
-# Package: audit.enforcement.resource.deny
+# Auto-generated policy 535 (Rego v1 syntax)
+# Package: risk.authorization.action.deny.logic
 
 # Metadata
 metadata := {
@@ -11,12 +11,14 @@ metadata := {
 }
 
 # Rules
-allowed_0535 {
+policy_0535_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
+}
+default policy_0535_allowed = false
+policy_0535_allowed if {
     input.user.role == "admin"
 }
-approved_0535 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
+policy_0535_allowed if {
+    data.policies.risk.enabled
 }
-
-# Utility function for user info

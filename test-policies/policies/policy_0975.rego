@@ -1,7 +1,7 @@
-package security.validation.resource.validate.policy_0975
+package compliance.authorization.policy.validate.policy_0975
 
-# Auto-generated policy 975
-# Package: security.validation.resource.validate
+# Auto-generated policy 975 (Rego v1 syntax)
+# Package: compliance.authorization.policy.validate
 
 # Metadata
 metadata := {
@@ -11,16 +11,18 @@ metadata := {
 }
 
 # Rules
-default allowed_0975 = false
-allowed_0975 {
+policy_0975_allowed if {
     input.user.active
     input.resource.public
 }
-allowed_0975 {
-    data.policies.security.enabled
+policy_0975_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
 }
-allowed_0975 {
+policy_0975_allowed if {
     input.user.role == "admin"
 }
-
-# Utility function for user info
+policy_0975_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
+}

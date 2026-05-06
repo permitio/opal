@@ -1,7 +1,7 @@
-package compliance.authorization.context.check.policy_0430
+package access.enforcement.resource.deny.policy_0430
 
-# Auto-generated policy 430
-# Package: compliance.authorization.context.check
+# Auto-generated policy 430 (Rego v1 syntax)
+# Package: access.enforcement.resource.deny
 
 # Metadata
 metadata := {
@@ -11,11 +11,11 @@ metadata := {
 }
 
 # Rules
-allowed_0430 {
-    input.user.role == "admin"
+policy_0430_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
 }
-allowed_0430 {
-    data.policies.compliance.enabled
+default policy_0430_allowed = false
+policy_0430_allowed if {
+    data.policies.access.enabled
 }
-
-# Utility function for user info

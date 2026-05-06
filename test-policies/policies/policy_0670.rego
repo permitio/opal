@@ -1,7 +1,7 @@
-package audit.validation.action.deny.policy_0670
+package governance.authentication.action.check.policy_0670
 
-# Auto-generated policy 670
-# Package: audit.validation.action.deny
+# Auto-generated policy 670 (Rego v1 syntax)
+# Package: governance.authentication.action.check
 
 # Metadata
 metadata := {
@@ -11,15 +11,14 @@ metadata := {
 }
 
 # Rules
-allowed_0670 {
-    input.user.role == "admin"
+policy_0670_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
 }
-allowed_0670 {
-    data.policies.audit.enabled
+policy_0670_allowed if {
+    data.policies.governance.enabled
 }
-allowed_0670 {
-    input.user.active
-    input.resource.public
+policy_0670_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
 }
-
-# Utility function for user info

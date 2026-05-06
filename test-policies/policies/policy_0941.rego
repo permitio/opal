@@ -1,7 +1,7 @@
-package access.authorization.user.deny.policy_0941
+package compliance.validation.context.deny.policy_0941
 
-# Auto-generated policy 941
-# Package: access.authorization.user.deny
+# Auto-generated policy 941 (Rego v1 syntax)
+# Package: compliance.validation.context.deny
 
 # Metadata
 metadata := {
@@ -11,12 +11,14 @@ metadata := {
 }
 
 # Rules
-allowed_0941 {
-    data.policies.access.enabled
+default policy_0941_allowed = false
+policy_0941_allowed if {
+    input.user.role == "admin"
 }
-denied_0941 {
-    input.action == "delete"
-    input.user.role != "admin"
+policy_0941_allowed if {
+    input.user.active
+    input.resource.public
 }
-
-# Utility function for user info
+policy_0941_allowed if {
+    data.policies.compliance.enabled
+}

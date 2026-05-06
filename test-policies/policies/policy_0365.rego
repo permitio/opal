@@ -1,7 +1,7 @@
-package audit.monitoring.policy.check.policy_0365
+package security.monitoring.user.verify.core.policy_0365
 
-# Auto-generated policy 365
-# Package: audit.monitoring.policy.check
+# Auto-generated policy 365 (Rego v1 syntax)
+# Package: security.monitoring.user.verify.core
 
 # Metadata
 metadata := {
@@ -11,16 +11,14 @@ metadata := {
 }
 
 # Rules
-allowed_0365 {
-    input.user.role == "admin"
-}
-denied_0365 {
+policy_0365_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-approved_0365 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
+policy_0365_allowed if {
+    data.policies.security.enabled
 }
-
-# Utility function for user info
+policy_0365_allowed if {
+    input.user.role == "admin"
+}
+default policy_0365_allowed = false

@@ -1,7 +1,7 @@
-package risk.authorization.action.verify.policy_0507
+package risk.authorization.policy.verify.policy_0507
 
-# Auto-generated policy 507
-# Package: risk.authorization.action.verify
+# Auto-generated policy 507 (Rego v1 syntax)
+# Package: risk.authorization.policy.verify
 
 # Metadata
 metadata := {
@@ -11,16 +11,11 @@ metadata := {
 }
 
 # Rules
-denied_0507 {
-    input.action == "delete"
-    input.user.role != "admin"
-}
-allowed_0507 {
-    input.user.role == "admin"
-}
-allowed_0507 {
+policy_0507_allowed if {
     input.user.active
     input.resource.public
 }
-
-# Utility function for user info
+policy_0507_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
+}

@@ -1,7 +1,7 @@
-package audit.enforcement.user.check.policy_0838
+package risk.enforcement.user.allow.core.policy_0838
 
-# Auto-generated policy 838
-# Package: audit.enforcement.user.check
+# Auto-generated policy 838 (Rego v1 syntax)
+# Package: risk.enforcement.user.allow.core
 
 # Metadata
 metadata := {
@@ -11,12 +11,8 @@ metadata := {
 }
 
 # Rules
-denied_0838 {
-    input.action == "delete"
-    input.user.role != "admin"
+policy_0838_allowed if {
+    input.user.active
+    input.resource.public
 }
-allowed_0838 {
-    input.user.role == "admin"
-}
-
-# Utility function for user info
+default policy_0838_allowed = false

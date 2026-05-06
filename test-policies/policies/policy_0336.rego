@@ -1,7 +1,7 @@
-package risk.authorization.user.verify.policy_0336
+package access.enforcement.action.check.policy_0336
 
-# Auto-generated policy 336
-# Package: risk.authorization.user.verify
+# Auto-generated policy 336 (Rego v1 syntax)
+# Package: access.enforcement.action.check
 
 # Metadata
 metadata := {
@@ -11,16 +11,9 @@ metadata := {
 }
 
 # Rules
-allowed_0336 {
-    input.user.active
-    input.resource.public
+policy_0336_allowed if {
+    data.policies.access.enabled
 }
-denied_0336 {
-    input.action == "delete"
-    input.user.role != "admin"
+policy_0336_allowed if {
+    input.user.role == "admin"
 }
-allowed_0336 {
-    data.policies.risk.enabled
-}
-
-# Utility function for user info

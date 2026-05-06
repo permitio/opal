@@ -1,7 +1,7 @@
-package risk.authorization.action.verify.core.policy_0458
+package governance.validation.policy.allow.data.policy_0458
 
-# Auto-generated policy 458
-# Package: risk.authorization.action.verify.core
+# Auto-generated policy 458 (Rego v1 syntax)
+# Package: governance.validation.policy.allow.data
 
 # Metadata
 metadata := {
@@ -11,12 +11,11 @@ metadata := {
 }
 
 # Rules
-allowed_0458 {
-    data.policies.risk.enabled
+policy_0458_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
 }
-approved_0458 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
+policy_0458_allowed if {
+    input.user.active
+    input.resource.public
 }
-
-# Utility function for user info

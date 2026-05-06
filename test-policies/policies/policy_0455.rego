@@ -1,7 +1,7 @@
-package risk.enforcement.policy.validate.logic.policy_0455
+package audit.enforcement.resource.check.policy_0455
 
-# Auto-generated policy 455
-# Package: risk.enforcement.policy.validate.logic
+# Auto-generated policy 455 (Rego v1 syntax)
+# Package: audit.enforcement.resource.check
 
 # Metadata
 metadata := {
@@ -11,18 +11,17 @@ metadata := {
 }
 
 # Rules
-denied_0455 {
-    input.action == "delete"
-    input.user.role != "admin"
+policy_0455_allowed if {
+    data.policies.audit.enabled
 }
-allowed_0455 {
-    input.user.active
-    input.resource.public
-}
-approved_0455 {
+policy_0455_approved if {
     input.user.risk_score < 50
     input.system.health > 0.8
 }
-default allowed_0455 = false
-
-# Utility function for user info
+policy_0455_allowed if {
+    input.user.role == "admin"
+}
+policy_0455_allowed if {
+    input.user.active
+    input.resource.public
+}

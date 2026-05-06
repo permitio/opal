@@ -1,7 +1,7 @@
-package governance.enforcement.resource.check.utils.policy_0840
+package compliance.validation.action.check.policy_0840
 
-# Auto-generated policy 840
-# Package: governance.enforcement.resource.check.utils
+# Auto-generated policy 840 (Rego v1 syntax)
+# Package: compliance.validation.action.check
 
 # Metadata
 metadata := {
@@ -11,16 +11,15 @@ metadata := {
 }
 
 # Rules
-denied_0840 {
+policy_0840_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-approved_0840 {
+policy_0840_approved if {
     input.user.risk_score < 50
     input.system.health > 0.8
 }
-allowed_0840 {
-    data.policies.governance.enabled
+policy_0840_allowed if {
+    data.policies.compliance.enabled
 }
-
-# Utility function for user info
+default policy_0840_allowed = false

@@ -1,7 +1,7 @@
-package governance.authorization.action.verify.helpers.policy_0477
+package security.enforcement.context.check.utils.policy_0477
 
-# Auto-generated policy 477
-# Package: governance.authorization.action.verify.helpers
+# Auto-generated policy 477 (Rego v1 syntax)
+# Package: security.enforcement.context.check.utils
 
 # Metadata
 metadata := {
@@ -11,12 +11,11 @@ metadata := {
 }
 
 # Rules
-default allowed_0477 = false
-allowed_0477 {
-    input.user.role == "admin"
+policy_0477_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
 }
-allowed_0477 {
-    data.policies.governance.enabled
+policy_0477_allowed if {
+    input.user.active
+    input.resource.public
 }
-
-# Utility function for user info

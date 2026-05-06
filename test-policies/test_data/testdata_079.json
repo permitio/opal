@@ -1,39 +1,67 @@
 {
   "test_id": 79,
   "metadata": {
-    "environment": "dev",
+    "environment": "staging",
     "region": "ap-northeast-1",
-    "version": "1.5.7"
+    "version": "1.2.12"
   },
   "users": [
     {
       "id": "user_000",
       "name": "User 0",
-      "role": "admin",
-      "active": true,
-      "risk_score": 38
+      "role": "viewer",
+      "active": false,
+      "risk_score": 17
     },
     {
       "id": "user_001",
       "name": "User 1",
-      "role": "admin",
+      "role": "editor",
       "active": true,
-      "risk_score": 42
+      "risk_score": 49
+    },
+    {
+      "id": "user_002",
+      "name": "User 2",
+      "role": "user",
+      "active": false,
+      "risk_score": 19
+    },
+    {
+      "id": "user_003",
+      "name": "User 3",
+      "role": "editor",
+      "active": false,
+      "risk_score": 3
     }
   ],
   "resources": [
     {
       "id": "res_000",
-      "type": "file",
+      "type": "api",
       "public": true,
-      "owner_id": "user_081",
-      "sensitivity": "public"
+      "owner_id": "user_046",
+      "sensitivity": "secret"
+    },
+    {
+      "id": "res_001",
+      "type": "file",
+      "public": false,
+      "owner_id": "user_096",
+      "sensitivity": "confidential"
+    },
+    {
+      "id": "res_002",
+      "type": "database",
+      "public": true,
+      "owner_id": "user_100",
+      "sensitivity": "confidential"
     }
   ],
   "system": {
-    "health": 0.79,
-    "load": 72.92,
-    "uptime_days": 284
+    "health": 0.68,
+    "load": 70.01,
+    "uptime_days": 338
   },
   "policies": {
     "security": {
@@ -43,7 +71,7 @@
       "enabled": true
     },
     "access": {
-      "enabled": false
+      "enabled": true
     },
     "audit": {
       "enabled": true

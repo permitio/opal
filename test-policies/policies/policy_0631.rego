@@ -1,7 +1,7 @@
-package governance.authorization.policy.allow.policy_0631
+package audit.validation.policy.verify.policy_0631
 
-# Auto-generated policy 631
-# Package: governance.authorization.policy.allow
+# Auto-generated policy 631 (Rego v1 syntax)
+# Package: audit.validation.policy.verify
 
 # Metadata
 metadata := {
@@ -11,16 +11,15 @@ metadata := {
 }
 
 # Rules
-approved_0631 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
-}
-allowed_0631 {
-    data.policies.governance.enabled
-}
-allowed_0631 {
+default policy_0631_allowed = false
+policy_0631_allowed if {
     input.user.active
     input.resource.public
 }
-
-# Utility function for user info
+policy_0631_allowed if {
+    data.policies.audit.enabled
+}
+policy_0631_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
+}

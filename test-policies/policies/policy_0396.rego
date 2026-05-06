@@ -1,7 +1,7 @@
-package governance.authentication.context.verify.data.policy_0396
+package risk.authorization.user.validate.helpers.policy_0396
 
-# Auto-generated policy 396
-# Package: governance.authentication.context.verify.data
+# Auto-generated policy 396 (Rego v1 syntax)
+# Package: risk.authorization.user.validate.helpers
 
 # Metadata
 metadata := {
@@ -11,20 +11,15 @@ metadata := {
 }
 
 # Rules
-approved_0396 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
+policy_0396_allowed if {
+    input.user.role == "admin"
 }
-denied_0396 {
-    input.action == "delete"
-    input.user.role != "admin"
-}
-allowed_0396 {
+default policy_0396_allowed = false
+policy_0396_allowed if {
     input.user.active
     input.resource.public
 }
-allowed_0396 {
-    input.user.role == "admin"
+policy_0396_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
 }
-
-# Utility function for user info

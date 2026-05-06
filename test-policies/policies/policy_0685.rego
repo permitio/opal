@@ -1,7 +1,7 @@
-package security.authorization.resource.validate.policy_0685
+package risk.validation.action.verify.helpers.policy_0685
 
-# Auto-generated policy 685
-# Package: security.authorization.resource.validate
+# Auto-generated policy 685 (Rego v1 syntax)
+# Package: risk.validation.action.verify.helpers
 
 # Metadata
 metadata := {
@@ -11,17 +11,15 @@ metadata := {
 }
 
 # Rules
-allowed_0685 {
-    data.policies.security.enabled
+policy_0685_allowed if {
+    input.user.active
+    input.resource.public
 }
-approved_0685 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
+policy_0685_allowed if {
+    data.policies.risk.enabled
 }
-default allowed_0685 = false
-denied_0685 {
+default policy_0685_allowed = false
+policy_0685_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-
-# Utility function for user info

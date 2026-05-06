@@ -1,7 +1,7 @@
-package governance.monitoring.resource.verify.utils.policy_0217
+package compliance.validation.resource.allow.policy_0217
 
-# Auto-generated policy 217
-# Package: governance.monitoring.resource.verify.utils
+# Auto-generated policy 217 (Rego v1 syntax)
+# Package: compliance.validation.resource.allow
 
 # Metadata
 metadata := {
@@ -11,17 +11,11 @@ metadata := {
 }
 
 # Rules
-allowed_0217 {
-    input.user.active
-    input.resource.public
+policy_0217_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
 }
-allowed_0217 {
-    data.policies.governance.enabled
-}
-default allowed_0217 = false
-denied_0217 {
+policy_0217_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-
-# Utility function for user info

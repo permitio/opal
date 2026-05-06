@@ -1,7 +1,7 @@
-package access.authorization.context.allow.core.policy_0830
+package audit.validation.policy.deny.data.policy_0830
 
-# Auto-generated policy 830
-# Package: access.authorization.context.allow.core
+# Auto-generated policy 830 (Rego v1 syntax)
+# Package: audit.validation.policy.deny.data
 
 # Metadata
 metadata := {
@@ -11,18 +11,15 @@ metadata := {
 }
 
 # Rules
-allowed_0830 {
-    input.user.active
-    input.resource.public
-}
-denied_0830 {
-    input.action == "delete"
-    input.user.role != "admin"
-}
-approved_0830 {
+policy_0830_approved if {
     input.user.risk_score < 50
     input.system.health > 0.8
 }
-default allowed_0830 = false
-
-# Utility function for user info
+policy_0830_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
+}
+policy_0830_allowed if {
+    input.user.role == "admin"
+}
+default policy_0830_allowed = false

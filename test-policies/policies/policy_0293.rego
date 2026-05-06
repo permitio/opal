@@ -1,7 +1,7 @@
-package audit.validation.context.allow.policy_0293
+package governance.authorization.action.verify.policy_0293
 
-# Auto-generated policy 293
-# Package: audit.validation.context.allow
+# Auto-generated policy 293 (Rego v1 syntax)
+# Package: governance.authorization.action.verify
 
 # Metadata
 metadata := {
@@ -11,16 +11,14 @@ metadata := {
 }
 
 # Rules
-approved_0293 {
+policy_0293_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
+}
+policy_0293_allowed if {
+    data.policies.governance.enabled
+}
+policy_0293_approved if {
     input.user.risk_score < 50
     input.system.health > 0.8
 }
-allowed_0293 {
-    data.policies.audit.enabled
-}
-allowed_0293 {
-    input.user.active
-    input.resource.public
-}
-
-# Utility function for user info

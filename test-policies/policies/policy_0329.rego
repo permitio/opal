@@ -1,7 +1,7 @@
-package governance.authorization.resource.deny.policy_0329
+package compliance.enforcement.action.check.logic.policy_0329
 
-# Auto-generated policy 329
-# Package: governance.authorization.resource.deny
+# Auto-generated policy 329 (Rego v1 syntax)
+# Package: compliance.enforcement.action.check.logic
 
 # Metadata
 metadata := {
@@ -11,13 +11,15 @@ metadata := {
 }
 
 # Rules
-allowed_0329 {
+default policy_0329_allowed = false
+policy_0329_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
+}
+policy_0329_allowed if {
+    data.policies.compliance.enabled
+}
+policy_0329_allowed if {
     input.user.active
     input.resource.public
 }
-approved_0329 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
-}
-
-# Utility function for user info

@@ -1,7 +1,7 @@
-package compliance.authorization.user.check.helpers.policy_0235
+package audit.enforcement.resource.deny.policy_0235
 
-# Auto-generated policy 235
-# Package: compliance.authorization.user.check.helpers
+# Auto-generated policy 235 (Rego v1 syntax)
+# Package: audit.enforcement.resource.deny
 
 # Metadata
 metadata := {
@@ -11,13 +11,13 @@ metadata := {
 }
 
 # Rules
-approved_0235 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
+policy_0235_allowed if {
+    data.policies.audit.enabled
 }
-default allowed_0235 = false
-allowed_0235 {
-    data.policies.compliance.enabled
+policy_0235_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
 }
-
-# Utility function for user info
+policy_0235_allowed if {
+    input.user.role == "admin"
+}

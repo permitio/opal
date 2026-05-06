@@ -1,7 +1,7 @@
-package access.monitoring.action.allow.policy_0607
+package risk.validation.context.verify.policy_0607
 
-# Auto-generated policy 607
-# Package: access.monitoring.action.allow
+# Auto-generated policy 607 (Rego v1 syntax)
+# Package: risk.validation.context.verify
 
 # Metadata
 metadata := {
@@ -11,15 +11,15 @@ metadata := {
 }
 
 # Rules
-allowed_0607 {
-    data.policies.access.enabled
+policy_0607_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
 }
-allowed_0607 {
+default policy_0607_allowed = false
+policy_0607_allowed if {
+    data.policies.risk.enabled
+}
+policy_0607_allowed if {
     input.user.active
     input.resource.public
 }
-allowed_0607 {
-    input.user.role == "admin"
-}
-
-# Utility function for user info

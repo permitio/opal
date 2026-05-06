@@ -1,7 +1,7 @@
-package access.enforcement.policy.allow.policy_0532
+package risk.monitoring.resource.validate.helpers.policy_0532
 
-# Auto-generated policy 532
-# Package: access.enforcement.policy.allow
+# Auto-generated policy 532 (Rego v1 syntax)
+# Package: risk.monitoring.resource.validate.helpers
 
 # Metadata
 metadata := {
@@ -11,17 +11,15 @@ metadata := {
 }
 
 # Rules
-allowed_0532 {
+policy_0532_allowed if {
+    input.user.role == "admin"
+}
+policy_0532_allowed if {
     input.user.active
     input.resource.public
 }
-allowed_0532 {
-    input.user.role == "admin"
-}
-approved_0532 {
+policy_0532_approved if {
     input.user.risk_score < 50
     input.system.health > 0.8
 }
-default allowed_0532 = false
-
-# Utility function for user info
+default policy_0532_allowed = false

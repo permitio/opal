@@ -1,7 +1,7 @@
-package audit.authorization.policy.validate.policy_0372
+package compliance.authorization.resource.validate.logic.policy_0372
 
-# Auto-generated policy 372
-# Package: audit.authorization.policy.validate
+# Auto-generated policy 372 (Rego v1 syntax)
+# Package: compliance.authorization.resource.validate.logic
 
 # Metadata
 metadata := {
@@ -11,13 +11,14 @@ metadata := {
 }
 
 # Rules
-allowed_0372 {
-    input.user.active
-    input.resource.public
-}
-approved_0372 {
+policy_0372_approved if {
     input.user.risk_score < 50
     input.system.health > 0.8
 }
-
-# Utility function for user info
+policy_0372_allowed if {
+    input.user.active
+    input.resource.public
+}
+policy_0372_allowed if {
+    data.policies.compliance.enabled
+}

@@ -1,7 +1,7 @@
-package compliance.authentication.user.check.data.policy_0704
+package governance.validation.resource.allow.policy_0704
 
-# Auto-generated policy 704
-# Package: compliance.authentication.user.check.data
+# Auto-generated policy 704 (Rego v1 syntax)
+# Package: governance.validation.resource.allow
 
 # Metadata
 metadata := {
@@ -11,14 +11,14 @@ metadata := {
 }
 
 # Rules
-denied_0704 {
-    input.action == "delete"
-    input.user.role != "admin"
+policy_0704_allowed if {
+    input.user.role == "admin"
 }
-default allowed_0704 = false
-allowed_0704 {
-    input.user.active
-    input.resource.public
+default policy_0704_allowed = false
+policy_0704_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
 }
-
-# Utility function for user info
+policy_0704_allowed if {
+    data.policies.governance.enabled
+}

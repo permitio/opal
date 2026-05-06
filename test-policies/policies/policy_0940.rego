@@ -1,7 +1,7 @@
-package compliance.enforcement.action.deny.policy_0940
+package security.monitoring.resource.validate.utils.policy_0940
 
-# Auto-generated policy 940
-# Package: compliance.enforcement.action.deny
+# Auto-generated policy 940 (Rego v1 syntax)
+# Package: security.monitoring.resource.validate.utils
 
 # Metadata
 metadata := {
@@ -11,13 +11,10 @@ metadata := {
 }
 
 # Rules
-approved_0940 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
+default policy_0940_allowed = false
+policy_0940_allowed if {
+    data.policies.security.enabled
 }
-allowed_0940 {
+policy_0940_allowed if {
     input.user.role == "admin"
 }
-default allowed_0940 = false
-
-# Utility function for user info

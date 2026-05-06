@@ -1,7 +1,7 @@
-package access.monitoring.resource.validate.policy_0413
+package governance.validation.user.check.utils.policy_0413
 
-# Auto-generated policy 413
-# Package: access.monitoring.resource.validate
+# Auto-generated policy 413 (Rego v1 syntax)
+# Package: governance.validation.user.check.utils
 
 # Metadata
 metadata := {
@@ -11,19 +11,13 @@ metadata := {
 }
 
 # Rules
-allowed_0413 {
-    input.user.active
-    input.resource.public
+policy_0413_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
 }
-denied_0413 {
-    input.action == "delete"
-    input.user.role != "admin"
+policy_0413_allowed if {
+    data.policies.governance.enabled
 }
-allowed_0413 {
+policy_0413_allowed if {
     input.user.role == "admin"
 }
-allowed_0413 {
-    data.policies.access.enabled
-}
-
-# Utility function for user info

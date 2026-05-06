@@ -1,7 +1,7 @@
-package security.authorization.action.validate.policy_0139
+package compliance.authorization.action.check.policy_0139
 
-# Auto-generated policy 139
-# Package: security.authorization.action.validate
+# Auto-generated policy 139 (Rego v1 syntax)
+# Package: compliance.authorization.action.check
 
 # Metadata
 metadata := {
@@ -11,14 +11,12 @@ metadata := {
 }
 
 # Rules
-allowed_0139 {
+default policy_0139_allowed = false
+policy_0139_allowed if {
     input.user.active
     input.resource.public
 }
-default allowed_0139 = false
-denied_0139 {
-    input.action == "delete"
-    input.user.role != "admin"
+policy_0139_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
 }
-
-# Utility function for user info

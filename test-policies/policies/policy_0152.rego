@@ -1,7 +1,7 @@
-package access.authentication.action.deny.helpers.policy_0152
+package compliance.authentication.resource.verify.helpers.policy_0152
 
-# Auto-generated policy 152
-# Package: access.authentication.action.deny.helpers
+# Auto-generated policy 152 (Rego v1 syntax)
+# Package: compliance.authentication.resource.verify.helpers
 
 # Metadata
 metadata := {
@@ -11,16 +11,15 @@ metadata := {
 }
 
 # Rules
-allowed_0152 {
+policy_0152_allowed if {
     input.user.active
     input.resource.public
 }
-approved_0152 {
+policy_0152_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
+}
+policy_0152_approved if {
     input.user.risk_score < 50
     input.system.health > 0.8
 }
-allowed_0152 {
-    data.policies.access.enabled
-}
-
-# Utility function for user info

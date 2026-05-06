@@ -1,7 +1,7 @@
-package risk.authentication.context.deny.utils.policy_0195
+package audit.validation.action.allow.core.policy_0195
 
-# Auto-generated policy 195
-# Package: risk.authentication.context.deny.utils
+# Auto-generated policy 195 (Rego v1 syntax)
+# Package: audit.validation.action.allow.core
 
 # Metadata
 metadata := {
@@ -11,13 +11,14 @@ metadata := {
 }
 
 # Rules
-default allowed_0195 = false
-allowed_0195 {
-    input.user.role == "admin"
-}
-allowed_0195 {
+policy_0195_allowed if {
     input.user.active
     input.resource.public
 }
-
-# Utility function for user info
+policy_0195_allowed if {
+    input.user.role == "admin"
+}
+policy_0195_allowed if {
+    data.policies.audit.enabled
+}
+default policy_0195_allowed = false

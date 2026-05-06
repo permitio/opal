@@ -1,7 +1,7 @@
-package risk.authentication.action.verify.helpers.policy_0973
+package compliance.validation.user.allow.policy_0973
 
-# Auto-generated policy 973
-# Package: risk.authentication.action.verify.helpers
+# Auto-generated policy 973 (Rego v1 syntax)
+# Package: compliance.validation.user.allow
 
 # Metadata
 metadata := {
@@ -11,20 +11,14 @@ metadata := {
 }
 
 # Rules
-approved_0973 {
+policy_0973_approved if {
     input.user.risk_score < 50
     input.system.health > 0.8
 }
-denied_0973 {
+policy_0973_allowed if {
+    data.policies.compliance.enabled
+}
+policy_0973_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-allowed_0973 {
-    input.user.active
-    input.resource.public
-}
-allowed_0973 {
-    data.policies.risk.enabled
-}
-
-# Utility function for user info

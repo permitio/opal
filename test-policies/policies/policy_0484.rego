@@ -1,7 +1,7 @@
-package risk.authentication.action.allow.utils.policy_0484
+package security.monitoring.action.allow.policy_0484
 
-# Auto-generated policy 484
-# Package: risk.authentication.action.allow.utils
+# Auto-generated policy 484 (Rego v1 syntax)
+# Package: security.monitoring.action.allow
 
 # Metadata
 metadata := {
@@ -11,15 +11,11 @@ metadata := {
 }
 
 # Rules
-allowed_0484 {
-    data.policies.risk.enabled
+default policy_0484_allowed = false
+policy_0484_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
 }
-allowed_0484 {
+policy_0484_allowed if {
     input.user.role == "admin"
 }
-allowed_0484 {
-    input.user.active
-    input.resource.public
-}
-
-# Utility function for user info

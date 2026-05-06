@@ -1,7 +1,7 @@
-package governance.authorization.policy.verify.policy_0121
+package audit.authentication.policy.validate.core.policy_0121
 
-# Auto-generated policy 121
-# Package: governance.authorization.policy.verify
+# Auto-generated policy 121 (Rego v1 syntax)
+# Package: audit.authentication.policy.validate.core
 
 # Metadata
 metadata := {
@@ -11,16 +11,10 @@ metadata := {
 }
 
 # Rules
-denied_0121 {
-    input.action == "delete"
-    input.user.role != "admin"
+policy_0121_allowed if {
+    input.user.role == "admin"
 }
-approved_0121 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
+default policy_0121_allowed = false
+policy_0121_allowed if {
+    data.policies.audit.enabled
 }
-allowed_0121 {
-    data.policies.governance.enabled
-}
-
-# Utility function for user info

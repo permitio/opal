@@ -1,7 +1,7 @@
-package compliance.monitoring.policy.allow.policy_0232
+package security.enforcement.user.deny.policy_0232
 
-# Auto-generated policy 232
-# Package: compliance.monitoring.policy.allow
+# Auto-generated policy 232 (Rego v1 syntax)
+# Package: security.enforcement.user.deny
 
 # Metadata
 metadata := {
@@ -11,12 +11,13 @@ metadata := {
 }
 
 # Rules
-allowed_0232 {
+policy_0232_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
+}
+policy_0232_allowed if {
+    data.policies.security.enabled
+}
+policy_0232_allowed if {
     input.user.role == "admin"
 }
-allowed_0232 {
-    input.user.active
-    input.resource.public
-}
-
-# Utility function for user info

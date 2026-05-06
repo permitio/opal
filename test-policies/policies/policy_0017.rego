@@ -1,7 +1,7 @@
-package compliance.monitoring.resource.deny.policy_0017
+package risk.monitoring.policy.deny.policy_0017
 
-# Auto-generated policy 17
-# Package: compliance.monitoring.resource.deny
+# Auto-generated policy 17 (Rego v1 syntax)
+# Package: risk.monitoring.policy.deny
 
 # Metadata
 metadata := {
@@ -11,14 +11,7 @@ metadata := {
 }
 
 # Rules
-denied_0017 {
-    input.action == "delete"
-    input.user.role != "admin"
+default policy_0017_allowed = false
+policy_0017_allowed if {
+    input.user.role == "admin"
 }
-allowed_0017 {
-    input.user.active
-    input.resource.public
-}
-default allowed_0017 = false
-
-# Utility function for user info

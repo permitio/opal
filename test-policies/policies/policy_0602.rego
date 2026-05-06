@@ -1,7 +1,7 @@
-package access.authorization.context.verify.policy_0602
+package governance.authorization.policy.deny.policy_0602
 
-# Auto-generated policy 602
-# Package: access.authorization.context.verify
+# Auto-generated policy 602 (Rego v1 syntax)
+# Package: governance.authorization.policy.deny
 
 # Metadata
 metadata := {
@@ -11,14 +11,11 @@ metadata := {
 }
 
 # Rules
-default allowed_0602 = false
-allowed_0602 {
-    input.user.active
-    input.resource.public
-}
-denied_0602 {
+policy_0602_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-
-# Utility function for user info
+policy_0602_allowed if {
+    input.user.role == "admin"
+}
+default policy_0602_allowed = false

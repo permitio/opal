@@ -1,7 +1,7 @@
-package security.monitoring.context.check.policy_0730
+package access.authentication.resource.check.logic.policy_0730
 
-# Auto-generated policy 730
-# Package: security.monitoring.context.check
+# Auto-generated policy 730 (Rego v1 syntax)
+# Package: access.authentication.resource.check.logic
 
 # Metadata
 metadata := {
@@ -11,19 +11,11 @@ metadata := {
 }
 
 # Rules
-allowed_0730 {
+policy_0730_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
+}
+policy_0730_allowed if {
     input.user.active
     input.resource.public
 }
-allowed_0730 {
-    input.user.role == "admin"
-}
-approved_0730 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
-}
-allowed_0730 {
-    data.policies.security.enabled
-}
-
-# Utility function for user info

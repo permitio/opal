@@ -1,7 +1,7 @@
-package audit.validation.action.allow.policy_0794
+package compliance.authorization.user.validate.logic.policy_0794
 
-# Auto-generated policy 794
-# Package: audit.validation.action.allow
+# Auto-generated policy 794 (Rego v1 syntax)
+# Package: compliance.authorization.user.validate.logic
 
 # Metadata
 metadata := {
@@ -11,13 +11,14 @@ metadata := {
 }
 
 # Rules
-approved_0794 {
+policy_0794_approved if {
     input.user.risk_score < 50
     input.system.health > 0.8
 }
-denied_0794 {
-    input.action == "delete"
-    input.user.role != "admin"
+default policy_0794_allowed = false
+policy_0794_allowed if {
+    input.user.role == "admin"
 }
-
-# Utility function for user info
+policy_0794_allowed if {
+    data.policies.compliance.enabled
+}

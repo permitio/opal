@@ -1,7 +1,7 @@
-package audit.monitoring.resource.check.core.policy_0707
+package compliance.validation.resource.verify.data.policy_0707
 
-# Auto-generated policy 707
-# Package: audit.monitoring.resource.check.core
+# Auto-generated policy 707 (Rego v1 syntax)
+# Package: compliance.validation.resource.verify.data
 
 # Metadata
 metadata := {
@@ -11,14 +11,14 @@ metadata := {
 }
 
 # Rules
-denied_0707 {
-    input.action == "delete"
-    input.user.role != "admin"
+policy_0707_allowed if {
+    input.user.role == "admin"
 }
-default allowed_0707 = false
-approved_0707 {
+policy_0707_approved if {
     input.user.risk_score < 50
     input.system.health > 0.8
 }
-
-# Utility function for user info
+policy_0707_allowed if {
+    data.policies.compliance.enabled
+}
+default policy_0707_allowed = false

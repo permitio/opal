@@ -1,7 +1,7 @@
-package governance.authentication.policy.check.core.policy_0264
+package governance.authentication.resource.verify.logic.policy_0264
 
-# Auto-generated policy 264
-# Package: governance.authentication.policy.check.core
+# Auto-generated policy 264 (Rego v1 syntax)
+# Package: governance.authentication.resource.verify.logic
 
 # Metadata
 metadata := {
@@ -11,15 +11,13 @@ metadata := {
 }
 
 # Rules
-approved_0264 {
+policy_0264_allowed if {
+    data.policies.governance.enabled
+}
+policy_0264_approved if {
     input.user.risk_score < 50
     input.system.health > 0.8
 }
-allowed_0264 {
-    data.policies.governance.enabled
-}
-allowed_0264 {
+policy_0264_allowed if {
     input.user.role == "admin"
 }
-
-# Utility function for user info

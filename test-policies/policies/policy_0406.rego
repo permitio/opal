@@ -1,7 +1,7 @@
-package risk.monitoring.user.check.policy_0406
+package audit.enforcement.context.verify.policy_0406
 
-# Auto-generated policy 406
-# Package: risk.monitoring.user.check
+# Auto-generated policy 406 (Rego v1 syntax)
+# Package: audit.enforcement.context.verify
 
 # Metadata
 metadata := {
@@ -11,17 +11,15 @@ metadata := {
 }
 
 # Rules
-denied_0406 {
+policy_0406_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-default allowed_0406 = false
-approved_0406 {
+default policy_0406_allowed = false
+policy_0406_allowed if {
+    data.policies.audit.enabled
+}
+policy_0406_approved if {
     input.user.risk_score < 50
     input.system.health > 0.8
 }
-allowed_0406 {
-    input.user.role == "admin"
-}
-
-# Utility function for user info

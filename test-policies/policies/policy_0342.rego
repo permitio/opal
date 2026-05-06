@@ -1,7 +1,7 @@
-package security.enforcement.context.validate.policy_0342
+package security.authentication.resource.verify.core.policy_0342
 
-# Auto-generated policy 342
-# Package: security.enforcement.context.validate
+# Auto-generated policy 342 (Rego v1 syntax)
+# Package: security.authentication.resource.verify.core
 
 # Metadata
 metadata := {
@@ -11,13 +11,13 @@ metadata := {
 }
 
 # Rules
-approved_0342 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
+policy_0342_allowed if {
+    data.policies.security.enabled
 }
-default allowed_0342 = false
-allowed_0342 {
+policy_0342_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
+}
+policy_0342_allowed if {
     input.user.role == "admin"
 }
-
-# Utility function for user info

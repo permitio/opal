@@ -1,7 +1,7 @@
-package compliance.validation.context.validate.logic.policy_0475
+package governance.monitoring.action.check.policy_0475
 
-# Auto-generated policy 475
-# Package: compliance.validation.context.validate.logic
+# Auto-generated policy 475 (Rego v1 syntax)
+# Package: governance.monitoring.action.check
 
 # Metadata
 metadata := {
@@ -11,13 +11,11 @@ metadata := {
 }
 
 # Rules
-allowed_0475 {
-    data.policies.compliance.enabled
+policy_0475_allowed if {
+    input.user.role == "admin"
 }
-default allowed_0475 = false
-denied_0475 {
-    input.action == "delete"
-    input.user.role != "admin"
+default policy_0475_allowed = false
+policy_0475_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
 }
-
-# Utility function for user info

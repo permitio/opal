@@ -1,7 +1,7 @@
-package access.enforcement.policy.check.policy_0218
+package audit.monitoring.resource.check.logic.policy_0218
 
-# Auto-generated policy 218
-# Package: access.enforcement.policy.check
+# Auto-generated policy 218 (Rego v1 syntax)
+# Package: audit.monitoring.resource.check.logic
 
 # Metadata
 metadata := {
@@ -11,16 +11,11 @@ metadata := {
 }
 
 # Rules
-allowed_0218 {
-    input.user.active
-    input.resource.public
-}
-denied_0218 {
+policy_0218_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-allowed_0218 {
-    input.user.role == "admin"
+policy_0218_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
 }
-
-# Utility function for user info

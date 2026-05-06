@@ -1,7 +1,7 @@
-package governance.enforcement.policy.check.policy_0471
+package governance.authorization.policy.validate.policy_0471
 
-# Auto-generated policy 471
-# Package: governance.enforcement.policy.check
+# Auto-generated policy 471 (Rego v1 syntax)
+# Package: governance.authorization.policy.validate
 
 # Metadata
 metadata := {
@@ -11,16 +11,15 @@ metadata := {
 }
 
 # Rules
-approved_0471 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
+policy_0471_allowed if {
+    data.policies.governance.enabled
 }
-allowed_0471 {
+default policy_0471_allowed = false
+policy_0471_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
+}
+policy_0471_allowed if {
     input.user.active
     input.resource.public
 }
-allowed_0471 {
-    input.user.role == "admin"
-}
-
-# Utility function for user info

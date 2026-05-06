@@ -1,7 +1,7 @@
-package risk.validation.user.check.policy_0428
+package compliance.authentication.user.validate.logic.policy_0428
 
-# Auto-generated policy 428
-# Package: risk.validation.user.check
+# Auto-generated policy 428 (Rego v1 syntax)
+# Package: compliance.authentication.user.validate.logic
 
 # Metadata
 metadata := {
@@ -11,19 +11,12 @@ metadata := {
 }
 
 # Rules
-allowed_0428 {
-    input.user.role == "admin"
-}
-approved_0428 {
+default policy_0428_allowed = false
+policy_0428_approved if {
     input.user.risk_score < 50
     input.system.health > 0.8
 }
-allowed_0428 {
-    data.policies.risk.enabled
+policy_0428_allowed if {
+    input.user.active
+    input.resource.public
 }
-denied_0428 {
-    input.action == "delete"
-    input.user.role != "admin"
-}
-
-# Utility function for user info

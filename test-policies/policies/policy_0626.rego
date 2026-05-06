@@ -1,7 +1,7 @@
-package risk.authorization.policy.validate.data.policy_0626
+package governance.monitoring.context.check.policy_0626
 
-# Auto-generated policy 626
-# Package: risk.authorization.policy.validate.data
+# Auto-generated policy 626 (Rego v1 syntax)
+# Package: governance.monitoring.context.check
 
 # Metadata
 metadata := {
@@ -11,10 +11,10 @@ metadata := {
 }
 
 # Rules
-denied_0626 {
+policy_0626_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-default allowed_0626 = false
-
-# Utility function for user info
+policy_0626_allowed if {
+    input.user.role == "admin"
+}

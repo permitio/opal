@@ -1,7 +1,7 @@
-package risk.monitoring.action.allow.policy_0407
+package compliance.validation.policy.validate.helpers.policy_0407
 
-# Auto-generated policy 407
-# Package: risk.monitoring.action.allow
+# Auto-generated policy 407 (Rego v1 syntax)
+# Package: compliance.validation.policy.validate.helpers
 
 # Metadata
 metadata := {
@@ -11,13 +11,10 @@ metadata := {
 }
 
 # Rules
-allowed_0407 {
-    data.policies.risk.enabled
+policy_0407_allowed if {
+    data.policies.compliance.enabled
 }
-default allowed_0407 = false
-approved_0407 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
+default policy_0407_allowed = false
+policy_0407_allowed if {
+    input.user.role == "admin"
 }
-
-# Utility function for user info

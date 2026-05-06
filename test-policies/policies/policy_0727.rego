@@ -1,7 +1,7 @@
-package governance.authentication.resource.deny.core.policy_0727
+package compliance.validation.user.validate.policy_0727
 
-# Auto-generated policy 727
-# Package: governance.authentication.resource.deny.core
+# Auto-generated policy 727 (Rego v1 syntax)
+# Package: compliance.validation.user.validate
 
 # Metadata
 metadata := {
@@ -11,12 +11,11 @@ metadata := {
 }
 
 # Rules
-allowed_0727 {
+policy_0727_allowed if {
     input.user.role == "admin"
 }
-denied_0727 {
+default policy_0727_allowed = false
+policy_0727_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-
-# Utility function for user info

@@ -1,7 +1,7 @@
-package audit.enforcement.user.deny.helpers.policy_0383
+package risk.validation.user.allow.policy_0383
 
-# Auto-generated policy 383
-# Package: audit.enforcement.user.deny.helpers
+# Auto-generated policy 383 (Rego v1 syntax)
+# Package: risk.validation.user.allow
 
 # Metadata
 metadata := {
@@ -11,17 +11,15 @@ metadata := {
 }
 
 # Rules
-approved_0383 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
-}
-allowed_0383 {
-    data.policies.audit.enabled
-}
-denied_0383 {
+policy_0383_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-default allowed_0383 = false
-
-# Utility function for user info
+default policy_0383_allowed = false
+policy_0383_allowed if {
+    data.policies.risk.enabled
+}
+policy_0383_allowed if {
+    input.user.active
+    input.resource.public
+}

@@ -1,7 +1,7 @@
-package risk.authorization.resource.verify.policy_0552
+package governance.validation.user.allow.policy_0552
 
-# Auto-generated policy 552
-# Package: risk.authorization.resource.verify
+# Auto-generated policy 552 (Rego v1 syntax)
+# Package: governance.validation.user.allow
 
 # Metadata
 metadata := {
@@ -11,17 +11,14 @@ metadata := {
 }
 
 # Rules
-allowed_0552 {
-    input.user.active
-    input.resource.public
-}
-allowed_0552 {
-    data.policies.risk.enabled
-}
-denied_0552 {
+policy_0552_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-default allowed_0552 = false
-
-# Utility function for user info
+policy_0552_allowed if {
+    input.user.role == "admin"
+}
+policy_0552_allowed if {
+    input.user.active
+    input.resource.public
+}

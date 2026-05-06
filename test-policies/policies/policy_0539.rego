@@ -1,7 +1,7 @@
-package access.validation.user.deny.policy_0539
+package governance.authorization.context.deny.helpers.policy_0539
 
-# Auto-generated policy 539
-# Package: access.validation.user.deny
+# Auto-generated policy 539 (Rego v1 syntax)
+# Package: governance.authorization.context.deny.helpers
 
 # Metadata
 metadata := {
@@ -11,18 +11,12 @@ metadata := {
 }
 
 # Rules
-approved_0539 {
+policy_0539_approved if {
     input.user.risk_score < 50
     input.system.health > 0.8
 }
-default allowed_0539 = false
-denied_0539 {
+default policy_0539_allowed = false
+policy_0539_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-allowed_0539 {
-    input.user.active
-    input.resource.public
-}
-
-# Utility function for user info

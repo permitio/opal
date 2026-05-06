@@ -1,7 +1,7 @@
-package security.authentication.resource.check.policy_0531
+package security.authentication.action.allow.policy_0531
 
-# Auto-generated policy 531
-# Package: security.authentication.resource.check
+# Auto-generated policy 531 (Rego v1 syntax)
+# Package: security.authentication.action.allow
 
 # Metadata
 metadata := {
@@ -11,13 +11,11 @@ metadata := {
 }
 
 # Rules
-allowed_0531 {
+policy_0531_allowed if {
     input.user.active
     input.resource.public
 }
-denied_0531 {
-    input.action == "delete"
-    input.user.role != "admin"
+policy_0531_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
 }
-
-# Utility function for user info

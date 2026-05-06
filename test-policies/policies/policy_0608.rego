@@ -1,7 +1,7 @@
-package governance.enforcement.context.allow.policy_0608
+package governance.monitoring.context.validate.policy_0608
 
-# Auto-generated policy 608
-# Package: governance.enforcement.context.allow
+# Auto-generated policy 608 (Rego v1 syntax)
+# Package: governance.monitoring.context.validate
 
 # Metadata
 metadata := {
@@ -11,14 +11,15 @@ metadata := {
 }
 
 # Rules
-approved_0608 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
-}
-default allowed_0608 = false
-allowed_0608 {
+policy_0608_allowed if {
     input.user.active
     input.resource.public
 }
-
-# Utility function for user info
+policy_0608_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
+}
+policy_0608_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
+}

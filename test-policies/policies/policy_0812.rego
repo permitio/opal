@@ -1,7 +1,7 @@
-package compliance.validation.user.check.policy_0812
+package compliance.validation.context.check.policy_0812
 
-# Auto-generated policy 812
-# Package: compliance.validation.user.check
+# Auto-generated policy 812 (Rego v1 syntax)
+# Package: compliance.validation.context.check
 
 # Metadata
 metadata := {
@@ -11,13 +11,14 @@ metadata := {
 }
 
 # Rules
-approved_0812 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
+policy_0812_allowed if {
+    data.policies.compliance.enabled
 }
-default allowed_0812 = false
-allowed_0812 {
+policy_0812_allowed if {
     input.user.role == "admin"
 }
-
-# Utility function for user info
+default policy_0812_allowed = false
+policy_0812_allowed if {
+    input.user.active
+    input.resource.public
+}

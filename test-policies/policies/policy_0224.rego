@@ -1,7 +1,7 @@
-package risk.enforcement.policy.allow.policy_0224
+package governance.authorization.policy.validate.policy_0224
 
-# Auto-generated policy 224
-# Package: risk.enforcement.policy.allow
+# Auto-generated policy 224 (Rego v1 syntax)
+# Package: governance.authorization.policy.validate
 
 # Metadata
 metadata := {
@@ -11,13 +11,15 @@ metadata := {
 }
 
 # Rules
-denied_0224 {
+default policy_0224_allowed = false
+policy_0224_allowed if {
+    data.policies.governance.enabled
+}
+policy_0224_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-allowed_0224 {
+policy_0224_allowed if {
     input.user.active
     input.resource.public
 }
-
-# Utility function for user info

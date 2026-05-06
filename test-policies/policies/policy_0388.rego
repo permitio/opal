@@ -1,7 +1,7 @@
-package security.authentication.user.verify.logic.policy_0388
+package risk.authentication.resource.check.policy_0388
 
-# Auto-generated policy 388
-# Package: security.authentication.user.verify.logic
+# Auto-generated policy 388 (Rego v1 syntax)
+# Package: risk.authentication.resource.check
 
 # Metadata
 metadata := {
@@ -11,12 +11,18 @@ metadata := {
 }
 
 # Rules
-allowed_0388 {
+policy_0388_allowed if {
+    input.user.active
+    input.resource.public
+}
+policy_0388_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
+}
+policy_0388_allowed if {
     input.user.role == "admin"
 }
-default allowed_0388 = false
-allowed_0388 {
-    data.policies.security.enabled
+policy_0388_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
 }
-
-# Utility function for user info

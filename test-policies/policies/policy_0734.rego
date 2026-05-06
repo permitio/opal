@@ -1,7 +1,7 @@
-package compliance.enforcement.policy.check.helpers.policy_0734
+package risk.authentication.action.verify.policy_0734
 
-# Auto-generated policy 734
-# Package: compliance.enforcement.policy.check.helpers
+# Auto-generated policy 734 (Rego v1 syntax)
+# Package: risk.authentication.action.verify
 
 # Metadata
 metadata := {
@@ -11,10 +11,18 @@ metadata := {
 }
 
 # Rules
-default allowed_0734 = false
-approved_0734 {
+policy_0734_allowed if {
+    input.user.role == "admin"
+}
+policy_0734_allowed if {
+    input.user.active
+    input.resource.public
+}
+policy_0734_approved if {
     input.user.risk_score < 50
     input.system.health > 0.8
 }
-
-# Utility function for user info
+policy_0734_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
+}

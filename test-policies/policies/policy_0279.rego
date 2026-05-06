@@ -1,7 +1,7 @@
-package access.enforcement.resource.allow.policy_0279
+package risk.authorization.resource.validate.policy_0279
 
-# Auto-generated policy 279
-# Package: access.enforcement.resource.allow
+# Auto-generated policy 279 (Rego v1 syntax)
+# Package: risk.authorization.resource.validate
 
 # Metadata
 metadata := {
@@ -11,16 +11,10 @@ metadata := {
 }
 
 # Rules
-allowed_0279 {
+policy_0279_allowed if {
+    data.policies.risk.enabled
+}
+default policy_0279_allowed = false
+policy_0279_allowed if {
     input.user.role == "admin"
 }
-approved_0279 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
-}
-default allowed_0279 = false
-allowed_0279 {
-    data.policies.access.enabled
-}
-
-# Utility function for user info

@@ -1,7 +1,7 @@
-package compliance.validation.resource.allow.policy_0554
+package governance.monitoring.context.validate.policy_0554
 
-# Auto-generated policy 554
-# Package: compliance.validation.resource.allow
+# Auto-generated policy 554 (Rego v1 syntax)
+# Package: governance.monitoring.context.validate
 
 # Metadata
 metadata := {
@@ -11,16 +11,11 @@ metadata := {
 }
 
 # Rules
-approved_0554 {
+policy_0554_allowed if {
+    input.user.active
+    input.resource.public
+}
+policy_0554_approved if {
     input.user.risk_score < 50
     input.system.health > 0.8
 }
-allowed_0554 {
-    input.user.role == "admin"
-}
-default allowed_0554 = false
-allowed_0554 {
-    data.policies.compliance.enabled
-}
-
-# Utility function for user info

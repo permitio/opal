@@ -2,87 +2,87 @@
   "test_id": 13,
   "metadata": {
     "environment": "dev",
-    "region": "us-east-1",
-    "version": "1.4.14"
+    "region": "eu-west-1",
+    "version": "1.4.4"
   },
   "users": [
     {
       "id": "user_000",
       "name": "User 0",
-      "role": "user",
-      "active": true,
-      "risk_score": 38
+      "role": "auditor",
+      "active": false,
+      "risk_score": 29
     },
     {
       "id": "user_001",
       "name": "User 1",
       "role": "auditor",
-      "active": false,
-      "risk_score": 22
+      "active": true,
+      "risk_score": 35
     },
     {
       "id": "user_002",
       "name": "User 2",
-      "role": "viewer",
+      "role": "user",
       "active": true,
-      "risk_score": 71
+      "risk_score": 24
     },
     {
       "id": "user_003",
       "name": "User 3",
-      "role": "admin",
-      "active": true,
-      "risk_score": 83
+      "role": "user",
+      "active": false,
+      "risk_score": 31
     },
     {
       "id": "user_004",
       "name": "User 4",
-      "role": "editor",
+      "role": "user",
       "active": false,
-      "risk_score": 69
+      "risk_score": 12
+    },
+    {
+      "id": "user_005",
+      "name": "User 5",
+      "role": "admin",
+      "active": false,
+      "risk_score": 17
+    },
+    {
+      "id": "user_006",
+      "name": "User 6",
+      "role": "viewer",
+      "active": true,
+      "risk_score": 34
+    },
+    {
+      "id": "user_007",
+      "name": "User 7",
+      "role": "viewer",
+      "active": true,
+      "risk_score": 71
     }
   ],
   "resources": [
     {
       "id": "res_000",
-      "type": "bucket",
-      "public": true,
-      "owner_id": "user_081",
-      "sensitivity": "confidential"
+      "type": "database",
+      "public": false,
+      "owner_id": "user_003",
+      "sensitivity": "internal"
     },
     {
       "id": "res_001",
-      "type": "bucket",
+      "type": "database",
       "public": false,
-      "owner_id": "user_057",
-      "sensitivity": "confidential"
-    },
-    {
-      "id": "res_002",
-      "type": "file",
-      "public": true,
-      "owner_id": "user_073",
-      "sensitivity": "secret"
-    },
-    {
-      "id": "res_003",
-      "type": "service",
-      "public": false,
-      "owner_id": "user_027",
-      "sensitivity": "public"
-    },
-    {
-      "id": "res_004",
-      "type": "file",
-      "public": false,
-      "owner_id": "user_093",
-      "sensitivity": "public"
+      "owner_id": "user_077",
+      "sensitivity": "internal"
     }
   ],
   "system": {
-    "health": 0.75,
-    "load": 62.83,
-    "uptime_days": 215
+    "health": 0.9,
+    "load": 44.62,
+    "uptime_days": 212
   },
   "policies": {
     "security": {
@@ -92,10 +92,10 @@
       "enabled": true
     },
     "access": {
-      "enabled": false
+      "enabled": true
     },
     "audit": {
-      "enabled": false
+      "enabled": true
     }
   }
 }

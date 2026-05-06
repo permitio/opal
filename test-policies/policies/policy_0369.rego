@@ -1,7 +1,7 @@
-package audit.authentication.resource.deny.policy_0369
+package risk.authorization.policy.check.policy_0369
 
-# Auto-generated policy 369
-# Package: audit.authentication.resource.deny
+# Auto-generated policy 369 (Rego v1 syntax)
+# Package: risk.authorization.policy.check
 
 # Metadata
 metadata := {
@@ -11,11 +11,14 @@ metadata := {
 }
 
 # Rules
-allowed_0369 {
+policy_0369_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
+}
+policy_0369_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
+}
+policy_0369_allowed if {
     input.user.role == "admin"
 }
-allowed_0369 {
-    data.policies.audit.enabled
-}
-
-# Utility function for user info

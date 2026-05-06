@@ -1,7 +1,7 @@
-package risk.enforcement.action.validate.policy_0274
+package access.validation.policy.check.data.policy_0274
 
-# Auto-generated policy 274
-# Package: risk.enforcement.action.validate
+# Auto-generated policy 274 (Rego v1 syntax)
+# Package: access.validation.policy.check.data
 
 # Metadata
 metadata := {
@@ -11,13 +11,11 @@ metadata := {
 }
 
 # Rules
-allowed_0274 {
-    input.user.active
-    input.resource.public
+default policy_0274_allowed = false
+policy_0274_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
 }
-denied_0274 {
-    input.action == "delete"
-    input.user.role != "admin"
+policy_0274_allowed if {
+    data.policies.access.enabled
 }
-
-# Utility function for user info

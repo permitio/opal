@@ -1,7 +1,7 @@
-package governance.enforcement.context.allow.policy_0378
+package risk.authorization.user.validate.policy_0378
 
-# Auto-generated policy 378
-# Package: governance.enforcement.context.allow
+# Auto-generated policy 378 (Rego v1 syntax)
+# Package: risk.authorization.user.validate
 
 # Metadata
 metadata := {
@@ -11,13 +11,11 @@ metadata := {
 }
 
 # Rules
-allowed_0378 {
-    input.user.role == "admin"
-}
-allowed_0378 {
+policy_0378_allowed if {
     input.user.active
     input.resource.public
 }
-default allowed_0378 = false
-
-# Utility function for user info
+policy_0378_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
+}

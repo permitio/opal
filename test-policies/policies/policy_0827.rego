@@ -1,7 +1,7 @@
-package governance.enforcement.action.deny.policy_0827
+package security.validation.policy.allow.core.policy_0827
 
-# Auto-generated policy 827
-# Package: governance.enforcement.action.deny
+# Auto-generated policy 827 (Rego v1 syntax)
+# Package: security.validation.policy.allow.core
 
 # Metadata
 metadata := {
@@ -11,15 +11,13 @@ metadata := {
 }
 
 # Rules
-allowed_0827 {
-    data.policies.governance.enabled
+policy_0827_allowed if {
+    data.policies.security.enabled
 }
-allowed_0827 {
+policy_0827_allowed if {
     input.user.role == "admin"
 }
-approved_0827 {
+policy_0827_approved if {
     input.user.risk_score < 50
     input.system.health > 0.8
 }
-
-# Utility function for user info

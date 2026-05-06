@@ -1,7 +1,7 @@
-package audit.validation.user.allow.policy_0038
+package compliance.validation.resource.deny.helpers.policy_0038
 
-# Auto-generated policy 38
-# Package: audit.validation.user.allow
+# Auto-generated policy 38 (Rego v1 syntax)
+# Package: compliance.validation.resource.deny.helpers
 
 # Metadata
 metadata := {
@@ -11,10 +11,14 @@ metadata := {
 }
 
 # Rules
-default allowed_0038 = false
-allowed_0038 {
-    input.user.active
-    input.resource.public
+policy_0038_allowed if {
+    input.user.role == "admin"
 }
-
-# Utility function for user info
+policy_0038_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
+}
+policy_0038_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
+}

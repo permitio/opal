@@ -1,7 +1,7 @@
-package risk.authentication.resource.validate.policy_0273
+package security.authentication.user.validate.policy_0273
 
-# Auto-generated policy 273
-# Package: risk.authentication.resource.validate
+# Auto-generated policy 273 (Rego v1 syntax)
+# Package: security.authentication.user.validate
 
 # Metadata
 metadata := {
@@ -11,17 +11,10 @@ metadata := {
 }
 
 # Rules
-allowed_0273 {
+default policy_0273_allowed = false
+policy_0273_allowed if {
+    data.policies.security.enabled
+}
+policy_0273_allowed if {
     input.user.role == "admin"
 }
-denied_0273 {
-    input.action == "delete"
-    input.user.role != "admin"
-}
-allowed_0273 {
-    input.user.active
-    input.resource.public
-}
-default allowed_0273 = false
-
-# Utility function for user info

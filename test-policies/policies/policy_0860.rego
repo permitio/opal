@@ -1,7 +1,7 @@
-package audit.validation.policy.deny.policy_0860
+package governance.monitoring.resource.verify.policy_0860
 
-# Auto-generated policy 860
-# Package: audit.validation.policy.deny
+# Auto-generated policy 860 (Rego v1 syntax)
+# Package: governance.monitoring.resource.verify
 
 # Metadata
 metadata := {
@@ -11,16 +11,11 @@ metadata := {
 }
 
 # Rules
-denied_0860 {
-    input.action == "delete"
-    input.user.role != "admin"
+policy_0860_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
 }
-allowed_0860 {
-    data.policies.audit.enabled
-}
-allowed_0860 {
+policy_0860_allowed if {
     input.user.active
     input.resource.public
 }
-
-# Utility function for user info

@@ -1,7 +1,7 @@
-package compliance.validation.resource.check.data.policy_0178
+package compliance.enforcement.resource.verify.policy_0178
 
-# Auto-generated policy 178
-# Package: compliance.validation.resource.check.data
+# Auto-generated policy 178 (Rego v1 syntax)
+# Package: compliance.enforcement.resource.verify
 
 # Metadata
 metadata := {
@@ -11,9 +11,13 @@ metadata := {
 }
 
 # Rules
-default allowed_0178 = false
-allowed_0178 {
+policy_0178_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
+}
+policy_0178_allowed if {
+    data.policies.compliance.enabled
+}
+policy_0178_allowed if {
     input.user.role == "admin"
 }
-
-# Utility function for user info

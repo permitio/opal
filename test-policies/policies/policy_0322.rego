@@ -1,7 +1,7 @@
-package security.authorization.action.verify.data.policy_0322
+package risk.monitoring.user.verify.policy_0322
 
-# Auto-generated policy 322
-# Package: security.authorization.action.verify.data
+# Auto-generated policy 322 (Rego v1 syntax)
+# Package: risk.monitoring.user.verify
 
 # Metadata
 metadata := {
@@ -11,17 +11,15 @@ metadata := {
 }
 
 # Rules
-denied_0322 {
+default policy_0322_allowed = false
+policy_0322_allowed if {
+    input.user.active
+    input.resource.public
+}
+policy_0322_allowed if {
+    data.policies.risk.enabled
+}
+policy_0322_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-allowed_0322 {
-    data.policies.security.enabled
-}
-approved_0322 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
-}
-default allowed_0322 = false
-
-# Utility function for user info

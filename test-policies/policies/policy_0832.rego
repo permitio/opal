@@ -1,7 +1,7 @@
-package governance.enforcement.action.validate.helpers.policy_0832
+package governance.monitoring.action.validate.helpers.policy_0832
 
-# Auto-generated policy 832
-# Package: governance.enforcement.action.validate.helpers
+# Auto-generated policy 832 (Rego v1 syntax)
+# Package: governance.monitoring.action.validate.helpers
 
 # Metadata
 metadata := {
@@ -11,9 +11,13 @@ metadata := {
 }
 
 # Rules
-allowed_0832 {
+policy_0832_allowed if {
     data.policies.governance.enabled
 }
-default allowed_0832 = false
-
-# Utility function for user info
+policy_0832_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
+}
+policy_0832_allowed if {
+    input.user.role == "admin"
+}

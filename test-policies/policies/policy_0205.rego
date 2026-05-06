@@ -1,7 +1,7 @@
-package access.validation.policy.allow.core.policy_0205
+package audit.validation.action.deny.policy_0205
 
-# Auto-generated policy 205
-# Package: access.validation.policy.allow.core
+# Auto-generated policy 205 (Rego v1 syntax)
+# Package: audit.validation.action.deny
 
 # Metadata
 metadata := {
@@ -11,17 +11,8 @@ metadata := {
 }
 
 # Rules
-allowed_0205 {
-    data.policies.access.enabled
+policy_0205_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
 }
-allowed_0205 {
-    input.user.active
-    input.resource.public
-}
-denied_0205 {
-    input.action == "delete"
-    input.user.role != "admin"
-}
-default allowed_0205 = false
-
-# Utility function for user info
+default policy_0205_allowed = false

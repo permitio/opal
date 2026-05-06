@@ -1,7 +1,7 @@
-package risk.monitoring.user.validate.policy_0556
+package access.enforcement.action.check.data.policy_0556
 
-# Auto-generated policy 556
-# Package: risk.monitoring.user.validate
+# Auto-generated policy 556 (Rego v1 syntax)
+# Package: access.enforcement.action.check.data
 
 # Metadata
 metadata := {
@@ -11,10 +11,11 @@ metadata := {
 }
 
 # Rules
-approved_0556 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
+policy_0556_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
 }
-default allowed_0556 = false
-
-# Utility function for user info
+default policy_0556_allowed = false
+policy_0556_allowed if {
+    input.user.role == "admin"
+}

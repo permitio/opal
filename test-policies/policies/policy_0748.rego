@@ -1,7 +1,7 @@
-package audit.authorization.resource.allow.policy_0748
+package access.enforcement.action.allow.policy_0748
 
-# Auto-generated policy 748
-# Package: audit.authorization.resource.allow
+# Auto-generated policy 748 (Rego v1 syntax)
+# Package: access.enforcement.action.allow
 
 # Metadata
 metadata := {
@@ -11,19 +11,10 @@ metadata := {
 }
 
 # Rules
-denied_0748 {
-    input.action == "delete"
-    input.user.role != "admin"
+policy_0748_allowed if {
+    data.policies.access.enabled
 }
-approved_0748 {
+policy_0748_approved if {
     input.user.risk_score < 50
     input.system.health > 0.8
 }
-allowed_0748 {
-    data.policies.audit.enabled
-}
-allowed_0748 {
-    input.user.role == "admin"
-}
-
-# Utility function for user info

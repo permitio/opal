@@ -1,7 +1,7 @@
-package audit.enforcement.context.deny.core.policy_0493
+package governance.authentication.policy.deny.policy_0493
 
-# Auto-generated policy 493
-# Package: audit.enforcement.context.deny.core
+# Auto-generated policy 493 (Rego v1 syntax)
+# Package: governance.authentication.policy.deny
 
 # Metadata
 metadata := {
@@ -11,13 +11,15 @@ metadata := {
 }
 
 # Rules
-allowed_0493 {
-    input.user.active
-    input.resource.public
+default policy_0493_allowed = false
+policy_0493_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
 }
-default allowed_0493 = false
-allowed_0493 {
-    data.policies.audit.enabled
+policy_0493_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
 }
-
-# Utility function for user info
+policy_0493_allowed if {
+    data.policies.governance.enabled
+}

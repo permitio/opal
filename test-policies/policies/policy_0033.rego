@@ -1,7 +1,7 @@
-package security.authorization.policy.allow.logic.policy_0033
+package audit.monitoring.policy.check.policy_0033
 
-# Auto-generated policy 33
-# Package: security.authorization.policy.allow.logic
+# Auto-generated policy 33 (Rego v1 syntax)
+# Package: audit.monitoring.policy.check
 
 # Metadata
 metadata := {
@@ -11,11 +11,14 @@ metadata := {
 }
 
 # Rules
-allowed_0033 {
-    data.policies.security.enabled
+policy_0033_allowed if {
+    input.user.active
+    input.resource.public
 }
-allowed_0033 {
+policy_0033_allowed if {
     input.user.role == "admin"
 }
-
-# Utility function for user info
+policy_0033_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
+}

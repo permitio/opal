@@ -1,7 +1,7 @@
-package compliance.monitoring.resource.deny.policy_0492
+package security.validation.resource.check.policy_0492
 
-# Auto-generated policy 492
-# Package: compliance.monitoring.resource.deny
+# Auto-generated policy 492 (Rego v1 syntax)
+# Package: security.validation.resource.check
 
 # Metadata
 metadata := {
@@ -11,10 +11,13 @@ metadata := {
 }
 
 # Rules
-default allowed_0492 = false
-allowed_0492 {
+policy_0492_allowed if {
     input.user.active
     input.resource.public
 }
-
-# Utility function for user info
+policy_0492_allowed if {
+    data.policies.security.enabled
+}
+policy_0492_allowed if {
+    input.user.role == "admin"
+}

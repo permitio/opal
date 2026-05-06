@@ -1,7 +1,7 @@
-package risk.enforcement.user.deny.policy_0157
+package governance.authorization.resource.check.core.policy_0157
 
-# Auto-generated policy 157
-# Package: risk.enforcement.user.deny
+# Auto-generated policy 157 (Rego v1 syntax)
+# Package: governance.authorization.resource.check.core
 
 # Metadata
 metadata := {
@@ -11,10 +11,12 @@ metadata := {
 }
 
 # Rules
-allowed_0157 {
+policy_0157_allowed if {
     input.user.active
     input.resource.public
 }
-default allowed_0157 = false
-
-# Utility function for user info
+policy_0157_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
+}
+default policy_0157_allowed = false

@@ -1,7 +1,7 @@
-package compliance.enforcement.user.verify.policy_0466
+package access.authentication.action.check.helpers.policy_0466
 
-# Auto-generated policy 466
-# Package: compliance.enforcement.user.verify
+# Auto-generated policy 466 (Rego v1 syntax)
+# Package: access.authentication.action.check.helpers
 
 # Metadata
 metadata := {
@@ -11,16 +11,11 @@ metadata := {
 }
 
 # Rules
-allowed_0466 {
+policy_0466_allowed if {
     input.user.role == "admin"
 }
-denied_0466 {
-    input.action == "delete"
-    input.user.role != "admin"
+default policy_0466_allowed = false
+policy_0466_allowed if {
+    input.user.active
+    input.resource.public
 }
-allowed_0466 {
-    data.policies.compliance.enabled
-}
-default allowed_0466 = false
-
-# Utility function for user info

@@ -1,7 +1,7 @@
-package security.validation.policy.allow.policy_0416
+package security.authorization.policy.validate.policy_0416
 
-# Auto-generated policy 416
-# Package: security.validation.policy.allow
+# Auto-generated policy 416 (Rego v1 syntax)
+# Package: security.authorization.policy.validate
 
 # Metadata
 metadata := {
@@ -11,17 +11,8 @@ metadata := {
 }
 
 # Rules
-denied_0416 {
-    input.action == "delete"
-    input.user.role != "admin"
-}
-allowed_0416 {
-    input.user.active
-    input.resource.public
-}
-approved_0416 {
+default policy_0416_allowed = false
+policy_0416_approved if {
     input.user.risk_score < 50
     input.system.health > 0.8
 }
-
-# Utility function for user info

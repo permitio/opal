@@ -1,7 +1,7 @@
-package governance.authentication.resource.allow.helpers.policy_0577
+package compliance.authentication.action.deny.policy_0577
 
-# Auto-generated policy 577
-# Package: governance.authentication.resource.allow.helpers
+# Auto-generated policy 577 (Rego v1 syntax)
+# Package: compliance.authentication.action.deny
 
 # Metadata
 metadata := {
@@ -11,17 +11,15 @@ metadata := {
 }
 
 # Rules
-approved_0577 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
+policy_0577_allowed if {
+    data.policies.compliance.enabled
 }
-allowed_0577 {
+default policy_0577_allowed = false
+policy_0577_allowed if {
     input.user.active
     input.resource.public
 }
-denied_0577 {
-    input.action == "delete"
-    input.user.role != "admin"
+policy_0577_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
 }
-
-# Utility function for user info

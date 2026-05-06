@@ -1,7 +1,7 @@
-package security.validation.action.allow.policy_0669
+package governance.authorization.policy.verify.policy_0669
 
-# Auto-generated policy 669
-# Package: security.validation.action.allow
+# Auto-generated policy 669 (Rego v1 syntax)
+# Package: governance.authorization.policy.verify
 
 # Metadata
 metadata := {
@@ -11,20 +11,8 @@ metadata := {
 }
 
 # Rules
-allowed_0669 {
-    input.user.role == "admin"
-}
-allowed_0669 {
+default policy_0669_allowed = false
+policy_0669_allowed if {
     input.user.active
     input.resource.public
 }
-approved_0669 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
-}
-denied_0669 {
-    input.action == "delete"
-    input.user.role != "admin"
-}
-
-# Utility function for user info

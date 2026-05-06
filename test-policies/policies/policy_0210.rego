@@ -1,7 +1,7 @@
-package access.authentication.resource.allow.logic.policy_0210
+package access.authorization.user.allow.policy_0210
 
-# Auto-generated policy 210
-# Package: access.authentication.resource.allow.logic
+# Auto-generated policy 210 (Rego v1 syntax)
+# Package: access.authorization.user.allow
 
 # Metadata
 metadata := {
@@ -11,16 +11,15 @@ metadata := {
 }
 
 # Rules
-default allowed_0210 = false
-allowed_0210 {
-    data.policies.access.enabled
+policy_0210_allowed if {
+    input.user.active
+    input.resource.public
 }
-allowed_0210 {
+policy_0210_allowed if {
     input.user.role == "admin"
 }
-denied_0210 {
+policy_0210_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-
-# Utility function for user info
+default policy_0210_allowed = false

@@ -1,7 +1,7 @@
-package access.authentication.resource.verify.policy_0155
+package risk.enforcement.action.verify.data.policy_0155
 
-# Auto-generated policy 155
-# Package: access.authentication.resource.verify
+# Auto-generated policy 155 (Rego v1 syntax)
+# Package: risk.enforcement.action.verify.data
 
 # Metadata
 metadata := {
@@ -11,12 +11,10 @@ metadata := {
 }
 
 # Rules
-allowed_0155 {
+policy_0155_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
+}
+policy_0155_allowed if {
     input.user.role == "admin"
 }
-default allowed_0155 = false
-allowed_0155 {
-    data.policies.access.enabled
-}
-
-# Utility function for user info

@@ -1,7 +1,7 @@
-package security.authentication.resource.deny.data.policy_0971
+package governance.authentication.context.validate.core.policy_0971
 
-# Auto-generated policy 971
-# Package: security.authentication.resource.deny.data
+# Auto-generated policy 971 (Rego v1 syntax)
+# Package: governance.authentication.context.validate.core
 
 # Metadata
 metadata := {
@@ -11,20 +11,14 @@ metadata := {
 }
 
 # Rules
-denied_0971 {
-    input.action == "delete"
-    input.user.role != "admin"
+policy_0971_allowed if {
+    input.user.role == "admin"
 }
-approved_0971 {
+policy_0971_approved if {
     input.user.risk_score < 50
     input.system.health > 0.8
 }
-allowed_0971 {
-    input.user.active
-    input.resource.public
+policy_0971_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
 }
-allowed_0971 {
-    data.policies.security.enabled
-}
-
-# Utility function for user info

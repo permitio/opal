@@ -1,7 +1,7 @@
-package security.authorization.policy.allow.helpers.policy_0783
+package risk.authorization.action.check.data.policy_0783
 
-# Auto-generated policy 783
-# Package: security.authorization.policy.allow.helpers
+# Auto-generated policy 783 (Rego v1 syntax)
+# Package: risk.authorization.action.check.data
 
 # Metadata
 metadata := {
@@ -11,13 +11,10 @@ metadata := {
 }
 
 # Rules
-allowed_0783 {
+policy_0783_allowed if {
     input.user.active
     input.resource.public
 }
-approved_0783 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
+policy_0783_allowed if {
+    input.user.role == "admin"
 }
-
-# Utility function for user info

@@ -1,7 +1,7 @@
-package governance.enforcement.context.verify.policy_0848
+package risk.enforcement.resource.deny.helpers.policy_0848
 
-# Auto-generated policy 848
-# Package: governance.enforcement.context.verify
+# Auto-generated policy 848 (Rego v1 syntax)
+# Package: risk.enforcement.resource.deny.helpers
 
 # Metadata
 metadata := {
@@ -11,9 +11,11 @@ metadata := {
 }
 
 # Rules
-allowed_0848 {
-    data.policies.governance.enabled
+policy_0848_allowed if {
+    data.policies.risk.enabled
 }
-default allowed_0848 = false
-
-# Utility function for user info
+default policy_0848_allowed = false
+policy_0848_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
+}

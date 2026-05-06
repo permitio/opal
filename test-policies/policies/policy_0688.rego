@@ -1,7 +1,7 @@
-package access.authentication.action.validate.policy_0688
+package governance.validation.resource.verify.core.policy_0688
 
-# Auto-generated policy 688
-# Package: access.authentication.action.validate
+# Auto-generated policy 688 (Rego v1 syntax)
+# Package: governance.validation.resource.verify.core
 
 # Metadata
 metadata := {
@@ -11,16 +11,8 @@ metadata := {
 }
 
 # Rules
-allowed_0688 {
-    data.policies.access.enabled
+default policy_0688_allowed = false
+policy_0688_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
 }
-default allowed_0688 = false
-allowed_0688 {
-    input.user.role == "admin"
-}
-allowed_0688 {
-    input.user.active
-    input.resource.public
-}
-
-# Utility function for user info

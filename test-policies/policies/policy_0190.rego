@@ -1,7 +1,7 @@
-package security.authorization.context.allow.policy_0190
+package access.monitoring.user.verify.logic.policy_0190
 
-# Auto-generated policy 190
-# Package: security.authorization.context.allow
+# Auto-generated policy 190 (Rego v1 syntax)
+# Package: access.monitoring.user.verify.logic
 
 # Metadata
 metadata := {
@@ -11,17 +11,8 @@ metadata := {
 }
 
 # Rules
-allowed_0190 {
-    data.policies.security.enabled
-}
-allowed_0190 {
+default policy_0190_allowed = false
+policy_0190_allowed if {
     input.user.active
     input.resource.public
 }
-default allowed_0190 = false
-denied_0190 {
-    input.action == "delete"
-    input.user.role != "admin"
-}
-
-# Utility function for user info

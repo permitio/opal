@@ -1,7 +1,7 @@
-package audit.validation.resource.check.policy_0253
+package audit.monitoring.resource.deny.data.policy_0253
 
-# Auto-generated policy 253
-# Package: audit.validation.resource.check
+# Auto-generated policy 253 (Rego v1 syntax)
+# Package: audit.monitoring.resource.deny.data
 
 # Metadata
 metadata := {
@@ -11,13 +11,9 @@ metadata := {
 }
 
 # Rules
-allowed_0253 {
-    input.user.active
-    input.resource.public
+policy_0253_allowed if {
+    data.policies.audit.enabled
 }
-denied_0253 {
-    input.action == "delete"
-    input.user.role != "admin"
+policy_0253_allowed if {
+    input.user.role == "admin"
 }
-
-# Utility function for user info

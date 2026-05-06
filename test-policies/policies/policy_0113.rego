@@ -1,7 +1,7 @@
-package compliance.enforcement.resource.allow.policy_0113
+package audit.enforcement.policy.check.helpers.policy_0113
 
-# Auto-generated policy 113
-# Package: compliance.enforcement.resource.allow
+# Auto-generated policy 113 (Rego v1 syntax)
+# Package: audit.enforcement.policy.check.helpers
 
 # Metadata
 metadata := {
@@ -11,19 +11,18 @@ metadata := {
 }
 
 # Rules
-allowed_0113 {
-    input.user.role == "admin"
-}
-allowed_0113 {
-    data.policies.compliance.enabled
-}
-allowed_0113 {
-    input.user.active
-    input.resource.public
-}
-denied_0113 {
+policy_0113_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-
-# Utility function for user info
+policy_0113_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
+}
+policy_0113_allowed if {
+    input.user.role == "admin"
+}
+policy_0113_allowed if {
+    input.user.active
+    input.resource.public
+}

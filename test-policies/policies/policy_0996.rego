@@ -1,7 +1,7 @@
-package security.monitoring.context.allow.utils.policy_0996
+package audit.authentication.user.deny.core.policy_0996
 
-# Auto-generated policy 996
-# Package: security.monitoring.context.allow.utils
+# Auto-generated policy 996 (Rego v1 syntax)
+# Package: audit.authentication.user.deny.core
 
 # Metadata
 metadata := {
@@ -11,20 +11,14 @@ metadata := {
 }
 
 # Rules
-denied_0996 {
+policy_0996_allowed if {
+    input.user.role == "admin"
+}
+policy_0996_allowed if {
+    data.policies.audit.enabled
+}
+default policy_0996_allowed = false
+policy_0996_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-allowed_0996 {
-    data.policies.security.enabled
-}
-allowed_0996 {
-    input.user.active
-    input.resource.public
-}
-approved_0996 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
-}
-
-# Utility function for user info

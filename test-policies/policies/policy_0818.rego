@@ -1,7 +1,7 @@
-package security.enforcement.action.verify.data.policy_0818
+package security.enforcement.resource.check.policy_0818
 
-# Auto-generated policy 818
-# Package: security.enforcement.action.verify.data
+# Auto-generated policy 818 (Rego v1 syntax)
+# Package: security.enforcement.resource.check
 
 # Metadata
 metadata := {
@@ -11,17 +11,14 @@ metadata := {
 }
 
 # Rules
-approved_0818 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
-}
-allowed_0818 {
+policy_0818_allowed if {
     input.user.role == "admin"
 }
-default allowed_0818 = false
-denied_0818 {
+policy_0818_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-
-# Utility function for user info
+policy_0818_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
+}

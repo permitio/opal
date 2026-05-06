@@ -1,7 +1,7 @@
-package access.authorization.policy.allow.core.policy_0664
+package audit.authentication.policy.validate.utils.policy_0664
 
-# Auto-generated policy 664
-# Package: access.authorization.policy.allow.core
+# Auto-generated policy 664 (Rego v1 syntax)
+# Package: audit.authentication.policy.validate.utils
 
 # Metadata
 metadata := {
@@ -11,14 +11,11 @@ metadata := {
 }
 
 # Rules
-approved_0664 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
-}
-default allowed_0664 = false
-allowed_0664 {
+policy_0664_allowed if {
     input.user.active
     input.resource.public
 }
-
-# Utility function for user info
+policy_0664_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
+}

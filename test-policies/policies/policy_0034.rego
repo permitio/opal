@@ -1,7 +1,7 @@
-package audit.monitoring.policy.deny.policy_0034
+package compliance.validation.resource.check.utils.policy_0034
 
-# Auto-generated policy 34
-# Package: audit.monitoring.policy.deny
+# Auto-generated policy 34 (Rego v1 syntax)
+# Package: compliance.validation.resource.check.utils
 
 # Metadata
 metadata := {
@@ -11,12 +11,10 @@ metadata := {
 }
 
 # Rules
-allowed_0034 {
-    input.user.active
-    input.resource.public
+policy_0034_allowed if {
+    data.policies.compliance.enabled
 }
-allowed_0034 {
-    data.policies.audit.enabled
+policy_0034_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
 }
-
-# Utility function for user info

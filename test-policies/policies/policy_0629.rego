@@ -1,7 +1,7 @@
-package audit.enforcement.context.check.helpers.policy_0629
+package risk.monitoring.action.deny.policy_0629
 
-# Auto-generated policy 629
-# Package: audit.enforcement.context.check.helpers
+# Auto-generated policy 629 (Rego v1 syntax)
+# Package: risk.monitoring.action.deny
 
 # Metadata
 metadata := {
@@ -11,13 +11,11 @@ metadata := {
 }
 
 # Rules
-denied_0629 {
-    input.action == "delete"
-    input.user.role != "admin"
+policy_0629_allowed if {
+    data.policies.risk.enabled
 }
-default allowed_0629 = false
-allowed_0629 {
-    data.policies.audit.enabled
+policy_0629_allowed if {
+    input.user.active
+    input.resource.public
 }
-
-# Utility function for user info
+default policy_0629_allowed = false

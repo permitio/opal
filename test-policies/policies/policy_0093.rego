@@ -1,7 +1,7 @@
-package governance.authorization.policy.allow.policy_0093
+package governance.authentication.context.verify.policy_0093
 
-# Auto-generated policy 93
-# Package: governance.authorization.policy.allow
+# Auto-generated policy 93 (Rego v1 syntax)
+# Package: governance.authentication.context.verify
 
 # Metadata
 metadata := {
@@ -11,13 +11,14 @@ metadata := {
 }
 
 # Rules
-default allowed_0093 = false
-allowed_0093 {
-    input.user.active
-    input.resource.public
+default policy_0093_allowed = false
+policy_0093_allowed if {
+    data.policies.governance.enabled
 }
-allowed_0093 {
+policy_0093_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
+}
+policy_0093_allowed if {
     input.user.role == "admin"
 }
-
-# Utility function for user info

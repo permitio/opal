@@ -1,7 +1,7 @@
-package compliance.monitoring.user.deny.policy_0981
+package access.enforcement.user.allow.helpers.policy_0981
 
-# Auto-generated policy 981
-# Package: compliance.monitoring.user.deny
+# Auto-generated policy 981 (Rego v1 syntax)
+# Package: access.enforcement.user.allow.helpers
 
 # Metadata
 metadata := {
@@ -11,20 +11,14 @@ metadata := {
 }
 
 # Rules
-denied_0981 {
-    input.action == "delete"
-    input.user.role != "admin"
+policy_0981_allowed if {
+    data.policies.access.enabled
 }
-approved_0981 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
-}
-allowed_0981 {
+default policy_0981_allowed = false
+policy_0981_allowed if {
     input.user.role == "admin"
 }
-allowed_0981 {
+policy_0981_allowed if {
     input.user.active
     input.resource.public
 }
-
-# Utility function for user info

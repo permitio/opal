@@ -1,7 +1,7 @@
-package audit.monitoring.context.check.policy_0503
+package risk.enforcement.action.deny.utils.policy_0503
 
-# Auto-generated policy 503
-# Package: audit.monitoring.context.check
+# Auto-generated policy 503 (Rego v1 syntax)
+# Package: risk.enforcement.action.deny.utils
 
 # Metadata
 metadata := {
@@ -11,17 +11,16 @@ metadata := {
 }
 
 # Rules
-approved_0503 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
-}
-default allowed_0503 = false
-denied_0503 {
+default policy_0503_allowed = false
+policy_0503_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-allowed_0503 {
-    data.policies.audit.enabled
+policy_0503_allowed if {
+    input.user.active
+    input.resource.public
 }
-
-# Utility function for user info
+policy_0503_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
+}

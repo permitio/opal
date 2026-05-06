@@ -3,7 +3,7 @@
   "metadata": {
     "environment": "prod",
     "region": "us-west-2",
-    "version": "1.3.0"
+    "version": "1.3.10"
   },
   "users": [
     {
@@ -11,92 +11,78 @@
       "name": "User 0",
       "role": "auditor",
       "active": true,
-      "risk_score": 61
+      "risk_score": 33
     },
     {
       "id": "user_001",
       "name": "User 1",
-      "role": "auditor",
+      "role": "viewer",
       "active": false,
-      "risk_score": 19
+      "risk_score": 64
     },
     {
       "id": "user_002",
       "name": "User 2",
-      "role": "auditor",
-      "active": false,
-      "risk_score": 10
+      "role": "editor",
+      "active": true,
+      "risk_score": 74
     },
     {
       "id": "user_003",
       "name": "User 3",
       "role": "viewer",
-      "active": true,
-      "risk_score": 43
+      "active": false,
+      "risk_score": 35
     },
     {
       "id": "user_004",
       "name": "User 4",
-      "role": "admin",
-      "active": false,
-      "risk_score": 30
+      "role": "auditor",
+      "active": true,
+      "risk_score": 83
     },
     {
       "id": "user_005",
       "name": "User 5",
       "role": "viewer",
-      "active": false,
-      "risk_score": 0
-    },
-    {
-      "id": "user_006",
-      "name": "User 6",
-      "role": "viewer",
-      "active": false,
-      "risk_score": 97
+      "active": true,
+      "risk_score": 75
     }
   ],
   "resources": [
     {
       "id": "res_000",
-      "type": "service",
+      "type": "api",
       "public": true,
-      "owner_id": "user_008",
-      "sensitivity": "internal"
+      "owner_id": "user_039",
+      "sensitivity": "secret"
     },
     {
       "id": "res_001",
-      "type": "database",
-      "public": true,
-      "owner_id": "user_076",
-      "sensitivity": "internal"
+      "type": "file",
+      "public": false,
+      "owner_id": "user_059",
+      "sensitivity": "confidential"
     },
     {
       "id": "res_002",
-      "type": "database",
-      "public": false,
-      "owner_id": "user_018",
-      "sensitivity": "secret"
-    },
-    {
-      "id": "res_003",
       "type": "bucket",
       "public": false,
-      "owner_id": "user_014",
+      "owner_id": "user_031",
       "sensitivity": "public"
     },
     {
-      "id": "res_004",
+      "id": "res_003",
       "type": "database",
       "public": true,
-      "owner_id": "user_097",
-      "sensitivity": "secret"
+      "owner_id": "user_038",
+      "sensitivity": "confidential"
     }
   ],
   "system": {
-    "health": 0.66,
-    "load": 47.27,
-    "uptime_days": 313
+    "health": 0.76,
+    "load": 56.56,
+    "uptime_days": 274
   },
   "policies": {
     "security": {

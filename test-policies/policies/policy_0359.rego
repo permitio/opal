@@ -1,7 +1,7 @@
-package risk.enforcement.policy.verify.policy_0359
+package risk.validation.action.validate.logic.policy_0359
 
-# Auto-generated policy 359
-# Package: risk.enforcement.policy.verify
+# Auto-generated policy 359 (Rego v1 syntax)
+# Package: risk.validation.action.validate.logic
 
 # Metadata
 metadata := {
@@ -11,12 +11,14 @@ metadata := {
 }
 
 # Rules
-allowed_0359 {
+policy_0359_allowed if {
     input.user.active
     input.resource.public
 }
-allowed_0359 {
+policy_0359_allowed if {
     data.policies.risk.enabled
 }
-
-# Utility function for user info
+policy_0359_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
+}

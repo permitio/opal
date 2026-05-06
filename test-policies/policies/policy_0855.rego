@@ -1,7 +1,7 @@
-package compliance.validation.resource.verify.policy_0855
+package compliance.validation.resource.verify.logic.policy_0855
 
-# Auto-generated policy 855
-# Package: compliance.validation.resource.verify
+# Auto-generated policy 855 (Rego v1 syntax)
+# Package: compliance.validation.resource.verify.logic
 
 # Metadata
 metadata := {
@@ -11,20 +11,10 @@ metadata := {
 }
 
 # Rules
-allowed_0855 {
+policy_0855_allowed if {
+    input.user.role == "admin"
+}
+policy_0855_allowed if {
     input.user.active
     input.resource.public
 }
-approved_0855 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
-}
-allowed_0855 {
-    data.policies.compliance.enabled
-}
-denied_0855 {
-    input.action == "delete"
-    input.user.role != "admin"
-}
-
-# Utility function for user info

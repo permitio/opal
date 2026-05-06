@@ -1,7 +1,7 @@
-package compliance.authentication.action.validate.helpers.policy_0301
+package audit.authentication.policy.deny.policy_0301
 
-# Auto-generated policy 301
-# Package: compliance.authentication.action.validate.helpers
+# Auto-generated policy 301 (Rego v1 syntax)
+# Package: audit.authentication.policy.deny
 
 # Metadata
 metadata := {
@@ -11,19 +11,8 @@ metadata := {
 }
 
 # Rules
-approved_0301 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
-}
-denied_0301 {
+policy_0301_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-allowed_0301 {
-    input.user.role == "admin"
-}
-allowed_0301 {
-    data.policies.compliance.enabled
-}
-
-# Utility function for user info
+default policy_0301_allowed = false

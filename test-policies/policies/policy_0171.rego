@@ -1,7 +1,7 @@
-package audit.validation.policy.deny.core.policy_0171
+package governance.enforcement.user.allow.core.policy_0171
 
-# Auto-generated policy 171
-# Package: audit.validation.policy.deny.core
+# Auto-generated policy 171 (Rego v1 syntax)
+# Package: governance.enforcement.user.allow.core
 
 # Metadata
 metadata := {
@@ -11,16 +11,17 @@ metadata := {
 }
 
 # Rules
-denied_0171 {
-    input.action == "delete"
-    input.user.role != "admin"
+policy_0171_allowed if {
+    data.policies.governance.enabled
 }
-allowed_0171 {
+policy_0171_allowed if {
     input.user.active
     input.resource.public
 }
-allowed_0171 {
-    data.policies.audit.enabled
+policy_0171_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
 }
-
-# Utility function for user info
+policy_0171_allowed if {
+    input.user.role == "admin"
+}

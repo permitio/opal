@@ -1,7 +1,7 @@
-package access.enforcement.resource.verify.policy_0086
+package audit.validation.user.allow.core.policy_0086
 
-# Auto-generated policy 86
-# Package: access.enforcement.resource.verify
+# Auto-generated policy 86 (Rego v1 syntax)
+# Package: audit.validation.user.allow.core
 
 # Metadata
 metadata := {
@@ -11,15 +11,8 @@ metadata := {
 }
 
 # Rules
-allowed_0086 {
-    data.policies.access.enabled
-}
-allowed_0086 {
-    input.user.role == "admin"
-}
-allowed_0086 {
+default policy_0086_allowed = false
+policy_0086_allowed if {
     input.user.active
     input.resource.public
 }
-
-# Utility function for user info

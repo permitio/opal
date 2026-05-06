@@ -1,7 +1,7 @@
-package compliance.authorization.user.deny.policy_0319
+package risk.enforcement.action.validate.policy_0319
 
-# Auto-generated policy 319
-# Package: compliance.authorization.user.deny
+# Auto-generated policy 319 (Rego v1 syntax)
+# Package: risk.enforcement.action.validate
 
 # Metadata
 metadata := {
@@ -11,14 +11,16 @@ metadata := {
 }
 
 # Rules
-default allowed_0319 = false
-denied_0319 {
-    input.action == "delete"
-    input.user.role != "admin"
-}
-allowed_0319 {
+policy_0319_allowed if {
     input.user.active
     input.resource.public
 }
-
-# Utility function for user info
+policy_0319_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
+}
+default policy_0319_allowed = false
+policy_0319_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
+}

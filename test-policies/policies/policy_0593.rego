@@ -1,7 +1,7 @@
-package audit.authentication.context.check.core.policy_0593
+package audit.validation.context.verify.helpers.policy_0593
 
-# Auto-generated policy 593
-# Package: audit.authentication.context.check.core
+# Auto-generated policy 593 (Rego v1 syntax)
+# Package: audit.validation.context.verify.helpers
 
 # Metadata
 metadata := {
@@ -11,14 +11,15 @@ metadata := {
 }
 
 # Rules
-default allowed_0593 = false
-denied_0593 {
-    input.action == "delete"
-    input.user.role != "admin"
+policy_0593_allowed if {
+    input.user.role == "admin"
 }
-approved_0593 {
+default policy_0593_allowed = false
+policy_0593_allowed if {
+    input.user.active
+    input.resource.public
+}
+policy_0593_approved if {
     input.user.risk_score < 50
     input.system.health > 0.8
 }
-
-# Utility function for user info

@@ -1,7 +1,7 @@
-package risk.authorization.context.validate.core.policy_0992
+package risk.authentication.action.allow.policy_0992
 
-# Auto-generated policy 992
-# Package: risk.authorization.context.validate.core
+# Auto-generated policy 992 (Rego v1 syntax)
+# Package: risk.authentication.action.allow
 
 # Metadata
 metadata := {
@@ -11,15 +11,14 @@ metadata := {
 }
 
 # Rules
-allowed_0992 {
-    data.policies.risk.enabled
-}
-allowed_0992 {
+default policy_0992_allowed = false
+policy_0992_allowed if {
     input.user.role == "admin"
 }
-approved_0992 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
+policy_0992_allowed if {
+    data.policies.risk.enabled
 }
-
-# Utility function for user info
+policy_0992_allowed if {
+    input.user.active
+    input.resource.public
+}

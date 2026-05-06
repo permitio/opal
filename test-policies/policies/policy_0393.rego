@@ -1,7 +1,7 @@
-package risk.validation.resource.validate.utils.policy_0393
+package compliance.validation.context.verify.logic.policy_0393
 
-# Auto-generated policy 393
-# Package: risk.validation.resource.validate.utils
+# Auto-generated policy 393 (Rego v1 syntax)
+# Package: compliance.validation.context.verify.logic
 
 # Metadata
 metadata := {
@@ -11,18 +11,14 @@ metadata := {
 }
 
 # Rules
-approved_0393 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
+policy_0393_allowed if {
+    input.user.role == "admin"
 }
-allowed_0393 {
-    input.user.active
-    input.resource.public
-}
-denied_0393 {
+policy_0393_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-default allowed_0393 = false
-
-# Utility function for user info
+policy_0393_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
+}

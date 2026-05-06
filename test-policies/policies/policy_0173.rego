@@ -1,7 +1,7 @@
-package security.monitoring.user.check.policy_0173
+package access.validation.user.allow.policy_0173
 
-# Auto-generated policy 173
-# Package: security.monitoring.user.check
+# Auto-generated policy 173 (Rego v1 syntax)
+# Package: access.validation.user.allow
 
 # Metadata
 metadata := {
@@ -11,16 +11,16 @@ metadata := {
 }
 
 # Rules
-approved_0173 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
+policy_0173_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
 }
-allowed_0173 {
+default policy_0173_allowed = false
+policy_0173_allowed if {
     input.user.active
     input.resource.public
 }
-allowed_0173 {
-    input.user.role == "admin"
+policy_0173_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
 }
-
-# Utility function for user info

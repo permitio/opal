@@ -1,7 +1,7 @@
-package risk.authorization.user.validate.policy_0882
+package audit.monitoring.policy.verify.core.policy_0882
 
-# Auto-generated policy 882
-# Package: risk.authorization.user.validate
+# Auto-generated policy 882 (Rego v1 syntax)
+# Package: audit.monitoring.policy.verify.core
 
 # Metadata
 metadata := {
@@ -11,19 +11,11 @@ metadata := {
 }
 
 # Rules
-allowed_0882 {
-    data.policies.risk.enabled
+policy_0882_allowed if {
+    data.policies.audit.enabled
 }
-denied_0882 {
-    input.action == "delete"
-    input.user.role != "admin"
+default policy_0882_allowed = false
+policy_0882_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
 }
-allowed_0882 {
-    input.user.role == "admin"
-}
-allowed_0882 {
-    input.user.active
-    input.resource.public
-}
-
-# Utility function for user info

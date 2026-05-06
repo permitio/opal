@@ -1,7 +1,7 @@
-package security.validation.user.allow.helpers.policy_0594
+package compliance.validation.action.deny.core.policy_0594
 
-# Auto-generated policy 594
-# Package: security.validation.user.allow.helpers
+# Auto-generated policy 594 (Rego v1 syntax)
+# Package: compliance.validation.action.deny.core
 
 # Metadata
 metadata := {
@@ -11,9 +11,16 @@ metadata := {
 }
 
 # Rules
-allowed_0594 {
-    input.user.role == "admin"
+policy_0594_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
 }
-default allowed_0594 = false
-
-# Utility function for user info
+default policy_0594_allowed = false
+policy_0594_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
+}
+policy_0594_allowed if {
+    input.user.active
+    input.resource.public
+}

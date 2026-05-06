@@ -1,7 +1,7 @@
-package access.authentication.policy.deny.helpers.policy_0650
+package audit.authentication.policy.deny.core.policy_0650
 
-# Auto-generated policy 650
-# Package: access.authentication.policy.deny.helpers
+# Auto-generated policy 650 (Rego v1 syntax)
+# Package: audit.authentication.policy.deny.core
 
 # Metadata
 metadata := {
@@ -11,12 +11,7 @@ metadata := {
 }
 
 # Rules
-allowed_0650 {
-    input.user.active
-    input.resource.public
+policy_0650_allowed if {
+    data.policies.audit.enabled
 }
-allowed_0650 {
-    data.policies.access.enabled
-}
-
-# Utility function for user info
+default policy_0650_allowed = false

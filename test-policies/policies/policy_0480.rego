@@ -1,7 +1,7 @@
-package access.enforcement.resource.deny.core.policy_0480
+package risk.authorization.resource.allow.policy_0480
 
-# Auto-generated policy 480
-# Package: access.enforcement.resource.deny.core
+# Auto-generated policy 480 (Rego v1 syntax)
+# Package: risk.authorization.resource.allow
 
 # Metadata
 metadata := {
@@ -11,13 +11,10 @@ metadata := {
 }
 
 # Rules
-approved_0480 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
+policy_0480_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
 }
-default allowed_0480 = false
-allowed_0480 {
-    data.policies.access.enabled
+policy_0480_allowed if {
+    input.user.role == "admin"
 }
-
-# Utility function for user info

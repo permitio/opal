@@ -1,7 +1,7 @@
-package audit.authorization.context.verify.policy_0371
+package access.enforcement.user.allow.policy_0371
 
-# Auto-generated policy 371
-# Package: audit.authorization.context.verify
+# Auto-generated policy 371 (Rego v1 syntax)
+# Package: access.enforcement.user.allow
 
 # Metadata
 metadata := {
@@ -11,17 +11,9 @@ metadata := {
 }
 
 # Rules
-allowed_0371 {
-    input.user.active
-    input.resource.public
+policy_0371_allowed if {
+    input.user.role == "admin"
 }
-approved_0371 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
+policy_0371_allowed if {
+    data.policies.access.enabled
 }
-denied_0371 {
-    input.action == "delete"
-    input.user.role != "admin"
-}
-
-# Utility function for user info

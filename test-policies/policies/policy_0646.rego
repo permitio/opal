@@ -1,7 +1,7 @@
-package compliance.authentication.action.check.policy_0646
+package security.authentication.action.validate.data.policy_0646
 
-# Auto-generated policy 646
-# Package: compliance.authentication.action.check
+# Auto-generated policy 646 (Rego v1 syntax)
+# Package: security.authentication.action.validate.data
 
 # Metadata
 metadata := {
@@ -11,17 +11,14 @@ metadata := {
 }
 
 # Rules
-allowed_0646 {
-    input.user.active
-    input.resource.public
+default policy_0646_allowed = false
+policy_0646_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
 }
-default allowed_0646 = false
-denied_0646 {
-    input.action == "delete"
-    input.user.role != "admin"
+policy_0646_allowed if {
+    input.user.role == "admin"
 }
-allowed_0646 {
-    data.policies.compliance.enabled
+policy_0646_allowed if {
+    data.policies.security.enabled
 }
-
-# Utility function for user info

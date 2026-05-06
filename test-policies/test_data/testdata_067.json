@@ -1,66 +1,73 @@
 {
   "test_id": 67,
   "metadata": {
-    "environment": "staging",
-    "region": "ap-northeast-1",
-    "version": "1.1.4"
+    "environment": "dev",
+    "region": "us-east-1",
+    "version": "1.0.10"
   },
   "users": [
     {
       "id": "user_000",
       "name": "User 0",
-      "role": "viewer",
+      "role": "editor",
       "active": false,
-      "risk_score": 25
+      "risk_score": 92
+    },
+    {
+      "id": "user_001",
+      "name": "User 1",
+      "role": "auditor",
+      "active": true,
+      "risk_score": 16
+    },
+    {
+      "id": "user_002",
+      "name": "User 2",
+      "role": "editor",
+      "active": false,
+      "risk_score": 19
     }
   ],
   "resources": [
     {
       "id": "res_000",
-      "type": "file",
+      "type": "api",
       "public": true,
-      "owner_id": "user_007",
+      "owner_id": "user_095",
       "sensitivity": "internal"
     },
     {
       "id": "res_001",
-      "type": "file",
+      "type": "api",
       "public": true,
-      "owner_id": "user_069",
-      "sensitivity": "internal"
+      "owner_id": "user_086",
+      "sensitivity": "public"
     },
     {
       "id": "res_002",
-      "type": "service",
-      "public": false,
-      "owner_id": "user_028",
-      "sensitivity": "internal"
-    },
-    {
-      "id": "res_003",
-      "type": "file",
-      "public": false,
-      "owner_id": "user_094",
+      "type": "bucket",
+      "public": true,
+      "owner_id": "user_089",
       "sensitivity": "internal"
     }
   ],
   "system": {
-    "health": 0.82,
-    "load": 84.86,
-    "uptime_days": 228
+    "health": 0.99,
+    "load": 93.57,
+    "uptime_days": 171
   },
   "policies": {
     "security": {
-      "enabled": false
+      "enabled": true
     },
     "compliance": {
-      "enabled": false
+      "enabled": true
     },
     "access": {
       "enabled": true
     },
     "audit": {
-      "enabled": false
+      "enabled": true
     }
   }
 }

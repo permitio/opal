@@ -1,7 +1,7 @@
-package compliance.validation.user.verify.policy_0645
+package access.enforcement.user.deny.policy_0645
 
-# Auto-generated policy 645
-# Package: compliance.validation.user.verify
+# Auto-generated policy 645 (Rego v1 syntax)
+# Package: access.enforcement.user.deny
 
 # Metadata
 metadata := {
@@ -11,17 +11,14 @@ metadata := {
 }
 
 # Rules
-allowed_0645 {
+policy_0645_allowed if {
     input.user.role == "admin"
 }
-approved_0645 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
+policy_0645_allowed if {
+    input.user.active
+    input.resource.public
 }
-default allowed_0645 = false
-denied_0645 {
-    input.action == "delete"
-    input.user.role != "admin"
+policy_0645_allowed if {
+    data.policies.access.enabled
 }
-
-# Utility function for user info
+default policy_0645_allowed = false

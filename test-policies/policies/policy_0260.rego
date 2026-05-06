@@ -1,7 +1,7 @@
-package compliance.monitoring.context.deny.utils.policy_0260
+package security.authentication.policy.check.data.policy_0260
 
-# Auto-generated policy 260
-# Package: compliance.monitoring.context.deny.utils
+# Auto-generated policy 260 (Rego v1 syntax)
+# Package: security.authentication.policy.check.data
 
 # Metadata
 metadata := {
@@ -11,12 +11,10 @@ metadata := {
 }
 
 # Rules
-denied_0260 {
+policy_0260_allowed if {
+    input.user.role == "admin"
+}
+policy_0260_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-allowed_0260 {
-    input.user.role == "admin"
-}
-
-# Utility function for user info

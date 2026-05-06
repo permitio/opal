@@ -1,7 +1,7 @@
-package security.validation.policy.check.helpers.policy_0226
+package audit.authentication.user.deny.policy_0226
 
-# Auto-generated policy 226
-# Package: security.validation.policy.check.helpers
+# Auto-generated policy 226 (Rego v1 syntax)
+# Package: audit.authentication.user.deny
 
 # Metadata
 metadata := {
@@ -11,10 +11,11 @@ metadata := {
 }
 
 # Rules
-default allowed_0226 = false
-allowed_0226 {
+policy_0226_allowed if {
+    data.policies.audit.enabled
+}
+policy_0226_allowed if {
     input.user.active
     input.resource.public
 }
-
-# Utility function for user info
+default policy_0226_allowed = false

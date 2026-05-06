@@ -1,7 +1,7 @@
-package access.authorization.user.check.policy_0617
+package security.authorization.user.verify.utils.policy_0617
 
-# Auto-generated policy 617
-# Package: access.authorization.user.check
+# Auto-generated policy 617 (Rego v1 syntax)
+# Package: security.authorization.user.verify.utils
 
 # Metadata
 metadata := {
@@ -11,19 +11,14 @@ metadata := {
 }
 
 # Rules
-allowed_0617 {
+policy_0617_allowed if {
+    data.policies.security.enabled
+}
+policy_0617_allowed if {
+    input.user.role == "admin"
+}
+default policy_0617_allowed = false
+policy_0617_allowed if {
     input.user.active
     input.resource.public
 }
-allowed_0617 {
-    input.user.role == "admin"
-}
-approved_0617 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
-}
-allowed_0617 {
-    data.policies.access.enabled
-}
-
-# Utility function for user info

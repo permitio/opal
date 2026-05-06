@@ -1,7 +1,7 @@
-package risk.authentication.user.deny.policy_0856
+package audit.validation.user.check.core.policy_0856
 
-# Auto-generated policy 856
-# Package: risk.authentication.user.deny
+# Auto-generated policy 856 (Rego v1 syntax)
+# Package: audit.validation.user.check.core
 
 # Metadata
 metadata := {
@@ -11,12 +11,10 @@ metadata := {
 }
 
 # Rules
-default allowed_0856 = false
-allowed_0856 {
-    data.policies.risk.enabled
+policy_0856_allowed if {
+    data.policies.audit.enabled
 }
-allowed_0856 {
-    input.user.role == "admin"
+policy_0856_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
 }
-
-# Utility function for user info

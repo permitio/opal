@@ -1,7 +1,7 @@
-package compliance.monitoring.user.deny.core.policy_0326
+package compliance.monitoring.resource.verify.policy_0326
 
-# Auto-generated policy 326
-# Package: compliance.monitoring.user.deny.core
+# Auto-generated policy 326 (Rego v1 syntax)
+# Package: compliance.monitoring.resource.verify
 
 # Metadata
 metadata := {
@@ -11,9 +11,9 @@ metadata := {
 }
 
 # Rules
-allowed_0326 {
+policy_0326_allowed if {
+    data.policies.compliance.enabled
+}
+policy_0326_allowed if {
     input.user.role == "admin"
 }
-default allowed_0326 = false
-
-# Utility function for user info

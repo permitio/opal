@@ -1,7 +1,7 @@
-package security.monitoring.policy.validate.utils.policy_0701
+package governance.validation.context.check.policy_0701
 
-# Auto-generated policy 701
-# Package: security.monitoring.policy.validate.utils
+# Auto-generated policy 701 (Rego v1 syntax)
+# Package: governance.validation.context.check
 
 # Metadata
 metadata := {
@@ -11,16 +11,15 @@ metadata := {
 }
 
 # Rules
-allowed_0701 {
-    data.policies.security.enabled
-}
-allowed_0701 {
-    input.user.active
-    input.resource.public
-}
-approved_0701 {
+policy_0701_approved if {
     input.user.risk_score < 50
     input.system.health > 0.8
 }
-
-# Utility function for user info
+default policy_0701_allowed = false
+policy_0701_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
+}
+policy_0701_allowed if {
+    data.policies.governance.enabled
+}

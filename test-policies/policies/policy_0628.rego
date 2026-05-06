@@ -1,7 +1,7 @@
-package access.monitoring.action.deny.policy_0628
+package compliance.validation.action.deny.helpers.policy_0628
 
-# Auto-generated policy 628
-# Package: access.monitoring.action.deny
+# Auto-generated policy 628 (Rego v1 syntax)
+# Package: compliance.validation.action.deny.helpers
 
 # Metadata
 metadata := {
@@ -11,20 +11,7 @@ metadata := {
 }
 
 # Rules
-approved_0628 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
+policy_0628_allowed if {
+    input.user.role == "admin"
 }
-allowed_0628 {
-    input.user.active
-    input.resource.public
-}
-denied_0628 {
-    input.action == "delete"
-    input.user.role != "admin"
-}
-allowed_0628 {
-    data.policies.access.enabled
-}
-
-# Utility function for user info
+default policy_0628_allowed = false

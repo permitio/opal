@@ -1,7 +1,7 @@
-package audit.validation.user.allow.policy_0136
+package access.monitoring.context.verify.policy_0136
 
-# Auto-generated policy 136
-# Package: audit.validation.user.allow
+# Auto-generated policy 136 (Rego v1 syntax)
+# Package: access.monitoring.context.verify
 
 # Metadata
 metadata := {
@@ -11,12 +11,17 @@ metadata := {
 }
 
 # Rules
-allowed_0136 {
-    data.policies.audit.enabled
+policy_0136_allowed if {
+    input.user.role == "admin"
 }
-denied_0136 {
+policy_0136_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-
-# Utility function for user info
+policy_0136_allowed if {
+    input.user.active
+    input.resource.public
+}
+policy_0136_allowed if {
+    data.policies.access.enabled
+}

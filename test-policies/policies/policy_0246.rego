@@ -1,7 +1,7 @@
-package audit.authentication.user.allow.data.policy_0246
+package compliance.validation.context.validate.core.policy_0246
 
-# Auto-generated policy 246
-# Package: audit.authentication.user.allow.data
+# Auto-generated policy 246 (Rego v1 syntax)
+# Package: compliance.validation.context.validate.core
 
 # Metadata
 metadata := {
@@ -11,13 +11,7 @@ metadata := {
 }
 
 # Rules
-allowed_0246 {
-    data.policies.audit.enabled
+default policy_0246_allowed = false
+policy_0246_allowed if {
+    data.policies.compliance.enabled
 }
-default allowed_0246 = false
-denied_0246 {
-    input.action == "delete"
-    input.user.role != "admin"
-}
-
-# Utility function for user info

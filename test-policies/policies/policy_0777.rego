@@ -1,7 +1,7 @@
-package security.monitoring.context.validate.policy_0777
+package security.authentication.user.verify.data.policy_0777
 
-# Auto-generated policy 777
-# Package: security.monitoring.context.validate
+# Auto-generated policy 777 (Rego v1 syntax)
+# Package: security.authentication.user.verify.data
 
 # Metadata
 metadata := {
@@ -11,17 +11,8 @@ metadata := {
 }
 
 # Rules
-denied_0777 {
-    input.action == "delete"
-    input.user.role != "admin"
-}
-allowed_0777 {
-    input.user.role == "admin"
-}
-default allowed_0777 = false
-allowed_0777 {
+policy_0777_allowed if {
     input.user.active
     input.resource.public
 }
-
-# Utility function for user info
+default policy_0777_allowed = false

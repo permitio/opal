@@ -1,7 +1,7 @@
-package access.monitoring.resource.deny.policy_0267
+package security.validation.policy.deny.helpers.policy_0267
 
-# Auto-generated policy 267
-# Package: access.monitoring.resource.deny
+# Auto-generated policy 267 (Rego v1 syntax)
+# Package: security.validation.policy.deny.helpers
 
 # Metadata
 metadata := {
@@ -11,12 +11,18 @@ metadata := {
 }
 
 # Rules
-approved_0267 {
+policy_0267_allowed if {
+    input.user.active
+    input.resource.public
+}
+policy_0267_allowed if {
+    input.user.role == "admin"
+}
+policy_0267_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
+}
+policy_0267_approved if {
     input.user.risk_score < 50
     input.system.health > 0.8
 }
-allowed_0267 {
-    input.user.role == "admin"
-}
-
-# Utility function for user info

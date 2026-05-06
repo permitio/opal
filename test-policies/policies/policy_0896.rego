@@ -1,7 +1,7 @@
-package compliance.authentication.policy.deny.policy_0896
+package risk.monitoring.user.validate.policy_0896
 
-# Auto-generated policy 896
-# Package: compliance.authentication.policy.deny
+# Auto-generated policy 896 (Rego v1 syntax)
+# Package: risk.monitoring.user.validate
 
 # Metadata
 metadata := {
@@ -11,16 +11,11 @@ metadata := {
 }
 
 # Rules
-denied_0896 {
+policy_0896_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-default allowed_0896 = false
-allowed_0896 {
-    data.policies.compliance.enabled
+policy_0896_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
 }
-allowed_0896 {
-    input.user.role == "admin"
-}
-
-# Utility function for user info

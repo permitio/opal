@@ -1,7 +1,7 @@
-package governance.enforcement.policy.allow.logic.policy_0128
+package audit.authorization.context.deny.core.policy_0128
 
-# Auto-generated policy 128
-# Package: governance.enforcement.policy.allow.logic
+# Auto-generated policy 128 (Rego v1 syntax)
+# Package: audit.authorization.context.deny.core
 
 # Metadata
 metadata := {
@@ -11,17 +11,11 @@ metadata := {
 }
 
 # Rules
-approved_0128 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
+policy_0128_allowed if {
+    input.user.active
+    input.resource.public
 }
-default allowed_0128 = false
-allowed_0128 {
-    data.policies.governance.enabled
-}
-denied_0128 {
+policy_0128_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-
-# Utility function for user info

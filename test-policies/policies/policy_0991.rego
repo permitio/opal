@@ -1,7 +1,7 @@
-package risk.authorization.context.verify.policy_0991
+package audit.authentication.policy.check.policy_0991
 
-# Auto-generated policy 991
-# Package: risk.authorization.context.verify
+# Auto-generated policy 991 (Rego v1 syntax)
+# Package: audit.authentication.policy.check
 
 # Metadata
 metadata := {
@@ -11,16 +11,12 @@ metadata := {
 }
 
 # Rules
-allowed_0991 {
-    data.policies.risk.enabled
-}
-allowed_0991 {
-    input.user.role == "admin"
-}
-approved_0991 {
+policy_0991_approved if {
     input.user.risk_score < 50
     input.system.health > 0.8
 }
-default allowed_0991 = false
-
-# Utility function for user info
+policy_0991_allowed if {
+    input.user.active
+    input.resource.public
+}
+default policy_0991_allowed = false

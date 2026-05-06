@@ -1,7 +1,7 @@
-package risk.enforcement.policy.allow.policy_0954
+package audit.authentication.user.allow.policy_0954
 
-# Auto-generated policy 954
-# Package: risk.enforcement.policy.allow
+# Auto-generated policy 954 (Rego v1 syntax)
+# Package: audit.authentication.user.allow
 
 # Metadata
 metadata := {
@@ -11,13 +11,14 @@ metadata := {
 }
 
 # Rules
-allowed_0954 {
-    data.policies.risk.enabled
+policy_0954_allowed if {
+    input.user.role == "admin"
 }
-approved_0954 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
+policy_0954_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
 }
-default allowed_0954 = false
-
-# Utility function for user info
+policy_0954_allowed if {
+    input.user.active
+    input.resource.public
+}

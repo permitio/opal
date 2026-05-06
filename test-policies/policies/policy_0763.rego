@@ -1,7 +1,7 @@
-package governance.authentication.user.deny.policy_0763
+package audit.enforcement.action.validate.policy_0763
 
-# Auto-generated policy 763
-# Package: governance.authentication.user.deny
+# Auto-generated policy 763 (Rego v1 syntax)
+# Package: audit.enforcement.action.validate
 
 # Metadata
 metadata := {
@@ -11,19 +11,8 @@ metadata := {
 }
 
 # Rules
-allowed_0763 {
-    data.policies.governance.enabled
+default policy_0763_allowed = false
+policy_0763_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
 }
-denied_0763 {
-    input.action == "delete"
-    input.user.role != "admin"
-}
-allowed_0763 {
-    input.user.active
-    input.resource.public
-}
-allowed_0763 {
-    input.user.role == "admin"
-}
-
-# Utility function for user info

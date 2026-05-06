@@ -1,7 +1,7 @@
-package risk.validation.resource.verify.core.policy_0412
+package compliance.validation.user.deny.logic.policy_0412
 
-# Auto-generated policy 412
-# Package: risk.validation.resource.verify.core
+# Auto-generated policy 412 (Rego v1 syntax)
+# Package: compliance.validation.user.deny.logic
 
 # Metadata
 metadata := {
@@ -11,14 +11,16 @@ metadata := {
 }
 
 # Rules
-allowed_0412 {
+default policy_0412_allowed = false
+policy_0412_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
+}
+policy_0412_allowed if {
     input.user.active
     input.resource.public
 }
-approved_0412 {
+policy_0412_approved if {
     input.user.risk_score < 50
     input.system.health > 0.8
 }
-default allowed_0412 = false
-
-# Utility function for user info

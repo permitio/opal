@@ -1,7 +1,7 @@
-package audit.enforcement.action.validate.helpers.policy_0672
+package compliance.authorization.context.allow.core.policy_0672
 
-# Auto-generated policy 672
-# Package: audit.enforcement.action.validate.helpers
+# Auto-generated policy 672 (Rego v1 syntax)
+# Package: compliance.authorization.context.allow.core
 
 # Metadata
 metadata := {
@@ -11,12 +11,10 @@ metadata := {
 }
 
 # Rules
-denied_0672 {
+policy_0672_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-allowed_0672 {
-    data.policies.audit.enabled
+policy_0672_allowed if {
+    data.policies.compliance.enabled
 }
-
-# Utility function for user info

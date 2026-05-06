@@ -1,7 +1,7 @@
-package audit.enforcement.context.validate.policy_0053
+package compliance.authorization.action.allow.core.policy_0053
 
-# Auto-generated policy 53
-# Package: audit.enforcement.context.validate
+# Auto-generated policy 53 (Rego v1 syntax)
+# Package: compliance.authorization.action.allow.core
 
 # Metadata
 metadata := {
@@ -11,13 +11,15 @@ metadata := {
 }
 
 # Rules
-allowed_0053 {
-    input.user.active
-    input.resource.public
-}
-denied_0053 {
+policy_0053_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-
-# Utility function for user info
+policy_0053_allowed if {
+    input.user.active
+    input.resource.public
+}
+policy_0053_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
+}

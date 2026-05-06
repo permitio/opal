@@ -1,7 +1,7 @@
-package access.authentication.resource.deny.policy_0101
+package security.validation.action.allow.policy_0101
 
-# Auto-generated policy 101
-# Package: access.authentication.resource.deny
+# Auto-generated policy 101 (Rego v1 syntax)
+# Package: security.validation.action.allow
 
 # Metadata
 metadata := {
@@ -11,13 +11,10 @@ metadata := {
 }
 
 # Rules
-denied_0101 {
-    input.action == "delete"
-    input.user.role != "admin"
+policy_0101_allowed if {
+    input.user.active
+    input.resource.public
 }
-approved_0101 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
+policy_0101_allowed if {
+    data.policies.security.enabled
 }
-
-# Utility function for user info

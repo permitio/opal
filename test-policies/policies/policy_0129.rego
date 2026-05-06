@@ -1,7 +1,7 @@
-package audit.monitoring.action.validate.policy_0129
+package governance.validation.user.validate.policy_0129
 
-# Auto-generated policy 129
-# Package: audit.monitoring.action.validate
+# Auto-generated policy 129 (Rego v1 syntax)
+# Package: governance.validation.user.validate
 
 # Metadata
 metadata := {
@@ -11,11 +11,11 @@ metadata := {
 }
 
 # Rules
-allowed_0129 {
+default policy_0129_allowed = false
+policy_0129_allowed if {
     input.user.role == "admin"
 }
-allowed_0129 {
-    data.policies.audit.enabled
+policy_0129_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
 }
-
-# Utility function for user info

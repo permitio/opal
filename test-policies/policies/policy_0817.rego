@@ -1,7 +1,7 @@
-package security.authorization.user.verify.policy_0817
+package governance.monitoring.user.check.policy_0817
 
-# Auto-generated policy 817
-# Package: security.authorization.user.verify
+# Auto-generated policy 817 (Rego v1 syntax)
+# Package: governance.monitoring.user.check
 
 # Metadata
 metadata := {
@@ -11,16 +11,14 @@ metadata := {
 }
 
 # Rules
-denied_0817 {
-    input.action == "delete"
-    input.user.role != "admin"
-}
-allowed_0817 {
-    input.user.role == "admin"
-}
-allowed_0817 {
+policy_0817_allowed if {
     input.user.active
     input.resource.public
 }
-
-# Utility function for user info
+policy_0817_allowed if {
+    data.policies.governance.enabled
+}
+policy_0817_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
+}

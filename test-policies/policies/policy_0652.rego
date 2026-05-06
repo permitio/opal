@@ -1,7 +1,7 @@
-package governance.validation.user.deny.policy_0652
+package access.monitoring.resource.check.policy_0652
 
-# Auto-generated policy 652
-# Package: governance.validation.user.deny
+# Auto-generated policy 652 (Rego v1 syntax)
+# Package: access.monitoring.resource.check
 
 # Metadata
 metadata := {
@@ -11,16 +11,10 @@ metadata := {
 }
 
 # Rules
-allowed_0652 {
-    data.policies.governance.enabled
-}
-default allowed_0652 = false
-denied_0652 {
+policy_0652_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-allowed_0652 {
-    input.user.role == "admin"
+policy_0652_allowed if {
+    data.policies.access.enabled
 }
-
-# Utility function for user info

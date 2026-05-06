@@ -1,7 +1,7 @@
-package audit.authorization.policy.deny.policy_0134
+package access.validation.user.verify.policy_0134
 
-# Auto-generated policy 134
-# Package: audit.authorization.policy.deny
+# Auto-generated policy 134 (Rego v1 syntax)
+# Package: access.validation.user.verify
 
 # Metadata
 metadata := {
@@ -11,16 +11,11 @@ metadata := {
 }
 
 # Rules
-allowed_0134 {
-    input.user.active
-    input.resource.public
-}
-approved_0134 {
+policy_0134_approved if {
     input.user.risk_score < 50
     input.system.health > 0.8
 }
-allowed_0134 {
-    data.policies.audit.enabled
+default policy_0134_allowed = false
+policy_0134_allowed if {
+    input.user.role == "admin"
 }
-
-# Utility function for user info

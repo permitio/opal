@@ -1,7 +1,7 @@
-package compliance.enforcement.context.validate.policy_0311
+package access.authorization.context.deny.policy_0311
 
-# Auto-generated policy 311
-# Package: compliance.enforcement.context.validate
+# Auto-generated policy 311 (Rego v1 syntax)
+# Package: access.authorization.context.deny
 
 # Metadata
 metadata := {
@@ -11,13 +11,13 @@ metadata := {
 }
 
 # Rules
-denied_0311 {
+policy_0311_allowed if {
+    input.user.role == "admin"
+}
+policy_0311_allowed if {
+    data.policies.access.enabled
+}
+policy_0311_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-approved_0311 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
-}
-
-# Utility function for user info

@@ -1,7 +1,7 @@
-package security.authentication.context.check.policy_0238
+package governance.monitoring.policy.verify.helpers.policy_0238
 
-# Auto-generated policy 238
-# Package: security.authentication.context.check
+# Auto-generated policy 238 (Rego v1 syntax)
+# Package: governance.monitoring.policy.verify.helpers
 
 # Metadata
 metadata := {
@@ -11,19 +11,10 @@ metadata := {
 }
 
 # Rules
-allowed_0238 {
+policy_0238_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
+}
+policy_0238_allowed if {
     input.user.role == "admin"
 }
-denied_0238 {
-    input.action == "delete"
-    input.user.role != "admin"
-}
-allowed_0238 {
-    data.policies.security.enabled
-}
-allowed_0238 {
-    input.user.active
-    input.resource.public
-}
-
-# Utility function for user info

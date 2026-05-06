@@ -1,7 +1,7 @@
-package compliance.monitoring.action.deny.policy_0063
+package audit.authorization.context.deny.helpers.policy_0063
 
-# Auto-generated policy 63
-# Package: compliance.monitoring.action.deny
+# Auto-generated policy 63 (Rego v1 syntax)
+# Package: audit.authorization.context.deny.helpers
 
 # Metadata
 metadata := {
@@ -11,9 +11,13 @@ metadata := {
 }
 
 # Rules
-allowed_0063 {
-    data.policies.compliance.enabled
+policy_0063_allowed if {
+    input.user.role == "admin"
 }
-default allowed_0063 = false
-
-# Utility function for user info
+policy_0063_allowed if {
+    input.user.active
+    input.resource.public
+}
+policy_0063_allowed if {
+    data.policies.audit.enabled
+}

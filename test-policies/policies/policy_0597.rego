@@ -1,7 +1,7 @@
-package security.validation.policy.verify.policy_0597
+package risk.enforcement.action.verify.data.policy_0597
 
-# Auto-generated policy 597
-# Package: security.validation.policy.verify
+# Auto-generated policy 597 (Rego v1 syntax)
+# Package: risk.enforcement.action.verify.data
 
 # Metadata
 metadata := {
@@ -11,12 +11,18 @@ metadata := {
 }
 
 # Rules
-allowed_0597 {
-    data.policies.security.enabled
-}
-allowed_0597 {
+policy_0597_allowed if {
     input.user.active
     input.resource.public
 }
-
-# Utility function for user info
+policy_0597_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
+}
+policy_0597_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
+}
+policy_0597_allowed if {
+    input.user.role == "admin"
+}

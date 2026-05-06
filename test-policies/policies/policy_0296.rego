@@ -1,7 +1,7 @@
-package governance.validation.action.allow.policy_0296
+package compliance.authorization.user.validate.policy_0296
 
-# Auto-generated policy 296
-# Package: governance.validation.action.allow
+# Auto-generated policy 296 (Rego v1 syntax)
+# Package: compliance.authorization.user.validate
 
 # Metadata
 metadata := {
@@ -11,11 +11,11 @@ metadata := {
 }
 
 # Rules
-allowed_0296 {
-    input.user.role == "admin"
+default policy_0296_allowed = false
+policy_0296_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
 }
-allowed_0296 {
-    data.policies.governance.enabled
+policy_0296_allowed if {
+    data.policies.compliance.enabled
 }
-
-# Utility function for user info

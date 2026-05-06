@@ -1,7 +1,7 @@
-package security.monitoring.user.validate.utils.policy_0468
+package access.enforcement.policy.allow.policy_0468
 
-# Auto-generated policy 468
-# Package: security.monitoring.user.validate.utils
+# Auto-generated policy 468 (Rego v1 syntax)
+# Package: access.enforcement.policy.allow
 
 # Metadata
 metadata := {
@@ -11,16 +11,14 @@ metadata := {
 }
 
 # Rules
-allowed_0468 {
-    input.user.role == "admin"
+policy_0468_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
 }
-default allowed_0468 = false
-allowed_0468 {
-    data.policies.security.enabled
+policy_0468_allowed if {
+    data.policies.access.enabled
 }
-allowed_0468 {
+policy_0468_allowed if {
     input.user.active
     input.resource.public
 }
-
-# Utility function for user info

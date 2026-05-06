@@ -1,7 +1,7 @@
-package access.validation.action.verify.data.policy_0015
+package audit.authorization.context.allow.core.policy_0015
 
-# Auto-generated policy 15
-# Package: access.validation.action.verify.data
+# Auto-generated policy 15 (Rego v1 syntax)
+# Package: audit.authorization.context.allow.core
 
 # Metadata
 metadata := {
@@ -11,17 +11,15 @@ metadata := {
 }
 
 # Rules
-allowed_0015 {
+default policy_0015_allowed = false
+policy_0015_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
+}
+policy_0015_allowed if {
     input.user.active
     input.resource.public
 }
-approved_0015 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
+policy_0015_allowed if {
+    data.policies.audit.enabled
 }
-allowed_0015 {
-    input.user.role == "admin"
-}
-default allowed_0015 = false
-
-# Utility function for user info

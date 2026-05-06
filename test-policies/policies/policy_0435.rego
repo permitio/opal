@@ -1,7 +1,7 @@
-package audit.authorization.context.check.logic.policy_0435
+package security.monitoring.context.verify.utils.policy_0435
 
-# Auto-generated policy 435
-# Package: audit.authorization.context.check.logic
+# Auto-generated policy 435 (Rego v1 syntax)
+# Package: security.monitoring.context.verify.utils
 
 # Metadata
 metadata := {
@@ -11,13 +11,10 @@ metadata := {
 }
 
 # Rules
-allowed_0435 {
+policy_0435_allowed if {
     input.user.role == "admin"
 }
-approved_0435 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
+policy_0435_allowed if {
+    input.user.active
+    input.resource.public
 }
-default allowed_0435 = false
-
-# Utility function for user info

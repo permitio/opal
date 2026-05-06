@@ -1,7 +1,7 @@
-package governance.monitoring.context.deny.policy_0764
+package access.authentication.resource.allow.logic.policy_0764
 
-# Auto-generated policy 764
-# Package: governance.monitoring.context.deny
+# Auto-generated policy 764 (Rego v1 syntax)
+# Package: access.authentication.resource.allow.logic
 
 # Metadata
 metadata := {
@@ -11,12 +11,14 @@ metadata := {
 }
 
 # Rules
-allowed_0764 {
-    data.policies.governance.enabled
+policy_0764_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
 }
-approved_0764 {
+policy_0764_allowed if {
+    data.policies.access.enabled
+}
+policy_0764_approved if {
     input.user.risk_score < 50
     input.system.health > 0.8
 }
-
-# Utility function for user info

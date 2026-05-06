@@ -1,7 +1,7 @@
-package access.authorization.action.verify.policy_0191
+package compliance.authorization.action.deny.policy_0191
 
-# Auto-generated policy 191
-# Package: access.authorization.action.verify
+# Auto-generated policy 191 (Rego v1 syntax)
+# Package: compliance.authorization.action.deny
 
 # Metadata
 metadata := {
@@ -11,16 +11,17 @@ metadata := {
 }
 
 # Rules
-allowed_0191 {
-    input.user.role == "admin"
+policy_0191_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
 }
-allowed_0191 {
+policy_0191_allowed if {
+    data.policies.compliance.enabled
+}
+policy_0191_allowed if {
     input.user.active
     input.resource.public
 }
-default allowed_0191 = false
-allowed_0191 {
-    data.policies.access.enabled
+policy_0191_allowed if {
+    input.user.role == "admin"
 }
-
-# Utility function for user info

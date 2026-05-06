@@ -1,7 +1,7 @@
-package audit.authorization.policy.verify.policy_0141
+package governance.enforcement.action.deny.policy_0141
 
-# Auto-generated policy 141
-# Package: audit.authorization.policy.verify
+# Auto-generated policy 141 (Rego v1 syntax)
+# Package: governance.enforcement.action.deny
 
 # Metadata
 metadata := {
@@ -11,16 +11,12 @@ metadata := {
 }
 
 # Rules
-allowed_0141 {
-    input.user.role == "admin"
+policy_0141_allowed if {
+    input.user.active
+    input.resource.public
 }
-denied_0141 {
+policy_0141_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-allowed_0141 {
-    data.policies.audit.enabled
-}
-default allowed_0141 = false
-
-# Utility function for user info
+default policy_0141_allowed = false

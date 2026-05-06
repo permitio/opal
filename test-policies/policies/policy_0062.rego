@@ -1,7 +1,7 @@
-package compliance.validation.user.deny.policy_0062
+package access.authorization.resource.deny.policy_0062
 
-# Auto-generated policy 62
-# Package: compliance.validation.user.deny
+# Auto-generated policy 62 (Rego v1 syntax)
+# Package: access.authorization.resource.deny
 
 # Metadata
 metadata := {
@@ -11,10 +11,15 @@ metadata := {
 }
 
 # Rules
-default allowed_0062 = false
-approved_0062 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
+policy_0062_allowed if {
+    input.user.active
+    input.resource.public
 }
-
-# Utility function for user info
+default policy_0062_allowed = false
+policy_0062_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
+}
+policy_0062_allowed if {
+    input.user.role == "admin"
+}

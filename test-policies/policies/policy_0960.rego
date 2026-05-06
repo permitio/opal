@@ -1,7 +1,7 @@
-package security.enforcement.policy.check.policy_0960
+package compliance.authorization.policy.check.core.policy_0960
 
-# Auto-generated policy 960
-# Package: security.enforcement.policy.check
+# Auto-generated policy 960 (Rego v1 syntax)
+# Package: compliance.authorization.policy.check.core
 
 # Metadata
 metadata := {
@@ -11,16 +11,7 @@ metadata := {
 }
 
 # Rules
-allowed_0960 {
-    data.policies.security.enabled
+policy_0960_allowed if {
+    data.policies.compliance.enabled
 }
-denied_0960 {
-    input.action == "delete"
-    input.user.role != "admin"
-}
-allowed_0960 {
-    input.user.active
-    input.resource.public
-}
-
-# Utility function for user info
+default policy_0960_allowed = false

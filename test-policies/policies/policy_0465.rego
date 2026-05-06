@@ -1,7 +1,7 @@
-package compliance.validation.action.verify.data.policy_0465
+package access.authorization.user.validate.utils.policy_0465
 
-# Auto-generated policy 465
-# Package: compliance.validation.action.verify.data
+# Auto-generated policy 465 (Rego v1 syntax)
+# Package: access.authorization.user.validate.utils
 
 # Metadata
 metadata := {
@@ -11,16 +11,14 @@ metadata := {
 }
 
 # Rules
-default allowed_0465 = false
-allowed_0465 {
+policy_0465_allowed if {
+    data.policies.access.enabled
+}
+default policy_0465_allowed = false
+policy_0465_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
+}
+policy_0465_allowed if {
     input.user.role == "admin"
 }
-allowed_0465 {
-    data.policies.compliance.enabled
-}
-allowed_0465 {
-    input.user.active
-    input.resource.public
-}
-
-# Utility function for user info

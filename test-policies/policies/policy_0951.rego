@@ -1,7 +1,7 @@
-package compliance.monitoring.context.allow.helpers.policy_0951
+package audit.authentication.user.validate.policy_0951
 
-# Auto-generated policy 951
-# Package: compliance.monitoring.context.allow.helpers
+# Auto-generated policy 951 (Rego v1 syntax)
+# Package: audit.authentication.user.validate
 
 # Metadata
 metadata := {
@@ -11,14 +11,15 @@ metadata := {
 }
 
 # Rules
-approved_0951 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
+policy_0951_allowed if {
+    data.policies.audit.enabled
 }
-default allowed_0951 = false
-denied_0951 {
+policy_0951_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-
-# Utility function for user info
+default policy_0951_allowed = false
+policy_0951_allowed if {
+    input.user.active
+    input.resource.public
+}

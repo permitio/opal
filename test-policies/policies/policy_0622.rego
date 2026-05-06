@@ -1,7 +1,7 @@
-package compliance.enforcement.user.deny.utils.policy_0622
+package risk.enforcement.context.verify.policy_0622
 
-# Auto-generated policy 622
-# Package: compliance.enforcement.user.deny.utils
+# Auto-generated policy 622 (Rego v1 syntax)
+# Package: risk.enforcement.context.verify
 
 # Metadata
 metadata := {
@@ -11,13 +11,10 @@ metadata := {
 }
 
 # Rules
-approved_0622 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
+policy_0622_allowed if {
+    data.policies.risk.enabled
 }
-allowed_0622 {
-    input.user.active
-    input.resource.public
+policy_0622_allowed if {
+    input.user.role == "admin"
 }
-
-# Utility function for user info
+default policy_0622_allowed = false

@@ -1,7 +1,7 @@
-package access.authorization.action.verify.policy_0985
+package risk.validation.context.validate.core.policy_0985
 
-# Auto-generated policy 985
-# Package: access.authorization.action.verify
+# Auto-generated policy 985 (Rego v1 syntax)
+# Package: risk.validation.context.validate.core
 
 # Metadata
 metadata := {
@@ -11,16 +11,8 @@ metadata := {
 }
 
 # Rules
-allowed_0985 {
-    input.user.role == "admin"
-}
-denied_0985 {
+policy_0985_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-default allowed_0985 = false
-allowed_0985 {
-    data.policies.access.enabled
-}
-
-# Utility function for user info
+default policy_0985_allowed = false

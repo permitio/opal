@@ -1,7 +1,7 @@
-package compliance.authorization.user.deny.policy_0302
+package security.validation.action.validate.policy_0302
 
-# Auto-generated policy 302
-# Package: compliance.authorization.user.deny
+# Auto-generated policy 302 (Rego v1 syntax)
+# Package: security.validation.action.validate
 
 # Metadata
 metadata := {
@@ -11,17 +11,15 @@ metadata := {
 }
 
 # Rules
-allowed_0302 {
-    data.policies.compliance.enabled
+policy_0302_allowed if {
+    input.user.role == "admin"
 }
-denied_0302 {
+policy_0302_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-approved_0302 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
+default policy_0302_allowed = false
+policy_0302_allowed if {
+    input.user.active
+    input.resource.public
 }
-default allowed_0302 = false
-
-# Utility function for user info

@@ -1,7 +1,7 @@
-package compliance.authorization.context.allow.policy_0323
+package governance.validation.policy.check.policy_0323
 
-# Auto-generated policy 323
-# Package: compliance.authorization.context.allow
+# Auto-generated policy 323 (Rego v1 syntax)
+# Package: governance.validation.policy.check
 
 # Metadata
 metadata := {
@@ -11,17 +11,8 @@ metadata := {
 }
 
 # Rules
-allowed_0323 {
-    input.user.role == "admin"
-}
-allowed_0323 {
+policy_0323_allowed if {
     input.user.active
     input.resource.public
 }
-approved_0323 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
-}
-default allowed_0323 = false
-
-# Utility function for user info
+default policy_0323_allowed = false

@@ -1,7 +1,7 @@
-package governance.monitoring.policy.verify.policy_0850
+package access.authorization.context.verify.policy_0850
 
-# Auto-generated policy 850
-# Package: governance.monitoring.policy.verify
+# Auto-generated policy 850 (Rego v1 syntax)
+# Package: access.authorization.context.verify
 
 # Metadata
 metadata := {
@@ -11,10 +11,17 @@ metadata := {
 }
 
 # Rules
-default allowed_0850 = false
-denied_0850 {
+policy_0850_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-
-# Utility function for user info
+policy_0850_allowed if {
+    data.policies.access.enabled
+}
+policy_0850_allowed if {
+    input.user.role == "admin"
+}
+policy_0850_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
+}

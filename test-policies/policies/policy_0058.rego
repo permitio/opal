@@ -1,7 +1,7 @@
-package security.authorization.action.verify.data.policy_0058
+package security.monitoring.action.check.policy_0058
 
-# Auto-generated policy 58
-# Package: security.authorization.action.verify.data
+# Auto-generated policy 58 (Rego v1 syntax)
+# Package: security.monitoring.action.check
 
 # Metadata
 metadata := {
@@ -11,16 +11,14 @@ metadata := {
 }
 
 # Rules
-allowed_0058 {
+policy_0058_allowed if {
     input.user.role == "admin"
 }
-approved_0058 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
-}
-allowed_0058 {
+default policy_0058_allowed = false
+policy_0058_allowed if {
     input.user.active
     input.resource.public
 }
-
-# Utility function for user info
+policy_0058_allowed if {
+    data.policies.security.enabled
+}

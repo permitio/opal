@@ -1,7 +1,7 @@
-package audit.validation.context.check.data.policy_0639
+package risk.authorization.policy.check.policy_0639
 
-# Auto-generated policy 639
-# Package: audit.validation.context.check.data
+# Auto-generated policy 639 (Rego v1 syntax)
+# Package: risk.authorization.policy.check
 
 # Metadata
 metadata := {
@@ -11,12 +11,15 @@ metadata := {
 }
 
 # Rules
-approved_0639 {
+default policy_0639_allowed = false
+policy_0639_allowed if {
+    data.policies.risk.enabled
+}
+policy_0639_approved if {
     input.user.risk_score < 50
     input.system.health > 0.8
 }
-allowed_0639 {
-    data.policies.audit.enabled
+policy_0639_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
 }
-
-# Utility function for user info

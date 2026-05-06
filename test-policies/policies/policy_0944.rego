@@ -1,7 +1,7 @@
-package governance.authorization.context.check.policy_0944
+package audit.validation.resource.deny.helpers.policy_0944
 
-# Auto-generated policy 944
-# Package: governance.authorization.context.check
+# Auto-generated policy 944 (Rego v1 syntax)
+# Package: audit.validation.resource.deny.helpers
 
 # Metadata
 metadata := {
@@ -11,16 +11,10 @@ metadata := {
 }
 
 # Rules
-allowed_0944 {
-    data.policies.governance.enabled
+policy_0944_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
 }
-approved_0944 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
+policy_0944_allowed if {
+    input.user.role == "admin"
 }
-allowed_0944 {
-    input.user.active
-    input.resource.public
-}
-
-# Utility function for user info

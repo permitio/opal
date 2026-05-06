@@ -1,7 +1,7 @@
-package governance.authorization.action.deny.policy_0957
+package security.validation.user.validate.policy_0957
 
-# Auto-generated policy 957
-# Package: governance.authorization.action.deny
+# Auto-generated policy 957 (Rego v1 syntax)
+# Package: security.validation.user.validate
 
 # Metadata
 metadata := {
@@ -11,16 +11,15 @@ metadata := {
 }
 
 # Rules
-allowed_0957 {
-    input.user.role == "admin"
+policy_0957_allowed if {
+    input.user.active
+    input.resource.public
 }
-denied_0957 {
-    input.action == "delete"
-    input.user.role != "admin"
+default policy_0957_allowed = false
+policy_0957_allowed if {
+    data.policies.security.enabled
 }
-approved_0957 {
+policy_0957_approved if {
     input.user.risk_score < 50
     input.system.health > 0.8
 }
-
-# Utility function for user info

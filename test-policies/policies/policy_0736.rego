@@ -1,7 +1,7 @@
-package risk.validation.resource.check.utils.policy_0736
+package security.authentication.user.deny.policy_0736
 
-# Auto-generated policy 736
-# Package: risk.validation.resource.check.utils
+# Auto-generated policy 736 (Rego v1 syntax)
+# Package: security.authentication.user.deny
 
 # Metadata
 metadata := {
@@ -11,13 +11,11 @@ metadata := {
 }
 
 # Rules
-default allowed_0736 = false
-allowed_0736 {
+policy_0736_allowed if {
+    input.user.active
+    input.resource.public
+}
+policy_0736_allowed if {
     input.user.role == "admin"
 }
-denied_0736 {
-    input.action == "delete"
-    input.user.role != "admin"
-}
-
-# Utility function for user info
+default policy_0736_allowed = false

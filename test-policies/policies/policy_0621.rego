@@ -1,7 +1,7 @@
-package access.validation.policy.verify.policy_0621
+package access.authentication.context.verify.helpers.policy_0621
 
-# Auto-generated policy 621
-# Package: access.validation.policy.verify
+# Auto-generated policy 621 (Rego v1 syntax)
+# Package: access.authentication.context.verify.helpers
 
 # Metadata
 metadata := {
@@ -11,12 +11,9 @@ metadata := {
 }
 
 # Rules
-allowed_0621 {
+policy_0621_allowed if {
+    input.user.role == "admin"
+}
+policy_0621_allowed if {
     data.policies.access.enabled
 }
-approved_0621 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
-}
-
-# Utility function for user info

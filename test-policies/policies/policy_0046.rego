@@ -1,7 +1,7 @@
-package governance.monitoring.user.allow.utils.policy_0046
+package access.validation.resource.check.policy_0046
 
-# Auto-generated policy 46
-# Package: governance.monitoring.user.allow.utils
+# Auto-generated policy 46 (Rego v1 syntax)
+# Package: access.validation.resource.check
 
 # Metadata
 metadata := {
@@ -11,12 +11,15 @@ metadata := {
 }
 
 # Rules
-approved_0046 {
+policy_0046_approved if {
     input.user.risk_score < 50
     input.system.health > 0.8
 }
-allowed_0046 {
-    input.user.role == "admin"
+default policy_0046_allowed = false
+policy_0046_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
 }
-
-# Utility function for user info
+policy_0046_allowed if {
+    data.policies.access.enabled
+}

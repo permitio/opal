@@ -1,7 +1,7 @@
-package security.enforcement.resource.verify.helpers.policy_0168
+package access.authorization.user.validate.data.policy_0168
 
-# Auto-generated policy 168
-# Package: security.enforcement.resource.verify.helpers
+# Auto-generated policy 168 (Rego v1 syntax)
+# Package: access.authorization.user.validate.data
 
 # Metadata
 metadata := {
@@ -11,19 +11,14 @@ metadata := {
 }
 
 # Rules
-allowed_0168 {
-    data.policies.security.enabled
-}
-allowed_0168 {
-    input.user.role == "admin"
-}
-approved_0168 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
-}
-allowed_0168 {
+policy_0168_allowed if {
     input.user.active
     input.resource.public
 }
-
-# Utility function for user info
+policy_0168_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
+}
+policy_0168_allowed if {
+    input.user.role == "admin"
+}

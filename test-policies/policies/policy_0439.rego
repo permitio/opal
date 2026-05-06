@@ -1,7 +1,7 @@
-package security.authentication.resource.check.policy_0439
+package governance.monitoring.user.allow.policy_0439
 
-# Auto-generated policy 439
-# Package: security.authentication.resource.check
+# Auto-generated policy 439 (Rego v1 syntax)
+# Package: governance.monitoring.user.allow
 
 # Metadata
 metadata := {
@@ -11,17 +11,11 @@ metadata := {
 }
 
 # Rules
-approved_0439 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
-}
-denied_0439 {
-    input.action == "delete"
-    input.user.role != "admin"
-}
-allowed_0439 {
+policy_0439_allowed if {
     input.user.active
     input.resource.public
 }
-
-# Utility function for user info
+default policy_0439_allowed = false
+policy_0439_allowed if {
+    input.user.role == "admin"
+}

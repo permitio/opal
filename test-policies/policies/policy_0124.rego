@@ -1,7 +1,7 @@
-package audit.authentication.policy.validate.data.policy_0124
+package governance.authorization.resource.deny.core.policy_0124
 
-# Auto-generated policy 124
-# Package: audit.authentication.policy.validate.data
+# Auto-generated policy 124 (Rego v1 syntax)
+# Package: governance.authorization.resource.deny.core
 
 # Metadata
 metadata := {
@@ -11,17 +11,14 @@ metadata := {
 }
 
 # Rules
-approved_0124 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
+policy_0124_allowed if {
+    data.policies.governance.enabled
 }
-allowed_0124 {
-    input.user.active
-    input.resource.public
-}
-denied_0124 {
+policy_0124_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-
-# Utility function for user info
+default policy_0124_allowed = false
+policy_0124_allowed if {
+    input.user.role == "admin"
+}

@@ -1,7 +1,7 @@
-package security.monitoring.context.verify.data.policy_0304
+package risk.validation.resource.deny.core.policy_0304
 
-# Auto-generated policy 304
-# Package: security.monitoring.context.verify.data
+# Auto-generated policy 304 (Rego v1 syntax)
+# Package: risk.validation.resource.deny.core
 
 # Metadata
 metadata := {
@@ -11,19 +11,8 @@ metadata := {
 }
 
 # Rules
-approved_0304 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
-}
-allowed_0304 {
-    input.user.role == "admin"
-}
-allowed_0304 {
+default policy_0304_allowed = false
+policy_0304_allowed if {
     input.user.active
     input.resource.public
 }
-allowed_0304 {
-    data.policies.security.enabled
-}
-
-# Utility function for user info

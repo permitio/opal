@@ -1,7 +1,7 @@
-package compliance.authorization.policy.check.policy_0710
+package access.authentication.context.validate.policy_0710
 
-# Auto-generated policy 710
-# Package: compliance.authorization.policy.check
+# Auto-generated policy 710 (Rego v1 syntax)
+# Package: access.authentication.context.validate
 
 # Metadata
 metadata := {
@@ -11,9 +11,11 @@ metadata := {
 }
 
 # Rules
-default allowed_0710 = false
-allowed_0710 {
-    input.user.role == "admin"
+default policy_0710_allowed = false
+policy_0710_allowed if {
+    data.policies.access.enabled
 }
-
-# Utility function for user info
+policy_0710_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
+}

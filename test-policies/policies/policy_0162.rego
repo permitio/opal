@@ -1,7 +1,7 @@
-package governance.validation.policy.deny.logic.policy_0162
+package governance.authorization.context.verify.utils.policy_0162
 
-# Auto-generated policy 162
-# Package: governance.validation.policy.deny.logic
+# Auto-generated policy 162 (Rego v1 syntax)
+# Package: governance.authorization.context.verify.utils
 
 # Metadata
 metadata := {
@@ -11,19 +11,16 @@ metadata := {
 }
 
 # Rules
-allowed_0162 {
-    data.policies.governance.enabled
-}
-allowed_0162 {
-    input.user.role == "admin"
-}
-approved_0162 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
-}
-denied_0162 {
+policy_0162_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-
-# Utility function for user info
+policy_0162_allowed if {
+    input.user.active
+    input.resource.public
+}
+policy_0162_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
+}
+default policy_0162_allowed = false

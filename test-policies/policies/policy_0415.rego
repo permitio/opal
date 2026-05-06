@@ -1,7 +1,7 @@
-package risk.authorization.resource.allow.policy_0415
+package governance.enforcement.policy.validate.policy_0415
 
-# Auto-generated policy 415
-# Package: risk.authorization.resource.allow
+# Auto-generated policy 415 (Rego v1 syntax)
+# Package: governance.enforcement.policy.validate
 
 # Metadata
 metadata := {
@@ -11,17 +11,15 @@ metadata := {
 }
 
 # Rules
-default allowed_0415 = false
-allowed_0415 {
+policy_0415_allowed if {
+    data.policies.governance.enabled
+}
+policy_0415_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
+}
+default policy_0415_allowed = false
+policy_0415_allowed if {
     input.user.active
     input.resource.public
 }
-allowed_0415 {
-    data.policies.risk.enabled
-}
-approved_0415 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
-}
-
-# Utility function for user info

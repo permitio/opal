@@ -1,7 +1,7 @@
-package compliance.authentication.user.allow.data.policy_0197
+package security.enforcement.user.verify.utils.policy_0197
 
-# Auto-generated policy 197
-# Package: compliance.authentication.user.allow.data
+# Auto-generated policy 197 (Rego v1 syntax)
+# Package: security.enforcement.user.verify.utils
 
 # Metadata
 metadata := {
@@ -11,19 +11,8 @@ metadata := {
 }
 
 # Rules
-allowed_0197 {
-    input.user.role == "admin"
-}
-denied_0197 {
-    input.action == "delete"
-    input.user.role != "admin"
-}
-allowed_0197 {
+policy_0197_allowed if {
     input.user.active
     input.resource.public
 }
-allowed_0197 {
-    data.policies.compliance.enabled
-}
-
-# Utility function for user info
+default policy_0197_allowed = false

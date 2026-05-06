@@ -1,7 +1,7 @@
-package governance.authentication.action.deny.utils.policy_0082
+package access.enforcement.context.check.core.policy_0082
 
-# Auto-generated policy 82
-# Package: governance.authentication.action.deny.utils
+# Auto-generated policy 82 (Rego v1 syntax)
+# Package: access.enforcement.context.check.core
 
 # Metadata
 metadata := {
@@ -11,10 +11,11 @@ metadata := {
 }
 
 # Rules
-default allowed_0082 = false
-allowed_0082 {
-    input.user.active
-    input.resource.public
+default policy_0082_allowed = false
+policy_0082_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
 }
-
-# Utility function for user info
+policy_0082_allowed if {
+    data.policies.access.enabled
+}

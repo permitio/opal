@@ -1,7 +1,7 @@
-package audit.validation.context.deny.helpers.policy_0901
+package risk.authorization.action.check.utils.policy_0901
 
-# Auto-generated policy 901
-# Package: audit.validation.context.deny.helpers
+# Auto-generated policy 901 (Rego v1 syntax)
+# Package: risk.authorization.action.check.utils
 
 # Metadata
 metadata := {
@@ -11,13 +11,11 @@ metadata := {
 }
 
 # Rules
-default allowed_0901 = false
-approved_0901 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
+default policy_0901_allowed = false
+policy_0901_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
 }
-allowed_0901 {
-    input.user.role == "admin"
+policy_0901_allowed if {
+    data.policies.risk.enabled
 }
-
-# Utility function for user info

@@ -1,7 +1,7 @@
-package risk.monitoring.policy.allow.policy_0061
+package access.authentication.context.allow.policy_0061
 
-# Auto-generated policy 61
-# Package: risk.monitoring.policy.allow
+# Auto-generated policy 61 (Rego v1 syntax)
+# Package: access.authentication.context.allow
 
 # Metadata
 metadata := {
@@ -11,12 +11,16 @@ metadata := {
 }
 
 # Rules
-allowed_0061 {
+policy_0061_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
+}
+policy_0061_allowed if {
     input.user.active
     input.resource.public
 }
-allowed_0061 {
-    input.user.role == "admin"
+policy_0061_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
 }
-
-# Utility function for user info
+default policy_0061_allowed = false

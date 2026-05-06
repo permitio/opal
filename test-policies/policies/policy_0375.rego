@@ -1,7 +1,7 @@
-package risk.authorization.action.deny.policy_0375
+package compliance.validation.user.allow.policy_0375
 
-# Auto-generated policy 375
-# Package: risk.authorization.action.deny
+# Auto-generated policy 375 (Rego v1 syntax)
+# Package: compliance.validation.user.allow
 
 # Metadata
 metadata := {
@@ -11,17 +11,15 @@ metadata := {
 }
 
 # Rules
-default allowed_0375 = false
-allowed_0375 {
+policy_0375_allowed if {
     input.user.active
     input.resource.public
 }
-allowed_0375 {
-    input.user.role == "admin"
-}
-denied_0375 {
+policy_0375_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-
-# Utility function for user info
+default policy_0375_allowed = false
+policy_0375_allowed if {
+    input.user.role == "admin"
+}

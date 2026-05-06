@@ -1,7 +1,7 @@
-package compliance.enforcement.action.allow.logic.policy_0261
+package governance.validation.context.validate.logic.policy_0261
 
-# Auto-generated policy 261
-# Package: compliance.enforcement.action.allow.logic
+# Auto-generated policy 261 (Rego v1 syntax)
+# Package: governance.validation.context.validate.logic
 
 # Metadata
 metadata := {
@@ -11,16 +11,17 @@ metadata := {
 }
 
 # Rules
-allowed_0261 {
+policy_0261_allowed if {
     input.user.role == "admin"
 }
-approved_0261 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
+policy_0261_allowed if {
+    input.user.active
+    input.resource.public
 }
-denied_0261 {
+policy_0261_allowed if {
+    data.policies.governance.enabled
+}
+policy_0261_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-
-# Utility function for user info

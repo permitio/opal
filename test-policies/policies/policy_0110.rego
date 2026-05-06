@@ -1,7 +1,7 @@
-package security.enforcement.action.deny.core.policy_0110
+package governance.authorization.context.verify.policy_0110
 
-# Auto-generated policy 110
-# Package: security.enforcement.action.deny.core
+# Auto-generated policy 110 (Rego v1 syntax)
+# Package: governance.authorization.context.verify
 
 # Metadata
 metadata := {
@@ -11,15 +11,14 @@ metadata := {
 }
 
 # Rules
-allowed_0110 {
-    data.policies.security.enabled
-}
-approved_0110 {
+policy_0110_approved if {
     input.user.risk_score < 50
     input.system.health > 0.8
 }
-allowed_0110 {
-    input.user.role == "admin"
+policy_0110_allowed if {
+    input.user.active
+    input.resource.public
 }
-
-# Utility function for user info
+policy_0110_allowed if {
+    data.policies.governance.enabled
+}

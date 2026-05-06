@@ -1,7 +1,7 @@
-package security.enforcement.action.verify.policy_0853
+package risk.authentication.action.verify.policy_0853
 
-# Auto-generated policy 853
-# Package: security.enforcement.action.verify
+# Auto-generated policy 853 (Rego v1 syntax)
+# Package: risk.authentication.action.verify
 
 # Metadata
 metadata := {
@@ -11,16 +11,14 @@ metadata := {
 }
 
 # Rules
-denied_0853 {
+policy_0853_allowed if {
+    input.user.active
+    input.resource.public
+}
+policy_0853_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-allowed_0853 {
-    input.user.role == "admin"
+policy_0853_allowed if {
+    data.policies.risk.enabled
 }
-allowed_0853 {
-    data.policies.security.enabled
-}
-default allowed_0853 = false
-
-# Utility function for user info

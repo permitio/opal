@@ -1,7 +1,7 @@
-package security.authorization.user.verify.helpers.policy_0202
+package compliance.authentication.policy.check.utils.policy_0202
 
-# Auto-generated policy 202
-# Package: security.authorization.user.verify.helpers
+# Auto-generated policy 202 (Rego v1 syntax)
+# Package: compliance.authentication.policy.check.utils
 
 # Metadata
 metadata := {
@@ -11,17 +11,11 @@ metadata := {
 }
 
 # Rules
-allowed_0202 {
-    input.user.active
-    input.resource.public
+policy_0202_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
 }
-denied_0202 {
-    input.action == "delete"
-    input.user.role != "admin"
+default policy_0202_allowed = false
+policy_0202_allowed if {
+    data.policies.compliance.enabled
 }
-allowed_0202 {
-    input.user.role == "admin"
-}
-default allowed_0202 = false
-
-# Utility function for user info

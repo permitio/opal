@@ -1,7 +1,7 @@
-package governance.enforcement.context.allow.data.policy_0677
+package risk.monitoring.resource.validate.policy_0677
 
-# Auto-generated policy 677
-# Package: governance.enforcement.context.allow.data
+# Auto-generated policy 677 (Rego v1 syntax)
+# Package: risk.monitoring.resource.validate
 
 # Metadata
 metadata := {
@@ -11,17 +11,13 @@ metadata := {
 }
 
 # Rules
-allowed_0677 {
+policy_0677_allowed if {
     input.user.active
     input.resource.public
 }
-default allowed_0677 = false
-denied_0677 {
-    input.action == "delete"
-    input.user.role != "admin"
+policy_0677_allowed if {
+    data.policies.risk.enabled
 }
-allowed_0677 {
+policy_0677_allowed if {
     input.user.role == "admin"
 }
-
-# Utility function for user info

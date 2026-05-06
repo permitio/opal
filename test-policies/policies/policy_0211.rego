@@ -1,7 +1,7 @@
-package audit.enforcement.user.allow.policy_0211
+package governance.authorization.context.check.policy_0211
 
-# Auto-generated policy 211
-# Package: audit.enforcement.user.allow
+# Auto-generated policy 211 (Rego v1 syntax)
+# Package: governance.authorization.context.check
 
 # Metadata
 metadata := {
@@ -11,16 +11,14 @@ metadata := {
 }
 
 # Rules
-allowed_0211 {
+policy_0211_allowed if {
+    data.policies.governance.enabled
+}
+default policy_0211_allowed = false
+policy_0211_allowed if {
     input.user.role == "admin"
 }
-default allowed_0211 = false
-allowed_0211 {
-    data.policies.audit.enabled
+policy_0211_allowed if {
+    input.user.active
+    input.resource.public
 }
-denied_0211 {
-    input.action == "delete"
-    input.user.role != "admin"
-}
-
-# Utility function for user info

@@ -1,7 +1,7 @@
-package audit.enforcement.user.validate.utils.policy_0314
+package compliance.authentication.user.verify.policy_0314
 
-# Auto-generated policy 314
-# Package: audit.enforcement.user.validate.utils
+# Auto-generated policy 314 (Rego v1 syntax)
+# Package: compliance.authentication.user.verify
 
 # Metadata
 metadata := {
@@ -11,13 +11,11 @@ metadata := {
 }
 
 # Rules
-default allowed_0314 = false
-allowed_0314 {
-    input.user.role == "admin"
-}
-allowed_0314 {
+policy_0314_allowed if {
     input.user.active
     input.resource.public
 }
-
-# Utility function for user info
+policy_0314_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
+}

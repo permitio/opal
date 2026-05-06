@@ -1,7 +1,7 @@
-package compliance.validation.action.check.core.policy_0064
+package audit.monitoring.policy.allow.policy_0064
 
-# Auto-generated policy 64
-# Package: compliance.validation.action.check.core
+# Auto-generated policy 64 (Rego v1 syntax)
+# Package: audit.monitoring.policy.allow
 
 # Metadata
 metadata := {
@@ -11,16 +11,11 @@ metadata := {
 }
 
 # Rules
-approved_0064 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
+policy_0064_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
 }
-allowed_0064 {
-    input.user.active
-    input.resource.public
+default policy_0064_allowed = false
+policy_0064_allowed if {
+    data.policies.audit.enabled
 }
-allowed_0064 {
-    data.policies.compliance.enabled
-}
-
-# Utility function for user info

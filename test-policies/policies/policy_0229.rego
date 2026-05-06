@@ -1,7 +1,7 @@
-package compliance.authorization.action.check.utils.policy_0229
+package audit.authorization.policy.check.policy_0229
 
-# Auto-generated policy 229
-# Package: compliance.authorization.action.check.utils
+# Auto-generated policy 229 (Rego v1 syntax)
+# Package: audit.authorization.policy.check
 
 # Metadata
 metadata := {
@@ -11,13 +11,11 @@ metadata := {
 }
 
 # Rules
-approved_0229 {
+policy_0229_allowed if {
+    data.policies.audit.enabled
+}
+default policy_0229_allowed = false
+policy_0229_approved if {
     input.user.risk_score < 50
     input.system.health > 0.8
 }
-allowed_0229 {
-    input.user.active
-    input.resource.public
-}
-
-# Utility function for user info

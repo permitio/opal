@@ -1,7 +1,7 @@
-package compliance.authentication.context.deny.policy_0902
+package audit.authorization.context.verify.core.policy_0902
 
-# Auto-generated policy 902
-# Package: compliance.authentication.context.deny
+# Auto-generated policy 902 (Rego v1 syntax)
+# Package: audit.authorization.context.verify.core
 
 # Metadata
 metadata := {
@@ -11,13 +11,11 @@ metadata := {
 }
 
 # Rules
-denied_0902 {
+policy_0902_allowed if {
+    data.policies.audit.enabled
+}
+default policy_0902_allowed = false
+policy_0902_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-allowed_0902 {
-    input.user.role == "admin"
-}
-default allowed_0902 = false
-
-# Utility function for user info

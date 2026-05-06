@@ -1,7 +1,7 @@
-package compliance.authorization.action.check.data.policy_0758
+package governance.authorization.context.allow.utils.policy_0758
 
-# Auto-generated policy 758
-# Package: compliance.authorization.action.check.data
+# Auto-generated policy 758 (Rego v1 syntax)
+# Package: governance.authorization.context.allow.utils
 
 # Metadata
 metadata := {
@@ -11,14 +11,15 @@ metadata := {
 }
 
 # Rules
-approved_0758 {
+default policy_0758_allowed = false
+policy_0758_approved if {
     input.user.risk_score < 50
     input.system.health > 0.8
 }
-default allowed_0758 = false
-denied_0758 {
-    input.action == "delete"
-    input.user.role != "admin"
+policy_0758_allowed if {
+    input.user.active
+    input.resource.public
 }
-
-# Utility function for user info
+policy_0758_allowed if {
+    input.user.role == "admin"
+}

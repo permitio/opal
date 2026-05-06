@@ -1,7 +1,7 @@
-package security.authentication.action.validate.policy_0080
+package compliance.enforcement.user.check.policy_0080
 
-# Auto-generated policy 80
-# Package: security.authentication.action.validate
+# Auto-generated policy 80 (Rego v1 syntax)
+# Package: compliance.enforcement.user.check
 
 # Metadata
 metadata := {
@@ -11,19 +11,14 @@ metadata := {
 }
 
 # Rules
-approved_0080 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
+policy_0080_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
 }
-allowed_0080 {
+policy_0080_allowed if {
+    data.policies.compliance.enabled
+}
+policy_0080_allowed if {
     input.user.active
     input.resource.public
 }
-allowed_0080 {
-    input.user.role == "admin"
-}
-allowed_0080 {
-    data.policies.security.enabled
-}
-
-# Utility function for user info

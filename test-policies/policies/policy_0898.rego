@@ -1,7 +1,7 @@
-package governance.authorization.action.deny.data.policy_0898
+package security.enforcement.policy.allow.policy_0898
 
-# Auto-generated policy 898
-# Package: governance.authorization.action.deny.data
+# Auto-generated policy 898 (Rego v1 syntax)
+# Package: security.enforcement.policy.allow
 
 # Metadata
 metadata := {
@@ -11,9 +11,12 @@ metadata := {
 }
 
 # Rules
-default allowed_0898 = false
-allowed_0898 {
-    input.user.role == "admin"
+policy_0898_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
 }
-
-# Utility function for user info
+policy_0898_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
+}
+default policy_0898_allowed = false

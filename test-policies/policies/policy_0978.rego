@@ -1,7 +1,7 @@
-package security.validation.resource.validate.policy_0978
+package access.monitoring.action.deny.policy_0978
 
-# Auto-generated policy 978
-# Package: security.validation.resource.validate
+# Auto-generated policy 978 (Rego v1 syntax)
+# Package: access.monitoring.action.deny
 
 # Metadata
 metadata := {
@@ -11,16 +11,11 @@ metadata := {
 }
 
 # Rules
-allowed_0978 {
-    input.user.active
-    input.resource.public
+policy_0978_allowed if {
+    data.policies.access.enabled
 }
-denied_0978 {
+default policy_0978_allowed = false
+policy_0978_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-allowed_0978 {
-    data.policies.security.enabled
-}
-
-# Utility function for user info

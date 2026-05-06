@@ -1,7 +1,7 @@
-package security.authentication.context.validate.policy_0154
+package compliance.authorization.user.deny.utils.policy_0154
 
-# Auto-generated policy 154
-# Package: security.authentication.context.validate
+# Auto-generated policy 154 (Rego v1 syntax)
+# Package: compliance.authorization.user.deny.utils
 
 # Metadata
 metadata := {
@@ -11,16 +11,10 @@ metadata := {
 }
 
 # Rules
-denied_0154 {
-    input.action == "delete"
-    input.user.role != "admin"
+policy_0154_allowed if {
+    data.policies.compliance.enabled
 }
-approved_0154 {
+policy_0154_approved if {
     input.user.risk_score < 50
     input.system.health > 0.8
 }
-allowed_0154 {
-    data.policies.security.enabled
-}
-
-# Utility function for user info

@@ -1,7 +1,7 @@
-package access.authentication.context.check.policy_0721
+package compliance.monitoring.resource.check.data.policy_0721
 
-# Auto-generated policy 721
-# Package: access.authentication.context.check
+# Auto-generated policy 721 (Rego v1 syntax)
+# Package: compliance.monitoring.resource.check.data
 
 # Metadata
 metadata := {
@@ -11,18 +11,16 @@ metadata := {
 }
 
 # Rules
-approved_0721 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
-}
-allowed_0721 {
+policy_0721_allowed if {
     input.user.active
     input.resource.public
 }
-denied_0721 {
+policy_0721_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-default allowed_0721 = false
-
-# Utility function for user info
+default policy_0721_allowed = false
+policy_0721_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
+}

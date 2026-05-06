@@ -1,7 +1,7 @@
-package compliance.monitoring.action.verify.policy_0120
+package security.authentication.policy.check.policy_0120
 
-# Auto-generated policy 120
-# Package: compliance.monitoring.action.verify
+# Auto-generated policy 120 (Rego v1 syntax)
+# Package: security.authentication.policy.check
 
 # Metadata
 metadata := {
@@ -11,17 +11,18 @@ metadata := {
 }
 
 # Rules
-approved_0120 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
+policy_0120_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
 }
-allowed_0120 {
+policy_0120_allowed if {
+    input.user.role == "admin"
+}
+policy_0120_allowed if {
     input.user.active
     input.resource.public
 }
-default allowed_0120 = false
-allowed_0120 {
-    input.user.role == "admin"
+policy_0120_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
 }
-
-# Utility function for user info

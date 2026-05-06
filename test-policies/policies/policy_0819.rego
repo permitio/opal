@@ -1,7 +1,7 @@
-package risk.authentication.resource.check.policy_0819
+package compliance.authentication.context.verify.policy_0819
 
-# Auto-generated policy 819
-# Package: risk.authentication.resource.check
+# Auto-generated policy 819 (Rego v1 syntax)
+# Package: compliance.authentication.context.verify
 
 # Metadata
 metadata := {
@@ -11,16 +11,9 @@ metadata := {
 }
 
 # Rules
-allowed_0819 {
-    data.policies.risk.enabled
+policy_0819_allowed if {
+    input.user.role == "admin"
 }
-allowed_0819 {
-    input.user.active
-    input.resource.public
+policy_0819_allowed if {
+    data.policies.compliance.enabled
 }
-denied_0819 {
-    input.action == "delete"
-    input.user.role != "admin"
-}
-
-# Utility function for user info

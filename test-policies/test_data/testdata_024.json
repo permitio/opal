@@ -3,99 +3,43 @@
   "metadata": {
     "environment": "dev",
     "region": "us-east-1",
-    "version": "1.4.13"
+    "version": "1.2.11"
   },
   "users": [
     {
       "id": "user_000",
       "name": "User 0",
-      "role": "editor",
-      "active": true,
-      "risk_score": 86
-    },
-    {
-      "id": "user_001",
-      "name": "User 1",
-      "role": "auditor",
+      "role": "user",
       "active": false,
-      "risk_score": 16
-    },
-    {
-      "id": "user_002",
-      "name": "User 2",
-      "role": "editor",
-      "active": true,
-      "risk_score": 44
-    },
-    {
-      "id": "user_003",
-      "name": "User 3",
-      "role": "auditor",
-      "active": false,
-      "risk_score": 72
-    },
-    {
-      "id": "user_004",
-      "name": "User 4",
-      "role": "admin",
-      "active": false,
-      "risk_score": 59
-    },
-    {
-      "id": "user_005",
-      "name": "User 5",
-      "role": "admin",
-      "active": false,
-      "risk_score": 5
-    },
-    {
-      "id": "user_006",
-      "name": "User 6",
-      "role": "editor",
-      "active": false,
-      "risk_score": 18
-    },
-    {
-      "id": "user_007",
-      "name": "User 7",
-      "role": "viewer",
-      "active": true,
-      "risk_score": 51
+      "risk_score": 47
     }
   ],
   "resources": [
     {
       "id": "res_000",
-      "type": "bucket",
+      "type": "service",
       "public": false,
-      "owner_id": "user_015",
+      "owner_id": "user_046",
       "sensitivity": "confidential"
-    },
-    {
-      "id": "res_001",
-      "type": "database",
-      "public": false,
-      "owner_id": "user_072",
-      "sensitivity": "secret"
     }
   ],
   "system": {
-    "health": 0.56,
-    "load": 69.99,
-    "uptime_days": 96
+    "health": 0.54,
+    "load": 68.12,
+    "uptime_days": 101
   },
   "policies": {
     "security": {
-      "enabled": true
+      "enabled": false
     },
     "compliance": {
       "enabled": true
     },
     "access": {
-      "enabled": true
+      "enabled": false
     },
     "audit": {
-      "enabled": false
+      "enabled": true
     }
   }
 }

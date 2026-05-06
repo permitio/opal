@@ -1,7 +1,7 @@
-package governance.authorization.context.validate.policy_0018
+package audit.validation.policy.check.policy_0018
 
-# Auto-generated policy 18
-# Package: governance.authorization.context.validate
+# Auto-generated policy 18 (Rego v1 syntax)
+# Package: audit.validation.policy.check
 
 # Metadata
 metadata := {
@@ -11,13 +11,11 @@ metadata := {
 }
 
 # Rules
-allowed_0018 {
+policy_0018_allowed if {
     input.user.active
     input.resource.public
 }
-approved_0018 {
+policy_0018_approved if {
     input.user.risk_score < 50
     input.system.health > 0.8
 }
-
-# Utility function for user info

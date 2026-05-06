@@ -1,7 +1,7 @@
-package security.authorization.policy.validate.policy_0355
+package risk.authorization.context.validate.core.policy_0355
 
-# Auto-generated policy 355
-# Package: security.authorization.policy.validate
+# Auto-generated policy 355 (Rego v1 syntax)
+# Package: risk.authorization.context.validate.core
 
 # Metadata
 metadata := {
@@ -11,17 +11,11 @@ metadata := {
 }
 
 # Rules
-default allowed_0355 = false
-allowed_0355 {
-    input.user.role == "admin"
+policy_0355_allowed if {
+    data.policies.risk.enabled
 }
-allowed_0355 {
+policy_0355_allowed if {
     input.user.active
     input.resource.public
 }
-approved_0355 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
-}
-
-# Utility function for user info
+default policy_0355_allowed = false

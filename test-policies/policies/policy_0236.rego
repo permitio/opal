@@ -1,7 +1,7 @@
-package audit.monitoring.user.deny.policy_0236
+package risk.enforcement.action.deny.policy_0236
 
-# Auto-generated policy 236
-# Package: audit.monitoring.user.deny
+# Auto-generated policy 236 (Rego v1 syntax)
+# Package: risk.enforcement.action.deny
 
 # Metadata
 metadata := {
@@ -11,19 +11,15 @@ metadata := {
 }
 
 # Rules
-allowed_0236 {
+policy_0236_allowed if {
     input.user.active
     input.resource.public
 }
-allowed_0236 {
+default policy_0236_allowed = false
+policy_0236_allowed if {
     input.user.role == "admin"
 }
-allowed_0236 {
-    data.policies.audit.enabled
+policy_0236_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
 }
-denied_0236 {
-    input.action == "delete"
-    input.user.role != "admin"
-}
-
-# Utility function for user info

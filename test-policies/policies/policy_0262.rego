@@ -1,7 +1,7 @@
-package risk.authentication.resource.validate.policy_0262
+package access.validation.resource.check.policy_0262
 
-# Auto-generated policy 262
-# Package: risk.authentication.resource.validate
+# Auto-generated policy 262 (Rego v1 syntax)
+# Package: access.validation.resource.check
 
 # Metadata
 metadata := {
@@ -11,12 +11,10 @@ metadata := {
 }
 
 # Rules
-approved_0262 {
+policy_0262_allowed if {
+    input.user.role == "admin"
+}
+policy_0262_approved if {
     input.user.risk_score < 50
     input.system.health > 0.8
 }
-allowed_0262 {
-    data.policies.risk.enabled
-}
-
-# Utility function for user info

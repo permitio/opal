@@ -1,7 +1,7 @@
-package governance.authorization.policy.verify.core.policy_0071
+package risk.enforcement.resource.allow.policy_0071
 
-# Auto-generated policy 71
-# Package: governance.authorization.policy.verify.core
+# Auto-generated policy 71 (Rego v1 syntax)
+# Package: risk.enforcement.resource.allow
 
 # Metadata
 metadata := {
@@ -11,13 +11,11 @@ metadata := {
 }
 
 # Rules
-allowed_0071 {
+policy_0071_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
+}
+policy_0071_allowed if {
     input.user.role == "admin"
 }
-allowed_0071 {
-    input.user.active
-    input.resource.public
-}
-default allowed_0071 = false
-
-# Utility function for user info
+default policy_0071_allowed = false

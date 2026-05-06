@@ -1,7 +1,7 @@
-package governance.monitoring.action.verify.policy_0470
+package risk.enforcement.resource.validate.policy_0470
 
-# Auto-generated policy 470
-# Package: governance.monitoring.action.verify
+# Auto-generated policy 470 (Rego v1 syntax)
+# Package: risk.enforcement.resource.validate
 
 # Metadata
 metadata := {
@@ -11,13 +11,12 @@ metadata := {
 }
 
 # Rules
-allowed_0470 {
-    data.policies.governance.enabled
-}
-allowed_0470 {
+policy_0470_allowed if {
     input.user.active
     input.resource.public
 }
-default allowed_0470 = false
-
-# Utility function for user info
+default policy_0470_allowed = false
+policy_0470_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
+}

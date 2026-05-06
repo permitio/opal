@@ -1,7 +1,7 @@
-package audit.monitoring.policy.check.policy_0214
+package governance.authentication.context.verify.policy_0214
 
-# Auto-generated policy 214
-# Package: audit.monitoring.policy.check
+# Auto-generated policy 214 (Rego v1 syntax)
+# Package: governance.authentication.context.verify
 
 # Metadata
 metadata := {
@@ -11,16 +11,10 @@ metadata := {
 }
 
 # Rules
-approved_0214 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
-}
-denied_0214 {
+policy_0214_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-allowed_0214 {
-    data.policies.audit.enabled
+policy_0214_allowed if {
+    data.policies.governance.enabled
 }
-
-# Utility function for user info

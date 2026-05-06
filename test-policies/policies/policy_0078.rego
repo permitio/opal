@@ -1,7 +1,7 @@
-package security.monitoring.context.validate.data.policy_0078
+package governance.authentication.policy.allow.core.policy_0078
 
-# Auto-generated policy 78
-# Package: security.monitoring.context.validate.data
+# Auto-generated policy 78 (Rego v1 syntax)
+# Package: governance.authentication.policy.allow.core
 
 # Metadata
 metadata := {
@@ -11,14 +11,10 @@ metadata := {
 }
 
 # Rules
-approved_0078 {
+policy_0078_approved if {
     input.user.risk_score < 50
     input.system.health > 0.8
 }
-denied_0078 {
-    input.action == "delete"
-    input.user.role != "admin"
+policy_0078_allowed if {
+    input.user.role == "admin"
 }
-default allowed_0078 = false
-
-# Utility function for user info

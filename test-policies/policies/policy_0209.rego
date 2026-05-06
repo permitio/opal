@@ -1,7 +1,7 @@
-package audit.authentication.resource.deny.policy_0209
+package audit.validation.user.deny.helpers.policy_0209
 
-# Auto-generated policy 209
-# Package: audit.authentication.resource.deny
+# Auto-generated policy 209 (Rego v1 syntax)
+# Package: audit.validation.user.deny.helpers
 
 # Metadata
 metadata := {
@@ -11,12 +11,10 @@ metadata := {
 }
 
 # Rules
-allowed_0209 {
-    input.user.role == "admin"
+policy_0209_allowed if {
+    data.policies.audit.enabled
 }
-approved_0209 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
+policy_0209_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
 }
-
-# Utility function for user info

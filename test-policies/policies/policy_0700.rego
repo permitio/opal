@@ -1,7 +1,7 @@
-package compliance.enforcement.resource.validate.helpers.policy_0700
+package governance.enforcement.resource.verify.utils.policy_0700
 
-# Auto-generated policy 700
-# Package: compliance.enforcement.resource.validate.helpers
+# Auto-generated policy 700 (Rego v1 syntax)
+# Package: governance.enforcement.resource.verify.utils
 
 # Metadata
 metadata := {
@@ -11,14 +11,11 @@ metadata := {
 }
 
 # Rules
-approved_0700 {
+default policy_0700_allowed = false
+policy_0700_approved if {
     input.user.risk_score < 50
     input.system.health > 0.8
 }
-default allowed_0700 = false
-allowed_0700 {
-    input.user.active
-    input.resource.public
+policy_0700_allowed if {
+    input.user.role == "admin"
 }
-
-# Utility function for user info

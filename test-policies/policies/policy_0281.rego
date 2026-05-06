@@ -1,7 +1,7 @@
-package governance.authorization.policy.validate.helpers.policy_0281
+package risk.monitoring.resource.deny.helpers.policy_0281
 
-# Auto-generated policy 281
-# Package: governance.authorization.policy.validate.helpers
+# Auto-generated policy 281 (Rego v1 syntax)
+# Package: risk.monitoring.resource.deny.helpers
 
 # Metadata
 metadata := {
@@ -11,14 +11,12 @@ metadata := {
 }
 
 # Rules
-denied_0281 {
-    input.action == "delete"
-    input.user.role != "admin"
-}
-allowed_0281 {
+policy_0281_allowed if {
     input.user.active
     input.resource.public
 }
-default allowed_0281 = false
-
-# Utility function for user info
+policy_0281_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
+}
+default policy_0281_allowed = false

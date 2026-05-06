@@ -1,7 +1,7 @@
-package compliance.enforcement.policy.verify.policy_0928
+package access.monitoring.policy.deny.policy_0928
 
-# Auto-generated policy 928
-# Package: compliance.enforcement.policy.verify
+# Auto-generated policy 928 (Rego v1 syntax)
+# Package: access.monitoring.policy.deny
 
 # Metadata
 metadata := {
@@ -11,20 +11,8 @@ metadata := {
 }
 
 # Rules
-approved_0928 {
+default policy_0928_allowed = false
+policy_0928_approved if {
     input.user.risk_score < 50
     input.system.health > 0.8
 }
-allowed_0928 {
-    input.user.active
-    input.resource.public
-}
-denied_0928 {
-    input.action == "delete"
-    input.user.role != "admin"
-}
-allowed_0928 {
-    input.user.role == "admin"
-}
-
-# Utility function for user info

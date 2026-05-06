@@ -1,7 +1,7 @@
-package security.authentication.context.verify.policy_0916
+package audit.monitoring.resource.validate.policy_0916
 
-# Auto-generated policy 916
-# Package: security.authentication.context.verify
+# Auto-generated policy 916 (Rego v1 syntax)
+# Package: audit.monitoring.resource.validate
 
 # Metadata
 metadata := {
@@ -11,12 +11,15 @@ metadata := {
 }
 
 # Rules
-allowed_0916 {
-    input.user.role == "admin"
+policy_0916_allowed if {
+    data.policies.audit.enabled
 }
-approved_0916 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
+policy_0916_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
 }
-
-# Utility function for user info
+policy_0916_allowed if {
+    input.user.active
+    input.resource.public
+}
+default policy_0916_allowed = false

@@ -1,7 +1,7 @@
-package audit.authorization.context.allow.policy_0589
+package governance.enforcement.resource.validate.policy_0589
 
-# Auto-generated policy 589
-# Package: audit.authorization.context.allow
+# Auto-generated policy 589 (Rego v1 syntax)
+# Package: governance.enforcement.resource.validate
 
 # Metadata
 metadata := {
@@ -11,12 +11,10 @@ metadata := {
 }
 
 # Rules
-denied_0589 {
-    input.action == "delete"
-    input.user.role != "admin"
+policy_0589_allowed if {
+    input.user.role == "admin"
 }
-allowed_0589 {
-    data.policies.audit.enabled
+policy_0589_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
 }
-
-# Utility function for user info

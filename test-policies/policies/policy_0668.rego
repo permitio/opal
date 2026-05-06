@@ -1,7 +1,7 @@
-package governance.validation.policy.deny.policy_0668
+package compliance.authorization.user.check.policy_0668
 
-# Auto-generated policy 668
-# Package: governance.validation.policy.deny
+# Auto-generated policy 668 (Rego v1 syntax)
+# Package: compliance.authorization.user.check
 
 # Metadata
 metadata := {
@@ -11,13 +11,7 @@ metadata := {
 }
 
 # Rules
-allowed_0668 {
-    input.user.role == "admin"
+default policy_0668_allowed = false
+policy_0668_allowed if {
+    data.policies.compliance.enabled
 }
-denied_0668 {
-    input.action == "delete"
-    input.user.role != "admin"
-}
-default allowed_0668 = false
-
-# Utility function for user info

@@ -1,7 +1,7 @@
-package compliance.authentication.action.validate.policy_0706
+package access.enforcement.policy.deny.policy_0706
 
-# Auto-generated policy 706
-# Package: compliance.authentication.action.validate
+# Auto-generated policy 706 (Rego v1 syntax)
+# Package: access.enforcement.policy.deny
 
 # Metadata
 metadata := {
@@ -11,13 +11,14 @@ metadata := {
 }
 
 # Rules
-allowed_0706 {
-    data.policies.compliance.enabled
+policy_0706_allowed if {
+    input.user.role == "admin"
 }
-default allowed_0706 = false
-denied_0706 {
-    input.action == "delete"
-    input.user.role != "admin"
+default policy_0706_allowed = false
+policy_0706_allowed if {
+    data.policies.access.enabled
 }
-
-# Utility function for user info
+policy_0706_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
+}

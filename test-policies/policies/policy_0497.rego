@@ -1,7 +1,7 @@
-package security.authentication.user.allow.policy_0497
+package security.monitoring.user.verify.policy_0497
 
-# Auto-generated policy 497
-# Package: security.authentication.user.allow
+# Auto-generated policy 497 (Rego v1 syntax)
+# Package: security.monitoring.user.verify
 
 # Metadata
 metadata := {
@@ -11,17 +11,15 @@ metadata := {
 }
 
 # Rules
-default allowed_0497 = false
-denied_0497 {
-    input.action == "delete"
-    input.user.role != "admin"
-}
-allowed_0497 {
-    input.user.role == "admin"
-}
-allowed_0497 {
+policy_0497_allowed if {
     input.user.active
     input.resource.public
 }
-
-# Utility function for user info
+policy_0497_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
+}
+policy_0497_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
+}

@@ -1,7 +1,7 @@
-package security.validation.user.verify.core.policy_0929
+package governance.enforcement.resource.deny.policy_0929
 
-# Auto-generated policy 929
-# Package: security.validation.user.verify.core
+# Auto-generated policy 929 (Rego v1 syntax)
+# Package: governance.enforcement.resource.deny
 
 # Metadata
 metadata := {
@@ -11,14 +11,11 @@ metadata := {
 }
 
 # Rules
-approved_0929 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
-}
-default allowed_0929 = false
-denied_0929 {
+default policy_0929_allowed = false
+policy_0929_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-
-# Utility function for user info
+policy_0929_allowed if {
+    input.user.role == "admin"
+}

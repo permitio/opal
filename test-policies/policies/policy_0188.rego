@@ -1,7 +1,7 @@
-package security.validation.action.check.policy_0188
+package security.authentication.resource.check.policy_0188
 
-# Auto-generated policy 188
-# Package: security.validation.action.check
+# Auto-generated policy 188 (Rego v1 syntax)
+# Package: security.authentication.resource.check
 
 # Metadata
 metadata := {
@@ -11,9 +11,7 @@ metadata := {
 }
 
 # Rules
-allowed_0188 {
+policy_0188_allowed if {
     data.policies.security.enabled
 }
-default allowed_0188 = false
-
-# Utility function for user info
+default policy_0188_allowed = false

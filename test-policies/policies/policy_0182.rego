@@ -1,7 +1,7 @@
-package governance.monitoring.context.validate.policy_0182
+package governance.validation.resource.deny.data.policy_0182
 
-# Auto-generated policy 182
-# Package: governance.monitoring.context.validate
+# Auto-generated policy 182 (Rego v1 syntax)
+# Package: governance.validation.resource.deny.data
 
 # Metadata
 metadata := {
@@ -11,12 +11,14 @@ metadata := {
 }
 
 # Rules
-allowed_0182 {
+policy_0182_allowed if {
+    data.policies.governance.enabled
+}
+policy_0182_allowed if {
     input.user.active
     input.resource.public
 }
-allowed_0182 {
-    data.policies.governance.enabled
+policy_0182_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
 }
-
-# Utility function for user info

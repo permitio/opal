@@ -1,7 +1,7 @@
-package audit.authentication.user.deny.data.policy_0675
+package compliance.validation.action.deny.policy_0675
 
-# Auto-generated policy 675
-# Package: audit.authentication.user.deny.data
+# Auto-generated policy 675 (Rego v1 syntax)
+# Package: compliance.validation.action.deny
 
 # Metadata
 metadata := {
@@ -11,13 +11,8 @@ metadata := {
 }
 
 # Rules
-denied_0675 {
-    input.action == "delete"
-    input.user.role != "admin"
+default policy_0675_allowed = false
+policy_0675_allowed if {
+    input.user.active
+    input.resource.public
 }
-approved_0675 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
-}
-
-# Utility function for user info

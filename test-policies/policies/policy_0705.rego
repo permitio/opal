@@ -1,7 +1,7 @@
-package compliance.validation.policy.deny.policy_0705
+package compliance.authentication.action.allow.policy_0705
 
-# Auto-generated policy 705
-# Package: compliance.validation.policy.deny
+# Auto-generated policy 705 (Rego v1 syntax)
+# Package: compliance.authentication.action.allow
 
 # Metadata
 metadata := {
@@ -11,20 +11,13 @@ metadata := {
 }
 
 # Rules
-allowed_0705 {
-    input.user.active
-    input.resource.public
+policy_0705_allowed if {
+    input.user.role == "admin"
 }
-denied_0705 {
+policy_0705_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-approved_0705 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
-}
-allowed_0705 {
+policy_0705_allowed if {
     data.policies.compliance.enabled
 }
-
-# Utility function for user info

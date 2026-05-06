@@ -1,7 +1,7 @@
-package audit.authentication.context.validate.data.policy_0084
+package audit.authentication.user.verify.core.policy_0084
 
-# Auto-generated policy 84
-# Package: audit.authentication.context.validate.data
+# Auto-generated policy 84 (Rego v1 syntax)
+# Package: audit.authentication.user.verify.core
 
 # Metadata
 metadata := {
@@ -11,16 +11,10 @@ metadata := {
 }
 
 # Rules
-allowed_0084 {
+policy_0084_allowed if {
     data.policies.audit.enabled
 }
-approved_0084 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
-}
-allowed_0084 {
+policy_0084_allowed if {
     input.user.active
     input.resource.public
 }
-
-# Utility function for user info

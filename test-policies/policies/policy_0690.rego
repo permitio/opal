@@ -1,7 +1,7 @@
-package compliance.authorization.policy.verify.policy_0690
+package governance.monitoring.policy.allow.helpers.policy_0690
 
-# Auto-generated policy 690
-# Package: compliance.authorization.policy.verify
+# Auto-generated policy 690 (Rego v1 syntax)
+# Package: governance.monitoring.policy.allow.helpers
 
 # Metadata
 metadata := {
@@ -11,17 +11,11 @@ metadata := {
 }
 
 # Rules
-allowed_0690 {
-    input.user.active
-    input.resource.public
+policy_0690_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
 }
-default allowed_0690 = false
-allowed_0690 {
-    input.user.role == "admin"
+default policy_0690_allowed = false
+policy_0690_allowed if {
+    data.policies.governance.enabled
 }
-denied_0690 {
-    input.action == "delete"
-    input.user.role != "admin"
-}
-
-# Utility function for user info

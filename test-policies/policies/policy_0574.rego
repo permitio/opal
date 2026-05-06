@@ -1,7 +1,7 @@
-package governance.validation.action.allow.policy_0574
+package audit.authentication.user.validate.policy_0574
 
-# Auto-generated policy 574
-# Package: governance.validation.action.allow
+# Auto-generated policy 574 (Rego v1 syntax)
+# Package: audit.authentication.user.validate
 
 # Metadata
 metadata := {
@@ -11,10 +11,10 @@ metadata := {
 }
 
 # Rules
-denied_0574 {
+policy_0574_allowed if {
+    input.user.role == "admin"
+}
+policy_0574_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-default allowed_0574 = false
-
-# Utility function for user info

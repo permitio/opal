@@ -1,7 +1,7 @@
-package audit.monitoring.user.verify.policy_0510
+package compliance.enforcement.user.validate.core.policy_0510
 
-# Auto-generated policy 510
-# Package: audit.monitoring.user.verify
+# Auto-generated policy 510 (Rego v1 syntax)
+# Package: compliance.enforcement.user.validate.core
 
 # Metadata
 metadata := {
@@ -11,12 +11,14 @@ metadata := {
 }
 
 # Rules
-denied_0510 {
-    input.action == "delete"
-    input.user.role != "admin"
+policy_0510_allowed if {
+    input.user.role == "admin"
 }
-allowed_0510 {
-    data.policies.audit.enabled
+policy_0510_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
 }
-
-# Utility function for user info
+policy_0510_allowed if {
+    input.user.active
+    input.resource.public
+}

@@ -1,7 +1,7 @@
-package audit.authorization.user.check.policy_0969
+package security.validation.user.validate.utils.policy_0969
 
-# Auto-generated policy 969
-# Package: audit.authorization.user.check
+# Auto-generated policy 969 (Rego v1 syntax)
+# Package: security.validation.user.validate.utils
 
 # Metadata
 metadata := {
@@ -11,10 +11,14 @@ metadata := {
 }
 
 # Rules
-denied_0969 {
-    input.action == "delete"
-    input.user.role != "admin"
+policy_0969_allowed if {
+    input.user.active
+    input.resource.public
 }
-default allowed_0969 = false
-
-# Utility function for user info
+default policy_0969_allowed = false
+policy_0969_allowed if {
+    data.policies.security.enabled
+}
+policy_0969_allowed if {
+    input.user.role == "admin"
+}

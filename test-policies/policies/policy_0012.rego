@@ -1,7 +1,7 @@
-package access.authentication.action.verify.policy_0012
+package audit.monitoring.policy.deny.policy_0012
 
-# Auto-generated policy 12
-# Package: access.authentication.action.verify
+# Auto-generated policy 12 (Rego v1 syntax)
+# Package: audit.monitoring.policy.deny
 
 # Metadata
 metadata := {
@@ -11,20 +11,15 @@ metadata := {
 }
 
 # Rules
-allowed_0012 {
-    input.user.role == "admin"
+default policy_0012_allowed = false
+policy_0012_allowed if {
+    data.policies.audit.enabled
 }
-approved_0012 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
-}
-allowed_0012 {
-    input.user.active
-    input.resource.public
-}
-denied_0012 {
+policy_0012_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-
-# Utility function for user info
+policy_0012_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
+}

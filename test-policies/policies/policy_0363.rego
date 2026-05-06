@@ -1,7 +1,7 @@
-package risk.validation.resource.check.data.policy_0363
+package access.monitoring.user.verify.policy_0363
 
-# Auto-generated policy 363
-# Package: risk.validation.resource.check.data
+# Auto-generated policy 363 (Rego v1 syntax)
+# Package: access.monitoring.user.verify
 
 # Metadata
 metadata := {
@@ -11,16 +11,8 @@ metadata := {
 }
 
 # Rules
-denied_0363 {
+default policy_0363_allowed = false
+policy_0363_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-allowed_0363 {
-    input.user.role == "admin"
-}
-approved_0363 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
-}
-
-# Utility function for user info

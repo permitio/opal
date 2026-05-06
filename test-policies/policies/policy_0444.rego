@@ -1,7 +1,7 @@
-package governance.monitoring.user.deny.data.policy_0444
+package security.monitoring.action.allow.policy_0444
 
-# Auto-generated policy 444
-# Package: governance.monitoring.user.deny.data
+# Auto-generated policy 444 (Rego v1 syntax)
+# Package: security.monitoring.action.allow
 
 # Metadata
 metadata := {
@@ -11,17 +11,14 @@ metadata := {
 }
 
 # Rules
-allowed_0444 {
-    data.policies.governance.enabled
-}
-default allowed_0444 = false
-allowed_0444 {
-    input.user.active
-    input.resource.public
-}
-denied_0444 {
+default policy_0444_allowed = false
+policy_0444_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-
-# Utility function for user info
+policy_0444_allowed if {
+    input.user.role == "admin"
+}
+policy_0444_allowed if {
+    data.policies.security.enabled
+}

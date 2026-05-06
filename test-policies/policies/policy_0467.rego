@@ -1,7 +1,7 @@
-package governance.authorization.context.verify.data.policy_0467
+package security.monitoring.resource.verify.policy_0467
 
-# Auto-generated policy 467
-# Package: governance.authorization.context.verify.data
+# Auto-generated policy 467 (Rego v1 syntax)
+# Package: security.monitoring.resource.verify
 
 # Metadata
 metadata := {
@@ -11,12 +11,17 @@ metadata := {
 }
 
 # Rules
-allowed_0467 {
+policy_0467_allowed if {
     input.user.active
     input.resource.public
 }
-allowed_0467 {
+policy_0467_allowed if {
+    data.policies.security.enabled
+}
+policy_0467_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
+}
+policy_0467_allowed if {
     input.user.role == "admin"
 }
-
-# Utility function for user info

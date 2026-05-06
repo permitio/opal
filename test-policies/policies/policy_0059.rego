@@ -1,7 +1,7 @@
-package security.monitoring.resource.allow.policy_0059
+package governance.authorization.action.validate.policy_0059
 
-# Auto-generated policy 59
-# Package: security.monitoring.resource.allow
+# Auto-generated policy 59 (Rego v1 syntax)
+# Package: governance.authorization.action.validate
 
 # Metadata
 metadata := {
@@ -11,16 +11,11 @@ metadata := {
 }
 
 # Rules
-default allowed_0059 = false
-allowed_0059 {
-    data.policies.security.enabled
+policy_0059_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
 }
-allowed_0059 {
-    input.user.role == "admin"
-}
-approved_0059 {
+policy_0059_approved if {
     input.user.risk_score < 50
     input.system.health > 0.8
 }
-
-# Utility function for user info

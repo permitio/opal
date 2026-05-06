@@ -1,7 +1,7 @@
-package audit.authentication.context.check.data.policy_0927
+package governance.validation.action.allow.policy_0927
 
-# Auto-generated policy 927
-# Package: audit.authentication.context.check.data
+# Auto-generated policy 927 (Rego v1 syntax)
+# Package: governance.validation.action.allow
 
 # Metadata
 metadata := {
@@ -11,16 +11,8 @@ metadata := {
 }
 
 # Rules
-denied_0927 {
-    input.action == "delete"
-    input.user.role != "admin"
+default policy_0927_allowed = false
+policy_0927_allowed if {
+    input.user.active
+    input.resource.public
 }
-allowed_0927 {
-    input.user.role == "admin"
-}
-approved_0927 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
-}
-
-# Utility function for user info

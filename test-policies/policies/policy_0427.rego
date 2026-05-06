@@ -1,7 +1,7 @@
-package compliance.monitoring.action.check.data.policy_0427
+package security.authorization.resource.allow.policy_0427
 
-# Auto-generated policy 427
-# Package: compliance.monitoring.action.check.data
+# Auto-generated policy 427 (Rego v1 syntax)
+# Package: security.authorization.resource.allow
 
 # Metadata
 metadata := {
@@ -11,13 +11,7 @@ metadata := {
 }
 
 # Rules
-default allowed_0427 = false
-allowed_0427 {
-    input.user.role == "admin"
+default policy_0427_allowed = false
+policy_0427_allowed if {
+    data.policies.security.enabled
 }
-allowed_0427 {
-    input.user.active
-    input.resource.public
-}
-
-# Utility function for user info

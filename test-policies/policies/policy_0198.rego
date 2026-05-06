@@ -1,7 +1,7 @@
-package access.monitoring.policy.check.policy_0198
+package audit.validation.action.validate.policy_0198
 
-# Auto-generated policy 198
-# Package: access.monitoring.policy.check
+# Auto-generated policy 198 (Rego v1 syntax)
+# Package: audit.validation.action.validate
 
 # Metadata
 metadata := {
@@ -11,13 +11,16 @@ metadata := {
 }
 
 # Rules
-default allowed_0198 = false
-approved_0198 {
+default policy_0198_allowed = false
+policy_0198_approved if {
     input.user.risk_score < 50
     input.system.health > 0.8
 }
-allowed_0198 {
-    input.user.role == "admin"
+policy_0198_allowed if {
+    input.user.active
+    input.resource.public
 }
-
-# Utility function for user info
+policy_0198_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
+}

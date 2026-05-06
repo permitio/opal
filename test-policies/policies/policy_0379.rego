@@ -1,7 +1,7 @@
-package risk.enforcement.context.deny.data.policy_0379
+package risk.enforcement.user.allow.policy_0379
 
-# Auto-generated policy 379
-# Package: risk.enforcement.context.deny.data
+# Auto-generated policy 379 (Rego v1 syntax)
+# Package: risk.enforcement.user.allow
 
 # Metadata
 metadata := {
@@ -11,17 +11,10 @@ metadata := {
 }
 
 # Rules
-approved_0379 {
+policy_0379_approved if {
     input.user.risk_score < 50
     input.system.health > 0.8
 }
-default allowed_0379 = false
-allowed_0379 {
-    input.user.role == "admin"
+policy_0379_allowed if {
+    data.policies.risk.enabled
 }
-denied_0379 {
-    input.action == "delete"
-    input.user.role != "admin"
-}
-
-# Utility function for user info

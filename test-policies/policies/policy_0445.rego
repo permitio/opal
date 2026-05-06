@@ -1,7 +1,7 @@
-package compliance.authentication.user.validate.policy_0445
+package risk.enforcement.action.deny.data.policy_0445
 
-# Auto-generated policy 445
-# Package: compliance.authentication.user.validate
+# Auto-generated policy 445 (Rego v1 syntax)
+# Package: risk.enforcement.action.deny.data
 
 # Metadata
 metadata := {
@@ -11,17 +11,17 @@ metadata := {
 }
 
 # Rules
-default allowed_0445 = false
-denied_0445 {
-    input.action == "delete"
-    input.user.role != "admin"
+policy_0445_allowed if {
+    data.policies.risk.enabled
 }
-allowed_0445 {
-    data.policies.compliance.enabled
-}
-approved_0445 {
+policy_0445_approved if {
     input.user.risk_score < 50
     input.system.health > 0.8
 }
-
-# Utility function for user info
+policy_0445_allowed if {
+    input.user.role == "admin"
+}
+policy_0445_allowed if {
+    input.user.active
+    input.resource.public
+}

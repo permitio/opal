@@ -1,45 +1,73 @@
 {
   "test_id": 29,
   "metadata": {
-    "environment": "staging",
-    "region": "eu-west-1",
-    "version": "1.4.5"
+    "environment": "dev",
+    "region": "ap-northeast-1",
+    "version": "1.5.10"
   },
   "users": [
     {
       "id": "user_000",
       "name": "User 0",
       "role": "auditor",
-      "active": false,
+      "active": true,
       "risk_score": 85
+    },
+    {
+      "id": "user_001",
+      "name": "User 1",
+      "role": "viewer",
+      "active": false,
+      "risk_score": 47
+    },
+    {
+      "id": "user_002",
+      "name": "User 2",
+      "role": "auditor",
+      "active": true,
+      "risk_score": 81
+    },
+    {
+      "id": "user_003",
+      "name": "User 3",
+      "role": "admin",
+      "active": true,
+      "risk_score": 39
+    },
+    {
+      "id": "user_004",
+      "name": "User 4",
+      "role": "viewer",
+      "active": true,
+      "risk_score": 20
     }
   ],
   "resources": [
     {
       "id": "res_000",
-      "type": "api",
+      "type": "database",
       "public": false,
-      "owner_id": "user_084",
+      "owner_id": "user_018",
       "sensitivity": "internal"
     }
   ],
   "system": {
-    "health": 0.81,
-    "load": 15.83,
-    "uptime_days": 47
+    "health": 0.87,
+    "load": 4.86,
+    "uptime_days": 290
   },
   "policies": {
     "security": {
       "enabled": true
     },
     "compliance": {
-      "enabled": false
+      "enabled": true
     },
     "access": {
-      "enabled": false
+      "enabled": true
     },
     "audit": {
-      "enabled": false
+      "enabled": true
     }
   }
 }

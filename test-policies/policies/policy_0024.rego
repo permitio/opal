@@ -1,7 +1,7 @@
-package access.enforcement.action.deny.policy_0024
+package security.enforcement.context.verify.policy_0024
 
-# Auto-generated policy 24
-# Package: access.enforcement.action.deny
+# Auto-generated policy 24 (Rego v1 syntax)
+# Package: security.enforcement.context.verify
 
 # Metadata
 metadata := {
@@ -11,16 +11,9 @@ metadata := {
 }
 
 # Rules
-allowed_0024 {
-    input.user.active
-    input.resource.public
-}
-allowed_0024 {
-    data.policies.access.enabled
-}
-default allowed_0024 = false
-allowed_0024 {
+policy_0024_allowed if {
     input.user.role == "admin"
 }
-
-# Utility function for user info
+policy_0024_allowed if {
+    data.policies.security.enabled
+}

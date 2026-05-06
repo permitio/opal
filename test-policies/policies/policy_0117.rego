@@ -1,7 +1,7 @@
-package audit.authorization.policy.validate.logic.policy_0117
+package audit.monitoring.policy.allow.helpers.policy_0117
 
-# Auto-generated policy 117
-# Package: audit.authorization.policy.validate.logic
+# Auto-generated policy 117 (Rego v1 syntax)
+# Package: audit.monitoring.policy.allow.helpers
 
 # Metadata
 metadata := {
@@ -11,12 +11,10 @@ metadata := {
 }
 
 # Rules
-approved_0117 {
+policy_0117_approved if {
     input.user.risk_score < 50
     input.system.health > 0.8
 }
-allowed_0117 {
-    data.policies.audit.enabled
+policy_0117_allowed if {
+    input.user.role == "admin"
 }
-
-# Utility function for user info

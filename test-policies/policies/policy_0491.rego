@@ -1,7 +1,7 @@
-package governance.enforcement.policy.allow.policy_0491
+package governance.enforcement.context.allow.data.policy_0491
 
-# Auto-generated policy 491
-# Package: governance.enforcement.policy.allow
+# Auto-generated policy 491 (Rego v1 syntax)
+# Package: governance.enforcement.context.allow.data
 
 # Metadata
 metadata := {
@@ -11,16 +11,7 @@ metadata := {
 }
 
 # Rules
-allowed_0491 {
-    data.policies.governance.enabled
-}
-default allowed_0491 = false
-allowed_0491 {
+policy_0491_allowed if {
     input.user.role == "admin"
 }
-approved_0491 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
-}
-
-# Utility function for user info
+default policy_0491_allowed = false

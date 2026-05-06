@@ -1,7 +1,7 @@
-package compliance.validation.resource.allow.policy_0511
+package governance.enforcement.action.deny.helpers.policy_0511
 
-# Auto-generated policy 511
-# Package: compliance.validation.resource.allow
+# Auto-generated policy 511 (Rego v1 syntax)
+# Package: governance.enforcement.action.deny.helpers
 
 # Metadata
 metadata := {
@@ -11,13 +11,7 @@ metadata := {
 }
 
 # Rules
-allowed_0511 {
-    input.user.active
-    input.resource.public
+default policy_0511_allowed = false
+policy_0511_allowed if {
+    input.user.role == "admin"
 }
-approved_0511 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
-}
-
-# Utility function for user info

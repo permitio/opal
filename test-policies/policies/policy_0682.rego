@@ -1,7 +1,7 @@
-package risk.validation.action.validate.helpers.policy_0682
+package compliance.validation.policy.allow.helpers.policy_0682
 
-# Auto-generated policy 682
-# Package: risk.validation.action.validate.helpers
+# Auto-generated policy 682 (Rego v1 syntax)
+# Package: compliance.validation.policy.allow.helpers
 
 # Metadata
 metadata := {
@@ -11,16 +11,15 @@ metadata := {
 }
 
 # Rules
-denied_0682 {
+policy_0682_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-allowed_0682 {
-    data.policies.risk.enabled
-}
-approved_0682 {
+policy_0682_approved if {
     input.user.risk_score < 50
     input.system.health > 0.8
 }
-
-# Utility function for user info
+policy_0682_allowed if {
+    input.user.active
+    input.resource.public
+}

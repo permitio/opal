@@ -1,7 +1,7 @@
-package access.monitoring.user.validate.policy_0945
+package audit.monitoring.context.verify.policy_0945
 
-# Auto-generated policy 945
-# Package: access.monitoring.user.validate
+# Auto-generated policy 945 (Rego v1 syntax)
+# Package: audit.monitoring.context.verify
 
 # Metadata
 metadata := {
@@ -11,10 +11,17 @@ metadata := {
 }
 
 # Rules
-default allowed_0945 = false
-allowed_0945 {
+policy_0945_allowed if {
+    input.user.role == "admin"
+}
+policy_0945_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
+}
+policy_0945_allowed if {
     input.user.active
     input.resource.public
 }
-
-# Utility function for user info
+policy_0945_allowed if {
+    data.policies.audit.enabled
+}

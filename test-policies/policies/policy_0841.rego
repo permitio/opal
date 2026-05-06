@@ -1,7 +1,7 @@
-package audit.authentication.action.verify.logic.policy_0841
+package governance.authorization.action.deny.policy_0841
 
-# Auto-generated policy 841
-# Package: audit.authentication.action.verify.logic
+# Auto-generated policy 841 (Rego v1 syntax)
+# Package: governance.authorization.action.deny
 
 # Metadata
 metadata := {
@@ -11,16 +11,14 @@ metadata := {
 }
 
 # Rules
-allowed_0841 {
-    input.user.active
-    input.resource.public
+policy_0841_allowed if {
+    input.user.role == "admin"
 }
-allowed_0841 {
-    data.policies.audit.enabled
+policy_0841_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
 }
-denied_0841 {
+policy_0841_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-
-# Utility function for user info

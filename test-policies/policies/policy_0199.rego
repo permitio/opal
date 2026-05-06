@@ -1,7 +1,7 @@
-package audit.enforcement.user.allow.utils.policy_0199
+package risk.validation.action.verify.data.policy_0199
 
-# Auto-generated policy 199
-# Package: audit.enforcement.user.allow.utils
+# Auto-generated policy 199 (Rego v1 syntax)
+# Package: risk.validation.action.verify.data
 
 # Metadata
 metadata := {
@@ -11,12 +11,13 @@ metadata := {
 }
 
 # Rules
-allowed_0199 {
-    data.policies.audit.enabled
+policy_0199_allowed if {
+    data.policies.risk.enabled
 }
-allowed_0199 {
-    input.user.active
-    input.resource.public
+policy_0199_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
 }
-
-# Utility function for user info
+policy_0199_allowed if {
+    input.user.role == "admin"
+}

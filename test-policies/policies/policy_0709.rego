@@ -1,7 +1,7 @@
-package governance.monitoring.policy.deny.policy_0709
+package security.authorization.action.check.data.policy_0709
 
-# Auto-generated policy 709
-# Package: governance.monitoring.policy.deny
+# Auto-generated policy 709 (Rego v1 syntax)
+# Package: security.authorization.action.check.data
 
 # Metadata
 metadata := {
@@ -11,16 +11,14 @@ metadata := {
 }
 
 # Rules
-denied_0709 {
-    input.action == "delete"
-    input.user.role != "admin"
-}
-allowed_0709 {
-    data.policies.governance.enabled
-}
-allowed_0709 {
+policy_0709_allowed if {
     input.user.active
     input.resource.public
 }
-
-# Utility function for user info
+policy_0709_allowed if {
+    input.user.role == "admin"
+}
+policy_0709_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
+}

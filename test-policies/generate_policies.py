@@ -50,10 +50,10 @@ def generate_package_hierarchy(policy_num):
 
 
 def generate_rego_policy(policy_num, package_path):
-    """Generate a sample Rego policy with realistic rules."""
+    """Generate a sample Rego policy with realistic rules (Rego v1 syntax)."""
     policy_name = f"policy_{policy_num:04d}"
     
-    # Create various rule types with proper Rego v1 syntax
+    # Create various rule types with proper Rego v1 syntax (requires 'if' keyword)
     rule_templates = [
         "default {name}_allowed = false",
         "{name}_allowed if {{\n    input.user.role == \"admin\"\n}}",
@@ -74,7 +74,7 @@ def generate_rego_policy(policy_num, package_path):
     
     policy_content = f"""package {package_path}.{policy_name}
 
-# Auto-generated policy {policy_num}
+# Auto-generated policy {policy_num} (Rego v1 syntax)
 # Package: {package_path}
 
 # Metadata
@@ -86,15 +86,6 @@ metadata := {{
 
 # Rules
 {chr(10).join(rules)}
-
-# Utility function for user info
-get_user_info if {{
-    user := {{
-        "id": input.user.id,
-        "role": input.user.role,
-        "active": input.user.active,
-    }}
-}}
 """
     
     return policy_content

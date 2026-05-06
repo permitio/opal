@@ -1,88 +1,60 @@
 {
   "test_id": 5,
   "metadata": {
-    "environment": "prod",
+    "environment": "dev",
     "region": "us-west-2",
-    "version": "1.0.8"
+    "version": "1.0.4"
   },
   "users": [
     {
       "id": "user_000",
       "name": "User 0",
-      "role": "admin",
-      "active": false,
-      "risk_score": 67
+      "role": "editor",
+      "active": true,
+      "risk_score": 20
     },
     {
       "id": "user_001",
       "name": "User 1",
-      "role": "auditor",
-      "active": false,
-      "risk_score": 27
-    },
-    {
-      "id": "user_002",
-      "name": "User 2",
-      "role": "admin",
-      "active": false,
-      "risk_score": 76
-    },
-    {
-      "id": "user_003",
-      "name": "User 3",
-      "role": "viewer",
-      "active": false,
-      "risk_score": 12
-    },
-    {
-      "id": "user_004",
-      "name": "User 4",
-      "role": "editor",
-      "active": false,
-      "risk_score": 23
-    },
-    {
-      "id": "user_005",
-      "name": "User 5",
-      "role": "admin",
-      "active": false,
-      "risk_score": 55
-    },
-    {
-      "id": "user_006",
-      "name": "User 6",
       "role": "user",
-      "active": false,
-      "risk_score": 4
+      "active": true,
+      "risk_score": 48
     }
   ],
   "resources": [
     {
       "id": "res_000",
-      "type": "database",
-      "public": true,
-      "owner_id": "user_077",
-      "sensitivity": "confidential"
+      "type": "api",
+      "public": false,
+      "owner_id": "user_099",
+      "sensitivity": "internal"
     },
     {
       "id": "res_001",
-      "type": "bucket",
+      "type": "service",
       "public": true,
-      "owner_id": "user_036",
+      "owner_id": "user_073",
       "sensitivity": "confidential"
     },
     {
       "id": "res_002",
-      "type": "file",
+      "type": "bucket",
       "public": false,
-      "owner_id": "user_056",
-      "sensitivity": "confidential"
+      "owner_id": "user_067",
+      "sensitivity": "public"
+    },
+    {
+      "id": "res_003",
+      "type": "file",
+      "public": true,
+      "owner_id": "user_001",
+      "sensitivity": "public"
     }
   ],
   "system": {
-    "health": 0.78,
-    "load": 56.75,
-    "uptime_days": 25
+    "health": 0.74,
+    "load": 14.54,
+    "uptime_days": 3
   },
   "policies": {
     "security": {
@@ -95,7 +67,7 @@
       "enabled": true
     },
     "audit": {
-      "enabled": false
+      "enabled": true
     }
   }
 }

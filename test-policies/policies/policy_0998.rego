@@ -1,7 +1,7 @@
-package access.monitoring.user.check.helpers.policy_0998
+package governance.enforcement.context.verify.policy_0998
 
-# Auto-generated policy 998
-# Package: access.monitoring.user.check.helpers
+# Auto-generated policy 998 (Rego v1 syntax)
+# Package: governance.enforcement.context.verify
 
 # Metadata
 metadata := {
@@ -11,12 +11,11 @@ metadata := {
 }
 
 # Rules
-allowed_0998 {
-    input.user.role == "admin"
+policy_0998_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
 }
-default allowed_0998 = false
-allowed_0998 {
-    data.policies.access.enabled
+policy_0998_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
 }
-
-# Utility function for user info

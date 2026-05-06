@@ -1,7 +1,7 @@
-package risk.authorization.context.verify.policy_0995
+package audit.validation.context.verify.utils.policy_0995
 
-# Auto-generated policy 995
-# Package: risk.authorization.context.verify
+# Auto-generated policy 995 (Rego v1 syntax)
+# Package: audit.validation.context.verify.utils
 
 # Metadata
 metadata := {
@@ -11,13 +11,15 @@ metadata := {
 }
 
 # Rules
-denied_0995 {
-    input.action == "delete"
-    input.user.role != "admin"
+default policy_0995_allowed = false
+policy_0995_allowed if {
+    data.policies.audit.enabled
 }
-allowed_0995 {
+policy_0995_allowed if {
     input.user.active
     input.resource.public
 }
-
-# Utility function for user info
+policy_0995_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
+}

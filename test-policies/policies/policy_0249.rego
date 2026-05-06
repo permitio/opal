@@ -1,7 +1,7 @@
-package audit.authentication.action.deny.data.policy_0249
+package risk.authentication.resource.allow.policy_0249
 
-# Auto-generated policy 249
-# Package: audit.authentication.action.deny.data
+# Auto-generated policy 249 (Rego v1 syntax)
+# Package: risk.authentication.resource.allow
 
 # Metadata
 metadata := {
@@ -11,12 +11,10 @@ metadata := {
 }
 
 # Rules
-approved_0249 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
+policy_0249_allowed if {
+    input.user.active
+    input.resource.public
 }
-allowed_0249 {
+policy_0249_allowed if {
     input.user.role == "admin"
 }
-
-# Utility function for user info

@@ -1,7 +1,7 @@
-package access.authentication.action.verify.policy_0448
+package audit.authentication.context.deny.policy_0448
 
-# Auto-generated policy 448
-# Package: access.authentication.action.verify
+# Auto-generated policy 448 (Rego v1 syntax)
+# Package: audit.authentication.context.deny
 
 # Metadata
 metadata := {
@@ -11,17 +11,15 @@ metadata := {
 }
 
 # Rules
-denied_0448 {
+policy_0448_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-default allowed_0448 = false
-allowed_0448 {
+policy_0448_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
+}
+policy_0448_allowed if {
     input.user.active
     input.resource.public
 }
-allowed_0448 {
-    input.user.role == "admin"
-}
-
-# Utility function for user info

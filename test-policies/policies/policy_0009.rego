@@ -1,7 +1,7 @@
-package audit.authentication.policy.check.policy_0009
+package compliance.authorization.context.check.utils.policy_0009
 
-# Auto-generated policy 9
-# Package: audit.authentication.policy.check
+# Auto-generated policy 9 (Rego v1 syntax)
+# Package: compliance.authorization.context.check.utils
 
 # Metadata
 metadata := {
@@ -11,16 +11,11 @@ metadata := {
 }
 
 # Rules
-approved_0009 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
+policy_0009_allowed if {
+    input.user.active
+    input.resource.public
 }
-allowed_0009 {
-    input.user.role == "admin"
+policy_0009_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
 }
-default allowed_0009 = false
-allowed_0009 {
-    data.policies.audit.enabled
-}
-
-# Utility function for user info

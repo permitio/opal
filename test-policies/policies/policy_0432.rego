@@ -1,7 +1,7 @@
-package audit.enforcement.resource.verify.policy_0432
+package security.validation.user.deny.core.policy_0432
 
-# Auto-generated policy 432
-# Package: audit.enforcement.resource.verify
+# Auto-generated policy 432 (Rego v1 syntax)
+# Package: security.validation.user.deny.core
 
 # Metadata
 metadata := {
@@ -11,9 +11,10 @@ metadata := {
 }
 
 # Rules
-allowed_0432 {
-    data.policies.audit.enabled
+policy_0432_allowed if {
+    input.user.active
+    input.resource.public
 }
-default allowed_0432 = false
-
-# Utility function for user info
+policy_0432_allowed if {
+    data.policies.security.enabled
+}

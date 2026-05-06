@@ -1,7 +1,7 @@
-package audit.enforcement.policy.deny.policy_0924
+package security.authorization.resource.validate.logic.policy_0924
 
-# Auto-generated policy 924
-# Package: audit.enforcement.policy.deny
+# Auto-generated policy 924 (Rego v1 syntax)
+# Package: security.authorization.resource.validate.logic
 
 # Metadata
 metadata := {
@@ -11,13 +11,8 @@ metadata := {
 }
 
 # Rules
-approved_0924 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
+default policy_0924_allowed = false
+policy_0924_allowed if {
+    input.user.active
+    input.resource.public
 }
-default allowed_0924 = false
-allowed_0924 {
-    input.user.role == "admin"
-}
-
-# Utility function for user info

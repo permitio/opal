@@ -1,7 +1,7 @@
-package compliance.monitoring.resource.check.helpers.policy_0616
+package risk.monitoring.user.validate.helpers.policy_0616
 
-# Auto-generated policy 616
-# Package: compliance.monitoring.resource.check.helpers
+# Auto-generated policy 616 (Rego v1 syntax)
+# Package: risk.monitoring.user.validate.helpers
 
 # Metadata
 metadata := {
@@ -11,17 +11,17 @@ metadata := {
 }
 
 # Rules
-denied_0616 {
+policy_0616_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-default allowed_0616 = false
-allowed_0616 {
+policy_0616_allowed if {
+    data.policies.risk.enabled
+}
+policy_0616_allowed if {
+    input.user.role == "admin"
+}
+policy_0616_allowed if {
     input.user.active
     input.resource.public
 }
-allowed_0616 {
-    input.user.role == "admin"
-}
-
-# Utility function for user info

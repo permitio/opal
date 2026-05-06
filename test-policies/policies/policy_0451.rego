@@ -1,7 +1,7 @@
-package security.monitoring.user.validate.logic.policy_0451
+package security.authentication.context.allow.policy_0451
 
-# Auto-generated policy 451
-# Package: security.monitoring.user.validate.logic
+# Auto-generated policy 451 (Rego v1 syntax)
+# Package: security.authentication.context.allow
 
 # Metadata
 metadata := {
@@ -11,16 +11,15 @@ metadata := {
 }
 
 # Rules
-allowed_0451 {
-    input.user.role == "admin"
+policy_0451_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
 }
-approved_0451 {
+policy_0451_approved if {
     input.user.risk_score < 50
     input.system.health > 0.8
 }
-allowed_0451 {
+policy_0451_allowed if {
     input.user.active
     input.resource.public
 }
-
-# Utility function for user info

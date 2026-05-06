@@ -1,7 +1,7 @@
-package risk.authentication.context.check.core.policy_0245
+package risk.authorization.resource.check.policy_0245
 
-# Auto-generated policy 245
-# Package: risk.authentication.context.check.core
+# Auto-generated policy 245 (Rego v1 syntax)
+# Package: risk.authorization.resource.check
 
 # Metadata
 metadata := {
@@ -11,20 +11,13 @@ metadata := {
 }
 
 # Rules
-allowed_0245 {
+policy_0245_allowed if {
+    input.user.role == "admin"
+}
+policy_0245_allowed if {
     input.user.active
     input.resource.public
 }
-allowed_0245 {
-    input.user.role == "admin"
+policy_0245_allowed if {
+    data.policies.risk.enabled
 }
-denied_0245 {
-    input.action == "delete"
-    input.user.role != "admin"
-}
-approved_0245 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
-}
-
-# Utility function for user info

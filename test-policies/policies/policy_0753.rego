@@ -1,7 +1,7 @@
-package security.authentication.action.deny.policy_0753
+package audit.authentication.action.verify.policy_0753
 
-# Auto-generated policy 753
-# Package: security.authentication.action.deny
+# Auto-generated policy 753 (Rego v1 syntax)
+# Package: audit.authentication.action.verify
 
 # Metadata
 metadata := {
@@ -11,13 +11,11 @@ metadata := {
 }
 
 # Rules
-allowed_0753 {
-    input.user.active
-    input.resource.public
-}
-denied_0753 {
+policy_0753_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-
-# Utility function for user info
+policy_0753_allowed if {
+    input.user.active
+    input.resource.public
+}

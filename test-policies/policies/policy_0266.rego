@@ -1,7 +1,7 @@
-package access.authentication.policy.allow.core.policy_0266
+package access.validation.user.validate.policy_0266
 
-# Auto-generated policy 266
-# Package: access.authentication.policy.allow.core
+# Auto-generated policy 266 (Rego v1 syntax)
+# Package: access.validation.user.validate
 
 # Metadata
 metadata := {
@@ -11,17 +11,12 @@ metadata := {
 }
 
 # Rules
-allowed_0266 {
-    input.user.active
-    input.resource.public
+policy_0266_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
 }
-default allowed_0266 = false
-approved_0266 {
+default policy_0266_allowed = false
+policy_0266_approved if {
     input.user.risk_score < 50
     input.system.health > 0.8
 }
-allowed_0266 {
-    input.user.role == "admin"
-}
-
-# Utility function for user info

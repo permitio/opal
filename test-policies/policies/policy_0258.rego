@@ -1,7 +1,7 @@
-package access.enforcement.context.validate.data.policy_0258
+package access.validation.context.deny.policy_0258
 
-# Auto-generated policy 258
-# Package: access.enforcement.context.validate.data
+# Auto-generated policy 258 (Rego v1 syntax)
+# Package: access.validation.context.deny
 
 # Metadata
 metadata := {
@@ -11,18 +11,11 @@ metadata := {
 }
 
 # Rules
-approved_0258 {
+policy_0258_approved if {
     input.user.risk_score < 50
     input.system.health > 0.8
 }
-allowed_0258 {
-    input.user.active
-    input.resource.public
+policy_0258_allowed if {
+    input.user.role == "admin"
 }
-default allowed_0258 = false
-denied_0258 {
-    input.action == "delete"
-    input.user.role != "admin"
-}
-
-# Utility function for user info
+default policy_0258_allowed = false

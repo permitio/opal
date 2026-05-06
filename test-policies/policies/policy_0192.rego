@@ -1,7 +1,7 @@
-package risk.monitoring.policy.deny.helpers.policy_0192
+package governance.authentication.resource.validate.data.policy_0192
 
-# Auto-generated policy 192
-# Package: risk.monitoring.policy.deny.helpers
+# Auto-generated policy 192 (Rego v1 syntax)
+# Package: governance.authentication.resource.validate.data
 
 # Metadata
 metadata := {
@@ -11,13 +11,15 @@ metadata := {
 }
 
 # Rules
-allowed_0192 {
-    input.user.active
-    input.resource.public
+policy_0192_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
 }
-default allowed_0192 = false
-allowed_0192 {
-    input.user.role == "admin"
+policy_0192_allowed if {
+    data.policies.governance.enabled
 }
-
-# Utility function for user info
+policy_0192_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
+}
+default policy_0192_allowed = false

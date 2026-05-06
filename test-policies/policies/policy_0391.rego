@@ -1,7 +1,7 @@
-package risk.enforcement.resource.allow.utils.policy_0391
+package audit.authorization.policy.deny.policy_0391
 
-# Auto-generated policy 391
-# Package: risk.enforcement.resource.allow.utils
+# Auto-generated policy 391 (Rego v1 syntax)
+# Package: audit.authorization.policy.deny
 
 # Metadata
 metadata := {
@@ -11,19 +11,9 @@ metadata := {
 }
 
 # Rules
-denied_0391 {
-    input.action == "delete"
-    input.user.role != "admin"
-}
-approved_0391 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
-}
-allowed_0391 {
-    data.policies.risk.enabled
-}
-allowed_0391 {
+policy_0391_allowed if {
     input.user.role == "admin"
 }
-
-# Utility function for user info
+policy_0391_allowed if {
+    data.policies.audit.enabled
+}

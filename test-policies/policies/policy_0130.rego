@@ -1,7 +1,7 @@
-package audit.authorization.action.deny.data.policy_0130
+package governance.validation.user.deny.policy_0130
 
-# Auto-generated policy 130
-# Package: audit.authorization.action.deny.data
+# Auto-generated policy 130 (Rego v1 syntax)
+# Package: governance.validation.user.deny
 
 # Metadata
 metadata := {
@@ -11,15 +11,14 @@ metadata := {
 }
 
 # Rules
-allowed_0130 {
-    data.policies.audit.enabled
+policy_0130_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
 }
-allowed_0130 {
-    input.user.role == "admin"
+policy_0130_allowed if {
+    data.policies.governance.enabled
 }
-approved_0130 {
+policy_0130_approved if {
     input.user.risk_score < 50
     input.system.health > 0.8
 }
-
-# Utility function for user info

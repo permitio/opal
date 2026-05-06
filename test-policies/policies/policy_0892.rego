@@ -1,7 +1,7 @@
-package audit.authorization.user.deny.core.policy_0892
+package access.validation.policy.deny.policy_0892
 
-# Auto-generated policy 892
-# Package: audit.authorization.user.deny.core
+# Auto-generated policy 892 (Rego v1 syntax)
+# Package: access.validation.policy.deny
 
 # Metadata
 metadata := {
@@ -11,13 +11,7 @@ metadata := {
 }
 
 # Rules
-default allowed_0892 = false
-allowed_0892 {
+default policy_0892_allowed = false
+policy_0892_allowed if {
     input.user.role == "admin"
 }
-allowed_0892 {
-    input.user.active
-    input.resource.public
-}
-
-# Utility function for user info

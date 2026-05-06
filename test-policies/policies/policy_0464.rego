@@ -1,7 +1,7 @@
-package compliance.monitoring.action.allow.policy_0464
+package risk.enforcement.resource.validate.data.policy_0464
 
-# Auto-generated policy 464
-# Package: compliance.monitoring.action.allow
+# Auto-generated policy 464 (Rego v1 syntax)
+# Package: risk.enforcement.resource.validate.data
 
 # Metadata
 metadata := {
@@ -11,14 +11,14 @@ metadata := {
 }
 
 # Rules
-allowed_0464 {
-    input.user.active
-    input.resource.public
+policy_0464_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
 }
-default allowed_0464 = false
-approved_0464 {
+policy_0464_allowed if {
+    input.user.role == "admin"
+}
+policy_0464_approved if {
     input.user.risk_score < 50
     input.system.health > 0.8
 }
-
-# Utility function for user info

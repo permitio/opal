@@ -1,7 +1,7 @@
-package access.validation.context.validate.core.policy_0955
+package governance.authorization.context.deny.policy_0955
 
-# Auto-generated policy 955
-# Package: access.validation.context.validate.core
+# Auto-generated policy 955 (Rego v1 syntax)
+# Package: governance.authorization.context.deny
 
 # Metadata
 metadata := {
@@ -11,13 +11,14 @@ metadata := {
 }
 
 # Rules
-approved_0955 {
+policy_0955_approved if {
     input.user.risk_score < 50
     input.system.health > 0.8
 }
-denied_0955 {
-    input.action == "delete"
-    input.user.role != "admin"
+policy_0955_allowed if {
+    data.policies.governance.enabled
 }
-
-# Utility function for user info
+policy_0955_allowed if {
+    input.user.role == "admin"
+}
+default policy_0955_allowed = false

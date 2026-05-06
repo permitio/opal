@@ -1,7 +1,7 @@
-package security.enforcement.policy.allow.policy_0180
+package risk.authentication.context.deny.policy_0180
 
-# Auto-generated policy 180
-# Package: security.enforcement.policy.allow
+# Auto-generated policy 180 (Rego v1 syntax)
+# Package: risk.authentication.context.deny
 
 # Metadata
 metadata := {
@@ -11,17 +11,16 @@ metadata := {
 }
 
 # Rules
-allowed_0180 {
-    input.user.active
-    input.resource.public
+default policy_0180_allowed = false
+policy_0180_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
 }
-allowed_0180 {
-    input.user.role == "admin"
-}
-approved_0180 {
+policy_0180_approved if {
     input.user.risk_score < 50
     input.system.health > 0.8
 }
-default allowed_0180 = false
-
-# Utility function for user info
+policy_0180_allowed if {
+    input.user.active
+    input.resource.public
+}

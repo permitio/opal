@@ -1,7 +1,7 @@
-package security.validation.resource.check.helpers.policy_0278
+package audit.validation.user.validate.helpers.policy_0278
 
-# Auto-generated policy 278
-# Package: security.validation.resource.check.helpers
+# Auto-generated policy 278 (Rego v1 syntax)
+# Package: audit.validation.user.validate.helpers
 
 # Metadata
 metadata := {
@@ -11,19 +11,16 @@ metadata := {
 }
 
 # Rules
-denied_0278 {
-    input.action == "delete"
-    input.user.role != "admin"
-}
-allowed_0278 {
-    input.user.role == "admin"
-}
-approved_0278 {
+policy_0278_approved if {
     input.user.risk_score < 50
     input.system.health > 0.8
 }
-allowed_0278 {
-    data.policies.security.enabled
+policy_0278_allowed if {
+    input.user.active
+    input.resource.public
 }
-
-# Utility function for user info
+policy_0278_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
+}
+default policy_0278_allowed = false

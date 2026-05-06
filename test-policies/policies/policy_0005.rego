@@ -1,7 +1,7 @@
-package risk.validation.context.check.helpers.policy_0005
+package audit.authentication.user.validate.policy_0005
 
-# Auto-generated policy 5
-# Package: risk.validation.context.check.helpers
+# Auto-generated policy 5 (Rego v1 syntax)
+# Package: audit.authentication.user.validate
 
 # Metadata
 metadata := {
@@ -11,16 +11,17 @@ metadata := {
 }
 
 # Rules
-approved_0005 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
+policy_0005_allowed if {
+    input.user.role == "admin"
 }
-denied_0005 {
+policy_0005_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-allowed_0005 {
-    input.user.role == "admin"
+policy_0005_allowed if {
+    data.policies.audit.enabled
 }
-
-# Utility function for user info
+policy_0005_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
+}

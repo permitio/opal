@@ -1,7 +1,7 @@
-package compliance.authentication.action.deny.helpers.policy_0834
+package security.authentication.user.verify.logic.policy_0834
 
-# Auto-generated policy 834
-# Package: compliance.authentication.action.deny.helpers
+# Auto-generated policy 834 (Rego v1 syntax)
+# Package: security.authentication.user.verify.logic
 
 # Metadata
 metadata := {
@@ -11,13 +11,8 @@ metadata := {
 }
 
 # Rules
-approved_0834 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
-}
-denied_0834 {
+default policy_0834_allowed = false
+policy_0834_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-
-# Utility function for user info

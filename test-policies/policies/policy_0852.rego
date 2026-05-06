@@ -1,7 +1,7 @@
-package security.authorization.action.allow.utils.policy_0852
+package governance.authorization.user.check.policy_0852
 
-# Auto-generated policy 852
-# Package: security.authorization.action.allow.utils
+# Auto-generated policy 852 (Rego v1 syntax)
+# Package: governance.authorization.user.check
 
 # Metadata
 metadata := {
@@ -11,19 +11,17 @@ metadata := {
 }
 
 # Rules
-denied_0852 {
-    input.action == "delete"
-    input.user.role != "admin"
+policy_0852_allowed if {
+    input.user.active
+    input.resource.public
 }
-allowed_0852 {
-    data.policies.security.enabled
-}
-allowed_0852 {
-    input.user.role == "admin"
-}
-approved_0852 {
+policy_0852_approved if {
     input.user.risk_score < 50
     input.system.health > 0.8
 }
-
-# Utility function for user info
+policy_0852_allowed if {
+    input.user.role == "admin"
+}
+policy_0852_allowed if {
+    data.policies.governance.enabled
+}

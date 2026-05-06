@@ -1,7 +1,7 @@
-package audit.validation.action.deny.core.policy_0397
+package security.monitoring.action.allow.policy_0397
 
-# Auto-generated policy 397
-# Package: audit.validation.action.deny.core
+# Auto-generated policy 397 (Rego v1 syntax)
+# Package: security.monitoring.action.allow
 
 # Metadata
 metadata := {
@@ -11,16 +11,9 @@ metadata := {
 }
 
 # Rules
-approved_0397 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
+policy_0397_allowed if {
+    data.policies.security.enabled
 }
-allowed_0397 {
-    input.user.active
-    input.resource.public
-}
-allowed_0397 {
+policy_0397_allowed if {
     input.user.role == "admin"
 }
-
-# Utility function for user info

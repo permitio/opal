@@ -1,7 +1,7 @@
-package access.authorization.action.check.policy_0060
+package risk.authorization.resource.allow.utils.policy_0060
 
-# Auto-generated policy 60
-# Package: access.authorization.action.check
+# Auto-generated policy 60 (Rego v1 syntax)
+# Package: risk.authorization.resource.allow.utils
 
 # Metadata
 metadata := {
@@ -11,10 +11,14 @@ metadata := {
 }
 
 # Rules
-default allowed_0060 = false
-allowed_0060 {
+policy_0060_allowed if {
+    input.user.role == "admin"
+}
+policy_0060_allowed if {
     input.user.active
     input.resource.public
 }
-
-# Utility function for user info
+policy_0060_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
+}

@@ -1,7 +1,7 @@
-package security.monitoring.context.allow.policy_0980
+package risk.monitoring.context.validate.core.policy_0980
 
-# Auto-generated policy 980
-# Package: security.monitoring.context.allow
+# Auto-generated policy 980 (Rego v1 syntax)
+# Package: risk.monitoring.context.validate.core
 
 # Metadata
 metadata := {
@@ -11,10 +11,7 @@ metadata := {
 }
 
 # Rules
-default allowed_0980 = false
-approved_0980 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
+policy_0980_allowed if {
+    data.policies.risk.enabled
 }
-
-# Utility function for user info
+default policy_0980_allowed = false

@@ -1,7 +1,7 @@
-package risk.enforcement.policy.verify.policy_0561
+package access.monitoring.policy.allow.data.policy_0561
 
-# Auto-generated policy 561
-# Package: risk.enforcement.policy.verify
+# Auto-generated policy 561 (Rego v1 syntax)
+# Package: access.monitoring.policy.allow.data
 
 # Metadata
 metadata := {
@@ -11,13 +11,11 @@ metadata := {
 }
 
 # Rules
-denied_0561 {
-    input.action == "delete"
-    input.user.role != "admin"
+policy_0561_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
 }
-allowed_0561 {
+policy_0561_allowed if {
     input.user.active
     input.resource.public
 }
-
-# Utility function for user info

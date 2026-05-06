@@ -1,7 +1,7 @@
-package access.validation.action.check.policy_0305
+package audit.validation.user.check.policy_0305
 
-# Auto-generated policy 305
-# Package: access.validation.action.check
+# Auto-generated policy 305 (Rego v1 syntax)
+# Package: audit.validation.user.check
 
 # Metadata
 metadata := {
@@ -11,16 +11,18 @@ metadata := {
 }
 
 # Rules
-default allowed_0305 = false
-allowed_0305 {
-    data.policies.access.enabled
-}
-allowed_0305 {
-    input.user.role == "admin"
-}
-allowed_0305 {
+policy_0305_allowed if {
     input.user.active
     input.resource.public
 }
-
-# Utility function for user info
+policy_0305_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
+}
+policy_0305_allowed if {
+    input.user.role == "admin"
+}
+policy_0305_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
+}

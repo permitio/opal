@@ -1,7 +1,7 @@
-package access.authorization.user.validate.policy_0074
+package audit.authorization.context.verify.policy_0074
 
-# Auto-generated policy 74
-# Package: access.authorization.user.validate
+# Auto-generated policy 74 (Rego v1 syntax)
+# Package: audit.authorization.context.verify
 
 # Metadata
 metadata := {
@@ -11,9 +11,15 @@ metadata := {
 }
 
 # Rules
-allowed_0074 {
-    data.policies.access.enabled
+policy_0074_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
 }
-default allowed_0074 = false
-
-# Utility function for user info
+default policy_0074_allowed = false
+policy_0074_allowed if {
+    input.user.active
+    input.resource.public
+}
+policy_0074_allowed if {
+    input.user.role == "admin"
+}

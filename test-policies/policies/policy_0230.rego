@@ -1,7 +1,7 @@
-package governance.authorization.policy.validate.policy_0230
+package access.validation.action.check.policy_0230
 
-# Auto-generated policy 230
-# Package: governance.authorization.policy.validate
+# Auto-generated policy 230 (Rego v1 syntax)
+# Package: access.validation.action.check
 
 # Metadata
 metadata := {
@@ -11,16 +11,17 @@ metadata := {
 }
 
 # Rules
-allowed_0230 {
-    data.policies.governance.enabled
+policy_0230_allowed if {
+    input.user.role == "admin"
 }
-approved_0230 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
+policy_0230_allowed if {
+    data.policies.access.enabled
 }
-allowed_0230 {
+policy_0230_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
+}
+policy_0230_allowed if {
     input.user.active
     input.resource.public
 }
-
-# Utility function for user info

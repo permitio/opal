@@ -1,7 +1,7 @@
-package compliance.authorization.policy.allow.data.policy_0654
+package security.enforcement.context.allow.policy_0654
 
-# Auto-generated policy 654
-# Package: compliance.authorization.policy.allow.data
+# Auto-generated policy 654 (Rego v1 syntax)
+# Package: security.enforcement.context.allow
 
 # Metadata
 metadata := {
@@ -11,9 +11,10 @@ metadata := {
 }
 
 # Rules
-default allowed_0654 = false
-allowed_0654 {
+policy_0654_allowed if {
     input.user.role == "admin"
 }
-
-# Utility function for user info
+policy_0654_allowed if {
+    input.user.active
+    input.resource.public
+}

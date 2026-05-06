@@ -1,7 +1,7 @@
-package governance.enforcement.context.check.logic.policy_0741
+package audit.authentication.user.verify.policy_0741
 
-# Auto-generated policy 741
-# Package: governance.enforcement.context.check.logic
+# Auto-generated policy 741 (Rego v1 syntax)
+# Package: audit.authentication.user.verify
 
 # Metadata
 metadata := {
@@ -11,13 +11,17 @@ metadata := {
 }
 
 # Rules
-default allowed_0741 = false
-allowed_0741 {
-    data.policies.governance.enabled
+policy_0741_allowed if {
+    data.policies.audit.enabled
 }
-allowed_0741 {
+policy_0741_allowed if {
     input.user.active
     input.resource.public
 }
-
-# Utility function for user info
+policy_0741_allowed if {
+    input.user.role == "admin"
+}
+policy_0741_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
+}

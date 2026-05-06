@@ -1,7 +1,7 @@
-package audit.monitoring.context.validate.policy_0351
+package governance.validation.context.allow.policy_0351
 
-# Auto-generated policy 351
-# Package: audit.monitoring.context.validate
+# Auto-generated policy 351 (Rego v1 syntax)
+# Package: governance.validation.context.allow
 
 # Metadata
 metadata := {
@@ -11,16 +11,7 @@ metadata := {
 }
 
 # Rules
-allowed_0351 {
-    data.policies.audit.enabled
+default policy_0351_allowed = false
+policy_0351_allowed if {
+    data.policies.governance.enabled
 }
-approved_0351 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
-}
-denied_0351 {
-    input.action == "delete"
-    input.user.role != "admin"
-}
-
-# Utility function for user info

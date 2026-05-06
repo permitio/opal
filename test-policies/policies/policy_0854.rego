@@ -1,7 +1,7 @@
-package compliance.validation.user.validate.policy_0854
+package governance.monitoring.action.allow.core.policy_0854
 
-# Auto-generated policy 854
-# Package: compliance.validation.user.validate
+# Auto-generated policy 854 (Rego v1 syntax)
+# Package: governance.monitoring.action.allow.core
 
 # Metadata
 metadata := {
@@ -11,16 +11,18 @@ metadata := {
 }
 
 # Rules
-allowed_0854 {
-    input.user.active
-    input.resource.public
-}
-allowed_0854 {
-    data.policies.compliance.enabled
-}
-denied_0854 {
+policy_0854_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-
-# Utility function for user info
+policy_0854_allowed if {
+    input.user.active
+    input.resource.public
+}
+policy_0854_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
+}
+policy_0854_allowed if {
+    data.policies.governance.enabled
+}

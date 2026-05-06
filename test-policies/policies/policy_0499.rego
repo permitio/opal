@@ -1,7 +1,7 @@
-package compliance.monitoring.resource.allow.helpers.policy_0499
+package governance.authentication.user.check.policy_0499
 
-# Auto-generated policy 499
-# Package: compliance.monitoring.resource.allow.helpers
+# Auto-generated policy 499 (Rego v1 syntax)
+# Package: governance.authentication.user.check
 
 # Metadata
 metadata := {
@@ -11,19 +11,15 @@ metadata := {
 }
 
 # Rules
-allowed_0499 {
+policy_0499_allowed if {
     input.user.active
     input.resource.public
 }
-approved_0499 {
+policy_0499_approved if {
     input.user.risk_score < 50
     input.system.health > 0.8
 }
-allowed_0499 {
+default policy_0499_allowed = false
+policy_0499_allowed if {
     input.user.role == "admin"
 }
-allowed_0499 {
-    data.policies.compliance.enabled
-}
-
-# Utility function for user info

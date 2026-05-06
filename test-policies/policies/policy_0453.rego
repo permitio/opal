@@ -1,7 +1,7 @@
-package governance.authentication.resource.check.data.policy_0453
+package audit.monitoring.context.verify.helpers.policy_0453
 
-# Auto-generated policy 453
-# Package: governance.authentication.resource.check.data
+# Auto-generated policy 453 (Rego v1 syntax)
+# Package: audit.monitoring.context.verify.helpers
 
 # Metadata
 metadata := {
@@ -11,17 +11,11 @@ metadata := {
 }
 
 # Rules
-default allowed_0453 = false
-allowed_0453 {
-    data.policies.governance.enabled
-}
-denied_0453 {
+policy_0453_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-approved_0453 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
+policy_0453_allowed if {
+    input.user.role == "admin"
 }
-
-# Utility function for user info
+default policy_0453_allowed = false

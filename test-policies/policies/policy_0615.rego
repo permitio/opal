@@ -1,7 +1,7 @@
-package governance.monitoring.action.verify.data.policy_0615
+package access.enforcement.resource.validate.policy_0615
 
-# Auto-generated policy 615
-# Package: governance.monitoring.action.verify.data
+# Auto-generated policy 615 (Rego v1 syntax)
+# Package: access.enforcement.resource.validate
 
 # Metadata
 metadata := {
@@ -11,12 +11,14 @@ metadata := {
 }
 
 # Rules
-allowed_0615 {
+policy_0615_allowed if {
     input.user.active
     input.resource.public
 }
-allowed_0615 {
-    input.user.role == "admin"
+policy_0615_allowed if {
+    data.policies.access.enabled
 }
-
-# Utility function for user info
+policy_0615_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
+}

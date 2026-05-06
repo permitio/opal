@@ -1,7 +1,7 @@
-package governance.authentication.context.validate.utils.policy_0647
+package compliance.enforcement.resource.verify.policy_0647
 
-# Auto-generated policy 647
-# Package: governance.authentication.context.validate.utils
+# Auto-generated policy 647 (Rego v1 syntax)
+# Package: compliance.enforcement.resource.verify
 
 # Metadata
 metadata := {
@@ -11,14 +11,15 @@ metadata := {
 }
 
 # Rules
-denied_0647 {
-    input.action == "delete"
-    input.user.role != "admin"
-}
-approved_0647 {
+policy_0647_approved if {
     input.user.risk_score < 50
     input.system.health > 0.8
 }
-default allowed_0647 = false
-
-# Utility function for user info
+policy_0647_allowed if {
+    input.user.active
+    input.resource.public
+}
+policy_0647_allowed if {
+    data.policies.compliance.enabled
+}
+default policy_0647_allowed = false

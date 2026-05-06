@@ -1,7 +1,7 @@
-package governance.enforcement.resource.allow.logic.policy_0142
+package governance.authentication.policy.verify.helpers.policy_0142
 
-# Auto-generated policy 142
-# Package: governance.enforcement.resource.allow.logic
+# Auto-generated policy 142 (Rego v1 syntax)
+# Package: governance.authentication.policy.verify.helpers
 
 # Metadata
 metadata := {
@@ -11,17 +11,9 @@ metadata := {
 }
 
 # Rules
-allowed_0142 {
-    input.user.active
-    input.resource.public
+policy_0142_allowed if {
+    data.policies.governance.enabled
 }
-approved_0142 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
+policy_0142_allowed if {
+    input.user.role == "admin"
 }
-denied_0142 {
-    input.action == "delete"
-    input.user.role != "admin"
-}
-
-# Utility function for user info

@@ -1,7 +1,7 @@
-package security.validation.policy.check.policy_0035
+package risk.monitoring.policy.check.data.policy_0035
 
-# Auto-generated policy 35
-# Package: security.validation.policy.check
+# Auto-generated policy 35 (Rego v1 syntax)
+# Package: risk.monitoring.policy.check.data
 
 # Metadata
 metadata := {
@@ -11,17 +11,13 @@ metadata := {
 }
 
 # Rules
-denied_0035 {
-    input.action == "delete"
-    input.user.role != "admin"
+policy_0035_allowed if {
+    data.policies.risk.enabled
 }
-allowed_0035 {
+policy_0035_allowed if {
+    input.user.role == "admin"
+}
+policy_0035_allowed if {
     input.user.active
     input.resource.public
 }
-approved_0035 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
-}
-
-# Utility function for user info

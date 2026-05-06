@@ -1,7 +1,7 @@
-package compliance.authentication.resource.verify.logic.policy_0505
+package audit.validation.policy.validate.policy_0505
 
-# Auto-generated policy 505
-# Package: compliance.authentication.resource.verify.logic
+# Auto-generated policy 505 (Rego v1 syntax)
+# Package: audit.validation.policy.validate
 
 # Metadata
 metadata := {
@@ -11,16 +11,11 @@ metadata := {
 }
 
 # Rules
-allowed_0505 {
-    input.user.role == "admin"
+policy_0505_allowed if {
+    data.policies.audit.enabled
 }
-allowed_0505 {
+default policy_0505_allowed = false
+policy_0505_allowed if {
     input.user.active
     input.resource.public
 }
-approved_0505 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
-}
-
-# Utility function for user info

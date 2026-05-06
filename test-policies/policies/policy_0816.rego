@@ -1,7 +1,7 @@
-package security.authentication.policy.check.policy_0816
+package governance.monitoring.action.check.policy_0816
 
-# Auto-generated policy 816
-# Package: security.authentication.policy.check
+# Auto-generated policy 816 (Rego v1 syntax)
+# Package: governance.monitoring.action.check
 
 # Metadata
 metadata := {
@@ -11,14 +11,11 @@ metadata := {
 }
 
 # Rules
-denied_0816 {
-    input.action == "delete"
-    input.user.role != "admin"
+policy_0816_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
 }
-default allowed_0816 = false
-allowed_0816 {
-    input.user.active
-    input.resource.public
+default policy_0816_allowed = false
+policy_0816_allowed if {
+    data.policies.governance.enabled
 }
-
-# Utility function for user info

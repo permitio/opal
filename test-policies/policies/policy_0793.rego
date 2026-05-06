@@ -1,7 +1,7 @@
-package compliance.enforcement.action.validate.policy_0793
+package compliance.monitoring.policy.validate.policy_0793
 
-# Auto-generated policy 793
-# Package: compliance.enforcement.action.validate
+# Auto-generated policy 793 (Rego v1 syntax)
+# Package: compliance.monitoring.policy.validate
 
 # Metadata
 metadata := {
@@ -11,18 +11,10 @@ metadata := {
 }
 
 # Rules
-default allowed_0793 = false
-approved_0793 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
-}
-denied_0793 {
+policy_0793_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-allowed_0793 {
-    input.user.active
-    input.resource.public
+policy_0793_allowed if {
+    input.user.role == "admin"
 }
-
-# Utility function for user info

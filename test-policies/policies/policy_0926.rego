@@ -1,7 +1,7 @@
-package compliance.enforcement.resource.check.policy_0926
+package access.enforcement.policy.check.logic.policy_0926
 
-# Auto-generated policy 926
-# Package: compliance.enforcement.resource.check
+# Auto-generated policy 926 (Rego v1 syntax)
+# Package: access.enforcement.policy.check.logic
 
 # Metadata
 metadata := {
@@ -11,13 +11,17 @@ metadata := {
 }
 
 # Rules
-approved_0926 {
+policy_0926_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
+}
+policy_0926_allowed if {
+    data.policies.access.enabled
+}
+policy_0926_allowed if {
+    input.user.role == "admin"
+}
+policy_0926_approved if {
     input.user.risk_score < 50
     input.system.health > 0.8
 }
-allowed_0926 {
-    input.user.active
-    input.resource.public
-}
-
-# Utility function for user info

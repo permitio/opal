@@ -1,7 +1,7 @@
-package security.enforcement.policy.validate.policy_0676
+package risk.validation.user.check.core.policy_0676
 
-# Auto-generated policy 676
-# Package: security.enforcement.policy.validate
+# Auto-generated policy 676 (Rego v1 syntax)
+# Package: risk.validation.user.check.core
 
 # Metadata
 metadata := {
@@ -11,16 +11,14 @@ metadata := {
 }
 
 # Rules
-allowed_0676 {
-    input.user.role == "admin"
+policy_0676_allowed if {
+    data.policies.risk.enabled
 }
-approved_0676 {
+policy_0676_approved if {
     input.user.risk_score < 50
     input.system.health > 0.8
 }
-allowed_0676 {
-    data.policies.security.enabled
+policy_0676_allowed if {
+    input.user.active
+    input.resource.public
 }
-default allowed_0676 = false
-
-# Utility function for user info

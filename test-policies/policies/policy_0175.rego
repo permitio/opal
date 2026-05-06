@@ -1,7 +1,7 @@
-package audit.authorization.user.allow.policy_0175
+package security.enforcement.resource.deny.policy_0175
 
-# Auto-generated policy 175
-# Package: audit.authorization.user.allow
+# Auto-generated policy 175 (Rego v1 syntax)
+# Package: security.enforcement.resource.deny
 
 # Metadata
 metadata := {
@@ -11,15 +11,8 @@ metadata := {
 }
 
 # Rules
-allowed_0175 {
-    input.user.role == "admin"
+default policy_0175_allowed = false
+policy_0175_allowed if {
+    input.user.active
+    input.resource.public
 }
-approved_0175 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
-}
-allowed_0175 {
-    data.policies.audit.enabled
-}
-
-# Utility function for user info

@@ -1,7 +1,7 @@
-package governance.monitoring.resource.deny.core.policy_0518
+package audit.authentication.user.check.policy_0518
 
-# Auto-generated policy 518
-# Package: governance.monitoring.resource.deny.core
+# Auto-generated policy 518 (Rego v1 syntax)
+# Package: audit.authentication.user.check
 
 # Metadata
 metadata := {
@@ -11,13 +11,10 @@ metadata := {
 }
 
 # Rules
-allowed_0518 {
-    input.user.role == "admin"
+policy_0518_allowed if {
+    input.user.active
+    input.resource.public
 }
-default allowed_0518 = false
-denied_0518 {
-    input.action == "delete"
-    input.user.role != "admin"
+policy_0518_allowed if {
+    data.policies.audit.enabled
 }
-
-# Utility function for user info

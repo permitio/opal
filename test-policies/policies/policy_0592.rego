@@ -1,7 +1,7 @@
-package access.enforcement.user.validate.logic.policy_0592
+package access.validation.user.allow.core.policy_0592
 
-# Auto-generated policy 592
-# Package: access.enforcement.user.validate.logic
+# Auto-generated policy 592 (Rego v1 syntax)
+# Package: access.validation.user.allow.core
 
 # Metadata
 metadata := {
@@ -11,15 +11,15 @@ metadata := {
 }
 
 # Rules
-allowed_0592 {
-    input.user.role == "admin"
+policy_0592_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
 }
-allowed_0592 {
+policy_0592_allowed if {
     data.policies.access.enabled
 }
-denied_0592 {
+default policy_0592_allowed = false
+policy_0592_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-
-# Utility function for user info

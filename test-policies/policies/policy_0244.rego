@@ -1,7 +1,7 @@
-package compliance.monitoring.context.validate.policy_0244
+package compliance.authorization.policy.deny.policy_0244
 
-# Auto-generated policy 244
-# Package: compliance.monitoring.context.validate
+# Auto-generated policy 244 (Rego v1 syntax)
+# Package: compliance.authorization.policy.deny
 
 # Metadata
 metadata := {
@@ -11,16 +11,10 @@ metadata := {
 }
 
 # Rules
-denied_0244 {
-    input.action == "delete"
-    input.user.role != "admin"
+policy_0244_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
 }
-allowed_0244 {
+policy_0244_allowed if {
     input.user.role == "admin"
 }
-allowed_0244 {
-    data.policies.compliance.enabled
-}
-default allowed_0244 = false
-
-# Utility function for user info

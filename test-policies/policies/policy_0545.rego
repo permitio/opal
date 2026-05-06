@@ -1,7 +1,7 @@
-package compliance.validation.resource.verify.utils.policy_0545
+package risk.authentication.policy.deny.policy_0545
 
-# Auto-generated policy 545
-# Package: compliance.validation.resource.verify.utils
+# Auto-generated policy 545 (Rego v1 syntax)
+# Package: risk.authentication.policy.deny
 
 # Metadata
 metadata := {
@@ -11,16 +11,10 @@ metadata := {
 }
 
 # Rules
-allowed_0545 {
-    data.policies.compliance.enabled
-}
-approved_0545 {
+policy_0545_approved if {
     input.user.risk_score < 50
     input.system.health > 0.8
 }
-allowed_0545 {
+policy_0545_allowed if {
     input.user.role == "admin"
 }
-default allowed_0545 = false
-
-# Utility function for user info

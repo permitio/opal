@@ -1,7 +1,7 @@
-package audit.monitoring.user.allow.policy_0732
+package compliance.monitoring.resource.validate.policy_0732
 
-# Auto-generated policy 732
-# Package: audit.monitoring.user.allow
+# Auto-generated policy 732 (Rego v1 syntax)
+# Package: compliance.monitoring.resource.validate
 
 # Metadata
 metadata := {
@@ -11,16 +11,8 @@ metadata := {
 }
 
 # Rules
-allowed_0732 {
-    input.user.role == "admin"
-}
-approved_0732 {
+policy_0732_approved if {
     input.user.risk_score < 50
     input.system.health > 0.8
 }
-allowed_0732 {
-    input.user.active
-    input.resource.public
-}
-
-# Utility function for user info
+default policy_0732_allowed = false

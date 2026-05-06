@@ -1,7 +1,7 @@
-package compliance.authentication.action.verify.policy_0367
+package security.authorization.resource.check.policy_0367
 
-# Auto-generated policy 367
-# Package: compliance.authentication.action.verify
+# Auto-generated policy 367 (Rego v1 syntax)
+# Package: security.authorization.resource.check
 
 # Metadata
 metadata := {
@@ -11,17 +11,12 @@ metadata := {
 }
 
 # Rules
-allowed_0367 {
-    data.policies.compliance.enabled
-}
-approved_0367 {
+policy_0367_approved if {
     input.user.risk_score < 50
     input.system.health > 0.8
 }
-default allowed_0367 = false
-allowed_0367 {
+default policy_0367_allowed = false
+policy_0367_allowed if {
     input.user.active
     input.resource.public
 }
-
-# Utility function for user info

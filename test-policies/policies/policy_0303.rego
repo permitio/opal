@@ -1,7 +1,7 @@
-package compliance.authorization.action.verify.logic.policy_0303
+package audit.authentication.action.verify.logic.policy_0303
 
-# Auto-generated policy 303
-# Package: compliance.authorization.action.verify.logic
+# Auto-generated policy 303 (Rego v1 syntax)
+# Package: audit.authentication.action.verify.logic
 
 # Metadata
 metadata := {
@@ -11,14 +11,11 @@ metadata := {
 }
 
 # Rules
-approved_0303 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
-}
-default allowed_0303 = false
-denied_0303 {
+policy_0303_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-
-# Utility function for user info
+policy_0303_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
+}

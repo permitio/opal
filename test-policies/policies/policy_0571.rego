@@ -1,7 +1,7 @@
-package audit.validation.user.verify.policy_0571
+package compliance.authentication.user.validate.utils.policy_0571
 
-# Auto-generated policy 571
-# Package: audit.validation.user.verify
+# Auto-generated policy 571 (Rego v1 syntax)
+# Package: compliance.authentication.user.validate.utils
 
 # Metadata
 metadata := {
@@ -11,9 +11,9 @@ metadata := {
 }
 
 # Rules
-allowed_0571 {
-    data.policies.audit.enabled
+policy_0571_allowed if {
+    input.user.role == "admin"
 }
-default allowed_0571 = false
-
-# Utility function for user info
+policy_0571_allowed if {
+    data.policies.compliance.enabled
+}

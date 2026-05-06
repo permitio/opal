@@ -1,7 +1,7 @@
-package access.authentication.resource.verify.policy_0555
+package security.authorization.action.deny.policy_0555
 
-# Auto-generated policy 555
-# Package: access.authentication.resource.verify
+# Auto-generated policy 555 (Rego v1 syntax)
+# Package: security.authorization.action.deny
 
 # Metadata
 metadata := {
@@ -11,12 +11,10 @@ metadata := {
 }
 
 # Rules
-approved_0555 {
+policy_0555_allowed if {
+    input.user.role == "admin"
+}
+policy_0555_approved if {
     input.user.risk_score < 50
     input.system.health > 0.8
 }
-allowed_0555 {
-    input.user.role == "admin"
-}
-
-# Utility function for user info

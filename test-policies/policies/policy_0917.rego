@@ -1,7 +1,7 @@
-package compliance.authorization.user.check.policy_0917
+package risk.validation.resource.deny.policy_0917
 
-# Auto-generated policy 917
-# Package: compliance.authorization.user.check
+# Auto-generated policy 917 (Rego v1 syntax)
+# Package: risk.validation.resource.deny
 
 # Metadata
 metadata := {
@@ -11,16 +11,7 @@ metadata := {
 }
 
 # Rules
-denied_0917 {
-    input.action == "delete"
-    input.user.role != "admin"
+policy_0917_allowed if {
+    data.policies.risk.enabled
 }
-allowed_0917 {
-    data.policies.compliance.enabled
-}
-allowed_0917 {
-    input.user.active
-    input.resource.public
-}
-
-# Utility function for user info
+default policy_0917_allowed = false

@@ -1,7 +1,7 @@
-package access.validation.action.check.policy_0542
+package audit.validation.user.verify.policy_0542
 
-# Auto-generated policy 542
-# Package: access.validation.action.check
+# Auto-generated policy 542 (Rego v1 syntax)
+# Package: audit.validation.user.verify
 
 # Metadata
 metadata := {
@@ -11,12 +11,9 @@ metadata := {
 }
 
 # Rules
-allowed_0542 {
+policy_0542_allowed if {
+    data.policies.audit.enabled
+}
+policy_0542_allowed if {
     input.user.role == "admin"
 }
-allowed_0542 {
-    input.user.active
-    input.resource.public
-}
-
-# Utility function for user info

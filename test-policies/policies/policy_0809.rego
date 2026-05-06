@@ -1,7 +1,7 @@
-package access.monitoring.action.verify.policy_0809
+package compliance.enforcement.user.deny.policy_0809
 
-# Auto-generated policy 809
-# Package: access.monitoring.action.verify
+# Auto-generated policy 809 (Rego v1 syntax)
+# Package: compliance.enforcement.user.deny
 
 # Metadata
 metadata := {
@@ -11,11 +11,14 @@ metadata := {
 }
 
 # Rules
-allowed_0809 {
+policy_0809_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
+}
+policy_0809_allowed if {
+    data.policies.compliance.enabled
+}
+default policy_0809_allowed = false
+policy_0809_allowed if {
     input.user.role == "admin"
 }
-allowed_0809 {
-    data.policies.access.enabled
-}
-
-# Utility function for user info

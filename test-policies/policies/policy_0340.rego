@@ -1,7 +1,7 @@
-package access.monitoring.resource.verify.policy_0340
+package governance.validation.action.verify.policy_0340
 
-# Auto-generated policy 340
-# Package: access.monitoring.resource.verify
+# Auto-generated policy 340 (Rego v1 syntax)
+# Package: governance.validation.action.verify
 
 # Metadata
 metadata := {
@@ -11,17 +11,10 @@ metadata := {
 }
 
 # Rules
-approved_0340 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
-}
-allowed_0340 {
+policy_0340_allowed if {
     input.user.active
     input.resource.public
 }
-allowed_0340 {
-    input.user.role == "admin"
+policy_0340_allowed if {
+    data.policies.governance.enabled
 }
-default allowed_0340 = false
-
-# Utility function for user info

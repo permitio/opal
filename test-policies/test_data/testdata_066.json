@@ -1,102 +1,123 @@
 {
   "test_id": 66,
   "metadata": {
-    "environment": "prod",
-    "region": "us-west-2",
-    "version": "1.0.20"
+    "environment": "staging",
+    "region": "eu-west-1",
+    "version": "1.4.11"
   },
   "users": [
     {
       "id": "user_000",
       "name": "User 0",
-      "role": "viewer",
-      "active": false,
-      "risk_score": 14
+      "role": "admin",
+      "active": true,
+      "risk_score": 97
     },
     {
       "id": "user_001",
       "name": "User 1",
       "role": "user",
-      "active": true,
-      "risk_score": 20
+      "active": false,
+      "risk_score": 94
     },
     {
       "id": "user_002",
       "name": "User 2",
-      "role": "auditor",
+      "role": "user",
       "active": true,
-      "risk_score": 94
+      "risk_score": 73
     },
     {
       "id": "user_003",
       "name": "User 3",
       "role": "auditor",
-      "active": false,
-      "risk_score": 17
+      "active": true,
+      "risk_score": 69
     },
     {
       "id": "user_004",
       "name": "User 4",
-      "role": "viewer",
-      "active": true,
-      "risk_score": 71
+      "role": "admin",
+      "active": false,
+      "risk_score": 68
     },
     {
       "id": "user_005",
       "name": "User 5",
-      "role": "viewer",
+      "role": "auditor",
       "active": false,
-      "risk_score": 70
+      "risk_score": 0
     },
     {
       "id": "user_006",
       "name": "User 6",
-      "role": "viewer",
+      "role": "editor",
       "active": true,
-      "risk_score": 72
+      "risk_score": 89
     },
     {
       "id": "user_007",
       "name": "User 7",
-      "role": "admin",
-      "active": false,
-      "risk_score": 99
+      "role": "editor",
+      "active": true,
+      "risk_score": 47
     },
     {
       "id": "user_008",
       "name": "User 8",
-      "role": "admin",
-      "active": true,
-      "risk_score": 43
+      "role": "user",
+      "active": false,
+      "risk_score": 3
     },
     {
       "id": "user_009",
       "name": "User 9",
-      "role": "editor",
-      "active": true,
-      "risk_score": 13
+      "role": "viewer",
+      "active": false,
+      "risk_score": 66
     }
   ],
   "resources": [
     {
       "id": "res_000",
       "type": "database",
-      "public": true,
-      "owner_id": "user_002",
+      "public": false,
+      "owner_id": "user_100",
       "sensitivity": "internal"
+    },
+    {
+      "id": "res_001",
+      "type": "bucket",
+      "public": false,
+      "owner_id": "user_079",
+      "sensitivity": "public"
+    },
+    {
+      "id": "res_002",
+      "type": "bucket",
+      "public": false,
+      "owner_id": "user_083",
+      "sensitivity": "secret"
+    },
+    {
+      "id": "res_003",
+      "type": "bucket",
+      "public": true,
+      "owner_id": "user_005",
+      "sensitivity": "secret"
     }
   ],
   "system": {
-    "health": 0.57,
-    "load": 61.5,
-    "uptime_days": 265
+    "health": 0.89,
+    "load": 7.54,
+    "uptime_days": 131
   },
   "policies": {
     "security": {
-      "enabled": false
+      "enabled": true
     },
     "compliance": {
-      "enabled": false
+      "enabled": true
     },
     "access": {
       "enabled": false

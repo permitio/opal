@@ -1,7 +1,7 @@
-package audit.authentication.action.check.core.policy_0100
+package governance.authorization.action.check.helpers.policy_0100
 
-# Auto-generated policy 100
-# Package: audit.authentication.action.check.core
+# Auto-generated policy 100 (Rego v1 syntax)
+# Package: governance.authorization.action.check.helpers
 
 # Metadata
 metadata := {
@@ -11,17 +11,13 @@ metadata := {
 }
 
 # Rules
-default allowed_0100 = false
-approved_0100 {
+policy_0100_allowed if {
+    input.user.role == "admin"
+}
+policy_0100_allowed if {
+    data.policies.governance.enabled
+}
+policy_0100_approved if {
     input.user.risk_score < 50
     input.system.health > 0.8
 }
-allowed_0100 {
-    data.policies.audit.enabled
-}
-allowed_0100 {
-    input.user.active
-    input.resource.public
-}
-
-# Utility function for user info

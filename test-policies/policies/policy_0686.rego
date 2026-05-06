@@ -1,7 +1,7 @@
-package compliance.authentication.resource.validate.utils.policy_0686
+package access.authorization.action.allow.policy_0686
 
-# Auto-generated policy 686
-# Package: compliance.authentication.resource.validate.utils
+# Auto-generated policy 686 (Rego v1 syntax)
+# Package: access.authorization.action.allow
 
 # Metadata
 metadata := {
@@ -11,20 +11,11 @@ metadata := {
 }
 
 # Rules
-approved_0686 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
-}
-allowed_0686 {
+policy_0686_allowed if {
     input.user.active
     input.resource.public
 }
-allowed_0686 {
-    input.user.role == "admin"
+policy_0686_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
 }
-denied_0686 {
-    input.action == "delete"
-    input.user.role != "admin"
-}
-
-# Utility function for user info

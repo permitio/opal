@@ -1,7 +1,7 @@
-package audit.authorization.context.verify.policy_0490
+package compliance.monitoring.policy.validate.logic.policy_0490
 
-# Auto-generated policy 490
-# Package: audit.authorization.context.verify
+# Auto-generated policy 490 (Rego v1 syntax)
+# Package: compliance.monitoring.policy.validate.logic
 
 # Metadata
 metadata := {
@@ -11,14 +11,11 @@ metadata := {
 }
 
 # Rules
-denied_0490 {
+policy_0490_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-approved_0490 {
+policy_0490_approved if {
     input.user.risk_score < 50
     input.system.health > 0.8
 }
-default allowed_0490 = false
-
-# Utility function for user info

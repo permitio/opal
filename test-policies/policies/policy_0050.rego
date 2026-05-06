@@ -1,7 +1,7 @@
-package governance.validation.context.allow.utils.policy_0050
+package compliance.authorization.context.allow.policy_0050
 
-# Auto-generated policy 50
-# Package: governance.validation.context.allow.utils
+# Auto-generated policy 50 (Rego v1 syntax)
+# Package: compliance.authorization.context.allow
 
 # Metadata
 metadata := {
@@ -11,17 +11,8 @@ metadata := {
 }
 
 # Rules
-approved_0050 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
-}
-allowed_0050 {
-    input.user.role == "admin"
-}
-default allowed_0050 = false
-allowed_0050 {
+policy_0050_allowed if {
     input.user.active
     input.resource.public
 }
-
-# Utility function for user info
+default policy_0050_allowed = false

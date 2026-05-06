@@ -1,7 +1,7 @@
-package governance.monitoring.action.verify.utils.policy_0364
+package governance.monitoring.policy.validate.policy_0364
 
-# Auto-generated policy 364
-# Package: governance.monitoring.action.verify.utils
+# Auto-generated policy 364 (Rego v1 syntax)
+# Package: governance.monitoring.policy.validate
 
 # Metadata
 metadata := {
@@ -11,13 +11,15 @@ metadata := {
 }
 
 # Rules
-allowed_0364 {
+policy_0364_allowed if {
+    data.policies.governance.enabled
+}
+default policy_0364_allowed = false
+policy_0364_allowed if {
     input.user.active
     input.resource.public
 }
-approved_0364 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
+policy_0364_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
 }
-
-# Utility function for user info

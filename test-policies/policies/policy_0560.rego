@@ -1,7 +1,7 @@
-package risk.authorization.user.validate.policy_0560
+package governance.enforcement.resource.validate.policy_0560
 
-# Auto-generated policy 560
-# Package: risk.authorization.user.validate
+# Auto-generated policy 560 (Rego v1 syntax)
+# Package: governance.enforcement.resource.validate
 
 # Metadata
 metadata := {
@@ -11,16 +11,14 @@ metadata := {
 }
 
 # Rules
-allowed_0560 {
-    data.policies.risk.enabled
-}
-allowed_0560 {
+policy_0560_allowed if {
     input.user.active
     input.resource.public
 }
-approved_0560 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
+policy_0560_allowed if {
+    data.policies.governance.enabled
 }
-
-# Utility function for user info
+policy_0560_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
+}

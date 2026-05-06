@@ -1,7 +1,7 @@
-package audit.monitoring.policy.allow.policy_0609
+package governance.authentication.action.validate.policy_0609
 
-# Auto-generated policy 609
-# Package: audit.monitoring.policy.allow
+# Auto-generated policy 609 (Rego v1 syntax)
+# Package: governance.authentication.action.validate
 
 # Metadata
 metadata := {
@@ -11,16 +11,14 @@ metadata := {
 }
 
 # Rules
-allowed_0609 {
-    input.user.role == "admin"
+policy_0609_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
 }
-default allowed_0609 = false
-denied_0609 {
+policy_0609_allowed if {
+    data.policies.governance.enabled
+}
+policy_0609_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-allowed_0609 {
-    data.policies.audit.enabled
-}
-
-# Utility function for user info

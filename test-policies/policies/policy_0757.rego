@@ -1,7 +1,7 @@
-package risk.enforcement.action.validate.policy_0757
+package audit.authentication.user.deny.data.policy_0757
 
-# Auto-generated policy 757
-# Package: risk.enforcement.action.validate
+# Auto-generated policy 757 (Rego v1 syntax)
+# Package: audit.authentication.user.deny.data
 
 # Metadata
 metadata := {
@@ -11,16 +11,15 @@ metadata := {
 }
 
 # Rules
-allowed_0757 {
-    input.user.role == "admin"
+default policy_0757_allowed = false
+policy_0757_allowed if {
+    data.policies.audit.enabled
 }
-allowed_0757 {
-    data.policies.risk.enabled
+policy_0757_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
 }
-denied_0757 {
-    input.action == "delete"
-    input.user.role != "admin"
+policy_0757_allowed if {
+    input.user.active
+    input.resource.public
 }
-default allowed_0757 = false
-
-# Utility function for user info

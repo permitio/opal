@@ -1,38 +1,45 @@
 {
   "test_id": 57,
   "metadata": {
-    "environment": "prod",
+    "environment": "staging",
     "region": "us-west-2",
-    "version": "1.5.0"
+    "version": "1.4.6"
   },
   "users": [
     {
       "id": "user_000",
       "name": "User 0",
-      "role": "viewer",
+      "role": "user",
       "active": true,
-      "risk_score": 24
+      "risk_score": 73
     },
     {
       "id": "user_001",
       "name": "User 1",
-      "role": "user",
-      "active": false,
-      "risk_score": 45
+      "role": "editor",
+      "active": true,
+      "risk_score": 24
     },
     {
       "id": "user_002",
       "name": "User 2",
-      "role": "auditor",
+      "role": "editor",
       "active": false,
-      "risk_score": 62
+      "risk_score": 79
     },
     {
       "id": "user_003",
       "name": "User 3",
       "role": "auditor",
-      "active": false,
-      "risk_score": 36
+      "active": true,
+      "risk_score": 7
+    },
+    {
+      "id": "user_004",
+      "name": "User 4",
+      "role": "editor",
+      "active": true,
+      "risk_score": 93
     }
   ],
   "resources": [
@@ -40,52 +47,38 @@
       "id": "res_000",
       "type": "file",
       "public": false,
-      "owner_id": "user_014",
-      "sensitivity": "public"
+      "owner_id": "user_095",
+      "sensitivity": "secret"
     },
     {
       "id": "res_001",
-      "type": "database",
+      "type": "api",
       "public": false,
-      "owner_id": "user_084",
-      "sensitivity": "internal"
+      "owner_id": "user_048",
+      "sensitivity": "confidential"
     },
     {
       "id": "res_002",
-      "type": "service",
-      "public": true,
-      "owner_id": "user_067",
-      "sensitivity": "internal"
-    },
-    {
-      "id": "res_003",
-      "type": "api",
-      "public": true,
-      "owner_id": "user_031",
-      "sensitivity": "internal"
-    },
-    {
-      "id": "res_004",
-      "type": "api",
-      "public": true,
-      "owner_id": "user_028",
-      "sensitivity": "secret"
+      "type": "file",
+      "public": false,
+      "owner_id": "user_004",
+      "sensitivity": "public"
     }
   ],
   "system": {
-    "health": 0.53,
-    "load": 23.62,
-    "uptime_days": 201
+    "health": 0.66,
+    "load": 87.44,
+    "uptime_days": 207
   },
   "policies": {
     "security": {
-      "enabled": true
+      "enabled": false
     },
     "compliance": {
-      "enabled": true
+      "enabled": false
     },
     "access": {
-      "enabled": false
+      "enabled": true
     },
     "audit": {
       "enabled": true

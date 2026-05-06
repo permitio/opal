@@ -1,7 +1,7 @@
-package risk.enforcement.action.deny.utils.policy_0681
+package security.authentication.user.validate.helpers.policy_0681
 
-# Auto-generated policy 681
-# Package: risk.enforcement.action.deny.utils
+# Auto-generated policy 681 (Rego v1 syntax)
+# Package: security.authentication.user.validate.helpers
 
 # Metadata
 metadata := {
@@ -11,17 +11,15 @@ metadata := {
 }
 
 # Rules
-denied_0681 {
+policy_0681_allowed if {
+    data.policies.security.enabled
+}
+policy_0681_allowed if {
+    input.user.active
+    input.resource.public
+}
+default policy_0681_allowed = false
+policy_0681_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-allowed_0681 {
-    data.policies.risk.enabled
-}
-default allowed_0681 = false
-approved_0681 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
-}
-
-# Utility function for user info

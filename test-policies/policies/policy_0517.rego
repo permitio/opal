@@ -1,7 +1,7 @@
-package access.monitoring.action.allow.logic.policy_0517
+package compliance.validation.action.deny.policy_0517
 
-# Auto-generated policy 517
-# Package: access.monitoring.action.allow.logic
+# Auto-generated policy 517 (Rego v1 syntax)
+# Package: compliance.validation.action.deny
 
 # Metadata
 metadata := {
@@ -11,18 +11,12 @@ metadata := {
 }
 
 # Rules
-approved_0517 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
-}
-denied_0517 {
+policy_0517_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-allowed_0517 {
-    input.user.active
-    input.resource.public
+default policy_0517_allowed = false
+policy_0517_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
 }
-default allowed_0517 = false
-
-# Utility function for user info

@@ -1,7 +1,7 @@
-package security.authorization.policy.deny.policy_0759
+package risk.authentication.policy.verify.policy_0759
 
-# Auto-generated policy 759
-# Package: security.authorization.policy.deny
+# Auto-generated policy 759 (Rego v1 syntax)
+# Package: risk.authentication.policy.verify
 
 # Metadata
 metadata := {
@@ -11,17 +11,11 @@ metadata := {
 }
 
 # Rules
-allowed_0759 {
+policy_0759_allowed if {
     input.user.active
     input.resource.public
 }
-allowed_0759 {
-    data.policies.security.enabled
-}
-denied_0759 {
+policy_0759_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-default allowed_0759 = false
-
-# Utility function for user info

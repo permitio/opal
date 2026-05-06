@@ -1,7 +1,7 @@
-package risk.authorization.resource.verify.policy_0811
+package governance.authorization.action.verify.policy_0811
 
-# Auto-generated policy 811
-# Package: risk.authorization.resource.verify
+# Auto-generated policy 811 (Rego v1 syntax)
+# Package: governance.authorization.action.verify
 
 # Metadata
 metadata := {
@@ -11,12 +11,15 @@ metadata := {
 }
 
 # Rules
-allowed_0811 {
-    data.policies.risk.enabled
-}
-allowed_0811 {
+policy_0811_allowed if {
     input.user.active
     input.resource.public
 }
-
-# Utility function for user info
+policy_0811_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
+}
+default policy_0811_allowed = false
+policy_0811_allowed if {
+    input.user.role == "admin"
+}

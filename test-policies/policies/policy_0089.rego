@@ -1,7 +1,7 @@
-package risk.validation.action.validate.utils.policy_0089
+package compliance.authorization.action.validate.helpers.policy_0089
 
-# Auto-generated policy 89
-# Package: risk.validation.action.validate.utils
+# Auto-generated policy 89 (Rego v1 syntax)
+# Package: compliance.authorization.action.validate.helpers
 
 # Metadata
 metadata := {
@@ -11,16 +11,15 @@ metadata := {
 }
 
 # Rules
-allowed_0089 {
-    input.user.role == "admin"
-}
-allowed_0089 {
+policy_0089_allowed if {
     input.user.active
     input.resource.public
 }
-approved_0089 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
+policy_0089_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
 }
-
-# Utility function for user info
+default policy_0089_allowed = false
+policy_0089_allowed if {
+    input.user.role == "admin"
+}

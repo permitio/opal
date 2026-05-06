@@ -1,7 +1,7 @@
-package audit.authorization.user.validate.core.policy_0966
+package governance.enforcement.action.verify.core.policy_0966
 
-# Auto-generated policy 966
-# Package: audit.authorization.user.validate.core
+# Auto-generated policy 966 (Rego v1 syntax)
+# Package: governance.enforcement.action.verify.core
 
 # Metadata
 metadata := {
@@ -11,15 +11,14 @@ metadata := {
 }
 
 # Rules
-allowed_0966 {
+policy_0966_allowed if {
+    data.policies.governance.enabled
+}
+default policy_0966_allowed = false
+policy_0966_allowed if {
     input.user.role == "admin"
 }
-approved_0966 {
+policy_0966_approved if {
     input.user.risk_score < 50
     input.system.health > 0.8
 }
-allowed_0966 {
-    data.policies.audit.enabled
-}
-
-# Utility function for user info

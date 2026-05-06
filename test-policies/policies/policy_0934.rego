@@ -1,7 +1,7 @@
-package risk.authentication.user.allow.data.policy_0934
+package risk.enforcement.resource.deny.policy_0934
 
-# Auto-generated policy 934
-# Package: risk.authentication.user.allow.data
+# Auto-generated policy 934 (Rego v1 syntax)
+# Package: risk.enforcement.resource.deny
 
 # Metadata
 metadata := {
@@ -11,13 +11,12 @@ metadata := {
 }
 
 # Rules
-default allowed_0934 = false
-denied_0934 {
-    input.action == "delete"
-    input.user.role != "admin"
+default policy_0934_allowed = false
+policy_0934_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
 }
-allowed_0934 {
-    data.policies.risk.enabled
+policy_0934_allowed if {
+    input.user.active
+    input.resource.public
 }
-
-# Utility function for user info

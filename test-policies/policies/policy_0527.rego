@@ -1,7 +1,7 @@
-package risk.monitoring.user.validate.policy_0527
+package access.validation.context.check.core.policy_0527
 
-# Auto-generated policy 527
-# Package: risk.monitoring.user.validate
+# Auto-generated policy 527 (Rego v1 syntax)
+# Package: access.validation.context.check.core
 
 # Metadata
 metadata := {
@@ -11,12 +11,14 @@ metadata := {
 }
 
 # Rules
-denied_0527 {
+policy_0527_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-allowed_0527 {
-    data.policies.risk.enabled
+policy_0527_allowed if {
+    input.user.role == "admin"
 }
-
-# Utility function for user info
+policy_0527_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
+}

@@ -1,7 +1,7 @@
-package audit.validation.action.verify.helpers.policy_0185
+package access.authentication.user.validate.policy_0185
 
-# Auto-generated policy 185
-# Package: audit.validation.action.verify.helpers
+# Auto-generated policy 185 (Rego v1 syntax)
+# Package: access.authentication.user.validate
 
 # Metadata
 metadata := {
@@ -11,13 +11,14 @@ metadata := {
 }
 
 # Rules
-denied_0185 {
-    input.action == "delete"
-    input.user.role != "admin"
+default policy_0185_allowed = false
+policy_0185_allowed if {
+    input.user.role == "admin"
 }
-default allowed_0185 = false
-allowed_0185 {
-    data.policies.audit.enabled
+policy_0185_allowed if {
+    input.user.active
+    input.resource.public
 }
-
-# Utility function for user info
+policy_0185_allowed if {
+    data.policies.access.enabled
+}

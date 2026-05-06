@@ -1,7 +1,7 @@
-package security.monitoring.user.validate.policy_0356
+package security.authentication.context.allow.policy_0356
 
-# Auto-generated policy 356
-# Package: security.monitoring.user.validate
+# Auto-generated policy 356 (Rego v1 syntax)
+# Package: security.authentication.context.allow
 
 # Metadata
 metadata := {
@@ -11,17 +11,16 @@ metadata := {
 }
 
 # Rules
-default allowed_0356 = false
-allowed_0356 {
-    input.user.role == "admin"
+policy_0356_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
 }
-allowed_0356 {
+default policy_0356_allowed = false
+policy_0356_allowed if {
     input.user.active
     input.resource.public
 }
-approved_0356 {
+policy_0356_approved if {
     input.user.risk_score < 50
     input.system.health > 0.8
 }
-
-# Utility function for user info

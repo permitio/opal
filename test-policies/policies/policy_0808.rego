@@ -1,7 +1,7 @@
-package audit.authorization.context.check.utils.policy_0808
+package compliance.authentication.user.validate.policy_0808
 
-# Auto-generated policy 808
-# Package: audit.authorization.context.check.utils
+# Auto-generated policy 808 (Rego v1 syntax)
+# Package: compliance.authentication.user.validate
 
 # Metadata
 metadata := {
@@ -11,16 +11,10 @@ metadata := {
 }
 
 # Rules
-allowed_0808 {
-    input.user.role == "admin"
+policy_0808_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
 }
-allowed_0808 {
-    input.user.active
-    input.resource.public
+policy_0808_allowed if {
+    data.policies.compliance.enabled
 }
-default allowed_0808 = false
-allowed_0808 {
-    data.policies.audit.enabled
-}
-
-# Utility function for user info

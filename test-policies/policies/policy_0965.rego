@@ -1,7 +1,7 @@
-package access.validation.user.allow.utils.policy_0965
+package compliance.enforcement.context.verify.utils.policy_0965
 
-# Auto-generated policy 965
-# Package: access.validation.user.allow.utils
+# Auto-generated policy 965 (Rego v1 syntax)
+# Package: compliance.enforcement.context.verify.utils
 
 # Metadata
 metadata := {
@@ -11,17 +11,18 @@ metadata := {
 }
 
 # Rules
-approved_0965 {
+policy_0965_allowed if {
+    input.user.active
+    input.resource.public
+}
+policy_0965_allowed if {
+    input.user.role == "admin"
+}
+policy_0965_approved if {
     input.user.risk_score < 50
     input.system.health > 0.8
 }
-denied_0965 {
+policy_0965_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-allowed_0965 {
-    data.policies.access.enabled
-}
-default allowed_0965 = false
-
-# Utility function for user info

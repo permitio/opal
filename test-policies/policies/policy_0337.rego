@@ -1,7 +1,7 @@
-package audit.monitoring.action.deny.helpers.policy_0337
+package risk.authorization.user.allow.data.policy_0337
 
-# Auto-generated policy 337
-# Package: audit.monitoring.action.deny.helpers
+# Auto-generated policy 337 (Rego v1 syntax)
+# Package: risk.authorization.user.allow.data
 
 # Metadata
 metadata := {
@@ -11,12 +11,9 @@ metadata := {
 }
 
 # Rules
-approved_0337 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
+policy_0337_allowed if {
+    input.user.role == "admin"
 }
-allowed_0337 {
-    data.policies.audit.enabled
+policy_0337_allowed if {
+    data.policies.risk.enabled
 }
-
-# Utility function for user info

@@ -1,7 +1,7 @@
-package risk.authentication.action.allow.utils.policy_0620
+package governance.validation.action.check.data.policy_0620
 
-# Auto-generated policy 620
-# Package: risk.authentication.action.allow.utils
+# Auto-generated policy 620 (Rego v1 syntax)
+# Package: governance.validation.action.check.data
 
 # Metadata
 metadata := {
@@ -11,10 +11,12 @@ metadata := {
 }
 
 # Rules
-allowed_0620 {
-    input.user.active
-    input.resource.public
+policy_0620_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
 }
-default allowed_0620 = false
-
-# Utility function for user info
+policy_0620_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
+}
+default policy_0620_allowed = false

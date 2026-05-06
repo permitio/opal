@@ -1,7 +1,7 @@
-package audit.authentication.action.verify.policy_0487
+package audit.validation.user.check.policy_0487
 
-# Auto-generated policy 487
-# Package: audit.authentication.action.verify
+# Auto-generated policy 487 (Rego v1 syntax)
+# Package: audit.validation.user.check
 
 # Metadata
 metadata := {
@@ -11,19 +11,14 @@ metadata := {
 }
 
 # Rules
-denied_0487 {
+policy_0487_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-allowed_0487 {
+policy_0487_allowed if {
     input.user.active
     input.resource.public
 }
-allowed_0487 {
-    data.policies.audit.enabled
-}
-allowed_0487 {
+policy_0487_allowed if {
     input.user.role == "admin"
 }
-
-# Utility function for user info

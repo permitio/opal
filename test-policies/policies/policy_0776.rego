@@ -1,7 +1,7 @@
-package security.authorization.resource.check.policy_0776
+package security.authentication.policy.deny.utils.policy_0776
 
-# Auto-generated policy 776
-# Package: security.authorization.resource.check
+# Auto-generated policy 776 (Rego v1 syntax)
+# Package: security.authentication.policy.deny.utils
 
 # Metadata
 metadata := {
@@ -11,15 +11,14 @@ metadata := {
 }
 
 # Rules
-allowed_0776 {
-    data.policies.security.enabled
+policy_0776_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
 }
-allowed_0776 {
+policy_0776_allowed if {
     input.user.role == "admin"
 }
-approved_0776 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
+policy_0776_allowed if {
+    data.policies.security.enabled
 }
-
-# Utility function for user info
+default policy_0776_allowed = false

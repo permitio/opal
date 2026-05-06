@@ -1,7 +1,7 @@
-package access.enforcement.action.check.data.policy_0570
+package risk.validation.resource.validate.helpers.policy_0570
 
-# Auto-generated policy 570
-# Package: access.enforcement.action.check.data
+# Auto-generated policy 570 (Rego v1 syntax)
+# Package: risk.validation.resource.validate.helpers
 
 # Metadata
 metadata := {
@@ -11,14 +11,10 @@ metadata := {
 }
 
 # Rules
-denied_0570 {
-    input.action == "delete"
-    input.user.role != "admin"
+policy_0570_allowed if {
+    data.policies.risk.enabled
 }
-approved_0570 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
+policy_0570_allowed if {
+    input.user.active
+    input.resource.public
 }
-default allowed_0570 = false
-
-# Utility function for user info

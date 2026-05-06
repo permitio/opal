@@ -1,7 +1,7 @@
-package compliance.authorization.user.verify.policy_0434
+package compliance.monitoring.resource.check.policy_0434
 
-# Auto-generated policy 434
-# Package: compliance.authorization.user.verify
+# Auto-generated policy 434 (Rego v1 syntax)
+# Package: compliance.monitoring.resource.check
 
 # Metadata
 metadata := {
@@ -11,9 +11,14 @@ metadata := {
 }
 
 # Rules
-default allowed_0434 = false
-allowed_0434 {
+policy_0434_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
+}
+policy_0434_allowed if {
+    input.user.active
+    input.resource.public
+}
+policy_0434_allowed if {
     data.policies.compliance.enabled
 }
-
-# Utility function for user info

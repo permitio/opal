@@ -1,7 +1,7 @@
-package risk.monitoring.user.check.policy_0459
+package governance.validation.user.validate.policy_0459
 
-# Auto-generated policy 459
-# Package: risk.monitoring.user.check
+# Auto-generated policy 459 (Rego v1 syntax)
+# Package: governance.validation.user.validate
 
 # Metadata
 metadata := {
@@ -11,16 +11,14 @@ metadata := {
 }
 
 # Rules
-denied_0459 {
+policy_0459_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-allowed_0459 {
-    input.user.role == "admin"
+policy_0459_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
 }
-default allowed_0459 = false
-allowed_0459 {
-    data.policies.risk.enabled
+policy_0459_allowed if {
+    data.policies.governance.enabled
 }
-
-# Utility function for user info

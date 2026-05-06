@@ -1,7 +1,7 @@
-package compliance.monitoring.context.deny.policy_0887
+package access.validation.user.validate.policy_0887
 
-# Auto-generated policy 887
-# Package: compliance.monitoring.context.deny
+# Auto-generated policy 887 (Rego v1 syntax)
+# Package: access.validation.user.validate
 
 # Metadata
 metadata := {
@@ -11,19 +11,13 @@ metadata := {
 }
 
 # Rules
-approved_0887 {
+policy_0887_approved if {
     input.user.risk_score < 50
     input.system.health > 0.8
 }
-denied_0887 {
-    input.action == "delete"
-    input.user.role != "admin"
-}
-allowed_0887 {
-    data.policies.compliance.enabled
-}
-allowed_0887 {
+policy_0887_allowed if {
     input.user.role == "admin"
 }
-
-# Utility function for user info
+policy_0887_allowed if {
+    data.policies.access.enabled
+}

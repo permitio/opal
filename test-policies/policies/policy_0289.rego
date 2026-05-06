@@ -1,7 +1,7 @@
-package audit.validation.context.check.logic.policy_0289
+package governance.validation.context.verify.logic.policy_0289
 
-# Auto-generated policy 289
-# Package: audit.validation.context.check.logic
+# Auto-generated policy 289 (Rego v1 syntax)
+# Package: governance.validation.context.verify.logic
 
 # Metadata
 metadata := {
@@ -11,12 +11,14 @@ metadata := {
 }
 
 # Rules
-allowed_0289 {
-    data.policies.audit.enabled
+policy_0289_allowed if {
+    data.policies.governance.enabled
 }
-approved_0289 {
+policy_0289_approved if {
     input.user.risk_score < 50
     input.system.health > 0.8
 }
-
-# Utility function for user info
+policy_0289_allowed if {
+    input.user.role == "admin"
+}
+default policy_0289_allowed = false

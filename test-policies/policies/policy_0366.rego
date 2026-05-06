@@ -1,7 +1,7 @@
-package audit.monitoring.policy.allow.policy_0366
+package audit.enforcement.user.validate.policy_0366
 
-# Auto-generated policy 366
-# Package: audit.monitoring.policy.allow
+# Auto-generated policy 366 (Rego v1 syntax)
+# Package: audit.enforcement.user.validate
 
 # Metadata
 metadata := {
@@ -11,16 +11,12 @@ metadata := {
 }
 
 # Rules
-allowed_0366 {
+default policy_0366_allowed = false
+policy_0366_allowed if {
     input.user.active
     input.resource.public
 }
-approved_0366 {
+policy_0366_approved if {
     input.user.risk_score < 50
     input.system.health > 0.8
 }
-allowed_0366 {
-    input.user.role == "admin"
-}
-
-# Utility function for user info

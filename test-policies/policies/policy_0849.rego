@@ -1,7 +1,7 @@
-package compliance.authentication.resource.check.policy_0849
+package security.authorization.policy.verify.policy_0849
 
-# Auto-generated policy 849
-# Package: compliance.authentication.resource.check
+# Auto-generated policy 849 (Rego v1 syntax)
+# Package: security.authorization.policy.verify
 
 # Metadata
 metadata := {
@@ -11,12 +11,10 @@ metadata := {
 }
 
 # Rules
-approved_0849 {
+policy_0849_approved if {
     input.user.risk_score < 50
     input.system.health > 0.8
 }
-allowed_0849 {
-    input.user.role == "admin"
+policy_0849_allowed if {
+    data.policies.security.enabled
 }
-
-# Utility function for user info

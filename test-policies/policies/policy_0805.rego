@@ -1,7 +1,7 @@
-package governance.enforcement.policy.validate.policy_0805
+package security.monitoring.action.check.policy_0805
 
-# Auto-generated policy 805
-# Package: governance.enforcement.policy.validate
+# Auto-generated policy 805 (Rego v1 syntax)
+# Package: security.monitoring.action.check
 
 # Metadata
 metadata := {
@@ -11,15 +11,18 @@ metadata := {
 }
 
 # Rules
-allowed_0805 {
-    input.user.role == "admin"
+policy_0805_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
 }
-approved_0805 {
+policy_0805_allowed if {
+    input.user.active
+    input.resource.public
+}
+policy_0805_allowed if {
+    data.policies.security.enabled
+}
+policy_0805_approved if {
     input.user.risk_score < 50
     input.system.health > 0.8
 }
-allowed_0805 {
-    data.policies.governance.enabled
-}
-
-# Utility function for user info

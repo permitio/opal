@@ -1,7 +1,7 @@
-package governance.enforcement.context.verify.policy_0925
+package audit.authorization.context.verify.policy_0925
 
-# Auto-generated policy 925
-# Package: governance.enforcement.context.verify
+# Auto-generated policy 925 (Rego v1 syntax)
+# Package: audit.authorization.context.verify
 
 # Metadata
 metadata := {
@@ -11,13 +11,9 @@ metadata := {
 }
 
 # Rules
-allowed_0925 {
-    input.user.active
-    input.resource.public
+policy_0925_allowed if {
+    data.policies.audit.enabled
 }
-denied_0925 {
-    input.action == "delete"
-    input.user.role != "admin"
+policy_0925_allowed if {
+    input.user.role == "admin"
 }
-
-# Utility function for user info

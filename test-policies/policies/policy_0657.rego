@@ -1,7 +1,7 @@
-package audit.validation.context.allow.data.policy_0657
+package security.monitoring.context.deny.policy_0657
 
-# Auto-generated policy 657
-# Package: audit.validation.context.allow.data
+# Auto-generated policy 657 (Rego v1 syntax)
+# Package: security.monitoring.context.deny
 
 # Metadata
 metadata := {
@@ -11,10 +11,15 @@ metadata := {
 }
 
 # Rules
-default allowed_0657 = false
-denied_0657 {
+policy_0657_allowed if {
+    data.policies.security.enabled
+}
+policy_0657_allowed if {
+    input.user.active
+    input.resource.public
+}
+default policy_0657_allowed = false
+policy_0657_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-
-# Utility function for user info

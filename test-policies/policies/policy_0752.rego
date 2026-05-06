@@ -1,7 +1,7 @@
-package governance.enforcement.resource.check.helpers.policy_0752
+package audit.enforcement.resource.check.policy_0752
 
-# Auto-generated policy 752
-# Package: governance.enforcement.resource.check.helpers
+# Auto-generated policy 752 (Rego v1 syntax)
+# Package: audit.enforcement.resource.check
 
 # Metadata
 metadata := {
@@ -11,9 +11,16 @@ metadata := {
 }
 
 # Rules
-allowed_0752 {
-    data.policies.governance.enabled
+policy_0752_allowed if {
+    input.user.active
+    input.resource.public
 }
-default allowed_0752 = false
-
-# Utility function for user info
+policy_0752_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
+}
+default policy_0752_allowed = false
+policy_0752_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
+}

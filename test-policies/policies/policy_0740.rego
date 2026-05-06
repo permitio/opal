@@ -1,7 +1,7 @@
-package compliance.authentication.context.allow.helpers.policy_0740
+package security.authorization.policy.validate.policy_0740
 
-# Auto-generated policy 740
-# Package: compliance.authentication.context.allow.helpers
+# Auto-generated policy 740 (Rego v1 syntax)
+# Package: security.authorization.policy.validate
 
 # Metadata
 metadata := {
@@ -11,12 +11,8 @@ metadata := {
 }
 
 # Rules
-allowed_0740 {
-    input.user.role == "admin"
+policy_0740_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
 }
-approved_0740 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
-}
-
-# Utility function for user info
+default policy_0740_allowed = false

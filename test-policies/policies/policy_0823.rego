@@ -1,7 +1,7 @@
-package governance.validation.user.deny.policy_0823
+package compliance.validation.action.allow.policy_0823
 
-# Auto-generated policy 823
-# Package: governance.validation.user.deny
+# Auto-generated policy 823 (Rego v1 syntax)
+# Package: compliance.validation.action.allow
 
 # Metadata
 metadata := {
@@ -11,9 +11,10 @@ metadata := {
 }
 
 # Rules
-default allowed_0823 = false
-allowed_0823 {
-    data.policies.governance.enabled
+policy_0823_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
 }
-
-# Utility function for user info
+policy_0823_allowed if {
+    input.user.role == "admin"
+}

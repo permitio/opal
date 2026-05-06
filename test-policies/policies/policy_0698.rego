@@ -1,7 +1,7 @@
-package risk.enforcement.action.verify.policy_0698
+package risk.validation.user.deny.data.policy_0698
 
-# Auto-generated policy 698
-# Package: risk.enforcement.action.verify
+# Auto-generated policy 698 (Rego v1 syntax)
+# Package: risk.validation.user.deny.data
 
 # Metadata
 metadata := {
@@ -11,17 +11,8 @@ metadata := {
 }
 
 # Rules
-allowed_0698 {
-    data.policies.risk.enabled
-}
-denied_0698 {
-    input.action == "delete"
-    input.user.role != "admin"
-}
-approved_0698 {
+default policy_0698_allowed = false
+policy_0698_approved if {
     input.user.risk_score < 50
     input.system.health > 0.8
 }
-default allowed_0698 = false
-
-# Utility function for user info

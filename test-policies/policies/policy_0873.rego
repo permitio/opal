@@ -1,7 +1,7 @@
-package compliance.monitoring.policy.deny.policy_0873
+package security.validation.resource.deny.policy_0873
 
-# Auto-generated policy 873
-# Package: compliance.monitoring.policy.deny
+# Auto-generated policy 873 (Rego v1 syntax)
+# Package: security.validation.resource.deny
 
 # Metadata
 metadata := {
@@ -11,12 +11,11 @@ metadata := {
 }
 
 # Rules
-allowed_0873 {
-    input.user.active
-    input.resource.public
-}
-allowed_0873 {
+policy_0873_allowed if {
     input.user.role == "admin"
 }
-
-# Utility function for user info
+default policy_0873_allowed = false
+policy_0873_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
+}

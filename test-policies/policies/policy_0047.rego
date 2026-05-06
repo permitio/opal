@@ -1,7 +1,7 @@
-package governance.authentication.context.allow.data.policy_0047
+package security.validation.policy.allow.utils.policy_0047
 
-# Auto-generated policy 47
-# Package: governance.authentication.context.allow.data
+# Auto-generated policy 47 (Rego v1 syntax)
+# Package: security.validation.policy.allow.utils
 
 # Metadata
 metadata := {
@@ -11,12 +11,10 @@ metadata := {
 }
 
 # Rules
-denied_0047 {
+policy_0047_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-allowed_0047 {
+policy_0047_allowed if {
     input.user.role == "admin"
 }
-
-# Utility function for user info

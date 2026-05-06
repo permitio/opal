@@ -1,7 +1,7 @@
-package risk.monitoring.resource.verify.helpers.policy_0821
+package compliance.authorization.action.check.utils.policy_0821
 
-# Auto-generated policy 821
-# Package: risk.monitoring.resource.verify.helpers
+# Auto-generated policy 821 (Rego v1 syntax)
+# Package: compliance.authorization.action.check.utils
 
 # Metadata
 metadata := {
@@ -11,16 +11,11 @@ metadata := {
 }
 
 # Rules
-default allowed_0821 = false
-denied_0821 {
+policy_0821_allowed if {
+    input.user.active
+    input.resource.public
+}
+policy_0821_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-allowed_0821 {
-    input.user.role == "admin"
-}
-allowed_0821 {
-    data.policies.risk.enabled
-}
-
-# Utility function for user info

@@ -1,7 +1,7 @@
-package security.validation.user.verify.policy_0418
+package security.validation.context.deny.policy_0418
 
-# Auto-generated policy 418
-# Package: security.validation.user.verify
+# Auto-generated policy 418 (Rego v1 syntax)
+# Package: security.validation.context.deny
 
 # Metadata
 metadata := {
@@ -11,16 +11,10 @@ metadata := {
 }
 
 # Rules
-approved_0418 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
+policy_0418_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
 }
-allowed_0418 {
-    input.user.role == "admin"
+policy_0418_allowed if {
+    data.policies.security.enabled
 }
-allowed_0418 {
-    input.user.active
-    input.resource.public
-}
-
-# Utility function for user info

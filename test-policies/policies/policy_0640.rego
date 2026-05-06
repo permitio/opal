@@ -1,7 +1,7 @@
-package security.validation.action.verify.helpers.policy_0640
+package risk.enforcement.user.deny.helpers.policy_0640
 
-# Auto-generated policy 640
-# Package: security.validation.action.verify.helpers
+# Auto-generated policy 640 (Rego v1 syntax)
+# Package: risk.enforcement.user.deny.helpers
 
 # Metadata
 metadata := {
@@ -11,12 +11,11 @@ metadata := {
 }
 
 # Rules
-allowed_0640 {
-    data.policies.security.enabled
+policy_0640_allowed if {
+    input.user.role == "admin"
 }
-denied_0640 {
+default policy_0640_allowed = false
+policy_0640_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-
-# Utility function for user info

@@ -1,7 +1,7 @@
-package risk.authentication.user.allow.policy_0072
+package compliance.authorization.action.check.data.policy_0072
 
-# Auto-generated policy 72
-# Package: risk.authentication.user.allow
+# Auto-generated policy 72 (Rego v1 syntax)
+# Package: compliance.authorization.action.check.data
 
 # Metadata
 metadata := {
@@ -11,16 +11,11 @@ metadata := {
 }
 
 # Rules
-allowed_0072 {
-    input.user.active
-    input.resource.public
+default policy_0072_allowed = false
+policy_0072_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
 }
-denied_0072 {
-    input.action == "delete"
-    input.user.role != "admin"
+policy_0072_allowed if {
+    data.policies.compliance.enabled
 }
-allowed_0072 {
-    input.user.role == "admin"
-}
-
-# Utility function for user info

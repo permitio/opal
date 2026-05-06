@@ -1,7 +1,7 @@
-package compliance.authorization.action.verify.policy_0637
+package risk.enforcement.user.check.policy_0637
 
-# Auto-generated policy 637
-# Package: compliance.authorization.action.verify
+# Auto-generated policy 637 (Rego v1 syntax)
+# Package: risk.enforcement.user.check
 
 # Metadata
 metadata := {
@@ -11,16 +11,11 @@ metadata := {
 }
 
 # Rules
-default allowed_0637 = false
-allowed_0637 {
-    input.user.role == "admin"
+default policy_0637_allowed = false
+policy_0637_allowed if {
+    data.policies.risk.enabled
 }
-allowed_0637 {
-    data.policies.compliance.enabled
+policy_0637_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
 }
-approved_0637 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
-}
-
-# Utility function for user info

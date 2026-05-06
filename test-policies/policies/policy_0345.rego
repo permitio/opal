@@ -1,7 +1,7 @@
-package risk.monitoring.context.deny.core.policy_0345
+package security.authorization.user.check.data.policy_0345
 
-# Auto-generated policy 345
-# Package: risk.monitoring.context.deny.core
+# Auto-generated policy 345 (Rego v1 syntax)
+# Package: security.authorization.user.check.data
 
 # Metadata
 metadata := {
@@ -11,13 +11,15 @@ metadata := {
 }
 
 # Rules
-denied_0345 {
+policy_0345_allowed if {
+    input.user.active
+    input.resource.public
+}
+policy_0345_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-allowed_0345 {
-    data.policies.risk.enabled
+policy_0345_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
 }
-default allowed_0345 = false
-
-# Utility function for user info

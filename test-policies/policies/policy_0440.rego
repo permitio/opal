@@ -1,7 +1,7 @@
-package compliance.enforcement.user.check.policy_0440
+package security.authorization.policy.verify.logic.policy_0440
 
-# Auto-generated policy 440
-# Package: compliance.enforcement.user.check
+# Auto-generated policy 440 (Rego v1 syntax)
+# Package: security.authorization.policy.verify.logic
 
 # Metadata
 metadata := {
@@ -11,12 +11,17 @@ metadata := {
 }
 
 # Rules
-allowed_0440 {
+policy_0440_allowed if {
     input.user.role == "admin"
 }
-allowed_0440 {
+policy_0440_allowed if {
     input.user.active
     input.resource.public
 }
-
-# Utility function for user info
+policy_0440_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
+}
+policy_0440_allowed if {
+    data.policies.security.enabled
+}

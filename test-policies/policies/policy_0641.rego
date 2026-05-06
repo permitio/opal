@@ -1,7 +1,7 @@
-package access.enforcement.resource.verify.policy_0641
+package audit.authorization.context.check.policy_0641
 
-# Auto-generated policy 641
-# Package: access.enforcement.resource.verify
+# Auto-generated policy 641 (Rego v1 syntax)
+# Package: audit.authorization.context.check
 
 # Metadata
 metadata := {
@@ -11,20 +11,15 @@ metadata := {
 }
 
 # Rules
-allowed_0641 {
+policy_0641_allowed if {
+    input.user.role == "admin"
+}
+default policy_0641_allowed = false
+policy_0641_allowed if {
     input.user.active
     input.resource.public
 }
-denied_0641 {
+policy_0641_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-approved_0641 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
-}
-allowed_0641 {
-    data.policies.access.enabled
-}
-
-# Utility function for user info

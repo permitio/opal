@@ -1,7 +1,7 @@
-package governance.monitoring.user.check.logic.policy_0743
+package governance.enforcement.action.validate.policy_0743
 
-# Auto-generated policy 743
-# Package: governance.monitoring.user.check.logic
+# Auto-generated policy 743 (Rego v1 syntax)
+# Package: governance.enforcement.action.validate
 
 # Metadata
 metadata := {
@@ -11,17 +11,15 @@ metadata := {
 }
 
 # Rules
-approved_0743 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
-}
-denied_0743 {
+policy_0743_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-allowed_0743 {
+policy_0743_allowed if {
+    data.policies.governance.enabled
+}
+policy_0743_allowed if {
     input.user.active
     input.resource.public
 }
-
-# Utility function for user info
+default policy_0743_allowed = false

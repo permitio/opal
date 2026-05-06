@@ -1,7 +1,7 @@
-package access.authentication.policy.deny.policy_0824
+package security.monitoring.action.validate.policy_0824
 
-# Auto-generated policy 824
-# Package: access.authentication.policy.deny
+# Auto-generated policy 824 (Rego v1 syntax)
+# Package: security.monitoring.action.validate
 
 # Metadata
 metadata := {
@@ -11,20 +11,9 @@ metadata := {
 }
 
 # Rules
-allowed_0824 {
+policy_0824_allowed if {
     input.user.role == "admin"
 }
-approved_0824 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
+policy_0824_allowed if {
+    data.policies.security.enabled
 }
-allowed_0824 {
-    input.user.active
-    input.resource.public
-}
-denied_0824 {
-    input.action == "delete"
-    input.user.role != "admin"
-}
-
-# Utility function for user info

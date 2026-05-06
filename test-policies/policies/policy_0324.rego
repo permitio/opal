@@ -1,7 +1,7 @@
-package compliance.enforcement.resource.deny.utils.policy_0324
+package audit.monitoring.resource.validate.policy_0324
 
-# Auto-generated policy 324
-# Package: compliance.enforcement.resource.deny.utils
+# Auto-generated policy 324 (Rego v1 syntax)
+# Package: audit.monitoring.resource.validate
 
 # Metadata
 metadata := {
@@ -11,14 +11,10 @@ metadata := {
 }
 
 # Rules
-approved_0324 {
+policy_0324_approved if {
     input.user.risk_score < 50
     input.system.health > 0.8
 }
-denied_0324 {
-    input.action == "delete"
-    input.user.role != "admin"
+policy_0324_allowed if {
+    input.user.role == "admin"
 }
-default allowed_0324 = false
-
-# Utility function for user info

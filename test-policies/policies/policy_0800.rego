@@ -1,7 +1,7 @@
-package security.authentication.resource.check.policy_0800
+package governance.validation.user.check.policy_0800
 
-# Auto-generated policy 800
-# Package: security.authentication.resource.check
+# Auto-generated policy 800 (Rego v1 syntax)
+# Package: governance.validation.user.check
 
 # Metadata
 metadata := {
@@ -11,9 +11,7 @@ metadata := {
 }
 
 # Rules
-default allowed_0800 = false
-allowed_0800 {
-    data.policies.security.enabled
+policy_0800_allowed if {
+    input.user.role == "admin"
 }
-
-# Utility function for user info
+default policy_0800_allowed = false

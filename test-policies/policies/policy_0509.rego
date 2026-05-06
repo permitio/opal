@@ -1,7 +1,7 @@
-package audit.enforcement.resource.deny.policy_0509
+package access.validation.action.validate.helpers.policy_0509
 
-# Auto-generated policy 509
-# Package: audit.enforcement.resource.deny
+# Auto-generated policy 509 (Rego v1 syntax)
+# Package: access.validation.action.validate.helpers
 
 # Metadata
 metadata := {
@@ -11,12 +11,17 @@ metadata := {
 }
 
 # Rules
-denied_0509 {
+policy_0509_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-allowed_0509 {
+policy_0509_allowed if {
     input.user.role == "admin"
 }
-
-# Utility function for user info
+policy_0509_allowed if {
+    data.policies.access.enabled
+}
+policy_0509_allowed if {
+    input.user.active
+    input.resource.public
+}

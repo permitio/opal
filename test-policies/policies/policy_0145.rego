@@ -1,7 +1,7 @@
-package access.validation.policy.verify.helpers.policy_0145
+package access.enforcement.context.check.logic.policy_0145
 
-# Auto-generated policy 145
-# Package: access.validation.policy.verify.helpers
+# Auto-generated policy 145 (Rego v1 syntax)
+# Package: access.enforcement.context.check.logic
 
 # Metadata
 metadata := {
@@ -11,17 +11,12 @@ metadata := {
 }
 
 # Rules
-denied_0145 {
+policy_0145_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
+}
+policy_0145_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-allowed_0145 {
-    input.user.active
-    input.resource.public
-}
-allowed_0145 {
-    input.user.role == "admin"
-}
-default allowed_0145 = false
-
-# Utility function for user info
+default policy_0145_allowed = false

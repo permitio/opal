@@ -1,7 +1,7 @@
-package access.validation.user.validate.policy_0483
+package governance.authorization.policy.validate.policy_0483
 
-# Auto-generated policy 483
-# Package: access.validation.user.validate
+# Auto-generated policy 483 (Rego v1 syntax)
+# Package: governance.authorization.policy.validate
 
 # Metadata
 metadata := {
@@ -11,9 +11,15 @@ metadata := {
 }
 
 # Rules
-default allowed_0483 = false
-allowed_0483 {
-    input.user.role == "admin"
+policy_0483_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
 }
-
-# Utility function for user info
+policy_0483_allowed if {
+    data.policies.governance.enabled
+}
+policy_0483_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
+}
+default policy_0483_allowed = false

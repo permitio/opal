@@ -1,7 +1,7 @@
-package security.monitoring.resource.validate.policy_0661
+package governance.monitoring.user.verify.policy_0661
 
-# Auto-generated policy 661
-# Package: security.monitoring.resource.validate
+# Auto-generated policy 661 (Rego v1 syntax)
+# Package: governance.monitoring.user.verify
 
 # Metadata
 metadata := {
@@ -11,14 +11,11 @@ metadata := {
 }
 
 # Rules
-allowed_0661 {
+policy_0661_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
+}
+policy_0661_allowed if {
     input.user.active
     input.resource.public
 }
-denied_0661 {
-    input.action == "delete"
-    input.user.role != "admin"
-}
-default allowed_0661 = false
-
-# Utility function for user info

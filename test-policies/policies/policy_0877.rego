@@ -1,7 +1,7 @@
-package compliance.enforcement.action.allow.data.policy_0877
+package access.enforcement.user.check.policy_0877
 
-# Auto-generated policy 877
-# Package: compliance.enforcement.action.allow.data
+# Auto-generated policy 877 (Rego v1 syntax)
+# Package: access.enforcement.user.check
 
 # Metadata
 metadata := {
@@ -11,14 +11,11 @@ metadata := {
 }
 
 # Rules
-denied_0877 {
+policy_0877_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-allowed_0877 {
-    input.user.active
-    input.resource.public
+default policy_0877_allowed = false
+policy_0877_allowed if {
+    input.user.role == "admin"
 }
-default allowed_0877 = false
-
-# Utility function for user info

@@ -1,7 +1,7 @@
-package audit.monitoring.user.verify.utils.policy_0307
+package governance.enforcement.context.deny.utils.policy_0307
 
-# Auto-generated policy 307
-# Package: audit.monitoring.user.verify.utils
+# Auto-generated policy 307 (Rego v1 syntax)
+# Package: governance.enforcement.context.deny.utils
 
 # Metadata
 metadata := {
@@ -11,19 +11,14 @@ metadata := {
 }
 
 # Rules
-allowed_0307 {
-    data.policies.audit.enabled
+policy_0307_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
 }
-denied_0307 {
+policy_0307_allowed if {
+    input.user.role == "admin"
+}
+policy_0307_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-allowed_0307 {
-    input.user.active
-    input.resource.public
-}
-allowed_0307 {
-    input.user.role == "admin"
-}
-
-# Utility function for user info

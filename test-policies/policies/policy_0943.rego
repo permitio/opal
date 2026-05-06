@@ -1,7 +1,7 @@
-package risk.authorization.action.allow.policy_0943
+package security.enforcement.action.allow.policy_0943
 
-# Auto-generated policy 943
-# Package: risk.authorization.action.allow
+# Auto-generated policy 943 (Rego v1 syntax)
+# Package: security.enforcement.action.allow
 
 # Metadata
 metadata := {
@@ -11,16 +11,11 @@ metadata := {
 }
 
 # Rules
-allowed_0943 {
-    input.user.active
-    input.resource.public
+policy_0943_allowed if {
+    data.policies.security.enabled
 }
-allowed_0943 {
-    input.user.role == "admin"
-}
-approved_0943 {
+default policy_0943_allowed = false
+policy_0943_approved if {
     input.user.risk_score < 50
     input.system.health > 0.8
 }
-
-# Utility function for user info

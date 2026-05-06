@@ -1,7 +1,7 @@
-package access.validation.action.verify.core.policy_0473
+package risk.authorization.resource.validate.policy_0473
 
-# Auto-generated policy 473
-# Package: access.validation.action.verify.core
+# Auto-generated policy 473 (Rego v1 syntax)
+# Package: risk.authorization.resource.validate
 
 # Metadata
 metadata := {
@@ -11,9 +11,10 @@ metadata := {
 }
 
 # Rules
-allowed_0473 {
-    data.policies.access.enabled
+policy_0473_allowed if {
+    input.user.active
+    input.resource.public
 }
-default allowed_0473 = false
-
-# Utility function for user info
+policy_0473_allowed if {
+    data.policies.risk.enabled
+}

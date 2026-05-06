@@ -1,7 +1,7 @@
-package governance.authorization.policy.verify.policy_0993
+package compliance.validation.policy.verify.policy_0993
 
-# Auto-generated policy 993
-# Package: governance.authorization.policy.verify
+# Auto-generated policy 993 (Rego v1 syntax)
+# Package: compliance.validation.policy.verify
 
 # Metadata
 metadata := {
@@ -11,16 +11,12 @@ metadata := {
 }
 
 # Rules
-allowed_0993 {
-    input.user.role == "admin"
+default policy_0993_allowed = false
+policy_0993_allowed if {
+    input.user.active
+    input.resource.public
 }
-approved_0993 {
+policy_0993_approved if {
     input.user.risk_score < 50
     input.system.health > 0.8
 }
-denied_0993 {
-    input.action == "delete"
-    input.user.role != "admin"
-}
-
-# Utility function for user info

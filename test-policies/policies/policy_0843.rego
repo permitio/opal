@@ -1,7 +1,7 @@
-package governance.authorization.resource.validate.policy_0843
+package access.authentication.user.validate.logic.policy_0843
 
-# Auto-generated policy 843
-# Package: governance.authorization.resource.validate
+# Auto-generated policy 843 (Rego v1 syntax)
+# Package: access.authentication.user.validate.logic
 
 # Metadata
 metadata := {
@@ -11,20 +11,11 @@ metadata := {
 }
 
 # Rules
-denied_0843 {
+policy_0843_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-approved_0843 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
-}
-allowed_0843 {
-    data.policies.governance.enabled
-}
-allowed_0843 {
+policy_0843_allowed if {
     input.user.active
     input.resource.public
 }
-
-# Utility function for user info

@@ -1,7 +1,7 @@
-package access.validation.action.check.policy_0512
+package access.monitoring.action.deny.policy_0512
 
-# Auto-generated policy 512
-# Package: access.validation.action.check
+# Auto-generated policy 512 (Rego v1 syntax)
+# Package: access.monitoring.action.deny
 
 # Metadata
 metadata := {
@@ -11,10 +11,14 @@ metadata := {
 }
 
 # Rules
-approved_0512 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
+policy_0512_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
 }
-default allowed_0512 = false
-
-# Utility function for user info
+policy_0512_allowed if {
+    input.user.active
+    input.resource.public
+}
+policy_0512_allowed if {
+    data.policies.access.enabled
+}

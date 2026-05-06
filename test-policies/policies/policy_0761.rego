@@ -1,7 +1,7 @@
-package access.enforcement.user.validate.policy_0761
+package audit.authorization.resource.deny.policy_0761
 
-# Auto-generated policy 761
-# Package: access.enforcement.user.validate
+# Auto-generated policy 761 (Rego v1 syntax)
+# Package: audit.authorization.resource.deny
 
 # Metadata
 metadata := {
@@ -11,9 +11,15 @@ metadata := {
 }
 
 # Rules
-allowed_0761 {
-    data.policies.access.enabled
+policy_0761_allowed if {
+    input.user.role == "admin"
 }
-default allowed_0761 = false
-
-# Utility function for user info
+policy_0761_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
+}
+policy_0761_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
+}
+default policy_0761_allowed = false

@@ -1,59 +1,45 @@
 {
   "test_id": 7,
   "metadata": {
-    "environment": "prod",
-    "region": "us-west-2",
-    "version": "1.5.17"
+    "environment": "staging",
+    "region": "us-east-1",
+    "version": "1.2.13"
   },
   "users": [
     {
       "id": "user_000",
       "name": "User 0",
-      "role": "editor",
-      "active": false,
-      "risk_score": 19
-    },
-    {
-      "id": "user_001",
-      "name": "User 1",
-      "role": "admin",
-      "active": true,
-      "risk_score": 7
-    },
-    {
-      "id": "user_002",
-      "name": "User 2",
       "role": "user",
-      "active": false,
-      "risk_score": 48
+      "active": true,
+      "risk_score": 24
     }
   ],
   "resources": [
     {
       "id": "res_000",
-      "type": "api",
+      "type": "database",
       "public": false,
-      "owner_id": "user_068",
-      "sensitivity": "confidential"
+      "owner_id": "user_069",
+      "sensitivity": "secret"
     }
   ],
   "system": {
-    "health": 1.0,
-    "load": 95.71,
-    "uptime_days": 223
+    "health": 0.55,
+    "load": 87.69,
+    "uptime_days": 326
   },
   "policies": {
     "security": {
-      "enabled": true
-    },
-    "compliance": {
-      "enabled": true
-    },
-    "access": {
       "enabled": false
     },
-    "audit": {
+    "compliance": {
+      "enabled": false
+    },
+    "access": {
       "enabled": true
+    },
+    "audit": {
+      "enabled": false
     }
   }
 }

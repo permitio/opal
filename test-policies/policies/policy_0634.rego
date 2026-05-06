@@ -1,7 +1,7 @@
-package governance.enforcement.policy.check.core.policy_0634
+package risk.authentication.user.check.policy_0634
 
-# Auto-generated policy 634
-# Package: governance.enforcement.policy.check.core
+# Auto-generated policy 634 (Rego v1 syntax)
+# Package: risk.authentication.user.check
 
 # Metadata
 metadata := {
@@ -11,19 +11,14 @@ metadata := {
 }
 
 # Rules
-allowed_0634 {
+policy_0634_allowed if {
+    data.policies.risk.enabled
+}
+default policy_0634_allowed = false
+policy_0634_allowed if {
     input.user.role == "admin"
 }
-allowed_0634 {
-    data.policies.governance.enabled
+policy_0634_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
 }
-allowed_0634 {
-    input.user.active
-    input.resource.public
-}
-denied_0634 {
-    input.action == "delete"
-    input.user.role != "admin"
-}
-
-# Utility function for user info

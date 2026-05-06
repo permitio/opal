@@ -1,7 +1,7 @@
-package access.monitoring.resource.validate.helpers.policy_0131
+package access.monitoring.context.check.utils.policy_0131
 
-# Auto-generated policy 131
-# Package: access.monitoring.resource.validate.helpers
+# Auto-generated policy 131 (Rego v1 syntax)
+# Package: access.monitoring.context.check.utils
 
 # Metadata
 metadata := {
@@ -11,17 +11,15 @@ metadata := {
 }
 
 # Rules
-allowed_0131 {
-    data.policies.access.enabled
+default policy_0131_allowed = false
+policy_0131_allowed if {
+    input.user.role == "admin"
 }
-denied_0131 {
+policy_0131_allowed if {
+    input.user.active
+    input.resource.public
+}
+policy_0131_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-default allowed_0131 = false
-approved_0131 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
-}
-
-# Utility function for user info

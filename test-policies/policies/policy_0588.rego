@@ -1,7 +1,7 @@
-package risk.validation.resource.verify.policy_0588
+package audit.validation.context.deny.policy_0588
 
-# Auto-generated policy 588
-# Package: risk.validation.resource.verify
+# Auto-generated policy 588 (Rego v1 syntax)
+# Package: audit.validation.context.deny
 
 # Metadata
 metadata := {
@@ -11,16 +11,14 @@ metadata := {
 }
 
 # Rules
-approved_0588 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
+policy_0588_allowed if {
+    input.user.active
+    input.resource.public
 }
-allowed_0588 {
+policy_0588_allowed if {
     input.user.role == "admin"
 }
-denied_0588 {
-    input.action == "delete"
-    input.user.role != "admin"
+policy_0588_allowed if {
+    data.policies.audit.enabled
 }
-
-# Utility function for user info
+default policy_0588_allowed = false

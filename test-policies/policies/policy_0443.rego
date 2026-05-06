@@ -1,7 +1,7 @@
-package risk.enforcement.policy.validate.policy_0443
+package security.monitoring.context.verify.policy_0443
 
-# Auto-generated policy 443
-# Package: risk.enforcement.policy.validate
+# Auto-generated policy 443 (Rego v1 syntax)
+# Package: security.monitoring.context.verify
 
 # Metadata
 metadata := {
@@ -11,17 +11,15 @@ metadata := {
 }
 
 # Rules
-allowed_0443 {
-    input.user.role == "admin"
-}
-denied_0443 {
+policy_0443_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-approved_0443 {
+default policy_0443_allowed = false
+policy_0443_allowed if {
+    input.user.role == "admin"
+}
+policy_0443_approved if {
     input.user.risk_score < 50
     input.system.health > 0.8
 }
-default allowed_0443 = false
-
-# Utility function for user info

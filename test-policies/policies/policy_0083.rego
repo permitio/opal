@@ -1,7 +1,7 @@
-package access.monitoring.resource.verify.policy_0083
+package governance.authorization.user.allow.policy_0083
 
-# Auto-generated policy 83
-# Package: access.monitoring.resource.verify
+# Auto-generated policy 83 (Rego v1 syntax)
+# Package: governance.authorization.user.allow
 
 # Metadata
 metadata := {
@@ -11,17 +11,17 @@ metadata := {
 }
 
 # Rules
-allowed_0083 {
-    input.user.active
-    input.resource.public
+policy_0083_allowed if {
+    data.policies.governance.enabled
 }
-allowed_0083 {
-    input.user.role == "admin"
-}
-default allowed_0083 = false
-approved_0083 {
+policy_0083_approved if {
     input.user.risk_score < 50
     input.system.health > 0.8
 }
-
-# Utility function for user info
+policy_0083_allowed if {
+    input.user.active
+    input.resource.public
+}
+policy_0083_allowed if {
+    input.user.role == "admin"
+}

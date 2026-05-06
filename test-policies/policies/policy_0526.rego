@@ -1,7 +1,7 @@
-package access.enforcement.resource.validate.policy_0526
+package audit.authentication.resource.check.policy_0526
 
-# Auto-generated policy 526
-# Package: access.enforcement.resource.validate
+# Auto-generated policy 526 (Rego v1 syntax)
+# Package: audit.authentication.resource.check
 
 # Metadata
 metadata := {
@@ -11,12 +11,15 @@ metadata := {
 }
 
 # Rules
-approved_0526 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
+policy_0526_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
 }
-allowed_0526 {
-    data.policies.access.enabled
+policy_0526_allowed if {
+    data.policies.audit.enabled
 }
-
-# Utility function for user info
+default policy_0526_allowed = false
+policy_0526_allowed if {
+    input.user.active
+    input.resource.public
+}

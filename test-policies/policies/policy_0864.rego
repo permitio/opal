@@ -1,7 +1,7 @@
-package compliance.authorization.resource.verify.policy_0864
+package access.enforcement.resource.deny.core.policy_0864
 
-# Auto-generated policy 864
-# Package: compliance.authorization.resource.verify
+# Auto-generated policy 864 (Rego v1 syntax)
+# Package: access.enforcement.resource.deny.core
 
 # Metadata
 metadata := {
@@ -11,16 +11,14 @@ metadata := {
 }
 
 # Rules
-allowed_0864 {
-    data.policies.compliance.enabled
+policy_0864_allowed if {
+    input.user.role == "admin"
 }
-approved_0864 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
+default policy_0864_allowed = false
+policy_0864_allowed if {
+    data.policies.access.enabled
 }
-allowed_0864 {
-    input.user.active
-    input.resource.public
+policy_0864_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
 }
-
-# Utility function for user info

@@ -1,7 +1,7 @@
-package risk.enforcement.policy.check.policy_0446
+package audit.authentication.action.check.policy_0446
 
-# Auto-generated policy 446
-# Package: risk.enforcement.policy.check
+# Auto-generated policy 446 (Rego v1 syntax)
+# Package: audit.authentication.action.check
 
 # Metadata
 metadata := {
@@ -11,17 +11,17 @@ metadata := {
 }
 
 # Rules
-allowed_0446 {
-    data.policies.risk.enabled
+policy_0446_allowed if {
+    input.user.role == "admin"
 }
-approved_0446 {
+policy_0446_allowed if {
+    data.policies.audit.enabled
+}
+policy_0446_approved if {
     input.user.risk_score < 50
     input.system.health > 0.8
 }
-default allowed_0446 = false
-denied_0446 {
-    input.action == "delete"
-    input.user.role != "admin"
+policy_0446_allowed if {
+    input.user.active
+    input.resource.public
 }
-
-# Utility function for user info

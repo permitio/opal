@@ -1,7 +1,7 @@
-package governance.monitoring.action.deny.policy_0052
+package security.monitoring.resource.verify.utils.policy_0052
 
-# Auto-generated policy 52
-# Package: governance.monitoring.action.deny
+# Auto-generated policy 52 (Rego v1 syntax)
+# Package: security.monitoring.resource.verify.utils
 
 # Metadata
 metadata := {
@@ -11,12 +11,14 @@ metadata := {
 }
 
 # Rules
-allowed_0052 {
-    input.user.role == "admin"
-}
-approved_0052 {
+policy_0052_approved if {
     input.user.risk_score < 50
     input.system.health > 0.8
 }
-
-# Utility function for user info
+policy_0052_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
+}
+policy_0052_allowed if {
+    input.user.role == "admin"
+}

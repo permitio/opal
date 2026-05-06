@@ -1,7 +1,7 @@
-package security.monitoring.resource.validate.policy_0295
+package audit.validation.user.check.policy_0295
 
-# Auto-generated policy 295
-# Package: security.monitoring.resource.validate
+# Auto-generated policy 295 (Rego v1 syntax)
+# Package: audit.validation.user.check
 
 # Metadata
 metadata := {
@@ -11,11 +11,14 @@ metadata := {
 }
 
 # Rules
-allowed_0295 {
-    input.user.role == "admin"
+policy_0295_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
 }
-allowed_0295 {
-    data.policies.security.enabled
+policy_0295_allowed if {
+    input.user.active
+    input.resource.public
 }
-
-# Utility function for user info
+policy_0295_allowed if {
+    data.policies.audit.enabled
+}

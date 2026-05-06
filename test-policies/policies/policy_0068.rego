@@ -1,7 +1,7 @@
-package risk.enforcement.user.allow.policy_0068
+package risk.authorization.policy.deny.logic.policy_0068
 
-# Auto-generated policy 68
-# Package: risk.enforcement.user.allow
+# Auto-generated policy 68 (Rego v1 syntax)
+# Package: risk.authorization.policy.deny.logic
 
 # Metadata
 metadata := {
@@ -11,18 +11,17 @@ metadata := {
 }
 
 # Rules
-allowed_0068 {
+policy_0068_allowed if {
     input.user.active
     input.resource.public
 }
-approved_0068 {
+policy_0068_approved if {
     input.user.risk_score < 50
     input.system.health > 0.8
 }
-default allowed_0068 = false
-denied_0068 {
-    input.action == "delete"
-    input.user.role != "admin"
+policy_0068_allowed if {
+    data.policies.risk.enabled
 }
-
-# Utility function for user info
+policy_0068_allowed if {
+    input.user.role == "admin"
+}

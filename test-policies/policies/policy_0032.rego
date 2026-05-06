@@ -1,7 +1,7 @@
-package compliance.authentication.policy.allow.core.policy_0032
+package security.enforcement.context.validate.policy_0032
 
-# Auto-generated policy 32
-# Package: compliance.authentication.policy.allow.core
+# Auto-generated policy 32 (Rego v1 syntax)
+# Package: security.enforcement.context.validate
 
 # Metadata
 metadata := {
@@ -11,16 +11,18 @@ metadata := {
 }
 
 # Rules
-approved_0032 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
-}
-allowed_0032 {
-    input.user.role == "admin"
-}
-allowed_0032 {
+policy_0032_allowed if {
     input.user.active
     input.resource.public
 }
-
-# Utility function for user info
+policy_0032_allowed if {
+    input.user.role == "admin"
+}
+policy_0032_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
+}
+policy_0032_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
+}

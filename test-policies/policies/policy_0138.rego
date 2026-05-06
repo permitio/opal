@@ -1,7 +1,7 @@
-package access.monitoring.context.deny.logic.policy_0138
+package governance.authorization.resource.allow.policy_0138
 
-# Auto-generated policy 138
-# Package: access.monitoring.context.deny.logic
+# Auto-generated policy 138 (Rego v1 syntax)
+# Package: governance.authorization.resource.allow
 
 # Metadata
 metadata := {
@@ -11,13 +11,11 @@ metadata := {
 }
 
 # Rules
-allowed_0138 {
-    input.user.active
-    input.resource.public
+policy_0138_allowed if {
+    input.user.role == "admin"
 }
-approved_0138 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
+policy_0138_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
 }
-
-# Utility function for user info
+default policy_0138_allowed = false

@@ -1,7 +1,7 @@
-package governance.enforcement.resource.allow.policy_0442
+package security.authorization.policy.allow.policy_0442
 
-# Auto-generated policy 442
-# Package: governance.enforcement.resource.allow
+# Auto-generated policy 442 (Rego v1 syntax)
+# Package: security.authorization.policy.allow
 
 # Metadata
 metadata := {
@@ -11,16 +11,17 @@ metadata := {
 }
 
 # Rules
-allowed_0442 {
-    data.policies.governance.enabled
+policy_0442_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
 }
-allowed_0442 {
+policy_0442_allowed if {
+    input.user.role == "admin"
+}
+policy_0442_allowed if {
+    data.policies.security.enabled
+}
+policy_0442_allowed if {
     input.user.active
     input.resource.public
 }
-approved_0442 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
-}
-
-# Utility function for user info

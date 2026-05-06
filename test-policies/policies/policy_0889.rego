@@ -1,7 +1,7 @@
-package security.authentication.user.deny.utils.policy_0889
+package risk.authorization.user.deny.policy_0889
 
-# Auto-generated policy 889
-# Package: security.authentication.user.deny.utils
+# Auto-generated policy 889 (Rego v1 syntax)
+# Package: risk.authorization.user.deny
 
 # Metadata
 metadata := {
@@ -11,13 +11,14 @@ metadata := {
 }
 
 # Rules
-allowed_0889 {
-    data.policies.security.enabled
+policy_0889_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
 }
-allowed_0889 {
-    input.user.active
-    input.resource.public
+policy_0889_allowed if {
+    input.user.role == "admin"
 }
-default allowed_0889 = false
-
-# Utility function for user info
+policy_0889_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
+}

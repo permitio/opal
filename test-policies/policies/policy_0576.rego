@@ -1,7 +1,7 @@
-package audit.monitoring.user.deny.policy_0576
+package security.monitoring.context.validate.policy_0576
 
-# Auto-generated policy 576
-# Package: audit.monitoring.user.deny
+# Auto-generated policy 576 (Rego v1 syntax)
+# Package: security.monitoring.context.validate
 
 # Metadata
 metadata := {
@@ -11,19 +11,7 @@ metadata := {
 }
 
 # Rules
-allowed_0576 {
-    input.user.active
-    input.resource.public
-}
-approved_0576 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
-}
-allowed_0576 {
+policy_0576_allowed if {
     input.user.role == "admin"
 }
-allowed_0576 {
-    data.policies.audit.enabled
-}
-
-# Utility function for user info
+default policy_0576_allowed = false

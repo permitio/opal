@@ -1,7 +1,7 @@
-package risk.authentication.user.allow.utils.policy_0436
+package compliance.monitoring.context.allow.policy_0436
 
-# Auto-generated policy 436
-# Package: risk.authentication.user.allow.utils
+# Auto-generated policy 436 (Rego v1 syntax)
+# Package: compliance.monitoring.context.allow
 
 # Metadata
 metadata := {
@@ -11,15 +11,12 @@ metadata := {
 }
 
 # Rules
-allowed_0436 {
-    input.user.active
-    input.resource.public
+policy_0436_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
 }
-allowed_0436 {
-    input.user.role == "admin"
+default policy_0436_allowed = false
+policy_0436_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
 }
-allowed_0436 {
-    data.policies.risk.enabled
-}
-
-# Utility function for user info

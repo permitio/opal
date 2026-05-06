@@ -1,7 +1,7 @@
-package governance.authentication.action.check.policy_0008
+package access.enforcement.policy.allow.policy_0008
 
-# Auto-generated policy 8
-# Package: governance.authentication.action.check
+# Auto-generated policy 8 (Rego v1 syntax)
+# Package: access.enforcement.policy.allow
 
 # Metadata
 metadata := {
@@ -11,13 +11,11 @@ metadata := {
 }
 
 # Rules
-approved_0008 {
+policy_0008_allowed if {
+    input.user.active
+    input.resource.public
+}
+policy_0008_approved if {
     input.user.risk_score < 50
     input.system.health > 0.8
 }
-denied_0008 {
-    input.action == "delete"
-    input.user.role != "admin"
-}
-
-# Utility function for user info

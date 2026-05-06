@@ -1,7 +1,7 @@
-package security.monitoring.action.validate.policy_0387
+package risk.authorization.context.allow.policy_0387
 
-# Auto-generated policy 387
-# Package: security.monitoring.action.validate
+# Auto-generated policy 387 (Rego v1 syntax)
+# Package: risk.authorization.context.allow
 
 # Metadata
 metadata := {
@@ -11,9 +11,9 @@ metadata := {
 }
 
 # Rules
-allowed_0387 {
+policy_0387_allowed if {
     input.user.role == "admin"
 }
-default allowed_0387 = false
-
-# Utility function for user info
+policy_0387_allowed if {
+    data.policies.risk.enabled
+}

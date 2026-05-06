@@ -1,7 +1,7 @@
-package security.monitoring.policy.deny.policy_0193
+package governance.enforcement.user.verify.helpers.policy_0193
 
-# Auto-generated policy 193
-# Package: security.monitoring.policy.deny
+# Auto-generated policy 193 (Rego v1 syntax)
+# Package: governance.enforcement.user.verify.helpers
 
 # Metadata
 metadata := {
@@ -11,19 +11,15 @@ metadata := {
 }
 
 # Rules
-allowed_0193 {
-    input.user.role == "admin"
+policy_0193_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
 }
-denied_0193 {
-    input.action == "delete"
-    input.user.role != "admin"
-}
-allowed_0193 {
+default policy_0193_allowed = false
+policy_0193_allowed if {
     input.user.active
     input.resource.public
 }
-allowed_0193 {
-    data.policies.security.enabled
+policy_0193_allowed if {
+    input.user.role == "admin"
 }
-
-# Utility function for user info

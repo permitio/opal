@@ -1,7 +1,7 @@
-package access.authentication.policy.check.policy_0257
+package risk.authentication.resource.allow.policy_0257
 
-# Auto-generated policy 257
-# Package: access.authentication.policy.check
+# Auto-generated policy 257 (Rego v1 syntax)
+# Package: risk.authentication.resource.allow
 
 # Metadata
 metadata := {
@@ -11,12 +11,15 @@ metadata := {
 }
 
 # Rules
-allowed_0257 {
-    data.policies.access.enabled
+default policy_0257_allowed = false
+policy_0257_allowed if {
+    input.user.active
+    input.resource.public
 }
-denied_0257 {
+policy_0257_allowed if {
+    input.user.role == "admin"
+}
+policy_0257_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-
-# Utility function for user info

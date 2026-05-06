@@ -1,7 +1,7 @@
-package governance.authentication.action.verify.utils.policy_0760
+package access.authorization.policy.validate.policy_0760
 
-# Auto-generated policy 760
-# Package: governance.authentication.action.verify.utils
+# Auto-generated policy 760 (Rego v1 syntax)
+# Package: access.authorization.policy.validate
 
 # Metadata
 metadata := {
@@ -11,13 +11,11 @@ metadata := {
 }
 
 # Rules
-approved_0760 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
+policy_0760_allowed if {
+    data.policies.access.enabled
 }
-denied_0760 {
+policy_0760_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-
-# Utility function for user info
+default policy_0760_allowed = false

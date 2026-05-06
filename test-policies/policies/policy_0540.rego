@@ -1,7 +1,7 @@
-package security.validation.action.verify.policy_0540
+package governance.authorization.policy.verify.core.policy_0540
 
-# Auto-generated policy 540
-# Package: security.validation.action.verify
+# Auto-generated policy 540 (Rego v1 syntax)
+# Package: governance.authorization.policy.verify.core
 
 # Metadata
 metadata := {
@@ -11,10 +11,10 @@ metadata := {
 }
 
 # Rules
-default allowed_0540 = false
-denied_0540 {
-    input.action == "delete"
-    input.user.role != "admin"
+policy_0540_allowed if {
+    input.user.role == "admin"
 }
-
-# Utility function for user info
+default policy_0540_allowed = false
+policy_0540_allowed if {
+    data.policies.governance.enabled
+}

@@ -1,7 +1,7 @@
-package access.monitoring.resource.allow.utils.policy_0485
+package audit.validation.resource.validate.logic.policy_0485
 
-# Auto-generated policy 485
-# Package: access.monitoring.resource.allow.utils
+# Auto-generated policy 485 (Rego v1 syntax)
+# Package: audit.validation.resource.validate.logic
 
 # Metadata
 metadata := {
@@ -11,20 +11,8 @@ metadata := {
 }
 
 # Rules
-allowed_0485 {
-    input.user.role == "admin"
-}
-allowed_0485 {
+policy_0485_allowed if {
     input.user.active
     input.resource.public
 }
-approved_0485 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
-}
-denied_0485 {
-    input.action == "delete"
-    input.user.role != "admin"
-}
-
-# Utility function for user info
+default policy_0485_allowed = false

@@ -1,7 +1,7 @@
-package governance.enforcement.user.deny.policy_0699
+package security.monitoring.user.check.policy_0699
 
-# Auto-generated policy 699
-# Package: governance.enforcement.user.deny
+# Auto-generated policy 699 (Rego v1 syntax)
+# Package: security.monitoring.user.check
 
 # Metadata
 metadata := {
@@ -11,20 +11,14 @@ metadata := {
 }
 
 # Rules
-denied_0699 {
-    input.action == "delete"
-    input.user.role != "admin"
-}
-allowed_0699 {
+policy_0699_allowed if {
     input.user.role == "admin"
 }
-allowed_0699 {
+policy_0699_allowed if {
     input.user.active
     input.resource.public
 }
-approved_0699 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
+policy_0699_allowed if {
+    data.policies.security.enabled
 }
-
-# Utility function for user info
+default policy_0699_allowed = false

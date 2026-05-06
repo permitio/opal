@@ -1,7 +1,7 @@
-package governance.validation.policy.verify.policy_0479
+package security.monitoring.policy.deny.policy_0479
 
-# Auto-generated policy 479
-# Package: governance.validation.policy.verify
+# Auto-generated policy 479 (Rego v1 syntax)
+# Package: security.monitoring.policy.deny
 
 # Metadata
 metadata := {
@@ -11,13 +11,10 @@ metadata := {
 }
 
 # Rules
-denied_0479 {
-    input.action == "delete"
-    input.user.role != "admin"
+policy_0479_allowed if {
+    data.policies.security.enabled
 }
-allowed_0479 {
-    input.user.active
-    input.resource.public
+policy_0479_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
 }
-
-# Utility function for user info

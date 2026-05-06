@@ -1,7 +1,7 @@
-package access.enforcement.context.check.logic.policy_0703
+package audit.validation.resource.deny.policy_0703
 
-# Auto-generated policy 703
-# Package: access.enforcement.context.check.logic
+# Auto-generated policy 703 (Rego v1 syntax)
+# Package: audit.validation.resource.deny
 
 # Metadata
 metadata := {
@@ -11,12 +11,11 @@ metadata := {
 }
 
 # Rules
-allowed_0703 {
-    data.policies.access.enabled
+policy_0703_allowed if {
+    input.user.active
+    input.resource.public
 }
-denied_0703 {
-    input.action == "delete"
-    input.user.role != "admin"
+default policy_0703_allowed = false
+policy_0703_allowed if {
+    input.user.role == "admin"
 }
-
-# Utility function for user info

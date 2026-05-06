@@ -1,7 +1,7 @@
-package risk.authentication.resource.deny.policy_0908
+package access.validation.user.deny.policy_0908
 
-# Auto-generated policy 908
-# Package: risk.authentication.resource.deny
+# Auto-generated policy 908 (Rego v1 syntax)
+# Package: access.validation.user.deny
 
 # Metadata
 metadata := {
@@ -11,12 +11,15 @@ metadata := {
 }
 
 # Rules
-allowed_0908 {
+default policy_0908_allowed = false
+policy_0908_allowed if {
+    data.policies.access.enabled
+}
+policy_0908_allowed if {
     input.user.active
     input.resource.public
 }
-allowed_0908 {
-    input.user.role == "admin"
+policy_0908_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
 }
-
-# Utility function for user info

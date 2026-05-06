@@ -1,7 +1,7 @@
-package governance.authorization.user.check.utils.policy_0604
+package audit.validation.user.verify.policy_0604
 
-# Auto-generated policy 604
-# Package: governance.authorization.user.check.utils
+# Auto-generated policy 604 (Rego v1 syntax)
+# Package: audit.validation.user.verify
 
 # Metadata
 metadata := {
@@ -11,12 +11,14 @@ metadata := {
 }
 
 # Rules
-denied_0604 {
-    input.action == "delete"
-    input.user.role != "admin"
+policy_0604_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
 }
-allowed_0604 {
-    data.policies.governance.enabled
+policy_0604_allowed if {
+    input.user.role == "admin"
 }
-
-# Utility function for user info
+policy_0604_allowed if {
+    input.user.active
+    input.resource.public
+}

@@ -1,7 +1,7 @@
-package security.validation.resource.check.policy_0644
+package governance.validation.policy.allow.policy_0644
 
-# Auto-generated policy 644
-# Package: security.validation.resource.check
+# Auto-generated policy 644 (Rego v1 syntax)
+# Package: governance.validation.policy.allow
 
 # Metadata
 metadata := {
@@ -11,17 +11,10 @@ metadata := {
 }
 
 # Rules
-default allowed_0644 = false
-allowed_0644 {
-    input.user.active
-    input.resource.public
-}
-approved_0644 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
-}
-allowed_0644 {
+policy_0644_allowed if {
     input.user.role == "admin"
 }
-
-# Utility function for user info
+policy_0644_allowed if {
+    data.policies.governance.enabled
+}
+default policy_0644_allowed = false

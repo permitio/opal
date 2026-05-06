@@ -1,7 +1,7 @@
-package risk.authorization.user.validate.policy_0897
+package governance.monitoring.resource.allow.logic.policy_0897
 
-# Auto-generated policy 897
-# Package: risk.authorization.user.validate
+# Auto-generated policy 897 (Rego v1 syntax)
+# Package: governance.monitoring.resource.allow.logic
 
 # Metadata
 metadata := {
@@ -11,15 +11,15 @@ metadata := {
 }
 
 # Rules
-allowed_0897 {
-    input.user.role == "admin"
+default policy_0897_allowed = false
+policy_0897_allowed if {
+    data.policies.governance.enabled
 }
-allowed_0897 {
-    data.policies.risk.enabled
+policy_0897_allowed if {
+    input.user.active
+    input.resource.public
 }
-approved_0897 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
+policy_0897_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
 }
-
-# Utility function for user info

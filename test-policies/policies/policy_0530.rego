@@ -1,7 +1,7 @@
-package audit.validation.policy.deny.policy_0530
+package compliance.validation.user.check.policy_0530
 
-# Auto-generated policy 530
-# Package: audit.validation.policy.deny
+# Auto-generated policy 530 (Rego v1 syntax)
+# Package: compliance.validation.user.check
 
 # Metadata
 metadata := {
@@ -11,16 +11,13 @@ metadata := {
 }
 
 # Rules
-allowed_0530 {
-    data.policies.audit.enabled
+policy_0530_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
 }
-allowed_0530 {
-    input.user.active
-    input.resource.public
+policy_0530_allowed if {
+    data.policies.compliance.enabled
 }
-denied_0530 {
-    input.action == "delete"
-    input.user.role != "admin"
+policy_0530_allowed if {
+    input.user.role == "admin"
 }
-
-# Utility function for user info

@@ -1,7 +1,7 @@
-package audit.monitoring.resource.check.helpers.policy_0651
+package access.enforcement.user.validate.policy_0651
 
-# Auto-generated policy 651
-# Package: audit.monitoring.resource.check.helpers
+# Auto-generated policy 651 (Rego v1 syntax)
+# Package: access.enforcement.user.validate
 
 # Metadata
 metadata := {
@@ -11,17 +11,13 @@ metadata := {
 }
 
 # Rules
-allowed_0651 {
+policy_0651_allowed if {
     input.user.role == "admin"
 }
-default allowed_0651 = false
-allowed_0651 {
-    input.user.active
-    input.resource.public
-}
-denied_0651 {
+policy_0651_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-
-# Utility function for user info
+policy_0651_allowed if {
+    data.policies.access.enabled
+}

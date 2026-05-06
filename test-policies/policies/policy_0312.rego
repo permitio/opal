@@ -1,7 +1,7 @@
-package security.authentication.action.verify.policy_0312
+package compliance.enforcement.context.validate.policy_0312
 
-# Auto-generated policy 312
-# Package: security.authentication.action.verify
+# Auto-generated policy 312 (Rego v1 syntax)
+# Package: compliance.enforcement.context.validate
 
 # Metadata
 metadata := {
@@ -11,15 +11,7 @@ metadata := {
 }
 
 # Rules
-allowed_0312 {
-    input.user.role == "admin"
+default policy_0312_allowed = false
+policy_0312_allowed if {
+    data.policies.compliance.enabled
 }
-allowed_0312 {
-    data.policies.security.enabled
-}
-denied_0312 {
-    input.action == "delete"
-    input.user.role != "admin"
-}
-
-# Utility function for user info

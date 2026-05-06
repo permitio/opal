@@ -1,7 +1,7 @@
-package compliance.enforcement.user.validate.policy_0321
+package security.enforcement.context.deny.data.policy_0321
 
-# Auto-generated policy 321
-# Package: compliance.enforcement.user.validate
+# Auto-generated policy 321 (Rego v1 syntax)
+# Package: security.enforcement.context.deny.data
 
 # Metadata
 metadata := {
@@ -11,16 +11,9 @@ metadata := {
 }
 
 # Rules
-allowed_0321 {
-    input.user.active
-    input.resource.public
+policy_0321_allowed if {
+    data.policies.security.enabled
 }
-allowed_0321 {
-    data.policies.compliance.enabled
+policy_0321_allowed if {
+    input.user.role == "admin"
 }
-denied_0321 {
-    input.action == "delete"
-    input.user.role != "admin"
-}
-
-# Utility function for user info

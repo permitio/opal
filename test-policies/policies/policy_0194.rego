@@ -1,7 +1,7 @@
-package security.authorization.resource.check.data.policy_0194
+package audit.authorization.context.deny.helpers.policy_0194
 
-# Auto-generated policy 194
-# Package: security.authorization.resource.check.data
+# Auto-generated policy 194 (Rego v1 syntax)
+# Package: audit.authorization.context.deny.helpers
 
 # Metadata
 metadata := {
@@ -11,16 +11,13 @@ metadata := {
 }
 
 # Rules
-allowed_0194 {
-    input.user.active
-    input.resource.public
+policy_0194_allowed if {
+    data.policies.audit.enabled
 }
-allowed_0194 {
+policy_0194_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
+}
+policy_0194_allowed if {
     input.user.role == "admin"
 }
-allowed_0194 {
-    data.policies.security.enabled
-}
-default allowed_0194 = false
-
-# Utility function for user info

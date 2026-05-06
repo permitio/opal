@@ -1,7 +1,7 @@
-package audit.validation.resource.deny.policy_0766
+package governance.authorization.user.validate.policy_0766
 
-# Auto-generated policy 766
-# Package: audit.validation.resource.deny
+# Auto-generated policy 766 (Rego v1 syntax)
+# Package: governance.authorization.user.validate
 
 # Metadata
 metadata := {
@@ -11,14 +11,15 @@ metadata := {
 }
 
 # Rules
-default allowed_0766 = false
-allowed_0766 {
+policy_0766_allowed if {
     input.user.active
     input.resource.public
 }
-denied_0766 {
+policy_0766_allowed if {
+    input.user.role == "admin"
+}
+policy_0766_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-
-# Utility function for user info
+default policy_0766_allowed = false

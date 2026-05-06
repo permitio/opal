@@ -1,7 +1,7 @@
-package risk.enforcement.context.verify.logic.policy_0029
+package risk.monitoring.resource.check.core.policy_0029
 
-# Auto-generated policy 29
-# Package: risk.enforcement.context.verify.logic
+# Auto-generated policy 29 (Rego v1 syntax)
+# Package: risk.monitoring.resource.check.core
 
 # Metadata
 metadata := {
@@ -11,12 +11,10 @@ metadata := {
 }
 
 # Rules
-approved_0029 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
-}
-allowed_0029 {
+policy_0029_allowed if {
     data.policies.risk.enabled
 }
-
-# Utility function for user info
+policy_0029_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
+}

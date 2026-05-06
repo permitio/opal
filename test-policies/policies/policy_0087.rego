@@ -1,7 +1,7 @@
-package risk.enforcement.policy.deny.policy_0087
+package governance.authentication.user.check.helpers.policy_0087
 
-# Auto-generated policy 87
-# Package: risk.enforcement.policy.deny
+# Auto-generated policy 87 (Rego v1 syntax)
+# Package: governance.authentication.user.check.helpers
 
 # Metadata
 metadata := {
@@ -11,15 +11,15 @@ metadata := {
 }
 
 # Rules
-allowed_0087 {
-    data.policies.risk.enabled
+default policy_0087_allowed = false
+policy_0087_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
 }
-allowed_0087 {
+policy_0087_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
+}
+policy_0087_allowed if {
     input.user.role == "admin"
 }
-allowed_0087 {
-    input.user.active
-    input.resource.public
-}
-
-# Utility function for user info

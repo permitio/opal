@@ -1,7 +1,7 @@
-package security.monitoring.user.deny.policy_0313
+package risk.validation.action.allow.logic.policy_0313
 
-# Auto-generated policy 313
-# Package: security.monitoring.user.deny
+# Auto-generated policy 313 (Rego v1 syntax)
+# Package: risk.validation.action.allow.logic
 
 # Metadata
 metadata := {
@@ -11,13 +11,14 @@ metadata := {
 }
 
 # Rules
-approved_0313 {
+policy_0313_approved if {
     input.user.risk_score < 50
     input.system.health > 0.8
 }
-denied_0313 {
+policy_0313_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-
-# Utility function for user info
+policy_0313_allowed if {
+    data.policies.risk.enabled
+}

@@ -1,7 +1,7 @@
-package access.authentication.resource.validate.utils.policy_0673
+package audit.monitoring.policy.validate.policy_0673
 
-# Auto-generated policy 673
-# Package: access.authentication.resource.validate.utils
+# Auto-generated policy 673 (Rego v1 syntax)
+# Package: audit.monitoring.policy.validate
 
 # Metadata
 metadata := {
@@ -11,16 +11,15 @@ metadata := {
 }
 
 # Rules
-denied_0673 {
-    input.action == "delete"
-    input.user.role != "admin"
+policy_0673_allowed if {
+    input.user.role == "admin"
 }
-allowed_0673 {
+policy_0673_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
+}
+policy_0673_allowed if {
     input.user.active
     input.resource.public
 }
-allowed_0673 {
-    data.policies.access.enabled
-}
-
-# Utility function for user info
+default policy_0673_allowed = false

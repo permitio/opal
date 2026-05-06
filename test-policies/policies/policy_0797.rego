@@ -1,7 +1,7 @@
-package security.enforcement.user.deny.logic.policy_0797
+package audit.enforcement.user.validate.policy_0797
 
-# Auto-generated policy 797
-# Package: security.enforcement.user.deny.logic
+# Auto-generated policy 797 (Rego v1 syntax)
+# Package: audit.enforcement.user.validate
 
 # Metadata
 metadata := {
@@ -11,12 +11,13 @@ metadata := {
 }
 
 # Rules
-allowed_0797 {
+policy_0797_allowed if {
     input.user.role == "admin"
 }
-allowed_0797 {
+policy_0797_allowed if {
+    data.policies.audit.enabled
+}
+policy_0797_allowed if {
     input.user.active
     input.resource.public
 }
-
-# Utility function for user info

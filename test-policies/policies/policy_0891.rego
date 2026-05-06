@@ -1,7 +1,7 @@
-package risk.validation.user.deny.policy_0891
+package access.monitoring.context.allow.policy_0891
 
-# Auto-generated policy 891
-# Package: risk.validation.user.deny
+# Auto-generated policy 891 (Rego v1 syntax)
+# Package: access.monitoring.context.allow
 
 # Metadata
 metadata := {
@@ -11,9 +11,14 @@ metadata := {
 }
 
 # Rules
-default allowed_0891 = false
-allowed_0891 {
-    input.user.role == "admin"
+policy_0891_allowed if {
+    input.user.active
+    input.resource.public
 }
-
-# Utility function for user info
+policy_0891_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
+}
+policy_0891_allowed if {
+    data.policies.access.enabled
+}

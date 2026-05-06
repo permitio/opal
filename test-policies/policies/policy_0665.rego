@@ -1,7 +1,7 @@
-package security.validation.policy.check.policy_0665
+package risk.authentication.policy.check.core.policy_0665
 
-# Auto-generated policy 665
-# Package: security.validation.policy.check
+# Auto-generated policy 665 (Rego v1 syntax)
+# Package: risk.authentication.policy.check.core
 
 # Metadata
 metadata := {
@@ -11,12 +11,10 @@ metadata := {
 }
 
 # Rules
-approved_0665 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
+policy_0665_allowed if {
+    input.user.active
+    input.resource.public
 }
-allowed_0665 {
-    data.policies.security.enabled
+policy_0665_allowed if {
+    input.user.role == "admin"
 }
-
-# Utility function for user info

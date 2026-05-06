@@ -1,7 +1,7 @@
-package risk.authentication.context.verify.policy_0548
+package access.validation.action.validate.policy_0548
 
-# Auto-generated policy 548
-# Package: risk.authentication.context.verify
+# Auto-generated policy 548 (Rego v1 syntax)
+# Package: access.validation.action.validate
 
 # Metadata
 metadata := {
@@ -11,13 +11,8 @@ metadata := {
 }
 
 # Rules
-approved_0548 {
+policy_0548_approved if {
     input.user.risk_score < 50
     input.system.health > 0.8
 }
-allowed_0548 {
-    input.user.active
-    input.resource.public
-}
-
-# Utility function for user info
+default policy_0548_allowed = false

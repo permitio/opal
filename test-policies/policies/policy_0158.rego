@@ -1,7 +1,7 @@
-package governance.enforcement.context.deny.policy_0158
+package risk.authorization.resource.allow.policy_0158
 
-# Auto-generated policy 158
-# Package: governance.enforcement.context.deny
+# Auto-generated policy 158 (Rego v1 syntax)
+# Package: risk.authorization.resource.allow
 
 # Metadata
 metadata := {
@@ -11,12 +11,11 @@ metadata := {
 }
 
 # Rules
-approved_0158 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
+default policy_0158_allowed = false
+policy_0158_allowed if {
+    input.user.role == "admin"
 }
-allowed_0158 {
-    data.policies.governance.enabled
+policy_0158_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
 }
-
-# Utility function for user info

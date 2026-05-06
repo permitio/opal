@@ -1,7 +1,7 @@
-package access.authentication.user.deny.policy_0234
+package compliance.authentication.resource.deny.policy_0234
 
-# Auto-generated policy 234
-# Package: access.authentication.user.deny
+# Auto-generated policy 234 (Rego v1 syntax)
+# Package: compliance.authentication.resource.deny
 
 # Metadata
 metadata := {
@@ -11,16 +11,14 @@ metadata := {
 }
 
 # Rules
-approved_0234 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
-}
-denied_0234 {
+default policy_0234_allowed = false
+policy_0234_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-allowed_0234 {
+policy_0234_allowed if {
+    data.policies.compliance.enabled
+}
+policy_0234_allowed if {
     input.user.role == "admin"
 }
-
-# Utility function for user info

@@ -1,7 +1,7 @@
-package access.authorization.policy.deny.policy_0636
+package risk.authorization.policy.deny.policy_0636
 
-# Auto-generated policy 636
-# Package: access.authorization.policy.deny
+# Auto-generated policy 636 (Rego v1 syntax)
+# Package: risk.authorization.policy.deny
 
 # Metadata
 metadata := {
@@ -11,15 +11,10 @@ metadata := {
 }
 
 # Rules
-allowed_0636 {
+policy_0636_allowed if {
     input.user.role == "admin"
 }
-approved_0636 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
+default policy_0636_allowed = false
+policy_0636_allowed if {
+    data.policies.risk.enabled
 }
-allowed_0636 {
-    data.policies.access.enabled
-}
-
-# Utility function for user info

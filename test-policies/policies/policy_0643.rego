@@ -1,7 +1,7 @@
-package risk.authorization.user.validate.policy_0643
+package governance.monitoring.user.allow.core.policy_0643
 
-# Auto-generated policy 643
-# Package: risk.authorization.user.validate
+# Auto-generated policy 643 (Rego v1 syntax)
+# Package: governance.monitoring.user.allow.core
 
 # Metadata
 metadata := {
@@ -11,17 +11,15 @@ metadata := {
 }
 
 # Rules
-allowed_0643 {
-    data.policies.risk.enabled
+policy_0643_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
 }
-default allowed_0643 = false
-allowed_0643 {
+policy_0643_allowed if {
+    data.policies.governance.enabled
+}
+policy_0643_allowed if {
     input.user.active
     input.resource.public
 }
-approved_0643 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
-}
-
-# Utility function for user info
+default policy_0643_allowed = false

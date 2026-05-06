@@ -1,7 +1,7 @@
-package audit.monitoring.policy.verify.policy_0610
+package audit.validation.action.validate.core.policy_0610
 
-# Auto-generated policy 610
-# Package: audit.monitoring.policy.verify
+# Auto-generated policy 610 (Rego v1 syntax)
+# Package: audit.validation.action.validate.core
 
 # Metadata
 metadata := {
@@ -11,17 +11,10 @@ metadata := {
 }
 
 # Rules
-allowed_0610 {
-    input.user.active
-    input.resource.public
+policy_0610_allowed if {
+    data.policies.audit.enabled
 }
-denied_0610 {
+policy_0610_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-allowed_0610 {
-    input.user.role == "admin"
-}
-default allowed_0610 = false
-
-# Utility function for user info

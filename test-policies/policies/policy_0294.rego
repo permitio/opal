@@ -1,7 +1,7 @@
-package risk.validation.action.check.logic.policy_0294
+package risk.monitoring.policy.verify.helpers.policy_0294
 
-# Auto-generated policy 294
-# Package: risk.validation.action.check.logic
+# Auto-generated policy 294 (Rego v1 syntax)
+# Package: risk.monitoring.policy.verify.helpers
 
 # Metadata
 metadata := {
@@ -11,12 +11,11 @@ metadata := {
 }
 
 # Rules
-allowed_0294 {
-    input.user.role == "admin"
-}
-allowed_0294 {
+policy_0294_allowed if {
     input.user.active
     input.resource.public
 }
-
-# Utility function for user info
+policy_0294_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
+}

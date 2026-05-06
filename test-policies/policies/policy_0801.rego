@@ -1,7 +1,7 @@
-package compliance.monitoring.user.deny.policy_0801
+package access.authorization.resource.allow.utils.policy_0801
 
-# Auto-generated policy 801
-# Package: compliance.monitoring.user.deny
+# Auto-generated policy 801 (Rego v1 syntax)
+# Package: access.authorization.resource.allow.utils
 
 # Metadata
 metadata := {
@@ -11,15 +11,14 @@ metadata := {
 }
 
 # Rules
-allowed_0801 {
+policy_0801_allowed if {
     input.user.role == "admin"
 }
-allowed_0801 {
+policy_0801_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
+}
+policy_0801_allowed if {
     input.user.active
     input.resource.public
 }
-allowed_0801 {
-    data.policies.compliance.enabled
-}
-
-# Utility function for user info

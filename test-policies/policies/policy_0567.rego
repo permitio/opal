@@ -1,7 +1,7 @@
-package risk.enforcement.context.check.logic.policy_0567
+package security.monitoring.resource.verify.policy_0567
 
-# Auto-generated policy 567
-# Package: risk.enforcement.context.check.logic
+# Auto-generated policy 567 (Rego v1 syntax)
+# Package: security.monitoring.resource.verify
 
 # Metadata
 metadata := {
@@ -11,17 +11,13 @@ metadata := {
 }
 
 # Rules
-denied_0567 {
-    input.action == "delete"
-    input.user.role != "admin"
+policy_0567_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
 }
-default allowed_0567 = false
-allowed_0567 {
-    data.policies.risk.enabled
+policy_0567_allowed if {
+    input.user.role == "admin"
 }
-allowed_0567 {
-    input.user.active
-    input.resource.public
+policy_0567_allowed if {
+    data.policies.security.enabled
 }
-
-# Utility function for user info

@@ -1,7 +1,7 @@
-package access.validation.resource.verify.policy_0429
+package security.authorization.context.verify.utils.policy_0429
 
-# Auto-generated policy 429
-# Package: access.validation.resource.verify
+# Auto-generated policy 429 (Rego v1 syntax)
+# Package: security.authorization.context.verify.utils
 
 # Metadata
 metadata := {
@@ -11,9 +11,15 @@ metadata := {
 }
 
 # Rules
-allowed_0429 {
+policy_0429_allowed if {
+    input.user.active
+    input.resource.public
+}
+policy_0429_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
+}
+default policy_0429_allowed = false
+policy_0429_allowed if {
     input.user.role == "admin"
 }
-default allowed_0429 = false
-
-# Utility function for user info

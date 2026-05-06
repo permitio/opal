@@ -1,7 +1,7 @@
-package audit.authorization.action.validate.policy_0286
+package security.validation.resource.allow.policy_0286
 
-# Auto-generated policy 286
-# Package: audit.authorization.action.validate
+# Auto-generated policy 286 (Rego v1 syntax)
+# Package: security.validation.resource.allow
 
 # Metadata
 metadata := {
@@ -11,14 +11,10 @@ metadata := {
 }
 
 # Rules
-allowed_0286 {
-    input.user.active
-    input.resource.public
+policy_0286_allowed if {
+    input.user.role == "admin"
 }
-denied_0286 {
+policy_0286_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-default allowed_0286 = false
-
-# Utility function for user info

@@ -1,7 +1,7 @@
-package risk.validation.context.verify.policy_0166
+package compliance.enforcement.action.validate.helpers.policy_0166
 
-# Auto-generated policy 166
-# Package: risk.validation.context.verify
+# Auto-generated policy 166 (Rego v1 syntax)
+# Package: compliance.enforcement.action.validate.helpers
 
 # Metadata
 metadata := {
@@ -11,17 +11,8 @@ metadata := {
 }
 
 # Rules
-approved_0166 {
+policy_0166_approved if {
     input.user.risk_score < 50
     input.system.health > 0.8
 }
-allowed_0166 {
-    input.user.active
-    input.resource.public
-}
-denied_0166 {
-    input.action == "delete"
-    input.user.role != "admin"
-}
-
-# Utility function for user info
+default policy_0166_allowed = false

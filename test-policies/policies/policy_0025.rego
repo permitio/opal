@@ -1,7 +1,7 @@
-package compliance.enforcement.policy.check.policy_0025
+package compliance.authorization.resource.allow.helpers.policy_0025
 
-# Auto-generated policy 25
-# Package: compliance.enforcement.policy.check
+# Auto-generated policy 25 (Rego v1 syntax)
+# Package: compliance.authorization.resource.allow.helpers
 
 # Metadata
 metadata := {
@@ -11,12 +11,11 @@ metadata := {
 }
 
 # Rules
-allowed_0025 {
-    data.policies.compliance.enabled
-}
-allowed_0025 {
+policy_0025_allowed if {
     input.user.role == "admin"
 }
-default allowed_0025 = false
-
-# Utility function for user info
+policy_0025_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
+}
+default policy_0025_allowed = false

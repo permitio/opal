@@ -1,7 +1,7 @@
-package risk.monitoring.action.deny.helpers.policy_0842
+package compliance.authorization.user.verify.policy_0842
 
-# Auto-generated policy 842
-# Package: risk.monitoring.action.deny.helpers
+# Auto-generated policy 842 (Rego v1 syntax)
+# Package: compliance.authorization.user.verify
 
 # Metadata
 metadata := {
@@ -11,12 +11,8 @@ metadata := {
 }
 
 # Rules
-allowed_0842 {
-    data.policies.risk.enabled
+default policy_0842_allowed = false
+policy_0842_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
 }
-allowed_0842 {
-    input.user.active
-    input.resource.public
-}
-
-# Utility function for user info

@@ -1,7 +1,7 @@
-package access.enforcement.context.deny.policy_0822
+package access.enforcement.action.allow.utils.policy_0822
 
-# Auto-generated policy 822
-# Package: access.enforcement.context.deny
+# Auto-generated policy 822 (Rego v1 syntax)
+# Package: access.enforcement.action.allow.utils
 
 # Metadata
 metadata := {
@@ -11,16 +11,8 @@ metadata := {
 }
 
 # Rules
-allowed_0822 {
+policy_0822_allowed if {
     input.user.active
     input.resource.public
 }
-approved_0822 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
-}
-allowed_0822 {
-    input.user.role == "admin"
-}
-
-# Utility function for user info
+default policy_0822_allowed = false

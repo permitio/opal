@@ -1,7 +1,7 @@
-package compliance.monitoring.action.validate.policy_0784
+package audit.authorization.resource.allow.policy_0784
 
-# Auto-generated policy 784
-# Package: compliance.monitoring.action.validate
+# Auto-generated policy 784 (Rego v1 syntax)
+# Package: audit.authorization.resource.allow
 
 # Metadata
 metadata := {
@@ -11,16 +11,14 @@ metadata := {
 }
 
 # Rules
-approved_0784 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
+policy_0784_allowed if {
+    data.policies.audit.enabled
 }
-allowed_0784 {
-    data.policies.compliance.enabled
+policy_0784_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
 }
-allowed_0784 {
+policy_0784_allowed if {
     input.user.active
     input.resource.public
 }
-
-# Utility function for user info

@@ -1,7 +1,7 @@
-package risk.enforcement.user.deny.policy_0534
+package risk.validation.policy.allow.policy_0534
 
-# Auto-generated policy 534
-# Package: risk.enforcement.user.deny
+# Auto-generated policy 534 (Rego v1 syntax)
+# Package: risk.validation.policy.allow
 
 # Metadata
 metadata := {
@@ -11,14 +11,14 @@ metadata := {
 }
 
 # Rules
-default allowed_0534 = false
-approved_0534 {
+policy_0534_approved if {
     input.user.risk_score < 50
     input.system.health > 0.8
 }
-denied_0534 {
+policy_0534_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-
-# Utility function for user info
+policy_0534_allowed if {
+    data.policies.risk.enabled
+}

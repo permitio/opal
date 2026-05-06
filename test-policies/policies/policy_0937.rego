@@ -1,7 +1,7 @@
-package access.authentication.action.deny.data.policy_0937
+package audit.authorization.resource.allow.core.policy_0937
 
-# Auto-generated policy 937
-# Package: access.authentication.action.deny.data
+# Auto-generated policy 937 (Rego v1 syntax)
+# Package: audit.authorization.resource.allow.core
 
 # Metadata
 metadata := {
@@ -11,10 +11,17 @@ metadata := {
 }
 
 # Rules
-allowed_0937 {
+policy_0937_allowed if {
     input.user.active
     input.resource.public
 }
-default allowed_0937 = false
-
-# Utility function for user info
+policy_0937_allowed if {
+    data.policies.audit.enabled
+}
+policy_0937_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
+}
+policy_0937_allowed if {
+    input.user.role == "admin"
+}

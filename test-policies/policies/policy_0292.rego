@@ -1,7 +1,7 @@
-package compliance.validation.context.check.policy_0292
+package access.monitoring.resource.check.data.policy_0292
 
-# Auto-generated policy 292
-# Package: compliance.validation.context.check
+# Auto-generated policy 292 (Rego v1 syntax)
+# Package: access.monitoring.resource.check.data
 
 # Metadata
 metadata := {
@@ -11,12 +11,14 @@ metadata := {
 }
 
 # Rules
-denied_0292 {
+policy_0292_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-allowed_0292 {
+policy_0292_allowed if {
     input.user.role == "admin"
 }
-
-# Utility function for user info
+default policy_0292_allowed = false
+policy_0292_allowed if {
+    data.policies.access.enabled
+}

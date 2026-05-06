@@ -1,7 +1,7 @@
-package security.monitoring.resource.allow.policy_0826
+package compliance.validation.resource.deny.policy_0826
 
-# Auto-generated policy 826
-# Package: security.monitoring.resource.allow
+# Auto-generated policy 826 (Rego v1 syntax)
+# Package: compliance.validation.resource.deny
 
 # Metadata
 metadata := {
@@ -11,17 +11,14 @@ metadata := {
 }
 
 # Rules
-allowed_0826 {
-    input.user.active
-    input.resource.public
+policy_0826_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
 }
-allowed_0826 {
-    input.user.role == "admin"
-}
-default allowed_0826 = false
-approved_0826 {
+policy_0826_approved if {
     input.user.risk_score < 50
     input.system.health > 0.8
 }
-
-# Utility function for user info
+policy_0826_allowed if {
+    input.user.role == "admin"
+}

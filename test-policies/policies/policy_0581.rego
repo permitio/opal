@@ -1,7 +1,7 @@
-package governance.enforcement.action.verify.logic.policy_0581
+package audit.enforcement.user.allow.policy_0581
 
-# Auto-generated policy 581
-# Package: governance.enforcement.action.verify.logic
+# Auto-generated policy 581 (Rego v1 syntax)
+# Package: audit.enforcement.user.allow
 
 # Metadata
 metadata := {
@@ -11,15 +11,8 @@ metadata := {
 }
 
 # Rules
-allowed_0581 {
-    data.policies.governance.enabled
+default policy_0581_allowed = false
+policy_0581_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
 }
-allowed_0581 {
-    input.user.active
-    input.resource.public
-}
-allowed_0581 {
-    input.user.role == "admin"
-}
-
-# Utility function for user info

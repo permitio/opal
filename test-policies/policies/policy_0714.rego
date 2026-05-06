@@ -1,7 +1,7 @@
-package governance.authorization.resource.check.policy_0714
+package governance.monitoring.user.deny.core.policy_0714
 
-# Auto-generated policy 714
-# Package: governance.authorization.resource.check
+# Auto-generated policy 714 (Rego v1 syntax)
+# Package: governance.monitoring.user.deny.core
 
 # Metadata
 metadata := {
@@ -11,12 +11,15 @@ metadata := {
 }
 
 # Rules
-allowed_0714 {
-    data.policies.governance.enabled
-}
-allowed_0714 {
+default policy_0714_allowed = false
+policy_0714_allowed if {
     input.user.role == "admin"
 }
-default allowed_0714 = false
-
-# Utility function for user info
+policy_0714_allowed if {
+    input.user.active
+    input.resource.public
+}
+policy_0714_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
+}

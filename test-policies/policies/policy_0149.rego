@@ -1,7 +1,7 @@
-package security.authentication.action.verify.policy_0149
+package audit.authentication.user.verify.policy_0149
 
-# Auto-generated policy 149
-# Package: security.authentication.action.verify
+# Auto-generated policy 149 (Rego v1 syntax)
+# Package: audit.authentication.user.verify
 
 # Metadata
 metadata := {
@@ -11,16 +11,10 @@ metadata := {
 }
 
 # Rules
-allowed_0149 {
-    input.user.role == "admin"
+policy_0149_allowed if {
+    data.policies.audit.enabled
 }
-allowed_0149 {
-    data.policies.security.enabled
-}
-denied_0149 {
+policy_0149_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-default allowed_0149 = false
-
-# Utility function for user info

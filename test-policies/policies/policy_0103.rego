@@ -1,7 +1,7 @@
-package security.authentication.context.deny.helpers.policy_0103
+package access.authentication.context.check.policy_0103
 
-# Auto-generated policy 103
-# Package: security.authentication.context.deny.helpers
+# Auto-generated policy 103 (Rego v1 syntax)
+# Package: access.authentication.context.check
 
 # Metadata
 metadata := {
@@ -11,15 +11,12 @@ metadata := {
 }
 
 # Rules
-denied_0103 {
-    input.action == "delete"
-    input.user.role != "admin"
+default policy_0103_allowed = false
+policy_0103_allowed if {
+    input.user.active
+    input.resource.public
 }
-allowed_0103 {
-    input.user.role == "admin"
+policy_0103_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
 }
-allowed_0103 {
-    data.policies.security.enabled
-}
-
-# Utility function for user info

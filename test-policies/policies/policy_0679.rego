@@ -1,7 +1,7 @@
-package audit.validation.policy.validate.policy_0679
+package compliance.validation.policy.allow.policy_0679
 
-# Auto-generated policy 679
-# Package: audit.validation.policy.validate
+# Auto-generated policy 679 (Rego v1 syntax)
+# Package: compliance.validation.policy.allow
 
 # Metadata
 metadata := {
@@ -11,10 +11,17 @@ metadata := {
 }
 
 # Rules
-allowed_0679 {
+policy_0679_allowed if {
     input.user.active
     input.resource.public
 }
-default allowed_0679 = false
-
-# Utility function for user info
+policy_0679_allowed if {
+    data.policies.compliance.enabled
+}
+policy_0679_allowed if {
+    input.user.role == "admin"
+}
+policy_0679_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
+}

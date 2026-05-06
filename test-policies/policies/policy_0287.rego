@@ -1,7 +1,7 @@
-package risk.authorization.user.check.policy_0287
+package governance.monitoring.policy.verify.policy_0287
 
-# Auto-generated policy 287
-# Package: risk.authorization.user.check
+# Auto-generated policy 287 (Rego v1 syntax)
+# Package: governance.monitoring.policy.verify
 
 # Metadata
 metadata := {
@@ -11,13 +11,11 @@ metadata := {
 }
 
 # Rules
-allowed_0287 {
+policy_0287_allowed if {
     input.user.active
     input.resource.public
 }
-allowed_0287 {
-    input.user.role == "admin"
+policy_0287_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
 }
-default allowed_0287 = false
-
-# Utility function for user info

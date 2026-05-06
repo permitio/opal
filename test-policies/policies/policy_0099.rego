@@ -1,7 +1,7 @@
-package compliance.enforcement.user.validate.data.policy_0099
+package risk.authorization.action.allow.policy_0099
 
-# Auto-generated policy 99
-# Package: compliance.enforcement.user.validate.data
+# Auto-generated policy 99 (Rego v1 syntax)
+# Package: risk.authorization.action.allow
 
 # Metadata
 metadata := {
@@ -11,17 +11,11 @@ metadata := {
 }
 
 # Rules
-default allowed_0099 = false
-allowed_0099 {
+policy_0099_allowed if {
+    input.user.role == "admin"
+}
+policy_0099_allowed if {
     input.user.active
     input.resource.public
 }
-allowed_0099 {
-    data.policies.compliance.enabled
-}
-denied_0099 {
-    input.action == "delete"
-    input.user.role != "admin"
-}
-
-# Utility function for user info
+default policy_0099_allowed = false

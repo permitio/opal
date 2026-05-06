@@ -1,7 +1,7 @@
-package governance.authorization.resource.check.policy_0472
+package security.validation.policy.check.helpers.policy_0472
 
-# Auto-generated policy 472
-# Package: governance.authorization.resource.check
+# Auto-generated policy 472 (Rego v1 syntax)
+# Package: security.validation.policy.check.helpers
 
 # Metadata
 metadata := {
@@ -11,20 +11,11 @@ metadata := {
 }
 
 # Rules
-approved_0472 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
-}
-allowed_0472 {
-    data.policies.governance.enabled
-}
-denied_0472 {
-    input.action == "delete"
-    input.user.role != "admin"
-}
-allowed_0472 {
+policy_0472_allowed if {
     input.user.active
     input.resource.public
 }
-
-# Utility function for user info
+policy_0472_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
+}

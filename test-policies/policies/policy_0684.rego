@@ -1,7 +1,7 @@
-package risk.authentication.user.validate.policy_0684
+package risk.validation.resource.deny.core.policy_0684
 
-# Auto-generated policy 684
-# Package: risk.authentication.user.validate
+# Auto-generated policy 684 (Rego v1 syntax)
+# Package: risk.validation.resource.deny.core
 
 # Metadata
 metadata := {
@@ -11,15 +11,18 @@ metadata := {
 }
 
 # Rules
-allowed_0684 {
-    data.policies.risk.enabled
-}
-approved_0684 {
+policy_0684_approved if {
     input.user.risk_score < 50
     input.system.health > 0.8
 }
-allowed_0684 {
+policy_0684_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
+}
+policy_0684_allowed if {
     input.user.role == "admin"
 }
-
-# Utility function for user info
+policy_0684_allowed if {
+    input.user.active
+    input.resource.public
+}

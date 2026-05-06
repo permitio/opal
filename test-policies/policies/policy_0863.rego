@@ -1,7 +1,7 @@
-package access.authentication.user.validate.policy_0863
+package security.enforcement.user.verify.policy_0863
 
-# Auto-generated policy 863
-# Package: access.authentication.user.validate
+# Auto-generated policy 863 (Rego v1 syntax)
+# Package: security.enforcement.user.verify
 
 # Metadata
 metadata := {
@@ -11,15 +11,11 @@ metadata := {
 }
 
 # Rules
-allowed_0863 {
-    data.policies.access.enabled
-}
-allowed_0863 {
-    input.user.role == "admin"
-}
-denied_0863 {
+policy_0863_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-
-# Utility function for user info
+default policy_0863_allowed = false
+policy_0863_allowed if {
+    input.user.role == "admin"
+}

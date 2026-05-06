@@ -1,7 +1,7 @@
-package compliance.validation.resource.allow.policy_0906
+package audit.authentication.context.verify.policy_0906
 
-# Auto-generated policy 906
-# Package: compliance.validation.resource.allow
+# Auto-generated policy 906 (Rego v1 syntax)
+# Package: audit.authentication.context.verify
 
 # Metadata
 metadata := {
@@ -11,16 +11,14 @@ metadata := {
 }
 
 # Rules
-approved_0906 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
+default policy_0906_allowed = false
+policy_0906_allowed if {
+    data.policies.audit.enabled
 }
-denied_0906 {
-    input.action == "delete"
-    input.user.role != "admin"
+policy_0906_allowed if {
+    input.user.role == "admin"
 }
-allowed_0906 {
-    data.policies.compliance.enabled
+policy_0906_allowed if {
+    input.user.active
+    input.resource.public
 }
-
-# Utility function for user info

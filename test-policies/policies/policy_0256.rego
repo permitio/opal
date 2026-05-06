@@ -1,7 +1,7 @@
-package security.authentication.user.check.core.policy_0256
+package security.authorization.policy.check.policy_0256
 
-# Auto-generated policy 256
-# Package: security.authentication.user.check.core
+# Auto-generated policy 256 (Rego v1 syntax)
+# Package: security.authorization.policy.check
 
 # Metadata
 metadata := {
@@ -11,13 +11,14 @@ metadata := {
 }
 
 # Rules
-default allowed_0256 = false
-allowed_0256 {
+default policy_0256_allowed = false
+policy_0256_allowed if {
+    input.user.role == "admin"
+}
+policy_0256_allowed if {
     data.policies.security.enabled
 }
-denied_0256 {
-    input.action == "delete"
-    input.user.role != "admin"
+policy_0256_allowed if {
+    input.user.active
+    input.resource.public
 }
-
-# Utility function for user info

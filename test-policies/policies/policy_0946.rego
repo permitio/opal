@@ -1,7 +1,7 @@
-package audit.authentication.user.allow.policy_0946
+package governance.validation.policy.deny.policy_0946
 
-# Auto-generated policy 946
-# Package: audit.authentication.user.allow
+# Auto-generated policy 946 (Rego v1 syntax)
+# Package: governance.validation.policy.deny
 
 # Metadata
 metadata := {
@@ -11,16 +11,15 @@ metadata := {
 }
 
 # Rules
-denied_0946 {
-    input.action == "delete"
-    input.user.role != "admin"
-}
-approved_0946 {
+policy_0946_approved if {
     input.user.risk_score < 50
     input.system.health > 0.8
 }
-allowed_0946 {
-    data.policies.audit.enabled
+policy_0946_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
 }
-
-# Utility function for user info
+policy_0946_allowed if {
+    input.user.role == "admin"
+}
+default policy_0946_allowed = false

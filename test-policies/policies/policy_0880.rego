@@ -1,7 +1,7 @@
-package risk.authorization.context.allow.policy_0880
+package audit.authorization.resource.check.policy_0880
 
-# Auto-generated policy 880
-# Package: risk.authorization.context.allow
+# Auto-generated policy 880 (Rego v1 syntax)
+# Package: audit.authorization.resource.check
 
 # Metadata
 metadata := {
@@ -11,17 +11,7 @@ metadata := {
 }
 
 # Rules
-allowed_0880 {
-    input.user.active
-    input.resource.public
+default policy_0880_allowed = false
+policy_0880_allowed if {
+    data.policies.audit.enabled
 }
-allowed_0880 {
-    data.policies.risk.enabled
-}
-default allowed_0880 = false
-approved_0880 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
-}
-
-# Utility function for user info

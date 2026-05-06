@@ -1,7 +1,7 @@
-package access.authentication.action.verify.policy_0963
+package governance.enforcement.context.verify.policy_0963
 
-# Auto-generated policy 963
-# Package: access.authentication.action.verify
+# Auto-generated policy 963 (Rego v1 syntax)
+# Package: governance.enforcement.context.verify
 
 # Metadata
 metadata := {
@@ -11,13 +11,17 @@ metadata := {
 }
 
 # Rules
-allowed_0963 {
+policy_0963_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
+}
+policy_0963_allowed if {
     input.user.role == "admin"
 }
-default allowed_0963 = false
-approved_0963 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
+policy_0963_allowed if {
+    data.policies.governance.enabled
 }
-
-# Utility function for user info
+policy_0963_allowed if {
+    input.user.active
+    input.resource.public
+}

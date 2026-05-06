@@ -1,7 +1,7 @@
-package compliance.authorization.action.validate.policy_0715
+package access.authentication.policy.validate.policy_0715
 
-# Auto-generated policy 715
-# Package: compliance.authorization.action.validate
+# Auto-generated policy 715 (Rego v1 syntax)
+# Package: access.authentication.policy.validate
 
 # Metadata
 metadata := {
@@ -11,16 +11,9 @@ metadata := {
 }
 
 # Rules
-default allowed_0715 = false
-allowed_0715 {
+policy_0715_allowed if {
+    data.policies.access.enabled
+}
+policy_0715_allowed if {
     input.user.role == "admin"
 }
-denied_0715 {
-    input.action == "delete"
-    input.user.role != "admin"
-}
-allowed_0715 {
-    data.policies.compliance.enabled
-}
-
-# Utility function for user info

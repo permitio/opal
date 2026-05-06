@@ -1,7 +1,7 @@
-package compliance.enforcement.resource.deny.logic.policy_0813
+package security.validation.context.validate.policy_0813
 
-# Auto-generated policy 813
-# Package: compliance.enforcement.resource.deny.logic
+# Auto-generated policy 813 (Rego v1 syntax)
+# Package: security.validation.context.validate
 
 # Metadata
 metadata := {
@@ -11,19 +11,14 @@ metadata := {
 }
 
 # Rules
-approved_0813 {
+policy_0813_approved if {
     input.user.risk_score < 50
     input.system.health > 0.8
 }
-allowed_0813 {
-    data.policies.compliance.enabled
-}
-allowed_0813 {
+default policy_0813_allowed = false
+policy_0813_allowed if {
     input.user.role == "admin"
 }
-allowed_0813 {
-    input.user.active
-    input.resource.public
+policy_0813_allowed if {
+    data.policies.security.enabled
 }
-
-# Utility function for user info

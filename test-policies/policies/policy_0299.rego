@@ -1,7 +1,7 @@
-package security.authorization.context.deny.utils.policy_0299
+package security.validation.user.check.helpers.policy_0299
 
-# Auto-generated policy 299
-# Package: security.authorization.context.deny.utils
+# Auto-generated policy 299 (Rego v1 syntax)
+# Package: security.validation.user.check.helpers
 
 # Metadata
 metadata := {
@@ -11,13 +11,14 @@ metadata := {
 }
 
 # Rules
-approved_0299 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
+policy_0299_allowed if {
+    input.user.role == "admin"
 }
-allowed_0299 {
-    input.user.active
-    input.resource.public
+policy_0299_allowed if {
+    data.policies.security.enabled
 }
-
-# Utility function for user info
+default policy_0299_allowed = false
+policy_0299_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
+}

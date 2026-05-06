@@ -1,7 +1,7 @@
-package risk.validation.policy.check.helpers.policy_0729
+package audit.validation.action.allow.helpers.policy_0729
 
-# Auto-generated policy 729
-# Package: risk.validation.policy.check.helpers
+# Auto-generated policy 729 (Rego v1 syntax)
+# Package: audit.validation.action.allow.helpers
 
 # Metadata
 metadata := {
@@ -11,12 +11,13 @@ metadata := {
 }
 
 # Rules
-allowed_0729 {
-    input.user.active
-    input.resource.public
+policy_0729_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
 }
-allowed_0729 {
+policy_0729_allowed if {
     input.user.role == "admin"
 }
-
-# Utility function for user info
+policy_0729_allowed if {
+    data.policies.audit.enabled
+}

@@ -1,7 +1,7 @@
-package security.authentication.resource.verify.policy_0711
+package governance.authorization.resource.validate.policy_0711
 
-# Auto-generated policy 711
-# Package: security.authentication.resource.verify
+# Auto-generated policy 711 (Rego v1 syntax)
+# Package: governance.authorization.resource.validate
 
 # Metadata
 metadata := {
@@ -11,20 +11,15 @@ metadata := {
 }
 
 # Rules
-approved_0711 {
+policy_0711_allowed if {
+    data.policies.governance.enabled
+}
+default policy_0711_allowed = false
+policy_0711_approved if {
     input.user.risk_score < 50
     input.system.health > 0.8
 }
-allowed_0711 {
-    input.user.role == "admin"
-}
-denied_0711 {
-    input.action == "delete"
-    input.user.role != "admin"
-}
-allowed_0711 {
+policy_0711_allowed if {
     input.user.active
     input.resource.public
 }
-
-# Utility function for user info

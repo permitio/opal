@@ -1,7 +1,7 @@
-package governance.authorization.policy.validate.logic.policy_0422
+package compliance.authorization.user.check.policy_0422
 
-# Auto-generated policy 422
-# Package: governance.authorization.policy.validate.logic
+# Auto-generated policy 422 (Rego v1 syntax)
+# Package: compliance.authorization.user.check
 
 # Metadata
 metadata := {
@@ -11,13 +11,14 @@ metadata := {
 }
 
 # Rules
-approved_0422 {
+default policy_0422_allowed = false
+policy_0422_allowed if {
+    data.policies.compliance.enabled
+}
+policy_0422_allowed if {
+    input.user.role == "admin"
+}
+policy_0422_approved if {
     input.user.risk_score < 50
     input.system.health > 0.8
 }
-allowed_0422 {
-    input.user.active
-    input.resource.public
-}
-
-# Utility function for user info

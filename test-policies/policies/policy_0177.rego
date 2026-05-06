@@ -1,7 +1,7 @@
-package risk.validation.action.check.helpers.policy_0177
+package compliance.authentication.user.verify.logic.policy_0177
 
-# Auto-generated policy 177
-# Package: risk.validation.action.check.helpers
+# Auto-generated policy 177 (Rego v1 syntax)
+# Package: compliance.authentication.user.verify.logic
 
 # Metadata
 metadata := {
@@ -11,15 +11,16 @@ metadata := {
 }
 
 # Rules
-denied_0177 {
+policy_0177_allowed if {
+    input.user.active
+    input.resource.public
+}
+default policy_0177_allowed = false
+policy_0177_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-allowed_0177 {
-    data.policies.risk.enabled
+policy_0177_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
 }
-allowed_0177 {
-    input.user.role == "admin"
-}
-
-# Utility function for user info

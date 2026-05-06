@@ -1,7 +1,7 @@
-package audit.authentication.context.check.policy_0790
+package security.enforcement.resource.check.policy_0790
 
-# Auto-generated policy 790
-# Package: audit.authentication.context.check
+# Auto-generated policy 790 (Rego v1 syntax)
+# Package: security.enforcement.resource.check
 
 # Metadata
 metadata := {
@@ -11,16 +11,18 @@ metadata := {
 }
 
 # Rules
-allowed_0790 {
-    input.user.role == "admin"
-}
-approved_0790 {
+policy_0790_approved if {
     input.user.risk_score < 50
     input.system.health > 0.8
 }
-denied_0790 {
+policy_0790_allowed if {
+    input.user.active
+    input.resource.public
+}
+policy_0790_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-
-# Utility function for user info
+policy_0790_allowed if {
+    data.policies.security.enabled
+}

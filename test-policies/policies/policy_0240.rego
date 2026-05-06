@@ -1,7 +1,7 @@
-package governance.authentication.user.check.policy_0240
+package security.validation.resource.verify.helpers.policy_0240
 
-# Auto-generated policy 240
-# Package: governance.authentication.user.check
+# Auto-generated policy 240 (Rego v1 syntax)
+# Package: security.validation.resource.verify.helpers
 
 # Metadata
 metadata := {
@@ -11,19 +11,18 @@ metadata := {
 }
 
 # Rules
-allowed_0240 {
+policy_0240_allowed if {
     input.user.active
     input.resource.public
 }
-denied_0240 {
+policy_0240_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
+}
+policy_0240_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-allowed_0240 {
-    data.policies.governance.enabled
+policy_0240_allowed if {
+    data.policies.security.enabled
 }
-allowed_0240 {
-    input.user.role == "admin"
-}
-
-# Utility function for user info

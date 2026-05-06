@@ -1,7 +1,7 @@
-package access.validation.policy.deny.helpers.policy_0007
+package risk.monitoring.policy.allow.policy_0007
 
-# Auto-generated policy 7
-# Package: access.validation.policy.deny.helpers
+# Auto-generated policy 7 (Rego v1 syntax)
+# Package: risk.monitoring.policy.allow
 
 # Metadata
 metadata := {
@@ -11,14 +11,13 @@ metadata := {
 }
 
 # Rules
-default allowed_0007 = false
-approved_0007 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
+policy_0007_allowed if {
+    input.user.active
+    input.resource.public
 }
-denied_0007 {
-    input.action == "delete"
-    input.user.role != "admin"
+policy_0007_allowed if {
+    input.user.role == "admin"
 }
-
-# Utility function for user info
+policy_0007_allowed if {
+    data.policies.risk.enabled
+}

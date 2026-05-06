@@ -1,7 +1,7 @@
-package security.authentication.resource.verify.policy_0077
+package security.enforcement.policy.validate.policy_0077
 
-# Auto-generated policy 77
-# Package: security.authentication.resource.verify
+# Auto-generated policy 77 (Rego v1 syntax)
+# Package: security.enforcement.policy.validate
 
 # Metadata
 metadata := {
@@ -11,13 +11,10 @@ metadata := {
 }
 
 # Rules
-default allowed_0077 = false
-allowed_0077 {
+default policy_0077_allowed = false
+policy_0077_allowed if {
     data.policies.security.enabled
 }
-denied_0077 {
-    input.action == "delete"
-    input.user.role != "admin"
+policy_0077_allowed if {
+    input.user.role == "admin"
 }
-
-# Utility function for user info

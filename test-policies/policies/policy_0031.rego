@@ -1,7 +1,7 @@
-package risk.authentication.resource.verify.data.policy_0031
+package audit.authorization.context.allow.policy_0031
 
-# Auto-generated policy 31
-# Package: risk.authentication.resource.verify.data
+# Auto-generated policy 31 (Rego v1 syntax)
+# Package: audit.authorization.context.allow
 
 # Metadata
 metadata := {
@@ -11,13 +11,15 @@ metadata := {
 }
 
 # Rules
-allowed_0031 {
-    data.policies.risk.enabled
+policy_0031_allowed if {
+    input.user.role == "admin"
 }
-default allowed_0031 = false
-allowed_0031 {
+policy_0031_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
+}
+policy_0031_allowed if {
     input.user.active
     input.resource.public
 }
-
-# Utility function for user info
+default policy_0031_allowed = false

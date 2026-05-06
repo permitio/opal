@@ -1,7 +1,7 @@
-package audit.monitoring.context.allow.logic.policy_0350
+package governance.authentication.policy.check.policy_0350
 
-# Auto-generated policy 350
-# Package: audit.monitoring.context.allow.logic
+# Auto-generated policy 350 (Rego v1 syntax)
+# Package: governance.authentication.policy.check
 
 # Metadata
 metadata := {
@@ -11,17 +11,14 @@ metadata := {
 }
 
 # Rules
-approved_0350 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
+policy_0350_allowed if {
+    input.user.active
+    input.resource.public
 }
-denied_0350 {
+policy_0350_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-default allowed_0350 = false
-allowed_0350 {
-    input.user.role == "admin"
+policy_0350_allowed if {
+    data.policies.governance.enabled
 }
-
-# Utility function for user info

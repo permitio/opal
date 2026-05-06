@@ -1,7 +1,7 @@
-package compliance.monitoring.user.validate.policy_0165
+package access.enforcement.policy.validate.policy_0165
 
-# Auto-generated policy 165
-# Package: compliance.monitoring.user.validate
+# Auto-generated policy 165 (Rego v1 syntax)
+# Package: access.enforcement.policy.validate
 
 # Metadata
 metadata := {
@@ -11,16 +11,11 @@ metadata := {
 }
 
 # Rules
-allowed_0165 {
+default policy_0165_allowed = false
+policy_0165_allowed if {
+    input.user.active
+    input.resource.public
+}
+policy_0165_allowed if {
     input.user.role == "admin"
 }
-denied_0165 {
-    input.action == "delete"
-    input.user.role != "admin"
-}
-approved_0165 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
-}
-
-# Utility function for user info

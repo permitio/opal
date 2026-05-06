@@ -1,7 +1,7 @@
-package risk.validation.policy.check.policy_0919
+package audit.authentication.policy.deny.helpers.policy_0919
 
-# Auto-generated policy 919
-# Package: risk.validation.policy.check
+# Auto-generated policy 919 (Rego v1 syntax)
+# Package: audit.authentication.policy.deny.helpers
 
 # Metadata
 metadata := {
@@ -11,17 +11,18 @@ metadata := {
 }
 
 # Rules
-allowed_0919 {
+policy_0919_allowed if {
+    data.policies.audit.enabled
+}
+policy_0919_allowed if {
     input.user.active
     input.resource.public
 }
-denied_0919 {
+policy_0919_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
+}
+policy_0919_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-default allowed_0919 = false
-allowed_0919 {
-    input.user.role == "admin"
-}
-
-# Utility function for user info

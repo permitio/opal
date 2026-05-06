@@ -1,7 +1,7 @@
-package access.enforcement.resource.deny.utils.policy_0635
+package audit.enforcement.user.validate.policy_0635
 
-# Auto-generated policy 635
-# Package: access.enforcement.resource.deny.utils
+# Auto-generated policy 635 (Rego v1 syntax)
+# Package: audit.enforcement.user.validate
 
 # Metadata
 metadata := {
@@ -11,15 +11,15 @@ metadata := {
 }
 
 # Rules
-allowed_0635 {
+default policy_0635_allowed = false
+policy_0635_allowed if {
     input.user.role == "admin"
 }
-allowed_0635 {
-    data.policies.access.enabled
+policy_0635_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
 }
-allowed_0635 {
+policy_0635_allowed if {
     input.user.active
     input.resource.public
 }
-
-# Utility function for user info

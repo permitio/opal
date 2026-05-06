@@ -1,7 +1,7 @@
-package access.monitoring.action.deny.utils.policy_0780
+package security.enforcement.action.check.policy_0780
 
-# Auto-generated policy 780
-# Package: access.monitoring.action.deny.utils
+# Auto-generated policy 780 (Rego v1 syntax)
+# Package: security.enforcement.action.check
 
 # Metadata
 metadata := {
@@ -11,17 +11,14 @@ metadata := {
 }
 
 # Rules
-denied_0780 {
-    input.action == "delete"
-    input.user.role != "admin"
+policy_0780_allowed if {
+    input.user.active
+    input.resource.public
 }
-default allowed_0780 = false
-allowed_0780 {
-    data.policies.access.enabled
-}
-approved_0780 {
+policy_0780_approved if {
     input.user.risk_score < 50
     input.system.health > 0.8
 }
-
-# Utility function for user info
+policy_0780_allowed if {
+    input.user.role == "admin"
+}

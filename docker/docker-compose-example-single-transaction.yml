@@ -61,7 +61,7 @@ services:
       # - OPAL_INITIAL_POLICY_LOAD_MODE=single_transaction
       - OPAL_INITIAL_POLICY_LOAD_MODE=per_module
       # PROPERTY SET: Disable OPA v0 compatibility to enable v1 API (required for transactions)
-      - OPAL_OPA_V0_COMPAT=true
+      - OPAL_OPA_V0_COMPAT=false
 
       # Uncomment the following lines to enable storing & loading OPA data from a backup file:
       # - OPAL_OFFLINE_MODE_ENABLED=true

@@ -1,7 +1,7 @@
-package audit.enforcement.resource.allow.policy_0724
+package access.validation.user.allow.policy_0724
 
-# Auto-generated policy 724
-# Package: audit.enforcement.resource.allow
+# Auto-generated policy 724 (Rego v1 syntax)
+# Package: access.validation.user.allow
 
 # Metadata
 metadata := {
@@ -11,16 +11,15 @@ metadata := {
 }
 
 # Rules
-allowed_0724 {
-    data.policies.audit.enabled
+policy_0724_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
 }
-allowed_0724 {
+policy_0724_allowed if {
+    data.policies.access.enabled
+}
+policy_0724_allowed if {
     input.user.active
     input.resource.public
 }
-allowed_0724 {
-    input.user.role == "admin"
-}
-default allowed_0724 = false
-
-# Utility function for user info
+default policy_0724_allowed = false

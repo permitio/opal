@@ -1,7 +1,7 @@
-package security.monitoring.resource.allow.policy_0055
+package audit.authorization.context.verify.policy_0055
 
-# Auto-generated policy 55
-# Package: security.monitoring.resource.allow
+# Auto-generated policy 55 (Rego v1 syntax)
+# Package: audit.authorization.context.verify
 
 # Metadata
 metadata := {
@@ -11,13 +11,14 @@ metadata := {
 }
 
 # Rules
-allowed_0055 {
+policy_0055_allowed if {
+    input.user.role == "admin"
+}
+default policy_0055_allowed = false
+policy_0055_allowed if {
     input.user.active
     input.resource.public
 }
-denied_0055 {
-    input.action == "delete"
-    input.user.role != "admin"
+policy_0055_allowed if {
+    data.policies.audit.enabled
 }
-
-# Utility function for user info

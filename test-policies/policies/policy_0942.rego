@@ -1,7 +1,7 @@
-package governance.enforcement.context.allow.data.policy_0942
+package governance.validation.action.validate.utils.policy_0942
 
-# Auto-generated policy 942
-# Package: governance.enforcement.context.allow.data
+# Auto-generated policy 942 (Rego v1 syntax)
+# Package: governance.validation.action.validate.utils
 
 # Metadata
 metadata := {
@@ -11,20 +11,17 @@ metadata := {
 }
 
 # Rules
-approved_0942 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
-}
-allowed_0942 {
-    input.user.active
-    input.resource.public
-}
-allowed_0942 {
-    data.policies.governance.enabled
-}
-denied_0942 {
+policy_0942_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-
-# Utility function for user info
+policy_0942_allowed if {
+    input.user.role == "admin"
+}
+policy_0942_allowed if {
+    data.policies.governance.enabled
+}
+policy_0942_allowed if {
+    input.user.active
+    input.resource.public
+}

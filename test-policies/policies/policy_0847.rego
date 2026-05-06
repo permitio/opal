@@ -1,7 +1,7 @@
-package audit.authentication.policy.allow.data.policy_0847
+package audit.authorization.action.validate.core.policy_0847
 
-# Auto-generated policy 847
-# Package: audit.authentication.policy.allow.data
+# Auto-generated policy 847 (Rego v1 syntax)
+# Package: audit.authorization.action.validate.core
 
 # Metadata
 metadata := {
@@ -11,16 +11,9 @@ metadata := {
 }
 
 # Rules
-denied_0847 {
-    input.action == "delete"
-    input.user.role != "admin"
-}
-allowed_0847 {
+policy_0847_allowed if {
     data.policies.audit.enabled
 }
-allowed_0847 {
-    input.user.active
-    input.resource.public
+policy_0847_allowed if {
+    input.user.role == "admin"
 }
-
-# Utility function for user info

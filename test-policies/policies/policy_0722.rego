@@ -1,7 +1,7 @@
-package risk.authentication.context.validate.helpers.policy_0722
+package security.enforcement.resource.validate.policy_0722
 
-# Auto-generated policy 722
-# Package: risk.authentication.context.validate.helpers
+# Auto-generated policy 722 (Rego v1 syntax)
+# Package: security.enforcement.resource.validate
 
 # Metadata
 metadata := {
@@ -11,20 +11,8 @@ metadata := {
 }
 
 # Rules
-allowed_0722 {
-    input.user.active
-    input.resource.public
-}
-allowed_0722 {
-    data.policies.risk.enabled
-}
-approved_0722 {
+policy_0722_approved if {
     input.user.risk_score < 50
     input.system.health > 0.8
 }
-denied_0722 {
-    input.action == "delete"
-    input.user.role != "admin"
-}
-
-# Utility function for user info
+default policy_0722_allowed = false

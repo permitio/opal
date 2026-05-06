@@ -1,7 +1,7 @@
-package access.validation.policy.check.policy_0918
+package audit.enforcement.user.validate.policy_0918
 
-# Auto-generated policy 918
-# Package: access.validation.policy.check
+# Auto-generated policy 918 (Rego v1 syntax)
+# Package: audit.enforcement.user.validate
 
 # Metadata
 metadata := {
@@ -11,20 +11,10 @@ metadata := {
 }
 
 # Rules
-allowed_0918 {
-    input.user.active
-    input.resource.public
-}
-approved_0918 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
-}
-denied_0918 {
+policy_0918_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-allowed_0918 {
-    input.user.role == "admin"
+policy_0918_allowed if {
+    data.policies.audit.enabled
 }
-
-# Utility function for user info

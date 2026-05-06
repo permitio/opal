@@ -1,7 +1,7 @@
-package governance.validation.context.allow.logic.policy_0814
+package access.monitoring.user.validate.policy_0814
 
-# Auto-generated policy 814
-# Package: governance.validation.context.allow.logic
+# Auto-generated policy 814 (Rego v1 syntax)
+# Package: access.monitoring.user.validate
 
 # Metadata
 metadata := {
@@ -11,20 +11,14 @@ metadata := {
 }
 
 # Rules
-allowed_0814 {
+policy_0814_allowed if {
     input.user.active
     input.resource.public
 }
-approved_0814 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
+policy_0814_allowed if {
+    input.user.role == "admin"
 }
-allowed_0814 {
-    data.policies.governance.enabled
-}
-denied_0814 {
+policy_0814_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-
-# Utility function for user info

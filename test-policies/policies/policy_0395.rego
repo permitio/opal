@@ -1,7 +1,7 @@
-package risk.enforcement.resource.verify.policy_0395
+package compliance.authorization.user.allow.core.policy_0395
 
-# Auto-generated policy 395
-# Package: risk.enforcement.resource.verify
+# Auto-generated policy 395 (Rego v1 syntax)
+# Package: compliance.authorization.user.allow.core
 
 # Metadata
 metadata := {
@@ -11,17 +11,14 @@ metadata := {
 }
 
 # Rules
-denied_0395 {
-    input.action == "delete"
-    input.user.role != "admin"
+policy_0395_allowed if {
+    data.policies.compliance.enabled
 }
-allowed_0395 {
-    data.policies.risk.enabled
+policy_0395_allowed if {
+    input.user.role == "admin"
 }
-allowed_0395 {
-    input.user.active
-    input.resource.public
+policy_0395_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
 }
-default allowed_0395 = false
-
-# Utility function for user info
+default policy_0395_allowed = false

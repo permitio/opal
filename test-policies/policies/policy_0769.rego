@@ -1,7 +1,7 @@
-package access.authorization.policy.validate.policy_0769
+package governance.authorization.policy.validate.policy_0769
 
-# Auto-generated policy 769
-# Package: access.authorization.policy.validate
+# Auto-generated policy 769 (Rego v1 syntax)
+# Package: governance.authorization.policy.validate
 
 # Metadata
 metadata := {
@@ -11,9 +11,13 @@ metadata := {
 }
 
 # Rules
-allowed_0769 {
+policy_0769_allowed if {
     input.user.role == "admin"
 }
-default allowed_0769 = false
-
-# Utility function for user info
+policy_0769_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
+}
+policy_0769_allowed if {
+    data.policies.governance.enabled
+}

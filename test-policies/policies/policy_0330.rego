@@ -1,7 +1,7 @@
-package audit.authentication.action.validate.policy_0330
+package compliance.validation.context.check.policy_0330
 
-# Auto-generated policy 330
-# Package: audit.authentication.action.validate
+# Auto-generated policy 330 (Rego v1 syntax)
+# Package: compliance.validation.context.check
 
 # Metadata
 metadata := {
@@ -11,12 +11,17 @@ metadata := {
 }
 
 # Rules
-allowed_0330 {
-    data.policies.audit.enabled
-}
-allowed_0330 {
+policy_0330_allowed if {
     input.user.active
     input.resource.public
 }
-
-# Utility function for user info
+policy_0330_allowed if {
+    input.user.role == "admin"
+}
+policy_0330_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
+}
+policy_0330_allowed if {
+    data.policies.compliance.enabled
+}

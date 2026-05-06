@@ -1,7 +1,7 @@
-package risk.monitoring.policy.deny.policy_0160
+package risk.authorization.policy.deny.logic.policy_0160
 
-# Auto-generated policy 160
-# Package: risk.monitoring.policy.deny
+# Auto-generated policy 160 (Rego v1 syntax)
+# Package: risk.authorization.policy.deny.logic
 
 # Metadata
 metadata := {
@@ -11,11 +11,14 @@ metadata := {
 }
 
 # Rules
-allowed_0160 {
+policy_0160_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
+}
+policy_0160_allowed if {
     data.policies.risk.enabled
 }
-allowed_0160 {
-    input.user.role == "admin"
+policy_0160_allowed if {
+    input.user.active
+    input.resource.public
 }
-
-# Utility function for user info

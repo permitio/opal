@@ -1,7 +1,7 @@
-package risk.authentication.user.verify.core.policy_0147
+package risk.validation.action.allow.policy_0147
 
-# Auto-generated policy 147
-# Package: risk.authentication.user.verify.core
+# Auto-generated policy 147 (Rego v1 syntax)
+# Package: risk.validation.action.allow
 
 # Metadata
 metadata := {
@@ -11,20 +11,15 @@ metadata := {
 }
 
 # Rules
-denied_0147 {
-    input.action == "delete"
-    input.user.role != "admin"
-}
-allowed_0147 {
-    input.user.active
-    input.resource.public
-}
-allowed_0147 {
-    data.policies.risk.enabled
-}
-approved_0147 {
+policy_0147_approved if {
     input.user.risk_score < 50
     input.system.health > 0.8
 }
-
-# Utility function for user info
+policy_0147_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
+}
+policy_0147_allowed if {
+    input.user.role == "admin"
+}
+default policy_0147_allowed = false

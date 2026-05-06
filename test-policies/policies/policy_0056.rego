@@ -1,7 +1,7 @@
-package access.enforcement.action.validate.policy_0056
+package risk.validation.action.deny.policy_0056
 
-# Auto-generated policy 56
-# Package: access.enforcement.action.validate
+# Auto-generated policy 56 (Rego v1 syntax)
+# Package: risk.validation.action.deny
 
 # Metadata
 metadata := {
@@ -11,19 +11,14 @@ metadata := {
 }
 
 # Rules
-allowed_0056 {
-    data.policies.access.enabled
+policy_0056_allowed if {
+    input.user.active
+    input.resource.public
 }
-denied_0056 {
-    input.action == "delete"
-    input.user.role != "admin"
+policy_0056_allowed if {
+    data.policies.risk.enabled
 }
-approved_0056 {
+policy_0056_approved if {
     input.user.risk_score < 50
     input.system.health > 0.8
 }
-allowed_0056 {
-    input.user.role == "admin"
-}
-
-# Utility function for user info

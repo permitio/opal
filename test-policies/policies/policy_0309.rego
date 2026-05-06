@@ -1,7 +1,7 @@
-package access.enforcement.context.validate.policy_0309
+package compliance.authentication.policy.allow.helpers.policy_0309
 
-# Auto-generated policy 309
-# Package: access.enforcement.context.validate
+# Auto-generated policy 309 (Rego v1 syntax)
+# Package: compliance.authentication.policy.allow.helpers
 
 # Metadata
 metadata := {
@@ -11,15 +11,14 @@ metadata := {
 }
 
 # Rules
-allowed_0309 {
+policy_0309_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
+}
+policy_0309_allowed if {
     input.user.role == "admin"
 }
-allowed_0309 {
-    data.policies.access.enabled
+policy_0309_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
 }
-allowed_0309 {
-    input.user.active
-    input.resource.public
-}
-
-# Utility function for user info

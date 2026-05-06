@@ -1,7 +1,7 @@
-package governance.validation.user.validate.data.policy_0348
+package audit.enforcement.context.check.policy_0348
 
-# Auto-generated policy 348
-# Package: governance.validation.user.validate.data
+# Auto-generated policy 348 (Rego v1 syntax)
+# Package: audit.enforcement.context.check
 
 # Metadata
 metadata := {
@@ -11,12 +11,14 @@ metadata := {
 }
 
 # Rules
-allowed_0348 {
+policy_0348_allowed if {
+    input.user.role == "admin"
+}
+policy_0348_allowed if {
     input.user.active
     input.resource.public
 }
-allowed_0348 {
-    input.user.role == "admin"
+policy_0348_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
 }
-
-# Utility function for user info

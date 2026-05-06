@@ -1,7 +1,7 @@
-package access.enforcement.action.validate.policy_0623
+package access.monitoring.user.check.utils.policy_0623
 
-# Auto-generated policy 623
-# Package: access.enforcement.action.validate
+# Auto-generated policy 623 (Rego v1 syntax)
+# Package: access.monitoring.user.check.utils
 
 # Metadata
 metadata := {
@@ -11,17 +11,12 @@ metadata := {
 }
 
 # Rules
-allowed_0623 {
-    input.user.role == "admin"
+policy_0623_allowed if {
+    input.user.active
+    input.resource.public
 }
-denied_0623 {
-    input.action == "delete"
-    input.user.role != "admin"
-}
-default allowed_0623 = false
-approved_0623 {
+default policy_0623_allowed = false
+policy_0623_approved if {
     input.user.risk_score < 50
     input.system.health > 0.8
 }
-
-# Utility function for user info

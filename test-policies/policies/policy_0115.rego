@@ -1,7 +1,7 @@
-package governance.enforcement.user.check.policy_0115
+package compliance.validation.user.allow.helpers.policy_0115
 
-# Auto-generated policy 115
-# Package: governance.enforcement.user.check
+# Auto-generated policy 115 (Rego v1 syntax)
+# Package: compliance.validation.user.allow.helpers
 
 # Metadata
 metadata := {
@@ -11,16 +11,14 @@ metadata := {
 }
 
 # Rules
-allowed_0115 {
-    input.user.role == "admin"
+policy_0115_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
 }
-allowed_0115 {
-    data.policies.governance.enabled
+policy_0115_allowed if {
+    input.user.active
+    input.resource.public
 }
-default allowed_0115 = false
-denied_0115 {
-    input.action == "delete"
-    input.user.role != "admin"
+policy_0115_allowed if {
+    data.policies.compliance.enabled
 }
-
-# Utility function for user info

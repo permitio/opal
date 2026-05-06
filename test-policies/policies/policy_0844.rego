@@ -1,7 +1,7 @@
-package compliance.monitoring.policy.allow.policy_0844
+package security.enforcement.policy.verify.policy_0844
 
-# Auto-generated policy 844
-# Package: compliance.monitoring.policy.allow
+# Auto-generated policy 844 (Rego v1 syntax)
+# Package: security.enforcement.policy.verify
 
 # Metadata
 metadata := {
@@ -11,16 +11,18 @@ metadata := {
 }
 
 # Rules
-allowed_0844 {
+policy_0844_allowed if {
+    input.user.role == "admin"
+}
+policy_0844_allowed if {
     input.user.active
     input.resource.public
 }
-allowed_0844 {
-    data.policies.compliance.enabled
+policy_0844_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
 }
-denied_0844 {
+policy_0844_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-
-# Utility function for user info

@@ -1,7 +1,7 @@
-package risk.authentication.context.deny.policy_0241
+package governance.enforcement.user.validate.data.policy_0241
 
-# Auto-generated policy 241
-# Package: risk.authentication.context.deny
+# Auto-generated policy 241 (Rego v1 syntax)
+# Package: governance.enforcement.user.validate.data
 
 # Metadata
 metadata := {
@@ -11,15 +11,11 @@ metadata := {
 }
 
 # Rules
-allowed_0241 {
-    input.user.role == "admin"
+policy_0241_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
 }
-allowed_0241 {
-    input.user.active
-    input.resource.public
+policy_0241_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
 }
-allowed_0241 {
-    data.policies.risk.enabled
-}
-
-# Utility function for user info

@@ -1,7 +1,7 @@
-package compliance.validation.action.allow.policy_0601
+package access.enforcement.policy.validate.policy_0601
 
-# Auto-generated policy 601
-# Package: compliance.validation.action.allow
+# Auto-generated policy 601 (Rego v1 syntax)
+# Package: access.enforcement.policy.validate
 
 # Metadata
 metadata := {
@@ -11,9 +11,11 @@ metadata := {
 }
 
 # Rules
-allowed_0601 {
-    input.user.role == "admin"
+default policy_0601_allowed = false
+policy_0601_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
 }
-default allowed_0601 = false
-
-# Utility function for user info
+policy_0601_allowed if {
+    data.policies.access.enabled
+}

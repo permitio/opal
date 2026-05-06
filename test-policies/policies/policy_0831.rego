@@ -1,7 +1,7 @@
-package compliance.authentication.policy.validate.policy_0831
+package risk.authentication.resource.allow.policy_0831
 
-# Auto-generated policy 831
-# Package: compliance.authentication.policy.validate
+# Auto-generated policy 831 (Rego v1 syntax)
+# Package: risk.authentication.resource.allow
 
 # Metadata
 metadata := {
@@ -11,20 +11,10 @@ metadata := {
 }
 
 # Rules
-approved_0831 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
-}
-allowed_0831 {
-    input.user.role == "admin"
-}
-allowed_0831 {
+policy_0831_allowed if {
     input.user.active
     input.resource.public
 }
-denied_0831 {
-    input.action == "delete"
-    input.user.role != "admin"
+policy_0831_allowed if {
+    data.policies.risk.enabled
 }
-
-# Utility function for user info

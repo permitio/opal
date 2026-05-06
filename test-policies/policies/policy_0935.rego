@@ -1,7 +1,7 @@
-package access.validation.context.validate.policy_0935
+package audit.authorization.context.check.policy_0935
 
-# Auto-generated policy 935
-# Package: access.validation.context.validate
+# Auto-generated policy 935 (Rego v1 syntax)
+# Package: audit.authorization.context.check
 
 # Metadata
 metadata := {
@@ -11,9 +11,17 @@ metadata := {
 }
 
 # Rules
-default allowed_0935 = false
-allowed_0935 {
+policy_0935_allowed if {
+    data.policies.audit.enabled
+}
+policy_0935_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
+}
+policy_0935_allowed if {
     input.user.role == "admin"
 }
-
-# Utility function for user info
+policy_0935_allowed if {
+    input.user.active
+    input.resource.public
+}

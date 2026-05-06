@@ -1,7 +1,7 @@
-package governance.enforcement.action.deny.policy_0596
+package audit.validation.policy.deny.data.policy_0596
 
-# Auto-generated policy 596
-# Package: governance.enforcement.action.deny
+# Auto-generated policy 596 (Rego v1 syntax)
+# Package: audit.validation.policy.deny.data
 
 # Metadata
 metadata := {
@@ -11,17 +11,13 @@ metadata := {
 }
 
 # Rules
-approved_0596 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
+policy_0596_allowed if {
+    data.policies.audit.enabled
 }
-denied_0596 {
-    input.action == "delete"
-    input.user.role != "admin"
-}
-allowed_0596 {
+policy_0596_allowed if {
     input.user.role == "admin"
 }
-default allowed_0596 = false
-
-# Utility function for user info
+policy_0596_allowed if {
+    input.user.active
+    input.resource.public
+}

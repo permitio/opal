@@ -1,7 +1,7 @@
-package governance.enforcement.resource.verify.policy_0708
+package risk.monitoring.resource.verify.policy_0708
 
-# Auto-generated policy 708
-# Package: governance.enforcement.resource.verify
+# Auto-generated policy 708 (Rego v1 syntax)
+# Package: risk.monitoring.resource.verify
 
 # Metadata
 metadata := {
@@ -11,16 +11,11 @@ metadata := {
 }
 
 # Rules
-allowed_0708 {
-    input.user.role == "admin"
-}
-allowed_0708 {
+policy_0708_allowed if {
     input.user.active
     input.resource.public
 }
-approved_0708 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
+default policy_0708_allowed = false
+policy_0708_allowed if {
+    input.user.role == "admin"
 }
-
-# Utility function for user info

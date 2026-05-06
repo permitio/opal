@@ -1,7 +1,7 @@
-package governance.validation.action.deny.policy_0254
+package compliance.validation.policy.deny.logic.policy_0254
 
-# Auto-generated policy 254
-# Package: governance.validation.action.deny
+# Auto-generated policy 254 (Rego v1 syntax)
+# Package: compliance.validation.policy.deny.logic
 
 # Metadata
 metadata := {
@@ -11,12 +11,8 @@ metadata := {
 }
 
 # Rules
-allowed_0254 {
-    input.user.role == "admin"
-}
-approved_0254 {
+default policy_0254_allowed = false
+policy_0254_approved if {
     input.user.risk_score < 50
     input.system.health > 0.8
 }
-
-# Utility function for user info

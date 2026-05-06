@@ -1,7 +1,7 @@
-package audit.authorization.resource.deny.data.policy_0868
+package access.monitoring.policy.allow.core.policy_0868
 
-# Auto-generated policy 868
-# Package: audit.authorization.resource.deny.data
+# Auto-generated policy 868 (Rego v1 syntax)
+# Package: access.monitoring.policy.allow.core
 
 # Metadata
 metadata := {
@@ -11,16 +11,14 @@ metadata := {
 }
 
 # Rules
-allowed_0868 {
+default policy_0868_allowed = false
+policy_0868_allowed if {
+    data.policies.access.enabled
+}
+policy_0868_allowed if {
+    input.user.role == "admin"
+}
+policy_0868_allowed if {
     input.user.active
     input.resource.public
 }
-denied_0868 {
-    input.action == "delete"
-    input.user.role != "admin"
-}
-allowed_0868 {
-    input.user.role == "admin"
-}
-
-# Utility function for user info

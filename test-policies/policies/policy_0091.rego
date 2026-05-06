@@ -1,7 +1,7 @@
-package compliance.authorization.resource.verify.helpers.policy_0091
+package risk.monitoring.user.deny.policy_0091
 
-# Auto-generated policy 91
-# Package: compliance.authorization.resource.verify.helpers
+# Auto-generated policy 91 (Rego v1 syntax)
+# Package: risk.monitoring.user.deny
 
 # Metadata
 metadata := {
@@ -11,16 +11,10 @@ metadata := {
 }
 
 # Rules
-denied_0091 {
-    input.action == "delete"
-    input.user.role != "admin"
+policy_0091_allowed if {
+    input.user.active
+    input.resource.public
 }
-approved_0091 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
+policy_0091_allowed if {
+    data.policies.risk.enabled
 }
-allowed_0091 {
-    data.policies.compliance.enabled
-}
-
-# Utility function for user info

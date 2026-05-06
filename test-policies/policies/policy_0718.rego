@@ -1,7 +1,7 @@
-package risk.authorization.user.validate.policy_0718
+package compliance.authentication.action.validate.policy_0718
 
-# Auto-generated policy 718
-# Package: risk.authorization.user.validate
+# Auto-generated policy 718 (Rego v1 syntax)
+# Package: compliance.authentication.action.validate
 
 # Metadata
 metadata := {
@@ -11,13 +11,14 @@ metadata := {
 }
 
 # Rules
-allowed_0718 {
+policy_0718_allowed if {
     input.user.active
     input.resource.public
 }
-denied_0718 {
-    input.action == "delete"
-    input.user.role != "admin"
+policy_0718_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
 }
-
-# Utility function for user info
+policy_0718_allowed if {
+    data.policies.compliance.enabled
+}

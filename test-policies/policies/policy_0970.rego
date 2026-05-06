@@ -1,7 +1,7 @@
-package security.authentication.action.validate.utils.policy_0970
+package audit.validation.resource.check.policy_0970
 
-# Auto-generated policy 970
-# Package: security.authentication.action.validate.utils
+# Auto-generated policy 970 (Rego v1 syntax)
+# Package: audit.validation.resource.check
 
 # Metadata
 metadata := {
@@ -11,16 +11,8 @@ metadata := {
 }
 
 # Rules
-allowed_0970 {
-    data.policies.security.enabled
+default policy_0970_allowed = false
+policy_0970_allowed if {
+    input.user.active
+    input.resource.public
 }
-denied_0970 {
-    input.action == "delete"
-    input.user.role != "admin"
-}
-approved_0970 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
-}
-
-# Utility function for user info

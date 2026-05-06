@@ -1,7 +1,7 @@
-package access.enforcement.user.check.data.policy_0328
+package governance.authorization.policy.allow.policy_0328
 
-# Auto-generated policy 328
-# Package: access.enforcement.user.check.data
+# Auto-generated policy 328 (Rego v1 syntax)
+# Package: governance.authorization.policy.allow
 
 # Metadata
 metadata := {
@@ -11,12 +11,10 @@ metadata := {
 }
 
 # Rules
-allowed_0328 {
+policy_0328_allowed if {
     input.user.role == "admin"
 }
-denied_0328 {
-    input.action == "delete"
-    input.user.role != "admin"
+policy_0328_allowed if {
+    input.user.active
+    input.resource.public
 }
-
-# Utility function for user info

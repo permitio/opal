@@ -1,7 +1,7 @@
-package risk.authentication.context.allow.logic.policy_0469
+package risk.authentication.user.check.policy_0469
 
-# Auto-generated policy 469
-# Package: risk.authentication.context.allow.logic
+# Auto-generated policy 469 (Rego v1 syntax)
+# Package: risk.authentication.user.check
 
 # Metadata
 metadata := {
@@ -11,12 +11,7 @@ metadata := {
 }
 
 # Rules
-allowed_0469 {
-    data.policies.risk.enabled
+default policy_0469_allowed = false
+policy_0469_allowed if {
+    input.user.role == "admin"
 }
-denied_0469 {
-    input.action == "delete"
-    input.user.role != "admin"
-}
-
-# Utility function for user info

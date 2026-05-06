@@ -1,7 +1,7 @@
-package risk.validation.policy.allow.utils.policy_0228
+package risk.validation.resource.deny.policy_0228
 
-# Auto-generated policy 228
-# Package: risk.validation.policy.allow.utils
+# Auto-generated policy 228 (Rego v1 syntax)
+# Package: risk.validation.resource.deny
 
 # Metadata
 metadata := {
@@ -11,12 +11,8 @@ metadata := {
 }
 
 # Rules
-allowed_0228 {
-    input.user.role == "admin"
+default policy_0228_allowed = false
+policy_0228_allowed if {
+    input.user.active
+    input.resource.public
 }
-allowed_0228 {
-    data.policies.risk.enabled
-}
-default allowed_0228 = false
-
-# Utility function for user info

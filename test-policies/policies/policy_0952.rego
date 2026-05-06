@@ -1,7 +1,7 @@
-package risk.monitoring.action.check.utils.policy_0952
+package security.authentication.context.validate.core.policy_0952
 
-# Auto-generated policy 952
-# Package: risk.monitoring.action.check.utils
+# Auto-generated policy 952 (Rego v1 syntax)
+# Package: security.authentication.context.validate.core
 
 # Metadata
 metadata := {
@@ -11,15 +11,8 @@ metadata := {
 }
 
 # Rules
-denied_0952 {
+default policy_0952_allowed = false
+policy_0952_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-allowed_0952 {
-    data.policies.risk.enabled
-}
-allowed_0952 {
-    input.user.role == "admin"
-}
-
-# Utility function for user info

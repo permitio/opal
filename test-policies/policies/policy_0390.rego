@@ -1,7 +1,7 @@
-package compliance.validation.action.deny.helpers.policy_0390
+package compliance.enforcement.policy.validate.policy_0390
 
-# Auto-generated policy 390
-# Package: compliance.validation.action.deny.helpers
+# Auto-generated policy 390 (Rego v1 syntax)
+# Package: compliance.enforcement.policy.validate
 
 # Metadata
 metadata := {
@@ -11,16 +11,11 @@ metadata := {
 }
 
 # Rules
-allowed_0390 {
+policy_0390_allowed if {
     data.policies.compliance.enabled
 }
-allowed_0390 {
-    input.user.role == "admin"
-}
-default allowed_0390 = false
-denied_0390 {
+default policy_0390_allowed = false
+policy_0390_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-
-# Utility function for user info

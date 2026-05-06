@@ -1,7 +1,7 @@
-package audit.monitoring.user.allow.policy_0474
+package governance.enforcement.user.check.policy_0474
 
-# Auto-generated policy 474
-# Package: audit.monitoring.user.allow
+# Auto-generated policy 474 (Rego v1 syntax)
+# Package: governance.enforcement.user.check
 
 # Metadata
 metadata := {
@@ -11,12 +11,13 @@ metadata := {
 }
 
 # Rules
-denied_0474 {
+policy_0474_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-allowed_0474 {
+policy_0474_allowed if {
+    data.policies.governance.enabled
+}
+policy_0474_allowed if {
     input.user.role == "admin"
 }
-
-# Utility function for user info

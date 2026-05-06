@@ -1,7 +1,7 @@
-package compliance.enforcement.policy.verify.policy_0088
+package security.authentication.action.check.policy_0088
 
-# Auto-generated policy 88
-# Package: compliance.enforcement.policy.verify
+# Auto-generated policy 88 (Rego v1 syntax)
+# Package: security.authentication.action.check
 
 # Metadata
 metadata := {
@@ -11,16 +11,10 @@ metadata := {
 }
 
 # Rules
-allowed_0088 {
-    input.user.role == "admin"
-}
-approved_0088 {
+policy_0088_approved if {
     input.user.risk_score < 50
     input.system.health > 0.8
 }
-allowed_0088 {
-    input.user.active
-    input.resource.public
+policy_0088_allowed if {
+    data.policies.security.enabled
 }
-
-# Utility function for user info

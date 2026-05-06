@@ -1,7 +1,7 @@
-package access.enforcement.policy.deny.policy_0344
+package audit.validation.resource.check.utils.policy_0344
 
-# Auto-generated policy 344
-# Package: access.enforcement.policy.deny
+# Auto-generated policy 344 (Rego v1 syntax)
+# Package: audit.validation.resource.check.utils
 
 # Metadata
 metadata := {
@@ -11,12 +11,9 @@ metadata := {
 }
 
 # Rules
-allowed_0344 {
-    data.policies.access.enabled
-}
-allowed_0344 {
+policy_0344_allowed if {
     input.user.role == "admin"
 }
-default allowed_0344 = false
-
-# Utility function for user info
+policy_0344_allowed if {
+    data.policies.audit.enabled
+}

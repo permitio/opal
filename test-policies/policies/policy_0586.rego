@@ -1,7 +1,7 @@
-package compliance.monitoring.user.validate.policy_0586
+package audit.enforcement.context.check.logic.policy_0586
 
-# Auto-generated policy 586
-# Package: compliance.monitoring.user.validate
+# Auto-generated policy 586 (Rego v1 syntax)
+# Package: audit.enforcement.context.check.logic
 
 # Metadata
 metadata := {
@@ -11,11 +11,15 @@ metadata := {
 }
 
 # Rules
-allowed_0586 {
-    data.policies.compliance.enabled
+default policy_0586_allowed = false
+policy_0586_allowed if {
+    data.policies.audit.enabled
 }
-allowed_0586 {
-    input.user.role == "admin"
+policy_0586_allowed if {
+    input.user.active
+    input.resource.public
 }
-
-# Utility function for user info
+policy_0586_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
+}

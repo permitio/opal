@@ -1,7 +1,7 @@
-package governance.authentication.resource.deny.core.policy_0079
+package risk.monitoring.policy.allow.policy_0079
 
-# Auto-generated policy 79
-# Package: governance.authentication.resource.deny.core
+# Auto-generated policy 79 (Rego v1 syntax)
+# Package: risk.monitoring.policy.allow
 
 # Metadata
 metadata := {
@@ -11,11 +11,11 @@ metadata := {
 }
 
 # Rules
-allowed_0079 {
-    data.policies.governance.enabled
+default policy_0079_allowed = false
+policy_0079_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
 }
-allowed_0079 {
-    input.user.role == "admin"
+policy_0079_allowed if {
+    data.policies.risk.enabled
 }
-
-# Utility function for user info

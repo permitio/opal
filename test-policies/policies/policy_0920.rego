@@ -1,7 +1,7 @@
-package governance.monitoring.user.check.policy_0920
+package risk.validation.policy.verify.core.policy_0920
 
-# Auto-generated policy 920
-# Package: governance.monitoring.user.check
+# Auto-generated policy 920 (Rego v1 syntax)
+# Package: risk.validation.policy.verify.core
 
 # Metadata
 metadata := {
@@ -11,13 +11,14 @@ metadata := {
 }
 
 # Rules
-approved_0920 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
-}
-allowed_0920 {
+default policy_0920_allowed = false
+policy_0920_allowed if {
     input.user.active
     input.resource.public
 }
-
-# Utility function for user info
+policy_0920_allowed if {
+    data.policies.risk.enabled
+}
+policy_0920_allowed if {
+    input.user.role == "admin"
+}

@@ -1,7 +1,7 @@
-package governance.authorization.user.validate.policy_0835
+package compliance.enforcement.context.validate.policy_0835
 
-# Auto-generated policy 835
-# Package: governance.authorization.user.validate
+# Auto-generated policy 835 (Rego v1 syntax)
+# Package: compliance.enforcement.context.validate
 
 # Metadata
 metadata := {
@@ -11,14 +11,11 @@ metadata := {
 }
 
 # Rules
-default allowed_0835 = false
-approved_0835 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
+policy_0835_allowed if {
+    data.policies.compliance.enabled
 }
-allowed_0835 {
+policy_0835_allowed if {
     input.user.active
     input.resource.public
 }
-
-# Utility function for user info
+default policy_0835_allowed = false

@@ -1,7 +1,7 @@
-package risk.authentication.policy.verify.policy_0792
+package audit.monitoring.resource.validate.helpers.policy_0792
 
-# Auto-generated policy 792
-# Package: risk.authentication.policy.verify
+# Auto-generated policy 792 (Rego v1 syntax)
+# Package: audit.monitoring.resource.validate.helpers
 
 # Metadata
 metadata := {
@@ -11,16 +11,15 @@ metadata := {
 }
 
 # Rules
-allowed_0792 {
-    data.policies.risk.enabled
-}
-allowed_0792 {
-    input.user.role == "admin"
-}
-denied_0792 {
+policy_0792_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-default allowed_0792 = false
-
-# Utility function for user info
+policy_0792_allowed if {
+    input.user.active
+    input.resource.public
+}
+default policy_0792_allowed = false
+policy_0792_allowed if {
+    data.policies.audit.enabled
+}

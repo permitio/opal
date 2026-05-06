@@ -1,7 +1,7 @@
-package security.enforcement.action.validate.policy_0132
+package audit.monitoring.user.check.policy_0132
 
-# Auto-generated policy 132
-# Package: security.enforcement.action.validate
+# Auto-generated policy 132 (Rego v1 syntax)
+# Package: audit.monitoring.user.check
 
 # Metadata
 metadata := {
@@ -11,13 +11,18 @@ metadata := {
 }
 
 # Rules
-approved_0132 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
-}
-denied_0132 {
+policy_0132_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-
-# Utility function for user info
+policy_0132_allowed if {
+    input.user.active
+    input.resource.public
+}
+policy_0132_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
+}
+policy_0132_allowed if {
+    data.policies.audit.enabled
+}

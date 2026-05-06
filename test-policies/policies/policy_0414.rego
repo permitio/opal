@@ -1,7 +1,7 @@
-package access.authorization.user.validate.core.policy_0414
+package governance.monitoring.context.validate.utils.policy_0414
 
-# Auto-generated policy 414
-# Package: access.authorization.user.validate.core
+# Auto-generated policy 414 (Rego v1 syntax)
+# Package: governance.monitoring.context.validate.utils
 
 # Metadata
 metadata := {
@@ -11,14 +11,15 @@ metadata := {
 }
 
 # Rules
-allowed_0414 {
+default policy_0414_allowed = false
+policy_0414_allowed if {
     input.user.active
     input.resource.public
 }
-default allowed_0414 = false
-denied_0414 {
+policy_0414_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-
-# Utility function for user info
+policy_0414_allowed if {
+    data.policies.governance.enabled
+}

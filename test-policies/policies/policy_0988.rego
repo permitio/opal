@@ -1,7 +1,7 @@
-package audit.enforcement.user.verify.policy_0988
+package governance.enforcement.policy.allow.policy_0988
 
-# Auto-generated policy 988
-# Package: audit.enforcement.user.verify
+# Auto-generated policy 988 (Rego v1 syntax)
+# Package: governance.enforcement.policy.allow
 
 # Metadata
 metadata := {
@@ -11,12 +11,11 @@ metadata := {
 }
 
 # Rules
-allowed_0988 {
-    data.policies.audit.enabled
+policy_0988_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
 }
-denied_0988 {
-    input.action == "delete"
-    input.user.role != "admin"
+policy_0988_allowed if {
+    input.user.role == "admin"
 }
-
-# Utility function for user info
+default policy_0988_allowed = false

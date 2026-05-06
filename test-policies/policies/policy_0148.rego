@@ -1,7 +1,7 @@
-package compliance.monitoring.action.verify.helpers.policy_0148
+package risk.authorization.user.validate.utils.policy_0148
 
-# Auto-generated policy 148
-# Package: compliance.monitoring.action.verify.helpers
+# Auto-generated policy 148 (Rego v1 syntax)
+# Package: risk.authorization.user.validate.utils
 
 # Metadata
 metadata := {
@@ -11,10 +11,18 @@ metadata := {
 }
 
 # Rules
-denied_0148 {
+policy_0148_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-default allowed_0148 = false
-
-# Utility function for user info
+policy_0148_allowed if {
+    input.user.role == "admin"
+}
+policy_0148_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
+}
+policy_0148_allowed if {
+    input.user.active
+    input.resource.public
+}

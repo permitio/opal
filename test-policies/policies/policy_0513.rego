@@ -1,7 +1,7 @@
-package compliance.monitoring.user.deny.utils.policy_0513
+package access.validation.policy.allow.policy_0513
 
-# Auto-generated policy 513
-# Package: compliance.monitoring.user.deny.utils
+# Auto-generated policy 513 (Rego v1 syntax)
+# Package: access.validation.policy.allow
 
 # Metadata
 metadata := {
@@ -11,19 +11,17 @@ metadata := {
 }
 
 # Rules
-allowed_0513 {
-    data.policies.compliance.enabled
-}
-denied_0513 {
-    input.action == "delete"
-    input.user.role != "admin"
-}
-allowed_0513 {
+policy_0513_allowed if {
     input.user.active
     input.resource.public
 }
-allowed_0513 {
+policy_0513_allowed if {
+    data.policies.access.enabled
+}
+policy_0513_allowed if {
     input.user.role == "admin"
 }
-
-# Utility function for user info
+policy_0513_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
+}

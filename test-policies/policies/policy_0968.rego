@@ -1,7 +1,7 @@
-package access.enforcement.user.verify.policy_0968
+package risk.authentication.resource.validate.policy_0968
 
-# Auto-generated policy 968
-# Package: access.enforcement.user.verify
+# Auto-generated policy 968 (Rego v1 syntax)
+# Package: risk.authentication.resource.validate
 
 # Metadata
 metadata := {
@@ -11,17 +11,11 @@ metadata := {
 }
 
 # Rules
-approved_0968 {
+default policy_0968_allowed = false
+policy_0968_approved if {
     input.user.risk_score < 50
     input.system.health > 0.8
 }
-denied_0968 {
-    input.action == "delete"
-    input.user.role != "admin"
+policy_0968_allowed if {
+    input.user.role == "admin"
 }
-allowed_0968 {
-    data.policies.access.enabled
-}
-default allowed_0968 = false
-
-# Utility function for user info

@@ -1,7 +1,7 @@
-package compliance.validation.context.validate.data.policy_0624
+package risk.monitoring.user.verify.policy_0624
 
-# Auto-generated policy 624
-# Package: compliance.validation.context.validate.data
+# Auto-generated policy 624 (Rego v1 syntax)
+# Package: risk.monitoring.user.verify
 
 # Metadata
 metadata := {
@@ -11,9 +11,8 @@ metadata := {
 }
 
 # Rules
-default allowed_0624 = false
-allowed_0624 {
-    input.user.role == "admin"
+default policy_0624_allowed = false
+policy_0624_allowed if {
+    input.user.active
+    input.resource.public
 }
-
-# Utility function for user info

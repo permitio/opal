@@ -1,7 +1,7 @@
-package security.authorization.action.allow.policy_0398
+package compliance.authentication.action.allow.data.policy_0398
 
-# Auto-generated policy 398
-# Package: security.authorization.action.allow
+# Auto-generated policy 398 (Rego v1 syntax)
+# Package: compliance.authentication.action.allow.data
 
 # Metadata
 metadata := {
@@ -11,17 +11,11 @@ metadata := {
 }
 
 # Rules
-denied_0398 {
-    input.action == "delete"
-    input.user.role != "admin"
-}
-approved_0398 {
+policy_0398_approved if {
     input.user.risk_score < 50
     input.system.health > 0.8
 }
-allowed_0398 {
-    input.user.active
-    input.resource.public
+policy_0398_allowed if {
+    input.user.role == "admin"
 }
-
-# Utility function for user info
+default policy_0398_allowed = false

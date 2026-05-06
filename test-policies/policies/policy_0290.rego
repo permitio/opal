@@ -1,7 +1,7 @@
-package security.enforcement.policy.validate.policy_0290
+package access.monitoring.resource.validate.policy_0290
 
-# Auto-generated policy 290
-# Package: security.enforcement.policy.validate
+# Auto-generated policy 290 (Rego v1 syntax)
+# Package: access.monitoring.resource.validate
 
 # Metadata
 metadata := {
@@ -11,17 +11,7 @@ metadata := {
 }
 
 # Rules
-allowed_0290 {
-    data.policies.security.enabled
+default policy_0290_allowed = false
+policy_0290_allowed if {
+    data.policies.access.enabled
 }
-default allowed_0290 = false
-approved_0290 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
-}
-denied_0290 {
-    input.action == "delete"
-    input.user.role != "admin"
-}
-
-# Utility function for user info

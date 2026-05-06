@@ -1,7 +1,7 @@
-package governance.enforcement.action.validate.policy_0876
+package audit.enforcement.action.check.policy_0876
 
-# Auto-generated policy 876
-# Package: governance.enforcement.action.validate
+# Auto-generated policy 876 (Rego v1 syntax)
+# Package: audit.enforcement.action.check
 
 # Metadata
 metadata := {
@@ -11,12 +11,10 @@ metadata := {
 }
 
 # Rules
-approved_0876 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
-}
-allowed_0876 {
+policy_0876_allowed if {
     input.user.role == "admin"
 }
-
-# Utility function for user info
+policy_0876_allowed if {
+    input.user.active
+    input.resource.public
+}

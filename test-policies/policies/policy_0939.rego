@@ -1,7 +1,7 @@
-package access.validation.action.deny.policy_0939
+package compliance.authentication.resource.verify.utils.policy_0939
 
-# Auto-generated policy 939
-# Package: access.validation.action.deny
+# Auto-generated policy 939 (Rego v1 syntax)
+# Package: compliance.authentication.resource.verify.utils
 
 # Metadata
 metadata := {
@@ -11,17 +11,11 @@ metadata := {
 }
 
 # Rules
-allowed_0939 {
-    input.user.active
-    input.resource.public
-}
-allowed_0939 {
-    data.policies.access.enabled
-}
-default allowed_0939 = false
-denied_0939 {
+policy_0939_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-
-# Utility function for user info
+policy_0939_allowed if {
+    input.user.active
+    input.resource.public
+}

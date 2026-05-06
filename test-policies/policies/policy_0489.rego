@@ -1,7 +1,7 @@
-package risk.authentication.context.check.policy_0489
+package compliance.authentication.user.check.utils.policy_0489
 
-# Auto-generated policy 489
-# Package: risk.authentication.context.check
+# Auto-generated policy 489 (Rego v1 syntax)
+# Package: compliance.authentication.user.check.utils
 
 # Metadata
 metadata := {
@@ -11,12 +11,15 @@ metadata := {
 }
 
 # Rules
-allowed_0489 {
-    data.policies.risk.enabled
+policy_0489_allowed if {
+    input.user.role == "admin"
 }
-denied_0489 {
+default policy_0489_allowed = false
+policy_0489_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
+}
+policy_0489_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-
-# Utility function for user info

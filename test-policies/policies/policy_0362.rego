@@ -1,7 +1,7 @@
-package security.enforcement.policy.verify.policy_0362
+package access.authorization.context.validate.logic.policy_0362
 
-# Auto-generated policy 362
-# Package: security.enforcement.policy.verify
+# Auto-generated policy 362 (Rego v1 syntax)
+# Package: access.authorization.context.validate.logic
 
 # Metadata
 metadata := {
@@ -11,13 +11,13 @@ metadata := {
 }
 
 # Rules
-allowed_0362 {
-    input.user.active
-    input.resource.public
+policy_0362_allowed if {
+    input.user.role == "admin"
 }
-denied_0362 {
-    input.action == "delete"
-    input.user.role != "admin"
+policy_0362_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
 }
-
-# Utility function for user info
+policy_0362_allowed if {
+    data.policies.access.enabled
+}

@@ -1,7 +1,7 @@
-package access.authorization.user.validate.core.policy_0774
+package risk.authorization.policy.validate.policy_0774
 
-# Auto-generated policy 774
-# Package: access.authorization.user.validate.core
+# Auto-generated policy 774 (Rego v1 syntax)
+# Package: risk.authorization.policy.validate
 
 # Metadata
 metadata := {
@@ -11,18 +11,17 @@ metadata := {
 }
 
 # Rules
-default allowed_0774 = false
-allowed_0774 {
-    input.user.active
-    input.resource.public
+policy_0774_allowed if {
+    input.user.role == "admin"
 }
-denied_0774 {
+policy_0774_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-approved_0774 {
+policy_0774_approved if {
     input.user.risk_score < 50
     input.system.health > 0.8
 }
-
-# Utility function for user info
+policy_0774_allowed if {
+    data.policies.risk.enabled
+}

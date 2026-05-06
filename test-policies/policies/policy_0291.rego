@@ -1,7 +1,7 @@
-package risk.authorization.policy.deny.utils.policy_0291
+package audit.validation.action.allow.policy_0291
 
-# Auto-generated policy 291
-# Package: risk.authorization.policy.deny.utils
+# Auto-generated policy 291 (Rego v1 syntax)
+# Package: audit.validation.action.allow
 
 # Metadata
 metadata := {
@@ -11,12 +11,14 @@ metadata := {
 }
 
 # Rules
-allowed_0291 {
+policy_0291_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
+}
+policy_0291_allowed if {
     input.user.active
     input.resource.public
 }
-allowed_0291 {
-    data.policies.risk.enabled
+policy_0291_allowed if {
+    data.policies.audit.enabled
 }
-
-# Utility function for user info

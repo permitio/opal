@@ -1,7 +1,7 @@
-package security.validation.resource.deny.helpers.policy_0405
+package governance.authentication.user.validate.policy_0405
 
-# Auto-generated policy 405
-# Package: security.validation.resource.deny.helpers
+# Auto-generated policy 405 (Rego v1 syntax)
+# Package: governance.authentication.user.validate
 
 # Metadata
 metadata := {
@@ -11,9 +11,7 @@ metadata := {
 }
 
 # Rules
-allowed_0405 {
-    input.user.role == "admin"
+default policy_0405_allowed = false
+policy_0405_allowed if {
+    data.policies.governance.enabled
 }
-default allowed_0405 = false
-
-# Utility function for user info

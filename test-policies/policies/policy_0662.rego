@@ -1,7 +1,7 @@
-package audit.monitoring.resource.check.policy_0662
+package security.monitoring.user.verify.policy_0662
 
-# Auto-generated policy 662
-# Package: audit.monitoring.resource.check
+# Auto-generated policy 662 (Rego v1 syntax)
+# Package: security.monitoring.user.verify
 
 # Metadata
 metadata := {
@@ -11,12 +11,11 @@ metadata := {
 }
 
 # Rules
-allowed_0662 {
-    input.user.role == "admin"
+policy_0662_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
 }
-allowed_0662 {
-    input.user.active
-    input.resource.public
+policy_0662_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
 }
-
-# Utility function for user info

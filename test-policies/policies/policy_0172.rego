@@ -1,7 +1,7 @@
-package governance.enforcement.user.check.data.policy_0172
+package compliance.authorization.action.validate.policy_0172
 
-# Auto-generated policy 172
-# Package: governance.enforcement.user.check.data
+# Auto-generated policy 172 (Rego v1 syntax)
+# Package: compliance.authorization.action.validate
 
 # Metadata
 metadata := {
@@ -11,13 +11,15 @@ metadata := {
 }
 
 # Rules
-approved_0172 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
-}
-allowed_0172 {
+policy_0172_allowed if {
     input.user.active
     input.resource.public
 }
-
-# Utility function for user info
+policy_0172_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
+}
+default policy_0172_allowed = false
+policy_0172_allowed if {
+    data.policies.compliance.enabled
+}

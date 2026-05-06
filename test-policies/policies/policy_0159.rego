@@ -1,7 +1,7 @@
-package security.authentication.context.verify.helpers.policy_0159
+package security.validation.policy.validate.policy_0159
 
-# Auto-generated policy 159
-# Package: security.authentication.context.verify.helpers
+# Auto-generated policy 159 (Rego v1 syntax)
+# Package: security.validation.policy.validate
 
 # Metadata
 metadata := {
@@ -11,20 +11,15 @@ metadata := {
 }
 
 # Rules
-allowed_0159 {
-    data.policies.security.enabled
+policy_0159_allowed if {
+    input.user.role == "admin"
 }
-allowed_0159 {
-    input.user.active
-    input.resource.public
-}
-approved_0159 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
-}
-denied_0159 {
+policy_0159_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-
-# Utility function for user info
+default policy_0159_allowed = false
+policy_0159_allowed if {
+    input.user.active
+    input.resource.public
+}

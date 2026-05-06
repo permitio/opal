@@ -1,7 +1,7 @@
-package security.authentication.policy.verify.core.policy_0213
+package governance.authentication.resource.validate.policy_0213
 
-# Auto-generated policy 213
-# Package: security.authentication.policy.verify.core
+# Auto-generated policy 213 (Rego v1 syntax)
+# Package: governance.authentication.resource.validate
 
 # Metadata
 metadata := {
@@ -11,18 +11,14 @@ metadata := {
 }
 
 # Rules
-approved_0213 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
-}
-default allowed_0213 = false
-denied_0213 {
-    input.action == "delete"
-    input.user.role != "admin"
-}
-allowed_0213 {
+policy_0213_allowed if {
     input.user.active
     input.resource.public
 }
-
-# Utility function for user info
+policy_0213_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
+}
+policy_0213_allowed if {
+    input.user.role == "admin"
+}

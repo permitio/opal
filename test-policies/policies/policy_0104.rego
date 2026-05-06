@@ -1,7 +1,7 @@
-package audit.enforcement.context.deny.policy_0104
+package access.validation.action.verify.policy_0104
 
-# Auto-generated policy 104
-# Package: audit.enforcement.context.deny
+# Auto-generated policy 104 (Rego v1 syntax)
+# Package: access.validation.action.verify
 
 # Metadata
 metadata := {
@@ -11,10 +11,13 @@ metadata := {
 }
 
 # Rules
-default allowed_0104 = false
-denied_0104 {
-    input.action == "delete"
-    input.user.role != "admin"
+policy_0104_allowed if {
+    input.user.active
+    input.resource.public
 }
-
-# Utility function for user info
+policy_0104_allowed if {
+    input.user.role == "admin"
+}
+policy_0104_allowed if {
+    data.policies.access.enabled
+}

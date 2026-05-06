@@ -1,7 +1,7 @@
-package compliance.validation.context.check.utils.policy_0026
+package governance.authentication.context.verify.policy_0026
 
-# Auto-generated policy 26
-# Package: compliance.validation.context.check.utils
+# Auto-generated policy 26 (Rego v1 syntax)
+# Package: governance.authentication.context.verify
 
 # Metadata
 metadata := {
@@ -11,16 +11,18 @@ metadata := {
 }
 
 # Rules
-allowed_0026 {
-    input.user.role == "admin"
+policy_0026_allowed if {
+    data.policies.governance.enabled
 }
-denied_0026 {
+policy_0026_allowed if {
+    input.user.active
+    input.resource.public
+}
+policy_0026_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-approved_0026 {
+policy_0026_approved if {
     input.user.risk_score < 50
     input.system.health > 0.8
 }
-
-# Utility function for user info

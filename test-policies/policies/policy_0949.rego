@@ -1,7 +1,7 @@
-package governance.authorization.user.deny.utils.policy_0949
+package audit.monitoring.resource.validate.policy_0949
 
-# Auto-generated policy 949
-# Package: governance.authorization.user.deny.utils
+# Auto-generated policy 949 (Rego v1 syntax)
+# Package: audit.monitoring.resource.validate
 
 # Metadata
 metadata := {
@@ -11,12 +11,13 @@ metadata := {
 }
 
 # Rules
-allowed_0949 {
-    input.user.active
-    input.resource.public
+policy_0949_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
 }
-allowed_0949 {
-    data.policies.governance.enabled
+policy_0949_allowed if {
+    input.user.role == "admin"
 }
-
-# Utility function for user info
+policy_0949_allowed if {
+    data.policies.audit.enabled
+}

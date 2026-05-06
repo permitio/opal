@@ -1,7 +1,7 @@
-package audit.authorization.policy.validate.policy_0725
+package access.enforcement.context.verify.helpers.policy_0725
 
-# Auto-generated policy 725
-# Package: audit.authorization.policy.validate
+# Auto-generated policy 725 (Rego v1 syntax)
+# Package: access.enforcement.context.verify.helpers
 
 # Metadata
 metadata := {
@@ -11,16 +11,15 @@ metadata := {
 }
 
 # Rules
-allowed_0725 {
-    input.user.active
-    input.resource.public
+policy_0725_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
 }
-approved_0725 {
+policy_0725_approved if {
     input.user.risk_score < 50
     input.system.health > 0.8
 }
-allowed_0725 {
-    data.policies.audit.enabled
+policy_0725_allowed if {
+    input.user.role == "admin"
 }
-
-# Utility function for user info
+default policy_0725_allowed = false

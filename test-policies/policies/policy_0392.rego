@@ -1,7 +1,7 @@
-package compliance.enforcement.resource.validate.data.policy_0392
+package security.monitoring.user.validate.policy_0392
 
-# Auto-generated policy 392
-# Package: compliance.enforcement.resource.validate.data
+# Auto-generated policy 392 (Rego v1 syntax)
+# Package: security.monitoring.user.validate
 
 # Metadata
 metadata := {
@@ -11,13 +11,14 @@ metadata := {
 }
 
 # Rules
-approved_0392 {
+policy_0392_approved if {
     input.user.risk_score < 50
     input.system.health > 0.8
 }
-allowed_0392 {
-    input.user.active
-    input.resource.public
+policy_0392_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
 }
-
-# Utility function for user info
+policy_0392_allowed if {
+    data.policies.security.enabled
+}

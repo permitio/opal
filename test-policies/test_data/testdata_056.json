@@ -2,105 +2,77 @@
   "test_id": 56,
   "metadata": {
     "environment": "staging",
-    "region": "us-west-2",
-    "version": "1.0.20"
+    "region": "ap-northeast-1",
+    "version": "1.4.10"
   },
   "users": [
     {
       "id": "user_000",
       "name": "User 0",
-      "role": "auditor",
+      "role": "viewer",
       "active": false,
-      "risk_score": 4
+      "risk_score": 52
     },
     {
       "id": "user_001",
       "name": "User 1",
-      "role": "viewer",
-      "active": true,
-      "risk_score": 80
+      "role": "auditor",
+      "active": false,
+      "risk_score": 68
     },
     {
       "id": "user_002",
       "name": "User 2",
-      "role": "user",
-      "active": false,
-      "risk_score": 10
+      "role": "auditor",
+      "active": true,
+      "risk_score": 40
     },
     {
       "id": "user_003",
       "name": "User 3",
-      "role": "auditor",
+      "role": "admin",
       "active": true,
-      "risk_score": 45
+      "risk_score": 76
     },
     {
       "id": "user_004",
       "name": "User 4",
-      "role": "viewer",
-      "active": true,
-      "risk_score": 5
+      "role": "user",
+      "active": false,
+      "risk_score": 88
     },
     {
       "id": "user_005",
       "name": "User 5",
-      "role": "admin",
-      "active": true,
-      "risk_score": 99
-    },
-    {
-      "id": "user_006",
-      "name": "User 6",
-      "role": "editor",
-      "active": true,
-      "risk_score": 29
-    },
-    {
-      "id": "user_007",
-      "name": "User 7",
       "role": "viewer",
-      "active": false,
-      "risk_score": 23
+      "active": true,
+      "risk_score": 15
     }
   ],
   "resources": [
     {
       "id": "res_000",
-      "type": "file",
+      "type": "api",
       "public": true,
-      "owner_id": "user_088",
-      "sensitivity": "secret"
+      "owner_id": "user_034",
+      "sensitivity": "public"
     },
     {
       "id": "res_001",
-      "type": "api",
-      "public": false,
-      "owner_id": "user_056",
-      "sensitivity": "confidential"
-    },
-    {
-      "id": "res_002",
       "type": "bucket",
-      "public": true,
-      "owner_id": "user_081",
-      "sensitivity": "confidential"
-    },
-    {
-      "id": "res_003",
-      "type": "database",
-      "public": true,
-      "owner_id": "user_036",
+      "public": false,
+      "owner_id": "user_033",
       "sensitivity": "internal"
     }
   ],
   "system": {
-    "health": 0.64,
-    "load": 55.07,
-    "uptime_days": 293
+    "health": 0.83,
+    "load": 98.53,
+    "uptime_days": 84
   },
   "policies": {
     "security": {
-      "enabled": false
+      "enabled": true
     },
     "compliance": {
       "enabled": false
@@ -109,7 +81,7 @@
       "enabled": true
     },
     "audit": {
-      "enabled": false
+      "enabled": true
     }
   }
 }

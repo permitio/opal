@@ -1,7 +1,7 @@
-package audit.authentication.context.validate.helpers.policy_0048
+package compliance.enforcement.user.validate.policy_0048
 
-# Auto-generated policy 48
-# Package: audit.authentication.context.validate.helpers
+# Auto-generated policy 48 (Rego v1 syntax)
+# Package: compliance.enforcement.user.validate
 
 # Metadata
 metadata := {
@@ -11,16 +11,11 @@ metadata := {
 }
 
 # Rules
-approved_0048 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
-}
-allowed_0048 {
-    data.policies.audit.enabled
-}
-denied_0048 {
+policy_0048_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-
-# Utility function for user info
+policy_0048_allowed if {
+    input.user.active
+    input.resource.public
+}

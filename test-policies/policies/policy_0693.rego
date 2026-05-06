@@ -1,7 +1,7 @@
-package audit.monitoring.policy.deny.policy_0693
+package compliance.authorization.resource.check.policy_0693
 
-# Auto-generated policy 693
-# Package: audit.monitoring.policy.deny
+# Auto-generated policy 693 (Rego v1 syntax)
+# Package: compliance.authorization.resource.check
 
 # Metadata
 metadata := {
@@ -11,16 +11,13 @@ metadata := {
 }
 
 # Rules
-default allowed_0693 = false
-allowed_0693 {
-    data.policies.audit.enabled
-}
-allowed_0693 {
+policy_0693_allowed if {
     input.user.role == "admin"
 }
-approved_0693 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
+policy_0693_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
 }
-
-# Utility function for user info
+policy_0693_allowed if {
+    data.policies.compliance.enabled
+}

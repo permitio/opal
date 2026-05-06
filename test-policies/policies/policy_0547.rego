@@ -1,7 +1,7 @@
-package access.authentication.policy.check.policy_0547
+package risk.validation.resource.allow.policy_0547
 
-# Auto-generated policy 547
-# Package: access.authentication.policy.check
+# Auto-generated policy 547 (Rego v1 syntax)
+# Package: risk.validation.resource.allow
 
 # Metadata
 metadata := {
@@ -11,20 +11,11 @@ metadata := {
 }
 
 # Rules
-approved_0547 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
-}
-denied_0547 {
-    input.action == "delete"
-    input.user.role != "admin"
-}
-allowed_0547 {
-    data.policies.access.enabled
-}
-allowed_0547 {
+policy_0547_allowed if {
     input.user.active
     input.resource.public
 }
-
-# Utility function for user info
+policy_0547_allowed if {
+    data.policies.risk.enabled
+}
+default policy_0547_allowed = false

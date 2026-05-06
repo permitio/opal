@@ -1,7 +1,7 @@
-package compliance.monitoring.context.check.policy_0904
+package security.monitoring.policy.verify.policy_0904
 
-# Auto-generated policy 904
-# Package: compliance.monitoring.context.check
+# Auto-generated policy 904 (Rego v1 syntax)
+# Package: security.monitoring.policy.verify
 
 # Metadata
 metadata := {
@@ -11,13 +11,18 @@ metadata := {
 }
 
 # Rules
-allowed_0904 {
-    input.user.active
-    input.resource.public
-}
-denied_0904 {
+policy_0904_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-
-# Utility function for user info
+policy_0904_allowed if {
+    input.user.active
+    input.resource.public
+}
+policy_0904_allowed if {
+    input.user.role == "admin"
+}
+policy_0904_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
+}

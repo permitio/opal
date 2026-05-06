@@ -1,7 +1,7 @@
-package compliance.authorization.action.allow.policy_0133
+package risk.enforcement.context.deny.policy_0133
 
-# Auto-generated policy 133
-# Package: compliance.authorization.action.allow
+# Auto-generated policy 133 (Rego v1 syntax)
+# Package: risk.enforcement.context.deny
 
 # Metadata
 metadata := {
@@ -11,16 +11,11 @@ metadata := {
 }
 
 # Rules
-denied_0133 {
-    input.action == "delete"
-    input.user.role != "admin"
-}
-allowed_0133 {
-    data.policies.compliance.enabled
-}
-allowed_0133 {
+default policy_0133_allowed = false
+policy_0133_allowed if {
     input.user.active
     input.resource.public
 }
-
-# Utility function for user info
+policy_0133_allowed if {
+    input.user.role == "admin"
+}

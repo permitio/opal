@@ -1,7 +1,7 @@
-package audit.enforcement.resource.deny.policy_0263
+package compliance.monitoring.action.verify.data.policy_0263
 
-# Auto-generated policy 263
-# Package: audit.enforcement.resource.deny
+# Auto-generated policy 263 (Rego v1 syntax)
+# Package: compliance.monitoring.action.verify.data
 
 # Metadata
 metadata := {
@@ -11,13 +11,15 @@ metadata := {
 }
 
 # Rules
-allowed_0263 {
-    data.policies.audit.enabled
+default policy_0263_allowed = false
+policy_0263_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
 }
-allowed_0263 {
+policy_0263_allowed if {
+    data.policies.compliance.enabled
+}
+policy_0263_allowed if {
     input.user.active
     input.resource.public
 }
-default allowed_0263 = false
-
-# Utility function for user info

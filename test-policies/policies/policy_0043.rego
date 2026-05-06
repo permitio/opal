@@ -1,7 +1,7 @@
-package governance.authentication.context.allow.policy_0043
+package governance.monitoring.context.check.policy_0043
 
-# Auto-generated policy 43
-# Package: governance.authentication.context.allow
+# Auto-generated policy 43 (Rego v1 syntax)
+# Package: governance.monitoring.context.check
 
 # Metadata
 metadata := {
@@ -11,12 +11,15 @@ metadata := {
 }
 
 # Rules
-allowed_0043 {
-    input.user.role == "admin"
+policy_0043_allowed if {
+    data.policies.governance.enabled
 }
-allowed_0043 {
+policy_0043_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
+}
+default policy_0043_allowed = false
+policy_0043_allowed if {
     input.user.active
     input.resource.public
 }
-
-# Utility function for user info

@@ -1,7 +1,7 @@
-package risk.validation.policy.deny.data.policy_0403
+package compliance.monitoring.action.verify.data.policy_0403
 
-# Auto-generated policy 403
-# Package: risk.validation.policy.deny.data
+# Auto-generated policy 403 (Rego v1 syntax)
+# Package: compliance.monitoring.action.verify.data
 
 # Metadata
 metadata := {
@@ -11,16 +11,18 @@ metadata := {
 }
 
 # Rules
-allowed_0403 {
-    data.policies.risk.enabled
+policy_0403_allowed if {
+    input.user.role == "admin"
 }
-approved_0403 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
-}
-allowed_0403 {
+policy_0403_allowed if {
     input.user.active
     input.resource.public
 }
-
-# Utility function for user info
+policy_0403_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
+}
+policy_0403_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
+}

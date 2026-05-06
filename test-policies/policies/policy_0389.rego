@@ -1,7 +1,7 @@
-package governance.validation.policy.deny.policy_0389
+package access.authorization.action.deny.policy_0389
 
-# Auto-generated policy 389
-# Package: governance.validation.policy.deny
+# Auto-generated policy 389 (Rego v1 syntax)
+# Package: access.authorization.action.deny
 
 # Metadata
 metadata := {
@@ -11,17 +11,14 @@ metadata := {
 }
 
 # Rules
-approved_0389 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
+policy_0389_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
 }
-allowed_0389 {
+policy_0389_allowed if {
+    input.user.role == "admin"
+}
+policy_0389_allowed if {
     input.user.active
     input.resource.public
 }
-default allowed_0389 = false
-allowed_0389 {
-    input.user.role == "admin"
-}
-
-# Utility function for user info

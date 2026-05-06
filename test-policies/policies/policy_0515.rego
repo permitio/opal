@@ -1,7 +1,7 @@
-package access.authentication.resource.validate.policy_0515
+package risk.validation.policy.allow.data.policy_0515
 
-# Auto-generated policy 515
-# Package: access.authentication.resource.validate
+# Auto-generated policy 515 (Rego v1 syntax)
+# Package: risk.validation.policy.allow.data
 
 # Metadata
 metadata := {
@@ -11,13 +11,11 @@ metadata := {
 }
 
 # Rules
-default allowed_0515 = false
-approved_0515 {
+policy_0515_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
+}
+policy_0515_approved if {
     input.user.risk_score < 50
     input.system.health > 0.8
 }
-allowed_0515 {
-    input.user.role == "admin"
-}
-
-# Utility function for user info

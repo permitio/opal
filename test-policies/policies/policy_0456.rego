@@ -1,7 +1,7 @@
-package audit.authorization.action.validate.policy_0456
+package risk.authentication.user.allow.policy_0456
 
-# Auto-generated policy 456
-# Package: audit.authorization.action.validate
+# Auto-generated policy 456 (Rego v1 syntax)
+# Package: risk.authentication.user.allow
 
 # Metadata
 metadata := {
@@ -11,13 +11,15 @@ metadata := {
 }
 
 # Rules
-denied_0456 {
-    input.action == "delete"
-    input.user.role != "admin"
+policy_0456_allowed if {
+    input.user.role == "admin"
 }
-allowed_0456 {
+policy_0456_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
+}
+policy_0456_allowed if {
     input.user.active
     input.resource.public
 }
-
-# Utility function for user info
+default policy_0456_allowed = false

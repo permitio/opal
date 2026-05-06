@@ -1,7 +1,7 @@
-package access.enforcement.policy.check.core.policy_0215
+package compliance.enforcement.resource.allow.policy_0215
 
-# Auto-generated policy 215
-# Package: access.enforcement.policy.check.core
+# Auto-generated policy 215 (Rego v1 syntax)
+# Package: compliance.enforcement.resource.allow
 
 # Metadata
 metadata := {
@@ -11,17 +11,10 @@ metadata := {
 }
 
 # Rules
-denied_0215 {
-    input.action == "delete"
-    input.user.role != "admin"
+policy_0215_allowed if {
+    data.policies.compliance.enabled
 }
-default allowed_0215 = false
-approved_0215 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
-}
-allowed_0215 {
+default policy_0215_allowed = false
+policy_0215_allowed if {
     input.user.role == "admin"
 }
-
-# Utility function for user info

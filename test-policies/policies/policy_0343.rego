@@ -1,7 +1,7 @@
-package audit.validation.user.validate.policy_0343
+package access.authorization.context.verify.helpers.policy_0343
 
-# Auto-generated policy 343
-# Package: audit.validation.user.validate
+# Auto-generated policy 343 (Rego v1 syntax)
+# Package: access.authorization.context.verify.helpers
 
 # Metadata
 metadata := {
@@ -11,14 +11,10 @@ metadata := {
 }
 
 # Rules
-denied_0343 {
-    input.action == "delete"
-    input.user.role != "admin"
+policy_0343_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
 }
-allowed_0343 {
-    input.user.active
-    input.resource.public
+policy_0343_allowed if {
+    input.user.role == "admin"
 }
-default allowed_0343 = false
-
-# Utility function for user info

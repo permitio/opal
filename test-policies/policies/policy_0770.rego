@@ -1,7 +1,7 @@
-package access.authorization.resource.check.utils.policy_0770
+package compliance.validation.policy.verify.policy_0770
 
-# Auto-generated policy 770
-# Package: access.authorization.resource.check.utils
+# Auto-generated policy 770 (Rego v1 syntax)
+# Package: compliance.validation.policy.verify
 
 # Metadata
 metadata := {
@@ -11,10 +11,14 @@ metadata := {
 }
 
 # Rules
-default allowed_0770 = false
-denied_0770 {
+policy_0770_allowed if {
+    input.user.active
+    input.resource.public
+}
+policy_0770_allowed if {
+    data.policies.compliance.enabled
+}
+policy_0770_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-
-# Utility function for user info

@@ -1,7 +1,7 @@
-package audit.enforcement.resource.validate.logic.policy_0884
+package governance.authentication.user.verify.policy_0884
 
-# Auto-generated policy 884
-# Package: audit.enforcement.resource.validate.logic
+# Auto-generated policy 884 (Rego v1 syntax)
+# Package: governance.authentication.user.verify
 
 # Metadata
 metadata := {
@@ -11,12 +11,14 @@ metadata := {
 }
 
 # Rules
-allowed_0884 {
-    data.policies.audit.enabled
-}
-denied_0884 {
+policy_0884_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-
-# Utility function for user info
+policy_0884_allowed if {
+    input.user.active
+    input.resource.public
+}
+policy_0884_allowed if {
+    data.policies.governance.enabled
+}

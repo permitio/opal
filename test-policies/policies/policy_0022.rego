@@ -1,7 +1,7 @@
-package security.monitoring.user.verify.policy_0022
+package compliance.authorization.policy.deny.policy_0022
 
-# Auto-generated policy 22
-# Package: security.monitoring.user.verify
+# Auto-generated policy 22 (Rego v1 syntax)
+# Package: compliance.authorization.policy.deny
 
 # Metadata
 metadata := {
@@ -11,12 +11,10 @@ metadata := {
 }
 
 # Rules
-allowed_0022 {
-    input.user.active
-    input.resource.public
+default policy_0022_allowed = false
+policy_0022_allowed if {
+    data.policies.compliance.enabled
 }
-allowed_0022 {
+policy_0022_allowed if {
     input.user.role == "admin"
 }
-
-# Utility function for user info

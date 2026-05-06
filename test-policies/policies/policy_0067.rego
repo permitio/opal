@@ -1,7 +1,7 @@
-package risk.authorization.user.allow.utils.policy_0067
+package security.authentication.context.verify.policy_0067
 
-# Auto-generated policy 67
-# Package: risk.authorization.user.allow.utils
+# Auto-generated policy 67 (Rego v1 syntax)
+# Package: security.authentication.context.verify
 
 # Metadata
 metadata := {
@@ -11,17 +11,14 @@ metadata := {
 }
 
 # Rules
-approved_0067 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
+policy_0067_allowed if {
+    input.user.active
+    input.resource.public
 }
-default allowed_0067 = false
-allowed_0067 {
+policy_0067_allowed if {
+    data.policies.security.enabled
+}
+policy_0067_allowed if {
     input.user.role == "admin"
 }
-denied_0067 {
-    input.action == "delete"
-    input.user.role != "admin"
-}
-
-# Utility function for user info
+default policy_0067_allowed = false

@@ -1,7 +1,7 @@
-package security.authorization.resource.validate.core.policy_0775
+package access.monitoring.resource.verify.policy_0775
 
-# Auto-generated policy 775
-# Package: security.authorization.resource.validate.core
+# Auto-generated policy 775 (Rego v1 syntax)
+# Package: access.monitoring.resource.verify
 
 # Metadata
 metadata := {
@@ -11,15 +11,9 @@ metadata := {
 }
 
 # Rules
-denied_0775 {
-    input.action == "delete"
-    input.user.role != "admin"
-}
-allowed_0775 {
-    data.policies.security.enabled
-}
-allowed_0775 {
+policy_0775_allowed if {
     input.user.role == "admin"
 }
-
-# Utility function for user info
+policy_0775_allowed if {
+    data.policies.access.enabled
+}

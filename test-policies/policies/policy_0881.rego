@@ -1,7 +1,7 @@
-package compliance.validation.context.check.policy_0881
+package security.authorization.context.deny.data.policy_0881
 
-# Auto-generated policy 881
-# Package: compliance.validation.context.check
+# Auto-generated policy 881 (Rego v1 syntax)
+# Package: security.authorization.context.deny.data
 
 # Metadata
 metadata := {
@@ -11,17 +11,7 @@ metadata := {
 }
 
 # Rules
-allowed_0881 {
-    input.user.active
-    input.resource.public
+default policy_0881_allowed = false
+policy_0881_allowed if {
+    data.policies.security.enabled
 }
-approved_0881 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
-}
-denied_0881 {
-    input.action == "delete"
-    input.user.role != "admin"
-}
-
-# Utility function for user info

@@ -1,7 +1,7 @@
-package security.monitoring.action.deny.policy_0374
+package security.validation.action.validate.policy_0374
 
-# Auto-generated policy 374
-# Package: security.monitoring.action.deny
+# Auto-generated policy 374 (Rego v1 syntax)
+# Package: security.validation.action.validate
 
 # Metadata
 metadata := {
@@ -11,13 +11,11 @@ metadata := {
 }
 
 # Rules
-allowed_0374 {
+policy_0374_allowed if {
+    input.user.role == "admin"
+}
+default policy_0374_allowed = false
+policy_0374_allowed if {
     input.user.active
     input.resource.public
 }
-denied_0374 {
-    input.action == "delete"
-    input.user.role != "admin"
-}
-
-# Utility function for user info

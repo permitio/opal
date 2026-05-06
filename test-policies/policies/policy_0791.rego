@@ -1,7 +1,7 @@
-package access.enforcement.policy.deny.policy_0791
+package compliance.enforcement.context.allow.policy_0791
 
-# Auto-generated policy 791
-# Package: access.enforcement.policy.deny
+# Auto-generated policy 791 (Rego v1 syntax)
+# Package: compliance.enforcement.context.allow
 
 # Metadata
 metadata := {
@@ -11,12 +11,15 @@ metadata := {
 }
 
 # Rules
-allowed_0791 {
+policy_0791_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
+}
+policy_0791_allowed if {
     input.user.role == "admin"
 }
-allowed_0791 {
-    data.policies.access.enabled
+default policy_0791_allowed = false
+policy_0791_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
 }
-default allowed_0791 = false
-
-# Utility function for user info

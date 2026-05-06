@@ -1,7 +1,7 @@
-package governance.validation.action.check.helpers.policy_0865
+package compliance.authorization.action.check.policy_0865
 
-# Auto-generated policy 865
-# Package: governance.validation.action.check.helpers
+# Auto-generated policy 865 (Rego v1 syntax)
+# Package: compliance.authorization.action.check
 
 # Metadata
 metadata := {
@@ -11,13 +11,17 @@ metadata := {
 }
 
 # Rules
-allowed_0865 {
-    input.user.active
-    input.resource.public
+policy_0865_allowed if {
+    input.user.role == "admin"
 }
-default allowed_0865 = false
-allowed_0865 {
-    data.policies.governance.enabled
+policy_0865_allowed if {
+    data.policies.compliance.enabled
 }
-
-# Utility function for user info
+policy_0865_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
+}
+policy_0865_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
+}

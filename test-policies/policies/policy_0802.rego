@@ -1,7 +1,7 @@
-package security.validation.action.deny.policy_0802
+package risk.validation.policy.validate.policy_0802
 
-# Auto-generated policy 802
-# Package: security.validation.action.deny
+# Auto-generated policy 802 (Rego v1 syntax)
+# Package: risk.validation.policy.validate
 
 # Metadata
 metadata := {
@@ -11,17 +11,7 @@ metadata := {
 }
 
 # Rules
-allowed_0802 {
-    data.policies.security.enabled
+policy_0802_allowed if {
+    data.policies.risk.enabled
 }
-default allowed_0802 = false
-approved_0802 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
-}
-denied_0802 {
-    input.action == "delete"
-    input.user.role != "admin"
-}
-
-# Utility function for user info
+default policy_0802_allowed = false

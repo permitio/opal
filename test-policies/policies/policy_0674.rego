@@ -1,7 +1,7 @@
-package risk.authentication.context.verify.data.policy_0674
+package compliance.monitoring.action.deny.logic.policy_0674
 
-# Auto-generated policy 674
-# Package: risk.authentication.context.verify.data
+# Auto-generated policy 674 (Rego v1 syntax)
+# Package: compliance.monitoring.action.deny.logic
 
 # Metadata
 metadata := {
@@ -11,16 +11,10 @@ metadata := {
 }
 
 # Rules
-allowed_0674 {
+policy_0674_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
+}
+policy_0674_allowed if {
     input.user.role == "admin"
 }
-approved_0674 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
-}
-default allowed_0674 = false
-allowed_0674 {
-    data.policies.risk.enabled
-}
-
-# Utility function for user info

@@ -1,7 +1,7 @@
-package access.enforcement.user.deny.policy_0591
+package access.authentication.policy.verify.policy_0591
 
-# Auto-generated policy 591
-# Package: access.enforcement.user.deny
+# Auto-generated policy 591 (Rego v1 syntax)
+# Package: access.authentication.policy.verify
 
 # Metadata
 metadata := {
@@ -11,13 +11,14 @@ metadata := {
 }
 
 # Rules
-allowed_0591 {
-    data.policies.access.enabled
-}
-approved_0591 {
+policy_0591_approved if {
     input.user.risk_score < 50
     input.system.health > 0.8
 }
-default allowed_0591 = false
-
-# Utility function for user info
+policy_0591_allowed if {
+    input.user.active
+    input.resource.public
+}
+policy_0591_allowed if {
+    data.policies.access.enabled
+}

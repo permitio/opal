@@ -1,7 +1,7 @@
-package governance.authentication.resource.deny.policy_0923
+package risk.authentication.user.allow.policy_0923
 
-# Auto-generated policy 923
-# Package: governance.authentication.resource.deny
+# Auto-generated policy 923 (Rego v1 syntax)
+# Package: risk.authentication.user.allow
 
 # Metadata
 metadata := {
@@ -11,13 +11,8 @@ metadata := {
 }
 
 # Rules
-allowed_0923 {
-    input.user.active
-    input.resource.public
-}
-denied_0923 {
+default policy_0923_allowed = false
+policy_0923_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-
-# Utility function for user info

@@ -1,7 +1,7 @@
-package governance.validation.resource.allow.policy_0754
+package security.authentication.context.validate.policy_0754
 
-# Auto-generated policy 754
-# Package: governance.validation.resource.allow
+# Auto-generated policy 754 (Rego v1 syntax)
+# Package: security.authentication.context.validate
 
 # Metadata
 metadata := {
@@ -11,10 +11,12 @@ metadata := {
 }
 
 # Rules
-approved_0754 {
+default policy_0754_allowed = false
+policy_0754_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
+}
+policy_0754_approved if {
     input.user.risk_score < 50
     input.system.health > 0.8
 }
-default allowed_0754 = false
-
-# Utility function for user info

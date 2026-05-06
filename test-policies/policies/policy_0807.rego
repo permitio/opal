@@ -1,7 +1,7 @@
-package security.enforcement.action.verify.data.policy_0807
+package security.authentication.user.allow.core.policy_0807
 
-# Auto-generated policy 807
-# Package: security.enforcement.action.verify.data
+# Auto-generated policy 807 (Rego v1 syntax)
+# Package: security.authentication.user.allow.core
 
 # Metadata
 metadata := {
@@ -11,12 +11,7 @@ metadata := {
 }
 
 # Rules
-allowed_0807 {
-    input.user.active
-    input.resource.public
-}
-allowed_0807 {
+default policy_0807_allowed = false
+policy_0807_allowed if {
     data.policies.security.enabled
 }
-
-# Utility function for user info

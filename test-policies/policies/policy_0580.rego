@@ -1,7 +1,7 @@
-package risk.authorization.context.check.policy_0580
+package access.enforcement.context.deny.policy_0580
 
-# Auto-generated policy 580
-# Package: risk.authorization.context.check
+# Auto-generated policy 580 (Rego v1 syntax)
+# Package: access.enforcement.context.deny
 
 # Metadata
 metadata := {
@@ -11,17 +11,11 @@ metadata := {
 }
 
 # Rules
-approved_0580 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
+default policy_0580_allowed = false
+policy_0580_allowed if {
+    input.user.active
+    input.resource.public
 }
-default allowed_0580 = false
-allowed_0580 {
-    data.policies.risk.enabled
+policy_0580_allowed if {
+    data.policies.access.enabled
 }
-denied_0580 {
-    input.action == "delete"
-    input.user.role != "admin"
-}
-
-# Utility function for user info

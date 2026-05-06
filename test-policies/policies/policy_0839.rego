@@ -1,7 +1,7 @@
-package audit.validation.action.validate.core.policy_0839
+package access.authorization.action.allow.policy_0839
 
-# Auto-generated policy 839
-# Package: audit.validation.action.validate.core
+# Auto-generated policy 839 (Rego v1 syntax)
+# Package: access.authorization.action.allow
 
 # Metadata
 metadata := {
@@ -11,19 +11,15 @@ metadata := {
 }
 
 # Rules
-allowed_0839 {
-    data.policies.audit.enabled
+default policy_0839_allowed = false
+policy_0839_allowed if {
+    data.policies.access.enabled
 }
-allowed_0839 {
-    input.user.role == "admin"
+policy_0839_allowed if {
+    input.user.active
+    input.resource.public
 }
-denied_0839 {
+policy_0839_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-approved_0839 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
-}
-
-# Utility function for user info

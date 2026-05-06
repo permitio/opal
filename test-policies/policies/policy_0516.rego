@@ -1,7 +1,7 @@
-package security.validation.context.allow.policy_0516
+package security.enforcement.user.allow.data.policy_0516
 
-# Auto-generated policy 516
-# Package: security.validation.context.allow
+# Auto-generated policy 516 (Rego v1 syntax)
+# Package: security.enforcement.user.allow.data
 
 # Metadata
 metadata := {
@@ -11,16 +11,10 @@ metadata := {
 }
 
 # Rules
-default allowed_0516 = false
-allowed_0516 {
-    data.policies.security.enabled
+policy_0516_allowed if {
+    input.user.role == "admin"
 }
-allowed_0516 {
+policy_0516_allowed if {
     input.user.active
     input.resource.public
 }
-allowed_0516 {
-    input.user.role == "admin"
-}
-
-# Utility function for user info

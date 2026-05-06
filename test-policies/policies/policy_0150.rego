@@ -1,7 +1,7 @@
-package governance.authentication.user.deny.policy_0150
+package access.authentication.action.allow.logic.policy_0150
 
-# Auto-generated policy 150
-# Package: governance.authentication.user.deny
+# Auto-generated policy 150 (Rego v1 syntax)
+# Package: access.authentication.action.allow.logic
 
 # Metadata
 metadata := {
@@ -11,13 +11,15 @@ metadata := {
 }
 
 # Rules
-allowed_0150 {
-    input.user.active
-    input.resource.public
+policy_0150_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
 }
-allowed_0150 {
-    data.policies.governance.enabled
+policy_0150_allowed if {
+    input.user.role == "admin"
 }
-default allowed_0150 = false
-
-# Utility function for user info
+default policy_0150_allowed = false
+policy_0150_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
+}

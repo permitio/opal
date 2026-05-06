@@ -1,7 +1,7 @@
-package compliance.authentication.policy.deny.policy_0582
+package audit.authorization.resource.deny.policy_0582
 
-# Auto-generated policy 582
-# Package: compliance.authentication.policy.deny
+# Auto-generated policy 582 (Rego v1 syntax)
+# Package: audit.authorization.resource.deny
 
 # Metadata
 metadata := {
@@ -11,19 +11,15 @@ metadata := {
 }
 
 # Rules
-allowed_0582 {
-    input.user.role == "admin"
+policy_0582_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
 }
-allowed_0582 {
-    input.user.active
-    input.resource.public
-}
-allowed_0582 {
-    data.policies.compliance.enabled
-}
-approved_0582 {
+policy_0582_approved if {
     input.user.risk_score < 50
     input.system.health > 0.8
 }
-
-# Utility function for user info
+policy_0582_allowed if {
+    input.user.active
+    input.resource.public
+}

@@ -1,7 +1,7 @@
-package risk.validation.user.deny.policy_0579
+package security.authentication.action.validate.helpers.policy_0579
 
-# Auto-generated policy 579
-# Package: risk.validation.user.deny
+# Auto-generated policy 579 (Rego v1 syntax)
+# Package: security.authentication.action.validate.helpers
 
 # Metadata
 metadata := {
@@ -11,14 +11,14 @@ metadata := {
 }
 
 # Rules
-default allowed_0579 = false
-denied_0579 {
+policy_0579_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-allowed_0579 {
-    input.user.active
-    input.resource.public
+policy_0579_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
 }
-
-# Utility function for user info
+policy_0579_allowed if {
+    input.user.role == "admin"
+}

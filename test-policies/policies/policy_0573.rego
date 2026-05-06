@@ -1,7 +1,7 @@
-package audit.enforcement.policy.allow.policy_0573
+package security.enforcement.action.validate.policy_0573
 
-# Auto-generated policy 573
-# Package: audit.enforcement.policy.allow
+# Auto-generated policy 573 (Rego v1 syntax)
+# Package: security.enforcement.action.validate
 
 # Metadata
 metadata := {
@@ -11,16 +11,17 @@ metadata := {
 }
 
 # Rules
-approved_0573 {
+policy_0573_approved if {
     input.user.risk_score < 50
     input.system.health > 0.8
 }
-allowed_0573 {
-    data.policies.audit.enabled
+policy_0573_allowed if {
+    input.user.role == "admin"
 }
-denied_0573 {
+policy_0573_allowed if {
+    data.policies.security.enabled
+}
+policy_0573_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-
-# Utility function for user info

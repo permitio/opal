@@ -1,7 +1,7 @@
-package risk.authentication.policy.validate.policy_0961
+package compliance.authentication.user.allow.policy_0961
 
-# Auto-generated policy 961
-# Package: risk.authentication.policy.validate
+# Auto-generated policy 961 (Rego v1 syntax)
+# Package: compliance.authentication.user.allow
 
 # Metadata
 metadata := {
@@ -11,19 +11,10 @@ metadata := {
 }
 
 # Rules
-allowed_0961 {
+policy_0961_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
+}
+policy_0961_allowed if {
     input.user.role == "admin"
 }
-denied_0961 {
-    input.action == "delete"
-    input.user.role != "admin"
-}
-allowed_0961 {
-    data.policies.risk.enabled
-}
-allowed_0961 {
-    input.user.active
-    input.resource.public
-}
-
-# Utility function for user info

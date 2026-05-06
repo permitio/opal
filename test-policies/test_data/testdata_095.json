@@ -1,88 +1,39 @@
 {
   "test_id": 95,
   "metadata": {
-    "environment": "staging",
-    "region": "ap-northeast-1",
-    "version": "1.5.5"
+    "environment": "prod",
+    "region": "us-west-2",
+    "version": "1.1.18"
   },
   "users": [
     {
       "id": "user_000",
       "name": "User 0",
-      "role": "viewer",
-      "active": true,
-      "risk_score": 31
-    },
-    {
-      "id": "user_001",
-      "name": "User 1",
       "role": "auditor",
-      "active": true,
-      "risk_score": 4
-    },
-    {
-      "id": "user_002",
-      "name": "User 2",
-      "role": "editor",
-      "active": true,
-      "risk_score": 3
-    },
-    {
-      "id": "user_003",
-      "name": "User 3",
-      "role": "admin",
-      "active": true,
-      "risk_score": 24
-    },
-    {
-      "id": "user_004",
-      "name": "User 4",
-      "role": "admin",
       "active": false,
-      "risk_score": 26
+      "risk_score": 53
     }
   ],
   "resources": [
     {
       "id": "res_000",
-      "type": "database",
-      "public": true,
-      "owner_id": "user_013",
-      "sensitivity": "confidential"
-    },
-    {
-      "id": "res_001",
-      "type": "service",
-      "public": true,
-      "owner_id": "user_029",
+      "type": "bucket",
+      "public": false,
+      "owner_id": "user_077",
       "sensitivity": "internal"
     },
     {
-      "id": "res_002",
+      "id": "res_001",
       "type": "api",
-      "public": true,
-      "owner_id": "user_071",
+      "public": false,
+      "owner_id": "user_090",
       "sensitivity": "public"
-    },
-    {
-      "id": "res_003",
-      "type": "file",
-      "public": false,
-      "owner_id": "user_062",
-      "sensitivity": "secret"
-    },
-    {
-      "id": "res_004",
-      "type": "service",
-      "public": false,
-      "owner_id": "user_003",
-      "sensitivity": "confidential"
     }
   ],
   "system": {
-    "health": 0.56,
-    "load": 40.0,
-    "uptime_days": 301
+    "health": 0.87,
+    "load": 61.71,
+    "uptime_days": 262
   },
   "policies": {
     "security": {
@@ -95,7 +46,7 @@
       "enabled": true
     },
     "audit": {
-      "enabled": false
+      "enabled": true
     }
   }
 }

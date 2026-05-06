@@ -1,7 +1,7 @@
-package compliance.monitoring.context.allow.logic.policy_0575
+package risk.enforcement.action.deny.policy_0575
 
-# Auto-generated policy 575
-# Package: compliance.monitoring.context.allow.logic
+# Auto-generated policy 575 (Rego v1 syntax)
+# Package: risk.enforcement.action.deny
 
 # Metadata
 metadata := {
@@ -11,13 +11,14 @@ metadata := {
 }
 
 # Rules
-denied_0575 {
-    input.action == "delete"
-    input.user.role != "admin"
+policy_0575_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
 }
-allowed_0575 {
+policy_0575_allowed if {
     input.user.active
     input.resource.public
 }
-
-# Utility function for user info
+policy_0575_allowed if {
+    data.policies.risk.enabled
+}

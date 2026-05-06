@@ -1,7 +1,7 @@
-package risk.authentication.action.allow.policy_0420
+package risk.validation.context.verify.policy_0420
 
-# Auto-generated policy 420
-# Package: risk.authentication.action.allow
+# Auto-generated policy 420 (Rego v1 syntax)
+# Package: risk.validation.context.verify
 
 # Metadata
 metadata := {
@@ -11,13 +11,10 @@ metadata := {
 }
 
 # Rules
-default allowed_0420 = false
-denied_0420 {
-    input.action == "delete"
-    input.user.role != "admin"
-}
-allowed_0420 {
+policy_0420_allowed if {
     data.policies.risk.enabled
 }
-
-# Utility function for user info
+policy_0420_allowed if {
+    input.user.role == "admin"
+}
+default policy_0420_allowed = false

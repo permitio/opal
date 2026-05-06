@@ -1,7 +1,7 @@
-package audit.enforcement.policy.deny.policy_0419
+package governance.authentication.user.deny.utils.policy_0419
 
-# Auto-generated policy 419
-# Package: audit.enforcement.policy.deny
+# Auto-generated policy 419 (Rego v1 syntax)
+# Package: governance.authentication.user.deny.utils
 
 # Metadata
 metadata := {
@@ -11,14 +11,11 @@ metadata := {
 }
 
 # Rules
-approved_0419 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
-}
-default allowed_0419 = false
-denied_0419 {
+default policy_0419_allowed = false
+policy_0419_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-
-# Utility function for user info
+policy_0419_allowed if {
+    input.user.role == "admin"
+}

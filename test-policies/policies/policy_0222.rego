@@ -1,7 +1,7 @@
-package governance.validation.policy.validate.data.policy_0222
+package security.authentication.context.validate.policy_0222
 
-# Auto-generated policy 222
-# Package: governance.validation.policy.validate.data
+# Auto-generated policy 222 (Rego v1 syntax)
+# Package: security.authentication.context.validate
 
 # Metadata
 metadata := {
@@ -11,17 +11,10 @@ metadata := {
 }
 
 # Rules
-approved_0222 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
+policy_0222_allowed if {
+    data.policies.security.enabled
 }
-allowed_0222 {
-    input.user.active
-    input.resource.public
+default policy_0222_allowed = false
+policy_0222_allowed if {
+    input.user.role == "admin"
 }
-denied_0222 {
-    input.action == "delete"
-    input.user.role != "admin"
-}
-
-# Utility function for user info

@@ -1,7 +1,7 @@
-package governance.validation.policy.verify.policy_0003
+package risk.monitoring.action.verify.data.policy_0003
 
-# Auto-generated policy 3
-# Package: governance.validation.policy.verify
+# Auto-generated policy 3 (Rego v1 syntax)
+# Package: risk.monitoring.action.verify.data
 
 # Metadata
 metadata := {
@@ -11,13 +11,14 @@ metadata := {
 }
 
 # Rules
-default allowed_0003 = false
-allowed_0003 {
+policy_0003_allowed if {
+    input.user.role == "admin"
+}
+default policy_0003_allowed = false
+policy_0003_allowed if {
+    data.policies.risk.enabled
+}
+policy_0003_allowed if {
     input.user.active
     input.resource.public
 }
-allowed_0003 {
-    input.user.role == "admin"
-}
-
-# Utility function for user info

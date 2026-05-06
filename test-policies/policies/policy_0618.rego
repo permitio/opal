@@ -1,7 +1,7 @@
-package audit.monitoring.context.check.policy_0618
+package risk.authentication.user.verify.helpers.policy_0618
 
-# Auto-generated policy 618
-# Package: audit.monitoring.context.check
+# Auto-generated policy 618 (Rego v1 syntax)
+# Package: risk.authentication.user.verify.helpers
 
 # Metadata
 metadata := {
@@ -11,17 +11,11 @@ metadata := {
 }
 
 # Rules
-approved_0618 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
-}
-allowed_0618 {
-    data.policies.audit.enabled
-}
-default allowed_0618 = false
-allowed_0618 {
+default policy_0618_allowed = false
+policy_0618_allowed if {
     input.user.active
     input.resource.public
 }
-
-# Utility function for user info
+policy_0618_allowed if {
+    data.policies.risk.enabled
+}

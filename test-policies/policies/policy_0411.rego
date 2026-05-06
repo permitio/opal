@@ -1,7 +1,7 @@
-package risk.enforcement.action.validate.helpers.policy_0411
+package governance.enforcement.policy.verify.policy_0411
 
-# Auto-generated policy 411
-# Package: risk.enforcement.action.validate.helpers
+# Auto-generated policy 411 (Rego v1 syntax)
+# Package: governance.enforcement.policy.verify
 
 # Metadata
 metadata := {
@@ -11,16 +11,17 @@ metadata := {
 }
 
 # Rules
-allowed_0411 {
-    data.policies.risk.enabled
-}
-denied_0411 {
-    input.action == "delete"
-    input.user.role != "admin"
-}
-approved_0411 {
+policy_0411_approved if {
     input.user.risk_score < 50
     input.system.health > 0.8
 }
-
-# Utility function for user info
+policy_0411_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
+}
+policy_0411_allowed if {
+    input.user.role == "admin"
+}
+policy_0411_allowed if {
+    data.policies.governance.enabled
+}

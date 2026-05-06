@@ -1,7 +1,7 @@
-package security.authentication.resource.check.logic.policy_0126
+package security.enforcement.resource.verify.policy_0126
 
-# Auto-generated policy 126
-# Package: security.authentication.resource.check.logic
+# Auto-generated policy 126 (Rego v1 syntax)
+# Package: security.enforcement.resource.verify
 
 # Metadata
 metadata := {
@@ -11,14 +11,9 @@ metadata := {
 }
 
 # Rules
-default allowed_0126 = false
-allowed_0126 {
-    input.user.active
-    input.resource.public
+policy_0126_allowed if {
+    data.policies.security.enabled
 }
-approved_0126 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
+policy_0126_allowed if {
+    input.user.role == "admin"
 }
-
-# Utility function for user info

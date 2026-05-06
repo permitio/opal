@@ -1,7 +1,7 @@
-package governance.authentication.resource.allow.policy_0370
+package audit.enforcement.context.deny.data.policy_0370
 
-# Auto-generated policy 370
-# Package: governance.authentication.resource.allow
+# Auto-generated policy 370 (Rego v1 syntax)
+# Package: audit.enforcement.context.deny.data
 
 # Metadata
 metadata := {
@@ -11,12 +11,11 @@ metadata := {
 }
 
 # Rules
-default allowed_0370 = false
-allowed_0370 {
-    input.user.role == "admin"
+default policy_0370_allowed = false
+policy_0370_allowed if {
+    data.policies.audit.enabled
 }
-allowed_0370 {
-    data.policies.governance.enabled
+policy_0370_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
 }
-
-# Utility function for user info

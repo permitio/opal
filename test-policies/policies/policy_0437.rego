@@ -1,7 +1,7 @@
-package access.enforcement.resource.check.utils.policy_0437
+package compliance.authorization.user.verify.policy_0437
 
-# Auto-generated policy 437
-# Package: access.enforcement.resource.check.utils
+# Auto-generated policy 437 (Rego v1 syntax)
+# Package: compliance.authorization.user.verify
 
 # Metadata
 metadata := {
@@ -11,16 +11,8 @@ metadata := {
 }
 
 # Rules
-default allowed_0437 = false
-allowed_0437 {
-    input.user.role == "admin"
-}
-allowed_0437 {
-    data.policies.access.enabled
-}
-approved_0437 {
+policy_0437_approved if {
     input.user.risk_score < 50
     input.system.health > 0.8
 }
-
-# Utility function for user info
+default policy_0437_allowed = false

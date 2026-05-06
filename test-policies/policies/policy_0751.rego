@@ -1,7 +1,7 @@
-package risk.monitoring.policy.allow.policy_0751
+package risk.enforcement.context.check.core.policy_0751
 
-# Auto-generated policy 751
-# Package: risk.monitoring.policy.allow
+# Auto-generated policy 751 (Rego v1 syntax)
+# Package: risk.enforcement.context.check.core
 
 # Metadata
 metadata := {
@@ -11,13 +11,10 @@ metadata := {
 }
 
 # Rules
-default allowed_0751 = false
-allowed_0751 {
-    data.policies.risk.enabled
+policy_0751_allowed if {
+    input.user.role == "admin"
 }
-denied_0751 {
-    input.action == "delete"
-    input.user.role != "admin"
+policy_0751_allowed if {
+    input.user.active
+    input.resource.public
 }
-
-# Utility function for user info

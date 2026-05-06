@@ -1,7 +1,7 @@
-package risk.authorization.context.validate.policy_0689
+package governance.enforcement.action.allow.logic.policy_0689
 
-# Auto-generated policy 689
-# Package: risk.authorization.context.validate
+# Auto-generated policy 689 (Rego v1 syntax)
+# Package: governance.enforcement.action.allow.logic
 
 # Metadata
 metadata := {
@@ -11,19 +11,8 @@ metadata := {
 }
 
 # Rules
-approved_0689 {
+default policy_0689_allowed = false
+policy_0689_approved if {
     input.user.risk_score < 50
     input.system.health > 0.8
 }
-allowed_0689 {
-    data.policies.risk.enabled
-}
-allowed_0689 {
-    input.user.role == "admin"
-}
-allowed_0689 {
-    input.user.active
-    input.resource.public
-}
-
-# Utility function for user info

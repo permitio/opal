@@ -1,7 +1,7 @@
-package access.authentication.policy.validate.policy_0845
+package audit.monitoring.context.validate.policy_0845
 
-# Auto-generated policy 845
-# Package: access.authentication.policy.validate
+# Auto-generated policy 845 (Rego v1 syntax)
+# Package: audit.monitoring.context.validate
 
 # Metadata
 metadata := {
@@ -11,13 +11,11 @@ metadata := {
 }
 
 # Rules
-allowed_0845 {
-    input.user.active
-    input.resource.public
+policy_0845_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
 }
-denied_0845 {
+policy_0845_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-
-# Utility function for user info

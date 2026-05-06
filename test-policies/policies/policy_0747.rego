@@ -1,7 +1,7 @@
-package compliance.validation.policy.verify.utils.policy_0747
+package access.enforcement.context.verify.policy_0747
 
-# Auto-generated policy 747
-# Package: compliance.validation.policy.verify.utils
+# Auto-generated policy 747 (Rego v1 syntax)
+# Package: access.enforcement.context.verify
 
 # Metadata
 metadata := {
@@ -11,12 +11,11 @@ metadata := {
 }
 
 # Rules
-denied_0747 {
-    input.action == "delete"
-    input.user.role != "admin"
+policy_0747_allowed if {
+    input.user.active
+    input.resource.public
 }
-allowed_0747 {
-    input.user.role == "admin"
+policy_0747_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
 }
-
-# Utility function for user info

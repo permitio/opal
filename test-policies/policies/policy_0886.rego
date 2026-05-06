@@ -1,7 +1,7 @@
-package risk.monitoring.action.check.policy_0886
+package audit.enforcement.user.validate.policy_0886
 
-# Auto-generated policy 886
-# Package: risk.monitoring.action.check
+# Auto-generated policy 886 (Rego v1 syntax)
+# Package: audit.enforcement.user.validate
 
 # Metadata
 metadata := {
@@ -11,12 +11,15 @@ metadata := {
 }
 
 # Rules
-allowed_0886 {
+policy_0886_allowed if {
     input.user.role == "admin"
 }
-default allowed_0886 = false
-allowed_0886 {
-    data.policies.risk.enabled
+default policy_0886_allowed = false
+policy_0886_allowed if {
+    input.user.active
+    input.resource.public
 }
-
-# Utility function for user info
+policy_0886_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
+}

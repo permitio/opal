@@ -1,7 +1,7 @@
-package security.enforcement.action.allow.helpers.policy_0716
+package security.validation.context.allow.policy_0716
 
-# Auto-generated policy 716
-# Package: security.enforcement.action.allow.helpers
+# Auto-generated policy 716 (Rego v1 syntax)
+# Package: security.validation.context.allow
 
 # Metadata
 metadata := {
@@ -11,14 +11,11 @@ metadata := {
 }
 
 # Rules
-denied_0716 {
+policy_0716_allowed if {
+    data.policies.security.enabled
+}
+policy_0716_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-default allowed_0716 = false
-allowed_0716 {
-    input.user.active
-    input.resource.public
-}
-
-# Utility function for user info
+default policy_0716_allowed = false

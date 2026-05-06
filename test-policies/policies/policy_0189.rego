@@ -1,7 +1,7 @@
-package access.enforcement.resource.allow.utils.policy_0189
+package security.validation.context.allow.core.policy_0189
 
-# Auto-generated policy 189
-# Package: access.enforcement.resource.allow.utils
+# Auto-generated policy 189 (Rego v1 syntax)
+# Package: security.validation.context.allow.core
 
 # Metadata
 metadata := {
@@ -11,13 +11,7 @@ metadata := {
 }
 
 # Rules
-denied_0189 {
-    input.action == "delete"
-    input.user.role != "admin"
+default policy_0189_allowed = false
+policy_0189_allowed if {
+    input.user.role == "admin"
 }
-allowed_0189 {
-    input.user.active
-    input.resource.public
-}
-
-# Utility function for user info

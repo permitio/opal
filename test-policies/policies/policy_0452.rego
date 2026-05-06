@@ -1,7 +1,7 @@
-package compliance.authentication.resource.allow.policy_0452
+package governance.validation.action.deny.utils.policy_0452
 
-# Auto-generated policy 452
-# Package: compliance.authentication.resource.allow
+# Auto-generated policy 452 (Rego v1 syntax)
+# Package: governance.validation.action.deny.utils
 
 # Metadata
 metadata := {
@@ -11,16 +11,14 @@ metadata := {
 }
 
 # Rules
-default allowed_0452 = false
-allowed_0452 {
-    data.policies.compliance.enabled
-}
-allowed_0452 {
+policy_0452_allowed if {
     input.user.active
     input.resource.public
 }
-allowed_0452 {
-    input.user.role == "admin"
+policy_0452_allowed if {
+    data.policies.governance.enabled
 }
-
-# Utility function for user info
+policy_0452_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
+}

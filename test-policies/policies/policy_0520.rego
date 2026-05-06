@@ -1,7 +1,7 @@
-package compliance.authentication.action.deny.data.policy_0520
+package governance.validation.policy.deny.policy_0520
 
-# Auto-generated policy 520
-# Package: compliance.authentication.action.deny.data
+# Auto-generated policy 520 (Rego v1 syntax)
+# Package: governance.validation.policy.deny
 
 # Metadata
 metadata := {
@@ -11,16 +11,9 @@ metadata := {
 }
 
 # Rules
-default allowed_0520 = false
-allowed_0520 {
-    data.policies.compliance.enabled
+policy_0520_allowed if {
+    data.policies.governance.enabled
 }
-allowed_0520 {
+policy_0520_allowed if {
     input.user.role == "admin"
 }
-denied_0520 {
-    input.action == "delete"
-    input.user.role != "admin"
-}
-
-# Utility function for user info

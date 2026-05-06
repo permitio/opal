@@ -1,7 +1,7 @@
-package access.authorization.action.check.policy_0671
+package compliance.monitoring.action.deny.logic.policy_0671
 
-# Auto-generated policy 671
-# Package: access.authorization.action.check
+# Auto-generated policy 671 (Rego v1 syntax)
+# Package: compliance.monitoring.action.deny.logic
 
 # Metadata
 metadata := {
@@ -11,18 +11,12 @@ metadata := {
 }
 
 # Rules
-default allowed_0671 = false
-allowed_0671 {
-    input.user.active
-    input.resource.public
-}
-approved_0671 {
+policy_0671_approved if {
     input.user.risk_score < 50
     input.system.health > 0.8
 }
-denied_0671 {
+default policy_0671_allowed = false
+policy_0671_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-
-# Utility function for user info

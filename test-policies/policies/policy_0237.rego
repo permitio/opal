@@ -1,7 +1,7 @@
-package governance.authentication.context.validate.utils.policy_0237
+package compliance.validation.user.deny.policy_0237
 
-# Auto-generated policy 237
-# Package: governance.authentication.context.validate.utils
+# Auto-generated policy 237 (Rego v1 syntax)
+# Package: compliance.validation.user.deny
 
 # Metadata
 metadata := {
@@ -11,13 +11,15 @@ metadata := {
 }
 
 # Rules
-default allowed_0237 = false
-approved_0237 {
+policy_0237_allowed if {
+    input.user.active
+    input.resource.public
+}
+policy_0237_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
+}
+policy_0237_approved if {
     input.user.risk_score < 50
     input.system.health > 0.8
 }
-allowed_0237 {
-    data.policies.governance.enabled
-}
-
-# Utility function for user info

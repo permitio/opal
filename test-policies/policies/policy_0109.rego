@@ -1,7 +1,7 @@
-package security.authentication.resource.deny.core.policy_0109
+package governance.validation.action.allow.policy_0109
 
-# Auto-generated policy 109
-# Package: security.authentication.resource.deny.core
+# Auto-generated policy 109 (Rego v1 syntax)
+# Package: governance.validation.action.allow
 
 # Metadata
 metadata := {
@@ -11,12 +11,11 @@ metadata := {
 }
 
 # Rules
-allowed_0109 {
-    data.policies.security.enabled
+policy_0109_allowed if {
+    input.user.active
+    input.resource.public
 }
-approved_0109 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
+policy_0109_allowed if {
+    input.user.role == "admin"
 }
-
-# Utility function for user info
+default policy_0109_allowed = false

@@ -1,7 +1,7 @@
-package governance.monitoring.context.validate.policy_0903
+package governance.enforcement.context.deny.logic.policy_0903
 
-# Auto-generated policy 903
-# Package: governance.monitoring.context.validate
+# Auto-generated policy 903 (Rego v1 syntax)
+# Package: governance.enforcement.context.deny.logic
 
 # Metadata
 metadata := {
@@ -11,17 +11,14 @@ metadata := {
 }
 
 # Rules
-denied_0903 {
-    input.action == "delete"
-    input.user.role != "admin"
-}
-approved_0903 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
-}
-default allowed_0903 = false
-allowed_0903 {
+default policy_0903_allowed = false
+policy_0903_allowed if {
     data.policies.governance.enabled
 }
-
-# Utility function for user info
+policy_0903_allowed if {
+    input.user.role == "admin"
+}
+policy_0903_allowed if {
+    input.user.active
+    input.resource.public
+}

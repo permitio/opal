@@ -1,7 +1,7 @@
-package security.authentication.context.allow.helpers.policy_0595
+package audit.validation.user.deny.utils.policy_0595
 
-# Auto-generated policy 595
-# Package: security.authentication.context.allow.helpers
+# Auto-generated policy 595 (Rego v1 syntax)
+# Package: audit.validation.user.deny.utils
 
 # Metadata
 metadata := {
@@ -11,12 +11,15 @@ metadata := {
 }
 
 # Rules
-approved_0595 {
+default policy_0595_allowed = false
+policy_0595_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
+}
+policy_0595_allowed if {
+    data.policies.audit.enabled
+}
+policy_0595_approved if {
     input.user.risk_score < 50
     input.system.health > 0.8
 }
-allowed_0595 {
-    data.policies.security.enabled
-}
-
-# Utility function for user info

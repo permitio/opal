@@ -1,7 +1,7 @@
-package governance.monitoring.action.check.policy_0394
+package governance.enforcement.action.deny.policy_0394
 
-# Auto-generated policy 394
-# Package: governance.monitoring.action.check
+# Auto-generated policy 394 (Rego v1 syntax)
+# Package: governance.enforcement.action.deny
 
 # Metadata
 metadata := {
@@ -11,10 +11,14 @@ metadata := {
 }
 
 # Rules
-default allowed_0394 = false
-allowed_0394 {
+policy_0394_allowed if {
+    data.policies.governance.enabled
+}
+default policy_0394_allowed = false
+policy_0394_allowed if {
+    input.user.role == "admin"
+}
+policy_0394_allowed if {
     input.user.active
     input.resource.public
 }
-
-# Utility function for user info

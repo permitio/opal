@@ -1,7 +1,7 @@
-package security.authentication.resource.check.policy_0611
+package audit.enforcement.context.check.policy_0611
 
-# Auto-generated policy 611
-# Package: security.authentication.resource.check
+# Auto-generated policy 611 (Rego v1 syntax)
+# Package: audit.enforcement.context.check
 
 # Metadata
 metadata := {
@@ -11,12 +11,14 @@ metadata := {
 }
 
 # Rules
-allowed_0611 {
-    input.user.role == "admin"
+policy_0611_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
 }
-allowed_0611 {
-    input.user.active
-    input.resource.public
+policy_0611_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
 }
-
-# Utility function for user info
+policy_0611_allowed if {
+    data.policies.audit.enabled
+}

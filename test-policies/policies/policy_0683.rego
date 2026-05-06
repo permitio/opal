@@ -1,7 +1,7 @@
-package risk.monitoring.action.validate.policy_0683
+package compliance.enforcement.context.deny.helpers.policy_0683
 
-# Auto-generated policy 683
-# Package: risk.monitoring.action.validate
+# Auto-generated policy 683 (Rego v1 syntax)
+# Package: compliance.enforcement.context.deny.helpers
 
 # Metadata
 metadata := {
@@ -11,17 +11,11 @@ metadata := {
 }
 
 # Rules
-default allowed_0683 = false
-denied_0683 {
+policy_0683_allowed if {
+    input.user.active
+    input.resource.public
+}
+policy_0683_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-approved_0683 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
-}
-allowed_0683 {
-    data.policies.risk.enabled
-}
-
-# Utility function for user info

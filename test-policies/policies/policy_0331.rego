@@ -1,7 +1,7 @@
-package compliance.authorization.action.allow.logic.policy_0331
+package access.validation.user.verify.logic.policy_0331
 
-# Auto-generated policy 331
-# Package: compliance.authorization.action.allow.logic
+# Auto-generated policy 331 (Rego v1 syntax)
+# Package: access.validation.user.verify.logic
 
 # Metadata
 metadata := {
@@ -11,19 +11,8 @@ metadata := {
 }
 
 # Rules
-allowed_0331 {
-    input.user.active
-    input.resource.public
-}
-allowed_0331 {
-    data.policies.compliance.enabled
-}
-denied_0331 {
+default policy_0331_allowed = false
+policy_0331_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-allowed_0331 {
-    input.user.role == "admin"
-}
-
-# Utility function for user info

@@ -1,7 +1,7 @@
-package audit.enforcement.policy.validate.data.policy_0590
+package access.enforcement.user.deny.utils.policy_0590
 
-# Auto-generated policy 590
-# Package: audit.enforcement.policy.validate.data
+# Auto-generated policy 590 (Rego v1 syntax)
+# Package: access.enforcement.user.deny.utils
 
 # Metadata
 metadata := {
@@ -11,16 +11,11 @@ metadata := {
 }
 
 # Rules
-allowed_0590 {
-    data.policies.audit.enabled
+policy_0590_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
 }
-allowed_0590 {
-    input.user.active
-    input.resource.public
-}
-denied_0590 {
+policy_0590_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-
-# Utility function for user info

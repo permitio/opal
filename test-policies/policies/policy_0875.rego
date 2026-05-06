@@ -1,7 +1,7 @@
-package access.validation.context.validate.utils.policy_0875
+package security.monitoring.user.check.policy_0875
 
-# Auto-generated policy 875
-# Package: access.validation.context.validate.utils
+# Auto-generated policy 875 (Rego v1 syntax)
+# Package: security.monitoring.user.check
 
 # Metadata
 metadata := {
@@ -11,18 +11,14 @@ metadata := {
 }
 
 # Rules
-allowed_0875 {
-    input.user.active
-    input.resource.public
+default policy_0875_allowed = false
+policy_0875_allowed if {
+    data.policies.security.enabled
 }
-denied_0875 {
+policy_0875_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-approved_0875 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
+policy_0875_allowed if {
+    input.user.role == "admin"
 }
-default allowed_0875 = false
-
-# Utility function for user info

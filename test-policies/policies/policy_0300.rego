@@ -1,7 +1,7 @@
-package governance.authentication.context.verify.logic.policy_0300
+package governance.monitoring.resource.check.policy_0300
 
-# Auto-generated policy 300
-# Package: governance.authentication.context.verify.logic
+# Auto-generated policy 300 (Rego v1 syntax)
+# Package: governance.monitoring.resource.check
 
 # Metadata
 metadata := {
@@ -11,12 +11,14 @@ metadata := {
 }
 
 # Rules
-allowed_0300 {
+policy_0300_allowed if {
+    data.policies.governance.enabled
+}
+policy_0300_allowed if {
     input.user.role == "admin"
 }
-approved_0300 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
+default policy_0300_allowed = false
+policy_0300_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
 }
-
-# Utility function for user info

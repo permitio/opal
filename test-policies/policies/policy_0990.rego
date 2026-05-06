@@ -1,7 +1,7 @@
-package governance.enforcement.user.verify.policy_0990
+package security.authentication.context.validate.helpers.policy_0990
 
-# Auto-generated policy 990
-# Package: governance.enforcement.user.verify
+# Auto-generated policy 990 (Rego v1 syntax)
+# Package: security.authentication.context.validate.helpers
 
 # Metadata
 metadata := {
@@ -11,16 +11,13 @@ metadata := {
 }
 
 # Rules
-allowed_0990 {
-    data.policies.governance.enabled
+policy_0990_allowed if {
+    data.policies.security.enabled
 }
-denied_0990 {
-    input.action == "delete"
-    input.user.role != "admin"
-}
-allowed_0990 {
+policy_0990_allowed if {
     input.user.role == "admin"
 }
-default allowed_0990 = false
-
-# Utility function for user info
+policy_0990_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
+}

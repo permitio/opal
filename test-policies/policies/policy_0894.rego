@@ -1,7 +1,7 @@
-package risk.validation.policy.check.policy_0894
+package risk.validation.context.deny.data.policy_0894
 
-# Auto-generated policy 894
-# Package: risk.validation.policy.check
+# Auto-generated policy 894 (Rego v1 syntax)
+# Package: risk.validation.context.deny.data
 
 # Metadata
 metadata := {
@@ -11,12 +11,8 @@ metadata := {
 }
 
 # Rules
-allowed_0894 {
-    data.policies.risk.enabled
-}
-approved_0894 {
+default policy_0894_allowed = false
+policy_0894_approved if {
     input.user.risk_score < 50
     input.system.health > 0.8
 }
-
-# Utility function for user info

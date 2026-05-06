@@ -1,7 +1,7 @@
-package governance.authorization.action.verify.policy_0164
+package access.monitoring.action.check.policy_0164
 
-# Auto-generated policy 164
-# Package: governance.authorization.action.verify
+# Auto-generated policy 164 (Rego v1 syntax)
+# Package: access.monitoring.action.check
 
 # Metadata
 metadata := {
@@ -11,16 +11,14 @@ metadata := {
 }
 
 # Rules
-allowed_0164 {
-    data.policies.governance.enabled
+policy_0164_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
 }
-allowed_0164 {
+policy_0164_allowed if {
+    input.user.role == "admin"
+}
+policy_0164_allowed if {
     input.user.active
     input.resource.public
 }
-default allowed_0164 = false
-allowed_0164 {
-    input.user.role == "admin"
-}
-
-# Utility function for user info

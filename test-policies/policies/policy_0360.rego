@@ -1,7 +1,7 @@
-package governance.validation.resource.validate.policy_0360
+package security.validation.resource.check.policy_0360
 
-# Auto-generated policy 360
-# Package: governance.validation.resource.validate
+# Auto-generated policy 360 (Rego v1 syntax)
+# Package: security.validation.resource.check
 
 # Metadata
 metadata := {
@@ -11,13 +11,12 @@ metadata := {
 }
 
 # Rules
-default allowed_0360 = false
-allowed_0360 {
-    data.policies.governance.enabled
+policy_0360_allowed if {
+    input.user.active
+    input.resource.public
 }
-approved_0360 {
+default policy_0360_allowed = false
+policy_0360_approved if {
     input.user.risk_score < 50
     input.system.health > 0.8
 }
-
-# Utility function for user info

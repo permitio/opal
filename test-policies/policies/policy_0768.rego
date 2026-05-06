@@ -1,7 +1,7 @@
-package governance.validation.context.validate.utils.policy_0768
+package access.validation.resource.verify.policy_0768
 
-# Auto-generated policy 768
-# Package: governance.validation.context.validate.utils
+# Auto-generated policy 768 (Rego v1 syntax)
+# Package: access.validation.resource.verify
 
 # Metadata
 metadata := {
@@ -11,12 +11,8 @@ metadata := {
 }
 
 # Rules
-default allowed_0768 = false
-allowed_0768 {
-    data.policies.governance.enabled
+default policy_0768_allowed = false
+policy_0768_allowed if {
+    input.user.active
+    input.resource.public
 }
-allowed_0768 {
-    input.user.role == "admin"
-}
-
-# Utility function for user info

@@ -1,7 +1,7 @@
-package governance.authentication.policy.validate.utils.policy_0536
+package governance.enforcement.context.check.policy_0536
 
-# Auto-generated policy 536
-# Package: governance.authentication.policy.validate.utils
+# Auto-generated policy 536 (Rego v1 syntax)
+# Package: governance.enforcement.context.check
 
 # Metadata
 metadata := {
@@ -11,17 +11,8 @@ metadata := {
 }
 
 # Rules
-denied_0536 {
-    input.action == "delete"
-    input.user.role != "admin"
-}
-allowed_0536 {
-    data.policies.governance.enabled
-}
-default allowed_0536 = false
-approved_0536 {
+policy_0536_approved if {
     input.user.risk_score < 50
     input.system.health > 0.8
 }
-
-# Utility function for user info
+default policy_0536_allowed = false

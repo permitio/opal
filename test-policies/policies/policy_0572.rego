@@ -1,7 +1,7 @@
-package audit.authorization.user.deny.policy_0572
+package access.monitoring.context.check.policy_0572
 
-# Auto-generated policy 572
-# Package: audit.authorization.user.deny
+# Auto-generated policy 572 (Rego v1 syntax)
+# Package: access.monitoring.context.check
 
 # Metadata
 metadata := {
@@ -11,16 +11,15 @@ metadata := {
 }
 
 # Rules
-approved_0572 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
+policy_0572_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
 }
-allowed_0572 {
-    input.user.role == "admin"
+default policy_0572_allowed = false
+policy_0572_allowed if {
+    input.user.active
+    input.resource.public
 }
-default allowed_0572 = false
-allowed_0572 {
-    data.policies.audit.enabled
+policy_0572_allowed if {
+    data.policies.access.enabled
 }
-
-# Utility function for user info

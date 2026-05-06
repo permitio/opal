@@ -1,7 +1,7 @@
-package governance.enforcement.policy.check.helpers.policy_0787
+package access.monitoring.user.validate.core.policy_0787
 
-# Auto-generated policy 787
-# Package: governance.enforcement.policy.check.helpers
+# Auto-generated policy 787 (Rego v1 syntax)
+# Package: access.monitoring.user.validate.core
 
 # Metadata
 metadata := {
@@ -11,13 +11,16 @@ metadata := {
 }
 
 # Rules
-allowed_0787 {
-    data.policies.governance.enabled
+policy_0787_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
 }
-default allowed_0787 = false
-denied_0787 {
+policy_0787_allowed if {
+    input.user.active
+    input.resource.public
+}
+default policy_0787_allowed = false
+policy_0787_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-
-# Utility function for user info

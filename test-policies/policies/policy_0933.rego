@@ -1,7 +1,7 @@
-package risk.authentication.resource.allow.policy_0933
+package audit.authentication.context.validate.policy_0933
 
-# Auto-generated policy 933
-# Package: risk.authentication.resource.allow
+# Auto-generated policy 933 (Rego v1 syntax)
+# Package: audit.authentication.context.validate
 
 # Metadata
 metadata := {
@@ -11,12 +11,11 @@ metadata := {
 }
 
 # Rules
-approved_0933 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
+default policy_0933_allowed = false
+policy_0933_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
 }
-allowed_0933 {
-    input.user.role == "admin"
+policy_0933_allowed if {
+    data.policies.audit.enabled
 }
-
-# Utility function for user info

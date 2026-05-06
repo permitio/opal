@@ -3,117 +3,110 @@
   "metadata": {
     "environment": "staging",
     "region": "us-west-2",
-    "version": "1.5.8"
+    "version": "1.2.19"
   },
   "users": [
     {
       "id": "user_000",
       "name": "User 0",
-      "role": "admin",
+      "role": "viewer",
       "active": true,
-      "risk_score": 0
+      "risk_score": 3
     },
     {
       "id": "user_001",
       "name": "User 1",
-      "role": "admin",
-      "active": false,
-      "risk_score": 9
+      "role": "auditor",
+      "active": true,
+      "risk_score": 34
     },
     {
       "id": "user_002",
       "name": "User 2",
       "role": "auditor",
-      "active": false,
-      "risk_score": 83
+      "active": true,
+      "risk_score": 44
     },
     {
       "id": "user_003",
       "name": "User 3",
-      "role": "viewer",
+      "role": "auditor",
       "active": false,
-      "risk_score": 8
+      "risk_score": 88
     },
     {
       "id": "user_004",
       "name": "User 4",
       "role": "user",
       "active": true,
-      "risk_score": 42
+      "risk_score": 67
     },
     {
       "id": "user_005",
       "name": "User 5",
       "role": "editor",
-      "active": false,
-      "risk_score": 77
+      "active": true,
+      "risk_score": 88
     },
     {
       "id": "user_006",
       "name": "User 6",
-      "role": "admin",
-      "active": false,
-      "risk_score": 45
-    },
-    {
-      "id": "user_007",
-      "name": "User 7",
-      "role": "user",
-      "active": true,
-      "risk_score": 56
-    },
-    {
-      "id": "user_008",
-      "name": "User 8",
       "role": "auditor",
       "active": true,
-      "risk_score": 11
+      "risk_score": 40
     }
   ],
   "resources": [
     {
       "id": "res_000",
-      "type": "database",
+      "type": "service",
       "public": false,
-      "owner_id": "user_054",
-      "sensitivity": "internal"
+      "owner_id": "user_004",
+      "sensitivity": "secret"
     },
     {
       "id": "res_001",
-      "type": "database",
+      "type": "service",
       "public": true,
-      "owner_id": "user_046",
-      "sensitivity": "secret"
+      "owner_id": "user_020",
+      "sensitivity": "internal"
     },
     {
       "id": "res_002",
       "type": "database",
       "public": false,
-      "owner_id": "user_012",
+      "owner_id": "user_078",
       "sensitivity": "public"
     },
     {
       "id": "res_003",
-      "type": "bucket",
-      "public": true,
-      "owner_id": "user_021",
-      "sensitivity": "secret"
+      "type": "api",
+      "public": false,
+      "owner_id": "user_005",
+      "sensitivity": "confidential"
+    },
+    {
+      "id": "res_004",
+      "type": "file",
+      "public": false,
+      "owner_id": "user_066",
+      "sensitivity": "confidential"
     }
   ],
   "system": {
-    "health": 0.6,
-    "load": 99.34,
-    "uptime_days": 259
+    "health": 0.87,
+    "load": 35.45,
+    "uptime_days": 322
   },
   "policies": {
     "security": {
-      "enabled": false
+      "enabled": true
     },
     "compliance": {
       "enabled": true
     },
     "access": {
-      "enabled": false
+      "enabled": true
     },
     "audit": {
       "enabled": true

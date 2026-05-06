@@ -1,7 +1,7 @@
-package risk.monitoring.policy.deny.utils.policy_0090
+package compliance.authentication.context.allow.helpers.policy_0090
 
-# Auto-generated policy 90
-# Package: risk.monitoring.policy.deny.utils
+# Auto-generated policy 90 (Rego v1 syntax)
+# Package: compliance.authentication.context.allow.helpers
 
 # Metadata
 metadata := {
@@ -11,15 +11,10 @@ metadata := {
 }
 
 # Rules
-allowed_0090 {
-    input.user.role == "admin"
-}
-denied_0090 {
+policy_0090_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-allowed_0090 {
-    data.policies.risk.enabled
+policy_0090_allowed if {
+    data.policies.compliance.enabled
 }
-
-# Utility function for user info

@@ -1,7 +1,7 @@
-package compliance.enforcement.policy.deny.policy_0524
+package access.validation.context.verify.policy_0524
 
-# Auto-generated policy 524
-# Package: compliance.enforcement.policy.deny
+# Auto-generated policy 524 (Rego v1 syntax)
+# Package: access.validation.context.verify
 
 # Metadata
 metadata := {
@@ -11,17 +11,8 @@ metadata := {
 }
 
 # Rules
-allowed_0524 {
+default policy_0524_allowed = false
+policy_0524_allowed if {
     input.user.active
     input.resource.public
 }
-approved_0524 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
-}
-default allowed_0524 = false
-allowed_0524 {
-    data.policies.compliance.enabled
-}
-
-# Utility function for user info

@@ -1,7 +1,7 @@
-package security.monitoring.policy.allow.policy_0272
+package risk.enforcement.action.deny.policy_0272
 
-# Auto-generated policy 272
-# Package: security.monitoring.policy.allow
+# Auto-generated policy 272 (Rego v1 syntax)
+# Package: risk.enforcement.action.deny
 
 # Metadata
 metadata := {
@@ -11,17 +11,10 @@ metadata := {
 }
 
 # Rules
-allowed_0272 {
-    input.user.active
-    input.resource.public
-}
-allowed_0272 {
-    input.user.role == "admin"
-}
-approved_0272 {
+policy_0272_approved if {
     input.user.risk_score < 50
     input.system.health > 0.8
 }
-default allowed_0272 = false
-
-# Utility function for user info
+policy_0272_allowed if {
+    data.policies.risk.enabled
+}

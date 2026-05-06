@@ -1,7 +1,7 @@
-package access.authorization.resource.deny.utils.policy_0105
+package risk.authorization.context.check.policy_0105
 
-# Auto-generated policy 105
-# Package: access.authorization.resource.deny.utils
+# Auto-generated policy 105 (Rego v1 syntax)
+# Package: risk.authorization.context.check
 
 # Metadata
 metadata := {
@@ -11,15 +11,12 @@ metadata := {
 }
 
 # Rules
-approved_0105 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
+policy_0105_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
 }
-allowed_0105 {
-    input.user.role == "admin"
+policy_0105_allowed if {
+    input.user.active
+    input.resource.public
 }
-allowed_0105 {
-    data.policies.access.enabled
-}
-
-# Utility function for user info
+default policy_0105_allowed = false

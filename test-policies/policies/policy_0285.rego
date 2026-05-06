@@ -1,7 +1,7 @@
-package security.authentication.user.verify.helpers.policy_0285
+package compliance.validation.action.check.policy_0285
 
-# Auto-generated policy 285
-# Package: security.authentication.user.verify.helpers
+# Auto-generated policy 285 (Rego v1 syntax)
+# Package: compliance.validation.action.check
 
 # Metadata
 metadata := {
@@ -11,13 +11,11 @@ metadata := {
 }
 
 # Rules
-approved_0285 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
+policy_0285_allowed if {
+    data.policies.compliance.enabled
 }
-default allowed_0285 = false
-allowed_0285 {
-    data.policies.security.enabled
+default policy_0285_allowed = false
+policy_0285_allowed if {
+    input.user.active
+    input.resource.public
 }
-
-# Utility function for user info

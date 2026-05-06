@@ -1,7 +1,7 @@
-package governance.authorization.policy.validate.utils.policy_0874
+package access.monitoring.action.deny.policy_0874
 
-# Auto-generated policy 874
-# Package: governance.authorization.policy.validate.utils
+# Auto-generated policy 874 (Rego v1 syntax)
+# Package: access.monitoring.action.deny
 
 # Metadata
 metadata := {
@@ -11,10 +11,11 @@ metadata := {
 }
 
 # Rules
-approved_0874 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
+policy_0874_allowed if {
+    input.user.role == "admin"
 }
-default allowed_0874 = false
-
-# Utility function for user info
+policy_0874_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
+}
+default policy_0874_allowed = false

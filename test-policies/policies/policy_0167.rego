@@ -1,7 +1,7 @@
-package compliance.authorization.context.allow.policy_0167
+package security.authentication.policy.deny.policy_0167
 
-# Auto-generated policy 167
-# Package: compliance.authorization.context.allow
+# Auto-generated policy 167 (Rego v1 syntax)
+# Package: security.authentication.policy.deny
 
 # Metadata
 metadata := {
@@ -11,10 +11,11 @@ metadata := {
 }
 
 # Rules
-denied_0167 {
-    input.action == "delete"
-    input.user.role != "admin"
+policy_0167_allowed if {
+    data.policies.security.enabled
 }
-default allowed_0167 = false
-
-# Utility function for user info
+default policy_0167_allowed = false
+policy_0167_allowed if {
+    input.user.active
+    input.resource.public
+}

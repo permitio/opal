@@ -1,7 +1,7 @@
-package compliance.monitoring.resource.verify.data.policy_0553
+package access.enforcement.context.deny.policy_0553
 
-# Auto-generated policy 553
-# Package: compliance.monitoring.resource.verify.data
+# Auto-generated policy 553 (Rego v1 syntax)
+# Package: access.enforcement.context.deny
 
 # Metadata
 metadata := {
@@ -11,13 +11,15 @@ metadata := {
 }
 
 # Rules
-default allowed_0553 = false
-allowed_0553 {
-    data.policies.compliance.enabled
+policy_0553_allowed if {
+    input.user.role == "admin"
 }
-allowed_0553 {
+default policy_0553_allowed = false
+policy_0553_allowed if {
     input.user.active
     input.resource.public
 }
-
-# Utility function for user info
+policy_0553_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
+}

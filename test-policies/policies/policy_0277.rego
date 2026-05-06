@@ -1,7 +1,7 @@
-package security.authentication.resource.check.policy_0277
+package security.validation.action.allow.policy_0277
 
-# Auto-generated policy 277
-# Package: security.authentication.resource.check
+# Auto-generated policy 277 (Rego v1 syntax)
+# Package: security.validation.action.allow
 
 # Metadata
 metadata := {
@@ -11,12 +11,8 @@ metadata := {
 }
 
 # Rules
-allowed_0277 {
-    input.user.role == "admin"
-}
-approved_0277 {
+default policy_0277_allowed = false
+policy_0277_approved if {
     input.user.risk_score < 50
     input.system.health > 0.8
 }
-
-# Utility function for user info

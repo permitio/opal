@@ -1,7 +1,7 @@
-package governance.validation.context.validate.policy_0796
+package access.authentication.policy.verify.policy_0796
 
-# Auto-generated policy 796
-# Package: governance.validation.context.validate
+# Auto-generated policy 796 (Rego v1 syntax)
+# Package: access.authentication.policy.verify
 
 # Metadata
 metadata := {
@@ -11,20 +11,8 @@ metadata := {
 }
 
 # Rules
-allowed_0796 {
-    input.user.role == "admin"
-}
-allowed_0796 {
-    input.user.active
-    input.resource.public
-}
-denied_0796 {
+policy_0796_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-approved_0796 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
-}
-
-# Utility function for user info
+default policy_0796_allowed = false

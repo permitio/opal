@@ -1,7 +1,7 @@
-package governance.monitoring.context.verify.data.policy_0983
+package access.authorization.context.allow.policy_0983
 
-# Auto-generated policy 983
-# Package: governance.monitoring.context.verify.data
+# Auto-generated policy 983 (Rego v1 syntax)
+# Package: access.authorization.context.allow
 
 # Metadata
 metadata := {
@@ -11,11 +11,7 @@ metadata := {
 }
 
 # Rules
-allowed_0983 {
+default policy_0983_allowed = false
+policy_0983_allowed if {
     input.user.role == "admin"
 }
-allowed_0983 {
-    data.policies.governance.enabled
-}
-
-# Utility function for user info

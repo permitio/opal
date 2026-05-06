@@ -1,7 +1,7 @@
-package security.monitoring.action.verify.policy_0450
+package security.validation.user.validate.helpers.policy_0450
 
-# Auto-generated policy 450
-# Package: security.monitoring.action.verify
+# Auto-generated policy 450 (Rego v1 syntax)
+# Package: security.validation.user.validate.helpers
 
 # Metadata
 metadata := {
@@ -11,17 +11,11 @@ metadata := {
 }
 
 # Rules
-allowed_0450 {
+policy_0450_allowed if {
     input.user.active
     input.resource.public
 }
-approved_0450 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
+default policy_0450_allowed = false
+policy_0450_allowed if {
+    input.user.role == "admin"
 }
-denied_0450 {
-    input.action == "delete"
-    input.user.role != "admin"
-}
-
-# Utility function for user info

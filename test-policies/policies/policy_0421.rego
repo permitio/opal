@@ -1,7 +1,7 @@
-package risk.authorization.user.allow.policy_0421
+package risk.authorization.user.validate.data.policy_0421
 
-# Auto-generated policy 421
-# Package: risk.authorization.user.allow
+# Auto-generated policy 421 (Rego v1 syntax)
+# Package: risk.authorization.user.validate.data
 
 # Metadata
 metadata := {
@@ -11,20 +11,15 @@ metadata := {
 }
 
 # Rules
-allowed_0421 {
+policy_0421_allowed if {
     input.user.role == "admin"
 }
-allowed_0421 {
+policy_0421_allowed if {
     input.user.active
     input.resource.public
 }
-denied_0421 {
-    input.action == "delete"
-    input.user.role != "admin"
-}
-approved_0421 {
+default policy_0421_allowed = false
+policy_0421_approved if {
     input.user.risk_score < 50
     input.system.health > 0.8
 }
-
-# Utility function for user info

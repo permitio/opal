@@ -1,7 +1,7 @@
-package compliance.authorization.resource.verify.logic.policy_0051
+package compliance.authorization.action.check.policy_0051
 
-# Auto-generated policy 51
-# Package: compliance.authorization.resource.verify.logic
+# Auto-generated policy 51 (Rego v1 syntax)
+# Package: compliance.authorization.action.check
 
 # Metadata
 metadata := {
@@ -11,20 +11,11 @@ metadata := {
 }
 
 # Rules
-denied_0051 {
-    input.action == "delete"
-    input.user.role != "admin"
-}
-approved_0051 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
-}
-allowed_0051 {
-    data.policies.compliance.enabled
-}
-allowed_0051 {
+policy_0051_allowed if {
     input.user.active
     input.resource.public
 }
-
-# Utility function for user info
+policy_0051_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
+}

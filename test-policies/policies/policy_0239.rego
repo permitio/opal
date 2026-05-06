@@ -1,7 +1,7 @@
-package access.enforcement.user.validate.policy_0239
+package risk.authentication.policy.validate.policy_0239
 
-# Auto-generated policy 239
-# Package: access.enforcement.user.validate
+# Auto-generated policy 239 (Rego v1 syntax)
+# Package: risk.authentication.policy.validate
 
 # Metadata
 metadata := {
@@ -11,12 +11,7 @@ metadata := {
 }
 
 # Rules
-allowed_0239 {
-    data.policies.access.enabled
+policy_0239_allowed if {
+    input.user.role == "admin"
 }
-allowed_0239 {
-    input.user.active
-    input.resource.public
-}
-
-# Utility function for user info
+default policy_0239_allowed = false

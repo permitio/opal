@@ -1,7 +1,7 @@
-package compliance.authentication.resource.verify.data.policy_0502
+package governance.authorization.user.allow.helpers.policy_0502
 
-# Auto-generated policy 502
-# Package: compliance.authentication.resource.verify.data
+# Auto-generated policy 502 (Rego v1 syntax)
+# Package: governance.authorization.user.allow.helpers
 
 # Metadata
 metadata := {
@@ -11,16 +11,7 @@ metadata := {
 }
 
 # Rules
-allowed_0502 {
-    input.user.active
-    input.resource.public
-}
-allowed_0502 {
+policy_0502_allowed if {
     input.user.role == "admin"
 }
-default allowed_0502 = false
-allowed_0502 {
-    data.policies.compliance.enabled
-}
-
-# Utility function for user info
+default policy_0502_allowed = false

@@ -1,7 +1,7 @@
-package access.authorization.resource.verify.policy_0358
+package compliance.monitoring.policy.allow.policy_0358
 
-# Auto-generated policy 358
-# Package: access.authorization.resource.verify
+# Auto-generated policy 358 (Rego v1 syntax)
+# Package: compliance.monitoring.policy.allow
 
 # Metadata
 metadata := {
@@ -11,16 +11,14 @@ metadata := {
 }
 
 # Rules
-approved_0358 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
-}
-allowed_0358 {
+policy_0358_allowed if {
     input.user.active
     input.resource.public
 }
-allowed_0358 {
-    data.policies.access.enabled
+policy_0358_allowed if {
+    input.user.role == "admin"
 }
-
-# Utility function for user info
+policy_0358_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
+}

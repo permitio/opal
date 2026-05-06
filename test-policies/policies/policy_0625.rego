@@ -1,7 +1,7 @@
-package compliance.authentication.policy.validate.policy_0625
+package risk.validation.user.check.policy_0625
 
-# Auto-generated policy 625
-# Package: compliance.authentication.policy.validate
+# Auto-generated policy 625 (Rego v1 syntax)
+# Package: risk.validation.user.check
 
 # Metadata
 metadata := {
@@ -11,13 +11,15 @@ metadata := {
 }
 
 # Rules
-denied_0625 {
-    input.action == "delete"
-    input.user.role != "admin"
-}
-allowed_0625 {
+policy_0625_allowed if {
     input.user.active
     input.resource.public
 }
-
-# Utility function for user info
+policy_0625_allowed if {
+    input.user.role == "admin"
+}
+default policy_0625_allowed = false
+policy_0625_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
+}

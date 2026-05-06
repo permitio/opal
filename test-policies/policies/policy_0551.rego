@@ -1,7 +1,7 @@
-package access.authorization.action.validate.policy_0551
+package security.authorization.resource.allow.policy_0551
 
-# Auto-generated policy 551
-# Package: access.authorization.action.validate
+# Auto-generated policy 551 (Rego v1 syntax)
+# Package: security.authorization.resource.allow
 
 # Metadata
 metadata := {
@@ -11,15 +11,10 @@ metadata := {
 }
 
 # Rules
-denied_0551 {
-    input.action == "delete"
-    input.user.role != "admin"
-}
-allowed_0551 {
-    data.policies.access.enabled
-}
-allowed_0551 {
+policy_0551_allowed if {
     input.user.role == "admin"
 }
-
-# Utility function for user info
+policy_0551_allowed if {
+    input.user.active
+    input.resource.public
+}

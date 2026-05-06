@@ -1,7 +1,7 @@
-package compliance.enforcement.action.verify.policy_0587
+package risk.authorization.action.verify.policy_0587
 
-# Auto-generated policy 587
-# Package: compliance.enforcement.action.verify
+# Auto-generated policy 587 (Rego v1 syntax)
+# Package: risk.authorization.action.verify
 
 # Metadata
 metadata := {
@@ -11,10 +11,17 @@ metadata := {
 }
 
 # Rules
-default allowed_0587 = false
-allowed_0587 {
+policy_0587_allowed if {
+    data.policies.risk.enabled
+}
+policy_0587_allowed if {
     input.user.active
     input.resource.public
 }
-
-# Utility function for user info
+policy_0587_allowed if {
+    input.user.role == "admin"
+}
+policy_0587_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
+}

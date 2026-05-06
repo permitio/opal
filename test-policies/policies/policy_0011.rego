@@ -1,7 +1,7 @@
-package security.monitoring.policy.check.policy_0011
+package security.monitoring.action.check.policy_0011
 
-# Auto-generated policy 11
-# Package: security.monitoring.policy.check
+# Auto-generated policy 11 (Rego v1 syntax)
+# Package: security.monitoring.action.check
 
 # Metadata
 metadata := {
@@ -11,16 +11,18 @@ metadata := {
 }
 
 # Rules
-approved_0011 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
-}
-allowed_0011 {
+policy_0011_allowed if {
     input.user.role == "admin"
 }
-allowed_0011 {
+policy_0011_allowed if {
     input.user.active
     input.resource.public
 }
-
-# Utility function for user info
+policy_0011_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
+}
+policy_0011_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
+}

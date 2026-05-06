@@ -1,7 +1,7 @@
-package compliance.authorization.resource.validate.logic.policy_0922
+package compliance.authentication.resource.check.policy_0922
 
-# Auto-generated policy 922
-# Package: compliance.authorization.resource.validate.logic
+# Auto-generated policy 922 (Rego v1 syntax)
+# Package: compliance.authentication.resource.check
 
 # Metadata
 metadata := {
@@ -11,12 +11,15 @@ metadata := {
 }
 
 # Rules
-allowed_0922 {
-    data.policies.compliance.enabled
+policy_0922_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
 }
-default allowed_0922 = false
-allowed_0922 {
+policy_0922_allowed if {
+    input.user.active
+    input.resource.public
+}
+default policy_0922_allowed = false
+policy_0922_allowed if {
     input.user.role == "admin"
 }
-
-# Utility function for user info

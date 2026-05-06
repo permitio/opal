@@ -1,7 +1,7 @@
-package governance.authorization.policy.check.utils.policy_0085
+package audit.authorization.action.verify.policy_0085
 
-# Auto-generated policy 85
-# Package: governance.authorization.policy.check.utils
+# Auto-generated policy 85 (Rego v1 syntax)
+# Package: audit.authorization.action.verify
 
 # Metadata
 metadata := {
@@ -11,17 +11,11 @@ metadata := {
 }
 
 # Rules
-default allowed_0085 = false
-allowed_0085 {
-    input.user.role == "admin"
-}
-allowed_0085 {
+policy_0085_allowed if {
     input.user.active
     input.resource.public
 }
-approved_0085 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
+policy_0085_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
 }
-
-# Utility function for user info

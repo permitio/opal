@@ -1,7 +1,7 @@
-package governance.enforcement.context.allow.policy_0423
+package risk.monitoring.policy.check.policy_0423
 
-# Auto-generated policy 423
-# Package: governance.enforcement.context.allow
+# Auto-generated policy 423 (Rego v1 syntax)
+# Package: risk.monitoring.policy.check
 
 # Metadata
 metadata := {
@@ -11,15 +11,11 @@ metadata := {
 }
 
 # Rules
-allowed_0423 {
-    input.user.role == "admin"
+policy_0423_allowed if {
+    input.user.active
+    input.resource.public
 }
-allowed_0423 {
-    data.policies.governance.enabled
+policy_0423_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
 }
-denied_0423 {
-    input.action == "delete"
-    input.user.role != "admin"
-}
-
-# Utility function for user info

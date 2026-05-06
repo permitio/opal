@@ -1,7 +1,7 @@
-package audit.enforcement.context.deny.policy_0666
+package governance.validation.resource.check.helpers.policy_0666
 
-# Auto-generated policy 666
-# Package: audit.enforcement.context.deny
+# Auto-generated policy 666 (Rego v1 syntax)
+# Package: governance.validation.resource.check.helpers
 
 # Metadata
 metadata := {
@@ -11,13 +11,14 @@ metadata := {
 }
 
 # Rules
-denied_0666 {
-    input.action == "delete"
-    input.user.role != "admin"
+policy_0666_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
 }
-default allowed_0666 = false
-allowed_0666 {
+policy_0666_allowed if {
+    input.user.active
+    input.resource.public
+}
+policy_0666_allowed if {
     input.user.role == "admin"
 }
-
-# Utility function for user info

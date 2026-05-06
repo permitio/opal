@@ -1,7 +1,7 @@
-package security.validation.action.allow.policy_0836
+package security.monitoring.resource.deny.policy_0836
 
-# Auto-generated policy 836
-# Package: security.validation.action.allow
+# Auto-generated policy 836 (Rego v1 syntax)
+# Package: security.monitoring.resource.deny
 
 # Metadata
 metadata := {
@@ -11,17 +11,14 @@ metadata := {
 }
 
 # Rules
-default allowed_0836 = false
-denied_0836 {
+policy_0836_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-approved_0836 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
+policy_0836_allowed if {
+    input.user.active
+    input.resource.public
 }
-allowed_0836 {
+policy_0836_allowed if {
     input.user.role == "admin"
 }
-
-# Utility function for user info

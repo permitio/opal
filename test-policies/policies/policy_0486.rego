@@ -1,7 +1,7 @@
-package governance.authentication.policy.allow.policy_0486
+package compliance.authorization.user.verify.policy_0486
 
-# Auto-generated policy 486
-# Package: governance.authentication.policy.allow
+# Auto-generated policy 486 (Rego v1 syntax)
+# Package: compliance.authorization.user.verify
 
 # Metadata
 metadata := {
@@ -11,14 +11,14 @@ metadata := {
 }
 
 # Rules
-approved_0486 {
+policy_0486_allowed if {
+    input.user.role == "admin"
+}
+policy_0486_approved if {
     input.user.risk_score < 50
     input.system.health > 0.8
 }
-denied_0486 {
+policy_0486_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-default allowed_0486 = false
-
-# Utility function for user info

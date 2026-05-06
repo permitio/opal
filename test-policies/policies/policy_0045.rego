@@ -1,7 +1,7 @@
-package audit.authentication.policy.verify.core.policy_0045
+package compliance.validation.resource.deny.policy_0045
 
-# Auto-generated policy 45
-# Package: audit.authentication.policy.verify.core
+# Auto-generated policy 45 (Rego v1 syntax)
+# Package: compliance.validation.resource.deny
 
 # Metadata
 metadata := {
@@ -11,16 +11,14 @@ metadata := {
 }
 
 # Rules
-allowed_0045 {
-    input.user.role == "admin"
-}
-allowed_0045 {
-    data.policies.audit.enabled
-}
-default allowed_0045 = false
-denied_0045 {
+policy_0045_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-
-# Utility function for user info
+policy_0045_allowed if {
+    input.user.active
+    input.resource.public
+}
+policy_0045_allowed if {
+    input.user.role == "admin"
+}

@@ -1,7 +1,7 @@
-package risk.authentication.context.check.utils.policy_0462
+package governance.monitoring.user.check.policy_0462
 
-# Auto-generated policy 462
-# Package: risk.authentication.context.check.utils
+# Auto-generated policy 462 (Rego v1 syntax)
+# Package: governance.monitoring.user.check
 
 # Metadata
 metadata := {
@@ -11,19 +11,14 @@ metadata := {
 }
 
 # Rules
-denied_0462 {
+policy_0462_allowed if {
+    data.policies.governance.enabled
+}
+default policy_0462_allowed = false
+policy_0462_allowed if {
+    input.user.role == "admin"
+}
+policy_0462_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-allowed_0462 {
-    data.policies.risk.enabled
-}
-approved_0462 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
-}
-allowed_0462 {
-    input.user.role == "admin"
-}
-
-# Utility function for user info

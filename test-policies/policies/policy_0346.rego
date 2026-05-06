@@ -1,7 +1,7 @@
-package security.authorization.action.check.policy_0346
+package risk.validation.action.verify.policy_0346
 
-# Auto-generated policy 346
-# Package: security.authorization.action.check
+# Auto-generated policy 346 (Rego v1 syntax)
+# Package: risk.validation.action.verify
 
 # Metadata
 metadata := {
@@ -11,12 +11,11 @@ metadata := {
 }
 
 # Rules
-allowed_0346 {
-    data.policies.security.enabled
-}
-denied_0346 {
+policy_0346_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-
-# Utility function for user info
+policy_0346_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
+}

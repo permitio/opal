@@ -1,7 +1,7 @@
-package governance.authentication.resource.check.policy_0041
+package compliance.monitoring.user.check.policy_0041
 
-# Auto-generated policy 41
-# Package: governance.authentication.resource.check
+# Auto-generated policy 41 (Rego v1 syntax)
+# Package: compliance.monitoring.user.check
 
 # Metadata
 metadata := {
@@ -11,12 +11,18 @@ metadata := {
 }
 
 # Rules
-allowed_0041 {
-    input.user.role == "admin"
+policy_0041_allowed if {
+    input.user.active
+    input.resource.public
 }
-denied_0041 {
+policy_0041_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
+}
+policy_0041_allowed if {
+    data.policies.compliance.enabled
+}
+policy_0041_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-
-# Utility function for user info

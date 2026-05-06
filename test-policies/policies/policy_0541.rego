@@ -1,7 +1,7 @@
-package governance.validation.action.verify.policy_0541
+package governance.validation.policy.allow.policy_0541
 
-# Auto-generated policy 541
-# Package: governance.validation.action.verify
+# Auto-generated policy 541 (Rego v1 syntax)
+# Package: governance.validation.policy.allow
 
 # Metadata
 metadata := {
@@ -11,16 +11,18 @@ metadata := {
 }
 
 # Rules
-approved_0541 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
+policy_0541_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
 }
-allowed_0541 {
-    data.policies.governance.enabled
-}
-allowed_0541 {
+policy_0541_allowed if {
     input.user.active
     input.resource.public
 }
-
-# Utility function for user info
+policy_0541_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
+}
+policy_0541_allowed if {
+    input.user.role == "admin"
+}

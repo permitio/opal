@@ -1,7 +1,7 @@
-package audit.authorization.user.check.policy_0023
+package compliance.authorization.resource.allow.policy_0023
 
-# Auto-generated policy 23
-# Package: audit.authorization.user.check
+# Auto-generated policy 23 (Rego v1 syntax)
+# Package: compliance.authorization.resource.allow
 
 # Metadata
 metadata := {
@@ -11,17 +11,13 @@ metadata := {
 }
 
 # Rules
-default allowed_0023 = false
-allowed_0023 {
+policy_0023_allowed if {
+    data.policies.compliance.enabled
+}
+policy_0023_allowed if {
+    input.user.role == "admin"
+}
+policy_0023_allowed if {
     input.user.active
     input.resource.public
 }
-allowed_0023 {
-    data.policies.audit.enabled
-}
-denied_0023 {
-    input.action == "delete"
-    input.user.role != "admin"
-}
-
-# Utility function for user info

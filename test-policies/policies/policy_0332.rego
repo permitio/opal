@@ -1,7 +1,7 @@
-package compliance.authorization.context.verify.policy_0332
+package risk.authorization.policy.deny.policy_0332
 
-# Auto-generated policy 332
-# Package: compliance.authorization.context.verify
+# Auto-generated policy 332 (Rego v1 syntax)
+# Package: risk.authorization.policy.deny
 
 # Metadata
 metadata := {
@@ -11,9 +11,11 @@ metadata := {
 }
 
 # Rules
-default allowed_0332 = false
-allowed_0332 {
-    data.policies.compliance.enabled
+policy_0332_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
 }
-
-# Utility function for user info
+policy_0332_allowed if {
+    input.user.active
+    input.resource.public
+}

@@ -1,7 +1,7 @@
-package access.authentication.resource.validate.policy_0767
+package compliance.enforcement.action.check.logic.policy_0767
 
-# Auto-generated policy 767
-# Package: access.authentication.resource.validate
+# Auto-generated policy 767 (Rego v1 syntax)
+# Package: compliance.enforcement.action.check.logic
 
 # Metadata
 metadata := {
@@ -11,9 +11,10 @@ metadata := {
 }
 
 # Rules
-default allowed_0767 = false
-allowed_0767 {
-    data.policies.access.enabled
+policy_0767_allowed if {
+    input.user.active
+    input.resource.public
 }
-
-# Utility function for user info
+policy_0767_allowed if {
+    data.policies.compliance.enabled
+}

@@ -1,7 +1,7 @@
-package security.authentication.context.deny.core.policy_0481
+package access.authentication.user.allow.helpers.policy_0481
 
-# Auto-generated policy 481
-# Package: security.authentication.context.deny.core
+# Auto-generated policy 481 (Rego v1 syntax)
+# Package: access.authentication.user.allow.helpers
 
 # Metadata
 metadata := {
@@ -11,12 +11,10 @@ metadata := {
 }
 
 # Rules
-allowed_0481 {
-    data.policies.security.enabled
-}
-default allowed_0481 = false
-allowed_0481 {
+default policy_0481_allowed = false
+policy_0481_allowed if {
     input.user.role == "admin"
 }
-
-# Utility function for user info
+policy_0481_allowed if {
+    data.policies.access.enabled
+}

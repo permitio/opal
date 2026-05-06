@@ -1,7 +1,7 @@
-package access.enforcement.context.allow.helpers.policy_0404
+package compliance.authentication.context.deny.policy_0404
 
-# Auto-generated policy 404
-# Package: access.enforcement.context.allow.helpers
+# Auto-generated policy 404 (Rego v1 syntax)
+# Package: compliance.authentication.context.deny
 
 # Metadata
 metadata := {
@@ -11,13 +11,12 @@ metadata := {
 }
 
 # Rules
-denied_0404 {
+default policy_0404_allowed = false
+policy_0404_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-approved_0404 {
+policy_0404_approved if {
     input.user.risk_score < 50
     input.system.health > 0.8
 }
-
-# Utility function for user info

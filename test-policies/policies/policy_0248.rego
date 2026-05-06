@@ -1,7 +1,7 @@
-package compliance.authentication.policy.allow.helpers.policy_0248
+package security.authorization.action.validate.utils.policy_0248
 
-# Auto-generated policy 248
-# Package: compliance.authentication.policy.allow.helpers
+# Auto-generated policy 248 (Rego v1 syntax)
+# Package: security.authorization.action.validate.utils
 
 # Metadata
 metadata := {
@@ -11,16 +11,18 @@ metadata := {
 }
 
 # Rules
-allowed_0248 {
-    data.policies.compliance.enabled
+policy_0248_allowed if {
+    data.policies.security.enabled
 }
-approved_0248 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
-}
-allowed_0248 {
+policy_0248_allowed if {
     input.user.active
     input.resource.public
 }
-
-# Utility function for user info
+policy_0248_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
+}
+policy_0248_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
+}

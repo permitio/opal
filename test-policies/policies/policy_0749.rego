@@ -1,7 +1,7 @@
-package access.monitoring.action.deny.policy_0749
+package security.monitoring.context.allow.policy_0749
 
-# Auto-generated policy 749
-# Package: access.monitoring.action.deny
+# Auto-generated policy 749 (Rego v1 syntax)
+# Package: security.monitoring.context.allow
 
 # Metadata
 metadata := {
@@ -11,10 +11,10 @@ metadata := {
 }
 
 # Rules
-approved_0749 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
+policy_0749_allowed if {
+    input.user.active
+    input.resource.public
 }
-default allowed_0749 = false
-
-# Utility function for user info
+policy_0749_allowed if {
+    input.user.role == "admin"
+}

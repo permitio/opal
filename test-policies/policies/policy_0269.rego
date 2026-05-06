@@ -1,7 +1,7 @@
-package access.authorization.context.deny.policy_0269
+package audit.authorization.context.allow.policy_0269
 
-# Auto-generated policy 269
-# Package: access.authorization.context.deny
+# Auto-generated policy 269 (Rego v1 syntax)
+# Package: audit.authorization.context.allow
 
 # Metadata
 metadata := {
@@ -11,12 +11,11 @@ metadata := {
 }
 
 # Rules
-allowed_0269 {
+policy_0269_allowed if {
     input.user.active
     input.resource.public
 }
-allowed_0269 {
-    input.user.role == "admin"
+policy_0269_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
 }
-
-# Utility function for user info

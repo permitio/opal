@@ -1,7 +1,7 @@
-package compliance.enforcement.policy.deny.core.policy_0250
+package access.authentication.user.deny.helpers.policy_0250
 
-# Auto-generated policy 250
-# Package: compliance.enforcement.policy.deny.core
+# Auto-generated policy 250 (Rego v1 syntax)
+# Package: access.authentication.user.deny.helpers
 
 # Metadata
 metadata := {
@@ -11,12 +11,15 @@ metadata := {
 }
 
 # Rules
-allowed_0250 {
-    data.policies.compliance.enabled
+policy_0250_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
 }
-allowed_0250 {
+policy_0250_allowed if {
     input.user.active
     input.resource.public
 }
-
-# Utility function for user info
+policy_0250_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
+}

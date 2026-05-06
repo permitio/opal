@@ -1,7 +1,7 @@
-package audit.authentication.policy.check.policy_0306
+package governance.monitoring.policy.deny.data.policy_0306
 
-# Auto-generated policy 306
-# Package: audit.authentication.policy.check
+# Auto-generated policy 306 (Rego v1 syntax)
+# Package: governance.monitoring.policy.deny.data
 
 # Metadata
 metadata := {
@@ -11,11 +11,15 @@ metadata := {
 }
 
 # Rules
-allowed_0306 {
-    data.policies.audit.enabled
+default policy_0306_allowed = false
+policy_0306_allowed if {
+    data.policies.governance.enabled
 }
-allowed_0306 {
-    input.user.role == "admin"
+policy_0306_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
 }
-
-# Utility function for user info
+policy_0306_allowed if {
+    input.user.active
+    input.resource.public
+}

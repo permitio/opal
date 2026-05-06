@@ -1,7 +1,7 @@
-package audit.monitoring.action.deny.data.policy_0386
+package access.monitoring.context.verify.policy_0386
 
-# Auto-generated policy 386
-# Package: audit.monitoring.action.deny.data
+# Auto-generated policy 386 (Rego v1 syntax)
+# Package: access.monitoring.context.verify
 
 # Metadata
 metadata := {
@@ -11,14 +11,8 @@ metadata := {
 }
 
 # Rules
-default allowed_0386 = false
-approved_0386 {
+policy_0386_approved if {
     input.user.risk_score < 50
     input.system.health > 0.8
 }
-denied_0386 {
-    input.action == "delete"
-    input.user.role != "admin"
-}
-
-# Utility function for user info
+default policy_0386_allowed = false

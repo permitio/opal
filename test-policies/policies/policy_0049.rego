@@ -1,7 +1,7 @@
-package security.validation.resource.validate.helpers.policy_0049
+package risk.monitoring.resource.deny.policy_0049
 
-# Auto-generated policy 49
-# Package: security.validation.resource.validate.helpers
+# Auto-generated policy 49 (Rego v1 syntax)
+# Package: risk.monitoring.resource.deny
 
 # Metadata
 metadata := {
@@ -11,9 +11,14 @@ metadata := {
 }
 
 # Rules
-default allowed_0049 = false
-allowed_0049 {
+policy_0049_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
+}
+default policy_0049_allowed = false
+policy_0049_allowed if {
+    data.policies.risk.enabled
+}
+policy_0049_allowed if {
     input.user.role == "admin"
 }
-
-# Utility function for user info

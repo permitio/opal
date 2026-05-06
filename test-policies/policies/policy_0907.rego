@@ -1,7 +1,7 @@
-package compliance.enforcement.policy.verify.utils.policy_0907
+package audit.monitoring.context.verify.core.policy_0907
 
-# Auto-generated policy 907
-# Package: compliance.enforcement.policy.verify.utils
+# Auto-generated policy 907 (Rego v1 syntax)
+# Package: audit.monitoring.context.verify.core
 
 # Metadata
 metadata := {
@@ -11,13 +11,9 @@ metadata := {
 }
 
 # Rules
-default allowed_0907 = false
-approved_0907 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
+policy_0907_allowed if {
+    data.policies.audit.enabled
 }
-allowed_0907 {
-    data.policies.compliance.enabled
+policy_0907_allowed if {
+    input.user.role == "admin"
 }
-
-# Utility function for user info

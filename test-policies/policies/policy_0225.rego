@@ -1,7 +1,7 @@
-package access.enforcement.action.deny.policy_0225
+package compliance.validation.policy.validate.policy_0225
 
-# Auto-generated policy 225
-# Package: access.enforcement.action.deny
+# Auto-generated policy 225 (Rego v1 syntax)
+# Package: compliance.validation.policy.validate
 
 # Metadata
 metadata := {
@@ -11,12 +11,14 @@ metadata := {
 }
 
 # Rules
-denied_0225 {
-    input.action == "delete"
-    input.user.role != "admin"
+policy_0225_allowed if {
+    data.policies.compliance.enabled
 }
-allowed_0225 {
-    data.policies.access.enabled
+policy_0225_allowed if {
+    input.user.active
+    input.resource.public
 }
-
-# Utility function for user info
+policy_0225_allowed if {
+    input.user.role == "admin"
+}
+default policy_0225_allowed = false

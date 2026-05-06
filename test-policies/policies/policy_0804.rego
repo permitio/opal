@@ -1,7 +1,7 @@
-package audit.enforcement.resource.check.logic.policy_0804
+package audit.enforcement.policy.allow.data.policy_0804
 
-# Auto-generated policy 804
-# Package: audit.enforcement.resource.check.logic
+# Auto-generated policy 804 (Rego v1 syntax)
+# Package: audit.enforcement.policy.allow.data
 
 # Metadata
 metadata := {
@@ -11,17 +11,12 @@ metadata := {
 }
 
 # Rules
-allowed_0804 {
-    input.user.active
-    input.resource.public
-}
-approved_0804 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
-}
-denied_0804 {
+default policy_0804_allowed = false
+policy_0804_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-
-# Utility function for user info
+policy_0804_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
+}

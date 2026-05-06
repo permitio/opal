@@ -1,7 +1,7 @@
-package compliance.authorization.policy.validate.logic.policy_0765
+package governance.validation.policy.deny.policy_0765
 
-# Auto-generated policy 765
-# Package: compliance.authorization.policy.validate.logic
+# Auto-generated policy 765 (Rego v1 syntax)
+# Package: governance.validation.policy.deny
 
 # Metadata
 metadata := {
@@ -11,10 +11,11 @@ metadata := {
 }
 
 # Rules
-default allowed_0765 = false
-denied_0765 {
+policy_0765_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-
-# Utility function for user info
+policy_0765_allowed if {
+    input.user.active
+    input.resource.public
+}

@@ -1,7 +1,7 @@
-package audit.authorization.action.check.core.policy_0498
+package audit.authentication.user.verify.policy_0498
 
-# Auto-generated policy 498
-# Package: audit.authorization.action.check.core
+# Auto-generated policy 498 (Rego v1 syntax)
+# Package: audit.authentication.user.verify
 
 # Metadata
 metadata := {
@@ -11,20 +11,15 @@ metadata := {
 }
 
 # Rules
-allowed_0498 {
+policy_0498_allowed if {
     data.policies.audit.enabled
 }
-approved_0498 {
+policy_0498_approved if {
     input.user.risk_score < 50
     input.system.health > 0.8
 }
-denied_0498 {
+policy_0498_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-allowed_0498 {
-    input.user.active
-    input.resource.public
-}
-
-# Utility function for user info
+default policy_0498_allowed = false

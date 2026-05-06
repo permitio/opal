@@ -1,7 +1,7 @@
-package compliance.monitoring.resource.allow.utils.policy_0373
+package governance.validation.policy.verify.policy_0373
 
-# Auto-generated policy 373
-# Package: compliance.monitoring.resource.allow.utils
+# Auto-generated policy 373 (Rego v1 syntax)
+# Package: governance.validation.policy.verify
 
 # Metadata
 metadata := {
@@ -11,13 +11,11 @@ metadata := {
 }
 
 # Rules
-allowed_0373 {
-    data.policies.compliance.enabled
+policy_0373_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
 }
-allowed_0373 {
-    input.user.active
-    input.resource.public
+default policy_0373_allowed = false
+policy_0373_allowed if {
+    data.policies.governance.enabled
 }
-default allowed_0373 = false
-
-# Utility function for user info

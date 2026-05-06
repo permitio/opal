@@ -1,7 +1,7 @@
-package risk.authentication.policy.validate.policy_0745
+package audit.validation.action.validate.logic.policy_0745
 
-# Auto-generated policy 745
-# Package: risk.authentication.policy.validate
+# Auto-generated policy 745 (Rego v1 syntax)
+# Package: audit.validation.action.validate.logic
 
 # Metadata
 metadata := {
@@ -11,12 +11,10 @@ metadata := {
 }
 
 # Rules
-approved_0745 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
+policy_0745_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
 }
-allowed_0745 {
-    data.policies.risk.enabled
+policy_0745_allowed if {
+    data.policies.audit.enabled
 }
-
-# Utility function for user info

@@ -1,7 +1,7 @@
-package security.monitoring.context.deny.policy_0282
+package audit.authentication.resource.check.policy_0282
 
-# Auto-generated policy 282
-# Package: security.monitoring.context.deny
+# Auto-generated policy 282 (Rego v1 syntax)
+# Package: audit.authentication.resource.check
 
 # Metadata
 metadata := {
@@ -11,16 +11,10 @@ metadata := {
 }
 
 # Rules
-approved_0282 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
+policy_0282_allowed if {
+    input.user.active
+    input.resource.public
 }
-allowed_0282 {
-    input.user.role == "admin"
+policy_0282_allowed if {
+    data.policies.audit.enabled
 }
-denied_0282 {
-    input.action == "delete"
-    input.user.role != "admin"
-}
-
-# Utility function for user info

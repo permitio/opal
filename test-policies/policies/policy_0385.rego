@@ -1,7 +1,7 @@
-package governance.enforcement.policy.deny.policy_0385
+package governance.validation.resource.check.policy_0385
 
-# Auto-generated policy 385
-# Package: governance.enforcement.policy.deny
+# Auto-generated policy 385 (Rego v1 syntax)
+# Package: governance.validation.resource.check
 
 # Metadata
 metadata := {
@@ -11,9 +11,17 @@ metadata := {
 }
 
 # Rules
-allowed_0385 {
+policy_0385_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
+}
+policy_0385_allowed if {
+    input.user.active
+    input.resource.public
+}
+policy_0385_allowed if {
+    data.policies.governance.enabled
+}
+policy_0385_allowed if {
     input.user.role == "admin"
 }
-default allowed_0385 = false
-
-# Utility function for user info

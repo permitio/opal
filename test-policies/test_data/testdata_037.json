@@ -3,57 +3,85 @@
   "metadata": {
     "environment": "prod",
     "region": "us-west-2",
-    "version": "1.5.7"
+    "version": "1.0.0"
   },
   "users": [
     {
       "id": "user_000",
       "name": "User 0",
-      "role": "editor",
+      "role": "admin",
+      "active": true,
+      "risk_score": 89
+    },
+    {
+      "id": "user_001",
+      "name": "User 1",
+      "role": "viewer",
       "active": false,
-      "risk_score": 100
+      "risk_score": 82
+    },
+    {
+      "id": "user_002",
+      "name": "User 2",
+      "role": "user",
+      "active": true,
+      "risk_score": 82
+    },
+    {
+      "id": "user_003",
+      "name": "User 3",
+      "role": "viewer",
+      "active": false,
+      "risk_score": 29
     }
   ],
   "resources": [
     {
       "id": "res_000",
       "type": "file",
-      "public": false,
-      "owner_id": "user_069",
-      "sensitivity": "confidential"
+      "public": true,
+      "owner_id": "user_080",
+      "sensitivity": "internal"
     },
     {
       "id": "res_001",
-      "type": "bucket",
-      "public": true,
-      "owner_id": "user_070",
-      "sensitivity": "secret"
+      "type": "api",
+      "public": false,
+      "owner_id": "user_056",
+      "sensitivity": "public"
     },
     {
       "id": "res_002",
-      "type": "bucket",
+      "type": "api",
       "public": false,
-      "owner_id": "user_035",
+      "owner_id": "user_096",
       "sensitivity": "secret"
+    },
+    {
+      "id": "res_003",
+      "type": "database",
+      "public": true,
+      "owner_id": "user_059",
+      "sensitivity": "public"
     }
   ],
   "system": {
-    "health": 0.74,
-    "load": 89.54,
-    "uptime_days": 365
+    "health": 0.62,
+    "load": 24.06,
+    "uptime_days": 207
   },
   "policies": {
     "security": {
-      "enabled": true
+      "enabled": false
     },
     "compliance": {
-      "enabled": true
+      "enabled": false
     },
     "access": {
       "enabled": true
     },
     "audit": {
-      "enabled": false
+      "enabled": true
     }
   }
 }

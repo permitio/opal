@@ -55,7 +55,7 @@ class TestREGOPolicies:
         for policy_file in policy_files:
             try:
                 result = subprocess.run(
-                    [opa_executable, "check", "--v0-compatible", str(policy_file)],
+                    [opa_executable, "check", str(policy_file)],
                     capture_output=True,
                     text=True,
                     timeout=10
@@ -75,23 +75,24 @@ class TestREGOPolicies:
     
     def test_policies_compile(self, policies_dir, opa_executable):
         """Test that all policies compile successfully."""
-        # Use a writable location for the output
-        # /app/results is guaranteed to be writable in the Docker container
-        output_file = Path("/tmp/policies_compile_test.tar.gz")
-        try:
-            result = subprocess.run(
-                [opa_executable, "build", "--v0-compatible", "-b", str(policies_dir), "-o", str(output_file)],
-                capture_output=True,
-                text=True,
-                timeout=30
-            )
-            assert result.returncode == 0, f"Build failed: {result.stderr if result.stderr else result.stdout}"
-        except subprocess.TimeoutExpired:
-            pytest.fail("Policy compilation timed out")
-        finally:
-            # Clean up the temporary build output
-            if output_file.exists():
-                output_file.unlink()
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # Copy all policies to temp directory
+            for policy_file in policies_dir.glob("*.rego"):
+                shutil.copy(policy_file, tmpdir)
+            
+            # Specify output file explicitly
+            output_file = Path(tmpdir) / "policies.tar.gz"
+            
+            try:
+                result = subprocess.run(
+                    [opa_executable, "build", "-b", tmpdir, "-o", str(output_file)],
+                    capture_output=True,
+                    text=True,
+                    timeout=30
+                )
+                assert result.returncode == 0, f"Build failed: {result.stderr if result.stderr else result.stdout}"
+            except subprocess.TimeoutExpired:
+                pytest.fail("Policy compilation timed out")
     
     def test_policies_have_package_names(self, policies_dir):
         """Verify all policies have valid package names with 4+ levels."""
@@ -132,7 +133,7 @@ class TestREGOPolicies:
                         input_data = json.load(f)
                     
                     result = subprocess.run(
-                        [opa_executable, "eval", "--v0-compatible", "-d", str(policy_file), "-i", str(data_file),
+                        [opa_executable, "eval", "-d", str(policy_file), "-i", str(data_file),
                          "data"],
                         capture_output=True,
                         text=True,
@@ -169,7 +170,7 @@ class TestREGOPolicies:
                 for _ in range(2):
                     try:
                         result = subprocess.run(
-                            [opa_executable, "eval", "--v0-compatible", "-d", str(policy_file), "-i", str(data_file),
+                            [opa_executable, "eval", "-d", str(policy_file), "-i", str(data_file),
                              "data"],
                             capture_output=True,
                             text=True,

@@ -1,7 +1,7 @@
-package access.authentication.action.validate.logic.policy_0102
+package governance.enforcement.context.deny.utils.policy_0102
 
-# Auto-generated policy 102
-# Package: access.authentication.action.validate.logic
+# Auto-generated policy 102 (Rego v1 syntax)
+# Package: governance.enforcement.context.deny.utils
 
 # Metadata
 metadata := {
@@ -11,16 +11,15 @@ metadata := {
 }
 
 # Rules
-default allowed_0102 = false
-allowed_0102 {
-    input.user.role == "admin"
+policy_0102_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
 }
-allowed_0102 {
+policy_0102_allowed if {
     input.user.active
     input.resource.public
 }
-allowed_0102 {
-    data.policies.access.enabled
+policy_0102_allowed if {
+    input.user.role == "admin"
 }
-
-# Utility function for user info
+default policy_0102_allowed = false

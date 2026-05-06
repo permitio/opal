@@ -1,7 +1,7 @@
-package governance.authentication.action.deny.policy_0614
+package access.monitoring.policy.deny.policy_0614
 
-# Auto-generated policy 614
-# Package: governance.authentication.action.deny
+# Auto-generated policy 614 (Rego v1 syntax)
+# Package: access.monitoring.policy.deny
 
 # Metadata
 metadata := {
@@ -11,12 +11,15 @@ metadata := {
 }
 
 # Rules
-allowed_0614 {
-    input.user.role == "admin"
-}
-denied_0614 {
+policy_0614_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-
-# Utility function for user info
+policy_0614_allowed if {
+    input.user.active
+    input.resource.public
+}
+policy_0614_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
+}

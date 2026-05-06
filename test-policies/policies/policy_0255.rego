@@ -1,7 +1,7 @@
-package security.enforcement.user.allow.policy_0255
+package access.enforcement.action.check.policy_0255
 
-# Auto-generated policy 255
-# Package: security.enforcement.user.allow
+# Auto-generated policy 255 (Rego v1 syntax)
+# Package: access.enforcement.action.check
 
 # Metadata
 metadata := {
@@ -11,13 +11,11 @@ metadata := {
 }
 
 # Rules
-default allowed_0255 = false
-allowed_0255 {
-    input.user.role == "admin"
+policy_0255_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
 }
-allowed_0255 {
+policy_0255_allowed if {
     input.user.active
     input.resource.public
 }
-
-# Utility function for user info

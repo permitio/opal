@@ -1,7 +1,7 @@
-package governance.authorization.policy.validate.policy_0738
+package compliance.authentication.resource.check.data.policy_0738
 
-# Auto-generated policy 738
-# Package: governance.authorization.policy.validate
+# Auto-generated policy 738 (Rego v1 syntax)
+# Package: compliance.authentication.resource.check.data
 
 # Metadata
 metadata := {
@@ -11,12 +11,10 @@ metadata := {
 }
 
 # Rules
-allowed_0738 {
-    data.policies.governance.enabled
+policy_0738_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
 }
-allowed_0738 {
-    input.user.active
-    input.resource.public
+policy_0738_allowed if {
+    input.user.role == "admin"
 }
-
-# Utility function for user info

@@ -1,7 +1,7 @@
-package risk.validation.user.validate.core.policy_0400
+package compliance.authorization.context.allow.policy_0400
 
-# Auto-generated policy 400
-# Package: risk.validation.user.validate.core
+# Auto-generated policy 400 (Rego v1 syntax)
+# Package: compliance.authorization.context.allow
 
 # Metadata
 metadata := {
@@ -11,10 +11,17 @@ metadata := {
 }
 
 # Rules
-default allowed_0400 = false
-denied_0400 {
-    input.action == "delete"
-    input.user.role != "admin"
+policy_0400_allowed if {
+    input.user.role == "admin"
 }
-
-# Utility function for user info
+policy_0400_allowed if {
+    data.policies.compliance.enabled
+}
+policy_0400_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
+}
+policy_0400_allowed if {
+    input.user.active
+    input.resource.public
+}

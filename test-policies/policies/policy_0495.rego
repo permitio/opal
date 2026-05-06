@@ -1,7 +1,7 @@
-package audit.validation.resource.verify.logic.policy_0495
+package compliance.authorization.action.verify.policy_0495
 
-# Auto-generated policy 495
-# Package: audit.validation.resource.verify.logic
+# Auto-generated policy 495 (Rego v1 syntax)
+# Package: compliance.authorization.action.verify
 
 # Metadata
 metadata := {
@@ -11,9 +11,14 @@ metadata := {
 }
 
 # Rules
-default allowed_0495 = false
-allowed_0495 {
-    data.policies.audit.enabled
+policy_0495_allowed if {
+    input.user.role == "admin"
 }
-
-# Utility function for user info
+default policy_0495_allowed = false
+policy_0495_allowed if {
+    input.user.active
+    input.resource.public
+}
+policy_0495_allowed if {
+    data.policies.compliance.enabled
+}

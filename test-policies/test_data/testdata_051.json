@@ -2,8 +2,8 @@
   "test_id": 51,
   "metadata": {
     "environment": "dev",
-    "region": "us-east-1",
-    "version": "1.3.8"
+    "region": "eu-west-1",
+    "version": "1.4.20"
   },
   "users": [
     {
@@ -11,71 +11,64 @@
       "name": "User 0",
       "role": "editor",
       "active": true,
-      "risk_score": 34
+      "risk_score": 14
     },
     {
       "id": "user_001",
       "name": "User 1",
-      "role": "editor",
+      "role": "viewer",
       "active": true,
-      "risk_score": 98
+      "risk_score": 87
     },
     {
       "id": "user_002",
       "name": "User 2",
-      "role": "editor",
+      "role": "user",
       "active": true,
-      "risk_score": 81
+      "risk_score": 52
     },
     {
       "id": "user_003",
       "name": "User 3",
-      "role": "editor",
+      "role": "admin",
+      "active": true,
+      "risk_score": 64
+    },
+    {
+      "id": "user_004",
+      "name": "User 4",
+      "role": "viewer",
       "active": false,
-      "risk_score": 89
+      "risk_score": 41
+    },
+    {
+      "id": "user_005",
+      "name": "User 5",
+      "role": "viewer",
+      "active": false,
+      "risk_score": 44
     }
   ],
   "resources": [
     {
       "id": "res_000",
-      "type": "file",
-      "public": false,
-      "owner_id": "user_096",
-      "sensitivity": "confidential"
-    },
-    {
-      "id": "res_001",
       "type": "service",
       "public": true,
-      "owner_id": "user_090",
-      "sensitivity": "public"
-    },
-    {
-      "id": "res_002",
-      "type": "database",
-      "public": false,
-      "owner_id": "user_044",
+      "owner_id": "user_028",
       "sensitivity": "secret"
-    },
-    {
-      "id": "res_003",
-      "type": "file",
-      "public": false,
-      "owner_id": "user_046",
-      "sensitivity": "public"
     }
   ],
   "system": {
-    "health": 0.69,
-    "load": 3.68,
-    "uptime_days": 238
+    "health": 0.9,
+    "load": 34.93,
+    "uptime_days": 159
   },
   "policies": {
     "security": {
       "enabled": false
     },
     "compliance": {
-      "enabled": false
+      "enabled": true
     },
     "access": {
       "enabled": true

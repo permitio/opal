@@ -1,7 +1,7 @@
-package risk.authorization.policy.check.policy_0508
+package access.validation.user.verify.policy_0508
 
-# Auto-generated policy 508
-# Package: risk.authorization.policy.check
+# Auto-generated policy 508 (Rego v1 syntax)
+# Package: access.validation.user.verify
 
 # Metadata
 metadata := {
@@ -11,16 +11,10 @@ metadata := {
 }
 
 # Rules
-allowed_0508 {
-    input.user.role == "admin"
-}
-allowed_0508 {
-    data.policies.risk.enabled
-}
-denied_0508 {
+policy_0508_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-default allowed_0508 = false
-
-# Utility function for user info
+policy_0508_allowed if {
+    data.policies.access.enabled
+}

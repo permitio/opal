@@ -1,7 +1,7 @@
-package compliance.monitoring.user.verify.policy_0606
+package access.authorization.policy.check.policy_0606
 
-# Auto-generated policy 606
-# Package: compliance.monitoring.user.verify
+# Auto-generated policy 606 (Rego v1 syntax)
+# Package: access.authorization.policy.check
 
 # Metadata
 metadata := {
@@ -11,16 +11,17 @@ metadata := {
 }
 
 # Rules
-denied_0606 {
-    input.action == "delete"
-    input.user.role != "admin"
-}
-allowed_0606 {
-    data.policies.compliance.enabled
-}
-allowed_0606 {
+policy_0606_allowed if {
     input.user.active
     input.resource.public
 }
-
-# Utility function for user info
+policy_0606_allowed if {
+    data.policies.access.enabled
+}
+policy_0606_allowed if {
+    input.user.role == "admin"
+}
+policy_0606_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
+}

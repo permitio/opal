@@ -1,7 +1,7 @@
-package governance.monitoring.action.check.logic.policy_0648
+package access.authentication.user.verify.data.policy_0648
 
-# Auto-generated policy 648
-# Package: governance.monitoring.action.check.logic
+# Auto-generated policy 648 (Rego v1 syntax)
+# Package: access.authentication.user.verify.data
 
 # Metadata
 metadata := {
@@ -11,12 +11,13 @@ metadata := {
 }
 
 # Rules
-allowed_0648 {
-    data.policies.governance.enabled
+policy_0648_allowed if {
+    data.policies.access.enabled
 }
-default allowed_0648 = false
-allowed_0648 {
+policy_0648_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
+}
+policy_0648_allowed if {
     input.user.role == "admin"
 }
-
-# Utility function for user info

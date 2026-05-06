@@ -1,7 +1,7 @@
-package risk.monitoring.action.deny.policy_0851
+package governance.authentication.action.deny.policy_0851
 
-# Auto-generated policy 851
-# Package: risk.monitoring.action.deny
+# Auto-generated policy 851 (Rego v1 syntax)
+# Package: governance.authentication.action.deny
 
 # Metadata
 metadata := {
@@ -11,19 +11,17 @@ metadata := {
 }
 
 # Rules
-allowed_0851 {
+policy_0851_allowed if {
     input.user.role == "admin"
 }
-denied_0851 {
+policy_0851_allowed if {
+    data.policies.governance.enabled
+}
+policy_0851_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
+}
+policy_0851_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-allowed_0851 {
-    input.user.active
-    input.resource.public
-}
-allowed_0851 {
-    data.policies.risk.enabled
-}
-
-# Utility function for user info

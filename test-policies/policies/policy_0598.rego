@@ -1,7 +1,7 @@
-package audit.authorization.action.deny.core.policy_0598
+package compliance.enforcement.user.deny.policy_0598
 
-# Auto-generated policy 598
-# Package: audit.authorization.action.deny.core
+# Auto-generated policy 598 (Rego v1 syntax)
+# Package: compliance.enforcement.user.deny
 
 # Metadata
 metadata := {
@@ -11,15 +11,14 @@ metadata := {
 }
 
 # Rules
-allowed_0598 {
-    data.policies.audit.enabled
+default policy_0598_allowed = false
+policy_0598_allowed if {
+    data.policies.compliance.enabled
 }
-allowed_0598 {
+policy_0598_allowed if {
     input.user.role == "admin"
 }
-denied_0598 {
-    input.action == "delete"
-    input.user.role != "admin"
+policy_0598_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
 }
-
-# Utility function for user info

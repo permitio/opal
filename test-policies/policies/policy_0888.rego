@@ -1,7 +1,7 @@
-package audit.monitoring.context.verify.policy_0888
+package audit.authentication.user.validate.policy_0888
 
-# Auto-generated policy 888
-# Package: audit.monitoring.context.verify
+# Auto-generated policy 888 (Rego v1 syntax)
+# Package: audit.authentication.user.validate
 
 # Metadata
 metadata := {
@@ -11,14 +11,15 @@ metadata := {
 }
 
 # Rules
-default allowed_0888 = false
-allowed_0888 {
-    input.user.active
-    input.resource.public
+default policy_0888_allowed = false
+policy_0888_allowed if {
+    input.user.role == "admin"
 }
-denied_0888 {
+policy_0888_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-
-# Utility function for user info
+policy_0888_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
+}

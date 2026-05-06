@@ -1,7 +1,7 @@
-package risk.monitoring.action.validate.data.policy_0899
+package governance.authorization.policy.validate.data.policy_0899
 
-# Auto-generated policy 899
-# Package: risk.monitoring.action.validate.data
+# Auto-generated policy 899 (Rego v1 syntax)
+# Package: governance.authorization.policy.validate.data
 
 # Metadata
 metadata := {
@@ -11,12 +11,14 @@ metadata := {
 }
 
 # Rules
-allowed_0899 {
-    input.user.role == "admin"
-}
-allowed_0899 {
+policy_0899_allowed if {
     input.user.active
     input.resource.public
 }
-
-# Utility function for user info
+policy_0899_allowed if {
+    input.user.role == "admin"
+}
+policy_0899_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
+}

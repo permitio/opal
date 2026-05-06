@@ -1,7 +1,7 @@
-package governance.validation.resource.deny.policy_0016
+package risk.authentication.context.verify.policy_0016
 
-# Auto-generated policy 16
-# Package: governance.validation.resource.deny
+# Auto-generated policy 16 (Rego v1 syntax)
+# Package: risk.authentication.context.verify
 
 # Metadata
 metadata := {
@@ -11,19 +11,13 @@ metadata := {
 }
 
 # Rules
-allowed_0016 {
+policy_0016_allowed if {
+    data.policies.risk.enabled
+}
+policy_0016_allowed if {
     input.user.role == "admin"
 }
-approved_0016 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
+policy_0016_allowed if {
+    input.user.active
+    input.resource.public
 }
-allowed_0016 {
-    data.policies.governance.enabled
-}
-denied_0016 {
-    input.action == "delete"
-    input.user.role != "admin"
-}
-
-# Utility function for user info

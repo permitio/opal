@@ -1,7 +1,7 @@
-package audit.authentication.context.allow.policy_0140
+package access.enforcement.user.verify.data.policy_0140
 
-# Auto-generated policy 140
-# Package: audit.authentication.context.allow
+# Auto-generated policy 140 (Rego v1 syntax)
+# Package: access.enforcement.user.verify.data
 
 # Metadata
 metadata := {
@@ -11,17 +11,7 @@ metadata := {
 }
 
 # Rules
-denied_0140 {
-    input.action == "delete"
-    input.user.role != "admin"
+policy_0140_allowed if {
+    input.user.role == "admin"
 }
-allowed_0140 {
-    data.policies.audit.enabled
-}
-allowed_0140 {
-    input.user.active
-    input.resource.public
-}
-default allowed_0140 = false
-
-# Utility function for user info
+default policy_0140_allowed = false

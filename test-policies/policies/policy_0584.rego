@@ -1,7 +1,7 @@
-package governance.monitoring.user.deny.policy_0584
+package compliance.monitoring.user.validate.policy_0584
 
-# Auto-generated policy 584
-# Package: governance.monitoring.user.deny
+# Auto-generated policy 584 (Rego v1 syntax)
+# Package: compliance.monitoring.user.validate
 
 # Metadata
 metadata := {
@@ -11,19 +11,14 @@ metadata := {
 }
 
 # Rules
-approved_0584 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
+policy_0584_allowed if {
+    data.policies.compliance.enabled
 }
-allowed_0584 {
-    input.user.role == "admin"
+policy_0584_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
 }
-allowed_0584 {
+policy_0584_allowed if {
     input.user.active
     input.resource.public
 }
-allowed_0584 {
-    data.policies.governance.enabled
-}
-
-# Utility function for user info

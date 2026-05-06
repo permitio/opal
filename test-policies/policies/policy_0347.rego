@@ -1,7 +1,7 @@
-package audit.authorization.user.check.policy_0347
+package risk.monitoring.user.verify.data.policy_0347
 
-# Auto-generated policy 347
-# Package: audit.authorization.user.check
+# Auto-generated policy 347 (Rego v1 syntax)
+# Package: risk.monitoring.user.verify.data
 
 # Metadata
 metadata := {
@@ -11,13 +11,11 @@ metadata := {
 }
 
 # Rules
-default allowed_0347 = false
-allowed_0347 {
-    data.policies.audit.enabled
-}
-allowed_0347 {
+policy_0347_allowed if {
     input.user.active
     input.resource.public
 }
-
-# Utility function for user info
+policy_0347_allowed if {
+    input.user.role == "admin"
+}
+default policy_0347_allowed = false

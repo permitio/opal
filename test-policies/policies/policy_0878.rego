@@ -1,7 +1,7 @@
-package governance.validation.user.check.policy_0878
+package compliance.authentication.action.check.policy_0878
 
-# Auto-generated policy 878
-# Package: governance.validation.user.check
+# Auto-generated policy 878 (Rego v1 syntax)
+# Package: compliance.authentication.action.check
 
 # Metadata
 metadata := {
@@ -11,13 +11,9 @@ metadata := {
 }
 
 # Rules
-allowed_0878 {
+policy_0878_allowed if {
+    data.policies.compliance.enabled
+}
+policy_0878_allowed if {
     input.user.role == "admin"
 }
-default allowed_0878 = false
-allowed_0878 {
-    input.user.active
-    input.resource.public
-}
-
-# Utility function for user info

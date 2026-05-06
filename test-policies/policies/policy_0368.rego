@@ -1,7 +1,7 @@
-package security.validation.action.verify.policy_0368
+package compliance.validation.resource.allow.utils.policy_0368
 
-# Auto-generated policy 368
-# Package: security.validation.action.verify
+# Auto-generated policy 368 (Rego v1 syntax)
+# Package: compliance.validation.resource.allow.utils
 
 # Metadata
 metadata := {
@@ -11,9 +11,10 @@ metadata := {
 }
 
 # Rules
-default allowed_0368 = false
-allowed_0368 {
+policy_0368_allowed if {
     input.user.role == "admin"
 }
-
-# Utility function for user info
+policy_0368_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
+}

@@ -1,7 +1,7 @@
-package audit.enforcement.resource.deny.policy_0069
+package governance.authorization.context.deny.policy_0069
 
-# Auto-generated policy 69
-# Package: audit.enforcement.resource.deny
+# Auto-generated policy 69 (Rego v1 syntax)
+# Package: governance.authorization.context.deny
 
 # Metadata
 metadata := {
@@ -11,16 +11,11 @@ metadata := {
 }
 
 # Rules
-approved_0069 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
+policy_0069_allowed if {
+    data.policies.governance.enabled
 }
-allowed_0069 {
-    data.policies.audit.enabled
-}
-allowed_0069 {
+default policy_0069_allowed = false
+policy_0069_allowed if {
     input.user.active
     input.resource.public
 }
-
-# Utility function for user info

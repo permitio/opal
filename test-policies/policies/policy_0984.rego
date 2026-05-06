@@ -1,7 +1,7 @@
-package audit.authorization.action.validate.policy_0984
+package access.authorization.action.deny.policy_0984
 
-# Auto-generated policy 984
-# Package: audit.authorization.action.validate
+# Auto-generated policy 984 (Rego v1 syntax)
+# Package: access.authorization.action.deny
 
 # Metadata
 metadata := {
@@ -11,19 +11,15 @@ metadata := {
 }
 
 # Rules
-denied_0984 {
+default policy_0984_allowed = false
+policy_0984_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-allowed_0984 {
-    input.user.active
-    input.resource.public
-}
-allowed_0984 {
-    data.policies.audit.enabled
-}
-allowed_0984 {
+policy_0984_allowed if {
     input.user.role == "admin"
 }
-
-# Utility function for user info
+policy_0984_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
+}

@@ -1,7 +1,7 @@
-package access.monitoring.action.validate.logic.policy_0568
+package audit.enforcement.resource.deny.policy_0568
 
-# Auto-generated policy 568
-# Package: access.monitoring.action.validate.logic
+# Auto-generated policy 568 (Rego v1 syntax)
+# Package: audit.enforcement.resource.deny
 
 # Metadata
 metadata := {
@@ -11,11 +11,11 @@ metadata := {
 }
 
 # Rules
-allowed_0568 {
-    data.policies.access.enabled
+policy_0568_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
 }
-allowed_0568 {
-    input.user.role == "admin"
+policy_0568_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
 }
-
-# Utility function for user info

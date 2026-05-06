@@ -1,7 +1,7 @@
-package governance.validation.context.deny.helpers.policy_0488
+package compliance.validation.policy.check.policy_0488
 
-# Auto-generated policy 488
-# Package: governance.validation.context.deny.helpers
+# Auto-generated policy 488 (Rego v1 syntax)
+# Package: compliance.validation.policy.check
 
 # Metadata
 metadata := {
@@ -11,11 +11,14 @@ metadata := {
 }
 
 # Rules
-allowed_0488 {
+policy_0488_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
+}
+policy_0488_allowed if {
     input.user.role == "admin"
 }
-allowed_0488 {
-    data.policies.governance.enabled
+policy_0488_allowed if {
+    data.policies.compliance.enabled
 }
-
-# Utility function for user info
+default policy_0488_allowed = false

@@ -1,7 +1,7 @@
-package risk.authorization.context.verify.policy_0997
+package risk.validation.user.check.utils.policy_0997
 
-# Auto-generated policy 997
-# Package: risk.authorization.context.verify
+# Auto-generated policy 997 (Rego v1 syntax)
+# Package: risk.validation.user.check.utils
 
 # Metadata
 metadata := {
@@ -11,16 +11,13 @@ metadata := {
 }
 
 # Rules
-allowed_0997 {
-    data.policies.risk.enabled
-}
-approved_0997 {
+policy_0997_approved if {
     input.user.risk_score < 50
     input.system.health > 0.8
 }
-denied_0997 {
-    input.action == "delete"
-    input.user.role != "admin"
+policy_0997_allowed if {
+    data.policies.risk.enabled
 }
-
-# Utility function for user info
+policy_0997_allowed if {
+    input.user.role == "admin"
+}

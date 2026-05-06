@@ -1,7 +1,7 @@
-package audit.enforcement.policy.check.core.policy_0585
+package risk.validation.action.deny.utils.policy_0585
 
-# Auto-generated policy 585
-# Package: audit.enforcement.policy.check.core
+# Auto-generated policy 585 (Rego v1 syntax)
+# Package: risk.validation.action.deny.utils
 
 # Metadata
 metadata := {
@@ -11,17 +11,12 @@ metadata := {
 }
 
 # Rules
-denied_0585 {
+policy_0585_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-default allowed_0585 = false
-allowed_0585 {
+policy_0585_allowed if {
     input.user.active
     input.resource.public
 }
-allowed_0585 {
-    input.user.role == "admin"
-}
-
-# Utility function for user info
+default policy_0585_allowed = false

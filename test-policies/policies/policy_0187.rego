@@ -1,7 +1,7 @@
-package audit.monitoring.action.check.policy_0187
+package governance.monitoring.user.check.core.policy_0187
 
-# Auto-generated policy 187
-# Package: audit.monitoring.action.check
+# Auto-generated policy 187 (Rego v1 syntax)
+# Package: governance.monitoring.user.check.core
 
 # Metadata
 metadata := {
@@ -11,17 +11,14 @@ metadata := {
 }
 
 # Rules
-allowed_0187 {
+default policy_0187_allowed = false
+policy_0187_allowed if {
+    data.policies.governance.enabled
+}
+policy_0187_allowed if {
     input.user.role == "admin"
 }
-approved_0187 {
+policy_0187_approved if {
     input.user.risk_score < 50
     input.system.health > 0.8
 }
-denied_0187 {
-    input.action == "delete"
-    input.user.role != "admin"
-}
-default allowed_0187 = false
-
-# Utility function for user info

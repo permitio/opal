@@ -1,7 +1,7 @@
-package governance.validation.policy.deny.policy_0696
+package access.authorization.user.verify.policy_0696
 
-# Auto-generated policy 696
-# Package: governance.validation.policy.deny
+# Auto-generated policy 696 (Rego v1 syntax)
+# Package: access.authorization.user.verify
 
 # Metadata
 metadata := {
@@ -11,12 +11,11 @@ metadata := {
 }
 
 # Rules
-allowed_0696 {
-    data.policies.governance.enabled
-}
-denied_0696 {
+policy_0696_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-
-# Utility function for user info
+policy_0696_allowed if {
+    data.policies.access.enabled
+}
+default policy_0696_allowed = false

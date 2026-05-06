@@ -1,7 +1,7 @@
-package security.validation.policy.deny.policy_0123
+package compliance.validation.action.allow.core.policy_0123
 
-# Auto-generated policy 123
-# Package: security.validation.policy.deny
+# Auto-generated policy 123 (Rego v1 syntax)
+# Package: compliance.validation.action.allow.core
 
 # Metadata
 metadata := {
@@ -11,14 +11,10 @@ metadata := {
 }
 
 # Rules
-default allowed_0123 = false
-approved_0123 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
+policy_0123_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
 }
-allowed_0123 {
-    input.user.active
-    input.resource.public
+policy_0123_allowed if {
+    data.policies.compliance.enabled
 }
-
-# Utility function for user info

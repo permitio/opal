@@ -1,7 +1,7 @@
-package governance.monitoring.policy.deny.helpers.policy_0627
+package risk.authorization.resource.check.policy_0627
 
-# Auto-generated policy 627
-# Package: governance.monitoring.policy.deny.helpers
+# Auto-generated policy 627 (Rego v1 syntax)
+# Package: risk.authorization.resource.check
 
 # Metadata
 metadata := {
@@ -11,13 +11,14 @@ metadata := {
 }
 
 # Rules
-allowed_0627 {
-    input.user.role == "admin"
+policy_0627_allowed if {
+    data.policies.risk.enabled
 }
-denied_0627 {
+policy_0627_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-default allowed_0627 = false
-
-# Utility function for user info
+policy_0627_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
+}

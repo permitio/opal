@@ -1,7 +1,7 @@
-package compliance.authorization.user.deny.policy_0242
+package risk.enforcement.user.verify.data.policy_0242
 
-# Auto-generated policy 242
-# Package: compliance.authorization.user.deny
+# Auto-generated policy 242 (Rego v1 syntax)
+# Package: risk.enforcement.user.verify.data
 
 # Metadata
 metadata := {
@@ -11,16 +11,15 @@ metadata := {
 }
 
 # Rules
-allowed_0242 {
+policy_0242_allowed if {
     input.user.active
     input.resource.public
 }
-allowed_0242 {
-    input.user.role == "admin"
+policy_0242_allowed if {
+    data.policies.risk.enabled
 }
-approved_0242 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
+default policy_0242_allowed = false
+policy_0242_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
 }
-
-# Utility function for user info

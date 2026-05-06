@@ -1,7 +1,7 @@
-package audit.authentication.action.deny.policy_0979
+package governance.authentication.user.verify.policy_0979
 
-# Auto-generated policy 979
-# Package: audit.authentication.action.deny
+# Auto-generated policy 979 (Rego v1 syntax)
+# Package: governance.authentication.user.verify
 
 # Metadata
 metadata := {
@@ -11,13 +11,14 @@ metadata := {
 }
 
 # Rules
-approved_0979 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
+policy_0979_allowed if {
+    input.user.active
+    input.resource.public
 }
-denied_0979 {
-    input.action == "delete"
-    input.user.role != "admin"
+policy_0979_allowed if {
+    input.user.role == "admin"
 }
-
-# Utility function for user info
+default policy_0979_allowed = false
+policy_0979_allowed if {
+    data.policies.governance.enabled
+}

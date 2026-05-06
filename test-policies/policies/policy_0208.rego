@@ -1,7 +1,7 @@
-package audit.monitoring.user.validate.logic.policy_0208
+package compliance.authorization.context.deny.policy_0208
 
-# Auto-generated policy 208
-# Package: audit.monitoring.user.validate.logic
+# Auto-generated policy 208 (Rego v1 syntax)
+# Package: compliance.authorization.context.deny
 
 # Metadata
 metadata := {
@@ -11,13 +11,11 @@ metadata := {
 }
 
 # Rules
-default allowed_0208 = false
-allowed_0208 {
-    input.user.role == "admin"
+default policy_0208_allowed = false
+policy_0208_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
 }
-denied_0208 {
-    input.action == "delete"
-    input.user.role != "admin"
+policy_0208_allowed if {
+    data.policies.compliance.enabled
 }
-
-# Utility function for user info

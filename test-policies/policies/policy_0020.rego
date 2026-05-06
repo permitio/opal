@@ -1,7 +1,7 @@
-package compliance.enforcement.action.check.helpers.policy_0020
+package access.validation.action.allow.policy_0020
 
-# Auto-generated policy 20
-# Package: compliance.enforcement.action.check.helpers
+# Auto-generated policy 20 (Rego v1 syntax)
+# Package: access.validation.action.allow
 
 # Metadata
 metadata := {
@@ -11,19 +11,12 @@ metadata := {
 }
 
 # Rules
-allowed_0020 {
-    data.policies.compliance.enabled
-}
-allowed_0020 {
-    input.user.role == "admin"
-}
-denied_0020 {
+default policy_0020_allowed = false
+policy_0020_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-allowed_0020 {
-    input.user.active
-    input.resource.public
+policy_0020_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
 }
-
-# Utility function for user info

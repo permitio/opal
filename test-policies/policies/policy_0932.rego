@@ -1,7 +1,7 @@
-package risk.authorization.resource.deny.policy_0932
+package access.authentication.context.check.core.policy_0932
 
-# Auto-generated policy 932
-# Package: risk.authorization.resource.deny
+# Auto-generated policy 932 (Rego v1 syntax)
+# Package: access.authentication.context.check.core
 
 # Metadata
 metadata := {
@@ -11,17 +11,7 @@ metadata := {
 }
 
 # Rules
-denied_0932 {
-    input.action == "delete"
-    input.user.role != "admin"
-}
-allowed_0932 {
+default policy_0932_allowed = false
+policy_0932_allowed if {
     input.user.role == "admin"
 }
-approved_0932 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
-}
-default allowed_0932 = false
-
-# Utility function for user info

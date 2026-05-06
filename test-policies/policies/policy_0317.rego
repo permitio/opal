@@ -1,7 +1,7 @@
-package risk.enforcement.policy.check.policy_0317
+package risk.enforcement.context.deny.policy_0317
 
-# Auto-generated policy 317
-# Package: risk.enforcement.policy.check
+# Auto-generated policy 317 (Rego v1 syntax)
+# Package: risk.enforcement.context.deny
 
 # Metadata
 metadata := {
@@ -11,14 +11,8 @@ metadata := {
 }
 
 # Rules
-allowed_0317 {
-    input.user.active
-    input.resource.public
-}
-default allowed_0317 = false
-denied_0317 {
+policy_0317_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-
-# Utility function for user info
+default policy_0317_allowed = false

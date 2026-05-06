@@ -1,7 +1,7 @@
-package audit.authentication.user.deny.policy_0438
+package access.validation.action.verify.policy_0438
 
-# Auto-generated policy 438
-# Package: audit.authentication.user.deny
+# Auto-generated policy 438 (Rego v1 syntax)
+# Package: access.validation.action.verify
 
 # Metadata
 metadata := {
@@ -11,12 +11,14 @@ metadata := {
 }
 
 # Rules
-allowed_0438 {
+policy_0438_allowed if {
+    input.user.role == "admin"
+}
+policy_0438_allowed if {
     input.user.active
     input.resource.public
 }
-allowed_0438 {
-    data.policies.audit.enabled
+policy_0438_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
 }
-
-# Utility function for user info

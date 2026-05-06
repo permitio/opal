@@ -1,7 +1,7 @@
-package audit.authentication.context.check.policy_0619
+package risk.authorization.action.allow.logic.policy_0619
 
-# Auto-generated policy 619
-# Package: audit.authentication.context.check
+# Auto-generated policy 619 (Rego v1 syntax)
+# Package: risk.authorization.action.allow.logic
 
 # Metadata
 metadata := {
@@ -11,9 +11,11 @@ metadata := {
 }
 
 # Rules
-default allowed_0619 = false
-allowed_0619 {
-    data.policies.audit.enabled
+policy_0619_allowed if {
+    input.user.active
+    input.resource.public
 }
-
-# Utility function for user info
+policy_0619_allowed if {
+    input.user.role == "admin"
+}
+default policy_0619_allowed = false

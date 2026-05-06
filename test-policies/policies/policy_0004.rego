@@ -1,7 +1,7 @@
-package governance.validation.resource.validate.policy_0004
+package security.authentication.context.deny.logic.policy_0004
 
-# Auto-generated policy 4
-# Package: governance.validation.resource.validate
+# Auto-generated policy 4 (Rego v1 syntax)
+# Package: security.authentication.context.deny.logic
 
 # Metadata
 metadata := {
@@ -11,11 +11,16 @@ metadata := {
 }
 
 # Rules
-allowed_0004 {
-    input.user.role == "admin"
+default policy_0004_allowed = false
+policy_0004_allowed if {
+    input.user.active
+    input.resource.public
 }
-allowed_0004 {
-    data.policies.governance.enabled
+policy_0004_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
 }
-
-# Utility function for user info
+policy_0004_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
+}

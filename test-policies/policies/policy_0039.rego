@@ -1,7 +1,7 @@
-package security.authorization.resource.allow.utils.policy_0039
+package security.monitoring.context.allow.utils.policy_0039
 
-# Auto-generated policy 39
-# Package: security.authorization.resource.allow.utils
+# Auto-generated policy 39 (Rego v1 syntax)
+# Package: security.monitoring.context.allow.utils
 
 # Metadata
 metadata := {
@@ -11,10 +11,7 @@ metadata := {
 }
 
 # Rules
-approved_0039 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
+policy_0039_allowed if {
+    input.user.role == "admin"
 }
-default allowed_0039 = false
-
-# Utility function for user info
+default policy_0039_allowed = false

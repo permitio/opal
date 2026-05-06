@@ -1,7 +1,7 @@
-package access.validation.context.verify.policy_0930
+package access.validation.context.verify.helpers.policy_0930
 
-# Auto-generated policy 930
-# Package: access.validation.context.verify
+# Auto-generated policy 930 (Rego v1 syntax)
+# Package: access.validation.context.verify.helpers
 
 # Metadata
 metadata := {
@@ -11,12 +11,17 @@ metadata := {
 }
 
 # Rules
-allowed_0930 {
-    data.policies.access.enabled
-}
-default allowed_0930 = false
-allowed_0930 {
+policy_0930_allowed if {
     input.user.role == "admin"
 }
-
-# Utility function for user info
+policy_0930_allowed if {
+    input.user.active
+    input.resource.public
+}
+policy_0930_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
+}
+policy_0930_allowed if {
+    data.policies.access.enabled
+}

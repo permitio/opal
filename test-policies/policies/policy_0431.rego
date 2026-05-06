@@ -1,7 +1,7 @@
-package governance.authentication.policy.allow.utils.policy_0431
+package audit.authentication.policy.allow.policy_0431
 
-# Auto-generated policy 431
-# Package: governance.authentication.policy.allow.utils
+# Auto-generated policy 431 (Rego v1 syntax)
+# Package: audit.authentication.policy.allow
 
 # Metadata
 metadata := {
@@ -11,9 +11,10 @@ metadata := {
 }
 
 # Rules
-allowed_0431 {
+policy_0431_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
+}
+policy_0431_allowed if {
     input.user.role == "admin"
 }
-default allowed_0431 = false
-
-# Utility function for user info

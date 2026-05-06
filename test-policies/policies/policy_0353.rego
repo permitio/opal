@@ -1,7 +1,7 @@
-package access.enforcement.user.validate.policy_0353
+package risk.enforcement.policy.verify.policy_0353
 
-# Auto-generated policy 353
-# Package: access.enforcement.user.validate
+# Auto-generated policy 353 (Rego v1 syntax)
+# Package: risk.enforcement.policy.verify
 
 # Metadata
 metadata := {
@@ -11,14 +11,14 @@ metadata := {
 }
 
 # Rules
-default allowed_0353 = false
-denied_0353 {
+policy_0353_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-approved_0353 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
+policy_0353_allowed if {
+    input.user.role == "admin"
 }
-
-# Utility function for user info
+policy_0353_allowed if {
+    input.user.active
+    input.resource.public
+}

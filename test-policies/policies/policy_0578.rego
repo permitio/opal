@@ -1,7 +1,7 @@
-package access.authentication.context.check.policy_0578
+package audit.authentication.action.check.policy_0578
 
-# Auto-generated policy 578
-# Package: access.authentication.context.check
+# Auto-generated policy 578 (Rego v1 syntax)
+# Package: audit.authentication.action.check
 
 # Metadata
 metadata := {
@@ -11,13 +11,18 @@ metadata := {
 }
 
 # Rules
-allowed_0578 {
-    data.policies.access.enabled
-}
-default allowed_0578 = false
-allowed_0578 {
+policy_0578_allowed if {
     input.user.active
     input.resource.public
 }
-
-# Utility function for user info
+policy_0578_allowed if {
+    data.policies.audit.enabled
+}
+policy_0578_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
+}
+policy_0578_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
+}

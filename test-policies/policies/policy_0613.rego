@@ -1,7 +1,7 @@
-package access.enforcement.policy.allow.policy_0613
+package compliance.authorization.action.check.policy_0613
 
-# Auto-generated policy 613
-# Package: access.enforcement.policy.allow
+# Auto-generated policy 613 (Rego v1 syntax)
+# Package: compliance.authorization.action.check
 
 # Metadata
 metadata := {
@@ -11,13 +11,8 @@ metadata := {
 }
 
 # Rules
-allowed_0613 {
-    data.policies.access.enabled
+default policy_0613_allowed = false
+policy_0613_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
 }
-allowed_0613 {
-    input.user.active
-    input.resource.public
-}
-default allowed_0613 = false
-
-# Utility function for user info

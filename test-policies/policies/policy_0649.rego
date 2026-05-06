@@ -1,7 +1,7 @@
-package access.authentication.policy.check.policy_0649
+package compliance.validation.action.validate.policy_0649
 
-# Auto-generated policy 649
-# Package: access.authentication.policy.check
+# Auto-generated policy 649 (Rego v1 syntax)
+# Package: compliance.validation.action.validate
 
 # Metadata
 metadata := {
@@ -11,9 +11,10 @@ metadata := {
 }
 
 # Rules
-default allowed_0649 = false
-allowed_0649 {
-    input.user.role == "admin"
+policy_0649_allowed if {
+    input.user.active
+    input.resource.public
 }
-
-# Utility function for user info
+policy_0649_allowed if {
+    data.policies.compliance.enabled
+}

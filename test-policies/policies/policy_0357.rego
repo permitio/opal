@@ -1,7 +1,7 @@
-package audit.enforcement.policy.allow.policy_0357
+package access.validation.action.allow.policy_0357
 
-# Auto-generated policy 357
-# Package: audit.enforcement.policy.allow
+# Auto-generated policy 357 (Rego v1 syntax)
+# Package: access.validation.action.allow
 
 # Metadata
 metadata := {
@@ -11,13 +11,10 @@ metadata := {
 }
 
 # Rules
-allowed_0357 {
+policy_0357_allowed if {
+    input.user.active
+    input.resource.public
+}
+policy_0357_allowed if {
     input.user.role == "admin"
 }
-denied_0357 {
-    input.action == "delete"
-    input.user.role != "admin"
-}
-default allowed_0357 = false
-
-# Utility function for user info

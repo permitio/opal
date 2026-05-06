@@ -1,7 +1,7 @@
-package security.authorization.user.verify.helpers.policy_0463
+package compliance.monitoring.resource.check.policy_0463
 
-# Auto-generated policy 463
-# Package: security.authorization.user.verify.helpers
+# Auto-generated policy 463 (Rego v1 syntax)
+# Package: compliance.monitoring.resource.check
 
 # Metadata
 metadata := {
@@ -11,17 +11,14 @@ metadata := {
 }
 
 # Rules
-allowed_0463 {
-    input.user.active
-    input.resource.public
-}
-default allowed_0463 = false
-allowed_0463 {
-    input.user.role == "admin"
-}
-denied_0463 {
+policy_0463_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-
-# Utility function for user info
+policy_0463_allowed if {
+    data.policies.compliance.enabled
+}
+policy_0463_allowed if {
+    input.user.active
+    input.resource.public
+}

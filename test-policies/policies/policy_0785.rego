@@ -1,7 +1,7 @@
-package compliance.authentication.resource.check.policy_0785
+package access.enforcement.policy.verify.policy_0785
 
-# Auto-generated policy 785
-# Package: compliance.authentication.resource.check
+# Auto-generated policy 785 (Rego v1 syntax)
+# Package: access.enforcement.policy.verify
 
 # Metadata
 metadata := {
@@ -11,10 +11,10 @@ metadata := {
 }
 
 # Rules
-allowed_0785 {
-    input.user.active
-    input.resource.public
+default policy_0785_allowed = false
+policy_0785_allowed if {
+    data.policies.access.enabled
 }
-default allowed_0785 = false
-
-# Utility function for user info
+policy_0785_allowed if {
+    input.user.role == "admin"
+}

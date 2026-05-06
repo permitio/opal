@@ -1,7 +1,7 @@
-package audit.enforcement.action.allow.core.policy_0318
+package governance.enforcement.context.validate.policy_0318
 
-# Auto-generated policy 318
-# Package: audit.enforcement.action.allow.core
+# Auto-generated policy 318 (Rego v1 syntax)
+# Package: governance.enforcement.context.validate
 
 # Metadata
 metadata := {
@@ -11,13 +11,14 @@ metadata := {
 }
 
 # Rules
-allowed_0318 {
+policy_0318_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
+}
+policy_0318_allowed if {
+    data.policies.governance.enabled
+}
+policy_0318_allowed if {
     input.user.active
     input.resource.public
 }
-denied_0318 {
-    input.action == "delete"
-    input.user.role != "admin"
-}
-
-# Utility function for user info

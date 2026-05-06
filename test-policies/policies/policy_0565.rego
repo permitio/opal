@@ -1,7 +1,7 @@
-package audit.authorization.context.validate.policy_0565
+package security.authorization.action.deny.policy_0565
 
-# Auto-generated policy 565
-# Package: audit.authorization.context.validate
+# Auto-generated policy 565 (Rego v1 syntax)
+# Package: security.authorization.action.deny
 
 # Metadata
 metadata := {
@@ -11,12 +11,10 @@ metadata := {
 }
 
 # Rules
-allowed_0565 {
-    data.policies.audit.enabled
-}
-default allowed_0565 = false
-allowed_0565 {
+policy_0565_allowed if {
     input.user.role == "admin"
 }
-
-# Utility function for user info
+policy_0565_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
+}

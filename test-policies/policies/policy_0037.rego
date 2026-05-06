@@ -1,7 +1,7 @@
-package governance.validation.user.allow.helpers.policy_0037
+package security.validation.action.check.logic.policy_0037
 
-# Auto-generated policy 37
-# Package: governance.validation.user.allow.helpers
+# Auto-generated policy 37 (Rego v1 syntax)
+# Package: security.validation.action.check.logic
 
 # Metadata
 metadata := {
@@ -11,12 +11,15 @@ metadata := {
 }
 
 # Rules
-approved_0037 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
+policy_0037_allowed if {
+    input.user.active
+    input.resource.public
 }
-allowed_0037 {
-    data.policies.governance.enabled
+policy_0037_allowed if {
+    data.policies.security.enabled
 }
-
-# Utility function for user info
+policy_0037_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
+}
+default policy_0037_allowed = false

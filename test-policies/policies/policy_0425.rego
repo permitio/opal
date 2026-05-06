@@ -1,7 +1,7 @@
-package security.authorization.policy.check.policy_0425
+package audit.monitoring.action.allow.utils.policy_0425
 
-# Auto-generated policy 425
-# Package: security.authorization.policy.check
+# Auto-generated policy 425 (Rego v1 syntax)
+# Package: audit.monitoring.action.allow.utils
 
 # Metadata
 metadata := {
@@ -11,13 +11,8 @@ metadata := {
 }
 
 # Rules
-allowed_0425 {
+default policy_0425_allowed = false
+policy_0425_allowed if {
     input.user.active
     input.resource.public
 }
-denied_0425 {
-    input.action == "delete"
-    input.user.role != "admin"
-}
-
-# Utility function for user info

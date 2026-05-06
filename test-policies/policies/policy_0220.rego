@@ -1,7 +1,7 @@
-package governance.validation.user.check.policy_0220
+package audit.enforcement.policy.check.data.policy_0220
 
-# Auto-generated policy 220
-# Package: governance.validation.user.check
+# Auto-generated policy 220 (Rego v1 syntax)
+# Package: audit.enforcement.policy.check.data
 
 # Metadata
 metadata := {
@@ -11,12 +11,11 @@ metadata := {
 }
 
 # Rules
-allowed_0220 {
+policy_0220_allowed if {
     input.user.active
     input.resource.public
 }
-allowed_0220 {
-    data.policies.governance.enabled
+default policy_0220_allowed = false
+policy_0220_allowed if {
+    data.policies.audit.enabled
 }
-
-# Utility function for user info

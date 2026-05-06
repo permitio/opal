@@ -1,7 +1,7 @@
-package compliance.monitoring.action.deny.helpers.policy_0161
+package compliance.validation.action.deny.policy_0161
 
-# Auto-generated policy 161
-# Package: compliance.monitoring.action.deny.helpers
+# Auto-generated policy 161 (Rego v1 syntax)
+# Package: compliance.validation.action.deny
 
 # Metadata
 metadata := {
@@ -11,16 +11,18 @@ metadata := {
 }
 
 # Rules
-allowed_0161 {
+policy_0161_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
+}
+policy_0161_allowed if {
     input.user.active
     input.resource.public
 }
-allowed_0161 {
+policy_0161_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
+}
+policy_0161_allowed if {
     input.user.role == "admin"
 }
-default allowed_0161 = false
-allowed_0161 {
-    data.policies.compliance.enabled
-}
-
-# Utility function for user info

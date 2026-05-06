@@ -1,7 +1,7 @@
-package compliance.authorization.user.validate.policy_0599
+package audit.enforcement.user.deny.policy_0599
 
-# Auto-generated policy 599
-# Package: compliance.authorization.user.validate
+# Auto-generated policy 599 (Rego v1 syntax)
+# Package: audit.enforcement.user.deny
 
 # Metadata
 metadata := {
@@ -11,15 +11,11 @@ metadata := {
 }
 
 # Rules
-allowed_0599 {
+default policy_0599_allowed = false
+policy_0599_allowed if {
     input.user.role == "admin"
 }
-allowed_0599 {
-    input.user.active
-    input.resource.public
+policy_0599_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
 }
-allowed_0599 {
-    data.policies.compliance.enabled
-}
-
-# Utility function for user info

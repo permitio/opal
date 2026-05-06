@@ -1,7 +1,7 @@
-package security.authentication.context.allow.data.policy_0702
+package access.authorization.resource.verify.policy_0702
 
-# Auto-generated policy 702
-# Package: security.authentication.context.allow.data
+# Auto-generated policy 702 (Rego v1 syntax)
+# Package: access.authorization.resource.verify
 
 # Metadata
 metadata := {
@@ -11,16 +11,11 @@ metadata := {
 }
 
 # Rules
-allowed_0702 {
+policy_0702_allowed if {
     input.user.role == "admin"
 }
-denied_0702 {
-    input.action == "delete"
-    input.user.role != "admin"
+default policy_0702_allowed = false
+policy_0702_allowed if {
+    input.user.active
+    input.resource.public
 }
-approved_0702 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
-}
-
-# Utility function for user info

@@ -1,7 +1,7 @@
-package compliance.enforcement.action.deny.policy_0713
+package audit.validation.user.verify.policy_0713
 
-# Auto-generated policy 713
-# Package: compliance.enforcement.action.deny
+# Auto-generated policy 713 (Rego v1 syntax)
+# Package: audit.validation.user.verify
 
 # Metadata
 metadata := {
@@ -11,13 +11,14 @@ metadata := {
 }
 
 # Rules
-approved_0713 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
-}
-denied_0713 {
+policy_0713_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-
-# Utility function for user info
+policy_0713_allowed if {
+    input.user.active
+    input.resource.public
+}
+policy_0713_allowed if {
+    input.user.role == "admin"
+}

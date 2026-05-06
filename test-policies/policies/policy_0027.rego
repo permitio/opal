@@ -1,7 +1,7 @@
-package audit.validation.resource.allow.data.policy_0027
+package security.authentication.action.validate.policy_0027
 
-# Auto-generated policy 27
-# Package: audit.validation.resource.allow.data
+# Auto-generated policy 27 (Rego v1 syntax)
+# Package: security.authentication.action.validate
 
 # Metadata
 metadata := {
@@ -11,20 +11,10 @@ metadata := {
 }
 
 # Rules
-approved_0027 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
+policy_0027_allowed if {
+    input.user.role == "admin"
 }
-denied_0027 {
-    input.action == "delete"
-    input.user.role != "admin"
-}
-allowed_0027 {
+policy_0027_allowed if {
     input.user.active
     input.resource.public
 }
-allowed_0027 {
-    data.policies.audit.enabled
-}
-
-# Utility function for user info

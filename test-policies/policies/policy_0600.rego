@@ -1,7 +1,7 @@
-package audit.monitoring.user.verify.logic.policy_0600
+package access.enforcement.user.check.policy_0600
 
-# Auto-generated policy 600
-# Package: audit.monitoring.user.verify.logic
+# Auto-generated policy 600 (Rego v1 syntax)
+# Package: access.enforcement.user.check
 
 # Metadata
 metadata := {
@@ -11,19 +11,11 @@ metadata := {
 }
 
 # Rules
-allowed_0600 {
-    input.user.role == "admin"
-}
-approved_0600 {
+policy_0600_approved if {
     input.user.risk_score < 50
     input.system.health > 0.8
 }
-allowed_0600 {
-    input.user.active
-    input.resource.public
+policy_0600_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
 }
-allowed_0600 {
-    data.policies.audit.enabled
-}
-
-# Utility function for user info

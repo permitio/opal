@@ -107,11 +107,11 @@ fi
 # Show summary
 if [ $TEST_EXIT_CODE -eq 0 ]; then
     echo -e "${GREEN}╔════════════════════════════════════════════════════════════╗${NC}"
-    echo -e "${GREEN}║              ✅ ALL DOCKER TESTS PASSED ✅                  ║${NC}"
+    echo -e "${GREEN}║              ✅ ALL DOCKER TESTS PASSED ✅                 ║${NC}"
     echo -e "${GREEN}╚════════════════════════════════════════════════════════════╝${NC}"
 else
     echo -e "${RED}╔════════════════════════════════════════════════════════════╗${NC}"
-    echo -e "${RED}║             ❌ SOME DOCKER TESTS FAILED ❌                  ║${NC}"
+    echo -e "${RED}║             ❌ SOME DOCKER TESTS FAILED ❌                 ║${NC}"
     echo -e "${RED}╚════════════════════════════════════════════════════════════╝${NC}"
 fi
 

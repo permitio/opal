@@ -1,7 +1,7 @@
-package audit.validation.action.allow.policy_0893
+package security.monitoring.action.allow.policy_0893
 
-# Auto-generated policy 893
-# Package: audit.validation.action.allow
+# Auto-generated policy 893 (Rego v1 syntax)
+# Package: security.monitoring.action.allow
 
 # Metadata
 metadata := {
@@ -11,13 +11,13 @@ metadata := {
 }
 
 # Rules
-allowed_0893 {
-    input.user.active
-    input.resource.public
+policy_0893_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
 }
-denied_0893 {
-    input.action == "delete"
-    input.user.role != "admin"
+policy_0893_allowed if {
+    input.user.role == "admin"
 }
-
-# Utility function for user info
+policy_0893_allowed if {
+    data.policies.security.enabled
+}

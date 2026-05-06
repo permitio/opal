@@ -1,7 +1,7 @@
-package risk.authorization.resource.validate.policy_0921
+package governance.validation.user.allow.policy_0921
 
-# Auto-generated policy 921
-# Package: risk.authorization.resource.validate
+# Auto-generated policy 921 (Rego v1 syntax)
+# Package: governance.validation.user.allow
 
 # Metadata
 metadata := {
@@ -11,16 +11,17 @@ metadata := {
 }
 
 # Rules
-allowed_0921 {
-    input.user.role == "admin"
+policy_0921_allowed if {
+    data.policies.governance.enabled
 }
-allowed_0921 {
+policy_0921_allowed if {
     input.user.active
     input.resource.public
 }
-denied_0921 {
-    input.action == "delete"
-    input.user.role != "admin"
+policy_0921_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
 }
-
-# Utility function for user info
+policy_0921_allowed if {
+    input.user.role == "admin"
+}

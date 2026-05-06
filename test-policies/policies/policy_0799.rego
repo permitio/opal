@@ -1,7 +1,7 @@
-package security.validation.action.allow.helpers.policy_0799
+package security.authentication.action.allow.policy_0799
 
-# Auto-generated policy 799
-# Package: security.validation.action.allow.helpers
+# Auto-generated policy 799 (Rego v1 syntax)
+# Package: security.authentication.action.allow
 
 # Metadata
 metadata := {
@@ -11,17 +11,11 @@ metadata := {
 }
 
 # Rules
-denied_0799 {
-    input.action == "delete"
-    input.user.role != "admin"
+policy_0799_allowed if {
+    input.user.role == "admin"
 }
-allowed_0799 {
-    data.policies.security.enabled
+default policy_0799_allowed = false
+policy_0799_allowed if {
+    input.user.active
+    input.resource.public
 }
-approved_0799 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
-}
-default allowed_0799 = false
-
-# Utility function for user info

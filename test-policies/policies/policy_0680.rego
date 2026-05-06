@@ -1,7 +1,7 @@
-package security.validation.resource.verify.policy_0680
+package audit.enforcement.action.deny.policy_0680
 
-# Auto-generated policy 680
-# Package: security.validation.resource.verify
+# Auto-generated policy 680 (Rego v1 syntax)
+# Package: audit.enforcement.action.deny
 
 # Metadata
 metadata := {
@@ -11,13 +11,14 @@ metadata := {
 }
 
 # Rules
-approved_0680 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
+policy_0680_allowed if {
+    input.user.role == "admin"
 }
-allowed_0680 {
+policy_0680_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
+}
+policy_0680_allowed if {
     input.user.active
     input.resource.public
 }
-
-# Utility function for user info

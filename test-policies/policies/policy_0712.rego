@@ -1,7 +1,7 @@
-package audit.authorization.resource.allow.policy_0712
+package audit.authorization.context.check.helpers.policy_0712
 
-# Auto-generated policy 712
-# Package: audit.authorization.resource.allow
+# Auto-generated policy 712 (Rego v1 syntax)
+# Package: audit.authorization.context.check.helpers
 
 # Metadata
 metadata := {
@@ -11,17 +11,18 @@ metadata := {
 }
 
 # Rules
-allowed_0712 {
-    input.user.active
-    input.resource.public
-}
-approved_0712 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
-}
-denied_0712 {
+policy_0712_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-
-# Utility function for user info
+policy_0712_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
+}
+policy_0712_allowed if {
+    data.policies.audit.enabled
+}
+policy_0712_allowed if {
+    input.user.active
+    input.resource.public
+}

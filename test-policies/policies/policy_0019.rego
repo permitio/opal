@@ -1,7 +1,7 @@
-package compliance.authorization.action.allow.policy_0019
+package compliance.validation.policy.allow.logic.policy_0019
 
-# Auto-generated policy 19
-# Package: compliance.authorization.action.allow
+# Auto-generated policy 19 (Rego v1 syntax)
+# Package: compliance.validation.policy.allow.logic
 
 # Metadata
 metadata := {
@@ -11,10 +11,15 @@ metadata := {
 }
 
 # Rules
-default allowed_0019 = false
-denied_0019 {
+policy_0019_allowed if {
+    input.user.active
+    input.resource.public
+}
+default policy_0019_allowed = false
+policy_0019_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-
-# Utility function for user info
+policy_0019_allowed if {
+    input.user.role == "admin"
+}

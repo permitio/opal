@@ -1,7 +1,7 @@
-package audit.validation.resource.verify.policy_0514
+package access.authentication.context.validate.policy_0514
 
-# Auto-generated policy 514
-# Package: audit.validation.resource.verify
+# Auto-generated policy 514 (Rego v1 syntax)
+# Package: access.authentication.context.validate
 
 # Metadata
 metadata := {
@@ -11,12 +11,12 @@ metadata := {
 }
 
 # Rules
-allowed_0514 {
-    data.policies.audit.enabled
+policy_0514_allowed if {
+    input.user.active
+    input.resource.public
 }
-denied_0514 {
-    input.action == "delete"
-    input.user.role != "admin"
+policy_0514_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
 }
-
-# Utility function for user info
+default policy_0514_allowed = false

@@ -1,7 +1,7 @@
-package audit.monitoring.context.allow.helpers.policy_0410
+package governance.authorization.policy.verify.policy_0410
 
-# Auto-generated policy 410
-# Package: audit.monitoring.context.allow.helpers
+# Auto-generated policy 410 (Rego v1 syntax)
+# Package: governance.authorization.policy.verify
 
 # Metadata
 metadata := {
@@ -11,20 +11,10 @@ metadata := {
 }
 
 # Rules
-denied_0410 {
-    input.action == "delete"
-    input.user.role != "admin"
+policy_0410_allowed if {
+    data.policies.governance.enabled
 }
-allowed_0410 {
-    input.user.role == "admin"
-}
-approved_0410 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
-}
-allowed_0410 {
+policy_0410_allowed if {
     input.user.active
     input.resource.public
 }
-
-# Utility function for user info

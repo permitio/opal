@@ -1,7 +1,7 @@
-package governance.enforcement.user.allow.policy_0733
+package compliance.monitoring.user.deny.policy_0733
 
-# Auto-generated policy 733
-# Package: governance.enforcement.user.allow
+# Auto-generated policy 733 (Rego v1 syntax)
+# Package: compliance.monitoring.user.deny
 
 # Metadata
 metadata := {
@@ -11,19 +11,8 @@ metadata := {
 }
 
 # Rules
-allowed_0733 {
-    data.policies.governance.enabled
+policy_0733_allowed if {
+    input.user.active
+    input.resource.public
 }
-allowed_0733 {
-    input.user.role == "admin"
-}
-approved_0733 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
-}
-denied_0733 {
-    input.action == "delete"
-    input.user.role != "admin"
-}
-
-# Utility function for user info
+default policy_0733_allowed = false

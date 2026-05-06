@@ -1,7 +1,7 @@
-package audit.authentication.user.verify.data.policy_0913
+package governance.authentication.resource.verify.policy_0913
 
-# Auto-generated policy 913
-# Package: audit.authentication.user.verify.data
+# Auto-generated policy 913 (Rego v1 syntax)
+# Package: governance.authentication.resource.verify
 
 # Metadata
 metadata := {
@@ -11,17 +11,11 @@ metadata := {
 }
 
 # Rules
-approved_0913 {
+policy_0913_approved if {
     input.user.risk_score < 50
     input.system.health > 0.8
 }
-allowed_0913 {
-    input.user.role == "admin"
+policy_0913_allowed if {
+    input.user.active
+    input.resource.public
 }
-denied_0913 {
-    input.action == "delete"
-    input.user.role != "admin"
-}
-default allowed_0913 = false
-
-# Utility function for user info

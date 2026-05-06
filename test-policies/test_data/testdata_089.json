@@ -2,48 +2,48 @@
   "test_id": 89,
   "metadata": {
     "environment": "dev",
-    "region": "ap-northeast-1",
-    "version": "1.1.13"
+    "region": "us-east-1",
+    "version": "1.5.8"
   },
   "users": [
     {
       "id": "user_000",
       "name": "User 0",
-      "role": "editor",
+      "role": "viewer",
       "active": true,
-      "risk_score": 70
+      "risk_score": 42
     }
   ],
   "resources": [
     {
       "id": "res_000",
-      "type": "bucket",
-      "public": true,
-      "owner_id": "user_050",
-      "sensitivity": "public"
+      "type": "api",
+      "public": false,
+      "owner_id": "user_099",
+      "sensitivity": "internal"
     },
     {
       "id": "res_001",
-      "type": "file",
+      "type": "database",
       "public": true,
-      "owner_id": "user_055",
+      "owner_id": "user_095",
       "sensitivity": "internal"
     }
   ],
   "system": {
-    "health": 0.87,
-    "load": 28.89,
-    "uptime_days": 78
+    "health": 0.63,
+    "load": 46.2,
+    "uptime_days": 150
   },
   "policies": {
     "security": {
-      "enabled": false
+      "enabled": true
     },
     "compliance": {
       "enabled": true
     },
     "access": {
-      "enabled": false
+      "enabled": true
     },
     "audit": {
       "enabled": false

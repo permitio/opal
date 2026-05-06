@@ -1,7 +1,7 @@
-package audit.validation.user.validate.logic.policy_0869
+package security.monitoring.user.check.policy_0869
 
-# Auto-generated policy 869
-# Package: audit.validation.user.validate.logic
+# Auto-generated policy 869 (Rego v1 syntax)
+# Package: security.monitoring.user.check
 
 # Metadata
 metadata := {
@@ -11,13 +11,10 @@ metadata := {
 }
 
 # Rules
-allowed_0869 {
+policy_0869_allowed if {
     input.user.role == "admin"
 }
-default allowed_0869 = false
-allowed_0869 {
-    input.user.active
-    input.resource.public
+policy_0869_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
 }
-
-# Utility function for user info

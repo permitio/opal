@@ -1,7 +1,7 @@
-package compliance.validation.resource.verify.policy_0883
+package access.enforcement.action.check.policy_0883
 
-# Auto-generated policy 883
-# Package: compliance.validation.resource.verify
+# Auto-generated policy 883 (Rego v1 syntax)
+# Package: access.enforcement.action.check
 
 # Metadata
 metadata := {
@@ -11,12 +11,11 @@ metadata := {
 }
 
 # Rules
-allowed_0883 {
-    input.user.role == "admin"
+policy_0883_allowed if {
+    input.user.active
+    input.resource.public
 }
-denied_0883 {
+policy_0883_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-
-# Utility function for user info

@@ -1,7 +1,7 @@
-package access.authentication.action.check.data.policy_0989
+package compliance.enforcement.user.deny.policy_0989
 
-# Auto-generated policy 989
-# Package: access.authentication.action.check.data
+# Auto-generated policy 989 (Rego v1 syntax)
+# Package: compliance.enforcement.user.deny
 
 # Metadata
 metadata := {
@@ -11,13 +11,10 @@ metadata := {
 }
 
 # Rules
-default allowed_0989 = false
-allowed_0989 {
-    data.policies.access.enabled
+policy_0989_allowed if {
+    data.policies.compliance.enabled
 }
-allowed_0989 {
-    input.user.active
-    input.resource.public
+policy_0989_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
 }
-
-# Utility function for user info

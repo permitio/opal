@@ -1,7 +1,7 @@
-package audit.authentication.policy.validate.policy_0697
+package audit.enforcement.resource.verify.policy_0697
 
-# Auto-generated policy 697
-# Package: audit.authentication.policy.validate
+# Auto-generated policy 697 (Rego v1 syntax)
+# Package: audit.enforcement.resource.verify
 
 # Metadata
 metadata := {
@@ -11,19 +11,11 @@ metadata := {
 }
 
 # Rules
-approved_0697 {
+policy_0697_allowed if {
+    input.user.role == "admin"
+}
+policy_0697_approved if {
     input.user.risk_score < 50
     input.system.health > 0.8
 }
-allowed_0697 {
-    input.user.role == "admin"
-}
-denied_0697 {
-    input.action == "delete"
-    input.user.role != "admin"
-}
-allowed_0697 {
-    data.policies.audit.enabled
-}
-
-# Utility function for user info
+default policy_0697_allowed = false

@@ -1,7 +1,7 @@
-package compliance.authorization.policy.check.logic.policy_0936
+package audit.validation.action.verify.utils.policy_0936
 
-# Auto-generated policy 936
-# Package: compliance.authorization.policy.check.logic
+# Auto-generated policy 936 (Rego v1 syntax)
+# Package: audit.validation.action.verify.utils
 
 # Metadata
 metadata := {
@@ -11,16 +11,11 @@ metadata := {
 }
 
 # Rules
-allowed_0936 {
-    input.user.active
-    input.resource.public
-}
-denied_0936 {
+policy_0936_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-allowed_0936 {
-    data.policies.compliance.enabled
+policy_0936_allowed if {
+    data.policies.audit.enabled
 }
-
-# Utility function for user info
+default policy_0936_allowed = false

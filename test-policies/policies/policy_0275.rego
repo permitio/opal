@@ -1,7 +1,7 @@
-package governance.validation.action.verify.helpers.policy_0275
+package access.authorization.user.check.logic.policy_0275
 
-# Auto-generated policy 275
-# Package: governance.validation.action.verify.helpers
+# Auto-generated policy 275 (Rego v1 syntax)
+# Package: access.authorization.user.check.logic
 
 # Metadata
 metadata := {
@@ -11,14 +11,10 @@ metadata := {
 }
 
 # Rules
-default allowed_0275 = false
-denied_0275 {
+policy_0275_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-allowed_0275 {
-    input.user.active
-    input.resource.public
+policy_0275_allowed if {
+    data.policies.access.enabled
 }
-
-# Utility function for user info

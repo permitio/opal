@@ -1,7 +1,7 @@
-package compliance.monitoring.policy.verify.policy_0259
+package compliance.authentication.context.allow.policy_0259
 
-# Auto-generated policy 259
-# Package: compliance.monitoring.policy.verify
+# Auto-generated policy 259 (Rego v1 syntax)
+# Package: compliance.authentication.context.allow
 
 # Metadata
 metadata := {
@@ -11,16 +11,14 @@ metadata := {
 }
 
 # Rules
-denied_0259 {
+policy_0259_allowed if {
+    input.user.role == "admin"
+}
+policy_0259_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
+}
+policy_0259_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-allowed_0259 {
-    data.policies.compliance.enabled
-}
-allowed_0259 {
-    input.user.role == "admin"
-}
-default allowed_0259 = false
-
-# Utility function for user info

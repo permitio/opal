@@ -1,7 +1,7 @@
-package governance.validation.policy.verify.policy_0994
+package access.authorization.user.verify.policy_0994
 
-# Auto-generated policy 994
-# Package: governance.validation.policy.verify
+# Auto-generated policy 994 (Rego v1 syntax)
+# Package: access.authorization.user.verify
 
 # Metadata
 metadata := {
@@ -11,16 +11,18 @@ metadata := {
 }
 
 # Rules
-allowed_0994 {
-    input.user.role == "admin"
+policy_0994_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
 }
-allowed_0994 {
-    data.policies.governance.enabled
-}
-default allowed_0994 = false
-allowed_0994 {
+policy_0994_allowed if {
     input.user.active
     input.resource.public
 }
-
-# Utility function for user info
+policy_0994_allowed if {
+    input.user.role == "admin"
+}
+policy_0994_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
+}

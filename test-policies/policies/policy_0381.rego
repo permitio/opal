@@ -1,7 +1,7 @@
-package compliance.authorization.action.allow.utils.policy_0381
+package compliance.enforcement.context.allow.policy_0381
 
-# Auto-generated policy 381
-# Package: compliance.authorization.action.allow.utils
+# Auto-generated policy 381 (Rego v1 syntax)
+# Package: compliance.enforcement.context.allow
 
 # Metadata
 metadata := {
@@ -11,12 +11,11 @@ metadata := {
 }
 
 # Rules
-allowed_0381 {
+policy_0381_allowed if {
     input.user.role == "admin"
 }
-denied_0381 {
-    input.action == "delete"
-    input.user.role != "admin"
+default policy_0381_allowed = false
+policy_0381_allowed if {
+    input.user.active
+    input.resource.public
 }
-
-# Utility function for user info

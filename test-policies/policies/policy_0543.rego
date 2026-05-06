@@ -1,7 +1,7 @@
-package access.monitoring.user.allow.policy_0543
+package audit.enforcement.resource.check.policy_0543
 
-# Auto-generated policy 543
-# Package: access.monitoring.user.allow
+# Auto-generated policy 543 (Rego v1 syntax)
+# Package: audit.enforcement.resource.check
 
 # Metadata
 metadata := {
@@ -11,10 +11,16 @@ metadata := {
 }
 
 # Rules
-default allowed_0543 = false
-denied_0543 {
+policy_0543_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-
-# Utility function for user info
+policy_0543_allowed if {
+    input.user.active
+    input.resource.public
+}
+default policy_0543_allowed = false
+policy_0543_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
+}

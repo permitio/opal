@@ -1,7 +1,7 @@
-package compliance.authentication.resource.validate.policy_0223
+package security.monitoring.action.validate.policy_0223
 
-# Auto-generated policy 223
-# Package: compliance.authentication.resource.validate
+# Auto-generated policy 223 (Rego v1 syntax)
+# Package: security.monitoring.action.validate
 
 # Metadata
 metadata := {
@@ -11,12 +11,15 @@ metadata := {
 }
 
 # Rules
-allowed_0223 {
-    data.policies.compliance.enabled
+default policy_0223_allowed = false
+policy_0223_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
 }
-denied_0223 {
+policy_0223_allowed if {
+    input.user.role == "admin"
+}
+policy_0223_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-
-# Utility function for user info

@@ -1,7 +1,7 @@
-package security.enforcement.context.check.policy_0461
+package risk.monitoring.resource.validate.policy_0461
 
-# Auto-generated policy 461
-# Package: security.enforcement.context.check
+# Auto-generated policy 461 (Rego v1 syntax)
+# Package: risk.monitoring.resource.validate
 
 # Metadata
 metadata := {
@@ -11,10 +11,14 @@ metadata := {
 }
 
 # Rules
-approved_0461 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
+policy_0461_allowed if {
+    data.policies.risk.enabled
 }
-default allowed_0461 = false
-
-# Utility function for user info
+policy_0461_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
+}
+policy_0461_allowed if {
+    input.user.role == "admin"
+}
+default policy_0461_allowed = false

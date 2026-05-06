@@ -1,7 +1,7 @@
-package audit.monitoring.resource.validate.policy_0447
+package risk.authentication.resource.check.policy_0447
 
-# Auto-generated policy 447
-# Package: audit.monitoring.resource.validate
+# Auto-generated policy 447 (Rego v1 syntax)
+# Package: risk.authentication.resource.check
 
 # Metadata
 metadata := {
@@ -11,16 +11,10 @@ metadata := {
 }
 
 # Rules
-approved_0447 {
+policy_0447_allowed if {
+    input.user.role == "admin"
+}
+policy_0447_approved if {
     input.user.risk_score < 50
     input.system.health > 0.8
 }
-denied_0447 {
-    input.action == "delete"
-    input.user.role != "admin"
-}
-allowed_0447 {
-    data.policies.audit.enabled
-}
-
-# Utility function for user info

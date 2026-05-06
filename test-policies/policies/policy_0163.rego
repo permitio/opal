@@ -1,7 +1,7 @@
-package access.enforcement.action.verify.policy_0163
+package security.enforcement.resource.allow.data.policy_0163
 
-# Auto-generated policy 163
-# Package: access.enforcement.action.verify
+# Auto-generated policy 163 (Rego v1 syntax)
+# Package: security.enforcement.resource.allow.data
 
 # Metadata
 metadata := {
@@ -11,16 +11,14 @@ metadata := {
 }
 
 # Rules
-approved_0163 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
-}
-allowed_0163 {
+policy_0163_allowed if {
     input.user.active
     input.resource.public
 }
-allowed_0163 {
-    data.policies.access.enabled
+policy_0163_allowed if {
+    data.policies.security.enabled
 }
-
-# Utility function for user info
+default policy_0163_allowed = false
+policy_0163_allowed if {
+    input.user.role == "admin"
+}

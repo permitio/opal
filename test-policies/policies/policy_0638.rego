@@ -1,7 +1,7 @@
-package governance.monitoring.context.check.policy_0638
+package security.validation.resource.check.policy_0638
 
-# Auto-generated policy 638
-# Package: governance.monitoring.context.check
+# Auto-generated policy 638 (Rego v1 syntax)
+# Package: security.validation.resource.check
 
 # Metadata
 metadata := {
@@ -11,16 +11,14 @@ metadata := {
 }
 
 # Rules
-allowed_0638 {
-    input.user.role == "admin"
+policy_0638_allowed if {
+    data.policies.security.enabled
 }
-denied_0638 {
-    input.action == "delete"
-    input.user.role != "admin"
-}
-approved_0638 {
+policy_0638_approved if {
     input.user.risk_score < 50
     input.system.health > 0.8
 }
-
-# Utility function for user info
+policy_0638_allowed if {
+    input.user.active
+    input.resource.public
+}

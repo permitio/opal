@@ -1,7 +1,7 @@
-package access.validation.resource.check.helpers.policy_0719
+package governance.validation.resource.deny.policy_0719
 
-# Auto-generated policy 719
-# Package: access.validation.resource.check.helpers
+# Auto-generated policy 719 (Rego v1 syntax)
+# Package: governance.validation.resource.deny
 
 # Metadata
 metadata := {
@@ -11,17 +11,10 @@ metadata := {
 }
 
 # Rules
-default allowed_0719 = false
-allowed_0719 {
-    data.policies.access.enabled
+policy_0719_allowed if {
+    data.policies.governance.enabled
 }
-denied_0719 {
-    input.action == "delete"
-    input.user.role != "admin"
+default policy_0719_allowed = false
+policy_0719_allowed if {
+    input.user.role == "admin"
 }
-allowed_0719 {
-    input.user.active
-    input.resource.public
-}
-
-# Utility function for user info

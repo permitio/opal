@@ -1,7 +1,7 @@
-package audit.authentication.policy.verify.utils.policy_0861
+package compliance.validation.policy.verify.data.policy_0861
 
-# Auto-generated policy 861
-# Package: audit.authentication.policy.verify.utils
+# Auto-generated policy 861 (Rego v1 syntax)
+# Package: compliance.validation.policy.verify.data
 
 # Metadata
 metadata := {
@@ -11,16 +11,17 @@ metadata := {
 }
 
 # Rules
-default allowed_0861 = false
-allowed_0861 {
-    input.user.active
-    input.resource.public
+policy_0861_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
 }
-allowed_0861 {
-    data.policies.audit.enabled
+policy_0861_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
 }
-allowed_0861 {
+policy_0861_allowed if {
+    data.policies.compliance.enabled
+}
+policy_0861_allowed if {
     input.user.role == "admin"
 }
-
-# Utility function for user info

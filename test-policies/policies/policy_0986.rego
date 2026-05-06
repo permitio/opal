@@ -1,7 +1,7 @@
-package governance.monitoring.user.check.policy_0986
+package audit.authentication.context.verify.core.policy_0986
 
-# Auto-generated policy 986
-# Package: governance.monitoring.user.check
+# Auto-generated policy 986 (Rego v1 syntax)
+# Package: audit.authentication.context.verify.core
 
 # Metadata
 metadata := {
@@ -11,13 +11,14 @@ metadata := {
 }
 
 # Rules
-allowed_0986 {
+policy_0986_allowed if {
+    data.policies.audit.enabled
+}
+policy_0986_allowed if {
+    input.user.active
+    input.resource.public
+}
+policy_0986_allowed if {
     input.user.role == "admin"
 }
-denied_0986 {
-    input.action == "delete"
-    input.user.role != "admin"
-}
-default allowed_0986 = false
-
-# Utility function for user info
+default policy_0986_allowed = false

@@ -1,7 +1,7 @@
-package compliance.authorization.action.check.policy_0122
+package audit.enforcement.policy.validate.policy_0122
 
-# Auto-generated policy 122
-# Package: compliance.authorization.action.check
+# Auto-generated policy 122 (Rego v1 syntax)
+# Package: audit.enforcement.policy.validate
 
 # Metadata
 metadata := {
@@ -11,11 +11,11 @@ metadata := {
 }
 
 # Rules
-allowed_0122 {
-    data.policies.compliance.enabled
+default policy_0122_allowed = false
+policy_0122_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
 }
-allowed_0122 {
-    input.user.role == "admin"
+policy_0122_allowed if {
+    data.policies.audit.enabled
 }
-
-# Utility function for user info

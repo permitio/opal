@@ -1,7 +1,7 @@
-package compliance.authentication.policy.deny.policy_0219
+package risk.enforcement.resource.verify.logic.policy_0219
 
-# Auto-generated policy 219
-# Package: compliance.authentication.policy.deny
+# Auto-generated policy 219 (Rego v1 syntax)
+# Package: risk.enforcement.resource.verify.logic
 
 # Metadata
 metadata := {
@@ -11,9 +11,8 @@ metadata := {
 }
 
 # Rules
-default allowed_0219 = false
-allowed_0219 {
-    input.user.role == "admin"
+policy_0219_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
 }
-
-# Utility function for user info
+default policy_0219_allowed = false

@@ -1,7 +1,7 @@
-package risk.authentication.resource.verify.utils.policy_0143
+package compliance.authentication.user.check.policy_0143
 
-# Auto-generated policy 143
-# Package: risk.authentication.resource.verify.utils
+# Auto-generated policy 143 (Rego v1 syntax)
+# Package: compliance.authentication.user.check
 
 # Metadata
 metadata := {
@@ -11,11 +11,13 @@ metadata := {
 }
 
 # Rules
-allowed_0143 {
+policy_0143_allowed if {
+    data.policies.compliance.enabled
+}
+policy_0143_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
+}
+policy_0143_allowed if {
     input.user.role == "admin"
 }
-allowed_0143 {
-    data.policies.risk.enabled
-}
-
-# Utility function for user info

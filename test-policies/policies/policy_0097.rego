@@ -1,7 +1,7 @@
-package compliance.enforcement.user.deny.policy_0097
+package audit.validation.user.verify.utils.policy_0097
 
-# Auto-generated policy 97
-# Package: compliance.enforcement.user.deny
+# Auto-generated policy 97 (Rego v1 syntax)
+# Package: audit.validation.user.verify.utils
 
 # Metadata
 metadata := {
@@ -11,11 +11,8 @@ metadata := {
 }
 
 # Rules
-allowed_0097 {
-    data.policies.compliance.enabled
+default policy_0097_allowed = false
+policy_0097_allowed if {
+    input.user.active
+    input.resource.public
 }
-allowed_0097 {
-    input.user.role == "admin"
-}
-
-# Utility function for user info

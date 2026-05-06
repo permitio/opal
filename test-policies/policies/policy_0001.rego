@@ -1,7 +1,7 @@
-package compliance.enforcement.context.verify.policy_0001
+package risk.authentication.resource.verify.policy_0001
 
-# Auto-generated policy 1
-# Package: compliance.enforcement.context.verify
+# Auto-generated policy 1 (Rego v1 syntax)
+# Package: risk.authentication.resource.verify
 
 # Metadata
 metadata := {
@@ -11,13 +11,14 @@ metadata := {
 }
 
 # Rules
-default allowed_0001 = false
-denied_0001 {
+policy_0001_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-allowed_0001 {
-    data.policies.compliance.enabled
+policy_0001_allowed if {
+    input.user.role == "admin"
 }
-
-# Utility function for user info
+policy_0001_allowed if {
+    data.policies.risk.enabled
+}
+default policy_0001_allowed = false

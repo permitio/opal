@@ -1,7 +1,7 @@
-package compliance.validation.action.verify.core.policy_0720
+package risk.validation.user.deny.core.policy_0720
 
-# Auto-generated policy 720
-# Package: compliance.validation.action.verify.core
+# Auto-generated policy 720 (Rego v1 syntax)
+# Package: risk.validation.user.deny.core
 
 # Metadata
 metadata := {
@@ -11,17 +11,7 @@ metadata := {
 }
 
 # Rules
-allowed_0720 {
-    input.user.active
-    input.resource.public
+default policy_0720_allowed = false
+policy_0720_allowed if {
+    data.policies.risk.enabled
 }
-approved_0720 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
-}
-default allowed_0720 = false
-allowed_0720 {
-    data.policies.compliance.enabled
-}
-
-# Utility function for user info

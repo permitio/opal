@@ -1,7 +1,7 @@
-package governance.monitoring.action.check.helpers.policy_0967
+package risk.enforcement.user.validate.policy_0967
 
-# Auto-generated policy 967
-# Package: governance.monitoring.action.check.helpers
+# Auto-generated policy 967 (Rego v1 syntax)
+# Package: risk.enforcement.user.validate
 
 # Metadata
 metadata := {
@@ -11,13 +11,14 @@ metadata := {
 }
 
 # Rules
-default allowed_0967 = false
-allowed_0967 {
+policy_0967_allowed if {
     input.user.role == "admin"
 }
-denied_0967 {
-    input.action == "delete"
-    input.user.role != "admin"
+policy_0967_allowed if {
+    input.user.active
+    input.resource.public
 }
-
-# Utility function for user info
+policy_0967_allowed if {
+    data.policies.risk.enabled
+}
+default policy_0967_allowed = false

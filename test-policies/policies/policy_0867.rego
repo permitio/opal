@@ -1,7 +1,7 @@
-package governance.authentication.action.check.logic.policy_0867
+package audit.enforcement.action.allow.logic.policy_0867
 
-# Auto-generated policy 867
-# Package: governance.authentication.action.check.logic
+# Auto-generated policy 867 (Rego v1 syntax)
+# Package: audit.enforcement.action.allow.logic
 
 # Metadata
 metadata := {
@@ -11,16 +11,17 @@ metadata := {
 }
 
 # Rules
-allowed_0867 {
-    data.policies.governance.enabled
+policy_0867_allowed if {
+    data.policies.audit.enabled
 }
-allowed_0867 {
+policy_0867_allowed if {
+    input.user.role == "admin"
+}
+policy_0867_allowed if {
     input.user.active
     input.resource.public
 }
-default allowed_0867 = false
-allowed_0867 {
-    input.user.role == "admin"
+policy_0867_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
 }
-
-# Utility function for user info

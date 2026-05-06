@@ -1,7 +1,7 @@
-package access.authorization.action.allow.policy_0112
+package governance.enforcement.user.deny.data.policy_0112
 
-# Auto-generated policy 112
-# Package: access.authorization.action.allow
+# Auto-generated policy 112 (Rego v1 syntax)
+# Package: governance.enforcement.user.deny.data
 
 # Metadata
 metadata := {
@@ -11,12 +11,8 @@ metadata := {
 }
 
 # Rules
-allowed_0112 {
-    data.policies.access.enabled
-}
-allowed_0112 {
+policy_0112_allowed if {
     input.user.active
     input.resource.public
 }
-
-# Utility function for user info
+default policy_0112_allowed = false

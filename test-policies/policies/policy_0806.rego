@@ -1,7 +1,7 @@
-package security.authorization.action.check.policy_0806
+package audit.authentication.user.check.data.policy_0806
 
-# Auto-generated policy 806
-# Package: security.authorization.action.check
+# Auto-generated policy 806 (Rego v1 syntax)
+# Package: audit.authentication.user.check.data
 
 # Metadata
 metadata := {
@@ -11,13 +11,10 @@ metadata := {
 }
 
 # Rules
-denied_0806 {
-    input.action == "delete"
-    input.user.role != "admin"
+policy_0806_allowed if {
+    input.user.role == "admin"
 }
-approved_0806 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
+policy_0806_allowed if {
+    data.policies.audit.enabled
 }
-
-# Utility function for user info
+default policy_0806_allowed = false

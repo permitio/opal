@@ -1,7 +1,7 @@
-package security.authentication.action.deny.policy_0066
+package compliance.validation.resource.validate.policy_0066
 
-# Auto-generated policy 66
-# Package: security.authentication.action.deny
+# Auto-generated policy 66 (Rego v1 syntax)
+# Package: compliance.validation.resource.validate
 
 # Metadata
 metadata := {
@@ -11,17 +11,8 @@ metadata := {
 }
 
 # Rules
-allowed_0066 {
-    input.user.active
-    input.resource.public
+default policy_0066_allowed = false
+policy_0066_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
 }
-denied_0066 {
-    input.action == "delete"
-    input.user.role != "admin"
-}
-default allowed_0066 = false
-allowed_0066 {
-    data.policies.security.enabled
-}
-
-# Utility function for user info

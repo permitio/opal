@@ -1,7 +1,7 @@
-package governance.enforcement.user.validate.utils.policy_0632
+package risk.monitoring.context.deny.utils.policy_0632
 
-# Auto-generated policy 632
-# Package: governance.enforcement.user.validate.utils
+# Auto-generated policy 632 (Rego v1 syntax)
+# Package: risk.monitoring.context.deny.utils
 
 # Metadata
 metadata := {
@@ -11,13 +11,8 @@ metadata := {
 }
 
 # Rules
-approved_0632 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
+policy_0632_allowed if {
+    input.user.active
+    input.resource.public
 }
-denied_0632 {
-    input.action == "delete"
-    input.user.role != "admin"
-}
-
-# Utility function for user info
+default policy_0632_allowed = false

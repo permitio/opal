@@ -1,7 +1,7 @@
-package access.authentication.user.check.policy_0633
+package security.enforcement.user.deny.policy_0633
 
-# Auto-generated policy 633
-# Package: access.authentication.user.check
+# Auto-generated policy 633 (Rego v1 syntax)
+# Package: security.enforcement.user.deny
 
 # Metadata
 metadata := {
@@ -11,17 +11,15 @@ metadata := {
 }
 
 # Rules
-allowed_0633 {
-    input.user.active
-    input.resource.public
-}
-default allowed_0633 = false
-allowed_0633 {
-    input.user.role == "admin"
-}
-denied_0633 {
+policy_0633_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-
-# Utility function for user info
+policy_0633_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
+}
+policy_0633_allowed if {
+    input.user.active
+    input.resource.public
+}

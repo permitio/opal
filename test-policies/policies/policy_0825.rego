@@ -1,7 +1,7 @@
-package governance.validation.user.allow.policy_0825
+package audit.authorization.action.deny.data.policy_0825
 
-# Auto-generated policy 825
-# Package: governance.validation.user.allow
+# Auto-generated policy 825 (Rego v1 syntax)
+# Package: audit.authorization.action.deny.data
 
 # Metadata
 metadata := {
@@ -11,19 +11,12 @@ metadata := {
 }
 
 # Rules
-allowed_0825 {
-    input.user.active
-    input.resource.public
+policy_0825_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
 }
-allowed_0825 {
-    data.policies.governance.enabled
-}
-allowed_0825 {
-    input.user.role == "admin"
-}
-denied_0825 {
+policy_0825_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-
-# Utility function for user info
+default policy_0825_allowed = false

@@ -1,7 +1,7 @@
-package governance.authentication.user.verify.policy_0958
+package compliance.authentication.resource.validate.policy_0958
 
-# Auto-generated policy 958
-# Package: governance.authentication.user.verify
+# Auto-generated policy 958 (Rego v1 syntax)
+# Package: compliance.authentication.resource.validate
 
 # Metadata
 metadata := {
@@ -11,12 +11,14 @@ metadata := {
 }
 
 # Rules
-denied_0958 {
-    input.action == "delete"
-    input.user.role != "admin"
+policy_0958_allowed if {
+    data.policies.compliance.enabled
 }
-allowed_0958 {
-    data.policies.governance.enabled
+default policy_0958_allowed = false
+policy_0958_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
 }
-
-# Utility function for user info
+policy_0958_allowed if {
+    input.user.role == "admin"
+}

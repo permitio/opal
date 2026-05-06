@@ -1,7 +1,7 @@
-package governance.validation.user.validate.data.policy_0231
+package security.monitoring.context.validate.logic.policy_0231
 
-# Auto-generated policy 231
-# Package: governance.validation.user.validate.data
+# Auto-generated policy 231 (Rego v1 syntax)
+# Package: security.monitoring.context.validate.logic
 
 # Metadata
 metadata := {
@@ -11,16 +11,15 @@ metadata := {
 }
 
 # Rules
-denied_0231 {
-    input.action == "delete"
-    input.user.role != "admin"
-}
-allowed_0231 {
-    input.user.role == "admin"
-}
-allowed_0231 {
+policy_0231_allowed if {
     input.user.active
     input.resource.public
 }
-
-# Utility function for user info
+default policy_0231_allowed = false
+policy_0231_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
+}
+policy_0231_allowed if {
+    input.user.role == "admin"
+}

@@ -1,7 +1,7 @@
-package risk.monitoring.action.deny.core.policy_0276
+package compliance.enforcement.action.verify.logic.policy_0276
 
-# Auto-generated policy 276
-# Package: risk.monitoring.action.deny.core
+# Auto-generated policy 276 (Rego v1 syntax)
+# Package: compliance.enforcement.action.verify.logic
 
 # Metadata
 metadata := {
@@ -11,16 +11,15 @@ metadata := {
 }
 
 # Rules
-allowed_0276 {
-    input.user.role == "admin"
+policy_0276_allowed if {
+    input.user.active
+    input.resource.public
 }
-default allowed_0276 = false
-allowed_0276 {
-    data.policies.risk.enabled
-}
-approved_0276 {
+policy_0276_approved if {
     input.user.risk_score < 50
     input.system.health > 0.8
 }
-
-# Utility function for user info
+default policy_0276_allowed = false
+policy_0276_allowed if {
+    data.policies.compliance.enabled
+}

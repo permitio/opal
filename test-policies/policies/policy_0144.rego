@@ -1,7 +1,7 @@
-package security.validation.context.allow.data.policy_0144
+package compliance.enforcement.user.check.policy_0144
 
-# Auto-generated policy 144
-# Package: security.validation.context.allow.data
+# Auto-generated policy 144 (Rego v1 syntax)
+# Package: compliance.enforcement.user.check
 
 # Metadata
 metadata := {
@@ -11,10 +11,14 @@ metadata := {
 }
 
 # Rules
-default allowed_0144 = false
-denied_0144 {
-    input.action == "delete"
-    input.user.role != "admin"
+policy_0144_allowed if {
+    input.user.role == "admin"
 }
-
-# Utility function for user info
+policy_0144_allowed if {
+    input.user.active
+    input.resource.public
+}
+policy_0144_allowed if {
+    data.policies.compliance.enabled
+}
+default policy_0144_allowed = false

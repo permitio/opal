@@ -1,7 +1,7 @@
-package security.authorization.user.allow.utils.policy_0036
+package access.validation.policy.check.core.policy_0036
 
-# Auto-generated policy 36
-# Package: security.authorization.user.allow.utils
+# Auto-generated policy 36 (Rego v1 syntax)
+# Package: access.validation.policy.check.core
 
 # Metadata
 metadata := {
@@ -11,10 +11,8 @@ metadata := {
 }
 
 # Rules
-default allowed_0036 = false
-allowed_0036 {
-    input.user.active
-    input.resource.public
+default policy_0036_allowed = false
+policy_0036_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
 }
-
-# Utility function for user info

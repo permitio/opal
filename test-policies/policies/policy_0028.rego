@@ -1,7 +1,7 @@
-package governance.authentication.resource.validate.policy_0028
+package security.monitoring.policy.validate.utils.policy_0028
 
-# Auto-generated policy 28
-# Package: governance.authentication.resource.validate
+# Auto-generated policy 28 (Rego v1 syntax)
+# Package: security.monitoring.policy.validate.utils
 
 # Metadata
 metadata := {
@@ -11,13 +11,11 @@ metadata := {
 }
 
 # Rules
-allowed_0028 {
-    input.user.active
-    input.resource.public
+default policy_0028_allowed = false
+policy_0028_allowed if {
+    data.policies.security.enabled
 }
-approved_0028 {
+policy_0028_approved if {
     input.user.risk_score < 50
     input.system.health > 0.8
 }
-
-# Utility function for user info

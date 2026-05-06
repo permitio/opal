@@ -1,7 +1,7 @@
-package access.monitoring.action.deny.policy_0457
+package risk.validation.action.allow.policy_0457
 
-# Auto-generated policy 457
-# Package: access.monitoring.action.deny
+# Auto-generated policy 457 (Rego v1 syntax)
+# Package: risk.validation.action.allow
 
 # Metadata
 metadata := {
@@ -11,19 +11,11 @@ metadata := {
 }
 
 # Rules
-allowed_0457 {
+policy_0457_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
+}
+default policy_0457_allowed = false
+policy_0457_allowed if {
     input.user.role == "admin"
 }
-allowed_0457 {
-    input.user.active
-    input.resource.public
-}
-denied_0457 {
-    input.action == "delete"
-    input.user.role != "admin"
-}
-allowed_0457 {
-    data.policies.access.enabled
-}
-
-# Utility function for user info

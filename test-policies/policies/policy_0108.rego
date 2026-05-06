@@ -1,7 +1,7 @@
-package risk.enforcement.policy.check.policy_0108
+package risk.enforcement.user.verify.policy_0108
 
-# Auto-generated policy 108
-# Package: risk.enforcement.policy.check
+# Auto-generated policy 108 (Rego v1 syntax)
+# Package: risk.enforcement.user.verify
 
 # Metadata
 metadata := {
@@ -11,13 +11,17 @@ metadata := {
 }
 
 # Rules
-default allowed_0108 = false
-allowed_0108 {
+policy_0108_allowed if {
     input.user.active
     input.resource.public
 }
-allowed_0108 {
+policy_0108_allowed if {
+    data.policies.risk.enabled
+}
+policy_0108_allowed if {
     input.user.role == "admin"
 }
-
-# Utility function for user info
+policy_0108_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
+}

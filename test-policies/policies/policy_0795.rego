@@ -1,7 +1,7 @@
-package audit.monitoring.context.deny.policy_0795
+package compliance.validation.context.check.utils.policy_0795
 
-# Auto-generated policy 795
-# Package: audit.monitoring.context.deny
+# Auto-generated policy 795 (Rego v1 syntax)
+# Package: compliance.validation.context.check.utils
 
 # Metadata
 metadata := {
@@ -11,17 +11,18 @@ metadata := {
 }
 
 # Rules
-allowed_0795 {
-    input.user.role == "admin"
+policy_0795_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
 }
-default allowed_0795 = false
-denied_0795 {
+policy_0795_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-allowed_0795 {
+policy_0795_allowed if {
+    input.user.role == "admin"
+}
+policy_0795_allowed if {
     input.user.active
     input.resource.public
 }
-
-# Utility function for user info

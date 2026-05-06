@@ -1,7 +1,7 @@
-package access.authentication.action.allow.core.policy_0558
+package risk.validation.policy.verify.policy_0558
 
-# Auto-generated policy 558
-# Package: access.authentication.action.allow.core
+# Auto-generated policy 558 (Rego v1 syntax)
+# Package: risk.validation.policy.verify
 
 # Metadata
 metadata := {
@@ -11,20 +11,11 @@ metadata := {
 }
 
 # Rules
-allowed_0558 {
-    input.user.active
-    input.resource.public
-}
-approved_0558 {
+policy_0558_approved if {
     input.user.risk_score < 50
     input.system.health > 0.8
 }
-denied_0558 {
+policy_0558_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-allowed_0558 {
-    data.policies.access.enabled
-}
-
-# Utility function for user info

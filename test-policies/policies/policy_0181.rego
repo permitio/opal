@@ -1,7 +1,7 @@
-package governance.authorization.policy.validate.policy_0181
+package risk.validation.context.deny.policy_0181
 
-# Auto-generated policy 181
-# Package: governance.authorization.policy.validate
+# Auto-generated policy 181 (Rego v1 syntax)
+# Package: risk.validation.context.deny
 
 # Metadata
 metadata := {
@@ -11,17 +11,14 @@ metadata := {
 }
 
 # Rules
-default allowed_0181 = false
-approved_0181 {
+policy_0181_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
+}
+policy_0181_approved if {
     input.user.risk_score < 50
     input.system.health > 0.8
 }
-allowed_0181 {
-    input.user.role == "admin"
+policy_0181_allowed if {
+    data.policies.risk.enabled
 }
-allowed_0181 {
-    input.user.active
-    input.resource.public
-}
-
-# Utility function for user info

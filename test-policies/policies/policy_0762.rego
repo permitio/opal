@@ -1,7 +1,7 @@
-package audit.authorization.context.allow.utils.policy_0762
+package security.enforcement.action.deny.policy_0762
 
-# Auto-generated policy 762
-# Package: audit.authorization.context.allow.utils
+# Auto-generated policy 762 (Rego v1 syntax)
+# Package: security.enforcement.action.deny
 
 # Metadata
 metadata := {
@@ -11,10 +11,8 @@ metadata := {
 }
 
 # Rules
-denied_0762 {
+policy_0762_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-default allowed_0762 = false
-
-# Utility function for user info
+default policy_0762_allowed = false

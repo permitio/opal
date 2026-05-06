@@ -1,7 +1,7 @@
-package access.monitoring.policy.deny.helpers.policy_0890
+package governance.monitoring.policy.verify.logic.policy_0890
 
-# Auto-generated policy 890
-# Package: access.monitoring.policy.deny.helpers
+# Auto-generated policy 890 (Rego v1 syntax)
+# Package: governance.monitoring.policy.verify.logic
 
 # Metadata
 metadata := {
@@ -11,16 +11,15 @@ metadata := {
 }
 
 # Rules
-allowed_0890 {
-    input.user.role == "admin"
-}
-default allowed_0890 = false
-allowed_0890 {
-    data.policies.access.enabled
-}
-approved_0890 {
+policy_0890_approved if {
     input.user.risk_score < 50
     input.system.health > 0.8
 }
-
-# Utility function for user info
+policy_0890_allowed if {
+    data.policies.governance.enabled
+}
+default policy_0890_allowed = false
+policy_0890_allowed if {
+    input.user.active
+    input.resource.public
+}

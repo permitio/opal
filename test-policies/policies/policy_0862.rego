@@ -1,7 +1,7 @@
-package governance.validation.context.validate.policy_0862
+package risk.validation.user.check.logic.policy_0862
 
-# Auto-generated policy 862
-# Package: governance.validation.context.validate
+# Auto-generated policy 862 (Rego v1 syntax)
+# Package: risk.validation.user.check.logic
 
 # Metadata
 metadata := {
@@ -11,16 +11,10 @@ metadata := {
 }
 
 # Rules
-approved_0862 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
+policy_0862_allowed if {
+    data.policies.risk.enabled
 }
-allowed_0862 {
-    input.user.role == "admin"
-}
-allowed_0862 {
+policy_0862_allowed if {
     input.user.active
     input.resource.public
 }
-
-# Utility function for user info

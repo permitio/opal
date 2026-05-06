@@ -1,7 +1,7 @@
-package governance.enforcement.context.allow.policy_0519
+package risk.enforcement.policy.verify.data.policy_0519
 
-# Auto-generated policy 519
-# Package: governance.enforcement.context.allow
+# Auto-generated policy 519 (Rego v1 syntax)
+# Package: risk.enforcement.policy.verify.data
 
 # Metadata
 metadata := {
@@ -11,12 +11,13 @@ metadata := {
 }
 
 # Rules
-approved_0519 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
+policy_0519_allowed if {
+    input.user.role == "admin"
 }
-allowed_0519 {
-    data.policies.governance.enabled
+policy_0519_allowed if {
+    input.user.active
+    input.resource.public
 }
-
-# Utility function for user info
+policy_0519_allowed if {
+    data.policies.risk.enabled
+}

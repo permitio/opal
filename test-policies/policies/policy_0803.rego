@@ -1,7 +1,7 @@
-package audit.monitoring.context.check.data.policy_0803
+package compliance.monitoring.action.allow.policy_0803
 
-# Auto-generated policy 803
-# Package: audit.monitoring.context.check.data
+# Auto-generated policy 803 (Rego v1 syntax)
+# Package: compliance.monitoring.action.allow
 
 # Metadata
 metadata := {
@@ -11,10 +11,10 @@ metadata := {
 }
 
 # Rules
-default allowed_0803 = false
-approved_0803 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
+policy_0803_allowed if {
+    input.user.role == "admin"
 }
-
-# Utility function for user info
+policy_0803_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
+}

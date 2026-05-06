@@ -1,7 +1,7 @@
-package access.authentication.user.verify.utils.policy_0206
+package risk.monitoring.user.allow.policy_0206
 
-# Auto-generated policy 206
-# Package: access.authentication.user.verify.utils
+# Auto-generated policy 206 (Rego v1 syntax)
+# Package: risk.monitoring.user.allow
 
 # Metadata
 metadata := {
@@ -11,19 +11,10 @@ metadata := {
 }
 
 # Rules
-allowed_0206 {
+policy_0206_allowed if {
+    data.policies.risk.enabled
+}
+default policy_0206_allowed = false
+policy_0206_allowed if {
     input.user.role == "admin"
 }
-approved_0206 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
-}
-denied_0206 {
-    input.action == "delete"
-    input.user.role != "admin"
-}
-allowed_0206 {
-    data.policies.access.enabled
-}
-
-# Utility function for user info

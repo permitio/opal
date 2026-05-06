@@ -1,7 +1,7 @@
-package compliance.authorization.action.verify.policy_0308
+package governance.enforcement.context.check.core.policy_0308
 
-# Auto-generated policy 308
-# Package: compliance.authorization.action.verify
+# Auto-generated policy 308 (Rego v1 syntax)
+# Package: governance.enforcement.context.check.core
 
 # Metadata
 metadata := {
@@ -11,16 +11,17 @@ metadata := {
 }
 
 # Rules
-allowed_0308 {
-    data.policies.compliance.enabled
+policy_0308_allowed if {
+    input.user.active
+    input.resource.public
 }
-default allowed_0308 = false
-approved_0308 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
+policy_0308_allowed if {
+    data.policies.governance.enabled
 }
-allowed_0308 {
+policy_0308_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
+}
+policy_0308_allowed if {
     input.user.role == "admin"
 }
-
-# Utility function for user info

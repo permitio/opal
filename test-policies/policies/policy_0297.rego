@@ -1,7 +1,7 @@
-package security.validation.context.allow.policy_0297
+package security.authentication.user.allow.policy_0297
 
-# Auto-generated policy 297
-# Package: security.validation.context.allow
+# Auto-generated policy 297 (Rego v1 syntax)
+# Package: security.authentication.user.allow
 
 # Metadata
 metadata := {
@@ -11,20 +11,14 @@ metadata := {
 }
 
 # Rules
-allowed_0297 {
+policy_0297_allowed if {
+    data.policies.security.enabled
+}
+policy_0297_allowed if {
     input.user.active
     input.resource.public
 }
-allowed_0297 {
-    input.user.role == "admin"
-}
-approved_0297 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
-}
-denied_0297 {
+policy_0297_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-
-# Utility function for user info

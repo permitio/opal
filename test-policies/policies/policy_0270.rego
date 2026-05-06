@@ -1,7 +1,7 @@
-package governance.authentication.policy.allow.policy_0270
+package compliance.monitoring.policy.allow.data.policy_0270
 
-# Auto-generated policy 270
-# Package: governance.authentication.policy.allow
+# Auto-generated policy 270 (Rego v1 syntax)
+# Package: compliance.monitoring.policy.allow.data
 
 # Metadata
 metadata := {
@@ -11,20 +11,15 @@ metadata := {
 }
 
 # Rules
-denied_0270 {
-    input.action == "delete"
-    input.user.role != "admin"
+default policy_0270_allowed = false
+policy_0270_allowed if {
+    data.policies.compliance.enabled
 }
-approved_0270 {
+policy_0270_approved if {
     input.user.risk_score < 50
     input.system.health > 0.8
 }
-allowed_0270 {
-    data.policies.governance.enabled
+policy_0270_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
 }
-allowed_0270 {
-    input.user.active
-    input.resource.public
-}
-
-# Utility function for user info

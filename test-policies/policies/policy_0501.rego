@@ -1,7 +1,7 @@
-package security.authorization.user.deny.policy_0501
+package access.monitoring.user.verify.policy_0501
 
-# Auto-generated policy 501
-# Package: security.authorization.user.deny
+# Auto-generated policy 501 (Rego v1 syntax)
+# Package: access.monitoring.user.verify
 
 # Metadata
 metadata := {
@@ -11,19 +11,7 @@ metadata := {
 }
 
 # Rules
-allowed_0501 {
-    data.policies.security.enabled
-}
-allowed_0501 {
-    input.user.active
-    input.resource.public
-}
-allowed_0501 {
+policy_0501_allowed if {
     input.user.role == "admin"
 }
-approved_0501 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
-}
-
-# Utility function for user info
+default policy_0501_allowed = false

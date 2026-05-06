@@ -1,7 +1,7 @@
-package compliance.authorization.action.allow.policy_0771
+package audit.monitoring.policy.validate.helpers.policy_0771
 
-# Auto-generated policy 771
-# Package: compliance.authorization.action.allow
+# Auto-generated policy 771 (Rego v1 syntax)
+# Package: audit.monitoring.policy.validate.helpers
 
 # Metadata
 metadata := {
@@ -11,9 +11,18 @@ metadata := {
 }
 
 # Rules
-default allowed_0771 = false
-allowed_0771 {
+policy_0771_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
+}
+policy_0771_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
+}
+policy_0771_allowed if {
+    input.user.active
+    input.resource.public
+}
+policy_0771_allowed if {
     input.user.role == "admin"
 }
-
-# Utility function for user info

@@ -1,7 +1,7 @@
-package security.authentication.context.validate.helpers.policy_0081
+package security.enforcement.policy.allow.policy_0081
 
-# Auto-generated policy 81
-# Package: security.authentication.context.validate.helpers
+# Auto-generated policy 81 (Rego v1 syntax)
+# Package: security.enforcement.policy.allow
 
 # Metadata
 metadata := {
@@ -11,16 +11,11 @@ metadata := {
 }
 
 # Rules
-approved_0081 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
+policy_0081_allowed if {
+    input.user.active
+    input.resource.public
 }
-denied_0081 {
-    input.action == "delete"
-    input.user.role != "admin"
+default policy_0081_allowed = false
+policy_0081_allowed if {
+    data.policies.security.enabled
 }
-allowed_0081 {
-    input.user.role == "admin"
-}
-
-# Utility function for user info

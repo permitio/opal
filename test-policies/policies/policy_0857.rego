@@ -1,7 +1,7 @@
-package security.authorization.user.deny.policy_0857
+package security.authorization.context.deny.helpers.policy_0857
 
-# Auto-generated policy 857
-# Package: security.authorization.user.deny
+# Auto-generated policy 857 (Rego v1 syntax)
+# Package: security.authorization.context.deny.helpers
 
 # Metadata
 metadata := {
@@ -11,12 +11,13 @@ metadata := {
 }
 
 # Rules
-allowed_0857 {
+policy_0857_allowed if {
+    data.policies.security.enabled
+}
+policy_0857_allowed if {
     input.user.role == "admin"
 }
-denied_0857 {
-    input.action == "delete"
-    input.user.role != "admin"
+policy_0857_allowed if {
+    input.user.active
+    input.resource.public
 }
-
-# Utility function for user info

@@ -1,7 +1,7 @@
-package risk.authorization.resource.deny.policy_0184
+package governance.authorization.context.deny.core.policy_0184
 
-# Auto-generated policy 184
-# Package: risk.authorization.resource.deny
+# Auto-generated policy 184 (Rego v1 syntax)
+# Package: governance.authorization.context.deny.core
 
 # Metadata
 metadata := {
@@ -11,20 +11,15 @@ metadata := {
 }
 
 # Rules
-approved_0184 {
-    input.user.risk_score < 50
-    input.system.health > 0.8
-}
-denied_0184 {
-    input.action == "delete"
-    input.user.role != "admin"
-}
-allowed_0184 {
+policy_0184_allowed if {
     input.user.active
     input.resource.public
 }
-allowed_0184 {
-    data.policies.risk.enabled
+policy_0184_approved if {
+    input.user.risk_score < 50
+    input.system.health > 0.8
 }
-
-# Utility function for user info
+policy_0184_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
+}

@@ -1,7 +1,7 @@
-package audit.monitoring.context.deny.policy_0212
+package audit.enforcement.action.deny.policy_0212
 
-# Auto-generated policy 212
-# Package: audit.monitoring.context.deny
+# Auto-generated policy 212 (Rego v1 syntax)
+# Package: audit.enforcement.action.deny
 
 # Metadata
 metadata := {
@@ -11,19 +11,14 @@ metadata := {
 }
 
 # Rules
-allowed_0212 {
+policy_0212_allowed if {
     input.user.role == "admin"
 }
-allowed_0212 {
-    data.policies.audit.enabled
+policy_0212_denied if {
+    input.action == "delete"
+    input.user.role != "admin"
 }
-approved_0212 {
+policy_0212_approved if {
     input.user.risk_score < 50
     input.system.health > 0.8
 }
-allowed_0212 {
-    input.user.active
-    input.resource.public
-}
-
-# Utility function for user info

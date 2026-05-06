@@ -1,7 +1,7 @@
-package risk.enforcement.user.verify.core.policy_0399
+package security.enforcement.context.deny.core.policy_0399
 
-# Auto-generated policy 399
-# Package: risk.enforcement.user.verify.core
+# Auto-generated policy 399 (Rego v1 syntax)
+# Package: security.enforcement.context.deny.core
 
 # Metadata
 metadata := {
@@ -11,19 +11,13 @@ metadata := {
 }
 
 # Rules
-allowed_0399 {
+policy_0399_allowed if {
     input.user.role == "admin"
 }
-allowed_0399 {
+policy_0399_allowed if {
     input.user.active
     input.resource.public
 }
-denied_0399 {
-    input.action == "delete"
-    input.user.role != "admin"
+policy_0399_allowed if {
+    data.policies.security.enabled
 }
-allowed_0399 {
-    data.policies.risk.enabled
-}
-
-# Utility function for user info

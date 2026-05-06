@@ -1,7 +1,7 @@
-package risk.enforcement.context.deny.policy_0135
+package access.authentication.resource.deny.policy_0135
 
-# Auto-generated policy 135
-# Package: risk.enforcement.context.deny
+# Auto-generated policy 135 (Rego v1 syntax)
+# Package: access.authentication.resource.deny
 
 # Metadata
 metadata := {
@@ -11,17 +11,15 @@ metadata := {
 }
 
 # Rules
-allowed_0135 {
-    input.user.role == "admin"
-}
-allowed_0135 {
-    input.user.active
-    input.resource.public
-}
-default allowed_0135 = false
-denied_0135 {
+policy_0135_denied if {
     input.action == "delete"
     input.user.role != "admin"
 }
-
-# Utility function for user info
+policy_0135_allowed if {
+    input.user.active
+    input.resource.public
+}
+default policy_0135_allowed = false
+policy_0135_allowed if {
+    input.user.role == "admin"
+}

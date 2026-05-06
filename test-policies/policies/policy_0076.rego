@@ -1,7 +1,7 @@
-package risk.authentication.action.verify.policy_0076
+package risk.authentication.action.validate.policy_0076
 
-# Auto-generated policy 76
-# Package: risk.authentication.action.verify
+# Auto-generated policy 76 (Rego v1 syntax)
+# Package: risk.authentication.action.validate
 
 # Metadata
 metadata := {
@@ -11,13 +11,14 @@ metadata := {
 }
 
 # Rules
-approved_0076 {
+policy_0076_approved if {
     input.user.risk_score < 50
     input.system.health > 0.8
 }
-allowed_0076 {
-    input.user.active
-    input.resource.public
+policy_0076_allowed if {
+    data.policies.risk.enabled
 }
-
-# Utility function for user info
+policy_0076_allowed if {
+    input.user.role == "admin"
+}
+default policy_0076_allowed = false
