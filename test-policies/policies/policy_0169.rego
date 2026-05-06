@@ -11,20 +11,13 @@ metadata := {
 }
 
 # Rules
-default policy_0169_allowed = false
-policy_0169_approved if {
+default allowed_0169 = false
+approved_0169 {
     input.user.risk_score < 50
     input.system.health > 0.8
 }
-policy_0169_allowed if {
+allowed_0169 {
     data.policies.governance.enabled
 }
 
 # Utility function for user info
-get_user_info if {
-    user := {
-        "id": input.user.id,
-        "role": input.user.role,
-        "active": input.user.active,
-    }
-}

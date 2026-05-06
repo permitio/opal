@@ -11,20 +11,13 @@ metadata := {
 }
 
 # Rules
-policy_0192_allowed if {
+allowed_0192 {
     input.user.active
     input.resource.public
 }
-default policy_0192_allowed = false
-policy_0192_allowed if {
+default allowed_0192 = false
+allowed_0192 {
     input.user.role == "admin"
 }
 
 # Utility function for user info
-get_user_info if {
-    user := {
-        "id": input.user.id,
-        "role": input.user.role,
-        "active": input.user.active,
-    }
-}

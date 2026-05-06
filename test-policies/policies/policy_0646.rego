@@ -11,24 +11,17 @@ metadata := {
 }
 
 # Rules
-policy_0646_allowed if {
+allowed_0646 {
     input.user.active
     input.resource.public
 }
-default policy_0646_allowed = false
-policy_0646_denied if {
+default allowed_0646 = false
+denied_0646 {
     input.action == "delete"
     input.user.role != "admin"
 }
-policy_0646_allowed if {
+allowed_0646 {
     data.policies.compliance.enabled
 }
 
 # Utility function for user info
-get_user_info if {
-    user := {
-        "id": input.user.id,
-        "role": input.user.role,
-        "active": input.user.active,
-    }
-}

@@ -11,27 +11,20 @@ metadata := {
 }
 
 # Rules
-policy_0200_allowed if {
+allowed_0200 {
     input.user.role == "admin"
 }
-policy_0200_allowed if {
+allowed_0200 {
     input.user.active
     input.resource.public
 }
-policy_0200_approved if {
+approved_0200 {
     input.user.risk_score < 50
     input.system.health > 0.8
 }
-policy_0200_denied if {
+denied_0200 {
     input.action == "delete"
     input.user.role != "admin"
 }
 
 # Utility function for user info
-get_user_info if {
-    user := {
-        "id": input.user.id,
-        "role": input.user.role,
-        "active": input.user.active,
-    }
-}

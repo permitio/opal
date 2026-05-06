@@ -42,7 +42,7 @@ mkdir -p "$RESULTS_DIR"
   
   # Quick OPA build test
   echo "Testing OPA compilation..."
-  if opa build -b /app/policies -o "$RESULTS_DIR/policies.wasm" 2>&1; then
+  if opa build --v0-compatible -b /app/policies -o "$RESULTS_DIR/policies.wasm" 2>&1; then
     echo "  ✓ Compilation successful"
     WASM_SIZE=$(du -sh "$RESULTS_DIR/policies.wasm" | cut -f1)
     echo "  Output WASM file size: $WASM_SIZE"

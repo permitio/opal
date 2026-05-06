@@ -11,24 +11,17 @@ metadata := {
 }
 
 # Rules
-policy_0968_approved if {
+approved_0968 {
     input.user.risk_score < 50
     input.system.health > 0.8
 }
-policy_0968_denied if {
+denied_0968 {
     input.action == "delete"
     input.user.role != "admin"
 }
-policy_0968_allowed if {
+allowed_0968 {
     data.policies.access.enabled
 }
-default policy_0968_allowed = false
+default allowed_0968 = false
 
 # Utility function for user info
-get_user_info if {
-    user := {
-        "id": input.user.id,
-        "role": input.user.role,
-        "active": input.user.active,
-    }
-}

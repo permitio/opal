@@ -58,9 +58,10 @@ services:
       - OPAL_LOG_FORMAT_INCLUDE_PID=true
       - OPAL_INLINE_OPA_LOG_FORMAT=http
       # PROPERTY SET FOR SINGLE TRANSACTION MODE: Enable atomic policy loading (fast cold-start)
-      - OPAL_INITIAL_POLICY_LOAD_MODE=single_transaction
+      # - OPAL_INITIAL_POLICY_LOAD_MODE=single_transaction
+      - OPAL_INITIAL_POLICY_LOAD_MODE=per_module
       # PROPERTY SET: Disable OPA v0 compatibility to enable v1 API (required for transactions)
-      - OPAL_OPA_V0_COMPAT=false
+      - OPAL_OPA_V0_COMPAT=true
 
       # Uncomment the following lines to enable storing & loading OPA data from a backup file:
       # - OPAL_OFFLINE_MODE_ENABLED=true

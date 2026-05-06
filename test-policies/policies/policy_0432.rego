@@ -11,16 +11,9 @@ metadata := {
 }
 
 # Rules
-policy_0432_allowed if {
+allowed_0432 {
     data.policies.audit.enabled
 }
-default policy_0432_allowed = false
+default allowed_0432 = false
 
 # Utility function for user info
-get_user_info if {
-    user := {
-        "id": input.user.id,
-        "role": input.user.role,
-        "active": input.user.active,
-    }
-}

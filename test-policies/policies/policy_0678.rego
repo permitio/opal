@@ -11,20 +11,13 @@ metadata := {
 }
 
 # Rules
-policy_0678_denied if {
+denied_0678 {
     input.action == "delete"
     input.user.role != "admin"
 }
-default policy_0678_allowed = false
-policy_0678_allowed if {
+default allowed_0678 = false
+allowed_0678 {
     data.policies.governance.enabled
 }
 
 # Utility function for user info
-get_user_info if {
-    user := {
-        "id": input.user.id,
-        "role": input.user.role,
-        "active": input.user.active,
-    }
-}

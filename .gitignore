@@ -139,4 +139,5 @@ dmypy.json
 .DS_Store
 
 temp.log
+temp-*.log
 .env

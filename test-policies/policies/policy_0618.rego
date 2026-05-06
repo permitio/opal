@@ -11,24 +11,17 @@ metadata := {
 }
 
 # Rules
-policy_0618_approved if {
+approved_0618 {
     input.user.risk_score < 50
     input.system.health > 0.8
 }
-policy_0618_allowed if {
+allowed_0618 {
     data.policies.audit.enabled
 }
-default policy_0618_allowed = false
-policy_0618_allowed if {
+default allowed_0618 = false
+allowed_0618 {
     input.user.active
     input.resource.public
 }
 
 # Utility function for user info
-get_user_info if {
-    user := {
-        "id": input.user.id,
-        "role": input.user.role,
-        "active": input.user.active,
-    }
-}

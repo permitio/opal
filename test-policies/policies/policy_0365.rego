@@ -11,23 +11,16 @@ metadata := {
 }
 
 # Rules
-policy_0365_allowed if {
+allowed_0365 {
     input.user.role == "admin"
 }
-policy_0365_denied if {
+denied_0365 {
     input.action == "delete"
     input.user.role != "admin"
 }
-policy_0365_approved if {
+approved_0365 {
     input.user.risk_score < 50
     input.system.health > 0.8
 }
 
 # Utility function for user info
-get_user_info if {
-    user := {
-        "id": input.user.id,
-        "role": input.user.role,
-        "active": input.user.active,
-    }
-}

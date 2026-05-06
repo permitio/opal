@@ -11,23 +11,16 @@ metadata := {
 }
 
 # Rules
-policy_0890_allowed if {
+allowed_0890 {
     input.user.role == "admin"
 }
-default policy_0890_allowed = false
-policy_0890_allowed if {
+default allowed_0890 = false
+allowed_0890 {
     data.policies.access.enabled
 }
-policy_0890_approved if {
+approved_0890 {
     input.user.risk_score < 50
     input.system.health > 0.8
 }
 
 # Utility function for user info
-get_user_info if {
-    user := {
-        "id": input.user.id,
-        "role": input.user.role,
-        "active": input.user.active,
-    }
-}

@@ -55,7 +55,7 @@ class TestREGOPolicies:
         for policy_file in policy_files:
             try:
                 result = subprocess.run(
-                    [opa_executable, "check", str(policy_file)],
+                    [opa_executable, "check", "--v0-compatible", str(policy_file)],
                     capture_output=True,
                     text=True,
                     timeout=10
@@ -80,7 +80,7 @@ class TestREGOPolicies:
         output_file = Path("/tmp/policies_compile_test.tar.gz")
         try:
             result = subprocess.run(
-                [opa_executable, "build", "-b", str(policies_dir), "-o", str(output_file)],
+                [opa_executable, "build", "--v0-compatible", "-b", str(policies_dir), "-o", str(output_file)],
                 capture_output=True,
                 text=True,
                 timeout=30
@@ -132,7 +132,7 @@ class TestREGOPolicies:
                         input_data = json.load(f)
                     
                     result = subprocess.run(
-                        [opa_executable, "eval", "-d", str(policy_file), "-i", str(data_file),
+                        [opa_executable, "eval", "--v0-compatible", "-d", str(policy_file), "-i", str(data_file),
                          "data"],
                         capture_output=True,
                         text=True,
@@ -169,7 +169,7 @@ class TestREGOPolicies:
                 for _ in range(2):
                     try:
                         result = subprocess.run(
-                            [opa_executable, "eval", "-d", str(policy_file), "-i", str(data_file),
+                            [opa_executable, "eval", "--v0-compatible", "-d", str(policy_file), "-i", str(data_file),
                              "data"],
                             capture_output=True,
                             text=True,
