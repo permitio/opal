@@ -28,7 +28,7 @@ services:
       # - OPAL_POLICY_REPO_URL=https://github.com/permitio/opal-example-policy-repo
       - OPAL_POLICY_REPO_URL=https://github.com/willemevenwel/opal.git
       # Path to the folder containing your rego files within the repo
-      - OPAL_POLICY_REPO_MANIFEST_PATH=my-test-policies/policies
+      - OPAL_POLICY_REPO_MANIFEST_PATH=test-policies/policies
       # Use the token for authentication
       - OPAL_POLICY_REPO_GIT_AUTH_TOKEN=${GH_TOKEN}
       # (Optional) If you want to use a specific branch

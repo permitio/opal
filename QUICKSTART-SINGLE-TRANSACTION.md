@@ -22,7 +22,10 @@ sleep 10
 docker-compose -f docker/docker-compose-example-single-transaction.yml logs opal_client | tail -30
 ```
 
-> **Note:** The `--build` flag compiles the OPAL client from local source code (your edited Python files), not from a pre-built registry image. This is important when testing changes to the OPAL codebase.
+```bash
+# This clears the screen and refreshes the 'logs --tail 20' view every 2 seconds
+watch "docker-compose -f docker/docker-compose-example-single-transaction.yml logs --tail 20"
+```
 
 **What to look for:**
 
