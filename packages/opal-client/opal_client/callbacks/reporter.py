@@ -39,7 +39,7 @@ class CallbacksReporter:
         extra_callbacks: Optional[List[CallbackConfig]] = None,
     ):
         try:
-            # all the urls that will be eventually called by the fetcher
+            # all callback request tuples (url, config, None) that will be eventually called by the fetcher
             callback_requests = []
             if self._get_user_data_handler is not None:
                 report = report.copy()
