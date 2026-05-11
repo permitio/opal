@@ -39,8 +39,8 @@ class CallbacksReporter:
         extra_callbacks: Optional[List[CallbackConfig]] = None,
     ):
         try:
-            # all the urls that will be eventually called by the fetcher
-            urls = []
+            # all callback request tuples (url, config, None) that will be eventually called by the fetcher
+            callback_requests = []
             if self._get_user_data_handler is not None:
                 report = report.copy()
                 report.user_data = await self._get_user_data_handler(report)
@@ -52,16 +52,18 @@ class CallbacksReporter:
                     entry.config or HttpFetcherConfig()
                 )  # should not be None if we got it from the register
                 config.data = report_data
-                urls.append((entry.url, config, None))
+                callback_requests.append((entry.url, config, None))
 
             # next we add the "one time" callbacks from extra_callbacks (i.e: callbacks sent as part of a DataUpdate message)
             if extra_callbacks is not None:
                 for url, config in extra_callbacks:
                     config.data = report_data
-                    urls.append((url, config, None))
+                    callback_requests.append((url, config, None))
 
-            logger.info("Reporting the update to requested callbacks", urls=repr(urls))
-            report_results = await self._fetcher.handle_urls(urls)
+            # log only the URLs — FetcherConfig may carry Authorization headers and the full report payload
+            urls = [request[0] for request in callback_requests]
+            logger.info("Reporting the update to requested callbacks", urls=urls)
+            report_results = await self._fetcher.handle_urls(callback_requests)
             # log reports which we failed to send
             for url, config, result in report_results:
                 if isinstance(result, Exception):
