@@ -66,6 +66,28 @@ class OpalClientConfig(Confi):
         {},
         description="Retry options when connecting to the policy store (i.e. the agent that handles the policy, e.g. OPA)",
     )
+
+    # Background liveness probe of the policy store (e.g. OPA).
+    # Without this, /healthy only reflects the success of the last server -> policy-store
+    # transaction, which can stay True even if OPA hangs / drops its listener.
+    POLICY_STORE_LIVENESS_PROBE_ENABLED = confi.bool(
+        "POLICY_STORE_LIVENESS_PROBE_ENABLED",
+        True,
+        description="If True, OPAL client periodically probes the policy store's "
+        "health endpoint and factors the result into /healthy. This makes /healthy "
+        "reflect live policy-store responsiveness, not just the success of the last "
+        "server -> policy-store transaction.",
+    )
+    POLICY_STORE_LIVENESS_PROBE_INTERVAL_SECONDS = confi.int(
+        "POLICY_STORE_LIVENESS_PROBE_INTERVAL_SECONDS",
+        10,
+        description="Interval (seconds) between background liveness probes against the policy store.",
+    )
+    POLICY_STORE_LIVENESS_PROBE_TIMEOUT_SECONDS = confi.int(
+        "POLICY_STORE_LIVENESS_PROBE_TIMEOUT_SECONDS",
+        2,
+        description="Per-request HTTP timeout (seconds) for liveness probes against the policy store.",
+    )
     POLICY_UPDATER_CONN_RETRY: ConnRetryOptions = confi.model(
         "POLICY_UPDATER_CONN_RETRY",
         ConnRetryOptions,

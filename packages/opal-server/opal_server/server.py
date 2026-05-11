@@ -6,7 +6,9 @@ import traceback
 from functools import partial
 from typing import List, Optional
 
-from fastapi import Depends, FastAPI
+from fastapi import Depends, FastAPI, Request
+from fastapi.openapi.docs import get_redoc_html
+from fastapi.responses import HTMLResponse
 from fastapi_websocket_pubsub.event_broadcaster import EventBroadcasterContextManager
 from opal_common.authentication.deps import JWTAuthenticator, StaticBearerAuthenticator
 from opal_common.authentication.signer import JWTSigner
@@ -197,6 +199,8 @@ class OpalServer:
             + " tracks a git repository (via webhook) for updates to policy (or static data) and accepts"
             + " continuous data update notifications via REST api, which are then pushed to clients.",
             version="0.1.0",
+            # disabled because of an issue with redoc_js_url in fastapi versions prior to 0.115.13
+            redoc_url=None,
         )
 
         configure_middleware(app)
@@ -272,6 +276,16 @@ class OpalServer:
         if self.jwks_endpoint is not None:
             # mount jwts (static) route
             self.jwks_endpoint.configure_app(app)
+
+        @app.get("/redoc", include_in_schema=False)
+        async def redoc_html(req: Request) -> HTMLResponse:
+            root_path = req.scope.get("root_path", "").rstrip("/")
+            openapi_url = root_path + app.openapi_url
+            return get_redoc_html(
+                openapi_url=openapi_url,
+                title=app.title + " - ReDoc",
+                redoc_js_url="https://cdn.jsdelivr.net/npm/redoc@2/bundles/redoc.standalone.js",
+            )
 
         # top level routes (i.e: healthchecks)
         @app.get("/healthcheck", include_in_schema=False)

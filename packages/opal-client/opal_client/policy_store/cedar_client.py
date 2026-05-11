@@ -12,6 +12,7 @@ from opal_client.policy_store.base_policy_store_client import (
     BasePolicyStoreClient,
     JsonableValue,
 )
+from opal_client.policy_store.liveness_probe import LivenessProbeMixin
 from opal_client.policy_store.opa_client import (
     RETRY_CONFIG,
     affects_transaction,
@@ -25,7 +26,7 @@ from opal_common.schemas.store import StoreTransaction, TransactionType
 from tenacity import retry
 
 
-class CedarClient(BasePolicyStoreClient):
+class CedarClient(LivenessProbeMixin, BasePolicyStoreClient):
     def __init__(
         self,
         cedar_server_url=None,
@@ -43,6 +44,12 @@ class CedarClient(BasePolicyStoreClient):
         self._had_successful_policy_transaction = False
         self._most_recent_data_transaction: Optional[StoreTransaction] = None
         self._most_recent_policy_transaction: Optional[StoreTransaction] = None
+
+        # `_engine_reachable` defaults to True so /healthy preserves historical
+        # behavior; `start_liveness_probe()` runs an initial sample synchronously
+        # and overwrites this before the probe loop begins.
+        self._engine_reachable: bool = True
+        self._init_liveness_probe()
 
         if auth_type == PolicyStoreAuth.TOKEN:
             if self._token is None:
@@ -279,13 +286,36 @@ class CedarClient(BasePolicyStoreClient):
         )
 
     async def is_healthy(self) -> bool:
-        return (
+        transactions_healthy: bool = (
             self._most_recent_policy_transaction is not None
             and self._most_recent_policy_transaction.success
         ) and (
             self._most_recent_data_transaction is not None
             and self._most_recent_data_transaction.success
         )
+        return transactions_healthy and self._engine_reachable
+
+    @property
+    def _probe_log_label(self) -> str:
+        return "Cedar"
+
+    async def _probe_engine_reachable(self, session: aiohttp.ClientSession) -> bool:
+        """Issue a single GET against the Cedar agent's `/v1/` endpoint.
+
+        Mirrors `CedarRunner.health_check()`'s precedent — cedar-agent
+        responds 2xx on `/v1/`. The probe sends no auth headers,
+        matching the runner's approach and keeping reachability
+        decoupled from auth.
+        """
+        health_url = f"{self._cedar_url}/"
+        async with session.get(health_url) as response:
+            return 200 <= response.status < 300
+
+    def _set_engine_reachable(self, value: bool) -> None:
+        self._engine_reachable = value
+
+    def _get_engine_reachable(self) -> bool:
+        return self._engine_reachable
 
     async def full_export(self, writer: AsyncTextIOWrapper) -> None:
         policies = await self.get_policies()

@@ -1094,6 +1094,37 @@ Default: `{"retries": 3, "backoff_factor": 0.3}`
 
 Retry options when connecting to the policy store (i.e., the agent that handles the policy, e.g., OPA).
 
+#### OPAL_POLICY_STORE_LIVENESS_PROBE_ENABLED
+
+Default: `True`
+
+If enabled, OPAL Client periodically probes the policy store's health endpoint
+in a background task and factors the result into the `/healthy` HTTP response.
+
+Without this probe, `/healthy` reflects only the success of the last
+`server -> policy-store` transaction, which can stay `True` even if OPA hangs,
+deadlocks, or stops accepting HTTP connections in steady state. With it
+enabled, supervisors that probe `/healthy` will see the client report unhealthy
+within one probe interval if the policy store becomes unresponsive, and
+recover automatically once it returns.
+
+The `/healthy` endpoint itself remains O(1): the probe runs once per interval
+in the background and updates a cached flag — high-frequency `/healthy`
+polling does not translate into proportional load on the policy store.
+
+#### OPAL_POLICY_STORE_LIVENESS_PROBE_INTERVAL_SECONDS
+
+Default: `10`
+
+Interval (in seconds) between background liveness probes against the policy store.
+
+#### OPAL_POLICY_STORE_LIVENESS_PROBE_TIMEOUT_SECONDS
+
+Default: `2`
+
+Per-request HTTP timeout (in seconds) for liveness probes against the policy
+store. A probe that exceeds this timeout is treated as an unreachable sample.
+
 #### OPAL_POLICY_STORE_POLICY_PATHS_TO_IGNORE
 
 Default: `[]`
