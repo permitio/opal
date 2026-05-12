@@ -64,9 +64,9 @@ class RepoInterface:
             else:
                 raise RuntimeError("Base branch was not found on remote")
             logger.debug(
-                f"Created local branch '{branch_name}', pointing to: {commit.hex}"
+                f"Created local branch '{branch_name}', pointing to: {str(commit.id)}"
             )
-            return repo.create_reference(f"refs/heads/{branch_name}", commit.hex)
+            return repo.create_reference(f"refs/heads/{branch_name}", str(commit.id))
         else:
             logger.debug(
                 f"No need to create local branch '{branch_name}': already exists!"
@@ -92,7 +92,7 @@ class RepoInterface:
     def get_commit_hash(repo: Repository, branch: str, remote: str) -> Optional[str]:
         try:
             (commit, _) = repo.resolve_refish(f"{remote}/{branch}")
-            return commit.hex
+            return str(commit.id)
         except (pygit2.GitError, KeyError):
             return None
 
@@ -311,7 +311,7 @@ class GitPolicyFetcher(PolicyFetcher):
                 repo, self.local_branch_name, self._remote, self._source.branch
             )
         else:
-            old_revision = local_branch.target.hex
+            old_revision = str(local_branch.target)
 
         await self.callbacks.on_update(old_revision, new_revision)
 
