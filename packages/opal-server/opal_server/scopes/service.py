@@ -1,8 +1,9 @@
+import asyncio
 import datetime
 import shutil
 from functools import partial
 from pathlib import Path
-from typing import List, Optional, Set, cast
+from typing import List, Optional, cast
 
 import git
 from ddtrace import tracer
@@ -196,32 +197,31 @@ class ScopesService:
 
             fetched_source_ids = set()
             skipped_scopes = []
-            for scope in scopes:
-                src_id = GitPolicyFetcher.source_id(scope.policy)
+            async with asyncio.TaskGroup() as g:
+                for scope in scopes:
+                    src_id = GitPolicyFetcher.source_id(scope.policy)
 
-                # Give priority to scopes that have a unique url per shard (so we'll clone all repos asap)
-                if src_id in fetched_source_ids:
-                    skipped_scopes.append(scope)
-                    continue
+                    # Give priority to scopes that have a unique url per shard (so we'll clone all repos asap)
+                    if src_id in fetched_source_ids:
+                        skipped_scopes.append(scope)
+                        continue
 
-                try:
-                    await self.sync_scope(
-                        scope=scope,
-                        force_fetch=True,
-                        notify_on_changes=notify_on_changes,
+                    g.create_task(
+                        self.sync_scope(
+                            scope=scope,
+                            force_fetch=True,
+                            notify_on_changes=notify_on_changes,
+                        )
                     )
-                except Exception as e:
-                    logger.exception(f"sync_scope failed for {scope.scope_id}")
+                    fetched_source_ids.add(src_id)
 
-                fetched_source_ids.add(src_id)
-
-            for scope in skipped_scopes:
-                # No need to refetch the same repo, just check for changes
-                try:
-                    await self.sync_scope(
-                        scope=scope,
-                        force_fetch=False,
-                        notify_on_changes=notify_on_changes,
+            async with asyncio.TaskGroup() as g:
+                for scope in skipped_scopes:
+                    # No need to refetch the same repo, just check for changes
+                    g.create_task(
+                        self.sync_scope(
+                            scope=scope,
+                            force_fetch=False,
+                            notify_on_changes=notify_on_changes,
+                        )
                     )
-                except Exception as e:
-                    logger.exception(f"sync_scope failed for {scope.scope_id}")
