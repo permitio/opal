@@ -72,7 +72,8 @@ class OpalServerConfig(Confi):
     )
 
     AUTH_PRIVATE_KEY = confi.delay(
-        lambda AUTH_PRIVATE_KEY_FORMAT=None, AUTH_PRIVATE_KEY_PASSPHRASE="": confi.private_key(
+        lambda AUTH_PRIVATE_KEY_FORMAT=None,
+        AUTH_PRIVATE_KEY_PASSPHRASE="": confi.private_key(
             "AUTH_PRIVATE_KEY",
             default=None,
             key_format=AUTH_PRIVATE_KEY_FORMAT,
@@ -172,6 +173,18 @@ class OpalServerConfig(Confi):
         "POLICY_BUNDLE_SERVER_AWS_REGION",
         "us-east-1",
         description="The AWS region of the S3 bucket",
+    )
+    POLICY_BUNDLE_AWS_ROLE_ARN = confi.str(
+        "AWS_ROLE_ARN",
+        # default to the env var injected by aws
+        os.getenv("AWS_ROLE_ARN"),
+        description="The IAM role to be used when accessing the bundle server. This is set by AWS automatically in EKS, but can be overridden if required.",
+    )
+    POLICY_BUNDLE_AWS_WEB_IDENTITY_TOKEN_FILE = confi.str(
+        "AWS_WEB_IDENTITY_TOKEN_FILE",
+        # default to the env var injected by aws
+        os.getenv("AWS_WEB_IDENTITY_TOKEN_FILE"),
+        description="The oidc token for the IAM role to be used when accessing the bundle server. This is set by AWS automatically in EKS, but can be overridden if required.",
     )
     POLICY_BUNDLE_TMP_PATH = confi.str(
         "POLICY_BUNDLE_TMP_PATH",

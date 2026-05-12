@@ -2,8 +2,10 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional, Tuple
 from urllib.parse import urlparse
+from xml.etree import ElementTree
 
 import aiohttp
+import aiofiles
 from fastapi import status
 from fastapi.exceptions import HTTPException
 from opal_common.git_utils.tar_file_to_local_git_extractor import (
@@ -17,6 +19,7 @@ from opal_common.utils import (
     hash_file,
     throw_if_bad_status_code,
     tuple_to_dict,
+    async_time_cache,
 )
 from opal_server.config import PolicyBundleServerType
 from tenacity import AsyncRetrying
@@ -43,6 +46,9 @@ class ApiPolicySource(BasePolicySource):
         token (str, optional):  auth token to include in connections to bundle server. Defaults to POLICY_BUNDLE_SERVER_TOKEN.
         token_id (str, optional):  auth token ID to include in connections to bundle server. Defaults to POLICY_BUNDLE_SERVER_TOKEN_ID.
         bundle_server_type (PolicyBundleServerType, optional):  the type of bundle server
+        region (str, optional): the aws region of s3 bucket containing the bundle
+        aws_role_arn (str, optional): the aws iam role to assume when accessing the s3 bucket. Only required when using temporary sts credentials.
+        aws_web_id_token_file (str, optional): the file containing a web id token for the target aws iam role. Only required when using temporary sts credentials.
     """
 
     def __init__(
@@ -53,6 +59,8 @@ class ApiPolicySource(BasePolicySource):
         token: Optional[str] = None,
         token_id: Optional[str] = None,
         region: Optional[str] = None,
+        aws_role_arn: Optional[str] = None,
+        aws_web_id_token_file: Optional[str] = None,
         bundle_server_type: Optional[PolicyBundleServerType] = None,
         policy_bundle_path=".",
         policy_bundle_git_add_pattern="*",
@@ -66,6 +74,8 @@ class ApiPolicySource(BasePolicySource):
         self.token_id = token_id
         self.server_type = bundle_server_type
         self.region = region
+        self.aws_role_arn = aws_role_arn
+        self.aws_web_id_token_file = aws_web_id_token_file
         self.bundle_hash = None
         self.etag = None
         self.tmp_bundle_path = Path(policy_bundle_path)
@@ -126,7 +136,84 @@ class ApiPolicySource(BasePolicySource):
                     )
                     raise
 
-    def build_auth_headers(self, token=None, path=None):
+    @async_time_cache(ttl=3000)
+    async def get_temporary_sts_credentials(self) -> tuple[str, str, str]:
+        """
+        This function will fetch a set of temporary credentials for a IAM role
+        from Amazon STS. It requires an aws region, the arn for the target role
+        and the file containing the web token.
+
+        This function will return the id and secret key required for login.
+        When using temporary credentials, AWS also requires a session token
+        which this function also provides.
+
+        This result of this funciton is cached to avoid being rate limited by
+        STS.
+        """
+        assert self.aws_web_id_token_file
+        assert self.aws_role_arn
+        assert self.region
+
+        async with aiofiles.open(self.aws_web_id_token_file) as token_file:
+            token = await token_file.read()
+
+        sts_url = f"sts.{self.region}.amazonaws.com"
+        params: dict[str, str] = {
+            "Action": "AssumeRoleWithWebIdentity",
+            "DurationSeconds": "3600",
+            "RoleSessionName": "Opal",
+            "RoleArn": self.aws_role_arn,
+            "WebIdentityToken": token,
+            "Version": "2011-06-15",
+        }
+
+        async with aiohttp.ClientSession() as session:
+            try:
+                async with session.get(
+                    f"https://{sts_url}",
+                    params=params,
+                    headers={"Content-Type": "application/xml"},
+                ) as response:
+                    if response.status == status.HTTP_404_NOT_FOUND:
+                        logger.warning(
+                            "requested url not found: {sts_url}",
+                            sts_url=sts_url,
+                        )
+                        raise HTTPException(
+                            status_code=status.HTTP_404_NOT_FOUND,
+                            detail=f"requested url not found: {sts_url}",
+                        )
+
+                    body = await response.read()
+
+                    # the default aws xml namespace
+                    ns = {"": "https://sts.amazonaws.com/doc/2011-06-15/"}
+
+                    et = ElementTree.fromstring(body)
+                    credentials = et.find(
+                        "AssumeRoleWithWebIdentityResult/Credentials", ns
+                    )
+                    assert credentials
+
+                    id = credentials.findtext("AccessKeyId", namespaces=ns)
+                    key = credentials.findtext("SecretAccessKey", namespaces=ns)
+                    session_token = credentials.findtext("SessionToken", namespaces=ns)
+
+                    assert id
+                    assert key
+                    assert session_token
+
+            except (aiohttp.ClientError, HTTPException) as e:
+                logger.warning("server connection error: {err}", err=repr(e))
+                raise
+            except Exception as e:
+                logger.error("unexpected server connection error: {err}", err=repr(e))
+                raise
+
+        logger.info("Successfully generated temporary AWS credentials")
+        return id, key, session_token
+
+    async def build_auth_headers(self, token=None, path=None):
         # if it's a simple HTTP server with a bearer token
         if self.server_type == PolicyBundleServerType.HTTP and token is not None:
             return tuple_to_dict(get_authorization_header(token))
@@ -136,6 +223,8 @@ class ApiPolicySource(BasePolicySource):
             and token is not None
             and self.token_id is not None
         ):
+            logger.info("Using provided token to log in to AWS_S3")
+
             split_url = urlparse(self.remote_source_url)
             host = split_url.netloc
             path = split_url.path + "/" + path
@@ -143,7 +232,25 @@ class ApiPolicySource(BasePolicySource):
             return build_aws_rest_auth_headers(
                 self.token_id, token, host, path, self.region
             )
+        elif (
+            self.server_type == PolicyBundleServerType.AWS_S3
+            and self.aws_role_arn is not None
+            and self.aws_web_id_token_file is not None
+            and self.region is not None
+        ):
+            logger.info("Using IAM Web auth to log in to AWS_S3")
+
+            split_url = urlparse(self.remote_source_url)
+            host = split_url.netloc
+            path = split_url.path + "/" + path
+
+            id, key, session_token = await self.get_temporary_sts_credentials()
+
+            return build_aws_rest_auth_headers(
+                id, key, host, path, self.region, session_token
+            )
         else:
+            logger.info("Not authenticating on bundle endpoint")
             return {}
 
     async def fetch_policy_bundle_from_api_source(
@@ -166,7 +273,7 @@ class ApiPolicySource(BasePolicySource):
         """
         path = "bundle.tar.gz"
 
-        auth_headers = self.build_auth_headers(token=token, path=path)
+        auth_headers = await self.build_auth_headers(token=token, path=path)
         etag_headers = (
             {"ETag": self.etag, "If-None-Match": self.etag} if self.etag else {}
         )
