@@ -34,6 +34,28 @@ The expected response should be like the one below.
 
 With some user data gathered, let's now issue an **authorization** query. In OPA, an authorization query is a query **with input**.
 
+You can also inspect the loaded data in the OPA playground UI at [`http://localhost:8181/`](http://localhost:8181/).
+
+For example, paste this query into the query field and click **Execute**:
+
+```rego
+data.users[i].roles[_] = "admin"
+```
+
+The expected result should show the user that has the `admin` role in the example [`data.json`](https://github.com/permitio/opal-example-policy-repo/blob/master/data.json):
+
+```json
+{
+  "result": [
+    {
+      "i": "alice"
+    }
+  ]
+}
+```
+
+This is a quick way to confirm that OPAL loaded the example data into OPA before sending authorization queries with input.
+
 This below query asks whether the user `bob` can `read` the `finance` resource, where the id of the object is `id123`.
 
 ```bash
