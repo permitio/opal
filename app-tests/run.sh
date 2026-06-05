@@ -238,6 +238,33 @@ function check_no_error {
   fi
 }
 
+function check_servers_logged {
+  echo "- Looking for msg '$1' in server's logs"
+  compose logs opal_server | grep -q "$1"
+}
+
+function check_servers_not_logged {
+  echo "- Ensuring msg '$1' is absent from server's logs"
+  if compose logs opal_server | grep -q "$1"; then
+    echo "- Unexpectedly found '$1' in server logs:"
+    compose logs opal_server | grep "$1"
+    exit 1
+  fi
+}
+
+function wait_for_broadcaster {
+  echo "- Waiting for broadcast_channel to accept connections"
+  for _ in $(seq 1 30); do
+    if compose exec -T broadcast_channel pg_isready -U postgres -q; then
+      echo "  broadcast_channel is ready"
+      return 0
+    fi
+    sleep 1
+  done
+  echo "  broadcast_channel did not become ready in time"
+  exit 1
+}
+
 function clean_up {
     ARG=$?
     # Ensure we're in the script directory for cleanup
@@ -344,15 +371,31 @@ function main {
   test_push_policy "something"
   test_statistics
 
-  echo "- Testing broadcast channel disconnection"
+  echo "- Testing broadcast channel disconnection (graceful restart)"
   compose restart broadcast_channel
-  sleep 10
+  wait_for_broadcaster
+  # Give the servers' reconnecting broadcaster a moment to re-establish the backbone
+  sleep 5
 
   test_data_publish "alice"
   test_push_policy "another"
+
+  echo "- Testing broadcast channel disconnection (ungraceful kill)"
+  compose kill broadcast_channel
+  sleep 3
+  compose up -d broadcast_channel
+  wait_for_broadcaster
+  sleep 5
+
   test_data_publish "sunil"
   test_data_publish "eve"
   test_push_policy "best_one_yet"
+
+  # Regression guards for the broadcaster-disconnect storm (see pubsub_resilience.py):
+  # the servers must have exercised the reconnect path, and must NOT have spewed the
+  # non-idempotent-disconnect ValueError that drove the fleet-wide drop storm.
+  check_servers_logged "backbone connection closed"
+  check_servers_not_logged "list.remove(x): x not in list"
   # TODO: Test statistics feature again after broadcaster restart (should first fix statistics bug)
 }
 

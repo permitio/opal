@@ -29,6 +29,7 @@ from opal_common.confi.confi import load_conf_if_none
 from opal_common.config import opal_common_config
 from opal_common.logger import logger
 from opal_server.config import opal_server_config
+from opal_server.pubsub_resilience import ReconnectingBroadcaster, SafeConnectionManager
 from pydantic import BaseModel
 from starlette.datastructures import QueryParams
 
@@ -141,12 +142,27 @@ class PubSub:
 
         self.broadcaster = None
         if broadcaster_uri is not None:
-            logger.info(f"Initializing broadcaster for server<->server communication")
-            self.broadcaster = EventBroadcaster(
-                broadcaster_uri,
-                notifier=self.notifier,
-                channel=opal_server_config.BROADCAST_CHANNEL_NAME,
-            )
+            if opal_server_config.BROADCAST_RECONNECT_ENABLED:
+                logger.info(
+                    "Initializing reconnecting broadcaster for server<->server communication"
+                )
+                self.broadcaster = ReconnectingBroadcaster(
+                    broadcaster_uri,
+                    notifier=self.notifier,
+                    channel=opal_server_config.BROADCAST_CHANNEL_NAME,
+                    reconnect_max_retries=opal_server_config.BROADCAST_RECONNECT_MAX_RETRIES,
+                    reconnect_backoff_min=opal_server_config.BROADCAST_RECONNECT_BACKOFF_MIN_SECONDS,
+                    reconnect_backoff_max=opal_server_config.BROADCAST_RECONNECT_BACKOFF_MAX_SECONDS,
+                )
+            else:
+                logger.info(
+                    "Initializing broadcaster for server<->server communication"
+                )
+                self.broadcaster = EventBroadcaster(
+                    broadcaster_uri,
+                    notifier=self.notifier,
+                    channel=opal_server_config.BROADCAST_CHANNEL_NAME,
+                )
         else:
             logger.info("Pub/Sub broadcaster is off")
 
@@ -159,6 +175,15 @@ class PubSub:
                 not opal_server_config.BROADCAST_CONN_LOSS_BUGFIX_EXPERIMENT_ENABLED
             ),
         )
+        # fastapi_websocket_rpc's ConnectionManager.disconnect is not idempotent: the RPC
+        # endpoint can call it twice for one socket (handle_disconnect plus the outer
+        # except in WebsocketRPCEndpoint.main_loop), raising
+        # ValueError('list.remove(x): x not in list'). Swap in an idempotent manager
+        # before any connection is served.
+        assert hasattr(self.endpoint, "endpoint") and hasattr(
+            self.endpoint.endpoint, "manager"
+        ), "Unexpected fastapi_websocket_pubsub internals: cannot install SafeConnectionManager"
+        self.endpoint.endpoint.manager = SafeConnectionManager()
         authenticator = WebsocketJWTAuthenticator(signer)
 
         @self.api_router.get(

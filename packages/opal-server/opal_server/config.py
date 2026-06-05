@@ -57,6 +57,29 @@ class OpalServerConfig(Confi):
         True,
         description="Enable experimental bugfix for broadcast connection loss",
     )
+    BROADCAST_RECONNECT_ENABLED = confi.bool(
+        "BROADCAST_RECONNECT_ENABLED",
+        True,
+        description="Reconnect the broadcaster reader on a backbone disconnect instead "
+        "of dropping all client connections. Set to False to revert to the legacy "
+        "(non-reconnecting) broadcaster.",
+    )
+    BROADCAST_RECONNECT_MAX_RETRIES = confi.int(
+        "BROADCAST_RECONNECT_MAX_RETRIES",
+        0,
+        description="Maximum consecutive broadcaster reconnect attempts before giving "
+        "up and letting the worker restart (0 = retry forever).",
+    )
+    BROADCAST_RECONNECT_BACKOFF_MIN_SECONDS = confi.float(
+        "BROADCAST_RECONNECT_BACKOFF_MIN_SECONDS",
+        0.5,
+        description="Minimum backoff in seconds between broadcaster reconnect attempts.",
+    )
+    BROADCAST_RECONNECT_BACKOFF_MAX_SECONDS = confi.float(
+        "BROADCAST_RECONNECT_BACKOFF_MAX_SECONDS",
+        30.0,
+        description="Maximum backoff in seconds between broadcaster reconnect attempts.",
+    )
 
     # server security
     AUTH_PRIVATE_KEY_FORMAT = confi.enum(
