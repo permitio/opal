@@ -119,6 +119,16 @@ class OpalClientConfig(Confi):
         description="Retry options when connecting to the base data source (e.g. an external API server which returns data snapshot)",
     )
 
+    DATA_UPDATER_MAX_CONCURRENT_UPDATES = confi.int(
+        "DATA_UPDATER_MAX_CONCURRENT_UPDATES",
+        10,
+        description="Maximum number of data update entries that may fetch and write to the "
+        "policy store concurrently. Bounds the peak in-flight working set so that a burst of "
+        "updates (e.g. a reconnect storm or frequent periodic updates to a slow data source) "
+        "cannot stack an unbounded number of fetched datasets in memory. Higher values allow "
+        "more update concurrency at the cost of a higher memory high-water mark.",
+    )
+
     POLICY_STORE_POLICY_PATHS_TO_IGNORE = confi.list(
         "POLICY_STORE_POLICY_PATHS_TO_IGNORE",
         [],
