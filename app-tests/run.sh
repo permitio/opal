@@ -304,11 +304,9 @@ function test_push_policy {
   check_clients_logged "PUT /v1/policies/$regofile -> 200"
 }
 
-function test_data_publish {
-  echo "- Testing data publish for user $1"
+function publish_data {
+  # POST a data update to a single OPAL server (no assertion).
   user=$1
-
-  # Use curl to publish data update via OPAL server API
   curl -s -X POST http://localhost:7002/data/config \
     -H "Authorization: Bearer $OPAL_DATA_SOURCE_TOKEN" \
     -H "Content-Type: application/json" \
@@ -321,9 +319,13 @@ function test_data_publish {
         "save_method": "PUT"
       }]
     }'
+}
 
+function test_data_publish {
+  echo "- Testing data publish for user $1"
+  publish_data "$1"
   sleep 5
-  check_clients_logged "PUT /v1/data/users/$user/location -> 204"
+  check_clients_logged "PUT /v1/data/users/$1/location -> 204"
 }
 
 function test_statistics {
@@ -392,10 +394,33 @@ function main {
   test_push_policy "best_one_yet"
 
   # Regression guards for the broadcaster-disconnect storm (see pubsub_resilience.py):
-  # the servers must have exercised the reconnect path, and must NOT have spewed the
-  # non-idempotent-disconnect ValueError that drove the fleet-wide drop storm.
-  check_servers_logged "backbone connection closed"
+  # the servers must have reconnected to the backbone (this line is logged on every
+  # (re)connect, so it fires on both the graceful-restart and ungraceful-kill paths),
+  # and must NOT have spewed the non-idempotent-disconnect ValueError that drove the
+  # fleet-wide drop storm.
+  check_servers_logged "Broadcaster listener connected to channel"
   check_servers_not_logged "list.remove(x): x not in list"
+
+  # Cross-instance consistency: publish an update WHILE the backbone is down, then
+  # recover. The two clients connect to different server replicas via the service VIP,
+  # so for BOTH to end up with the value the missed cross-server update must converge
+  # after recovery (via the replay buffer and/or the resync-on-reconnect path).
+  echo "- Testing cross-instance consistency across a backbone outage"
+  compose kill broadcast_channel
+  sleep 3
+  publish_data "consistency_user"
+  sleep 2
+  compose up -d broadcast_channel
+  wait_for_broadcaster
+  # allow buffered replay + (if needed) client resync + full refetch to settle
+  sleep 15
+  # The server that received the publish while the backbone was down must have
+  # buffered it and replayed it on recovery (proves the replay path actually ran,
+  # not just a client refetch).
+  check_servers_logged "buffered for replay"
+  check_servers_logged "Replaying"
+  # BOTH clients (on different replicas via the VIP) must end up with the value.
+  check_clients_logged "PUT /v1/data/users/consistency_user/location -> 204"
   # TODO: Test statistics feature again after broadcaster restart (should first fix statistics bug)
 }
 

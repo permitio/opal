@@ -70,5 +70,11 @@ If the broadcast backbone (Postgres/Redis/Kafka) briefly drops — for example d
 | OPAL_BROADCAST_RECONNECT_MAX_RETRIES         | `0`     | Maximum consecutive reconnect attempts before giving up and letting the worker restart. `0` means retry forever.                                  |
 | OPAL_BROADCAST_RECONNECT_BACKOFF_MIN_SECONDS | `0.5`   | Minimum backoff (seconds) between reconnect attempts.                                                                                             |
 | OPAL_BROADCAST_RECONNECT_BACKOFF_MAX_SECONDS | `30`    | Maximum backoff (seconds) between reconnect attempts.                                                                                             |
+| OPAL_BROADCAST_REPLAY_BUFFER_SIZE            | `10000` | Max number of outbound broadcasts buffered while the backbone is down and replayed on reconnect (`0` disables buffering). On overflow the oldest are dropped. |
+| OPAL_BROADCAST_RESYNC_ON_RECONNECT           | `true`  | After a backbone gap, force this worker's clients to reconnect so they re-fetch full policy + data state. Set to `false` to rely only on best-effort replay. |
+| OPAL_BROADCAST_RESYNC_SETTLE_SECONDS         | `2`     | Grace period after a reconnect before replaying buffered broadcasts and resyncing clients, to let peer servers re-subscribe.                      |
 
-While the backbone is unreachable, cross-server fan-out is paused but client websocket connections are kept alive; updates published during the outage are delivered once the backbone reconnects (OPAL keeps no replay buffer, so a client that itself reconnects re-fetches the full policy/data state).
+Consistency across the outage is handled in two layers. While the backbone is unreachable, client websocket connections are kept alive but cross-server fan-out is paused. On reconnect:
+
+- **Replay buffer** — broadcasts that failed to reach the backbone during the outage are replayed, so peer servers that have re-subscribed catch up without a client refetch. This is best-effort: the backbone keeps no replay of its own, so a peer that is slow to re-subscribe may miss a replayed message.
+- **Resync** (the guarantee) — each server forces its own clients to reconnect and re-fetch the full policy/data state. Because every server experienced the same gap, every server reconciles its own clients and the fleet converges to current truth. Updates missed during the gap are therefore reconciled even if the replay did not reach a peer in time.

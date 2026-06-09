@@ -80,6 +80,26 @@ class OpalServerConfig(Confi):
         30.0,
         description="Maximum backoff in seconds between broadcaster reconnect attempts.",
     )
+    BROADCAST_REPLAY_BUFFER_SIZE = confi.int(
+        "BROADCAST_REPLAY_BUFFER_SIZE",
+        10000,
+        description="Max number of outbound broadcasts buffered while the backbone is "
+        "down and replayed on reconnect (0 disables buffering). On overflow the oldest "
+        "are dropped and clients are resynced instead.",
+    )
+    BROADCAST_RESYNC_ON_RECONNECT = confi.bool(
+        "BROADCAST_RESYNC_ON_RECONNECT",
+        True,
+        description="After a backbone gap that may have lost updates, force this "
+        "worker's connected clients to reconnect so they re-fetch full policy + data "
+        "state (guarantees cross-instance consistency).",
+    )
+    BROADCAST_RESYNC_SETTLE_SECONDS = confi.float(
+        "BROADCAST_RESYNC_SETTLE_SECONDS",
+        2.0,
+        description="Grace period after a broadcaster reconnect before replaying "
+        "buffered broadcasts and resyncing clients, to let peer servers re-subscribe.",
+    )
 
     # server security
     AUTH_PRIVATE_KEY_FORMAT = confi.enum(
