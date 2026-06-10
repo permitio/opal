@@ -1,3 +1,9 @@
+# The pinned formatter versions below (black 23.1.0, isort 5.12.0, docformatter
+# 1.7.x) do not run on Python 3.13+, so pin the hook toolchain to 3.12 (the version
+# CI uses). Without this, hooks fail on machines whose default python is newer.
+default_language_version:
+  python: python3.12
+
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v5.0.0
@@ -18,8 +24,11 @@ repos:
     hooks:
       - id: codespell
         args: [--skip, "*.json,*.lock"]
+  # v1.7.6 dropped the `docformatter-venv` hook whose `language: python_venv` made
+  # prek / pre-commit>=4 reject the whole manifest. Pinned to v1.7.6 (not v1.7.7,
+  # whose docstring wrapping differs) so the bump introduces no reformatting.
   - repo: https://github.com/PyCQA/docformatter
-    rev: v1.7.5
+    rev: v1.7.6
     hooks:
       - id: docformatter
         args: [--in-place]

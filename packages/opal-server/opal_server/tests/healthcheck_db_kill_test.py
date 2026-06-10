@@ -95,7 +95,8 @@ def _pending_reader_task():
 
 
 def _done_task():
-    """An already-completed task standing in for a reader that gave up retrying."""
+    """An already-completed task standing in for a reader that gave up
+    retrying."""
     loop = asyncio.new_event_loop()
     try:
         task = loop.create_task(asyncio.sleep(0))
@@ -143,7 +144,8 @@ async def test_healthcheck_stays_ok_through_transient_db_kill():
 
 @pytest.mark.asyncio
 async def test_healthcheck_goes_503_when_reconnect_gives_up():
-    """A permanent DB kill that exhausts retries must flip the reader to unhealthy.
+    """A permanent DB kill that exhausts retries must flip the reader to
+    unhealthy.
 
     ``reconnect_max_retries=3`` with tiny backoff: a permanent fault drives the
     reconnect loop to give up; the reader task completes (done). With listeners
