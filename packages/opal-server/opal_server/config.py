@@ -100,6 +100,14 @@ class OpalServerConfig(Confi):
         description="Grace period after a broadcaster reconnect before replaying "
         "buffered broadcasts and resyncing clients, to let peer servers re-subscribe.",
     )
+    BROADCAST_HEALTHCHECK_ENABLED = confi.bool(
+        "BROADCAST_HEALTHCHECK_ENABLED",
+        True,
+        description="Make /healthcheck reflect the broadcaster reader's health so a "
+        "k8s readiness/liveness probe can route away from or restart a worker whose "
+        "reader is wedged while clients depend on it. Set to False to revert "
+        "/healthcheck to always returning ok.",
+    )
 
     # server security
     AUTH_PRIVATE_KEY_FORMAT = confi.enum(

@@ -170,6 +170,41 @@ class ReconnectingBroadcaster(EventBroadcaster):
         self._subscription_task = asyncio.create_task(self.__read_notifications__())
         return self._subscription_task
 
+    def is_reader_healthy(self) -> bool:
+        """Report whether the reconnecting reader can still serve connected
+        clients.
+
+        Used by the server ``/healthcheck`` so a k8s readiness/liveness probe can
+        route away from (or restart) a worker whose reader is wedged while clients
+        depend on it — defense in depth on top of the reconnect loop itself.
+
+        Health is judged against the listener count, not the backbone connection:
+
+        * No listeners (``_listen_count <= 0``): healthy. The reader is started lazily
+          when the count goes 0->1 and reset to ``None`` when it returns to 0, so its
+          absence here is expected idleness, not a fault — nothing depends on it.
+        * Listeners present: healthy only while the reader task is a live, *pending*
+          task. A pending task INCLUDES the case where it is mid-reconnect through a
+          backbone outage: ``ReconnectingBroadcaster`` deliberately keeps the reader
+          pending across a drop, so a transient reconnect must NOT read as unhealthy
+          (otherwise the probe would flap the pod during every normal backbone blip).
+          It reads unhealthy only in the two wedged states — the task is ``None``
+          (never started / leaked listen-count) or ``done`` (crashed, or gave up after
+          ``reconnect_max_retries``) — which is exactly when clients are stuck.
+
+        This is a cheap, non-blocking attribute read (no await, no lock); any rare race
+        against a reconnect is absorbed by the probe's ``failureThreshold``.
+
+        Returns:
+            bool: True if idle or the reader is live and pending; False if listeners
+            depend on a missing or completed reader task.
+        """
+        if self._listen_count <= 0:
+            return True
+        return (
+            self._subscription_task is not None and not self._subscription_task.done()
+        )
+
     async def __broadcast_notifications__(self, subscription: Subscription, data):
         """Share a local notification with the backbone; buffer it on failure.
 

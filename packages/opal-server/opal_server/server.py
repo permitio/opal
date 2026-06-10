@@ -8,7 +8,7 @@ from typing import List, Optional
 
 from fastapi import Depends, FastAPI, Request
 from fastapi.openapi.docs import get_redoc_html
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi_websocket_pubsub.event_broadcaster import EventBroadcasterContextManager
 from opal_common.authentication.deps import JWTAuthenticator, StaticBearerAuthenticator
 from opal_common.authentication.signer import JWTSigner
@@ -34,6 +34,7 @@ from opal_server.policy.watcher.task import PolicyWatcherTask
 from opal_server.policy.webhook.api import init_git_webhook_router
 from opal_server.publisher import setup_broadcaster_keepalive_task
 from opal_server.pubsub import PubSub
+from opal_server.pubsub_resilience import ReconnectingBroadcaster
 from opal_server.redis_utils import RedisDB
 from opal_server.scopes.api import init_scope_router
 from opal_server.scopes.loader import load_scopes
@@ -288,9 +289,27 @@ class OpalServer:
             )
 
         # top level routes (i.e: healthchecks)
-        @app.get("/healthcheck", include_in_schema=False)
         @app.get("/", include_in_schema=False)
+        def root():
+            # Liveness / process-up: trivially ok as long as the process serves.
+            return {"status": "ok"}
+
+        @app.get("/healthcheck", include_in_schema=False)
         def healthcheck():
+            # Readiness: also reflect broadcaster-reader health so a wedged reader
+            # (reader task absent/dead while clients depend on it) fails the probe
+            # and k8s can route away from / restart this worker. Stays ok through a
+            # normal transient reconnect (see ReconnectingBroadcaster.is_reader_healthy).
+            broadcaster = self.pubsub.broadcaster
+            if (
+                opal_server_config.BROADCAST_HEALTHCHECK_ENABLED
+                and isinstance(broadcaster, ReconnectingBroadcaster)
+                and not broadcaster.is_reader_healthy()
+            ):
+                return JSONResponse(
+                    status_code=503,
+                    content={"status": "error", "broadcaster": "unhealthy"},
+                )
             return {"status": "ok"}
 
         return app

@@ -190,3 +190,74 @@ def test_backoff_is_bounded():
     delays = [broadcaster._backoff_seconds(attempt) for attempt in range(0, 25)]
     assert all(0.0 <= delay <= 10.0 for delay in delays)
     assert max(delays) > 0
+
+
+def _make_broadcaster():
+    return ReconnectingBroadcaster(
+        "memory://",
+        notifier=FakeNotifier(),
+        channel="test",
+    )
+
+
+def test_is_reader_healthy_idle_when_no_listeners():
+    # No clients depend on the reader; its absence is expected idleness, not a fault.
+    broadcaster = _make_broadcaster()
+    broadcaster._listen_count = 0
+    broadcaster._subscription_task = None
+    assert broadcaster.is_reader_healthy() is True
+
+
+@pytest.mark.asyncio
+async def test_is_reader_healthy_with_live_pending_reader():
+    # Listeners present and the reader is a live, pending task (this also models the
+    # mid-reconnect state ReconnectingBroadcaster keeps pending across a backbone gap).
+    broadcaster = _make_broadcaster()
+    broadcaster._listen_count = 1
+    task = asyncio.create_task(asyncio.sleep(60))
+    broadcaster._subscription_task = task
+    try:
+        assert broadcaster.is_reader_healthy() is True
+    finally:
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+
+def test_is_reader_healthy_false_when_reader_missing():
+    # Listeners present but the reader task is None: leaked listen-count / never-started.
+    broadcaster = _make_broadcaster()
+    broadcaster._listen_count = 1
+    broadcaster._subscription_task = None
+    assert broadcaster.is_reader_healthy() is False
+
+
+@pytest.mark.asyncio
+async def test_is_reader_healthy_false_when_reader_done():
+    # Listeners present but the reader task completed: it crashed or gave up retrying.
+    broadcaster = _make_broadcaster()
+    broadcaster._listen_count = 1
+
+    async def _noop():
+        return None
+
+    task = asyncio.create_task(_noop())
+    await task
+    broadcaster._subscription_task = task
+    assert task.done()
+    assert broadcaster.is_reader_healthy() is False
+
+
+@pytest.mark.asyncio
+async def test_is_reader_healthy_false_when_reader_cancelled():
+    # A cancelled reader is also "done" — the wedged state after a clean shutdown
+    # of the reader while listeners somehow remain.
+    broadcaster = _make_broadcaster()
+    broadcaster._listen_count = 1
+    task = asyncio.create_task(asyncio.sleep(60))
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    broadcaster._subscription_task = task
+    assert task.done()
+    assert broadcaster.is_reader_healthy() is False
