@@ -33,11 +33,28 @@ class FakeNotifier:
 class FakeBus:
     """A controllable in-memory broadcast backbone for a single channel."""
 
-    def __init__(self, fail_connect=False):
-        self.fail_connect = fail_connect
+    def __init__(
+        self,
+        fail_connect=False,
+        fail_connect_times=0,
+        fail_subscribe_times=0,
+        connect_gate=None,
+        fail_publish_after=None,
+    ):
+        self.fail_connect = fail_connect  # permanently refuse to connect
+        self.fail_connect_times = (
+            fail_connect_times  # refuse the first N connects, then succeed
+        )
+        self.fail_subscribe_times = fail_subscribe_times  # fail the first N subscribes
+        self.connect_gate = (
+            connect_gate  # asyncio.Event; if set, connect awaits it (slow connect)
+        )
+        # publish raises once this many payloads have published (transport fails mid-drain)
+        self.fail_publish_after = fail_publish_after
         self.connects = 0
         self.subscribes = 0
         self.disconnects = 0
+        self.published = []  # payloads published via the replay/flush path
         self.queue = asyncio.Queue()
 
     def channel_factory(self, _url):
@@ -58,7 +75,9 @@ class _FakeChannel:
 
     async def connect(self):
         self._bus.connects += 1
-        if self._bus.fail_connect:
+        if self._bus.connect_gate is not None:
+            await self._bus.connect_gate.wait()
+        if self._bus.fail_connect or self._bus.connects <= self._bus.fail_connect_times:
             raise ConnectionError("backbone refused connection")
 
     async def disconnect(self):
@@ -67,6 +86,23 @@ class _FakeChannel:
     def subscribe(self, channel):
         return _FakeSubscription(self._bus)
 
+    # The replay/flush path uses the channel as an async context manager and publishes.
+    async def __aenter__(self):
+        if self._bus.fail_connect:
+            raise ConnectionError("backbone down")
+        return self
+
+    async def __aexit__(self, *exc):
+        return False
+
+    async def publish(self, channel, payload):
+        if (
+            self._bus.fail_publish_after is not None
+            and len(self._bus.published) >= self._bus.fail_publish_after
+        ):
+            raise ConnectionError("publish failed")
+        self._bus.published.append(payload)
+
 
 class _FakeSubscription:
     def __init__(self, bus):
@@ -74,6 +110,8 @@ class _FakeSubscription:
 
     async def __aenter__(self):
         self._bus.subscribes += 1
+        if self._bus.subscribes <= self._bus.fail_subscribe_times:
+            raise ConnectionError("subscribe failed")
         return _FakeSubscriber(self._bus)
 
     async def __aexit__(self, *exc):
@@ -261,3 +299,329 @@ async def test_is_reader_healthy_false_when_reader_cancelled():
     broadcaster._subscription_task = task
     assert task.done()
     assert broadcaster.is_reader_healthy() is False
+
+
+@pytest.mark.asyncio
+async def test_reader_recovers_after_transient_connect_failures():
+    # Flaky reconnect: the first two reconnect attempts fail, the third succeeds. With
+    # max_retries=0 (retry forever) the reader must recover, not give up or die.
+    bus = FakeBus(fail_connect_times=2)
+    notifier = FakeNotifier()
+    broadcaster = ReconnectingBroadcaster(
+        "memory://",
+        notifier=notifier,
+        channel="test",
+        broadcast_type=bus.channel_factory,
+        reconnect_backoff_min=0,
+        reconnect_backoff_max=0,
+    )
+    task = await broadcaster.start_reader_task()
+    try:
+        await _wait_for(lambda: bus.subscribes >= 1)
+        assert bus.connects >= 3  # two failures, then a successful connect
+        assert not task.done()
+        # Delivery resumes once connected.
+        await bus.push(["policy_data"], {"x": 1}, notifier_id="other-server")
+        await _wait_for(lambda: notifier.notified)
+    finally:
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+
+@pytest.mark.asyncio
+async def test_reader_survives_slow_connect():
+    # A slow (but not failed) backbone connect must keep the reader pending. Completing
+    # the reader task is exactly what cancels every client websocket in production, so a
+    # slow connection must never be mistaken for a dead reader.
+    gate = asyncio.Event()
+    bus = FakeBus(connect_gate=gate)
+    broadcaster = ReconnectingBroadcaster(
+        "memory://",
+        notifier=FakeNotifier(),
+        channel="test",
+        broadcast_type=bus.channel_factory,
+        reconnect_backoff_min=0,
+        reconnect_backoff_max=0,
+    )
+    task = await broadcaster.start_reader_task()
+    try:
+        await _wait_for(lambda: bus.connects >= 1)  # connect started, but gated (slow)
+        await asyncio.sleep(0.05)
+        assert not task.done()  # still pending mid-connect
+        assert bus.subscribes == 0  # not subscribed until the connect completes
+        assert (
+            broadcaster.is_reader_healthy() is True
+        )  # healthy while connecting slowly
+        gate.set()  # the slow connection finally completes
+        await _wait_for(lambda: bus.subscribes >= 1)
+        assert not task.done()
+    finally:
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+
+@pytest.mark.asyncio
+async def test_reader_reconnects_when_subscribe_fails():
+    # connect succeeds but subscribe fails once (a partial connection). The reader must
+    # treat it like any backbone error and reconnect, then deliver.
+    bus = FakeBus(fail_subscribe_times=1)
+    notifier = FakeNotifier()
+    broadcaster = ReconnectingBroadcaster(
+        "memory://",
+        notifier=notifier,
+        channel="test",
+        broadcast_type=bus.channel_factory,
+        reconnect_backoff_min=0,
+        reconnect_backoff_max=0,
+    )
+    task = await broadcaster.start_reader_task()
+    try:
+        await _wait_for(
+            lambda: bus.subscribes >= 2
+        )  # first subscribe failed, then retried
+        assert not task.done()
+        await bus.push(["policy_data"], {"x": 1}, notifier_id="other-server")
+        await _wait_for(lambda: notifier.notified)
+    finally:
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+
+@pytest.mark.asyncio
+async def test_buffer_overflow_drops_oldest():
+    broadcaster = ReconnectingBroadcaster(
+        "memory://", notifier=FakeNotifier(), channel="test", replay_buffer_size=2
+    )
+    error = ConnectionError("backbone down")
+    await broadcaster._buffer_outbound("policy_data", {"n": 1}, error)
+    await broadcaster._buffer_outbound("policy_data", {"n": 2}, error)
+    assert len(broadcaster._outbound_buffer) == 2
+
+    await broadcaster._buffer_outbound("policy_data", {"n": 3}, error)  # over capacity
+    assert len(broadcaster._outbound_buffer) == 2
+    # The oldest entry ({"n": 1}) was dropped by the bounded deque.
+    assert [data for _, data in broadcaster._outbound_buffer] == [{"n": 2}, {"n": 3}]
+
+
+@pytest.mark.asyncio
+async def test_buffering_disabled_when_size_is_zero():
+    # replay_buffer_size=0 disables buffering entirely; the resync is then the only
+    # recovery path, so nothing is retained here.
+    broadcaster = ReconnectingBroadcaster(
+        "memory://", notifier=FakeNotifier(), channel="test", replay_buffer_size=0
+    )
+    await broadcaster._buffer_outbound("policy_data", {"n": 1}, ConnectionError("down"))
+    assert len(broadcaster._outbound_buffer) == 0
+
+
+@pytest.mark.asyncio
+async def test_flush_replays_buffered_broadcasts():
+    bus = FakeBus()
+    broadcaster = ReconnectingBroadcaster(
+        "memory://",
+        notifier=FakeNotifier(),
+        channel="test",
+        broadcast_type=bus.channel_factory,
+        replay_buffer_size=10,
+    )
+    error = ConnectionError("backbone down")
+    await broadcaster._buffer_outbound("policy_data", {"n": 1}, error)
+    await broadcaster._buffer_outbound("policy_data", {"n": 2}, error)
+
+    await broadcaster._flush_outbound_buffer()
+
+    assert len(bus.published) == 2  # both replayed to the backbone
+    assert len(broadcaster._outbound_buffer) == 0  # buffer drained
+
+
+@pytest.mark.asyncio
+async def test_flush_drops_unserializable_buffered_broadcast():
+    bus = FakeBus()
+    broadcaster = ReconnectingBroadcaster(
+        "memory://",
+        notifier=FakeNotifier(),
+        channel="test",
+        broadcast_type=bus.channel_factory,
+        replay_buffer_size=10,
+    )
+    # A poison payload that cannot be serialized must be dropped, not wedge the buffer.
+    broadcaster._outbound_buffer.append(("policy_data", object()))
+    broadcaster._outbound_buffer.append(("policy_data", {"n": 1}))
+
+    await broadcaster._flush_outbound_buffer()
+
+    assert len(broadcaster._outbound_buffer) == 0  # poison dropped, good one sent
+    assert len(bus.published) == 1  # only the serializable broadcast was published
+
+
+@pytest.mark.asyncio
+async def test_shutdown_cancels_pending_child_tasks():
+    # On clean shutdown (reader cancellation) any in-flight notify/recovery child task
+    # must be cancelled too, so the worker does not leak tasks.
+    bus = FakeBus()
+    broadcaster = ReconnectingBroadcaster(
+        "memory://",
+        notifier=FakeNotifier(),
+        channel="test",
+        broadcast_type=bus.channel_factory,
+        reconnect_backoff_min=0,
+        reconnect_backoff_max=0,
+    )
+    task = await broadcaster.start_reader_task()
+    await _wait_for(lambda: bus.subscribes >= 1)
+    child = asyncio.create_task(asyncio.sleep(60))
+    broadcaster._tasks.add(child)
+
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    await _wait_for(lambda: child.done())
+    assert child.cancelled()
+
+
+@pytest.mark.asyncio
+async def test_skips_own_broadcasts():
+    # A broadcast tagged with our own notifier id must not be re-delivered to our local
+    # notifier (it was already delivered locally when first published).
+    notifier = FakeNotifier()
+    broadcaster = ReconnectingBroadcaster(
+        "memory://", notifier=notifier, channel="test"
+    )
+    own = BroadcastNotification(
+        notifier_id=broadcaster._id, topics=["policy_data"], data={"x": 1}
+    )
+    await broadcaster._handle_broadcast_event(_Event(own.json()))
+    assert notifier.notified == []
+
+    other = BroadcastNotification(
+        notifier_id="other-server", topics=["policy_data"], data={"x": 2}
+    )
+    await broadcaster._handle_broadcast_event(_Event(other.json()))
+    await _wait_for(lambda: notifier.notified)
+    assert notifier.notified[0][0] == ["policy_data"]
+
+
+@pytest.mark.asyncio
+async def test_flush_partial_replay_requeues_unsent():
+    # Transport fails after the first publish: the unsent tail must be re-buffered (in
+    # order, at the front) for the next recovery, and the sent item must not re-send.
+    bus = FakeBus(fail_publish_after=1)
+    broadcaster = ReconnectingBroadcaster(
+        "memory://",
+        notifier=FakeNotifier(),
+        channel="test",
+        broadcast_type=bus.channel_factory,
+        replay_buffer_size=10,
+    )
+    error = ConnectionError("backbone down")
+    await broadcaster._buffer_outbound("policy_data", {"n": 1}, error)
+    await broadcaster._buffer_outbound("policy_data", {"n": 2}, error)
+    await broadcaster._buffer_outbound("policy_data", {"n": 3}, error)
+
+    await broadcaster._flush_outbound_buffer()
+
+    assert (
+        len(bus.published) == 1
+    )  # only the first got through before the transport failed
+    assert [data for _, data in broadcaster._outbound_buffer] == [{"n": 2}, {"n": 3}]
+
+    # The backbone heals; a second flush drains the rest without re-sending {"n": 1}.
+    bus.fail_publish_after = None
+    await broadcaster._flush_outbound_buffer()
+    assert len(bus.published) == 3
+    assert len(broadcaster._outbound_buffer) == 0
+
+
+@pytest.mark.asyncio
+async def test_single_flight_recovery_dedupes():
+    # A second gap while a recovery is still in flight must not spawn a second recovery.
+    broadcaster = _make_broadcaster()
+    blocker = asyncio.Event()
+    broadcaster._recovery_task = asyncio.create_task(blocker.wait())
+    broadcaster._tasks.add(broadcaster._recovery_task)
+    first = broadcaster._recovery_task
+
+    broadcaster._schedule_gap_recovery()  # second gap during the in-flight recovery
+    assert broadcaster._recovery_task is first  # single-flight: no new recovery task
+
+    blocker.set()
+    await first
+
+
+@pytest.mark.asyncio
+async def test_reader_recovers_within_max_retries():
+    # max_retries=5 but only 3 transient failures, then success: the reader recovers and
+    # resets its attempt counter (a later drop gets the full budget again, not give-up).
+    bus = FakeBus(fail_connect_times=3)
+    notifier = FakeNotifier()
+    broadcaster = ReconnectingBroadcaster(
+        "memory://",
+        notifier=notifier,
+        channel="test",
+        broadcast_type=bus.channel_factory,
+        reconnect_max_retries=5,
+        reconnect_backoff_min=0,
+        reconnect_backoff_max=0,
+    )
+    task = await broadcaster.start_reader_task()
+    try:
+        await _wait_for(lambda: bus.subscribes >= 1)
+        assert bus.connects >= 4  # 3 failures + a success
+        assert not task.done()
+        await bus.push(["policy_data"], {"x": 1}, notifier_id="other-server")
+        await _wait_for(lambda: notifier.notified)
+        # Counter reset: a later drop gets the full retry budget again.
+        await bus.drop()
+        await _wait_for(lambda: bus.subscribes >= 2)
+        assert not task.done()
+    finally:
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+
+@pytest.mark.asyncio
+async def test_recovery_pins_reader_across_client_recycle():
+    # The resync closes every client (driving the client-held listen count to 0), but
+    # _recover_after_gap pins its own listening context for the whole recovery, so the
+    # reader must NOT be cancelled while the recycle happens.
+    bus = FakeBus()
+    broadcaster = ReconnectingBroadcaster(
+        "memory://",
+        notifier=FakeNotifier(),
+        channel="test",
+        broadcast_type=bus.channel_factory,
+        resync_settle_seconds=0,
+        reconnect_backoff_min=0,
+        reconnect_backoff_max=0,
+    )
+    # One connected client holds the listening context (this also starts the reader).
+    client_ctx = broadcaster.get_listening_context()
+    await client_ctx.__aenter__()
+    reader = broadcaster.get_reader_task()
+    await _wait_for(lambda: bus.subscribes >= 1)
+
+    observed = {}
+
+    async def on_reconnect():
+        # The resync closes the only client: drop its listening context.
+        await client_ctx.__aexit__(None, None, None)
+        # The pin in _recover_after_gap must hold the count, keeping the reader alive.
+        observed["reader_alive"] = not reader.done()
+
+    broadcaster.set_reconnect_callback(on_reconnect)
+    broadcaster._had_prior_connection = True
+
+    await broadcaster._recover_after_gap()
+
+    assert observed["reader_alive"] is True
+    # The pin is released and no client remains, so the reader is cancelled by the
+    # listener count reaching zero — drain it.
+    if not reader.done():
+        reader.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await reader

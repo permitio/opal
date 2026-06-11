@@ -139,6 +139,7 @@ class Instance:
         )
         self.store = []
         self._reader = None
+        self._listen_ctx = None
 
     async def start(self):
         async def record(subscription, data):
@@ -147,12 +148,23 @@ class Instance:
         await self.notifier.subscribe(f"{self.name}-store", ALL_TOPICS, record)
         # Share this worker's local notifications with the backbone, and listen.
         await self.broadcaster._subscribe_to_all_topics()
-        self._reader = await self.broadcaster.start_reader_task()
+        # Hold a listening context like a connected client would, so the reader is tied
+        # to a non-zero listener count (as in production) and the recovery pin cannot
+        # cancel it when that pin releases.
+        self._listen_ctx = self.broadcaster.get_listening_context()
+        await self._listen_ctx.__aenter__()
+        self._reader = self.broadcaster.get_reader_task()
 
     async def publish(self, topic, data):
         await self.notifier.notify([topic], data, notifier_id=f"{self.name}-publisher")
 
     async def stop(self):
+        if self._listen_ctx is not None:
+            try:
+                await self._listen_ctx.__aexit__(None, None, None)
+            except Exception:
+                pass
+            self._listen_ctx = None
         if self._reader is not None:
             self._reader.cancel()
             try:

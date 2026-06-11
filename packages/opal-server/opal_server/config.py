@@ -52,11 +52,6 @@ class OpalServerConfig(Confi):
         "EventNotifier",
         description="The name to be used for segmentation in the backbone pub/sub",
     )
-    BROADCAST_CONN_LOSS_BUGFIX_EXPERIMENT_ENABLED = confi.bool(
-        "BROADCAST_CONN_LOSS_BUGFIX_EXPERIMENT_ENABLED",
-        True,
-        description="Enable experimental bugfix for broadcast connection loss",
-    )
     BROADCAST_RECONNECT_ENABLED = confi.bool(
         "BROADCAST_RECONNECT_ENABLED",
         True,
@@ -85,7 +80,7 @@ class OpalServerConfig(Confi):
         10000,
         description="Max number of outbound broadcasts buffered while the backbone is "
         "down and replayed on reconnect (0 disables buffering). On overflow the oldest "
-        "are dropped and clients are resynced instead.",
+        "buffered broadcasts are dropped; the resync on reconnect still reconciles clients.",
     )
     BROADCAST_RESYNC_ON_RECONNECT = confi.bool(
         "BROADCAST_RESYNC_ON_RECONNECT",

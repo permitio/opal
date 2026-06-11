@@ -170,13 +170,23 @@ class PubSub:
         else:
             logger.info("Pub/Sub broadcaster is off")
 
-        # The server endpoint
+        # The server endpoint.
+        #
+        # ignore_broadcaster_disconnected=False races each client's main_loop against the
+        # shared broadcaster reader task, so a completed reader surfaces the disconnect and
+        # the client reconnects. That is only safe with ReconnectingBroadcaster, whose
+        # reader stays *pending* across transient drops and completes only after
+        # BROADCAST_RECONNECT_MAX_RETRIES is exhausted (the intended last resort). For the
+        # stock EventBroadcaster (reconnect disabled) the reader dies on the first drop, so
+        # we keep the library-safe default (True) to degrade to "stale but connected"
+        # rather than the fleet-wide drop storm. (Replaces an earlier experimental
+        # broadcast-connection-loss flag.)
         self.endpoint = PubSubEndpoint(
             broadcaster=self.broadcaster,
             notifier=self.notifier,
             rpc_channel_get_remote_id=opal_common_config.STATISTICS_ENABLED,
-            ignore_broadcaster_disconnected=(
-                not opal_server_config.BROADCAST_CONN_LOSS_BUGFIX_EXPERIMENT_ENABLED
+            ignore_broadcaster_disconnected=not isinstance(
+                self.broadcaster, ReconnectingBroadcaster
             ),
         )
         # fastapi_websocket_rpc's ConnectionManager.disconnect is not idempotent: the RPC
@@ -270,14 +280,12 @@ class PubSub:
                 "Broadcaster recovered after a gap; resyncing this worker's clients "
                 "so they re-fetch current policy + data state"
             )
-            # Closing every client would drive the broadcaster's listener count to 0
-            # and cancel the reconnecting reader task. Pin a listening context so the
-            # reader survives the recycle, and hold it briefly so reconnecting clients
-            # re-establish the count before we release.
-            async with broadcaster.get_listening_context():
-                await manager.close_all_staggered()
-                if settle > 0:
-                    await asyncio.sleep(settle)
+            # The reader is kept alive across this recycle by the listening context the
+            # broadcaster pins around the whole recovery (see _recover_after_gap), so
+            # closing every client here cannot cancel it.
+            await manager.close_all_staggered()
+            if settle > 0:
+                await asyncio.sleep(settle)
 
         broadcaster.set_reconnect_callback(_on_broadcaster_reconnect)
 

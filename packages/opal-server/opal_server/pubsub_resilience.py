@@ -144,7 +144,6 @@ class ReconnectingBroadcaster(EventBroadcaster):
         # Single lock serialises buffer mutation, the overflow flag, and the flush,
         # so a concurrent broadcast cannot race the flush's drain/flag-reset.
         self._buffer_lock = asyncio.Lock()
-        self._buffer_overflowed = False
         # (A) gap detection + single-flight resync hook.
         self._had_prior_connection = False
         self._recovery_task: Optional[asyncio.Task] = None
@@ -224,20 +223,19 @@ class ReconnectingBroadcaster(EventBroadcaster):
     async def _buffer_outbound(self, topic, data, error: Exception):
         async with self._buffer_lock:
             if self._replay_buffer_size <= 0:
-                # buffering disabled — nothing to replay; the gap resync is the only
-                # recovery path. Nothing to record here.
+                # buffering disabled — the gap resync is the only recovery path.
                 logger.warning(
                     f"Broadcast to backbone failed ({error!r}); replay buffer disabled"
                 )
                 return
-            if len(self._outbound_buffer) >= self._replay_buffer_size:
-                # at capacity: this append drops the oldest entry, unrecoverable.
-                self._buffer_overflowed = True
+            # At capacity this append drops the oldest entry (bounded deque); the resync
+            # on reconnect still reconciles clients, so the drop only widens the window.
+            overflow = len(self._outbound_buffer) >= self._replay_buffer_size
             self._outbound_buffer.append((topic, data))
             logger.warning(
                 f"Broadcast to backbone failed ({error!r}); buffered for replay "
                 f"({len(self._outbound_buffer)}/{self._replay_buffer_size}"
-                f"{', OVERFLOW' if self._buffer_overflowed else ''})"
+                f"{', OVERFLOW — oldest dropped' if overflow else ''})"
             )
 
     async def __read_notifications__(self):
@@ -263,7 +261,7 @@ class ReconnectingBroadcaster(EventBroadcaster):
                 )
             except asyncio.CancelledError:
                 logger.info("Broadcaster listener cancelled; stopping")
-                self._cancel_pending_tasks()
+                await self._cancel_pending_tasks()
                 raise
             except Exception as e:
                 attempt += 1
@@ -281,9 +279,16 @@ class ReconnectingBroadcaster(EventBroadcaster):
                 await self._safe_disconnect_channel()
             await asyncio.sleep(self._backoff_seconds(attempt))
 
-    def _cancel_pending_tasks(self):
-        for task in list(self._tasks):
+    async def _cancel_pending_tasks(self):
+        # Cancel AND join child notify/recovery tasks so they fully unwind (releasing any
+        # pinned listening context) before the reader re-raises its own cancellation.
+        # Exclude the current task defensively (the reader is not in _tasks, but be safe).
+        current = asyncio.current_task()
+        tasks = [task for task in self._tasks if task is not current]
+        for task in tasks:
             task.cancel()
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
 
     def _schedule_gap_recovery(self):
         # Single-flight: a flap during the settle window must not spawn a second
@@ -297,12 +302,18 @@ class ReconnectingBroadcaster(EventBroadcaster):
 
     async def _recover_after_gap(self):
         """After reconnecting following a gap: let peers re-subscribe, replay the
-        buffer (B), then fire the resync hook (A)."""
+        buffer (B), then fire the resync hook (A).
+
+        The whole recovery runs inside a pinned listening context so the reader task
+        cannot be cancelled mid-recovery — neither by the resync hook closing every
+        client nor by an unrelated drop to zero listeners during the settle window.
+        """
         try:
-            if self._resync_settle_seconds > 0:
-                await asyncio.sleep(self._resync_settle_seconds)
-            await self._flush_outbound_buffer()
-            await self._fire_reconnect()
+            async with self.get_listening_context():
+                if self._resync_settle_seconds > 0:
+                    await asyncio.sleep(self._resync_settle_seconds)
+                await self._flush_outbound_buffer()
+                await self._fire_reconnect()
         except asyncio.CancelledError:
             raise
         except Exception:
@@ -311,43 +322,49 @@ class ReconnectingBroadcaster(EventBroadcaster):
     async def _flush_outbound_buffer(self):
         """Replay buffered broadcasts to the backbone (best-effort).
 
-        Held under ``_buffer_lock`` so a concurrent failed broadcast cannot mutate
-        the buffer mid-drain. Items that can no longer be serialized are dropped (so
-        one poison payload can't wedge the buffer); a transport failure stops the
-        drain and leaves the rest for the next recovery.
+        The buffer is drained into a local snapshot under ``_buffer_lock`` and then
+        published WITHOUT the lock, so a concurrent failed broadcast can still buffer
+        (and a slow/hung publish can't wedge the buffer lock). Items that can no longer
+        be serialized are dropped (so one poison payload can't wedge the buffer); a
+        transport failure re-enqueues the unsent tail (in order, at the front) for the
+        next recovery.
         """
         async with self._buffer_lock:
-            self._buffer_overflowed = False
             if not self._outbound_buffer:
                 return
-            count = len(self._outbound_buffer)
-            logger.info(f"Replaying {count} buffered broadcast(s) after recovery")
-            try:
-                async with self._broadcast_type(self._broadcast_url) as channel:
-                    while self._outbound_buffer:
-                        topic, data = self._outbound_buffer[0]
-                        try:
-                            payload = pydantic_serialize(
-                                BroadcastNotification(
-                                    notifier_id=self._id, topics=[topic], data=data
-                                )
+            pending = list(self._outbound_buffer)
+            self._outbound_buffer.clear()
+        logger.info(f"Replaying {len(pending)} buffered broadcast(s) after recovery")
+        unsent = list(pending)
+        try:
+            async with self._broadcast_type(self._broadcast_url) as channel:
+                while unsent:
+                    topic, data = unsent[0]
+                    try:
+                        payload = pydantic_serialize(
+                            BroadcastNotification(
+                                notifier_id=self._id, topics=[topic], data=data
                             )
-                        except Exception as e:
-                            logger.error(
-                                f"Dropping un-serializable buffered broadcast on "
-                                f"topic '{topic}': {e!r}"
-                            )
-                            self._outbound_buffer.popleft()
-                            continue
-                        await channel.publish(self._channel, payload)
-                        self._outbound_buffer.popleft()
-            except asyncio.CancelledError:
-                raise
-            except Exception as e:
-                logger.error(
-                    f"Failed to replay buffered broadcasts ({len(self._outbound_buffer)} "
-                    f"left, will retry on next recovery): {e!r}"
-                )
+                        )
+                    except Exception as e:
+                        logger.error(
+                            f"Dropping un-serializable buffered broadcast on "
+                            f"topic '{topic}': {e!r}"
+                        )
+                        unsent.pop(0)
+                        continue
+                    await channel.publish(self._channel, payload)
+                    unsent.pop(0)
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            logger.error(
+                f"Failed to replay buffered broadcasts ({len(unsent)} left, will retry "
+                f"on next recovery): {e!r}"
+            )
+            if unsent:
+                async with self._buffer_lock:
+                    self._outbound_buffer.extendleft(reversed(unsent))
 
     async def _fire_reconnect(self):
         if self._on_reconnect is None:
