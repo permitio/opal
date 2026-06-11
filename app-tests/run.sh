@@ -433,6 +433,14 @@ while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
   main && break
   RETRY_COUNT=$((RETRY_COUNT + 1))
   echo "Test failed, retrying..."
+  # Tear the stack down before retrying so the next attempt starts clean:
+  # generate_opal_keys binds host port 7002, which conflicts with a leftover
+  # stack, and stale (transient) client ERRORs from the previous attempt's
+  # broadcaster kills would otherwise trip check_no_error. The compose helper
+  # uses --env-file .env, which exists after the first attempt's keygen.
+  compose down --remove-orphans --volumes 2>/dev/null || true
+  docker rm -f --wait opal-server-keygen 2>/dev/null || true
+  rm -rf ./opal-tests-policy-repo ./temp-repo ./gitea-data ./git-repos 2>/dev/null || true
 done
 
 if [ $RETRY_COUNT -ge $MAX_RETRIES ]; then
