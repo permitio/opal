@@ -76,6 +76,28 @@ def verify_private_key_or_throw(scope_in: Scope):
             )
 
 
+def normalize_data_topics_for_scope(
+    scope_id: str, config: DataSourceConfig
+) -> DataSourceConfig:
+    """Return a copy of `config` whose entry topics are namespaced
+    `{scope_id}:data:{topic}` — the form a scoped client subscribes to and
+    content-filters data entries by (entries with any other topic form are
+    silently discarded by the client). Already-namespaced topics pass through
+    unchanged, so operator-authored namespaced topics keep working.
+
+    The input config is not modified (the persisted scope keeps the
+    operator-authored topic form).
+    """
+    prefix = f"{scope_id}:data:"
+    normalized = config.copy(deep=True)
+    for entry in normalized.entries:
+        entry.topics = [
+            topic if topic.startswith(prefix) else f"{prefix}{topic}"
+            for topic in entry.topics
+        ]
+    return normalized
+
+
 def init_scope_router(
     scopes: ScopeRepository,
     authenticator: JWTAuthenticator,
@@ -111,6 +133,14 @@ def init_scope_router(
             raise
 
         verify_private_key_or_throw(scope_in)
+
+        data_config_changed = True
+        try:
+            existing_scope = await scopes.get(scope_in.scope_id)
+            data_config_changed = existing_scope.data != scope_in.data
+        except ScopeNotFoundError:
+            pass
+
         await scopes.put(scope_in)
 
         force_fetch_str = " (force fetch)" if force_fetch else ""
@@ -121,6 +151,26 @@ def init_scope_router(
             opal_server_config.POLICY_REPO_WEBHOOK_TOPIC,
             {"scope_id": scope_in.scope_id, "force_fetch": force_fetch},
         )
+
+        # Notify already-connected scoped clients about the scope's data source
+        # configuration. Clients only fetch /scopes/{scope_id}/data on (re)connect,
+        # so without this publish, a client that connected before the scope was
+        # created (or before its data config changed) never receives the scope's
+        # data sources (issue #779). Entry topics are namespaced to the
+        # `{scope_id}:data:{topic}` form the scoped client filters by. Published
+        # only when the data config is new or actually changed — mirroring the
+        # policy path, which notifies only on new commits.
+        if data_config_changed and scope_in.data and scope_in.data.entries:
+            await DataUpdatePublisher(
+                ServerSideTopicPublisher(pubsub_endpoint)
+            ).publish_data_updates(
+                DataUpdate(
+                    entries=normalize_data_topics_for_scope(
+                        scope_in.scope_id, scope_in.data
+                    ).entries,
+                    reason=f"Scope '{scope_in.scope_id}' data source configuration updated",
+                )
+            )
 
         return Response(status_code=status.HTTP_201_CREATED)
 
@@ -316,10 +366,15 @@ def init_scope_router(
         )
         try:
             scope = await scopes.get(scope_id)
-            return scope.data
+            # Serve entry topics in the namespaced `{scope_id}:data:{topic}` form
+            # the scoped client filters by — entries authored with bare/default
+            # topics (e.g. the schema default `policy_data`) would otherwise be
+            # silently discarded by the client (the #779 symptom via the happy
+            # path). The persisted scope keeps the authored form.
+            return normalize_data_topics_for_scope(scope_id, scope.data)
         except ScopeNotFoundError as ex:
             logger.warning(
-                "Requested scope {scope_id} not found, returning OPAL_DATA_CONFIG_SOURCES",
+                "Requested scope {scope_id} not found, serving an empty data-source config",
                 scope_id=scope_id,
             )
             try:
@@ -331,7 +386,14 @@ def init_scope_router(
                     redirect_url = set_url_query_param(url, "token", token)
                     return RedirectResponse(url=redirect_url)
                 else:
-                    return config.config
+                    # A scope that is not (yet) in the repository has no
+                    # scope-specific data sources to serve. Returning the
+                    # server-global OPAL_DATA_CONFIG_SOURCES here leaks the
+                    # default `policy_data` topic, which a scoped agent
+                    # (subscribed to `<scope_id>:data:<topic>`) discards as
+                    # topic-mismatched -- so it loads no data at all (issue #779).
+                    # Serve an empty, scope-shaped config instead of the wrong default.
+                    return DataSourceConfig(entries=[])
             except ScopeNotFoundError:
                 raise HTTPException(status.HTTP_404_NOT_FOUND, detail=str(ex))
 
