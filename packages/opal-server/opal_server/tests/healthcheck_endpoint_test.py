@@ -7,6 +7,7 @@ liveness 200.
 """
 import contextlib
 
+import pytest
 from opal_server.config import opal_server_config
 from opal_server.pubsub_resilience import ReconnectingBroadcaster
 from opal_server.server import OpalServer
@@ -69,3 +70,35 @@ def test_healthcheck_kill_switch_keeps_it_ok_when_disabled():
     client = TestClient(server.app)
     with _override_config(BROADCAST_HEALTHCHECK_ENABLED=False):
         assert client.get("/healthcheck").status_code == 200
+
+
+def _build_server_with_broadcaster():
+    # A broadcaster_uri makes PubSub build a ReconnectingBroadcaster (the object only;
+    # no connection happens until the reader task starts), so the give-up wiring runs.
+    return OpalServer(
+        init_policy_watcher=False,
+        init_publisher=False,
+        broadcaster_uri="postgres://localhost/test",
+        enable_jwks_endpoint=False,
+    )
+
+
+def test_broadcaster_give_up_is_wired_to_graceful_shutdown():
+    # F3(a): a reconnecting broadcaster that gives up must restart the worker regardless
+    # of the statistics flag, via a broadcaster-level give-up hook OPAL wires here.
+    server = _build_server_with_broadcaster()
+    assert isinstance(server.pubsub.broadcaster, ReconnectingBroadcaster)
+    # The give-up hook was registered during OpalServer construction.
+    assert server.pubsub.broadcaster._on_give_up is not None
+
+
+@pytest.mark.asyncio
+async def test_broadcaster_give_up_hook_triggers_graceful_shutdown():
+    # Firing the wired hook calls _graceful_shutdown (patched so the test does not
+    # actually SIGTERM the test process).
+    server = _build_server_with_broadcaster()
+    shutdowns = []
+    server._graceful_shutdown = lambda: shutdowns.append(1)
+
+    await server.pubsub.broadcaster._fire_give_up()
+    assert shutdowns == [1]

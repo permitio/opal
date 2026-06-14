@@ -8,6 +8,7 @@ control: the stock EventBroadcaster reader DOES complete on the same disconnect,
 proving these tests actually catch the regression.
 """
 import asyncio
+from contextlib import asynccontextmanager
 
 import pytest
 from fastapi_websocket_pubsub import EventBroadcaster
@@ -15,6 +16,18 @@ from fastapi_websocket_pubsub.event_broadcaster import BroadcastNotification
 from opal_server.pubsub_resilience import ReconnectingBroadcaster
 
 _END = object()
+
+
+def _noop_listening_context():
+    """Stand-in for the broadcaster's pinned listening context that does
+    nothing, so a unit test can exercise the recovery loop without a real
+    backbone reader."""
+
+    @asynccontextmanager
+    async def _ctx():
+        yield
+
+    return _ctx()
 
 
 class _Event:
@@ -538,18 +551,61 @@ async def test_flush_partial_replay_requeues_unsent():
 
 @pytest.mark.asyncio
 async def test_single_flight_recovery_dedupes():
-    # A second gap while a recovery is still in flight must not spawn a second recovery.
+    # A second gap while a recovery is still in flight must not spawn a second recovery;
+    # instead it requests a rerun so the in-flight recovery loops once more (F2).
     broadcaster = _make_broadcaster()
     blocker = asyncio.Event()
     broadcaster._recovery_task = asyncio.create_task(blocker.wait())
     broadcaster._tasks.add(broadcaster._recovery_task)
     first = broadcaster._recovery_task
+    assert broadcaster._recovery_rerun_requested is False
 
     broadcaster._schedule_gap_recovery()  # second gap during the in-flight recovery
     assert broadcaster._recovery_task is first  # single-flight: no new recovery task
+    assert broadcaster._recovery_rerun_requested is True  # but a rerun is requested
 
     blocker.set()
     await first
+
+
+@pytest.mark.asyncio
+async def test_recovery_reruns_for_gap_during_late_phase():
+    # F2: a gap that lands during the LATE recovery phase (after the flush, while the
+    # reconnect hook runs) must still be flushed/resynced by exactly one more loop —
+    # not dropped because a recovery was already in flight.
+    broadcaster = _make_broadcaster()
+    broadcaster._resync_settle_seconds = 0
+    fire_count = 0
+    release_first_fire = asyncio.Event()
+
+    async def on_reconnect():
+        nonlocal fire_count
+        fire_count += 1
+        if fire_count == 1:
+            # A gap arriving during the first recovery's late (fire) phase routes to the
+            # in-flight recovery (which is broadcaster._recovery_task) and sets the flag.
+            broadcaster._schedule_gap_recovery()
+            # Block until the test confirms the rerun was requested mid-iteration.
+            await release_first_fire.wait()
+
+    broadcaster.set_reconnect_callback(on_reconnect)
+    # Isolate the rerun-loop semantics from the real listening-context pin (which is
+    # covered by test_recovery_pins_reader_across_client_recycle).
+    broadcaster.get_listening_context = _noop_listening_context
+
+    # Start the recovery through the scheduler so broadcaster._recovery_task is the live
+    # task — that is what the nested _schedule_gap_recovery sees as "already in flight".
+    broadcaster._schedule_gap_recovery()
+    recovery = broadcaster._recovery_task
+    await _wait_for(lambda: fire_count == 1)
+    # The gap during the late phase requested a rerun on the live recovery.
+    assert broadcaster._recovery_rerun_requested is True
+    release_first_fire.set()
+
+    await asyncio.wait_for(recovery, timeout=2)
+    # The recovery looped exactly once more: the hook fired twice, then settled.
+    assert fire_count == 2
+    assert broadcaster._recovery_rerun_requested is False
 
 
 @pytest.mark.asyncio
@@ -614,7 +670,6 @@ async def test_recovery_pins_reader_across_client_recycle():
         observed["reader_alive"] = not reader.done()
 
     broadcaster.set_reconnect_callback(on_reconnect)
-    broadcaster._had_prior_connection = True
 
     await broadcaster._recover_after_gap()
 
@@ -625,3 +680,154 @@ async def test_recovery_pins_reader_across_client_recycle():
         reader.cancel()
     with pytest.raises(asyncio.CancelledError):
         await reader
+
+
+def _count_gap_recoveries(broadcaster) -> list:
+    """Replace _schedule_gap_recovery with a no-op counter so a test can assert
+    whether a (re)connect treated itself as a gap, without running the real
+    recovery machinery."""
+    scheduled = []
+    broadcaster._schedule_gap_recovery = lambda: scheduled.append(1)
+    return scheduled
+
+
+@pytest.mark.asyncio
+async def test_fresh_reader_task_does_not_recover_on_first_connect():
+    # F1: gap detection is reader-task-local. When the last client disconnects the
+    # upstream cancels the reader and clears _subscription_task; the NEXT client starts a
+    # fresh reader task, whose first connect must NOT be treated as a gap (no spurious
+    # flush + client-recycling resync). Only a reconnect WITHIN a task's own loop is a gap.
+    bus = FakeBus()
+    broadcaster = ReconnectingBroadcaster(
+        "memory://",
+        notifier=FakeNotifier(),
+        channel="test",
+        broadcast_type=bus.channel_factory,
+        reconnect_backoff_min=0,
+        reconnect_backoff_max=0,
+    )
+    scheduled = _count_gap_recoveries(broadcaster)
+
+    # First reader task: its initial connect is not a gap.
+    first = await broadcaster.start_reader_task()
+    await _wait_for(lambda: bus.subscribes >= 1)
+    assert scheduled == []
+
+    # The last client disconnects: upstream cancels the reader and resets the handle.
+    first.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await first
+    broadcaster._subscription_task = None
+
+    # A new client arrives: a FRESH reader task starts. Its first connect must NOT
+    # schedule a gap recovery, even though a prior connection existed on this instance.
+    second = await broadcaster.start_reader_task()
+    assert second is not first
+    await _wait_for(lambda: bus.subscribes >= 2)
+    await asyncio.sleep(0.05)
+    assert scheduled == []  # fresh task starts clean — no stale-instance-flag recovery
+
+    try:
+        # A real backbone gap WITHIN this task's loop (a drop + reconnect) does recover.
+        await bus.drop()
+        await _wait_for(lambda: bus.subscribes >= 3)
+        await _wait_for(lambda: len(scheduled) == 1)
+    finally:
+        second.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await second
+
+
+@pytest.mark.asyncio
+async def test_flap_loop_counts_toward_give_up():
+    # F3(b): a connect-OK / instant-close flap loop must increment the attempt counter
+    # (the subscriber never sustains a read), so reconnect_max_retries trips and the
+    # reader completes — rather than looping forever because a connect resets the counter.
+    bus = FakeBus()
+    give_up = []
+
+    broadcaster = ReconnectingBroadcaster(
+        "memory://",
+        notifier=FakeNotifier(),
+        channel="test",
+        broadcast_type=bus.channel_factory,
+        reconnect_max_retries=3,
+        reconnect_backoff_min=0,
+        reconnect_backoff_max=0,
+    )
+
+    async def on_give_up():
+        give_up.append(1)
+
+    broadcaster.set_give_up_callback(on_give_up)
+
+    # Each subscribe connects fine, then the subscriber ends immediately (a flap): the
+    # shared read queue is pre-loaded with _END markers, so every session reads one _END
+    # and stops without ever sustaining a read. Three such flaps exhaust max_retries=3.
+    for _ in range(5):
+        await bus.drop()
+
+    task = await broadcaster.start_reader_task()
+
+    # Three sub-threshold sessions exhaust the retry budget and the reader returns.
+    await asyncio.wait_for(task, timeout=2)
+    assert task.done()
+    assert task.exception() is None
+    assert give_up == [1]  # the give-up hook fired exactly once (on the returning path)
+
+
+@pytest.mark.asyncio
+async def test_give_up_hook_not_fired_on_cancellation():
+    # F3(a): the give-up hook is for give-up (return), NOT clean shutdown (cancellation).
+    bus = FakeBus()
+    give_up = []
+    broadcaster = ReconnectingBroadcaster(
+        "memory://",
+        notifier=FakeNotifier(),
+        channel="test",
+        broadcast_type=bus.channel_factory,
+        reconnect_backoff_min=0,
+        reconnect_backoff_max=0,
+    )
+
+    async def on_give_up():
+        give_up.append(1)
+
+    broadcaster.set_give_up_callback(on_give_up)
+
+    task = await broadcaster.start_reader_task()
+    await _wait_for(lambda: bus.subscribes >= 1)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    await asyncio.sleep(0.05)
+    assert give_up == []  # cancellation must not look like a give-up
+
+
+@pytest.mark.asyncio
+async def test_partial_replay_requeue_preserves_drop_oldest():
+    # F5: when a transport failure re-enqueues the unsent (older) tail AND concurrent
+    # failures refilled the buffer (newer), the bounded deque must drop the OLDEST from
+    # the front, keeping order unsent-before-refill — not evict the newest refill.
+    broadcaster = ReconnectingBroadcaster(
+        "memory://",
+        notifier=FakeNotifier(),
+        channel="test",
+        replay_buffer_size=3,
+    )
+    # Simulate a concurrent refill that landed during the lock-free publish: two newer
+    # entries already sit in the buffer when the unsent tail comes back.
+    broadcaster._outbound_buffer.append(("policy_data", {"n": "refill-1"}))
+    broadcaster._outbound_buffer.append(("policy_data", {"n": "refill-2"}))
+
+    unsent = [("policy_data", {"n": "unsent-1"}), ("policy_data", {"n": "unsent-2"})]
+    await broadcaster._requeue_unsent(unsent)
+
+    # maxlen=3: unsent (older) go in front, then refill (newer); overflow drops oldest.
+    assert broadcaster._outbound_buffer.maxlen == 3
+    assert [data["n"] for _, data in broadcaster._outbound_buffer] == [
+        "unsent-2",
+        "refill-1",
+        "refill-2",
+    ]
+    # The OLDEST (unsent-1) was dropped from the front, NOT the newest refill.

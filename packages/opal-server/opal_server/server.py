@@ -147,6 +147,7 @@ class OpalServer:
             self.jwks_endpoint = None
 
         self.pubsub = PubSub(signer=self.signer, broadcaster_uri=broadcaster_uri)
+        self._wire_broadcaster_give_up()
 
         self.publisher: Optional[TopicPublisher] = None
         self.broadcast_keepalive: Optional[PeriodicPublisher] = None
@@ -430,6 +431,35 @@ class OpalServer:
             await asyncio.gather(*tasks)
         except Exception:
             logger.exception("exception while shutting down background tasks")
+
+    def _wire_broadcaster_give_up(self):
+        """Graceful-restart the worker if the reconnecting broadcaster gives
+        up.
+
+        When ``BROADCAST_RECONNECT_MAX_RETRIES`` is exhausted the reader task
+        completes by *returning*. With ``ignore_broadcaster_disconnected=False`` a
+        done reader cancels every client websocket, re-creating the drop storm. The
+        statistics path already restarts the worker on reader completion, but only
+        when ``STATISTICS_ENABLED`` — so with statistics off nothing restarts the
+        worker until the liveness probe acts. This broadcaster-level give-up hook
+        triggers the same graceful shutdown regardless of the statistics flag. It
+        fires only on give-up (return), never on cancellation (clean shutdown), so
+        normal shutdown does not re-trigger it. (When statistics are enabled both
+        this hook and the stats done-callback may fire; a second SIGTERM to an
+        already-terminating worker is a harmless no-op.)
+        """
+        broadcaster = self.pubsub.broadcaster
+        if not isinstance(broadcaster, ReconnectingBroadcaster):
+            return
+
+        async def _on_broadcaster_give_up():
+            logger.error(
+                "Broadcaster gave up reconnecting to the backbone; "
+                "restarting this worker"
+            )
+            self._graceful_shutdown()
+
+        broadcaster.set_give_up_callback(_on_broadcaster_give_up)
 
     def _graceful_shutdown(self):
         logger.info("Trigger worker graceful shutdown")

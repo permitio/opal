@@ -250,7 +250,13 @@ async def test_resync_callback_fires_after_a_gap():
 @pytest.mark.asyncio
 async def test_resync_is_single_flight_across_a_flap_during_settle():
     """A second disconnect during the settle window must not spawn a second
-    concurrent recovery (which would corrupt the buffer / double-resync)."""
+    concurrent recovery (which would corrupt the buffer / double-resync).
+
+    Under the single-flight rerun semantics (F2) the second gap, landing while the
+    first recovery is still in its settle sleep, requests exactly one rerun: the hook
+    fires once for the gap and once for the rerun (2), never three concurrent
+    recoveries, and never zero (F8 — the old ``<= 2`` assertion passed even with 0).
+    """
     bus = InMemoryBackbone()
     # Long settle so a second gap lands while the first recovery is still pending.
     a = Instance(bus, "A", resync_settle_seconds=0.3, replay_buffer_size=100)
@@ -275,10 +281,15 @@ async def test_resync_is_single_flight_across_a_flap_during_settle():
         await _wait_for(lambda: bus.subscriber_count() == 1)
         # Let recoveries settle.
         await asyncio.sleep(1.0)
-        # Single-flight: the overlapping flap collapses into one recovery, not three.
-        assert len(calls) <= 2
+        # The recovery actually fired (not 0) and the overlapping flap collapsed into a
+        # single rerun (not three concurrent recoveries).
+        assert 1 <= len(calls) <= 2
+        # The rerun for the in-settle gap ran, so it fired exactly twice.
+        assert len(calls) == 2
         assert a.broadcaster._recovery_task is not None
         assert a.broadcaster._recovery_task.done()
+        # The rerun flag is cleared once the recovery loop drains.
+        assert a.broadcaster._recovery_rerun_requested is False
     finally:
         await a.stop()
 

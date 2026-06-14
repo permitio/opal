@@ -117,8 +117,8 @@ class ReconnectingBroadcaster(EventBroadcaster):
     loop. This subclass wraps the connect/subscribe/read cycle in a reconnect loop
     with bounded exponential backoff, so the reader task stays *pending* across
     transient outages. The task only completes on clean shutdown (cancellation) or
-    after ``reconnect_max_retries`` consecutive failures, in which case the existing
-    ``ignore_broadcaster_disconnected=False`` path triggers a graceful worker restart.
+    after ``reconnect_max_retries`` consecutive failures (give-up), in which case it
+    fires the registered give-up hook so OPAL graceful-restarts the worker.
     """
 
     def __init__(
@@ -144,15 +144,32 @@ class ReconnectingBroadcaster(EventBroadcaster):
         # Single lock serialises buffer mutation, the overflow flag, and the flush,
         # so a concurrent broadcast cannot race the flush's drain/flag-reset.
         self._buffer_lock = asyncio.Lock()
-        # (A) gap detection + single-flight resync hook.
-        self._had_prior_connection = False
+        # (A) single-flight resync hook. Gap detection itself is reader-task-local
+        # (see __read_notifications__), not an instance flag.
         self._recovery_task: Optional[asyncio.Task] = None
+        # Set when a gap arrives while a recovery is already in flight (single-flight),
+        # so the in-flight recovery loops once more rather than dropping that gap.
+        self._recovery_rerun_requested = False
         self._on_reconnect: Optional[ReconnectCallback] = None
+        # Fired once if the reader gives up (exhausts reconnect retries) and returns,
+        # so OPAL can graceful-restart the worker even with statistics disabled.
+        self._on_give_up: Optional[ReconnectCallback] = None
 
     def set_reconnect_callback(self, callback: Optional[ReconnectCallback]):
         """Register an ``async () -> None`` callback fired once after each gap
         (a reconnect that follows a previously-established connection)."""
         self._on_reconnect = callback
+
+    def set_give_up_callback(self, callback: Optional[ReconnectCallback]):
+        """Register an ``async () -> None`` callback fired once if the reader
+        gives up after exhausting ``reconnect_max_retries``.
+
+        Fires only when the reader task completes by *returning* (give-
+        up), never on cancellation (clean shutdown), so OPAL can wire it
+        to a graceful worker restart without normal shutdown re-
+        triggering it.
+        """
+        self._on_give_up = callback
 
     async def start_reader_task(self):
         """Spawn the reconnecting reader task once.
@@ -239,26 +256,56 @@ class ReconnectingBroadcaster(EventBroadcaster):
             )
 
     async def __read_notifications__(self):
-        """Read incoming broadcasts, reconnecting on backbone disconnect."""
+        """Read incoming broadcasts, reconnecting on backbone disconnect.
+
+        ``had_prior_connection`` is deliberately a task-local, not an instance
+        attribute: gap recovery must fire only for a reconnect *within this
+        reader task's own loop* (a real backbone gap). When the last client
+        disconnects, the upstream cancels this task and clears
+        ``_subscription_task``; the next client starts a *fresh* reader task,
+        which must start clean — an instance flag would carry a stale ``True``
+        into that fresh task and schedule a spurious full recovery (flush +
+        client-recycling resync) on its very first connect, a churn loop that
+        also hits stats-off deployments.
+        """
         attempt = 0
+        had_prior_connection = False
         while True:
             try:
                 channel = await self._ensure_connected()
-                attempt = 0
                 logger.info(
                     f"Broadcaster listener connected to channel '{self._channel}'"
                 )
                 async with channel.subscribe(channel=self._channel) as subscriber:
                     # We are subscribed again; recover concurrently so we keep reading
                     # (and can receive peers' replays) during the settle window.
-                    if self._had_prior_connection:
+                    if had_prior_connection:
                         self._schedule_gap_recovery()
-                    self._had_prior_connection = True
+                    had_prior_connection = True
+                    # A connect that ends without sustaining (no read) is a flap, not a
+                    # healthy session, so only a sustained subscriber resets the attempt
+                    # counter — otherwise a connect-OK/instant-close loop would never
+                    # increment ``attempt`` and ``reconnect_max_retries`` could never trip.
+                    sustained = False
                     async for event in subscriber:
+                        if not sustained:
+                            sustained = True
+                            attempt = 0
                         await self._handle_broadcast_event(event)
-                logger.warning(
-                    "Broadcast subscriber ended (backbone connection closed); reconnecting"
-                )
+                if sustained:
+                    logger.warning(
+                        "Broadcast subscriber ended (backbone connection closed); "
+                        "reconnecting"
+                    )
+                else:
+                    attempt += 1
+                    logger.warning(
+                        "Broadcast subscriber ended immediately without sustaining "
+                        f"(attempt {attempt}); treating as a failed reconnect"
+                    )
+                    if self._gave_up(attempt):
+                        await self._fire_give_up()
+                        return
             except asyncio.CancelledError:
                 logger.info("Broadcaster listener cancelled; stopping")
                 await self._cancel_pending_tasks()
@@ -266,18 +313,23 @@ class ReconnectingBroadcaster(EventBroadcaster):
             except Exception as e:
                 attempt += 1
                 logger.error(f"Broadcaster listener error (attempt {attempt}): {e!r}")
-                if (
-                    self._reconnect_max_retries
-                    and attempt >= self._reconnect_max_retries
-                ):
-                    logger.error(
-                        f"Broadcaster reconnect exhausted after {attempt} attempts; "
-                        "giving up so the worker can restart"
-                    )
-                    break
+                if self._gave_up(attempt):
+                    await self._fire_give_up()
+                    return
             finally:
                 await self._safe_disconnect_channel()
             await asyncio.sleep(self._backoff_seconds(attempt))
+
+    def _gave_up(self, attempt: int) -> bool:
+        """Return whether ``reconnect_max_retries`` is exhausted (0 = retry
+        forever)."""
+        if self._reconnect_max_retries and attempt >= self._reconnect_max_retries:
+            logger.error(
+                f"Broadcaster reconnect exhausted after {attempt} attempts; "
+                "giving up so the worker can restart"
+            )
+            return True
+        return False
 
     async def _cancel_pending_tasks(self):
         # Cancel AND join child notify/recovery tasks so they fully unwind (releasing any
@@ -291,11 +343,16 @@ class ReconnectingBroadcaster(EventBroadcaster):
             await asyncio.gather(*tasks, return_exceptions=True)
 
     def _schedule_gap_recovery(self):
-        # Single-flight: a flap during the settle window must not spawn a second
+        # Single-flight: a flap during a recovery must not spawn a second concurrent
         # recovery (concurrent flushes corrupt the buffer; double resync re-storms).
+        # Instead, request a rerun so a gap that lands while a recovery is in flight —
+        # including during the late ``_fire_reconnect`` phase, after the flush — is still
+        # flushed/resynced by one more loop of the in-flight recovery rather than dropped.
         if self._recovery_task is not None and not self._recovery_task.done():
-            logger.debug("Gap recovery already in progress; not scheduling another")
+            logger.debug("Gap recovery already in progress; requesting a rerun")
+            self._recovery_rerun_requested = True
             return
+        self._recovery_rerun_requested = False
         self._recovery_task = asyncio.create_task(self._recover_after_gap())
         self._tasks.add(self._recovery_task)
         self._recovery_task.add_done_callback(self._tasks.discard)
@@ -307,13 +364,26 @@ class ReconnectingBroadcaster(EventBroadcaster):
         The whole recovery runs inside a pinned listening context so the reader task
         cannot be cancelled mid-recovery — neither by the resync hook closing every
         client nor by an unrelated drop to zero listeners during the settle window.
+
+        Loops once more whenever a gap arrives during an iteration (single-flight rerun):
+        the rerun flag is cleared at the top of each iteration and re-checked after the
+        full pin -> settle -> flush -> fire body, so a gap landing at any point during the
+        body — clear happens first, check happens last — is captured and triggers exactly
+        one more iteration (single-threaded asyncio, no lock needed).
         """
         try:
-            async with self.get_listening_context():
-                if self._resync_settle_seconds > 0:
-                    await asyncio.sleep(self._resync_settle_seconds)
-                await self._flush_outbound_buffer()
-                await self._fire_reconnect()
+            while True:
+                self._recovery_rerun_requested = False
+                async with self.get_listening_context():
+                    if self._resync_settle_seconds > 0:
+                        await asyncio.sleep(self._resync_settle_seconds)
+                    await self._flush_outbound_buffer()
+                    await self._fire_reconnect()
+                if not self._recovery_rerun_requested:
+                    break
+                logger.info(
+                    "Gap arrived during recovery; rerunning flush + resync once"
+                )
         except asyncio.CancelledError:
             raise
         except Exception:
@@ -326,8 +396,8 @@ class ReconnectingBroadcaster(EventBroadcaster):
         published WITHOUT the lock, so a concurrent failed broadcast can still buffer
         (and a slow/hung publish can't wedge the buffer lock). Items that can no longer
         be serialized are dropped (so one poison payload can't wedge the buffer); a
-        transport failure re-enqueues the unsent tail (in order, at the front) for the
-        next recovery.
+        transport failure re-enqueues the unsent (older) tail ahead of any concurrent
+        refill (newer) for the next recovery (see ``_requeue_unsent``).
         """
         async with self._buffer_lock:
             if not self._outbound_buffer:
@@ -363,8 +433,23 @@ class ReconnectingBroadcaster(EventBroadcaster):
                 f"on next recovery): {e!r}"
             )
             if unsent:
-                async with self._buffer_lock:
-                    self._outbound_buffer.extendleft(reversed(unsent))
+                await self._requeue_unsent(unsent)
+
+    async def _requeue_unsent(self, unsent: list):
+        """Re-enqueue the unsent (older) tail ahead of any concurrent refill
+        (newer).
+
+        The publish above ran WITHOUT the lock, so concurrent failed broadcasts may have
+        refilled the buffer meanwhile. Rebuild under the lock as ``unsent + refill`` and
+        rely on the bounded deque dropping from the FRONT (oldest) on overflow — a plain
+        ``extendleft`` would instead evict the newest refill, inverting the drop-oldest
+        policy on a deque that is already at ``maxlen``.
+        """
+        async with self._buffer_lock:
+            refill = list(self._outbound_buffer)
+            self._outbound_buffer.clear()
+            self._outbound_buffer.extend(unsent)
+            self._outbound_buffer.extend(refill)
 
     async def _fire_reconnect(self):
         if self._on_reconnect is None:
@@ -375,6 +460,27 @@ class ReconnectingBroadcaster(EventBroadcaster):
             raise
         except Exception:
             logger.exception("Broadcaster on_reconnect callback failed")
+
+    async def _fire_give_up(self):
+        """Fire the give-up hook so OPAL can graceful-restart the worker.
+
+        Called only from the give-up (returning) path of the reader
+        loop, never on cancellation, so a clean shutdown does not re-
+        trigger the restart. If no hook is wired, log loudly that this
+        worker now depends on the liveness probe.
+        """
+        if self._on_give_up is None:
+            logger.error(
+                "Broadcaster gave up reconnecting and no give-up hook is wired; this "
+                "worker now requires the liveness probe (/healthcheck) to be restarted"
+            )
+            return
+        try:
+            await self._on_give_up()
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("Broadcaster on_give_up callback failed")
 
     async def _ensure_connected(self):
         if self.listening_broadcast_channel is None:
