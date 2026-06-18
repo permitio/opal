@@ -475,14 +475,16 @@ class DataUpdater:
 
         for entry in update.entries:
             if not entry.topics:
-                logger.debug("Data entry {entry} has no topics, skipping", entry=entry)
+                logger.debug(
+                    "Data entry for url {url} has no topics, skipping", url=entry.url
+                )
                 continue
 
             # Only process entries that match one of our subscribed data topics
             if set(entry.topics).isdisjoint(set(self._data_topics)):
                 logger.debug(
-                    "Data entry {entry} has no topics matching the data topics, skipping",
-                    entry=entry,
+                    "Data entry for url {url} has no topics matching the data topics, skipping",
+                    url=entry.url,
                 )
                 continue
 
@@ -589,8 +591,8 @@ class DataUpdater:
             )
         except Exception as e:
             logger.exception(
-                "Failed to fetch data for entry {entry} with exception {exc}",
-                entry=entry,
+                "Failed to fetch data for entry url {url} with exception {exc}",
+                url=entry.url,
                 exc=e,
             )
             raise Exception(f"Failed to fetch data for entry {entry.url}: {e}")

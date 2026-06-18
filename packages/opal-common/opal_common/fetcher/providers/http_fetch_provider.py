@@ -1,7 +1,7 @@
 """Simple HTTP get data fetcher using requests supports."""
 
 from enum import Enum
-from typing import Any, Union, cast
+from typing import Any, ClassVar, Set, Union, cast
 
 import httpx
 from aiohttp import ClientResponse, ClientSession, ClientTimeout
@@ -27,6 +27,10 @@ class HttpMethods(Enum):
 
 class HttpFetcherConfig(FetcherConfig):
     """Config for HttpFetchProvider's Adding HTTP headers."""
+
+    # ``headers`` carries Authorization tokens and ``data`` the (possibly
+    # sensitive) payload - mask both in repr/str so they never leak into logs.
+    _redacted_repr_fields: ClassVar[Set[str]] = {"headers", "data"}
 
     headers: dict = None
     is_json: bool = True

@@ -38,8 +38,9 @@ class FastApiRpcFetchProvider(BaseFetchProvider):
         args = self._event.config.rpc_arguments
         method = self._event.config.rpc_method_name
         result = None
+        # Note: ``args`` (rpc_arguments) may carry credentials - never log it.
         logger.info(
-            f"{self.__class__.__name__} fetching from {self._url} with RPC call {method}({args})"
+            f"{self.__class__.__name__} fetching from {self._url} with RPC call {method}"
         )
         async with WebSocketRpcClient(
             self._url,

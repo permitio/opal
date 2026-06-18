@@ -94,9 +94,9 @@ class DataUpdatePublisher:
                 all_topic_combos.update(topic_combos)
             else:
                 logger.warning(
-                    "[{pid}] No topics were provided for the following entry: {entry}",
+                    "[{pid}] No topics were provided for the entry with url: {url}",
                     pid=os.getpid(),
-                    entry=entry,
+                    url=entry.url,
                 )
 
         # publish all topics with all their sub combinations
