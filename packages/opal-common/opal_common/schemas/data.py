@@ -1,5 +1,3 @@
-from logging import basicConfig
-from pydoc import describe
 from typing import Any, ClassVar, Dict, List, Optional, Set, Tuple, Union
 
 from opal_common.fetcher.events import FetcherConfig

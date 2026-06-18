@@ -13,8 +13,12 @@ untouched.
 import pytest
 from loguru import logger
 from opal_common.fetcher.events import FetchEvent
+from opal_common.fetcher.providers.fastapi_rpc_fetch_provider import (
+    FastApiRpcFetchConfig,
+)
 from opal_common.fetcher.providers.http_fetch_provider import HttpFetcherConfig
-from opal_common.schemas.data import DataSourceEntry
+from opal_common.http_utils import redact_url
+from opal_common.schemas.data import DataSourceEntry, DataUpdate
 
 SECRET_TOKEN = "Bearer super-secret-token-must-not-leak"
 
@@ -35,6 +39,12 @@ def _models():
             fetcher="HttpFetchProvider",
             url="http://data.example.com",
             config={"headers": {"Authorization": SECRET_TOKEN}},
+        ),
+        # rpc_arguments is a secret-bearing field on a different FetcherConfig
+        # subclass; it must be redacted too (regression for a missed subclass).
+        "FastApiRpcFetchConfig": FastApiRpcFetchConfig(
+            rpc_method_name="publish",
+            rpc_arguments={"token": SECRET_TOKEN},
         ),
     }
 
@@ -62,6 +72,30 @@ def test_wire_serialization_is_not_redacted():
     assert entry.dict()["config"]["headers"]["Authorization"] == SECRET_TOKEN
 
 
+def test_nested_container_models_redact_transitively():
+    """The objects actually published on the wire are containers like
+    ``DataUpdate`` that hold ``DataSourceEntry`` objects. They carry no mixin
+    themselves but must still redact via nested repr."""
+    update = DataUpdate(
+        reason="test",
+        entries=[
+            DataSourceEntry(
+                url="http://data.example.com",
+                save_method="PUT",
+                config={"headers": {"Authorization": SECRET_TOKEN}},
+                data={"payload": SECRET_TOKEN},
+            )
+        ],
+    )
+    assert SECRET_TOKEN not in repr(update)
+    assert SECRET_TOKEN not in str(update)
+    assert SECRET_TOKEN not in f"{update}"
+    # wire format still carries the real value
+    assert update.dict()["entries"][0]["config"]["headers"]["Authorization"] == (
+        SECRET_TOKEN
+    )
+
+
 def test_loguru_serialize_does_not_leak():
     """The actual #901 scenario: a sink with ``serialize=True`` dumps the full
     record (including ``extra``) as JSON. Interpolating or binding any of these
@@ -81,3 +115,42 @@ def test_loguru_serialize_does_not_leak():
 
     combined = "\n".join(captured)
     assert SECRET_TOKEN not in combined, "secret leaked through loguru serialize=True"
+
+
+def test_loguru_diagnose_does_not_leak_model_value():
+    """With ``diagnose=True`` loguru renders local variable *values* in
+    tracebacks (the #901-class vector). The model's own value must render
+    redacted."""
+    captured: list[str] = []
+    sink_id = logger.add(
+        lambda message: captured.append(str(message)),
+        level="DEBUG",
+        backtrace=True,
+        diagnose=True,
+    )
+    try:
+        entry = _models()["DataSourceEntry"]  # noqa: F841 - referenced in traceback
+        try:
+            raise ValueError("boom")
+        except ValueError:
+            logger.exception("failed while handling entry")
+    finally:
+        logger.remove(sink_id)
+
+    combined = "\n".join(captured)
+    assert SECRET_TOKEN not in combined, "secret leaked through loguru diagnose=True"
+
+
+@pytest.mark.parametrize(
+    "url,expected",
+    [
+        ("https://user:tok@host/path", "https://***@host/path"),
+        ("https://x-access-token:tok@github.com/o/r.git", "https://***@github.com/o/r.git"),
+        ("https://host:8443/p?q=1", "https://host:8443/p?q=1"),
+        ("http://plain.example.com/data", "http://plain.example.com/data"),
+    ],
+)
+def test_redact_url(url, expected):
+    redacted = redact_url(url)
+    assert redacted == expected
+    assert "tok" not in redacted

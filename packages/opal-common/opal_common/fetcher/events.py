@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field
 
 class FetcherConfig(RedactedReprMixin, BaseModel):
     """The configuration of a fetcher, used as part of a FetchEvent Fetch
-    Provider's have their own uniqueue events and configurations.
+    Provider's have their own unique events and configurations.
 
     Configurations
 

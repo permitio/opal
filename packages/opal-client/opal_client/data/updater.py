@@ -26,7 +26,7 @@ from opal_client.policy_store.policy_store_client_factory import (
 )
 from opal_common.async_utils import TasksPool, repeated_call
 from opal_common.config import opal_common_config
-from opal_common.http_utils import is_http_error_response
+from opal_common.http_utils import is_http_error_response, redact_url
 from opal_common.schemas.data import (
     DataEntryReport,
     DataSourceConfig,
@@ -476,7 +476,8 @@ class DataUpdater:
         for entry in update.entries:
             if not entry.topics:
                 logger.debug(
-                    "Data entry for url {url} has no topics, skipping", url=entry.url
+                    "Data entry for url {url} has no topics, skipping",
+                    url=redact_url(entry.url),
                 )
                 continue
 
@@ -484,7 +485,7 @@ class DataUpdater:
             if set(entry.topics).isdisjoint(set(self._data_topics)):
                 logger.debug(
                     "Data entry for url {url} has no topics matching the data topics, skipping",
-                    url=entry.url,
+                    url=redact_url(entry.url),
                 )
                 continue
 
@@ -592,13 +593,15 @@ class DataUpdater:
         except Exception as e:
             logger.exception(
                 "Failed to fetch data for entry url {url} with exception {exc}",
-                url=entry.url,
+                url=redact_url(entry.url),
                 exc=e,
             )
-            raise Exception(f"Failed to fetch data for entry {entry.url}: {e}")
+            raise Exception(
+                f"Failed to fetch data for entry {redact_url(entry.url)}: {e}"
+            )
 
         if result is None:
-            raise Exception(f"Fetched data is empty for entry {entry.url}")
+            raise Exception(f"Fetched data is empty for entry {redact_url(entry.url)}")
 
         if isinstance(result, aiohttp.ClientResponse) and is_http_error_response(
             result
@@ -606,12 +609,12 @@ class DataUpdater:
             error_content = await result.text()
             logger.error(
                 "Failed to decode response from url: '{url}', got response code {status} with response: {error}",
-                url=entry.url,
+                url=redact_url(entry.url),
                 status=result.status,
                 error=error_content,
             )
             raise Exception(
-                f"Failed to decode response from url: '{entry.url}', got response code {result.status} with response: {error_content}"
+                f"Failed to decode response from url: '{redact_url(entry.url)}', got response code {result.status} with response: {error_content}"
             )
 
         return result
