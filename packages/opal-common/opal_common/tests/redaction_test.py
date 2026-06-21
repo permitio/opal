@@ -26,7 +26,8 @@ SECRET_TOKEN = "Bearer super-secret-token-must-not-leak"
 
 
 def _models():
-    """One instance of each credential-bearing model, all carrying SECRET_TOKEN."""
+    """One instance of each credential-bearing model, all carrying
+    SECRET_TOKEN."""
     return {
         "HttpFetcherConfig": HttpFetcherConfig(
             headers={"Authorization": SECRET_TOKEN}, data={"payload": SECRET_TOKEN}
@@ -53,7 +54,7 @@ def _models():
 
 @pytest.mark.parametrize("name,model", list(_models().items()))
 def test_repr_and_str_redact_secrets(name, model):
-    """repr() / str() (used by f-strings and ``"{}".format``) must never expose
+    """Repr() / str() (used by f-strings and ``"{}".format``) must never expose
     the secret, and must show it was redacted."""
     assert SECRET_TOKEN not in repr(model), f"secret leaked in repr({name})"
     assert SECRET_TOKEN not in str(model), f"secret leaked in str({name})"
@@ -76,8 +77,11 @@ def test_wire_serialization_is_not_redacted():
 
 def test_nested_container_models_redact_transitively():
     """The objects actually published on the wire are containers like
-    ``DataUpdate`` that hold ``DataSourceEntry`` objects. They carry no mixin
-    themselves but must still redact via nested repr."""
+    ``DataUpdate`` that hold ``DataSourceEntry`` objects.
+
+    They carry no mixin themselves but must still redact via nested
+    repr.
+    """
     update = DataUpdate(
         reason="test",
         entries=[
@@ -100,8 +104,11 @@ def test_nested_container_models_redact_transitively():
 
 def test_loguru_serialize_does_not_leak():
     """The actual #901 scenario: a sink with ``serialize=True`` dumps the full
-    record (including ``extra``) as JSON. Interpolating or binding any of these
-    models must not put the secret on the wire."""
+    record (including ``extra``) as JSON.
+
+    Interpolating or binding any of these models must not put the secret
+    on the wire.
+    """
     captured: List[str] = []
     sink_id = logger.add(
         lambda message: captured.append(str(message)),
@@ -121,8 +128,10 @@ def test_loguru_serialize_does_not_leak():
 
 def test_loguru_diagnose_does_not_leak_model_value():
     """With ``diagnose=True`` loguru renders local variable *values* in
-    tracebacks (the #901-class vector). The model's own value must render
-    redacted."""
+    tracebacks (the #901-class vector).
+
+    The model's own value must render redacted.
+    """
     captured: List[str] = []
     sink_id = logger.add(
         lambda message: captured.append(str(message)),
