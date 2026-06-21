@@ -1,6 +1,5 @@
 from typing import Any, ClassVar, Dict, List, Optional, Set, Tuple, Union
 
-from opal_common.fetcher.events import FetcherConfig
 from opal_common.fetcher.providers.http_fetch_provider import HttpFetcherConfig
 from opal_common.logging_utils.redaction import RedactedReprMixin
 from opal_common.schemas.store import JSONPatchAction

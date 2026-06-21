@@ -39,7 +39,8 @@ class OpalCommonConfig(Confi):
         description="Include diagnosis (local variable values) in tracebacks. "
         "Off by default because loguru renders raw variable values, which can "
         "leak credentials (e.g. auth headers/tokens) into logs - only enable for "
-        "local debugging.",
+        "local debugging. Also gates verbose git protocol tracing "
+        "(GIT_TRACE/GIT_CURL_VERBOSE), which can leak auth headers.",
     )
     LOG_COLORIZE = confi.bool("LOG_COLORIZE", True, description="Colorize log messages")
     LOG_SERIALIZE = confi.bool(

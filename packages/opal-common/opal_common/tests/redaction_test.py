@@ -10,6 +10,8 @@ protected at once - while leaving ``.dict()`` / ``.json()`` (the wire format)
 untouched.
 """
 
+from typing import List
+
 import pytest
 from loguru import logger
 from opal_common.fetcher.events import FetchEvent
@@ -100,7 +102,7 @@ def test_loguru_serialize_does_not_leak():
     """The actual #901 scenario: a sink with ``serialize=True`` dumps the full
     record (including ``extra``) as JSON. Interpolating or binding any of these
     models must not put the secret on the wire."""
-    captured: list[str] = []
+    captured: List[str] = []
     sink_id = logger.add(
         lambda message: captured.append(str(message)),
         level="DEBUG",
@@ -121,7 +123,7 @@ def test_loguru_diagnose_does_not_leak_model_value():
     """With ``diagnose=True`` loguru renders local variable *values* in
     tracebacks (the #901-class vector). The model's own value must render
     redacted."""
-    captured: list[str] = []
+    captured: List[str] = []
     sink_id = logger.add(
         lambda message: captured.append(str(message)),
         level="DEBUG",
@@ -144,16 +146,33 @@ def test_loguru_diagnose_does_not_leak_model_value():
 @pytest.mark.parametrize(
     "url,expected",
     [
+        # userinfo (user:password) is stripped
         ("https://user:tok@host/path", "https://***@host/path"),
-        ("https://x-access-token:tok@github.com/o/r.git", "https://***@github.com/o/r.git"),
-        ("https://host:8443/p?q=1", "https://host:8443/p?q=1"),
-        ("http://plain.example.com/data", "http://plain.example.com/data"),
+        (
+            "https://x-access-token:tok@github.com/o/r.git",
+            "https://***@github.com/o/r.git",
+        ),
+        # username-only userinfo is still stripped (the user can be a token)
+        ("ssh://gittok@host/repo.git", "ssh://***@host/repo.git"),
+        # IPv6 literal must keep its brackets and stay a valid URL
+        ("https://u:p@[::1]:8443/x", "https://***@[::1]:8443/x"),
+        # sensitive query params are masked, non-sensitive kept
+        (
+            "https://host/p?token=secret&page=2",
+            "https://host/p?token=***&page=2",
+        ),
+        ("https://host/p?access_token=secret", "https://host/p?access_token=***"),
+        # nothing sensitive -> returned byte-for-byte unchanged
+        ("https://host:8443/p?q=1#frag", "https://host:8443/p?q=1#frag"),
+        ("http://plain.example.com/data/", "http://plain.example.com/data/"),
+        # scp-style git url has no parseable userinfo and no password -> untouched
+        ("git@github.com:org/repo.git", "git@github.com:org/repo.git"),
+        ("", ""),
     ],
 )
 def test_redact_url(url, expected):
-    redacted = redact_url(url)
-    assert redacted == expected
-    assert "tok" not in redacted
+    # expected values never contain a secret, so equality fully validates
+    assert redact_url(url) == expected
 
 
 def test_redact_url_in_text():
@@ -163,3 +182,40 @@ def test_redact_url_in_text():
     scrubbed = redact_url_in_text(err, url)
     assert "SECRETTOKEN" not in scrubbed
     assert "https://***@github.com/org/repo.git" in scrubbed
+
+
+def test_redact_url_in_text_scrubs_creds_not_in_known_url():
+    """The regex scrub must catch a credentialed URL even when it differs from
+    the URL we passed (e.g. git injected creds / normalized the string)."""
+    # self.url has no creds, but git prints a credentialed variant
+    text = (
+        "fatal: could not read from 'https://x-access-token:LEAKED@github.com/o/r.git/'"
+    )
+    scrubbed = redact_url_in_text(text, "https://github.com/o/r.git")
+    assert "LEAKED" not in scrubbed
+    assert "https://***@github.com/o/r.git/" in scrubbed
+
+
+def test_git_ssh_env_gates_verbose_tracing_on_log_diagnose(tmp_path):
+    """GIT_TRACE/GIT_CURL_VERBOSE dump auth headers; they must only be set when
+    LOG_DIAGNOSE is explicitly enabled."""
+    from opal_common.config import opal_common_config
+    from opal_common.git_utils import env
+
+    ssh_url = "git@github.com:org/repo.git"
+    original_diagnose = opal_common_config.LOG_DIAGNOSE
+    original_key_file = opal_common_config.GIT_SSH_KEY_FILE
+    # point the pem-file writer at a throwaway path so we never touch a real key
+    opal_common_config.GIT_SSH_KEY_FILE = str(tmp_path / "id_test")
+    try:
+        opal_common_config.LOG_DIAGNOSE = False
+        off = env.provide_git_ssh_environment(ssh_url, "DUMMY_KEY")
+        assert "GIT_TRACE" not in off and "GIT_CURL_VERBOSE" not in off
+        assert "GIT_SSH_COMMAND" in off
+
+        opal_common_config.LOG_DIAGNOSE = True
+        on = env.provide_git_ssh_environment(ssh_url, "DUMMY_KEY")
+        assert on.get("GIT_TRACE") == "1" and on.get("GIT_CURL_VERBOSE") == "1"
+    finally:
+        opal_common_config.LOG_DIAGNOSE = original_diagnose
+        opal_common_config.GIT_SSH_KEY_FILE = original_key_file

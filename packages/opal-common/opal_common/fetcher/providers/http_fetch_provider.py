@@ -9,7 +9,7 @@ from opal_common.config import opal_common_config
 from opal_common.fetcher.events import FetcherConfig, FetchEvent
 from opal_common.fetcher.fetch_provider import BaseFetchProvider
 from opal_common.fetcher.logger import get_logger
-from opal_common.http_utils import is_http_error_response
+from opal_common.http_utils import is_http_error_response, redact_url
 from opal_common.security.sslcontext import get_custom_ssl_context
 from pydantic import validator
 
@@ -95,7 +95,7 @@ class HttpFetchProvider(BaseFetchProvider):
         await self._session.__aexit__(exc_type, exc_val, tb)
 
     async def _fetch_(self):
-        logger.debug(f"{self.__class__.__name__} fetching from {self._url}")
+        logger.debug(f"{self.__class__.__name__} fetching from {redact_url(self._url)}")
         http_method = self.match_http_method_from_type(
             self._session, self._event.config.method
         )

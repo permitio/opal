@@ -232,9 +232,7 @@ class GitPolicyFetcher(PolicyFetcher):
                 callbacks=self._auth_callbacks,
             )
         except pygit2.GitError:
-            logger.exception(
-                f"Could not clone repo at {redact_url(self._source.url)}"
-            )
+            logger.exception(f"Could not clone repo at {redact_url(self._source.url)}")
         else:
             logger.info(f"Clone completed: {redact_url(self._source.url)}")
             await self._notify_on_changes(repo)

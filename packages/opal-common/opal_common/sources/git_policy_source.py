@@ -4,6 +4,7 @@ from git import Repo
 from opal_common.git_utils.branch_tracker import BranchTracker
 from opal_common.git_utils.exceptions import GitFailed
 from opal_common.git_utils.repo_cloner import RepoCloner
+from opal_common.http_utils import redact_url
 from opal_common.logger import logger
 from opal_common.sources.base_policy_source import BasePolicySource
 
@@ -69,14 +70,14 @@ class GitPolicySource(BasePolicySource):
                     # Don't bother with remove and reclone because this case shouldn't happen on reasobable usage
                     raise GitFailed(
                         RuntimeError(
-                            f"Existing repo has wrong remote url: {remote_urls}"
+                            f"Existing repo has wrong remote url: {[redact_url(u) for u in remote_urls]}"
                         )
                     )
                 else:
                     logger.info(
                         "SKIPPED cloning policy repo, found existing repo at '{path}' with remotes: {remote_urls})",
                         path=self._cloner.path,
-                        remote_urls=remote_urls,
+                        remote_urls=[redact_url(u) for u in remote_urls],
                     )
         except GitFailed as e:
             await self._on_git_failed(e)
