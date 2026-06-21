@@ -40,8 +40,13 @@ def provide_git_ssh_environment(url: str, ssh_key: str):
     if not is_ssh_repo_url(url) or ssh_key is None:
         return {}  # no ssh config
     git_ssh_identity_file = save_ssh_key_to_pem_file(ssh_key)
-    return {
+    env = {
         "GIT_SSH_COMMAND": f"ssh -o StrictHostKeyChecking=no -o IdentitiesOnly=yes -i {git_ssh_identity_file}",
-        "GIT_TRACE": "1",
-        "GIT_CURL_VERBOSE": "1",
     }
+    # GIT_TRACE / GIT_CURL_VERBOSE make git dump verbose protocol output to
+    # stderr - including HTTP Authorization headers - which OPAL captures into
+    # its logs. Only enable them when diagnosis logging is explicitly turned on.
+    if opal_common_config.LOG_DIAGNOSE:
+        env["GIT_TRACE"] = "1"
+        env["GIT_CURL_VERBOSE"] = "1"
+    return env

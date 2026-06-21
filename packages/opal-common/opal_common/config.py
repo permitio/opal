@@ -34,7 +34,12 @@ class OpalCommonConfig(Confi):
         "LOG_TRACEBACK", True, description="Include traceback in log messages"
     )
     LOG_DIAGNOSE = confi.bool(
-        "LOG_DIAGNOSE", True, description="Include diagnosis in log messages"
+        "LOG_DIAGNOSE",
+        False,
+        description="Include diagnosis (local variable values) in tracebacks. "
+        "Off by default because loguru renders raw variable values, which can "
+        "leak credentials (e.g. auth headers/tokens) into logs - only enable for "
+        "local debugging.",
     )
     LOG_COLORIZE = confi.bool("LOG_COLORIZE", True, description="Colorize log messages")
     LOG_SERIALIZE = confi.bool(

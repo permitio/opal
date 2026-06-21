@@ -17,7 +17,7 @@ from opal_common.fetcher.providers.fastapi_rpc_fetch_provider import (
     FastApiRpcFetchConfig,
 )
 from opal_common.fetcher.providers.http_fetch_provider import HttpFetcherConfig
-from opal_common.http_utils import redact_url
+from opal_common.http_utils import redact_url, redact_url_in_text
 from opal_common.schemas.data import DataSourceEntry, DataUpdate
 
 SECRET_TOKEN = "Bearer super-secret-token-must-not-leak"
@@ -154,3 +154,12 @@ def test_redact_url(url, expected):
     redacted = redact_url(url)
     assert redacted == expected
     assert "tok" not in redacted
+
+
+def test_redact_url_in_text():
+    """Git command errors embed the (credentialed) repo URL in free text."""
+    url = "https://x-access-token:SECRETTOKEN@github.com/org/repo.git"
+    err = f"Cmd('git') failed: fatal: could not read from '{url}'"
+    scrubbed = redact_url_in_text(err, url)
+    assert "SECRETTOKEN" not in scrubbed
+    assert "https://***@github.com/org/repo.git" in scrubbed

@@ -28,6 +28,16 @@ def redact_url(url: str) -> str:
     return urlunsplit((parts.scheme, netloc, parts.path, parts.query, parts.fragment))
 
 
+def redact_url_in_text(text: str, url: str) -> str:
+    """Replace occurrences of ``url`` (which may embed credentials) in free text
+    - such as a git command error message - with its redacted form, so the text
+    is safe to log.
+    """
+    if not url:
+        return text
+    return text.replace(url, redact_url(url))
+
+
 def is_http_error_response(
     response: Union[aiohttp.ClientResponse, httpx.Response]
 ) -> bool:
