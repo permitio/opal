@@ -140,9 +140,16 @@ def test_loguru_diagnose_does_not_leak_model_value():
         diagnose=True,
     )
     try:
-        entry = _models()["DataSourceEntry"]  # noqa: F841 - referenced in traceback
+        entry = _models()["DataSourceEntry"]
         try:
-            raise ValueError("boom")
+            # The raising line must *reference* ``entry`` (the whole model) so
+            # loguru's diagnose renders its repr in the traceback - otherwise the
+            # test is a tautology (an unprotected model would pass too). We must
+            # NOT reach into a credential field here (e.g. ``entry.config[...]``):
+            # diagnose evaluates that sub-expression and renders the raw dict,
+            # which the model-layer mixin documents it cannot protect. Rendering
+            # ``entry`` exercises exactly what the mixin defends.
+            raise ValueError(entry)
         except ValueError:
             logger.exception("failed while handling entry")
     finally:
