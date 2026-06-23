@@ -7,8 +7,16 @@ from typing import Dict, List
 import requests
 
 OPAL_URL = "http://localhost:7002"
+# reachable from inside the opal_server container (compose network)
 GITEA_INTERNAL_URL = "http://gitea:3000"
+# reachable from the host-side test harness (published port, see docker-compose.yml)
+GITEA_HOST_URL = "http://localhost:13000"
 GITEA_USER = "opaladmin"
+GITEA_PASSWORD = "opaladmin"
+
+# TEST-NET-1 (RFC 5737): routable but runs no git server, so a clone hangs
+# instead of failing fast — used to simulate an offline/unreachable repo.
+UNREACHABLE_HOST = "192.0.2.1"
 
 # the compose project lives next to this file; compose() runs from here
 _COMPOSE_DIR = str(Path(__file__).resolve().parent)
@@ -69,9 +77,89 @@ class OpalServerClient:
         resp.raise_for_status()
 
 
+class GiteaAdmin:
+    """Host-side admin client for the test bed's Gitea.
+
+    The ``seed`` sidecar does the bulk repo creation from inside the compose
+    network; this class lets a test inspect or mutate Gitea repos directly
+    from the host (e.g. assert seeding happened, or add/remove a single repo
+    for a specific scenario). It authenticates with the admin user that the
+    ``gitea-admin`` sidecar created, over the published host port.
+    """
+
+    def __init__(
+        self,
+        base_url: str = GITEA_HOST_URL,
+        user: str = GITEA_USER,
+        password: str = GITEA_PASSWORD,
+    ):
+        self.base_url = base_url.rstrip("/")
+        self._user = user
+        self._auth = (user, password)
+
+    def repo_exists(self, name: str) -> bool:
+        resp = requests.get(
+            f"{self.base_url}/api/v1/repos/{self._user}/{name}",
+            auth=self._auth,
+            timeout=10,
+        )
+        return resp.status_code == 200
+
+    def list_repos(self) -> List[str]:
+        names: List[str] = []
+        page = 1
+        while True:
+            resp = requests.get(
+                f"{self.base_url}/api/v1/users/{self._user}/repos",
+                params={"page": page, "limit": 50},
+                auth=self._auth,
+                timeout=10,
+            )
+            resp.raise_for_status()
+            batch = resp.json()
+            if not batch:
+                break
+            names.extend(r["name"] for r in batch)
+            page += 1
+        return names
+
+    def create_repo(self, name: str) -> None:
+        if self.repo_exists(name):
+            return
+        resp = requests.post(
+            f"{self.base_url}/api/v1/user/repos",
+            json={"name": name, "private": False, "auto_init": True},
+            auth=self._auth,
+            timeout=10,
+        )
+        resp.raise_for_status()
+
+    def delete_repo(self, name: str) -> None:
+        resp = requests.delete(
+            f"{self.base_url}/api/v1/repos/{self._user}/{name}",
+            auth=self._auth,
+            timeout=10,
+        )
+        if resp.status_code not in (204, 404):
+            resp.raise_for_status()
+
+
 def gitea_repo_url(name: str) -> str:
     # url reachable from inside the opal_server container
     return f"{GITEA_INTERNAL_URL}/{GITEA_USER}/{name}.git"
+
+
+def make_repo_unreachable(name: str) -> str:
+    """Return a git URL for ``name`` pointing at a routable-but-dead host.
+
+    Simulates an offline/unreachable policy repo: the address is in
+    TEST-NET-1 (RFC 5737), which is routable but runs no git server, so a
+    clone hangs rather than failing fast — exercising the missing fetch
+    timeout on the scopes path (the bug PR3 fixes). The URL keeps the same
+    ``/{user}/{name}.git`` shape as a real Gitea repo so the scope looks
+    ordinary apart from the unreachable host.
+    """
+    return f"http://{UNREACHABLE_HOST}/{GITEA_USER}/{name}.git"
 
 
 def compose(*args: str) -> subprocess.CompletedProcess:

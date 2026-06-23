@@ -2,7 +2,7 @@ import os
 
 import pytest
 
-from helpers import OpalServerClient, compose
+from helpers import GiteaAdmin, OpalServerClient, compose
 
 
 def pytest_addoption(parser):
@@ -42,3 +42,9 @@ def stack(request, repo_count):
 @pytest.fixture()
 def opal(stack) -> OpalServerClient:
     return stack
+
+
+@pytest.fixture(scope="session")
+def gitea_admin(stack) -> GiteaAdmin:
+    """Host-side Gitea admin client (depends on `stack` so Gitea is up)."""
+    return GiteaAdmin()

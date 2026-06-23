@@ -30,8 +30,11 @@ services:
       GITEA__security__INSTALL_LOCK: "true"
       GITEA__server__ROOT_URL: "http://gitea:3000/"
       GITEA__database__DB_TYPE: "sqlite3"
-    # not published to the host: only the seed sidecar and opal_server reach it
-    # over the compose network (via http://gitea:3000). Avoids host port clashes.
+    # published on 13000 (not 3000) for the host-side GiteaAdmin helper; the
+    # uncommon port avoids the usual :3000 clash. opal_server and the seed
+    # sidecar still reach it over the compose network via http://gitea:3000.
+    ports:
+      - "13000:3000"
     volumes:
       - gitea-data:/data
     healthcheck:

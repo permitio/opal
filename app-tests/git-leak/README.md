@@ -7,6 +7,16 @@ memory leak, offline-repo hang, slow serial boot, broadcaster no-reconnect.
 - `opal_server` (2 workers, scopes on, Postgres broadcaster, built from `docker/Dockerfile`)
 - `redis`, `postgres`, `gitea` (+ one-shot `gitea-admin` and `seed` sidecars)
 
+Only `opal_server` (`:7002`) and `gitea` (`:13000` on the host) are published;
+Postgres is internal to the compose network.
+
+## Helpers (`helpers.py`)
+- `OpalServerClient` — drive opal over HTTP (`stats`, `put_scope`, `delete_scope`, `refresh_all`).
+- `GiteaAdmin` — host-side Gitea admin client (`list_repos`, `repo_exists`,
+  `create_repo`, `delete_repo`); also exposed as the `gitea_admin` pytest fixture.
+- `make_repo_unreachable(name)` — git URL on a routable-but-dead host (TEST-NET-1) for the offline-repo test.
+- `bounce_postgres(down_seconds)` — stop/start Postgres to simulate a broadcaster outage.
+
 ## Run
 ```bash
 cd app-tests/git-leak

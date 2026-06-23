@@ -2,7 +2,12 @@ import time
 
 import pytest
 
-from helpers import bounce_postgres, gitea_repo_url, list_seeded_repos
+from helpers import (
+    bounce_postgres,
+    gitea_repo_url,
+    list_seeded_repos,
+    make_repo_unreachable,
+)
 
 
 @pytest.mark.timeout(300)
@@ -12,8 +17,8 @@ def test_offline_repo_does_not_block_healthy_scopes(opal, repo_count):
     FAILS on master: the scopes path has no fetch timeout, so a hung
     clone occupies the shared executor and the server stalls.
     """
-    # a routable-but-dead address: TEST-NET-1 (RFC 5737), no git server there
-    opal.put_scope("offline", "http://192.0.2.1/dead/repo.git", branch="main")
+    # a routable-but-dead address (TEST-NET-1, RFC 5737): the clone hangs
+    opal.put_scope("offline", make_repo_unreachable("dead-repo"), branch="main")
 
     healthy = list_seeded_repos(1)[0]
     opal.put_scope("healthy", gitea_repo_url(healthy))
