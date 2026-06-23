@@ -366,6 +366,26 @@ class GitPolicyFetcher(PolicyFetcher):
     def repo_clone_path(base_dir: Path, source: GitPolicyScopeSource) -> Path:
         return GitPolicyFetcher.base_dir(base_dir) / GitPolicyFetcher.source_id(source)
 
+    @staticmethod
+    def forget_repo(path: str) -> None:
+        """Drop the cached repository for a clone path and release its handles.
+
+        The cached ``pygit2.Repository`` keeps OS file descriptors and mmapped
+        pack indexes open; without this, a deleted scope's repo pins memory and
+        inodes for the lifetime of the process even after the clone is removed.
+        ``Repository.free()`` is called only when available (it is not part of
+        every pygit2 release); otherwise the dropped reference is reclaimed by GC.
+        """
+        repo = GitPolicyFetcher.repos.pop(path, None)
+        if repo is None:
+            return
+        free = getattr(repo, "free", None)
+        if callable(free):
+            try:
+                free()
+            except Exception:
+                logger.debug("pygit2 Repository.free() failed; relying on GC")
+
 
 class GitCallback(RemoteCallbacks):
     def __init__(self, source: GitPolicyScopeSource):
