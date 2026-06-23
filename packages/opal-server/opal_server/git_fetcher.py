@@ -4,6 +4,8 @@ import datetime
 import hashlib
 import shutil
 import time
+from concurrent.futures import ThreadPoolExecutor
+from functools import partial
 from pathlib import Path
 from typing import Optional, cast
 
@@ -32,6 +34,40 @@ from pygit2 import (
     discover_repository,
     reference_is_valid_name,
 )
+
+
+_git_executor: Optional[ThreadPoolExecutor] = None
+
+
+def _get_git_executor() -> ThreadPoolExecutor:
+    """Lazily build the dedicated pool for scope git operations.
+
+    Isolated from the default executor so a hung clone/fetch can never starve
+    bundle serving or other server work.
+    """
+    global _git_executor
+    if _git_executor is None:
+        _git_executor = ThreadPoolExecutor(
+            max_workers=opal_server_config.SCOPES_GIT_MAX_WORKERS,
+            thread_name_prefix="opal-git",
+        )
+    return _git_executor
+
+
+async def run_in_git_executor(func, *args, timeout: float, **kwargs):
+    """Run a blocking git call on the dedicated pool with a hard timeout.
+
+    Raises ``TimeoutError`` (via ``asyncio.wait_for``) when the call exceeds
+    ``timeout`` seconds. ``timeout <= 0`` means no limit. NOTE: the timeout
+    unblocks the event loop and the awaiting coroutine, but the underlying
+    pygit2 call keeps running on its pool thread until the OS network timeout;
+    the dedicated pool keeps that lingering thread isolated.
+    """
+    loop = asyncio.get_event_loop()
+    fut = loop.run_in_executor(_get_git_executor(), partial(func, *args, **kwargs))
+    if timeout and timeout > 0:
+        return await asyncio.wait_for(fut, timeout=timeout)
+    return await fut
 
 
 class PolicyFetcherCallbacks:
