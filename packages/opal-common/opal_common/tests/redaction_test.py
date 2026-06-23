@@ -242,8 +242,9 @@ def test_redact_url_in_text_scrubs_creds_not_in_known_url():
 
 
 def test_git_ssh_env_gates_verbose_tracing_on_log_diagnose(tmp_path):
-    """GIT_TRACE/GIT_CURL_VERBOSE dump auth headers; they must only be set when
-    LOG_DIAGNOSE is explicitly enabled."""
+    """On SSH clones GIT_TRACE/GIT_CURL_VERBOSE add verbose protocol/host
+    disclosure to logs; they must only be set when LOG_DIAGNOSE is explicitly
+    enabled."""
     from opal_common.config import opal_common_config
     from opal_common.git_utils import env
 
