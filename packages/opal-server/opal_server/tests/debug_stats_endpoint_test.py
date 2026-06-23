@@ -1,6 +1,5 @@
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-
 from opal_server.debug_stats import register_internal_stats_route
 
 

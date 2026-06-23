@@ -1,7 +1,6 @@
 import time
 
 import pytest
-
 from helpers import (
     bounce_postgres,
     gitea_repo_url,
@@ -37,14 +36,16 @@ def test_offline_repo_does_not_block_healthy_scopes(opal, repo_count):
 
 @pytest.mark.timeout(300)
 def test_server_recovers_after_postgres_bounce(opal):
-    """A transient Postgres (broadcaster) outage must not leave the server down.
+    """A transient Postgres (broadcaster) outage must not leave the server
+    down.
 
-    Recovery guard, not a known-broken case. On current master this PASSES:
-    when the broadcast channel drops, the affected worker triggers a graceful
-    shutdown and gunicorn respawns it, while the sibling worker keeps serving
-    HTTP — so the surface recovers within the window. It guards against a
-    regression of that property (PER-15065's in-process reconnect would make
-    recovery cleaner by avoiding the worker churn, but recovery already holds).
+    Recovery guard, not a known-broken case. On current master this
+    PASSES: when the broadcast channel drops, the affected worker
+    triggers a graceful shutdown and gunicorn respawns it, while the
+    sibling worker keeps serving HTTP — so the surface recovers within
+    the window. It guards against a regression of that property
+    (PER-15065's in-process reconnect would make recovery cleaner by
+    avoiding the worker churn, but recovery already holds).
     """
     assert opal.stats()  # healthy before
     bounce_postgres(down_seconds=5)

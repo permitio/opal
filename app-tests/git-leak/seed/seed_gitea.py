@@ -53,7 +53,9 @@ def _ensure_token(base_url: str, user: str, password: str) -> str:
         return resp.json()["sha1"]
     # token already exists -> delete then recreate (Gitea won't reveal an existing secret)
     requests.delete(
-        f"{base_url}/api/v1/users/{user}/tokens/{name}", auth=(user, password), timeout=10
+        f"{base_url}/api/v1/users/{user}/tokens/{name}",
+        auth=(user, password),
+        timeout=10,
     )
     resp = requests.post(
         f"{base_url}/api/v1/users/{user}/tokens",
@@ -81,7 +83,9 @@ def _ensure_repo(base_url: str, token: str, user: str, name: str) -> None:
     created.raise_for_status()
 
 
-def _push_policy(base_url: str, token: str, user: str, name: str, workdir: Path) -> None:
+def _push_policy(
+    base_url: str, token: str, user: str, name: str, workdir: Path
+) -> None:
     repo_dir = workdir / name
     repo_dir.mkdir(parents=True, exist_ok=True)
     (repo_dir / "example.rego").write_text(POLICY_REGO)
@@ -92,7 +96,9 @@ def _push_policy(base_url: str, token: str, user: str, name: str, workdir: Path)
     author = Actor("seed", "seed@example.com")
     repo.index.commit("seed policy", author=author, committer=author)
 
-    push_url = base_url.replace("http://", f"http://{user}:{token}@") + f"/{user}/{name}.git"
+    push_url = (
+        base_url.replace("http://", f"http://{user}:{token}@") + f"/{user}/{name}.git"
+    )
     origin = repo.create_remote("origin", push_url)
     origin.push(refspec="main:main")
 

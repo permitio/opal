@@ -31,7 +31,10 @@ class OpalServerClient:
         last = None
         while time.time() < deadline:
             try:
-                if requests.get(f"{self.base_url}/healthcheck", timeout=5).status_code == 200:
+                if (
+                    requests.get(f"{self.base_url}/healthcheck", timeout=5).status_code
+                    == 200
+                ):
                     return
             except requests.RequestException as exc:
                 last = exc

@@ -1,7 +1,6 @@
 import time
 
 import pytest
-
 from helpers import gitea_repo_url, list_seeded_repos
 
 
