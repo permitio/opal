@@ -13,7 +13,6 @@ import aiofiles.os
 import pygit2
 from ddtrace import tracer
 from git import Repo
-from opal_common.async_utils import run_sync
 from opal_common.git_utils.bundle_maker import BundleMaker
 from opal_common.logger import logger
 from opal_common.schemas.policy import PolicyBundle
@@ -226,9 +225,10 @@ class GitPolicyFetcher(PolicyFetcher):
                             GitPolicyFetcher.repos_last_fetched[
                                 self._source_id
                             ] = datetime.datetime.now()
-                            await run_sync(
+                            await run_in_git_executor(
                                 repo.remotes[self._remote].fetch,
                                 callbacks=self._auth_callbacks,
+                                timeout=opal_server_config.SCOPES_GIT_FETCH_TIMEOUT,
                             )
                             logger.debug(f"Fetch completed: {self._source.url}")
 
@@ -258,14 +258,19 @@ class GitPolicyFetcher(PolicyFetcher):
             path=self._repo_path,
         )
         try:
-            repo: Repository = await run_sync(
+            repo: Repository = await run_in_git_executor(
                 clone_repository,
                 self._source.url,
                 str(self._repo_path),
                 callbacks=self._auth_callbacks,
+                timeout=opal_server_config.SCOPES_GIT_FETCH_TIMEOUT,
             )
-        except pygit2.GitError:
-            logger.exception(f"Could not clone repo at {self._source.url}")
+        except (pygit2.GitError, asyncio.TimeoutError) as exc:
+            logger.error(
+                "Could not clone repo at {url}: {err}",
+                url=self._source.url,
+                err=repr(exc),
+            )
         else:
             logger.info(f"Clone completed: {self._source.url}")
             await self._notify_on_changes(repo)
