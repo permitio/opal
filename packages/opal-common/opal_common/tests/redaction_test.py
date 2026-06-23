@@ -257,3 +257,37 @@ def test_git_ssh_env_gates_verbose_tracing_on_log_diagnose(tmp_path):
     finally:
         opal_common_config.LOG_DIAGNOSE = original_diagnose
         opal_common_config.GIT_SSH_KEY_FILE = original_key_file
+
+
+_URL_SECRET = "url-secret-must-not-leak"
+
+
+@pytest.mark.parametrize(
+    "model",
+    [
+        DataSourceEntry(
+            url=f"https://user:{_URL_SECRET}@host/path?token={_URL_SECRET}",
+            save_method="PUT",
+        ),
+        FetchEvent(
+            fetcher="HttpFetchProvider",
+            url=f"https://user:{_URL_SECRET}@host/path?token={_URL_SECRET}",
+        ),
+    ],
+)
+def test_url_field_credentials_redacted_in_repr(model):
+    """The ``url`` field can embed credentials; repr/str must strip them (via
+    redact_url) while keeping the host/path visible for debugging."""
+    rendered = repr(model)
+    assert _URL_SECRET not in rendered
+    assert _URL_SECRET not in str(model)
+    # host/path stay visible (we redact, not blanket-mask, urls)
+    assert "***@host/path" in rendered
+
+
+def test_url_field_wire_serialization_keeps_real_url():
+    """Redaction is log-only: ``.dict()`` must keep the real (credentialed) url
+    so fetching still works."""
+    url = f"https://user:{_URL_SECRET}@host/path"
+    entry = DataSourceEntry(url=url, save_method="PUT")
+    assert entry.dict()["url"] == url

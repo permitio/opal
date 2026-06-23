@@ -29,6 +29,9 @@ class FetchEvent(RedactedReprMixin, BaseModel):
 
     # ``config`` may carry a FetcherConfig with credentials - mask it in repr/str.
     _redacted_repr_fields: ClassVar[Set[str]] = {"config"}
+    # ``url`` can embed credentials (``user:token@host`` / ``?token=``); strip
+    # them via redact_url while keeping host/path visible for debugging.
+    _redacted_url_fields: ClassVar[Set[str]] = {"url"}
 
     # Event id to be filled by the engine
     id: str = None

@@ -20,6 +20,9 @@ class DataSourceEntry(RedactedReprMixin, BaseModel):
     # ``data`` an inline payload - mask both in repr/str so they never leak into
     # logs (entries are frequently interpolated into log messages).
     _redacted_repr_fields: ClassVar[Set[str]] = {"config", "data"}
+    # ``url`` can embed credentials (``user:token@host`` / ``?token=``); strip
+    # them via redact_url while keeping host/path visible for debugging.
+    _redacted_url_fields: ClassVar[Set[str]] = {"url"}
 
     @validator("data")
     def validate_save_method(cls, value, values):
