@@ -1,0 +1,103 @@
+name: opal-git-leak-test
+
+services:
+  redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: opal
+      POSTGRES_PASSWORD: opal
+      POSTGRES_DB: opal
+    # not published to the host: only opal_server reaches it over the compose
+    # network, and bounce_postgres() uses `docker compose stop/start`. Publishing
+    # 5432 would collide with any Postgres already running on the host.
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U opal"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  gitea:
+    image: gitea/gitea:1.21
+    environment:
+      GITEA__security__INSTALL_LOCK: "true"
+      GITEA__server__ROOT_URL: "http://gitea:3000/"
+      GITEA__database__DB_TYPE: "sqlite3"
+    # not published to the host: only the seed sidecar and opal_server reach it
+    # over the compose network (via http://gitea:3000). Avoids host port clashes.
+    volumes:
+      - gitea-data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/api/v1/version || exit 1"]
+      interval: 3s
+      timeout: 5s
+      retries: 40
+
+  gitea-admin:
+    # creates the admin user once gitea is healthy
+    image: gitea/gitea:1.21
+    depends_on:
+      gitea:
+        condition: service_healthy
+    user: git
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - >
+        gitea admin user create --username opaladmin --password opaladmin
+        --email admin@example.com --admin --must-change-password=false
+        --config /data/gitea/conf/app.ini || true
+    volumes:
+      - gitea-data:/data
+    restart: "no"
+
+  seed:
+    build: ./seed
+    depends_on:
+      gitea:
+        condition: service_healthy
+      gitea-admin:
+        condition: service_completed_successfully
+    environment:
+      GITEA_URL: "http://gitea:3000"
+      GITEA_ADMIN_USER: "opaladmin"
+      GITEA_ADMIN_PASSWORD: "opaladmin"
+      REPO_COUNT: "${REPO_COUNT:-50}"
+    volumes:
+      - seed-output:/seed-output
+    restart: "no"
+
+  opal_server:
+    build:
+      context: ../..
+      dockerfile: docker/Dockerfile
+      target: server
+    environment:
+      UVICORN_NUM_WORKERS: "2"
+      OPAL_SCOPES: "1"
+      OPAL_REDIS_URL: "redis://redis:6379"
+      OPAL_BROADCAST_URI: "postgres://opal:opal@postgres:5432/opal"
+      OPAL_BASE_DIR: "/opal"
+      OPAL_POLICY_REFRESH_INTERVAL: "0"
+      OPAL_DEBUG_INTERNAL_STATS: "1"
+      # OPAL_AUTH_PUBLIC_KEY is intentionally left unset: with no public key the
+      # JWT verifier is disabled, so the harness can call scope routes without
+      # minting JWTs. Local test bed only; never a production setting.
+      OPAL_LOG_FORMAT_INCLUDE_PID: "true"
+    ports:
+      - "7002:7002"
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+
+volumes:
+  gitea-data:
+  seed-output:

@@ -1,0 +1,54 @@
+import time
+
+import pytest
+
+from helpers import bounce_postgres, gitea_repo_url, list_seeded_repos
+
+
+@pytest.mark.timeout(300)
+def test_offline_repo_does_not_block_healthy_scopes(opal, repo_count):
+    """An unreachable repo must not stop healthy scopes from serving.
+
+    FAILS on master: the scopes path has no fetch timeout, so a hung
+    clone occupies the shared executor and the server stalls.
+    """
+    # a routable-but-dead address: TEST-NET-1 (RFC 5737), no git server there
+    opal.put_scope("offline", "http://192.0.2.1/dead/repo.git", branch="main")
+
+    healthy = list_seeded_repos(1)[0]
+    opal.put_scope("healthy", gitea_repo_url(healthy))
+
+    # the healthy scope's repo must appear in the cache within a bounded time,
+    # even though the offline scope is hanging
+    deadline = time.time() + 60
+    served = False
+    while time.time() < deadline:
+        if opal.stats()["repos"] >= 1:
+            served = True
+            break
+        time.sleep(2)
+    assert served, "healthy scope never loaded while an offline repo was hanging"
+
+
+@pytest.mark.timeout(300)
+def test_server_recovers_after_postgres_bounce(opal):
+    """A transient Postgres outage must not leave the server permanently down.
+
+    FAILS on master: broadcaster disconnect SIGTERMs the worker with no
+    in-process reconnect; after a bounce the /internal stats endpoint does
+    not come back within the window without an external supervisor restart.
+    """
+    assert opal.stats()  # healthy before
+    bounce_postgres(down_seconds=5)
+
+    deadline = time.time() + 60
+    recovered = False
+    while time.time() < deadline:
+        try:
+            opal.wait_healthy(timeout=5)
+            opal.stats()
+            recovered = True
+            break
+        except Exception:
+            time.sleep(2)
+    assert recovered, "server did not recover within 60s of a postgres bounce"

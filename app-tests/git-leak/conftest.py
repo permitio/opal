@@ -1,0 +1,44 @@
+import os
+
+import pytest
+
+from helpers import OpalServerClient, compose
+
+
+def pytest_addoption(parser):
+    parser.addoption(
+        "--boot-scopes",
+        action="store",
+        default="50",
+        help="number of repos to seed/boot (default 50)",
+    )
+    parser.addoption(
+        "--keep-stack",
+        action="store_true",
+        default=False,
+        help="do not tear the compose stack down after the run",
+    )
+
+
+@pytest.fixture(scope="session")
+def repo_count(request) -> int:
+    return int(request.config.getoption("--boot-scopes"))
+
+
+@pytest.fixture(scope="session")
+def stack(request, repo_count):
+    os.environ["REPO_COUNT"] = str(repo_count)
+    # build + start infra; seed runs to completion then exits
+    compose("up", "-d", "--build")
+    # block until seeding sidecar has finished creating repos
+    compose("wait", "seed")
+    client = OpalServerClient()
+    client.wait_healthy()
+    yield client
+    if not request.config.getoption("--keep-stack"):
+        compose("down", "-v")
+
+
+@pytest.fixture()
+def opal(stack) -> OpalServerClient:
+    return stack
