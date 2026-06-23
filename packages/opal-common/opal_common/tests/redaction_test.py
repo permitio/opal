@@ -171,6 +171,14 @@ def test_loguru_diagnose_does_not_leak_model_value():
             "https://host/p?token=***&page=2",
         ),
         ("https://host/p?access_token=secret", "https://host/p?access_token=***"),
+        # sensitive params in the *fragment* are masked too
+        ("https://host/p#access_token=secret", "https://host/p#access_token=***"),
+        # non-sensitive params keep their exact original encoding (no urlencode
+        # round-trip normalizing "%20" -> "+")
+        (
+            "https://host/p?name=John%20Doe&token=secret",
+            "https://host/p?name=John%20Doe&token=***",
+        ),
         # nothing sensitive -> returned byte-for-byte unchanged
         ("https://host:8443/p?q=1#frag", "https://host:8443/p?q=1#frag"),
         ("http://plain.example.com/data/", "http://plain.example.com/data/"),
@@ -182,6 +190,27 @@ def test_loguru_diagnose_does_not_leak_model_value():
 def test_redact_url(url, expected):
     # expected values never contain a secret, so equality fully validates
     assert redact_url(url) == expected
+
+
+def test_redact_url_never_raises_on_malformed_url():
+    """redact_url is called from log/except paths and must never throw - e.g. an
+    out-of-range port only raises when .port is accessed (urlsplit is lazy)."""
+    bad = "https://u:p@host:99999999999/x"
+    # would raise ValueError("Port out of range") without the guard
+    assert redact_url(bad) == bad
+
+
+def test_redact_url_in_text_masks_query_token_with_userinfo():
+    """When a known URL carries *both* userinfo and a sensitive query param,
+    the query token must still be masked (regression: the userinfo regex used
+    to run first and destroy the verbatim URL before the query scrub could
+    match)."""
+    url = "https://user:SECRETTOK@host/path?token=SECRETTOK2"
+    text = "fatal: could not read from '" + url + "'"
+    scrubbed = redact_url_in_text(text, url)
+    assert "SECRETTOK" not in scrubbed
+    assert "SECRETTOK2" not in scrubbed
+    assert "https://***@host/path?token=***" in scrubbed
 
 
 def test_redact_url_in_text():
