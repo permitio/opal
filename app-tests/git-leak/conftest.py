@@ -47,7 +47,14 @@ def stack(request, repo_count):
 
 @pytest.fixture()
 def opal(stack) -> OpalServerClient:
-    return stack
+    # The compose stack is session-scoped (one server for the whole run), but
+    # scopes must not leak between tests: clone paths are keyed by repo URL, so
+    # a scope left behind by one test shares a cache entry with any later test
+    # using the same seeded repo and would pollute its drain assertions. Delete
+    # whatever this test created on teardown to keep each test isolated.
+    stack._created_scopes.clear()
+    yield stack
+    stack.cleanup_created_scopes()
 
 
 @pytest.fixture(scope="session")

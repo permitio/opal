@@ -25,6 +25,12 @@ _COMPOSE_DIR = str(Path(__file__).resolve().parent)
 class OpalServerClient:
     def __init__(self, base_url: str = OPAL_URL):
         self.base_url = base_url.rstrip("/")
+        # scope_ids created via put_scope, so a per-test fixture can delete them
+        # on teardown. Clone paths are keyed by repo URL (not scope_id), so a
+        # scope left behind by one test shares a GitPolicyFetcher cache entry
+        # with any other test pointing at the same seeded repo — without cleanup
+        # that leftover keeps the entry alive and pollutes a drain assertion.
+        self._created_scopes: set = set()
 
     def wait_healthy(self, timeout: int = 180) -> None:
         deadline = time.time() + timeout
@@ -82,11 +88,36 @@ class OpalServerClient:
         # the scope router mounts at prefix="/scopes" with @router.put("")
         resp = requests.put(f"{self.base_url}/scopes", json=body, timeout=30)
         resp.raise_for_status()
+        self._created_scopes.add(scope_id)
 
     def delete_scope(self, scope_id: str) -> None:
         resp = requests.delete(f"{self.base_url}/scopes/{scope_id}", timeout=30)
         if resp.status_code not in (200, 204, 404):
             resp.raise_for_status()
+        self._created_scopes.discard(scope_id)
+
+    def cleanup_created_scopes(self, drain_timeout: int = 15) -> None:
+        """Delete every scope created on this client, then best-effort wait for
+        the caches to drain — so the next test starts from a clean slate.
+
+        Best-effort by design: on master, delete never purges the caches (the
+        leak this suite gates), so the drain wait will simply time out. A
+        teardown failure must never fail the test that just ran, hence the broad
+        excepts and the bounded wait.
+        """
+        for scope_id in list(self._created_scopes):
+            try:
+                self.delete_scope(scope_id)
+            except Exception:
+                self._created_scopes.discard(scope_id)
+        deadline = time.time() + drain_timeout
+        while time.time() < deadline:
+            try:
+                if self.stats(samples=1)["repos"] == 0:
+                    return
+            except Exception:
+                return
+            time.sleep(1)
 
     def refresh_all(self) -> None:
         # Best-effort: POST /scopes/refresh publishes on the webhook topic so

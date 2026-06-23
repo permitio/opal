@@ -37,9 +37,16 @@ def test_churn_releases_caches(opal, repo_count):
 
 @pytest.mark.timeout(900)
 def test_repeat_sync_does_not_grow(opal, repo_count):
-    """Re-syncing the same scopes must not grow the caches unboundedly.
+    """Re-syncing the *same* scopes must not grow the caches.
 
-    FAILS on master: repos cache only ever grows.
+    Idempotency guard, not a known-broken case. On current master this
+    PASSES: a clone path is keyed by the repo URL (``source_id`` =
+    sha256(url)+branch-shard), so re-syncing identical scopes reuses the
+    existing ``repos`` / ``repos_last_fetched`` entries instead of
+    allocating new ones. It guards against a regression that would make
+    repeat sync allocate per-sync. The unbounded *growth + no purge on
+    delete* leak is covered by ``test_churn_releases_caches`` above, which
+    uses distinct scopes and DOES fail on master.
     """
     n = min(repo_count, 50)
     repos = list_seeded_repos(n)

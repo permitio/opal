@@ -27,13 +27,20 @@ Useful flags: `--boot-scopes=N` (any N), `--keep-stack` (skip teardown),
 env `BOOT_TARGET_SECONDS=120` (tighten the boot gate).
 
 ## Expected on master
-The leak tests (#1, #2) and the offline-repo test (#4) FAIL on master — they
-target unfixed bugs and become the regression gates for PR2/PR3. The boot test
-(#3) passes but only fails when `BOOT_TARGET_SECONDS` is set low (PR4's gate).
-The Postgres-bounce test (#5) PASSES on master: it is a recovery guard — when
-the broadcaster drops, the worker is respawned by gunicorn while the sibling
-worker keeps serving, so the HTTP surface recovers. It guards that property
-against regression rather than reproducing a current failure.
+The churn leak test (`test_churn_releases_caches`) and the offline-repo test
+FAIL on master — they target unfixed bugs and become the regression gates for
+PR2/PR3. The boot test passes but only fails when `BOOT_TARGET_SECONDS` is set
+low (PR4's gate).
+
+Two tests are guards that PASS on master rather than reproducing a current
+failure:
+- `test_repeat_sync_does_not_grow` — clone paths are keyed by the repo URL, so
+  re-syncing identical scopes reuses cache entries and does not grow them. It
+  guards against a regression that would make repeat sync allocate per-sync.
+  (The unbounded-growth-then-no-purge leak is the *churn* test's job.)
+- `test_server_recovers_after_postgres_bounce` — when the broadcaster drops, the
+  affected worker is respawned by gunicorn while the sibling keeps serving, so
+  the HTTP surface recovers. Guards that property against regression.
 
 ## Requires
 Docker + docker compose v2, plus host Python with `pytest pytest-timeout requests GitPython`.
