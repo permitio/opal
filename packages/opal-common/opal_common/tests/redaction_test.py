@@ -299,3 +299,39 @@ def test_url_field_wire_serialization_keeps_real_url():
     url = f"https://user:{_URL_SECRET}@host/path"
     entry = DataSourceEntry(url=url, save_method="PUT")
     assert entry.dict()["url"] == url
+
+
+def test_scrubbing_stream_redacts_thirdparty_exception_traceback():
+    """The model-layer mixin cannot mask a third-party exception (e.g. aiohttp)
+    that renders a credentialed URL in its traceback.
+
+    The stream sink wrapper scrubs the fully-formatted record, closing
+    that vector.
+    """
+    import io
+
+    from opal_common.logging_utils.scrubbing import CredentialScrubbingStream
+
+    buf = io.StringIO()
+    sink_id = logger.add(
+        CredentialScrubbingStream(buf),
+        level="DEBUG",
+        backtrace=True,
+        diagnose=False,
+        colorize=False,
+        format="{message}\n{exception}",
+    )
+    try:
+        url = "https://user:THIRDPARTYSECRET@host/path"
+        try:
+            # str() of this exception carries the credentialed url, like a real
+            # aiohttp ClientResponseError would.
+            raise RuntimeError(f"connection failed for {url}")
+        except RuntimeError:
+            logger.exception("fetch failed")
+    finally:
+        logger.remove(sink_id)
+
+    out = buf.getvalue()
+    assert "THIRDPARTYSECRET" not in out, "secret leaked through exception traceback"
+    assert "***@host/path" in out
