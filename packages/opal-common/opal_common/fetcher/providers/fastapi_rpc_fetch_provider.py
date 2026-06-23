@@ -7,6 +7,7 @@ from fastapi_websocket_rpc.websocket_rpc_client import WebSocketRpcClient
 from opal_common.fetcher.events import FetcherConfig, FetchEvent
 from opal_common.fetcher.fetch_provider import BaseFetchProvider
 from opal_common.fetcher.logger import get_logger
+from opal_common.http_utils import redact_url
 
 logger = get_logger("rpc_fetch_provider")
 
@@ -45,7 +46,7 @@ class FastApiRpcFetchProvider(BaseFetchProvider):
         result = None
         # Note: ``args`` (rpc_arguments) may carry credentials - never log it.
         logger.info(
-            f"{self.__class__.__name__} fetching from {self._url} with RPC call {method}"
+            f"{self.__class__.__name__} fetching from {redact_url(self._url)} with RPC call {method}"
         )
         async with WebSocketRpcClient(
             self._url,

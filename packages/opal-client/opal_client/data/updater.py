@@ -26,7 +26,11 @@ from opal_client.policy_store.policy_store_client_factory import (
 )
 from opal_common.async_utils import TasksPool, repeated_call
 from opal_common.config import opal_common_config
-from opal_common.http_utils import is_http_error_response, redact_url
+from opal_common.http_utils import (
+    is_http_error_response,
+    redact_url,
+    redact_url_in_text,
+)
 from opal_common.schemas.data import (
     DataEntryReport,
     DataSourceConfig,
@@ -227,7 +231,10 @@ class DataUpdater:
         """
         if url is None:
             url = self._data_sources_config_url
-        logger.info("Getting data-sources configuration from '{source}'", source=url)
+        logger.info(
+            "Getting data-sources configuration from '{source}'",
+            source=redact_url(url),
+        )
 
         try:
             async with ClientSession(
@@ -446,8 +453,10 @@ class DataUpdater:
             if not isinstance(data, str):
                 data = json.dumps(data, default=pydantic_encoder)
             return hashlib.sha256(data.encode("utf-8")).hexdigest()
-        except Exception as e:
-            logger.exception(f"Failed to calculate hash for data {data}: {e}")
+        except Exception:
+            # Don't interpolate ``data`` - it may be an inline credential-bearing
+            # payload. logger.exception already records the traceback.
+            logger.exception("Failed to calculate hash for data")
             return ""
 
     async def _update_policy_data(self, update: DataUpdate) -> None:
@@ -549,26 +558,34 @@ class DataUpdater:
         try:
             result = await self._fetch_data(entry)
         except Exception as e:
+            # url is persisted into the transaction log and the OPA-failed error
+            # log; redact it (and the exception text) - the functional fetch
+            # already used the real entry.url above.
             store_transaction._update_remote_status(
-                url=entry.url, status=False, error=str(e)
+                url=redact_url(entry.url),
+                status=False,
+                error=redact_url_in_text(str(e), entry.url),
             )
             return DataEntryReport(entry=entry, fetched=False, saved=False)
 
         try:
             await self._store_fetched_data(entry, result, store_transaction)
         except Exception as e:
-            logger.exception("Failed to save data update to policy-store: {exc}", exc=e)
+            # logger.exception already records the traceback; don't bind the raw
+            # exception (str(e) can carry a credentialed URL).
+            logger.exception("Failed to save data update to policy-store")
             store_transaction._update_remote_status(
-                url=entry.url,
+                url=redact_url(entry.url),
                 status=False,
-                error=f"Failed to save data to policy store: {e}",
+                error=f"Failed to save data to policy store: "
+                f"{redact_url_in_text(str(e), entry.url)}",
             )
             return DataEntryReport(
                 entry=entry, hash=self.calc_hash(result), fetched=True, saved=False
             )
         else:
             store_transaction._update_remote_status(
-                url=entry.url, status=True, error=""
+                url=redact_url(entry.url), status=True, error=""
             )
             return DataEntryReport(
                 entry=entry, hash=self.calc_hash(result), fetched=True, saved=True
@@ -591,13 +608,17 @@ class DataUpdater:
                 data=entry.data,
             )
         except Exception as e:
+            # logger.exception already records the active traceback; don't bind
+            # the raw exception into the message - str(e) on a 3rd-party error
+            # (e.g. aiohttp) can carry a credentialed URL and would be serialized
+            # verbatim under LOG_SERIALIZE.
             logger.exception(
-                "Failed to fetch data for entry url {url} with exception {exc}",
+                "Failed to fetch data for entry url {url}",
                 url=redact_url(entry.url),
-                exc=e,
             )
             raise Exception(
-                f"Failed to fetch data for entry {redact_url(entry.url)}: {e}"
+                f"Failed to fetch data for entry {redact_url(entry.url)}: "
+                f"{redact_url_in_text(str(e), entry.url)}"
             )
 
         if result is None:

@@ -9,6 +9,7 @@ from fastapi.exceptions import HTTPException
 from opal_common.git_utils.tar_file_to_local_git_extractor import (
     TarFileToLocalGitExtractor,
 )
+from opal_common.http_utils import redact_url
 from opal_common.logger import logger
 from opal_common.sources.base_policy_source import BasePolicySource
 from opal_common.utils import (
@@ -188,11 +189,11 @@ class ApiPolicySource(BasePolicySource):
                     if response.status == status.HTTP_404_NOT_FOUND:
                         logger.warning(
                             "requested url not found: {full_url}",
-                            full_url=full_url,
+                            full_url=redact_url(full_url),
                         )
                         raise HTTPException(
                             status_code=status.HTTP_404_NOT_FOUND,
-                            detail=f"requested url not found: {full_url}",
+                            detail=f"requested url not found: {redact_url(full_url)}",
                         )
                     if response.status == status.HTTP_304_NOT_MODIFIED:
                         logger.info(
@@ -263,7 +264,7 @@ class ApiPolicySource(BasePolicySource):
         """
         logger.info(
             "Fetching changes from remote: '{remote}'",
-            remote=self.remote_source_url,
+            remote=redact_url(self.remote_source_url),
         )
         (
             has_changes,

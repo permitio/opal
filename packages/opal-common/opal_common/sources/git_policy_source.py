@@ -75,7 +75,7 @@ class GitPolicySource(BasePolicySource):
                     )
                 else:
                     logger.info(
-                        "SKIPPED cloning policy repo, found existing repo at '{path}' with remotes: {remote_urls})",
+                        "SKIPPED cloning policy repo, found existing repo at '{path}' with remotes: {remote_urls}",
                         path=self._cloner.path,
                         remote_urls=[redact_url(u) for u in remote_urls],
                     )

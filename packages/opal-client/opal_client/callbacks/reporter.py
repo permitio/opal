@@ -5,7 +5,7 @@ import aiohttp
 from opal_client.callbacks.register import CallbackConfig, CallbacksRegister
 from opal_client.data.fetcher import DataFetcher
 from opal_common.fetcher.providers.http_fetch_provider import HttpFetcherConfig
-from opal_common.http_utils import is_http_error_response
+from opal_common.http_utils import is_http_error_response, redact_url
 from opal_common.logger import logger
 from opal_common.schemas.data import DataUpdateReport
 
@@ -60,8 +60,9 @@ class CallbacksReporter:
                     config.data = report_data
                     callback_requests.append((url, config, None))
 
-            # log only the URLs — FetcherConfig may carry Authorization headers and the full report payload
-            urls = [request[0] for request in callback_requests]
+            # log only the URLs — FetcherConfig may carry Authorization headers and the full report payload.
+            # Callback URLs are user-supplied and can embed credentials, so redact them too.
+            urls = [redact_url(request[0]) for request in callback_requests]
             logger.info("Reporting the update to requested callbacks", urls=urls)
             report_results = await self._fetcher.handle_urls(callback_requests)
             # log reports which we failed to send
@@ -69,7 +70,7 @@ class CallbacksReporter:
                 if isinstance(result, Exception):
                     logger.error(
                         "Failed to send report to {url}, info={exc_info}",
-                        url=url,
+                        url=redact_url(url),
                         exc_info=repr(result),
                     )
                 if isinstance(
@@ -83,7 +84,7 @@ class CallbacksReporter:
                         error_content = await result.text()
                     logger.error(
                         "Failed to send report to {url}, got response code {status} with error: {error}",
-                        url=url,
+                        url=redact_url(url),
                         status=result.status,
                         error=error_content,
                     )
