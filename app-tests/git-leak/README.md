@@ -27,8 +27,13 @@ Useful flags: `--boot-scopes=N` (any N), `--keep-stack` (skip teardown),
 env `BOOT_TARGET_SECONDS=120` (tighten the boot gate).
 
 ## Expected on master
-All five flagship tests FAIL (except the boot test, which only fails when
-`BOOT_TARGET_SECONDS` is set low). They become the regression gates for the fixes.
+The leak tests (#1, #2) and the offline-repo test (#4) FAIL on master — they
+target unfixed bugs and become the regression gates for PR2/PR3. The boot test
+(#3) passes but only fails when `BOOT_TARGET_SECONDS` is set low (PR4's gate).
+The Postgres-bounce test (#5) PASSES on master: it is a recovery guard — when
+the broadcaster drops, the worker is respawned by gunicorn while the sibling
+worker keeps serving, so the HTTP surface recovers. It guards that property
+against regression rather than reproducing a current failure.
 
 ## Requires
 Docker + docker compose v2, plus host Python with `pytest pytest-timeout requests GitPython`.
