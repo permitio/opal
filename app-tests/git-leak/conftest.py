@@ -1,4 +1,5 @@
 import os
+import shutil
 
 import pytest
 from helpers import GiteaAdmin, OpalServerClient, compose
@@ -26,6 +27,12 @@ def repo_count(request) -> int:
 
 @pytest.fixture(scope="session")
 def stack(request, repo_count):
+    # Defense-in-depth: this docker-compose suite is already excluded from the
+    # repo's default `pytest` run via `testpaths = packages` in pytest.ini, so
+    # the unit-test CI matrix never collects it. If it is ever collected in an
+    # environment without docker, skip cleanly instead of erroring.
+    if shutil.which("docker") is None:
+        pytest.skip("docker (compose) is required for the git-leak test bed")
     os.environ["REPO_COUNT"] = str(repo_count)
     # build + start infra; seed runs to completion then exits
     compose("up", "-d", "--build")

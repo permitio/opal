@@ -23,7 +23,8 @@ def test_churn_releases_caches(opal, repo_count):
     repos = list_seeded_repos(n)
     for i, name in enumerate(repos):
         opal.put_scope(f"churn-{i}", gitea_repo_url(name))
-    _wait_until(lambda: opal.stats()["repos"] >= n, timeout=600)
+    loaded = _wait_until(lambda: opal.stats()["repos"] >= n, timeout=600)
+    assert loaded, f"initial load never reached {n} repos: {opal.stats()}"
 
     for i in range(n):
         opal.delete_scope(f"churn-{i}")
@@ -44,7 +45,8 @@ def test_repeat_sync_does_not_grow(opal, repo_count):
     repos = list_seeded_repos(n)
     for i, name in enumerate(repos):
         opal.put_scope(f"stable-{i}", gitea_repo_url(name))
-    _wait_until(lambda: opal.stats()["repos"] >= n, timeout=600)
+    loaded = _wait_until(lambda: opal.stats()["repos"] >= n, timeout=600)
+    assert loaded, f"initial sync never reached {n} repos: {opal.stats()}"
 
     baseline = opal.stats()["repos"]
     for _ in range(10):

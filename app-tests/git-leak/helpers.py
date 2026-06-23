@@ -41,12 +41,28 @@ class OpalServerClient:
             time.sleep(2)
         raise RuntimeError(f"opal-server not healthy in {timeout}s (last: {last})")
 
-    def stats(self) -> Dict[str, int]:
-        resp = requests.get(
-            f"{self.base_url}/internal/git-fetcher-cache-stats", timeout=10
-        )
-        resp.raise_for_status()
-        return resp.json()
+    def stats(self, samples: int = 5, interval: float = 0.1) -> Dict[str, int]:
+        """Read the git-fetcher cache stats, merged across several reads.
+
+        The server runs multiple workers and the ``GitPolicyFetcher`` caches
+        are per-process, so a single read may land on a worker with empty
+        caches (e.g. a non-leader that never fetched). Sample a few times and
+        take the ``max`` per key, so the harness observes whichever worker
+        still holds the most entries — this prevents both false negatives
+        (missing a populated leader) and false positives (an ``== 0`` drain
+        assertion passing only because it hit an empty worker).
+        """
+        merged: Dict[str, int] = {}
+        for i in range(max(1, samples)):
+            resp = requests.get(
+                f"{self.base_url}/internal/git-fetcher-cache-stats", timeout=10
+            )
+            resp.raise_for_status()
+            for key, value in resp.json().items():
+                merged[key] = max(merged.get(key, 0), value)
+            if i < samples - 1:
+                time.sleep(interval)
+        return merged
 
     def put_scope(self, scope_id: str, repo_url: str, branch: str = "main") -> None:
         body = {
@@ -73,10 +89,13 @@ class OpalServerClient:
             resp.raise_for_status()
 
     def refresh_all(self) -> None:
-        # publishes a refresh on the webhook topic; leader pulls all scopes
+        # Best-effort: POST /scopes/refresh publishes on the webhook topic so
+        # every leader re-syncs all scopes. If this OPAL build doesn't expose
+        # the route (404), treat it as a no-op — there is no client-side
+        # fallback; callers rely on their own stats polling either way.
         resp = requests.post(f"{self.base_url}/scopes/refresh", timeout=30)
         if resp.status_code == 404:
-            return  # endpoint name differs across versions; caller falls back to poll
+            return
         resp.raise_for_status()
 
 
