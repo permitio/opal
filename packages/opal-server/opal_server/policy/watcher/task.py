@@ -28,11 +28,10 @@ class BasePolicyWatcherTask:
 
     async def _on_webhook(self, topic: Topic, data: Any):
         logger.info(f"Webhook listener triggered ({len(self._webhook_tasks)})")
-        for task in self._webhook_tasks:
-            if task.done():
-                # Clean references to finished tasks
-                self._webhook_tasks.remove(task)
-
+        # Rebuild rather than remove-while-iterating: list.remove() inside a
+        # `for t in self._webhook_tasks` loop skips the element after each removal,
+        # so finished tasks accumulate.
+        self._webhook_tasks = [t for t in self._webhook_tasks if not t.done()]
         self._webhook_tasks.append(asyncio.create_task(self.trigger(topic, data)))
 
     async def _listen_to_webhook_notifications(self):
