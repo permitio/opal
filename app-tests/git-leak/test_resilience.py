@@ -41,6 +41,11 @@ def test_offline_repo_does_not_block_healthy_scopes(opal, repo_count):
         # while the offline scopes hang. A 200 from its policy bundle proves the
         # clone completed and the scope is served — a stronger signal than a
         # cache count, and exactly what the offline hang starves on master.
+        #
+        # A 200 here can't be a *masked* default bundle: GET /{scope}/policy
+        # falls back to the "default" scope on a bad/missing repo, but this bed
+        # never creates a "default" scope, so that fallback raises instead of
+        # returning 200. The only way to get 200 is the healthy clone completing.
         deadline = time.time() + 90
         served = False
         last = None

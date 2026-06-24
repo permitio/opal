@@ -47,6 +47,11 @@ def register_internal_stats_route(
     if not enabled:
         return
 
+    # Deliberately a sync def: Starlette runs it in its own threadpool, which is
+    # independent of the default loop executor opal uses for git fetches
+    # (run_sync -> run_in_executor(None, ...)). So this endpoint keeps answering
+    # even when hung clones saturate the fetch executor — which is exactly the
+    # condition the offline-repo test observes through it.
     @app.get(
         "/internal/git-fetcher-cache-stats",
         include_in_schema=False,

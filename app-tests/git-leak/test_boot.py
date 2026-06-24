@@ -27,8 +27,10 @@ def test_boot_loads_all_scopes(opal, repo_count):
     opal.wait_healthy(timeout=600)
 
     deadline = start + 2000
+    loaded = 0
     while time.time() < deadline:
-        if opal.stats()["repo_locks"] >= n:
+        loaded = opal.stats()["repo_locks"]
+        if loaded >= n:
             break
         time.sleep(2)
     elapsed = time.time() - start
@@ -36,5 +38,5 @@ def test_boot_loads_all_scopes(opal, repo_count):
     # PR1 records the baseline (loose). PR4 will set BOOT_TARGET_SECONDS low.
     BOOT_TARGET_SECONDS = int(os.environ.get("BOOT_TARGET_SECONDS", "2000"))
     print(f"boot loaded {n} scopes in {elapsed:.1f}s (target {BOOT_TARGET_SECONDS}s)")
-    assert opal.stats()["repo_locks"] >= n, "not all scopes loaded after boot"
+    assert loaded >= n, "not all scopes loaded after boot"
     assert elapsed < BOOT_TARGET_SECONDS, f"boot too slow: {elapsed:.1f}s"

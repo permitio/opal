@@ -72,7 +72,7 @@ services:
     # blocks reading the git smart-HTTP response, holding the fetch executor.
     # Deterministic, unlike a TEST-NET-1 address which many networks reject
     # fast with ICMP-unreachable (so the clone would fail fast, not hang).
-    image: alpine/socat:latest
+    image: alpine/socat:1.8.0.3
     command: ["TCP-LISTEN:80,fork,reuseaddr", "SYSTEM:sleep 3600"]
 
   seed:

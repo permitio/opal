@@ -55,13 +55,14 @@ def test_churn_releases_caches(opal, repo_count):
     for i in range(n):
         opal.delete_scope(f"churn-{i}")
 
-    # all three caches must drain to empty once every scope is deleted
-    released = _wait_until(
-        lambda: opal.stats()["repo_locks"] == 0
-        and opal.stats()["repos"] == 0
-        and opal.stats()["repos_last_fetched"] == 0,
-        timeout=60,
-    )
+    # all three caches must drain to empty once every scope is deleted. Read a
+    # single stats snapshot per poll so the three keys reflect the same
+    # observation (and to avoid 3x the HTTP round-trips per iteration).
+    def _all_caches_empty() -> bool:
+        s = opal.stats()
+        return s["repo_locks"] == 0 and s["repos"] == 0 and s["repos_last_fetched"] == 0
+
+    released = _wait_until(_all_caches_empty, timeout=60)
     stats = opal.stats()
     assert released, f"caches did not drain after deleting all scopes: {stats}"
 
