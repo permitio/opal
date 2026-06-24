@@ -43,8 +43,8 @@ def test_churn_releases_caches(opal, repo_count):
     """Create then delete many scopes; the three caches must return to empty.
 
     FAILS on this branch (without PR2): delete_scope never purges the
-    GitPolicyFetcher caches, so they stay populated after every scope is gone.
-    Becomes green once PR2 lands.
+    GitPolicyFetcher caches, so they stay populated after every scope is
+    gone. Becomes green once PR2 lands.
     """
     n = min(repo_count, 100)
     repos = list_seeded_repos(n)
@@ -101,9 +101,9 @@ def test_repeat_sync_does_not_grow(opal, repo_count):
         time.sleep(2)
 
     grown = opal.stats()
-    assert grown["repos"] <= baseline_repos, (
-        f"repos cache count grew on repeat sync: {baseline_repos} -> {grown['repos']}"
-    )
+    assert (
+        grown["repos"] <= baseline_repos
+    ), f"repos cache count grew on repeat sync: {baseline_repos} -> {grown['repos']}"
     # allow generous headroom for allocator slack; fail only on a real per-sync
     # leak (10 refreshes of N scopes ballooning RSS).
     rss_budget = baseline_rss + max(50_000, baseline_rss // 5)

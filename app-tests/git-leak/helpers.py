@@ -152,13 +152,11 @@ class OpalServerClient:
     def get_scope_policy(self, scope_id: str) -> requests.Response:
         """Fetch a scope's policy bundle (GET /scopes/{id}/policy).
 
-        A 200 here proves the scope's repo was cloned and is being served —
-        the signal that a healthy scope still works while another scope's
-        clone is hanging.
+        A 200 here proves the scope's repo was cloned and is being
+        served — the signal that a healthy scope still works while
+        another scope's clone is hanging.
         """
-        return requests.get(
-            f"{self.base_url}/scopes/{scope_id}/policy", timeout=30
-        )
+        return requests.get(f"{self.base_url}/scopes/{scope_id}/policy", timeout=30)
 
     def refresh_all(self) -> None:
         # POST /scopes/refresh publishes on the webhook topic so the leader
@@ -258,10 +256,10 @@ def make_repo_unreachable(name: str) -> str:
 def compose(*args: str) -> subprocess.CompletedProcess:
     """Run `docker compose <args>`; on failure, surface the captured output.
 
-    `capture_output=True` keeps compose noise out of passing tests, but a raw
-    CalledProcessError shows only the exit code — so on failure we re-raise
-    with the captured stdout/stderr embedded, otherwise a broken build/seed/
-    restart is opaque to debug.
+    `capture_output=True` keeps compose noise out of passing tests, but
+    a raw CalledProcessError shows only the exit code — so on failure we
+    re-raise with the captured stdout/stderr embedded, otherwise a
+    broken build/seed/ restart is opaque to debug.
     """
     proc = subprocess.run(
         ["docker", "compose", *args],

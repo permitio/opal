@@ -25,9 +25,10 @@ def test_endpoint_present_when_enabled():
 def test_endpoint_applies_passed_dependencies():
     """A route dependency (e.g. the server's authenticator) is enforced.
 
-    Mirrors how server.py wires the real JWTAuthenticator: when verification is
-    enabled the dependency rejects unauthenticated reads; when disabled it is a
-    no-op (covered by the test above, which passes no dependency).
+    Mirrors how server.py wires the real JWTAuthenticator: when
+    verification is enabled the dependency rejects unauthenticated
+    reads; when disabled it is a no-op (covered by the test above, which
+    passes no dependency).
     """
 
     def _deny():

@@ -8,7 +8,6 @@ from helpers import (
     make_repo_unreachable,
 )
 
-
 # Enough hanging clones to exhaust opal's default fetch executor
 # (run_sync -> run_in_executor(None, ...), a ThreadPoolExecutor of
 # min(32, cpu+4) workers). One hang wouldn't starve a multi-thread pool, so we
@@ -21,15 +20,18 @@ OFFLINE_REPOS = 40
 def test_offline_repo_does_not_block_healthy_scopes(opal, repo_count):
     """Unreachable repos must not stop a healthy scope from serving.
 
-    FAILS on this branch (without PR3): the scopes path has no fetch timeout,
-    so the hung clones of the offline repos occupy the shared fetch executor
-    and the healthy scope's bundle never becomes available.
+    FAILS on this branch (without PR3): the scopes path has no fetch
+    timeout, so the hung clones of the offline repos occupy the shared
+    fetch executor and the healthy scope's bundle never becomes
+    available.
     """
     # the `blackhole` sidecar accepts the TCP handshake then never answers, so
     # each of these clones hangs (holding a fetch-executor thread) rather than
     # failing fast; enough of them saturate the pool.
     for i in range(OFFLINE_REPOS):
-        opal.put_scope(f"offline-{i}", make_repo_unreachable(f"dead-{i}"), branch="main")
+        opal.put_scope(
+            f"offline-{i}", make_repo_unreachable(f"dead-{i}"), branch="main"
+        )
 
     healthy = list_seeded_repos(1)[0]
     opal.put_scope("healthy", gitea_repo_url(healthy))
@@ -107,4 +109,6 @@ def test_server_recovers_after_postgres_bounce(opal, repo_count):
             synced = True
             break
         time.sleep(2)
-    assert synced, "scope PUT after the bounce never synced; broadcaster did not recover"
+    assert (
+        synced
+    ), "scope PUT after the bounce never synced; broadcaster did not recover"
