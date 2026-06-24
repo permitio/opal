@@ -1,7 +1,6 @@
 import time
 
 import pytest
-
 from opal_server.config import OpalServerConfig
 from opal_server.git_fetcher import run_in_git_executor
 

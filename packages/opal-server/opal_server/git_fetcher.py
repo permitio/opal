@@ -34,15 +34,14 @@ from pygit2 import (
     reference_is_valid_name,
 )
 
-
 _git_executor: Optional[ThreadPoolExecutor] = None
 
 
 def _get_git_executor() -> ThreadPoolExecutor:
     """Lazily build the dedicated pool for scope git operations.
 
-    Isolated from the default executor so a hung clone/fetch can never starve
-    bundle serving or other server work.
+    Isolated from the default executor so a hung clone/fetch can never
+    starve bundle serving or other server work.
     """
     global _git_executor
     if _git_executor is None:
@@ -65,7 +64,13 @@ async def run_in_git_executor(func, *args, timeout: float, **kwargs):
     loop = asyncio.get_event_loop()
     fut = loop.run_in_executor(_get_git_executor(), partial(func, *args, **kwargs))
     if timeout and timeout > 0:
-        return await asyncio.wait_for(fut, timeout=timeout)
+        try:
+            return await asyncio.wait_for(fut, timeout=timeout)
+        except asyncio.TimeoutError as exc:
+            # On Python < 3.11 ``asyncio.TimeoutError`` is a distinct class from
+            # the builtin ``TimeoutError``; normalize so callers (and the
+            # documented contract) can rely on the builtin everywhere.
+            raise TimeoutError() from exc
     return await fut
 
 
@@ -265,7 +270,7 @@ class GitPolicyFetcher(PolicyFetcher):
                 callbacks=self._auth_callbacks,
                 timeout=opal_server_config.SCOPES_GIT_FETCH_TIMEOUT,
             )
-        except (pygit2.GitError, asyncio.TimeoutError) as exc:
+        except (pygit2.GitError, TimeoutError) as exc:
             logger.error(
                 "Could not clone repo at {url}: {err}",
                 url=self._source.url,
