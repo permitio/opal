@@ -54,7 +54,7 @@ install-develop:
 
 # docs
 docs-dev:
-	@cd documentation && yarn start
+	@cd documentation && pnpm start
 
 # docker
 docker-build-client:
