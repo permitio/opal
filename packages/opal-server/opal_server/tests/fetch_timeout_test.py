@@ -14,9 +14,9 @@ async def test_hanging_git_op_raises_timeout(monkeypatch):
     def _hang():
         time.sleep(5)
 
-    start = time.time()
+    start = time.monotonic()
     with pytest.raises(TimeoutError):
         await run_in_git_executor(
             _hang, timeout=opal_server_config.SCOPES_GIT_FETCH_TIMEOUT
         )
-    assert time.time() - start < 2, "wait_for did not unblock promptly"
+    assert time.monotonic() - start < 2, "wait_for did not unblock promptly"

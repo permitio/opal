@@ -61,7 +61,7 @@ async def run_in_git_executor(func, *args, timeout: float, **kwargs):
     pygit2 call keeps running on its pool thread until the OS network timeout;
     the dedicated pool keeps that lingering thread isolated.
     """
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     fut = loop.run_in_executor(_get_git_executor(), partial(func, *args, **kwargs))
     if timeout and timeout > 0:
         try:
@@ -227,14 +227,18 @@ class GitPolicyFetcher(PolicyFetcher):
                             logger.debug(
                                 f"Fetching remote (force_fetch={force_fetch}): {self._remote} ({self._source.url})"
                             )
-                            GitPolicyFetcher.repos_last_fetched[
-                                self._source_id
-                            ] = datetime.datetime.now()
                             await run_in_git_executor(
                                 repo.remotes[self._remote].fetch,
                                 callbacks=self._auth_callbacks,
                                 timeout=opal_server_config.SCOPES_GIT_FETCH_TIMEOUT,
                             )
+                            # Only mark as fetched after the fetch actually
+                            # succeeds. On timeout/error this stays stale so a
+                            # later force_fetch is not wrongly suppressed by
+                            # _was_fetched_after.
+                            GitPolicyFetcher.repos_last_fetched[
+                                self._source_id
+                            ] = datetime.datetime.now()
                             logger.debug(f"Fetch completed: {self._source.url}")
 
                         # New commits might be present because of a previous fetch made by another scope
