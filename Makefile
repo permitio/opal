@@ -54,7 +54,7 @@ install-develop:
 
 # docs
 docs-dev:
-	@cd documentation && pnpm start
+	@cd documentation && corepack pnpm start
 
 # docker
 docker-build-client:
