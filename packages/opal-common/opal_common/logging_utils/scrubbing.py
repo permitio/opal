@@ -2,8 +2,8 @@ from opal_common.http_utils import redact_url_in_text
 
 
 class CredentialScrubbingStream:
-    """A writable-stream wrapper that scrubs embedded URL credentials from every
-    fully-formatted log record before it reaches the underlying stream.
+    """A writable-stream wrapper that scrubs embedded URL credentials from
+    every fully-formatted log record before it reaches the underlying stream.
 
     This is the catch-all that the model-layer redaction (``RedactedReprMixin``)
     cannot provide: third-party exceptions - most notably aiohttp
