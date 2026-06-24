@@ -227,15 +227,25 @@ class GitPolicyFetcher(PolicyFetcher):
                             logger.debug(
                                 f"Fetching remote (force_fetch={force_fetch}): {self._remote} ({self._source.url})"
                             )
-                            await run_in_git_executor(
-                                repo.remotes[self._remote].fetch,
-                                callbacks=self._auth_callbacks,
-                                timeout=opal_server_config.SCOPES_GIT_FETCH_TIMEOUT,
-                            )
+                            try:
+                                await run_in_git_executor(
+                                    repo.remotes[self._remote].fetch,
+                                    callbacks=self._auth_callbacks,
+                                    timeout=opal_server_config.SCOPES_GIT_FETCH_TIMEOUT,
+                                )
+                            except TimeoutError as exc:
+                                # Expected when a repo is unreachable: log cleanly
+                                # (no traceback) and skip, matching the clone path.
+                                # repos_last_fetched stays stale so the next cycle
+                                # retries and force_fetch is not wrongly suppressed.
+                                logger.error(
+                                    "Timed out fetching {url}, skipping: {err}",
+                                    url=self._source.url,
+                                    err=repr(exc),
+                                )
+                                return
                             # Only mark as fetched after the fetch actually
-                            # succeeds. On timeout/error this stays stale so a
-                            # later force_fetch is not wrongly suppressed by
-                            # _was_fetched_after.
+                            # succeeds.
                             GitPolicyFetcher.repos_last_fetched[
                                 self._source_id
                             ] = datetime.datetime.now()

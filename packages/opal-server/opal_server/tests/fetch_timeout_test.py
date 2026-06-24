@@ -12,7 +12,9 @@ async def test_hanging_git_op_raises_timeout(monkeypatch):
     monkeypatch.setattr(opal_server_config, "SCOPES_GIT_FETCH_TIMEOUT", 0.2)
 
     def _hang():
-        time.sleep(5)
+        # Short enough that the lingering pool thread doesn't delay teardown,
+        # but well above the 0.2s timeout under test.
+        time.sleep(1)
 
     start = time.monotonic()
     with pytest.raises(TimeoutError):

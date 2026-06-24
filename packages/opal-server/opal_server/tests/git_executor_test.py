@@ -20,7 +20,7 @@ async def test_run_in_git_executor_returns_value():
 @pytest.mark.asyncio
 async def test_run_in_git_executor_times_out():
     with pytest.raises(TimeoutError):
-        await run_in_git_executor(lambda: time.sleep(2), timeout=0.1)
+        await run_in_git_executor(lambda: time.sleep(1), timeout=0.1)
 
 
 @pytest.mark.asyncio
