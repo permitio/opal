@@ -51,14 +51,29 @@ services:
         condition: service_healthy
     user: git
     entrypoint: ["/bin/sh", "-c"]
+    # Tolerate only the idempotent "already exists" case; any other failure
+    # must abort so `seed` (which depends on this completing) doesn't run
+    # against a Gitea with no admin user and fail with a confusing 401.
     command:
       - >
-        gitea admin user create --username opaladmin --password opaladmin
+        out=$$(gitea admin user create --username opaladmin --password opaladmin
         --email admin@example.com --admin --must-change-password=false
-        --config /data/gitea/conf/app.ini || true
+        --config /data/gitea/conf/app.ini 2>&1); rc=$$?;
+        echo "$$out";
+        if [ $$rc -ne 0 ] && ! echo "$$out" | grep -qi "already exist"; then
+          exit $$rc;
+        fi
     volumes:
       - gitea-data:/data
     restart: "no"
+
+  blackhole:
+    # Accepts the TCP handshake then never answers — a clone connects and
+    # blocks reading the git smart-HTTP response, holding the fetch executor.
+    # Deterministic, unlike a TEST-NET-1 address which many networks reject
+    # fast with ICMP-unreachable (so the clone would fail fast, not hang).
+    image: alpine/socat:latest
+    command: ["TCP-LISTEN:80,fork,reuseaddr", "SYSTEM:sleep 3600"]
 
   seed:
     build: ./seed
@@ -82,7 +97,12 @@ services:
       dockerfile: docker/Dockerfile
       target: server
     environment:
-      UVICORN_NUM_WORKERS: "2"
+      # Single worker on purpose: the GitPolicyFetcher caches read by
+      # /internal/git-fetcher-cache-stats are per-process, so with >1 worker a
+      # round-robin read can miss the worker that fetched and make a `== 0`
+      # drain assertion pass falsely. One worker makes every cache read
+      # deterministic. The leak/boot/offline bugs all reproduce single-worker.
+      UVICORN_NUM_WORKERS: "1"
       OPAL_SCOPES: "1"
       OPAL_REDIS_URL: "redis://redis:6379"
       OPAL_BROADCAST_URI: "postgres://opal:opal@postgres:5432/opal"

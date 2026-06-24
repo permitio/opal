@@ -13,52 +13,101 @@ def _wait_until(predicate, timeout=30, interval=0.5):
     return False
 
 
+def _load_scopes(opal, prefix, names):
+    """PUT a scope per repo, then force a second sync so all three caches fill.
+
+    The first sync of a fresh scope takes the clone path, which populates only
+    ``repo_locks`` — ``repos`` and ``repos_last_fetched`` are filled solely by
+    the discover/fetch path on a *subsequent* sync. ``refresh_all()`` triggers
+    that second sync, so after this returns all three caches reflect the N
+    scopes and the drain assertions test a cache the sync path actually fills.
+
+    Returns the per-key load count reached (max over a wait).
+    """
+    n = len(names)
+    for i, name in enumerate(names):
+        opal.put_scope(f"{prefix}-{i}", gitea_repo_url(name))
+    # repo_locks is populated on the first sync (the clone path), so it is the
+    # deterministic signal that every scope was at least picked up.
+    locked = _wait_until(lambda: opal.stats()["repo_locks"] >= n, timeout=600)
+    assert locked, f"initial load never locked {n} repos: {opal.stats()}"
+    # force the discover/fetch path so `repos` / `repos_last_fetched` fill too
+    opal.refresh_all()
+    fetched = _wait_until(lambda: opal.stats()["repos"] >= n, timeout=600)
+    assert fetched, f"refresh never populated {n} repos: {opal.stats()}"
+    return opal.stats()
+
+
 @pytest.mark.timeout(900)
 def test_churn_releases_caches(opal, repo_count):
     """Create then delete many scopes; the three caches must return to empty.
 
-    FAILS on master: delete_scope never purges GitPolicyFetcher caches.
+    FAILS on this branch (without PR2): delete_scope never purges the
+    GitPolicyFetcher caches, so they stay populated after every scope is gone.
+    Becomes green once PR2 lands.
     """
     n = min(repo_count, 100)
     repos = list_seeded_repos(n)
-    for i, name in enumerate(repos):
-        opal.put_scope(f"churn-{i}", gitea_repo_url(name))
-    loaded = _wait_until(lambda: opal.stats()["repos"] >= n, timeout=600)
-    assert loaded, f"initial load never reached {n} repos: {opal.stats()}"
+    loaded = _load_scopes(opal, "churn", repos)
+    assert loaded["repo_locks"] >= n and loaded["repos"] >= n, loaded
+    rss_loaded = loaded["rss_kb"]
 
     for i in range(n):
         opal.delete_scope(f"churn-{i}")
 
-    released = _wait_until(lambda: opal.stats()["repos"] == 0, timeout=30)
+    # all three caches must drain to empty once every scope is deleted
+    released = _wait_until(
+        lambda: opal.stats()["repo_locks"] == 0
+        and opal.stats()["repos"] == 0
+        and opal.stats()["repos_last_fetched"] == 0,
+        timeout=60,
+    )
     stats = opal.stats()
-    assert released, f"repos cache did not drain: {stats}"
-    assert stats["repos_last_fetched"] == 0, stats
+    assert released, f"caches did not drain after deleting all scopes: {stats}"
+
+    # The cache drain above is the gate. RSS is only a loose backstop here:
+    # freeing the caches need not return memory to the OS (glibc/Python keep
+    # arenas), so this guards against a *gross* leak — RSS ballooning well past
+    # the loaded peak — without false-failing on allocator slack once PR2 lands.
+    rss_budget = rss_loaded + max(100_000, rss_loaded // 2)
+    assert stats["rss_kb"] <= rss_budget, (
+        f"RSS ballooned across churn: {rss_loaded} -> {stats['rss_kb']} kb "
+        f"(budget {rss_budget})"
+    )
 
 
 @pytest.mark.timeout(900)
 def test_repeat_sync_does_not_grow(opal, repo_count):
-    """Re-syncing the *same* scopes must not grow the caches.
+    """Re-syncing the *same* scopes must not grow memory unboundedly.
 
-    Idempotency guard, not a known-broken case. On current master this
-    PASSES: a clone path is keyed by the repo URL (``source_id`` =
-    sha256(url)+branch-shard), so re-syncing identical scopes reuses the
-    existing ``repos`` / ``repos_last_fetched`` entries instead of
-    allocating new ones. It guards against a regression that would make
-    repeat sync allocate per-sync. The unbounded *growth + no purge on
-    delete* leak is covered by ``test_churn_releases_caches`` above, which
-    uses distinct scopes and DOES fail on master.
+    Idempotency guard, not a known-broken case — PASSES on this branch. Clone
+    paths are keyed by the repo URL (``source_id`` = sha256(url)+branch-shard),
+    so re-syncing identical scopes reuses the existing ``repos`` /
+    ``repos_last_fetched`` entries rather than allocating new ones; the cache
+    *counts* therefore can't grow for any implementation, which is why the
+    load-bearing assertion here is on **RSS**, not on ``len(repos)``. It guards
+    against a regression where each repeat sync leaks per-sync allocations. The
+    unbounded growth-then-no-purge-on-delete leak is covered by
+    ``test_churn_releases_caches`` above, which uses distinct scopes.
     """
     n = min(repo_count, 50)
     repos = list_seeded_repos(n)
-    for i, name in enumerate(repos):
-        opal.put_scope(f"stable-{i}", gitea_repo_url(name))
-    loaded = _wait_until(lambda: opal.stats()["repos"] >= n, timeout=600)
-    assert loaded, f"initial sync never reached {n} repos: {opal.stats()}"
+    loaded = _load_scopes(opal, "stable", repos)
+    baseline_repos = loaded["repos"]
+    baseline_rss = loaded["rss_kb"]
 
-    baseline = opal.stats()["repos"]
     for _ in range(10):
         opal.refresh_all()
         time.sleep(2)
 
-    grown = opal.stats()["repos"]
-    assert grown <= baseline, f"repos cache grew on repeat sync: {baseline} -> {grown}"
+    grown = opal.stats()
+    assert grown["repos"] <= baseline_repos, (
+        f"repos cache count grew on repeat sync: {baseline_repos} -> {grown['repos']}"
+    )
+    # allow generous headroom for allocator slack; fail only on a real per-sync
+    # leak (10 refreshes of N scopes ballooning RSS).
+    rss_budget = baseline_rss + max(50_000, baseline_rss // 5)
+    assert grown["rss_kb"] <= rss_budget, (
+        f"RSS grew unboundedly on repeat sync: "
+        f"{baseline_rss} -> {grown['rss_kb']} kb (budget {rss_budget})"
+    )

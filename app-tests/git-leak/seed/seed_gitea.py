@@ -113,18 +113,36 @@ def main() -> int:
     token = _ensure_token(base_url, user, password)
 
     workdir = Path("/tmp/seed-work")
+    failures = []
     for i in range(count):
         name = f"policy-repo-{i:04d}"
-        _ensure_repo(base_url, token, user, name)
-        # only push if the repo is empty (freshly created)
-        head = requests.get(
-            f"{base_url}/api/v1/repos/{user}/{name}/branches/main",
-            headers={"Authorization": f"token {token}"},
-            timeout=10,
+        # Isolate per-repo failures: one bad push must not abort the loop and
+        # leave an indeterminate subset seeded. Collect failures and exit
+        # non-zero with a count so the harness sees a real seed error (and
+        # `docker compose wait seed` surfaces it) instead of a later, confusing
+        # load-gate timeout.
+        try:
+            _ensure_repo(base_url, token, user, name)
+            # only push if the repo is empty (freshly created)
+            head = requests.get(
+                f"{base_url}/api/v1/repos/{user}/{name}/branches/main",
+                headers={"Authorization": f"token {token}"},
+                timeout=10,
+            )
+            if head.status_code != 200:
+                _push_policy(base_url, token, user, name, workdir)
+            print(f"seeded {name}", flush=True)
+        except Exception as exc:  # noqa: BLE001 - report, don't abort the loop
+            failures.append((name, repr(exc)))
+            print(f"FAILED {name}: {exc!r}", flush=True)
+
+    if failures:
+        print(
+            f"ERROR: seeded {count - len(failures)}/{count} repos; "
+            f"{len(failures)} failed (e.g. {failures[:3]})",
+            flush=True,
         )
-        if head.status_code != 200:
-            _push_policy(base_url, token, user, name, workdir)
-        print(f"seeded {name}", flush=True)
+        return 1
 
     # write the token where the test harness can read it
     Path("/seed-output/token").write_text(token)

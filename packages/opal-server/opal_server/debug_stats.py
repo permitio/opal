@@ -4,9 +4,9 @@ Used only by the off-by-default /internal stats endpoint so tests can
 observe the cache growth that the memory-leak fix (PR2) eliminates.
 """
 from pathlib import Path
-from typing import Dict
+from typing import Dict, List, Optional
 
-from fastapi import FastAPI
+from fastapi import FastAPI, params
 from opal_server.git_fetcher import GitPolicyFetcher
 
 
@@ -31,11 +31,26 @@ def git_fetcher_cache_stats() -> Dict[str, int]:
     }
 
 
-def register_internal_stats_route(app: FastAPI, enabled: bool) -> None:
-    """Mount GET /internal/git-fetcher-cache-stats only when enabled."""
+def register_internal_stats_route(
+    app: FastAPI,
+    enabled: bool,
+    dependencies: Optional[List[params.Depends]] = None,
+) -> None:
+    """Mount GET /internal/git-fetcher-cache-stats only when enabled.
+
+    ``dependencies`` are applied to the route (e.g. the server's
+    ``JWTAuthenticator``) so the endpoint is protected when JWT verification
+    is enabled. When verification is disabled — as in the test bed, which
+    leaves ``OPAL_AUTH_PUBLIC_KEY`` unset — the authenticator is a no-op and
+    the route stays reachable without a token.
+    """
     if not enabled:
         return
 
-    @app.get("/internal/git-fetcher-cache-stats", include_in_schema=False)
+    @app.get(
+        "/internal/git-fetcher-cache-stats",
+        include_in_schema=False,
+        dependencies=dependencies or [],
+    )
     def _git_fetcher_cache_stats() -> Dict[str, int]:
         return git_fetcher_cache_stats()

@@ -14,9 +14,12 @@ GITEA_HOST_URL = "http://localhost:13000"
 GITEA_USER = "opaladmin"
 GITEA_PASSWORD = "opaladmin"
 
-# TEST-NET-1 (RFC 5737): routable but runs no git server, so a clone hangs
-# instead of failing fast — used to simulate an offline/unreachable repo.
-UNREACHABLE_HOST = "192.0.2.1"
+# the `blackhole` compose service (alpine/socat) accepts the TCP handshake then
+# never answers, so a clone connects and blocks reading the response — a
+# deterministic hang. Reachable from the opal_server container on the compose
+# network. (A TEST-NET-1 address was rejected too fast on many networks, so the
+# clone failed fast instead of hanging and the offline scenario wasn't exercised.)
+UNREACHABLE_HOST = "blackhole"
 
 # the compose project lives next to this file; compose() runs from here
 _COMPOSE_DIR = str(Path(__file__).resolve().parent)
@@ -47,16 +50,15 @@ class OpalServerClient:
             time.sleep(2)
         raise RuntimeError(f"opal-server not healthy in {timeout}s (last: {last})")
 
-    def stats(self, samples: int = 5, interval: float = 0.1) -> Dict[str, int]:
-        """Read the git-fetcher cache stats, merged across several reads.
+    def stats(self, samples: int = 3, interval: float = 0.1) -> Dict[str, int]:
+        """Read the git-fetcher cache stats, merged across a few reads.
 
-        The server runs multiple workers and the ``GitPolicyFetcher`` caches
-        are per-process, so a single read may land on a worker with empty
-        caches (e.g. a non-leader that never fetched). Sample a few times and
-        take the ``max`` per key, so the harness observes whichever worker
-        still holds the most entries — this prevents both false negatives
-        (missing a populated leader) and false positives (an ``== 0`` drain
-        assertion passing only because it hit an empty worker).
+        The stack runs a single uvicorn worker (see docker-compose.yml), so the
+        per-process ``GitPolicyFetcher`` caches are read deterministically — a
+        read can't miss the worker that fetched. Sampling a few times and taking
+        the ``max`` per key only smooths over a read that races an in-flight
+        mutation; it is not relied on to paper over multi-worker nondeterminism
+        (which the single-worker setup removes outright).
         """
         merged: Dict[str, int] = {}
         for i in range(max(1, samples)):
@@ -96,37 +98,75 @@ class OpalServerClient:
             resp.raise_for_status()
         self._created_scopes.discard(scope_id)
 
-    def cleanup_created_scopes(self, drain_timeout: int = 15) -> None:
-        """Delete every scope created on this client, then best-effort wait for
-        the caches to drain — so the next test starts from a clean slate.
+    def list_scope_ids(self) -> List[str]:
+        """All scope ids the server currently knows (GET /scopes)."""
+        resp = requests.get(f"{self.base_url}/scopes", timeout=30)
+        resp.raise_for_status()
+        return [s["scope_id"] for s in resp.json()]
 
-        Best-effort by design: on master, delete never purges the caches (the
-        leak this suite gates), so the drain wait will simply time out. A
-        teardown failure must never fail the test that just ran, hence the broad
-        excepts and the bounded wait.
+    def hard_reset(self, timeout: int = 600) -> None:
+        """Recover the server from a saturated fetch executor by wiping state.
+
+        When a test leaves many clones hung (the offline-repo test saturates the
+        executor on purpose), per-scope DELETEs would queue *behind* those hung
+        threads, and a plain restart would have ``preload_scopes`` re-clone the
+        offline scopes and saturate again. Instead: stop the server (killing the
+        hung threads), flush the Redis scope store so nothing is re-cloned, then
+        start clean. Used in that test's teardown so the session-scoped stack is
+        usable by every later test.
         """
-        for scope_id in list(self._created_scopes):
-            try:
-                self.delete_scope(scope_id)
-            except Exception:
-                self._created_scopes.discard(scope_id)
+        compose("stop", "opal_server")
+        compose("exec", "-T", "redis", "redis-cli", "FLUSHALL")
+        compose("start", "opal_server")
+        self._created_scopes.clear()
+        self.wait_healthy(timeout=timeout)
+
+    def delete_all_scopes(self, drain_timeout: int = 20) -> None:
+        """Delete every scope the *server* knows (not just this client's), then
+        best-effort wait for the caches to drain — a clean slate independent of
+        what any prior, possibly-failed, test left behind.
+
+        Best-effort drain by design: on master, delete never purges the caches
+        (the leak this suite gates), so the wait simply times out. This runs in
+        fixture setup/teardown, so a failure here must not mask the test, hence
+        the broad excepts and bounded wait.
+        """
+        try:
+            for scope_id in self.list_scope_ids():
+                try:
+                    self.delete_scope(scope_id)
+                except Exception:
+                    self._created_scopes.discard(scope_id)
+        except Exception:
+            pass
+        self._created_scopes.clear()
         deadline = time.time() + drain_timeout
         while time.time() < deadline:
             try:
-                if self.stats(samples=1)["repos"] == 0:
+                if self.stats()["repo_locks"] == 0:
                     return
             except Exception:
                 return
             time.sleep(1)
 
+    def get_scope_policy(self, scope_id: str) -> requests.Response:
+        """Fetch a scope's policy bundle (GET /scopes/{id}/policy).
+
+        A 200 here proves the scope's repo was cloned and is being served —
+        the signal that a healthy scope still works while another scope's
+        clone is hanging.
+        """
+        return requests.get(
+            f"{self.base_url}/scopes/{scope_id}/policy", timeout=30
+        )
+
     def refresh_all(self) -> None:
-        # Best-effort: POST /scopes/refresh publishes on the webhook topic so
-        # every leader re-syncs all scopes. If this OPAL build doesn't expose
-        # the route (404), treat it as a no-op — there is no client-side
-        # fallback; callers rely on their own stats polling either way.
+        # POST /scopes/refresh publishes on the webhook topic so the leader
+        # re-syncs all scopes. The second sync takes the discover/fetch path
+        # (not the first-sync clone path), which is what populates the `repos`
+        # and `repos_last_fetched` caches. A missing route is a real error and
+        # is surfaced via raise_for_status.
         resp = requests.post(f"{self.base_url}/scopes/refresh", timeout=30)
-        if resp.status_code == 404:
-            return
         resp.raise_for_status()
 
 
@@ -203,32 +243,47 @@ def gitea_repo_url(name: str) -> str:
 
 
 def make_repo_unreachable(name: str) -> str:
-    """Return a git URL for ``name`` pointing at a routable-but-dead host.
+    """Return a git URL for ``name`` pointing at the ``blackhole`` sidecar.
 
-    Simulates an offline/unreachable policy repo: the address is in
-    TEST-NET-1 (RFC 5737), which is routable but runs no git server, so a
-    clone hangs rather than failing fast — exercising the missing fetch
-    timeout on the scopes path (the bug PR3 fixes). The URL keeps the same
-    ``/{user}/{name}.git`` shape as a real Gitea repo so the scope looks
-    ordinary apart from the unreachable host.
+    Simulates an offline/unreachable policy repo: ``blackhole`` (alpine/socat)
+    accepts the TCP handshake then never answers, so the clone connects and
+    blocks reading the git smart-HTTP response — a deterministic hang that
+    exercises the missing fetch timeout on the scopes path (the bug PR3 fixes).
+    The URL keeps the same ``/{user}/{name}.git`` shape as a real Gitea repo so
+    the scope looks ordinary apart from the unreachable host.
     """
     return f"http://{UNREACHABLE_HOST}/{GITEA_USER}/{name}.git"
 
 
 def compose(*args: str) -> subprocess.CompletedProcess:
-    return subprocess.run(
+    """Run `docker compose <args>`; on failure, surface the captured output.
+
+    `capture_output=True` keeps compose noise out of passing tests, but a raw
+    CalledProcessError shows only the exit code — so on failure we re-raise
+    with the captured stdout/stderr embedded, otherwise a broken build/seed/
+    restart is opaque to debug.
+    """
+    proc = subprocess.run(
         ["docker", "compose", *args],
         cwd=_COMPOSE_DIR,
         capture_output=True,
         text=True,
-        check=True,
     )
+    if proc.returncode != 0:
+        raise RuntimeError(
+            f"`docker compose {' '.join(args)}` failed (exit {proc.returncode})\n"
+            f"--- stdout ---\n{proc.stdout}\n--- stderr ---\n{proc.stderr}"
+        )
+    return proc
 
 
 def bounce_postgres(down_seconds: int = 5) -> None:
     compose("stop", "postgres")
     time.sleep(down_seconds)
-    compose("start", "postgres")
+    # `up -d --wait` blocks until Postgres passes its healthcheck again (plain
+    # `compose start` has no --wait), so a recovery poll that follows isn't
+    # racing an unready broadcaster. --no-recreate keeps the same container.
+    compose("up", "-d", "--wait", "--no-recreate", "postgres")
 
 
 def list_seeded_repos(count: int) -> List[str]:

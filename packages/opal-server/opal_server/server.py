@@ -295,7 +295,9 @@ class OpalServer:
             return {"status": "ok"}
 
         register_internal_stats_route(
-            app, enabled=opal_server_config.DEBUG_INTERNAL_STATS
+            app,
+            enabled=opal_server_config.DEBUG_INTERNAL_STATS,
+            dependencies=[Depends(authenticator)],
         )
 
         return app
