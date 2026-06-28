@@ -47,6 +47,11 @@ services:
       - POSTGRES_DB=postgres
       - POSTGRES_USER=postgres
       - POSTGRES_PASSWORD=postgres
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
 
   opal_server:
     image: permitio/opal-server:${OPAL_IMAGE_TAG:-latest}
@@ -56,6 +61,15 @@ services:
       endpoint_mode: vip
     environment:
       - OPAL_BROADCAST_URI=postgres://postgres:postgres@broadcast_channel:5432/postgres
+      # Make the broadcaster reconnect fast and replay after both replicas have
+      # re-subscribed, so a cross-instance update published during a backbone
+      # outage deterministically converges to both clients (see run.sh
+      # "cross-instance consistency" test). With backoff_max=2 both servers
+      # re-subscribe within ~2s of the DB returning, while settle=3 delays the
+      # replay until after that, guaranteeing the replayed update is delivered.
+      - OPAL_BROADCAST_RECONNECT_BACKOFF_MIN_SECONDS=0.5
+      - OPAL_BROADCAST_RECONNECT_BACKOFF_MAX_SECONDS=2
+      - OPAL_BROADCAST_RESYNC_SETTLE_SECONDS=3
       - UVICORN_NUM_WORKERS=4
       - OPAL_POLICY_REPO_URL=http://gitea:3000/gitea_admin/policy-repo.git
       - OPAL_POLICY_REPO_MAIN_BRANCH=${POLICY_REPO_BRANCH:-main}
