@@ -28,6 +28,14 @@ allow {
 
 DATA_JSON = '{"roles": {"admin": ["read", "write"]}}\n'
 
+# Reserved repos seeded in addition to the numeric ``policy-repo-NNNN`` set.
+# These sit outside the range the boot/leak tests enumerate (so no test ever
+# clones them) and back the resilience offline-hang test's "healthy" probe,
+# which must force a fresh clone through the saturated executor rather than
+# reuse a surviving on-disk clone. Keep in sync with ``HEALTHY_PROBE_REPO`` in
+# ``helpers.py``.
+RESERVED_REPOS = ("policy-repo-healthy-probe",)
+
 
 def _wait_for_gitea(base_url: str, timeout: int = 120) -> None:
     deadline = time.time() + timeout
@@ -114,8 +122,10 @@ def main() -> int:
 
     workdir = Path("/tmp/seed-work")
     failures = []
-    for i in range(count):
-        name = f"policy-repo-{i:04d}"
+    # the numeric set the boot/leak tests enumerate, plus the reserved repos
+    # (e.g. the resilience offline-hang test's never-cloned healthy probe)
+    names = [f"policy-repo-{i:04d}" for i in range(count)] + list(RESERVED_REPOS)
+    for name in names:
         # Isolate per-repo failures: one bad push must not abort the loop and
         # leave an indeterminate subset seeded. Collect failures and exit
         # non-zero with a count so the harness sees a real seed error (and
@@ -136,9 +146,10 @@ def main() -> int:
             failures.append((name, repr(exc)))
             print(f"FAILED {name}: {exc!r}", flush=True)
 
+    total = len(names)
     if failures:
         print(
-            f"ERROR: seeded {count - len(failures)}/{count} repos; "
+            f"ERROR: seeded {total - len(failures)}/{total} repos; "
             f"{len(failures)} failed (e.g. {failures[:3]})",
             flush=True,
         )
@@ -146,7 +157,7 @@ def main() -> int:
 
     # write the token where the test harness can read it
     Path("/seed-output/token").write_text(token)
-    print(f"DONE: ensured {count} repos", flush=True)
+    print(f"DONE: ensured {total} repos", flush=True)
     return 0
 
 

@@ -2,7 +2,13 @@ import os
 import shutil
 
 import pytest
-from helpers import GiteaAdmin, OpalServerClient, compose, list_seeded_repos
+from helpers import (
+    HEALTHY_PROBE_REPO,
+    GiteaAdmin,
+    OpalServerClient,
+    compose,
+    list_seeded_repos,
+)
 
 
 def pytest_addoption(parser):
@@ -43,7 +49,9 @@ def stack(request, repo_count):
     # Verify the seed actually produced all N repos before any test runs: a
     # partial seed would otherwise look like a server bug when the load gate
     # can't reach N. Fail loudly with the gap.
-    expected = set(list_seeded_repos(repo_count))
+    # include the reserved probe repo the resilience test relies on, so a
+    # partial seed of it is caught here too rather than as a later test failure
+    expected = set(list_seeded_repos(repo_count)) | {HEALTHY_PROBE_REPO}
     present = set(GiteaAdmin().list_repos())
     missing = expected - present
     assert not missing, (

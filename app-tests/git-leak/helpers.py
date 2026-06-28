@@ -286,3 +286,17 @@ def bounce_postgres(down_seconds: int = 5) -> None:
 
 def list_seeded_repos(count: int) -> List[str]:
     return [f"policy-repo-{i:04d}" for i in range(count)]
+
+
+# A reserved repo seeded *outside* the numeric ``policy-repo-NNNN`` range that
+# ``list_seeded_repos`` enumerates, so no boot/leak test ever clones it. The
+# resilience offline-hang test uses it as its "healthy" probe: clones live at
+# ``base_dir/<source_id>`` keyed by URL-hash and survive ``compose
+# restart/stop/start`` (opal_server mounts no volume at ``/opal``; only
+# ``down -v`` wipes them), so pointing the probe at any shared seeded repo would
+# let the healthy scope reuse an on-disk clone and serve 200 *without* touching
+# the saturated fetch executor — false-passing a gate that must FAIL on this
+# branch. A dedicated never-cloned repo forces a genuine fresh clone through the
+# starved executor. Keep this name in sync with ``RESERVED_REPOS`` in
+# ``seed/seed_gitea.py``.
+HEALTHY_PROBE_REPO = "policy-repo-healthy-probe"

@@ -2,6 +2,7 @@ import time
 
 import pytest
 from helpers import (
+    HEALTHY_PROBE_REPO,
     bounce_postgres,
     gitea_repo_url,
     list_seeded_repos,
@@ -33,8 +34,14 @@ def test_offline_repo_does_not_block_healthy_scopes(opal, repo_count):
             f"offline-{i}", make_repo_unreachable(f"dead-{i}"), branch="main"
         )
 
-    healthy = list_seeded_repos(1)[0]
-    opal.put_scope("healthy", gitea_repo_url(healthy))
+    # Point the healthy scope at a repo *no other test clones* (HEALTHY_PROBE_REPO
+    # is seeded outside the numeric range the boot/leak tests enumerate). Clones
+    # survive compose restart/stop/start, so reusing a shared seeded repo here
+    # would let this scope hit the existing on-disk clone via _discover_repository,
+    # skip _clone(), and serve 200 without ever touching the saturated executor —
+    # false-passing this gate. A never-cloned repo forces a real clone through the
+    # starved pool, so the gate fails correctly on this branch (no PR3 timeout).
+    opal.put_scope("healthy", gitea_repo_url(HEALTHY_PROBE_REPO))
 
     try:
         # The healthy scope must become *servable* within a bounded time even
