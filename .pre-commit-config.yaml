@@ -23,7 +23,7 @@ repos:
     rev: v2.2.4
     hooks:
       - id: codespell
-        args: [--skip, "*.json,*.lock"]
+        args: [--skip, "*.json,*.lock,*pnpm-lock.yaml"]
   # v1.7.6 dropped the `docformatter-venv` hook whose `language: python_venv` made
   # prek / pre-commit>=4 reject the whole manifest. Pinned to v1.7.6 (not v1.7.7,
   # whose docstring wrapping differs) so the bump introduces no reformatting.
