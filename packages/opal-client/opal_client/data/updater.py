@@ -71,6 +71,7 @@ class DataUpdater:
         shard_id: Optional[str] = None,
         on_connect: List[PubSubOnConnectCallback] = None,
         on_disconnect: List[OnDisconnectCallback] = None,
+        max_concurrent_data_updates: Optional[int] = None,
     ):
         """Initializes the DataUpdater with the necessary configuration and
         clients.
@@ -89,6 +90,8 @@ class DataUpdater:
             shard_id (str, optional): A partition/shard identifier. Translates to an HTTP header.
             on_connect (List[PubSubOnConnectCallback], optional): Extra on-connect callbacks.
             on_disconnect (List[OnDisconnectCallback], optional): Extra on-disconnect callbacks.
+            max_concurrent_data_updates (int, optional): Max data update entries that may
+                fetch+write concurrently. Defaults to DATA_UPDATER_MAX_CONCURRENT_UPDATES.
         """
         # Defaults
         token: str = token or opal_client_config.CLIENT_TOKEN
@@ -158,6 +161,16 @@ class DataUpdater:
 
         # Lock to prevent multiple concurrent writes to the same path
         self._dst_lock = HierarchicalLock()
+
+        # Bound how many data update entries may fetch+write concurrently. Updates
+        # are triggered fire-and-forget into an unbounded task pool, so without this
+        # gate a burst (reconnect storm, frequent periodic updates, slow store) could
+        # stack an unbounded number of in-flight datasets in memory.
+        if max_concurrent_data_updates is None:
+            max_concurrent_data_updates = (
+                opal_client_config.DATA_UPDATER_MAX_CONCURRENT_UPDATES
+            )
+        self._update_semaphore = asyncio.Semaphore(max_concurrent_data_updates)
 
         # References to repeated polling tasks (periodic data fetch)
         self._polling_update_tasks = []
@@ -490,8 +503,12 @@ class DataUpdater:
                 update.id, transaction_type=TransactionType.data
             )
 
-            # Acquire a per-destination lock to avoid overwriting the same path concurrently
+            # Bound concurrent fetch+write across all in-flight updates (outermost),
+            # then acquire a per-destination lock to avoid overwriting the same path
+            # concurrently. The semaphore caps the peak in-flight working set; the
+            # lock preserves per-path write ordering.
             async with (
+                self._update_semaphore,
                 transaction_context as store_transaction,
                 self._dst_lock.lock(entry.dst_path),
             ):
