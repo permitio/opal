@@ -59,7 +59,7 @@ def test_churn_releases_caches(opal, repo_count):
     # single stats snapshot per poll so the three keys reflect the same
     # observation (and to avoid 3x the HTTP round-trips per iteration).
     def _all_caches_empty() -> bool:
-        s = opal.stats()
+        s = opal.stats(samples=1)
         return s["repo_locks"] == 0 and s["repos"] == 0 and s["repos_last_fetched"] == 0
 
     released = _wait_until(_all_caches_empty, timeout=60)

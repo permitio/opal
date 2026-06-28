@@ -116,10 +116,15 @@ class OpalServerClient:
         usable by every later test.
         """
         compose("stop", "opal_server")
-        compose("exec", "-T", "redis", "redis-cli", "FLUSHALL")
-        compose("start", "opal_server")
-        self._created_scopes.clear()
-        self.wait_healthy(timeout=timeout)
+        try:
+            compose("exec", "-T", "redis", "redis-cli", "FLUSHALL")
+        finally:
+            # Always bring the server back up, even if the flush failed: leaving
+            # it stopped would fail every later session-scoped test, and since
+            # this runs in a test's `finally` it would also mask the real result.
+            compose("start", "opal_server")
+            self._created_scopes.clear()
+            self.wait_healthy(timeout=timeout)
 
     def delete_all_scopes(self, drain_timeout: int = 20) -> None:
         """Delete every scope the *server* knows (not just this client's), then
@@ -143,10 +148,15 @@ class OpalServerClient:
         deadline = time.time() + drain_timeout
         while time.time() < deadline:
             try:
-                if self.stats()["repo_locks"] == 0:
+                # Single snapshot: we're waiting for zero, so the peak-merge
+                # (max over samples) would only delay observing the drain.
+                if self.stats(samples=1)["repo_locks"] == 0:
                     return
             except Exception:
-                return
+                # A transient stats-read failure is not proof of a drain — keep
+                # polling until the deadline rather than returning early, which
+                # would let a not-yet-drained cache leak into the next test.
+                pass
             time.sleep(1)
 
     def get_scope_policy(self, scope_id: str) -> requests.Response:

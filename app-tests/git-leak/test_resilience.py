@@ -1,6 +1,7 @@
 import time
 
 import pytest
+import requests
 from helpers import (
     HEALTHY_PROBE_REPO,
     bounce_postgres,
@@ -63,7 +64,7 @@ def test_offline_repo_does_not_block_healthy_scopes(opal, repo_count):
                 if resp.status_code == 200:
                     served = True
                     break
-            except Exception as exc:  # request itself may stall when starved
+            except requests.RequestException as exc:  # may stall when starved
                 last = repr(exc)
             time.sleep(2)
         assert served, (
@@ -93,8 +94,9 @@ def test_server_recovers_after_postgres_bounce(opal, repo_count):
     (PER-15065's in-process reconnect would make recovery cleaner by avoiding
     the worker churn, but recovery already holds.)
     """
-    assert opal.stats()  # healthy before
-    baseline_locks = opal.stats()["repo_locks"]
+    baseline = opal.stats()  # healthy before
+    assert baseline
+    baseline_locks = baseline["repo_locks"]
 
     bounce_postgres(down_seconds=5)
 
@@ -107,7 +109,8 @@ def test_server_recovers_after_postgres_bounce(opal, repo_count):
             opal.stats()
             recovered = True
             break
-        except Exception:
+        except (requests.RequestException, RuntimeError):
+            # RequestException: HTTP not back yet; RuntimeError: wait_healthy timed out
             time.sleep(2)
     assert recovered, "server did not recover HTTP within 90s of a postgres bounce"
 
