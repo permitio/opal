@@ -88,7 +88,8 @@ WORKDIR /opal
 
 # copy opa from official docker image
 ARG opa_image=openpolicyagent/opa
-ARG opa_tag=1.9.0-static
+# Bumped from 1.9.0-static to fix CVE-2025-68121 (golang/stdlib@1.25.1 -> Go 1.26.2)
+ARG opa_tag=1.16.1-static
 RUN skopeo copy "docker://${opa_image}:${opa_tag}" docker-archive:./image.tar && \
   mkdir image && tar xf image.tar -C ./image && cat image/*.tar | tar xf - -C ./image -i && \
   find image/ -name "opa*" -type f -executable -print0 | xargs -0 -I "{}" cp {} ./opa && chmod 755 ./opa && \
@@ -125,7 +126,10 @@ RUN apk add --no-cache wget
 WORKDIR /download
 
 # Download pre-built EOPA binary based on architecture
-ARG eopa_tag=v1.44.0
+# Bumped from v1.44.0 to latest available release.
+# TODO: CVE-2026-33815 and CVE-2026-33816 (jackc/pgx/v5@5.7.6, fix: >= 5.9.0) are NOT resolved.
+#       EOPA v1.45.1 still ships pgx v5.7.6. Waiting for a new EOPA release from Styra with updated dependencies.
+ARG eopa_tag=v1.45.1
 ARG TARGETARCH
 RUN case "${TARGETARCH}" in \
         "amd64") EOPA_ARCH="x86_64" ;; \
