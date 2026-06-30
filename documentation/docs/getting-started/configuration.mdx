@@ -526,11 +526,53 @@ The channel name for broadcasting messages.
 
 For more information, see [running OPAL with Kafka](/tutorials/run_opal_with_kafka) and [running OPAL with Apache Pulsar](/tutorials/run_opal_with_pulsar).
 
-#### OPAL_BROADCAST_CONN_LOSS_BUGFIX_EXPERIMENT_ENABLED
+#### OPAL_BROADCAST_RECONNECT_ENABLED
 
 Default: `True`
 
-Enable experimental fix for broadcast connection loss issues.
+Reconnect the broadcaster reader on a backbone disconnect instead of dropping all client connections. Set to `False` to revert to the legacy (non-reconnecting) broadcaster.
+
+#### OPAL_BROADCAST_RECONNECT_MAX_RETRIES
+
+Default: `0`
+
+Maximum consecutive broadcaster reconnect attempts before giving up and letting the worker restart (`0` = retry forever).
+
+#### OPAL_BROADCAST_RECONNECT_BACKOFF_MIN_SECONDS
+
+Default: `0.5`
+
+Minimum backoff in seconds between broadcaster reconnect attempts.
+
+#### OPAL_BROADCAST_RECONNECT_BACKOFF_MAX_SECONDS
+
+Default: `30.0`
+
+Maximum backoff in seconds between broadcaster reconnect attempts.
+
+#### OPAL_BROADCAST_REPLAY_BUFFER_SIZE
+
+Default: `10000`
+
+Maximum number of outbound broadcasts buffered while the backbone is down and replayed on reconnect (`0` disables buffering).
+
+#### OPAL_BROADCAST_RESYNC_ON_RECONNECT
+
+Default: `True`
+
+After a backbone gap that may have lost updates, force this worker's connected clients to reconnect so they re-fetch full policy + data state (guarantees cross-instance consistency).
+
+#### OPAL_BROADCAST_RESYNC_SETTLE_SECONDS
+
+Default: `2.0`
+
+Grace period after a broadcaster reconnect before replaying buffered broadcasts and resyncing clients, to let peer servers re-subscribe.
+
+#### OPAL_BROADCAST_HEALTHCHECK_ENABLED
+
+Default: `True`
+
+Make `/healthcheck` reflect the broadcaster reader's health, so a Kubernetes readiness/liveness probe can route away from or restart a worker whose reader is wedged while clients depend on it.
 
 #### OPAL_BROADCAST_KEEPALIVE_INTERVAL
 

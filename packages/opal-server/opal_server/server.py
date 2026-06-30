@@ -8,7 +8,7 @@ from typing import List, Optional
 
 from fastapi import Depends, FastAPI, Request
 from fastapi.openapi.docs import get_redoc_html
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi_websocket_pubsub.event_broadcaster import EventBroadcasterContextManager
 from opal_common.authentication.deps import JWTAuthenticator, StaticBearerAuthenticator
 from opal_common.authentication.signer import JWTSigner
@@ -34,6 +34,7 @@ from opal_server.policy.watcher.task import PolicyWatcherTask
 from opal_server.policy.webhook.api import init_git_webhook_router
 from opal_server.publisher import setup_broadcaster_keepalive_task
 from opal_server.pubsub import PubSub
+from opal_server.pubsub_resilience import ReconnectingBroadcaster
 from opal_server.redis_utils import RedisDB
 from opal_server.scopes.api import init_scope_router
 from opal_server.scopes.loader import load_scopes
@@ -146,6 +147,7 @@ class OpalServer:
             self.jwks_endpoint = None
 
         self.pubsub = PubSub(signer=self.signer, broadcaster_uri=broadcaster_uri)
+        self._wire_broadcaster_give_up()
 
         self.publisher: Optional[TopicPublisher] = None
         self.broadcast_keepalive: Optional[PeriodicPublisher] = None
@@ -288,9 +290,27 @@ class OpalServer:
             )
 
         # top level routes (i.e: healthchecks)
-        @app.get("/healthcheck", include_in_schema=False)
         @app.get("/", include_in_schema=False)
+        def root():
+            # Liveness / process-up: trivially ok as long as the process serves.
+            return {"status": "ok"}
+
+        @app.get("/healthcheck", include_in_schema=False)
         def healthcheck():
+            # Readiness: also reflect broadcaster-reader health so a wedged reader
+            # (reader task absent/dead while clients depend on it) fails the probe
+            # and k8s can route away from / restart this worker. Stays ok through a
+            # normal transient reconnect (see ReconnectingBroadcaster.is_reader_healthy).
+            broadcaster = self.pubsub.broadcaster
+            if (
+                opal_server_config.BROADCAST_HEALTHCHECK_ENABLED
+                and isinstance(broadcaster, ReconnectingBroadcaster)
+                and not broadcaster.is_reader_healthy()
+            ):
+                return JSONResponse(
+                    status_code=503,
+                    content={"status": "error", "broadcaster": "unhealthy"},
+                )
             return {"status": "ok"}
 
         return app
@@ -411,6 +431,35 @@ class OpalServer:
             await asyncio.gather(*tasks)
         except Exception:
             logger.exception("exception while shutting down background tasks")
+
+    def _wire_broadcaster_give_up(self):
+        """Graceful-restart the worker if the reconnecting broadcaster gives
+        up.
+
+        When ``BROADCAST_RECONNECT_MAX_RETRIES`` is exhausted the reader task
+        completes by *returning*. With ``ignore_broadcaster_disconnected=False`` a
+        done reader cancels every client websocket, re-creating the drop storm. The
+        statistics path already restarts the worker on reader completion, but only
+        when ``STATISTICS_ENABLED`` — so with statistics off nothing restarts the
+        worker until the liveness probe acts. This broadcaster-level give-up hook
+        triggers the same graceful shutdown regardless of the statistics flag. It
+        fires only on give-up (return), never on cancellation (clean shutdown), so
+        normal shutdown does not re-trigger it. (When statistics are enabled both
+        this hook and the stats done-callback may fire; a second SIGTERM to an
+        already-terminating worker is a harmless no-op.)
+        """
+        broadcaster = self.pubsub.broadcaster
+        if not isinstance(broadcaster, ReconnectingBroadcaster):
+            return
+
+        async def _on_broadcaster_give_up():
+            logger.error(
+                "Broadcaster gave up reconnecting to the backbone; "
+                "restarting this worker"
+            )
+            self._graceful_shutdown()
+
+        broadcaster.set_give_up_callback(_on_broadcaster_give_up)
 
     def _graceful_shutdown(self):
         logger.info("Trigger worker graceful shutdown")
