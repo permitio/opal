@@ -1,9 +1,7 @@
-from logging import basicConfig
-from pydoc import describe
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, ClassVar, Dict, List, Optional, Set, Tuple, Union
 
-from opal_common.fetcher.events import FetcherConfig
 from opal_common.fetcher.providers.http_fetch_provider import HttpFetcherConfig
+from opal_common.logging_utils.redaction import RedactedReprMixin
 from opal_common.schemas.store import JSONPatchAction
 from pydantic import AnyHttpUrl, BaseModel, Field, root_validator, validator
 
@@ -13,10 +11,18 @@ JsonableValue = Union[List[JSONPatchAction], List[Any], Dict[str, Any]]
 DEFAULT_DATA_TOPIC = "policy_data"
 
 
-class DataSourceEntry(BaseModel):
+class DataSourceEntry(RedactedReprMixin, BaseModel):
     """
     Data source configuration - where client's should retrieve data from and how they should store it
     """
+
+    # ``config`` may carry fetcher auth (e.g. Authorization headers) and
+    # ``data`` an inline payload - mask both in repr/str so they never leak into
+    # logs (entries are frequently interpolated into log messages).
+    _redacted_repr_fields: ClassVar[Set[str]] = {"config", "data"}
+    # ``url`` can embed credentials (``user:token@host`` / ``?token=``); strip
+    # them via redact_url while keeping host/path visible for debugging.
+    _redacted_url_fields: ClassVar[Set[str]] = {"url"}
 
     @validator("data")
     def validate_save_method(cls, value, values):

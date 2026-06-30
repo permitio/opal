@@ -10,6 +10,7 @@ from git import GitCommandError, GitError, Repo
 from opal_common.config import opal_common_config
 from opal_common.git_utils.env import provide_git_ssh_environment
 from opal_common.git_utils.exceptions import GitFailed
+from opal_common.http_utils import redact_url, redact_url_in_text
 from opal_common.logger import logger
 from opal_common.utils import get_filepaths_with_glob
 from tenacity import RetryError, retry, stop, wait
@@ -179,7 +180,7 @@ class RepoCloner:
         """
         logger.info(
             "Cloning repo from '{url}' to '{to_path}' (branch: '{branch}')",
-            url=self.url,
+            url=redact_url(self.url),
             to_path=self.path,
             branch=self.branch_name,
         )
@@ -196,7 +197,10 @@ class RepoCloner:
         except (GitError, GitCommandError) as e:
             raise GitFailed(e)
         except RetryError as e:
-            logger.exception("cannot clone policy repo: {error}", error=e)
+            logger.exception(
+                "cannot clone policy repo: {error}",
+                error=redact_url_in_text(str(e), self.url),
+            )
             raise GitFailed(e)
         else:
             logger.info("Clone succeeded", repo_path=self.path)
@@ -208,5 +212,8 @@ class RepoCloner:
                 url=self.url, to_path=self.path, branch=self.branch_name, env=env
             )
         except (GitError, GitCommandError) as e:
-            logger.error("cannot clone policy repo: {error}", error=e)
+            logger.error(
+                "cannot clone policy repo: {error}",
+                error=redact_url_in_text(str(e), self.url),
+            )
             raise

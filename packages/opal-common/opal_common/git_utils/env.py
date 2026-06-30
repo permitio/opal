@@ -40,8 +40,18 @@ def provide_git_ssh_environment(url: str, ssh_key: str):
     if not is_ssh_repo_url(url) or ssh_key is None:
         return {}  # no ssh config
     git_ssh_identity_file = save_ssh_key_to_pem_file(ssh_key)
-    return {
+    env = {
         "GIT_SSH_COMMAND": f"ssh -o StrictHostKeyChecking=no -o IdentitiesOnly=yes -i {git_ssh_identity_file}",
-        "GIT_TRACE": "1",
-        "GIT_CURL_VERBOSE": "1",
     }
+    # This function only runs for SSH clones (non-SSH urls early-return above),
+    # so the value of gating GIT_TRACE / GIT_CURL_VERBOSE here is reducing the
+    # verbose SSH protocol noise / host disclosure git dumps to stderr (which
+    # OPAL captures into its logs) - not closing an HTTP Authorization-header
+    # leak, since SSH uses key auth, not HTTP headers. (HTTPS clones, where
+    # GIT_CURL_VERBOSE would dump Authorization headers, never enter this path;
+    # that would have to be handled where the HTTPS clone env is built.)
+    # Only enable verbose tracing when diagnosis logging is explicitly turned on.
+    if opal_common_config.LOG_DIAGNOSE:
+        env["GIT_TRACE"] = "1"
+        env["GIT_CURL_VERBOSE"] = "1"
+    return env

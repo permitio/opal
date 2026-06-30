@@ -1,7 +1,7 @@
 """Simple HTTP get data fetcher using requests supports."""
 
 from enum import Enum
-from typing import Any, Union, cast
+from typing import Any, ClassVar, Set, Union, cast
 
 import httpx
 from aiohttp import ClientResponse, ClientSession, ClientTimeout
@@ -9,7 +9,7 @@ from opal_common.config import opal_common_config
 from opal_common.fetcher.events import FetcherConfig, FetchEvent
 from opal_common.fetcher.fetch_provider import BaseFetchProvider
 from opal_common.fetcher.logger import get_logger
-from opal_common.http_utils import is_http_error_response
+from opal_common.http_utils import is_http_error_response, redact_url
 from opal_common.security.sslcontext import get_custom_ssl_context
 from pydantic import validator
 
@@ -27,6 +27,10 @@ class HttpMethods(Enum):
 
 class HttpFetcherConfig(FetcherConfig):
     """Config for HttpFetchProvider's Adding HTTP headers."""
+
+    # ``headers`` carries Authorization tokens and ``data`` the (possibly
+    # sensitive) payload - mask both in repr/str so they never leak into logs.
+    _redacted_repr_fields: ClassVar[Set[str]] = {"headers", "data"}
 
     headers: dict = None
     is_json: bool = True
@@ -91,7 +95,7 @@ class HttpFetchProvider(BaseFetchProvider):
         await self._session.__aexit__(exc_type, exc_val, tb)
 
     async def _fetch_(self):
-        logger.debug(f"{self.__class__.__name__} fetching from {self._url}")
+        logger.debug(f"{self.__class__.__name__} fetching from {redact_url(self._url)}")
         http_method = self.match_http_method_from_type(
             self._session, self._event.config.method
         )

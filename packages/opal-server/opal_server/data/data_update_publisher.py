@@ -3,6 +3,7 @@ import os
 from typing import List
 
 from fastapi_utils.tasks import repeat_every
+from opal_common.http_utils import redact_url
 from opal_common.logger import logger
 from opal_common.schemas.data import (
     DataSourceEntryWithPollingInterval,
@@ -75,7 +76,7 @@ class DataUpdatePublisher:
         # a nicer format of entries to the log
         logged_entries = [
             dict(
-                url=entry.url,
+                url=redact_url(entry.url),
                 method=entry.save_method,
                 path=entry.dst_path or "/",
                 inline_data=(entry.data is not None),
@@ -94,9 +95,9 @@ class DataUpdatePublisher:
                 all_topic_combos.update(topic_combos)
             else:
                 logger.warning(
-                    "[{pid}] No topics were provided for the following entry: {entry}",
+                    "[{pid}] No topics were provided for the entry with url: {url}",
                     pid=os.getpid(),
-                    entry=entry,
+                    url=redact_url(entry.url),
                 )
 
         # publish all topics with all their sub combinations
