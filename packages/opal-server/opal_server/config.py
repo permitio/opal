@@ -52,10 +52,56 @@ class OpalServerConfig(Confi):
         "EventNotifier",
         description="The name to be used for segmentation in the backbone pub/sub",
     )
-    BROADCAST_CONN_LOSS_BUGFIX_EXPERIMENT_ENABLED = confi.bool(
-        "BROADCAST_CONN_LOSS_BUGFIX_EXPERIMENT_ENABLED",
+    BROADCAST_RECONNECT_ENABLED = confi.bool(
+        "BROADCAST_RECONNECT_ENABLED",
         True,
-        description="Enable experimental bugfix for broadcast connection loss",
+        description="Reconnect the broadcaster reader on a backbone disconnect instead "
+        "of dropping all client connections. Set to False to revert to the legacy "
+        "(non-reconnecting) broadcaster.",
+    )
+    BROADCAST_RECONNECT_MAX_RETRIES = confi.int(
+        "BROADCAST_RECONNECT_MAX_RETRIES",
+        0,
+        description="Maximum consecutive broadcaster reconnect attempts before giving "
+        "up and letting the worker restart (0 = retry forever).",
+    )
+    BROADCAST_RECONNECT_BACKOFF_MIN_SECONDS = confi.float(
+        "BROADCAST_RECONNECT_BACKOFF_MIN_SECONDS",
+        0.5,
+        description="Minimum backoff in seconds between broadcaster reconnect attempts.",
+    )
+    BROADCAST_RECONNECT_BACKOFF_MAX_SECONDS = confi.float(
+        "BROADCAST_RECONNECT_BACKOFF_MAX_SECONDS",
+        30.0,
+        description="Maximum backoff in seconds between broadcaster reconnect attempts.",
+    )
+    BROADCAST_REPLAY_BUFFER_SIZE = confi.int(
+        "BROADCAST_REPLAY_BUFFER_SIZE",
+        10000,
+        description="Max number of outbound broadcasts buffered while the backbone is "
+        "down and replayed on reconnect (0 disables buffering). On overflow the oldest "
+        "buffered broadcasts are dropped; the resync on reconnect still reconciles clients.",
+    )
+    BROADCAST_RESYNC_ON_RECONNECT = confi.bool(
+        "BROADCAST_RESYNC_ON_RECONNECT",
+        True,
+        description="After a backbone gap that may have lost updates, force this "
+        "worker's connected clients to reconnect so they re-fetch full policy + data "
+        "state (guarantees cross-instance consistency).",
+    )
+    BROADCAST_RESYNC_SETTLE_SECONDS = confi.float(
+        "BROADCAST_RESYNC_SETTLE_SECONDS",
+        2.0,
+        description="Grace period after a broadcaster reconnect before replaying "
+        "buffered broadcasts and resyncing clients, to let peer servers re-subscribe.",
+    )
+    BROADCAST_HEALTHCHECK_ENABLED = confi.bool(
+        "BROADCAST_HEALTHCHECK_ENABLED",
+        True,
+        description="Make /healthcheck reflect the broadcaster reader's health so a "
+        "k8s readiness/liveness probe can route away from or restart a worker whose "
+        "reader is wedged while clients depend on it. Set to False to revert "
+        "/healthcheck to always returning ok.",
     )
 
     # server security

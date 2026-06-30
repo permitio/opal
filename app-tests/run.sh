@@ -238,6 +238,33 @@ function check_no_error {
   fi
 }
 
+function check_servers_logged {
+  echo "- Looking for msg '$1' in server's logs"
+  compose logs opal_server | grep -q "$1"
+}
+
+function check_servers_not_logged {
+  echo "- Ensuring msg '$1' is absent from server's logs"
+  if compose logs opal_server | grep -q "$1"; then
+    echo "- Unexpectedly found '$1' in server logs:"
+    compose logs opal_server | grep "$1"
+    exit 1
+  fi
+}
+
+function wait_for_broadcaster {
+  echo "- Waiting for broadcast_channel to accept connections"
+  for _ in $(seq 1 30); do
+    if compose exec -T broadcast_channel pg_isready -U postgres -q; then
+      echo "  broadcast_channel is ready"
+      return 0
+    fi
+    sleep 1
+  done
+  echo "  broadcast_channel did not become ready in time"
+  exit 1
+}
+
 function clean_up {
     ARG=$?
     # Ensure we're in the script directory for cleanup
@@ -277,11 +304,9 @@ function test_push_policy {
   check_clients_logged "PUT /v1/policies/$regofile -> 200"
 }
 
-function test_data_publish {
-  echo "- Testing data publish for user $1"
+function publish_data {
+  # POST a data update to a single OPAL server (no assertion).
   user=$1
-
-  # Use curl to publish data update via OPAL server API
   curl -s -X POST http://localhost:7002/data/config \
     -H "Authorization: Bearer $OPAL_DATA_SOURCE_TOKEN" \
     -H "Content-Type: application/json" \
@@ -294,9 +319,13 @@ function test_data_publish {
         "save_method": "PUT"
       }]
     }'
+}
 
+function test_data_publish {
+  echo "- Testing data publish for user $1"
+  publish_data "$1"
   sleep 5
-  check_clients_logged "PUT /v1/data/users/$user/location -> 204"
+  check_clients_logged "PUT /v1/data/users/$1/location -> 204"
 }
 
 function test_statistics {
@@ -344,15 +373,54 @@ function main {
   test_push_policy "something"
   test_statistics
 
-  echo "- Testing broadcast channel disconnection"
+  echo "- Testing broadcast channel disconnection (graceful restart)"
   compose restart broadcast_channel
-  sleep 10
+  wait_for_broadcaster
+  # Give the servers' reconnecting broadcaster a moment to re-establish the backbone
+  sleep 5
 
   test_data_publish "alice"
   test_push_policy "another"
+
+  echo "- Testing broadcast channel disconnection (ungraceful kill)"
+  compose kill broadcast_channel
+  sleep 3
+  compose up -d broadcast_channel
+  wait_for_broadcaster
+  sleep 5
+
   test_data_publish "sunil"
   test_data_publish "eve"
   test_push_policy "best_one_yet"
+
+  # Regression guards for the broadcaster-disconnect storm (see pubsub_resilience.py):
+  # the servers must have reconnected to the backbone (this line is logged on every
+  # (re)connect, so it fires on both the graceful-restart and ungraceful-kill paths),
+  # and must NOT have spewed the non-idempotent-disconnect ValueError that drove the
+  # fleet-wide drop storm.
+  check_servers_logged "Broadcaster listener connected to channel"
+  check_servers_not_logged "list.remove(x): x not in list"
+
+  # Cross-instance consistency: publish an update WHILE the backbone is down, then
+  # recover. The two clients connect to different server replicas via the service VIP,
+  # so for BOTH to end up with the value the missed cross-server update must converge
+  # after recovery (via the replay buffer and/or the resync-on-reconnect path).
+  echo "- Testing cross-instance consistency across a backbone outage"
+  compose kill broadcast_channel
+  sleep 3
+  publish_data "consistency_user"
+  sleep 2
+  compose up -d broadcast_channel
+  wait_for_broadcaster
+  # allow buffered replay + (if needed) client resync + full refetch to settle
+  sleep 15
+  # The server that received the publish while the backbone was down must have
+  # buffered it and replayed it on recovery (proves the replay path actually ran,
+  # not just a client refetch).
+  check_servers_logged "buffered for replay"
+  check_servers_logged "Replaying"
+  # BOTH clients (on different replicas via the VIP) must end up with the value.
+  check_clients_logged "PUT /v1/data/users/consistency_user/location -> 204"
   # TODO: Test statistics feature again after broadcaster restart (should first fix statistics bug)
 }
 
@@ -365,6 +433,14 @@ while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
   main && break
   RETRY_COUNT=$((RETRY_COUNT + 1))
   echo "Test failed, retrying..."
+  # Tear the stack down before retrying so the next attempt starts clean:
+  # generate_opal_keys binds host port 7002, which conflicts with a leftover
+  # stack, and stale (transient) client ERRORs from the previous attempt's
+  # broadcaster kills would otherwise trip check_no_error. The compose helper
+  # uses --env-file .env, which exists after the first attempt's keygen.
+  compose down --remove-orphans --volumes 2>/dev/null || true
+  docker rm -f --wait opal-server-keygen 2>/dev/null || true
+  rm -rf ./opal-tests-policy-repo ./temp-repo ./gitea-data ./git-repos 2>/dev/null || true
 done
 
 if [ $RETRY_COUNT -ge $MAX_RETRIES ]; then
