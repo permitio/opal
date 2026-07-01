@@ -435,6 +435,14 @@ class OpalServerConfig(Confi):
         description="The max number of local clones to use for the same repo (reused across scopes)",
     )
 
+    SCOPES_SYNC_CONCURRENCY = confi.int(
+        "SCOPES_SYNC_CONCURRENCY",
+        10,
+        description="Maximum number of scope git repositories fetched concurrently "
+        "during sync_scopes (boot and periodic). Higher is faster but uses more "
+        "memory, file descriptors, and network connections at once.",
+    )
+
     REDIS_URL = confi.str(
         "REDIS_URL",
         default="redis://localhost",
