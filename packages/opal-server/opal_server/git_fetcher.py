@@ -179,13 +179,22 @@ class GitPolicyFetcher(PolicyFetcher):
             f"Initializing git fetcher: scope_id={scope_id}, url={source.url}, branch={self._source.branch}, source_id={self._source_id}"
         )
 
-    async def _get_repo_lock(self):
-        # Previous file based implementation worked across multiple processes/threads, but wasn't fair (next acquiree is random)
-        # This implementation works only within the same process/thread, but is fair (next acquiree is the earliest to enter the lock)
-        lock = GitPolicyFetcher.repo_locks[
-            self._source_id
-        ] = GitPolicyFetcher.repo_locks.get(self._source_id, asyncio.Lock())
+    @staticmethod
+    def source_lock(source_id: str) -> asyncio.Lock:
+        """Return the process-shared per-source lock, creating it on first use.
+
+        The same lock object is reused for a given source_id so that a fetch and
+        a concurrent delete of the same source serialize against each other.
+        """
+        lock = GitPolicyFetcher.repo_locks.get(source_id)
+        if lock is None:
+            lock = GitPolicyFetcher.repo_locks[source_id] = asyncio.Lock()
         return lock
+
+    async def _get_repo_lock(self):
+        # Same-process, fair (FIFO) lock per source. Shared with delete_scope
+        # via GitPolicyFetcher.source_lock so delete cannot race an in-flight fetch.
+        return GitPolicyFetcher.source_lock(self._source_id)
 
     async def _was_fetched_after(self, t: datetime.datetime):
         last_fetched = GitPolicyFetcher.repos_last_fetched.get(self._source_id, None)
