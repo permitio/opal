@@ -193,6 +193,22 @@ class OpalServerConfig(Confi):
         0,
         description="The timeout for cloning the policy repository (0 means wait forever)",
     )
+    SCOPES_GIT_FETCH_TIMEOUT = confi.float(
+        "SCOPES_GIT_FETCH_TIMEOUT",
+        120.0,
+        description="Hard timeout in seconds for a single scope git clone/fetch. "
+        "On timeout the operation is logged and skipped (retried next cycle), so "
+        "one unreachable repo can never block boot or other scopes indefinitely "
+        "(0 = no timeout).",
+    )
+    SCOPES_GIT_MAX_WORKERS = confi.int(
+        "SCOPES_GIT_MAX_WORKERS",
+        10,
+        description="Size of the dedicated thread pool for scope git operations, "
+        "which also bounds how many scopes are synced concurrently. Isolating git "
+        "work keeps a hung fetch from starving bundle serving and other server "
+        "work that uses the default executor.",
+    )
     LEADER_LOCK_FILE_PATH = confi.str(
         "LEADER_LOCK_FILE_PATH",
         "/tmp/opal_server_leader.lock",

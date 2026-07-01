@@ -6,6 +6,7 @@ from typing import Any
 from fastapi_websocket_pubsub import Topic
 from opal_common.logger import logger
 from opal_server.config import opal_server_config
+from opal_server.git_fetcher import shutdown_git_executor
 from opal_server.policy.watcher.task import BasePolicyWatcherTask
 from opal_server.redis_utils import RedisDB
 from opal_server.scopes.scope_repository import ScopeRepository
@@ -81,5 +82,10 @@ class ScopesPolicyWatcherTask(BasePolicyWatcherTask):
                 pubsub_endpoint=None,
             )
             asyncio.run(service.sync_scopes(notify_on_changes=False))
+
+            # Release the git pool built during preload so the gunicorn master
+            # does not carry pool threads into forked workers (they would be
+            # dead in the child). Workers rebuild their own pool on first use.
+            shutdown_git_executor()
 
             logger.warning("Finished preloading repo clones for scopes.")

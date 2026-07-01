@@ -1,3 +1,4 @@
+import asyncio
 import datetime
 import shutil
 from functools import partial
@@ -12,6 +13,7 @@ from opal_common.logger import logger
 from opal_common.schemas.policy import PolicyUpdateMessageNotification
 from opal_common.schemas.policy_source import GitPolicyScopeSource
 from opal_common.topics.publisher import ScopedServerSideTopicPublisher
+from opal_server.config import opal_server_config
 from opal_server.git_fetcher import GitPolicyFetcher, PolicyFetcherCallbacks
 from opal_server.policy.watcher.callbacks import (
     create_policy_update,
@@ -194,34 +196,58 @@ class ScopesService:
                 f"OPAL Scopes: syncing {len(scopes)} scopes in the background (polling updates: {only_poll_updates})"
             )
 
-            fetched_source_ids = set()
-            skipped_scopes = []
+            # Partition into distinct repos (cloned/fetched once, with priority
+            # so every repo is pulled asap) and the scopes that merely reuse an
+            # already-handled repo (checked for changes only).
+            unique_scopes = []
+            duplicate_scopes = []
+            seen_source_ids = set()
             for scope in scopes:
                 src_id = GitPolicyFetcher.source_id(scope.policy)
+                if src_id in seen_source_ids:
+                    duplicate_scopes.append(scope)
+                else:
+                    seen_source_ids.add(src_id)
+                    unique_scopes.append(scope)
 
-                # Give priority to scopes that have a unique url per shard (so we'll clone all repos asap)
-                if src_id in fetched_source_ids:
-                    skipped_scopes.append(scope)
-                    continue
+            # Bound concurrency to the dedicated git pool so one unreachable repo
+            # only stalls its own slot (for the fetch timeout), not the whole
+            # boot/poll pass. Phase 1 clones/fetches every distinct repo; phase 2
+            # then checks the duplicates against those now-present repos.
+            semaphore = asyncio.Semaphore(
+                max(1, opal_server_config.SCOPES_GIT_MAX_WORKERS)
+            )
+            await self._sync_scopes_concurrently(
+                unique_scopes,
+                semaphore,
+                force_fetch=True,
+                notify_on_changes=notify_on_changes,
+            )
+            await self._sync_scopes_concurrently(
+                duplicate_scopes,
+                semaphore,
+                force_fetch=False,
+                notify_on_changes=notify_on_changes,
+            )
 
+    async def _sync_scopes_concurrently(
+        self, scopes, semaphore, *, force_fetch, notify_on_changes
+    ):
+        """Sync ``scopes`` concurrently, bounded by ``semaphore``.
+
+        Each scope's failure is logged and isolated so one bad repo
+        never fails the whole pass.
+        """
+
+        async def _sync_one(scope):
+            async with semaphore:
                 try:
                     await self.sync_scope(
                         scope=scope,
-                        force_fetch=True,
+                        force_fetch=force_fetch,
                         notify_on_changes=notify_on_changes,
                     )
-                except Exception as e:
+                except Exception:
                     logger.exception(f"sync_scope failed for {scope.scope_id}")
 
-                fetched_source_ids.add(src_id)
-
-            for scope in skipped_scopes:
-                # No need to refetch the same repo, just check for changes
-                try:
-                    await self.sync_scope(
-                        scope=scope,
-                        force_fetch=False,
-                        notify_on_changes=notify_on_changes,
-                    )
-                except Exception as e:
-                    logger.exception(f"sync_scope failed for {scope.scope_id}")
+        await asyncio.gather(*(_sync_one(scope) for scope in scopes))
