@@ -182,14 +182,18 @@ class ScopesService:
                 for s in other_scopes
             )
 
-            if source_id_shared:
-                logger.info(
-                    "Another scope shares the same clone (source id), skipping clone deletion"
-                )
-            else:
-                shutil.rmtree(scope_dir, ignore_errors=True)
-                GitPolicyFetcher.forget_repo(str(scope_dir))
-                GitPolicyFetcher.repos_last_fetched.pop(deleted_source_id, None)
+            # Serialize the filesystem + cache mutation against an in-flight
+            # fetch of the same source so a delete cannot race a concurrent
+            # sync_scope (see PR4 bounded-concurrency loading).
+            async with GitPolicyFetcher.source_lock(deleted_source_id):
+                if source_id_shared:
+                    logger.info(
+                        "Another scope shares the same clone (source id), skipping clone deletion"
+                    )
+                else:
+                    shutil.rmtree(scope_dir, ignore_errors=True)
+                    GitPolicyFetcher.forget_repo(str(scope_dir))
+                    GitPolicyFetcher.repos_last_fetched.pop(deleted_source_id, None)
 
             await self._scopes.delete(scope_id)
 
