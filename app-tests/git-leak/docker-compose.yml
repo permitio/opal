@@ -87,8 +87,6 @@ services:
       GITEA_ADMIN_USER: "opaladmin"
       GITEA_ADMIN_PASSWORD: "opaladmin"
       REPO_COUNT: "${REPO_COUNT:-50}"
-    volumes:
-      - seed-output:/seed-output
     restart: "no"
 
   opal_server:
@@ -133,4 +131,3 @@ services:
 
 volumes:
   gitea-data:
-  seed-output:

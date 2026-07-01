@@ -126,15 +126,20 @@ class OpalServerClient:
             self._created_scopes.clear()
             self.wait_healthy(timeout=timeout)
 
-    def delete_all_scopes(self, drain_timeout: int = 20) -> None:
+    def delete_all_scopes(self, drain_timeout: int = 3) -> None:
         """Delete every scope the *server* knows (not just this client's), then
         best-effort wait for the caches to drain — a clean slate independent of
         what any prior, possibly-failed, test left behind.
 
         Best-effort drain by design: on master, delete never purges the caches
-        (the leak this suite gates), so the wait simply times out. This runs in
-        fixture setup/teardown, so a failure here must not mask the test, hence
-        the broad excepts and bounded wait.
+        (the leak this suite gates), so the wait can't succeed there — hence the
+        short ``drain_timeout`` (this runs in *every* test's setup and teardown,
+        so a long wait for a state that can't occur on master would be pure dead
+        time per test). Post-PR2 the purge is near-instant, so a few seconds is
+        ample. The DELETEs themselves are synchronous, so the scope store is
+        already clean before this wait — the wait only smooths the in-process
+        cache count. This runs in fixture setup/teardown, so a failure here must
+        not mask the test, hence the broad excepts and bounded wait.
         """
         try:
             for scope_id in self.list_scope_ids():
@@ -263,20 +268,32 @@ def make_repo_unreachable(name: str) -> str:
     return f"http://{UNREACHABLE_HOST}/{GITEA_USER}/{name}.git"
 
 
-def compose(*args: str) -> subprocess.CompletedProcess:
+def compose(*args: str, timeout: int = 1200) -> subprocess.CompletedProcess:
     """Run `docker compose <args>`; on failure, surface the captured output.
 
     `capture_output=True` keeps compose noise out of passing tests, but
     a raw CalledProcessError shows only the exit code — so on failure we
     re-raise with the captured stdout/stderr embedded, otherwise a
     broken build/seed/ restart is opaque to debug.
+
+    ``timeout`` (default 1200s) bounds each call: ``@pytest.mark.timeout`` does
+    not cover session-scoped *fixture setup*, so a wedged ``up``/``wait``/build
+    would otherwise hang to the CI job limit. On expiry we raise a clear error
+    (subprocess.run kills the process group) instead of blocking indefinitely.
     """
-    proc = subprocess.run(
-        ["docker", "compose", *args],
-        cwd=_COMPOSE_DIR,
-        capture_output=True,
-        text=True,
-    )
+    try:
+        proc = subprocess.run(
+            ["docker", "compose", *args],
+            cwd=_COMPOSE_DIR,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise RuntimeError(
+            f"`docker compose {' '.join(args)}` timed out after {timeout}s\n"
+            f"--- stdout ---\n{exc.stdout or ''}\n--- stderr ---\n{exc.stderr or ''}"
+        ) from exc
     if proc.returncode != 0:
         raise RuntimeError(
             f"`docker compose {' '.join(args)}` failed (exit {proc.returncode})\n"
