@@ -404,6 +404,15 @@ class OpalServerConfig(Confi):
         description="Set if OPAL server should enable tracing with datadog APM",
     )
 
+    DEBUG_INTERNAL_STATS = confi.bool(
+        "DEBUG_INTERNAL_STATS",
+        False,
+        description=(
+            "Expose GET /internal/git-fetcher-cache-stats with in-memory cache "
+            "sizes and process RSS. For diagnostics/tests only; keep off in production."
+        ),
+    )
+
     SCOPES = confi.bool("SCOPES", default=False, description="Enable scopes")
 
     SCOPES_REPO_CLONES_SHARDS = confi.int(
