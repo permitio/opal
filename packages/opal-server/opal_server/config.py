@@ -193,6 +193,20 @@ class OpalServerConfig(Confi):
         0,
         description="The timeout for cloning the policy repository (0 means wait forever)",
     )
+    SCOPES_GIT_FETCH_TIMEOUT = confi.float(
+        "SCOPES_GIT_FETCH_TIMEOUT",
+        120.0,
+        description="Hard timeout in seconds for a single scope git clone/fetch. "
+        "On timeout the operation is abandoned and the scope is marked failed so "
+        "one unreachable repo can never block boot or other scopes (0 = no timeout).",
+    )
+    SCOPES_GIT_MAX_WORKERS = confi.int(
+        "SCOPES_GIT_MAX_WORKERS",
+        10,
+        description="Size of the dedicated thread pool for scope git operations. "
+        "Isolating git work keeps a hung fetch from starving bundle serving and "
+        "other server work that uses the default executor.",
+    )
     LEADER_LOCK_FILE_PATH = confi.str(
         "LEADER_LOCK_FILE_PATH",
         "/tmp/opal_server_leader.lock",
@@ -404,12 +418,29 @@ class OpalServerConfig(Confi):
         description="Set if OPAL server should enable tracing with datadog APM",
     )
 
+    DEBUG_INTERNAL_STATS = confi.bool(
+        "DEBUG_INTERNAL_STATS",
+        False,
+        description=(
+            "Expose GET /internal/git-fetcher-cache-stats with in-memory cache "
+            "sizes and process RSS. For diagnostics/tests only; keep off in production."
+        ),
+    )
+
     SCOPES = confi.bool("SCOPES", default=False, description="Enable scopes")
 
     SCOPES_REPO_CLONES_SHARDS = confi.int(
         "SCOPES_REPO_CLONES_SHARDS",
         1,
         description="The max number of local clones to use for the same repo (reused across scopes)",
+    )
+
+    SCOPES_SYNC_CONCURRENCY = confi.int(
+        "SCOPES_SYNC_CONCURRENCY",
+        10,
+        description="Maximum number of scope git repositories fetched concurrently "
+        "during sync_scopes (boot and periodic). Higher is faster but uses more "
+        "memory, file descriptors, and network connections at once.",
     )
 
     REDIS_URL = confi.str(

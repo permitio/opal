@@ -27,6 +27,7 @@ from opal_common.topics.publisher import (
 from opal_server.config import opal_server_config
 from opal_server.data.api import init_data_updates_router
 from opal_server.data.data_update_publisher import DataUpdatePublisher
+from opal_server.debug_stats import register_internal_stats_route
 from opal_server.loadlimiting import init_loadlimit_router
 from opal_server.policy.bundles.api import router as bundles_router
 from opal_server.policy.watcher.factory import setup_watcher_task
@@ -312,6 +313,12 @@ class OpalServer:
                     content={"status": "error", "broadcaster": "unhealthy"},
                 )
             return {"status": "ok"}
+
+        register_internal_stats_route(
+            app,
+            enabled=opal_server_config.DEBUG_INTERNAL_STATS,
+            dependencies=[Depends(authenticator)],
+        )
 
         return app
 

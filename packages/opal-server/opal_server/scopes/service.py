@@ -1,3 +1,4 @@
+import asyncio
 import datetime
 import shutil
 from functools import partial
@@ -12,6 +13,7 @@ from opal_common.logger import logger
 from opal_common.schemas.policy import PolicyUpdateMessageNotification
 from opal_common.schemas.policy_source import GitPolicyScopeSource
 from opal_common.topics.publisher import ScopedServerSideTopicPublisher
+from opal_server.config import opal_server_config
 from opal_server.git_fetcher import GitPolicyFetcher, PolicyFetcherCallbacks
 from opal_server.policy.watcher.callbacks import (
     create_policy_update,
@@ -162,24 +164,38 @@ class ScopesService:
         with tracer.trace("scopes_service.delete_scope", resource=scope_id):
             logger.info(f"Delete scope: {scope_id}")
             scope = await self._scopes.get(scope_id)
-            url = scope.policy.url
+            deleted_source = cast(GitPolicyScopeSource, scope.policy)
+            deleted_source_id = GitPolicyFetcher.source_id(deleted_source)
+            scope_dir = GitPolicyFetcher.repo_clone_path(self._base_dir, deleted_source)
 
-            scopes = await self._scopes.all()
-            remove_repo_clone = True
+            # Clone dir, the `repos` handle cache, and `repos_last_fetched` are
+            # all keyed by source_id (= the clone path). A sibling only shares
+            # storage when it resolves to the same source_id; same url with a
+            # different branch can shard to a different source_id (and a
+            # different clone dir) when SCOPES_REPO_CLONES_SHARDS > 1, so gate on
+            # source_id, not url — otherwise the deleted scope's clone + pygit2
+            # handle leak.
+            other_scopes = [
+                s for s in await self._scopes.all() if s.scope_id != scope_id
+            ]
+            source_id_shared = any(
+                isinstance(s.policy, GitPolicyScopeSource)
+                and GitPolicyFetcher.source_id(s.policy) == deleted_source_id
+                for s in other_scopes
+            )
 
-            for scope in scopes:
-                if scope.scope_id != scope_id and scope.policy.url == url:
+            # Serialize the filesystem + cache mutation against an in-flight
+            # fetch of the same source so a delete cannot race a concurrent
+            # sync_scope (see PR4 bounded-concurrency loading).
+            async with GitPolicyFetcher.source_lock(deleted_source_id):
+                if source_id_shared:
                     logger.info(
-                        f"found another scope with same remote url ({scope.scope_id}), skipping clone deletion"
+                        "Another scope shares the same clone (source id), skipping clone deletion"
                     )
-                    remove_repo_clone = False
-                    break
-
-            if remove_repo_clone:
-                scope_dir = GitPolicyFetcher.repo_clone_path(
-                    self._base_dir, cast(GitPolicyScopeSource, scope.policy)
-                )
-                shutil.rmtree(scope_dir, ignore_errors=True)
+                else:
+                    shutil.rmtree(scope_dir, ignore_errors=True)
+                    GitPolicyFetcher.forget_repo(str(scope_dir))
+                    GitPolicyFetcher.repos_last_fetched.pop(deleted_source_id, None)
 
             await self._scopes.delete(scope_id)
 
@@ -190,38 +206,56 @@ class ScopesService:
                 # Only sync scopes that have polling enabled (in a periodic check)
                 scopes = [scope for scope in scopes if scope.policy.poll_updates]
 
+            concurrency = max(1, opal_server_config.SCOPES_SYNC_CONCURRENCY)
             logger.info(
-                f"OPAL Scopes: syncing {len(scopes)} scopes in the background (polling updates: {only_poll_updates})"
+                f"OPAL Scopes: syncing {len(scopes)} scopes "
+                f"(concurrency={concurrency}, polling updates: {only_poll_updates})"
             )
 
+            # Pass 1: fetch each distinct source once (force_fetch). Pass 2: scopes that
+            # share an already-fetched source only re-check locally (no network).
             fetched_source_ids = set()
-            skipped_scopes = []
+            first_pass = []
+            second_pass = []
             for scope in scopes:
                 src_id = GitPolicyFetcher.source_id(scope.policy)
 
                 # Give priority to scopes that have a unique url per shard (so we'll clone all repos asap)
                 if src_id in fetched_source_ids:
-                    skipped_scopes.append(scope)
-                    continue
+                    second_pass.append(scope)
+                else:
+                    fetched_source_ids.add(src_id)
+                    first_pass.append(scope)
 
+            await self._sync_scope_batch(
+                first_pass,
+                force_fetch=True,
+                notify_on_changes=notify_on_changes,
+                concurrency=concurrency,
+            )
+            await self._sync_scope_batch(
+                second_pass,
+                force_fetch=False,
+                notify_on_changes=notify_on_changes,
+                concurrency=concurrency,
+            )
+
+    async def _sync_scope_batch(
+        self, scopes, *, force_fetch, notify_on_changes, concurrency
+    ):
+        if not scopes:
+            return
+        semaphore = asyncio.Semaphore(concurrency)
+
+        async def _one(scope):
+            async with semaphore:
                 try:
                     await self.sync_scope(
                         scope=scope,
-                        force_fetch=True,
+                        force_fetch=force_fetch,
                         notify_on_changes=notify_on_changes,
                     )
-                except Exception as e:
+                except Exception:
                     logger.exception(f"sync_scope failed for {scope.scope_id}")
 
-                fetched_source_ids.add(src_id)
-
-            for scope in skipped_scopes:
-                # No need to refetch the same repo, just check for changes
-                try:
-                    await self.sync_scope(
-                        scope=scope,
-                        force_fetch=False,
-                        notify_on_changes=notify_on_changes,
-                    )
-                except Exception as e:
-                    logger.exception(f"sync_scope failed for {scope.scope_id}")
+        await asyncio.gather(*(_one(scope) for scope in scopes))

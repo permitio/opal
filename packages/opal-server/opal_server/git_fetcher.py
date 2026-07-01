@@ -4,6 +4,8 @@ import datetime
 import hashlib
 import shutil
 import time
+from concurrent.futures import ThreadPoolExecutor
+from functools import partial
 from pathlib import Path
 from typing import Optional, cast
 
@@ -11,7 +13,6 @@ import aiofiles.os
 import pygit2
 from ddtrace import tracer
 from git import Repo
-from opal_common.async_utils import run_sync
 from opal_common.git_utils.bundle_maker import BundleMaker
 from opal_common.logger import logger
 from opal_common.schemas.policy import PolicyBundle
@@ -32,6 +33,45 @@ from pygit2 import (
     discover_repository,
     reference_is_valid_name,
 )
+
+_git_executor: Optional[ThreadPoolExecutor] = None
+
+
+def _get_git_executor() -> ThreadPoolExecutor:
+    """Lazily build the dedicated pool for scope git operations.
+
+    Isolated from the default executor so a hung clone/fetch can never
+    starve bundle serving or other server work.
+    """
+    global _git_executor
+    if _git_executor is None:
+        _git_executor = ThreadPoolExecutor(
+            max_workers=opal_server_config.SCOPES_GIT_MAX_WORKERS,
+            thread_name_prefix="opal-git",
+        )
+    return _git_executor
+
+
+async def run_in_git_executor(func, *args, timeout: float, **kwargs):
+    """Run a blocking git call on the dedicated pool with a hard timeout.
+
+    Raises ``TimeoutError`` (via ``asyncio.wait_for``) when the call exceeds
+    ``timeout`` seconds. ``timeout <= 0`` means no limit. NOTE: the timeout
+    unblocks the event loop and the awaiting coroutine, but the underlying
+    pygit2 call keeps running on its pool thread until the OS network timeout;
+    the dedicated pool keeps that lingering thread isolated.
+    """
+    loop = asyncio.get_running_loop()
+    fut = loop.run_in_executor(_get_git_executor(), partial(func, *args, **kwargs))
+    if timeout and timeout > 0:
+        try:
+            return await asyncio.wait_for(fut, timeout=timeout)
+        except asyncio.TimeoutError as exc:
+            # On Python < 3.11 ``asyncio.TimeoutError`` is a distinct class from
+            # the builtin ``TimeoutError``; normalize so callers (and the
+            # documented contract) can rely on the builtin everywhere.
+            raise TimeoutError() from exc
+    return await fut
 
 
 class PolicyFetcherCallbacks:
@@ -139,13 +179,23 @@ class GitPolicyFetcher(PolicyFetcher):
             f"Initializing git fetcher: scope_id={scope_id}, url={source.url}, branch={self._source.branch}, source_id={self._source_id}"
         )
 
-    async def _get_repo_lock(self):
-        # Previous file based implementation worked across multiple processes/threads, but wasn't fair (next acquiree is random)
-        # This implementation works only within the same process/thread, but is fair (next acquiree is the earliest to enter the lock)
-        lock = GitPolicyFetcher.repo_locks[
-            self._source_id
-        ] = GitPolicyFetcher.repo_locks.get(self._source_id, asyncio.Lock())
+    @staticmethod
+    def source_lock(source_id: str) -> asyncio.Lock:
+        """Return the process-shared per-source lock, creating it on first use.
+
+        The same lock object is reused for a given source_id so that a
+        fetch and a concurrent delete of the same source serialize
+        against each other.
+        """
+        lock = GitPolicyFetcher.repo_locks.get(source_id)
+        if lock is None:
+            lock = GitPolicyFetcher.repo_locks[source_id] = asyncio.Lock()
         return lock
+
+    async def _get_repo_lock(self):
+        # Same-process, fair (FIFO) lock per source. Shared with delete_scope
+        # via GitPolicyFetcher.source_lock so delete cannot race an in-flight fetch.
+        return GitPolicyFetcher.source_lock(self._source_id)
 
     async def _was_fetched_after(self, t: datetime.datetime):
         last_fetched = GitPolicyFetcher.repos_last_fetched.get(self._source_id, None)
@@ -187,13 +237,28 @@ class GitPolicyFetcher(PolicyFetcher):
                             logger.debug(
                                 f"Fetching remote (force_fetch={force_fetch}): {self._remote} ({self._source.url})"
                             )
+                            try:
+                                await run_in_git_executor(
+                                    repo.remotes[self._remote].fetch,
+                                    callbacks=self._auth_callbacks,
+                                    timeout=opal_server_config.SCOPES_GIT_FETCH_TIMEOUT,
+                                )
+                            except TimeoutError as exc:
+                                # Expected when a repo is unreachable: log cleanly
+                                # (no traceback) and skip, matching the clone path.
+                                # repos_last_fetched stays stale so the next cycle
+                                # retries and force_fetch is not wrongly suppressed.
+                                logger.error(
+                                    "Timed out fetching {url}, skipping: {err}",
+                                    url=self._source.url,
+                                    err=repr(exc),
+                                )
+                                return
+                            # Only mark as fetched after the fetch actually
+                            # succeeds.
                             GitPolicyFetcher.repos_last_fetched[
                                 self._source_id
                             ] = datetime.datetime.now()
-                            await run_sync(
-                                repo.remotes[self._remote].fetch,
-                                callbacks=self._auth_callbacks,
-                            )
                             logger.debug(f"Fetch completed: {self._source.url}")
 
                         # New commits might be present because of a previous fetch made by another scope
@@ -222,14 +287,19 @@ class GitPolicyFetcher(PolicyFetcher):
             path=self._repo_path,
         )
         try:
-            repo: Repository = await run_sync(
+            repo: Repository = await run_in_git_executor(
                 clone_repository,
                 self._source.url,
                 str(self._repo_path),
                 callbacks=self._auth_callbacks,
+                timeout=opal_server_config.SCOPES_GIT_FETCH_TIMEOUT,
             )
-        except pygit2.GitError:
-            logger.exception(f"Could not clone repo at {self._source.url}")
+        except (pygit2.GitError, TimeoutError) as exc:
+            logger.error(
+                "Could not clone repo at {url}: {err}",
+                url=self._source.url,
+                err=repr(exc),
+            )
         else:
             logger.info(f"Clone completed: {self._source.url}")
             await self._notify_on_changes(repo)
@@ -365,6 +435,26 @@ class GitPolicyFetcher(PolicyFetcher):
     @staticmethod
     def repo_clone_path(base_dir: Path, source: GitPolicyScopeSource) -> Path:
         return GitPolicyFetcher.base_dir(base_dir) / GitPolicyFetcher.source_id(source)
+
+    @staticmethod
+    def forget_repo(path: str) -> None:
+        """Drop the cached repository for a clone path and release its handles.
+
+        The cached ``pygit2.Repository`` keeps OS file descriptors and mmapped
+        pack indexes open; without this, a deleted scope's repo pins memory and
+        inodes for the lifetime of the process even after the clone is removed.
+        ``Repository.free()`` is called only when available (it is not part of
+        every pygit2 release); otherwise the dropped reference is reclaimed by GC.
+        """
+        repo = GitPolicyFetcher.repos.pop(path, None)
+        if repo is None:
+            return
+        free = getattr(repo, "free", None)
+        if callable(free):
+            try:
+                free()
+            except Exception:
+                logger.debug("pygit2 Repository.free() failed; relying on GC")
 
 
 class GitCallback(RemoteCallbacks):
