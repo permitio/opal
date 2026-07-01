@@ -8,6 +8,7 @@ from helpers import (
     OpalServerClient,
     compose,
     list_seeded_repos,
+    worker_pids,
 )
 
 
@@ -76,6 +77,13 @@ def opal(stack) -> OpalServerClient:
     # tracked set) at setup, so a scope orphaned by a prior failed test can't
     # contaminate this one; then again on teardown.
     stack.delete_all_scopes()
+    # Guard the single-worker invariant the cache gates depend on: if a prior
+    # opal_multiworker teardown failed to restore 1 worker, the per-process cache
+    # reads would be nondeterministic here (a `== 0` drain could false-pass).
+    # Fail loudly and ordering-independently rather than silently mis-measure.
+    assert (
+        len(worker_pids()) == 1
+    ), f"expected a single-worker stack, found workers {sorted(worker_pids())}"
     yield stack
     stack.delete_all_scopes()
 
@@ -110,6 +118,13 @@ def opal_multiworker(stack) -> OpalServerClient:
         compose("up", "-d", "--no-deps", "--force-recreate", "opal_server")
         stack.wait_healthy()
         stack.delete_all_scopes()
+        # Verify the restore actually reduced the stack back to one worker. If it
+        # did not (a botched recreate), fail loudly here rather than leave a
+        # 2-worker stack that would silently break later single-worker cache
+        # gates' determinism.
+        assert (
+            len(worker_pids()) == 1
+        ), f"opal_multiworker teardown left workers {sorted(worker_pids())}, expected 1"
 
 
 @pytest.fixture(scope="session")

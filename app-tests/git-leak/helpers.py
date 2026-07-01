@@ -346,6 +346,30 @@ def worker_pids(service: str = "opal_server") -> set:
     return set(pids[1:])  # drop the master (lowest PID); the rest are workers
 
 
+# The reconnecting broadcaster (PER-15065 / #915) logs this line every time its
+# reader (re)connects to the backbone channel — once at boot, and once more on
+# each reconnect after a backbone drop (pubsub_resilience.py `_reader_loop` ->
+# `_ensure_connected`). Counting it across a Postgres bounce positively proves a
+# disconnect+reconnect actually happened.
+_BROADCASTER_CONNECT_LOG = "Broadcaster listener connected to channel"
+
+
+def broadcaster_connect_count(service: str = "opal_server") -> int:
+    """Count broadcaster reader (re)connect log lines for ``service``.
+
+    The postgres-bounce test asserts this COUNT *increased* across the bounce so
+    the gate positively confirms the backbone actually dropped and the reader
+    reconnected — without this, a bounce that failed to break the reader (a
+    future Postgres shutdown-signal change, connection pooling, etc.) would leave
+    the worker PIDs unchanged and pass the gate vacuously. Paired with
+    ``worker_pids()`` unchanged (which proves the recovery was *in place*, not a
+    respawn), the two together pin down the PER-15065 property.
+    """
+    # --no-log-prefix strips the "service | " column so the marker matches cleanly.
+    out = compose("logs", "--no-log-prefix", service).stdout
+    return out.count(_BROADCASTER_CONNECT_LOG)
+
+
 def bounce_postgres(down_seconds: int = 5) -> None:
     compose("stop", "postgres")
     time.sleep(down_seconds)
@@ -361,13 +385,13 @@ def list_seeded_repos(count: int) -> List[str]:
 
 # A reserved repo seeded *outside* the numeric ``policy-repo-NNNN`` range that
 # ``list_seeded_repos`` enumerates, so no boot/leak test ever clones it. The
-# resilience offline-hang test uses it as its "healthy" probe: clones live at
-# ``base_dir/<source_id>`` keyed by URL-hash and survive ``compose
-# restart/stop/start`` (opal_server mounts no volume at ``/opal``; only
-# ``down -v`` wipes them), so pointing the probe at any shared seeded repo would
-# let the healthy scope reuse an on-disk clone and serve 200 *without* touching
-# the saturated fetch executor — false-passing a gate that must FAIL on this
-# branch. A dedicated never-cloned repo forces a genuine fresh clone through the
-# starved executor. Keep this name in sync with ``RESERVED_REPOS`` in
-# ``seed/seed_gitea.py``.
+# resilience offline-hang test uses it as its "healthy" probe so the scope must
+# perform a genuine *clone* through the starved executor, rather than reusing an
+# on-disk clone left by another test (clones live at ``base_dir/<source_id>``
+# keyed by URL-hash and survive ``compose restart/stop/start`` — opal_server
+# mounts no volume at ``/opal``; only ``down -v`` wipes them). Note serving the
+# bundle (``make_bundle`` via ``run_sync``) shares that same fetch executor, so a
+# pre-cloned shared repo would be starved on serve too — the never-cloned probe
+# is belt-and-suspenders that additionally exercises the clone path. Keep this
+# name in sync with ``RESERVED_REPOS`` in ``seed/seed_gitea.py``.
 HEALTHY_PROBE_REPO = "policy-repo-healthy-probe"

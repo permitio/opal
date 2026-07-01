@@ -1,14 +1,27 @@
 import time
 
 import pytest
+import requests
 from helpers import gitea_repo_url, list_seeded_repos
 
 
 def _wait_until(predicate, timeout=30, interval=0.5):
+    """Poll ``predicate`` until true or ``timeout`` elapses.
+
+    The predicates here read ``/internal`` via ``opal.stats()``, which does
+    ``raise_for_status()``. A *transient* request error (a momentary 5xx, a
+    connection reset, or a read racing an in-flight mutation) is treated as "not
+    yet" and retried instead of propagating and turning the whole test into an
+    ERROR before the deadline. A *persistent* failure still surfaces: the wait
+    just returns ``False`` and the caller's ``assert`` fires with the last stats.
+    """
     deadline = time.time() + timeout
     while time.time() < deadline:
-        if predicate():
-            return True
+        try:
+            if predicate():
+                return True
+        except requests.RequestException:
+            pass
         time.sleep(interval)
     return False
 

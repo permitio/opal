@@ -5,6 +5,7 @@ import requests
 from helpers import (
     HEALTHY_PROBE_REPO,
     bounce_postgres,
+    broadcaster_connect_count,
     gitea_repo_url,
     list_seeded_repos,
     make_repo_unreachable,
@@ -28,24 +29,29 @@ def test_offline_repo_does_not_block_healthy_scopes(opal, repo_count):
     fetch executor and the healthy scope's bundle never becomes
     available.
     """
-    # the `blackhole` sidecar accepts the TCP handshake then never answers, so
-    # each of these clones hangs (holding a fetch-executor thread) rather than
-    # failing fast; enough of them saturate the pool.
-    for i in range(OFFLINE_REPOS):
-        opal.put_scope(
-            f"offline-{i}", make_repo_unreachable(f"dead-{i}"), branch="main"
-        )
-
-    # Point the healthy scope at a repo *no other test clones* (HEALTHY_PROBE_REPO
-    # is seeded outside the numeric range the boot/leak tests enumerate). Clones
-    # survive compose restart/stop/start, so reusing a shared seeded repo here
-    # would let this scope hit the existing on-disk clone via _discover_repository,
-    # skip _clone(), and serve 200 without ever touching the saturated executor —
-    # false-passing this gate. A never-cloned repo forces a real clone through the
-    # starved pool, so the gate fails correctly on this branch (no PR3 timeout).
-    opal.put_scope("healthy", gitea_repo_url(HEALTHY_PROBE_REPO))
-
     try:
+        # the `blackhole` sidecar accepts the TCP handshake then never answers, so
+        # each of these clones hangs (holding a fetch-executor thread) rather than
+        # failing fast; enough of them saturate the pool. These PUTs live *inside*
+        # the try so that if one fails partway through, the finally still runs
+        # hard_reset() — otherwise the clones already dispatched to the executor
+        # would hang for the blackhole's full duration and starve the
+        # session-scoped stack for every later test.
+        for i in range(OFFLINE_REPOS):
+            opal.put_scope(
+                f"offline-{i}", make_repo_unreachable(f"dead-{i}"), branch="main"
+            )
+
+        # Point the healthy scope at a repo *no other test clones*
+        # (HEALTHY_PROBE_REPO is seeded outside the numeric range the boot/leak
+        # tests enumerate) so it must perform a genuine clone rather than reuse a
+        # surviving on-disk clone via _discover_repository. Serving the bundle
+        # shares the same starved executor too, so a shared repo would also stay
+        # red here — the never-cloned probe additionally guarantees the *clone*
+        # itself is exercised through the starved pool (fails correctly on this
+        # branch, no PR3 timeout).
+        opal.put_scope("healthy", gitea_repo_url(HEALTHY_PROBE_REPO))
+
         # The healthy scope must become *servable* within a bounded time even
         # while the offline scopes hang. A 200 from its policy bundle proves the
         # clone completed and the scope is served — a stronger signal than a
@@ -97,8 +103,10 @@ def test_server_recovers_after_postgres_bounce(opal_multiworker, repo_count):
     worker keeps its PID. Before that fix the disconnect escalated to a graceful
     worker shutdown and gunicorn respawned the worker with a *new* PID. We assert
     (a) the worker PIDs are unchanged across the bounce — the in-place-reconnect
-    signal — and (b) a scope PUT after the bounce becomes servable, proving the
-    broadcast/sync path itself recovered (not just HTTP liveness).
+    signal; (b) the backbone reader actually dropped and reconnected (its connect
+    log count increased), so (a) is not vacuously true because the bounce failed
+    to break anything; and (c) a scope PUT after the bounce becomes servable,
+    proving the broadcast/sync path itself recovered (not just HTTP liveness).
     """
     opal = opal_multiworker
 
@@ -106,6 +114,8 @@ def test_server_recovers_after_postgres_bounce(opal_multiworker, repo_count):
     assert (
         len(before) == 2
     ), f"expected 2 gunicorn workers for this test, got {sorted(before)}"
+    # baseline reader (re)connect count — assertion (b) requires it to increase
+    before_connects = broadcaster_connect_count()
 
     bounce_postgres(down_seconds=5)
 
@@ -132,7 +142,28 @@ def test_server_recovers_after_postgres_bounce(opal_multiworker, repo_count):
         f"the broadcaster did not reconnect in place (PER-15065 regressed)"
     )
 
-    # (b) the broadcast/sync path recovered: a freshly PUT scope must become
+    # (b) the bounce actually broke and reconnected the backbone reader — so (a)
+    # is not vacuously true because nothing dropped. The reconnecting broadcaster
+    # logs a fresh connect line on every reconnect; the count must strictly
+    # increase over the pre-bounce baseline (poll, since the reconnect lags the
+    # Postgres healthcheck by the backoff + resync-settle window).
+    deadline = time.time() + 60
+    reconnected = False
+    after_connects = before_connects
+    while time.time() < deadline:
+        after_connects = broadcaster_connect_count()
+        if after_connects > before_connects:
+            reconnected = True
+            break
+        time.sleep(2)
+    assert reconnected, (
+        f"broadcaster reader never logged a reconnect after the bounce "
+        f"(connect count stayed {before_connects}); the bounce may not have "
+        f"dropped the backbone, which would make the PID-unchanged check above "
+        f"vacuous"
+    )
+
+    # (c) the broadcast/sync path recovered: a freshly PUT scope must become
     # servable. A 200 from its bundle proves the leader received the sync and
     # cloned the repo after the backbone returned. We assert on a served bundle
     # rather than /internal cache counts, which are per-process and so not

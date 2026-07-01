@@ -51,18 +51,26 @@ services:
         condition: service_healthy
     user: git
     entrypoint: ["/bin/sh", "-c"]
-    # Tolerate only the idempotent "already exists" case; any other failure
-    # must abort so `seed` (which depends on this completing) doesn't run
-    # against a Gitea with no admin user and fail with a confusing 401.
+    # Tolerate the idempotent "already exists" case, and RETRY on "database is
+    # locked": this CLI mutates the same SQLite file the live gitea server holds
+    # open, so it can lose a lock race and fail transiently. Any other failure
+    # aborts so `seed` (which depends on this completing) doesn't run against a
+    # Gitea with no admin user and fail with a confusing 401.
+    # `|` (literal) block, not `>` (folded): the `gitea admin user create` call is
+    # kept on ONE line so YAML can't fold a newline into the middle of its args
+    # (that would run `--email ...` as its own command -> exit 127).
     command:
-      - >
-        out=$$(gitea admin user create --username opaladmin --password opaladmin
-        --email admin@example.com --admin --must-change-password=false
-        --config /data/gitea/conf/app.ini 2>&1); rc=$$?;
-        echo "$$out";
-        if [ $$rc -ne 0 ] && ! echo "$$out" | grep -qi "already exist"; then
-          exit $$rc;
-        fi
+      - |
+        for attempt in 1 2 3 4 5 6; do
+          out=$$(gitea admin user create --username opaladmin --password opaladmin --email admin@example.com --admin --must-change-password=false --config /data/gitea/conf/app.ini 2>&1)
+          rc=$$?
+          echo "$$out"
+          if [ $$rc -eq 0 ] || echo "$$out" | grep -qi "already exist"; then exit 0; fi
+          if echo "$$out" | grep -qi "database is locked"; then echo "gitea db locked; retry $$attempt"; sleep 2; continue; fi
+          exit $$rc
+        done
+        echo "gitea admin create failed after retries"
+        exit 1
     volumes:
       - gitea-data:/data
     restart: "no"

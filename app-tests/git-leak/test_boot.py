@@ -18,6 +18,14 @@ def test_boot_loads_all_scopes(opal, repo_count):
     120s @ 50 scopes) so the assertion actually gates the parallel-boot fix —
     with the default loose target it always passes and only records a number.
 
+    We measure a **deterministic cold boot**: ``--force-recreate`` gives the
+    container a fresh filesystem (opal_server mounts no volume at ``/opal``), so
+    ``preload_scopes`` must cold-clone all N repos from the Redis scope store —
+    exactly the fresh-pod scenario PR4 parallelizes. A plain ``restart`` would
+    instead leave a run-dependent mix of complete on-disk clones (fast warm
+    re-discover) and clones killed mid-flight by the restart (cold re-clone),
+    making ``elapsed`` non-deterministic and a poor basis for PR4's tight gate.
+
     Completion is keyed on every scope's bundle being *served*
     (``GET /scopes/{id}/policy`` == 200), not on the ``repo_locks`` cache count:
     ``repo_locks`` is set at fetch *start*, so stopping the clock on it would end
@@ -30,13 +38,15 @@ def test_boot_loads_all_scopes(opal, repo_count):
     for scope_id, name in zip(scope_ids, repos):
         opal.put_scope(scope_id, gitea_repo_url(name))
 
-    # Start the clock at the restart, not after wait_healthy: preload_scopes()
+    # Start the clock at the recreate, not after wait_healthy: preload_scopes()
     # runs in gunicorn's `when_ready` (before workers accept traffic), so by the
     # time /healthcheck answers, boot-sync may already be partly done — starting
-    # the clock later would undercount it. (Clones survive a restart, so preload
-    # re-discovers the on-disk repos rather than re-cloning from scratch.)
+    # the clock later would undercount it. --force-recreate wipes the container FS
+    # so the scopes (still in Redis) are all cold-cloned by preload, a
+    # deterministic fresh-boot measurement. --no-deps leaves redis/postgres/gitea
+    # untouched.
     start = time.time()
-    compose("restart", "opal_server")
+    compose("up", "-d", "--no-deps", "--force-recreate", "opal_server")
     opal.wait_healthy(timeout=600)
 
     # Poll until every scope serves its bundle. Re-check only the not-yet-served
