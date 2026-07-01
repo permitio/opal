@@ -10,8 +10,8 @@ instantiation — the bare name is what appears in the table).
 
 | Env var | Type | Default | Purpose | Declared at |
 |---|---|---|---|---|
-| `OPAL_SCOPES_GIT_FETCH_TIMEOUT` | float (seconds) | `120.0` | Hard timeout for a single scope git clone/fetch. On timeout the operation is abandoned and the scope is marked failed, so one unreachable repo can never block boot or other scopes. `0` = no timeout. | `packages/opal-server/opal_server/config.py:150-156` |
-| `OPAL_SCOPES_GIT_MAX_WORKERS` | int | `10` | Size of the dedicated `ThreadPoolExecutor` for scope git operations. Isolating git work keeps a hung fetch from starving bundle serving and other server work that uses the default executor. | `packages/opal-server/opal_server/config.py:157-163` |
+| `OPAL_SCOPES_GIT_FETCH_TIMEOUT` | float (seconds) | `120.0` | Hard timeout for a single scope git clone/fetch. On timeout the operation is abandoned and the scope is marked failed, so one unreachable repo can never block boot or other scopes. `0` = no timeout. | `packages/opal-server/opal_server/config.py:196-202` |
+| `OPAL_SCOPES_GIT_MAX_WORKERS` | int | `10` | Size of the dedicated `ThreadPoolExecutor` for scope git operations. Isolating git work keeps a hung fetch from starving bundle serving and other server work that uses the default executor. | `packages/opal-server/opal_server/config.py:203-209` |
 
 > **Caveat (timeout is soft, not a hard kill).** `OPAL_SCOPES_GIT_FETCH_TIMEOUT` is enforced via
 > `asyncio.wait_for`, which cancels the *await* — unblocking the event loop and the awaiting

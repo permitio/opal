@@ -42,6 +42,10 @@ def _get_git_executor() -> ThreadPoolExecutor:
 
     Isolated from the default executor so a hung clone/fetch can never
     starve bundle serving or other server work.
+
+    ``SCOPES_GIT_MAX_WORKERS`` is read once on first use; the executor is then
+    cached for the process lifetime — it is not runtime-reconfigurable and is
+    never explicitly shut down (matches the PR3 design).
     """
     global _git_executor
     if _git_executor is None:
