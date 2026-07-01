@@ -183,8 +183,9 @@ class GitPolicyFetcher(PolicyFetcher):
     def source_lock(source_id: str) -> asyncio.Lock:
         """Return the process-shared per-source lock, creating it on first use.
 
-        The same lock object is reused for a given source_id so that a fetch and
-        a concurrent delete of the same source serialize against each other.
+        The same lock object is reused for a given source_id so that a
+        fetch and a concurrent delete of the same source serialize
+        against each other.
         """
         lock = GitPolicyFetcher.repo_locks.get(source_id)
         if lock is None:

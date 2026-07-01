@@ -1,3 +1,4 @@
+import asyncio
 import datetime
 import shutil
 from functools import partial
@@ -12,6 +13,7 @@ from opal_common.logger import logger
 from opal_common.schemas.policy import PolicyUpdateMessageNotification
 from opal_common.schemas.policy_source import GitPolicyScopeSource
 from opal_common.topics.publisher import ScopedServerSideTopicPublisher
+from opal_server.config import opal_server_config
 from opal_server.git_fetcher import GitPolicyFetcher, PolicyFetcherCallbacks
 from opal_server.policy.watcher.callbacks import (
     create_policy_update,
@@ -204,38 +206,56 @@ class ScopesService:
                 # Only sync scopes that have polling enabled (in a periodic check)
                 scopes = [scope for scope in scopes if scope.policy.poll_updates]
 
+            concurrency = max(1, opal_server_config.SCOPES_SYNC_CONCURRENCY)
             logger.info(
-                f"OPAL Scopes: syncing {len(scopes)} scopes in the background (polling updates: {only_poll_updates})"
+                f"OPAL Scopes: syncing {len(scopes)} scopes "
+                f"(concurrency={concurrency}, polling updates: {only_poll_updates})"
             )
 
+            # Pass 1: fetch each distinct source once (force_fetch). Pass 2: scopes that
+            # share an already-fetched source only re-check locally (no network).
             fetched_source_ids = set()
-            skipped_scopes = []
+            first_pass = []
+            second_pass = []
             for scope in scopes:
                 src_id = GitPolicyFetcher.source_id(scope.policy)
 
                 # Give priority to scopes that have a unique url per shard (so we'll clone all repos asap)
                 if src_id in fetched_source_ids:
-                    skipped_scopes.append(scope)
-                    continue
+                    second_pass.append(scope)
+                else:
+                    fetched_source_ids.add(src_id)
+                    first_pass.append(scope)
 
+            await self._sync_scope_batch(
+                first_pass,
+                force_fetch=True,
+                notify_on_changes=notify_on_changes,
+                concurrency=concurrency,
+            )
+            await self._sync_scope_batch(
+                second_pass,
+                force_fetch=False,
+                notify_on_changes=notify_on_changes,
+                concurrency=concurrency,
+            )
+
+    async def _sync_scope_batch(
+        self, scopes, *, force_fetch, notify_on_changes, concurrency
+    ):
+        if not scopes:
+            return
+        semaphore = asyncio.Semaphore(concurrency)
+
+        async def _one(scope):
+            async with semaphore:
                 try:
                     await self.sync_scope(
                         scope=scope,
-                        force_fetch=True,
+                        force_fetch=force_fetch,
                         notify_on_changes=notify_on_changes,
                     )
-                except Exception as e:
+                except Exception:
                     logger.exception(f"sync_scope failed for {scope.scope_id}")
 
-                fetched_source_ids.add(src_id)
-
-            for scope in skipped_scopes:
-                # No need to refetch the same repo, just check for changes
-                try:
-                    await self.sync_scope(
-                        scope=scope,
-                        force_fetch=False,
-                        notify_on_changes=notify_on_changes,
-                    )
-                except Exception as e:
-                    logger.exception(f"sync_scope failed for {scope.scope_id}")
+        await asyncio.gather(*(_one(scope) for scope in scopes))
