@@ -162,24 +162,34 @@ class ScopesService:
         with tracer.trace("scopes_service.delete_scope", resource=scope_id):
             logger.info(f"Delete scope: {scope_id}")
             scope = await self._scopes.get(scope_id)
-            url = scope.policy.url
+            deleted_source = cast(GitPolicyScopeSource, scope.policy)
+            deleted_source_id = GitPolicyFetcher.source_id(deleted_source)
+            scope_dir = GitPolicyFetcher.repo_clone_path(self._base_dir, deleted_source)
 
-            scopes = await self._scopes.all()
-            remove_repo_clone = True
+            # Clone dir, the `repos` handle cache, and `repos_last_fetched` are
+            # all keyed by source_id (= the clone path). A sibling only shares
+            # storage when it resolves to the same source_id; same url with a
+            # different branch can shard to a different source_id (and a
+            # different clone dir) when SCOPES_REPO_CLONES_SHARDS > 1, so gate on
+            # source_id, not url — otherwise the deleted scope's clone + pygit2
+            # handle leak.
+            other_scopes = [
+                s for s in await self._scopes.all() if s.scope_id != scope_id
+            ]
+            source_id_shared = any(
+                isinstance(s.policy, GitPolicyScopeSource)
+                and GitPolicyFetcher.source_id(s.policy) == deleted_source_id
+                for s in other_scopes
+            )
 
-            for scope in scopes:
-                if scope.scope_id != scope_id and scope.policy.url == url:
-                    logger.info(
-                        f"found another scope with same remote url ({scope.scope_id}), skipping clone deletion"
-                    )
-                    remove_repo_clone = False
-                    break
-
-            if remove_repo_clone:
-                scope_dir = GitPolicyFetcher.repo_clone_path(
-                    self._base_dir, cast(GitPolicyScopeSource, scope.policy)
+            if source_id_shared:
+                logger.info(
+                    "Another scope shares the same clone (source id), skipping clone deletion"
                 )
+            else:
                 shutil.rmtree(scope_dir, ignore_errors=True)
+                GitPolicyFetcher.forget_repo(str(scope_dir))
+                GitPolicyFetcher.repos_last_fetched.pop(deleted_source_id, None)
 
             await self._scopes.delete(scope_id)
 
