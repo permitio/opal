@@ -97,15 +97,25 @@ services:
       dockerfile: docker/Dockerfile
       target: server
     environment:
-      # Single worker on purpose: the GitPolicyFetcher caches read by
+      # Default single worker: the GitPolicyFetcher caches read by
       # /internal/git-fetcher-cache-stats are per-process, so with >1 worker a
       # round-robin read can miss the worker that fetched and make a `== 0`
       # drain assertion pass falsely. One worker makes every cache read
       # deterministic. The leak/boot/offline bugs all reproduce single-worker.
-      UVICORN_NUM_WORKERS: "1"
+      # The postgres-bounce test (test_resilience.py) overrides this to 2 via
+      # OPAL_TEST_WORKERS for its own container, because cross-worker fan-out
+      # over the Postgres backbone only happens with >=2 workers
+      # (references/debug-pubsub.md §3-4) — a single worker can't tell #915's
+      # in-place broadcaster reconnect from a plain worker respawn.
+      UVICORN_NUM_WORKERS: "${OPAL_TEST_WORKERS:-1}"
       OPAL_SCOPES: "1"
       OPAL_REDIS_URL: "redis://redis:6379"
       OPAL_BROADCAST_URI: "postgres://opal:opal@postgres:5432/opal"
+      # Make the broadcaster reconnect fast + deterministic for the postgres-
+      # bounce test (defaults are 30s max backoff / 2s settle). Harmless to the
+      # single-worker tests, which don't exercise cross-worker fan-out.
+      OPAL_BROADCAST_RECONNECT_BACKOFF_MAX_SECONDS: "2"
+      OPAL_BROADCAST_RESYNC_SETTLE_SECONDS: "2"
       OPAL_BASE_DIR: "/opal"
       OPAL_POLICY_REFRESH_INTERVAL: "0"
       OPAL_DEBUG_INTERNAL_STATS: "1"

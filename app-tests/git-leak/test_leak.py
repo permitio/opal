@@ -78,23 +78,24 @@ def test_churn_releases_caches(opal, repo_count):
 
 
 @pytest.mark.timeout(900)
-def test_repeat_sync_does_not_grow(opal, repo_count):
-    """Re-syncing the *same* scopes must not grow memory unboundedly.
+def test_repeat_sync_rss_stays_bounded(opal, repo_count):
+    """Re-syncing the *same* scopes must not leak per-sync memory (RSS guard).
 
-    Idempotency guard, not a known-broken case — PASSES on this branch. Clone
-    paths are keyed by the repo URL (``source_id`` = sha256(url)+branch-shard),
-    so re-syncing identical scopes reuses the existing ``repos`` /
-    ``repos_last_fetched`` entries rather than allocating new ones; the cache
-    *counts* therefore can't grow for any implementation, which is why the
-    load-bearing assertion here is on **RSS**, not on ``len(repos)``. It guards
-    against a regression where each repeat sync leaks per-sync allocations. The
-    unbounded growth-then-no-purge-on-delete leak is covered by
-    ``test_churn_releases_caches`` above, which uses distinct scopes.
+    Deliberately an **RSS** guard, not a cache-count leak gate. The clone caches
+    are keyed by repo URL (``source_id`` = sha256(url)+branch-shard), so
+    re-syncing identical scopes reuses the existing ``repos`` /
+    ``repos_last_fetched`` entries; the cache *counts* cannot grow for *any*
+    implementation. A ``len(repos)`` assertion would therefore be tautological
+    (it can't fail), so it is intentionally omitted here — do not re-add it as a
+    "gate". The load-bearing assertion is RSS: it catches a regression where each
+    repeat sync leaks per-sync allocations even while the entry count stays flat.
+
+    The unbounded-growth-then-no-purge-on-delete leak is covered by
+    ``test_churn_releases_caches`` above, which uses *distinct* scopes.
     """
     n = min(repo_count, 50)
     repos = list_seeded_repos(n)
     loaded = _load_scopes(opal, "stable", repos)
-    baseline_repos = loaded["repos"]
     baseline_rss = loaded["rss_kb"]
 
     for _ in range(10):
@@ -102,9 +103,6 @@ def test_repeat_sync_does_not_grow(opal, repo_count):
         time.sleep(2)
 
     grown = opal.stats()
-    assert (
-        grown["repos"] <= baseline_repos
-    ), f"repos cache count grew on repeat sync: {baseline_repos} -> {grown['repos']}"
     # allow generous headroom for allocator slack; fail only on a real per-sync
     # leak (10 refreshes of N scopes ballooning RSS).
     rss_budget = baseline_rss + max(50_000, baseline_rss // 5)

@@ -8,6 +8,7 @@ from helpers import (
     gitea_repo_url,
     list_seeded_repos,
     make_repo_unreachable,
+    worker_pids,
 )
 
 # Enough hanging clones to exhaust opal's default fetch executor
@@ -80,33 +81,41 @@ def test_offline_repo_does_not_block_healthy_scopes(opal, repo_count):
         opal.hard_reset()
 
 
-@pytest.mark.timeout(300)
-def test_server_recovers_after_postgres_bounce(opal, repo_count):
-    """A transient Postgres (broadcaster) outage must not break propagation.
+@pytest.mark.timeout(420)
+def test_server_recovers_after_postgres_bounce(opal_multiworker, repo_count):
+    """A transient Postgres (broadcaster) outage must reconnect *in place*.
 
-    Recovery guard, not a known-broken case — PASSES on this branch: when the
-    broadcast channel drops, the affected worker triggers a graceful shutdown
-    and gunicorn respawns it, and once Postgres is back the broadcaster
-    reconnects. We prove recovery of the *broadcast path*, not just HTTP
-    liveness: after the bounce we PUT a fresh scope and assert it actually
-    syncs (its repo lands in the cache), which only happens if the leader
-    received the sync notification over the recovered broadcaster.
-    (PER-15065's in-process reconnect would make recovery cleaner by avoiding
-    the worker churn, but recovery already holds.)
+    Runs **2 workers** (via the ``opal_multiworker`` fixture) so the Postgres
+    backbone is actually exercised: cross-worker fan-out only happens with >=2
+    workers (references/debug-pubsub.md §3-4). A single worker fans out
+    in-process and never touches the backbone, so it can't tell #915's in-place
+    reconnect from a plain worker respawn — which is why the previous
+    single-worker version of this test passed either way.
+
+    Guards PER-15065 (#915): on a backbone disconnect the reconnecting
+    broadcaster recovers the reader in process (retry-forever by default), so the
+    worker keeps its PID. Before that fix the disconnect escalated to a graceful
+    worker shutdown and gunicorn respawned the worker with a *new* PID. We assert
+    (a) the worker PIDs are unchanged across the bounce — the in-place-reconnect
+    signal — and (b) a scope PUT after the bounce becomes servable, proving the
+    broadcast/sync path itself recovered (not just HTTP liveness).
     """
-    baseline = opal.stats()  # healthy before
-    assert baseline
-    baseline_locks = baseline["repo_locks"]
+    opal = opal_multiworker
+
+    before = worker_pids()
+    assert (
+        len(before) == 2
+    ), f"expected 2 gunicorn workers for this test, got {sorted(before)}"
 
     bounce_postgres(down_seconds=5)
 
-    # wait for the HTTP surface to come back first
+    # HTTP must come back first. A respawn would also satisfy this — hence the
+    # PID check below, which a respawn would *not* satisfy.
     deadline = time.time() + 90
     recovered = False
     while time.time() < deadline:
         try:
             opal.wait_healthy(timeout=5)
-            opal.stats()
             recovered = True
             break
         except (requests.RequestException, RuntimeError):
@@ -114,16 +123,36 @@ def test_server_recovers_after_postgres_bounce(opal, repo_count):
             time.sleep(2)
     assert recovered, "server did not recover HTTP within 90s of a postgres bounce"
 
-    # prove the broadcast path itself recovered: a freshly PUT scope must sync
+    # (a) in-place reconnect: the workers must be the *same* processes. A changed
+    # PID means the broadcaster gave up and gunicorn respawned the worker — the
+    # pre-#915 behavior this guards against.
+    after = worker_pids()
+    assert after == before, (
+        f"workers respawned across the bounce ({sorted(before)} -> {sorted(after)}); "
+        f"the broadcaster did not reconnect in place (PER-15065 regressed)"
+    )
+
+    # (b) the broadcast/sync path recovered: a freshly PUT scope must become
+    # servable. A 200 from its bundle proves the leader received the sync and
+    # cloned the repo after the backbone returned. We assert on a served bundle
+    # rather than /internal cache counts, which are per-process and so not
+    # deterministic to read on a 2-worker stack.
     healthy = list_seeded_repos(1)[0]
     opal.put_scope("post-bounce", gitea_repo_url(healthy))
-    synced = False
+    served = False
+    last = None
     deadline = time.time() + 120
     while time.time() < deadline:
-        if opal.stats()["repo_locks"] > baseline_locks:
-            synced = True
-            break
+        try:
+            resp = opal.get_scope_policy("post-bounce")
+            last = resp.status_code
+            if resp.status_code == 200:
+                served = True
+                break
+        except requests.RequestException as exc:
+            last = repr(exc)
         time.sleep(2)
-    assert (
-        synced
-    ), "scope PUT after the bounce never synced; broadcaster did not recover"
+    assert served, (
+        f"scope PUT after the bounce never became servable (last: {last}); "
+        f"the broadcaster/sync path did not recover"
+    )

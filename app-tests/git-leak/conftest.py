@@ -80,6 +80,38 @@ def opal(stack) -> OpalServerClient:
     stack.delete_all_scopes()
 
 
+@pytest.fixture()
+def opal_multiworker(stack) -> OpalServerClient:
+    """opal_server reconfigured to 2 gunicorn workers, for the broadcaster
+    test.
+
+    The session stack is single-worker (the right call for the per-
+    process cache drain assertions), but the Postgres broadcaster's
+    cross-worker fan-out — the reason it is in this compose file at all
+    — is only exercised with >=2 workers (references/debug-pubsub.md
+    §3-4). This force-recreates opal_server with 2 workers for one test,
+    then restores the single-worker stack on teardown so the cache tests
+    keep their determinism. Each side starts from a clean slate: the
+    recreate wipes the container's on-disk clones, and clearing scopes
+    stops a leftover scope (whose clone is URL-keyed) from being re-
+    cloned on boot.
+    """
+    os.environ["OPAL_TEST_WORKERS"] = "2"
+    try:
+        # --no-deps: don't bounce redis/postgres/gitea; --force-recreate: apply
+        # the new worker count. No --wait (opal_server has no compose
+        # healthcheck) — wait_healthy() polls the HTTP surface instead.
+        compose("up", "-d", "--no-deps", "--force-recreate", "opal_server")
+        stack.wait_healthy()
+        stack.delete_all_scopes()
+        yield stack
+    finally:
+        os.environ["OPAL_TEST_WORKERS"] = "1"
+        compose("up", "-d", "--no-deps", "--force-recreate", "opal_server")
+        stack.wait_healthy()
+        stack.delete_all_scopes()
+
+
 @pytest.fixture(scope="session")
 def gitea_admin(stack) -> GiteaAdmin:
     """Host-side Gitea admin client (depends on `stack` so Gitea is up)."""

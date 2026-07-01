@@ -37,20 +37,31 @@ Useful flags: `--boot-scopes=N` (any N), `--keep-stack` (skip teardown),
 env `BOOT_TARGET_SECONDS=120` (tighten the boot gate).
 
 ## Expected behavior
-The churn leak test (`test_churn_releases_caches`) and the offline-repo test
-FAIL on this branch *without the PR2/PR3 fix* — they target unfixed bugs and
-become the regression gates for PR2/PR3, flipping green when those land. The
-boot test passes but fails when `BOOT_TARGET_SECONDS` is set low (PR4's gate).
 
-Two tests are guards that PASS rather than reproducing a current failure:
-- `test_repeat_sync_does_not_grow` — clone paths are keyed by the repo URL, so
-  re-syncing identical scopes reuses cache entries and the cache *counts* can't
-  grow for any implementation; the load-bearing assertion is therefore on RSS,
-  guarding against a regression that leaks per-sync allocations.
-- `test_server_recovers_after_postgres_bounce` — when the broadcaster drops, the
-  worker is respawned by gunicorn and the broadcaster reconnects once Postgres
-  is back; the test PUTs a fresh scope post-bounce and asserts it syncs, proving
-  the broadcast path (not just HTTP) recovered.
+Gate-coverage matrix (what each flagship test actually does):
+
+| Test | Role | Behaviour here |
+|---|---|---|
+| `test_churn_releases_caches` | **gate (PR2)** | FAILS without the PR2 leak fix — delete leaves the caches populated; flips green when PR2 lands |
+| `test_offline_repo_does_not_block_healthy_scopes` | **gate (PR3)** | FAILS without the PR3 fetch timeout — 40 hung clones starve the executor so a healthy scope never serves; flips green when PR3 lands |
+| `test_boot_loads_all_scopes` | **baseline → gate (PR4)** | PASSES with the loose default target; set `BOOT_TARGET_SECONDS` low (plan: 120 @ 50) on PR4 to gate the parallel-boot fix |
+| `test_repeat_sync_rss_stays_bounded` | **RSS guard** | PASSES; an RSS-budget guard against per-sync allocation leaks (the cache *count* can't grow for any impl, so there is no count assertion — see below) |
+| `test_server_recovers_after_postgres_bounce` | **guard (PER-15065)** | PASSES on this branch (which has #915); guards the in-place broadcaster reconnect |
+
+Notes on the two guards:
+- `test_repeat_sync_rss_stays_bounded` — clone paths are keyed by the repo URL,
+  so re-syncing identical scopes reuses cache entries and the cache *counts*
+  can't grow for any implementation; the load-bearing assertion is therefore on
+  RSS only (a `len(repos)` check would be tautological and is intentionally
+  omitted), guarding against a regression that leaks per-sync allocations.
+- `test_server_recovers_after_postgres_bounce` — runs **2 workers** so the
+  Postgres backbone is actually exercised (cross-worker fan-out needs >=2
+  workers; a single worker fans out in-process and never touches the backbone).
+  Across a transient bounce it asserts the gunicorn **worker PIDs are unchanged**
+  — proving #915's reconnecting broadcaster recovered the reader *in place*
+  rather than gunicorn respawning a graceful-shutdown worker (the pre-fix
+  behaviour) — and that a scope PUT after the bounce becomes servable, proving
+  the broadcast/sync path recovered (not just HTTP).
 
 ## Requires
 Docker + docker compose v2, plus host Python with `pytest pytest-timeout requests GitPython`.

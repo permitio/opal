@@ -285,6 +285,50 @@ def compose(*args: str) -> subprocess.CompletedProcess:
     return proc
 
 
+def worker_pids(service: str = "opal_server") -> set:
+    """Return the set of gunicorn *worker* PIDs running inside ``service``.
+
+    The server runs ``gunicorn`` (master) + ``UvicornWorker`` children (see
+    ``scripts/start.sh``). When a worker's broadcaster reader gives up on a
+    backbone disconnect it triggers a graceful shutdown and gunicorn respawns
+    the worker with a *new* PID; the reconnecting broadcaster (PER-15065 / #915)
+    instead recovers the reader in place and the worker keeps its PID. Comparing
+    this set across a transient bounce is how the broadcaster test tells an
+    in-place reconnect apart from a worker respawn.
+
+    Implemented over ``/proc`` (no ``ps`` in the slim image): every gunicorn
+    process' ``cmdline`` contains "gunicorn", and the master is the lowest PID
+    (it exists before it forks any worker), so the workers are the rest. The
+    match is done **host-side in Python**, not with ``grep gunicorn`` in the
+    container: the scanning command's own ``sh -c`` wrapper has "gunicorn" in
+    its command line, so an in-container grep would count that wrapper as a
+    third "worker". The dump command below contains neither "gunicorn" nor
+    "grep", so it cannot match itself.
+    """
+    out = compose(
+        "exec",
+        "-T",
+        service,
+        "sh",
+        "-c",
+        # emit "<pid> <cmdline>" per process; tr -d strips the NUL arg
+        # separators so the args concatenate into one searchable token.
+        # `|| true`: a momentary read failure must not raise from compose().
+        "for d in /proc/[0-9]*/; do p=${d#/proc/}; p=${p%/}; "
+        'echo "$p $(cat "$d/cmdline" 2>/dev/null | tr -d "\\000")"; '
+        "done || true",
+    ).stdout
+    pids = []
+    for line in out.splitlines():
+        pid_str, _, cmd = line.partition(" ")
+        if pid_str.isdigit() and "gunicorn" in cmd:
+            pids.append(int(pid_str))
+    pids.sort()
+    if len(pids) <= 1:
+        return set()  # only the master (or nothing) observed: no workers
+    return set(pids[1:])  # drop the master (lowest PID); the rest are workers
+
+
 def bounce_postgres(down_seconds: int = 5) -> None:
     compose("stop", "postgres")
     time.sleep(down_seconds)
