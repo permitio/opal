@@ -106,13 +106,18 @@ class OpalServerConfig(Confi):
     BROADCAST_FREEZE_ON_DISCONNECT = confi.bool(
         "BROADCAST_FREEZE_ON_DISCONNECT",
         True,
-        description="While the broadcaster backbone is disconnected, freeze client-facing "
-        "publishes on every worker instead of applying them locally — so a write that cannot "
-        "fan out to the whole fleet is never served by just one worker (fleet consistency "
-        "over freshness). The write still lands in its datasource and is reconciled by the "
-        "reconnect resync. Applies to source-based updates and requires "
-        "BROADCAST_RECONNECT_ENABLED. Set to False for the previous behavior, where the "
-        "receiving worker's own clients update immediately and peers only after reconnect.",
+        description="During a broadcaster backbone gap, freeze client-facing publishes on "
+        "every worker instead of applying them locally — so a write that cannot fan out to "
+        "the whole fleet is never served by just one worker (fleet consistency over "
+        "freshness). Recovery is the reconnect resync: clients re-fetch their configured "
+        "data sources and policy, so updates covered by those are reconciled; one-off "
+        "updates outside them (inline data payloads, ad-hoc fetch URLs) are DROPPED by a "
+        "freeze, not deferred. Internal coordination topics (statistics, keepalive, the git "
+        "webhook trigger) are exempt and keep the deliver-locally + buffer-for-replay "
+        "behavior. Requires BROADCAST_RECONNECT_ENABLED and BROADCAST_RESYNC_ON_RECONNECT "
+        "(if the resync is disabled, freezing is refused with a warning). Set to False for "
+        "the previous behavior, where the receiving worker's own clients update immediately "
+        "and peers only after reconnect.",
     )
 
     # server security
