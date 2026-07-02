@@ -13,7 +13,10 @@ from contextlib import asynccontextmanager
 import pytest
 from fastapi_websocket_pubsub import EventBroadcaster
 from fastapi_websocket_pubsub.event_broadcaster import BroadcastNotification
-from opal_server.pubsub_resilience import ReconnectingBroadcaster
+from opal_server.pubsub_resilience import (
+    FreezablePubSubEndpoint,
+    ReconnectingBroadcaster,
+)
 
 _END = object()
 
@@ -41,6 +44,15 @@ class FakeNotifier:
 
     async def notify(self, topics, data, notifier_id=None):
         self.notified.append((list(topics), data, notifier_id))
+
+    def gen_subscriber_id(self):
+        # PubSubEndpoint.__init__ mints a server id from the notifier.
+        return "fake-subscriber-id"
+
+    async def subscribe(self, *args, **kwargs):
+        # The broadcaster's sharing context registers itself on the notifier
+        # (EventBroadcaster._subscribe_to_all_topics); a no-op suffices here.
+        pass
 
 
 class FakeBus:
@@ -831,3 +843,202 @@ async def test_partial_replay_requeue_preserves_drop_oldest():
         "refill-2",
     ]
     # The OLDEST (unsent-1) was dropped from the front, NOT the newest refill.
+
+
+# ---------------------------------------------------------------------------
+# Fleet-consistency freeze (is_backbone_connected + FreezablePubSubEndpoint)
+# ---------------------------------------------------------------------------
+
+
+def _reconnecting(bus, notifier=None):
+    return ReconnectingBroadcaster(
+        "memory://",
+        notifier=notifier or FakeNotifier(),
+        channel="test",
+        broadcast_type=bus.channel_factory,
+        reconnect_backoff_min=0,
+        reconnect_backoff_max=0,
+    )
+
+
+@pytest.mark.asyncio
+async def test_is_backbone_connected_tracks_subscription():
+    """The flag is False before the reader subscribes, True while subscribed,
+    and False again once the reader stops."""
+    bus = FakeBus()
+    broadcaster = _reconnecting(bus)
+    assert not broadcaster.is_backbone_connected()  # not started -> disconnected
+    task = await broadcaster.start_reader_task()
+    try:
+        await _wait_for(broadcaster.is_backbone_connected)  # subscribed -> connected
+    finally:
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+    assert not broadcaster.is_backbone_connected()  # reader gone -> disconnected
+
+
+@pytest.mark.asyncio
+async def test_is_in_backbone_gap_lifecycle():
+    """A GAP is: had a live subscription, lost it, reader still retrying. Neither
+    'never started' nor 'never yet connected' nor 'reconnected' is a gap."""
+    bus = FakeBus()
+    broadcaster = _reconnecting(bus)
+    assert not broadcaster.is_in_backbone_gap()  # never started -> not a gap
+    task = await broadcaster.start_reader_task()
+    try:
+        await _wait_for(broadcaster.is_backbone_connected)
+        assert not broadcaster.is_in_backbone_gap()  # subscribed -> not a gap
+
+        # Backbone drops and stays unavailable: block re-subscribes, then close the read.
+        bus.fail_subscribe_times = 10_000
+        await bus.drop()
+        await _wait_for(broadcaster.is_in_backbone_gap)  # GAP: had one, lost it
+
+        # Backbone returns: allow re-subscribes -> gap ends.
+        bus.fail_subscribe_times = 0
+        await _wait_for(lambda: not broadcaster.is_in_backbone_gap())
+        assert broadcaster.is_backbone_connected()
+    finally:
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+
+@pytest.mark.asyncio
+async def test_reader_restart_does_not_inherit_gap_state():
+    """A RESTARTED reader (previous one cancelled when the last listener left) must
+    start with a clean slate: its pre-first-subscribe window is 'never connected',
+    not a gap — a first connect fires no resync, so freezing there would LOSE
+    publishes rather than defer them."""
+    bus = FakeBus()
+    broadcaster = _reconnecting(bus)
+    task = await broadcaster.start_reader_task()
+    await _wait_for(broadcaster.is_backbone_connected)  # session established
+    # Last listener leaves: upstream cancels the reader and clears the task slot.
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    broadcaster._subscription_task = None
+    # Backbone is down when a new listener restarts the reader.
+    bus.fail_subscribe_times = 10_000
+    task2 = await broadcaster.start_reader_task()
+    try:
+        await _wait_for(lambda: bus.subscribes >= 2)  # new reader is retrying
+        assert not broadcaster.is_in_backbone_gap()  # clean slate: NOT a gap
+    finally:
+        task2.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task2
+
+
+def _endpoint(broadcaster, notifier, freeze=True, exempt=()):
+    return FreezablePubSubEndpoint(
+        broadcaster=broadcaster,
+        notifier=notifier,
+        freeze_on_disconnect=freeze,
+        freeze_exempt_topics=exempt,
+    )
+
+
+def _fabricate_gap(broadcaster):
+    """Put a broadcaster into the mid-gap state (had a session, lost it, reader
+    pending) without driving a real backbone.
+
+    Returns the dummy reader task — cancel it in the test's cleanup.
+    """
+    dummy = asyncio.get_event_loop().create_task(asyncio.sleep(60))
+    broadcaster._subscription_task = dummy
+    broadcaster._had_backbone_connection = True
+    broadcaster._backbone_connected = False
+    return dummy
+
+
+@pytest.mark.asyncio
+async def test_should_freeze_matrix():
+    """Freeze only when: enabled AND ReconnectingBroadcaster AND mid-GAP AND a
+    non-exempt topic. Everything else delegates normally."""
+    bus = FakeBus()
+    topics = ["policy_data"]
+
+    # never-started reader -> NOT a gap -> no freeze (healthy idle worker must not drop)
+    b = _reconnecting(bus)
+    assert _endpoint(b, FakeNotifier())._should_freeze(topics) is False
+    # reader running but never yet connected (boot / backbone down from the start) -> no
+    # freeze: no resync fires on a FIRST connect, so a frozen publish would be lost.
+    dummy = _fabricate_gap(b)
+    b._had_backbone_connection = False
+    try:
+        assert _endpoint(b, FakeNotifier())._should_freeze(topics) is False
+        # a real gap (had a session, lost it) -> FREEZE
+        b._had_backbone_connection = True
+        endpoint = _endpoint(b, FakeNotifier())
+        assert endpoint._should_freeze(topics) is True
+        # exempt topics keep flowing mid-gap: "__" internals and the explicit exempt set
+        assert endpoint._should_freeze(["__opal_stats_server_keepalive"]) is False
+        assert (
+            _endpoint(b, FakeNotifier(), exempt=["webhook"])._should_freeze(["webhook"])
+            is False
+        )
+        # a mixed list containing any non-exempt topic still freezes (consistency wins)
+        assert endpoint._should_freeze(["__opal_stats_wakeup", "policy_data"]) is True
+        # freeze disabled -> never
+        assert (
+            _endpoint(b, FakeNotifier(), freeze=False)._should_freeze(topics) is False
+        )
+        # reconnected -> never
+        b._backbone_connected = True
+        assert _endpoint(b, FakeNotifier())._should_freeze(topics) is False
+        b._backbone_connected = False
+    finally:
+        dummy.cancel()
+    # no broadcaster (single worker) -> never
+    assert _endpoint(None, FakeNotifier())._should_freeze(topics) is False
+    # stock (non-reconnecting) broadcaster -> never (legacy drop-on-disconnect path)
+    stock = EventBroadcaster(
+        "memory://",
+        notifier=FakeNotifier(),
+        channel="test",
+        broadcast_type=bus.channel_factory,
+    )
+    assert _endpoint(stock, FakeNotifier())._should_freeze(topics) is False
+
+
+@pytest.mark.asyncio
+async def test_publish_is_suppressed_during_gap():
+    """Mid-gap, publish must not deliver to clients at all (notifier
+    untouched); after the gap the next publish delivers and resets the episode
+    counter."""
+    notifier = FakeNotifier()
+    b = _reconnecting(FakeBus())
+    dummy = _fabricate_gap(b)
+    endpoint = _endpoint(b, notifier)
+    try:
+        await endpoint.publish(["policy_data"], {"x": 1})
+        await endpoint.publish(["policy_data"], {"x": 2})
+        assert notifier.notified == []  # frozen: nothing reached the clients
+        assert endpoint._frozen_in_episode == 2
+        # gap ends -> publish flows again and the episode counter resets
+        b._backbone_connected = True
+        await endpoint.publish(["policy_data"], {"x": 3})
+        assert [d for _, d, _ in notifier.notified] == [{"x": 3}]
+        assert endpoint._frozen_in_episode == 0
+    finally:
+        dummy.cancel()
+
+
+@pytest.mark.asyncio
+async def test_publish_delivers_when_not_freezing():
+    """With no broadcaster (nothing to freeze), publish delegates and
+    delivers."""
+    notifier = FakeNotifier()
+    endpoint = _endpoint(None, notifier)
+    await endpoint.publish(["policy_data"], {"x": 1})
+    assert notifier.notified and notifier.notified[0][0] == ["policy_data"]
+
+
+def test_notify_alias_is_frozen():
+    """The library aliases ``notify = publish`` at class level (binding the
+    BASE publish); the subclass must re-bind it or ``endpoint.notify(...)``
+    bypasses the freeze gate."""
+    assert FreezablePubSubEndpoint.notify is FreezablePubSubEndpoint.publish

@@ -31,7 +31,11 @@ from opal_common.confi.confi import load_conf_if_none
 from opal_common.config import opal_common_config
 from opal_common.logger import logger
 from opal_server.config import opal_server_config
-from opal_server.pubsub_resilience import ReconnectingBroadcaster, SafeConnectionManager
+from opal_server.pubsub_resilience import (
+    FreezablePubSubEndpoint,
+    ReconnectingBroadcaster,
+    SafeConnectionManager,
+)
 from pydantic import BaseModel
 from starlette.datastructures import QueryParams
 
@@ -181,13 +185,36 @@ class PubSub:
         # we keep the library-safe default (True) to degrade to "stale but connected"
         # rather than the fleet-wide drop storm. (Replaces an earlier experimental
         # broadcast-connection-loss flag.)
-        self.endpoint = PubSubEndpoint(
+        # The reconnect resync is the freeze's ONLY recovery path (frozen publishes are
+        # dropped, not buffered) — with the resync disabled the combination would silently
+        # lose every update published during every gap, so refuse it rather than honor it.
+        freeze_on_disconnect = opal_server_config.BROADCAST_FREEZE_ON_DISCONNECT
+        if (
+            freeze_on_disconnect
+            and not opal_server_config.BROADCAST_RESYNC_ON_RECONNECT
+        ):
+            logger.warning(
+                "BROADCAST_FREEZE_ON_DISCONNECT is enabled but BROADCAST_RESYNC_ON_RECONNECT "
+                "is disabled — the resync is the freeze's only recovery path, so freezing is "
+                "DISABLED to avoid silently losing updates published during a backbone gap. "
+                "Re-enable BROADCAST_RESYNC_ON_RECONNECT to get the fleet-consistency freeze."
+            )
+            freeze_on_disconnect = False
+        self.endpoint = FreezablePubSubEndpoint(
             broadcaster=self.broadcaster,
             notifier=self.notifier,
             rpc_channel_get_remote_id=opal_common_config.STATISTICS_ENABLED,
             ignore_broadcaster_disconnected=not isinstance(
                 self.broadcaster, ReconnectingBroadcaster
             ),
+            # Freeze client-facing publishes during a backbone gap so a write that cannot
+            # reach the whole fleet is not applied on a single worker (see
+            # FreezablePubSubEndpoint). No-op unless the reconnecting broadcaster is in use.
+            freeze_on_disconnect=freeze_on_disconnect,
+            # The git-webhook trigger targets the server-side policy watcher, not clients —
+            # freezing it would drop repo-pull triggers with nothing to replay them (topics
+            # prefixed "__", i.e. statistics/keepalive, are exempted by the endpoint itself).
+            freeze_exempt_topics=[opal_server_config.POLICY_REPO_WEBHOOK_TOPIC],
         )
         # fastapi_websocket_rpc's ConnectionManager.disconnect is not idempotent: the RPC
         # endpoint can call it twice for one socket (handle_disconnect plus the outer

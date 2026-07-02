@@ -103,6 +103,22 @@ class OpalServerConfig(Confi):
         "reader is wedged while clients depend on it. Set to False to revert "
         "/healthcheck to always returning ok.",
     )
+    BROADCAST_FREEZE_ON_DISCONNECT = confi.bool(
+        "BROADCAST_FREEZE_ON_DISCONNECT",
+        True,
+        description="During a broadcaster backbone gap, freeze client-facing publishes on "
+        "every worker instead of applying them locally — so a write that cannot fan out to "
+        "the whole fleet is never served by just one worker (fleet consistency over "
+        "freshness). Recovery is the reconnect resync: clients re-fetch their configured "
+        "data sources and policy, so updates covered by those are reconciled; one-off "
+        "updates outside them (inline data payloads, ad-hoc fetch URLs) are DROPPED by a "
+        "freeze, not deferred. Internal coordination topics (statistics, keepalive, the git "
+        "webhook trigger) are exempt and keep the deliver-locally + buffer-for-replay "
+        "behavior. Requires BROADCAST_RECONNECT_ENABLED and BROADCAST_RESYNC_ON_RECONNECT "
+        "(if the resync is disabled, freezing is refused with a warning). Set to False for "
+        "the previous behavior, where the receiving worker's own clients update immediately "
+        "and peers only after reconnect.",
+    )
 
     # server security
     AUTH_PRIVATE_KEY_FORMAT = confi.enum(
