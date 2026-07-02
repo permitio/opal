@@ -598,8 +598,9 @@ class ReconnectingBroadcaster(EventBroadcaster):
 
 
 class FreezablePubSubEndpoint(PubSubEndpoint):
-    """A ``PubSubEndpoint`` that *freezes* client-facing publishes during a broadcaster
-    backbone GAP, to keep a multi-worker fleet consistent through an outage.
+    """A ``PubSubEndpoint`` that *freezes* client-facing publishes during a
+    broadcaster backbone GAP, to keep a multi-worker fleet consistent through
+    an outage.
 
     The problem: a server-side ``publish`` fans out two independent ways — local in-process
     delivery to *this* worker's own clients, and (via the broadcaster) to peer workers. Only

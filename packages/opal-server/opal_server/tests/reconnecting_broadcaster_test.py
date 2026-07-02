@@ -863,8 +863,8 @@ def _reconnecting(bus, notifier=None):
 
 @pytest.mark.asyncio
 async def test_is_backbone_connected_tracks_subscription():
-    """The flag is False before the reader subscribes, True while subscribed, and
-    False again once the reader stops."""
+    """The flag is False before the reader subscribes, True while subscribed,
+    and False again once the reader stops."""
     bus = FakeBus()
     broadcaster = _reconnecting(bus)
     assert not broadcaster.is_backbone_connected()  # not started -> disconnected
@@ -943,8 +943,10 @@ def _endpoint(broadcaster, notifier, freeze=True, exempt=()):
 
 def _fabricate_gap(broadcaster):
     """Put a broadcaster into the mid-gap state (had a session, lost it, reader
-    pending) without driving a real backbone. Returns the dummy reader task —
-    cancel it in the test's cleanup."""
+    pending) without driving a real backbone.
+
+    Returns the dummy reader task — cancel it in the test's cleanup.
+    """
     dummy = asyncio.get_event_loop().create_task(asyncio.sleep(60))
     broadcaster._subscription_task = dummy
     broadcaster._had_backbone_connection = True
@@ -1004,8 +1006,9 @@ async def test_should_freeze_matrix():
 
 @pytest.mark.asyncio
 async def test_publish_is_suppressed_during_gap():
-    """Mid-gap, publish must not deliver to clients at all (notifier untouched);
-    after the gap the next publish delivers and resets the episode counter."""
+    """Mid-gap, publish must not deliver to clients at all (notifier
+    untouched); after the gap the next publish delivers and resets the episode
+    counter."""
     notifier = FakeNotifier()
     b = _reconnecting(FakeBus())
     dummy = _fabricate_gap(b)
@@ -1026,7 +1029,8 @@ async def test_publish_is_suppressed_during_gap():
 
 @pytest.mark.asyncio
 async def test_publish_delivers_when_not_freezing():
-    """With no broadcaster (nothing to freeze), publish delegates and delivers."""
+    """With no broadcaster (nothing to freeze), publish delegates and
+    delivers."""
     notifier = FakeNotifier()
     endpoint = _endpoint(None, notifier)
     await endpoint.publish(["policy_data"], {"x": 1})
@@ -1034,7 +1038,7 @@ async def test_publish_delivers_when_not_freezing():
 
 
 def test_notify_alias_is_frozen():
-    """The library aliases ``notify = publish`` at class level (binding the BASE
-    publish); the subclass must re-bind it or ``endpoint.notify(...)`` bypasses
-    the freeze gate."""
+    """The library aliases ``notify = publish`` at class level (binding the
+    BASE publish); the subclass must re-bind it or ``endpoint.notify(...)``
+    bypasses the freeze gate."""
     assert FreezablePubSubEndpoint.notify is FreezablePubSubEndpoint.publish
