@@ -42,7 +42,7 @@ from collections import deque
 from typing import Awaitable, Callable, Optional
 
 from fastapi import WebSocket
-from fastapi_websocket_pubsub import EventBroadcaster
+from fastapi_websocket_pubsub import EventBroadcaster, PubSubEndpoint
 from fastapi_websocket_pubsub.event_broadcaster import BroadcastNotification
 from fastapi_websocket_pubsub.event_notifier import Subscription
 from fastapi_websocket_pubsub.util import pydantic_serialize
@@ -154,6 +154,15 @@ class ReconnectingBroadcaster(EventBroadcaster):
         # Fired once if the reader gives up (exhausts reconnect retries) and returns,
         # so OPAL can graceful-restart the worker even with statistics disabled.
         self._on_give_up: Optional[ReconnectCallback] = None
+        # Live backbone-subscription state — True only while actively subscribed, so a
+        # publish right now would actually reach peer workers. Deliberately distinct from
+        # is_reader_healthy() (which stays True across a transient reconnect so the k8s probe
+        # doesn't flap): this flips False the instant the subscription drops. Read by
+        # FreezablePubSubEndpoint to freeze client-facing publishes during a gap, so a write
+        # that can't fan out to the fleet is never applied on just one worker (fleet
+        # consistency). Instance attr (not task-local): the endpoint reads it from outside
+        # the reader task.
+        self._backbone_connected = False
 
     def set_reconnect_callback(self, callback: Optional[ReconnectCallback]):
         """Register an ``async () -> None`` callback fired once after each gap
@@ -221,6 +230,22 @@ class ReconnectingBroadcaster(EventBroadcaster):
             self._subscription_task is not None and not self._subscription_task.done()
         )
 
+    def is_backbone_connected(self) -> bool:
+        """Whether the reader currently holds a live backbone subscription.
+
+        True only while actively subscribed — i.e. a publish right now would actually
+        reach peer workers. Flips False the instant the subscription drops and back to
+        True only once re-subscribed.
+
+        This is intentionally NOT ``is_reader_healthy()``: that one stays True across a
+        transient reconnect (so the k8s probe does not flap the pod), which is exactly the
+        wrong signal for gating delivery. ``FreezablePubSubEndpoint`` reads this to freeze
+        client-facing publishes while the backbone is down, so a write that cannot fan out
+        to the whole fleet is never applied on a single worker (fleet consistency; the
+        write still lands in the source of truth and is picked up by the reconnect resync).
+        """
+        return self._backbone_connected
+
     async def __broadcast_notifications__(self, subscription: Subscription, data):
         """Share a local notification with the backbone; buffer it on failure.
 
@@ -277,6 +302,9 @@ class ReconnectingBroadcaster(EventBroadcaster):
                     f"Broadcaster listener connected to channel '{self._channel}'"
                 )
                 async with channel.subscribe(channel=self._channel) as subscriber:
+                    # Subscribed: the backbone is reachable, so publishes will fan out to
+                    # peers again — reopen the publish gate (see FreezablePubSubEndpoint).
+                    self._backbone_connected = True
                     # We are subscribed again; recover concurrently so we keep reading
                     # (and can receive peers' replays) during the settle window.
                     if had_prior_connection:
@@ -317,6 +345,10 @@ class ReconnectingBroadcaster(EventBroadcaster):
                     await self._fire_give_up()
                     return
             finally:
+                # Any exit from the read cycle (backbone closed, error, or cancel) means we
+                # are no longer subscribed — close the publish gate until we re-subscribe, so
+                # a write during the gap is not applied on this worker alone.
+                self._backbone_connected = False
                 await self._safe_disconnect_channel()
             await asyncio.sleep(self._backoff_seconds(attempt))
 
@@ -532,3 +564,59 @@ class ReconnectingBroadcaster(EventBroadcaster):
         base = min(base, self._reconnect_backoff_max)
         # Equal jitter, so a fleet of pods does not reconnect to the backbone in lockstep.
         return base / 2 + random.uniform(0, base / 2)
+
+
+class FreezablePubSubEndpoint(PubSubEndpoint):
+    """A ``PubSubEndpoint`` that *freezes* client-facing publishes while the broadcaster
+    backbone is disconnected, to keep a multi-worker fleet consistent during an outage.
+
+    The problem: a server-side ``publish`` fans out two independent ways — local in-process
+    delivery to *this* worker's own clients, and (via the broadcaster) to peer workers. Only
+    the outbound path is buffered when the backbone is down; local delivery still fires. So a
+    data/policy update that reaches one worker during a backbone gap is applied to that
+    worker's clients but not the fleet — a transient split (some PDPs new, others old) that
+    lasts the whole outage.
+
+    With freeze enabled, when the broadcaster is a ``ReconnectingBroadcaster`` that is
+    currently disconnected (``is_backbone_connected()`` is False), ``publish`` is skipped
+    entirely: neither local clients nor the outbound buffer see it. The write still lands in
+    the source of truth (the datasource the update points at), and the reconnect *resync*
+    makes every worker refetch it on recovery — so the whole fleet moves together instead of
+    diverging mid-outage.
+
+    Skipping the *whole* publish (not just local delivery) also means nothing is buffered for
+    replay during the freeze, so recovery converges purely via the resync refetch with no
+    partial replayed state racing ahead of it.
+
+    Delegates straight to the base (no freeze) when: freeze is disabled; there is no
+    broadcaster (single worker — no fleet to keep consistent); or the broadcaster is the
+    stock ``EventBroadcaster`` (reconnect disabled — the legacy drop-on-disconnect path).
+
+    Scope: designed for *source-based* updates (the entry carries a URL the client refetches,
+    which is how permit's data flows). An *inline* update (data embedded in the broadcast) has
+    no source to refetch, so an inline update issued during a freeze is dropped rather than
+    deferred — accepted, since inline is legacy/unused.
+    """
+
+    def __init__(self, *args, freeze_on_disconnect: bool = True, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._freeze_on_disconnect = freeze_on_disconnect
+
+    def _should_freeze(self) -> bool:
+        broadcaster = self.broadcaster
+        return (
+            self._freeze_on_disconnect
+            and isinstance(broadcaster, ReconnectingBroadcaster)
+            and not broadcaster.is_backbone_connected()
+        )
+
+    async def publish(self, topics, data=None):
+        if self._should_freeze():
+            logger.warning(
+                "Broadcaster backbone disconnected; freezing publish to preserve fleet "
+                "consistency (not delivered to clients; reconciled via resync on reconnect). "
+                "topics={topics}",
+                topics=topics,
+            )
+            return
+        return await super().publish(topics, data)

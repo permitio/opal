@@ -13,7 +13,10 @@ from contextlib import asynccontextmanager
 import pytest
 from fastapi_websocket_pubsub import EventBroadcaster
 from fastapi_websocket_pubsub.event_broadcaster import BroadcastNotification
-from opal_server.pubsub_resilience import ReconnectingBroadcaster
+from opal_server.pubsub_resilience import (
+    FreezablePubSubEndpoint,
+    ReconnectingBroadcaster,
+)
 
 _END = object()
 
@@ -41,6 +44,10 @@ class FakeNotifier:
 
     async def notify(self, topics, data, notifier_id=None):
         self.notified.append((list(topics), data, notifier_id))
+
+    def gen_subscriber_id(self):
+        # PubSubEndpoint.__init__ mints a server id from the notifier.
+        return "fake-subscriber-id"
 
 
 class FakeBus:
@@ -831,3 +838,90 @@ async def test_partial_replay_requeue_preserves_drop_oldest():
         "refill-2",
     ]
     # The OLDEST (unsent-1) was dropped from the front, NOT the newest refill.
+
+
+# ---------------------------------------------------------------------------
+# Fleet-consistency freeze (is_backbone_connected + FreezablePubSubEndpoint)
+# ---------------------------------------------------------------------------
+
+
+def _reconnecting(bus, notifier=None):
+    return ReconnectingBroadcaster(
+        "memory://",
+        notifier=notifier or FakeNotifier(),
+        channel="test",
+        broadcast_type=bus.channel_factory,
+        reconnect_backoff_min=0,
+        reconnect_backoff_max=0,
+    )
+
+
+@pytest.mark.asyncio
+async def test_is_backbone_connected_tracks_subscription():
+    """The flag is False before the reader subscribes, True while subscribed, and
+    False again once the reader stops — the exact signal the publish gate needs."""
+    bus = FakeBus()
+    broadcaster = _reconnecting(bus)
+    assert not broadcaster.is_backbone_connected()  # not started -> disconnected
+    task = await broadcaster.start_reader_task()
+    try:
+        await _wait_for(lambda: bus.subscribes >= 1)
+        await _wait_for(broadcaster.is_backbone_connected)
+        assert broadcaster.is_backbone_connected()  # subscribed -> connected
+    finally:
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+    assert not broadcaster.is_backbone_connected()  # reader gone -> disconnected
+
+
+def _endpoint(broadcaster, notifier, freeze=True):
+    return FreezablePubSubEndpoint(
+        broadcaster=broadcaster, notifier=notifier, freeze_on_disconnect=freeze
+    )
+
+
+@pytest.mark.asyncio
+async def test_should_freeze_matrix():
+    """The gate freezes only when: freeze enabled AND a ReconnectingBroadcaster AND the
+    backbone is currently disconnected. Every other combination delegates normally."""
+    bus = FakeBus()
+    b = _reconnecting(bus)  # not started -> is_backbone_connected() is False
+
+    # disconnected reconnecting broadcaster + freeze on -> FREEZE
+    assert _endpoint(b, FakeNotifier(), freeze=True)._should_freeze() is True
+    # freeze disabled -> never
+    assert _endpoint(b, FakeNotifier(), freeze=False)._should_freeze() is False
+    # connected -> never
+    b._backbone_connected = True
+    assert _endpoint(b, FakeNotifier(), freeze=True)._should_freeze() is False
+    b._backbone_connected = False
+    # no broadcaster (single worker) -> never
+    assert _endpoint(None, FakeNotifier(), freeze=True)._should_freeze() is False
+    # stock (non-reconnecting) broadcaster -> never (legacy drop-on-disconnect path)
+    stock = EventBroadcaster(
+        "memory://",
+        notifier=FakeNotifier(),
+        channel="test",
+        broadcast_type=bus.channel_factory,
+    )
+    assert _endpoint(stock, FakeNotifier(), freeze=True)._should_freeze() is False
+
+
+@pytest.mark.asyncio
+async def test_publish_is_suppressed_while_backbone_down():
+    """When frozen, publish must not deliver to clients at all (notifier untouched)."""
+    notifier = FakeNotifier()
+    b = _reconnecting(bus := FakeBus())  # disconnected
+    endpoint = _endpoint(b, notifier, freeze=True)
+    await endpoint.publish(["policy_data"], {"x": 1})
+    assert notifier.notified == []  # frozen: nothing reached the clients
+
+
+@pytest.mark.asyncio
+async def test_publish_delivers_when_not_freezing():
+    """With no broadcaster (nothing to freeze), publish delegates and delivers."""
+    notifier = FakeNotifier()
+    endpoint = _endpoint(None, notifier, freeze=True)
+    await endpoint.publish(["policy_data"], {"x": 1})
+    assert notifier.notified and notifier.notified[0][0] == ["policy_data"]
