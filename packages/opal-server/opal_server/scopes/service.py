@@ -8,6 +8,7 @@ import git
 from ddtrace import tracer
 from fastapi_websocket_pubsub import PubSubEndpoint
 from opal_common.git_utils.commit_viewer import VersionedFile
+from opal_common.http_utils import redact_url
 from opal_common.logger import logger
 from opal_common.schemas.policy import PolicyUpdateMessageNotification
 from opal_common.schemas.policy_source import GitPolicyScopeSource
@@ -130,7 +131,7 @@ class ScopesService:
             source = cast(GitPolicyScopeSource, scope.policy)
 
             logger.debug(
-                f"Sync scope: {scope.scope_id} (remote: {source.url}, branch: {source.branch}, req_time: {req_time})"
+                f"Sync scope: {scope.scope_id} (remote: {redact_url(source.url)}, branch: {source.branch}, req_time: {req_time})"
             )
 
             callbacks = PolicyFetcherCallbacks()
