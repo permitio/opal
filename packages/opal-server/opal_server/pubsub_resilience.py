@@ -673,16 +673,19 @@ class FreezablePubSubEndpoint(PubSubEndpoint):
         )
 
     def _should_freeze(self, topics) -> bool:
+        return self._in_frozen_gap() and not self._is_exempt(topics)
+
+    def _in_frozen_gap(self) -> bool:
         broadcaster = self.broadcaster
         return (
             self._freeze_on_disconnect
             and isinstance(broadcaster, ReconnectingBroadcaster)
             and broadcaster.is_in_backbone_gap()
-            and not self._is_exempt(topics)
         )
 
     async def publish(self, topics, data=None):
-        if self._should_freeze(topics):
+        in_gap = self._in_frozen_gap()
+        if in_gap and not self._is_exempt(topics):
             self._frozen_in_episode += 1
             log = logger.warning if self._frozen_in_episode == 1 else logger.debug
             log(
@@ -693,7 +696,9 @@ class FreezablePubSubEndpoint(PubSubEndpoint):
                 count=self._frozen_in_episode,
             )
             return
-        if self._frozen_in_episode:
+        # Emit the episode summary only once the gap is actually over — an EXEMPT publish
+        # mid-gap also reaches this point and must not reset the counter or claim recovery.
+        if self._frozen_in_episode and not in_gap:
             count, self._frozen_in_episode = self._frozen_in_episode, 0
             logger.warning(
                 "Backbone recovered; froze {count} publish(es) during the gap — clients "

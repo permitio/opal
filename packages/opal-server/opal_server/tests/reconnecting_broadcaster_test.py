@@ -1028,6 +1028,30 @@ async def test_publish_is_suppressed_during_gap():
 
 
 @pytest.mark.asyncio
+async def test_exempt_publish_mid_gap_delivers_without_ending_episode():
+    """An exempt (internal/webhook) publish during the gap is delivered but
+    must NOT reset the freeze-episode counter or log the 'recovered' summary —
+    the gap is still open."""
+    notifier = FakeNotifier()
+    b = _reconnecting(FakeBus())
+    dummy = _fabricate_gap(b)
+    endpoint = _endpoint(b, notifier, exempt=["webhook"])
+    try:
+        await endpoint.publish(["policy_data"], {"x": 1})  # frozen
+        assert endpoint._frozen_in_episode == 1
+        await endpoint.publish(["webhook"], {"w": 1})  # exempt -> delivered
+        await endpoint.publish(["__opal_stats_wakeup"], {"s": 1})  # exempt
+        assert [t for t, _, _ in notifier.notified] == [
+            ["webhook"],
+            ["__opal_stats_wakeup"],
+        ]
+        # episode still open: exempt deliveries mid-gap must not end it
+        assert endpoint._frozen_in_episode == 1
+    finally:
+        dummy.cancel()
+
+
+@pytest.mark.asyncio
 async def test_publish_delivers_when_not_freezing():
     """With no broadcaster (nothing to freeze), publish delegates and
     delivers."""
