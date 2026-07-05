@@ -117,7 +117,10 @@ function prepare_policy_repo {
 
   # Wait for Gitea to be ready and initialized
   echo "  Waiting for Gitea to be ready..."
-  timeout=120
+  # Generous budget: gitea can take minutes to bring the web listener up on slow
+  # bind-mount I/O (e.g. Docker Desktop) — the loop exits as soon as it is ready,
+  # so fast environments (CI) pay nothing for the headroom.
+  timeout=300
   counter=0
   while ! curl -sf http://localhost:3000 > /dev/null 2>&1; do
     counter=$((counter + 1))
@@ -248,6 +251,15 @@ function check_servers_not_logged {
   if compose logs opal_server | grep -q "$1"; then
     echo "- Unexpectedly found '$1' in server logs:"
     compose logs opal_server | grep "$1"
+    exit 1
+  fi
+}
+
+function check_clients_not_logged {
+  echo "- Ensuring msg '$1' is absent from client's logs"
+  if compose logs opal_client | grep -q "$1"; then
+    echo "- Unexpectedly found '$1' in client logs:"
+    compose logs opal_client | grep "$1"
     exit 1
   fi
 }
@@ -402,24 +414,39 @@ function main {
   check_servers_not_logged "list.remove(x): x not in list"
 
   # Cross-instance consistency: publish an update WHILE the backbone is down, then
-  # recover. The two clients connect to different server replicas via the service VIP,
-  # so for BOTH to end up with the value the missed cross-server update must converge
-  # after recovery (via the replay buffer and/or the resync-on-reconnect path).
+  # recover. The two clients connect to different server replicas via the service VIP.
+  # With BROADCAST_FREEZE_ON_DISCONNECT (the default), a client-facing publish that
+  # cannot fan out to the whole fleet is FROZEN — applied by NO client — so the fleet
+  # never splits (one replica's clients seeing the update while the other's don't).
+  # One-off updates like this one are not part of the clients' configured data
+  # sources, so the freeze DROPS them (documented trade); freshness is restored by
+  # re-publishing after recovery, and the fleet converges together.
   echo "- Testing cross-instance consistency across a backbone outage"
   compose kill broadcast_channel
   sleep 3
   publish_data "consistency_user"
   sleep 2
+  # The receiving server must have frozen the publish at the gate...
+  check_servers_logged "freezing publish to preserve fleet consistency"
   compose up -d broadcast_channel
   wait_for_broadcaster
-  # allow buffered replay + (if needed) client resync + full refetch to settle
+  # allow recovery: exempt-topic replay + client resync + full refetch to settle
   sleep 15
-  # The server that received the publish while the backbone was down must have
-  # buffered it and replayed it on recovery (proves the replay path actually ran,
-  # not just a client refetch).
+  # Internal (exempt) topics still ride the pre-freeze buffer+replay path during the
+  # gap — these lines prove that path stayed intact alongside the freeze.
   check_servers_logged "buffered for replay"
   check_servers_logged "Replaying"
-  # BOTH clients (on different replicas via the VIP) must end up with the value.
+  # Recovery resynced this worker's clients (the freeze's convergence path).
+  check_servers_logged "resyncing this worker's clients"
+  # THE consistency assertion: the frozen update reached NO client — neither during
+  # the gap nor via replay after it. No fleet split.
+  check_clients_not_logged "PUT /v1/data/users/consistency_user/location -> 204"
+  # After recovery the fleet is fully functional: re-publish and BOTH clients
+  # (on different replicas via the VIP) converge on the value together.
+  publish_data "consistency_user"
+  sleep 5
+  # The freezing server's first post-gap delivery logs the freeze-episode summary.
+  check_servers_logged "publish(es) during the gap"
   check_clients_logged "PUT /v1/data/users/consistency_user/location -> 204"
   # TODO: Test statistics feature again after broadcaster restart (should first fix statistics bug)
 }
