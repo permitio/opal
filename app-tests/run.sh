@@ -246,22 +246,77 @@ function check_servers_logged {
   compose logs opal_server | grep -q "$1"
 }
 
+# The negative assertions capture the logs first: piped directly into grep, a
+# failing `compose logs` (daemon hiccup, renamed service) is indistinguishable
+# from "message absent" and the check silently passes. (pipefail wouldn't help —
+# the `if pipeline; then fail; fi` shape falls through on ANY pipeline failure.)
 function check_servers_not_logged {
   echo "- Ensuring msg '$1' is absent from server's logs"
-  if compose logs opal_server | grep -q "$1"; then
+  local logs
+  logs=$(compose logs opal_server)
+  if [[ -z "$logs" ]]; then
+    echo "- Could not retrieve any server logs"
+    exit 1
+  fi
+  if grep -q "$1" <<< "$logs"; then
     echo "- Unexpectedly found '$1' in server logs:"
-    compose logs opal_server | grep "$1"
+    grep "$1" <<< "$logs"
     exit 1
   fi
 }
 
 function check_clients_not_logged {
   echo "- Ensuring msg '$1' is absent from client's logs"
-  if compose logs opal_client | grep -q "$1"; then
-    echo "- Unexpectedly found '$1' in client logs:"
-    compose logs opal_client | grep "$1"
+  local logs
+  logs=$(compose logs opal_client)
+  if [[ -z "$logs" ]]; then
+    echo "- Could not retrieve any client logs"
     exit 1
   fi
+  if grep -q "$1" <<< "$logs"; then
+    echo "- Unexpectedly found '$1' in client logs:"
+    grep "$1" <<< "$logs"
+    exit 1
+  fi
+}
+
+function wait_for_servers_logged {
+  # Poll (up to $2 seconds) until a server logs $1 — for assertions whose
+  # timing depends on periodic tasks rather than the just-issued request.
+  echo "- Waiting (up to ${2}s) for msg '$1' in server's logs"
+  for _ in $(seq 1 "$2"); do
+    if compose logs opal_server 2>/dev/null | grep -q "$1"; then
+      return 0
+    fi
+    sleep 1
+  done
+  echo "- Timed out waiting for '$1' in server logs"
+  exit 1
+}
+
+function count_backbone_drops {
+  # Lines the reconnecting reader logs when an established backbone subscription
+  # ends (clean close or error) — i.e. the moments the publish-freeze gate closes.
+  compose logs opal_server 2>/dev/null \
+    | grep -cE "Broadcast subscriber ended|Broadcaster listener error" || true
+}
+
+function wait_for_backbone_drop {
+  # Wait until a server worker OBSERVES the backbone drop (a drop-log line past
+  # the pre-kill baseline in $1): the freeze only engages once the reader's read
+  # cycle exits and clears its connected flag, so publishing after a fixed sleep
+  # races that observation.
+  echo "- Waiting for a server to observe the backbone drop"
+  local baseline=$1
+  for _ in $(seq 1 30); do
+    if (( $(count_backbone_drops) > baseline )); then
+      echo "  backbone drop observed"
+      return 0
+    fi
+    sleep 1
+  done
+  echo "  no server observed the backbone drop in time"
+  exit 1
 }
 
 function wait_for_broadcaster {
@@ -422,8 +477,9 @@ function main {
   # sources, so the freeze DROPS them (documented trade); freshness is restored by
   # re-publishing after recovery, and the fleet converges together.
   echo "- Testing cross-instance consistency across a backbone outage"
+  drops_before=$(count_backbone_drops)
   compose kill broadcast_channel
-  sleep 3
+  wait_for_backbone_drop "$drops_before"
   publish_data "consistency_user"
   sleep 2
   # The receiving server must have frozen the publish at the gate...
@@ -445,8 +501,11 @@ function main {
   # (on different replicas via the VIP) converge on the value together.
   publish_data "consistency_user"
   sleep 5
-  # The freezing server's first post-gap delivery logs the freeze-episode summary.
-  check_servers_logged "publish(es) during the gap"
+  # The freeze-episode summary is logged by the WORKER that froze, on its next
+  # delivered publish — and the re-publish above lands on 1 of N workers. In
+  # practice the exempt statistics keepalive (~10s, exercising every worker)
+  # delivers it; poll rather than assume one fixed delay covers that coupling.
+  wait_for_servers_logged "publish(es) during the gap" 30
   check_clients_logged "PUT /v1/data/users/consistency_user/location -> 204"
   # TODO: Test statistics feature again after broadcaster restart (should first fix statistics bug)
 }
