@@ -8,7 +8,7 @@ control: the stock EventBroadcaster reader DOES complete on the same disconnect,
 proving these tests actually catch the regression.
 """
 import asyncio
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 
 import pytest
 from fastapi_websocket_pubsub import EventBroadcaster
@@ -52,6 +52,12 @@ class FakeNotifier:
     async def subscribe(self, *args, **kwargs):
         # The broadcaster's sharing context registers itself on the notifier
         # (EventBroadcaster._subscribe_to_all_topics); a no-op suffices here.
+        pass
+
+    async def unsubscribe(self, *args, **kwargs):
+        # The sharing context's __aexit__ unsubscribes after every delivered
+        # publish; without this the teardown path raises AttributeError (swallowed
+        # upstream) instead of unwinding cleanly.
         pass
 
 
@@ -846,7 +852,7 @@ async def test_partial_replay_requeue_preserves_drop_oldest():
 
 
 # ---------------------------------------------------------------------------
-# Fleet-consistency freeze (is_backbone_connected + FreezablePubSubEndpoint)
+# Fleet-consistency freeze (backbone gap tracking + FreezablePubSubEndpoint)
 # ---------------------------------------------------------------------------
 
 
@@ -862,20 +868,21 @@ def _reconnecting(bus, notifier=None):
 
 
 @pytest.mark.asyncio
-async def test_is_backbone_connected_tracks_subscription():
+async def test_backbone_connected_tracks_subscription():
     """The flag is False before the reader subscribes, True while subscribed,
     and False again once the reader stops."""
     bus = FakeBus()
     broadcaster = _reconnecting(bus)
-    assert not broadcaster.is_backbone_connected()  # not started -> disconnected
+    assert not broadcaster._backbone_connected  # not started -> disconnected
     task = await broadcaster.start_reader_task()
     try:
-        await _wait_for(broadcaster.is_backbone_connected)  # subscribed -> connected
+        # subscribed -> connected
+        await _wait_for(lambda: broadcaster._backbone_connected)
     finally:
         task.cancel()
         with pytest.raises(asyncio.CancelledError):
             await task
-    assert not broadcaster.is_backbone_connected()  # reader gone -> disconnected
+    assert not broadcaster._backbone_connected  # reader gone -> disconnected
 
 
 @pytest.mark.asyncio
@@ -887,7 +894,7 @@ async def test_is_in_backbone_gap_lifecycle():
     assert not broadcaster.is_in_backbone_gap()  # never started -> not a gap
     task = await broadcaster.start_reader_task()
     try:
-        await _wait_for(broadcaster.is_backbone_connected)
+        await _wait_for(lambda: broadcaster._backbone_connected)
         assert not broadcaster.is_in_backbone_gap()  # subscribed -> not a gap
 
         # Backbone drops and stays unavailable: block re-subscribes, then close the read.
@@ -898,7 +905,7 @@ async def test_is_in_backbone_gap_lifecycle():
         # Backbone returns: allow re-subscribes -> gap ends.
         bus.fail_subscribe_times = 0
         await _wait_for(lambda: not broadcaster.is_in_backbone_gap())
-        assert broadcaster.is_backbone_connected()
+        assert broadcaster._backbone_connected
     finally:
         task.cancel()
         with pytest.raises(asyncio.CancelledError):
@@ -914,7 +921,7 @@ async def test_reader_restart_does_not_inherit_gap_state():
     bus = FakeBus()
     broadcaster = _reconnecting(bus)
     task = await broadcaster.start_reader_task()
-    await _wait_for(broadcaster.is_backbone_connected)  # session established
+    await _wait_for(lambda: broadcaster._backbone_connected)  # session established
     # Last listener leaves: upstream cancels the reader and clears the task slot.
     task.cancel()
     with pytest.raises(asyncio.CancelledError):
@@ -945,13 +952,25 @@ def _fabricate_gap(broadcaster):
     """Put a broadcaster into the mid-gap state (had a session, lost it, reader
     pending) without driving a real backbone.
 
-    Returns the dummy reader task — cancel it in the test's cleanup.
+    Returns the dummy reader task — pass it to ``_unwind_gap`` in the test's
+    cleanup.
     """
-    dummy = asyncio.get_event_loop().create_task(asyncio.sleep(60))
+    dummy = asyncio.get_running_loop().create_task(asyncio.sleep(60))
     broadcaster._subscription_task = dummy
     broadcaster._had_backbone_connection = True
     broadcaster._backbone_connected = False
+    # In the real reader every gap opens on a connected -> disconnected edge, which
+    # bumps the generation — mirror that so episode accounting sees a distinct gap.
+    broadcaster._gap_generation += 1
     return dummy
+
+
+async def _unwind_gap(dummy):
+    """Cancel the fabricated dummy reader task AND await it, so no cancelled
+    task outlives the test (pytest-asyncio teardown warnings)."""
+    dummy.cancel()
+    with suppress(asyncio.CancelledError):
+        await dummy
 
 
 @pytest.mark.asyncio
@@ -982,6 +1001,9 @@ async def test_should_freeze_matrix():
         )
         # a mixed list containing any non-exempt topic still freezes (consistency wins)
         assert endpoint._should_freeze(["__opal_stats_wakeup", "policy_data"]) is True
+        # an EMPTY topic list must not slip past the gate (all([]) is True)
+        assert endpoint._should_freeze([]) is True
+        assert endpoint._should_freeze(None) is True
         # freeze disabled -> never
         assert (
             _endpoint(b, FakeNotifier(), freeze=False)._should_freeze(topics) is False
@@ -991,7 +1013,7 @@ async def test_should_freeze_matrix():
         assert _endpoint(b, FakeNotifier())._should_freeze(topics) is False
         b._backbone_connected = False
     finally:
-        dummy.cancel()
+        await _unwind_gap(dummy)
     # no broadcaster (single worker) -> never
     assert _endpoint(None, FakeNotifier())._should_freeze(topics) is False
     # stock (non-reconnecting) broadcaster -> never (legacy drop-on-disconnect path)
@@ -1024,7 +1046,7 @@ async def test_publish_is_suppressed_during_gap():
         assert [d for _, d, _ in notifier.notified] == [{"x": 3}]
         assert endpoint._frozen_in_episode == 0
     finally:
-        dummy.cancel()
+        await _unwind_gap(dummy)
 
 
 @pytest.mark.asyncio
@@ -1048,7 +1070,36 @@ async def test_exempt_publish_mid_gap_delivers_without_ending_episode():
         # episode still open: exempt deliveries mid-gap must not end it
         assert endpoint._frozen_in_episode == 1
     finally:
-        dummy.cancel()
+        await _unwind_gap(dummy)
+
+
+@pytest.mark.asyncio
+async def test_back_to_back_gaps_get_separate_episodes():
+    """Gap A ends and gap B opens before any out-of-gap publish is delivered
+    (recovery itself never publishes — the resync closes client sockets and
+    clients refetch): the first frozen publish of gap B must open a FRESH
+    episode (flushing A's pending summary), not inherit A's count and log the
+    gap-B WARNING at DEBUG."""
+    notifier = FakeNotifier()
+    b = _reconnecting(FakeBus())
+    endpoint = _endpoint(b, notifier)
+    dummy = _fabricate_gap(b)
+    try:
+        await endpoint.publish(["policy_data"], {"x": 1})  # frozen in gap A
+        await endpoint.publish(["policy_data"], {"x": 2})  # frozen in gap A
+        assert endpoint._frozen_in_episode == 2
+        # Gap A recovers, then gap B opens, with NO publish delivered in between —
+        # as in the real reader, the connected -> disconnected edge bumps the
+        # generation.
+        b._backbone_connected = True
+        b._backbone_connected = False
+        b._gap_generation += 1
+        await endpoint.publish(["policy_data"], {"x": 3})  # first freeze of gap B
+        # Fresh episode: gap B's first freeze counts as #1 (WARNING), not #3.
+        assert endpoint._frozen_in_episode == 1
+        assert notifier.notified == []  # nothing was ever delivered to clients
+    finally:
+        await _unwind_gap(dummy)
 
 
 @pytest.mark.asyncio

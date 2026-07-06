@@ -154,10 +154,17 @@ class ReconnectingBroadcaster(EventBroadcaster):
         # Fired once if the reader gives up (exhausts reconnect retries) and returns,
         # so OPAL can graceful-restart the worker even with statistics disabled.
         self._on_give_up: Optional[ReconnectCallback] = None
-        # Live backbone-subscription state; see is_backbone_connected() / is_in_backbone_gap().
+        # Live backbone-subscription state; see is_in_backbone_gap(). True only while
+        # actively subscribed — i.e. a publish right now would actually reach peer
+        # workers. Deliberately a separate signal from is_reader_healthy(): that one
+        # stays True across a transient reconnect (so the k8s probe does not flap the
+        # pod), which is exactly the wrong signal for gating delivery.
         # Instance attrs (not task-local): FreezablePubSubEndpoint reads them from outside
         # the reader task.
         self._backbone_connected = False
+        # Monotonic gap counter, bumped on every connected -> disconnected edge in the
+        # reader; see backbone_gap_generation().
+        self._gap_generation = 0
         # Whether this broadcaster ever held a backbone subscription — distinguishes a real
         # GAP (had a session, lost it) from "never connected yet" (boot, or backbone down
         # from the start), where freezing would be wrong: no resync fires on a FIRST
@@ -237,18 +244,16 @@ class ReconnectingBroadcaster(EventBroadcaster):
             self._subscription_task is not None and not self._subscription_task.done()
         )
 
-    def is_backbone_connected(self) -> bool:
-        """Whether the reader currently holds a live backbone subscription.
+    def backbone_gap_generation(self) -> int:
+        """Monotonic count of backbone gaps: bumped each time an established
+        subscription drops (the connected -> disconnected edge in the reader).
 
-        True only while actively subscribed — i.e. a publish right now would actually
-        reach peer workers. Flips False the instant the subscription drops and back to
-        True only once re-subscribed.
-
-        This is intentionally NOT ``is_reader_healthy()``: that one stays True across a
-        transient reconnect (so the k8s probe does not flap the pod), which is exactly the
-        wrong signal for gating delivery.
+        Lets ``FreezablePubSubEndpoint`` tell two back-to-back gaps apart even when no
+        publish is delivered between them (recovery itself never publishes — the resync
+        closes client sockets and clients refetch), so each gap opens its own freeze
+        episode instead of merging into the previous one.
         """
-        return self._backbone_connected
+        return self._gap_generation
 
     def is_in_backbone_gap(self) -> bool:
         """Whether the broadcaster is mid-GAP: it *had* a live backbone subscription,
@@ -378,7 +383,11 @@ class ReconnectingBroadcaster(EventBroadcaster):
             finally:
                 # Any exit from the read cycle (backbone closed, error, or cancel) means we
                 # are no longer subscribed — close the publish gate until we re-subscribe, so
-                # a write during the gap is not applied on this worker alone.
+                # a write during the gap is not applied on this worker alone. An established
+                # subscription ending here is a NEW gap: bump the generation so freeze
+                # episodes never span two gaps.
+                if self._backbone_connected:
+                    self._gap_generation += 1
                 self._backbone_connected = False
                 await self._safe_disconnect_channel()
             await asyncio.sleep(self._backoff_seconds(attempt))
@@ -620,11 +629,13 @@ class FreezablePubSubEndpoint(PubSubEndpoint):
 
     **Exempt topics** keep the pre-freeze behavior (local delivery + outbound replay buffer)
     even mid-gap: topics prefixed ``__`` (the statistics protocol and the broadcaster
-    keepalive — dropping those corrupts server-to-server state that no resync rebuilds:
-    ghost clients, workers that never stat-sync) and any topic in ``freeze_exempt_topics``
-    (OPAL passes the git-webhook trigger topic: it targets the server-side policy watcher,
-    not clients, and a dropped trigger means the repo pull it requests simply never happens
-    — the resync would then refetch from a clone that was never advanced).
+    keepalive under their default names — dropping those corrupts server-to-server state
+    that no resync rebuilds: ghost clients, workers that never stat-sync) and any topic in
+    ``freeze_exempt_topics``. OPAL passes the git-webhook trigger topic (it targets the
+    server-side policy watcher, not clients, and a dropped trigger means the repo pull it
+    requests simply never happens — the resync would then refetch from a clone that was
+    never advanced) plus the *configured* statistics/keepalive channel names, since those
+    are operator-overridable and the ``__`` prefix rule only covers the defaults.
 
     Delegates straight to the base when: freeze is disabled; there is no broadcaster
     (single worker); or the broadcaster is the stock ``EventBroadcaster``.
@@ -663,10 +674,19 @@ class FreezablePubSubEndpoint(PubSubEndpoint):
         # frozen stats keepalive), and the first delivered publish afterwards logs a
         # summary count.
         self._frozen_in_episode = 0
+        # Which backbone gap (backbone_gap_generation()) the open episode belongs to:
+        # a gap can end and a NEW one open before any out-of-gap publish is delivered
+        # (recovery itself never publishes), so publish() flushes the previous gap's
+        # pending summary when it sees a frozen publish from a different generation.
+        self._frozen_gap_generation: Optional[int] = None
 
     def _is_exempt(self, topics) -> bool:
         if isinstance(topics, str):
             topics = [topics]
+        if not topics:
+            # all([]) is True — an empty (or None) topic list must not slip past the
+            # gate as "exempt".
+            return False
         return all(
             topic.startswith("__") or topic in self._freeze_exempt_topics
             for topic in topics
@@ -685,7 +705,14 @@ class FreezablePubSubEndpoint(PubSubEndpoint):
 
     async def publish(self, topics, data=None):
         in_gap = self._in_frozen_gap()
-        if in_gap and not self._is_exempt(topics):
+        if self._should_freeze(topics):
+            # A new gap can open before the previous episode's summary got out
+            # (recovery itself never publishes) — flush it first, so each gap gets
+            # its own leading WARNING and its own summary count.
+            generation = self.broadcaster.backbone_gap_generation()
+            if self._frozen_in_episode and generation != self._frozen_gap_generation:
+                self._log_episode_summary()
+            self._frozen_gap_generation = generation
             self._frozen_in_episode += 1
             log = logger.warning if self._frozen_in_episode == 1 else logger.debug
             log(
@@ -699,13 +726,16 @@ class FreezablePubSubEndpoint(PubSubEndpoint):
         # Emit the episode summary only once the gap is actually over — an EXEMPT publish
         # mid-gap also reaches this point and must not reset the counter or claim recovery.
         if self._frozen_in_episode and not in_gap:
-            count, self._frozen_in_episode = self._frozen_in_episode, 0
-            logger.warning(
-                "Backbone recovered; froze {count} publish(es) during the gap — clients "
-                "reconcile via the reconnect resync",
-                count=count,
-            )
+            self._log_episode_summary()
         return await super().publish(topics, data)
+
+    def _log_episode_summary(self):
+        count, self._frozen_in_episode = self._frozen_in_episode, 0
+        logger.warning(
+            "Backbone recovered; froze {count} publish(es) during the gap — clients "
+            "reconcile via the reconnect resync",
+            count=count,
+        )
 
     # The library aliases ``notify = publish`` at class level (backward-compat canonical
     # name), which binds the BASE publish — re-bind it here or ``endpoint.notify(...)``

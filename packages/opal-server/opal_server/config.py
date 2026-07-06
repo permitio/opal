@@ -114,8 +114,10 @@ class OpalServerConfig(Confi):
         "updates outside them (inline data payloads, ad-hoc fetch URLs) are DROPPED by a "
         "freeze, not deferred. Internal coordination topics (statistics, keepalive, the git "
         "webhook trigger) are exempt and keep the deliver-locally + buffer-for-replay "
-        "behavior. Requires BROADCAST_RECONNECT_ENABLED and BROADCAST_RESYNC_ON_RECONNECT "
-        "(if the resync is disabled, freezing is refused with a warning). Set to False for "
+        "behavior. Engages only with BROADCAST_RECONNECT_ENABLED (without the reconnecting "
+        "broadcaster there is no gap signal, so the flag is a no-op) and requires "
+        "BROADCAST_RESYNC_ON_RECONNECT (if the resync is disabled, freezing is refused "
+        "with a warning). Set to False for "
         "the previous behavior, where the receiving worker's own clients update immediately "
         "and peers only after reconnect.",
     )
