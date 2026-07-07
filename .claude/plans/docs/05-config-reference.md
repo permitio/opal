@@ -10,8 +10,8 @@ instantiation — the bare name is what appears in the table).
 
 | Env var | Type | Default | Purpose | Declared at |
 |---|---|---|---|---|
-| `OPAL_SCOPES_GIT_FETCH_TIMEOUT` | float (seconds) | `120.0` | Hard timeout for a single scope git clone/fetch. On timeout the operation is logged and skipped (retried next cycle), so one unreachable repo can never block boot or other scopes *indefinitely*. `0` = no timeout. | `packages/opal-server/opal_server/config.py:196-202` |
-| `OPAL_SCOPES_GIT_MAX_WORKERS` | int | `10` | Size of the dedicated `ThreadPoolExecutor` for scope git operations, which also bounds how many scopes are synced concurrently. Isolating git work keeps a hung fetch from starving bundle serving and other server work that uses the default executor. | `packages/opal-server/opal_server/config.py:203-209` |
+| `OPAL_SCOPES_GIT_FETCH_TIMEOUT` | float (seconds) | `120.0` | Hard timeout for a single scope git clone/fetch. On timeout the operation is logged and skipped (retried next cycle), so one unreachable repo can never block boot or other scopes *indefinitely*. `0` = no timeout. | `packages/opal-server/opal_server/config.py:196-203` |
+| `OPAL_SCOPES_GIT_MAX_WORKERS` | int | `10` | Size of the dedicated `ThreadPoolExecutor` for scope git operations, which also bounds how many scopes are synced concurrently. Isolating git work keeps a hung fetch from starving bundle serving and other server work that uses the default executor. | `packages/opal-server/opal_server/config.py:204-211` |
 
 > **Caveat (timeout is soft, not a hard kill).** `OPAL_SCOPES_GIT_FETCH_TIMEOUT` is enforced via
 > `asyncio.wait`, which unblocks the event loop and the awaiting coroutine — but the underlying
@@ -21,8 +21,21 @@ instantiation — the bare name is what appears in the table).
 > touching the same (non-thread-safe) pygit2 repo while the first is still lingering. Hard-kill via
 > subprocess is out of scope. See spec §6.
 >
-> **Boot / concurrency.** Scope syncs run concurrently, bounded by `OPAL_SCOPES_GIT_MAX_WORKERS`, so
-> a slow/offline repo only holds its own slot for up to the timeout rather than serially delaying the
-> whole pass. With more offline repos than workers, boot/poll can still take
-> `ceil(offline / workers) × timeout`; the pool workers are daemon threads so a lingering op never
-> blocks process shutdown.
+> **Boot / concurrency.** Scope syncs run concurrently, bounded by `OPAL_SCOPES_GIT_MAX_WORKERS`. On
+> timeout the *awaiting coroutine* unblocks and frees its concurrency slot, but — because the timeout
+> is soft (see the caveat above) — the timed-out op keeps its **pool thread** until the OS network
+> timeout. Queued git ops therefore wait for a *freed pool thread*, not merely for a slot, so a naive
+> `ceil(offline / workers) × timeout` bound is optimistic: it assumes each wave's threads are
+> reclaimed before the next wave starts, which lingering (uncancellable) ops break. When the number
+> of simultaneously-offline repos is `>= OPAL_SCOPES_GIT_MAX_WORKERS`, every pool thread is held by a
+> lingering op and a healthy repo submitted afterward can be delayed up to the **OS/TCP network
+> timeout** of those ops — which can far exceed `OPAL_SCOPES_GIT_FETCH_TIMEOUT` — not
+> `ceil(offline / workers) × timeout`. (This bears on the `app-tests/git-leak` offline test, which
+> runs 40 offline repos against the default 10 workers.)
+>
+> **What this actually guarantees.** Not that a fixed pool immediately reclaims capacity on timeout.
+> The guarantee is (1) **event-loop isolation** — the HTTP surface and bundle serving run on the
+> loop's default executor, never the git pool, so they never block on a hung repo; and (2) a
+> **bounded per-slot stall** — each sync slot's coroutine waits at most `OPAL_SCOPES_GIT_FETCH_TIMEOUT`
+> before the event loop moves on. The pool workers are daemon threads, so a lingering op never blocks
+> process shutdown.
