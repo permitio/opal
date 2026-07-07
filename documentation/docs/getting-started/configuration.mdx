@@ -220,11 +220,18 @@ Whether to include traceback information in log messages.
 
 #### OPAL_LOG_DIAGNOSE
 
-Default: `True`
+Default: `False`
 
-Include diagnosis in log messages.
+Include diagnosis (local variable values) in tracebacks. Also gates verbose git
+SSH protocol tracing (`GIT_TRACE`/`GIT_CURL_VERBOSE`).
 
 _Added in OPAL v0.6.0_
+
+:::caution Default changed
+The default is now `False` (previously `True`). Operators upgrading lose
+diagnostic tracebacks and verbose git tracing unless they opt back in with
+`OPAL_LOG_DIAGNOSE=true`.
+:::
 
 :::danger
 When `OPAL_LOG_DIAGNOSE` is enabled, logs may contain sensitive information such as secrets.
