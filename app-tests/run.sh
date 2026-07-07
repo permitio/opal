@@ -226,10 +226,17 @@ function compose {
   docker compose -f ./docker-compose-app-tests.yml --env-file .env "$@"
 }
 
+# The positive assertions must exit explicitly on a miss: `main` runs on the
+# left of `&&` (see the retry loop), which suppresses `set -e` throughout it,
+# so a helper that merely returns grep's status can never fail the run.
 function check_clients_logged {
   echo "- Looking for msg '$1' in client's logs"
-  compose logs --index 1 opal_client | grep -q "$1"
-  compose logs --index 2 opal_client | grep -q "$1"
+  for index in 1 2; do
+    if ! compose logs --index "$index" opal_client | grep -q "$1"; then
+      echo "- '$1' not found in client $index logs"
+      exit 1
+    fi
+  done
 }
 
 function check_no_error {
@@ -243,7 +250,10 @@ function check_no_error {
 
 function check_servers_logged {
   echo "- Looking for msg '$1' in server's logs"
-  compose logs opal_server | grep -q "$1"
+  if ! compose logs opal_server | grep -q "$1"; then
+    echo "- '$1' not found in server logs"
+    exit 1
+  fi
 }
 
 # The negative assertions capture the logs first: piped directly into grep, a
@@ -516,7 +526,10 @@ RETRY_COUNT=0
 
 while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
   echo "Running test (attempt $((RETRY_COUNT+1)) of $MAX_RETRIES)..."
-  main && break
+  # Run main in a subshell: the assertion helpers fail via `exit 1` (see
+  # check_clients_logged), which would otherwise terminate the whole script
+  # through the EXIT trap and skip these retries entirely.
+  (main) && break
   RETRY_COUNT=$((RETRY_COUNT + 1))
   echo "Test failed, retrying..."
   # Tear the stack down before retrying so the next attempt starts clean:
