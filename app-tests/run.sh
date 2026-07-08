@@ -117,7 +117,10 @@ function prepare_policy_repo {
 
   # Wait for Gitea to be ready and initialized
   echo "  Waiting for Gitea to be ready..."
-  timeout=120
+  # Generous budget: gitea can take minutes to bring the web listener up on slow
+  # bind-mount I/O (e.g. Docker Desktop) — the loop exits as soon as it is ready,
+  # so fast environments (CI) pay nothing for the headroom.
+  timeout=300
   counter=0
   while ! curl -sf http://localhost:3000 > /dev/null 2>&1; do
     counter=$((counter + 1))
@@ -223,10 +226,17 @@ function compose {
   docker compose -f ./docker-compose-app-tests.yml --env-file .env "$@"
 }
 
+# The positive assertions must exit explicitly on a miss: `main` runs on the
+# left of `&&` (see the retry loop), which suppresses `set -e` throughout it,
+# so a helper that merely returns grep's status can never fail the run.
 function check_clients_logged {
   echo "- Looking for msg '$1' in client's logs"
-  compose logs --index 1 opal_client | grep -q "$1"
-  compose logs --index 2 opal_client | grep -q "$1"
+  for index in 1 2; do
+    if ! compose logs --index "$index" opal_client | grep -q "$1"; then
+      echo "- '$1' not found in client $index logs"
+      exit 1
+    fi
+  done
 }
 
 function check_no_error {
@@ -240,16 +250,83 @@ function check_no_error {
 
 function check_servers_logged {
   echo "- Looking for msg '$1' in server's logs"
-  compose logs opal_server | grep -q "$1"
-}
-
-function check_servers_not_logged {
-  echo "- Ensuring msg '$1' is absent from server's logs"
-  if compose logs opal_server | grep -q "$1"; then
-    echo "- Unexpectedly found '$1' in server logs:"
-    compose logs opal_server | grep "$1"
+  if ! compose logs opal_server | grep -q "$1"; then
+    echo "- '$1' not found in server logs"
     exit 1
   fi
+}
+
+# The negative assertions capture the logs first: piped directly into grep, a
+# failing `compose logs` (daemon hiccup, renamed service) is indistinguishable
+# from "message absent" and the check silently passes. (pipefail wouldn't help —
+# the `if pipeline; then fail; fi` shape falls through on ANY pipeline failure.)
+function check_servers_not_logged {
+  echo "- Ensuring msg '$1' is absent from server's logs"
+  local logs
+  logs=$(compose logs opal_server)
+  if [[ -z "$logs" ]]; then
+    echo "- Could not retrieve any server logs"
+    exit 1
+  fi
+  if grep -q "$1" <<< "$logs"; then
+    echo "- Unexpectedly found '$1' in server logs:"
+    grep "$1" <<< "$logs"
+    exit 1
+  fi
+}
+
+function check_clients_not_logged {
+  echo "- Ensuring msg '$1' is absent from client's logs"
+  local logs
+  logs=$(compose logs opal_client)
+  if [[ -z "$logs" ]]; then
+    echo "- Could not retrieve any client logs"
+    exit 1
+  fi
+  if grep -q "$1" <<< "$logs"; then
+    echo "- Unexpectedly found '$1' in client logs:"
+    grep "$1" <<< "$logs"
+    exit 1
+  fi
+}
+
+function wait_for_servers_logged {
+  # Poll (up to $2 seconds) until a server logs $1 — for assertions whose
+  # timing depends on periodic tasks rather than the just-issued request.
+  echo "- Waiting (up to ${2}s) for msg '$1' in server's logs"
+  for _ in $(seq 1 "$2"); do
+    if compose logs opal_server 2>/dev/null | grep -q "$1"; then
+      return 0
+    fi
+    sleep 1
+  done
+  echo "- Timed out waiting for '$1' in server logs"
+  exit 1
+}
+
+function count_backbone_drops {
+  # Lines the reconnecting reader logs when an established backbone subscription
+  # ends (clean close or error) — i.e. the moments the publish-freeze gate closes.
+  compose logs opal_server 2>/dev/null \
+    | grep -cE "Broadcast subscriber ended|Broadcaster listener error" || true
+}
+
+function wait_for_backbone_drop {
+  # Wait until a server worker OBSERVES the backbone drop (a drop-log line past
+  # the pre-kill baseline in $1): the freeze only engages once the reader's read
+  # cycle exits and clears its connected flag, so publishing after a fixed sleep
+  # races that observation.
+  echo "- Waiting for a server to observe the backbone drop"
+  local baseline=$1
+  for _ in $(seq 1 30); do
+    if (( $(count_backbone_drops) > baseline )); then
+      echo "  backbone drop observed"
+      return 0
+    fi
+    sleep 1
+  done
+  echo "  no server observed the backbone drop in time"
+  exit 1
 }
 
 function wait_for_broadcaster {
@@ -402,24 +479,43 @@ function main {
   check_servers_not_logged "list.remove(x): x not in list"
 
   # Cross-instance consistency: publish an update WHILE the backbone is down, then
-  # recover. The two clients connect to different server replicas via the service VIP,
-  # so for BOTH to end up with the value the missed cross-server update must converge
-  # after recovery (via the replay buffer and/or the resync-on-reconnect path).
+  # recover. The two clients connect to different server replicas via the service VIP.
+  # With BROADCAST_FREEZE_ON_DISCONNECT (the default), a client-facing publish that
+  # cannot fan out to the whole fleet is FROZEN — applied by NO client — so the fleet
+  # never splits (one replica's clients seeing the update while the other's don't).
+  # One-off updates like this one are not part of the clients' configured data
+  # sources, so the freeze DROPS them (documented trade); freshness is restored by
+  # re-publishing after recovery, and the fleet converges together.
   echo "- Testing cross-instance consistency across a backbone outage"
+  drops_before=$(count_backbone_drops)
   compose kill broadcast_channel
-  sleep 3
+  wait_for_backbone_drop "$drops_before"
   publish_data "consistency_user"
   sleep 2
+  # The receiving server must have frozen the publish at the gate...
+  check_servers_logged "freezing publish to preserve fleet consistency"
   compose up -d broadcast_channel
   wait_for_broadcaster
-  # allow buffered replay + (if needed) client resync + full refetch to settle
+  # allow recovery: exempt-topic replay + client resync + full refetch to settle
   sleep 15
-  # The server that received the publish while the backbone was down must have
-  # buffered it and replayed it on recovery (proves the replay path actually ran,
-  # not just a client refetch).
+  # Internal (exempt) topics still ride the pre-freeze buffer+replay path during the
+  # gap — these lines prove that path stayed intact alongside the freeze.
   check_servers_logged "buffered for replay"
   check_servers_logged "Replaying"
-  # BOTH clients (on different replicas via the VIP) must end up with the value.
+  # Recovery resynced this worker's clients (the freeze's convergence path).
+  check_servers_logged "resyncing this worker's clients"
+  # THE consistency assertion: the frozen update reached NO client — neither during
+  # the gap nor via replay after it. No fleet split.
+  check_clients_not_logged "PUT /v1/data/users/consistency_user/location -> 204"
+  # After recovery the fleet is fully functional: re-publish and BOTH clients
+  # (on different replicas via the VIP) converge on the value together.
+  publish_data "consistency_user"
+  sleep 5
+  # The freeze-episode summary is logged by the WORKER that froze, on its next
+  # delivered publish — and the re-publish above lands on 1 of N workers. In
+  # practice the exempt statistics keepalive (~10s, exercising every worker)
+  # delivers it; poll rather than assume one fixed delay covers that coupling.
+  wait_for_servers_logged "publish(es) during the gap" 30
   check_clients_logged "PUT /v1/data/users/consistency_user/location -> 204"
   # TODO: Test statistics feature again after broadcaster restart (should first fix statistics bug)
 }
@@ -430,7 +526,10 @@ RETRY_COUNT=0
 
 while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
   echo "Running test (attempt $((RETRY_COUNT+1)) of $MAX_RETRIES)..."
-  main && break
+  # Run main in a subshell: the assertion helpers fail via `exit 1` (see
+  # check_clients_logged), which would otherwise terminate the whole script
+  # through the EXIT trap and skip these retries entirely.
+  (main) && break
   RETRY_COUNT=$((RETRY_COUNT + 1))
   echo "Test failed, retrying..."
   # Tear the stack down before retrying so the next attempt starts clean:
