@@ -1,3 +1,4 @@
+import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from opal_common.schemas.policy_source import GitPolicyScopeSource, NoAuthData
@@ -6,8 +7,6 @@ from opal_server.git_fetcher import GitPolicyFetcher
 from opal_server.scopes.api import init_scope_router
 from opal_server.scopes.scope_repository import ScopeNotFoundError
 from opal_server.scopes.service import ScopesService
-
-import pytest
 
 
 class FakeScopeRepository:
