@@ -20,6 +20,26 @@ from helpers import (
 OFFLINE_REPOS = 40
 
 
+def _wait_served(opal, scope_id: str, timeout: int):
+    """Poll a scope's policy bundle until it serves 200 or ``timeout`` elapses.
+
+    Returns ``(served, last)`` where ``last`` is the final status code or
+    exception repr, for the caller's assertion message.
+    """
+    deadline = time.time() + timeout
+    last = None
+    while time.time() < deadline:
+        try:
+            resp = opal.get_scope_policy(scope_id)
+            last = resp.status_code
+            if resp.status_code == 200:
+                return True, last
+        except requests.RequestException as exc:
+            last = repr(exc)
+        time.sleep(2)
+    return False, last
+
+
 @pytest.mark.timeout(420)
 def test_offline_repo_does_not_block_healthy_scopes(opal, repo_count):
     """Unreachable repos must not stop a healthy scope from serving.
@@ -105,10 +125,24 @@ def test_server_recovers_after_postgres_bounce(opal_multiworker, repo_count):
     (a) the worker PIDs are unchanged across the bounce — the in-place-reconnect
     signal; (b) the backbone reader actually dropped and reconnected (its connect
     log count increased), so (a) is not vacuously true because the bounce failed
-    to break anything; and (c) a scope PUT after the bounce becomes servable,
-    proving the broadcast/sync path itself recovered (not just HTTP liveness).
+    to break anything; (c) a scope PUT after the bounce becomes servable,
+    proving the broadcast/sync path itself recovered (not just HTTP liveness);
+    and (d) a scope PUT *during* the outage becomes servable too.
+
+    (d) guards the disconnect-window publish path: the scope PUT publishes its
+    sync trigger on the git-webhook topic, which the reconnecting broadcaster
+    buffers while the backbone is down and replays on reconnect (and which
+    #933's publish freeze explicitly exempts, keeping that behavior after a
+    rebase). A 201 acknowledged during the gap must therefore never be silently
+    dropped — the scope sits in the store but no resync would ever sync it, so
+    only the replayed trigger can make it servable. The during-outage scope uses
+    a *different* seeded repo than (c)'s: serving reads the on-disk clone keyed
+    by repo URL, so sharing (c)'s repo would let (d) return 200 off the clone
+    (c)'s sync produced, without (d)'s own trigger ever being delivered.
     """
     opal = opal_multiworker
+    assert repo_count >= 2, "needs --boot-scopes >= 2"
+    post_bounce_repo, during_bounce_repo = list_seeded_repos(2)
 
     before = worker_pids()
     assert (
@@ -117,7 +151,16 @@ def test_server_recovers_after_postgres_bounce(opal_multiworker, repo_count):
     # baseline reader (re)connect count — assertion (b) requires it to increase
     before_connects = broadcaster_connect_count()
 
-    bounce_postgres(down_seconds=5)
+    def _publish_during_outage():
+        # A PUT while the backbone is down: scopes.put persists to Redis, and
+        # the sync publish is buffered for replay (the broadcaster's outbound
+        # buffer catches the failed backbone share rather than raising), so
+        # this returns 201 mid-outage. If it ever starts failing here instead,
+        # that is a behavior change worth a loud test failure — bounce_postgres
+        # restores Postgres before propagating the exception.
+        opal.put_scope("during-bounce", gitea_repo_url(during_bounce_repo))
+
+    bounce_postgres(down_seconds=5, during=_publish_during_outage)
 
     # HTTP must come back first. A respawn would also satisfy this — hence the
     # PID check below, which a respawn would *not* satisfy.
@@ -168,22 +211,20 @@ def test_server_recovers_after_postgres_bounce(opal_multiworker, repo_count):
     # cloned the repo after the backbone returned. We assert on a served bundle
     # rather than /internal cache counts, which are per-process and so not
     # deterministic to read on a 2-worker stack.
-    healthy = list_seeded_repos(1)[0]
-    opal.put_scope("post-bounce", gitea_repo_url(healthy))
-    served = False
-    last = None
-    deadline = time.time() + 120
-    while time.time() < deadline:
-        try:
-            resp = opal.get_scope_policy("post-bounce")
-            last = resp.status_code
-            if resp.status_code == 200:
-                served = True
-                break
-        except requests.RequestException as exc:
-            last = repr(exc)
-        time.sleep(2)
+    opal.put_scope("post-bounce", gitea_repo_url(post_bounce_repo))
+    served, last = _wait_served(opal, "post-bounce", timeout=120)
     assert served, (
         f"scope PUT after the bounce never became servable (last: {last}); "
         f"the broadcaster/sync path did not recover"
+    )
+
+    # (d) the scope acknowledged DURING the outage must become servable: its
+    # buffered sync trigger has to be replayed to the leader once the backbone
+    # is back. By this point (c) has proven the post-recovery path works, so a
+    # failure here isolates the disconnect-window publish being dropped.
+    served, last = _wait_served(opal, "during-bounce", timeout=120)
+    assert served, (
+        f"scope PUT during the bounce never became servable (last: {last}); "
+        f"its sync trigger was dropped instead of buffered/replayed across "
+        f"the backbone gap"
     )

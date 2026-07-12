@@ -370,13 +370,30 @@ def broadcaster_connect_count(service: str = "opal_server") -> int:
     return out.count(_BROADCASTER_CONNECT_LOG)
 
 
-def bounce_postgres(down_seconds: int = 5) -> None:
+def bounce_postgres(down_seconds: int = 5, during=None) -> None:
+    """Stop Postgres, optionally run ``during()`` while it is down, restart it.
+
+    ``during`` lets a test act inside the outage window (e.g. publish a scope
+    while the backbone is down). It runs right after the stop; the remainder of
+    ``down_seconds`` is then slept so the outage lasts at least that long
+    regardless of how long the callback took. Postgres is brought back even if
+    the callback raises — otherwise one failed callback would leave the
+    session-scoped stack without its broadcaster for every later test — and the
+    callback's exception then propagates.
+    """
     compose("stop", "postgres")
-    time.sleep(down_seconds)
-    # `up -d --wait` blocks until Postgres passes its healthcheck again (plain
-    # `compose start` has no --wait), so a recovery poll that follows isn't
-    # racing an unready broadcaster. --no-recreate keeps the same container.
-    compose("up", "-d", "--wait", "--no-recreate", "postgres")
+    stopped_at = time.time()
+    try:
+        if during is not None:
+            during()
+    finally:
+        remaining = down_seconds - (time.time() - stopped_at)
+        if remaining > 0:
+            time.sleep(remaining)
+        # `up -d --wait` blocks until Postgres passes its healthcheck again (plain
+        # `compose start` has no --wait), so a recovery poll that follows isn't
+        # racing an unready broadcaster. --no-recreate keeps the same container.
+        compose("up", "-d", "--wait", "--no-recreate", "postgres")
 
 
 def list_seeded_repos(count: int) -> List[str]:
