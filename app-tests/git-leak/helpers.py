@@ -126,15 +126,20 @@ class OpalServerClient:
             self._created_scopes.clear()
             self.wait_healthy(timeout=timeout)
 
-    def delete_all_scopes(self, drain_timeout: int = 20) -> None:
+    def delete_all_scopes(self, drain_timeout: int = 3) -> None:
         """Delete every scope the *server* knows (not just this client's), then
         best-effort wait for the caches to drain — a clean slate independent of
         what any prior, possibly-failed, test left behind.
 
         Best-effort drain by design: on master, delete never purges the caches
-        (the leak this suite gates), so the wait simply times out. This runs in
-        fixture setup/teardown, so a failure here must not mask the test, hence
-        the broad excepts and bounded wait.
+        (the leak this suite gates), so the wait can't succeed there — hence the
+        short ``drain_timeout`` (this runs in *every* test's setup and teardown,
+        so a long wait for a state that can't occur on master would be pure dead
+        time per test). Post-PR2 the purge is near-instant, so a few seconds is
+        ample. The DELETEs themselves are synchronous, so the scope store is
+        already clean before this wait — the wait only smooths the in-process
+        cache count. This runs in fixture setup/teardown, so a failure here must
+        not mask the test, hence the broad excepts and bounded wait.
         """
         try:
             for scope_id in self.list_scope_ids():
@@ -263,20 +268,32 @@ def make_repo_unreachable(name: str) -> str:
     return f"http://{UNREACHABLE_HOST}/{GITEA_USER}/{name}.git"
 
 
-def compose(*args: str) -> subprocess.CompletedProcess:
+def compose(*args: str, timeout: int = 1200) -> subprocess.CompletedProcess:
     """Run `docker compose <args>`; on failure, surface the captured output.
 
     `capture_output=True` keeps compose noise out of passing tests, but
     a raw CalledProcessError shows only the exit code — so on failure we
     re-raise with the captured stdout/stderr embedded, otherwise a
     broken build/seed/ restart is opaque to debug.
+
+    ``timeout`` (default 1200s) bounds each call: ``@pytest.mark.timeout`` does
+    not cover session-scoped *fixture setup*, so a wedged ``up``/``wait``/build
+    would otherwise hang to the CI job limit. On expiry we raise a clear error
+    (subprocess.run kills the process group) instead of blocking indefinitely.
     """
-    proc = subprocess.run(
-        ["docker", "compose", *args],
-        cwd=_COMPOSE_DIR,
-        capture_output=True,
-        text=True,
-    )
+    try:
+        proc = subprocess.run(
+            ["docker", "compose", *args],
+            cwd=_COMPOSE_DIR,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise RuntimeError(
+            f"`docker compose {' '.join(args)}` timed out after {timeout}s\n"
+            f"--- stdout ---\n{exc.stdout or ''}\n--- stderr ---\n{exc.stderr or ''}"
+        ) from exc
     if proc.returncode != 0:
         raise RuntimeError(
             f"`docker compose {' '.join(args)}` failed (exit {proc.returncode})\n"
@@ -285,13 +302,98 @@ def compose(*args: str) -> subprocess.CompletedProcess:
     return proc
 
 
-def bounce_postgres(down_seconds: int = 5) -> None:
+def worker_pids(service: str = "opal_server") -> set:
+    """Return the set of gunicorn *worker* PIDs running inside ``service``.
+
+    The server runs ``gunicorn`` (master) + ``UvicornWorker`` children (see
+    ``scripts/start.sh``). When a worker's broadcaster reader gives up on a
+    backbone disconnect it triggers a graceful shutdown and gunicorn respawns
+    the worker with a *new* PID; the reconnecting broadcaster (PER-15065 / #915)
+    instead recovers the reader in place and the worker keeps its PID. Comparing
+    this set across a transient bounce is how the broadcaster test tells an
+    in-place reconnect apart from a worker respawn.
+
+    Implemented over ``/proc`` (no ``ps`` in the slim image): every gunicorn
+    process' ``cmdline`` contains "gunicorn", and the master is the lowest PID
+    (it exists before it forks any worker), so the workers are the rest. The
+    match is done **host-side in Python**, not with ``grep gunicorn`` in the
+    container: the scanning command's own ``sh -c`` wrapper has "gunicorn" in
+    its command line, so an in-container grep would count that wrapper as a
+    third "worker". The dump command below contains neither "gunicorn" nor
+    "grep", so it cannot match itself.
+    """
+    out = compose(
+        "exec",
+        "-T",
+        service,
+        "sh",
+        "-c",
+        # emit "<pid> <cmdline>" per process; tr -d strips the NUL arg
+        # separators so the args concatenate into one searchable token.
+        # `|| true`: a momentary read failure must not raise from compose().
+        "for d in /proc/[0-9]*/; do p=${d#/proc/}; p=${p%/}; "
+        'echo "$p $(cat "$d/cmdline" 2>/dev/null | tr -d "\\000")"; '
+        "done || true",
+    ).stdout
+    pids = []
+    for line in out.splitlines():
+        pid_str, _, cmd = line.partition(" ")
+        if pid_str.isdigit() and "gunicorn" in cmd:
+            pids.append(int(pid_str))
+    pids.sort()
+    if len(pids) <= 1:
+        return set()  # only the master (or nothing) observed: no workers
+    return set(pids[1:])  # drop the master (lowest PID); the rest are workers
+
+
+# The reconnecting broadcaster (PER-15065 / #915) logs this line every time its
+# reader (re)connects to the backbone channel — once at boot, and once more on
+# each reconnect after a backbone drop (pubsub_resilience.py `_reader_loop` ->
+# `_ensure_connected`). Counting it across a Postgres bounce positively proves a
+# disconnect+reconnect actually happened.
+_BROADCASTER_CONNECT_LOG = "Broadcaster listener connected to channel"
+
+
+def broadcaster_connect_count(service: str = "opal_server") -> int:
+    """Count broadcaster reader (re)connect log lines for ``service``.
+
+    The postgres-bounce test asserts this COUNT *increased* across the bounce so
+    the gate positively confirms the backbone actually dropped and the reader
+    reconnected — without this, a bounce that failed to break the reader (a
+    future Postgres shutdown-signal change, connection pooling, etc.) would leave
+    the worker PIDs unchanged and pass the gate vacuously. Paired with
+    ``worker_pids()`` unchanged (which proves the recovery was *in place*, not a
+    respawn), the two together pin down the PER-15065 property.
+    """
+    # --no-log-prefix strips the "service | " column so the marker matches cleanly.
+    out = compose("logs", "--no-log-prefix", service).stdout
+    return out.count(_BROADCASTER_CONNECT_LOG)
+
+
+def bounce_postgres(down_seconds: int = 5, during=None) -> None:
+    """Stop Postgres, optionally run ``during()`` while it is down, restart it.
+
+    ``during`` lets a test act inside the outage window (e.g. publish a scope
+    while the backbone is down). It runs right after the stop; the remainder of
+    ``down_seconds`` is then slept so the outage lasts at least that long
+    regardless of how long the callback took. Postgres is brought back even if
+    the callback raises — otherwise one failed callback would leave the
+    session-scoped stack without its broadcaster for every later test — and the
+    callback's exception then propagates.
+    """
     compose("stop", "postgres")
-    time.sleep(down_seconds)
-    # `up -d --wait` blocks until Postgres passes its healthcheck again (plain
-    # `compose start` has no --wait), so a recovery poll that follows isn't
-    # racing an unready broadcaster. --no-recreate keeps the same container.
-    compose("up", "-d", "--wait", "--no-recreate", "postgres")
+    stopped_at = time.time()
+    try:
+        if during is not None:
+            during()
+    finally:
+        remaining = down_seconds - (time.time() - stopped_at)
+        if remaining > 0:
+            time.sleep(remaining)
+        # `up -d --wait` blocks until Postgres passes its healthcheck again (plain
+        # `compose start` has no --wait), so a recovery poll that follows isn't
+        # racing an unready broadcaster. --no-recreate keeps the same container.
+        compose("up", "-d", "--wait", "--no-recreate", "postgres")
 
 
 def list_seeded_repos(count: int) -> List[str]:
@@ -300,13 +402,13 @@ def list_seeded_repos(count: int) -> List[str]:
 
 # A reserved repo seeded *outside* the numeric ``policy-repo-NNNN`` range that
 # ``list_seeded_repos`` enumerates, so no boot/leak test ever clones it. The
-# resilience offline-hang test uses it as its "healthy" probe: clones live at
-# ``base_dir/<source_id>`` keyed by URL-hash and survive ``compose
-# restart/stop/start`` (opal_server mounts no volume at ``/opal``; only
-# ``down -v`` wipes them), so pointing the probe at any shared seeded repo would
-# let the healthy scope reuse an on-disk clone and serve 200 *without* touching
-# the saturated fetch executor — false-passing a gate that must FAIL on this
-# branch. A dedicated never-cloned repo forces a genuine fresh clone through the
-# starved executor. Keep this name in sync with ``RESERVED_REPOS`` in
-# ``seed/seed_gitea.py``.
+# resilience offline-hang test uses it as its "healthy" probe so the scope must
+# perform a genuine *clone* through the starved executor, rather than reusing an
+# on-disk clone left by another test (clones live at ``base_dir/<source_id>``
+# keyed by URL-hash and survive ``compose restart/stop/start`` — opal_server
+# mounts no volume at ``/opal``; only ``down -v`` wipes them). Note serving the
+# bundle (``make_bundle`` via ``run_sync``) shares that same fetch executor, so a
+# pre-cloned shared repo would be starved on serve too — the never-cloned probe
+# is belt-and-suspenders that additionally exercises the clone path. Keep this
+# name in sync with ``RESERVED_REPOS`` in ``seed/seed_gitea.py``.
 HEALTHY_PROBE_REPO = "policy-repo-healthy-probe"

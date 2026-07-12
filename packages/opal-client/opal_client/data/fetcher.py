@@ -7,6 +7,7 @@ from opal_common.config import opal_common_config
 from opal_common.fetcher import FetchingEngine
 from opal_common.fetcher.events import FetcherConfig
 from opal_common.fetcher.providers.http_fetch_provider import HttpFetcherConfig
+from opal_common.http_utils import redact_url
 from opal_common.logger import logger
 from opal_common.utils import get_authorization_header, tuple_to_dict
 
@@ -62,20 +63,20 @@ class DataFetcher:
     ) -> Optional[JsonableValue]:
         """Helper function wrapping self._engine.handle_url."""
         if data is not None:
-            logger.info("Data provided inline for url: {url}", url=url)
+            logger.info("Data provided inline for url: {url}", url=redact_url(url))
             return data
 
         if url is None:
             logger.error("Invalid data update: no embedded data or URL")
             return None
 
-        logger.info("Fetching data from url: {url}", url=url)
+        logger.info("Fetching data from url: {url}", url=redact_url(url))
         try:
             # ask the engine to get our data
             response = await self._engine.handle_url(url, config=config)
             return response
         except asyncio.TimeoutError as e:
-            logger.exception("Timeout while fetching url: {url}", url=url)
+            logger.exception("Timeout while fetching url: {url}", url=redact_url(url))
             raise
 
     async def handle_urls(

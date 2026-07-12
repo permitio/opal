@@ -24,8 +24,10 @@ Postgres and `blackhole` are internal to the compose network.
   `create_repo`, `delete_repo`); also exposed as the `gitea_admin` pytest fixture.
 - `make_repo_unreachable(name)` — git URL on the `blackhole` sidecar (completes
   the TCP handshake, never answers) so the clone hangs for the offline-repo test.
-- `bounce_postgres(down_seconds)` — stop Postgres, then `up -d --wait` it back to
-  simulate a broadcaster outage and await readiness before the recovery poll.
+- `bounce_postgres(down_seconds, during=None)` — stop Postgres, optionally run a
+  callback while it is down (the bounce test publishes a scope mid-outage), then
+  `up -d --wait` it back to simulate a broadcaster outage and await readiness
+  before the recovery poll.
 
 ## Run
 ```bash
@@ -37,20 +39,41 @@ Useful flags: `--boot-scopes=N` (any N), `--keep-stack` (skip teardown),
 env `BOOT_TARGET_SECONDS=120` (tighten the boot gate).
 
 ## Expected behavior
-The churn leak test (`test_churn_releases_caches`) and the offline-repo test
-FAIL on this branch *without the PR2/PR3 fix* — they target unfixed bugs and
-become the regression gates for PR2/PR3, flipping green when those land. The
-boot test passes but fails when `BOOT_TARGET_SECONDS` is set low (PR4's gate).
 
-Two tests are guards that PASS rather than reproducing a current failure:
-- `test_repeat_sync_does_not_grow` — clone paths are keyed by the repo URL, so
-  re-syncing identical scopes reuses cache entries and the cache *counts* can't
-  grow for any implementation; the load-bearing assertion is therefore on RSS,
-  guarding against a regression that leaks per-sync allocations.
-- `test_server_recovers_after_postgres_bounce` — when the broadcaster drops, the
-  worker is respawned by gunicorn and the broadcaster reconnects once Postgres
-  is back; the test PUTs a fresh scope post-bounce and asserts it syncs, proving
-  the broadcast path (not just HTTP) recovered.
+Gate-coverage matrix (what each flagship test actually does):
+
+| Test | Role | Behaviour here |
+|---|---|---|
+| `test_churn_releases_caches` | **gate (PR2)** | FAILS without the PR2 leak fix — delete leaves the caches populated; flips green when PR2 lands |
+| `test_scope_repoint_releases_old_repo_cache` | **gate (PR2, update path)** | FAILS without PR2 — re-pointing a scope to a new URL orphans the old URL's cache entries; stays red after PR2 unless its purge also covers scope *updates*, not just deletes |
+| `test_shared_repo_survives_sibling_scope_delete` | **over-purge guard (PR2)** | PASSES here (nothing purges on master); once PR2 lands it guards against purging a URL-keyed entry that a surviving sibling scope still references |
+| `test_offline_repo_does_not_block_healthy_scopes` | **gate (PR3)** | FAILS without the PR3 fetch timeout — 40 hung clones starve the executor so a healthy scope never serves; flips green when PR3 lands |
+| `test_boot_loads_all_scopes` | **baseline → gate (PR4)** | PASSES with the loose default target; set `BOOT_TARGET_SECONDS` low (plan: 120 @ 50) on PR4 to gate the parallel-boot fix |
+| `test_repeat_sync_rss_stays_bounded` | **RSS guard** | PASSES; an RSS-budget guard against per-sync allocation leaks (the cache *count* can't grow for any impl, so there is no count assertion — see below) |
+| `test_server_recovers_after_postgres_bounce` | **guard (PER-15065 + gap publishes)** | PASSES on this branch (which has #915); guards the in-place broadcaster reconnect and that a scope PUT *during* the outage is buffered/replayed, not dropped |
+
+Notes on the guards:
+- `test_repeat_sync_rss_stays_bounded` — clone paths are keyed by the repo URL,
+  so re-syncing identical scopes reuses cache entries and the cache *counts*
+  can't grow for any implementation; the load-bearing assertion is therefore on
+  RSS only (a `len(repos)` check would be tautological and is intentionally
+  omitted), guarding against a regression that leaks per-sync allocations.
+- `test_server_recovers_after_postgres_bounce` — runs **2 workers** so the
+  Postgres backbone is actually exercised (cross-worker fan-out needs >=2
+  workers; a single worker fans out in-process and never touches the backbone).
+  Across a transient bounce it asserts the gunicorn **worker PIDs are unchanged**
+  — proving #915's reconnecting broadcaster recovered the reader *in place*
+  rather than gunicorn respawning a graceful-shutdown worker (the pre-fix
+  behaviour) — that a scope PUT after the bounce becomes servable, proving
+  the broadcast/sync path recovered (not just HTTP), and that a scope PUT
+  *during* the outage becomes servable too: its sync trigger rides the
+  git-webhook topic, which the reconnecting broadcaster buffers and replays on
+  reconnect (and which #933's publish freeze exempts on master), so a 201
+  acknowledged mid-gap must never be silently dropped.
+- `test_shared_repo_survives_sibling_scope_delete` — the caches are keyed by
+  repo URL, not scope id, so it green-guards PR2 against purging an entry that
+  another live scope still references (churn only covers the all-scopes-gone
+  direction).
 
 ## Requires
 Docker + docker compose v2, plus host Python with `pytest pytest-timeout requests GitPython`.

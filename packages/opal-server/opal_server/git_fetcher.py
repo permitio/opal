@@ -13,6 +13,7 @@ from ddtrace import tracer
 from git import Repo
 from opal_common.async_utils import run_sync
 from opal_common.git_utils.bundle_maker import BundleMaker
+from opal_common.http_utils import redact_url
 from opal_common.logger import logger
 from opal_common.schemas.policy import PolicyBundle
 from opal_common.schemas.policy_source import (
@@ -106,10 +107,10 @@ class RepoInterface:
         for remote in repo.remotes:
             if remote.url == expected_remote_url:
                 logger.debug(
-                    f"found target repo url is referred by remote: {remote.name}, url={remote.url}"
+                    f"found target repo url is referred by remote: {remote.name}, url={redact_url(remote.url)}"
                 )
                 return
-        error: str = f"Repo mismatch! No remote matches target url: {expected_remote_url}, found urls: {[remote.url for remote in repo.remotes]}"
+        error: str = f"Repo mismatch! No remote matches target url: {redact_url(expected_remote_url)}, found urls: {[redact_url(remote.url) for remote in repo.remotes]}"
         logger.error(error)
         raise ValueError(error)
 
@@ -136,7 +137,7 @@ class GitPolicyFetcher(PolicyFetcher):
         self._remote = remote_name
         self._scope_id = scope_id
         logger.debug(
-            f"Initializing git fetcher: scope_id={scope_id}, url={source.url}, branch={self._source.branch}, source_id={self._source_id}"
+            f"Initializing git fetcher: scope_id={scope_id}, url={redact_url(source.url)}, branch={self._source.branch}, source_id={self._source_id}"
         )
 
     async def _get_repo_lock(self):
@@ -185,7 +186,7 @@ class GitPolicyFetcher(PolicyFetcher):
                         )
                         if should_fetch:
                             logger.debug(
-                                f"Fetching remote (force_fetch={force_fetch}): {self._remote} ({self._source.url})"
+                                f"Fetching remote (force_fetch={force_fetch}): {self._remote} ({redact_url(self._source.url)})"
                             )
                             GitPolicyFetcher.repos_last_fetched[
                                 self._source_id
@@ -194,7 +195,9 @@ class GitPolicyFetcher(PolicyFetcher):
                                 repo.remotes[self._remote].fetch,
                                 callbacks=self._auth_callbacks,
                             )
-                            logger.debug(f"Fetch completed: {self._source.url}")
+                            logger.debug(
+                                f"Fetch completed: {redact_url(self._source.url)}"
+                            )
 
                         # New commits might be present because of a previous fetch made by another scope
                         await self._notify_on_changes(repo)
@@ -218,7 +221,7 @@ class GitPolicyFetcher(PolicyFetcher):
     async def _clone(self):
         logger.info(
             "Cloning repo at '{url}' to '{path}'",
-            url=self._source.url,
+            url=redact_url(self._source.url),
             path=self._repo_path,
         )
         try:
@@ -229,9 +232,9 @@ class GitPolicyFetcher(PolicyFetcher):
                 callbacks=self._auth_callbacks,
             )
         except pygit2.GitError:
-            logger.exception(f"Could not clone repo at {self._source.url}")
+            logger.exception(f"Could not clone repo at {redact_url(self._source.url)}")
         else:
-            logger.info(f"Clone completed: {self._source.url}")
+            logger.info(f"Clone completed: {redact_url(self._source.url)}")
             await self._notify_on_changes(repo)
 
     def _get_repo(self) -> Repository:

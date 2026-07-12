@@ -98,7 +98,10 @@ def init_data_updates_router(
             redirect_url = set_url_query_param(url, "token", token)
             return RedirectResponse(url=redirect_url)
         else:
-            logger.error("pydantic model invalid", model=data_sources_config)
+            logger.error(
+                "data source configuration is invalid: neither an inline config "
+                "nor an external_source_url was provided"
+            )
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Did not find a data source configuration!",

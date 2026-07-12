@@ -13,6 +13,7 @@ import os
 import sys
 import time
 from pathlib import Path
+from urllib.parse import urlsplit, urlunsplit
 
 import requests
 from git import Actor, Repo
@@ -104,8 +105,12 @@ def _push_policy(
     author = Actor("seed", "seed@example.com")
     repo.index.commit("seed policy", author=author, committer=author)
 
-    push_url = (
-        base_url.replace("http://", f"http://{user}:{token}@") + f"/{user}/{name}.git"
+    # Inject credentials scheme-agnostically (works for http and https) rather
+    # than string-replacing "http://", which would silently drop the creds if
+    # GITEA_URL were ever https and produce an opaque auth failure.
+    parts = urlsplit(base_url)
+    push_url = urlunsplit(
+        (parts.scheme, f"{user}:{token}@{parts.netloc}", f"/{user}/{name}.git", "", "")
     )
     origin = repo.create_remote("origin", push_url)
     origin.push(refspec="main:main")
@@ -155,8 +160,6 @@ def main() -> int:
         )
         return 1
 
-    # write the token where the test harness can read it
-    Path("/seed-output/token").write_text(token)
     print(f"DONE: ensured {total} repos", flush=True)
     return 0
 

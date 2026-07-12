@@ -1,3 +1,4 @@
+from opal_common.http_utils import redact_url
 from opal_common.logger import logger
 from opal_common.schemas.policy_source import (
     GitPolicyScopeSource,
@@ -21,7 +22,7 @@ async def _load_env_scope(repo: ScopeRepository):
     if opal_server_config.POLICY_REPO_URL is not None:
         logger.info(
             "Adding default scope from env: {url}",
-            url=opal_server_config.POLICY_REPO_URL,
+            url=redact_url(opal_server_config.POLICY_REPO_URL),
         )
 
         auth = NoAuthData()
