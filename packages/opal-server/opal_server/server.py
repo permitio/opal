@@ -4,6 +4,7 @@ import signal
 import sys
 import traceback
 from functools import partial
+from pathlib import Path
 from typing import List, Optional
 
 from fastapi import Depends, FastAPI, Request
@@ -40,6 +41,7 @@ from opal_server.redis_utils import RedisDB
 from opal_server.scopes.api import init_scope_router
 from opal_server.scopes.loader import load_scopes
 from opal_server.scopes.scope_repository import ScopeRepository
+from opal_server.scopes.service import ScopesService
 from opal_server.security.api import init_security_router
 from opal_server.security.jwks import JwksStaticEndpoint
 from opal_server.statistics import OpalStatistics, init_statistics_router
@@ -270,8 +272,15 @@ class OpalServer:
         )
 
         if opal_server_config.SCOPES:
+            scopes_service = ScopesService(
+                base_dir=Path(opal_server_config.BASE_DIR),
+                scopes=self._scopes,
+                pubsub_endpoint=self.pubsub.endpoint,
+            )
             app.include_router(
-                init_scope_router(self._scopes, authenticator, self.pubsub.endpoint),
+                init_scope_router(
+                    self._scopes, authenticator, self.pubsub.endpoint, scopes_service
+                ),
                 tags=["Scopes"],
                 prefix="/scopes",
             )

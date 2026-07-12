@@ -191,6 +191,7 @@ class ScopesService:
                 shutil.rmtree(scope_dir, ignore_errors=True)
                 GitPolicyFetcher.forget_repo(str(scope_dir))
                 GitPolicyFetcher.repos_last_fetched.pop(deleted_source_id, None)
+                GitPolicyFetcher.repo_locks.pop(deleted_source_id, None)
 
             await self._scopes.delete(scope_id)
 

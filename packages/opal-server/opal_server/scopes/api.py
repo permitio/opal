@@ -44,6 +44,7 @@ from opal_server.config import opal_server_config
 from opal_server.data.data_update_publisher import DataUpdatePublisher
 from opal_server.git_fetcher import GitPolicyFetcher
 from opal_server.scopes.scope_repository import ScopeNotFoundError, ScopeRepository
+from opal_server.scopes.service import ScopesService
 
 
 def verify_private_key(private_key: str, key_format: EncryptionKeyFormat) -> bool:
@@ -80,6 +81,7 @@ def init_scope_router(
     scopes: ScopeRepository,
     authenticator: JWTAuthenticator,
     pubsub_endpoint: PubSubEndpoint,
+    scopes_service: ScopesService,
 ):
     router = APIRouter()
 
@@ -171,8 +173,13 @@ def init_scope_router(
             logger.error(f"Unauthorized to delete scope: {repr(ex)}")
             raise
 
-        # TODO: This should also asynchronously clean the repo from the disk (if it's not used by other scopes)
-        await scopes.delete(scope_id)
+        try:
+            # Deletes the scope and also cleans the repo clone from disk and the
+            # GitPolicyFetcher in-memory caches (unless another scope shares them).
+            await scopes_service.delete_scope(scope_id)
+        except ScopeNotFoundError:
+            # Deleting a missing scope was always a silent no-op (204); keep it.
+            pass
 
         return Response(status_code=status.HTTP_204_NO_CONTENT)
 

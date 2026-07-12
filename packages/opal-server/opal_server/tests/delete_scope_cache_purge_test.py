@@ -57,6 +57,7 @@ async def test_delete_unique_scope_purges_caches(tmp_path, monkeypatch):
     clone_path = str(GitPolicyFetcher.repo_clone_path(tmp_path, src))
     GitPolicyFetcher.repos[clone_path] = object()
     GitPolicyFetcher.repos_last_fetched[sid] = "ts"
+    GitPolicyFetcher.repo_locks[sid] = object()
 
     monkeypatch.setattr(
         "opal_server.scopes.service.shutil.rmtree", lambda *a, **k: None
@@ -66,6 +67,7 @@ async def test_delete_unique_scope_purges_caches(tmp_path, monkeypatch):
 
     assert clone_path not in GitPolicyFetcher.repos
     assert sid not in GitPolicyFetcher.repos_last_fetched
+    assert sid not in GitPolicyFetcher.repo_locks
 
 
 @pytest.mark.asyncio
@@ -79,6 +81,7 @@ async def test_delete_keeps_caches_when_sibling_shares_source(tmp_path, monkeypa
     clone_path = str(GitPolicyFetcher.repo_clone_path(tmp_path, a.policy))
     GitPolicyFetcher.repos[clone_path] = object()
     GitPolicyFetcher.repos_last_fetched[sid] = "ts"
+    GitPolicyFetcher.repo_locks[sid] = object()
 
     rmtree_calls = []
     monkeypatch.setattr(
@@ -91,6 +94,7 @@ async def test_delete_keeps_caches_when_sibling_shares_source(tmp_path, monkeypa
     assert rmtree_calls == []  # sibling shares the source id; clone must survive
     assert clone_path in GitPolicyFetcher.repos
     assert sid in GitPolicyFetcher.repos_last_fetched
+    assert sid in GitPolicyFetcher.repo_locks
 
 
 @pytest.mark.asyncio
