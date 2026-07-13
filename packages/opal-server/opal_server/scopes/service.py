@@ -163,7 +163,18 @@ class ScopesService:
         with tracer.trace("scopes_service.delete_scope", resource=scope_id):
             logger.info(f"Delete scope: {scope_id}")
             scope = await self._scopes.get(scope_id)
-            deleted_source = cast(GitPolicyScopeSource, scope.policy)
+
+            if not isinstance(scope.policy, GitPolicyScopeSource):
+                # Mirrors sync_scope: only git sources have a clone dir and
+                # fetcher caches to clean up.
+                logger.warning(
+                    f"Scope {scope_id} has a non-git policy source, "
+                    "deleting the scope record only"
+                )
+                await self._scopes.delete(scope_id)
+                return
+
+            deleted_source = scope.policy
             deleted_source_id = GitPolicyFetcher.source_id(deleted_source)
             scope_dir = GitPolicyFetcher.repo_clone_path(self._base_dir, deleted_source)
 
@@ -177,21 +188,34 @@ class ScopesService:
             other_scopes = [
                 s for s in await self._scopes.all() if s.scope_id != scope_id
             ]
-            source_id_shared = any(
-                isinstance(s.policy, GitPolicyScopeSource)
-                and GitPolicyFetcher.source_id(s.policy) == deleted_source_id
-                for s in other_scopes
+            sharing_scope_id = next(
+                (
+                    s.scope_id
+                    for s in other_scopes
+                    if isinstance(s.policy, GitPolicyScopeSource)
+                    and GitPolicyFetcher.source_id(s.policy) == deleted_source_id
+                ),
+                None,
             )
 
-            if source_id_shared:
+            if sharing_scope_id is not None:
                 logger.info(
-                    "Another scope shares the same clone (source id), skipping clone deletion"
+                    f"Scope {sharing_scope_id} shares the same clone (source id), "
+                    "skipping clone deletion"
                 )
             else:
-                shutil.rmtree(scope_dir, ignore_errors=True)
-                GitPolicyFetcher.forget_repo(str(scope_dir))
-                GitPolicyFetcher.repos_last_fetched.pop(deleted_source_id, None)
-                GitPolicyFetcher.repo_locks.pop(deleted_source_id, None)
+                # NOTE: this purge is process-local best-effort — it cleans the
+                # caches of whichever worker serves the DELETE. Broadcasting the
+                # purge so the leader (which accumulates most handles via
+                # continuous sync) also drops its caches is tracked for PR3.
+                async with GitPolicyFetcher.lock_source(deleted_source_id):
+                    shutil.rmtree(scope_dir, ignore_errors=True)
+                    GitPolicyFetcher.forget_repo(str(scope_dir))
+                    GitPolicyFetcher.repos_last_fetched.pop(deleted_source_id, None)
+                    # Popped while the lock is held: lock_source waiters re-check
+                    # the dict entry after acquiring and retry on the fresh lock,
+                    # so nobody proceeds under the stale one.
+                    GitPolicyFetcher.repo_locks.pop(deleted_source_id, None)
 
             await self._scopes.delete(scope_id)
 

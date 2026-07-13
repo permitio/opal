@@ -1,3 +1,5 @@
+import asyncio
+
 import pytest
 from opal_common.schemas.policy_source import GitPolicyScopeSource, NoAuthData
 from opal_common.schemas.scopes import Scope
@@ -57,7 +59,7 @@ async def test_delete_unique_scope_purges_caches(tmp_path, monkeypatch):
     clone_path = str(GitPolicyFetcher.repo_clone_path(tmp_path, src))
     GitPolicyFetcher.repos[clone_path] = object()
     GitPolicyFetcher.repos_last_fetched[sid] = "ts"
-    GitPolicyFetcher.repo_locks[sid] = object()
+    GitPolicyFetcher.repo_locks[sid] = asyncio.Lock()
 
     monkeypatch.setattr(
         "opal_server.scopes.service.shutil.rmtree", lambda *a, **k: None
@@ -81,7 +83,7 @@ async def test_delete_keeps_caches_when_sibling_shares_source(tmp_path, monkeypa
     clone_path = str(GitPolicyFetcher.repo_clone_path(tmp_path, a.policy))
     GitPolicyFetcher.repos[clone_path] = object()
     GitPolicyFetcher.repos_last_fetched[sid] = "ts"
-    GitPolicyFetcher.repo_locks[sid] = object()
+    GitPolicyFetcher.repo_locks[sid] = asyncio.Lock()
 
     rmtree_calls = []
     monkeypatch.setattr(
@@ -134,3 +136,64 @@ async def test_delete_purges_when_sibling_shares_url_but_not_source(
     assert rmtree_calls == [clone_path_a]  # its own clone dir removed
     assert clone_path_a not in GitPolicyFetcher.repos
     assert sid_a not in GitPolicyFetcher.repos_last_fetched
+
+
+@pytest.mark.asyncio
+async def test_delete_serializes_against_inflight_repo_lock(tmp_path, monkeypatch):
+    """The purge must wait for the repo lock held by an in-flight fetch —
+    otherwise it rmtree's the clone and free()s the pygit2 handle out from
+    under the fetch thread."""
+    scope = _scope("only", "https://git/repo-a.git")
+    repo = FakeScopeRepository([scope])
+    svc = ScopesService(base_dir=tmp_path, scopes=repo, pubsub_endpoint=None)
+
+    sid = GitPolicyFetcher.source_id(scope.policy)
+    clone_path = str(GitPolicyFetcher.repo_clone_path(tmp_path, scope.policy))
+    GitPolicyFetcher.repos[clone_path] = object()
+
+    rmtree_calls = []
+    monkeypatch.setattr(
+        "opal_server.scopes.service.shutil.rmtree",
+        lambda p, **k: rmtree_calls.append(str(p)),
+    )
+
+    # Simulate an in-flight fetch holding the repo lock.
+    lock = GitPolicyFetcher.repo_locks.setdefault(sid, asyncio.Lock())
+    await lock.acquire()
+    try:
+        delete_task = asyncio.create_task(svc.delete_scope("only"))
+        for _ in range(10):  # give the delete every chance to (wrongly) proceed
+            await asyncio.sleep(0)
+        assert not delete_task.done(), "delete_scope did not wait for the repo lock"
+        assert rmtree_calls == [], "purge ran while the fetch held the repo lock"
+    finally:
+        lock.release()
+
+    await asyncio.wait_for(delete_task, timeout=5)
+    assert rmtree_calls == [clone_path]
+    assert clone_path not in GitPolicyFetcher.repos
+    assert sid not in GitPolicyFetcher.repo_locks
+
+
+@pytest.mark.asyncio
+async def test_lock_source_waiter_retries_after_delete_pops_entry():
+    """A waiter queued on the old lock must not proceed under it once a delete
+    popped the entry — it retries and serializes on the freshly-minted lock."""
+    sid = "some-source-id"
+    events = []
+
+    async def deleter():
+        async with GitPolicyFetcher.lock_source(sid):
+            events.append("deleter-in")
+            await asyncio.sleep(0.01)  # let the waiter queue on this lock
+            GitPolicyFetcher.repo_locks.pop(sid, None)
+        events.append("deleter-out")
+
+    async def waiter():
+        async with GitPolicyFetcher.lock_source(sid):
+            events.append("waiter-in")
+            # We must hold the *current* dict entry, not the popped one.
+            assert GitPolicyFetcher.repo_locks.get(sid) is not None
+
+    await asyncio.gather(deleter(), waiter())
+    assert events == ["deleter-in", "deleter-out", "waiter-in"]

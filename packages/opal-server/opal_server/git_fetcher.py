@@ -4,6 +4,7 @@ import datetime
 import hashlib
 import shutil
 import time
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Optional, cast
 
@@ -140,13 +141,24 @@ class GitPolicyFetcher(PolicyFetcher):
             f"Initializing git fetcher: scope_id={scope_id}, url={redact_url(source.url)}, branch={self._source.branch}, source_id={self._source_id}"
         )
 
-    async def _get_repo_lock(self):
-        # Previous file based implementation worked across multiple processes/threads, but wasn't fair (next acquiree is random)
-        # This implementation works only within the same process/thread, but is fair (next acquiree is the earliest to enter the lock)
-        lock = GitPolicyFetcher.repo_locks[
-            self._source_id
-        ] = GitPolicyFetcher.repo_locks.get(self._source_id, asyncio.Lock())
-        return lock
+    @staticmethod
+    @asynccontextmanager
+    async def lock_source(source_id: str):
+        """Serialize all mutation of a source's clone dir and cached handles.
+
+        Locks are minted on demand into ``repo_locks`` (asyncio.Lock: process-
+        local but fair, unlike the previous file-based lock). A scope delete
+        pops the dict entry while holding the lock, so after acquiring we must
+        re-check that ``repo_locks`` still maps ``source_id`` to the lock we
+        acquired — a waiter woken after a delete would otherwise proceed under
+        the stale lock, unserialized against holders of the freshly-minted one.
+        """
+        while True:
+            lock = GitPolicyFetcher.repo_locks.setdefault(source_id, asyncio.Lock())
+            async with lock:
+                if GitPolicyFetcher.repo_locks.get(source_id) is lock:
+                    yield
+                    return
 
     async def _was_fetched_after(self, t: datetime.datetime):
         last_fetched = GitPolicyFetcher.repos_last_fetched.get(self._source_id, None)
@@ -168,8 +180,7 @@ class GitPolicyFetcher(PolicyFetcher):
         - if the hinted commit hash is provided and is already found in the local clone
         we use this hint to avoid an necessary fetch.
         """
-        repo_lock = await self._get_repo_lock()
-        async with repo_lock:
+        async with GitPolicyFetcher.lock_source(self._source_id):
             with tracer.trace(
                 "git_policy_fetcher.fetch_and_notify_on_changes",
                 resource=self._scope_id,
