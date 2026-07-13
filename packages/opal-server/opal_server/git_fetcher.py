@@ -387,8 +387,9 @@ class GitPolicyFetcher(PolicyFetcher):
         The cached ``pygit2.Repository`` keeps OS file descriptors and mmapped
         pack indexes open; without this, a deleted scope's repo pins memory and
         inodes for the lifetime of the process even after the clone is removed.
-        ``Repository.free()`` is called only when available (it is not part of
-        every pygit2 release); otherwise the dropped reference is reclaimed by GC.
+        ``Repository.free()`` is called only when available (the pinned pygit2
+        always has it; the guard defends against test doubles and future API
+        changes); otherwise the dropped reference is reclaimed by GC.
         """
         repo = GitPolicyFetcher.repos.pop(path, None)
         if repo is None:
@@ -397,8 +398,11 @@ class GitPolicyFetcher(PolicyFetcher):
         if callable(free):
             try:
                 free()
-            except Exception:
-                logger.debug("pygit2 Repository.free() failed; relying on GC")
+            except Exception as e:
+                logger.warning(
+                    f"pygit2 Repository.free() failed for {path}: {e!r}; "
+                    "relying on GC to release the handles"
+                )
 
 
 class GitCallback(RemoteCallbacks):

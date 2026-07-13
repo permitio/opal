@@ -209,7 +209,18 @@ class ScopesService:
                 # purge so the leader (which accumulates most handles via
                 # continuous sync) also drops its caches is tracked for PR3.
                 async with GitPolicyFetcher.lock_source(deleted_source_id):
-                    shutil.rmtree(scope_dir, ignore_errors=True)
+                    try:
+                        shutil.rmtree(scope_dir)
+                    except FileNotFoundError:
+                        pass  # never cloned (or already gone) — nothing to clean
+                    except OSError as e:
+                        # Deliberately not fatal: the scope record must still be
+                        # deleted, but an orphaned clone on disk has to be
+                        # discoverable rather than silently leaked.
+                        logger.warning(
+                            f"Failed to remove clone dir {scope_dir} of deleted "
+                            f"scope {scope_id}: {e!r}"
+                        )
                     GitPolicyFetcher.forget_repo(str(scope_dir))
                     GitPolicyFetcher.repos_last_fetched.pop(deleted_source_id, None)
                     # Popped while the lock is held: lock_source waiters re-check
