@@ -22,7 +22,6 @@ async def test_done_tasks_are_all_removed():
     w._webhook_tasks = list(finished)
 
     await w._on_webhook("webhook", None)
-    await asyncio.sleep(0)  # let the newly created trigger task finish
 
     # all 3 done ones removed...
     remaining_done = [t for t in w._webhook_tasks if t in finished]
@@ -32,4 +31,38 @@ async def test_done_tasks_are_all_removed():
     assert len(w._webhook_tasks) == 1
     assert len(survivors) == 1, f"new trigger task not scheduled: {w._webhook_tasks}"
 
-    await asyncio.gather(*survivors)  # drain the dangling task
+    # Await the trigger task directly (not sleep(0)) so the test doesn't depend
+    # on scheduler tick ordering.
+    await asyncio.gather(*survivors)
+
+
+class _FailingWatcher(BasePolicyWatcherTask):
+    async def trigger(self, topic, data):
+        raise RuntimeError("trigger blew up")
+
+
+@pytest.mark.asyncio
+async def test_failed_trigger_exception_is_retrieved_and_logged():
+    """Sweeping a failed trigger task must retrieve and log its exception, not
+    silently drop the reference (asyncio's 'exception was never retrieved')."""
+    from opal_common.logger import logger as opal_logger
+
+    w = _FailingWatcher(pubsub_endpoint=None)
+
+    await w._on_webhook("webhook", None)  # schedules a trigger that raises
+    failed = list(w._webhook_tasks)
+    await asyncio.gather(*failed, return_exceptions=True)
+
+    records = []
+    sink_id = opal_logger.add(lambda m: records.append(str(m)), level="ERROR")
+    try:
+        await w._on_webhook("webhook", None)  # sweep must log the failure
+    finally:
+        opal_logger.remove(sink_id)
+
+    assert failed[0] not in w._webhook_tasks, "failed task not swept"
+    assert any(
+        "Webhook trigger task failed" in r and "trigger blew up" in r for r in records
+    ), f"failure not logged: {records}"
+
+    await asyncio.gather(*w._webhook_tasks, return_exceptions=True)

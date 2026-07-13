@@ -30,7 +30,12 @@ class BasePolicyWatcherTask:
         logger.info(f"Webhook listener triggered ({len(self._webhook_tasks)})")
         # Rebuild rather than remove-while-iterating: list.remove() inside a
         # `for t in self._webhook_tasks` loop skips the element after each removal,
-        # so finished tasks accumulate.
+        # so finished tasks accumulate. Retrieve exceptions before dropping the
+        # references — otherwise a failed trigger() is only reported by asyncio's
+        # generic "Task exception was never retrieved" at GC time.
+        for t in self._webhook_tasks:
+            if t.done() and not t.cancelled() and t.exception() is not None:
+                logger.error(f"Webhook trigger task failed: {t.exception()!r}")
         self._webhook_tasks = [t for t in self._webhook_tasks if not t.done()]
         self._webhook_tasks.append(asyncio.create_task(self.trigger(topic, data)))
 
@@ -72,7 +77,7 @@ class BasePolicyWatcherTask:
         for task in self._tasks + self._webhook_tasks:
             if not task.done():
                 task.cancel()
-        await asyncio.gather(*self._tasks, return_exceptions=True)
+        await asyncio.gather(*self._tasks, *self._webhook_tasks, return_exceptions=True)
 
     async def trigger(self, topic: Topic, data: Any):
         """Triggers the policy watcher from outside to check for changes (git
