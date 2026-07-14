@@ -115,3 +115,84 @@ async def test_clone_clears_partial_dir_before_cloning(monkeypatch, tmp_path):
         "partial dir not cleared before clone — a real clone_repository "
         "raises on a non-empty destination, wedging the scope forever"
     )
+
+
+class _RemoteStub:
+    def __init__(self, url):
+        self.url = url
+        self.name = "origin"
+
+
+class _Ref:
+    target = "deadbeef" * 5
+
+
+class _WarmHandle:
+    """Cached handle over a gutted clone: its open mmaps keep the deleted
+    pack files readable (unlink does not invalidate them), so through THIS
+    handle the repo looks perfectly healthy."""
+
+    def __init__(self, url):
+        self.remotes = [_RemoteStub(url)]
+        self.freed = False
+
+    def lookup_reference(self, name):
+        return _Ref()
+
+    def get(self, oid):
+        return object()  # mmap still serves the object
+
+    def free(self):
+        self.freed = True
+
+
+class _GuttedProbe:
+    """What a fresh on-disk handle sees: refs intact, head object missing."""
+
+    def __init__(self, path):
+        self.freed = False
+
+    def lookup_reference(self, name):
+        return _Ref()
+
+    def get(self, oid):
+        return None  # object store gutted on disk
+
+    def free(self):
+        self.freed = True
+
+
+@pytest.mark.asyncio
+async def test_gutted_object_store_triggers_recovery(monkeypatch, tmp_path):
+    """Refs intact + objects missing on disk must be treated as invalid even
+    though the warm cached handle still reads everything via its mmaps:
+    fetch would negotiate "up to date" and the scope would serve 500s
+    forever otherwise."""
+    url = "https://example.com/r.git"
+    fetcher = _make_fetcher(tmp_path, "s", url)
+    path = str(fetcher._repo_path)
+    warm = _WarmHandle(url)
+    GitPolicyFetcher.repos[path] = warm
+    probes = []
+
+    def fake_repository(p):
+        probe = _GuttedProbe(p)
+        probes.append(probe)
+        return probe
+
+    monkeypatch.setattr("opal_server.git_fetcher.Repository", fake_repository)
+    monkeypatch.setattr(fetcher, "_discover_repository", lambda p: True)
+    monkeypatch.setattr("opal_server.git_fetcher.shutil.rmtree", lambda p, **k: None)
+    clone_calls = []
+
+    async def fake_clone():
+        clone_calls.append(True)
+
+    monkeypatch.setattr(fetcher, "_clone", fake_clone)
+
+    await fetcher.fetch_and_notify_on_changes()
+
+    assert clone_calls == [True], "gutted clone was not routed to recovery"
+    assert path not in GitPolicyFetcher.repos
+    assert warm.freed is True, "recovery evicted the warm handle without free()"
+    assert probes and all(p.freed for p in probes), "disk probe handle leaked"

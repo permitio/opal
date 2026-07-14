@@ -53,8 +53,10 @@ def test_warm_boot_reuses_clones(opal, repo_count):
 def test_corrupt_clone_recovers_without_clone_loop(opal):
     """S3/T7: emptying a clone's object store in place (objects/ kept as an
     empty dir, so pygit2.discover_repository still finds the repo) while the
-    server holds a warm cached handle must recover through the invalid-repo
-    branch with exactly one re-clone (pre-Bug-A-fix this looped forever)."""
+    server holds a warm cached handle must be detected as invalid (gutted
+    object store: refs intact, head object unreadable) and recover through
+    the invalid-repo branch with exactly one re-clone — no serve-500s-
+    forever wedge and no re-clone loop."""
     repo = list_seeded_repos(3)[2]
     opal.put_scope("dirty", gitea_repo_url(repo))
     assert wait_until(
@@ -67,7 +69,7 @@ def test_corrupt_clone_recovers_without_clone_loop(opal):
 
     # empty the object store's CONTENTS in place, keeping the objects/ dir
     # itself so discover_repository still resolves the repo; the server keeps
-    # its cached pygit2 handle (warm cache) — the exact Bug A precondition
+    # its cached pygit2 handle (warm cache) — the gutted-object-store case
     # (deleting the objects/ node instead would route recovery through the
     # repo-not-found -> _clone() branch and never touch the cached handle)
     compose(

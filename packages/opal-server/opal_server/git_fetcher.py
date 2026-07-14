@@ -280,7 +280,37 @@ class GitPolicyFetcher(PolicyFetcher):
         try:
             repo = self._get_repo()
             RepoInterface.verify_found_repo_matches_remote(repo, self._source.url)
-            return repo
+            # A clone can be discoverable yet unusable: refs and config
+            # intact but the object store gutted (crash mid-gc, disk
+            # corruption). A fetch then negotiates "up to date" against the
+            # intact refs and downloads nothing, so without this check the
+            # scope serves 500s forever with no self-heal. Validate that the
+            # tracked branch's head object is actually readable FROM DISK:
+            # the check must use a short-lived fresh handle, because the
+            # cached warm handle keeps deleted pack files readable through
+            # its open mmaps (unlink does not invalidate them) and would
+            # report the object as present. Partial corruption deeper in
+            # the tree is NOT caught here (that would need fsck-grade
+            # checks).
+            probe = Repository(str(self._repo_path))
+            try:
+                try:
+                    ref = probe.lookup_reference(
+                        f"refs/remotes/{self._remote}/{self._source.branch}"
+                    )
+                except KeyError:
+                    # Branch not fetched yet — the fetch path handles that.
+                    return repo
+                if probe.get(ref.target) is None:
+                    logger.warning(
+                        "Repo at {path} has refs but an unreadable object "
+                        "store (missing head object) — treating as invalid",
+                        path=self._repo_path,
+                    )
+                    return None
+                return repo
+            finally:
+                probe.free()
         except pygit2.GitError:
             logger.warning("Invalid repo at: {path}", path=self._repo_path)
             return None
