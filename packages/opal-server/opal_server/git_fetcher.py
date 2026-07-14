@@ -222,11 +222,17 @@ class GitPolicyFetcher(PolicyFetcher):
                         await self._notify_on_changes(repo)
                         return
                     else:
-                        # repo dir exists but invalid -> we must delete the directory
+                        # repo dir exists but invalid -> drop the cached handle
+                        # FIRST (it is the thing judging the dir invalid; kept,
+                        # it would re-invalidate the fresh clone on every sync
+                        # -> infinite re-clone loop), then delete the directory.
                         logger.warning(
                             "Deleting invalid repo: {path}", path=self._repo_path
                         )
-                        shutil.rmtree(self._repo_path)
+                        GitPolicyFetcher.forget_repo(str(self._repo_path))
+                        # ignore_errors: with a stale handle the dir may already
+                        # be partially or fully gone.
+                        shutil.rmtree(self._repo_path, ignore_errors=True)
                 else:
                     logger.info("Repo not found at {path}", path=self._repo_path)
 
@@ -238,6 +244,11 @@ class GitPolicyFetcher(PolicyFetcher):
         return discover_repository(str(path)) and git_path.exists()
 
     async def _clone(self):
+        if self._repo_path.exists():
+            # A failed/interrupted clone leaves a partial dir;
+            # clone_repository refuses a non-empty destination, which would
+            # wedge every retry for this source.
+            shutil.rmtree(self._repo_path, ignore_errors=True)
         logger.info(
             "Cloning repo at '{url}' to '{path}'",
             url=redact_url(self._source.url),
@@ -254,6 +265,9 @@ class GitPolicyFetcher(PolicyFetcher):
             logger.exception(f"Could not clone repo at {redact_url(self._source.url)}")
         else:
             logger.info(f"Clone completed: {redact_url(self._source.url)}")
+            # Cache the fresh handle so the next sync's _get_repo() reuses it
+            # instead of reopening (or hitting a stale predecessor).
+            GitPolicyFetcher.repos[str(self._repo_path)] = repo
             await self._notify_on_changes(repo)
 
     def _get_repo(self) -> Repository:
