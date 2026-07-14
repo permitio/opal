@@ -192,3 +192,15 @@ def test_boot_with_unreachable_remotes_still_serves_healthy(opal):
         ), "healthy scope starved at boot by unreachable remotes (PR3 gate)"
     finally:
         opal.hard_reset()
+        # hard_reset flushes Redis but never touches git_sources/ — the
+        # blackhole scopes' partial clone dirs would poison later tests' I1
+        # checks. The scope store is empty post-reset, so a blanket clean is
+        # safe. (Same rationale as test_redis_wiped_boot_reclaims_clones.)
+        compose(
+            "exec",
+            "-T",
+            "opal_server",
+            "sh",
+            "-c",
+            "rm -rf /opal/git_sources/*",
+        )
