@@ -197,3 +197,45 @@ async def test_lock_source_waiter_retries_after_delete_pops_entry():
 
     await asyncio.gather(deleter(), waiter())
     assert events == ["deleter-in", "deleter-out", "waiter-in"]
+
+
+@pytest.mark.asyncio
+async def test_recreate_after_delete_serializes_and_sees_clean_caches(
+    tmp_path, monkeypatch
+):
+    """A re-create's first sync queued during a delete must run only after the
+    purge completed, on the freshly-minted lock, and see empty caches."""
+    scope = _scope("only", "https://git/repo-a.git")
+    repo = FakeScopeRepository([scope])
+    svc = ScopesService(base_dir=tmp_path, scopes=repo, pubsub_endpoint=None)
+    sid = GitPolicyFetcher.source_id(scope.policy)
+    clone_path = str(GitPolicyFetcher.repo_clone_path(tmp_path, scope.policy))
+    GitPolicyFetcher.repos[clone_path] = object()
+    monkeypatch.setattr(
+        "opal_server.scopes.service.shutil.rmtree", lambda *a, **k: None
+    )
+
+    order = []
+    gate = GitPolicyFetcher.repo_locks.setdefault(sid, asyncio.Lock())
+    await gate.acquire()  # simulate the in-flight fetch the delete must wait on
+    try:
+
+        async def deleter():
+            await svc.delete_scope("only")
+            order.append("delete-done")
+
+        async def recreator():  # stands in for the re-created scope's first sync
+            async with GitPolicyFetcher.lock_source(sid):
+                order.append(("recreate-in", clone_path in GitPolicyFetcher.repos))
+
+        d = asyncio.create_task(deleter())
+        for _ in range(5):
+            await asyncio.sleep(0)  # deleter queues on the held lock first
+        r = asyncio.create_task(recreator())
+        for _ in range(5):
+            await asyncio.sleep(0)  # recreator queues behind it
+    finally:
+        gate.release()
+
+    await asyncio.wait_for(asyncio.gather(d, r), timeout=5)
+    assert order == ["delete-done", ("recreate-in", False)]
