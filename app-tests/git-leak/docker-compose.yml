@@ -114,6 +114,10 @@ services:
       # (references/debug-pubsub.md §3-4) — a single worker can't tell #915's
       # in-place broadcaster reconnect from a plain worker respawn.
       UVICORN_NUM_WORKERS: "${OPAL_TEST_WORKERS:-1}"
+      # Shard-count knob for the reshard boot test (test_boot_states.py):
+      # changing SCOPES_REPO_CLONES_SHARDS between boots moves every source_id,
+      # orphaning all previous clone dirs — a real ops event worth gating.
+      OPAL_SCOPES_REPO_CLONES_SHARDS: "${OPAL_TEST_SHARDS:-1}"
       OPAL_SCOPES: "1"
       OPAL_REDIS_URL: "redis://redis:6379"
       OPAL_BROADCAST_URI: "postgres://opal:opal@postgres:5432/opal"

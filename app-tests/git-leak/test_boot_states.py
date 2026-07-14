@@ -204,3 +204,44 @@ def test_boot_with_unreachable_remotes_still_serves_healthy(opal):
             "-c",
             "rm -rf /opal/git_sources/*",
         )
+
+
+@pytest.mark.timeout(1200)
+@pytest.mark.allow_worker_restart
+@pytest.mark.invariant_exempt("I1")
+def test_shard_reconfig_still_serves_but_orphans_old_clones(opal, tmp_path):
+    """S5: SCOPES_REPO_CLONES_SHARDS reconfig moves every source_id.
+    GREEN half: serving must survive the reshard (re-clone under new ids).
+    RED half (until the orphan sweep): the old-shard dirs are orphaned."""
+    import os
+
+    from invariants import live_source_ids
+
+    opal.put_scope("shard-0", gitea_repo_url(list_seeded_repos(1)[0]))
+    assert wait_until(
+        lambda: opal.get_scope_policy("shard-0").status_code == 200, timeout=300
+    )
+    # preserve the shards=1 clones across the recreate (recreate wipes the fs)
+    compose("cp", "opal_server:/opal/git_sources", str(tmp_path / "saved"))
+
+    os.environ["OPAL_TEST_SHARDS"] = "4"
+    try:
+        compose("up", "-d", "--no-deps", "--force-recreate", "opal_server")
+        opal.wait_healthy()
+        # restore the old-shard dirs next to whatever the new boot creates
+        compose("cp", str(tmp_path / "saved") + "/.", "opal_server:/opal/git_sources")
+        opal.refresh_all()
+        assert wait_until(
+            lambda: opal.get_scope_policy("shard-0").status_code == 200,
+            timeout=300,
+        ), "scope stopped serving after the shard reconfig (green half broken!)"
+        assert wait_until(
+            lambda: clone_dirs() <= live_source_ids(opal, shards=4), timeout=60
+        ), (
+            "old-shard clone dirs orphaned after reshard (red half — orphan "
+            f"sweep gate): {sorted(clone_dirs())[:5]}"
+        )
+    finally:
+        os.environ["OPAL_TEST_SHARDS"] = "1"
+        compose("up", "-d", "--no-deps", "--force-recreate", "opal_server")
+        opal.wait_healthy()
