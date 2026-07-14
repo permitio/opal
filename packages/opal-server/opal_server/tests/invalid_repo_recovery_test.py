@@ -64,6 +64,7 @@ async def test_recovery_forgets_stale_cached_handle(monkeypatch, tmp_path):
         "recovery left the stale handle cached — next sync re-invalidates "
         "the fresh clone (infinite re-clone loop)"
     )
+    assert broken.freed is True, "recovery evicted the handle without free()ing it"
 
 
 @pytest.mark.asyncio
