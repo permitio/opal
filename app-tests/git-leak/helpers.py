@@ -2,7 +2,7 @@
 import subprocess
 import time
 from pathlib import Path
-from typing import Dict, List
+from typing import Any, Dict, List
 
 import requests
 
@@ -50,7 +50,7 @@ class OpalServerClient:
             time.sleep(2)
         raise RuntimeError(f"opal-server not healthy in {timeout}s (last: {last})")
 
-    def stats(self, samples: int = 3, interval: float = 0.1) -> Dict[str, int]:
+    def stats(self, samples: int = 3, interval: float = 0.1) -> Dict[str, Any]:
         """Read the git-fetcher cache stats, merged across a few reads.
 
         The stack runs a single uvicorn worker (see docker-compose.yml), so the
@@ -59,8 +59,17 @@ class OpalServerClient:
         the ``max`` per key only smooths over a read that races an in-flight
         mutation; it is not relied on to paper over multi-worker nondeterminism
         (which the single-worker setup removes outright).
+
+        Merge semantics: numeric counts take the max across samples (peak
+        smoothing); ``pid`` and the ``*_keys`` lists are last-wins. The
+        count fields and their paired ``*_keys`` lists are therefore only
+        guaranteed mutually consistent at ``samples=1`` — which is what
+        every consistency-sensitive consumer (the invariant checker,
+        per-pid sampling) uses. Do not assert
+        ``len(stats["repos_keys"]) == stats["repos"]`` on a multi-sample
+        merge.
         """
-        merged: Dict[str, int] = {}
+        merged: Dict[str, Any] = {}
         for i in range(max(1, samples)):
             resp = requests.get(
                 f"{self.base_url}/internal/git-fetcher-cache-stats", timeout=10
