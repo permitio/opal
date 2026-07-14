@@ -47,3 +47,39 @@ def test_warm_boot_reuses_clones(opal, repo_count):
     assert (
         _clone_log_count() == clones_before
     ), "warm boot re-cloned instead of reusing the on-disk clones"
+
+
+@pytest.mark.timeout(900)
+def test_corrupt_clone_recovers_without_clone_loop(opal):
+    """S3/T7: corrupting a clone under a warm handle cache must recover with
+    exactly one re-clone (pre-Bug-A-fix this looped forever)."""
+    repo = list_seeded_repos(3)[2]
+    opal.put_scope("dirty", gitea_repo_url(repo))
+    assert wait_until(
+        lambda: opal.get_scope_policy("dirty").status_code == 200, timeout=300
+    )
+
+    # corrupt the clone's git metadata in place; the server keeps its cached
+    # pygit2 handle (warm cache) — the exact Bug A precondition
+    compose(
+        "exec",
+        "-T",
+        "opal_server",
+        "sh",
+        "-c",
+        'for d in /opal/git_sources/*/; do rm -rf "$d/.git/objects"; done',
+    )
+    opal.refresh_all()
+
+    assert wait_until(
+        lambda: opal.get_scope_policy("dirty").status_code == 200, timeout=300
+    ), "scope never recovered after clone corruption"
+
+    clones_1 = _clone_log_count()
+    opal.refresh_all()
+    time.sleep(10)
+    clones_2 = _clone_log_count()
+    assert clones_2 == clones_1, (
+        f"re-clone loop: clone count kept growing after recovery "
+        f"({clones_1} -> {clones_2})"
+    )
