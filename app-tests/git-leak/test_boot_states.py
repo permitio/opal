@@ -102,3 +102,57 @@ def test_corrupt_clone_recovers_without_clone_loop(opal):
         f"re-clone loop: clone count kept growing after recovery "
         f"({clones_1} -> {clones_2})"
     )
+
+
+@pytest.mark.timeout(900)
+@pytest.mark.invariant_exempt("I1")
+def test_orphan_clone_dir_is_reclaimed(opal):
+    """RED until an orphan sweep exists (PR3+, currently unowned): a clone dir
+    with no live scope must eventually be removed."""
+    fake_sid = "f" * 64 + "-0"
+    compose(
+        "exec",
+        "-T",
+        "opal_server",
+        "sh",
+        "-c",
+        f"mkdir -p /opal/git_sources/{fake_sid} && touch /opal/git_sources/{fake_sid}/junk",
+    )
+    try:
+        opal.refresh_all()
+        assert wait_until(
+            lambda: fake_sid not in clone_dirs(), timeout=60
+        ), "orphan clone dir never reclaimed (needs an orphan sweep)"
+    finally:
+        # red gate leaves state on purpose; clean it so later tests' I1 holds
+        compose(
+            "exec",
+            "-T",
+            "opal_server",
+            "sh",
+            "-c",
+            f"rm -rf /opal/git_sources/{fake_sid}",
+        )
+
+
+@pytest.mark.timeout(900)
+@pytest.mark.allow_worker_restart
+@pytest.mark.invariant_exempt("I1")
+def test_redis_wiped_boot_reclaims_clones(opal):
+    """RED until the orphan sweep (same class as the orphan-dir gate): after a
+    scope-store wipe, on-disk clones reference nothing and must be
+    reclaimed."""
+    opal.put_scope("wipe-0", gitea_repo_url(list_seeded_repos(1)[0]))
+    assert wait_until(
+        lambda: opal.get_scope_policy("wipe-0").status_code == 200, timeout=300
+    )
+    try:
+        compose("stop", "opal_server")
+        compose("exec", "-T", "redis", "redis-cli", "FLUSHALL")
+        compose("start", "opal_server")
+        opal.wait_healthy()
+        assert wait_until(
+            lambda: clone_dirs() == set(), timeout=60
+        ), f"clones of the wiped scope store never reclaimed: {sorted(clone_dirs())[:5]}"
+    finally:
+        opal.hard_reset()
