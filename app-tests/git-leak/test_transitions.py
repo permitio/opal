@@ -182,10 +182,18 @@ def test_repoint_during_inflight_fetch_drains_old_source(opal, repo_count):
 
 @pytest.mark.timeout(1200)
 def test_multiworker_churn_drains_every_worker(opal_multiworker, repo_count):
-    """RED until PR3 (broadcast purge): DELETE purges only the worker that
-    serves it; the leader (which fetched) keeps its caches.
+    """RED until PR3 (broadcast purge): cache purges are process-local, so any
+    worker whose caches were populated by something other than the DELETE it
+    serves leaks permanently.
 
-    The HIGH finding from the PR2 review, as a gate.
+    Who populates what: the LEADER accumulates handles/locks via its watcher's
+    syncs (scopes/task.py); ANY worker additionally caches a pygit2 handle when
+    it serves a policy bundle (make_bundle -> _get_current_branch_head ->
+    _get_repo). The purge runs only on whichever worker happens to serve the
+    DELETE — every accumulation on a different worker outlives the scope. In
+    this test only the leader accumulates (nothing GETs bundles), so the
+    leader's retained entries are the observable leak. The HIGH finding from
+    the PR2 review, as a gate.
     """
     from helpers import stats_by_pid
 
@@ -209,6 +217,6 @@ def test_multiworker_churn_drains_every_worker(opal_multiworker, repo_count):
         )
 
     assert wait_until(_every_worker_drained, timeout=120), (
-        "a worker (the leader) kept its caches after full churn (PR3 gate): "
+        "a worker kept caches the churn's DELETEs never reached (PR3 gate): "
         f"{ {p: {k: v for k, v in s.items() if isinstance(v, int)} for p, s in stats_by_pid(opal).items()} }"
     )
