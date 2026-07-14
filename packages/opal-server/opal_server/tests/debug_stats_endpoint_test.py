@@ -23,7 +23,16 @@ def test_endpoint_present_when_enabled():
     resp = client.get("/internal/git-fetcher-cache-stats")
     assert resp.status_code == 200
     body = resp.json()
-    assert set(body) == {"repo_locks", "repos", "repos_last_fetched", "rss_kb"}
+    assert set(body) == {
+        "pid",
+        "repo_locks",
+        "repos",
+        "repos_last_fetched",
+        "rss_kb",
+        "repo_locks_keys",
+        "repos_keys",
+        "repos_last_fetched_keys",
+    }
 
 
 def test_endpoint_applies_passed_dependencies():
@@ -77,7 +86,16 @@ def test_server_wiring_mounts_endpoint_when_flag_enabled():
         client = TestClient(_build_server().app)
         resp = client.get("/internal/git-fetcher-cache-stats")
     assert resp.status_code == 200
-    assert set(resp.json()) == {"repo_locks", "repos", "repos_last_fetched", "rss_kb"}
+    assert set(resp.json()) == {
+        "pid",
+        "repo_locks",
+        "repos",
+        "repos_last_fetched",
+        "rss_kb",
+        "repo_locks_keys",
+        "repos_keys",
+        "repos_last_fetched_keys",
+    }
 
 
 def test_server_wiring_omits_endpoint_when_flag_disabled():

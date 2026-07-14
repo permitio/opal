@@ -3,6 +3,7 @@
 Used only by the off-by-default /internal stats endpoint so tests can
 observe the cache growth that the memory-leak fix (PR2) eliminates.
 """
+import os
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -21,13 +22,19 @@ def _read_rss_kb() -> int:
     return 0
 
 
-def git_fetcher_cache_stats() -> Dict[str, int]:
-    """Sizes of the three process-global GitPolicyFetcher caches + RSS."""
+def git_fetcher_cache_stats() -> Dict:
+    """Sizes + keys of the three process-global GitPolicyFetcher caches, RSS,
+    and the worker pid (per-process caches: the pid identifies WHICH worker
+    answered, so multi-worker bed tests can assert per-worker drain)."""
     return {
+        "pid": os.getpid(),
         "repo_locks": len(GitPolicyFetcher.repo_locks),
         "repos": len(GitPolicyFetcher.repos),
         "repos_last_fetched": len(GitPolicyFetcher.repos_last_fetched),
         "rss_kb": _read_rss_kb(),
+        "repo_locks_keys": sorted(GitPolicyFetcher.repo_locks.keys()),
+        "repos_keys": sorted(GitPolicyFetcher.repos.keys()),
+        "repos_last_fetched_keys": sorted(GitPolicyFetcher.repos_last_fetched.keys()),
     }
 
 
@@ -57,5 +64,5 @@ def register_internal_stats_route(
         include_in_schema=False,
         dependencies=dependencies or [],
     )
-    def _git_fetcher_cache_stats() -> Dict[str, int]:
+    def _git_fetcher_cache_stats() -> Dict:
         return git_fetcher_cache_stats()

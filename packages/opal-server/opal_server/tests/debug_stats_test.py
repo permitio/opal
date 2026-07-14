@@ -1,3 +1,4 @@
+import os
 import sys
 
 from opal_server.config import opal_server_config
@@ -26,3 +27,16 @@ def test_stats_report_dict_sizes(monkeypatch):
 
 def test_internal_stats_flag_defaults_off():
     assert opal_server_config.DEBUG_INTERNAL_STATS is False
+
+
+def test_stats_include_pid_and_cache_keys(monkeypatch):
+    monkeypatch.setattr(GitPolicyFetcher, "repos", {"/clones/x": object()})
+    monkeypatch.setattr(GitPolicyFetcher, "repos_last_fetched", {"sid-1": "ts"})
+    monkeypatch.setattr(GitPolicyFetcher, "repo_locks", {"sid-1": object()})
+
+    stats = git_fetcher_cache_stats()
+
+    assert stats["pid"] == os.getpid()
+    assert stats["repos_keys"] == ["/clones/x"]
+    assert stats["repos_last_fetched_keys"] == ["sid-1"]
+    assert stats["repo_locks_keys"] == ["sid-1"]

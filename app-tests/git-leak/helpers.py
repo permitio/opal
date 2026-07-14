@@ -67,7 +67,12 @@ class OpalServerClient:
             )
             resp.raise_for_status()
             for key, value in resp.json().items():
-                merged[key] = max(merged.get(key, 0), value)
+                if key != "pid" and isinstance(value, (int, float)):
+                    merged[key] = max(merged.get(key, 0), value)
+                else:
+                    # pid and the *_keys lists: last-wins (single-worker stack
+                    # makes every read hit the same worker anyway)
+                    merged[key] = value
             if i < samples - 1:
                 time.sleep(interval)
         return merged
