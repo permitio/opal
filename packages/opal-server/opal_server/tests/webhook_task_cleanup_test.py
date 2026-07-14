@@ -66,3 +66,24 @@ async def test_failed_trigger_exception_is_retrieved_and_logged():
     ), f"failure not logged: {records}"
 
     await asyncio.gather(*w._webhook_tasks, return_exceptions=True)
+
+
+class _HangingWatcher(BasePolicyWatcherTask):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.started = asyncio.Event()
+
+    async def trigger(self, topic, data):
+        self.started.set()
+        await asyncio.Event().wait()  # hangs until cancelled
+
+
+@pytest.mark.asyncio
+async def test_stop_cancels_and_gathers_inflight_trigger():
+    w = _HangingWatcher(pubsub_endpoint=None)
+    await w._on_webhook("webhook", None)
+    await asyncio.wait_for(w.started.wait(), timeout=5)
+
+    await w.stop()  # must cancel the hung trigger AND await it (gather)
+
+    assert all(t.cancelled() for t in w._webhook_tasks)
