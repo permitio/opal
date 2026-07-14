@@ -199,13 +199,21 @@ class GitPolicyFetcher(PolicyFetcher):
                             logger.debug(
                                 f"Fetching remote (force_fetch={force_fetch}): {self._remote} ({redact_url(self._source.url)})"
                             )
-                            GitPolicyFetcher.repos_last_fetched[
-                                self._source_id
-                            ] = datetime.datetime.now()
+                            # Record the START time but write it only on
+                            # success: a failed fetch must not look "fresh"
+                            # to _was_fetched_after(), or it suppresses the
+                            # forced refresh a webhook just asked for. The
+                            # start time (not completion) is what req_time
+                            # comparisons need: a fetch that STARTED after
+                            # the request already satisfies it.
+                            fetch_started = datetime.datetime.now()
                             await run_sync(
                                 repo.remotes[self._remote].fetch,
                                 callbacks=self._auth_callbacks,
                             )
+                            GitPolicyFetcher.repos_last_fetched[
+                                self._source_id
+                            ] = fetch_started
                             logger.debug(
                                 f"Fetch completed: {redact_url(self._source.url)}"
                             )
