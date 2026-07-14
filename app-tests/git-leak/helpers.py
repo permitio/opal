@@ -472,16 +472,19 @@ def stats_by_pid(opal, min_pids: int = 2, attempts: int = 200, interval: float =
     """Sample the stats endpoint repeatedly; keep the LATEST snapshot per pid.
 
     Requests land on arbitrary workers, so repeated single-sample reads
-    eventually observe each worker. Returns {pid: latest_stats}; the
-    caller decides whether len() >= min_pids is enough.
+    eventually observe each worker. Returns {pid: latest_stats} once min_pids
+    distinct pids are seen (plus one grace sample for freshness), or after
+    `attempts` samples; the caller decides whether the count is sufficient.
     """
     seen = {}
+    grace_sweep_done = False
     for _ in range(attempts):
         snap = opal.stats(samples=1)
         seen[snap["pid"]] = snap
         if len(seen) >= min_pids:
-            # keep going a short while so every seen pid has a FRESH snapshot
-            pass
+            if grace_sweep_done:
+                break
+            grace_sweep_done = True
         time.sleep(interval)
     return seen
 
