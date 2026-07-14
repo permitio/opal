@@ -168,3 +168,27 @@ def test_redis_wiped_boot_reclaims_clones(opal):
             "-c",
             "rm -rf /opal/git_sources/*",
         )
+
+
+@pytest.mark.timeout(1200)
+@pytest.mark.allow_worker_restart
+@pytest.mark.invariant_exempt("I1", "I3", "I4")
+def test_boot_with_unreachable_remotes_still_serves_healthy(opal):
+    """RED until PR3 (fetch timeout) — WATCH THIS FLIP when PR3 merges.
+
+    Boot-time cousin of the offline gate: unreachable remotes present at boot
+    hang the preload/first-sync clones and starve the executor, so a healthy
+    scope can't serve.
+    """
+    for i in range(10):
+        opal.put_scope(f"down-{i}", make_repo_unreachable(f"down-{i}-repo"))
+    opal.put_scope("boot-healthy", gitea_repo_url(HEALTHY_PROBE_REPO))
+    try:
+        compose("restart", "opal_server")
+        opal.wait_healthy(timeout=300)
+        assert wait_until(
+            lambda: opal.get_scope_policy("boot-healthy").status_code == 200,
+            timeout=300,
+        ), "healthy scope starved at boot by unreachable remotes (PR3 gate)"
+    finally:
+        opal.hard_reset()
