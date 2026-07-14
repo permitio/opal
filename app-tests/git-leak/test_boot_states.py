@@ -145,7 +145,7 @@ def test_redis_wiped_boot_reclaims_clones(opal):
     opal.put_scope("wipe-0", gitea_repo_url(list_seeded_repos(1)[0]))
     assert wait_until(
         lambda: opal.get_scope_policy("wipe-0").status_code == 200, timeout=300
-    )
+    ), "wipe-0 never served before the wipe"
     try:
         compose("stop", "opal_server")
         compose("exec", "-T", "redis", "redis-cli", "FLUSHALL")
@@ -156,3 +156,15 @@ def test_redis_wiped_boot_reclaims_clones(opal):
         ), f"clones of the wiped scope store never reclaimed: {sorted(clone_dirs())[:5]}"
     finally:
         opal.hard_reset()
+        # hard_reset never touches git_sources/, and post-FLUSHALL no scope
+        # record exists to route a DELETE's rmtree at the leftover clone —
+        # remove it explicitly so later tests' I1 stays meaningful. The scope
+        # store is empty here, so a blanket clean is safe.
+        compose(
+            "exec",
+            "-T",
+            "opal_server",
+            "sh",
+            "-c",
+            "rm -rf /opal/git_sources/*",
+        )
