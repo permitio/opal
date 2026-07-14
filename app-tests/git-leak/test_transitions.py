@@ -95,3 +95,49 @@ def test_randomized_churn_holds_invariants(opal, repo_count):
             f"round {round_no}: locks exceed live sources (seed {seed}): "
             f"{opal.stats()}"
         )
+
+
+@pytest.mark.timeout(900)
+@pytest.mark.allow_worker_restart
+@pytest.mark.invariant_exempt("I1", "I3", "I4")
+def test_delete_during_hung_fetch_no_crash(opal):
+    """Deleting a scope whose clone is hung must never crash a worker (the use-
+    after-free class 89e090be fixed).
+
+    GREEN since that fix.
+    """
+    import requests as _requests
+
+    pids = worker_pids()
+    opal.put_scope("hung-nc", make_repo_unreachable("hung-nc-repo"))
+    time.sleep(5)  # let the leader's clone start and block on the blackhole
+    try:
+        try:
+            opal.delete_scope("hung-nc")
+        except _requests.RequestException:
+            pass  # a slow/blocked DELETE is the OTHER test's concern
+        assert (
+            worker_pids() == pids
+        ), "worker crashed/respawned during delete-vs-hung-fetch"
+    finally:
+        opal.hard_reset()
+
+
+@pytest.mark.timeout(900)
+@pytest.mark.allow_worker_restart
+@pytest.mark.invariant_exempt("I1", "I3", "I4")
+def test_delete_during_hung_fetch_returns_bounded(opal):
+    """RED until PR3 (fetch timeout): the purge waits on the repo lock, and a
+    hung clone holds that lock indefinitely, so the DELETE hangs with it."""
+    import requests as _requests
+
+    opal.put_scope("hung-b", make_repo_unreachable("hung-b-repo"))
+    time.sleep(5)
+    try:
+        start = time.time()
+        resp = _requests.delete(f"{opal.base_url}/scopes/hung-b", timeout=90)
+        assert (
+            resp.status_code in (200, 204) and time.time() - start < 90
+        ), "DELETE of a hung-fetch scope did not return in bounded time"
+    finally:
+        opal.hard_reset()
