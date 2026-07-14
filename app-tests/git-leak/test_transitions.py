@@ -141,3 +141,40 @@ def test_delete_during_hung_fetch_returns_bounded(opal):
         ), "DELETE of a hung-fetch scope did not return in bounded time"
     finally:
         opal.hard_reset()
+
+
+@pytest.mark.timeout(900)
+@pytest.mark.allow_worker_restart
+@pytest.mark.invariant_exempt("I1", "I3", "I4")
+def test_repoint_during_inflight_fetch_drains_old_source(opal, repo_count):
+    """RED until PR3 (update-path purge).
+
+    Repointing a scope while its old source's clone is hung must still
+    serve the new source (green half) and eventually drop the old
+    source's cache entries (red half).
+    """
+    repo_b = list_seeded_repos(2)[1]
+    old_url = make_repo_unreachable("repoint-hang-repo")
+    opal.put_scope("rp", old_url)
+    time.sleep(5)  # old source's clone is now in flight, holding its lock
+    try:
+        opal.put_scope("rp", gitea_repo_url(repo_b))  # repoint while hung
+        assert wait_until(
+            lambda: opal.get_scope_policy("rp").status_code == 200, timeout=300
+        ), "repointed scope never served its new source"
+
+        old_sid = source_id(old_url)
+
+        def _old_entries_gone():
+            s = opal.stats(samples=1)
+            return (
+                old_sid not in s["repo_locks_keys"]
+                and old_sid not in s["repos_last_fetched_keys"]
+            )
+
+        assert wait_until(_old_entries_gone, timeout=60), (
+            f"old source {old_sid[:12]}… cache entries leaked after repoint "
+            f"(PR3 update-path purge gate): {opal.stats()}"
+        )
+    finally:
+        opal.hard_reset()
