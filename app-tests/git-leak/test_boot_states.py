@@ -51,29 +51,46 @@ def test_warm_boot_reuses_clones(opal, repo_count):
 
 @pytest.mark.timeout(900)
 def test_corrupt_clone_recovers_without_clone_loop(opal):
-    """S3/T7: corrupting a clone under a warm handle cache must recover with
-    exactly one re-clone (pre-Bug-A-fix this looped forever)."""
+    """S3/T7: emptying a clone's object store in place (objects/ kept as an
+    empty dir, so pygit2.discover_repository still finds the repo) while the
+    server holds a warm cached handle must recover through the invalid-repo
+    branch with exactly one re-clone (pre-Bug-A-fix this looped forever)."""
     repo = list_seeded_repos(3)[2]
     opal.put_scope("dirty", gitea_repo_url(repo))
     assert wait_until(
         lambda: opal.get_scope_policy("dirty").status_code == 200, timeout=300
     )
 
-    # corrupt the clone's git metadata in place; the server keeps its cached
-    # pygit2 handle (warm cache) — the exact Bug A precondition
+    invalid_before = compose("logs", "--no-log-prefix", "opal_server").stdout.count(
+        "Deleting invalid repo"
+    )
+
+    # empty the object store's CONTENTS in place, keeping the objects/ dir
+    # itself so discover_repository still resolves the repo; the server keeps
+    # its cached pygit2 handle (warm cache) — the exact Bug A precondition
+    # (deleting the objects/ node instead would route recovery through the
+    # repo-not-found -> _clone() branch and never touch the cached handle)
     compose(
         "exec",
         "-T",
         "opal_server",
         "sh",
         "-c",
-        'for d in /opal/git_sources/*/; do rm -rf "$d/.git/objects"; done',
+        'for d in /opal/git_sources/*/; do rm -rf "$d/.git/objects"/*; done',
     )
     opal.refresh_all()
 
     assert wait_until(
         lambda: opal.get_scope_policy("dirty").status_code == 200, timeout=300
     ), "scope never recovered after clone corruption"
+
+    invalid_after = compose("logs", "--no-log-prefix", "opal_server").stdout.count(
+        "Deleting invalid repo"
+    )
+    assert invalid_after > invalid_before, (
+        "recovery did not take the invalid-repo (warm cached handle) branch — "
+        "the corruption failed to exercise the Bug A path"
+    )
 
     clones_1 = _clone_log_count()
     opal.refresh_all()
