@@ -178,3 +178,37 @@ def test_repoint_during_inflight_fetch_drains_old_source(opal, repo_count):
         )
     finally:
         opal.hard_reset()
+
+
+@pytest.mark.timeout(1200)
+def test_multiworker_churn_drains_every_worker(opal_multiworker, repo_count):
+    """RED until PR3 (broadcast purge): DELETE purges only the worker that
+    serves it; the leader (which fetched) keeps its caches.
+
+    The HIGH finding from the PR2 review, as a gate.
+    """
+    from helpers import stats_by_pid
+
+    opal = opal_multiworker
+    n = min(repo_count, 10)
+    for i, repo in enumerate(list_seeded_repos(n)):
+        opal.put_scope(f"mw-{i}", gitea_repo_url(repo))
+    assert wait_until(
+        lambda: any(s["repos"] >= 1 for s in stats_by_pid(opal, attempts=40).values()),
+        timeout=600,
+    ), "no worker ever populated its repo cache"
+
+    for i in range(n):
+        opal.delete_scope(f"mw-{i}")
+
+    def _every_worker_drained():
+        snaps = stats_by_pid(opal, min_pids=2, attempts=60)
+        return len(snaps) >= 2 and all(
+            s["repo_locks"] == 0 and s["repos"] == 0 and s["repos_last_fetched"] == 0
+            for s in snaps.values()
+        )
+
+    assert wait_until(_every_worker_drained, timeout=120), (
+        "a worker (the leader) kept its caches after full churn (PR3 gate): "
+        f"{ {p: {k: v for k, v in s.items() if isinstance(v, int)} for p, s in stats_by_pid(opal).items()} }"
+    )
