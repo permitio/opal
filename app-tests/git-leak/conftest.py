@@ -10,6 +10,7 @@ from helpers import (
     list_seeded_repos,
     worker_pids,
 )
+from invariants import check_invariants
 
 
 def pytest_addoption(parser):
@@ -67,7 +68,7 @@ def stack(request, repo_count):
 
 
 @pytest.fixture()
-def opal(stack) -> OpalServerClient:
+def opal(stack, request) -> OpalServerClient:
     # The compose stack is session-scoped (one server for the whole run), but
     # scopes must not leak between tests: clone paths are keyed by repo URL, so
     # a scope left behind by one test shares a cache entry with any later test
@@ -84,8 +85,18 @@ def opal(stack) -> OpalServerClient:
     assert (
         len(worker_pids()) == 1
     ), f"expected a single-worker stack, found workers {sorted(worker_pids())}"
+    pids_before = worker_pids()
     yield stack
     stack.delete_all_scopes()
+    exempt_marker = request.node.get_closest_marker("invariant_exempt")
+    exempt = set(exempt_marker.args) if exempt_marker else set()
+    if request.node.get_closest_marker("allow_worker_restart") is None:
+        assert worker_pids() == pids_before, (
+            f"I5: worker pid-set changed during the test "
+            f"({sorted(pids_before)} -> {sorted(worker_pids())}) — a crash/"
+            f"respawn resets the caches and can fake a clean drain"
+        )
+    check_invariants(stack, exempt=exempt)
 
 
 @pytest.fixture()

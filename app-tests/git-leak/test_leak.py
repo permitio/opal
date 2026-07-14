@@ -178,6 +178,7 @@ def test_shared_repo_survives_sibling_scope_delete(opal, repo_count):
 
 
 @pytest.mark.timeout(900)
+@pytest.mark.invariant_exempt("I1", "I3", "I4")
 def test_scope_repoint_releases_old_repo_cache(opal, repo_count):
     """Re-pointing a scope to a new repo URL, then deleting it, must drain ALL
     cache entries — including the orphaned old URL's.

@@ -401,6 +401,26 @@ def bounce_postgres(down_seconds: int = 5, during=None) -> None:
         compose("up", "-d", "--wait", "--no-recreate", "postgres")
 
 
+def wait_until(predicate, timeout: float, interval: float = 2.0) -> bool:
+    """Poll ``predicate()`` until truthy or ``timeout`` elapses.
+
+    Swallows transient exceptions from the predicate (a stats read
+    racing a restart is not a verdict) — only the final state decides.
+    """
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        try:
+            if predicate():
+                return True
+        except Exception:
+            pass
+        time.sleep(interval)
+    try:
+        return bool(predicate())
+    except Exception:
+        return False
+
+
 def list_seeded_repos(count: int) -> List[str]:
     return [f"policy-repo-{i:04d}" for i in range(count)]
 

@@ -41,6 +41,8 @@ def _wait_served(opal, scope_id: str, timeout: int):
 
 
 @pytest.mark.timeout(420)
+@pytest.mark.allow_worker_restart
+@pytest.mark.invariant_exempt("I1")
 def test_offline_repo_does_not_block_healthy_scopes(opal, repo_count):
     """Unreachable repos must not stop a healthy scope from serving.
 
