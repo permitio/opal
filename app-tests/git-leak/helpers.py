@@ -248,7 +248,12 @@ class GiteaAdmin:
             return
         resp = requests.post(
             f"{self.base_url}/api/v1/user/repos",
-            json={"name": name, "private": False, "auto_init": True},
+            json={
+                "name": name,
+                "private": False,
+                "auto_init": True,
+                "default_branch": "main",
+            },
             auth=self._auth,
             timeout=10,
         )
@@ -262,6 +267,39 @@ class GiteaAdmin:
         )
         if resp.status_code not in (204, 404):
             resp.raise_for_status()
+
+
+class RepoMutator:
+    """Host-side git mutations against a bed Gitea repo (force-push, branch
+    ops) — the remote-transition tests' hands.
+
+    Uses GitPython over the published host port with admin basic-auth.
+    """
+
+    def __init__(self, name: str, workdir: Path):
+        import git as gitpython
+
+        self._url = (
+            f"http://{GITEA_USER}:{GITEA_PASSWORD}@localhost:13000/"
+            f"{GITEA_USER}/{name}.git"
+        )
+        self._clone = gitpython.Repo.clone_from(self._url, str(workdir / name))
+        with self._clone.config_writer() as cw:
+            cw.set_value("user", "name", "bed-mutator")
+            cw.set_value("user", "email", "bed@test.local")
+
+    def force_push_rewrite(self, branch: str = "main") -> None:
+        self._clone.git.checkout(branch)
+        self._clone.git.commit("--amend", "--allow-empty", "-m", "rewritten history")
+        self._clone.git.push("--force", "origin", branch)
+
+    def push_new_branch(self, branch: str) -> None:
+        self._clone.git.checkout("-b", branch)
+        self._clone.git.commit("--allow-empty", "-m", f"seed {branch}")
+        self._clone.git.push("origin", branch)
+
+    def delete_remote_branch(self, branch: str) -> None:
+        self._clone.git.push("origin", f":{branch}")
 
 
 def gitea_repo_url(name: str) -> str:
