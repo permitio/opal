@@ -7,6 +7,7 @@ from typing import List, Optional, Set, cast
 import git
 from ddtrace import tracer
 from fastapi_websocket_pubsub import PubSubEndpoint
+from opal_common.async_utils import run_sync
 from opal_common.git_utils.commit_viewer import VersionedFile
 from opal_common.http_utils import redact_url
 from opal_common.logger import logger
@@ -185,50 +186,52 @@ class ScopesService:
             # different clone dir) when SCOPES_REPO_CLONES_SHARDS > 1, so gate on
             # source_id, not url — otherwise the deleted scope's clone + pygit2
             # handle leak.
-            other_scopes = [
-                s for s in await self._scopes.all() if s.scope_id != scope_id
-            ]
-            sharing_scope_id = next(
-                (
-                    s.scope_id
-                    for s in other_scopes
-                    if isinstance(s.policy, GitPolicyScopeSource)
-                    and GitPolicyFetcher.source_id(s.policy) == deleted_source_id
-                ),
-                None,
-            )
-
-            if sharing_scope_id is not None:
-                logger.info(
-                    f"Scope {sharing_scope_id} shares the same clone (source id), "
-                    "skipping clone deletion"
+            #
+            # Serialize record-delete + sibling-check + purge on the source
+            # lock: two concurrent sibling deletes could otherwise both read
+            # the other as still-live (the check and the record delete span
+            # separate store round-trips) and BOTH skip the purge, orphaning
+            # the clone and cache entries permanently. Deleting our record
+            # before re-checking makes the last deleter see no sharer.
+            async with GitPolicyFetcher.lock_source(deleted_source_id):
+                await self._scopes.delete(scope_id)
+                sharing_scope_id = next(
+                    (
+                        s.scope_id
+                        for s in await self._scopes.all()
+                        if s.scope_id != scope_id
+                        and isinstance(s.policy, GitPolicyScopeSource)
+                        and GitPolicyFetcher.source_id(s.policy) == deleted_source_id
+                    ),
+                    None,
                 )
-            else:
-                # NOTE: this purge is process-local best-effort — it cleans the
-                # caches of whichever worker serves the DELETE. Broadcasting the
-                # purge so the leader (which accumulates most handles via
-                # continuous sync) also drops its caches is tracked for PR3.
-                async with GitPolicyFetcher.lock_source(deleted_source_id):
-                    try:
-                        shutil.rmtree(scope_dir)
-                    except FileNotFoundError:
-                        pass  # never cloned (or already gone) — nothing to clean
-                    except OSError as e:
-                        # Deliberately not fatal: the scope record must still be
-                        # deleted, but an orphaned clone on disk has to be
-                        # discoverable rather than silently leaked.
-                        logger.warning(
-                            f"Failed to remove clone dir {scope_dir} of deleted "
-                            f"scope {scope_id}: {e!r}"
-                        )
-                    GitPolicyFetcher.forget_repo(str(scope_dir))
-                    GitPolicyFetcher.repos_last_fetched.pop(deleted_source_id, None)
-                    # Popped while the lock is held: lock_source waiters re-check
-                    # the dict entry after acquiring and retry on the fresh lock,
-                    # so nobody proceeds under the stale one.
-                    GitPolicyFetcher.repo_locks.pop(deleted_source_id, None)
-
-            await self._scopes.delete(scope_id)
+                if sharing_scope_id is not None:
+                    logger.info(
+                        f"Scope {sharing_scope_id} shares the same clone "
+                        "(source id), skipping clone deletion"
+                    )
+                    return
+                # NOTE (PR3): delete must ultimately route through the leader
+                # like put/refresh — only the leader should mutate the shared
+                # clone tree. Today this purge is process-local best-effort
+                # (the leader's caches leak until PR3's broadcast purge), and
+                # a non-leader DELETE rmtree's the shared tree unserialized
+                # against the leader's in-flight fetches (cross-process;
+                # bounded and self-healing, but an invariant break).
+                try:
+                    await run_sync(shutil.rmtree, str(scope_dir))
+                except FileNotFoundError:
+                    pass  # never cloned (or already gone) — nothing to clean
+                except OSError as e:
+                    logger.warning(
+                        f"Failed to remove clone dir {scope_dir} of deleted "
+                        f"scope {scope_id}: {e!r}"
+                    )
+                GitPolicyFetcher.forget_repo(str(scope_dir))
+                GitPolicyFetcher.repos_last_fetched.pop(deleted_source_id, None)
+                # Popped while the lock is held: lock_source waiters re-check
+                # the dict entry after acquiring and retry on the fresh lock.
+                GitPolicyFetcher.repo_locks.pop(deleted_source_id, None)
 
     async def sync_scopes(self, only_poll_updates=False, notify_on_changes=True):
         with tracer.trace("scopes_service.sync_scopes"):

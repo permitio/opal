@@ -13,14 +13,17 @@ class FakeScopeRepository:
         self._scopes = {s.scope_id: s for s in scopes}
 
     async def get(self, scope_id):
+        await asyncio.sleep(0)
         if scope_id not in self._scopes:
             raise ScopeNotFoundError(scope_id)
         return self._scopes[scope_id]
 
     async def all(self):
+        await asyncio.sleep(0)
         return list(self._scopes.values())
 
     async def delete(self, scope_id):
+        await asyncio.sleep(0)
         self._scopes.pop(scope_id, None)
 
 
@@ -97,6 +100,34 @@ async def test_delete_keeps_caches_when_sibling_shares_source(tmp_path, monkeypa
     assert clone_path in GitPolicyFetcher.repos
     assert sid in GitPolicyFetcher.repos_last_fetched
     assert sid in GitPolicyFetcher.repo_locks
+
+
+@pytest.mark.asyncio
+async def test_concurrent_sibling_deletes_still_purge(tmp_path, monkeypatch):
+    """Two concurrent DELETEs of source-sharing scopes must not BOTH skip the
+    purge (TOCTOU on the sibling check) — whichever finishes last must
+    purge."""
+    a = _scope("a", "https://git/shared.git")
+    b = _scope("b", "https://git/shared.git")
+    repo = FakeScopeRepository([a, b])
+    svc = ScopesService(base_dir=tmp_path, scopes=repo, pubsub_endpoint=None)
+    sid = GitPolicyFetcher.source_id(a.policy)
+    clone_path = str(GitPolicyFetcher.repo_clone_path(tmp_path, a.policy))
+    GitPolicyFetcher.repos[clone_path] = object()
+    GitPolicyFetcher.repos_last_fetched[sid] = "ts"
+    rmtree_calls = []
+    monkeypatch.setattr(
+        "opal_server.scopes.service.shutil.rmtree",
+        lambda p, **k: rmtree_calls.append(str(p)),
+    )
+
+    await asyncio.gather(svc.delete_scope("a"), svc.delete_scope("b"))
+
+    assert rmtree_calls == [
+        clone_path
+    ], "concurrent sibling deletes both skipped the purge (TOCTOU)"
+    assert clone_path not in GitPolicyFetcher.repos
+    assert sid not in GitPolicyFetcher.repos_last_fetched
 
 
 @pytest.mark.asyncio
