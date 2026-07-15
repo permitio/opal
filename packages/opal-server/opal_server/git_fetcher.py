@@ -230,9 +230,15 @@ class GitPolicyFetcher(PolicyFetcher):
                             "Deleting invalid repo: {path}", path=self._repo_path
                         )
                         GitPolicyFetcher.forget_repo(str(self._repo_path))
-                        # ignore_errors: with a stale handle the dir may already
-                        # be partially or fully gone.
-                        shutil.rmtree(self._repo_path, ignore_errors=True)
+                        try:
+                            shutil.rmtree(self._repo_path)
+                        except FileNotFoundError:
+                            pass  # already gone — the intended end state
+                        except OSError as e:
+                            logger.warning(
+                                f"Failed to remove clone dir "
+                                f"{self._repo_path}: {e!r}"
+                            )
                 else:
                     logger.info("Repo not found at {path}", path=self._repo_path)
 
@@ -248,7 +254,12 @@ class GitPolicyFetcher(PolicyFetcher):
             # A failed/interrupted clone leaves a partial dir;
             # clone_repository refuses a non-empty destination, which would
             # wedge every retry for this source.
-            shutil.rmtree(self._repo_path, ignore_errors=True)
+            try:
+                shutil.rmtree(self._repo_path)
+            except FileNotFoundError:
+                pass  # already gone — the intended end state
+            except OSError as e:
+                logger.warning(f"Failed to remove clone dir {self._repo_path}: {e!r}")
         logger.info(
             "Cloning repo at '{url}' to '{path}'",
             url=redact_url(self._source.url),
