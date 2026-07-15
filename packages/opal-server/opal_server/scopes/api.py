@@ -14,7 +14,7 @@ from fastapi import (
 )
 from fastapi.responses import RedirectResponse
 from fastapi_websocket_pubsub import PubSubEndpoint
-from git import InvalidGitRepositoryError
+from git import InvalidGitRepositoryError, NoSuchPathError
 from opal_common.async_utils import run_sync
 from opal_common.authentication.authz import (
     require_peer_type,
@@ -280,7 +280,14 @@ def init_scope_router(
 
         try:
             return await run_sync(fetcher.make_bundle, base_hash)
-        except (InvalidGitRepositoryError, pygit2.GitError, ValueError):
+        except (
+            InvalidGitRepositoryError,
+            # A concurrent delete/recovery can rmtree the clone dir before
+            # Repo() opens it — fall back to the default scope, not a 500.
+            NoSuchPathError,
+            pygit2.GitError,
+            ValueError,
+        ):
             logger.warning(
                 "Requested scope {scope_id} has invalid repo, returning default scope",
                 scope_id=scope_id,
@@ -305,6 +312,7 @@ def init_scope_router(
         except (
             ScopeNotFoundError,
             InvalidGitRepositoryError,
+            NoSuchPathError,
             pygit2.GitError,
             ValueError,
         ):
