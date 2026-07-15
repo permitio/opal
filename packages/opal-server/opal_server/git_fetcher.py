@@ -268,6 +268,10 @@ class GitPolicyFetcher(PolicyFetcher):
             url=redact_url(self._source.url),
             path=self._repo_path,
         )
+        # Same start-time rule as the fetch path above: the clone's
+        # negotiation reflects remote state at clone START, so that is the
+        # timestamp req_time comparisons need.
+        clone_started = datetime.datetime.now()
         try:
             repo: Repository = await run_sync(
                 clone_repository,
@@ -284,9 +288,7 @@ class GitPolicyFetcher(PolicyFetcher):
             GitPolicyFetcher.repos[str(self._repo_path)] = repo
             # A reclone just downloaded current remote state — record it so
             # _was_fetched_after() doesn't force a redundant fetch next cycle.
-            GitPolicyFetcher.repos_last_fetched[
-                self._source_id
-            ] = datetime.datetime.now()
+            GitPolicyFetcher.repos_last_fetched[self._source_id] = clone_started
             await self._notify_on_changes(repo)
 
     def _get_repo(self) -> Repository:
