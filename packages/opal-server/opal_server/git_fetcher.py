@@ -187,7 +187,10 @@ class GitPolicyFetcher(PolicyFetcher):
             ):
                 if self._discover_repository(self._repo_path):
                     logger.debug("Repo found at {path}", path=self._repo_path)
-                    repo = self._get_valid_repo()
+                    # The probe opens/parses a fresh Repository handle from
+                    # disk — off the event loop so a slow disk can't stall
+                    # every other request being served on this worker.
+                    repo = await run_sync(self._get_valid_repo)
                     if repo is not None:
                         should_fetch = await self._should_fetch(
                             repo,
@@ -279,6 +282,11 @@ class GitPolicyFetcher(PolicyFetcher):
             # Cache the fresh handle so the next sync's _get_repo() reuses it
             # instead of reopening (or hitting a stale predecessor).
             GitPolicyFetcher.repos[str(self._repo_path)] = repo
+            # A reclone just downloaded current remote state — record it so
+            # _was_fetched_after() doesn't force a redundant fetch next cycle.
+            GitPolicyFetcher.repos_last_fetched[
+                self._source_id
+            ] = datetime.datetime.now()
             await self._notify_on_changes(repo)
 
     def _get_repo(self) -> Repository:
