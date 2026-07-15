@@ -195,16 +195,31 @@ class ScopesService:
             # before re-checking makes the last deleter see no sharer.
             async with GitPolicyFetcher.lock_source(deleted_source_id):
                 await self._scopes.delete(scope_id)
-                sharing_scope_id = next(
-                    (
-                        s.scope_id
-                        for s in await self._scopes.all()
-                        if s.scope_id != scope_id
-                        and isinstance(s.policy, GitPolicyScopeSource)
-                        and GitPolicyFetcher.source_id(s.policy) == deleted_source_id
-                    ),
-                    None,
-                )
+                # The re-check must not be able to skip the purge by raising:
+                # our record is already deleted, so a client retry is a 204
+                # no-op (ScopeNotFoundError) and the purge becomes permanently
+                # unreachable. all() does a full scan + Scope.parse_raw — a
+                # transient store error or one malformed record throws. Over-
+                # purging self-heals (a surviving sibling re-clones on its
+                # next sync); under-purging is a permanent leak.
+                try:
+                    sharing_scope_id = next(
+                        (
+                            s.scope_id
+                            for s in await self._scopes.all()
+                            if s.scope_id != scope_id
+                            and isinstance(s.policy, GitPolicyScopeSource)
+                            and GitPolicyFetcher.source_id(s.policy)
+                            == deleted_source_id
+                        ),
+                        None,
+                    )
+                except Exception as e:
+                    logger.warning(
+                        f"sibling check failed after deleting scope "
+                        f"{scope_id}; purging defensively: {e!r}"
+                    )
+                    sharing_scope_id = None
                 if sharing_scope_id is not None:
                     logger.info(
                         f"Scope {sharing_scope_id} shares the same clone "

@@ -130,6 +130,68 @@ async def test_concurrent_sibling_deletes_still_purge(tmp_path, monkeypatch):
     assert sid not in GitPolicyFetcher.repos_last_fetched
 
 
+class _AllRaisesAfterDeleteRepository(FakeScopeRepository):
+    """All() blows up only on the post-delete sibling re-check (e.g. a
+    transient store error or one malformed record failing parse_raw)."""
+
+    def __init__(self, scopes):
+        super().__init__(scopes)
+        self.deleted_once = False
+
+    async def delete(self, scope_id):
+        await super().delete(scope_id)
+        self.deleted_once = True
+
+    async def all(self):
+        if self.deleted_once:
+            raise RuntimeError("store scan failed (malformed record)")
+        return await super().all()
+
+
+@pytest.mark.asyncio
+async def test_sibling_check_failure_still_purges(tmp_path, monkeypatch):
+    """If the post-delete sibling re-check raises, the purge must still run:
+
+    the record is already deleted, so the client's retry is a 204 no-op
+    (ScopeNotFoundError) and a skipped purge is a permanent leak. Over-
+    purging is safe — a surviving sibling re-clones on its next sync.
+    """
+    scope = _scope("only", "https://git/repo-a.git")
+    repo = _AllRaisesAfterDeleteRepository([scope])
+    svc = ScopesService(base_dir=tmp_path, scopes=repo, pubsub_endpoint=None)
+
+    sid = GitPolicyFetcher.source_id(scope.policy)
+    clone_path = str(GitPolicyFetcher.repo_clone_path(tmp_path, scope.policy))
+    GitPolicyFetcher.repos[clone_path] = object()
+    GitPolicyFetcher.repos_last_fetched[sid] = "ts"
+
+    rmtree_calls = []
+    monkeypatch.setattr(
+        "opal_server.scopes.service.shutil.rmtree",
+        lambda p, **k: rmtree_calls.append(str(p)),
+    )
+
+    from opal_common.logger import logger as opal_logger
+
+    records = []
+    sink_id = opal_logger.add(lambda m: records.append(str(m)), level="WARNING")
+    try:
+        # Must not raise: the re-check failure is downgraded to a warning.
+        await svc.delete_scope("only")
+    finally:
+        opal_logger.remove(sink_id)
+
+    assert rmtree_calls == [clone_path], (
+        "sibling re-check failure skipped the purge — permanent leak "
+        "(retry is a 204 no-op, the purge is unreachable)"
+    )
+    assert clone_path not in GitPolicyFetcher.repos
+    assert sid not in GitPolicyFetcher.repos_last_fetched
+    assert any(
+        "sibling check failed" in r and "purging defensively" in r for r in records
+    ), f"defensive purge not logged: {records}"
+
+
 @pytest.mark.asyncio
 async def test_delete_purges_when_sibling_shares_url_but_not_source(
     tmp_path, monkeypatch
