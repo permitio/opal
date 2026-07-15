@@ -196,3 +196,26 @@ async def test_gutted_object_store_triggers_recovery(monkeypatch, tmp_path):
     assert path not in GitPolicyFetcher.repos
     assert warm.freed is True, "recovery evicted the warm handle without free()"
     assert probes and all(p.freed for p in probes), "disk probe handle leaked"
+
+
+class _PoisonRepo:
+    """Any attribute access means the shared cached handle was touched."""
+
+    def __getattr__(self, name):
+        raise AssertionError(
+            "shared cached handle was read outside lock_source (UAF hazard)"
+        )
+
+
+def test_branch_head_does_not_touch_shared_handle(monkeypatch, tmp_path):
+    fetcher = _make_fetcher(tmp_path, "s", "https://example.com/r.git")
+    path = str(fetcher._repo_path)
+    GitPolicyFetcher.repos[path] = _PoisonRepo()
+    fresh = object()
+    monkeypatch.setattr("opal_server.git_fetcher.Repository", lambda p: fresh)
+    monkeypatch.setattr(
+        "opal_server.git_fetcher.RepoInterface.get_commit_hash",
+        lambda repo, branch, remote: "abc123" if repo is fresh else None,
+    )
+
+    assert fetcher._get_current_branch_head() == "abc123"

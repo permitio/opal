@@ -385,10 +385,22 @@ class GitPolicyFetcher(PolicyFetcher):
         local_branch.set_target(new_revision)
 
     def _get_current_branch_head(self) -> str:
-        repo = self._get_repo()
-        head_commit_hash = RepoInterface.get_commit_hash(
-            repo, self._source.branch, self._remote
-        )
+        # Opened fresh per call instead of using the shared cached handle:
+        # this runs on executor threads (run_sync(make_bundle) in the policy-
+        # bundle route) and outside lock_source, where the cached handle can
+        # be free()'d concurrently by a scope delete or invalid-repo recovery.
+        # asyncio locks don't exclude executor threads — sharing the handle
+        # here is a use-after-free. Same fresh-probe pattern as
+        # _get_valid_repo's disk-truth check.
+        repo = Repository(str(self._repo_path))
+        try:
+            head_commit_hash = RepoInterface.get_commit_hash(
+                repo, self._source.branch, self._remote
+            )
+        finally:
+            free = getattr(repo, "free", None)
+            if callable(free):
+                free()
         if not head_commit_hash:
             logger.error("Could not find current branch head")
             raise ValueError("Could not find current branch head")
