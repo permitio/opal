@@ -234,7 +234,7 @@ class GitPolicyFetcher(PolicyFetcher):
                         )
                         GitPolicyFetcher.forget_repo(str(self._repo_path))
                         try:
-                            shutil.rmtree(self._repo_path)
+                            await run_sync(shutil.rmtree, str(self._repo_path))
                         except FileNotFoundError:
                             pass  # already gone — the intended end state
                         except OSError as e:
@@ -258,7 +258,7 @@ class GitPolicyFetcher(PolicyFetcher):
             # clone_repository refuses a non-empty destination, which would
             # wedge every retry for this source.
             try:
-                shutil.rmtree(self._repo_path)
+                await run_sync(shutil.rmtree, str(self._repo_path))
             except FileNotFoundError:
                 pass  # already gone — the intended end state
             except OSError as e:

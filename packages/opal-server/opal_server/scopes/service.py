@@ -233,6 +233,12 @@ class ScopesService:
                 # a non-leader DELETE rmtree's the shared tree unserialized
                 # against the leader's in-flight fetches (cross-process;
                 # bounded and self-healing, but an invariant break).
+                # The same class exists IN-process: a sync that loaded the
+                # scope before this delete and acquires the fresh lock after
+                # the purge re-clones and re-populates the caches for the dead
+                # scope (found by the bed's randomized churn driver;
+                # deterministic seed recorded there). PR3's purge routing must
+                # include a scope-liveness check before clone.
                 try:
                     await run_sync(shutil.rmtree, str(scope_dir))
                 except FileNotFoundError:
