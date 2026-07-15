@@ -68,6 +68,37 @@ async def test_failed_trigger_exception_is_retrieved_and_logged():
     await asyncio.gather(*w._webhook_tasks, return_exceptions=True)
 
 
+class _CredentialLeakingWatcher(BasePolicyWatcherTask):
+    async def trigger(self, topic, data):
+        raise RuntimeError("fetch https://user:secret@host/repo failed")
+
+
+@pytest.mark.asyncio
+async def test_failed_trigger_log_redacts_credentialed_url():
+    """A git exception can embed a credentialed remote URL verbatim; the
+    sweep's failure log must not leak it."""
+    from opal_common.logger import logger as opal_logger
+
+    w = _CredentialLeakingWatcher(pubsub_endpoint=None)
+
+    await w._on_webhook("webhook", None)  # schedules a trigger that raises
+    failed = list(w._webhook_tasks)
+    await asyncio.gather(*failed, return_exceptions=True)
+
+    records = []
+    sink_id = opal_logger.add(lambda m: records.append(str(m)), level="ERROR")
+    try:
+        await w._on_webhook("webhook", None)  # sweep must log the failure
+    finally:
+        opal_logger.remove(sink_id)
+
+    assert any("Webhook trigger task failed" in r for r in records), records
+    assert any("://***@" in r for r in records), records
+    assert not any("secret" in r for r in records), records
+
+    await asyncio.gather(*w._webhook_tasks, return_exceptions=True)
+
+
 class _HangingWatcher(BasePolicyWatcherTask):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)

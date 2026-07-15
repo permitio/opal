@@ -1,5 +1,6 @@
 import asyncio
 import os
+import re
 import signal
 from typing import Any, Coroutine, List, Optional
 
@@ -8,6 +9,11 @@ from fastapi_websocket_pubsub.pub_sub_server import PubSubEndpoint
 from opal_common.logger import logger
 from opal_common.sources.base_policy_source import BasePolicySource
 from opal_server.config import opal_server_config
+
+# git exceptions (e.g. from a failed fetch/clone) can embed a credentialed
+# remote URL (https://user:token@host/repo) verbatim in their message —
+# strip the credential before this ever reaches the logs.
+_CREDENTIALED_URL_RE = re.compile(r"://[^/@\s]+@")
 
 
 class BasePolicyWatcherTask:
@@ -35,7 +41,8 @@ class BasePolicyWatcherTask:
         # generic "Task exception was never retrieved" at GC time.
         for t in self._webhook_tasks:
             if t.done() and not t.cancelled() and t.exception() is not None:
-                logger.error(f"Webhook trigger task failed: {t.exception()!r}")
+                exc_text = _CREDENTIALED_URL_RE.sub("://***@", repr(t.exception()))
+                logger.error(f"Webhook trigger task failed: {exc_text}")
         self._webhook_tasks = [t for t in self._webhook_tasks if not t.done()]
         self._webhook_tasks.append(asyncio.create_task(self.trigger(topic, data)))
 
