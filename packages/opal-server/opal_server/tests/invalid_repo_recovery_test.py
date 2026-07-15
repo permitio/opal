@@ -219,3 +219,92 @@ def test_branch_head_does_not_touch_shared_handle(monkeypatch, tmp_path):
     )
 
     assert fetcher._get_current_branch_head() == "abc123"
+
+
+class _HealthyCachedRepo:
+    """The warm cached handle _get_valid_repo returns when the disk probe
+    confirms the repo is healthy."""
+
+    def __init__(self, url):
+        self.remotes = [_RemoteStub(url)]
+        self.freed = False
+
+    def free(self):
+        self.freed = True
+
+
+class _BranchNotFetchedProbe:
+    """Fresh on-disk probe when the tracked branch has never been fetched (e.g.
+    right after a scope's remote branch config changed)."""
+
+    def __init__(self, path):
+        self.freed = False
+
+    def lookup_reference(self, name):
+        raise KeyError(name)
+
+    def free(self):
+        self.freed = True
+
+
+def test_get_valid_repo_tolerates_branch_not_yet_fetched(monkeypatch, tmp_path):
+    """The fetch path is responsible for missing branches -- the probe must not
+    treat that as corruption and must still return the cached repo."""
+    url = "https://example.com/r.git"
+    fetcher = _make_fetcher(tmp_path, "s", url)
+    path = str(fetcher._repo_path)
+    cached = _HealthyCachedRepo(url)
+    GitPolicyFetcher.repos[path] = cached
+    probes = []
+
+    def fake_repository(p):
+        probe = _BranchNotFetchedProbe(p)
+        probes.append(probe)
+        return probe
+
+    monkeypatch.setattr("opal_server.git_fetcher.Repository", fake_repository)
+
+    result = fetcher._get_valid_repo()
+
+    assert result is cached
+    assert probes and all(p.freed for p in probes), "disk probe handle leaked"
+
+
+class _HealthyProbe:
+    """Fresh on-disk probe when the head object is actually readable from disk
+    (the healthy case)."""
+
+    def __init__(self, path):
+        self.freed = False
+
+    def lookup_reference(self, name):
+        return _Ref()
+
+    def get(self, oid):
+        return object()  # readable from disk
+
+    def free(self):
+        self.freed = True
+
+
+def test_get_valid_repo_returns_cached_when_probe_confirms_healthy(
+    monkeypatch, tmp_path
+):
+    url = "https://example.com/r.git"
+    fetcher = _make_fetcher(tmp_path, "s", url)
+    path = str(fetcher._repo_path)
+    cached = _HealthyCachedRepo(url)
+    GitPolicyFetcher.repos[path] = cached
+    probes = []
+
+    def fake_repository(p):
+        probe = _HealthyProbe(p)
+        probes.append(probe)
+        return probe
+
+    monkeypatch.setattr("opal_server.git_fetcher.Repository", fake_repository)
+
+    result = fetcher._get_valid_repo()
+
+    assert result is cached
+    assert probes and all(p.freed for p in probes), "disk probe handle leaked"
