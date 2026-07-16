@@ -19,7 +19,11 @@ from opal_server.policy.watcher.callbacks import (
     create_policy_update,
     create_update_all_directories_in_repo,
 )
-from opal_server.scopes.scope_repository import Scope, ScopeRepository
+from opal_server.scopes.scope_repository import (
+    Scope,
+    ScopeNotFoundError,
+    ScopeRepository,
+)
 
 
 def is_rego_source_file(
@@ -309,24 +313,37 @@ class ScopesService:
                     skipped_scopes.append(scope)
                     continue
 
-                try:
-                    await self.sync_scope(
-                        scope=scope,
-                        force_fetch=True,
-                        notify_on_changes=notify_on_changes,
-                    )
-                except Exception as e:
-                    logger.exception(f"sync_scope failed for {scope.scope_id}")
-
+                await self._sync_snapshotted_scope(
+                    scope, force_fetch=True, notify_on_changes=notify_on_changes
+                )
                 fetched_source_ids.add(src_id)
 
             for scope in skipped_scopes:
                 # No need to refetch the same repo, just check for changes
-                try:
-                    await self.sync_scope(
-                        scope=scope,
-                        force_fetch=False,
-                        notify_on_changes=notify_on_changes,
-                    )
-                except Exception as e:
-                    logger.exception(f"sync_scope failed for {scope.scope_id}")
+                await self._sync_snapshotted_scope(
+                    scope, force_fetch=False, notify_on_changes=notify_on_changes
+                )
+
+    async def _sync_snapshotted_scope(
+        self, scope: Scope, force_fetch: bool, notify_on_changes: bool
+    ):
+        """Sync one scope taken from a (possibly stale) all() snapshot,
+        swallowing per-scope errors so the sweep continues.
+
+        Passes scope_id (not the snapshot object) so sync_scope re-gets
+        fresh state right before use — a delete that landed after the
+        snapshot surfaces as ScopeNotFoundError instead of re-cloning a
+        dead scope's repo and re-populating the fetcher caches for it.
+        """
+        try:
+            await self.sync_scope(
+                scope_id=scope.scope_id,
+                force_fetch=force_fetch,
+                notify_on_changes=notify_on_changes,
+            )
+        except ScopeNotFoundError:
+            logger.info(
+                f"scope {scope.scope_id} was deleted while sync was queued, skipping"
+            )
+        except Exception:
+            logger.exception(f"sync_scope failed for {scope.scope_id}")

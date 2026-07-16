@@ -337,6 +337,40 @@ async def test_purge_still_runs_when_record_delete_raises_ambiguously(
     assert sid not in GitPolicyFetcher.repo_locks
 
 
+class _DeletedAfterSnapshotRepository(FakeScopeRepository):
+    """All() still returns the scope (a stale sync_scopes snapshot); get()
+    reports it deleted — models a DELETE landing between the two."""
+
+    async def get(self, scope_id):
+        await asyncio.sleep(0)
+        raise ScopeNotFoundError(scope_id)
+
+
+@pytest.mark.asyncio
+async def test_sync_scopes_skips_scope_deleted_after_snapshot(tmp_path, monkeypatch):
+    """A scope deleted between sync_scopes' all() snapshot and its queued
+    sync_scope call must not be fetched — re-cloning it would re-populate
+    repos/repos_last_fetched/repo_locks for a dead scope (leaked until
+    restart)."""
+    scope = _scope("dead", "https://git/repo-a.git")
+    repo = _DeletedAfterSnapshotRepository([scope])
+    svc = ScopesService(base_dir=tmp_path, scopes=repo, pubsub_endpoint=None)
+
+    fetch_calls = []
+
+    async def fake_fetch(self, *args, **kwargs):
+        fetch_calls.append(self._scope_id)
+
+    monkeypatch.setattr(GitPolicyFetcher, "fetch_and_notify_on_changes", fake_fetch)
+
+    await svc.sync_scopes()  # must not raise: the delete race is expected
+
+    assert fetch_calls == [], "sync fetched a scope whose delete already landed"
+    assert not GitPolicyFetcher.repos
+    assert not GitPolicyFetcher.repos_last_fetched
+    assert not GitPolicyFetcher.repo_locks
+
+
 @pytest.mark.asyncio
 async def test_recreate_after_delete_serializes_and_sees_clean_caches(
     tmp_path, monkeypatch
