@@ -292,6 +292,51 @@ async def test_lock_source_waiter_retries_after_delete_pops_entry():
     assert events == ["deleter-in", "deleter-out", "waiter-in"]
 
 
+class _AmbiguousDeleteRepository(FakeScopeRepository):
+    """Delete commits server-side but the client sees an error (classic
+    dropped-connection/timeout ambiguous store outcome)."""
+
+    async def delete(self, scope_id):
+        await super().delete(scope_id)
+        raise ConnectionError("connection dropped after the delete committed")
+
+
+@pytest.mark.asyncio
+async def test_purge_still_runs_when_record_delete_raises_ambiguously(
+    tmp_path, monkeypatch
+):
+    """If the record delete commits but raises to the caller, the purge must
+    still run: the record is gone, so a client retry is a 204 no-op
+    (ScopeNotFoundError) and a purge gated on a clean delete is permanently
+    orphaned. The error must still propagate (the client sees a 500 and can
+    retry)."""
+    scope = _scope("only", "https://git/repo-a.git")
+    repo = _AmbiguousDeleteRepository([scope])
+    svc = ScopesService(base_dir=tmp_path, scopes=repo, pubsub_endpoint=None)
+
+    sid = GitPolicyFetcher.source_id(scope.policy)
+    clone_path = str(GitPolicyFetcher.repo_clone_path(tmp_path, scope.policy))
+    GitPolicyFetcher.repos[clone_path] = object()
+    GitPolicyFetcher.repos_last_fetched[sid] = "ts"
+
+    rmtree_calls = []
+    monkeypatch.setattr(
+        "opal_server.scopes.service.shutil.rmtree",
+        lambda p, **k: rmtree_calls.append(str(p)),
+    )
+
+    with pytest.raises(ConnectionError):
+        await svc.delete_scope("only")
+
+    assert rmtree_calls == [clone_path], (
+        "record-delete failure skipped the purge — the retry is a 204 no-op, "
+        "so the clone and cache entries leak permanently"
+    )
+    assert clone_path not in GitPolicyFetcher.repos
+    assert sid not in GitPolicyFetcher.repos_last_fetched
+    assert sid not in GitPolicyFetcher.repo_locks
+
+
 @pytest.mark.asyncio
 async def test_recreate_after_delete_serializes_and_sees_clean_caches(
     tmp_path, monkeypatch
