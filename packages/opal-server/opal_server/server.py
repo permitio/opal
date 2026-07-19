@@ -4,6 +4,7 @@ import signal
 import sys
 import traceback
 from functools import partial
+from pathlib import Path
 from typing import List, Optional
 
 from fastapi import Depends, FastAPI, Request
@@ -27,6 +28,7 @@ from opal_common.topics.publisher import (
 from opal_server.config import opal_server_config
 from opal_server.data.api import init_data_updates_router
 from opal_server.data.data_update_publisher import DataUpdatePublisher
+from opal_server.debug_stats import register_internal_stats_route
 from opal_server.loadlimiting import init_loadlimit_router
 from opal_server.policy.bundles.api import router as bundles_router
 from opal_server.policy.watcher.factory import setup_watcher_task
@@ -39,6 +41,7 @@ from opal_server.redis_utils import RedisDB
 from opal_server.scopes.api import init_scope_router
 from opal_server.scopes.loader import load_scopes
 from opal_server.scopes.scope_repository import ScopeRepository
+from opal_server.scopes.service import ScopesService
 from opal_server.security.api import init_security_router
 from opal_server.security.jwks import JwksStaticEndpoint
 from opal_server.statistics import OpalStatistics, init_statistics_router
@@ -269,8 +272,15 @@ class OpalServer:
         )
 
         if opal_server_config.SCOPES:
+            scopes_service = ScopesService(
+                base_dir=Path(opal_server_config.BASE_DIR),
+                scopes=self._scopes,
+                pubsub_endpoint=self.pubsub.endpoint,
+            )
             app.include_router(
-                init_scope_router(self._scopes, authenticator, self.pubsub.endpoint),
+                init_scope_router(
+                    self._scopes, authenticator, self.pubsub.endpoint, scopes_service
+                ),
                 tags=["Scopes"],
                 prefix="/scopes",
             )
@@ -312,6 +322,12 @@ class OpalServer:
                     content={"status": "error", "broadcaster": "unhealthy"},
                 )
             return {"status": "ok"}
+
+        register_internal_stats_route(
+            app,
+            enabled=opal_server_config.DEBUG_INTERNAL_STATS,
+            dependencies=[Depends(authenticator)],
+        )
 
         return app
 

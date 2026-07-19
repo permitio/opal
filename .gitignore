@@ -137,3 +137,6 @@ dmypy.json
 *.iml
 
 .DS_Store
+
+# Private Claude Code working artifacts (plans/specs) — never commit
+.claude/

@@ -9,6 +9,7 @@ import time
 import weakref
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import thread as cf_thread
+from contextlib import asynccontextmanager
 from functools import partial
 from pathlib import Path
 from typing import Optional, cast
@@ -17,6 +18,7 @@ import aiofiles.os
 import pygit2
 from ddtrace import tracer
 from git import Repo
+from opal_common.async_utils import run_sync
 from opal_common.git_utils.bundle_maker import BundleMaker
 from opal_common.http_utils import redact_url
 from opal_common.logger import logger
@@ -336,13 +338,24 @@ class GitPolicyFetcher(PolicyFetcher):
             f"Initializing git fetcher: scope_id={scope_id}, url={redact_url(source.url)}, branch={self._source.branch}, source_id={self._source_id}"
         )
 
-    async def _get_repo_lock(self):
-        # Previous file based implementation worked across multiple processes/threads, but wasn't fair (next acquiree is random)
-        # This implementation works only within the same process/thread, but is fair (next acquiree is the earliest to enter the lock)
-        lock = GitPolicyFetcher.repo_locks[
-            self._source_id
-        ] = GitPolicyFetcher.repo_locks.get(self._source_id, asyncio.Lock())
-        return lock
+    @staticmethod
+    @asynccontextmanager
+    async def lock_source(source_id: str):
+        """Serialize all mutation of a source's clone dir and cached handles.
+
+        Locks are minted on demand into ``repo_locks`` (asyncio.Lock: process-
+        local but fair, unlike the previous file-based lock). A scope delete
+        pops the dict entry while holding the lock, so after acquiring we must
+        re-check that ``repo_locks`` still maps ``source_id`` to the lock we
+        acquired — a waiter woken after a delete would otherwise proceed under
+        the stale lock, unserialized against holders of the freshly-minted one.
+        """
+        while True:
+            lock = GitPolicyFetcher.repo_locks.setdefault(source_id, asyncio.Lock())
+            async with lock:
+                if GitPolicyFetcher.repo_locks.get(source_id) is lock:
+                    yield
+                    return
 
     async def _was_fetched_after(self, t: datetime.datetime):
         last_fetched = GitPolicyFetcher.repos_last_fetched.get(self._source_id, None)
@@ -364,8 +377,7 @@ class GitPolicyFetcher(PolicyFetcher):
         - if the hinted commit hash is provided and is already found in the local clone
         we use this hint to avoid an necessary fetch.
         """
-        repo_lock = await self._get_repo_lock()
-        async with repo_lock:
+        async with GitPolicyFetcher.lock_source(self._source_id):
             if git_op_in_flight(self._source_id):
                 # A previous git op for this repo exceeded its timeout and is
                 # still running on a pool thread. pygit2 Repository objects are
@@ -383,7 +395,10 @@ class GitPolicyFetcher(PolicyFetcher):
             ):
                 if self._discover_repository(self._repo_path):
                     logger.debug("Repo found at {path}", path=self._repo_path)
-                    repo = self._get_valid_repo()
+                    # The probe opens/parses a fresh Repository handle from
+                    # disk — off the event loop so a slow disk can't stall
+                    # every other request being served on this worker.
+                    repo = await run_sync(self._get_valid_repo)
                     if repo is not None:
                         should_fetch = await self._should_fetch(
                             repo,
@@ -395,7 +410,14 @@ class GitPolicyFetcher(PolicyFetcher):
                             logger.debug(
                                 f"Fetching remote (force_fetch={force_fetch}): {self._remote} ({redact_url(self._source.url)})"
                             )
-                            started = datetime.datetime.now()
+                            # Record the START time but write it only on
+                            # success: a failed fetch must not look "fresh"
+                            # to _was_fetched_after(), or it suppresses the
+                            # forced refresh a webhook just asked for. The
+                            # start time (not completion) is what req_time
+                            # comparisons need: a fetch that STARTED after
+                            # the request already satisfies it.
+                            fetch_started = datetime.datetime.now()
                             try:
                                 await run_in_git_executor(
                                     repo.remotes[self._remote].fetch,
@@ -414,13 +436,9 @@ class GitPolicyFetcher(PolicyFetcher):
                                     err=repr(exc),
                                 )
                                 return
-                            # Record the fetch *start* time, but only now that it
-                            # has succeeded: a completion timestamp could wrongly
-                            # suppress a force_fetch whose req_time falls within an
-                            # in-flight fetch (see _was_fetched_after).
                             GitPolicyFetcher.repos_last_fetched[
                                 self._source_id
-                            ] = started
+                            ] = fetch_started
                             logger.debug(
                                 f"Fetch completed: {redact_url(self._source.url)}"
                             )
@@ -429,14 +447,26 @@ class GitPolicyFetcher(PolicyFetcher):
                         await self._notify_on_changes(repo)
                         return
                     else:
-                        # repo dir exists but invalid -> we must delete the directory
+                        # repo dir exists but invalid -> drop the cached handle
+                        # FIRST (it is the thing judging the dir invalid; kept,
+                        # it would re-invalidate the fresh clone on every sync
+                        # -> infinite re-clone loop), then delete the directory.
                         logger.warning(
                             "Deleting invalid repo: {path}", path=self._repo_path
                         )
-                        # ignore_errors: a partial dir left by an abandoned
-                        # (timed-out) clone may still be written to; a failed
-                        # delete self-heals via the clone below (or next cycle).
-                        shutil.rmtree(self._repo_path, ignore_errors=True)
+                        GitPolicyFetcher.forget_repo(str(self._repo_path))
+                        try:
+                            await run_sync(shutil.rmtree, str(self._repo_path))
+                        except FileNotFoundError:
+                            pass  # already gone — the intended end state
+                        except OSError as e:
+                            # A partial dir left by an abandoned (timed-out)
+                            # clone may still be written to; a failed delete
+                            # self-heals via the clone below (or next cycle).
+                            logger.warning(
+                                f"Failed to remove clone dir "
+                                f"{self._repo_path}: {e!r}"
+                            )
                 else:
                     logger.info("Repo not found at {path}", path=self._repo_path)
 
@@ -448,11 +478,25 @@ class GitPolicyFetcher(PolicyFetcher):
         return discover_repository(str(path)) and git_path.exists()
 
     async def _clone(self):
+        if self._repo_path.exists():
+            # A failed/interrupted clone leaves a partial dir;
+            # clone_repository refuses a non-empty destination, which would
+            # wedge every retry for this source.
+            try:
+                await run_sync(shutil.rmtree, str(self._repo_path))
+            except FileNotFoundError:
+                pass  # already gone — the intended end state
+            except OSError as e:
+                logger.warning(f"Failed to remove clone dir {self._repo_path}: {e!r}")
         logger.info(
             "Cloning repo at '{url}' to '{path}'",
             url=redact_url(self._source.url),
             path=self._repo_path,
         )
+        # Same start-time rule as the fetch path above: the clone's
+        # negotiation reflects remote state at clone START, so that is the
+        # timestamp req_time comparisons need.
+        clone_started = datetime.datetime.now()
         try:
             repo: Repository = await run_in_git_executor(
                 clone_repository,
@@ -470,6 +514,12 @@ class GitPolicyFetcher(PolicyFetcher):
             )
         else:
             logger.info(f"Clone completed: {redact_url(self._source.url)}")
+            # Cache the fresh handle so the next sync's _get_repo() reuses it
+            # instead of reopening (or hitting a stale predecessor).
+            GitPolicyFetcher.repos[str(self._repo_path)] = repo
+            # A reclone just downloaded current remote state — record it so
+            # _was_fetched_after() doesn't force a redundant fetch next cycle.
+            GitPolicyFetcher.repos_last_fetched[self._source_id] = clone_started
             await self._notify_on_changes(repo)
 
     def _get_repo(self) -> Repository:
@@ -482,7 +532,37 @@ class GitPolicyFetcher(PolicyFetcher):
         try:
             repo = self._get_repo()
             RepoInterface.verify_found_repo_matches_remote(repo, self._source.url)
-            return repo
+            # A clone can be discoverable yet unusable: refs and config
+            # intact but the object store gutted (crash mid-gc, disk
+            # corruption). A fetch then negotiates "up to date" against the
+            # intact refs and downloads nothing, so without this check the
+            # scope serves 500s forever with no self-heal. Validate that the
+            # tracked branch's head object is actually readable FROM DISK:
+            # the check must use a short-lived fresh handle, because the
+            # cached warm handle keeps deleted pack files readable through
+            # its open mmaps (unlink does not invalidate them) and would
+            # report the object as present. Partial corruption deeper in
+            # the tree is NOT caught here (that would need fsck-grade
+            # checks).
+            probe = Repository(str(self._repo_path))
+            try:
+                try:
+                    ref = probe.lookup_reference(
+                        f"refs/remotes/{self._remote}/{self._source.branch}"
+                    )
+                except KeyError:
+                    # Branch not fetched yet — the fetch path handles that.
+                    return repo
+                if probe.get(ref.target) is None:
+                    logger.warning(
+                        "Repo at {path} has refs but an unreadable object "
+                        "store (missing head object) — treating as invalid",
+                        path=self._repo_path,
+                    )
+                    return None
+                return repo
+            finally:
+                probe.free()
         except pygit2.GitError:
             logger.warning("Invalid repo at: {path}", path=self._repo_path)
             return None
@@ -557,10 +637,22 @@ class GitPolicyFetcher(PolicyFetcher):
         local_branch.set_target(new_revision)
 
     def _get_current_branch_head(self) -> str:
-        repo = self._get_repo()
-        head_commit_hash = RepoInterface.get_commit_hash(
-            repo, self._source.branch, self._remote
-        )
+        # Opened fresh per call instead of using the shared cached handle:
+        # this runs on executor threads (run_sync(make_bundle) in the policy-
+        # bundle route) and outside lock_source, where the cached handle can
+        # be free()'d concurrently by a scope delete or invalid-repo recovery.
+        # asyncio locks don't exclude executor threads — sharing the handle
+        # here is a use-after-free. Same fresh-probe pattern as
+        # _get_valid_repo's disk-truth check.
+        repo = Repository(str(self._repo_path))
+        try:
+            head_commit_hash = RepoInterface.get_commit_hash(
+                repo, self._source.branch, self._remote
+            )
+        finally:
+            free = getattr(repo, "free", None)
+            if callable(free):
+                free()
         if not head_commit_hash:
             logger.error("Could not find current branch head")
             raise ValueError("Could not find current branch head")
@@ -603,6 +695,30 @@ class GitPolicyFetcher(PolicyFetcher):
     @staticmethod
     def repo_clone_path(base_dir: Path, source: GitPolicyScopeSource) -> Path:
         return GitPolicyFetcher.base_dir(base_dir) / GitPolicyFetcher.source_id(source)
+
+    @staticmethod
+    def forget_repo(path: str) -> None:
+        """Drop the cached repository for a clone path and release its handles.
+
+        The cached ``pygit2.Repository`` keeps OS file descriptors and mmapped
+        pack indexes open; without this, a deleted scope's repo pins memory and
+        inodes for the lifetime of the process even after the clone is removed.
+        ``Repository.free()`` is called only when available (the pinned pygit2
+        always has it; the guard defends against test doubles and future API
+        changes); otherwise the dropped reference is reclaimed by GC.
+        """
+        repo = GitPolicyFetcher.repos.pop(path, None)
+        if repo is None:
+            return
+        free = getattr(repo, "free", None)
+        if callable(free):
+            try:
+                free()
+            except Exception as e:
+                logger.warning(
+                    f"pygit2 Repository.free() failed for {path}: {e!r}; "
+                    "relying on GC to release the handles"
+                )
 
 
 class GitCallback(RemoteCallbacks):
