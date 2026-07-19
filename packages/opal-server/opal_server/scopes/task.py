@@ -51,7 +51,12 @@ class ScopesPolicyWatcherTask(BasePolicyWatcherTask):
         # After sync, disk state is settled: anything on disk that no live
         # scope references is an orphan (crash leftovers, redis-wiped boot,
         # old-shard dirs after a SCOPES_REPO_CLONES_SHARDS change).
-        await self._purger.sweep_orphans()
+        try:
+            await self._purger.sweep_orphans()
+        except Exception:
+            # The backstop must never kill the watcher task or fail silently;
+            # the periodic pass retries (and logs) on its own schedule.
+            logger.exception("Boot-time orphan sweep failed")
 
     async def _periodic_polling(self):
         try:

@@ -112,21 +112,36 @@ async def test_redis_wiped_boot_reclaims_everything(tmp_path):
 
 @pytest.mark.asyncio
 async def test_store_error_aborts_sweep_without_deleting(tmp_path):
-    """A transient store error must NOT be read as 'no scopes exist' — that
-    would rmtree every live clone."""
+    """A transient store error must abort the ENTIRE sweep before the
+    per-entry loop — not be read as 'no scopes exist' (which would rmtree
+    every live clone). The call-count assertion proves the abort happened
+    at the initial scan, independent of the per-entry recheck's own guard."""
 
-    class BrokenRepo(FakeScopeRepository):
+    class BrokenOnceRepo(FakeScopeRepository):
+        def __init__(self, scopes):
+            super().__init__(scopes)
+            self.all_calls = 0
+
         async def all(self):
-            raise RuntimeError("redis down")
+            self.all_calls += 1
+            if self.all_calls == 1:
+                raise RuntimeError("redis down")
+            return await super().all()
 
-    clone = _clone_dir_for(tmp_path, _scope("live", "https://git/live.git"))
+    live_clone = _clone_dir_for(tmp_path, _scope("live", "https://git/live.git"))
+    orphan = _git_sources(tmp_path) / "deadbeef-0"
+    orphan.mkdir()
+    pubsub = FakePubSubEndpoint()
+    repo = BrokenOnceRepo([])  # empty: if the sweep wrongly continued with
+    # live=set(), the recheck (a second .all() call) would succeed and
+    # delete BOTH dirs — every assertion below discriminates.
 
-    purger = LeaderScopePurger(
-        base_dir=tmp_path, scopes=BrokenRepo([]), pubsub_endpoint=None
-    )
+    purger = LeaderScopePurger(base_dir=tmp_path, scopes=repo, pubsub_endpoint=pubsub)
     await purger.sweep_orphans()  # must not raise
 
-    assert clone.exists(), "sweep deleted clones on a store error"
+    assert repo.all_calls == 1, "sweep continued past the failed initial scan"
+    assert live_clone.exists() and orphan.exists()
+    assert pubsub.published == []
 
 
 @pytest.mark.asyncio
