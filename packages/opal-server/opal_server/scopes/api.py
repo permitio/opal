@@ -43,6 +43,7 @@ from opal_common.urls import set_url_query_param
 from opal_server.config import opal_server_config
 from opal_server.data.data_update_publisher import DataUpdatePublisher
 from opal_server.git_fetcher import GitPolicyFetcher
+from opal_server.scopes.purge import ScopePurgeCommand
 from opal_server.scopes.scope_repository import ScopeNotFoundError, ScopeRepository
 from opal_server.scopes.service import ScopesService
 
@@ -112,8 +113,42 @@ def init_scope_router(
             logger.error(f"Unauthorized to PUT scope: {repr(ex)}")
             raise
 
+        old_source_id = None
+        old_clone_path = None
+        try:
+            old_scope = await scopes.get(scope_in.scope_id)
+            if isinstance(old_scope.policy, GitPolicyScopeSource):
+                old_source_id = GitPolicyFetcher.source_id(old_scope.policy)
+                old_clone_path = str(
+                    GitPolicyFetcher.repo_clone_path(
+                        pathlib.Path(opal_server_config.BASE_DIR),
+                        old_scope.policy,
+                    )
+                )
+        except ScopeNotFoundError:
+            pass  # brand-new scope — nothing to repoint away from
+
         verify_private_key_or_throw(scope_in)
         await scopes.put(scope_in)
+
+        new_source_id = (
+            GitPolicyFetcher.source_id(scope_in.policy)
+            if isinstance(scope_in.policy, GitPolicyScopeSource)
+            else None
+        )
+        if old_source_id is not None and old_source_id != new_source_id:
+            # Re-point: the old source's clone + cache entries would orphan.
+            # Same channel/handlers as delete — the leader sibling-checks, so
+            # a source still shared by another scope survives.
+            await pubsub_endpoint.publish(
+                [opal_server_config.SCOPES_PURGE_CHANNEL],
+                ScopePurgeCommand(
+                    source_id=old_source_id,
+                    clone_path=old_clone_path,
+                    scope_id=scope_in.scope_id,
+                    reason="repoint",
+                ).dict(),
+            )
 
         force_fetch_str = " (force fetch)" if force_fetch else ""
         logger.info(f"Sync scope: {scope_in.scope_id}{force_fetch_str}")
