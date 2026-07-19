@@ -324,16 +324,29 @@ def init_scope_router(
         except (
             InvalidGitRepositoryError,
             # A concurrent delete/recovery can rmtree the clone dir before
-            # Repo() opens it — fall back to the default scope, not a 500.
+            # Repo() opens it (NoSuchPathError), or mid-tree-walk (raw
+            # OSError). The record exists, so this is transient: recovery or
+            # the next sync re-creates the clone. Serving the default
+            # scope's bundle here would hand a live tenant another tenant's
+            # policy — tell the client to retry instead.
             NoSuchPathError,
             pygit2.GitError,
             ValueError,
+            OSError,
         ):
             logger.warning(
-                "Requested scope {scope_id} has invalid repo, returning default scope",
+                "Scope {scope_id} is live but its clone is unavailable, "
+                "returning 503",
                 scope_id=scope_id,
             )
-            return await _generate_default_scope_bundle(scope_id)
+            raise HTTPException(
+                status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=(
+                    f"Policy clone for scope {scope_id} is temporarily "
+                    "unavailable, retry shortly"
+                ),
+                headers={"Retry-After": "5"},
+            )
 
     async def _generate_default_scope_bundle(scope_id: str) -> PolicyBundle:
         metrics.event(

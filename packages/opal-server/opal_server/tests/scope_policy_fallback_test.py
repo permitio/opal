@@ -1,11 +1,9 @@
-"""GET /scopes/{scope_id}/policy fallback when the clone dir vanishes.
+"""GET /scopes/{scope_id}/policy when the clone dir vanishes.
 
-A concurrent delete (or invalid-repo recovery) can rmtree a live scope's
-clone between the scope-record read and make_bundle opening the repo.
-The route must fall back to the default scope's bundle, not 500. (Known
-limitation, tracked for PR3: a live scope is briefly served the default
-bundle instead of a retryable error.)
-"""
+Record missing -> default scope bundle (unchanged contract).
+Record PRESENT but the clone is transiently broken -> 503 + Retry-After:
+a live tenant must never be served another tenant's policy (PR3 flip of
+the PR2-era regression lock)."""
 
 import pytest
 from fastapi import FastAPI
@@ -74,9 +72,7 @@ def _default_bundle():
     )
 
 
-def test_live_scope_clone_vanish_falls_back_to_default_bundle(tmp_path, monkeypatch):
-    """A live scope whose clone dir vanished mid-request (NoSuchPathError from
-    make_bundle) must be served the default scope's bundle, not a 500."""
+def test_live_scope_clone_vanish_returns_retryable_503(tmp_path, monkeypatch):
     live = _scope("live", "https://git/live.git")
     default = _scope("default", "https://git/default.git")
     repo = FakeScopeRepository([live, default])
@@ -93,13 +89,32 @@ def test_live_scope_clone_vanish_falls_back_to_default_bundle(tmp_path, monkeypa
 
     resp = _client(repo, tmp_path).get("/scopes/live/policy")
 
-    assert resp.status_code == 200
-    assert resp.json()["hash"] == "default-head"
+    assert resp.status_code == 503
+    assert resp.headers["retry-after"] == "5"
+
+
+def test_live_scope_oserror_returns_retryable_503(tmp_path, monkeypatch):
+    """make_bundle's tree-walk can raise raw OSError if the dir vanishes
+    mid-walk — an unhandled 500 before PR3."""
+    live = _scope("live", "https://git/live.git")
+    repo = FakeScopeRepository([live])
+
+    def fake_make_bundle(self, base_hash):
+        raise OSError(2, "No such file or directory")
+
+    monkeypatch.setattr(GitPolicyFetcher, "make_bundle", fake_make_bundle)
+    monkeypatch.setattr(
+        "opal_server.scopes.api.opal_server_config.BASE_DIR", str(tmp_path)
+    )
+
+    resp = _client(repo, tmp_path).get("/scopes/live/policy")
+
+    assert resp.status_code == 503
+    assert resp.headers["retry-after"] == "5"
 
 
 def test_missing_scope_still_falls_back_to_default_bundle(tmp_path, monkeypatch):
-    """The pre-existing scope-not-found fallback must keep working alongside
-    the clone-vanish branch."""
+    """The record-missing fallback is the contract — unchanged."""
     default = _scope("default", "https://git/default.git")
     repo = FakeScopeRepository([default])
 
