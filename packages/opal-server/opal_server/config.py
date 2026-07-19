@@ -222,10 +222,7 @@ class OpalServerConfig(Confi):
     SCOPES_GIT_MAX_WORKERS = confi.int(
         "SCOPES_GIT_MAX_WORKERS",
         10,
-        description="Size of the dedicated thread pool for scope git operations, "
-        "which also bounds how many scopes are synced concurrently. Isolating git "
-        "work keeps a hung fetch from starving bundle serving and other server "
-        "work that uses the default executor.",
+        description="Maximum number of LIVE scope git operations (clone/fetch) running concurrently; also bounds how many scopes are synced at once. A timed-out operation stops counting against this limit (its lingering thread persists on its own until the OS network timeout), so capacity is never starved by hung remotes — but worst-case thread count during an outage is this limit plus the number of lingering timed-out operations.",
     )
     LEADER_LOCK_FILE_PATH = confi.str(
         "LEADER_LOCK_FILE_PATH",

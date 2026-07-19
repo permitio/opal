@@ -110,9 +110,10 @@ class ScopesPolicyWatcherTask(BasePolicyWatcherTask):
             )
             asyncio.run(service.sync_scopes(notify_on_changes=False))
 
-            # Release the git pool built during preload so the gunicorn master
-            # does not carry pool threads into forked workers (they would be
-            # dead in the child). Workers rebuild their own pool on first use.
+            # Clear git-op bookkeeping built during preload (in-flight markers
+            # and the loop-bound live-op semaphore) so the gunicorn master does
+            # not carry stale state into forked workers. Git ops run on per-op
+            # daemon threads; there is no shared pool to tear down.
             shutdown_git_executor()
 
             logger.warning("Finished preloading repo clones for scopes.")
