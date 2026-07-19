@@ -31,9 +31,10 @@ def clear_caches():
     GitPolicyFetcher.repo_locks.clear()
 
 
-def _cmd(sid="sid-1", path="/clones/sid-1"):
+def _cmd(sid="sid-1", path="/clones/sid-1", confirmed=False):
     return ScopePurgeCommand(
-        source_id=sid, clone_path=path, scope_id="s1", reason="delete"
+        source_id=sid, clone_path=path, scope_id="s1", reason="delete",
+        confirmed=confirmed,
     )
 
 
@@ -71,10 +72,24 @@ async def test_handle_purge_message_parses_and_purges():
     GitPolicyFetcher.repos["/clones/sid-1"] = object()
     GitPolicyFetcher.repos_last_fetched["sid-1"] = "ts"
 
-    await handle_purge_message(None, _cmd().dict())
+    await handle_purge_message(None, _cmd(confirmed=True).dict())
 
     assert "/clones/sid-1" not in GitPolicyFetcher.repos
     assert "sid-1" not in GitPolicyFetcher.repos_last_fetched
+
+
+@pytest.mark.asyncio
+async def test_handle_purge_message_ignores_unconfirmed_requests():
+    """Workers must not purge on a raw request — only the leader's
+    sibling-checked confirmation may drop cache entries (over-purge of a
+    shared source was a bed regression)."""
+    GitPolicyFetcher.repos["/clones/sid-1"] = object()
+    GitPolicyFetcher.repos_last_fetched["sid-1"] = "ts"
+
+    await handle_purge_message(None, _cmd().dict())  # confirmed defaults False
+
+    assert "/clones/sid-1" in GitPolicyFetcher.repos
+    assert "sid-1" in GitPolicyFetcher.repos_last_fetched
 
 
 @pytest.mark.asyncio
@@ -300,3 +315,102 @@ async def test_leader_handle_tolerates_garbage_payload(tmp_path):
     assert await purger.handle(None, {"nonsense": True}) is None
     assert await purger.handle(None, None) is None
     assert await purger.handle(None, "not-a-dict") is None
+
+
+@pytest.mark.asyncio
+async def test_leader_ignores_confirmation_broadcasts(tmp_path):
+    dead = _scope("dead", "https://git/repo-a.git")
+    sid = GitPolicyFetcher.source_id(dead.policy)
+    clone = _make_clone(tmp_path, dead.policy)
+    purger = LeaderScopePurger(
+        base_dir=tmp_path, scopes=FakeScopeRepository([]), pubsub_endpoint=None
+    )
+    task = await purger.handle(
+        None,
+        ScopePurgeCommand(
+            source_id=sid, clone_path=str(clone), scope_id="dead",
+            reason="delete", confirmed=True,
+        ).dict(),
+    )
+    assert task is None
+    assert clone.exists(), "leader acted on its own confirmation broadcast"
+
+
+@pytest.mark.asyncio
+async def test_leader_publishes_confirmation_after_purge(tmp_path):
+    class FakePubSubEndpoint:
+        def __init__(self):
+            self.published = []
+
+        async def publish(self, topics, data=None):
+            self.published.append((list(topics), data))
+
+    dead = _scope("dead", "https://git/repo-a.git")
+    sid = GitPolicyFetcher.source_id(dead.policy)
+    clone = _make_clone(tmp_path, dead.policy)
+    pubsub = FakePubSubEndpoint()
+    purger = LeaderScopePurger(
+        base_dir=tmp_path, scopes=FakeScopeRepository([]), pubsub_endpoint=pubsub
+    )
+    task = await purger.handle(
+        None,
+        ScopePurgeCommand(
+            source_id=sid, clone_path=str(clone), scope_id="dead",
+            reason="delete",
+        ).dict(),
+    )
+    await task
+    assert not clone.exists()
+    assert len(pubsub.published) == 1
+    _, payload = pubsub.published[0]
+    assert payload["confirmed"] is True
+    assert payload["source_id"] == sid
+
+
+@pytest.mark.asyncio
+async def test_leader_does_not_confirm_when_shared_or_inflight(tmp_path):
+    survivor = _scope("survivor", "https://git/shared.git")
+    sid = GitPolicyFetcher.source_id(survivor.policy)
+    clone = _make_clone(tmp_path, survivor.policy)
+
+    class FakePubSubEndpoint:
+        def __init__(self):
+            self.published = []
+
+        async def publish(self, topics, data=None):
+            self.published.append((list(topics), data))
+
+    pubsub = FakePubSubEndpoint()
+    purger = LeaderScopePurger(
+        base_dir=tmp_path,
+        scopes=FakeScopeRepository([survivor]),
+        pubsub_endpoint=pubsub,
+    )
+    task = await purger.handle(
+        None,
+        ScopePurgeCommand(
+            source_id=sid, clone_path=str(clone), scope_id="deleted-sibling",
+            reason="delete",
+        ).dict(),
+    )
+    await task
+    assert pubsub.published == []  # shared → no confirmation
+
+    inflight_purger = LeaderScopePurger(
+        base_dir=tmp_path,
+        scopes=FakeScopeRepository([]),
+        pubsub_endpoint=pubsub,
+    )
+    _mark_git_op_started(sid)
+    try:
+        task = await inflight_purger.handle(
+            None,
+            ScopePurgeCommand(
+                source_id=sid, clone_path=str(clone), scope_id="x",
+                reason="delete",
+            ).dict(),
+        )
+        await task
+    finally:
+        _mark_git_op_done(sid)
+    assert pubsub.published == []  # deferred → no confirmation

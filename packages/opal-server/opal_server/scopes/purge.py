@@ -25,6 +25,8 @@ class ScopePurgeCommand(BaseModel):
     clone_path: str  # carried explicitly: the scope record is already gone
     scope_id: str  # logging / tracing only
     reason: str  # "delete" | "repoint" | "orphan" — logging only
+    confirmed: bool = False  # set by the leader after the sibling-check;
+                             # memory handlers act only on confirmed commands
 
 
 def purge_local_memory(source_id: str, clone_path: str) -> None:
@@ -48,6 +50,9 @@ async def handle_purge_message(subscription, data: Any) -> None:
         cmd = ScopePurgeCommand(**data)
     except (ValidationError, TypeError):
         logger.warning("Ignoring malformed scope purge message: {data}", data=data)
+        return
+    if not cmd.confirmed:
+        # A request — only the leader acts on those (sibling-check first).
         return
     logger.info(
         "Purging local caches for source {source_id} (scope {scope_id}, {reason})",
@@ -115,6 +120,8 @@ class LeaderScopePurger:
         except (ValidationError, TypeError):
             # The worker-level handler already logged the malformed payload.
             return None
+        if cmd.confirmed:
+            return None  # our own confirmation broadcast, addressed to workers
         # publish() awaits subscriber callbacks inline — never do lock-waiting
         # disk work on the publisher's request path (DELETE/PUT latency is
         # bounded by contract). The purge proceeds in the background.
@@ -124,6 +131,7 @@ class LeaderScopePurger:
         return task
 
     async def purge_source_if_unshared(self, cmd: ScopePurgeCommand) -> None:
+        confirm = False
         async with GitPolicyFetcher.lock_source(cmd.source_id):
             sharer = await find_scope_sharing_source(self._scopes, cmd.source_id)
             if sharer is not None:
@@ -131,8 +139,7 @@ class LeaderScopePurger:
                     f"Scope {sharer} still shares source {cmd.source_id}, "
                     "keeping the clone"
                 )
-                return
-            if git_op_in_flight(cmd.source_id):
+            elif git_op_in_flight(cmd.source_id):
                 # A lingering timed-out git op still touches the repo on a
                 # pool thread; rmtree/free now risks a crash. The orphan
                 # sweep reclaims the dir on a later pass.
@@ -140,18 +147,26 @@ class LeaderScopePurger:
                     f"Deferring disk purge of {cmd.source_id}: a git "
                     "operation is still in flight"
                 )
-                return
-            GitPolicyFetcher.forget_repo(cmd.clone_path)
-            GitPolicyFetcher.repos_last_fetched.pop(cmd.source_id, None)
-            try:
-                await run_sync(shutil.rmtree, cmd.clone_path)
-            except FileNotFoundError:
-                pass  # already gone — the intended end state
-            except OSError as e:
-                logger.warning(f"Failed to remove clone dir {cmd.clone_path}: {e!r}")
-            # Popped while the lock is held: lock_source waiters re-check
-            # the dict entry after acquiring and retry on the fresh lock.
-            GitPolicyFetcher.repo_locks.pop(cmd.source_id, None)
+            else:
+                GitPolicyFetcher.forget_repo(cmd.clone_path)
+                GitPolicyFetcher.repos_last_fetched.pop(cmd.source_id, None)
+                try:
+                    await run_sync(shutil.rmtree, cmd.clone_path)
+                except FileNotFoundError:
+                    pass  # already gone — the intended end state
+                except OSError as e:
+                    logger.warning(
+                        f"Failed to remove clone dir {cmd.clone_path}: {e!r}"
+                    )
+                # Popped while the lock is held: lock_source waiters re-check
+                # the dict entry after acquiring and retry on the fresh lock.
+                GitPolicyFetcher.repo_locks.pop(cmd.source_id, None)
+                confirm = True
+        if confirm and self._pubsub_endpoint is not None:
+            await self._pubsub_endpoint.publish(
+                [opal_server_config.SCOPES_PURGE_CHANNEL],
+                cmd.copy(update={"confirmed": True}).dict(),
+            )
 
     async def sweep_orphans(self) -> None:
         """Reclaim clone dirs referencing no live scope.
@@ -221,5 +236,6 @@ class LeaderScopePurger:
                             clone_path=str(path),
                             scope_id="",
                             reason="orphan",
+                            confirmed=True,
                         ).dict(),
                     )

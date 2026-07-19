@@ -95,6 +95,7 @@ async def test_orphan_dir_reclaimed_live_dir_kept(tmp_path):
     assert topics == [opal_server_config.SCOPES_PURGE_CHANNEL]
     assert payload["source_id"] == "deadbeef-0"
     assert payload["reason"] == "orphan"
+    assert payload["confirmed"] is True
 
 
 @pytest.mark.asyncio

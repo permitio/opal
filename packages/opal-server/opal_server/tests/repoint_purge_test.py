@@ -102,6 +102,7 @@ def test_repoint_publishes_purge_for_old_source(tmp_path, monkeypatch):
         "clone_path": old_clone,
         "scope_id": "s1",
         "reason": "repoint",
+        "confirmed": False,
     }
 
 

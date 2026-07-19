@@ -68,12 +68,15 @@ def clear_caches():
     GitPolicyFetcher.repo_locks.clear()
 
 
-def test_delete_route_purges_fetcher_caches(tmp_path):
-    """DELETE /scopes/{id} must flow through ScopesService.delete_scope so the
-    GitPolicyFetcher caches drain (the git-leak churn gate).
+def test_delete_route_does_not_purge_fetcher_caches_without_pubsub(tmp_path):
+    """DELETE /scopes/{id} must flow through ScopesService.delete_scope and
+    delete the record even with no pubsub endpoint wired (degraded mode).
 
-    Disk mutation is no longer inline (moved to the leader's purge-channel
-    handler, PR3), so this only pins the local in-memory cache purge."""
+    Cache purging is now two-phase (PR3): the route only publishes a
+    request; GitPolicyFetcher caches drain only once the leader's
+    sibling-checked confirmation arrives. With pubsub_endpoint=None there is
+    no confirmation, so the caches are left untouched here — the orphan
+    sweep is the backstop."""
     scope = _scope("only", "https://git/repo-a.git")
     repo = FakeScopeRepository([scope])
 
@@ -85,8 +88,9 @@ def test_delete_route_purges_fetcher_caches(tmp_path):
     resp = _client(repo, tmp_path).delete("/scopes/only")
 
     assert resp.status_code == 204
-    assert clone_path not in GitPolicyFetcher.repos
-    assert sid not in GitPolicyFetcher.repos_last_fetched
+    assert "only" not in repo._scopes  # record deleted
+    assert clone_path in GitPolicyFetcher.repos
+    assert sid in GitPolicyFetcher.repos_last_fetched
 
 
 def test_delete_route_missing_scope_stays_204(tmp_path):

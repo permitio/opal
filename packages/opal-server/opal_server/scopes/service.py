@@ -19,7 +19,7 @@ from opal_server.policy.watcher.callbacks import (
     create_policy_update,
     create_update_all_directories_in_repo,
 )
-from opal_server.scopes.purge import ScopePurgeCommand, purge_local_memory
+from opal_server.scopes.purge import ScopePurgeCommand
 from opal_server.scopes.scope_repository import (
     Scope,
     ScopeNotFoundError,
@@ -196,14 +196,15 @@ class ScopesService:
             try:
                 await self._scopes.delete(scope_id)
             finally:
-                # The purge must stay reachable even when the record delete
+                # The publish must stay reachable even when the record delete
                 # raises an ambiguous outcome (committed server-side, error
                 # surfaced to the client): the retry is a 204 no-op
-                # (ScopeNotFoundError) and a purge gated on a clean delete
-                # would be permanently orphaned. Over-publishing self-heals:
-                # the leader's sibling-check sees a still-live record and
-                # keeps the clone.
-                purge_local_memory(deleted_source_id, str(scope_dir))
+                # (ScopeNotFoundError), so a publish gated on a clean delete
+                # would orphan the purge permanently. Over-publishing
+                # self-heals: the leader's sibling-check sees a still-live
+                # record and keeps everything. Memory entries (all workers,
+                # this one included) drop when the leader's confirmation
+                # broadcast arrives.
                 if self._pubsub_endpoint is not None:
                     await self._pubsub_endpoint.publish(
                         [opal_server_config.SCOPES_PURGE_CHANNEL],

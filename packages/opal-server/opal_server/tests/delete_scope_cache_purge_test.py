@@ -68,7 +68,7 @@ def clear_caches():
 
 
 @pytest.mark.asyncio
-async def test_delete_purges_local_memory_and_publishes(tmp_path):
+async def test_delete_publishes_request_without_touching_local_memory(tmp_path):
     scope = _scope("only", "https://git/repo-a.git")
     repo = FakeScopeRepository([scope])
     pubsub = FakePubSubEndpoint()
@@ -83,9 +83,9 @@ async def test_delete_purges_local_memory_and_publishes(tmp_path):
 
     await svc.delete_scope("only")
 
-    assert clone_path not in GitPolicyFetcher.repos
-    assert sid not in GitPolicyFetcher.repos_last_fetched
-    # Route-side purge never pops locks (only the lock holder may).
+    # Caches drop only on the leader's confirmation broadcast, not here.
+    assert clone_path in GitPolicyFetcher.repos
+    assert sid in GitPolicyFetcher.repos_last_fetched
     assert GitPolicyFetcher.repo_locks[sid] is lock
     assert len(pubsub.published) == 1
     topics, payload = pubsub.published[0]
@@ -95,6 +95,7 @@ async def test_delete_purges_local_memory_and_publishes(tmp_path):
         "clone_path": clone_path,
         "scope_id": "only",
         "reason": "delete",
+        "confirmed": False,
     }
 
 
@@ -115,9 +116,9 @@ async def test_delete_does_not_touch_disk(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_delete_without_pubsub_endpoint_still_purges_local(tmp_path):
-    """pubsub_endpoint=None (preload path / degraded mode) must not crash and
-    must still drop local memory."""
+async def test_delete_without_pubsub_endpoint_does_not_crash(tmp_path):
+    """pubsub_endpoint=None (preload path / degraded mode) must not crash;
+    caches are untouched (degraded mode: the orphan sweep is the backstop)."""
     scope = _scope("only", "https://git/repo-a.git")
     repo = FakeScopeRepository([scope])
     svc = ScopesService(base_dir=tmp_path, scopes=repo, pubsub_endpoint=None)
@@ -128,8 +129,10 @@ async def test_delete_without_pubsub_endpoint_still_purges_local(tmp_path):
 
     await svc.delete_scope("only")
 
-    assert clone_path not in GitPolicyFetcher.repos
-    assert sid not in GitPolicyFetcher.repos_last_fetched
+    with pytest.raises(ScopeNotFoundError):
+        await repo.get("only")
+    assert clone_path in GitPolicyFetcher.repos
+    assert sid in GitPolicyFetcher.repos_last_fetched
 
 
 @pytest.mark.asyncio
@@ -174,7 +177,6 @@ async def test_publish_still_runs_when_record_delete_raises_ambiguously(tmp_path
     with pytest.raises(ConnectionError):
         await svc.delete_scope("only")
 
-    assert clone_path not in GitPolicyFetcher.repos
     assert len(pubsub.published) == 1
 
 
