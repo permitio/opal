@@ -119,3 +119,7 @@ Docker + docker compose v2, plus host Python with `pytest pytest-timeout request
 - First-sync of a fresh scope takes the clone path, which fills only `repo_locks`;
   `repos` / `repos_last_fetched` are filled by the discover/fetch path on a second
   sync, so the load helpers issue a `refresh_all()` before asserting on `repos`.
+- `OPAL_SCOPES_GIT_FETCH_TIMEOUT` is set to `10` (code default: `120`) so hung
+  clones/fetches against the `blackhole` sidecar fail fast — the code default
+  exceeds this bed's serve windows, so offline-repo/timeout gates need the
+  short timeout to observe a healthy scope recover within their deadlines.

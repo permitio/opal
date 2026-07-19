@@ -3,6 +3,7 @@ import time
 import pytest
 import requests
 from helpers import gitea_repo_url, list_seeded_repos
+from invariants import source_id
 
 
 def _wait_until(predicate, timeout=30, interval=0.5):
@@ -180,21 +181,35 @@ def test_shared_repo_survives_sibling_scope_delete(opal, repo_count):
 @pytest.mark.timeout(900)
 @pytest.mark.invariant_exempt("I1", "I3", "I4")
 def test_scope_repoint_releases_old_repo_cache(opal, repo_count):
-    """Re-pointing a scope to a new repo URL, then deleting it, must drain ALL
-    cache entries — including the orphaned old URL's.
+    """Re-pointing a scope to a new repo URL must drain the OLD URL's cache
+    entries once the new source has taken over serving.
 
     ``PUT /scopes`` is create-or-update, so PUT-ing an existing scope_id with a
-    *different* repo URL orphans the old URL's cache entries: the same leak as
-    churn, via a path ``test_churn_releases_caches`` (delete-only) never takes.
-    A purge hooked solely into scope deletion would look up the scope's
-    *current* URL and leave the old entry behind forever.
+    *different* repo URL orphans the old URL's cache entries unless the purge
+    also covers the update path (not just deletes, which
+    ``test_churn_releases_caches`` covers).
 
-    FAILS on this branch (without PR2, nothing purges — the same right-reason
-    failure as churn); stays red after PR2 unless its purge also covers the
-    update path (or sweeps entries no live scope references).
+    GREEN GUARD, not a red gate: PR3's repoint purge
+    (``ScopePurgeCommand(reason="repoint")``, handled by ``LeaderScopePurger``)
+    fires synchronously with the repoint and, when the old source isn't
+    mid-fetch, completes in single-digit milliseconds — confirmed via server
+    logs (~4ms between the new source's lock being minted and the old
+    source's cache entries being purged; see
+    .superpowers/sdd/bed-deep-dive.md, finding 1). An earlier version of this
+    test asserted ``repo_locks >= 2`` right after the repoint as proof both
+    URLs were briefly visible together — that's a race against an
+    already-instant purge, and loses almost every time. This version instead
+    proves the purge itself: wait for the new source to actually be served,
+    then assert the old source's cache entries are gone. It stays
+    discriminating (would fail if the repoint purge were reverted) because it
+    checks the OLD source's keys, not just cache counts. Symmetric with
+    ``test_repoint_during_inflight_fetch_drains_old_source``'s red half, which
+    covers the case where the old source's clone is still hung at repoint
+    time.
     """
     assert repo_count >= 2, "needs --boot-scopes >= 2"
     repo_a, repo_b = list_seeded_repos(2)
+    old_sid = source_id(gitea_repo_url(repo_a))
 
     opal.put_scope("repoint", gitea_repo_url(repo_a))
     locked = _wait_until(lambda: opal.stats()["repo_locks"] >= 1, timeout=600)
@@ -203,30 +218,36 @@ def test_scope_repoint_releases_old_repo_cache(opal, repo_count):
     fetched = _wait_until(lambda: opal.stats()["repos"] >= 1, timeout=600)
     assert fetched, f"refresh never populated the initial repo: {opal.stats()}"
 
+    served = _wait_until(
+        lambda: opal.get_scope_policy("repoint").status_code == 200, timeout=120
+    )
+    assert served, "repo_a never served before the repoint"
+    content_a = opal.get_scope_policy("repoint").content
+
     # Re-point the same scope_id at a different repo; repo_a's entries are now
-    # referenced by no scope. The sync triggered by the PUT clones repo_b
-    # (filling repo_locks), and the refresh fills its repos /
-    # repos_last_fetched — so both URLs are visible in the caches, proof the
-    # orphan exists before the delete (this guards the setup, not the leak).
+    # referenced by no scope.
     opal.put_scope("repoint", gitea_repo_url(repo_b))
-    locked = _wait_until(lambda: opal.stats()["repo_locks"] >= 2, timeout=600)
-    assert locked, f"re-pointed repo never locked: {opal.stats()}"
-    opal.refresh_all()
-    fetched = _wait_until(lambda: opal.stats()["repos"] >= 2, timeout=600)
-    assert fetched, (
-        f"expected cache entries for both the old and new URL after the "
-        f"re-point: {opal.stats()}"
+
+    def _serving_repo_b() -> bool:
+        resp = opal.get_scope_policy("repoint")
+        # bundle content, not just status 200 (which was already true for
+        # repo_a) — this is what proves the scope actually switched sources.
+        return resp.status_code == 200 and resp.content != content_a
+
+    assert _wait_until(_serving_repo_b, timeout=300), (
+        "scope never switched to serving the re-pointed (repo_b) content"
     )
 
-    opal.delete_scope("repoint")
-
-    def _all_caches_empty() -> bool:
+    def _old_source_purged() -> bool:
         s = opal.stats(samples=1)
-        return s["repo_locks"] == 0 and s["repos"] == 0 and s["repos_last_fetched"] == 0
+        return (
+            old_sid not in s["repo_locks_keys"]
+            # repos_keys holds full on-disk paths, not bare source_ids
+            and not any(old_sid in key for key in s["repos_keys"])
+            and old_sid not in s["repos_last_fetched_keys"]
+        )
 
-    released = _wait_until(_all_caches_empty, timeout=60)
-    assert released, (
-        f"caches did not drain after deleting the re-pointed scope (the old "
-        f"URL's orphaned entry leaks unless the purge covers updates too): "
-        f"{opal.stats()}"
+    assert _wait_until(_old_source_purged, timeout=60), (
+        f"old source {old_sid[:12]}… cache entries leaked after repoint "
+        f"(PR3 update-path purge gate): {opal.stats()}"
     )

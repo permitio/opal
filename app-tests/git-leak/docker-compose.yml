@@ -119,6 +119,12 @@ services:
       # orphaning all previous clone dirs — a real ops event worth gating.
       OPAL_SCOPES_REPO_CLONES_SHARDS: "${OPAL_TEST_SHARDS:-1}"
       OPAL_SCOPES: "1"
+      # Fail hung clones/fetches fast. The code default (120s) exceeds the
+      # bed's serve windows: with FIFO queueing over SCOPES_GIT_MAX_WORKERS
+      # slots, a burst of blackholed sources delays a healthy scope by up to
+      # ceil(burst/slots) x timeout — 10s keeps that well under every gate's
+      # window while still exercising the timeout+zombie machinery for real.
+      OPAL_SCOPES_GIT_FETCH_TIMEOUT: "10"
       OPAL_REDIS_URL: "redis://redis:6379"
       OPAL_BROADCAST_URI: "postgres://opal:opal@postgres:5432/opal"
       # Make the broadcaster reconnect fast + deterministic for the postgres-

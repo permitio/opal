@@ -230,6 +230,20 @@ def test_shard_reconfig_still_serves_but_orphans_old_clones(opal, tmp_path):
         opal.wait_healthy()
         # restore the old-shard dirs next to whatever the new boot creates
         compose("cp", str(tmp_path / "saved") + "/.", "opal_server:/opal/git_sources")
+        # docker cp writes root-owned files; the sweep runs as the non-root
+        # `opal` user (uid 1000), so it would PermissionError on the rmtree
+        # without this.
+        compose(
+            "exec",
+            "-u",
+            "root",
+            "-T",
+            "opal_server",
+            "chown",
+            "-R",
+            "opal:opal",
+            "/opal/git_sources",
+        )
         opal.refresh_all()
         assert wait_until(
             lambda: opal.get_scope_policy("shard-0").status_code == 200,
