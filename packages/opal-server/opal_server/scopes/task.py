@@ -38,7 +38,7 @@ class ScopesPolicyWatcherTask(BasePolicyWatcherTask):
         await self._pubsub_endpoint.subscribe(
             [opal_server_config.SCOPES_PURGE_CHANNEL], self._purger.handle
         )
-        self._tasks.append(asyncio.create_task(self._boot_sync_then_sweep()))
+        self._tasks.append(asyncio.create_task(self._sync_all_then_sweep()))
 
         if opal_server_config.POLICY_REFRESH_INTERVAL > 0:
             self._tasks.append(asyncio.create_task(self._periodic_polling()))
@@ -46,17 +46,18 @@ class ScopesPolicyWatcherTask(BasePolicyWatcherTask):
     async def stop(self):
         return await super().stop()
 
-    async def _boot_sync_then_sweep(self):
+    async def _sync_all_then_sweep(self):
         await self._service.sync_scopes()
         # After sync, disk state is settled: anything on disk that no live
         # scope references is an orphan (crash leftovers, redis-wiped boot,
         # old-shard dirs after a SCOPES_REPO_CLONES_SHARDS change).
+        # Runs on boot and on refresh-all triggers.
         try:
             await self._purger.sweep_orphans()
         except Exception:
             # The backstop must never kill the watcher task or fail silently;
             # the periodic pass retries (and logs) on its own schedule.
-            logger.exception("Boot-time orphan sweep failed")
+            logger.exception("Orphan sweep failed")
 
     async def _periodic_polling(self):
         try:
@@ -90,7 +91,7 @@ class ScopesPolicyWatcherTask(BasePolicyWatcherTask):
                 )
         else:
             # Refresh all scopes
-            await self._service.sync_scopes()
+            await self._sync_all_then_sweep()
 
     @staticmethod
     def preload_scopes():

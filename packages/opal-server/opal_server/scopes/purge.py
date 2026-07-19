@@ -114,6 +114,18 @@ class LeaderScopePurger:
         # otherwise GC-able); discarded on completion.
         self._pending_purges = set()
 
+    async def _purge_and_log(self, cmd: ScopePurgeCommand) -> None:
+        try:
+            await self.purge_source_if_unshared(cmd)
+        except Exception:
+            # Detached background task: without this, an unexpected failure
+            # (e.g. the confirmation publish hitting a broadcaster error)
+            # surfaces only as asyncio's unretrieved-exception noise.
+            logger.exception(
+                f"Background purge of source {cmd.source_id} "
+                f"({cmd.reason}) failed"
+            )
+
     async def handle(self, subscription, data: Any):
         try:
             cmd = ScopePurgeCommand(**data)
@@ -125,7 +137,7 @@ class LeaderScopePurger:
         # publish() awaits subscriber callbacks inline — never do lock-waiting
         # disk work on the publisher's request path (DELETE/PUT latency is
         # bounded by contract). The purge proceeds in the background.
-        task = asyncio.create_task(self.purge_source_if_unshared(cmd))
+        task = asyncio.create_task(self._purge_and_log(cmd))
         self._pending_purges.add(task)
         task.add_done_callback(self._pending_purges.discard)
         return task
