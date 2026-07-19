@@ -68,9 +68,12 @@ def clear_caches():
     GitPolicyFetcher.repo_locks.clear()
 
 
-def test_delete_route_purges_fetcher_caches(tmp_path, monkeypatch):
+def test_delete_route_purges_fetcher_caches(tmp_path):
     """DELETE /scopes/{id} must flow through ScopesService.delete_scope so the
-    GitPolicyFetcher caches drain (the git-leak churn gate)."""
+    GitPolicyFetcher caches drain (the git-leak churn gate).
+
+    Disk mutation is no longer inline (moved to the leader's purge-channel
+    handler, PR3), so this only pins the local in-memory cache purge."""
     scope = _scope("only", "https://git/repo-a.git")
     repo = FakeScopeRepository([scope])
 
@@ -78,10 +81,6 @@ def test_delete_route_purges_fetcher_caches(tmp_path, monkeypatch):
     clone_path = str(GitPolicyFetcher.repo_clone_path(tmp_path, scope.policy))
     GitPolicyFetcher.repos[clone_path] = object()
     GitPolicyFetcher.repos_last_fetched[sid] = "ts"
-
-    monkeypatch.setattr(
-        "opal_server.scopes.service.shutil.rmtree", lambda *a, **k: None
-    )
 
     resp = _client(repo, tmp_path).delete("/scopes/only")
 

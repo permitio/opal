@@ -1,6 +1,5 @@
 import asyncio
 import datetime
-import shutil
 from functools import partial
 from pathlib import Path
 from typing import List, Optional, Set, cast
@@ -8,7 +7,6 @@ from typing import List, Optional, Set, cast
 import git
 from ddtrace import tracer
 from fastapi_websocket_pubsub import PubSubEndpoint
-from opal_common.async_utils import run_sync
 from opal_common.git_utils.commit_viewer import VersionedFile
 from opal_common.http_utils import redact_url
 from opal_common.logger import logger
@@ -21,6 +19,7 @@ from opal_server.policy.watcher.callbacks import (
     create_policy_update,
     create_update_all_directories_in_repo,
 )
+from opal_server.scopes.purge import ScopePurgeCommand, purge_local_memory
 from opal_server.scopes.scope_repository import (
     Scope,
     ScopeNotFoundError,
@@ -181,118 +180,32 @@ class ScopesService:
                 await self._scopes.delete(scope_id)
                 return
 
-            deleted_source = scope.policy
-            deleted_source_id = GitPolicyFetcher.source_id(deleted_source)
-            scope_dir = GitPolicyFetcher.repo_clone_path(self._base_dir, deleted_source)
+            deleted_source_id = GitPolicyFetcher.source_id(scope.policy)
+            scope_dir = GitPolicyFetcher.repo_clone_path(
+                self._base_dir, scope.policy
+            )
 
-            # Clone dir, the `repos` handle cache, and `repos_last_fetched` are
-            # all keyed by source_id (= the clone path). A sibling only shares
-            # storage when it resolves to the same source_id; same url with a
-            # different branch can shard to a different source_id (and a
-            # different clone dir) when SCOPES_REPO_CLONES_SHARDS > 1, so gate on
-            # source_id, not url — otherwise the deleted scope's clone + pygit2
-            # handle leak.
-            #
-            # Serialize record-delete + sibling-check + purge on the source
-            # lock: two concurrent sibling deletes could otherwise both read
-            # the other as still-live (the check and the record delete span
-            # separate store round-trips) and BOTH skip the purge, orphaning
-            # the clone and cache entries permanently. Deleting our record
-            # before re-checking makes the last deleter see no sharer.
-            async with GitPolicyFetcher.lock_source(deleted_source_id):
-                try:
-                    await self._scopes.delete(scope_id)
-                finally:
-                    # The purge must stay reachable even when the record
-                    # delete raises an ambiguous outcome (committed server-
-                    # side, error surfaced to the client): the client retry
-                    # then hits ScopeNotFoundError -> 204 no-op, and a purge
-                    # gated on a clean delete would be permanently orphaned.
-                    # If the delete genuinely failed the record survives,
-                    # over-purging self-heals (the scope re-clones on its
-                    # next sync), and the error still propagates as a 500.
-                    await self._purge_source_cache_if_unshared(
-                        deleted_source_id, scope_dir, scope_id
+            try:
+                await self._scopes.delete(scope_id)
+            finally:
+                # The purge must stay reachable even when the record delete
+                # raises an ambiguous outcome (committed server-side, error
+                # surfaced to the client): the retry is a 204 no-op
+                # (ScopeNotFoundError) and a purge gated on a clean delete
+                # would be permanently orphaned. Over-publishing self-heals:
+                # the leader's sibling-check sees a still-live record and
+                # keeps the clone.
+                purge_local_memory(deleted_source_id, str(scope_dir))
+                if self._pubsub_endpoint is not None:
+                    await self._pubsub_endpoint.publish(
+                        [opal_server_config.SCOPES_PURGE_CHANNEL],
+                        ScopePurgeCommand(
+                            source_id=deleted_source_id,
+                            clone_path=str(scope_dir),
+                            scope_id=scope_id,
+                            reason="delete",
+                        ).dict(),
                     )
-
-    async def _purge_source_cache_if_unshared(
-        self, deleted_source_id: str, scope_dir: Path, scope_id: str
-    ):
-        """Remove the clone dir and the GitPolicyFetcher cache entries keyed by
-        ``deleted_source_id``, unless a surviving scope still shares them.
-
-        Must run under ``lock_source(deleted_source_id)``, after scope_id's
-        record was deleted (so the last of two concurrent sibling deleters
-        sees no sharer and purges).
-        """
-        sharing_scope_id = await self._find_scope_sharing_source(
-            deleted_source_id, scope_id
-        )
-        if sharing_scope_id is not None:
-            logger.info(
-                f"Scope {sharing_scope_id} shares the same clone "
-                "(source id), skipping clone deletion"
-            )
-            return
-        # NOTE (PR3): delete must ultimately route through the leader
-        # like put/refresh — only the leader should mutate the shared
-        # clone tree. Today this purge is process-local best-effort
-        # (the leader's caches leak until PR3's broadcast purge), and
-        # a non-leader DELETE rmtree's the shared tree unserialized
-        # against the leader's in-flight fetches (cross-process;
-        # bounded and self-healing, but an invariant break).
-        # The same class exists IN-process: a sync that loaded the
-        # scope before this delete and acquires the fresh lock after
-        # the purge re-clones and re-populates the caches for the dead
-        # scope (found by the bed's randomized churn driver;
-        # deterministic seed recorded there). PR3's purge routing must
-        # include a scope-liveness check before clone.
-        try:
-            await run_sync(shutil.rmtree, str(scope_dir))
-        except FileNotFoundError:
-            pass  # never cloned (or already gone) — nothing to clean
-        except OSError as e:
-            logger.warning(
-                f"Failed to remove clone dir {scope_dir} of deleted "
-                f"scope {scope_id}: {e!r}"
-            )
-        GitPolicyFetcher.forget_repo(str(scope_dir))
-        GitPolicyFetcher.repos_last_fetched.pop(deleted_source_id, None)
-        # Popped while the lock is held: lock_source waiters re-check
-        # the dict entry after acquiring and retry on the fresh lock.
-        GitPolicyFetcher.repo_locks.pop(deleted_source_id, None)
-
-    async def _find_scope_sharing_source(
-        self, deleted_source_id: str, scope_id: str
-    ) -> Optional[str]:
-        """Return the id of a surviving scope that shares deleted_source_id, or
-        None (= safe to purge).
-
-        Must not be able to skip the purge by raising: scope_id's record
-        is already deleted, so a client retry is a 204 no-op
-        (ScopeNotFoundError) and the purge becomes permanently
-        unreachable. all() does a full scan + Scope.parse_raw — a
-        transient store error or one malformed record throws. Over-
-        purging self-heals (a surviving sibling re-clones on its next
-        sync); under-purging is a permanent leak.
-        """
-        try:
-            return next(
-                (
-                    s.scope_id
-                    for s in await self._scopes.all()
-                    if s.scope_id != scope_id
-                    and isinstance(s.policy, GitPolicyScopeSource)
-                    and GitPolicyFetcher.source_id(s.policy) == deleted_source_id
-                ),
-                None,
-            )
-        except Exception as e:
-            logger.warning(
-                f"sibling check failed after deleting scope "
-                f"{scope_id}; purging defensively: {e!r}"
-            )
-            return None
 
     async def sync_scopes(self, only_poll_updates=False, notify_on_changes=True):
         with tracer.trace("scopes_service.sync_scopes"):

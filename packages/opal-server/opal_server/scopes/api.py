@@ -174,11 +174,9 @@ def init_scope_router(
             raise
 
         try:
-            # Deletes the scope and also cleans the repo clone from disk and the
-            # GitPolicyFetcher in-memory caches (unless another scope shares them).
-            # The cache purge is process-local best-effort: it runs on whichever
-            # worker serves this DELETE; a fleet-wide purge (leader included) is
-            # tracked for PR3 of the leak series.
+            # Deletes the record, purges this worker's in-memory caches, and
+            # broadcasts a ScopePurgeCommand so every worker drops its caches
+            # and the leader removes the clone dir (fleet-wide purge, PR3).
             await scopes_service.delete_scope(scope_id)
         except ScopeNotFoundError:
             # Deleting a missing scope was always a silent no-op (204); keep it.
