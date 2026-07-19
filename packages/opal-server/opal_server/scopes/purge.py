@@ -6,6 +6,7 @@ purged source. The leader additionally registers ``LeaderScopePurger.handle``
 (at watcher start) which removes the clone dir — only the leader mutates the
 clone tree.
 """
+import os
 import shutil
 from pathlib import Path
 from typing import Any, Optional
@@ -143,3 +144,75 @@ class LeaderScopePurger:
             # Popped while the lock is held: lock_source waiters re-check
             # the dict entry after acquiring and retry on the fresh lock.
             GitPolicyFetcher.repo_locks.pop(cmd.source_id, None)
+
+    async def sweep_orphans(self) -> None:
+        """Reclaim clone dirs referencing no live scope.
+
+        Covers crash-orphaned dirs, redis-wiped boots, and old-shard dirs
+        after a SCOPES_REPO_CLONES_SHARDS reconfig. Leader-only; runs after
+        boot sync and after each periodic sync pass (settled state).
+        """
+        sources_dir = GitPolicyFetcher.base_dir(self._base_dir)
+        try:
+            entries = await run_sync(os.listdir, str(sources_dir))
+        except FileNotFoundError:
+            return  # nothing cloned yet
+
+        try:
+            live = {
+                GitPolicyFetcher.source_id(s.policy)
+                for s in await self._scopes.all()
+                if isinstance(s.policy, GitPolicyScopeSource)
+            }
+        except Exception as e:
+            # A transient store error must NOT read as "no scopes exist" —
+            # that would rmtree every live clone. Abort; next pass retries.
+            logger.warning(f"Orphan sweep aborted, scope scan failed: {e!r}")
+            return
+
+        for name in entries:
+            path = sources_dir / name
+            if name in live or not path.is_dir():
+                continue
+            async with GitPolicyFetcher.lock_source(name):
+                # Re-check under the lock: a PUT may have claimed this
+                # source while we swept (cloning is also leader-local under
+                # this same lock, so the serialization is sound). A raising
+                # re-check keeps the dir (conservative — opposite bias to
+                # the delete path, where the record is known-gone).
+                try:
+                    still_orphan = name not in {
+                        GitPolicyFetcher.source_id(s.policy)
+                        for s in await self._scopes.all()
+                        if isinstance(s.policy, GitPolicyScopeSource)
+                    }
+                except Exception:
+                    continue
+                if not still_orphan:
+                    continue
+                if git_op_in_flight(name):
+                    logger.info(
+                        f"Orphan sweep skipping {name}: git op in flight"
+                    )
+                    continue
+                logger.info(f"Reclaiming orphan clone dir: {path}")
+                GitPolicyFetcher.forget_repo(str(path))
+                GitPolicyFetcher.repos_last_fetched.pop(name, None)
+                try:
+                    await run_sync(shutil.rmtree, str(path))
+                except FileNotFoundError:
+                    pass
+                except OSError as e:
+                    logger.warning(f"Failed to reclaim orphan {path}: {e!r}")
+                    continue
+                GitPolicyFetcher.repo_locks.pop(name, None)  # under the lock
+                if self._pubsub_endpoint is not None:
+                    await self._pubsub_endpoint.publish(
+                        [opal_server_config.SCOPES_PURGE_CHANNEL],
+                        ScopePurgeCommand(
+                            source_id=name,
+                            clone_path=str(path),
+                            scope_id="",
+                            reason="orphan",
+                        ).dict(),
+                    )

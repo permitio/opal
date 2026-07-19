@@ -38,13 +38,20 @@ class ScopesPolicyWatcherTask(BasePolicyWatcherTask):
         await self._pubsub_endpoint.subscribe(
             [opal_server_config.SCOPES_PURGE_CHANNEL], self._purger.handle
         )
-        self._tasks.append(asyncio.create_task(self._service.sync_scopes()))
+        self._tasks.append(asyncio.create_task(self._boot_sync_then_sweep()))
 
         if opal_server_config.POLICY_REFRESH_INTERVAL > 0:
             self._tasks.append(asyncio.create_task(self._periodic_polling()))
 
     async def stop(self):
         return await super().stop()
+
+    async def _boot_sync_then_sweep(self):
+        await self._service.sync_scopes()
+        # After sync, disk state is settled: anything on disk that no live
+        # scope references is an orphan (crash leftovers, redis-wiped boot,
+        # old-shard dirs after a SCOPES_REPO_CLONES_SHARDS change).
+        await self._purger.sweep_orphans()
 
     async def _periodic_polling(self):
         try:
@@ -53,6 +60,7 @@ class ScopesPolicyWatcherTask(BasePolicyWatcherTask):
                 logger.info("Periodic sync")
                 try:
                     await self._service.sync_scopes(only_poll_updates=True)
+                    await self._purger.sweep_orphans()
                 except asyncio.CancelledError:
                     raise
                 except Exception as e:
