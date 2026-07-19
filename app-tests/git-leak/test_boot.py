@@ -7,6 +7,10 @@ from helpers import compose, gitea_repo_url, list_seeded_repos
 
 
 @pytest.mark.timeout(2400)
+# The mid-test --force-recreate resets container-local /proc PIDs, so the
+# fixture's before/after pid comparison spans two container generations —
+# same exemption every force-recreating test in test_boot_states.py carries.
+@pytest.mark.allow_worker_restart
 def test_boot_loads_all_scopes(opal, repo_count):
     """Measure how long a fresh boot takes to *serve* all scope repos.
 
