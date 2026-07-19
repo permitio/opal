@@ -311,6 +311,14 @@ class OpalServerConfig(Confi):
         20,
         description="Timeout for forgetting a server from which a keep-alive haven't been seen (keep-alive frequency would be half of this value)",
     )
+    SCOPES_PURGE_CHANNEL = confi.str(
+        "SCOPES_PURGE_CHANNEL",
+        "__opal_scope_purge__",
+        description="Pub/sub channel (worker-to-worker, over the broadcaster) used to "
+        "purge GitPolicyFetcher caches fleet-wide when a scope is deleted, repointed "
+        "to a new source, or its clone dir is reclaimed as an orphan. Every worker "
+        "subscribes; the leader additionally removes the clone dir.",
+    )
 
     # Data updates
     ALL_DATA_TOPIC = confi.str(
