@@ -1,8 +1,6 @@
 """PUT /scopes re-pointing a scope to a new URL/branch must broadcast a purge
 for the OLD source — otherwise its clone + cache entries orphan (bed gate:
 test_scope_repoint_releases_old_repo_cache)."""
-import asyncio
-
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -131,6 +129,27 @@ def test_put_new_scope_publishes_no_purge(tmp_path, monkeypatch):
     client = _client(repo, pubsub, tmp_path)
 
     resp = client.put("/scopes", json=_scope("brand-new", "https://git/x.git").dict())
+
+    assert resp.status_code == 201
+    assert _purge_messages(pubsub) == []
+
+
+def test_put_with_unreadable_old_record_still_succeeds(tmp_path, monkeypatch):
+    """A corrupted/unreadable prior record must not 500 the PUT that
+    overwrites it; the purge is skipped (orphan sweep backstops it)."""
+    monkeypatch.setattr(
+        "opal_server.scopes.api.opal_server_config.BASE_DIR", str(tmp_path)
+    )
+
+    class CorruptedReadRepository(FakeScopeRepository):
+        async def get(self, scope_id):
+            raise RuntimeError("stored record failed to parse")
+
+    repo = CorruptedReadRepository([])
+    pubsub = FakePubSubEndpoint()
+    client = _client(repo, pubsub, tmp_path)
+
+    resp = client.put("/scopes", json=_scope("s1", "https://git/new.git").dict())
 
     assert resp.status_code == 201
     assert _purge_messages(pubsub) == []

@@ -127,6 +127,14 @@ def init_scope_router(
                 )
         except ScopeNotFoundError:
             pass  # brand-new scope — nothing to repoint away from
+        except Exception as e:
+            # An unreadable old record must not block the overwrite that
+            # fixes it. Its source_id is unknowable anyway — a missed
+            # repoint purge is reclaimed by the leader's orphan sweep.
+            logger.warning(
+                f"Could not read previous record for scope "
+                f"{scope_in.scope_id}, skipping repoint purge: {e!r}"
+            )
 
         verify_private_key_or_throw(scope_in)
         await scopes.put(scope_in)
