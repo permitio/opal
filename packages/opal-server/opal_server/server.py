@@ -40,6 +40,7 @@ from opal_server.pubsub_resilience import ReconnectingBroadcaster
 from opal_server.redis_utils import RedisDB
 from opal_server.scopes.api import init_scope_router
 from opal_server.scopes.loader import load_scopes
+from opal_server.scopes.purge import subscribe_worker_purge_handler
 from opal_server.scopes.scope_repository import ScopeRepository
 from opal_server.scopes.service import ScopesService
 from opal_server.security.api import init_security_router
@@ -385,6 +386,13 @@ class OpalServer:
                     self.pubsub.endpoint.notifier.register_unsubscribe_event(
                         self.opal_statistics.remove_client
                     )
+
+                if opal_server_config.SCOPES:
+                    # Every worker (leader or not) must drop its in-memory
+                    # GitPolicyFetcher caches when a scope is deleted/repointed
+                    # anywhere in the fleet. Subscribed before the leadership
+                    # lock on purpose: non-leaders block on that lock forever.
+                    await subscribe_worker_purge_handler(self.pubsub.endpoint)
 
                 # We want only one worker to run repo watchers
                 # (otherwise for each new commit, we will publish multiple updates via pub/sub).
