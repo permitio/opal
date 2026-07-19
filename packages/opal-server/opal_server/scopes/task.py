@@ -9,6 +9,7 @@ from opal_server.config import opal_server_config
 from opal_server.git_fetcher import shutdown_git_executor
 from opal_server.policy.watcher.task import BasePolicyWatcherTask
 from opal_server.redis_utils import RedisDB
+from opal_server.scopes.purge import LeaderScopePurger
 from opal_server.scopes.scope_repository import ScopeRepository
 from opal_server.scopes.service import ScopesService
 
@@ -17,14 +18,26 @@ class ScopesPolicyWatcherTask(BasePolicyWatcherTask):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
+        self._scopes = ScopeRepository(RedisDB(opal_server_config.REDIS_URL))
         self._service = ScopesService(
             base_dir=Path(opal_server_config.BASE_DIR),
-            scopes=ScopeRepository(RedisDB(opal_server_config.REDIS_URL)),
+            scopes=self._scopes,
+            pubsub_endpoint=self._pubsub_endpoint,
+        )
+        self._purger = LeaderScopePurger(
+            base_dir=Path(opal_server_config.BASE_DIR),
+            scopes=self._scopes,
             pubsub_endpoint=self._pubsub_endpoint,
         )
 
     async def start(self):
         await super().start()
+        # Leader-only disk purge: this task starts only on the leader, so
+        # registering here (not at worker boot) preserves the invariant that
+        # only the leader mutates the clone tree.
+        await self._pubsub_endpoint.subscribe(
+            [opal_server_config.SCOPES_PURGE_CHANNEL], self._purger.handle
+        )
         self._tasks.append(asyncio.create_task(self._service.sync_scopes()))
 
         if opal_server_config.POLICY_REFRESH_INTERVAL > 0:

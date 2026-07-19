@@ -93,3 +93,182 @@ async def test_subscribe_worker_purge_handler_wires_channel():
     ep = FakeEndpoint()
     await subscribe_worker_purge_handler(ep)
     assert ep.subs == [(["__opal_scope_purge__"], handle_purge_message)]
+
+
+import shutil
+
+from opal_common.schemas.policy_source import GitPolicyScopeSource, NoAuthData
+from opal_common.schemas.scopes import Scope
+from opal_server.scopes.purge import LeaderScopePurger
+from opal_server.scopes.scope_repository import ScopeNotFoundError
+
+
+class FakeScopeRepository:
+    def __init__(self, scopes):
+        self._scopes = {s.scope_id: s for s in scopes}
+
+    async def get(self, scope_id):
+        await asyncio.sleep(0)
+        if scope_id not in self._scopes:
+            raise ScopeNotFoundError(scope_id)
+        return self._scopes[scope_id]
+
+    async def all(self):
+        await asyncio.sleep(0)
+        return list(self._scopes.values())
+
+    async def delete(self, scope_id):
+        await asyncio.sleep(0)
+        self._scopes.pop(scope_id, None)
+
+
+def _scope(scope_id, url, branch="main"):
+    return Scope(
+        scope_id=scope_id,
+        policy=GitPolicyScopeSource(
+            source_type="git",
+            url=url,
+            branch=branch,
+            auth=NoAuthData(auth_type="none"),
+        ),
+        data={"entries": []},
+    )
+
+
+def _make_clone(tmp_path, source):
+    clone = GitPolicyFetcher.repo_clone_path(tmp_path, source)
+    clone.mkdir(parents=True)
+    (clone / "marker").write_text("x")
+    return clone
+
+
+@pytest.mark.asyncio
+async def test_leader_purges_unshared_source_from_disk(tmp_path):
+    dead = _scope("dead", "https://git/repo-a.git")
+    sid = GitPolicyFetcher.source_id(dead.policy)
+    clone = _make_clone(tmp_path, dead.policy)
+    GitPolicyFetcher.repos[str(clone)] = object()
+    GitPolicyFetcher.repos_last_fetched[sid] = "ts"
+    GitPolicyFetcher.repo_locks[sid] = asyncio.Lock()
+
+    purger = LeaderScopePurger(
+        base_dir=tmp_path, scopes=FakeScopeRepository([]), pubsub_endpoint=None
+    )
+    await purger.handle(
+        None,
+        ScopePurgeCommand(
+            source_id=sid, clone_path=str(clone), scope_id="dead", reason="delete"
+        ).dict(),
+    )
+
+    assert not clone.exists()
+    assert str(clone) not in GitPolicyFetcher.repos
+    assert sid not in GitPolicyFetcher.repos_last_fetched
+    assert sid not in GitPolicyFetcher.repo_locks  # popped under the held lock
+
+
+@pytest.mark.asyncio
+async def test_leader_keeps_disk_when_live_sibling_shares_source(tmp_path):
+    survivor = _scope("survivor", "https://git/shared.git")
+    sid = GitPolicyFetcher.source_id(survivor.policy)
+    clone = _make_clone(tmp_path, survivor.policy)
+
+    purger = LeaderScopePurger(
+        base_dir=tmp_path,
+        scopes=FakeScopeRepository([survivor]),
+        pubsub_endpoint=None,
+    )
+    await purger.handle(
+        None,
+        ScopePurgeCommand(
+            source_id=sid, clone_path=str(clone), scope_id="deleted-sibling",
+            reason="delete",
+        ).dict(),
+    )
+
+    assert clone.exists(), "shared clone must survive a sibling's delete"
+
+
+@pytest.mark.asyncio
+async def test_leader_skips_disk_while_git_op_in_flight(tmp_path):
+    dead = _scope("dead", "https://git/repo-a.git")
+    sid = GitPolicyFetcher.source_id(dead.policy)
+    clone = _make_clone(tmp_path, dead.policy)
+
+    purger = LeaderScopePurger(
+        base_dir=tmp_path, scopes=FakeScopeRepository([]), pubsub_endpoint=None
+    )
+    _mark_git_op_started(sid)
+    try:
+        await purger.handle(
+            None,
+            ScopePurgeCommand(
+                source_id=sid, clone_path=str(clone), scope_id="dead",
+                reason="delete",
+            ).dict(),
+        )
+    finally:
+        _mark_git_op_done(sid)
+
+    assert clone.exists(), "rmtree while a git thread touches the repo is unsafe"
+    # The orphan sweep is the backstop that reclaims it later (Task 8).
+
+
+@pytest.mark.asyncio
+async def test_leader_purges_defensively_when_sibling_check_raises(tmp_path):
+    """PR2 semantics transfer: if the store scan raises, purge anyway —
+    under-purging is a permanent leak, over-purging self-heals via re-clone."""
+
+    class BrokenRepo(FakeScopeRepository):
+        async def all(self):
+            raise RuntimeError("store scan failed")
+
+    dead = _scope("dead", "https://git/repo-a.git")
+    sid = GitPolicyFetcher.source_id(dead.policy)
+    clone = _make_clone(tmp_path, dead.policy)
+
+    purger = LeaderScopePurger(
+        base_dir=tmp_path, scopes=BrokenRepo([]), pubsub_endpoint=None
+    )
+    await purger.handle(
+        None,
+        ScopePurgeCommand(
+            source_id=sid, clone_path=str(clone), scope_id="dead", reason="delete"
+        ).dict(),
+    )
+
+    assert not clone.exists()
+
+
+@pytest.mark.asyncio
+async def test_leader_serializes_against_held_source_lock(tmp_path):
+    """The disk purge must wait for the source lock held by an in-flight
+    fetch (transfers PR2's delete_serializes_against_inflight_repo_lock)."""
+    dead = _scope("dead", "https://git/repo-a.git")
+    sid = GitPolicyFetcher.source_id(dead.policy)
+    clone = _make_clone(tmp_path, dead.policy)
+
+    purger = LeaderScopePurger(
+        base_dir=tmp_path, scopes=FakeScopeRepository([]), pubsub_endpoint=None
+    )
+    lock = GitPolicyFetcher.repo_locks.setdefault(sid, asyncio.Lock())
+    await lock.acquire()
+    try:
+        task = asyncio.create_task(
+            purger.handle(
+                None,
+                ScopePurgeCommand(
+                    source_id=sid, clone_path=str(clone), scope_id="dead",
+                    reason="delete",
+                ).dict(),
+            )
+        )
+        for _ in range(10):
+            await asyncio.sleep(0)
+        assert not task.done(), "purge did not wait for the source lock"
+        assert clone.exists()
+    finally:
+        lock.release()
+
+    await asyncio.wait_for(task, timeout=5)
+    assert not clone.exists()
