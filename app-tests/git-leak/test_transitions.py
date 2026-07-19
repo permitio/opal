@@ -37,22 +37,21 @@ def test_delete_recreate_storm(opal, repo_count):
 
 @pytest.mark.timeout(1200)
 def test_randomized_churn_holds_invariants(opal, repo_count):
-    """Seeded random put/refresh churn with settled deletes; invariants must
-    hold at every settle point. Replay a failure with CHURN_SEED=<printed>.
+    """Seeded random put/refresh churn with end-of-round deletes; invariants
+    must hold at every settle point. Replay a failure with CHURN_SEED=<printed>.
 
-    Two deliberate constraints, both lifted when PR3's fleet purge lands
-    (no silent caps):
-    - 'repoint' ops are EXCLUDED: a repoint orphans the old source's cache
-      entries by design today (the red repoint gate covers it). A `put` on a
-      live scope therefore reuses that scope's existing repo.
-    - Deletes run only at round END, after every live scope has settled: a
-      DELETE racing an in-flight sync loses its purge (the sync re-populates
-      the caches for the dead scope — same PR3 class; proven deterministically
-      by seed 309006536 during this test's development; deterministic red-gate
-      coverage lands in test_repoint_during_inflight_fetch_drains_old_source).
-      A bounded residual window remains (a served scope's re-sync can still be
-      in flight); in practice the settle polling latency dwarfs a tiny repo's
-      sync time.
+    One deliberate constraint remains: 'repoint' ops are EXCLUDED — a repoint
+    orphans the old source's cache entries by design today (the red repoint
+    gate covers it: test_scope_repoint_releases_old_repo_cache and
+    test_repoint_during_inflight_fetch_drains_old_source). A `put` on a live
+    scope therefore reuses that scope's existing repo.
+
+    The delete-vs-inflight-sync exclusion is LIFTED: deletes used to run only
+    after every live scope had settled, because a DELETE racing an in-flight
+    sync lost its purge (the sync re-populated the caches for the dead scope;
+    proven deterministically by seed 309006536 during this test's
+    development). PR3's fleet-wide purge channel closes that race, so deletes
+    now fire without waiting for the round's live scopes to settle first.
     """
     import os
     import random
@@ -74,13 +73,9 @@ def test_randomized_churn_holds_invariants(opal, repo_count):
                 live[sid_] = repo
             else:
                 opal.refresh_all()
-        # settle every live scope before any delete
-        for sid_ in list(live):
-            assert wait_until(
-                lambda s=sid_: opal.get_scope_policy(s).status_code == 200,
-                timeout=300,
-            ), f"round {round_no}: live scope {sid_} never settled (seed {seed})"
-        # settled deletes: each live scope has a coin-flip chance to go
+        # deletes race in-flight syncs: PR3's fleet purge closes this class,
+        # so each live scope has a coin-flip chance to go without waiting for
+        # it to settle first.
         for sid_ in list(live):
             if rng.random() < 0.5:
                 opal.delete_scope(sid_)
