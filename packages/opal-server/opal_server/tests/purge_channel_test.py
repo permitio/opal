@@ -272,3 +272,15 @@ async def test_leader_serializes_against_held_source_lock(tmp_path):
 
     await asyncio.wait_for(task, timeout=5)
     assert not clone.exists()
+
+
+@pytest.mark.asyncio
+async def test_leader_handle_tolerates_garbage_payload(tmp_path):
+    """A malformed purge message must never raise out of the leader handler —
+    a raised exception could kill the pub/sub subscription."""
+    purger = LeaderScopePurger(
+        base_dir=tmp_path, scopes=FakeScopeRepository([]), pubsub_endpoint=None
+    )
+    await purger.handle(None, {"nonsense": True})
+    await purger.handle(None, None)
+    await purger.handle(None, "not-a-dict")

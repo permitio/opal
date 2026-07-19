@@ -6,9 +6,13 @@ purged source. The leader additionally registers ``LeaderScopePurger.handle``
 (at watcher start) which removes the clone dir — only the leader mutates the
 clone tree.
 """
+import shutil
+from pathlib import Path
 from typing import Any, Optional
 
+from opal_common.async_utils import run_sync
 from opal_common.logger import logger
+from opal_common.schemas.policy_source import GitPolicyScopeSource
 from pydantic import BaseModel, ValidationError
 
 from opal_server.config import opal_server_config
@@ -57,13 +61,6 @@ async def subscribe_worker_purge_handler(endpoint) -> None:
     await endpoint.subscribe(
         [opal_server_config.SCOPES_PURGE_CHANNEL], handle_purge_message
     )
-
-
-import shutil
-from pathlib import Path
-
-from opal_common.async_utils import run_sync
-from opal_common.schemas.policy_source import GitPolicyScopeSource
 
 
 async def find_scope_sharing_source(
