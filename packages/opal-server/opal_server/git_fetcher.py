@@ -12,7 +12,7 @@ from concurrent.futures import thread as cf_thread
 from contextlib import asynccontextmanager
 from functools import partial
 from pathlib import Path
-from typing import Optional, cast
+from typing import Awaitable, Callable, Optional, cast
 
 import aiofiles.os
 import pygit2
@@ -325,6 +325,7 @@ class GitPolicyFetcher(PolicyFetcher):
         source: GitPolicyScopeSource,
         callbacks=PolicyFetcherCallbacks(),
         remote_name: str = "origin",
+        liveness_probe: Optional[Callable[[], Awaitable[bool]]] = None,
     ):
         super().__init__(callbacks)
         self._base_dir = GitPolicyFetcher.base_dir(base_dir)
@@ -334,6 +335,7 @@ class GitPolicyFetcher(PolicyFetcher):
         self._repo_path = self._base_dir / self._source_id
         self._remote = remote_name
         self._scope_id = scope_id
+        self._liveness_probe = liveness_probe
         logger.debug(
             f"Initializing git fetcher: scope_id={scope_id}, url={redact_url(source.url)}, branch={self._source.branch}, source_id={self._source_id}"
         )
@@ -471,6 +473,29 @@ class GitPolicyFetcher(PolicyFetcher):
                     logger.info("Repo not found at {path}", path=self._repo_path)
 
                 # fallthrough to clean clone
+                # Liveness check before clone (the resurrection point): a
+                # DELETE that landed during this sync already broadcast its
+                # purge; cloning now would resurrect the dead scope's repo
+                # and re-populate the caches. Runs under lock_source, so it
+                # is serialized against the leader's disk purge. Fails open:
+                # a store hiccup must not block the sync.
+                if self._liveness_probe is not None:
+                    try:
+                        alive = await self._liveness_probe()
+                    except Exception as e:
+                        logger.warning(
+                            "Liveness probe for scope {scope} failed, "
+                            "proceeding with clone: {err}",
+                            scope=self._scope_id,
+                            err=repr(e),
+                        )
+                        alive = True
+                    if not alive:
+                        logger.info(
+                            "Scope {scope} was deleted mid-sync, skipping clone",
+                            scope=self._scope_id,
+                        )
+                        return
                 await self._clone()
 
     def _discover_repository(self, path: Path) -> bool:

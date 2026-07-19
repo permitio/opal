@@ -149,11 +149,19 @@ class ScopesService:
                     pubsub_endpoint=self._pubsub_endpoint,
                 )
 
+            async def _scope_still_exists() -> bool:
+                try:
+                    await self._scopes.get(scope.scope_id)
+                    return True
+                except ScopeNotFoundError:
+                    return False
+
             fetcher = GitPolicyFetcher(
                 self._base_dir,
                 scope.scope_id,
                 source,
                 callbacks=callbacks,
+                liveness_probe=_scope_still_exists,
             )
 
             try:
