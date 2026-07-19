@@ -41,8 +41,6 @@ from pygit2 import (
     reference_is_valid_name,
 )
 
-_git_executor: Optional[ThreadPoolExecutor] = None
-
 # Source ids whose scope git op (clone/fetch) is still running on a pool thread
 # — including one that already exceeded its timeout but whose blocking pygit2
 # call has not yet returned. Guarded by a lock because it is cleared from the
@@ -100,54 +98,29 @@ class _DaemonThreadPoolExecutor(ThreadPoolExecutor):
             cf_thread._threads_queues[t] = self._work_queue
 
 
-def _get_git_executor() -> ThreadPoolExecutor:
-    """Lazily build the dedicated pool for scope git operations.
-
-    Isolated from the default executor so a hung clone/fetch can never starve
-    bundle serving or other server work. Workers are daemon threads so a
-    lingering (timed-out) git op cannot block interpreter shutdown.
-
-    ``SCOPES_GIT_MAX_WORKERS`` is read once on first use; the executor is then
-    cached for the process lifetime. It is reset after ``fork`` (see
-    ``_reset_git_executor_after_fork``) because a ``ThreadPoolExecutor``
-    inherited across a fork has no live worker threads in the child.
-    """
-    global _git_executor
-    if _git_executor is None:
-        _git_executor = _DaemonThreadPoolExecutor(
-            max_workers=opal_server_config.SCOPES_GIT_MAX_WORKERS,
-            thread_name_prefix="opal-git",
-        )
-    return _git_executor
-
-
 def shutdown_git_executor() -> None:
-    """Drop the dedicated git pool and clear in-flight state.
+    """Clear in-flight markers and live-op accounting.
 
-    Called at the end of the pre-fork ``preload_scopes`` so the gunicorn master
-    does not carry idle git-pool threads (or stale in-flight markers) into the
-    forked workers. Workers lazily rebuild their own pool on first use.
+    Called at the end of the pre-fork ``preload_scopes`` so the gunicorn
+    master does not carry stale in-flight markers (or loop-bound semaphores)
+    into forked workers. Per-op executors need no teardown: their daemon
+    threads die with their ops (or the process).
     """
-    global _git_executor
-    executor, _git_executor = _git_executor, None
-    if executor is not None:
-        executor.shutdown(wait=False, cancel_futures=True)
+    _live_ops_semaphores.clear()
     with _git_busy_lock:
         _git_busy.clear()
 
 
 def _reset_git_executor_after_fork() -> None:
-    """Reset the git pool + in-flight state in a freshly forked child.
+    """Reset live-op accounting + in-flight state in a freshly forked child.
 
-    A ``ThreadPoolExecutor`` created in the parent is inherited *broken* by the
-    child: its worker threads do not survive ``fork``, yet its bookkeeping makes
-    ``_adjust_thread_count`` skip spawning live workers, so every submitted task
-    would sit queued forever. Dropping the reference forces the child to build
-    its own working pool. The in-flight markers are stale in the child too (no
-    thread will ever clear them), so clear them.
+    The live-op semaphores are bound to the parent's event loop (see
+    ``_get_live_ops_semaphore``), which does not survive ``fork``; dropping
+    them forces the child to mint its own on first use against its own loop.
+    The in-flight markers are stale in the child too (no thread will ever
+    clear them), so clear them.
     """
-    global _git_executor
-    _git_executor = None
+    _live_ops_semaphores.clear()
     with _git_busy_lock:
         _git_busy.clear()
 
@@ -186,18 +159,40 @@ def _consume_future_result(fut) -> None:
             pass
 
 
+# Bounds LIVE (non-timed-out) git ops. asyncio primitives are loop-bound, so
+# the semaphore is minted per running loop (WeakKeyDictionary: a dead loop's
+# entry vanishes with it). A timed-out op releases its slot while its zombie
+# thread lingers — capacity is never consumed by zombies (a fixed pool
+# starves once zombies exceed its size; see the offline-repo bed gate).
+_live_ops_semaphores: "weakref.WeakKeyDictionary" = weakref.WeakKeyDictionary()
+
+
+def _get_live_ops_semaphore() -> asyncio.Semaphore:
+    loop = asyncio.get_running_loop()
+    sem = _live_ops_semaphores.get(loop)
+    if sem is None:
+        sem = asyncio.Semaphore(max(1, opal_server_config.SCOPES_GIT_MAX_WORKERS))
+        _live_ops_semaphores[loop] = sem
+    return sem
+
+
 async def run_in_git_executor(func, *args, timeout: float, busy_key=None, **kwargs):
-    """Run a blocking git call on the dedicated pool with a hard timeout.
+    """Run a blocking git call on its own daemon thread with a hard timeout.
+
+    ``SCOPES_GIT_MAX_WORKERS`` bounds LIVE (non-timed-out) ops via an asyncio
+    semaphore; each op still gets its own single-use daemon-thread executor,
+    so a lingering ("zombie") op after a timeout never occupies a shared pool
+    slot — it keeps running on its private thread but no longer counts
+    against the concurrency bound.
 
     Raises the builtin ``TimeoutError`` when the call exceeds ``timeout``
     seconds (``timeout <= 0`` means no limit). NOTE: the timeout unblocks the
     event loop and the awaiting coroutine, but the underlying pygit2 call keeps
-    running on its pool thread until the OS network timeout; the dedicated pool
-    keeps that lingering thread isolated.
+    running on its own daemon thread until the OS network timeout.
 
     When ``busy_key`` is given it is marked in-flight for the *entire real
     duration* of the call — including any lingering time after a timeout — and
-    cleared only when the blocking call actually returns (on the pool thread).
+    cleared only when the blocking call actually returns (on its own thread).
     Callers use ``git_op_in_flight`` to avoid starting a second git op against
     the same repository while a timed-out one is still running.
     """
@@ -210,27 +205,53 @@ async def run_in_git_executor(func, *args, timeout: float, busy_key=None, **kwar
             if busy_key is not None:
                 _mark_git_op_done(busy_key)
 
+    sem = _get_live_ops_semaphore()
+    await sem.acquire()
+    released = False
+
+    def _release_once():
+        nonlocal released
+        if not released:
+            released = True
+            sem.release()
+
+    # Single-use executor: the op gets a private daemon thread, so a zombie
+    # never blocks the next op the way a fixed shared pool does. shutdown
+    # with wait=False just drops bookkeeping; the daemon thread dies with
+    # the pygit2 call (or the process).
+    executor = _DaemonThreadPoolExecutor(max_workers=1, thread_name_prefix="opal-git")
     if busy_key is not None:
         _mark_git_op_started(busy_key)
     try:
-        fut = loop.run_in_executor(_get_git_executor(), _runner)
+        fut = loop.run_in_executor(executor, _runner)
     except BaseException:
         if busy_key is not None:
             _mark_git_op_done(busy_key)
+        executor.shutdown(wait=False)
+        _release_once()
         raise
+    fut.add_done_callback(lambda f: executor.shutdown(wait=False))
 
     if not (timeout and timeout > 0):
-        return await fut
+        try:
+            return await fut
+        finally:
+            _release_once()
 
-    # Use asyncio.wait (not wait_for) so a timeout does NOT cancel the future:
-    # the pool thread runs to completion and clears busy_key, and a still-queued
-    # task isn't silently dropped. The done-callback retrieves the eventual
-    # result to avoid an "exception never retrieved" warning.
+    # asyncio.wait (not wait_for) so a timeout does NOT cancel the future:
+    # the thread runs to completion and clears busy_key; the done-callback
+    # retrieves the eventual result to avoid "exception never retrieved".
     fut.add_done_callback(_consume_future_result)
     done, _pending = await asyncio.wait({fut}, timeout=timeout)
     if not done:
+        # Zombie: free the capacity slot; the private daemon thread lingers
+        # until the OS gives up, tracked only by busy_key.
+        _release_once()
         raise TimeoutError(f"git operation exceeded {timeout}s")
-    return fut.result()
+    try:
+        return fut.result()
+    finally:
+        _release_once()
 
 
 class PolicyFetcherCallbacks:

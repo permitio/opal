@@ -72,3 +72,54 @@ async def test_busy_key_cleared_after_success():
     key = "ok-source-id"
     assert await run_in_git_executor(lambda: 1, timeout=5, busy_key=key) == 1
     assert git_op_in_flight(key) is False
+
+
+@pytest.mark.asyncio
+async def test_zombie_does_not_consume_capacity(monkeypatch):
+    """A timed-out (lingering) op must not starve the next op — the bed's
+    offline-repo gate: N hung > pool size permanently exhausted the old
+    fixed pool. With max workers = 1, a zombie plus a healthy op is the
+    minimal starvation scenario."""
+    from opal_server.config import opal_server_config
+    from opal_server.git_fetcher import shutdown_git_executor
+
+    monkeypatch.setattr(opal_server_config, "SCOPES_GIT_MAX_WORKERS", 1)
+    shutdown_git_executor()  # drop any semaphore minted with the old size
+    try:
+        release = threading.Event()
+        with pytest.raises(TimeoutError):
+            await run_in_git_executor(release.wait, timeout=0.1)  # zombie now lingers
+
+        start = time.monotonic()
+        result = await asyncio.wait_for(
+            run_in_git_executor(lambda: "healthy", timeout=5), timeout=2
+        )
+        elapsed = time.monotonic() - start
+        assert result == "healthy"
+        assert elapsed < 1.5, f"healthy op starved behind a zombie ({elapsed:.2f}s)"
+    finally:
+        release.set()  # let the zombie thread finish
+        shutdown_git_executor()
+
+
+@pytest.mark.asyncio
+async def test_semaphore_bounds_live_ops(monkeypatch):
+    """Live ops beyond SCOPES_GIT_MAX_WORKERS queue on the semaphore."""
+    from opal_server.config import opal_server_config
+    from opal_server.git_fetcher import shutdown_git_executor
+
+    monkeypatch.setattr(opal_server_config, "SCOPES_GIT_MAX_WORKERS", 1)
+    shutdown_git_executor()
+    gate = threading.Event()
+    try:
+        first = asyncio.ensure_future(run_in_git_executor(gate.wait, timeout=0))
+        await asyncio.sleep(0.05)  # first op occupies the only live slot
+        second = asyncio.ensure_future(run_in_git_executor(lambda: "second", timeout=5))
+        await asyncio.sleep(0.05)
+        assert not second.done(), "second op ran despite the live-op bound"
+        gate.set()
+        assert await asyncio.wait_for(second, timeout=2) == "second"
+        await asyncio.wait_for(first, timeout=2)
+    finally:
+        gate.set()
+        shutdown_git_executor()
