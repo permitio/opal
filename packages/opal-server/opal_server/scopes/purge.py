@@ -6,6 +6,7 @@ purged source. The leader additionally registers ``LeaderScopePurger.handle``
 (at watcher start) which removes the clone dir — only the leader mutates the
 clone tree.
 """
+import asyncio
 import os
 import shutil
 from pathlib import Path
@@ -14,10 +15,9 @@ from typing import Any, Optional
 from opal_common.async_utils import run_sync
 from opal_common.logger import logger
 from opal_common.schemas.policy_source import GitPolicyScopeSource
-from pydantic import BaseModel, ValidationError
-
 from opal_server.config import opal_server_config
 from opal_server.git_fetcher import GitPolicyFetcher, git_op_in_flight
+from pydantic import BaseModel, ValidationError
 
 
 class ScopePurgeCommand(BaseModel):
@@ -69,9 +69,10 @@ async def find_scope_sharing_source(
 ) -> Optional[str]:
     """Return the id of a live scope mapping to ``source_id``, or None.
 
-    Returns None (= purge defensively) when the scan raises: the caller's
-    record is already gone, so a skipped purge is a permanent leak while an
-    over-purge self-heals (a surviving sibling re-clones on its next sync).
+    Returns None (= purge defensively) when the scan raises: the
+    caller's record is already gone, so a skipped purge is a permanent
+    leak while an over-purge self-heals (a surviving sibling re-clones
+    on its next sync).
     """
     try:
         return next(
@@ -104,14 +105,23 @@ class LeaderScopePurger:
         self._base_dir = base_dir
         self._scopes = scopes
         self._pubsub_endpoint = pubsub_endpoint
+        # Strong refs to in-flight background purges (create_task results are
+        # otherwise GC-able); discarded on completion.
+        self._pending_purges = set()
 
-    async def handle(self, subscription, data: Any) -> None:
+    async def handle(self, subscription, data: Any):
         try:
             cmd = ScopePurgeCommand(**data)
         except (ValidationError, TypeError):
             # The worker-level handler already logged the malformed payload.
-            return
-        await self.purge_source_if_unshared(cmd)
+            return None
+        # publish() awaits subscriber callbacks inline — never do lock-waiting
+        # disk work on the publisher's request path (DELETE/PUT latency is
+        # bounded by contract). The purge proceeds in the background.
+        task = asyncio.create_task(self.purge_source_if_unshared(cmd))
+        self._pending_purges.add(task)
+        task.add_done_callback(self._pending_purges.discard)
+        return task
 
     async def purge_source_if_unshared(self, cmd: ScopePurgeCommand) -> None:
         async with GitPolicyFetcher.lock_source(cmd.source_id):
@@ -138,9 +148,7 @@ class LeaderScopePurger:
             except FileNotFoundError:
                 pass  # already gone — the intended end state
             except OSError as e:
-                logger.warning(
-                    f"Failed to remove clone dir {cmd.clone_path}: {e!r}"
-                )
+                logger.warning(f"Failed to remove clone dir {cmd.clone_path}: {e!r}")
             # Popped while the lock is held: lock_source waiters re-check
             # the dict entry after acquiring and retry on the fresh lock.
             GitPolicyFetcher.repo_locks.pop(cmd.source_id, None)
@@ -148,9 +156,10 @@ class LeaderScopePurger:
     async def sweep_orphans(self) -> None:
         """Reclaim clone dirs referencing no live scope.
 
-        Covers crash-orphaned dirs, redis-wiped boots, and old-shard dirs
-        after a SCOPES_REPO_CLONES_SHARDS reconfig. Leader-only; runs after
-        boot sync and after each periodic sync pass (settled state).
+        Covers crash-orphaned dirs, redis-wiped boots, and old-shard
+        dirs after a SCOPES_REPO_CLONES_SHARDS reconfig. Leader-only;
+        runs after boot sync and after each periodic sync pass (settled
+        state).
         """
         sources_dir = GitPolicyFetcher.base_dir(self._base_dir)
         try:
@@ -191,9 +200,7 @@ class LeaderScopePurger:
                 if not still_orphan:
                     continue
                 if git_op_in_flight(name):
-                    logger.info(
-                        f"Orphan sweep skipping {name}: git op in flight"
-                    )
+                    logger.info(f"Orphan sweep skipping {name}: git op in flight")
                     continue
                 logger.info(f"Reclaiming orphan clone dir: {path}")
                 GitPolicyFetcher.forget_repo(str(path))

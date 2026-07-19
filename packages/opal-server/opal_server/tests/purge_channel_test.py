@@ -2,7 +2,11 @@ import asyncio
 
 import pytest
 from opal_server.config import OpalServerConfig
-from opal_server.git_fetcher import GitPolicyFetcher, _mark_git_op_started, _mark_git_op_done
+from opal_server.git_fetcher import (
+    GitPolicyFetcher,
+    _mark_git_op_done,
+    _mark_git_op_started,
+)
 from opal_server.scopes.purge import (
     ScopePurgeCommand,
     handle_purge_message,
@@ -154,12 +158,13 @@ async def test_leader_purges_unshared_source_from_disk(tmp_path):
     purger = LeaderScopePurger(
         base_dir=tmp_path, scopes=FakeScopeRepository([]), pubsub_endpoint=None
     )
-    await purger.handle(
+    task = await purger.handle(
         None,
         ScopePurgeCommand(
             source_id=sid, clone_path=str(clone), scope_id="dead", reason="delete"
         ).dict(),
     )
+    await task
 
     assert not clone.exists()
     assert str(clone) not in GitPolicyFetcher.repos
@@ -178,13 +183,16 @@ async def test_leader_keeps_disk_when_live_sibling_shares_source(tmp_path):
         scopes=FakeScopeRepository([survivor]),
         pubsub_endpoint=None,
     )
-    await purger.handle(
+    task = await purger.handle(
         None,
         ScopePurgeCommand(
-            source_id=sid, clone_path=str(clone), scope_id="deleted-sibling",
+            source_id=sid,
+            clone_path=str(clone),
+            scope_id="deleted-sibling",
             reason="delete",
         ).dict(),
     )
+    await task
 
     assert clone.exists(), "shared clone must survive a sibling's delete"
 
@@ -200,13 +208,16 @@ async def test_leader_skips_disk_while_git_op_in_flight(tmp_path):
     )
     _mark_git_op_started(sid)
     try:
-        await purger.handle(
+        task = await purger.handle(
             None,
             ScopePurgeCommand(
-                source_id=sid, clone_path=str(clone), scope_id="dead",
+                source_id=sid,
+                clone_path=str(clone),
+                scope_id="dead",
                 reason="delete",
             ).dict(),
         )
+        await task
     finally:
         _mark_git_op_done(sid)
 
@@ -230,20 +241,22 @@ async def test_leader_purges_defensively_when_sibling_check_raises(tmp_path):
     purger = LeaderScopePurger(
         base_dir=tmp_path, scopes=BrokenRepo([]), pubsub_endpoint=None
     )
-    await purger.handle(
+    task = await purger.handle(
         None,
         ScopePurgeCommand(
             source_id=sid, clone_path=str(clone), scope_id="dead", reason="delete"
         ).dict(),
     )
+    await task
 
     assert not clone.exists()
 
 
 @pytest.mark.asyncio
-async def test_leader_serializes_against_held_source_lock(tmp_path):
-    """The disk purge must wait for the source lock held by an in-flight
-    fetch (transfers PR2's delete_serializes_against_inflight_repo_lock)."""
+async def test_leader_handle_returns_fast_and_purge_waits_for_lock(tmp_path):
+    """Handle() must return promptly even while the source lock is held (the
+    publish path awaits it inline — DELETE/PUT latency contract), while the
+    background purge still serializes on the lock."""
     dead = _scope("dead", "https://git/repo-a.git")
     sid = GitPolicyFetcher.source_id(dead.policy)
     clone = _make_clone(tmp_path, dead.policy)
@@ -254,18 +267,21 @@ async def test_leader_serializes_against_held_source_lock(tmp_path):
     lock = GitPolicyFetcher.repo_locks.setdefault(sid, asyncio.Lock())
     await lock.acquire()
     try:
-        task = asyncio.create_task(
+        task = await asyncio.wait_for(
             purger.handle(
                 None,
                 ScopePurgeCommand(
-                    source_id=sid, clone_path=str(clone), scope_id="dead",
+                    source_id=sid,
+                    clone_path=str(clone),
+                    scope_id="dead",
                     reason="delete",
                 ).dict(),
-            )
+            ),
+            timeout=1,
         )
         for _ in range(10):
             await asyncio.sleep(0)
-        assert not task.done(), "purge did not wait for the source lock"
+        assert not task.done(), "purge ran while the fetch held the source lock"
         assert clone.exists()
     finally:
         lock.release()
@@ -276,11 +292,11 @@ async def test_leader_serializes_against_held_source_lock(tmp_path):
 
 @pytest.mark.asyncio
 async def test_leader_handle_tolerates_garbage_payload(tmp_path):
-    """A malformed purge message must never raise out of the leader handler —
-    a raised exception could kill the pub/sub subscription."""
+    """A malformed purge message must never raise out of the leader handler — a
+    raised exception could kill the pub/sub subscription."""
     purger = LeaderScopePurger(
         base_dir=tmp_path, scopes=FakeScopeRepository([]), pubsub_endpoint=None
     )
-    await purger.handle(None, {"nonsense": True})
-    await purger.handle(None, None)
-    await purger.handle(None, "not-a-dict")
+    assert await purger.handle(None, {"nonsense": True}) is None
+    assert await purger.handle(None, None) is None
+    assert await purger.handle(None, "not-a-dict") is None
