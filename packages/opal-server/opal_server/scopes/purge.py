@@ -152,13 +152,22 @@ class LeaderScopePurger:
                     "keeping the clone"
                 )
             elif git_op_in_flight(cmd.source_id):
-                # A lingering timed-out git op still touches the repo on a
-                # pool thread; rmtree/free now risks a crash. The orphan
-                # sweep reclaims the dir on a later pass.
+                # A lingering (timed-out) git op still touches the repo on a
+                # pool thread: freeing the pygit2 handle or deleting the dir
+                # now risks a crash, so those wait for the orphan sweep. The
+                # lock and timestamp entries are event-loop-side objects the
+                # thread never touches — drain them now (under the held lock,
+                # per the lock-identity rule) and confirm, so workers drop
+                # their memory entries; the leader's own handle survives via
+                # purge_local_memory's in-flight guard.
                 logger.warning(
-                    f"Deferring disk purge of {cmd.source_id}: a git "
-                    "operation is still in flight"
+                    f"Deferring clone-dir removal for {cmd.source_id}: a git "
+                    "operation is still in flight (orphan sweep reclaims it); "
+                    "draining lock/timestamp entries now"
                 )
+                GitPolicyFetcher.repos_last_fetched.pop(cmd.source_id, None)
+                GitPolicyFetcher.repo_locks.pop(cmd.source_id, None)
+                confirm = True
             else:
                 GitPolicyFetcher.forget_repo(cmd.clone_path)
                 GitPolicyFetcher.repos_last_fetched.pop(cmd.source_id, None)

@@ -213,23 +213,37 @@ async def test_leader_keeps_disk_when_live_sibling_shares_source(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_leader_skips_disk_while_git_op_in_flight(tmp_path):
+async def test_leader_inflight_defers_disk_but_drains_lock_and_timestamp(tmp_path):
+    """With a lingering git op: the clone dir and the (thread-visible) repo
+    handle must survive, but the lock/timestamp entries drain and the purge
+    is confirmed — the repoint-during-hung-fetch gate measures exactly the
+    lock/timestamp drain."""
+
+    class FakePubSubEndpoint:
+        def __init__(self):
+            self.published = []
+
+        async def publish(self, topics, data=None):
+            self.published.append((list(topics), data))
+
     dead = _scope("dead", "https://git/repo-a.git")
     sid = GitPolicyFetcher.source_id(dead.policy)
     clone = _make_clone(tmp_path, dead.policy)
+    GitPolicyFetcher.repos[str(clone)] = object()
+    GitPolicyFetcher.repos_last_fetched[sid] = "ts"
+    GitPolicyFetcher.repo_locks[sid] = asyncio.Lock()
+    pubsub = FakePubSubEndpoint()
 
     purger = LeaderScopePurger(
-        base_dir=tmp_path, scopes=FakeScopeRepository([]), pubsub_endpoint=None
+        base_dir=tmp_path, scopes=FakeScopeRepository([]), pubsub_endpoint=pubsub
     )
     _mark_git_op_started(sid)
     try:
         task = await purger.handle(
             None,
             ScopePurgeCommand(
-                source_id=sid,
-                clone_path=str(clone),
-                scope_id="dead",
-                reason="delete",
+                source_id=sid, clone_path=str(clone), scope_id="dead",
+                reason="repoint",
             ).dict(),
         )
         await task
@@ -237,7 +251,12 @@ async def test_leader_skips_disk_while_git_op_in_flight(tmp_path):
         _mark_git_op_done(sid)
 
     assert clone.exists(), "rmtree while a git thread touches the repo is unsafe"
-    # The orphan sweep is the backstop that reclaims it later (Task 8).
+    assert str(clone) in GitPolicyFetcher.repos, "handle freed under a live thread"
+    assert sid not in GitPolicyFetcher.repos_last_fetched
+    assert sid not in GitPolicyFetcher.repo_locks
+    assert len(pubsub.published) == 1
+    _, payload = pubsub.published[0]
+    assert payload["confirmed"] is True
 
 
 @pytest.mark.asyncio
@@ -368,7 +387,7 @@ async def test_leader_publishes_confirmation_after_purge(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_leader_does_not_confirm_when_shared_or_inflight(tmp_path):
+async def test_leader_does_not_confirm_when_shared(tmp_path):
     survivor = _scope("survivor", "https://git/shared.git")
     sid = GitPolicyFetcher.source_id(survivor.policy)
     clone = _make_clone(tmp_path, survivor.policy)
@@ -395,22 +414,3 @@ async def test_leader_does_not_confirm_when_shared_or_inflight(tmp_path):
     )
     await task
     assert pubsub.published == []  # shared → no confirmation
-
-    inflight_purger = LeaderScopePurger(
-        base_dir=tmp_path,
-        scopes=FakeScopeRepository([]),
-        pubsub_endpoint=pubsub,
-    )
-    _mark_git_op_started(sid)
-    try:
-        task = await inflight_purger.handle(
-            None,
-            ScopePurgeCommand(
-                source_id=sid, clone_path=str(clone), scope_id="x",
-                reason="delete",
-            ).dict(),
-        )
-        await task
-    finally:
-        _mark_git_op_done(sid)
-    assert pubsub.published == []  # deferred → no confirmation
