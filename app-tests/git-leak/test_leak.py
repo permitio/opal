@@ -234,9 +234,9 @@ def test_scope_repoint_releases_old_repo_cache(opal, repo_count):
         # repo_a) — this is what proves the scope actually switched sources.
         return resp.status_code == 200 and resp.content != content_a
 
-    assert _wait_until(_serving_repo_b, timeout=300), (
-        "scope never switched to serving the re-pointed (repo_b) content"
-    )
+    assert _wait_until(
+        _serving_repo_b, timeout=300
+    ), "scope never switched to serving the re-pointed (repo_b) content"
 
     def _old_source_purged() -> bool:
         s = opal.stats(samples=1)

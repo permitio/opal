@@ -33,7 +33,10 @@ def clear_caches():
 
 def _cmd(sid="sid-1", path="/clones/sid-1", confirmed=False):
     return ScopePurgeCommand(
-        source_id=sid, clone_path=path, scope_id="s1", reason="delete",
+        source_id=sid,
+        clone_path=path,
+        scope_id="s1",
+        reason="delete",
         confirmed=confirmed,
     )
 
@@ -80,9 +83,9 @@ async def test_handle_purge_message_parses_and_purges():
 
 @pytest.mark.asyncio
 async def test_handle_purge_message_ignores_unconfirmed_requests():
-    """Workers must not purge on a raw request — only the leader's
-    sibling-checked confirmation may drop cache entries (over-purge of a
-    shared source was a bed regression)."""
+    """Workers must not purge on a raw request — only the leader's sibling-
+    checked confirmation may drop cache entries (over-purge of a shared source
+    was a bed regression)."""
     GitPolicyFetcher.repos["/clones/sid-1"] = object()
     GitPolicyFetcher.repos_last_fetched["sid-1"] = "ts"
 
@@ -242,7 +245,9 @@ async def test_leader_inflight_defers_disk_but_drains_lock_and_timestamp(tmp_pat
         task = await purger.handle(
             None,
             ScopePurgeCommand(
-                source_id=sid, clone_path=str(clone), scope_id="dead",
+                source_id=sid,
+                clone_path=str(clone),
+                scope_id="dead",
                 reason="repoint",
             ).dict(),
         )
@@ -347,8 +352,11 @@ async def test_leader_ignores_confirmation_broadcasts(tmp_path):
     task = await purger.handle(
         None,
         ScopePurgeCommand(
-            source_id=sid, clone_path=str(clone), scope_id="dead",
-            reason="delete", confirmed=True,
+            source_id=sid,
+            clone_path=str(clone),
+            scope_id="dead",
+            reason="delete",
+            confirmed=True,
         ).dict(),
     )
     assert task is None
@@ -374,7 +382,9 @@ async def test_leader_publishes_confirmation_after_purge(tmp_path):
     task = await purger.handle(
         None,
         ScopePurgeCommand(
-            source_id=sid, clone_path=str(clone), scope_id="dead",
+            source_id=sid,
+            clone_path=str(clone),
+            scope_id="dead",
             reason="delete",
         ).dict(),
     )
@@ -408,7 +418,9 @@ async def test_leader_does_not_confirm_when_shared(tmp_path):
     task = await purger.handle(
         None,
         ScopePurgeCommand(
-            source_id=sid, clone_path=str(clone), scope_id="deleted-sibling",
+            source_id=sid,
+            clone_path=str(clone),
+            scope_id="deleted-sibling",
             reason="delete",
         ).dict(),
     )
@@ -418,10 +430,10 @@ async def test_leader_does_not_confirm_when_shared(tmp_path):
 
 @pytest.mark.asyncio
 async def test_confirmation_is_published_while_holding_the_source_lock(tmp_path):
-    """The confirmation frees this process's pygit2 handle via the inline
-    local subscriber. It MUST be published under lock_source, or a
-    re-created scope's sync can cache a fresh handle in the gap and have it
-    freed mid-_notify_on_changes (use-after-free).
+    """The confirmation frees this process's pygit2 handle via the inline local
+    subscriber. It MUST be published under lock_source, or a re-created scope's
+    sync can cache a fresh handle in the gap and have it freed mid-
+    _notify_on_changes (use-after-free).
 
     Discriminates by capturing the lock object BEFORE the purge runs, then
     checking ``.locked()`` from inside the fake endpoint's ``publish()``.
@@ -452,11 +464,13 @@ async def test_confirmation_is_published_while_holding_the_source_lock(tmp_path)
     task = await purger.handle(
         None,
         ScopePurgeCommand(
-            source_id=sid, clone_path=str(clone), scope_id="dead",
+            source_id=sid,
+            clone_path=str(clone),
+            scope_id="dead",
             reason="delete",
         ).dict(),
     )
     await task
-    assert lock_state_at_publish == [True], (
-        f"confirmation published outside lock_source: {lock_state_at_publish}"
-    )
+    assert lock_state_at_publish == [
+        True
+    ], f"confirmation published outside lock_source: {lock_state_at_publish}"

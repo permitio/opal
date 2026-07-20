@@ -1,9 +1,10 @@
 """GET /scopes/{scope_id}/policy when the clone dir vanishes.
 
-Record missing -> default scope bundle (unchanged contract).
-Record PRESENT but the clone is transiently broken -> 503 + Retry-After:
-a live tenant must never be served another tenant's policy (PR3 flip of
-the PR2-era regression lock)."""
+Record missing -> default scope bundle (unchanged contract). Record
+PRESENT but the clone is transiently broken -> 503 + Retry-After: a live
+tenant must never be served another tenant's policy (PR3 flip of the
+PR2-era regression lock).
+"""
 
 import pytest
 from fastapi import FastAPI
@@ -94,8 +95,8 @@ def test_live_scope_clone_vanish_returns_retryable_503(tmp_path, monkeypatch):
 
 
 def test_live_scope_oserror_returns_retryable_503(tmp_path, monkeypatch):
-    """make_bundle's tree-walk can raise raw OSError if the dir vanishes
-    mid-walk — an unhandled 500 before PR3."""
+    """make_bundle's tree-walk can raise raw OSError if the dir vanishes mid-
+    walk — an unhandled 500 before PR3."""
     live = _scope("live", "https://git/live.git")
     repo = FakeScopeRepository([live])
 

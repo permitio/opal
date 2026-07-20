@@ -1,6 +1,8 @@
 """PUT /scopes re-pointing a scope to a new URL/branch must broadcast a purge
 for the OLD source — otherwise its clone + cache entries orphan (bed gate:
-test_scope_repoint_releases_old_repo_cache)."""
+
+test_scope_repoint_releases_old_repo_cache).
+"""
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -136,8 +138,8 @@ def test_put_new_scope_publishes_no_purge(tmp_path, monkeypatch):
 
 
 def test_put_with_unreadable_old_record_still_succeeds(tmp_path, monkeypatch):
-    """A corrupted/unreadable prior record must not 500 the PUT that
-    overwrites it; the purge is skipped (orphan sweep backstops it)."""
+    """A corrupted/unreadable prior record must not 500 the PUT that overwrites
+    it; the purge is skipped (orphan sweep backstops it)."""
     monkeypatch.setattr(
         "opal_server.scopes.api.opal_server_config.BASE_DIR", str(tmp_path)
     )

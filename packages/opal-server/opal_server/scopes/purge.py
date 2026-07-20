@@ -26,7 +26,7 @@ class ScopePurgeCommand(BaseModel):
     scope_id: str  # logging / tracing only
     reason: str  # "delete" | "repoint" | "orphan" — logging only
     confirmed: bool = False  # set by the leader after the sibling-check;
-                             # memory handlers act only on confirmed commands
+    # memory handlers act only on confirmed commands
 
 
 def purge_local_memory(source_id: str, clone_path: str) -> None:
@@ -122,8 +122,7 @@ class LeaderScopePurger:
             # (e.g. the confirmation publish hitting a broadcaster error)
             # surfaces only as asyncio's unretrieved-exception noise.
             logger.exception(
-                f"Background purge of source {cmd.source_id} "
-                f"({cmd.reason}) failed"
+                f"Background purge of source {cmd.source_id} " f"({cmd.reason}) failed"
             )
 
     async def handle(self, subscription, data: Any):

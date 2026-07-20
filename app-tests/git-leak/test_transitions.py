@@ -38,7 +38,8 @@ def test_delete_recreate_storm(opal, repo_count):
 @pytest.mark.timeout(1200)
 def test_randomized_churn_holds_invariants(opal, repo_count):
     """Seeded random put/refresh churn with end-of-round deletes; invariants
-    must hold at every settle point. Replay a failure with CHURN_SEED=<printed>.
+    must hold at every settle point. Replay a failure with
+    CHURN_SEED=<printed>.
 
     One deliberate constraint remains: 'repoint' ops are EXCLUDED — a repoint
     orphans the old source's cache entries by design today (the red repoint

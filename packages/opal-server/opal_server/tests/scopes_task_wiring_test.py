@@ -25,8 +25,8 @@ class _Recorder:
 
 
 def _bare_task(events, fail_sweep=False):
-    """Construct without __init__ (it needs Redis); wire only what the
-    methods under test use."""
+    """Construct without __init__ (it needs Redis); wire only what the methods
+    under test use."""
     t = ScopesPolicyWatcherTask.__new__(ScopesPolicyWatcherTask)
     rec = _Recorder(events, fail_sweep=fail_sweep)
     t._service = rec

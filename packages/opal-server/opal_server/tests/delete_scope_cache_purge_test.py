@@ -164,8 +164,10 @@ class _AmbiguousDeleteRepository(FakeScopeRepository):
 @pytest.mark.asyncio
 async def test_publish_still_runs_when_record_delete_raises_ambiguously(tmp_path):
     """The retry is a 204 no-op (ScopeNotFoundError), so a publish gated on a
-    clean delete would orphan the leader-side purge permanently. The error
-    still propagates."""
+    clean delete would orphan the leader-side purge permanently.
+
+    The error still propagates.
+    """
     scope = _scope("only", "https://git/repo-a.git")
     repo = _AmbiguousDeleteRepository([scope])
     pubsub = FakePubSubEndpoint()
@@ -185,8 +187,8 @@ async def test_publish_still_runs_when_record_delete_raises_ambiguously(tmp_path
 
 @pytest.mark.asyncio
 async def test_lock_source_waiter_retries_after_delete_pops_entry():
-    """A waiter queued on the old lock must not proceed under it once a
-    holder popped the entry — it retries on the freshly-minted lock."""
+    """A waiter queued on the old lock must not proceed under it once a holder
+    popped the entry — it retries on the freshly-minted lock."""
     sid = "some-source-id"
     events = []
 

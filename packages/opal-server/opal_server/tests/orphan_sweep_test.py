@@ -113,10 +113,13 @@ async def test_redis_wiped_boot_reclaims_everything(tmp_path):
 
 @pytest.mark.asyncio
 async def test_store_error_aborts_sweep_without_deleting(tmp_path):
-    """A transient store error must abort the ENTIRE sweep before the
-    per-entry loop — not be read as 'no scopes exist' (which would rmtree
-    every live clone). The call-count assertion proves the abort happened
-    at the initial scan, independent of the per-entry recheck's own guard."""
+    """A transient store error must abort the ENTIRE sweep before the per-entry
+    loop — not be read as 'no scopes exist' (which would rmtree every live
+    clone).
+
+    The call-count assertion proves the abort happened at the initial
+    scan, independent of the per-entry recheck's own guard.
+    """
 
     class BrokenOnceRepo(FakeScopeRepository):
         def __init__(self, scopes):

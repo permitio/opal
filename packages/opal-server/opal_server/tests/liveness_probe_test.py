@@ -2,7 +2,8 @@
 
 A delete landing DURING a sync must not let the sync re-clone the dead
 scope's repo (bed gate: the delete-vs-sync exclusion in
-test_randomized_churn_holds_invariants is lifted once this holds)."""
+test_randomized_churn_holds_invariants is lifted once this holds).
+"""
 import asyncio
 
 import pytest
@@ -34,9 +35,7 @@ def clear_caches():
 
 
 def _fetcher(tmp_path, probe):
-    return GitPolicyFetcher(
-        tmp_path, "scope-1", _source(), liveness_probe=probe
-    )
+    return GitPolicyFetcher(tmp_path, "scope-1", _source(), liveness_probe=probe)
 
 
 async def _run_with_clone_recorder(fetcher, monkeypatch):

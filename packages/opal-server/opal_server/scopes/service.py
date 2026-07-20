@@ -196,9 +196,7 @@ class ScopesService:
                 return
 
             deleted_source_id = GitPolicyFetcher.source_id(scope.policy)
-            scope_dir = GitPolicyFetcher.repo_clone_path(
-                self._base_dir, scope.policy
-            )
+            scope_dir = GitPolicyFetcher.repo_clone_path(self._base_dir, scope.policy)
 
             try:
                 await self._scopes.delete(scope_id)

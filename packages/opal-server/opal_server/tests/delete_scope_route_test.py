@@ -74,9 +74,10 @@ def test_delete_route_does_not_purge_fetcher_caches_without_pubsub(tmp_path):
 
     Cache purging is now two-phase (PR3): the route only publishes a
     request; GitPolicyFetcher caches drain only once the leader's
-    sibling-checked confirmation arrives. With pubsub_endpoint=None there is
-    no confirmation, so the caches are left untouched here — the orphan
-    sweep is the backstop."""
+    sibling-checked confirmation arrives. With pubsub_endpoint=None
+    there is no confirmation, so the caches are left untouched here —
+    the orphan sweep is the backstop.
+    """
     scope = _scope("only", "https://git/repo-a.git")
     repo = FakeScopeRepository([scope])
 
