@@ -183,11 +183,18 @@ class LeaderScopePurger:
                 # the dict entry after acquiring and retry on the fresh lock.
                 GitPolicyFetcher.repo_locks.pop(cmd.source_id, None)
                 confirm = True
-        if confirm and self._pubsub_endpoint is not None:
-            await self._pubsub_endpoint.publish(
-                [opal_server_config.SCOPES_PURGE_CHANNEL],
-                cmd.copy(update={"confirmed": True}).dict(),
-            )
+            # Published under the lock, like sweep_orphans: publish() runs
+            # local subscribers inline, so the confirmation frees this
+            # process's cached pygit2 handle. Releasing the lock first would
+            # let a re-created scope's sync acquire it, cache a fresh handle,
+            # and enter _notify_on_changes — which holds the handle across an
+            # await and then calls set_target() on it — while this stale
+            # confirmation frees it underneath (use-after-free).
+            if confirm and self._pubsub_endpoint is not None:
+                await self._pubsub_endpoint.publish(
+                    [opal_server_config.SCOPES_PURGE_CHANNEL],
+                    cmd.copy(update={"confirmed": True}).dict(),
+                )
 
     async def sweep_orphans(self) -> None:
         """Reclaim clone dirs referencing no live scope.

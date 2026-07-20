@@ -414,3 +414,49 @@ async def test_leader_does_not_confirm_when_shared(tmp_path):
     )
     await task
     assert pubsub.published == []  # shared → no confirmation
+
+
+@pytest.mark.asyncio
+async def test_confirmation_is_published_while_holding_the_source_lock(tmp_path):
+    """The confirmation frees this process's pygit2 handle via the inline
+    local subscriber. It MUST be published under lock_source, or a
+    re-created scope's sync can cache a fresh handle in the gap and have it
+    freed mid-_notify_on_changes (use-after-free).
+
+    Discriminates by capturing the lock object BEFORE the purge runs, then
+    checking ``.locked()`` from inside the fake endpoint's ``publish()``.
+    ``publish()`` runs on the purge's own task, so this is a same-task state
+    check, not a cross-task race: if the publish call happens before the
+    ``async with`` block has exited, the lock is still held and ``.locked()``
+    is True; if it happens after, the lock was already released and
+    ``.locked()`` is False. The lock is popped from ``repo_locks`` under the
+    lock before the confirm, so this check must use the captured reference,
+    not a fresh dict lookup.
+    """
+    dead = _scope("dead", "https://git/repo-a.git")
+    sid = GitPolicyFetcher.source_id(dead.policy)
+    clone = _make_clone(tmp_path, dead.policy)
+    # Capture the lock object the purge will acquire, before it runs.
+    source_lock = GitPolicyFetcher.repo_locks.setdefault(sid, asyncio.Lock())
+    lock_state_at_publish = []
+
+    class LockProbingEndpoint:
+        async def publish(self, topics, data=None):
+            lock_state_at_publish.append(source_lock.locked())
+
+    purger = LeaderScopePurger(
+        base_dir=tmp_path,
+        scopes=FakeScopeRepository([]),
+        pubsub_endpoint=LockProbingEndpoint(),
+    )
+    task = await purger.handle(
+        None,
+        ScopePurgeCommand(
+            source_id=sid, clone_path=str(clone), scope_id="dead",
+            reason="delete",
+        ).dict(),
+    )
+    await task
+    assert lock_state_at_publish == [True], (
+        f"confirmation published outside lock_source: {lock_state_at_publish}"
+    )
