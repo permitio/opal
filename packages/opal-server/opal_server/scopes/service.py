@@ -149,12 +149,19 @@ class ScopesService:
                     pubsub_endpoint=self._pubsub_endpoint,
                 )
 
+            source_id = GitPolicyFetcher.source_id(source)
+
             async def _scope_still_exists() -> bool:
+                # Also confirms the scope still points at the source this
+                # fetcher is syncing: after a repoint the old source was
+                # already purged, so cloning it again would orphan a dir.
                 try:
-                    await self._scopes.get(scope.scope_id)
-                    return True
+                    fresh = await self._scopes.get(scope.scope_id)
                 except ScopeNotFoundError:
                     return False
+                if not isinstance(fresh.policy, GitPolicyScopeSource):
+                    return False
+                return GitPolicyFetcher.source_id(fresh.policy) == source_id
 
             fetcher = GitPolicyFetcher(
                 self._base_dir,
