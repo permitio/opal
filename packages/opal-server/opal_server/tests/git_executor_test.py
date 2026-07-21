@@ -1,9 +1,9 @@
 import asyncio
 import threading
 import time
+from concurrent.futures import thread as cf_thread
 
 import pytest
-from concurrent.futures import thread as cf_thread
 from opal_server.config import OpalServerConfig
 from opal_server.git_fetcher import (
     _DaemonThreadPoolExecutor,
@@ -15,10 +15,11 @@ from opal_server.git_fetcher import (
 def test_daemon_worker_not_registered_in_global_join_queue():
     """A worker thread must NOT land in concurrent.futures' _threads_queues.
 
-    The stdlib's _python_exit atexit handler joins every thread in that global
-    regardless of daemon=True, so a registered worker running a hung git call
-    would block interpreter shutdown — the "stuck on an offline repo" hang this
-    executor exists to prevent, relocated to process exit / rolling restart.
+    The stdlib's _python_exit atexit handler joins every thread in that
+    global regardless of daemon=True, so a registered worker running a
+    hung git call would block interpreter shutdown — the "stuck on an
+    offline repo" hang this executor exists to prevent, relocated to
+    process exit / rolling restart.
     """
     ex = _DaemonThreadPoolExecutor(max_workers=1, thread_name_prefix="test-daemon")
     gate = threading.Event()
@@ -143,7 +144,8 @@ async def test_cancelled_op_releases_its_semaphore_slot(monkeypatch):
     ``await asyncio.wait({fut}, timeout=timeout)`` -- the specific await that
     (pre-fix) was not wrapped in the outer try/finally (the no-timeout
     ``await fut`` branch already had its own per-branch finally, so a
-    timeout=0 op would not have exercised the gap this test guards)."""
+    timeout=0 op would not have exercised the gap this test guards).
+    """
     from opal_server.config import opal_server_config
     from opal_server.git_fetcher import shutdown_git_executor
 

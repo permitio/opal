@@ -1,13 +1,14 @@
-"""preload_scopes() wiring: the gunicorn master must reset the fetcher
-caches right after clearing git-executor bookkeeping, so forked workers
-inherit neither (fix P).
+"""preload_scopes() wiring: the gunicorn master must reset the fetcher caches
+right after clearing git-executor bookkeeping, so forked workers inherit
+neither (fix P).
 
 A non-leader worker never populates GitPolicyFetcher.repos itself (sync,
-the only writer, is leader-only) — its only entries would be ones inherited
-from the master's preload fork. Since the fleet-wide purge broadcast only
-reaches a worker whose broadcaster reader is running, a client-less
-non-leader worker could never drop an inherited handle. Clearing the caches
-in the master before fork means workers start (and stay) empty.
+the only writer, is leader-only) — its only entries would be ones
+inherited from the master's preload fork. Since the fleet-wide purge
+broadcast only reaches a worker whose broadcaster reader is running, a
+client-less non-leader worker could never drop an inherited handle.
+Clearing the caches in the master before fork means workers start (and
+stay) empty.
 """
 import opal_server.scopes.task as task_module
 from opal_server.config import opal_server_config

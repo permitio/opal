@@ -510,8 +510,10 @@ async def test_leader_ignores_forged_clone_path(tmp_path):
     task = await purger.handle(
         None,
         ScopePurgeCommand(
-            source_id=sid, clone_path=str(forged),  # <-- forged path
-            scope_id="d", reason="delete",
+            source_id=sid,
+            clone_path=str(forged),  # <-- forged path
+            scope_id="d",
+            reason="delete",
         ).dict(),
     )
     await task
@@ -529,8 +531,10 @@ async def test_leader_rejects_malformed_source_id(tmp_path):
     task = await purger.handle(
         None,
         ScopePurgeCommand(
-            source_id="../../etc", clone_path=str(evil),
-            scope_id="d", reason="delete",
+            source_id="../../etc",
+            clone_path=str(evil),
+            scope_id="d",
+            reason="delete",
         ).dict(),
     )
     if task is not None:

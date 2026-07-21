@@ -24,8 +24,8 @@ _SOURCE_ID_RE = re.compile(r"^[0-9a-f]{64}-\d+$")
 
 
 def _confined_clone_path(base_dir, source_id: str):
-    """Derive the on-disk clone dir for ``source_id``, or ``None`` if the id
-    is malformed.
+    """Derive the on-disk clone dir for ``source_id``, or ``None`` if the id is
+    malformed.
 
     SECURITY: a purge command's ``clone_path`` field arrives over pub/sub and
     must NEVER reach the filesystem — a forged message could otherwise carry
