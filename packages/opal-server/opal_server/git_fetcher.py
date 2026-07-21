@@ -769,6 +769,25 @@ class GitPolicyFetcher(PolicyFetcher):
                     "relying on GC to release the handles"
                 )
 
+    @staticmethod
+    def reset_caches() -> None:
+        """Free and drop every cached repo handle, lock, and timestamp.
+
+        Called in the gunicorn master after preload and before fork so no
+        fetcher state is inherited by workers. A forked worker that inherited
+        a handle for a scope it never syncs (sync is leader-only) could never
+        purge it — the fleet-wide purge broadcast only reaches workers whose
+        broadcaster reader is running — so it would pin that handle for life.
+        Workers re-open handles lazily from the on-disk clones (preserved).
+        Inherited repo_locks are asyncio.Locks bound to the master's event
+        loop and meaningless post-fork regardless.
+        """
+        for path in list(GitPolicyFetcher.repos):
+            GitPolicyFetcher.forget_repo(path)  # frees the pygit2 handle + pops
+        GitPolicyFetcher.repos.clear()
+        GitPolicyFetcher.repos_last_fetched.clear()
+        GitPolicyFetcher.repo_locks.clear()
+
 
 class GitCallback(RemoteCallbacks):
     def __init__(self, source: GitPolicyScopeSource):

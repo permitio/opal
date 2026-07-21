@@ -6,7 +6,7 @@ from typing import Any
 from fastapi_websocket_pubsub import Topic
 from opal_common.logger import logger
 from opal_server.config import opal_server_config
-from opal_server.git_fetcher import shutdown_git_executor
+from opal_server.git_fetcher import GitPolicyFetcher, shutdown_git_executor
 from opal_server.policy.watcher.task import BasePolicyWatcherTask
 from opal_server.redis_utils import RedisDB
 from opal_server.scopes.purge import LeaderScopePurger
@@ -115,5 +115,15 @@ class ScopesPolicyWatcherTask(BasePolicyWatcherTask):
             # not carry stale state into forked workers. Git ops run on per-op
             # daemon threads; there is no shared pool to tear down.
             shutdown_git_executor()
+
+            # Drop every cached repo handle/lock/timestamp built during preload
+            # so none of it is inherited by forked workers. Sync (the only path
+            # that populates these caches) is leader-only, so a non-leader worker
+            # that inherited a handle could never purge it — the fleet-wide purge
+            # broadcast reaches a worker only when its broadcaster reader runs
+            # (STATISTICS_ENABLED or a connected client), leaving a client-less
+            # non-leader to pin the handle for life. The on-disk clones remain;
+            # workers re-open handles lazily.
+            GitPolicyFetcher.reset_caches()
 
             logger.warning("Finished preloading repo clones for scopes.")

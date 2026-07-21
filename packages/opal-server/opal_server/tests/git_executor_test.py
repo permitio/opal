@@ -168,6 +168,42 @@ async def test_cancelled_op_releases_its_semaphore_slot(monkeypatch):
         shutdown_git_executor()
 
 
+def test_reset_caches_frees_and_clears_all():
+    """The gunicorn master must not fork with populated fetcher caches.
+
+    A forked worker that never syncs (sync is leader-only) can only ever
+    populate ``repos``/``repos_last_fetched``/``repo_locks`` by inheriting
+    them from the master's preload. A client-less non-leader worker's
+    broadcaster reader never runs, so it would never receive the purge
+    confirmation and would pin an inherited handle for life. This asserts
+    the pre-fork reset actually frees the cached handle (not just drops the
+    reference) and clears all three caches.
+    """
+    from opal_server.git_fetcher import GitPolicyFetcher
+
+    freed = []
+
+    class _Handle:
+        def free(self):
+            freed.append(True)
+
+    try:
+        GitPolicyFetcher.repos["/clones/x"] = _Handle()
+        GitPolicyFetcher.repos_last_fetched["sid"] = "ts"
+        GitPolicyFetcher.repo_locks["sid"] = object()
+
+        GitPolicyFetcher.reset_caches()
+
+        assert not GitPolicyFetcher.repos
+        assert not GitPolicyFetcher.repos_last_fetched
+        assert not GitPolicyFetcher.repo_locks
+        assert freed == [True], "cached pygit2 handle was not free()'d"
+    finally:
+        GitPolicyFetcher.repos.clear()
+        GitPolicyFetcher.repos_last_fetched.clear()
+        GitPolicyFetcher.repo_locks.clear()
+
+
 @pytest.mark.asyncio
 async def test_semaphore_bounds_live_ops(monkeypatch):
     """Live ops beyond SCOPES_GIT_MAX_WORKERS queue on the semaphore."""
