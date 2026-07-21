@@ -8,6 +8,7 @@ clone tree.
 """
 import asyncio
 import os
+import re
 import shutil
 from pathlib import Path
 from typing import Any, Optional
@@ -18,6 +19,24 @@ from opal_common.schemas.policy_source import GitPolicyScopeSource
 from opal_server.config import opal_server_config
 from opal_server.git_fetcher import GitPolicyFetcher, git_op_in_flight
 from pydantic import BaseModel, ValidationError
+
+_SOURCE_ID_RE = re.compile(r"^[0-9a-f]{64}-\d+$")
+
+
+def _confined_clone_path(base_dir, source_id: str):
+    """Derive the on-disk clone dir for ``source_id``, or ``None`` if the id
+    is malformed.
+
+    SECURITY: a purge command's ``clone_path`` field arrives over pub/sub and
+    must NEVER reach the filesystem — a forged message could otherwise carry
+    an arbitrary path into ``rmtree``/``free()``. ``source_id`` is a sha256
+    hex digest + shard index (no separators, no traversal), so the derived
+    path is always confined to ``base_dir/git_sources``. The result is also
+    the exact key used in ``GitPolicyFetcher.repos``.
+    """
+    if not _SOURCE_ID_RE.match(source_id):
+        return None
+    return str(GitPolicyFetcher.base_dir(Path(base_dir)) / source_id)
 
 
 class ScopePurgeCommand(BaseModel):
@@ -54,13 +73,20 @@ async def handle_purge_message(subscription, data: Any) -> None:
     if not cmd.confirmed:
         # A request — only the leader acts on those (sibling-check first).
         return
+    safe_path = _confined_clone_path(opal_server_config.BASE_DIR, cmd.source_id)
+    if safe_path is None:
+        logger.warning(
+            "Ignoring scope purge with malformed source_id: {sid}",
+            sid=cmd.source_id,
+        )
+        return
     logger.info(
         "Purging local caches for source {source_id} (scope {scope_id}, {reason})",
         source_id=cmd.source_id,
         scope_id=cmd.scope_id,
         reason=cmd.reason,
     )
-    purge_local_memory(cmd.source_id, cmd.clone_path)
+    purge_local_memory(cmd.source_id, safe_path)
 
 
 async def subscribe_worker_purge_handler(endpoint) -> None:
@@ -142,6 +168,12 @@ class LeaderScopePurger:
         return task
 
     async def purge_source_if_unshared(self, cmd: ScopePurgeCommand) -> None:
+        safe_path = _confined_clone_path(self._base_dir, cmd.source_id)
+        if safe_path is None:
+            logger.warning(
+                f"Ignoring leader purge with malformed source_id: {cmd.source_id}"
+            )
+            return
         confirm = False
         async with GitPolicyFetcher.lock_source(cmd.source_id):
             sharer = await find_scope_sharing_source(self._scopes, cmd.source_id)
@@ -168,16 +200,14 @@ class LeaderScopePurger:
                 GitPolicyFetcher.repo_locks.pop(cmd.source_id, None)
                 confirm = True
             else:
-                GitPolicyFetcher.forget_repo(cmd.clone_path)
+                GitPolicyFetcher.forget_repo(safe_path)
                 GitPolicyFetcher.repos_last_fetched.pop(cmd.source_id, None)
                 try:
-                    await run_sync(shutil.rmtree, cmd.clone_path)
+                    await run_sync(shutil.rmtree, safe_path)
                 except FileNotFoundError:
                     pass  # already gone — the intended end state
                 except OSError as e:
-                    logger.warning(
-                        f"Failed to remove clone dir {cmd.clone_path}: {e!r}"
-                    )
+                    logger.warning(f"Failed to remove clone dir {safe_path}: {e!r}")
                 # Popped while the lock is held: lock_source waiters re-check
                 # the dict entry after acquiring and retry on the fresh lock.
                 GitPolicyFetcher.repo_locks.pop(cmd.source_id, None)

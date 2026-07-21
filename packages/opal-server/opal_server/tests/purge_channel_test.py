@@ -1,4 +1,5 @@
 import asyncio
+from pathlib import Path
 
 import pytest
 from opal_server.config import OpalServerConfig
@@ -41,6 +42,15 @@ def _cmd(sid="sid-1", path="/clones/sid-1", confirmed=False):
     )
 
 
+def _real_sid():
+    # 64 hex + shard index, matching GitPolicyFetcher.source_id's shape
+    return "a" * 64 + "-0"
+
+
+def _derived_path(base_dir, sid):
+    return str(GitPolicyFetcher.base_dir(Path(base_dir)) / sid)
+
+
 def test_purge_local_memory_pops_repo_and_timestamp_but_never_locks():
     GitPolicyFetcher.repos["/clones/sid-1"] = object()
     GitPolicyFetcher.repos_last_fetched["sid-1"] = "ts"
@@ -71,14 +81,19 @@ def test_purge_local_memory_skips_forget_repo_while_git_op_in_flight():
 
 
 @pytest.mark.asyncio
-async def test_handle_purge_message_parses_and_purges():
-    GitPolicyFetcher.repos["/clones/sid-1"] = object()
-    GitPolicyFetcher.repos_last_fetched["sid-1"] = "ts"
+async def test_handle_purge_message_parses_and_purges(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        "opal_server.scopes.purge.opal_server_config.BASE_DIR", str(tmp_path)
+    )
+    sid = _real_sid()
+    path = _derived_path(tmp_path, sid)
+    GitPolicyFetcher.repos[path] = object()
+    GitPolicyFetcher.repos_last_fetched[sid] = "ts"
 
-    await handle_purge_message(None, _cmd(confirmed=True).dict())
+    await handle_purge_message(None, _cmd(sid=sid, path=path, confirmed=True).dict())
 
-    assert "/clones/sid-1" not in GitPolicyFetcher.repos
-    assert "sid-1" not in GitPolicyFetcher.repos_last_fetched
+    assert path not in GitPolicyFetcher.repos
+    assert sid not in GitPolicyFetcher.repos_last_fetched
 
 
 @pytest.mark.asyncio
@@ -474,3 +489,50 @@ async def test_confirmation_is_published_while_holding_the_source_lock(tmp_path)
     assert lock_state_at_publish == [
         True
     ], f"confirmation published outside lock_source: {lock_state_at_publish}"
+
+
+@pytest.mark.asyncio
+async def test_leader_ignores_forged_clone_path(tmp_path):
+    """A forged clone_path must never be deleted — only the path DERIVED from
+    source_id is touched."""
+    import os
+
+    forged = tmp_path / "victim"
+    forged.mkdir()
+    (forged / "keep").write_text("x")
+    # a real clone that SHOULD be purged, under the derived location
+    sid = GitPolicyFetcher.source_id(_scope("d", "https://git/repo-a.git").policy)
+    derived = GitPolicyFetcher.base_dir(tmp_path) / sid
+    derived.mkdir(parents=True)
+    purger = LeaderScopePurger(
+        base_dir=tmp_path, scopes=FakeScopeRepository([]), pubsub_endpoint=None
+    )
+    task = await purger.handle(
+        None,
+        ScopePurgeCommand(
+            source_id=sid, clone_path=str(forged),  # <-- forged path
+            scope_id="d", reason="delete",
+        ).dict(),
+    )
+    await task
+    assert forged.exists(), "forged clone_path was deleted — path came off the wire"
+    assert not derived.exists(), "the real (derived) clone dir should be purged"
+
+
+@pytest.mark.asyncio
+async def test_leader_rejects_malformed_source_id(tmp_path):
+    evil = tmp_path / "evil"
+    evil.mkdir()
+    purger = LeaderScopePurger(
+        base_dir=tmp_path, scopes=FakeScopeRepository([]), pubsub_endpoint=None
+    )
+    task = await purger.handle(
+        None,
+        ScopePurgeCommand(
+            source_id="../../etc", clone_path=str(evil),
+            scope_id="d", reason="delete",
+        ).dict(),
+    )
+    if task is not None:
+        await task
+    assert evil.exists()
