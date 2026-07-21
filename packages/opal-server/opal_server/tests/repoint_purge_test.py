@@ -137,6 +137,50 @@ def test_put_new_scope_publishes_no_purge(tmp_path, monkeypatch):
     assert _purge_messages(pubsub) == []
 
 
+class _AmbiguousPutRepository(FakeScopeRepository):
+    """Put() commits server-side but the client sees an error."""
+
+    async def put(self, scope):
+        await super().put(scope)
+        raise ConnectionError("connection dropped after the put committed")
+
+
+def test_repoint_purge_still_publishes_when_put_raises_ambiguously(
+    tmp_path, monkeypatch
+):
+    """A retry after an ambiguous PUT sees old_source_id == new_source_id
+    already (the store was updated) and would never re-trigger the repoint
+    purge on its own — the purge must fire from this same call, mirroring
+    delete_scope's try/finally.
+
+    The error still propagates to the client.
+    """
+    monkeypatch.setattr(
+        "opal_server.scopes.api.opal_server_config.BASE_DIR", str(tmp_path)
+    )
+    old = _scope("s1", "https://git/old.git")
+    repo = _AmbiguousPutRepository([old])
+    pubsub = FakePubSubEndpoint()
+    client = _client(repo, pubsub, tmp_path)
+
+    new = _scope("s1", "https://git/new.git")
+    with pytest.raises(ConnectionError):
+        client.put("/scopes", json=new.dict())
+
+    old_sid = GitPolicyFetcher.source_id(old.policy)
+    old_clone = str(GitPolicyFetcher.repo_clone_path(tmp_path, old.policy))
+    purges = _purge_messages(pubsub)
+    assert len(purges) == 1
+    _, payload = purges[0]
+    assert payload == {
+        "source_id": old_sid,
+        "clone_path": old_clone,
+        "scope_id": "s1",
+        "reason": "repoint",
+        "confirmed": False,
+    }
+
+
 def test_put_with_unreadable_old_record_still_succeeds(tmp_path, monkeypatch):
     """A corrupted/unreadable prior record must not 500 the PUT that overwrites
     it; the purge is skipped (orphan sweep backstops it)."""
