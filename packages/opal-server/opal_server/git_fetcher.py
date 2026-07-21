@@ -95,7 +95,13 @@ class _DaemonThreadPoolExecutor(ThreadPoolExecutor):
             )
             t.start()
             self._threads.add(t)
-            cf_thread._threads_queues[t] = self._work_queue
+            # Deliberately NOT registered in ``cf_thread._threads_queues``:
+            # the stdlib's ``_python_exit`` atexit handler iterates that global
+            # and ``join()``s every thread in it regardless of ``daemon=True``,
+            # which would block interpreter shutdown on a lingering (timed-out)
+            # git call — the exact "stuck on an offline repo" hang this class
+            # exists to avoid, relocated to shutdown/restart. Normal shutdown
+            # uses ``self._threads`` + queue sentinels and is unaffected.
 
 
 def shutdown_git_executor() -> None:

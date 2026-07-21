@@ -3,8 +3,40 @@ import threading
 import time
 
 import pytest
+from concurrent.futures import thread as cf_thread
 from opal_server.config import OpalServerConfig
-from opal_server.git_fetcher import git_op_in_flight, run_in_git_executor
+from opal_server.git_fetcher import (
+    _DaemonThreadPoolExecutor,
+    git_op_in_flight,
+    run_in_git_executor,
+)
+
+
+def test_daemon_worker_not_registered_in_global_join_queue():
+    """A worker thread must NOT land in concurrent.futures' _threads_queues.
+
+    The stdlib's _python_exit atexit handler joins every thread in that global
+    regardless of daemon=True, so a registered worker running a hung git call
+    would block interpreter shutdown — the "stuck on an offline repo" hang this
+    executor exists to prevent, relocated to process exit / rolling restart.
+    """
+    ex = _DaemonThreadPoolExecutor(max_workers=1, thread_name_prefix="test-daemon")
+    gate = threading.Event()
+    try:
+        ex.submit(gate.wait)  # forces one worker thread to spawn
+        for _ in range(200):
+            if ex._threads:
+                break
+            time.sleep(0.01)
+        assert ex._threads, "no worker thread spawned"
+        registered = set(ex._threads) & set(cf_thread._threads_queues)
+        assert not registered, (
+            "daemon worker registered in _threads_queues; _python_exit would "
+            "join it and block shutdown on a hung git op"
+        )
+    finally:
+        gate.set()
+        ex.shutdown(wait=True)
 
 
 def test_git_resilience_config_defaults(monkeypatch):
