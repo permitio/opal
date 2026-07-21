@@ -214,10 +214,11 @@ class OpalServerConfig(Confi):
     SCOPES_GIT_FETCH_TIMEOUT = confi.float(
         "SCOPES_GIT_FETCH_TIMEOUT",
         120.0,
-        description="Hard timeout in seconds for a single scope git clone/fetch. "
-        "On timeout the operation is logged and skipped (retried next cycle), so "
-        "one unreachable repo can never block boot or other scopes indefinitely "
-        "(0 = no timeout).",
+        description="Soft timeout in seconds for a single scope git clone/fetch "
+        "(the awaiting operation is abandoned, but the underlying git call keeps "
+        "running on its thread until the OS network timeout). On timeout the "
+        "operation is logged and skipped (retried next cycle), so one unreachable "
+        "repo can never block boot or other scopes indefinitely (0 = no timeout).",
     )
     SCOPES_GIT_MAX_WORKERS = confi.int(
         "SCOPES_GIT_MAX_WORKERS",

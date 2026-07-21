@@ -272,6 +272,11 @@ class LeaderScopePurger:
                 if not still_orphan:
                     continue
                 if git_op_in_flight(name):
+                    # Unlike purge_source_if_unshared's in-flight branch, there's
+                    # no immediate lock/timestamp drain here: an orphan has no
+                    # live scope and no waiter blocked on this lock to free, so
+                    # deferring the whole entry to the next sweep pass is
+                    # sufficient (the entry may not even be in the caches).
                     logger.info(f"Orphan sweep skipping {name}: git op in flight")
                     continue
                 logger.info(f"Reclaiming orphan clone dir: {path}")

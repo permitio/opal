@@ -157,3 +157,21 @@ async def test_unrepointed_scope_still_clones(tmp_path, monkeypatch):
 
     clones = await _sync_with_clone_recorder(svc, scope, monkeypatch)
     assert clones == [True]
+
+
+@pytest.mark.asyncio
+async def test_deleted_scope_is_not_cloned_through_real_closure(tmp_path, monkeypatch):
+    """Delete-resurrection counterpart to
+    test_repointed_scope_is_not_cloned_against_stale_source: a delete landing
+    mid-sync must not let the REAL ScopesService closure (not the hand-rolled
+    probe above) clone a deleted scope's repo — ``_scope_still_exists``'s
+    ``except ScopeNotFoundError: return False`` branch must actually fire."""
+    stale = _git_scope("scope-1", "https://git/repo-a.git")
+    svc = ScopesService(
+        base_dir=tmp_path,
+        scopes=FakeScopeRepository(None),  # get() raises ScopeNotFoundError
+        pubsub_endpoint=None,
+    )
+
+    clones = await _sync_with_clone_recorder(svc, stale, monkeypatch)
+    assert clones == [], "sync resurrected a deleted scope's clone"

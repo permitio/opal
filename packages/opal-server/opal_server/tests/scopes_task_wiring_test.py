@@ -49,6 +49,23 @@ async def test_sweep_failure_is_swallowed_and_does_not_mask_sync():
 
 
 @pytest.mark.asyncio
+async def test_sweep_failure_is_logged():
+    """Swallowing the sweep failure must not make it invisible — boot-time
+    sweep failures need to surface somewhere an operator can find them."""
+    from opal_common.logger import logger as opal_logger
+
+    events = []
+    records = []
+    sink_id = opal_logger.add(lambda m: records.append(str(m)), level="ERROR")
+    try:
+        await _bare_task(events, fail_sweep=True)._sync_all_then_sweep()
+    finally:
+        opal_logger.remove(sink_id)
+
+    assert any("Orphan sweep failed" in r for r in records), f"not logged: {records}"
+
+
+@pytest.mark.asyncio
 async def test_refresh_all_trigger_sweeps():
     events = []
     await _bare_task(events).trigger(topic=None, data=None)
