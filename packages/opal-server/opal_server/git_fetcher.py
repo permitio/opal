@@ -221,40 +221,37 @@ async def run_in_git_executor(func, *args, timeout: float, busy_key=None, **kwar
             released = True
             sem.release()
 
-    # Single-use executor: the op gets a private daemon thread, so a zombie
-    # never blocks the next op the way a fixed shared pool does. shutdown
-    # with wait=False just drops bookkeeping; the daemon thread dies with
-    # the pygit2 call (or the process).
-    executor = _DaemonThreadPoolExecutor(max_workers=1, thread_name_prefix="opal-git")
-    if busy_key is not None:
-        _mark_git_op_started(busy_key)
     try:
-        fut = loop.run_in_executor(executor, _runner)
-    except BaseException:
+        # Single-use executor: the op gets a private daemon thread, so a zombie
+        # never blocks the next op the way a fixed shared pool does. shutdown
+        # with wait=False just drops bookkeeping; the daemon thread dies with
+        # the pygit2 call (or the process).
+        executor = _DaemonThreadPoolExecutor(
+            max_workers=1, thread_name_prefix="opal-git"
+        )
         if busy_key is not None:
-            _mark_git_op_done(busy_key)
-        executor.shutdown(wait=False)
-        _release_once()
-        raise
-    fut.add_done_callback(lambda f: executor.shutdown(wait=False))
-
-    if not (timeout and timeout > 0):
+            _mark_git_op_started(busy_key)
         try:
-            return await fut
-        finally:
-            _release_once()
+            fut = loop.run_in_executor(executor, _runner)
+        except BaseException:
+            if busy_key is not None:
+                _mark_git_op_done(busy_key)
+            executor.shutdown(wait=False)
+            raise
+        fut.add_done_callback(lambda f: executor.shutdown(wait=False))
 
-    # asyncio.wait (not wait_for) so a timeout does NOT cancel the future:
-    # the thread runs to completion and clears busy_key; the done-callback
-    # retrieves the eventual result to avoid "exception never retrieved".
-    fut.add_done_callback(_consume_future_result)
-    done, _pending = await asyncio.wait({fut}, timeout=timeout)
-    if not done:
-        # Zombie: free the capacity slot; the private daemon thread lingers
-        # until the OS gives up, tracked only by busy_key.
-        _release_once()
-        raise TimeoutError(f"git operation exceeded {timeout}s")
-    try:
+        if not (timeout and timeout > 0):
+            return await fut
+
+        # asyncio.wait (not wait_for) so a timeout does NOT cancel the future:
+        # the thread runs to completion and clears busy_key; the done-callback
+        # retrieves the eventual result to avoid "exception never retrieved".
+        fut.add_done_callback(_consume_future_result)
+        done, _pending = await asyncio.wait({fut}, timeout=timeout)
+        if not done:
+            # Zombie: free the capacity slot; the private daemon thread lingers
+            # until the OS gives up, tracked only by busy_key.
+            raise TimeoutError(f"git operation exceeded {timeout}s")
         return fut.result()
     finally:
         _release_once()

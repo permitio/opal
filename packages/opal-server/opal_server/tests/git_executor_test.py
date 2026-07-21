@@ -135,6 +135,40 @@ async def test_zombie_does_not_consume_capacity(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_cancelled_op_releases_its_semaphore_slot(monkeypatch):
+    """Cancelling the awaiting task must still release the live-op semaphore
+    slot; otherwise every cancellation permanently shrinks concurrency.
+
+    Uses a nonzero timeout so the cancellation lands inside
+    ``await asyncio.wait({fut}, timeout=timeout)`` -- the specific await that
+    (pre-fix) was not wrapped in the outer try/finally (the no-timeout
+    ``await fut`` branch already had its own per-branch finally, so a
+    timeout=0 op would not have exercised the gap this test guards)."""
+    from opal_server.config import opal_server_config
+    from opal_server.git_fetcher import shutdown_git_executor
+
+    monkeypatch.setattr(opal_server_config, "SCOPES_GIT_MAX_WORKERS", 1)
+    shutdown_git_executor()
+    gate = threading.Event()
+    try:
+        first = asyncio.ensure_future(run_in_git_executor(gate.wait, timeout=5))
+        await asyncio.sleep(0.05)  # first holds the only slot, awaiting asyncio.wait
+        first.cancel()
+        try:
+            await first
+        except asyncio.CancelledError:
+            pass
+        # the slot must be free again
+        second = await asyncio.wait_for(
+            run_in_git_executor(lambda: "ok", timeout=5), timeout=2
+        )
+        assert second == "ok"
+    finally:
+        gate.set()
+        shutdown_git_executor()
+
+
+@pytest.mark.asyncio
 async def test_semaphore_bounds_live_ops(monkeypatch):
     """Live ops beyond SCOPES_GIT_MAX_WORKERS queue on the semaphore."""
     from opal_server.config import opal_server_config
