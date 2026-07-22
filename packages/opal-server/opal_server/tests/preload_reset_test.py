@@ -10,6 +10,8 @@ client-less non-leader worker could never drop an inherited handle.
 Clearing the caches in the master before fork means workers start (and
 stay) empty.
 """
+import asyncio
+
 import opal_server.scopes.task as task_module
 from opal_server.config import opal_server_config
 
@@ -39,7 +41,16 @@ def test_preload_scopes_resets_fetcher_caches_after_shutdown(monkeypatch):
     monkeypatch.setattr(task_module, "GitPolicyFetcher", _StubGitPolicyFetcher)
     monkeypatch.setattr(opal_server_config, "SCOPES", True)
 
-    task_module.ScopesPolicyWatcherTask.preload_scopes()
+    try:
+        task_module.ScopesPolicyWatcherTask.preload_scopes()
+    finally:
+        # preload_scopes runs asyncio.run(), which closes its loop and leaves
+        # the main thread with no current event loop. On Python 3.9 a later
+        # sync test that constructs an asyncio primitive (e.g. asyncio.Lock())
+        # then raises "no current event loop" — a cross-test poisoning that
+        # only bites 3.9 (3.10+ primitives don't grab the loop at __init__).
+        # Restore a fresh loop so test isolation holds.
+        asyncio.set_event_loop(asyncio.new_event_loop())
 
     assert events == ["sync_scopes", "shutdown_git_executor", "reset_caches"], events
 
