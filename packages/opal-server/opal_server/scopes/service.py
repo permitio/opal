@@ -246,22 +246,39 @@ class ScopesService:
                     seen_source_ids.add(src_id)
                     unique_scopes.append(scope)
 
-            # Bound concurrency to the dedicated git pool so one unreachable repo
-            # only stalls its own slot (for the fetch timeout), not the whole
-            # boot/poll pass. Phase 1 clones/fetches every distinct repo; phase 2
-            # then checks the duplicates against those now-present repos.
-            semaphore = asyncio.Semaphore(
+            # Phase 1 clones/fetches every distinct repo; phase 2 then checks the
+            # duplicates against those now-present repos.
+            #
+            # The two phases have different cost profiles, so they get separate
+            # bounds. Phase 1 does the network clone/fetch, so it is capped at
+            # SCOPES_GIT_MAX_WORKERS: one unreachable repo then only stalls its
+            # own slot (for the fetch timeout), not the whole pass.
+            git_semaphore = asyncio.Semaphore(
                 max(1, opal_server_config.SCOPES_GIT_MAX_WORKERS)
             )
             await self._sync_scopes_concurrently(
                 unique_scopes,
-                semaphore,
+                git_semaphore,
                 force_fetch=True,
                 notify_on_changes=notify_on_changes,
             )
+
+            # Phase 2 is local-only in the common case: the repos were just
+            # handled in phase 1, so _should_fetch returns False and no network
+            # fetch happens (only a disk open + change-check + notify). It must
+            # NOT inherit phase 1's network cap. Its real limits are already the
+            # per-source lock, the shared disk-open executor, and — for the rare
+            # re-fetch when phase 1 left a branch missing — the inner git-op
+            # semaphore inside run_in_git_executor (still SCOPES_GIT_MAX_WORKERS).
+            # Give it a wider bound so many cheap change-checks proceed in
+            # parallel while still capping task count and the notify fan-out;
+            # 32 matches the ceiling of asyncio's default thread pool, which is
+            # what actually bounds the phase-2 disk opens.
+            local_concurrency = max(opal_server_config.SCOPES_GIT_MAX_WORKERS, 32)
+            local_semaphore = asyncio.Semaphore(local_concurrency)
             await self._sync_scopes_concurrently(
                 duplicate_scopes,
-                semaphore,
+                local_semaphore,
                 force_fetch=False,
                 notify_on_changes=notify_on_changes,
             )
