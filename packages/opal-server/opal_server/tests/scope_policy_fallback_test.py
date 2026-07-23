@@ -114,3 +114,14 @@ def test_missing_scope_still_falls_back_to_default_bundle(tmp_path, monkeypatch)
 
     assert resp.status_code == 200
     assert resp.json()["hash"] == "default-head"
+
+
+def test_missing_scope_without_default_returns_404(tmp_path):
+    """An absent scope with no 'default' scope to fall back on must return 404,
+    matching get_scope/refresh_scope, not a 500 from an uncaught
+    ScopeNotFoundError re-raised out of the default-bundle path (#919)."""
+    repo = FakeScopeRepository([])
+
+    resp = _client(repo, tmp_path).get("/scopes/ghost/policy")
+
+    assert resp.status_code == 404
