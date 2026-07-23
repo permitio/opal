@@ -316,7 +316,9 @@ def init_scope_router(
             pygit2.GitError,
             ValueError,
         ):
-            raise ScopeNotFoundError(scope_id)
+            raise HTTPException(
+                status.HTTP_404_NOT_FOUND, detail=f"No such scope: {scope_id}"
+            )
 
     @router.get(
         "/{scope_id}/data",
