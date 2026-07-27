@@ -73,6 +73,6 @@ setup(
         "Topic :: Internet :: WWW/HTTP :: HTTP Servers",
         "Topic :: Internet :: WWW/HTTP :: WSGI",
     ],
-    python_requires=">=3.9",
+    python_requires=">=3.9,<3.13",
     install_requires=common_install_requires + about.get_install_requires(project_root),
 )

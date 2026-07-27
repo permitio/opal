@@ -2,6 +2,7 @@ import asyncio
 import codecs
 import datetime
 import hashlib
+import inspect
 import os
 import shutil
 import threading
@@ -75,9 +76,17 @@ class _DaemonThreadPoolExecutor(ThreadPoolExecutor):
     """
 
     def _adjust_thread_count(self) -> None:  # pragma: no cover - thread mgmt
-        if not hasattr(cf_thread, "_worker") or not hasattr(
-            cf_thread, "_threads_queues"
-        ):
+        worker = getattr(cf_thread, "_worker", None)
+        # Fall back to the stdlib if any internal we mirror has moved or changed
+        # shape: _worker must exist and take exactly the 4 positional args we pass,
+        # _threads_queues must exist, and this executor must expose _initializer.
+        if (worker is None or not hasattr(cf_thread, "_threads_queues")
+                or not hasattr(self, "_initializer")):
+            return super()._adjust_thread_count()
+        try:
+            if len(inspect.signature(worker).parameters) != 4:
+                return super()._adjust_thread_count()
+        except (TypeError, ValueError):
             return super()._adjust_thread_count()
         # If idle threads are available, don't spin up new ones.
         if self._idle_semaphore.acquire(timeout=0):

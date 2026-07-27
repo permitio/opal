@@ -279,3 +279,22 @@ async def test_op_admitted_below_zombie_cap(monkeypatch):
         assert await run_in_git_executor(lambda: 7, timeout=5) == 7
     finally:
         _mark_git_op_done("z1")
+
+
+from concurrent.futures import ThreadPoolExecutor
+from opal_server.git_fetcher import _DaemonThreadPoolExecutor
+
+
+def test_adjust_thread_count_falls_back_on_worker_shape_mismatch(monkeypatch):
+    ex = _DaemonThreadPoolExecutor(max_workers=1, thread_name_prefix="shape-test")
+    try:
+        monkeypatch.setattr(cf_thread, "_worker", lambda a, b, c: None)  # wrong arity (3)
+        called = {"super": False}
+        monkeypatch.setattr(
+            ThreadPoolExecutor, "_adjust_thread_count",
+            lambda self: called.__setitem__("super", True),
+        )
+        ex._adjust_thread_count()  # must not raise
+        assert called["super"] is True
+    finally:
+        ex.shutdown(wait=False)
