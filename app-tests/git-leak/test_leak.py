@@ -194,8 +194,7 @@ def test_scope_repoint_releases_old_repo_cache(opal, repo_count):
     fires synchronously with the repoint and, when the old source isn't
     mid-fetch, completes in single-digit milliseconds — confirmed via server
     logs (~4ms between the new source's lock being minted and the old
-    source's cache entries being purged; see
-    .superpowers/sdd/bed-deep-dive.md, finding 1). An earlier version of this
+    source's cache entries being purged). An earlier version of this
     test asserted ``repo_locks >= 2`` right after the repoint as proof both
     URLs were briefly visible together — that's a race against an
     already-instant purge, and loses almost every time. This version instead

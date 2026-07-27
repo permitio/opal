@@ -479,6 +479,42 @@ Default: `1`
 
 The max number of local clones to use for the same repo (reused across scopes).
 
+#### OPAL_SCOPES_GIT_FETCH_TIMEOUT
+
+Default: `120.0`
+
+Soft timeout (seconds) for a single scope git clone/fetch: the awaiting operation is abandoned on timeout (logged, skipped, retried next cycle) while the underlying git call keeps running on its thread until the OS network timeout, so one unreachable repo never blocks boot or other scopes. `0` = no timeout.
+
+#### OPAL_SCOPES_GIT_MAX_WORKERS
+
+Default: `10`
+
+Maximum number of LIVE scope git operations (clone/fetch) running concurrently; also bounds how many scopes are synced at once. A timed-out operation stops counting against this limit (its lingering thread persists on its own until the OS network timeout), so capacity is never starved by hung remotes.
+
+#### OPAL_SCOPES_PURGE_CHANNEL
+
+Default: `__opal_scope_purge__`
+
+Pub/sub channel (worker-to-worker, over the broadcaster) used to purge GitPolicyFetcher caches fleet-wide when a scope is deleted, repointed to a new source, or its clone dir is reclaimed as an orphan. Every worker subscribes; the leader additionally removes the clone dir.
+
+#### OPAL_SCOPES_GIT_PRELOAD_DRAIN_TIMEOUT
+
+Default: `10.0`
+
+Max seconds the pre-fork scope preload waits for in-flight git ops to finish before tearing down and forking workers. Ops still lingering past this bound are left running on their daemon threads and their cached handles are left unfreed by the pre-fork cache reset, avoiding a use-after-free (0 = don't wait).
+
+#### OPAL_SCOPES_ORPHAN_SWEEP_INTERVAL
+
+Default: `300`
+
+Interval (seconds) for the leader's always-on orphan clone-dir sweep, independent of POLICY_REFRESH_INTERVAL, so the backstop that reclaims clone dirs referencing no live scope runs even with polling disabled (0 disables the timer; boot and refresh-all still sweep once).
+
+#### OPAL_SCOPES_GIT_MAX_ZOMBIES
+
+Default: `40`
+
+Maximum number of in-flight scope git operations (live plus lingering timed-out) allowed to hold a daemon thread at once. New git ops are refused (and retried next cycle) while at this cap, bounding thread growth when remotes hang (0 = no cap).
+
 #### OPAL_LEADER_LOCK_FILE_PATH
 
 Default: `/tmp/opal_server_leader.lock`
