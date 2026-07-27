@@ -42,7 +42,7 @@ from opal_common.topics.publisher import (
 from opal_common.urls import set_url_query_param
 from opal_server.config import opal_server_config
 from opal_server.data.data_update_publisher import DataUpdatePublisher
-from opal_server.git_fetcher import GitPolicyFetcher
+from opal_server.git_fetcher import BranchHeadNotFoundError, GitPolicyFetcher
 from opal_server.scopes.purge import ScopePurgeCommand
 from opal_server.scopes.scope_repository import ScopeNotFoundError, ScopeRepository
 from opal_server.scopes.service import ScopesService
@@ -328,6 +328,16 @@ def init_scope_router(
 
         try:
             return await run_sync(fetcher.make_bundle, base_hash)
+        except BranchHeadNotFoundError as exc:
+            logger.error(
+                "Scope {scope_id} bundle unavailable: {exc!r} (non-retryable)",
+                scope_id=scope_id, exc=exc,
+            )
+            raise HTTPException(
+                status.HTTP_409_CONFLICT,
+                detail=(f"Policy branch for scope {scope_id} could not be resolved "
+                        "(check the configured branch); not retryable"),
+            )
         except (
             InvalidGitRepositoryError,
             # A concurrent delete/recovery can rmtree the clone dir before
@@ -340,11 +350,11 @@ def init_scope_router(
             pygit2.GitError,
             ValueError,
             OSError,
-        ):
+        ) as exc:
             logger.warning(
-                "Scope {scope_id} is live but its clone is unavailable, "
+                "Scope {scope_id} is live but its clone is unavailable ({exc!r}), "
                 "returning 503",
-                scope_id=scope_id,
+                scope_id=scope_id, exc=exc,
             )
             raise HTTPException(
                 status.HTTP_503_SERVICE_UNAVAILABLE,

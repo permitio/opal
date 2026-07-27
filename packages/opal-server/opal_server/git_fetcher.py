@@ -56,6 +56,11 @@ class GitConcurrencyLimitExceeded(RuntimeError):
     """Raised when in-flight (live + zombie) git ops reach SCOPES_GIT_MAX_ZOMBIES."""
 
 
+class BranchHeadNotFoundError(ValueError):
+    """Configured branch has no resolvable HEAD (permanent misconfig), NOT a
+    transient clone gap. Subclasses ValueError so broad handlers still catch it."""
+
+
 _zombie_cap_logged = False
 
 
@@ -744,7 +749,7 @@ class GitPolicyFetcher(PolicyFetcher):
                 free()
         if not head_commit_hash:
             logger.error("Could not find current branch head")
-            raise ValueError("Could not find current branch head")
+            raise BranchHeadNotFoundError("Could not find current branch head")
         return head_commit_hash
 
     @tracer.wrap("git_policy_fetcher.make_bundle")

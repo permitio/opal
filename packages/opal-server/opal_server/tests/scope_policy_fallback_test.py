@@ -130,3 +130,20 @@ def test_missing_scope_still_falls_back_to_default_bundle(tmp_path, monkeypatch)
 
     assert resp.status_code == 200
     assert resp.json()["hash"] == "default-head"
+
+
+from opal_server.git_fetcher import BranchHeadNotFoundError
+
+
+def test_wrong_branch_returns_non_retryable_409(tmp_path, monkeypatch):
+    live = _scope("live", "https://git/live.git", branch="does-not-exist")
+    repo = FakeScopeRepository([live])
+
+    def fake_make_bundle(self, base_hash):
+        raise BranchHeadNotFoundError("Could not find current branch head")
+
+    monkeypatch.setattr(GitPolicyFetcher, "make_bundle", fake_make_bundle)
+    monkeypatch.setattr("opal_server.scopes.api.opal_server_config.BASE_DIR", str(tmp_path))
+    resp = _client(repo, tmp_path).get("/scopes/live/policy")
+    assert resp.status_code == 409
+    assert "retry-after" not in resp.headers
