@@ -483,7 +483,7 @@ The max number of local clones to use for the same repo (reused across scopes).
 
 Default: `120.0`
 
-Soft timeout (seconds) for a single scope git clone/fetch: the awaiting operation is abandoned on timeout (logged, skipped, retried next cycle) while the underlying git call keeps running on its thread until the OS network timeout, so one unreachable repo never blocks boot or other scopes. `0` = no timeout.
+Soft timeout in seconds for a single scope git clone/fetch (the awaiting operation is abandoned, but the underlying git call keeps running on its thread until the OS network timeout). On timeout the operation is logged and skipped (retried next cycle), so one unreachable repo can never block boot or other scopes indefinitely (0 = no timeout).
 
 #### OPAL_SCOPES_GIT_MAX_WORKERS
 
