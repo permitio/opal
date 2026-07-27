@@ -80,16 +80,24 @@ def test_preload_scopes_drains_before_teardown(monkeypatch):
     events = []
 
     class _StubService:
-        def __init__(self, *a, **k): pass
-        async def sync_scopes(self, *a, **k): events.append("sync_scopes")
+        def __init__(self, *a, **k):
+            pass
+
+        async def sync_scopes(self, *a, **k):
+            events.append("sync_scopes")
 
     class _StubGPF:
         @staticmethod
-        def reset_caches(): events.append("reset_caches")
+        def reset_caches():
+            events.append("reset_caches")
 
     monkeypatch.setattr(task_module, "ScopesService", _StubService)
-    monkeypatch.setattr(task_module, "drain_git_ops", lambda t: events.append("drain") or True)
-    monkeypatch.setattr(task_module, "shutdown_git_executor", lambda: events.append("shutdown"))
+    monkeypatch.setattr(
+        task_module, "drain_git_ops", lambda t: events.append("drain") or True
+    )
+    monkeypatch.setattr(
+        task_module, "shutdown_git_executor", lambda: events.append("shutdown")
+    )
     monkeypatch.setattr(task_module, "GitPolicyFetcher", _StubGPF)
     monkeypatch.setattr(opal_server_config, "SCOPES", True)
     try:

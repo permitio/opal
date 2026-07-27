@@ -133,11 +133,13 @@ class _DaemonThreadPoolExecutor(ThreadPoolExecutor):
 
 
 def shutdown_git_executor() -> None:
-    """Drop loop-bound live-op accounting before fork. Only the loop-bound
-    semaphores are cleared (meaningless post-fork). _git_busy markers are LEFT
-    in place so reset_caches (next) can skip freeing a handle a lingering git op
-    still holds; the forked child clears the stale markers in
-    _reset_git_executor_after_fork."""
+    """Drop loop-bound live-op accounting before fork.
+
+    Only the loop-bound semaphores are cleared (meaningless post-fork).
+    _git_busy markers are LEFT in place so reset_caches (next) can skip
+    freeing a handle a lingering git op still holds; the forked child
+    clears the stale markers in _reset_git_executor_after_fork.
+    """
     _live_ops_semaphores.clear()
 
 
@@ -191,11 +193,14 @@ def git_op_in_flight(key: str) -> bool:
 
 
 def drain_git_ops(timeout: float) -> bool:
-    """Block up to `timeout`s for all in-flight git ops to finish. Returns True
-    if drained, False if the timeout elapsed with ops still lingering. Lets a
-    clone/fetch that finished at the end of the sync pass clear its marker before
-    reset_caches runs; ops still lingering (unreachable remote) are left running
-    and protected by reset_caches's in-flight guard. timeout<=0 = don't wait."""
+    """Block up to `timeout`s for all in-flight git ops to finish.
+
+    Returns True if drained, False if the timeout elapsed with ops still
+    lingering. Lets a clone/fetch that finished at the end of the sync
+    pass clear its marker before reset_caches runs; ops still lingering
+    (unreachable remote) are left running and protected by
+    reset_caches's in-flight guard. timeout<=0 = don't wait.
+    """
     deadline = time.monotonic() + max(0.0, timeout)
     while True:
         with _git_busy_lock:
@@ -860,11 +865,12 @@ class GitPolicyFetcher(PolicyFetcher):
         asyncio.Locks bound to the master's event loop and meaningless
         post-fork regardless.
 
-        A source whose git op is still in flight (lingering past its timeout
-        on a daemon thread) is skipped: its handle is only dropped from the
-        cache, never free()'d, since the pool thread may still be reading
-        from it — free()'ing it here would be a use-after-free. GC reclaims
-        it once the blocking call actually returns.
+        A source whose git op is still in flight (lingering past its
+        timeout on a daemon thread) is skipped: its handle is only
+        dropped from the cache, never free()'d, since the pool thread
+        may still be reading from it — free()'ing it here would be a
+        use-after-free. GC reclaims it once the blocking call actually
+        returns.
         """
         for path in list(GitPolicyFetcher.repos):
             source_id = os.path.basename(path.rstrip("/"))

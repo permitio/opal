@@ -315,13 +315,18 @@ def test_adjust_thread_count_falls_back_on_worker_shape_mismatch(monkeypatch):
 def test_after_fork_child_reset_reinits_held_lock_without_deadlock():
     import opal_server.git_fetcher as gf
     from opal_server.git_fetcher import (
-        _reset_git_executor_after_fork, _mark_git_op_started, _mark_git_op_done, git_op_in_flight,
+        _mark_git_op_done,
+        _mark_git_op_started,
+        _reset_git_executor_after_fork,
+        git_op_in_flight,
     )
+
     _mark_git_op_started("stale-child-sid")
     done = threading.Event()
 
     def _run_child_handler():
-        _reset_git_executor_after_fork(); done.set()
+        _reset_git_executor_after_fork()
+        done.set()
 
     worker = threading.Thread(target=_run_child_handler, daemon=True)
     gf._git_busy_lock.acquire()  # emulate the 'before' handler holding it at fork
@@ -336,12 +341,20 @@ def test_after_fork_child_reset_reinits_held_lock_without_deadlock():
 
 
 def test_reset_caches_skips_free_for_in_flight_source():
-    from opal_server.git_fetcher import GitPolicyFetcher, _mark_git_op_started, _mark_git_op_done
+    from opal_server.git_fetcher import (
+        GitPolicyFetcher,
+        _mark_git_op_done,
+        _mark_git_op_started,
+    )
+
     freed = []
 
     class _Handle:
-        def __init__(self, name): self.name = name
-        def free(self): freed.append(self.name)
+        def __init__(self, name):
+            self.name = name
+
+        def free(self):
+            freed.append(self.name)
 
     busy_path = "/base/git_sources/busysha-0"
     free_path = "/base/git_sources/freesha-1"
@@ -354,14 +367,20 @@ def test_reset_caches_skips_free_for_in_flight_source():
         assert not GitPolicyFetcher.repos
     finally:
         _mark_git_op_done("busysha-0")
-        GitPolicyFetcher.repos.clear(); GitPolicyFetcher.repos_last_fetched.clear(); GitPolicyFetcher.repo_locks.clear()
+        GitPolicyFetcher.repos.clear()
+        GitPolicyFetcher.repos_last_fetched.clear()
+        GitPolicyFetcher.repo_locks.clear()
 
 
 def test_pre_fork_shutdown_keeps_busy_marker_child_reset_clears_it():
     from opal_server.git_fetcher import (
-        shutdown_git_executor, _reset_git_executor_after_fork,
-        _mark_git_op_started, _mark_git_op_done, git_op_in_flight,
+        _mark_git_op_done,
+        _mark_git_op_started,
+        _reset_git_executor_after_fork,
+        git_op_in_flight,
+        shutdown_git_executor,
     )
+
     _mark_git_op_started("survive-sid")
     try:
         shutdown_git_executor()
@@ -374,11 +393,17 @@ def test_pre_fork_shutdown_keeps_busy_marker_child_reset_clears_it():
 
 def test_drain_git_ops_returns_true_when_no_ops():
     from opal_server.git_fetcher import drain_git_ops
+
     assert drain_git_ops(1.0) is True
 
 
 def test_drain_git_ops_times_out_while_op_in_flight():
-    from opal_server.git_fetcher import drain_git_ops, _mark_git_op_started, _mark_git_op_done
+    from opal_server.git_fetcher import (
+        _mark_git_op_done,
+        _mark_git_op_started,
+        drain_git_ops,
+    )
+
     _mark_git_op_started("stuck-sid")
     try:
         start = time.monotonic()
@@ -389,13 +414,20 @@ def test_drain_git_ops_times_out_while_op_in_flight():
 
 
 def test_drain_git_ops_returns_as_soon_as_last_op_clears():
-    from opal_server.git_fetcher import drain_git_ops, _mark_git_op_started, _mark_git_op_done
+    from opal_server.git_fetcher import (
+        _mark_git_op_done,
+        _mark_git_op_started,
+        drain_git_ops,
+    )
+
     _mark_git_op_started("clears-sid")
 
     def _clear():
-        time.sleep(0.1); _mark_git_op_done("clears-sid")
+        time.sleep(0.1)
+        _mark_git_op_done("clears-sid")
 
-    t = threading.Thread(target=_clear, daemon=True); t.start()
+    t = threading.Thread(target=_clear, daemon=True)
+    t.start()
     try:
         start = time.monotonic()
         assert drain_git_ops(5.0) is True
