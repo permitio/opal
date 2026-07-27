@@ -353,3 +353,18 @@ def test_reset_caches_skips_free_for_in_flight_source():
     finally:
         _mark_git_op_done("busysha-0")
         GitPolicyFetcher.repos.clear(); GitPolicyFetcher.repos_last_fetched.clear(); GitPolicyFetcher.repo_locks.clear()
+
+
+def test_pre_fork_shutdown_keeps_busy_marker_child_reset_clears_it():
+    from opal_server.git_fetcher import (
+        shutdown_git_executor, _reset_git_executor_after_fork,
+        _mark_git_op_started, _mark_git_op_done, git_op_in_flight,
+    )
+    _mark_git_op_started("survive-sid")
+    try:
+        shutdown_git_executor()
+        assert git_op_in_flight("survive-sid") is True  # survives pre-fork teardown
+        _reset_git_executor_after_fork()
+        assert git_op_in_flight("survive-sid") is False
+    finally:
+        _mark_git_op_done("survive-sid")

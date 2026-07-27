@@ -133,16 +133,12 @@ class _DaemonThreadPoolExecutor(ThreadPoolExecutor):
 
 
 def shutdown_git_executor() -> None:
-    """Clear in-flight markers and live-op accounting.
-
-    Called at the end of the pre-fork ``preload_scopes`` so the gunicorn
-    master does not carry stale in-flight markers (or loop-bound semaphores)
-    into forked workers. Per-op executors need no teardown: their daemon
-    threads die with their ops (or the process).
-    """
+    """Drop loop-bound live-op accounting before fork. Only the loop-bound
+    semaphores are cleared (meaningless post-fork). _git_busy markers are LEFT
+    in place so reset_caches (next) can skip freeing a handle a lingering git op
+    still holds; the forked child clears the stale markers in
+    _reset_git_executor_after_fork."""
     _live_ops_semaphores.clear()
-    with _git_busy_lock:
-        _git_busy.clear()
 
 
 def _reset_git_executor_after_fork() -> None:
