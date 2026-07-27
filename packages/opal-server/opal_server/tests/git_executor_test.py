@@ -45,9 +45,11 @@ def test_git_resilience_config_defaults(monkeypatch):
     # Don't let an ambient OPAL_* env var in CI/dev shadow the declared defaults.
     monkeypatch.delenv("OPAL_SCOPES_GIT_FETCH_TIMEOUT", raising=False)
     monkeypatch.delenv("OPAL_SCOPES_GIT_MAX_WORKERS", raising=False)
+    monkeypatch.delenv("OPAL_SCOPES_GIT_PRELOAD_DRAIN_TIMEOUT", raising=False)
     clean = OpalServerConfig(prefix="OPAL_")
     assert clean.SCOPES_GIT_FETCH_TIMEOUT == 120.0
     assert clean.SCOPES_GIT_MAX_WORKERS == 10
+    assert clean.SCOPES_GIT_PRELOAD_DRAIN_TIMEOUT == 10.0
 
 
 @pytest.mark.asyncio
@@ -368,3 +370,35 @@ def test_pre_fork_shutdown_keeps_busy_marker_child_reset_clears_it():
         assert git_op_in_flight("survive-sid") is False
     finally:
         _mark_git_op_done("survive-sid")
+
+
+def test_drain_git_ops_returns_true_when_no_ops():
+    from opal_server.git_fetcher import drain_git_ops
+    assert drain_git_ops(1.0) is True
+
+
+def test_drain_git_ops_times_out_while_op_in_flight():
+    from opal_server.git_fetcher import drain_git_ops, _mark_git_op_started, _mark_git_op_done
+    _mark_git_op_started("stuck-sid")
+    try:
+        start = time.monotonic()
+        assert drain_git_ops(0.3) is False
+        assert 0.3 <= time.monotonic() - start < 1.5
+    finally:
+        _mark_git_op_done("stuck-sid")
+
+
+def test_drain_git_ops_returns_as_soon_as_last_op_clears():
+    from opal_server.git_fetcher import drain_git_ops, _mark_git_op_started, _mark_git_op_done
+    _mark_git_op_started("clears-sid")
+
+    def _clear():
+        time.sleep(0.1); _mark_git_op_done("clears-sid")
+
+    t = threading.Thread(target=_clear, daemon=True); t.start()
+    try:
+        start = time.monotonic()
+        assert drain_git_ops(5.0) is True
+        assert time.monotonic() - start < 2.0
+    finally:
+        t.join(2)

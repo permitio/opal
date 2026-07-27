@@ -190,6 +190,23 @@ def git_op_in_flight(key: str) -> bool:
         return key in _git_busy
 
 
+def drain_git_ops(timeout: float) -> bool:
+    """Block up to `timeout`s for all in-flight git ops to finish. Returns True
+    if drained, False if the timeout elapsed with ops still lingering. Lets a
+    clone/fetch that finished at the end of the sync pass clear its marker before
+    reset_caches runs; ops still lingering (unreachable remote) are left running
+    and protected by reset_caches's in-flight guard. timeout<=0 = don't wait."""
+    deadline = time.monotonic() + max(0.0, timeout)
+    while True:
+        with _git_busy_lock:
+            if not _git_busy:
+                return True
+        if time.monotonic() >= deadline:
+            with _git_busy_lock:
+                return not _git_busy
+        time.sleep(0.05)
+
+
 def git_busy_count() -> int:
     """Number of scope git ops holding a pool thread (incl.
 

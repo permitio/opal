@@ -233,6 +233,15 @@ class OpalServerConfig(Confi):
         "thread persists on its own until the OS network timeout), so capacity is "
         "never starved by hung remotes.",
     )
+    SCOPES_GIT_PRELOAD_DRAIN_TIMEOUT = confi.float(
+        "SCOPES_GIT_PRELOAD_DRAIN_TIMEOUT",
+        10.0,
+        description="Max seconds the pre-fork scope preload waits for in-flight git "
+        "ops to finish before tearing down and forking workers. Ops still lingering "
+        "past this bound are left running on their daemon threads and their cached "
+        "handles are left unfreed by the pre-fork cache reset, avoiding a use-after-free "
+        "(0 = don't wait).",
+    )
     SCOPES_GIT_MAX_ZOMBIES = confi.int(
         "SCOPES_GIT_MAX_ZOMBIES",
         # 4x the default SCOPES_GIT_MAX_WORKERS. Once this many git ops (live +

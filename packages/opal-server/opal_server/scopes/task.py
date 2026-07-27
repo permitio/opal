@@ -6,7 +6,11 @@ from typing import Any
 from fastapi_websocket_pubsub import Topic
 from opal_common.logger import logger
 from opal_server.config import opal_server_config
-from opal_server.git_fetcher import GitPolicyFetcher, shutdown_git_executor
+from opal_server.git_fetcher import (
+    GitPolicyFetcher,
+    drain_git_ops,
+    shutdown_git_executor,
+)
 from opal_server.policy.watcher.task import BasePolicyWatcherTask
 from opal_server.redis_utils import RedisDB
 from opal_server.scopes.purge import LeaderScopePurger
@@ -109,6 +113,11 @@ class ScopesPolicyWatcherTask(BasePolicyWatcherTask):
                 pubsub_endpoint=None,
             )
             asyncio.run(service.sync_scopes(notify_on_changes=False))
+
+            # Bounded window for a just-finished clone/fetch to clear its in-flight
+            # marker before teardown+fork. Ops still lingering (hung remote) are
+            # left running; reset_caches's guard then skips freeing their handles.
+            drain_git_ops(opal_server_config.SCOPES_GIT_PRELOAD_DRAIN_TIMEOUT)
 
             # Clear git-op bookkeeping built during preload (in-flight markers
             # and the loop-bound live-op semaphore) so the gunicorn master does

@@ -74,3 +74,26 @@ def test_preload_scopes_noop_when_scopes_disabled(monkeypatch):
     task_module.ScopesPolicyWatcherTask.preload_scopes()
 
     assert events == []
+
+
+def test_preload_scopes_drains_before_teardown(monkeypatch):
+    events = []
+
+    class _StubService:
+        def __init__(self, *a, **k): pass
+        async def sync_scopes(self, *a, **k): events.append("sync_scopes")
+
+    class _StubGPF:
+        @staticmethod
+        def reset_caches(): events.append("reset_caches")
+
+    monkeypatch.setattr(task_module, "ScopesService", _StubService)
+    monkeypatch.setattr(task_module, "drain_git_ops", lambda t: events.append("drain") or True)
+    monkeypatch.setattr(task_module, "shutdown_git_executor", lambda: events.append("shutdown"))
+    monkeypatch.setattr(task_module, "GitPolicyFetcher", _StubGPF)
+    monkeypatch.setattr(opal_server_config, "SCOPES", True)
+    try:
+        task_module.ScopesPolicyWatcherTask.preload_scopes()
+    finally:
+        asyncio.set_event_loop(asyncio.new_event_loop())
+    assert events == ["sync_scopes", "drain", "shutdown", "reset_caches"], events
