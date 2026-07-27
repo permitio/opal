@@ -47,6 +47,9 @@ class ScopesPolicyWatcherTask(BasePolicyWatcherTask):
         if opal_server_config.POLICY_REFRESH_INTERVAL > 0:
             self._tasks.append(asyncio.create_task(self._periodic_polling()))
 
+        if opal_server_config.SCOPES_ORPHAN_SWEEP_INTERVAL > 0:
+            self._tasks.append(asyncio.create_task(self._periodic_orphan_sweep()))
+
     async def stop(self):
         return await super().stop()
 
@@ -78,6 +81,23 @@ class ScopesPolicyWatcherTask(BasePolicyWatcherTask):
 
         except asyncio.CancelledError:
             logger.info("Periodic sync cancelled")
+
+    async def _periodic_orphan_sweep(self):
+        """Always-on backstop independent of POLICY_REFRESH_INTERVAL. _periodic_polling
+        also sweeps but only runs when polling is enabled; with it off, boot's
+        _sync_all_then_sweep was the sole sweep, so a delete/repoint whose purge
+        broadcast never reached the leader leaked until refresh-all."""
+        try:
+            while True:
+                await asyncio.sleep(opal_server_config.SCOPES_ORPHAN_SWEEP_INTERVAL)
+                try:
+                    await self._purger.sweep_orphans()
+                except asyncio.CancelledError:
+                    raise
+                except Exception:
+                    logger.exception("Periodic orphan sweep failed")
+        except asyncio.CancelledError:
+            logger.info("Periodic orphan sweep cancelled")
 
     async def trigger(self, topic: Topic, data: Any):
         if data is not None and isinstance(data, dict):

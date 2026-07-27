@@ -77,3 +77,23 @@ async def test_single_scope_trigger_does_not_sweep():
     events = []
     await _bare_task(events).trigger(topic=None, data={"scope_id": "s1"})
     assert events == ["sync_one"]
+
+
+@pytest.mark.asyncio
+async def test_periodic_orphan_sweep_runs_with_polling_disabled(monkeypatch):
+    from opal_server.config import opal_server_config
+
+    monkeypatch.setattr(opal_server_config, "POLICY_REFRESH_INTERVAL", 0)
+    monkeypatch.setattr(opal_server_config, "SCOPES_ORPHAN_SWEEP_INTERVAL", 300)
+    calls = {"n": 0}
+
+    async def fake_sleep(_):
+        calls["n"] += 1
+        if calls["n"] >= 2:
+            raise asyncio.CancelledError
+
+    monkeypatch.setattr(asyncio, "sleep", fake_sleep)
+    events = []
+    await _bare_task(events)._periodic_orphan_sweep()
+    assert events.count("sweep") == 1
+    assert "sync" not in events

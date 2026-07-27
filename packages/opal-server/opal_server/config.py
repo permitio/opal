@@ -507,6 +507,15 @@ class OpalServerConfig(Confi):
         description="Policy polling refresh interval",
     )
 
+    SCOPES_ORPHAN_SWEEP_INTERVAL = confi.int(
+        "SCOPES_ORPHAN_SWEEP_INTERVAL",
+        300,
+        description="Interval (seconds) for the leader's always-on orphan clone-dir "
+        "sweep, independent of POLICY_REFRESH_INTERVAL, so the backstop that reclaims "
+        "clone dirs referencing no live scope runs even with polling disabled "
+        "(0 disables the timer; boot and refresh-all still sweep once).",
+    )
+
     def on_load(self):
         if self.SERVER_PORT is not None and self.SERVER_PORT.isdigit():
             # Backward compatibility - if SERVER_PORT is set with a valid value, use it as SERVER_BIND_PORT
