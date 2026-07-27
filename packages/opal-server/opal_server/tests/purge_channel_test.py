@@ -2,12 +2,13 @@ import asyncio
 from pathlib import Path
 
 import pytest
-from opal_server.config import OpalServerConfig
+from opal_server.config import OpalServerConfig, opal_server_config
 from opal_server.git_fetcher import (
     GitPolicyFetcher,
     _mark_git_op_done,
     _mark_git_op_started,
 )
+from opal_server.pubsub import PubSub
 from opal_server.scopes.purge import (
     ScopePurgeCommand,
     handle_purge_message,
@@ -130,6 +131,13 @@ async def test_subscribe_worker_purge_handler_wires_channel():
     ep = FakeEndpoint()
     await subscribe_worker_purge_handler(ep)
     assert ep.subs == [(["__opal_scope_purge__"], handle_purge_message)]
+
+
+def test_purge_channel_is_freeze_exempt_under_custom_name(monkeypatch):
+    monkeypatch.setattr(opal_server_config, "SCOPES_PURGE_CHANNEL", "scope_purge_custom")
+    ps = PubSub(signer=object(), broadcaster_uri=None)  # signer only stored, not called
+    assert "scope_purge_custom" in ps.endpoint._freeze_exempt_topics
+    assert ps.endpoint._is_exempt(["scope_purge_custom"]) is True
 
 
 import shutil

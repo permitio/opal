@@ -226,6 +226,10 @@ class PubSub:
             # keepalive — dropping those corrupts state no resync rebuilds). The coordination
             # channels are exempted by their CONFIGURED names: the endpoint's own "__" prefix
             # rule covers only the defaults, and every one of these is operator-overridable.
+            # Worker-to-worker cache purge on scope delete/repoint/orphan-reclaim.
+            # Freezing it during a backbone gap would leave stale GitPolicyFetcher
+            # caches fleet-wide with nothing to replay the purge. Exempt by its
+            # CONFIGURED name because it is operator-overridable to a non-"__" value.
             freeze_exempt_topics=[
                 opal_server_config.POLICY_REPO_WEBHOOK_TOPIC,
                 opal_server_config.BROADCAST_KEEPALIVE_TOPIC,
@@ -234,6 +238,7 @@ class PubSub:
                 opal_server_config.STATISTICS_SERVER_KEEPALIVE_CHANNEL,
                 opal_common_config.STATISTICS_ADD_CLIENT_CHANNEL,
                 opal_common_config.STATISTICS_REMOVE_CLIENT_CHANNEL,
+                opal_server_config.SCOPES_PURGE_CHANNEL,
             ],
         )
         # fastapi_websocket_rpc's ConnectionManager.disconnect is not idempotent: the RPC
