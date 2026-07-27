@@ -138,7 +138,9 @@ async def test_subscribe_worker_purge_handler_wires_channel():
 
 
 def test_purge_channel_is_freeze_exempt_under_custom_name(monkeypatch):
-    monkeypatch.setattr(opal_server_config, "SCOPES_PURGE_CHANNEL", "scope_purge_custom")
+    monkeypatch.setattr(
+        opal_server_config, "SCOPES_PURGE_CHANNEL", "scope_purge_custom"
+    )
     ps = PubSub(signer=object(), broadcaster_uri=None)  # signer only stored, not called
     assert "scope_purge_custom" in ps.endpoint._freeze_exempt_topics
     assert ps.endpoint._is_exempt(["scope_purge_custom"]) is True
@@ -319,7 +321,9 @@ async def test_leader_purges_defensively_when_sibling_check_raises(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_leader_keeps_clone_on_repoint_when_sibling_check_raises(tmp_path, monkeypatch):
+async def test_leader_keeps_clone_on_repoint_when_sibling_check_raises(
+    tmp_path, monkeypatch
+):
     """Repoint's old-source purge must NOT fail open when the sibling check
     raises: the record for the reused source_id still exists (it was just
     repointed elsewhere), so a defensive purge would delete a clone a live
@@ -339,7 +343,9 @@ async def test_leader_keeps_clone_on_repoint_when_sibling_check_raises(tmp_path,
         base_dir=Path(tmp_path), scopes=RaisingRepo(), pubsub_endpoint=None
     )
     await purger.purge_source_if_unshared(
-        ScopePurgeCommand(source_id=sid, clone_path=str(clone), scope_id="s1", reason="repoint")
+        ScopePurgeCommand(
+            source_id=sid, clone_path=str(clone), scope_id="s1", reason="repoint"
+        )
     )
     assert clone.exists(), "repoint must not purge defensively on a raising scan"
 

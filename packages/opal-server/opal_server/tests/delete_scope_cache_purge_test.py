@@ -140,8 +140,8 @@ async def test_delete_does_not_touch_disk(tmp_path):
 
 @pytest.mark.asyncio
 async def test_delete_without_pubsub_endpoint_does_not_crash(tmp_path):
-    """pubsub_endpoint=None (preload path / degraded mode) must not crash;
-    the local memory purge is unconditional — it does not depend on pub/sub."""
+    """pubsub_endpoint=None (preload path / degraded mode) must not crash; the
+    local memory purge is unconditional — it does not depend on pub/sub."""
     scope = _scope("only", "https://git/repo-a.git")
     repo = FakeScopeRepository([scope])
     svc = ScopesService(base_dir=tmp_path, scopes=repo, pubsub_endpoint=None)
