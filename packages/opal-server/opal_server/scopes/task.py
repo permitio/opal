@@ -81,6 +81,7 @@ class ScopesPolicyWatcherTask(BasePolicyWatcherTask):
 
         except asyncio.CancelledError:
             logger.info("Periodic sync cancelled")
+            raise
 
     async def _periodic_orphan_sweep(self):
         """Always-on backstop independent of POLICY_REFRESH_INTERVAL. _periodic_polling
@@ -98,6 +99,7 @@ class ScopesPolicyWatcherTask(BasePolicyWatcherTask):
                     logger.exception("Periodic orphan sweep failed")
         except asyncio.CancelledError:
             logger.info("Periodic orphan sweep cancelled")
+            raise
 
     async def trigger(self, topic: Topic, data: Any):
         if data is not None and isinstance(data, dict):

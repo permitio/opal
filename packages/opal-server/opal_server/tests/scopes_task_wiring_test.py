@@ -94,23 +94,44 @@ async def test_periodic_orphan_sweep_runs_with_polling_disabled(monkeypatch):
 
     monkeypatch.setattr(asyncio, "sleep", fake_sleep)
     events = []
-    await _bare_task(events)._periodic_orphan_sweep()
+    with pytest.raises(asyncio.CancelledError):
+        await _bare_task(events)._periodic_orphan_sweep()
     assert events.count("sweep") == 1
     assert "sync" not in events
 
 
-# NOTE (C7.4, deferred): the cluster-C7 brief specified two
-# `_periodic_polling` tests here (sync-then-sweep-each-pass, and
-# survives-a-raising-sweep) that cancel the task and assert
-# `pytest.raises(asyncio.CancelledError)` around `await task`. Both
-# deterministically fail against current code: `_periodic_polling`'s outer
-# `except asyncio.CancelledError:` (opal_server/scopes/task.py) logs and
-# does not re-raise, so a cancelled task completes normally instead of
-# raising CancelledError to its awaiter (verified with a standalone asyncio
-# repro, independent of pytest — not a fixture/timing artifact). This is
-# out of C7's test-only scope to fix in production code, so the two tests
-# were withheld rather than committed red or weakened to hide the gap.
-# See .superpowers/sdd/cluster-C7-report.md for full detail.
+@pytest.mark.asyncio
+async def test_periodic_polling_syncs_then_sweeps_each_pass(monkeypatch):
+    from opal_server.config import opal_server_config
+
+    monkeypatch.setattr(opal_server_config, "POLICY_REFRESH_INTERVAL", 0.001)
+    events = []
+    task = asyncio.create_task(_bare_task(events)._periodic_polling())
+    try:
+        while events[:2] != ["sync", "sweep"]:
+            await asyncio.sleep(0)
+    finally:
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+    assert events[:2] == ["sync", "sweep"]
+
+
+@pytest.mark.asyncio
+async def test_periodic_polling_survives_a_raising_sweep(monkeypatch):
+    from opal_server.config import opal_server_config
+
+    monkeypatch.setattr(opal_server_config, "POLICY_REFRESH_INTERVAL", 0.001)
+    events = []
+    task = asyncio.create_task(_bare_task(events, fail_sweep=True)._periodic_polling())
+    try:
+        while events.count("sync") < 2:
+            await asyncio.sleep(0)
+        assert not task.done()
+    finally:
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
 
 
 @pytest.mark.asyncio
