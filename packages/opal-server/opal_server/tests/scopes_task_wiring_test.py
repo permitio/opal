@@ -97,3 +97,62 @@ async def test_periodic_orphan_sweep_runs_with_polling_disabled(monkeypatch):
     await _bare_task(events)._periodic_orphan_sweep()
     assert events.count("sweep") == 1
     assert "sync" not in events
+
+
+# NOTE (C7.4, deferred): the cluster-C7 brief specified two
+# `_periodic_polling` tests here (sync-then-sweep-each-pass, and
+# survives-a-raising-sweep) that cancel the task and assert
+# `pytest.raises(asyncio.CancelledError)` around `await task`. Both
+# deterministically fail against current code: `_periodic_polling`'s outer
+# `except asyncio.CancelledError:` (opal_server/scopes/task.py) logs and
+# does not re-raise, so a cancelled task completes normally instead of
+# raising CancelledError to its awaiter (verified with a standalone asyncio
+# repro, independent of pytest — not a fixture/timing artifact). This is
+# out of C7's test-only scope to fix in production code, so the two tests
+# were withheld rather than committed red or weakened to hide the gap.
+# See .superpowers/sdd/cluster-C7-report.md for full detail.
+
+
+@pytest.mark.asyncio
+async def test_start_subscribes_leader_purge_handler(monkeypatch):
+    from opal_server.config import opal_server_config
+    from opal_server.policy.watcher.task import BasePolicyWatcherTask
+
+    async def _noop_start(self):
+        return None
+
+    monkeypatch.setattr(BasePolicyWatcherTask, "start", _noop_start)
+    monkeypatch.setattr(opal_server_config, "POLICY_REFRESH_INTERVAL", 0)
+
+    class FakeEndpoint:
+        def __init__(self):
+            self.subs = []
+
+        async def subscribe(self, topics, callback):
+            self.subs.append((list(topics), callback))
+
+    class FakePurger:
+        async def handle(self, *a, **k):
+            return None
+
+        async def sweep_orphans(self):
+            return None
+
+    class FakeService:
+        async def sync_scopes(self, *a, **k):
+            return None
+
+    t = ScopesPolicyWatcherTask.__new__(ScopesPolicyWatcherTask)
+    t._pubsub_endpoint = FakeEndpoint()
+    t._purger = FakePurger()
+    t._service = FakeService()
+    t._tasks = []
+    await t.start()
+    try:
+        assert t._pubsub_endpoint.subs == [
+            ([opal_server_config.SCOPES_PURGE_CHANNEL], t._purger.handle)
+        ]
+    finally:
+        for task in t._tasks:
+            task.cancel()
+        await asyncio.gather(*t._tasks, return_exceptions=True)
