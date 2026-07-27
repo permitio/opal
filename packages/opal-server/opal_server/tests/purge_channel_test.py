@@ -148,9 +148,10 @@ def test_purge_channel_is_freeze_exempt_under_custom_name(monkeypatch):
 
 import shutil
 
+from opal_common.logger import logger
 from opal_common.schemas.policy_source import GitPolicyScopeSource, NoAuthData
 from opal_common.schemas.scopes import Scope
-from opal_server.scopes.purge import LeaderScopePurger
+from opal_server.scopes.purge import LeaderScopePurger, find_scope_sharing_source
 from opal_server.scopes.scope_repository import ScopeNotFoundError
 
 
@@ -309,15 +310,21 @@ async def test_leader_purges_defensively_when_sibling_check_raises(tmp_path):
     purger = LeaderScopePurger(
         base_dir=tmp_path, scopes=BrokenRepo([]), pubsub_endpoint=None
     )
-    task = await purger.handle(
-        None,
-        ScopePurgeCommand(
-            source_id=sid, clone_path=str(clone), scope_id="dead", reason="delete"
-        ).dict(),
-    )
-    await task
+    warnings = []
+    sink_id = logger.add(lambda m: warnings.append(str(m)), level="WARNING")
+    try:
+        task = await purger.handle(
+            None,
+            ScopePurgeCommand(
+                source_id=sid, clone_path=str(clone), scope_id="dead", reason="delete"
+            ).dict(),
+        )
+        await task
+    finally:
+        logger.remove(sink_id)
 
     assert not clone.exists()
+    assert any("purging defensively" in w for w in warnings), f"not emitted: {warnings}"
 
 
 @pytest.mark.asyncio
@@ -584,3 +591,41 @@ async def test_leader_rejects_malformed_source_id(tmp_path):
     if task is not None:
         await task
     assert evil.exists()
+
+
+@pytest.mark.asyncio
+async def test_concurrent_purges_for_shared_source_do_not_both_skip(tmp_path):
+    a = _scope("a", "https://git/shared.git")
+    b = _scope("b", "https://git/shared.git")
+    sid = GitPolicyFetcher.source_id(a.policy)
+    assert sid == GitPolicyFetcher.source_id(b.policy)
+    clone = _make_clone(tmp_path, a.policy)
+    repo = FakeScopeRepository([a, b])
+    purger = LeaderScopePurger(base_dir=tmp_path, scopes=repo, pubsub_endpoint=None)
+
+    async def delete_then_purge(scope_id):
+        await repo.delete(scope_id)
+        task = await purger.handle(
+            None,
+            ScopePurgeCommand(
+                source_id=sid, clone_path=str(clone), scope_id=scope_id, reason="delete"
+            ).dict(),
+        )
+        await task
+
+    await asyncio.gather(delete_then_purge("a"), delete_then_purge("b"))
+    assert not clone.exists(), "both purges skipped — shared source leaked"
+
+
+@pytest.mark.asyncio
+async def test_find_scope_sharing_source_distinguishes_shards(monkeypatch):
+    monkeypatch.setattr(opal_server_config, "SCOPES_REPO_CLONES_SHARDS", 4)
+    a = _scope("a", "https://git/shared.git", branch="main")
+    b = _scope("b", "https://git/shared.git", branch="prod")
+    sid_a, sid_b = GitPolicyFetcher.source_id(a.policy), GitPolicyFetcher.source_id(
+        b.policy
+    )
+    assert sid_a != sid_b
+    repo = FakeScopeRepository([b])
+    assert await find_scope_sharing_source(repo, sid_a) is None
+    assert await find_scope_sharing_source(repo, sid_b) == "b"
