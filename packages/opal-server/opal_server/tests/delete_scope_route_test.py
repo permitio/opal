@@ -3,6 +3,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from opal_common.schemas.policy_source import GitPolicyScopeSource, NoAuthData
 from opal_common.schemas.scopes import Scope
+from opal_server.config import opal_server_config
 from opal_server.git_fetcher import GitPolicyFetcher
 from opal_server.scopes.api import init_scope_router
 from opal_server.scopes.scope_repository import ScopeNotFoundError
@@ -47,11 +48,11 @@ def _scope(scope_id, url, branch="main"):
     )
 
 
-def _client(repo, base_dir):
-    service = ScopesService(base_dir=base_dir, scopes=repo, pubsub_endpoint=None)
+def _client(repo, base_dir, pubsub=None):
+    service = ScopesService(base_dir=base_dir, scopes=repo, pubsub_endpoint=pubsub)
     app = FastAPI()
     app.include_router(
-        init_scope_router(repo, FakeAuthenticator(), None, service),
+        init_scope_router(repo, FakeAuthenticator(), pubsub, service),
         prefix="/scopes",
     )
     return TestClient(app)
@@ -99,3 +100,26 @@ def test_delete_route_missing_scope_stays_204(tmp_path):
     wiring and must remain one."""
     resp = _client(FakeScopeRepository([]), tmp_path).delete("/scopes/ghost")
     assert resp.status_code == 204
+
+
+class FakePubSubEndpoint:
+    def __init__(self):
+        self.published = []
+
+    async def publish(self, topics, data=None):
+        self.published.append((list(topics), data))
+
+
+def test_delete_route_publishes_purge_request(tmp_path):
+    scope = _scope("only", "https://git/repo-a.git")
+    repo = FakeScopeRepository([scope])
+    pubsub = FakePubSubEndpoint()
+    sid = GitPolicyFetcher.source_id(scope.policy)
+    resp = _client(repo, tmp_path, pubsub=pubsub).delete("/scopes/only")
+    assert resp.status_code == 204
+    assert "only" not in repo._scopes
+    assert len(pubsub.published) == 1
+    topics, payload = pubsub.published[0]
+    assert topics == [opal_server_config.SCOPES_PURGE_CHANNEL]
+    assert payload["source_id"] == sid and payload["scope_id"] == "only"
+    assert payload["reason"] == "delete" and payload["confirmed"] is False
