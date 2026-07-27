@@ -331,12 +331,15 @@ def init_scope_router(
         except BranchHeadNotFoundError as exc:
             logger.error(
                 "Scope {scope_id} bundle unavailable: {exc!r} (non-retryable)",
-                scope_id=scope_id, exc=exc,
+                scope_id=scope_id,
+                exc=exc,
             )
             raise HTTPException(
                 status.HTTP_409_CONFLICT,
-                detail=(f"Policy branch for scope {scope_id} could not be resolved "
-                        "(check the configured branch); not retryable"),
+                detail=(
+                    f"Policy branch for scope {scope_id} could not be resolved "
+                    "(check the configured branch); not retryable"
+                ),
             )
         except (
             InvalidGitRepositoryError,
@@ -354,7 +357,8 @@ def init_scope_router(
             logger.warning(
                 "Scope {scope_id} is live but its clone is unavailable ({exc!r}), "
                 "returning 503",
-                scope_id=scope_id, exc=exc,
+                scope_id=scope_id,
+                exc=exc,
             )
             raise HTTPException(
                 status.HTTP_503_SERVICE_UNAVAILABLE,

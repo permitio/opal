@@ -53,12 +53,16 @@ _git_busy_lock = threading.Lock()
 
 
 class GitConcurrencyLimitExceeded(RuntimeError):
-    """Raised when in-flight (live + zombie) git ops reach SCOPES_GIT_MAX_ZOMBIES."""
+    """Raised when in-flight (live + zombie) git ops reach
+    SCOPES_GIT_MAX_ZOMBIES."""
 
 
 class BranchHeadNotFoundError(ValueError):
     """Configured branch has no resolvable HEAD (permanent misconfig), NOT a
-    transient clone gap. Subclasses ValueError so broad handlers still catch it."""
+    transient clone gap.
+
+    Subclasses ValueError so broad handlers still catch it.
+    """
 
 
 _zombie_cap_logged = False
@@ -85,8 +89,11 @@ class _DaemonThreadPoolExecutor(ThreadPoolExecutor):
         # Fall back to the stdlib if any internal we mirror has moved or changed
         # shape: _worker must exist and take exactly the 4 positional args we pass,
         # _threads_queues must exist, and this executor must expose _initializer.
-        if (worker is None or not hasattr(cf_thread, "_threads_queues")
-                or not hasattr(self, "_initializer")):
+        if (
+            worker is None
+            or not hasattr(cf_thread, "_threads_queues")
+            or not hasattr(self, "_initializer")
+        ):
             return super()._adjust_thread_count()
         try:
             if len(inspect.signature(worker).parameters) != 4:
@@ -165,7 +172,10 @@ def _mark_git_op_done(key: str) -> None:
     global _zombie_cap_logged
     with _git_busy_lock:
         _git_busy.discard(key)
-        if _zombie_cap_logged and len(_git_busy) < opal_server_config.SCOPES_GIT_MAX_ZOMBIES:
+        if (
+            _zombie_cap_logged
+            and len(_git_busy) < opal_server_config.SCOPES_GIT_MAX_ZOMBIES
+        ):
             _zombie_cap_logged = False
 
 
@@ -180,7 +190,10 @@ def git_op_in_flight(key: str) -> bool:
 
 
 def git_busy_count() -> int:
-    """Number of scope git ops holding a pool thread (incl. timed-out zombies)."""
+    """Number of scope git ops holding a pool thread (incl.
+
+    timed-out zombies).
+    """
     with _git_busy_lock:
         return len(_git_busy)
 
@@ -240,7 +253,8 @@ async def run_in_git_executor(func, *args, timeout: float, busy_key=None, **kwar
             logger.error(
                 "Refusing new scope git op: {count} in-flight at/over "
                 "SCOPES_GIT_MAX_ZOMBIES={cap}; remotes appear stuck.",
-                count=git_busy_count(), cap=max_zombies,
+                count=git_busy_count(),
+                cap=max_zombies,
             )
         raise GitConcurrencyLimitExceeded(
             f"in-flight git ops ({git_busy_count()}) reached "

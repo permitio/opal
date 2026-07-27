@@ -143,7 +143,9 @@ def test_wrong_branch_returns_non_retryable_409(tmp_path, monkeypatch):
         raise BranchHeadNotFoundError("Could not find current branch head")
 
     monkeypatch.setattr(GitPolicyFetcher, "make_bundle", fake_make_bundle)
-    monkeypatch.setattr("opal_server.scopes.api.opal_server_config.BASE_DIR", str(tmp_path))
+    monkeypatch.setattr(
+        "opal_server.scopes.api.opal_server_config.BASE_DIR", str(tmp_path)
+    )
     resp = _client(repo, tmp_path).get("/scopes/live/policy")
     assert resp.status_code == 409
     assert "retry-after" not in resp.headers

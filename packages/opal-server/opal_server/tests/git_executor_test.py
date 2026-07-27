@@ -234,8 +234,9 @@ def test_scopes_git_max_workers_description_is_wrapped():
     import opal_server.config as cfg_mod
 
     lines = pathlib.Path(cfg_mod.__file__).read_text().splitlines()
-    start = next(i for i, l in enumerate(lines)
-                 if "SCOPES_GIT_MAX_WORKERS = confi.int(" in l)
+    start = next(
+        i for i, l in enumerate(lines) if "SCOPES_GIT_MAX_WORKERS = confi.int(" in l
+    )
     block, depth = [], 0
     for line in lines[start:]:
         block.append(line)
@@ -249,7 +250,10 @@ def test_scopes_git_max_workers_description_is_wrapped():
 
 from opal_server.config import opal_server_config
 from opal_server.git_fetcher import (
-    GitConcurrencyLimitExceeded, git_busy_count, _mark_git_op_done, _mark_git_op_started,
+    GitConcurrencyLimitExceeded,
+    _mark_git_op_done,
+    _mark_git_op_started,
+    git_busy_count,
 )
 
 
@@ -262,13 +266,15 @@ def test_max_zombies_default(monkeypatch):
 @pytest.mark.asyncio
 async def test_zombie_cap_refuses_new_op(monkeypatch):
     monkeypatch.setattr(opal_server_config, "SCOPES_GIT_MAX_ZOMBIES", 2)
-    _mark_git_op_started("z1"); _mark_git_op_started("z2")
+    _mark_git_op_started("z1")
+    _mark_git_op_started("z2")
     try:
         assert git_busy_count() == 2
         with pytest.raises(GitConcurrencyLimitExceeded):
             await run_in_git_executor(lambda: 1, timeout=5)
     finally:
-        _mark_git_op_done("z1"); _mark_git_op_done("z2")
+        _mark_git_op_done("z1")
+        _mark_git_op_done("z2")
 
 
 @pytest.mark.asyncio
@@ -282,16 +288,20 @@ async def test_op_admitted_below_zombie_cap(monkeypatch):
 
 
 from concurrent.futures import ThreadPoolExecutor
+
 from opal_server.git_fetcher import _DaemonThreadPoolExecutor
 
 
 def test_adjust_thread_count_falls_back_on_worker_shape_mismatch(monkeypatch):
     ex = _DaemonThreadPoolExecutor(max_workers=1, thread_name_prefix="shape-test")
     try:
-        monkeypatch.setattr(cf_thread, "_worker", lambda a, b, c: None)  # wrong arity (3)
+        monkeypatch.setattr(
+            cf_thread, "_worker", lambda a, b, c: None
+        )  # wrong arity (3)
         called = {"super": False}
         monkeypatch.setattr(
-            ThreadPoolExecutor, "_adjust_thread_count",
+            ThreadPoolExecutor,
+            "_adjust_thread_count",
             lambda self: called.__setitem__("super", True),
         )
         ex._adjust_thread_count()  # must not raise
