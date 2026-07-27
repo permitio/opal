@@ -68,7 +68,7 @@ def clear_caches():
 
 
 @pytest.mark.asyncio
-async def test_delete_publishes_request_and_drops_local_memory(tmp_path):
+async def test_delete_publishes_request_without_touching_local_memory(tmp_path):
     scope = _scope("only", "https://git/repo-a.git")
     repo = FakeScopeRepository([scope])
     pubsub = FakePubSubEndpoint()
@@ -83,11 +83,9 @@ async def test_delete_publishes_request_and_drops_local_memory(tmp_path):
 
     await svc.delete_scope("only")
 
-    # This worker's memory caches drop immediately (best-effort, memory-only);
-    # the lock entry is untouched (only a holder may pop it) and the clone
-    # dir itself stays leader-gated via the broadcast.
-    assert clone_path not in GitPolicyFetcher.repos
-    assert sid not in GitPolicyFetcher.repos_last_fetched
+    # Caches drop only on the leader's confirmation broadcast, not here.
+    assert clone_path in GitPolicyFetcher.repos
+    assert sid in GitPolicyFetcher.repos_last_fetched
     assert GitPolicyFetcher.repo_locks[sid] is lock
     assert len(pubsub.published) == 1
     topics, payload = pubsub.published[0]
@@ -99,27 +97,6 @@ async def test_delete_publishes_request_and_drops_local_memory(tmp_path):
         "reason": "delete",
         "confirmed": False,
     }
-
-
-@pytest.mark.asyncio
-async def test_delete_drops_this_workers_memory_but_not_disk(tmp_path):
-    scope = _scope("only", "https://git/repo-a.git")
-    clone = GitPolicyFetcher.repo_clone_path(tmp_path, scope.policy)
-    clone.mkdir(parents=True)
-    sid = GitPolicyFetcher.source_id(scope.policy)
-    GitPolicyFetcher.repos[str(clone)] = object()
-    GitPolicyFetcher.repos_last_fetched[sid] = "ts"
-    svc = ScopesService(
-        base_dir=tmp_path,
-        scopes=FakeScopeRepository([scope]),
-        pubsub_endpoint=FakePubSubEndpoint(),
-    )
-
-    await svc.delete_scope("only")
-
-    assert str(clone) not in GitPolicyFetcher.repos
-    assert sid not in GitPolicyFetcher.repos_last_fetched
-    assert clone.exists(), "disk mutation belongs to the leader's handler"
 
 
 @pytest.mark.asyncio
@@ -140,8 +117,8 @@ async def test_delete_does_not_touch_disk(tmp_path):
 
 @pytest.mark.asyncio
 async def test_delete_without_pubsub_endpoint_does_not_crash(tmp_path):
-    """pubsub_endpoint=None (preload path / degraded mode) must not crash; the
-    local memory purge is unconditional — it does not depend on pub/sub."""
+    """pubsub_endpoint=None (preload path / degraded mode) must not crash;
+    caches are untouched (degraded mode: the orphan sweep is the backstop)."""
     scope = _scope("only", "https://git/repo-a.git")
     repo = FakeScopeRepository([scope])
     svc = ScopesService(base_dir=tmp_path, scopes=repo, pubsub_endpoint=None)
@@ -154,8 +131,8 @@ async def test_delete_without_pubsub_endpoint_does_not_crash(tmp_path):
 
     with pytest.raises(ScopeNotFoundError):
         await repo.get("only")
-    assert clone_path not in GitPolicyFetcher.repos
-    assert sid not in GitPolicyFetcher.repos_last_fetched
+    assert clone_path in GitPolicyFetcher.repos
+    assert sid in GitPolicyFetcher.repos_last_fetched
 
 
 @pytest.mark.asyncio
