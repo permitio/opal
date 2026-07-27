@@ -146,21 +146,26 @@ def shutdown_git_executor() -> None:
 
 
 def _reset_git_executor_after_fork() -> None:
-    """Reset live-op accounting + in-flight state in a freshly forked child.
-
-    The live-op semaphores are bound to the parent's event loop (see
-    ``_get_live_ops_semaphore``), which does not survive ``fork``; dropping
-    them forces the child to mint its own on first use against its own loop.
-    The in-flight markers are stale in the child too (no thread will ever
-    clear them), so clear them.
-    """
+    """after_in_child fork handler: _git_busy_lock is held on entry (the paired
+    'before' handler acquired it and the child inherits it LOCKED). Reinit it in
+    place FIRST (dropping it without a matching acquire — re-acquiring would
+    deadlock), then mutate _git_busy directly (child is single-threaded here)."""
+    global _git_busy_lock
+    reinit = getattr(_git_busy_lock, "_at_fork_reinit", None)
+    if callable(reinit):
+        reinit()
+    else:  # pragma: no cover
+        _git_busy_lock = threading.Lock()
     _live_ops_semaphores.clear()
-    with _git_busy_lock:
-        _git_busy.clear()
+    _git_busy.clear()
 
 
 if hasattr(os, "register_at_fork"):
-    os.register_at_fork(after_in_child=_reset_git_executor_after_fork)
+    os.register_at_fork(
+        before=_git_busy_lock.acquire,
+        after_in_parent=_git_busy_lock.release,
+        after_in_child=_reset_git_executor_after_fork,
+    )
 
 
 def _mark_git_op_started(key: str) -> None:

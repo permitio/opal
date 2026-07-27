@@ -308,3 +308,26 @@ def test_adjust_thread_count_falls_back_on_worker_shape_mismatch(monkeypatch):
         assert called["super"] is True
     finally:
         ex.shutdown(wait=False)
+
+
+def test_after_fork_child_reset_reinits_held_lock_without_deadlock():
+    import opal_server.git_fetcher as gf
+    from opal_server.git_fetcher import (
+        _reset_git_executor_after_fork, _mark_git_op_started, _mark_git_op_done, git_op_in_flight,
+    )
+    _mark_git_op_started("stale-child-sid")
+    done = threading.Event()
+
+    def _run_child_handler():
+        _reset_git_executor_after_fork(); done.set()
+
+    worker = threading.Thread(target=_run_child_handler, daemon=True)
+    gf._git_busy_lock.acquire()  # emulate the 'before' handler holding it at fork
+    try:
+        worker.start()
+        assert done.wait(2), "child reset deadlocked on the inherited-held lock"
+        assert gf._git_busy_lock.acquire(timeout=1), "lock still held after child reset"
+        gf._git_busy_lock.release()
+        assert git_op_in_flight("stale-child-sid") is False
+    finally:
+        _mark_git_op_done("stale-child-sid")
