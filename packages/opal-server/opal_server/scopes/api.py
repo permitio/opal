@@ -224,9 +224,9 @@ def init_scope_router(
             raise
 
         try:
-            # Deletes the record, purges this worker's in-memory caches, and
-            # broadcasts a ScopePurgeCommand so every worker drops its caches
-            # and the leader removes the clone dir (fleet-wide purge, PR3).
+            # Deletes the record, best-effort drops THIS worker's in-memory fetcher
+            # caches (memory only), and broadcasts a ScopePurgeCommand so every
+            # worker drops its caches and the leader removes the clone dir.
             await scopes_service.delete_scope(scope_id)
         except ScopeNotFoundError:
             # Deleting a missing scope was always a silent no-op (204); keep it.

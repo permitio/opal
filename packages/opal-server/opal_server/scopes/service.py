@@ -19,7 +19,7 @@ from opal_server.policy.watcher.callbacks import (
     create_policy_update,
     create_update_all_directories_in_repo,
 )
-from opal_server.scopes.purge import ScopePurgeCommand
+from opal_server.scopes.purge import ScopePurgeCommand, purge_local_memory
 from opal_server.scopes.scope_repository import (
     Scope,
     ScopeNotFoundError,
@@ -207,9 +207,9 @@ class ScopesService:
                 # (ScopeNotFoundError), so a publish gated on a clean delete
                 # would orphan the purge permanently. Over-publishing
                 # self-heals: the leader's sibling-check sees a still-live
-                # record and keeps everything. Memory entries (all workers,
-                # this one included) drop when the leader's confirmation
-                # broadcast arrives.
+                # record and keeps everything. Other workers' memory entries
+                # drop when the leader's confirmation broadcast arrives; this
+                # worker's own memory entries are purged below regardless.
                 if self._pubsub_endpoint is not None:
                     await self._pubsub_endpoint.publish(
                         [opal_server_config.SCOPES_PURGE_CHANNEL],
@@ -220,6 +220,14 @@ class ScopesService:
                             reason="delete",
                         ).dict(),
                     )
+                # Best-effort local memory purge on THIS worker (memory only; clone-dir
+                # removal stays leader-gated via the broadcast). Independent of the
+                # broadcast so a client-less non-leader — whose broadcaster reader may
+                # never run — still drops its cached handle+timestamp instead of pinning
+                # them for life. Under lock_source to serialize vs a concurrent sync;
+                # purge_local_memory keeps its in-flight guard so a lingering op self-heals.
+                async with GitPolicyFetcher.lock_source(deleted_source_id):
+                    purge_local_memory(deleted_source_id, str(scope_dir))
 
     async def sync_scopes(self, only_poll_updates=False, notify_on_changes=True):
         with tracer.trace("scopes_service.sync_scopes"):
