@@ -95,33 +95,40 @@ async def subscribe_worker_purge_handler(endpoint) -> None:
     )
 
 
+def _scope_sharing_source(
+    scopes_snapshot, source_id: str, excluded_scope_id: Optional[str] = None
+) -> Optional[str]:
+    """First live scope in a pre-fetched list mapping to ``source_id``, else
+    None.
+
+    Pure (no I/O): RAISES if a scope's ``source_id()`` derivation raises —
+    the caller owns the fail-open/fail-closed policy for that. Reused by
+    the orphan sweep (C4.5).
+    """
+    return next(
+        (
+            s.scope_id
+            for s in scopes_snapshot
+            if s.scope_id != excluded_scope_id
+            and isinstance(s.policy, GitPolicyScopeSource)
+            and GitPolicyFetcher.source_id(s.policy) == source_id
+        ),
+        None,
+    )
+
+
 async def find_scope_sharing_source(
     scopes, source_id: str, excluded_scope_id: Optional[str] = None
 ) -> Optional[str]:
     """Return the id of a live scope mapping to ``source_id``, or None.
 
-    Returns None (= purge defensively) when the scan raises: the
-    caller's record is already gone, so a skipped purge is a permanent
-    leak while an over-purge self-heals (a surviving sibling re-clones
-    on its next sync).
+    RAISES on a store/scan error (was: swallowed and returned None). The
+    caller decides the fail-open policy by ``reason``: a repoint's old
+    source still has a live record (just moved elsewhere), so a raising
+    scan must NOT read as "unshared"; a delete's record is already gone,
+    so under-purging there is a permanent leak.
     """
-    try:
-        return next(
-            (
-                s.scope_id
-                for s in await scopes.all()
-                if s.scope_id != excluded_scope_id
-                and isinstance(s.policy, GitPolicyScopeSource)
-                and GitPolicyFetcher.source_id(s.policy) == source_id
-            ),
-            None,
-        )
-    except Exception as e:
-        logger.warning(
-            f"sibling check for source {source_id} failed; "
-            f"purging defensively: {e!r}"
-        )
-        return None
+    return _scope_sharing_source(await scopes.all(), source_id, excluded_scope_id)
 
 
 class LeaderScopePurger:
@@ -176,7 +183,24 @@ class LeaderScopePurger:
             return
         confirm = False
         async with GitPolicyFetcher.lock_source(cmd.source_id):
-            sharer = await find_scope_sharing_source(self._scopes, cmd.source_id)
+            try:
+                sharer = await find_scope_sharing_source(self._scopes, cmd.source_id)
+            except Exception as e:
+                if cmd.reason == "repoint":
+                    # The old source's record wasn't deleted — it was just
+                    # repointed elsewhere — so a raising scan can't be told
+                    # apart from "still shared". Keep the clone; the orphan
+                    # sweep backstops it once the scan recovers.
+                    logger.warning(
+                        f"Sibling check for {cmd.source_id} failed on repoint; "
+                        f"keeping the clone (orphan sweep backstops): {e!r}"
+                    )
+                    return
+                logger.warning(
+                    f"Sibling check for {cmd.source_id} failed on {cmd.reason}; "
+                    f"purging defensively: {e!r}"
+                )
+                sharer = None
             if sharer is not None:
                 logger.info(
                     f"Scope {sharer} still shares source {cmd.source_id}, "

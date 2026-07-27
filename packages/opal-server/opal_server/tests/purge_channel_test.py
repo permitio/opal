@@ -319,6 +319,32 @@ async def test_leader_purges_defensively_when_sibling_check_raises(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_leader_keeps_clone_on_repoint_when_sibling_check_raises(tmp_path, monkeypatch):
+    """Repoint's old-source purge must NOT fail open when the sibling check
+    raises: the record for the reused source_id still exists (it was just
+    repointed elsewhere), so a defensive purge would delete a clone a live
+    scope may still reference. Delete keeps its fail-open (the tested
+    behavior above): its record is already gone, so under-purging leaks
+    forever while over-purging self-heals via re-clone."""
+    monkeypatch.setattr(opal_server_config, "BASE_DIR", str(tmp_path))
+
+    class RaisingRepo:
+        async def all(self):
+            raise RuntimeError("store scan failed")
+
+    sid = _real_sid()
+    clone = Path(_derived_path(tmp_path, sid))
+    clone.mkdir(parents=True)
+    purger = LeaderScopePurger(
+        base_dir=Path(tmp_path), scopes=RaisingRepo(), pubsub_endpoint=None
+    )
+    await purger.purge_source_if_unshared(
+        ScopePurgeCommand(source_id=sid, clone_path=str(clone), scope_id="s1", reason="repoint")
+    )
+    assert clone.exists(), "repoint must not purge defensively on a raising scan"
+
+
+@pytest.mark.asyncio
 async def test_leader_handle_returns_fast_and_purge_waits_for_lock(tmp_path):
     """Handle() must return promptly even while the source lock is held (the
     publish path awaits it inline — DELETE/PUT latency contract), while the
