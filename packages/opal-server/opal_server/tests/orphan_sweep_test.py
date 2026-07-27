@@ -186,3 +186,98 @@ async def test_missing_base_dir_is_a_noop(tmp_path):
         pubsub_endpoint=None,
     )
     await purger.sweep_orphans()  # must not raise
+
+
+@pytest.mark.asyncio
+async def test_sweep_skips_live_dirs_without_a_recheck_scan(tmp_path):
+    """The bulk case: dirs that map to a live scope in the snapshot are
+    skipped with NO per-dir re-fetch — one scopes.all() total for an
+    all-live tree."""
+    live = [_scope(f"s{i}", f"https://git/r{i}.git") for i in range(4)]
+    clones = [_clone_dir_for(tmp_path, s) for s in live]
+
+    class CountingRepo(FakeScopeRepository):
+        def __init__(self, scopes):
+            super().__init__(scopes)
+            self.all_calls = 0
+
+        async def all(self):
+            self.all_calls += 1
+            return await super().all()
+
+    repo = CountingRepo(live)
+    await LeaderScopePurger(
+        base_dir=tmp_path, scopes=repo, pubsub_endpoint=None
+    ).sweep_orphans()
+
+    assert repo.all_calls == 1, f"live dirs triggered {repo.all_calls} scans"
+    for clone in clones:
+        assert clone.exists()
+
+
+@pytest.mark.asyncio
+async def test_sweep_keeps_dir_reclaimed_by_a_put_between_snapshot_and_lock(
+    tmp_path, monkeypatch
+):
+    """The race: a candidate orphan (absent from the initial snapshot) is
+    re-claimed by a PUT before the sweep takes its lock. The fresh
+    under-lock re-check must see the new scope and KEEP the clone."""
+    orphan = _git_sources(tmp_path) / "shatest-0"
+    orphan.mkdir()
+    reclaimer = _scope("late", "https://git/late.git")
+    # Make the reclaimer resolve to this exact dir name so it "owns" the
+    # source once it lands (a real source_id hash won't match "shatest-0").
+    monkeypatch.setattr(
+        GitPolicyFetcher, "source_id", staticmethod(lambda p: "shatest-0")
+    )
+
+    class ReclaimOnRecheck(FakeScopeRepository):
+        def __init__(self, s):
+            super().__init__(s)
+            self.calls = 0
+
+        async def all(self):
+            self.calls += 1
+            if self.calls >= 2:  # a PUT landed before the under-lock re-check
+                self._scopes["late"] = reclaimer
+            return await super().all()
+
+    repo = ReclaimOnRecheck([])  # initial snapshot: empty -> looks orphaned
+    await LeaderScopePurger(
+        base_dir=tmp_path, scopes=repo, pubsub_endpoint=None
+    ).sweep_orphans()
+
+    assert orphan.exists(), "a PUT that re-claimed the dir was clobbered by the sweep"
+    assert repo.calls == 2, "candidate must trigger exactly one fresh re-check"
+
+
+@pytest.mark.asyncio
+async def test_sweep_logs_and_keeps_dir_when_recheck_raises(tmp_path):
+    from opal_common.logger import logger as opal_logger
+
+    orphan = _git_sources(tmp_path) / "eeee-0"
+    orphan.mkdir()
+
+    class RaiseOnRecheck(FakeScopeRepository):
+        def __init__(self, s):
+            super().__init__(s)
+            self.calls = 0
+
+        async def all(self):
+            self.calls += 1
+            if self.calls >= 2:
+                raise RuntimeError("store scan failed under lock")
+            return await super().all()
+
+    records = []
+    sink = opal_logger.add(lambda m: records.append(str(m)), level="WARNING")
+    purger = LeaderScopePurger(
+        base_dir=tmp_path, scopes=RaiseOnRecheck([]), pubsub_endpoint=None
+    )
+    try:
+        await purger.sweep_orphans()  # must not raise
+    finally:
+        opal_logger.remove(sink)
+
+    assert orphan.exists(), "a raising re-check must keep the dir"
+    assert any("keeping dir" in r for r in records), f"not logged: {records}"

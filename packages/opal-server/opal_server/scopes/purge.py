@@ -131,6 +131,18 @@ async def find_scope_sharing_source(
     return _scope_sharing_source(await scopes.all(), source_id, excluded_scope_id)
 
 
+def _list_dir_names(path: str) -> list:
+    """Immediate subdirectory names (dirs only) of ``path``.
+
+    Uses ``os.scandir`` so the ``is_dir()`` stat comes from the (cached)
+    ``DirEntry`` rather than a second syscall per entry, and — via
+    ``run_sync`` at the call site — runs on a worker thread, not the event
+    loop.
+    """
+    with os.scandir(path) as it:
+        return [entry.name for entry in it if entry.is_dir()]
+
+
 class LeaderScopePurger:
     """Leader-only: removes clone dirs for purged sources.
 
@@ -250,50 +262,59 @@ class LeaderScopePurger:
                 )
 
     async def sweep_orphans(self) -> None:
-        """Reclaim clone dirs referencing no live scope.
+        """Reclaim clone dirs referencing no live scope. Leader-only.
 
-        Covers crash-orphaned dirs, redis-wiped boots, and old-shard
-        dirs after a SCOPES_REPO_CLONES_SHARDS reconfig. Leader-only;
-        runs after boot sync and after each periodic sync pass (settled
-        state).
+        Covers crash-orphaned dirs, redis-wiped boots, and old-shard dirs
+        after a SCOPES_REPO_CLONES_SHARDS reconfig. Runs after boot sync
+        and after each periodic sync pass (settled state).
+
+        Hybrid: one snapshot cheaply filters out clearly-live dirs (the
+        common case — no per-dir scan at all). Only dirs that look
+        orphaned in that snapshot get a FRESH ``scopes.all()`` re-check
+        under ``lock_source`` before deletion — cloning is also
+        leader-local under this same lock, so a PUT that just re-claimed
+        the source (its sync taking the same lock) is observed and the
+        clone is kept. A store error must never read as "no scopes
+        exist" (would rmtree every live clone) — abort; next pass
+        retries.
         """
         sources_dir = GitPolicyFetcher.base_dir(self._base_dir)
         try:
-            entries = await run_sync(os.listdir, str(sources_dir))
+            dir_names = await run_sync(_list_dir_names, str(sources_dir))
         except FileNotFoundError:
             return  # nothing cloned yet
 
         try:
-            live = {
-                GitPolicyFetcher.source_id(s.policy)
-                for s in await self._scopes.all()
-                if isinstance(s.policy, GitPolicyScopeSource)
-            }
+            snapshot = await self._scopes.all()  # one scan; filters the bulk
         except Exception as e:
-            # A transient store error must NOT read as "no scopes exist" —
-            # that would rmtree every live clone. Abort; next pass retries.
             logger.warning(f"Orphan sweep aborted, scope scan failed: {e!r}")
             return
 
-        for name in entries:
-            path = sources_dir / name
-            if name in live or not path.is_dir():
+        for name in dir_names:
+            # Cheap filter against the snapshot: clearly live -> keep, no
+            # per-dir I/O at all in the common (all-live) case.
+            try:
+                if _scope_sharing_source(snapshot, name) is not None:
+                    continue
+            except Exception as e:
+                logger.warning(f"Orphan re-check for {name} failed, keeping dir: {e!r}")
                 continue
             async with GitPolicyFetcher.lock_source(name):
-                # Re-check under the lock: a PUT may have claimed this
-                # source while we swept (cloning is also leader-local under
-                # this same lock, so the serialization is sound). A raising
-                # re-check keeps the dir (conservative — opposite bias to
-                # the delete path, where the record is known-gone).
+                # Candidate orphan: re-verify against a FRESH read taken
+                # under the lock, so a PUT that re-claimed this source
+                # mid-sweep (its sync takes the same lock) is observed
+                # here and the clone is kept. A raising re-check keeps the
+                # dir (conservative — opposite bias to the delete path,
+                # where the record is known-gone) and is logged, not
+                # silently swallowed.
                 try:
-                    still_orphan = name not in {
-                        GitPolicyFetcher.source_id(s.policy)
-                        for s in await self._scopes.all()
-                        if isinstance(s.policy, GitPolicyScopeSource)
-                    }
-                except Exception:
-                    continue
-                if not still_orphan:
+                    fresh = await self._scopes.all()
+                    if _scope_sharing_source(fresh, name) is not None:
+                        continue  # re-claimed since the snapshot
+                except Exception as e:
+                    logger.warning(
+                        f"Orphan re-check for {name} failed, keeping dir: {e!r}"
+                    )
                     continue
                 if git_op_in_flight(name):
                     # Unlike purge_source_if_unshared's in-flight branch, there's
@@ -303,6 +324,7 @@ class LeaderScopePurger:
                     # sufficient (the entry may not even be in the caches).
                     logger.info(f"Orphan sweep skipping {name}: git op in flight")
                     continue
+                path = sources_dir / name
                 logger.info(f"Reclaiming orphan clone dir: {path}")
                 GitPolicyFetcher.forget_repo(str(path))
                 GitPolicyFetcher.repos_last_fetched.pop(name, None)
