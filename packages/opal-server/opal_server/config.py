@@ -222,8 +222,16 @@ class OpalServerConfig(Confi):
     )
     SCOPES_GIT_MAX_WORKERS = confi.int(
         "SCOPES_GIT_MAX_WORKERS",
+        # Worst-case OS-thread count during an outage is this limit plus the
+        # number of lingering timed-out ("zombie") ops: a timed-out op releases
+        # its concurrency slot but keeps a daemon thread until the OS network
+        # timeout. SCOPES_GIT_MAX_ZOMBIES bounds that tail.
         10,
-        description="Maximum number of LIVE scope git operations (clone/fetch) running concurrently; also bounds how many scopes are synced at once. A timed-out operation stops counting against this limit (its lingering thread persists on its own until the OS network timeout), so capacity is never starved by hung remotes — but worst-case thread count during an outage is this limit plus the number of lingering timed-out operations.",
+        description="Maximum number of LIVE scope git operations (clone/fetch) "
+        "running concurrently; also bounds how many scopes are synced at once. A "
+        "timed-out operation stops counting against this limit (its lingering "
+        "thread persists on its own until the OS network timeout), so capacity is "
+        "never starved by hung remotes.",
     )
     LEADER_LOCK_FILE_PATH = confi.str(
         "LEADER_LOCK_FILE_PATH",

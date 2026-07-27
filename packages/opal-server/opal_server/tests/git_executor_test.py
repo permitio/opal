@@ -1,4 +1,5 @@
 import asyncio
+import pathlib
 import threading
 import time
 from concurrent.futures import thread as cf_thread
@@ -227,3 +228,20 @@ async def test_semaphore_bounds_live_ops(monkeypatch):
     finally:
         gate.set()
         shutdown_git_executor()
+
+
+def test_scopes_git_max_workers_description_is_wrapped():
+    import opal_server.config as cfg_mod
+
+    lines = pathlib.Path(cfg_mod.__file__).read_text().splitlines()
+    start = next(i for i, l in enumerate(lines)
+                 if "SCOPES_GIT_MAX_WORKERS = confi.int(" in l)
+    block, depth = [], 0
+    for line in lines[start:]:
+        block.append(line)
+        depth += line.count("(") - line.count(")")
+        if depth == 0:
+            break
+    too_long = [l for l in block if len(l) > 100]
+    assert not too_long, f"unwrapped lines: {too_long}"
+    assert OpalServerConfig(prefix="OPAL_").SCOPES_GIT_MAX_WORKERS == 10
