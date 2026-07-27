@@ -245,3 +245,37 @@ def test_scopes_git_max_workers_description_is_wrapped():
     too_long = [l for l in block if len(l) > 100]
     assert not too_long, f"unwrapped lines: {too_long}"
     assert OpalServerConfig(prefix="OPAL_").SCOPES_GIT_MAX_WORKERS == 10
+
+
+from opal_server.config import opal_server_config
+from opal_server.git_fetcher import (
+    GitConcurrencyLimitExceeded, git_busy_count, _mark_git_op_done, _mark_git_op_started,
+)
+
+
+def test_max_zombies_default(monkeypatch):
+    monkeypatch.delenv("OPAL_SCOPES_GIT_MAX_ZOMBIES", raising=False)
+    monkeypatch.delenv("OPAL_SCOPES_GIT_MAX_WORKERS", raising=False)
+    assert OpalServerConfig(prefix="OPAL_").SCOPES_GIT_MAX_ZOMBIES == 40
+
+
+@pytest.mark.asyncio
+async def test_zombie_cap_refuses_new_op(monkeypatch):
+    monkeypatch.setattr(opal_server_config, "SCOPES_GIT_MAX_ZOMBIES", 2)
+    _mark_git_op_started("z1"); _mark_git_op_started("z2")
+    try:
+        assert git_busy_count() == 2
+        with pytest.raises(GitConcurrencyLimitExceeded):
+            await run_in_git_executor(lambda: 1, timeout=5)
+    finally:
+        _mark_git_op_done("z1"); _mark_git_op_done("z2")
+
+
+@pytest.mark.asyncio
+async def test_op_admitted_below_zombie_cap(monkeypatch):
+    monkeypatch.setattr(opal_server_config, "SCOPES_GIT_MAX_ZOMBIES", 2)
+    _mark_git_op_started("z1")
+    try:
+        assert await run_in_git_executor(lambda: 7, timeout=5) == 7
+    finally:
+        _mark_git_op_done("z1")

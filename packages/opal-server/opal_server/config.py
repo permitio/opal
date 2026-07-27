@@ -233,6 +233,17 @@ class OpalServerConfig(Confi):
         "thread persists on its own until the OS network timeout), so capacity is "
         "never starved by hung remotes.",
     )
+    SCOPES_GIT_MAX_ZOMBIES = confi.int(
+        "SCOPES_GIT_MAX_ZOMBIES",
+        # 4x the default SCOPES_GIT_MAX_WORKERS. Once this many git ops (live +
+        # lingering timed-out) hold a daemon thread, new ops are refused until
+        # threads drain, bounding worst-case thread growth during an outage.
+        40,
+        description="Maximum number of in-flight scope git operations (live plus "
+        "lingering timed-out) allowed to hold a daemon thread at once. New git ops "
+        "are refused (and retried next cycle) while at this cap, bounding thread "
+        "growth when remotes hang (0 = no cap).",
+    )
     LEADER_LOCK_FILE_PATH = confi.str(
         "LEADER_LOCK_FILE_PATH",
         "/tmp/opal_server_leader.lock",

@@ -51,6 +51,13 @@ _git_busy: set = set()
 _git_busy_lock = threading.Lock()
 
 
+class GitConcurrencyLimitExceeded(RuntimeError):
+    """Raised when in-flight (live + zombie) git ops reach SCOPES_GIT_MAX_ZOMBIES."""
+
+
+_zombie_cap_logged = False
+
+
 class _DaemonThreadPoolExecutor(ThreadPoolExecutor):
     """A ``ThreadPoolExecutor`` whose worker threads are daemon threads.
 
@@ -141,8 +148,11 @@ def _mark_git_op_started(key: str) -> None:
 
 
 def _mark_git_op_done(key: str) -> None:
+    global _zombie_cap_logged
     with _git_busy_lock:
         _git_busy.discard(key)
+        if _zombie_cap_logged and len(_git_busy) < opal_server_config.SCOPES_GIT_MAX_ZOMBIES:
+            _zombie_cap_logged = False
 
 
 def git_op_in_flight(key: str) -> bool:
@@ -153,6 +163,12 @@ def git_op_in_flight(key: str) -> bool:
     """
     with _git_busy_lock:
         return key in _git_busy
+
+
+def git_busy_count() -> int:
+    """Number of scope git ops holding a pool thread (incl. timed-out zombies)."""
+    with _git_busy_lock:
+        return len(_git_busy)
 
 
 def _consume_future_result(fut) -> None:
@@ -202,6 +218,21 @@ async def run_in_git_executor(func, *args, timeout: float, busy_key=None, **kwar
     Callers use ``git_op_in_flight`` to avoid starting a second git op against
     the same repository while a timed-out one is still running.
     """
+    global _zombie_cap_logged
+    max_zombies = opal_server_config.SCOPES_GIT_MAX_ZOMBIES
+    if max_zombies and git_busy_count() >= max_zombies:
+        if not _zombie_cap_logged:
+            _zombie_cap_logged = True
+            logger.error(
+                "Refusing new scope git op: {count} in-flight at/over "
+                "SCOPES_GIT_MAX_ZOMBIES={cap}; remotes appear stuck.",
+                count=git_busy_count(), cap=max_zombies,
+            )
+        raise GitConcurrencyLimitExceeded(
+            f"in-flight git ops ({git_busy_count()}) reached "
+            f"SCOPES_GIT_MAX_ZOMBIES ({max_zombies})"
+        )
+
     loop = asyncio.get_running_loop()
 
     def _runner():
