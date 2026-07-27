@@ -331,3 +331,25 @@ def test_after_fork_child_reset_reinits_held_lock_without_deadlock():
         assert git_op_in_flight("stale-child-sid") is False
     finally:
         _mark_git_op_done("stale-child-sid")
+
+
+def test_reset_caches_skips_free_for_in_flight_source():
+    from opal_server.git_fetcher import GitPolicyFetcher, _mark_git_op_started, _mark_git_op_done
+    freed = []
+
+    class _Handle:
+        def __init__(self, name): self.name = name
+        def free(self): freed.append(self.name)
+
+    busy_path = "/base/git_sources/busysha-0"
+    free_path = "/base/git_sources/freesha-1"
+    try:
+        GitPolicyFetcher.repos[busy_path] = _Handle("busy")
+        GitPolicyFetcher.repos[free_path] = _Handle("free")
+        _mark_git_op_started("busysha-0")  # basename(busy_path) == source_id
+        GitPolicyFetcher.reset_caches()
+        assert freed == ["free"], f"in-flight handle was freed: {freed}"
+        assert not GitPolicyFetcher.repos
+    finally:
+        _mark_git_op_done("busysha-0")
+        GitPolicyFetcher.repos.clear(); GitPolicyFetcher.repos_last_fetched.clear(); GitPolicyFetcher.repo_locks.clear()

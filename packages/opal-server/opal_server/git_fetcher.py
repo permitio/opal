@@ -846,9 +846,23 @@ class GitPolicyFetcher(PolicyFetcher):
         from the on-disk clones (preserved). Inherited repo_locks are
         asyncio.Locks bound to the master's event loop and meaningless
         post-fork regardless.
+
+        A source whose git op is still in flight (lingering past its timeout
+        on a daemon thread) is skipped: its handle is only dropped from the
+        cache, never free()'d, since the pool thread may still be reading
+        from it — free()'ing it here would be a use-after-free. GC reclaims
+        it once the blocking call actually returns.
         """
         for path in list(GitPolicyFetcher.repos):
-            GitPolicyFetcher.forget_repo(path)  # frees the pygit2 handle + pops
+            source_id = os.path.basename(path.rstrip("/"))
+            if git_op_in_flight(source_id):
+                # Still in use on a pool thread — drop the reference, never free
+                # (free()'ing a handle a daemon thread holds is a use-after-free).
+                # GC reclaims it once the blocking call returns. Mirrors
+                # purge_local_memory / the orphan sweep guard.
+                GitPolicyFetcher.repos.pop(path, None)
+                continue
+            GitPolicyFetcher.forget_repo(path)
         GitPolicyFetcher.repos.clear()
         GitPolicyFetcher.repos_last_fetched.clear()
         GitPolicyFetcher.repo_locks.clear()
