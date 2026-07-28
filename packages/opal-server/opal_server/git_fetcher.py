@@ -11,7 +11,6 @@ import weakref
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import thread as cf_thread
 from contextlib import asynccontextmanager
-from functools import partial
 from pathlib import Path
 from typing import Awaitable, Callable, Optional, cast
 
@@ -23,6 +22,7 @@ from opal_common.async_utils import run_sync
 from opal_common.git_utils.bundle_maker import BundleMaker
 from opal_common.http_utils import redact_url
 from opal_common.logger import logger
+from opal_common.monitoring import metrics
 from opal_common.schemas.policy import PolicyBundle
 from opal_common.schemas.policy_source import (
     GitHubTokenAuthData,
@@ -166,20 +166,33 @@ if hasattr(os, "register_at_fork"):
     )
 
 
+def _emit_git_ops_in_flight(count: int) -> None:
+    # Continuous gauge so Datadog can watch the in-flight (incl. timed-out
+    # zombie) git-op count rise and fall — not just the one-shot error log at
+    # the SCOPES_GIT_MAX_ZOMBIES cap. datadog.statsd is fail-silent and
+    # thread-safe, so this is safe to call from the git-op daemon threads even
+    # when metrics are unconfigured.
+    metrics.gauge("opal_server.scopes.git_ops_in_flight", count)
+
+
 def _mark_git_op_started(key: str) -> None:
     with _git_busy_lock:
         _git_busy.add(key)
+        count = len(_git_busy)
+    _emit_git_ops_in_flight(count)
 
 
 def _mark_git_op_done(key: str) -> None:
     global _zombie_cap_logged
     with _git_busy_lock:
         _git_busy.discard(key)
+        count = len(_git_busy)
         if (
             _zombie_cap_logged
             and len(_git_busy) < opal_server_config.SCOPES_GIT_MAX_ZOMBIES
         ):
             _zombie_cap_logged = False
+    _emit_git_ops_in_flight(count)
 
 
 def git_op_in_flight(key: str) -> bool:
@@ -777,9 +790,27 @@ class GitPolicyFetcher(PolicyFetcher):
         # _get_valid_repo's disk-truth check.
         repo = Repository(str(self._repo_path))
         try:
-            head_commit_hash = RepoInterface.get_commit_hash(
-                repo, self._source.branch, self._remote
-            )
+            # Resolve the branch ref inline rather than via
+            # RepoInterface.get_commit_hash, which collapses BOTH failure modes
+            # to None. On the serving path we must tell them apart:
+            #   * KeyError  -> the branch ref genuinely does not exist: a
+            #     PERMANENT misconfiguration (wrong/deleted branch). Surface it
+            #     as BranchHeadNotFoundError -> the bundle route's 409
+            #     "not retryable".
+            #   * pygit2.GitError -> the ref is present but its object can't be
+            #     resolved right now (object store transiently gutted by a
+            #     concurrent re-clone/fetch). This is TRANSIENT and the sync
+            #     path is already self-healing it, so let it propagate: the
+            #     bundle route's own pygit2.GitError handler turns it into a
+            #     retryable 503, instead of telling the client "not retryable"
+            #     for a scope that will recover on its own.
+            try:
+                commit, _ = repo.resolve_refish(
+                    f"{self._remote}/{self._source.branch}"
+                )
+                head_commit_hash = commit.hex
+            except KeyError:
+                head_commit_hash = None
         finally:
             free = getattr(repo, "free", None)
             if callable(free):

@@ -14,7 +14,11 @@ from opal_common.schemas.policy import PolicyUpdateMessageNotification
 from opal_common.schemas.policy_source import GitPolicyScopeSource
 from opal_common.topics.publisher import ScopedServerSideTopicPublisher
 from opal_server.config import opal_server_config
-from opal_server.git_fetcher import GitPolicyFetcher, PolicyFetcherCallbacks
+from opal_server.git_fetcher import (
+    GitConcurrencyLimitExceeded,
+    GitPolicyFetcher,
+    PolicyFetcherCallbacks,
+)
 from opal_server.policy.watcher.callbacks import (
     create_policy_update,
     create_update_all_directories_in_repo,
@@ -174,6 +178,17 @@ class ScopesService:
             try:
                 await fetcher.fetch_and_notify_on_changes(
                     hinted_hash=hinted_hash, force_fetch=force_fetch, req_time=req_time
+                )
+            except GitConcurrencyLimitExceeded as e:
+                # Expected backpressure, not a fault: the zombie cap
+                # (SCOPES_GIT_MAX_ZOMBIES) is refusing new git ops because too
+                # many are stuck on unreachable remotes. Log it cleanly at
+                # warning — a full stack trace per refused scope per pass would
+                # bury the one cap-reached signal under noise during an outage.
+                logger.warning(
+                    "Skipping scope {scope_id} this pass: {err}",
+                    scope_id=scope.scope_id,
+                    err=e,
                 )
             except Exception as e:
                 logger.exception(

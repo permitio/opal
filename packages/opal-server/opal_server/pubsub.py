@@ -142,6 +142,9 @@ class PubSub:
         # Pub/Sub Internals
         self.notifier = WebSocketRpcEventNotifier()
         self.notifier.add_channel_restriction(type(self)._verify_permitted_topics)
+        self.notifier.add_channel_restriction(
+            type(self)._reject_external_purge_channel
+        )
         self.client_tracker = ClientTracker()
         self.notifier.register_subscribe_event(self.client_tracker.on_subscribe)
         self.notifier.register_unsubscribe_event(self.client_tracker.on_unsubscribe)
@@ -353,4 +356,44 @@ class PubSub:
         if unauthorized_topics:
             raise Unauthorized(
                 description=f"Invalid 'topics' to subscribe {unauthorized_topics}"
+            )
+
+    @staticmethod
+    async def _reject_external_purge_channel(
+        topics: Union[TopicList, ALL_TOPICS], channel: RpcChannel
+    ):
+        """Forbid external RPC peers from touching the scope-purge channel.
+
+        ``SCOPES_PURGE_CHANNEL`` is a server-internal control channel: a purge
+        command evicts every worker's ``GitPolicyFetcher`` caches and (via the
+        leader) deletes clone dirs fleet-wide. The only legitimate publishers
+        are opal-server itself (delete / repoint / orphan-sweep) and the
+        cross-server broadcaster relay — both call ``notify()`` with
+        ``channel=None``, and channel restrictions run **only when a channel is
+        present** (see ``EventNotifier.notify``/``subscribe``: ``if channel:``).
+        So this restriction never fires for legitimate server traffic; it only
+        sees an external websocket peer (a client/PDP).
+
+        Without this gate any connected peer could forge a purge and churn the
+        whole fleet's caches, because ``_verify_permitted_topics`` above
+        default-allows tokens that carry no ``permitted_topics`` claim (the
+        common case). No legitimate client ever names this channel — clients
+        only publish to ``STATISTICS_ADD_CLIENT_CHANNEL`` — so rejecting it here
+        blocks the forgery without affecting any real client (publish or
+        subscribe); no client change/redeploy is required.
+
+        ``ALL_TOPICS`` is the subscribe-to-everything sentinel (a ``str``), not
+        a concrete topic, and a publish never fans out to a specific-topic
+        subscriber through it, so it cannot reach the purge handlers — leave it
+        to the ``permitted_topics`` restriction.
+        """
+        if isinstance(topics, str):
+            return
+        if opal_server_config.SCOPES_PURGE_CHANNEL in topics:
+            raise Unauthorized(
+                description=(
+                    f"Topic '{opal_server_config.SCOPES_PURGE_CHANNEL}' is "
+                    "server-internal and may not be published or subscribed by "
+                    "external peers"
+                )
             )

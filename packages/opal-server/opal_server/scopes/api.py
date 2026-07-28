@@ -334,6 +334,11 @@ def init_scope_router(
                 scope_id=scope_id,
                 exc=exc,
             )
+            metrics.event(
+                "ScopePolicyUnavailable",
+                message=f"Scope {scope_id} policy 409 (branch unresolved)",
+                tags={"scope_id": scope_id, "status": "409", "retryable": "false"},
+            )
             raise HTTPException(
                 status.HTTP_409_CONFLICT,
                 detail=(
@@ -359,6 +364,11 @@ def init_scope_router(
                 "returning 503",
                 scope_id=scope_id,
                 exc=exc,
+            )
+            metrics.event(
+                "ScopePolicyUnavailable",
+                message=f"Scope {scope_id} policy 503 (clone unavailable)",
+                tags={"scope_id": scope_id, "status": "503", "retryable": "true"},
             )
             raise HTTPException(
                 status.HTTP_503_SERVICE_UNAVAILABLE,

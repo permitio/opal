@@ -211,12 +211,20 @@ def test_branch_head_does_not_touch_shared_handle(monkeypatch, tmp_path):
     fetcher = _make_fetcher(tmp_path, "s", "https://example.com/r.git")
     path = str(fetcher._repo_path)
     GitPolicyFetcher.repos[path] = _PoisonRepo()
-    fresh = object()
-    monkeypatch.setattr("opal_server.git_fetcher.Repository", lambda p: fresh)
-    monkeypatch.setattr(
-        "opal_server.git_fetcher.RepoInterface.get_commit_hash",
-        lambda repo, branch, remote: "abc123" if repo is fresh else None,
-    )
+
+    # _get_current_branch_head must open a FRESH handle (Repository(self._repo_path))
+    # and resolve off it — never the poisoned shared cache handle above.
+    class _FreshCommit:
+        hex = "abc123"
+
+    class _FreshRepo:
+        def resolve_refish(self, refish):
+            return (_FreshCommit(), None)
+
+        def free(self):
+            pass
+
+    monkeypatch.setattr("opal_server.git_fetcher.Repository", lambda p: _FreshRepo())
 
     assert fetcher._get_current_branch_head() == "abc123"
 

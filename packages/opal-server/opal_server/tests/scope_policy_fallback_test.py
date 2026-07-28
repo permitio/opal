@@ -149,3 +149,98 @@ def test_wrong_branch_returns_non_retryable_409(tmp_path, monkeypatch):
     resp = _client(repo, tmp_path).get("/scopes/live/policy")
     assert resp.status_code == 409
     assert "retry-after" not in resp.headers
+
+
+# --- F17/F7: _get_current_branch_head must distinguish a PERMANENT missing
+# branch (KeyError -> BranchHeadNotFoundError -> 409) from a TRANSIENT object-
+# store failure (pygit2.GitError -> propagates -> retryable 503). Previously
+# RepoInterface.get_commit_hash collapsed both to None, so a self-healing scope
+# got a non-retryable 409. These exercise the REAL method (not a mock of
+# make_bundle) so the raise path is actually covered. ---
+import pygit2  # noqa: E402
+
+from opal_server.git_fetcher import GitPolicyFetcher as _Fetcher  # noqa: E402
+
+
+class _FakeRepo:
+    """Stand-in for pygit2.Repository whose resolve_refish outcome we control."""
+
+    def __init__(self, resolve):
+        self._resolve = resolve
+
+    def resolve_refish(self, refish):
+        return self._resolve()
+
+    def free(self):  # _get_current_branch_head free()s the handle in finally
+        pass
+
+
+class _FakeCommit:
+    def __init__(self, hex_):
+        self.hex = hex_
+
+
+def _raise(exc):
+    def _f():
+        raise exc
+
+    return _f
+
+
+def _branch_head_fetcher(tmp_path, branch="main"):
+    src = GitPolicyScopeSource(
+        source_type="git",
+        url="https://git/live.git",
+        branch=branch,
+        auth=NoAuthData(auth_type="none"),
+    )
+    return _Fetcher(tmp_path, "s1", src)
+
+
+def test_branch_head_missing_ref_is_permanent_branchheadnotfound(tmp_path, monkeypatch):
+    # resolve_refish raises KeyError: the branch ref genuinely does not exist.
+    monkeypatch.setattr(
+        "opal_server.git_fetcher.Repository",
+        lambda path: _FakeRepo(_raise(KeyError("no such ref"))),
+    )
+    with pytest.raises(BranchHeadNotFoundError):
+        _branch_head_fetcher(tmp_path)._get_current_branch_head()
+
+
+def test_branch_head_transient_giterror_propagates(tmp_path, monkeypatch):
+    # resolve_refish raises pygit2.GitError: ref present, object store gutted.
+    # Must propagate (route -> 503), NOT become BranchHeadNotFoundError (409).
+    monkeypatch.setattr(
+        "opal_server.git_fetcher.Repository",
+        lambda path: _FakeRepo(_raise(pygit2.GitError("odb: object not found"))),
+    )
+    with pytest.raises(pygit2.GitError):
+        _branch_head_fetcher(tmp_path)._get_current_branch_head()
+
+
+def test_branch_head_success_returns_hash(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        "opal_server.git_fetcher.Repository",
+        lambda path: _FakeRepo(lambda: (_FakeCommit("deadbeef"), None)),
+    )
+    assert _branch_head_fetcher(tmp_path)._get_current_branch_head() == "deadbeef"
+
+
+def test_transient_object_store_giterror_returns_retryable_503(tmp_path, monkeypatch):
+    """End-to-end: a transient pygit2.GitError out of make_bundle -> 503, not 409."""
+    live = _scope("live", "https://git/live.git")
+    default = _scope("default", "https://git/default.git")
+    repo = FakeScopeRepository([live, default])
+
+    def fake_make_bundle(self, base_hash):
+        if self._scope_id == "live":
+            raise pygit2.GitError("odb: object not found")
+        return _default_bundle()
+
+    monkeypatch.setattr(GitPolicyFetcher, "make_bundle", fake_make_bundle)
+    monkeypatch.setattr(
+        "opal_server.scopes.api.opal_server_config.BASE_DIR", str(tmp_path)
+    )
+    resp = _client(repo, tmp_path).get("/scopes/live/policy")
+    assert resp.status_code == 503
+    assert resp.headers["retry-after"] == "5"

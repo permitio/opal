@@ -20,7 +20,9 @@ from opal_server.config import opal_server_config
 from opal_server.git_fetcher import GitPolicyFetcher, git_op_in_flight
 from pydantic import BaseModel, ValidationError
 
-_SOURCE_ID_RE = re.compile(r"^[0-9a-f]{64}-\d+$")
+# \Z (not $) so a trailing newline can't sneak past validation: in Python `$`
+# also matches just before a final "\n", so "<64hex>-0\n" would wrongly pass.
+_SOURCE_ID_RE = re.compile(r"\A[0-9a-f]{64}-\d+\Z")
 
 
 def _confined_clone_path(base_dir, source_id: str):
@@ -41,9 +43,14 @@ def _confined_clone_path(base_dir, source_id: str):
 
 class ScopePurgeCommand(BaseModel):
     source_id: str  # cache key for repos_last_fetched / repo_locks
-    clone_path: str  # carried explicitly: the scope record is already gone
+    # Informational only: every handler re-derives the clone dir from source_id
+    # (never trusts this path); kept for readable logs and forward-compat.
+    clone_path: str
     scope_id: str  # logging / tracing only
-    reason: str  # "delete" | "repoint" | "orphan" — logging only
+    # Load-bearing, NOT just logging: the leader's sibling-check fail-open
+    # branches on reason (repoint keeps the clone on a raising scan; delete/
+    # orphan purge). See LeaderScopePurger.purge_source_if_unshared.
+    reason: str  # "delete" | "repoint" | "orphan"
     confirmed: bool = False  # set by the leader after the sibling-check;
     # memory handlers act only on confirmed commands
 
@@ -290,6 +297,7 @@ class LeaderScopePurger:
             logger.warning(f"Orphan sweep aborted, scope scan failed: {e!r}")
             return
 
+        reclaimed = 0
         for name in dir_names:
             # Cheap filter against the snapshot: clearly live -> keep, no
             # per-dir I/O at all in the common (all-live) case.
@@ -336,6 +344,7 @@ class LeaderScopePurger:
                     logger.warning(f"Failed to reclaim orphan {path}: {e!r}")
                     continue
                 GitPolicyFetcher.repo_locks.pop(name, None)  # under the lock
+                reclaimed += 1
                 if self._pubsub_endpoint is not None:
                     await self._pubsub_endpoint.publish(
                         [opal_server_config.SCOPES_PURGE_CHANNEL],
@@ -347,3 +356,12 @@ class LeaderScopePurger:
                             confirmed=True,
                         ).dict(),
                     )
+
+        # Heartbeat: a healthy no-op sweep (reclaimed=0) is the common case and
+        # must still be visible in Datadog, so on-call can confirm the leak
+        # backstop actually ran rather than silently died.
+        logger.info(
+            "Orphan sweep complete: scanned {scanned} clone dirs, reclaimed {reclaimed}",
+            scanned=len(dir_names),
+            reclaimed=reclaimed,
+        )

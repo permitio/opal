@@ -9,6 +9,7 @@ from opal_server.config import opal_server_config
 from opal_server.git_fetcher import (
     GitPolicyFetcher,
     drain_git_ops,
+    git_busy_count,
     shutdown_git_executor,
 )
 from opal_server.policy.watcher.task import BasePolicyWatcherTask
@@ -44,10 +45,16 @@ class ScopesPolicyWatcherTask(BasePolicyWatcherTask):
         )
         self._tasks.append(asyncio.create_task(self._sync_all_then_sweep()))
 
-        if opal_server_config.POLICY_REFRESH_INTERVAL > 0:
+        polling_on = opal_server_config.POLICY_REFRESH_INTERVAL > 0
+        if polling_on:
             self._tasks.append(asyncio.create_task(self._periodic_polling()))
 
-        if opal_server_config.SCOPES_ORPHAN_SWEEP_INTERVAL > 0:
+        # Always-on orphan-sweep backstop — but skip it when polling is on,
+        # because _periodic_polling already sweeps after every poll. Running
+        # both would double the disk scans and emit duplicate confirmed-orphan
+        # purge broadcasts. In prod POLICY_REFRESH_INTERVAL is 0, so this timer
+        # is the sole sweeper there.
+        if opal_server_config.SCOPES_ORPHAN_SWEEP_INTERVAL > 0 and not polling_on:
             self._tasks.append(asyncio.create_task(self._periodic_orphan_sweep()))
 
     async def stop(self):
@@ -139,7 +146,22 @@ class ScopesPolicyWatcherTask(BasePolicyWatcherTask):
             # Bounded window for a just-finished clone/fetch to clear its in-flight
             # marker before teardown+fork. Ops still lingering (hung remote) are
             # left running; reset_caches's guard then skips freeing their handles.
-            drain_git_ops(opal_server_config.SCOPES_GIT_PRELOAD_DRAIN_TIMEOUT)
+            # A False return means the drain timed out with git ops STILL running:
+            # those threads persist in the master across the fork, so a forked
+            # worker can race them on the shared clone dir. Log it — this is the
+            # one condition that carries that risk, and it must not be silent.
+            drained = drain_git_ops(
+                opal_server_config.SCOPES_GIT_PRELOAD_DRAIN_TIMEOUT
+            )
+            if not drained:
+                logger.warning(
+                    "Preload drain timed out ({timeout}s) with git ops still "
+                    "in flight ({in_flight}); they persist in the master across "
+                    "fork. Consider raising SCOPES_GIT_PRELOAD_DRAIN_TIMEOUT or "
+                    "lowering SCOPES_GIT_FETCH_TIMEOUT.",
+                    timeout=opal_server_config.SCOPES_GIT_PRELOAD_DRAIN_TIMEOUT,
+                    in_flight=git_busy_count(),
+                )
 
             # Clear git-op bookkeeping built during preload (in-flight markers
             # and the loop-bound live-op semaphore) so the gunicorn master does
