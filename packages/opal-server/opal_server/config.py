@@ -214,24 +214,32 @@ class OpalServerConfig(Confi):
     SCOPES_GIT_FETCH_TIMEOUT = confi.float(
         "SCOPES_GIT_FETCH_TIMEOUT",
         120.0,
-        description="Soft timeout in seconds for a single scope git clone/fetch "
-        "(the awaiting operation is abandoned, but the underlying git call keeps "
-        "running on its thread until the OS network timeout). On timeout the "
-        "operation is logged and skipped (retried next cycle), so one unreachable "
-        "repo can never block boot or other scopes indefinitely (0 = no timeout).",
+        description="Soft timeout in seconds for a single scope git clone/fetch: "
+        "the awaiting operation is abandoned (the event loop and the sync pass "
+        "move on) and the op is logged and skipped, retried next cycle. It is a "
+        "SOFT timeout: the underlying git call keeps running on its own thread, "
+        "and the pinned libgit2 sets no socket/server read timeout, so a "
+        "black-holed remote can keep that thread — and the source's in-flight "
+        "marker — alive for the life of the process (that source is then skipped "
+        "until it recovers or the process restarts); SCOPES_GIT_MAX_ZOMBIES "
+        "bounds how many such threads accumulate. Either way one unreachable repo "
+        "never blocks boot or other scopes (0 = no timeout).",
     )
     SCOPES_GIT_MAX_WORKERS = confi.int(
         "SCOPES_GIT_MAX_WORKERS",
         # Worst-case OS-thread count during an outage is this limit plus the
         # number of lingering timed-out ("zombie") ops: a timed-out op releases
-        # its concurrency slot but keeps a daemon thread until the OS network
-        # timeout. SCOPES_GIT_MAX_ZOMBIES bounds that tail.
+        # its concurrency slot but keeps a daemon thread running on its own.
+        # SCOPES_GIT_MAX_ZOMBIES bounds that tail.
         10,
-        description="Maximum number of LIVE scope git operations (clone/fetch) "
-        "running concurrently; also bounds how many scopes are synced at once. A "
-        "timed-out operation stops counting against this limit (its lingering "
-        "thread persists on its own until the OS network timeout), so capacity is "
-        "never starved by hung remotes.",
+        description="Maximum number of concurrent scope git operations. It bounds "
+        "phase 1 (the network clone/fetch of each distinct repo) AND phase 2 (the "
+        "local change-check of scopes that reuse an already-cloned repo), so it "
+        "sets how many scopes are synced at once in either phase. A timed-out "
+        "operation stops counting against this limit — its lingering daemon "
+        "thread persists on its own (a black-holed remote's can persist for the "
+        "life of the process; SCOPES_GIT_MAX_ZOMBIES caps how many accumulate), "
+        "so capacity is never starved by hung remotes.",
     )
     SCOPES_GIT_PRELOAD_DRAIN_TIMEOUT = confi.float(
         "SCOPES_GIT_PRELOAD_DRAIN_TIMEOUT",

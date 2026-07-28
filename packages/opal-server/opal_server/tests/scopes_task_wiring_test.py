@@ -8,12 +8,15 @@ from opal_server.scopes.task import ScopesPolicyWatcherTask
 
 
 class _Recorder:
-    def __init__(self, events, fail_sweep=False):
+    def __init__(self, events, fail_sweep=False, fail_sync=False):
         self._events = events
         self._fail_sweep = fail_sweep
+        self._fail_sync = fail_sync
 
     async def sync_scopes(self, *args, **kwargs):
         self._events.append("sync")
+        if self._fail_sync:
+            raise RuntimeError("store scan failed")
 
     async def sync_scope(self, *args, **kwargs):
         self._events.append("sync_one")
@@ -24,11 +27,11 @@ class _Recorder:
             raise PermissionError("disk broke")
 
 
-def _bare_task(events, fail_sweep=False):
+def _bare_task(events, fail_sweep=False, fail_sync=False):
     """Construct without __init__ (it needs Redis); wire only what the methods
     under test use."""
     t = ScopesPolicyWatcherTask.__new__(ScopesPolicyWatcherTask)
-    rec = _Recorder(events, fail_sweep=fail_sweep)
+    rec = _Recorder(events, fail_sweep=fail_sweep, fail_sync=fail_sync)
     t._service = rec
     t._purger = rec
     return t
@@ -101,29 +104,34 @@ async def test_periodic_orphan_sweep_runs_with_polling_disabled(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_periodic_polling_syncs_then_sweeps_each_pass(monkeypatch):
+async def test_periodic_polling_syncs_but_does_not_sweep(monkeypatch):
+    # Polling must NOT sweep: the always-on _periodic_orphan_sweep owns that,
+    # independent of POLICY_REFRESH_INTERVAL (per the config docs). Sweeping here
+    # too would double the disk scans and confirmed-orphan purge broadcasts.
     from opal_server.config import opal_server_config
 
     monkeypatch.setattr(opal_server_config, "POLICY_REFRESH_INTERVAL", 0.001)
     events = []
     task = asyncio.create_task(_bare_task(events)._periodic_polling())
     try:
-        while events[:2] != ["sync", "sweep"]:
+        while events.count("sync") < 2:
             await asyncio.sleep(0)
     finally:
         task.cancel()
         with pytest.raises(asyncio.CancelledError):
             await task
-    assert events[:2] == ["sync", "sweep"]
+    assert "sweep" not in events
 
 
 @pytest.mark.asyncio
-async def test_periodic_polling_survives_a_raising_sweep(monkeypatch):
+async def test_periodic_polling_survives_a_raising_sync(monkeypatch):
+    # A raising sync_scopes in a poll pass must be caught (logged) and the loop
+    # kept alive — one store hiccup must not kill periodic sync.
     from opal_server.config import opal_server_config
 
     monkeypatch.setattr(opal_server_config, "POLICY_REFRESH_INTERVAL", 0.001)
     events = []
-    task = asyncio.create_task(_bare_task(events, fail_sweep=True)._periodic_polling())
+    task = asyncio.create_task(_bare_task(events, fail_sync=True)._periodic_polling())
     try:
         while events.count("sync") < 2:
             await asyncio.sleep(0)

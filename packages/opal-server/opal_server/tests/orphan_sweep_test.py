@@ -16,6 +16,15 @@ from opal_server.git_fetcher import (
 from opal_server.scopes.purge import LeaderScopePurger
 from opal_server.scopes.scope_repository import ScopeNotFoundError
 
+# Valid source_id shape: 64 hex + "-<shard>" (matches purge._SOURCE_ID_RE). The
+# sweep validates every dir name against this before rmtree (the SECURITY
+# invariant every deletion path enforces), so these tests must use realistic
+# names rather than short placeholders.
+_SID = "deadbeef" * 8 + "-0"
+_SID_BUSY = "b" * 64 + "-0"
+_SID_RACE = "a" * 64 + "-0"
+_SID_RAISE = "e" * 64 + "-0"
+
 
 class FakeScopeRepository:
     def __init__(self, scopes):
@@ -79,7 +88,7 @@ def _clone_dir_for(tmp_path, scope):
 async def test_orphan_dir_reclaimed_live_dir_kept(tmp_path):
     live = _scope("live", "https://git/live.git")
     live_clone = _clone_dir_for(tmp_path, live)
-    orphan = _git_sources(tmp_path) / "deadbeef-0"
+    orphan = _git_sources(tmp_path) / _SID
     orphan.mkdir()
     pubsub = FakePubSubEndpoint()
 
@@ -93,7 +102,7 @@ async def test_orphan_dir_reclaimed_live_dir_kept(tmp_path):
     assert len(pubsub.published) == 1
     topics, payload = pubsub.published[0]
     assert topics == [opal_server_config.SCOPES_PURGE_CHANNEL]
-    assert payload["source_id"] == "deadbeef-0"
+    assert payload["source_id"] == _SID
     assert payload["reason"] == "orphan"
     assert payload["confirmed"] is True
 
@@ -133,7 +142,7 @@ async def test_store_error_aborts_sweep_without_deleting(tmp_path):
             return await super().all()
 
     live_clone = _clone_dir_for(tmp_path, _scope("live", "https://git/live.git"))
-    orphan = _git_sources(tmp_path) / "deadbeef-0"
+    orphan = _git_sources(tmp_path) / _SID
     orphan.mkdir()
     pubsub = FakePubSubEndpoint()
     repo = BrokenOnceRepo([])  # empty: if the sweep wrongly continued with
@@ -150,19 +159,24 @@ async def test_store_error_aborts_sweep_without_deleting(tmp_path):
 
 @pytest.mark.asyncio
 async def test_inflight_orphan_is_skipped(tmp_path):
-    orphan = _git_sources(tmp_path) / "busy-source-0"
+    orphan = _git_sources(tmp_path) / _SID_BUSY
     orphan.mkdir()
 
     purger = LeaderScopePurger(
         base_dir=tmp_path, scopes=FakeScopeRepository([]), pubsub_endpoint=None
     )
-    _mark_git_op_started("busy-source-0")
+    _mark_git_op_started(_SID_BUSY)
     try:
         await purger.sweep_orphans()
     finally:
-        _mark_git_op_done("busy-source-0")
+        _mark_git_op_done(_SID_BUSY)
 
     assert orphan.exists(), "swept a dir a lingering git op still touches"
+    # The dir/handle are deferred, but the repo_locks entry lock_source minted
+    # for this candidate must NOT leak (invariant I4).
+    assert (
+        _SID_BUSY not in GitPolicyFetcher.repo_locks
+    ), "in-flight defer left a stray lock"
 
 
 @pytest.mark.asyncio
@@ -222,13 +236,13 @@ async def test_sweep_keeps_dir_reclaimed_by_a_put_between_snapshot_and_lock(
     """The race: a candidate orphan (absent from the initial snapshot) is
     re-claimed by a PUT before the sweep takes its lock. The fresh
     under-lock re-check must see the new scope and KEEP the clone."""
-    orphan = _git_sources(tmp_path) / "shatest-0"
+    orphan = _git_sources(tmp_path) / _SID_RACE
     orphan.mkdir()
     reclaimer = _scope("late", "https://git/late.git")
     # Make the reclaimer resolve to this exact dir name so it "owns" the
-    # source once it lands (a real source_id hash won't match "shatest-0").
+    # source once it lands (a real source_id hash won't match _SID_RACE).
     monkeypatch.setattr(
-        GitPolicyFetcher, "source_id", staticmethod(lambda p: "shatest-0")
+        GitPolicyFetcher, "source_id", staticmethod(lambda p: _SID_RACE)
     )
 
     class ReclaimOnRecheck(FakeScopeRepository):
@@ -255,7 +269,7 @@ async def test_sweep_keeps_dir_reclaimed_by_a_put_between_snapshot_and_lock(
 async def test_sweep_logs_and_keeps_dir_when_recheck_raises(tmp_path):
     from opal_common.logger import logger as opal_logger
 
-    orphan = _git_sources(tmp_path) / "eeee-0"
+    orphan = _git_sources(tmp_path) / _SID_RAISE
     orphan.mkdir()
 
     class RaiseOnRecheck(FakeScopeRepository):

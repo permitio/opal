@@ -74,7 +74,8 @@ class _DaemonThreadPoolExecutor(ThreadPoolExecutor):
     A scope git op can stay blocked in a libgit2 network call well past our
     soft timeout. With the stdlib's non-daemon workers, ``concurrent.futures``'
     atexit handler would ``join()`` such a thread and hang interpreter shutdown
-    until the OS network timeout fires. Daemon workers let the process exit
+    (the pinned libgit2 enforces no network read timeout, so a black-holed
+    remote never unblocks it). Daemon workers let the process exit
     promptly; abandoning an in-flight fetch at exit is safe (libgit2 stages
     objects in a temp pack and swaps refs atomically under lockfiles, and a
     half-written clone dir is detected as invalid and re-cloned on next boot).
@@ -273,7 +274,11 @@ async def run_in_git_executor(func, *args, timeout: float, busy_key=None, **kwar
     Raises the builtin ``TimeoutError`` when the call exceeds ``timeout``
     seconds (``timeout <= 0`` means no limit). NOTE: the timeout unblocks the
     event loop and the awaiting coroutine, but the underlying pygit2 call keeps
-    running on its own daemon thread until the OS network timeout.
+    running on its own daemon thread. Nothing forces it to stop — the pinned
+    libgit2 sets no socket/server read timeout — so against a black-holed remote
+    that thread (and this key's in-flight marker) can stay alive for the life of
+    the process. ``SCOPES_GIT_MAX_ZOMBIES`` is the real bound on how many such
+    threads accumulate.
 
     When ``busy_key`` is given it is marked in-flight for the *entire real
     duration* of the call — including any lingering time after a timeout — and

@@ -434,3 +434,62 @@ def test_drain_git_ops_returns_as_soon_as_last_op_clears():
         assert time.monotonic() - start < 2.0
     finally:
         t.join(2)
+
+
+# --- Sync-path single-flight guard (fetch_and_notify_on_changes): while a
+# prior timed-out git op is still marked in-flight for a source, the next sync
+# must SKIP the whole pass rather than touch the non-thread-safe Repository
+# concurrently. Deleting the guard makes both mutations ship green (it also caps
+# the phase-2 duplicate re-fetch storm), so it needs its own coverage. ---
+from opal_common.schemas.policy_source import (  # noqa: E402
+    GitPolicyScopeSource,
+    NoAuthData,
+)
+from opal_server.git_fetcher import (  # noqa: E402
+    GitPolicyFetcher,
+    _mark_git_op_done,
+    _mark_git_op_started,
+)
+
+
+class _ReachedDiscover(Exception):
+    """Raised from a stubbed _discover_repository to prove execution passed the
+    in-flight guard (the first real op after it)."""
+
+
+def _guard_fetcher(tmp_path, monkeypatch):
+    src = GitPolicyScopeSource(
+        source_type="git",
+        url="https://git/guard.git",
+        branch="main",
+        auth=NoAuthData(auth_type="none"),
+    )
+    fetcher = GitPolicyFetcher(tmp_path, "s1", src)
+
+    def _boom(_path):
+        raise _ReachedDiscover
+
+    # _discover_repository is the first thing the method does after the guard;
+    # raising here stops before any real git work while signalling "reached".
+    monkeypatch.setattr(fetcher, "_discover_repository", _boom)
+    return fetcher
+
+
+@pytest.mark.asyncio
+async def test_fetch_and_notify_skips_when_git_op_in_flight(tmp_path, monkeypatch):
+    fetcher = _guard_fetcher(tmp_path, monkeypatch)
+    _mark_git_op_started(fetcher._source_id)
+    try:
+        # Guard must fire -> return before _discover_repository -> no _ReachedDiscover.
+        await fetcher.fetch_and_notify_on_changes()
+    finally:
+        _mark_git_op_done(fetcher._source_id)
+
+
+@pytest.mark.asyncio
+async def test_fetch_and_notify_proceeds_when_nothing_in_flight(tmp_path, monkeypatch):
+    # Inverse: with no in-flight marker the guard must NOT fire, so work reaches
+    # _discover_repository — otherwise the guard would be a no-op that always skips.
+    fetcher = _guard_fetcher(tmp_path, monkeypatch)
+    with pytest.raises(_ReachedDiscover):
+        await fetcher.fetch_and_notify_on_changes()

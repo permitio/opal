@@ -285,11 +285,14 @@ class ScopesService:
             # per-source lock, the shared disk-open executor, and — for the rare
             # re-fetch when phase 1 left a branch missing — the inner git-op
             # semaphore inside run_in_git_executor (still SCOPES_GIT_MAX_WORKERS).
-            # Give it a wider bound so many cheap change-checks proceed in
-            # parallel while still capping task count and the notify fan-out;
-            # 32 matches the ceiling of asyncio's default thread pool, which is
-            # what actually bounds the phase-2 disk opens.
-            local_concurrency = max(opal_server_config.SCOPES_GIT_MAX_WORKERS, 32)
+            # It shares the loop's default executor (the same pool that serves
+            # policy bundles), so bound it by the SAME SCOPES_GIT_MAX_WORKERS
+            # knob as phase 1 rather than a hard-coded floor: an operator who
+            # lowers the knob to protect a small pod must be able to lower phase
+            # 2 too, and over-subscribing that ~min(32, cpu+4)-thread pool only
+            # queues work and contends with bundle serving. (The earlier
+            # max(..., 32) made 32 a floor the knob could never reduce below.)
+            local_concurrency = max(1, opal_server_config.SCOPES_GIT_MAX_WORKERS)
             local_semaphore = asyncio.Semaphore(local_concurrency)
             await self._sync_scopes_concurrently(
                 duplicate_scopes,

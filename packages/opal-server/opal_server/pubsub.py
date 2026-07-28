@@ -380,18 +380,28 @@ class PubSub:
         blocks the forgery without affecting any real client (publish or
         subscribe); no client change/redeploy is required.
 
-        ``ALL_TOPICS`` is the subscribe-to-everything sentinel (a ``str``), not
-        a concrete topic, and a publish never fans out to a specific-topic
-        subscriber through it, so it cannot reach the purge handlers — leave it
-        to the ``permitted_topics`` restriction.
+        ``ALL_TOPICS`` is rejected too. It is exempt for *publish* (a publish
+        never fans out to a specific-topic subscriber through it), but the same
+        callback also guards *subscribe*, and ``EventNotifier.notify`` fans
+        every published topic — the purge channel included — to the
+        ``ALL_TOPICS`` subscriber bucket. So a peer subscribing to
+        ``ALL_TOPICS`` would still receive purge traffic. No opal-client ever
+        subscribes to ``ALL_TOPICS`` (only the broadcaster does, and that is
+        ``channel=None`` so it never reaches this callback), so rejecting it
+        from external peers is safe.
         """
-        if isinstance(topics, str):
-            return
-        if opal_server_config.SCOPES_PURGE_CHANNEL in topics:
+        # Normalize: the notifier may hand us a single topic (str), a list, or
+        # the ALL_TOPICS sentinel (also a str). An external peer may name
+        # neither the purge channel nor ALL_TOPICS.
+        topic_list = [topics] if isinstance(topics, str) else list(topics)
+        if (
+            ALL_TOPICS in topic_list
+            or opal_server_config.SCOPES_PURGE_CHANNEL in topic_list
+        ):
             raise Unauthorized(
                 description=(
-                    f"Topic '{opal_server_config.SCOPES_PURGE_CHANNEL}' is "
-                    "server-internal and may not be published or subscribed by "
-                    "external peers"
+                    f"Topic '{opal_server_config.SCOPES_PURGE_CHANNEL}' (and "
+                    "ALL_TOPICS, which would receive it) is server-internal and "
+                    "may not be published or subscribed by external peers"
                 )
             )

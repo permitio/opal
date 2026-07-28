@@ -139,6 +139,20 @@ class OpalServerClient:
             compose("start", "opal_server")
             self._created_scopes.clear()
             self.wait_healthy(timeout=timeout)
+            # wait_healthy returns once HTTP is up, but the boot orphan sweep is
+            # still reclaiming the clone dirs the flushed scopes left behind
+            # (minting+popping one repo_locks entry per dir). Wait for it to
+            # settle to repo_locks==0 so the fixture-teardown invariant check
+            # can't race the sweep and catch a transient minted-not-yet-popped
+            # lock (a flaky I4 on the offline-repo test).
+            deadline = time.time() + 30
+            while time.time() < deadline:
+                try:
+                    if self.stats(samples=1)["repo_locks"] == 0:
+                        break
+                except Exception:
+                    pass
+                time.sleep(0.5)
 
     def delete_all_scopes(self, drain_timeout: int = 3) -> None:
         """Delete every scope the *server* knows (not just this client's), then

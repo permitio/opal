@@ -1,9 +1,11 @@
-"""sync_scopes runs its two passes under separate concurrency bounds.
+"""sync_scopes runs its two passes, each bounded by SCOPES_GIT_MAX_WORKERS.
 
-Phase 1 (distinct repos, network clone/fetch) is capped at
-SCOPES_GIT_MAX_WORKERS. Phase 2 (scopes reusing an already-handled repo,
-local change-check only) must NOT inherit that network cap and runs
-wider.
+Phase 1 (distinct repos, network clone/fetch) and phase 2 (scopes
+reusing an already-handled repo, local change-check only) are both
+capped at SCOPES_GIT_MAX_WORKERS. Phase 2 shares the loop's default
+executor with policy-bundle serving, so it must honor the same knob
+rather than a hard-coded floor (the earlier max(MAX_WORKERS, 32) made 32
+a floor the knob could not lower and over-subscribed that pool).
 """
 import asyncio
 
@@ -68,7 +70,10 @@ def clear_caches():
 
 
 @pytest.mark.asyncio
-async def test_local_pass_runs_wider_than_git_pass(tmp_path, monkeypatch):
+async def test_both_passes_bounded_by_the_git_worker_knob(tmp_path, monkeypatch):
+    # Phase 2 must honor SCOPES_GIT_MAX_WORKERS, not a hard floor: with the knob
+    # at 2, phase 2 (6 duplicate scopes) must peak at <= 2, not 6. The old
+    # max(MAX_WORKERS, 32) floor would let all 6 run at once (peak=6).
     monkeypatch.setattr(opal_server_config, "SCOPES_GIT_MAX_WORKERS", 2)
 
     # 6 distinct repos, 2 scopes each -> 6 unique (phase 1), 6 duplicates (phase 2).
@@ -99,8 +104,11 @@ async def test_local_pass_runs_wider_than_git_pass(tmp_path, monkeypatch):
     # Phase 1 = force_fetch=True (network); phase 2 = force_fetch=False (local).
     assert peak[True] <= 2, f"phase 1 exceeded the git cap: peak={peak[True]}"
     assert (
-        peak[False] > 2
-    ), f"phase 2 did not run wider than the git cap: peak={peak[False]}"
+        peak[False] <= 2
+    ), f"phase 2 exceeded SCOPES_GIT_MAX_WORKERS (is the max(,32) floor back?): peak={peak[False]}"
+    assert (
+        peak[False] > 1
+    ), f"phase 2 ran serially, not concurrently: peak={peak[False]}"
 
 
 @pytest.mark.asyncio

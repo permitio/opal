@@ -45,23 +45,41 @@ class ScopesPolicyWatcherTask(BasePolicyWatcherTask):
         )
         self._tasks.append(asyncio.create_task(self._sync_all_then_sweep()))
 
-        polling_on = opal_server_config.POLICY_REFRESH_INTERVAL > 0
-        if polling_on:
+        if opal_server_config.POLICY_REFRESH_INTERVAL > 0:
             self._tasks.append(asyncio.create_task(self._periodic_polling()))
 
-        # Always-on orphan-sweep backstop — but skip it when polling is on,
-        # because _periodic_polling already sweeps after every poll. Running
-        # both would double the disk scans and emit duplicate confirmed-orphan
-        # purge broadcasts. In prod POLICY_REFRESH_INTERVAL is 0, so this timer
-        # is the sole sweeper there.
-        if opal_server_config.SCOPES_ORPHAN_SWEEP_INTERVAL > 0 and not polling_on:
+        # Always-on orphan-sweep backstop, independent of POLICY_REFRESH_INTERVAL
+        # (as the key's docs state). _periodic_polling deliberately does NOT
+        # sweep, so this timer is the single periodic sweeper — no duplicate
+        # scans or confirmed-orphan purge broadcasts even when polling is on.
+        if opal_server_config.SCOPES_ORPHAN_SWEEP_INTERVAL > 0:
             self._tasks.append(asyncio.create_task(self._periodic_orphan_sweep()))
 
     async def stop(self):
+        # Tear down the leader purge path cleanly BEFORE the base teardown:
+        # unsubscribe so no new purge message is processed during shutdown, then
+        # drain any in-flight background purge so a shutdown window can't abandon
+        # an rmtree mid-flight. start()/stop() run exactly once, so there is no
+        # double-subscribe to guard against.
+        try:
+            await self._pubsub_endpoint.unsubscribe(
+                [opal_server_config.SCOPES_PURGE_CHANNEL]
+            )
+        except Exception:
+            logger.exception("Failed to unsubscribe scope purge handler on stop")
+        await self._purger.stop()
         return await super().stop()
 
     async def _sync_all_then_sweep(self):
-        await self._service.sync_scopes()
+        # sync_scopes must be wrapped too: this coroutine is launched
+        # fire-and-forget from start() (boot), so an unhandled raise here would
+        # die silently — the exception is never retrieved (stop() gathers with
+        # return_exceptions=True and discards it), not even asyncio's
+        # "never retrieved" warning until GC. Log it and still run the sweep.
+        try:
+            await self._service.sync_scopes()
+        except Exception:
+            logger.exception("Scope sync (sync_scopes) failed")
         # After sync, disk state is settled: anything on disk that no live
         # scope references is an orphan (crash leftovers, redis-wiped boot,
         # old-shard dirs after a SCOPES_REPO_CLONES_SHARDS change).
@@ -80,7 +98,9 @@ class ScopesPolicyWatcherTask(BasePolicyWatcherTask):
                 logger.info("Periodic sync")
                 try:
                     await self._service.sync_scopes(only_poll_updates=True)
-                    await self._purger.sweep_orphans()
+                    # Orphan sweeping runs on its own always-on timer
+                    # (_periodic_orphan_sweep), not here — running both would
+                    # double the disk scans and confirmed-orphan purge broadcasts.
                 except asyncio.CancelledError:
                     raise
                 except Exception as e:

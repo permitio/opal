@@ -93,7 +93,24 @@ async def handle_purge_message(subscription, data: Any) -> None:
         scope_id=cmd.scope_id,
         reason=cmd.reason,
     )
-    purge_local_memory(cmd.source_id, safe_path)
+    # Under lock_source, exactly as the leader publishes the confirmation under
+    # it. forget_repo -> Repository.free() must not run concurrently with a
+    # re-created scope's sync on THIS process: fetch_and_notify_on_changes holds
+    # its handle across an await and then set_target()s it, all under
+    # lock_source. The git_op_in_flight guard inside purge_local_memory only
+    # covers pool-thread ops, not that event-loop handle-holding — so without
+    # the lock this every-worker handler is the use-after-free the leader path
+    # is careful to avoid, on every process except the publisher.
+    async with GitPolicyFetcher.lock_source(cmd.source_id):
+        purge_local_memory(cmd.source_id, safe_path)
+        # Pop the repo_locks entry lock_source just minted (via setdefault),
+        # under the lock — the same lock-identity rule the leader follows in
+        # purge_source_if_unshared. purge_local_memory deliberately never pops it
+        # (it held no lock); now that this handler does, popping here is what
+        # keeps a purged source from leaving a stray repo_locks key (invariant
+        # I4). lock_source waiters re-check the dict and re-mint a fresh lock, so
+        # a concurrently re-created scope is unaffected.
+        GitPolicyFetcher.repo_locks.pop(cmd.source_id, None)
 
 
 async def subscribe_worker_purge_handler(endpoint) -> None:
@@ -192,6 +209,19 @@ class LeaderScopePurger:
         self._pending_purges.add(task)
         task.add_done_callback(self._pending_purges.discard)
         return task
+
+    async def stop(self) -> None:
+        """Await in-flight background purges so a shutdown can't abandon an
+        rmtree mid-flight (or run a fresh one after the watcher stopped).
+
+        These tasks are spawned detached in ``handle`` and are NOT in the
+        watcher's ``self._tasks``, so ``BasePolicyWatcherTask.stop`` never waits
+        on them. Each purge is bounded work (one sibling-check + one rmtree + a
+        confirm publish), so awaiting here cannot hang. Called from the watcher
+        task's ``stop`` after it has unsubscribed this handler.
+        """
+        if self._pending_purges:
+            await asyncio.gather(*list(self._pending_purges), return_exceptions=True)
 
     async def purge_source_if_unshared(self, cmd: ScopePurgeCommand) -> None:
         safe_path = _confined_clone_path(self._base_dir, cmd.source_id)
@@ -297,15 +327,47 @@ class LeaderScopePurger:
             logger.warning(f"Orphan sweep aborted, scope scan failed: {e!r}")
             return
 
-        reclaimed = 0
-        for name in dir_names:
-            # Cheap filter against the snapshot: clearly live -> keep, no
-            # per-dir I/O at all in the common (all-live) case.
+        # Precompute the live source_ids ONCE (O(scopes)) so the per-dir filter
+        # below is an O(1) set lookup, instead of re-walking the whole snapshot
+        # and recomputing two sha256 per (dir, scope) pair — that made the filter
+        # O(dirs x scopes) and, with no await in the hot path, blocked the
+        # leader's event loop. A scope whose source_id() derivation raises is
+        # skipped here, so its dir looks orphaned and falls to the under-lock
+        # re-check, which re-raises and conservatively KEEPS the dir.
+        live_source_ids = set()
+        for s in snapshot:
+            if not isinstance(s.policy, GitPolicyScopeSource):
+                continue
             try:
-                if _scope_sharing_source(snapshot, name) is not None:
-                    continue
+                live_source_ids.add(GitPolicyFetcher.source_id(s.policy))
             except Exception as e:
-                logger.warning(f"Orphan re-check for {name} failed, keeping dir: {e!r}")
+                logger.warning(
+                    "Orphan sweep: could not derive source_id for scope "
+                    "{scope_id}; its clone falls to the under-lock re-check: {err}",
+                    scope_id=s.scope_id,
+                    err=repr(e),
+                )
+
+        reclaimed = 0
+        for i, name in enumerate(dir_names):
+            # Yield periodically so a very large clone tree doesn't starve the
+            # event loop even though each check below is O(1).
+            if i and i % 200 == 0:
+                await asyncio.sleep(0)
+            # Validate the dir name is a real source id BEFORE it can reach
+            # rmtree — the same SECURITY invariant every other deletion path
+            # enforces via _confined_clone_path. A name the clone path never
+            # created (not a source id) is left untouched, never swept.
+            safe_path = _confined_clone_path(self._base_dir, name)
+            if safe_path is None:
+                logger.warning(
+                    "Orphan sweep skipping unrecognized clone dir (name is not a "
+                    "source id): {name}",
+                    name=name,
+                )
+                continue
+            # Cheap filter: clearly live -> keep (O(1) set lookup, no per-dir I/O).
+            if name in live_source_ids:
                 continue
             async with GitPolicyFetcher.lock_source(name):
                 # Candidate orphan: re-verify against a FRESH read taken
@@ -325,23 +387,27 @@ class LeaderScopePurger:
                     )
                     continue
                 if git_op_in_flight(name):
-                    # Unlike purge_source_if_unshared's in-flight branch, there's
-                    # no immediate lock/timestamp drain here: an orphan has no
-                    # live scope and no waiter blocked on this lock to free, so
-                    # deferring the whole entry to the next sweep pass is
-                    # sufficient (the entry may not even be in the caches).
-                    logger.info(f"Orphan sweep skipping {name}: git op in flight")
+                    # A lingering (timed-out) git op still touches the repo on a
+                    # pool thread, so defer the dir removal + handle free to a
+                    # later sweep (freeing now risks a crash). But DRAIN the
+                    # event-loop-side entries under the held lock — including the
+                    # repo_locks entry lock_source just minted for this candidate
+                    # (via setdefault) — or that lock leaks as a stray with no
+                    # live scope (invariant I4). Mirrors purge_source_if_unshared's
+                    # in-flight branch.
+                    logger.info(f"Orphan sweep deferring {name}: git op in flight")
+                    GitPolicyFetcher.repos_last_fetched.pop(name, None)
+                    GitPolicyFetcher.repo_locks.pop(name, None)
                     continue
-                path = sources_dir / name
-                logger.info(f"Reclaiming orphan clone dir: {path}")
-                GitPolicyFetcher.forget_repo(str(path))
+                logger.info("Reclaiming orphan clone dir: {path}", path=safe_path)
+                GitPolicyFetcher.forget_repo(safe_path)
                 GitPolicyFetcher.repos_last_fetched.pop(name, None)
                 try:
-                    await run_sync(shutil.rmtree, str(path))
+                    await run_sync(shutil.rmtree, safe_path)
                 except FileNotFoundError:
                     pass
                 except OSError as e:
-                    logger.warning(f"Failed to reclaim orphan {path}: {e!r}")
+                    logger.warning(f"Failed to reclaim orphan {safe_path}: {e!r}")
                     continue
                 GitPolicyFetcher.repo_locks.pop(name, None)  # under the lock
                 reclaimed += 1
@@ -350,7 +416,7 @@ class LeaderScopePurger:
                         [opal_server_config.SCOPES_PURGE_CHANNEL],
                         ScopePurgeCommand(
                             source_id=name,
-                            clone_path=str(path),
+                            clone_path=safe_path,
                             scope_id="",
                             reason="orphan",
                             confirmed=True,

@@ -102,17 +102,48 @@ async def test_handle_purge_message_parses_and_purges(tmp_path, monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_handle_purge_message_ignores_unconfirmed_requests():
+async def test_handle_purge_message_leaves_no_stray_repo_lock(tmp_path, monkeypatch):
+    """The worker handler takes lock_source (minting a repo_locks entry via
+    setdefault), so it must pop it under the lock — otherwise every purged
+    source leaks a lock (invariant I4; the git-leak bed's churn tests catch it
+    the hard way)."""
+    monkeypatch.setattr(
+        "opal_server.scopes.purge.opal_server_config.BASE_DIR", str(tmp_path)
+    )
+    sid = _real_sid()
+    path = _derived_path(tmp_path, sid)
+    GitPolicyFetcher.repos[path] = object()
+
+    await handle_purge_message(None, _cmd(sid=sid, path=path, confirmed=True).dict())
+
+    assert sid not in GitPolicyFetcher.repo_locks, "worker purge left a stray lock"
+
+
+@pytest.mark.asyncio
+async def test_handle_purge_message_ignores_unconfirmed_requests(tmp_path, monkeypatch):
     """Workers must not purge on a raw request — only the leader's sibling-
     checked confirmation may drop cache entries (over-purge of a shared source
-    was a bed regression)."""
-    GitPolicyFetcher.repos["/clones/sid-1"] = object()
-    GitPolicyFetcher.repos_last_fetched["sid-1"] = "ts"
+    was a bed regression).
 
-    await handle_purge_message(None, _cmd().dict())  # confirmed defaults False
+    Uses a VALID source_id and seeds the cache at its DERIVED path, so the ONLY
+    thing that can stop the purge is the `confirmed` gate. With the old
+    `sid="sid-1"` the handler returned at the malformed-source_id branch instead
+    (after the gate), so the test passed even with the gate deleted and never
+    actually observed it.
+    """
+    monkeypatch.setattr(
+        "opal_server.scopes.purge.opal_server_config.BASE_DIR", str(tmp_path)
+    )
+    sid = _real_sid()
+    path = _derived_path(tmp_path, sid)
+    GitPolicyFetcher.repos[path] = object()
+    GitPolicyFetcher.repos_last_fetched[sid] = "ts"
 
-    assert "/clones/sid-1" in GitPolicyFetcher.repos
-    assert "sid-1" in GitPolicyFetcher.repos_last_fetched
+    # confirmed defaults False -> a raw request; the gate must stop it.
+    await handle_purge_message(None, _cmd(sid=sid, path=path).dict())
+
+    assert path in GitPolicyFetcher.repos
+    assert sid in GitPolicyFetcher.repos_last_fetched
 
 
 @pytest.mark.asyncio
@@ -200,10 +231,14 @@ async def test_ordinary_client_topics_are_not_affected():
 
 
 @pytest.mark.asyncio
-async def test_all_topics_sentinel_is_left_to_the_permitted_topics_restriction():
-    # ALL_TOPICS is a str sentinel, not a concrete topic; this restriction must
-    # not choke on it (a publish never fans out to the purge handler through it).
-    await PubSub._reject_external_purge_channel(ALL_TOPICS, object())
+async def test_external_peer_cannot_subscribe_all_topics():
+    # ALL_TOPICS must be rejected too: the same callback guards subscribe, and
+    # notify() fans every published topic (purge included) to the ALL_TOPICS
+    # subscriber bucket, so an ALL_TOPICS subscriber would receive purge
+    # traffic. No opal-client subscribes to ALL_TOPICS (only the broadcaster,
+    # which is channel=None and never reaches this callback).
+    with pytest.raises(Unauthorized):
+        await PubSub._reject_external_purge_channel(ALL_TOPICS, object())
 
 
 import shutil
@@ -689,3 +724,59 @@ async def test_find_scope_sharing_source_distinguishes_shards(monkeypatch):
     repo = FakeScopeRepository([b])
     assert await find_scope_sharing_source(repo, sid_a) is None
     assert await find_scope_sharing_source(repo, sid_b) == "b"
+
+
+@pytest.mark.asyncio
+async def test_recreate_after_delete_serializes_and_sees_clean_caches(
+    tmp_path, monkeypatch
+):
+    """The third dropped PR2 regression, ported to the fleet-purge design.
+
+    A re-created scope's first sync queued while the leader is purging
+    the old source must run only AFTER the purge completes, on the
+    freshly-minted lock, and see clean caches — never the stale pygit2
+    handle the purge is about to free. Delete and purge are no longer
+    synchronous, so lock_source is the only thing serializing them; this
+    is the use-after-free the confirmation-under- lock discipline exists
+    to prevent.
+    """
+    monkeypatch.setattr(
+        "opal_server.scopes.purge.opal_server_config.BASE_DIR", str(tmp_path)
+    )
+    monkeypatch.setattr("opal_server.scopes.purge.shutil.rmtree", lambda *a, **k: None)
+    sid = _real_sid()
+    clone_path = _derived_path(tmp_path, sid)
+    GitPolicyFetcher.repos[clone_path] = object()  # stale handle from before the delete
+
+    # Leader purge for a source no live scope maps to (it was deleted): purges
+    # under lock_source, dropping the cached handle.
+    purger = LeaderScopePurger(
+        base_dir=tmp_path, scopes=FakeScopeRepository([]), pubsub_endpoint=None
+    )
+    cmd = _cmd(sid=sid, path=clone_path, confirmed=False)
+
+    order = []
+    gate = GitPolicyFetcher.repo_locks.setdefault(sid, asyncio.Lock())
+    await gate.acquire()  # stands in for the in-flight op the purge queues behind
+    try:
+
+        async def deleter():
+            await purger.purge_source_if_unshared(cmd)
+            order.append("purge-done")
+
+        async def recreator():  # the re-created scope's first sync
+            async with GitPolicyFetcher.lock_source(sid):
+                order.append(("recreate-in", clone_path in GitPolicyFetcher.repos))
+
+        d = asyncio.create_task(deleter())
+        for _ in range(5):
+            await asyncio.sleep(0)  # purge queues on the held lock first
+        r = asyncio.create_task(recreator())
+        for _ in range(5):
+            await asyncio.sleep(0)  # recreate queues behind it
+    finally:
+        gate.release()
+
+    await asyncio.wait_for(asyncio.gather(d, r), timeout=5)
+    # Recreate ran AFTER the purge, and saw the handle already gone (clean caches).
+    assert order == ["purge-done", ("recreate-in", False)]
