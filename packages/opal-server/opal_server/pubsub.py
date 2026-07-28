@@ -142,9 +142,7 @@ class PubSub:
         # Pub/Sub Internals
         self.notifier = WebSocketRpcEventNotifier()
         self.notifier.add_channel_restriction(type(self)._verify_permitted_topics)
-        self.notifier.add_channel_restriction(
-            type(self)._reject_external_purge_channel
-        )
+        self.notifier.add_channel_restriction(type(self)._reject_external_purge_channel)
         self.client_tracker = ClientTracker()
         self.notifier.register_subscribe_event(self.client_tracker.on_subscribe)
         self.notifier.register_unsubscribe_event(self.client_tracker.on_unsubscribe)

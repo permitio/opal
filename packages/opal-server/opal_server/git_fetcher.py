@@ -805,9 +805,7 @@ class GitPolicyFetcher(PolicyFetcher):
             #     retryable 503, instead of telling the client "not retryable"
             #     for a scope that will recover on its own.
             try:
-                commit, _ = repo.resolve_refish(
-                    f"{self._remote}/{self._source.branch}"
-                )
+                commit, _ = repo.resolve_refish(f"{self._remote}/{self._source.branch}")
                 head_commit_hash = commit.hex
             except KeyError:
                 head_commit_hash = None

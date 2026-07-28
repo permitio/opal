@@ -158,53 +158,52 @@ from opal_common.config import opal_common_config  # noqa: E402
 
 def test_purge_restriction_is_registered_on_the_notifier():
     ps = PubSub(signer=object(), broadcaster_uri=None)
-    assert (
-        PubSub._reject_external_purge_channel
-        in ps.notifier._channel_restrictions
-    )
+    assert PubSub._reject_external_purge_channel in ps.notifier._channel_restrictions
 
 
-def test_external_peer_publish_to_purge_channel_is_rejected():
+# NOTE: these await the restriction directly under @pytest.mark.asyncio rather
+# than asyncio.run(...). asyncio.run() closes its loop and leaves the current
+# loop set to None, which on Python 3.9 breaks later SYNC tests that call
+# asyncio.get_event_loop() (e.g. reconnecting_broadcaster_test) — the same
+# py3.9 event-loop-isolation trap as commit 8400a75e.
+@pytest.mark.asyncio
+async def test_external_peer_publish_to_purge_channel_is_rejected():
     with pytest.raises(Unauthorized):
-        asyncio.run(
-            PubSub._reject_external_purge_channel(
-                [opal_server_config.SCOPES_PURGE_CHANNEL], object()
-            )
+        await PubSub._reject_external_purge_channel(
+            [opal_server_config.SCOPES_PURGE_CHANNEL], object()
         )
 
 
-def test_external_peer_rejected_even_when_purge_channel_mixed_with_others():
+@pytest.mark.asyncio
+async def test_external_peer_rejected_even_when_purge_channel_mixed_with_others():
     with pytest.raises(Unauthorized):
-        asyncio.run(
-            PubSub._reject_external_purge_channel(
-                ["policy:some_dir", opal_server_config.SCOPES_PURGE_CHANNEL], object()
-            )
+        await PubSub._reject_external_purge_channel(
+            ["policy:some_dir", opal_server_config.SCOPES_PURGE_CHANNEL], object()
         )
 
 
-def test_client_stats_channel_publish_is_not_affected():
+@pytest.mark.asyncio
+async def test_client_stats_channel_publish_is_not_affected():
     # The ONLY channel a real opal-client publishes to (STATISTICS enabled).
     # Must still pass — proves the fix does not touch legitimate client traffic
     # and needs no client change/redeploy.
-    asyncio.run(
-        PubSub._reject_external_purge_channel(
-            [opal_common_config.STATISTICS_ADD_CLIENT_CHANNEL], object()
-        )
+    await PubSub._reject_external_purge_channel(
+        [opal_common_config.STATISTICS_ADD_CLIENT_CHANNEL], object()
     )
 
 
-def test_ordinary_client_topics_are_not_affected():
-    asyncio.run(
-        PubSub._reject_external_purge_channel(
-            ["policy:dir_a", "data:tenant/x"], object()
-        )
+@pytest.mark.asyncio
+async def test_ordinary_client_topics_are_not_affected():
+    await PubSub._reject_external_purge_channel(
+        ["policy:dir_a", "data:tenant/x"], object()
     )
 
 
-def test_all_topics_sentinel_is_left_to_the_permitted_topics_restriction():
+@pytest.mark.asyncio
+async def test_all_topics_sentinel_is_left_to_the_permitted_topics_restriction():
     # ALL_TOPICS is a str sentinel, not a concrete topic; this restriction must
     # not choke on it (a publish never fans out to the purge handler through it).
-    asyncio.run(PubSub._reject_external_purge_channel(ALL_TOPICS, object()))
+    await PubSub._reject_external_purge_channel(ALL_TOPICS, object())
 
 
 import shutil

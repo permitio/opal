@@ -91,10 +91,13 @@ class ScopesPolicyWatcherTask(BasePolicyWatcherTask):
             raise
 
     async def _periodic_orphan_sweep(self):
-        """Always-on backstop independent of POLICY_REFRESH_INTERVAL. _periodic_polling
-        also sweeps but only runs when polling is enabled; with it off, boot's
-        _sync_all_then_sweep was the sole sweep, so a delete/repoint whose purge
-        broadcast never reached the leader leaked until refresh-all."""
+        """Always-on backstop independent of POLICY_REFRESH_INTERVAL.
+
+        _periodic_polling also sweeps but only runs when polling is
+        enabled; with it off, boot's _sync_all_then_sweep was the sole
+        sweep, so a delete/repoint whose purge broadcast never reached
+        the leader leaked until refresh-all.
+        """
         try:
             while True:
                 await asyncio.sleep(opal_server_config.SCOPES_ORPHAN_SWEEP_INTERVAL)
@@ -150,9 +153,7 @@ class ScopesPolicyWatcherTask(BasePolicyWatcherTask):
             # those threads persist in the master across the fork, so a forked
             # worker can race them on the shared clone dir. Log it — this is the
             # one condition that carries that risk, and it must not be silent.
-            drained = drain_git_ops(
-                opal_server_config.SCOPES_GIT_PRELOAD_DRAIN_TIMEOUT
-            )
+            drained = drain_git_ops(opal_server_config.SCOPES_GIT_PRELOAD_DRAIN_TIMEOUT)
             if not drained:
                 logger.warning(
                     "Preload drain timed out ({timeout}s) with git ops still "

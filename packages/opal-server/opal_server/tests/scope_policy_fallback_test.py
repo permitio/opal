@@ -158,12 +158,12 @@ def test_wrong_branch_returns_non_retryable_409(tmp_path, monkeypatch):
 # got a non-retryable 409. These exercise the REAL method (not a mock of
 # make_bundle) so the raise path is actually covered. ---
 import pygit2  # noqa: E402
-
 from opal_server.git_fetcher import GitPolicyFetcher as _Fetcher  # noqa: E402
 
 
 class _FakeRepo:
-    """Stand-in for pygit2.Repository whose resolve_refish outcome we control."""
+    """Stand-in for pygit2.Repository whose resolve_refish outcome we
+    control."""
 
     def __init__(self, resolve):
         self._resolve = resolve
