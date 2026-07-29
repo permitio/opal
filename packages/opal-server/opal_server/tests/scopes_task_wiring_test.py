@@ -26,6 +26,28 @@ class _Recorder:
         if self._fail_sweep:
             raise PermissionError("disk broke")
 
+    async def handle(self, *args, **kwargs):  # the purge-channel subscriber
+        return None
+
+
+class FakeNotifier:
+    """Minimal stand-in for EventNotifier's subscriber-id API."""
+
+    def __init__(self):
+        self.subs = []
+        self.unsubs = []
+        self._minted = 0
+
+    def gen_subscriber_id(self):
+        self._minted += 1
+        return f"fake-sub-{self._minted}"
+
+    async def subscribe(self, subscriber_id, topics, callback):
+        self.subs.append((subscriber_id, list(topics), callback))
+
+    async def unsubscribe(self, subscriber_id, topics=None):
+        self.unsubs.append((subscriber_id, list(topics) if topics else None))
+
 
 def _bare_task(events, fail_sweep=False, fail_sync=False):
     """Construct without __init__ (it needs Redis); wire only what the methods
@@ -155,10 +177,7 @@ async def test_start_subscribes_leader_purge_handler(monkeypatch):
 
     class FakeEndpoint:
         def __init__(self):
-            self.subs = []
-
-        async def subscribe(self, topics, callback):
-            self.subs.append((list(topics), callback))
+            self.notifier = FakeNotifier()
 
     class FakePurger:
         async def handle(self, *a, **k):
@@ -176,12 +195,291 @@ async def test_start_subscribes_leader_purge_handler(monkeypatch):
     t._purger = FakePurger()
     t._service = FakeService()
     t._tasks = []
+    t._purger_sub_id = None
     await t.start()
     try:
-        assert t._pubsub_endpoint.subs == [
-            ([opal_server_config.SCOPES_PURGE_CHANNEL], t._purger.handle)
+        # Registered under its OWN subscriber id (not the endpoint's shared one),
+        # so stop() can remove it without dropping the every-worker handler.
+        assert t._pubsub_endpoint.notifier.subs == [
+            (
+                t._purger_sub_id,
+                [opal_server_config.SCOPES_PURGE_CHANNEL],
+                t._purger.handle,
+            )
         ]
+        assert t._purger_sub_id is not None
     finally:
         for task in t._tasks:
             task.cancel()
         await asyncio.gather(*t._tasks, return_exceptions=True)
+
+
+# --- Round-3 review: ~35 lines of new lifecycle code had zero coverage, and
+# both fixes in this file shipped green when reverted. One test per mutation. ---
+
+
+class _FakeEndpoint:
+    def __init__(self):
+        self.notifier = FakeNotifier()
+
+
+def _purge_cmd(sid, confirmed):
+    return {
+        "source_id": sid,
+        "clone_path": f"/clones/{sid}",
+        "scope_id": "s1",
+        "reason": "delete",
+        "confirmed": confirmed,
+    }
+
+
+@pytest.fixture
+def _clean_fetcher_caches():
+    from opal_server.git_fetcher import GitPolicyFetcher
+
+    caches = (
+        GitPolicyFetcher.repos,
+        GitPolicyFetcher.repos_last_fetched,
+        GitPolicyFetcher.repo_locks,
+    )
+    for d in caches:
+        d.clear()
+    yield
+    for d in caches:
+        d.clear()
+
+
+@pytest.mark.asyncio
+async def test_sync_all_then_sweep_still_sweeps_when_sync_raises():
+    """A raising boot sync must not skip the sweep (nor die silently: stop()
+    gathers with return_exceptions=True and discards the exception).
+
+    Mutation: deleting the try/except around sync_scopes must fail here.
+    """
+    events = []
+    await _bare_task(events, fail_sync=True)._sync_all_then_sweep()  # no raise
+    assert events == ["sync", "sweep"]
+
+
+@pytest.mark.asyncio
+async def test_orphan_sweep_timer_starts_even_when_polling_is_enabled(monkeypatch):
+    """The sweep timer is always-on: _periodic_polling deliberately does not
+    sweep, so gating this timer on `POLICY_REFRESH_INTERVAL <= 0` would leave a
+    polling-enabled deployment with no periodic sweep at all.
+
+    Mutation: re-adding that gate must fail here.
+    """
+    from opal_server.config import opal_server_config
+    from opal_server.policy.watcher.task import BasePolicyWatcherTask
+
+    async def _noop_start(self):
+        return None
+
+    monkeypatch.setattr(BasePolicyWatcherTask, "start", _noop_start)
+    monkeypatch.setattr(opal_server_config, "POLICY_REFRESH_INTERVAL", 3600)
+    monkeypatch.setattr(opal_server_config, "SCOPES_ORPHAN_SWEEP_INTERVAL", 300)
+
+    events = []
+    t = _bare_task(events)
+    t._pubsub_endpoint = _FakeEndpoint()
+    t._tasks = []
+    t._purger_sub_id = None
+    await t.start()
+    try:
+        running = {task.get_coro().__name__ for task in t._tasks}
+        assert "_periodic_orphan_sweep" in running, running
+        assert "_periodic_polling" in running, running
+    finally:
+        for task in t._tasks:
+            task.cancel()
+        await asyncio.gather(*t._tasks, return_exceptions=True)
+
+
+@pytest.mark.asyncio
+async def test_stop_does_not_unsubscribe_the_every_worker_purge_handler(
+    tmp_path, monkeypatch, _clean_fetcher_caches
+):
+    """Stop() must remove ONLY the leader's subscription.
+
+    PubSubEndpoint files every server-side subscription under one shared
+    subscriber id, and EventNotifier.unsubscribe deletes that id's whole
+    callback list for the topic — so unsubscribing by topic here would also drop
+    handle_purge_message, which server.py registers once at boot for every
+    worker and nothing ever re-adds. The process stays up (uvicorn drains
+    in-flight requests) while silently ignoring every fleet purge.
+
+    Mutation: `await self._pubsub_endpoint.unsubscribe([CHANNEL])` must fail.
+    """
+    from fastapi_websocket_pubsub.pub_sub_server import PubSubEndpoint
+    from opal_server.config import opal_server_config
+    from opal_server.git_fetcher import GitPolicyFetcher
+    from opal_server.policy.watcher.task import BasePolicyWatcherTask
+    from opal_server.scopes.purge import subscribe_worker_purge_handler
+
+    async def _noop_start(self):
+        return None
+
+    monkeypatch.setattr(BasePolicyWatcherTask, "start", _noop_start)
+    monkeypatch.setattr(
+        "opal_server.scopes.purge.opal_server_config.BASE_DIR", str(tmp_path)
+    )
+    monkeypatch.setattr(opal_server_config, "POLICY_REFRESH_INTERVAL", 0)
+    monkeypatch.setattr(opal_server_config, "SCOPES_ORPHAN_SWEEP_INTERVAL", 0)
+
+    endpoint = PubSubEndpoint()  # real EventNotifier
+    await subscribe_worker_purge_handler(endpoint)  # boot-time, every worker
+
+    sid = "a" * 64 + "-0"
+    cached_path = str(GitPolicyFetcher.base_dir(tmp_path) / sid)
+    GitPolicyFetcher.repos[cached_path] = object()
+
+    leader_calls = []
+
+    class _RecordingPurger:
+        async def handle(self, subscription, data):
+            leader_calls.append(data)
+
+        async def sync_scopes(self, *a, **k):
+            return None
+
+        async def sweep_orphans(self):
+            return None
+
+        def signal_stop(self):
+            return None
+
+        async def stop(self):
+            return None
+
+    t = ScopesPolicyWatcherTask.__new__(ScopesPolicyWatcherTask)
+    purger = _RecordingPurger()
+    t._pubsub_endpoint = endpoint
+    t._purger = purger
+    t._service = purger
+    t._tasks = []
+    t._webhook_tasks = []
+    t._purger_sub_id = None
+
+    await t.start()
+    await t.stop()
+
+    # The leader's own subscription is gone...
+    await endpoint.publish(
+        [opal_server_config.SCOPES_PURGE_CHANNEL], _purge_cmd(sid, False)
+    )
+    assert leader_calls == [], "leader purge handler still subscribed after stop()"
+
+    # ...but the every-worker cache purge still works.
+    await endpoint.publish(
+        [opal_server_config.SCOPES_PURGE_CHANNEL], _purge_cmd(sid, True)
+    )
+    assert (
+        cached_path not in GitPolicyFetcher.repos
+    ), "stop() also unsubscribed the every-worker purge handler"
+
+
+@pytest.mark.asyncio
+async def test_stop_cancels_lock_holders_before_draining_purges(
+    tmp_path, monkeypatch, _clean_fetcher_caches
+):
+    """Order matters: a queued purge's first act is to take lock_source, held by
+    a sync across a whole clone/fetch (unbounded when SCOPES_GIT_FETCH_TIMEOUT
+    is 0). Draining before super().stop() waits on a lock whose release requires
+    that very cancellation — shutdown hangs, still holding the leadership lock,
+    until k8s SIGKILLs the pod.
+
+    Mutation: awaiting the drain before super().stop() must fail here (it blocks
+    for the whole _PURGE_DRAIN_TIMEOUT, past this wait_for).
+    """
+    from opal_server.git_fetcher import GitPolicyFetcher
+    from opal_server.scopes.purge import LeaderScopePurger
+
+    class _EmptyStore:
+        async def all(self):
+            return []
+
+    dead_dir = GitPolicyFetcher.base_dir(tmp_path) / ("c" * 64 + "-0")
+    dead_dir.mkdir(parents=True)
+    sid = dead_dir.name
+
+    purger = LeaderScopePurger(
+        base_dir=tmp_path, scopes=_EmptyStore(), pubsub_endpoint=None
+    )
+
+    holding = asyncio.Event()
+
+    async def _stuck_sync():
+        async with GitPolicyFetcher.lock_source(sid):
+            holding.set()
+            await asyncio.sleep(3600)  # a fetch against a black-holed remote
+
+    t = ScopesPolicyWatcherTask.__new__(ScopesPolicyWatcherTask)
+    t._pubsub_endpoint = _FakeEndpoint()
+    t._purger = purger
+    t._service = purger
+    t._tasks = [asyncio.create_task(_stuck_sync())]
+    t._webhook_tasks = []
+    t._purger_sub_id = None
+
+    await holding.wait()
+    await purger.handle(None, _purge_cmd(sid, False))  # queues behind the lock
+    for _ in range(5):
+        await asyncio.sleep(0)
+    assert dead_dir.exists(), "purge should still be blocked on the held lock"
+
+    await asyncio.wait_for(t.stop(), timeout=2)
+
+    assert not dead_dir.exists(), "the drained purge never completed"
+
+
+@pytest.mark.asyncio
+async def test_stop_is_idempotent(monkeypatch):
+    """Stop() runs twice on the normal path — BasePolicyWatcherTask.__aexit__
+    and stop_server_background_tasks both call it — so the second pass must be
+    a clean no-op (the old comment claimed it ran exactly once)."""
+    from opal_server.config import opal_server_config
+    from opal_server.policy.watcher.task import BasePolicyWatcherTask
+
+    async def _noop_start(self):
+        return None
+
+    monkeypatch.setattr(BasePolicyWatcherTask, "start", _noop_start)
+    monkeypatch.setattr(opal_server_config, "POLICY_REFRESH_INTERVAL", 0)
+    monkeypatch.setattr(opal_server_config, "SCOPES_ORPHAN_SWEEP_INTERVAL", 0)
+
+    stops = []
+
+    class _Purger:
+        async def handle(self, *a, **k):
+            return None
+
+        async def sync_scopes(self, *a, **k):
+            return None
+
+        async def sweep_orphans(self):
+            return None
+
+        def signal_stop(self):
+            return None
+
+        async def stop(self):
+            stops.append(1)
+
+    t = ScopesPolicyWatcherTask.__new__(ScopesPolicyWatcherTask)
+    purger = _Purger()
+    t._pubsub_endpoint = _FakeEndpoint()
+    t._purger = purger
+    t._service = purger
+    t._tasks = []
+    t._webhook_tasks = []
+    t._purger_sub_id = None
+
+    await t.start()
+    sub_id = t._purger_sub_id
+    await t.stop()
+    await t.stop()  # must not raise, must not unsubscribe twice
+
+    assert t._pubsub_endpoint.notifier.unsubs == [
+        (sub_id, [opal_server_config.SCOPES_PURGE_CHANNEL])
+    ]
+    assert len(stops) == 2  # draining twice is harmless (the set is empty)

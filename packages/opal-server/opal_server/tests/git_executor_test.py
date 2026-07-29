@@ -289,6 +289,30 @@ async def test_op_admitted_below_zombie_cap(monkeypatch):
         _mark_git_op_done("z1")
 
 
+@pytest.mark.asyncio
+async def test_negative_max_zombies_is_treated_as_no_cap(monkeypatch):
+    """0 means "no cap"; a NEGATIVE value must too.
+
+    Unclamped, a negative is truthy and `git_busy_count() >= cap` holds
+    with nothing in flight, so the very first git op is refused: every
+    clone and fetch raises GitConcurrencyLimitExceeded, no scope ever
+    syncs, policy goes stale fleet-wide, and the one error line
+    misdirects on-call to "remotes appear stuck" when nothing is stuck.
+    Every sibling knob in this subsystem is clamped; this one is now
+    too.
+    """
+    monkeypatch.setattr(opal_server_config, "SCOPES_GIT_MAX_ZOMBIES", -1)
+    assert git_busy_count() == 0
+    assert await run_in_git_executor(lambda: 7, timeout=5) == 7
+
+    # ...and it stays uncapped with ops already in flight.
+    _mark_git_op_started("neg-1")
+    try:
+        assert await run_in_git_executor(lambda: 8, timeout=5) == 8
+    finally:
+        _mark_git_op_done("neg-1")
+
+
 from concurrent.futures import ThreadPoolExecutor
 
 from opal_server.git_fetcher import _DaemonThreadPoolExecutor

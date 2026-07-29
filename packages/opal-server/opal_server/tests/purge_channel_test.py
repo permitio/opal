@@ -2,6 +2,7 @@ import asyncio
 from pathlib import Path
 
 import pytest
+from fastapi_websocket_pubsub.pub_sub_server import PubSubEndpoint
 from opal_server.config import OpalServerConfig, opal_server_config
 from opal_server.git_fetcher import (
     GitPolicyFetcher,
@@ -780,3 +781,124 @@ async def test_recreate_after_delete_serializes_and_sees_clean_caches(
     await asyncio.wait_for(asyncio.gather(d, r), timeout=5)
     # Recreate ran AFTER the purge, and saw the handle already gone (clean caches).
     assert order == ["purge-done", ("recreate-in", False)]
+
+
+# --- Round-3 review: the guards above ship green when mutated away. Each test
+# below fails under exactly one mutation of the fix it pins. ---
+
+
+@pytest.mark.asyncio
+async def test_handle_purge_message_waits_for_the_source_lock(tmp_path, monkeypatch):
+    """The every-worker handler must free the pygit2 handle only under
+    lock_source.
+
+    Without the lock, forget_repo -> Repository.free() can land while a
+    re-created scope's sync holds that handle across an await (and then
+    set_target()s it) — the use-after-free the leader path avoids, on
+    every process except the publisher. Mutation: replacing the
+    `async with lock_source(...)` with `if True:` must fail here.
+    """
+    monkeypatch.setattr(
+        "opal_server.scopes.purge.opal_server_config.BASE_DIR", str(tmp_path)
+    )
+    sid = _real_sid()
+    path = _derived_path(tmp_path, sid)
+    GitPolicyFetcher.repos[path] = object()
+
+    holder = GitPolicyFetcher.repo_locks.setdefault(sid, asyncio.Lock())
+    await holder.acquire()  # stands in for the sync holding the handle
+    task = asyncio.create_task(
+        handle_purge_message(None, _cmd(sid=sid, path=path, confirmed=True).dict())
+    )
+    try:
+        for _ in range(10):
+            await asyncio.sleep(0)
+        assert (
+            path in GitPolicyFetcher.repos
+        ), "handle freed while another holder owned lock_source"
+        assert not task.done()
+    finally:
+        holder.release()
+
+    await asyncio.wait_for(task, timeout=2)
+    assert path not in GitPolicyFetcher.repos  # freed once the lock was free
+
+
+@pytest.mark.asyncio
+async def test_inline_confirmation_delivery_does_not_deadlock(tmp_path, monkeypatch):
+    """Publish() runs local subscribers INLINE, so the confirmation issued
+    inside purge_source_if_unshared's held lock_source re-enters
+    handle_purge_message, which asks for the same non-reentrant lock.
+
+    The only reason that is not a deadlock is that repo_locks.pop runs
+    BEFORE the publish, so the handler mints a fresh lock. Every other
+    purge test uses a recording fake endpoint and cannot see this;
+    mutation: moving the pop below the publish must fail here (it hangs,
+    hence the wait_for).
+    """
+    monkeypatch.setattr(
+        "opal_server.scopes.purge.opal_server_config.BASE_DIR", str(tmp_path)
+    )
+    dead = _scope("dead", "https://git/inline-delivery.git")
+    sid = GitPolicyFetcher.source_id(dead.policy)
+    clone = _make_clone(tmp_path, dead.policy)
+    GitPolicyFetcher.repos[str(clone)] = object()
+
+    endpoint = PubSubEndpoint()  # real EventNotifier, no broadcaster
+    await subscribe_worker_purge_handler(endpoint)  # the every-worker handler
+    received = []
+
+    async def _recorder(subscription, data):
+        received.append(data)
+
+    await endpoint.subscribe([opal_server_config.SCOPES_PURGE_CHANNEL], _recorder)
+
+    purger = LeaderScopePurger(
+        base_dir=tmp_path, scopes=FakeScopeRepository([]), pubsub_endpoint=endpoint
+    )
+    await asyncio.wait_for(
+        purger.purge_source_if_unshared(_cmd(sid=sid, path=str(clone))), timeout=2
+    )
+
+    assert not clone.exists()
+    # Proves the confirmation really was delivered inline on this task (so the
+    # no-deadlock assertion above is meaningful, not vacuous).
+    assert [d["confirmed"] for d in received] == [True]
+    assert sid not in GitPolicyFetcher.repo_locks
+
+
+@pytest.mark.asyncio
+async def test_stop_awaits_a_slow_pending_purge(tmp_path):
+    """LeaderScopePurger.stop must actually drain: mutation to `return None`
+    must fail here."""
+    purger = LeaderScopePurger(
+        base_dir=tmp_path, scopes=FakeScopeRepository([]), pubsub_endpoint=None
+    )
+    finished = []
+
+    async def _slow(cmd):
+        await asyncio.sleep(0.05)
+        finished.append(cmd.source_id)
+
+    purger.purge_source_if_unshared = _slow
+    sid = _real_sid()
+    await purger.handle(None, _cmd(sid=sid).dict())
+    assert finished == [], "handle must return before the purge completes"
+
+    await purger.stop()
+
+    assert finished == [sid], "stop() did not await the in-flight purge"
+
+
+@pytest.mark.asyncio
+async def test_handle_ignores_purge_requests_once_stopping(tmp_path):
+    """After signal_stop, no new purge may be queued — the watcher's drain is
+    bounded and would abandon it, or it would start an rmtree nothing waits
+    on."""
+    purger = LeaderScopePurger(
+        base_dir=tmp_path, scopes=FakeScopeRepository([]), pubsub_endpoint=None
+    )
+    purger.signal_stop()
+
+    assert await purger.handle(None, _cmd(sid=_real_sid()).dict()) is None
+    assert not purger._pending_purges

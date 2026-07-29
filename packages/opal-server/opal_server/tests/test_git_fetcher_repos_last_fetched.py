@@ -167,3 +167,40 @@ async def test_stamp_records_fetch_start_time_not_completion(monkeypatch, tmp_pa
         "stamp is later than the fetch's entry time — completion time was "
         "stored instead of start time"
     )
+
+
+@pytest.mark.asyncio
+async def test_timed_out_fetch_does_not_stamp_last_fetched_or_notify(
+    monkeypatch, tmp_path
+):
+    """A timed-out fetch must leave repos_last_fetched untouched and publish
+    nothing.
+
+    Falling through instead would make _was_fetched_after() report the
+    repo as fresh, so _should_fetch SUPPRESSES the webhook-forced
+    refresh ("Repo was fetched after refresh request, override
+    force_fetch with False") and the repo is never re-fetched — while
+    _notify_on_changes publishes a policy update computed off the stale
+    pre-fetch HEAD. Mutation: turning the `except TimeoutError: return`
+    into a fallthrough must fail here.
+    """
+    fetcher = _make_fetcher(tmp_path, "scope_x", "https://example.com/repo-x.git")
+    monkeypatch.setattr(fetcher, "_discover_repository", lambda path: True)
+    monkeypatch.setattr(fetcher, "_get_valid_repo", lambda: _FakeRepo(_OkRemote()))
+
+    async def _timed_out(*args, **kwargs):
+        raise TimeoutError("git operation exceeded 0.1s")
+
+    monkeypatch.setattr("opal_server.git_fetcher.run_in_git_executor", _timed_out)
+
+    notified = []
+
+    async def _notify(repo):
+        notified.append(repo)
+
+    monkeypatch.setattr(fetcher, "_notify_on_changes", _notify)
+
+    await fetcher.fetch_and_notify_on_changes(force_fetch=True)  # must not raise
+
+    assert fetcher._source_id not in GitPolicyFetcher.repos_last_fetched
+    assert notified == [], "published an update computed off the stale HEAD"
