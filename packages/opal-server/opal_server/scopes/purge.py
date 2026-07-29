@@ -24,6 +24,11 @@ from pydantic import BaseModel, ValidationError
 # also matches just before a final "\n", so "<64hex>-0\n" would wrongly pass.
 _SOURCE_ID_RE = re.compile(r"\A[0-9a-f]{64}-\d+\Z")
 
+# How many orphan-sweep candidates share one fresh store read (see
+# LeaderScopePurger._fresh_live_source_ids). Trades Redis round trips against how
+# stale that read can be when a dir is deleted; also the loop's yield cadence.
+_FRESH_READ_EVERY = 200
+
 
 def _confined_clone_path(base_dir, source_id: str):
     """Derive the on-disk clone dir for ``source_id``, or ``None`` if the id is
@@ -334,6 +339,43 @@ class LeaderScopePurger:
                     cmd.copy(update={"confirmed": True}).dict(),
                 )
 
+    async def _fresh_live_source_ids(self, dir_names) -> Optional[set]:
+        """Live source ids from a FRESH store read, or None if this pass must
+        abort.
+
+        Taken once per ``_FRESH_READ_EVERY`` candidates rather than once per
+        candidate: a per-candidate read is a full Redis SCAN plus a parse per
+        record plus two sha256 per live scope, i.e. O(orphans x scopes)
+        sequential round trips in exactly the passes where every dir is a
+        candidate (a ``SCOPES_REPO_CLONES_SHARDS`` reconfig, an opted-in
+        wiped-store boot). Re-reading on a cadence rather than once for the whole
+        pass bounds how stale this set can be at the moment a dir is deleted, so
+        a PUT that re-claims a source mid-pass is seen within one batch.
+        """
+        try:
+            fresh = await self._scopes.all()
+        except Exception as e:
+            logger.warning(f"Orphan sweep aborted, fresh re-check scan failed: {e!r}")
+            return None
+        if not self._may_reclaim(fresh, dir_names):
+            return None
+        try:
+            return {
+                GitPolicyFetcher.source_id(s.policy)
+                for s in fresh
+                if isinstance(s.policy, GitPolicyScopeSource)
+            }
+        except Exception as e:
+            # Same conservative bias the per-candidate re-check had: an
+            # underivable scope means we cannot prove any candidate is
+            # unreferenced, so KEEP everything and retry next pass. The snapshot
+            # loop already logged which scope is broken.
+            logger.warning(
+                f"Orphan sweep aborted, could not derive the fresh live source "
+                f"set (a scope's source_id raised): {e!r}"
+            )
+            return None
+
     @staticmethod
     def _may_reclaim(scopes_snapshot, dir_names) -> bool:
         """False when a store read that returned ZERO scopes must not be acted
@@ -389,13 +431,13 @@ class LeaderScopePurger:
         misconfiguration and aborted unless
         ``SCOPES_ORPHAN_SWEEP_RECLAIM_ON_EMPTY_STORE`` says otherwise.
 
-        Freshness is per BATCH, not per candidate: one scan for the pass
-        instead of one per candidate (which was O(orphans x scopes) Redis
-        round trips in exactly the passes that make every dir a candidate —
-        a shard reconfig or a wiped store). The residual window is a
-        re-claim that lands between the fresh read and this pass reaching
-        that dir; the cost is a spurious reclaim + re-clone on the next
-        sync, not lost policy — the clone dir is rebuilt from the remote.
+        Freshness is per BATCH of ``_FRESH_READ_EVERY`` candidates, not per
+        candidate: a per-candidate scan was O(orphans x scopes) Redis round
+        trips in exactly the passes that make every dir a candidate — a
+        shard reconfig or an opted-in wiped store. The residual window is
+        a re-claim landing between a batch's read and this pass reaching
+        that dir; the cost there is a spurious reclaim plus a re-clone on
+        the scope's next sync, not lost policy.
         """
         sources_dir = GitPolicyFetcher.base_dir(self._base_dir)
         try:
@@ -455,46 +497,15 @@ class LeaderScopePurger:
 
         reclaimed = 0
         fresh_live = None
-        if candidates:
-            # ONE fresh read for the whole candidate batch, replacing the
-            # per-candidate scan: that was a full Redis SCAN + a parse per
-            # record + two sha256 per live scope FOR EVERY candidate, i.e.
-            # O(orphans x scopes) sequential round trips in precisely the passes
-            # where every dir is a candidate (a SCOPES_REPO_CLONES_SHARDS
-            # reconfig, an opted-in wiped-store boot). The re-read still runs
-            # after the snapshot, so a PUT that re-claimed a source earlier in
-            # this pass is observed; see the docstring for the residual window.
-            try:
-                fresh = await self._scopes.all()
-            except Exception as e:
-                logger.warning(
-                    f"Orphan sweep aborted, fresh re-check scan failed: {e!r}"
-                )
-                return
-            if not self._may_reclaim(fresh, dir_names):
-                return
-            try:
-                fresh_live = {
-                    GitPolicyFetcher.source_id(s.policy)
-                    for s in fresh
-                    if isinstance(s.policy, GitPolicyScopeSource)
-                }
-            except Exception as e:
-                # Same conservative bias the per-candidate re-check had: an
-                # underivable scope means we cannot prove a candidate is
-                # unreferenced, so KEEP everything and retry next pass. The
-                # snapshot loop above already logged which scope is broken.
-                logger.warning(
-                    f"Orphan sweep aborted, could not derive the fresh live "
-                    f"source set (a scope's source_id raised): {e!r}"
-                )
-                return
-
         for i, (name, safe_path) in enumerate(candidates):
-            # Yield periodically so a very large clone tree doesn't starve the
-            # event loop even though each check below is O(1).
-            if i and i % 200 == 0:
-                await asyncio.sleep(0)
+            if i % _FRESH_READ_EVERY == 0:
+                # One fresh read per batch of candidates (not per candidate),
+                # which also yields, so a very large clone tree can't starve the
+                # event loop: every other check in this loop is O(1) and an
+                # uncontended lock_source does not yield on its own.
+                fresh_live = await self._fresh_live_source_ids(dir_names)
+                if fresh_live is None:
+                    return
             async with GitPolicyFetcher.lock_source(name):
                 # Taken under the lock so a PUT that re-claimed this source
                 # mid-sweep (its sync takes the same lock, cloning being

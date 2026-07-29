@@ -428,3 +428,43 @@ async def test_sweep_issues_one_fresh_read_for_the_whole_candidate_batch(tmp_pat
     assert repo.all_calls == 2, f"{len(orphans)} candidates cost {repo.all_calls} scans"
     assert all(not d.exists() for d in orphans)
     assert live_clone.exists()
+
+
+@pytest.mark.asyncio
+async def test_sweep_refreshes_the_live_set_on_a_cadence(tmp_path, monkeypatch):
+    """The batched fresh read is re-taken every _FRESH_READ_EVERY candidates,
+    not once for the whole pass.
+
+    That cadence is what bounds how stale the live set can be at the moment a
+    dir is deleted: with a single read per pass, a PUT that re-claims a source
+    after the read is never observed and its just-cloned dir is reclaimed (the
+    git-leak bed caught exactly that when the wiped-store reclaim was left on
+    bed-wide). Mutation: pinning the read to `i == 0` must fail here.
+    """
+    monkeypatch.setattr("opal_server.scopes.purge._FRESH_READ_EVERY", 2)
+    live = _scope("live", "https://git/live.git")
+    live_clone = _clone_dir_for(tmp_path, live)
+    orphans = []
+    for i in range(5):
+        d = _git_sources(tmp_path) / (f"{i}" * 64 + "-0")
+        d.mkdir()
+        orphans.append(d)
+
+    class CountingRepo(FakeScopeRepository):
+        def __init__(self, scopes):
+            super().__init__(scopes)
+            self.all_calls = 0
+
+        async def all(self):
+            self.all_calls += 1
+            return await super().all()
+
+    repo = CountingRepo([live])
+    await LeaderScopePurger(
+        base_dir=tmp_path, scopes=repo, pubsub_endpoint=None
+    ).sweep_orphans()
+
+    # 1 snapshot + ceil(5 candidates / 2 per batch) = 4
+    assert repo.all_calls == 4, f"cadence not honoured ({repo.all_calls} scans)"
+    assert all(not d.exists() for d in orphans)
+    assert live_clone.exists()

@@ -2,6 +2,7 @@
 
 The cold-empty start (S1) is covered by test_boot.py.
 """
+import os
 import time
 
 import pytest
@@ -107,9 +108,22 @@ def test_corrupt_clone_recovers_without_clone_loop(opal):
 @pytest.mark.timeout(900)
 @pytest.mark.invariant_exempt("I1")
 def test_orphan_clone_dir_is_reclaimed(opal):
-    """RED until an orphan sweep exists (PR3+, currently unowned): a clone dir
-    with no live scope must eventually be removed."""
+    """RED until an orphan sweep exists (PR3+): a clone dir with no live scope
+    must eventually be removed, while a live scope's clone is left alone.
+
+    Deliberately runs with a live scope present rather than an empty scope
+    store: a zero-scope read is refused by the sweep unless
+    OPAL_SCOPES_ORPHAN_SWEEP_RECLAIM_ON_EMPTY_STORE is set (see
+    test_redis_wiped_boot_reclaims_clones), and the shape worth gating is the
+    production one — real scopes alongside a stale dir, where reclaiming the
+    stale dir must not touch the live clone.
+    """
     fake_sid = "f" * 64 + "-0"
+    opal.put_scope("orphan-live", gitea_repo_url(list_seeded_repos(1)[0]))
+    assert wait_until(
+        lambda: opal.get_scope_policy("orphan-live").status_code == 200, timeout=300
+    ), "the live scope never served, so the sweep has nothing to protect"
+    live_dirs = clone_dirs()
     compose(
         "exec",
         "-T",
@@ -123,6 +137,10 @@ def test_orphan_clone_dir_is_reclaimed(opal):
         assert wait_until(
             lambda: fake_sid not in clone_dirs(), timeout=60
         ), "orphan clone dir never reclaimed (needs an orphan sweep)"
+        assert live_dirs <= clone_dirs(), (
+            f"the sweep also reclaimed a live scope's clone "
+            f"(missing: {sorted(live_dirs - clone_dirs())})"
+        )
     finally:
         # red gate leaves state on purpose; clean it so later tests' I1 holds
         compose(
@@ -142,18 +160,29 @@ def test_redis_wiped_boot_reclaims_clones(opal):
     """RED until the orphan sweep (same class as the orphan-dir gate): after a
     scope-store wipe, on-disk clones reference nothing and must be reclaimed.
 
-    Needs OPAL_SCOPES_ORPHAN_SWEEP_RECLAIM_ON_EMPTY_STORE (set for the
-    whole bed in docker-compose.yml): reclaiming on a zero-scope read is
-    opt-in, because from inside the sweep this deliberate FLUSHALL is
-    indistinguishable from a REDIS_URL pointed at the wrong DB, a
-    failover to an empty replica, or a stray FLUSHDB — where reclaiming
-    would delete every tenant's clone.
+    Reclaiming on a zero-scope read is opt-in
+    (OPAL_SCOPES_ORPHAN_SWEEP_RECLAIM_ON_EMPTY_STORE, default off): from
+    inside the sweep this deliberate FLUSHALL is indistinguishable from a
+    REDIS_URL pointed at the wrong DB, a failover to an empty replica, or
+    a stray FLUSHDB — where reclaiming would delete every tenant's clone.
+    So this test flips the key on for its own container and restores the
+    default afterwards, rather than the bed running with it on
+    everywhere: every OTHER test here must keep exercising the shipped
+    refusal behaviour.
     """
+    # Apply the opt-in: --force-recreate is what picks up the new env, and it
+    # also empties the container's clone tree, so seed the clone AFTER it.
+    os.environ["OPAL_TEST_RECLAIM_ON_EMPTY_STORE"] = "true"
+    compose("up", "-d", "--no-deps", "--force-recreate", "opal_server")
+    opal.wait_healthy()
+
     opal.put_scope("wipe-0", gitea_repo_url(list_seeded_repos(1)[0]))
     assert wait_until(
         lambda: opal.get_scope_policy("wipe-0").status_code == 200, timeout=300
     ), "wipe-0 never served before the wipe"
     try:
+        # stop/start (not recreate) so the clone tree survives the restart —
+        # the whole point is that clones outlive the store that referenced them.
         compose("stop", "opal_server")
         compose("exec", "-T", "redis", "redis-cli", "FLUSHALL")
         compose("start", "opal_server")
@@ -162,6 +191,9 @@ def test_redis_wiped_boot_reclaims_clones(opal):
             lambda: clone_dirs() == set(), timeout=60
         ), f"clones of the wiped scope store never reclaimed: {sorted(clone_dirs())[:5]}"
     finally:
+        os.environ["OPAL_TEST_RECLAIM_ON_EMPTY_STORE"] = "false"
+        compose("up", "-d", "--no-deps", "--force-recreate", "opal_server")
+        opal.wait_healthy()
         opal.hard_reset()
         # hard_reset never touches git_sources/, and post-FLUSHALL no scope
         # record exists to route a DELETE's rmtree at the leftover clone —
