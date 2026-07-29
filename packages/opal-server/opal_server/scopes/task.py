@@ -18,10 +18,22 @@ from opal_server.scopes.purge import LeaderScopePurger
 from opal_server.scopes.scope_repository import ScopeRepository
 from opal_server.scopes.service import ScopesService
 
+# Upper bound on the shutdown drain of in-flight scope purges. The drain is
+# best-effort: a purge's rmtree runs on a worker thread and completes whether or
+# not we are still awaiting it, and anything abandoned here is reclaimed by the
+# next boot's orphan sweep. Blocking shutdown longer would be strictly worse —
+# stop() runs while the leadership lock is still held, so no other worker can
+# take over, and k8s's terminationGracePeriodSeconds (30s by default) would
+# SIGKILL us anyway.
+_PURGE_DRAIN_TIMEOUT = 5.0
+
 
 class ScopesPolicyWatcherTask(BasePolicyWatcherTask):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        # Set in start(); None means "nothing to unsubscribe" (stop() without a
+        # successful start, or a second stop()).
+        self._purger_sub_id = None
 
         self._scopes = ScopeRepository(RedisDB(opal_server_config.REDIS_URL))
         self._service = ScopesService(
@@ -40,8 +52,20 @@ class ScopesPolicyWatcherTask(BasePolicyWatcherTask):
         # Leader-only disk purge: this task starts only on the leader, so
         # registering here (not at worker boot) preserves the invariant that
         # only the leader mutates the clone tree.
-        await self._pubsub_endpoint.subscribe(
-            [opal_server_config.SCOPES_PURGE_CHANNEL], self._purger.handle
+        #
+        # Registered under a DEDICATED subscriber id rather than through
+        # PubSubEndpoint.subscribe, which files every server-side subscription
+        # under one shared endpoint id: EventNotifier.unsubscribe deletes that
+        # id's WHOLE callback list for the topic, so unsubscribing by topic in
+        # stop() would also drop the every-worker handle_purge_message
+        # subscription (registered once at boot in server.py, never re-added) —
+        # leaving this process deaf to fleet purges for the rest of its life.
+        # Our own id makes the leader subscription independently removable.
+        self._purger_sub_id = self._pubsub_endpoint.notifier.gen_subscriber_id()
+        await self._pubsub_endpoint.notifier.subscribe(
+            self._purger_sub_id,
+            [opal_server_config.SCOPES_PURGE_CHANNEL],
+            self._purger.handle,
         )
         self._tasks.append(asyncio.create_task(self._sync_all_then_sweep()))
 
@@ -56,19 +80,41 @@ class ScopesPolicyWatcherTask(BasePolicyWatcherTask):
             self._tasks.append(asyncio.create_task(self._periodic_orphan_sweep()))
 
     async def stop(self):
-        # Tear down the leader purge path cleanly BEFORE the base teardown:
-        # unsubscribe so no new purge message is processed during shutdown, then
-        # drain any in-flight background purge so a shutdown window can't abandon
-        # an rmtree mid-flight. start()/stop() run exactly once, so there is no
-        # double-subscribe to guard against.
+        # stop() runs TWICE on the normal path — once from
+        # BasePolicyWatcherTask.__aexit__ (server.py's `async with self.watcher`)
+        # and again from stop_server_background_tasks — so every step here is
+        # idempotent: the subscriber id is consumed on first use, signal_stop and
+        # the drain are no-ops once done.
+        #
+        # Stop accepting new purge messages first (cheap, non-blocking).
+        if self._purger_sub_id is not None:
+            sub_id, self._purger_sub_id = self._purger_sub_id, None
+            try:
+                await self._pubsub_endpoint.notifier.unsubscribe(
+                    sub_id, [opal_server_config.SCOPES_PURGE_CHANNEL]
+                )
+            except Exception:
+                logger.exception("Failed to unsubscribe scope purge handler on stop")
+        self._purger.signal_stop()
+
+        # Cancel our tasks BEFORE draining the purges, not after: a queued purge
+        # first waits on GitPolicyFetcher.lock_source, which a sync task holds
+        # across a clone/fetch (up to SCOPES_GIT_FETCH_TIMEOUT, and unbounded
+        # when that is 0). Draining first would wait on a lock whose release
+        # requires the very cancellation the drain is blocking — an unrecoverable
+        # shutdown hang, taken while the leadership lock is still held.
+        result = await super().stop()
+
+        # Best-effort, bounded (see _PURGE_DRAIN_TIMEOUT).
         try:
-            await self._pubsub_endpoint.unsubscribe(
-                [opal_server_config.SCOPES_PURGE_CHANNEL]
+            await asyncio.wait_for(self._purger.stop(), timeout=_PURGE_DRAIN_TIMEOUT)
+        except asyncio.TimeoutError:
+            logger.warning(
+                "Abandoned in-flight scope purges at shutdown after {timeout}s; "
+                "the next boot's orphan sweep reclaims anything left behind",
+                timeout=_PURGE_DRAIN_TIMEOUT,
             )
-        except Exception:
-            logger.exception("Failed to unsubscribe scope purge handler on stop")
-        await self._purger.stop()
-        return await super().stop()
+        return result
 
     async def _sync_all_then_sweep(self):
         # sync_scopes must be wrapped too: this coroutine is launched
@@ -111,12 +157,15 @@ class ScopesPolicyWatcherTask(BasePolicyWatcherTask):
             raise
 
     async def _periodic_orphan_sweep(self):
-        """Always-on backstop independent of POLICY_REFRESH_INTERVAL.
+        """The single periodic sweeper, always-on and independent of
+        POLICY_REFRESH_INTERVAL.
 
-        _periodic_polling also sweeps but only runs when polling is
-        enabled; with it off, boot's _sync_all_then_sweep was the sole
-        sweep, so a delete/repoint whose purge broadcast never reached
-        the leader leaked until refresh-all.
+        _periodic_polling deliberately does NOT sweep (running both
+        would double the disk scans and confirmed-orphan purge
+        broadcasts), so without this timer boot's _sync_all_then_sweep
+        would be the sole sweep and a delete/repoint whose purge
+        broadcast never reached the leader would leak until the next
+        refresh-all.
         """
         try:
             while True:

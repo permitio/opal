@@ -259,7 +259,8 @@ class OpalServerConfig(Confi):
         description="Maximum number of in-flight scope git operations (live plus "
         "lingering timed-out) allowed to hold a daemon thread at once. New git ops "
         "are refused (and retried next cycle) while at this cap, bounding thread "
-        "growth when remotes hang (0 = no cap).",
+        "growth when remotes hang (0 = no cap; a negative value is clamped to 0 "
+        "and also means no cap).",
     )
     LEADER_LOCK_FILE_PATH = confi.str(
         "LEADER_LOCK_FILE_PATH",
@@ -522,6 +523,19 @@ class OpalServerConfig(Confi):
         "sweep, independent of POLICY_REFRESH_INTERVAL, so the backstop that reclaims "
         "clone dirs referencing no live scope runs even with polling disabled "
         "(0 disables the timer; boot and refresh-all still sweep once).",
+    )
+
+    SCOPES_ORPHAN_SWEEP_RECLAIM_ON_EMPTY_STORE = confi.bool(
+        "SCOPES_ORPHAN_SWEEP_RECLAIM_ON_EMPTY_STORE",
+        False,
+        description="Allow the orphan sweep to reclaim clone dirs when the scope "
+        "store returns ZERO scopes. Off by default: from inside the sweep a "
+        "genuinely wiped store is indistinguishable from a misdirected one (a "
+        "REDIS_URL pointed at the wrong DB index, a failover to an empty replica, "
+        "a stray FLUSHDB), and only one of those is safe to act on — reclaiming "
+        "would delete every tenant's local clone at once. When off, such a pass is "
+        "logged at error level and aborted; turn it on only where an empty store "
+        "provably means 'no scopes exist' and reclaiming everything is wanted.",
     )
 
     def on_load(self):

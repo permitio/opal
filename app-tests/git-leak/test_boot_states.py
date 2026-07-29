@@ -140,8 +140,15 @@ def test_orphan_clone_dir_is_reclaimed(opal):
 @pytest.mark.invariant_exempt("I1")
 def test_redis_wiped_boot_reclaims_clones(opal):
     """RED until the orphan sweep (same class as the orphan-dir gate): after a
-    scope-store wipe, on-disk clones reference nothing and must be
-    reclaimed."""
+    scope-store wipe, on-disk clones reference nothing and must be reclaimed.
+
+    Needs OPAL_SCOPES_ORPHAN_SWEEP_RECLAIM_ON_EMPTY_STORE (set for the
+    whole bed in docker-compose.yml): reclaiming on a zero-scope read is
+    opt-in, because from inside the sweep this deliberate FLUSHALL is
+    indistinguishable from a REDIS_URL pointed at the wrong DB, a
+    failover to an empty replica, or a stray FLUSHDB — where reclaiming
+    would delete every tenant's clone.
+    """
     opal.put_scope("wipe-0", gitea_repo_url(list_seeded_repos(1)[0]))
     assert wait_until(
         lambda: opal.get_scope_policy("wipe-0").status_code == 200, timeout=300

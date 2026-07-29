@@ -280,11 +280,7 @@ class ScopesService:
 
             # Phase 2 is local-only in the common case: the repos were just
             # handled in phase 1, so _should_fetch returns False and no network
-            # fetch happens (only a disk open + change-check + notify). It must
-            # NOT inherit phase 1's network cap. Its real limits are already the
-            # per-source lock, the shared disk-open executor, and — for the rare
-            # re-fetch when phase 1 left a branch missing — the inner git-op
-            # semaphore inside run_in_git_executor (still SCOPES_GIT_MAX_WORKERS).
+            # fetch happens (only a disk open + change-check + notify).
             # It shares the loop's default executor (the same pool that serves
             # policy bundles), so bound it by the SAME SCOPES_GIT_MAX_WORKERS
             # knob as phase 1 rather than a hard-coded floor: an operator who

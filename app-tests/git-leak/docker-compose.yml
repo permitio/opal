@@ -134,6 +134,12 @@ services:
       OPAL_BROADCAST_RESYNC_SETTLE_SECONDS: "2"
       OPAL_BASE_DIR: "/opal"
       OPAL_POLICY_REFRESH_INTERVAL: "0"
+      # test_redis_wiped_boot_reclaims_clones deliberately FLUSHALLs the scope
+      # store and expects the now-unreferenced clones to be reclaimed. The
+      # sweep refuses that by default (an empty store is indistinguishable from
+      # a misdirected one — wrong DB index, empty replica, stray FLUSHDB — and
+      # only one of those is safe to act on), so the bed opts in explicitly.
+      OPAL_SCOPES_ORPHAN_SWEEP_RECLAIM_ON_EMPTY_STORE: "true"
       OPAL_DEBUG_INTERNAL_STATS: "1"
       # OPAL_AUTH_PUBLIC_KEY is intentionally left unset: with no public key the
       # JWT verifier is disabled, so the harness can call scope routes without

@@ -287,7 +287,11 @@ async def run_in_git_executor(func, *args, timeout: float, busy_key=None, **kwar
     the same repository while a timed-out one is still running.
     """
     global _zombie_cap_logged
-    max_zombies = opal_server_config.SCOPES_GIT_MAX_ZOMBIES
+    # Clamped like every sibling knob in this subsystem: unclamped, a negative
+    # value is truthy AND `count >= cap` holds with nothing in flight, so the
+    # very first git op would be refused and no scope would ever sync. Negative
+    # reads as "no cap" (0), matching the intent of anyone typing -1 to disable.
+    max_zombies = max(0, opal_server_config.SCOPES_GIT_MAX_ZOMBIES)
     if max_zombies and git_busy_count() >= max_zombies:
         if not _zombie_cap_logged:
             _zombie_cap_logged = True

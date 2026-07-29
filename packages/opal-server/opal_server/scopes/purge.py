@@ -93,8 +93,11 @@ async def handle_purge_message(subscription, data: Any) -> None:
         scope_id=cmd.scope_id,
         reason=cmd.reason,
     )
-    # Under lock_source, exactly as the leader publishes the confirmation under
-    # it. forget_repo -> Repository.free() must not run concurrently with a
+    # Under lock_source — a FRESH lock, not the one the leader holds while it
+    # publishes the confirmation: the leader pops the repo_locks entry before
+    # publishing precisely so this handler's setdefault mints a new one instead
+    # of deadlocking on the held one (see purge_source_if_unshared).
+    # forget_repo -> Repository.free() must not run concurrently with a
     # re-created scope's sync on THIS process: fetch_and_notify_on_changes holds
     # its handle across an await and then set_target()s it, all under
     # lock_source. The git_op_in_flight guard inside purge_local_memory only
@@ -182,6 +185,8 @@ class LeaderScopePurger:
         # Strong refs to in-flight background purges (create_task results are
         # otherwise GC-able); discarded on completion.
         self._pending_purges = set()
+        # Set by signal_stop(): no new purge is queued once shutdown started.
+        self._stopping = False
 
     async def _purge_and_log(self, cmd: ScopePurgeCommand) -> None:
         try:
@@ -202,6 +207,16 @@ class LeaderScopePurger:
             return None
         if cmd.confirmed:
             return None  # our own confirmation broadcast, addressed to workers
+        if self._stopping:
+            # Shutdown started: the watcher has already unsubscribed us and is
+            # about to drain what is in flight. Queuing more work here would
+            # either be abandoned by that bounded drain or start an rmtree
+            # nothing waits on. The next leader's boot sweep reclaims it.
+            logger.info(
+                f"Ignoring purge request for {cmd.source_id} ({cmd.reason}): "
+                "purger is stopping"
+            )
+            return None
         # publish() awaits subscriber callbacks inline — never do lock-waiting
         # disk work on the publisher's request path (DELETE/PUT latency is
         # bounded by contract). The purge proceeds in the background.
@@ -210,16 +225,27 @@ class LeaderScopePurger:
         task.add_done_callback(self._pending_purges.discard)
         return task
 
+    def signal_stop(self) -> None:
+        """Refuse new purge requests from ``handle`` (idempotent)."""
+        self._stopping = True
+
     async def stop(self) -> None:
         """Await in-flight background purges so a shutdown can't abandon an
         rmtree mid-flight (or run a fresh one after the watcher stopped).
 
         These tasks are spawned detached in ``handle`` and are NOT in the
         watcher's ``self._tasks``, so ``BasePolicyWatcherTask.stop`` never waits
-        on them. Each purge is bounded work (one sibling-check + one rmtree + a
-        confirm publish), so awaiting here cannot hang. Called from the watcher
-        task's ``stop`` after it has unsubscribed this handler.
+        on them.
+
+        This CAN block for a long time and the caller must bound it: a purge's
+        first act is to take ``lock_source``, held by a sync across a whole
+        clone/fetch (unbounded when ``SCOPES_GIT_FETCH_TIMEOUT`` is 0), and it
+        then does a ``scopes.all()`` and a confirmation ``publish()`` against a
+        Redis/broadcaster client with no socket timeout. The watcher calls this
+        after cancelling its tasks (so the lock holders are gone) and under an
+        ``asyncio.wait_for``.
         """
+        self.signal_stop()
         if self._pending_purges:
             await asyncio.gather(*list(self._pending_purges), return_exceptions=True)
 
@@ -283,6 +309,16 @@ class LeaderScopePurger:
                     logger.warning(f"Failed to remove clone dir {safe_path}: {e!r}")
                 # Popped while the lock is held: lock_source waiters re-check
                 # the dict entry after acquiring and retry on the fresh lock.
+                #
+                # LOAD-BEARING ORDER: this pop must stay BEFORE the confirmation
+                # publish below, not moved after it as a "clean up last" tidy-up.
+                # publish() runs local subscribers inline on this very task, and
+                # handle_purge_message re-enters lock_source(source_id) — the
+                # same non-reentrant asyncio.Lock still held here. Popping first
+                # makes that handler's setdefault mint a FRESH lock instead of
+                # waiting on ours; popping after would wedge lock_source for this
+                # source permanently, hanging every later sync, purge and sweep
+                # for it (and, via the watcher's stop(), shutdown too).
                 GitPolicyFetcher.repo_locks.pop(cmd.source_id, None)
                 confirm = True
             # Published under the lock, like sweep_orphans: publish() runs
@@ -298,6 +334,40 @@ class LeaderScopePurger:
                     cmd.copy(update={"confirmed": True}).dict(),
                 )
 
+    @staticmethod
+    def _may_reclaim(scopes_snapshot, dir_names) -> bool:
+        """False when a store read that returned ZERO scopes must not be acted
+        on.
+
+        ``ScopeRepository.all()`` is a Redis SCAN loop: against an empty or
+        wrong keyspace it returns no keys and no error, so "the store is
+        empty" and "the store we are reading is not the store that owns
+        these clones" are the same observation from in here — and only one
+        of them makes deleting every clone dir correct. Refuse by default;
+        ``SCOPES_ORPHAN_SWEEP_RECLAIM_ON_EMPTY_STORE`` opts in where an
+        empty store provably means no scopes exist.
+        """
+        if scopes_snapshot or not dir_names:
+            return True
+        if opal_server_config.SCOPES_ORPHAN_SWEEP_RECLAIM_ON_EMPTY_STORE:
+            logger.warning(
+                "Orphan sweep: scope store returned NO scopes while {n} clone "
+                "dirs exist — reclaiming them all "
+                "(SCOPES_ORPHAN_SWEEP_RECLAIM_ON_EMPTY_STORE is enabled)",
+                n=len(dir_names),
+            )
+            return True
+        logger.error(
+            "Orphan sweep aborted: scope store returned NO scopes while {n} "
+            "clone dirs exist — refusing to reclaim (that looks like a "
+            "misconfigured or empty store, e.g. REDIS_URL on the wrong DB, a "
+            "failover to an empty replica, or a stray FLUSHDB, not a wiped "
+            "boot). Set SCOPES_ORPHAN_SWEEP_RECLAIM_ON_EMPTY_STORE=true if an "
+            "empty store really means no scopes exist here.",
+            n=len(dir_names),
+        )
+        return False
+
     async def sweep_orphans(self) -> None:
         """Reclaim clone dirs referencing no live scope. Leader-only.
 
@@ -307,13 +377,25 @@ class LeaderScopePurger:
 
         Hybrid: one snapshot cheaply filters out clearly-live dirs (the
         common case — no per-dir scan at all). Only dirs that look
-        orphaned in that snapshot get a FRESH ``scopes.all()`` re-check
-        under ``lock_source`` before deletion — cloning is also
-        leader-local under this same lock, so a PUT that just re-claimed
-        the source (its sync taking the same lock) is observed and the
-        clone is kept. A store error must never read as "no scopes
-        exist" (would rmtree every live clone) — abort; next pass
-        retries.
+        orphaned in that snapshot are re-checked against ONE fresh
+        ``scopes.all()`` read, taken for the whole candidate batch, before
+        each deletion under ``lock_source``.
+
+        A store error must never read as "no scopes exist" (would rmtree
+        every live clone) — abort; next pass retries. Neither must a
+        SUCCESSFUL empty result: ``ScopeRepository.all()`` is a Redis SCAN
+        loop that returns zero keys, no error, against a wrong/empty
+        keyspace, so an empty store with clone dirs present is treated as a
+        misconfiguration and aborted unless
+        ``SCOPES_ORPHAN_SWEEP_RECLAIM_ON_EMPTY_STORE`` says otherwise.
+
+        Freshness is per BATCH, not per candidate: one scan for the pass
+        instead of one per candidate (which was O(orphans x scopes) Redis
+        round trips in exactly the passes that make every dir a candidate —
+        a shard reconfig or a wiped store). The residual window is a
+        re-claim that lands between the fresh read and this pass reaching
+        that dir; the cost is a spurious reclaim + re-clone on the next
+        sync, not lost policy — the clone dir is rebuilt from the remote.
         """
         sources_dir = GitPolicyFetcher.base_dir(self._base_dir)
         try:
@@ -327,13 +409,17 @@ class LeaderScopePurger:
             logger.warning(f"Orphan sweep aborted, scope scan failed: {e!r}")
             return
 
+        if not self._may_reclaim(snapshot, dir_names):
+            return
+
         # Precompute the live source_ids ONCE (O(scopes)) so the per-dir filter
         # below is an O(1) set lookup, instead of re-walking the whole snapshot
         # and recomputing two sha256 per (dir, scope) pair — that made the filter
         # O(dirs x scopes) and, with no await in the hot path, blocked the
         # leader's event loop. A scope whose source_id() derivation raises is
-        # skipped here, so its dir looks orphaned and falls to the under-lock
-        # re-check, which re-raises and conservatively KEEPS the dir.
+        # skipped here (logged), so its dir becomes a candidate — and the fresh
+        # batch derivation below hits the same raise and aborts the pass, which
+        # is the conservative bias: never delete a dir we cannot prove orphaned.
         live_source_ids = set()
         for s in snapshot:
             if not isinstance(s.policy, GitPolicyScopeSource):
@@ -348,12 +434,8 @@ class LeaderScopePurger:
                     err=repr(e),
                 )
 
-        reclaimed = 0
-        for i, name in enumerate(dir_names):
-            # Yield periodically so a very large clone tree doesn't starve the
-            # event loop even though each check below is O(1).
-            if i and i % 200 == 0:
-                await asyncio.sleep(0)
+        candidates = []
+        for name in dir_names:
             # Validate the dir name is a real source id BEFORE it can reach
             # rmtree — the same SECURITY invariant every other deletion path
             # enforces via _confined_clone_path. A name the clone path never
@@ -369,23 +451,58 @@ class LeaderScopePurger:
             # Cheap filter: clearly live -> keep (O(1) set lookup, no per-dir I/O).
             if name in live_source_ids:
                 continue
+            candidates.append((name, safe_path))
+
+        reclaimed = 0
+        fresh_live = None
+        if candidates:
+            # ONE fresh read for the whole candidate batch, replacing the
+            # per-candidate scan: that was a full Redis SCAN + a parse per
+            # record + two sha256 per live scope FOR EVERY candidate, i.e.
+            # O(orphans x scopes) sequential round trips in precisely the passes
+            # where every dir is a candidate (a SCOPES_REPO_CLONES_SHARDS
+            # reconfig, an opted-in wiped-store boot). The re-read still runs
+            # after the snapshot, so a PUT that re-claimed a source earlier in
+            # this pass is observed; see the docstring for the residual window.
+            try:
+                fresh = await self._scopes.all()
+            except Exception as e:
+                logger.warning(
+                    f"Orphan sweep aborted, fresh re-check scan failed: {e!r}"
+                )
+                return
+            if not self._may_reclaim(fresh, dir_names):
+                return
+            try:
+                fresh_live = {
+                    GitPolicyFetcher.source_id(s.policy)
+                    for s in fresh
+                    if isinstance(s.policy, GitPolicyScopeSource)
+                }
+            except Exception as e:
+                # Same conservative bias the per-candidate re-check had: an
+                # underivable scope means we cannot prove a candidate is
+                # unreferenced, so KEEP everything and retry next pass. The
+                # snapshot loop above already logged which scope is broken.
+                logger.warning(
+                    f"Orphan sweep aborted, could not derive the fresh live "
+                    f"source set (a scope's source_id raised): {e!r}"
+                )
+                return
+
+        for i, (name, safe_path) in enumerate(candidates):
+            # Yield periodically so a very large clone tree doesn't starve the
+            # event loop even though each check below is O(1).
+            if i and i % 200 == 0:
+                await asyncio.sleep(0)
             async with GitPolicyFetcher.lock_source(name):
-                # Candidate orphan: re-verify against a FRESH read taken
-                # under the lock, so a PUT that re-claimed this source
-                # mid-sweep (its sync takes the same lock) is observed
-                # here and the clone is kept. A raising re-check keeps the
-                # dir (conservative — opposite bias to the delete path,
-                # where the record is known-gone) and is logged, not
-                # silently swallowed.
-                try:
-                    fresh = await self._scopes.all()
-                    if _scope_sharing_source(fresh, name) is not None:
-                        continue  # re-claimed since the snapshot
-                except Exception as e:
-                    logger.warning(
-                        f"Orphan re-check for {name} failed, keeping dir: {e!r}"
-                    )
-                    continue
+                # Taken under the lock so a PUT that re-claimed this source
+                # mid-sweep (its sync takes the same lock, cloning being
+                # leader-local) cannot be half-observed: either its record is in
+                # fresh_live, or its clone finished after this check and the
+                # dir we remove is rebuilt by the next sync.
+                if name in fresh_live:
+                    continue  # re-claimed since the snapshot
                 if git_op_in_flight(name):
                     # A lingering (timed-out) git op still touches the repo on a
                     # pool thread, so defer the dir removal + handle free to a
@@ -409,7 +526,10 @@ class LeaderScopePurger:
                 except OSError as e:
                     logger.warning(f"Failed to reclaim orphan {safe_path}: {e!r}")
                     continue
-                GitPolicyFetcher.repo_locks.pop(name, None)  # under the lock
+                # Popped under the held lock AND deliberately BEFORE the
+                # confirmation publish below — see purge_source_if_unshared for
+                # why moving it after the publish deadlocks.
+                GitPolicyFetcher.repo_locks.pop(name, None)
                 reclaimed += 1
                 if self._pubsub_endpoint is not None:
                     await self._pubsub_endpoint.publish(
