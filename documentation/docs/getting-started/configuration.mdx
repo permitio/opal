@@ -515,6 +515,12 @@ Default: `40`
 
 Maximum number of in-flight scope git operations (live plus lingering timed-out) allowed to hold a daemon thread at once. New git ops are refused (and retried next cycle) while at this cap, bounding thread growth when remotes hang (0 = no cap; a negative value is clamped to 0 and also means no cap).
 
+#### OPAL_SCOPES_ORPHAN_SWEEP_MAX_RECLAIM_FRACTION
+
+Default: `0.5`
+
+Safety ceiling on a single orphan-sweep pass: if this fraction or more of the clone dirs on disk look orphaned at once, the pass is refused and logged at error level instead of reclaiming them. A scope store pointed at the wrong keyspace answers successfully with someone else's scopes, so every local clone looks unreferenced — this catches that, where the zero-scope check cannot. Reclaiming a single dir is always allowed (the ordinary case). Raise it (or set 0 / 1 to disable the ceiling) for a deliberate SCOPES_REPO_CLONES_SHARDS reconfig, which legitimately orphans a large share of the tree at once.
+
 #### OPAL_SCOPES_ORPHAN_SWEEP_RECLAIM_ON_EMPTY_STORE
 
 Default: `False`

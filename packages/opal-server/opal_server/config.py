@@ -538,6 +538,20 @@ class OpalServerConfig(Confi):
         "provably means 'no scopes exist' and reclaiming everything is wanted.",
     )
 
+    SCOPES_ORPHAN_SWEEP_MAX_RECLAIM_FRACTION = confi.float(
+        "SCOPES_ORPHAN_SWEEP_MAX_RECLAIM_FRACTION",
+        0.5,
+        description="Safety ceiling on a single orphan-sweep pass: if this "
+        "fraction or more of the clone dirs on disk look orphaned at once, the "
+        "pass is refused and logged at error level instead of reclaiming them. A "
+        "scope store pointed at the wrong keyspace answers successfully with "
+        "someone else's scopes, so every local clone looks unreferenced — this "
+        "catches that, where the zero-scope check cannot. Reclaiming a single dir "
+        "is always allowed (the ordinary case). Raise it (or set 0 / 1 to disable "
+        "the ceiling) for a deliberate SCOPES_REPO_CLONES_SHARDS reconfig, which "
+        "legitimately orphans a large share of the tree at once.",
+    )
+
     def on_load(self):
         if self.SERVER_PORT is not None and self.SERVER_PORT.isdigit():
             # Backward compatibility - if SERVER_PORT is set with a valid value, use it as SERVER_BIND_PORT

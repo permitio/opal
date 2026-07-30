@@ -21,7 +21,10 @@ from opal_server.scopes.service import ScopesService
 # Upper bound on the shutdown drain of in-flight scope purges. The drain is
 # best-effort: a purge's rmtree runs on a worker thread and completes whether or
 # not we are still awaiting it, and anything abandoned here is reclaimed by the
-# next boot's orphan sweep. Blocking shutdown longer would be strictly worse —
+# next boot's orphan sweep — UNLESS the store then reads empty (e.g. the
+# abandoned dir belonged to the last scope), which the sweep refuses to act on
+# by default; see SCOPES_ORPHAN_SWEEP_RECLAIM_ON_EMPTY_STORE. Blocking shutdown
+# longer would be strictly worse —
 # stop() runs while the leadership lock is still held, so no other worker can
 # take over, and k8s's terminationGracePeriodSeconds (30s by default) would
 # SIGKILL us anyway.
@@ -111,7 +114,9 @@ class ScopesPolicyWatcherTask(BasePolicyWatcherTask):
         except asyncio.TimeoutError:
             logger.warning(
                 "Abandoned in-flight scope purges at shutdown after {timeout}s; "
-                "the next boot's orphan sweep reclaims anything left behind",
+                "the next boot's orphan sweep reclaims what is left behind "
+                "unless the scope store then reads empty (see "
+                "SCOPES_ORPHAN_SWEEP_RECLAIM_ON_EMPTY_STORE)",
                 timeout=_PURGE_DRAIN_TIMEOUT,
             )
         return result
