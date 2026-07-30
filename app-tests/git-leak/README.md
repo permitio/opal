@@ -1,13 +1,22 @@
 # OPAL git-leak / resilience test bed
 
-Reproduces (as failing tests) the four issues fixed by PR2–PR5: memory leak,
+Reproduces (as failing tests) the issues fixed by PR2–PR5: memory leak,
 offline-repo hang, slow serial boot, broadcaster no-reconnect.
 
 Every assertion is driven through `GET /internal/git-fetcher-cache-stats`, which
-**this PR (PR1) adds** — it does not exist on `master`. So the suite runs against
-*this branch*: the leak/offline tests fail here *until PR2/PR3 land*, then go
-green. Run against true `master` they would all error at setup on the missing
-endpoint, not "fail for the targeted bug."
+**PR1 adds** — it does not exist on `master`. The suite therefore runs against
+this branch series, not true `master` (there it would error at setup on the
+missing endpoint, not "fail for the targeted bug").
+
+**Status: 20/21 green as of PR3.** PR2 and PR3 were the last planned code
+changes for this bed. Every gate below passes on the PR3 head except assertion
+(d) of `test_server_recovers_after_postgres_bounce`, which is a genuine gap in
+the already-merged broadcaster work (#933), not in PR3 — see its row. The one knob still
+open is PR4's: `test_boot_loads_all_scopes` passes against the loose default
+boot target and is meant to be tightened (`BOOT_TARGET_SECONDS`, plan: 120 @ 50)
+when the parallel-boot work lands. The "fails without X" wording in the matrix is
+kept deliberately — it records *why each gate exists* and what regressing that
+fix would look like, not the current result.
 
 ## Stack
 - `opal_server` (single worker, scopes on, Postgres broadcaster, built from `docker/Dockerfile`)
@@ -44,25 +53,25 @@ Gate-coverage matrix (what each flagship test actually does):
 
 | Test | Role | Behaviour here |
 |---|---|---|
-| `test_churn_releases_caches` | **gate (PR2)** | FAILS without the PR2 leak fix — delete leaves the caches populated; flips green when PR2 lands |
-| `test_scope_repoint_releases_old_repo_cache` | **gate (PR2, update path)** | FAILS without PR2 — re-pointing a scope to a new URL orphans the old URL's cache entries; stays red after PR2 unless its purge also covers scope *updates*, not just deletes |
+| `test_churn_releases_caches` | **gate (PR2)** | PASSES since PR2 — fails without the leak fix, where a delete leaves the caches populated |
+| `test_scope_repoint_releases_old_repo_cache` | **gate (PR3, update path)** | PASSES since PR3's repoint purge (`ScopePurgeCommand(reason="repoint")`) — fails if the purge covers only deletes, leaving the old URL's cache entries orphaned. Note its precondition compares served bundle bytes, so the seeder gives every repo distinct content (`_data_json_for`); identical content made two repos share a commit sha and the precondition unsatisfiable |
 | `test_shared_repo_survives_sibling_scope_delete` | **over-purge guard (PR2)** | PASSES here (nothing purges on master); once PR2 lands it guards against purging a URL-keyed entry that a surviving sibling scope still references |
-| `test_offline_repo_does_not_block_healthy_scopes` | **gate (PR3)** | FAILS without the PR3 fetch timeout — 40 hung clones starve the executor so a healthy scope never serves; flips green when PR3 lands |
+| `test_offline_repo_does_not_block_healthy_scopes` | **gate (PR3)** | PASSES since PR3's fetch timeout — fails without it, where 40 hung clones starve the executor and a healthy scope never serves |
 | `test_boot_loads_all_scopes` | **baseline → gate (PR4)** | PASSES with the loose default target; set `BOOT_TARGET_SECONDS` low (plan: 120 @ 50) on PR4 to gate the parallel-boot fix |
 | `test_repeat_sync_rss_stays_bounded` | **RSS guard** | PASSES; an RSS-budget guard against per-sync allocation leaks (the cache *count* can't grow for any impl, so there is no count assertion — see below) |
-| `test_server_recovers_after_postgres_bounce` | **guard (PER-15065 + gap publishes)** | PASSES on this branch (which has #915); guards the in-place broadcaster reconnect and that a scope PUT *during* the outage is buffered/replayed, not dropped |
+| `test_server_recovers_after_postgres_bounce` | **guard (PER-15065) + RED half (gap publishes)** | Assertions (a)-(c) PASS — the broadcaster reconnects in place (PID-stable), the reader really dropped and reconnected, and a post-bounce PUT becomes servable. **Assertion (d) FAILS ~2 runs in 3**: a scope PUT *during* the outage is buffered but never replayed, so it stays 503. Mechanism: the outbound replay buffer is flushed only by `_recover_after_gap`, which is scheduled from inside the reader task (`__read_notifications__`); with `STATISTICS_ENABLED=False` (the default, and unset here) and no OPAL clients connected, only the **leader** worker has a reader — via the watcher's listening context. A publish buffered on a non-leader worker therefore has nothing to flush it, and with 2 workers the PUT lands there about half the time. Not owned by PR3: `pubsub_resilience.py` is master's (#933) and this branch adds zero lines to it. Same class as the DELETE-purge finding from the PR2 review ("depends on the leader's broadcaster reader, which does not run without `STATISTICS_ENABLED` or a client connected to that worker"). Needs a follow-up on the broadcaster, not on this PR |
 | `test_delete_recreate_storm` | **guard (lock re-mint)** | PASSES — rapid delete/re-create of the same source serializes on the repo lock and ends with clean caches; guards 89e090be |
 | `test_randomized_churn_holds_invariants` | **guard (seeded churn)** | PASSES — seeded random put/refresh/delete churn holds invariants at every settle point (replay a failure with `CHURN_SEED=<seed>`); `repoint` ops remain deliberately excluded (covered separately by the red repoint gates), but the delete-vs-inflight-sync exclusion is lifted now that PR3's fleet purge lands |
 | `test_delete_during_hung_fetch_no_crash` | **guard (use-after-free)** | PASSES — deleting a scope whose clone is hung never crashes a worker; guards the use-after-free class 89e090be fixed |
-| `test_delete_during_hung_fetch_returns_bounded` | **gate (PR3)** | FAILS without the PR3 fetch timeout — the purge waits on the repo lock and a hung clone holds that lock indefinitely, so the DELETE never returns in bounded time |
-| `test_repoint_during_inflight_fetch_drains_old_source` | **gate (PR3, update path)** | Green half passes today — repointing while the old source's clone is hung still serves the new source; red half FAILS without PR3's update-path purge — the old source's cache entries never drain |
-| `test_multiworker_churn_drains_every_worker` | **gate (PR3, broadcast)** | FAILS without PR3's broadcast purge — cache purges are process-local, so a worker whose caches were populated by something other than the DELETE it served (e.g. the leader's watcher syncs) leaks permanently; the HIGH finding from the PR2 review, as a gate |
+| `test_delete_during_hung_fetch_returns_bounded` | **gate (PR3)** | PASSES since PR3's fetch timeout — fails without it, where the purge waits on a repo lock a hung clone holds indefinitely and the DELETE never returns in bounded time |
+| `test_repoint_during_inflight_fetch_drains_old_source` | **gate (PR3, update path)** | PASSES, both halves — repointing while the old source's clone is hung still serves the new source, AND the old source's cache entries drain (the half that needs PR3's update-path purge) |
+| `test_multiworker_churn_drains_every_worker` | **gate (PR3, broadcast)** | PASSES since PR3's fleet-wide purge — fails without it, where purges are process-local and a worker whose caches were populated by something other than the DELETE it served (e.g. the leader's watcher syncs) leaks permanently; this was the HIGH finding from the PR2 review, as a gate |
 | `test_warm_boot_reuses_clones` | **guard (S2)** | PASSES — a restart with intact clones must serve without re-cloning |
 | `test_corrupt_clone_recovers_without_clone_loop` | **guard (S3/T7)** | PASSES — emptying a clone's object store in place while the server holds a warm cached handle is detected as invalid and recovers through the invalid-repo branch with exactly one re-clone, no serve-500s wedge and no re-clone loop; verifies the gutted-object-store detection fix |
-| `test_orphan_clone_dir_is_reclaimed` | **gate (orphan sweep, unowned)** | FAILS — a clone dir with no live scope is never reclaimed; no orphan sweep exists yet (PR3+, currently unowned) |
-| `test_redis_wiped_boot_reclaims_clones` | **gate (orphan sweep, PR3)** | FAILS without PR3's orphan sweep — after a scope-store wipe, on-disk clones referencing nothing are never reclaimed; same missing-sweep class as the orphan-dir gate. Reclaiming on a zero-scope read is opt-in (`OPAL_SCOPES_ORPHAN_SWEEP_RECLAIM_ON_EMPTY_STORE`, default off because the sweep cannot tell this deliberate wipe from a misdirected store); this test flips it on for its own container and restores the default, so every other test here keeps exercising the refusal |
-| `test_boot_with_unreachable_remotes_still_serves_healthy` | **gate (PR3) — watch this flip** | FAILS without the PR3 fetch timeout — unreachable remotes present at boot hang the preload/first-sync clones and starve the executor, so a healthy scope can't serve; boot-time cousin of the offline gate |
-| `test_shard_reconfig_still_serves_but_orphans_old_clones` | **half-gate (S5, orphan sweep)** | Green half PASSES — serving survives a `SCOPES_REPO_CLONES_SHARDS` reconfig (re-clone under new ids); red half FAILS — the old-shard dirs are orphaned until the orphan sweep lands |
+| `test_orphan_clone_dir_is_reclaimed` | **gate (orphan sweep, PR3)** | PASSES since PR3's orphan sweep — fails without it, where a clone dir with no live scope is never reclaimed. Runs with a live scope present (the production shape) and also asserts the sweep leaves that live clone alone |
+| `test_redis_wiped_boot_reclaims_clones` | **gate (orphan sweep, PR3)** | PASSES since PR3's orphan sweep. Reclaiming on a zero-scope read is opt-in (`OPAL_SCOPES_ORPHAN_SWEEP_RECLAIM_ON_EMPTY_STORE`, default off, because the sweep cannot tell this deliberate wipe from a store pointed at the wrong keyspace); the `reclaim_on_empty_store` fixture flips it on for this test's container only and restores the default, so every other test here exercises the shipped refusal |
+| `test_boot_with_unreachable_remotes_still_serves_healthy` | **gate (PR3)** | PASSES since PR3's fetch timeout — fails without it, where unreachable remotes present at boot hang the preload/first-sync clones and starve the executor so a healthy scope can't serve |
+| `test_shard_reconfig_still_serves_but_orphans_old_clones` | **gate (S5, orphan sweep, PR3)** | PASSES, both halves — serving survives a `SCOPES_REPO_CLONES_SHARDS` reconfig (re-clone under new ids) and the old-shard dirs are reclaimed by the sweep |
 | `test_force_push_rewrite_recovers` | **characterization** | PASSES — a force-pushed (rewritten) head is picked up on refresh, pinning today's behavior (pygit2's forced default fetch refspec plus `set_target` moving the local ref) |
 | `test_deleted_branch_keeps_serving_last_head` | **characterization** | PASSES — deleting the tracked branch upstream doesn't crash anything; fetch doesn't prune, so OPAL silently keeps serving the last known head (documented, not necessarily desirable, behavior) |
 

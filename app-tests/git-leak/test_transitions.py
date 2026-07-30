@@ -123,8 +123,11 @@ def test_delete_during_hung_fetch_no_crash(opal):
 @pytest.mark.allow_worker_restart
 @pytest.mark.invariant_exempt("I1", "I3", "I4")
 def test_delete_during_hung_fetch_returns_bounded(opal):
-    """RED until PR3 (fetch timeout): the purge waits on the repo lock, and a
-    hung clone holds that lock indefinitely, so the DELETE hangs with it."""
+    """Gate for PR3's fetch timeout; green since it landed.
+
+    Without it the purge waits on the repo lock, and a hung clone holds
+    that lock indefinitely, so the DELETE hangs with it.
+    """
     import requests as _requests
 
     opal.put_scope("hung-b", make_repo_unreachable("hung-b-repo"))
@@ -143,7 +146,7 @@ def test_delete_during_hung_fetch_returns_bounded(opal):
 @pytest.mark.allow_worker_restart
 @pytest.mark.invariant_exempt("I1", "I3", "I4")
 def test_repoint_during_inflight_fetch_drains_old_source(opal, repo_count):
-    """RED until PR3 (update-path purge).
+    """Gate for PR3's update-path purge; green since it landed.
 
     Repointing a scope while its old source's clone is hung must still
     serve the new source (green half) and eventually drop the old
@@ -178,9 +181,9 @@ def test_repoint_during_inflight_fetch_drains_old_source(opal, repo_count):
 
 @pytest.mark.timeout(1200)
 def test_multiworker_churn_drains_every_worker(opal_multiworker, repo_count):
-    """RED until PR3 (broadcast purge): cache purges are process-local, so any
-    worker whose caches were populated by something other than the DELETE it
-    serves leaks permanently.
+    """Gate for PR3's fleet-wide broadcast purge; green since it landed.
+    Without it cache purges are process-local, so any worker whose caches were
+    populated by something other than the DELETE it serves leaks permanently.
 
     Who populates what: the LEADER accumulates handles/locks via its watcher's
     syncs (scopes/task.py); ANY worker additionally caches a pygit2 handle when

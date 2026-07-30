@@ -92,13 +92,29 @@ def _ensure_repo(base_url: str, token: str, user: str, name: str) -> None:
     created.raise_for_status()
 
 
+def _data_json_for(name: str) -> str:
+    """Per-repo DISTINCT policy data.
+
+    Every repo used to get byte-identical content, and the commit is made with a
+    fixed author/message, so a repo's sha depended only on the wall-clock second
+    it was pushed in — 20 repos pushed in a loop routinely share one. Two repos
+    with the same sha serve byte-identical bundles, which silently breaks any
+    test that distinguishes repos by served content: the precondition of
+    ``test_scope_repoint_releases_old_repo_cache`` ("the scope switched to
+    serving repo_b") can then never become true, and the gate burns its 300s poll
+    and fails without ever reaching the cache-drain assertion it exists for.
+    Embedding the repo name makes the tree — and therefore the sha — unique.
+    """
+    return DATA_JSON.replace("}}", '}, "repo": "%s"}' % name)
+
+
 def _push_policy(
     base_url: str, token: str, user: str, name: str, workdir: Path
 ) -> None:
     repo_dir = workdir / name
     repo_dir.mkdir(parents=True, exist_ok=True)
     (repo_dir / "example.rego").write_text(POLICY_REGO)
-    (repo_dir / "data.json").write_text(DATA_JSON)
+    (repo_dir / "data.json").write_text(_data_json_for(name))
 
     repo = Repo.init(repo_dir, initial_branch="main")
     repo.index.add(["example.rego", "data.json"])

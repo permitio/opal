@@ -108,8 +108,8 @@ def test_corrupt_clone_recovers_without_clone_loop(opal):
 @pytest.mark.timeout(900)
 @pytest.mark.invariant_exempt("I1")
 def test_orphan_clone_dir_is_reclaimed(opal):
-    """RED until an orphan sweep exists (PR3+): a clone dir with no live scope
-    must eventually be removed, while a live scope's clone is left alone.
+    """Gate for PR3's orphan sweep: a clone dir with no live scope must
+    eventually be removed, while a live scope's clone is left alone.
 
     Deliberately runs with a live scope present rather than an empty scope
     store: a zero-scope read is refused by the sweep unless
@@ -183,7 +183,7 @@ def reclaim_on_empty_store(opal):
 @pytest.mark.allow_worker_restart
 @pytest.mark.invariant_exempt("I1")
 def test_redis_wiped_boot_reclaims_clones(opal, reclaim_on_empty_store):
-    """RED until the orphan sweep (same class as the orphan-dir gate): after a
+    """Gate for PR3's orphan sweep (same class as the orphan-dir gate): after a
     scope-store wipe, on-disk clones reference nothing and must be reclaimed.
 
     Reclaiming on a zero-scope read is opt-in
@@ -230,11 +230,11 @@ def test_redis_wiped_boot_reclaims_clones(opal, reclaim_on_empty_store):
 @pytest.mark.allow_worker_restart
 @pytest.mark.invariant_exempt("I1", "I3", "I4")
 def test_boot_with_unreachable_remotes_still_serves_healthy(opal):
-    """RED until PR3 (fetch timeout) — WATCH THIS FLIP when PR3 merges.
+    """Gate for PR3's fetch timeout; green since it landed.
 
-    Boot-time cousin of the offline gate: unreachable remotes present at boot
-    hang the preload/first-sync clones and starve the executor, so a healthy
-    scope can't serve.
+    Boot-time cousin of the offline gate: without the timeout, unreachable
+    remotes present at boot hang the preload/first-sync clones and starve the
+    executor, so a healthy scope can't serve.
     """
     for i in range(10):
         opal.put_scope(f"down-{i}", make_repo_unreachable(f"down-{i}-repo"))
