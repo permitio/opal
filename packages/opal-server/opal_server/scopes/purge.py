@@ -419,9 +419,9 @@ class LeaderScopePurger:
 
         Hybrid: one snapshot cheaply filters out clearly-live dirs (the
         common case — no per-dir scan at all). Only dirs that look
-        orphaned in that snapshot are re-checked against ONE fresh
-        ``scopes.all()`` read, taken for the whole candidate batch, before
-        each deletion under ``lock_source``.
+        orphaned in that snapshot become candidates, and each deletion
+        happens under ``lock_source`` against a fresh ``scopes.all()`` read
+        shared by its batch of candidates (see below).
 
         A store error must never read as "no scopes exist" (would rmtree
         every live clone) — abort; next pass retries. Neither must a
