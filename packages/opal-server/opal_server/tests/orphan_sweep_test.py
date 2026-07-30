@@ -3,8 +3,10 @@ reclaimed (bed gates: test_orphan_clone_dir_is_reclaimed,
 test_redis_wiped_boot_reclaims_clones, red half of
 test_shard_reconfig_still_serves_but_orphans_old_clones)."""
 import asyncio
+import shutil
 
 import pytest
+from fastapi_websocket_pubsub.pub_sub_server import PubSubEndpoint
 from opal_common.schemas.policy_source import GitPolicyScopeSource, NoAuthData
 from opal_common.schemas.scopes import Scope
 from opal_server.config import opal_server_config
@@ -13,7 +15,7 @@ from opal_server.git_fetcher import (
     _mark_git_op_done,
     _mark_git_op_started,
 )
-from opal_server.scopes.purge import LeaderScopePurger
+from opal_server.scopes.purge import LeaderScopePurger, subscribe_worker_purge_handler
 from opal_server.scopes.scope_repository import ScopeNotFoundError
 
 # Valid source_id shape: 64 hex + "-<shard>" (matches purge._SOURCE_ID_RE). The
@@ -45,6 +47,18 @@ class FakePubSubEndpoint:
 
     async def publish(self, topics, data=None):
         self.published.append((list(topics), data))
+
+
+class CountingRepo(FakeScopeRepository):
+    """FakeScopeRepository that counts store reads."""
+
+    def __init__(self, scopes):
+        super().__init__(scopes)
+        self.all_calls = 0
+
+    async def all(self):
+        self.all_calls += 1
+        return await super().all()
 
 
 def _scope(scope_id, url, branch="main"):
@@ -237,16 +251,6 @@ async def test_non_directory_junk_is_ignored(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_missing_base_dir_is_a_noop(tmp_path):
-    purger = LeaderScopePurger(
-        base_dir=tmp_path / "never-created",
-        scopes=FakeScopeRepository([]),
-        pubsub_endpoint=None,
-    )
-    await purger.sweep_orphans()  # must not raise
-
-
-@pytest.mark.asyncio
 async def test_sweep_skips_live_dirs_without_a_recheck_scan(tmp_path):
     """The bulk case: dirs that map to a live scope in the snapshot are
     skipped with NO per-dir re-fetch — one scopes.all() total for an
@@ -348,9 +352,7 @@ async def test_sweep_logs_and_keeps_dir_when_recheck_raises(tmp_path):
 
     assert orphan.exists(), "a raising re-check must keep the dir"
     assert live_clone.exists()
-    assert any(
-        "fresh re-check scan failed" in r for r in records
-    ), f"not logged: {records}"
+    assert any("keeping dir" in r for r in records), f"not logged: {records}"
 
 
 @pytest.mark.asyncio
@@ -391,80 +393,406 @@ async def test_sweep_leaves_non_source_id_dirs_untouched(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_sweep_issues_one_fresh_read_for_the_whole_candidate_batch(tmp_path):
-    """The orphan-heavy pass must not scan the store once per candidate.
+async def test_all_live_pass_costs_one_scan(tmp_path):
+    """The bulk case must stay cheap: dirs mapping to a live scope in the
+    snapshot are skipped with NO per-dir store read, so an all-live tree costs
+    exactly one scan however many dirs it has.
 
-    A per-candidate scopes.all() is a full Redis SCAN plus a parse per
-    record plus two sha256 per live scope, for every candidate —
-    O(orphans x scopes) sequential round trips in exactly the passes
-    that make every dir a candidate (a SCOPES_REPO_CLONES_SHARDS
-    reconfig, an opted-in wiped-store boot), and the sweep now runs on
-    an always-on timer.
+    This is the half of the round-3 perf fix that survives the round-4 HIGH: the
+    authoritative read now happens only for dirs that actually look orphaned.
     """
-    live = _scope("live", "https://git/live.git")
-    live_clone = _clone_dir_for(tmp_path, live)
-    orphans = []
-    for i in range(6):
-        d = _git_sources(tmp_path) / (f"{i}" * 64 + "-0")
-        d.mkdir()
-        orphans.append(d)
+    live = [_scope(f"s{i}", f"https://git/r{i}.git") for i in range(6)]
+    clones = [_clone_dir_for(tmp_path, s) for s in live]
 
-    class CountingRepo(FakeScopeRepository):
-        def __init__(self, scopes):
-            super().__init__(scopes)
-            self.all_calls = 0
-
-        async def all(self):
-            self.all_calls += 1
-            return await super().all()
-
-    repo = CountingRepo([live])
+    repo = CountingRepo(live)
     await LeaderScopePurger(
         base_dir=tmp_path, scopes=repo, pubsub_endpoint=None
     ).sweep_orphans()
 
-    # One snapshot + one fresh re-read for the batch, regardless of how many
-    # candidates the pass has.
-    assert repo.all_calls == 2, f"{len(orphans)} candidates cost {repo.all_calls} scans"
+    assert repo.all_calls == 1, f"an all-live pass cost {repo.all_calls} scans"
+    assert all(c.exists() for c in clones)
+
+
+@pytest.mark.asyncio
+async def test_each_candidate_gets_its_own_fresh_read(tmp_path):
+    """Every candidate is re-checked against its own read, taken under its own
+    lock: one snapshot plus one read per candidate."""
+    # Enough live dirs that 3 candidates stay under the plausibility ceiling
+    # (which is exercised on its own in the ceiling tests below).
+    live = [_scope(f"live{i}", f"https://git/live{i}.git") for i in range(4)]
+    live_clones = [_clone_dir_for(tmp_path, s) for s in live]
+    orphans = []
+    for i in range(3):
+        d = _git_sources(tmp_path) / (f"{i}" * 64 + "-0")
+        d.mkdir()
+        orphans.append(d)
+
+    repo = CountingRepo(live)
+    await LeaderScopePurger(
+        base_dir=tmp_path, scopes=repo, pubsub_endpoint=None
+    ).sweep_orphans()
+
+    assert repo.all_calls == 1 + len(orphans), (
+        f"expected 1 snapshot + {len(orphans)} per-candidate reads, got "
+        f"{repo.all_calls}"
+    )
     assert all(not d.exists() for d in orphans)
+    assert all(c.exists() for c in live_clones)
+
+
+@pytest.mark.asyncio
+async def test_candidate_that_goes_live_mid_pass_is_kept(tmp_path, monkeypatch):
+    """A source that becomes live WHILE the pass deletes earlier candidates
+    must not be reclaimed.
+
+    The round-4 HIGH: the authoritative read has to happen inside each
+    candidate's own lock_source. Any read hoisted out of the loop — batched, or
+    re-taken every N candidates — is stale by the time later candidates are
+    reached, so a PUT landing in that window is invisible and a LIVE tenant's
+    clone dir is deleted, plus a confirmed orphan purge broadcast fleet-wide.
+    That does not self-heal at the shipped defaults: POLICY_REFRESH_INTERVAL=0
+    means nothing re-clones, so the scope serves 503 until a webhook or a manual
+    refresh-all arrives.
+
+    Mutation: hoist the read above the loop and reuse it -> victim deleted.
+    """
+    victim_sid = "a" * 64 + "-0"
+    trigger_sid = "b" * 64 + "-0"
+    victim = _git_sources(tmp_path) / victim_sid
+    victim.mkdir()
+    trigger = _git_sources(tmp_path) / trigger_sid
+    trigger.mkdir()
+    # Live fillers: keep the store non-empty (an empty store is refused outright)
+    # and keep the candidate share under the plausibility ceiling.
+    fillers = [_scope(f"filler{i}", f"https://git/filler{i}.git") for i in range(6)]
+    for f in fillers:
+        _clone_dir_for(tmp_path, f)
+    reclaimer = _scope("late", "https://git/late.git")
+    monkeypatch.setattr(
+        GitPolicyFetcher,
+        "source_id",
+        staticmethod(
+            lambda pol: victim_sid
+            if pol.url == "https://git/late.git"
+            else "f" * 64 + f"-{abs(hash(pol.url)) % 90 + 9}"
+        ),
+    )
+
+    events = []
+    repo = FakeScopeRepository(fillers)
+    real_rmtree = shutil.rmtree
+
+    def _rmtree_spy(path, *a, **kw):
+        # The PUT lands while an EARLIER candidate is being deleted — precisely
+        # the window a hoisted read cannot observe.
+        if str(path).endswith(trigger_sid):
+            repo._scopes["late"] = reclaimer
+            events.append("PUT: victim became live")
+        events.append(
+            "rmtree " + ("trigger" if str(path).endswith(trigger_sid) else "victim")
+        )
+        return real_rmtree(path, *a, **kw)
+
+    monkeypatch.setattr(shutil, "rmtree", _rmtree_spy)
+    pubsub = FakePubSubEndpoint()
+
+    await LeaderScopePurger(
+        base_dir=tmp_path, scopes=repo, pubsub_endpoint=pubsub
+    ).sweep_orphans()
+
+    purged = [payload["source_id"] for _, payload in pubsub.published]
+    assert victim.exists(), (
+        f"reclaimed a clone whose source went live mid-pass — a stale live-set "
+        f"was used for the delete decision (events: {events})"
+    )
+    assert (
+        victim_sid not in purged
+    ), "broadcast a confirmed orphan purge for a live source"
+
+
+@pytest.mark.asyncio
+async def test_wrong_but_populated_keyspace_is_refused_by_the_ceiling(tmp_path):
+    """The zero-scope guard cannot see a store pointed at the WRONG keyspace: it
+    answers successfully with someone else's scopes, none of whose source_ids
+    match the local dirs, so every clone looks orphaned.
+
+    The ceiling catches it without having to tell a wrong store from a right one
+    — it only notices that one pass is about to delete an implausible share.
+    Mutation: drop the ceiling call -> all five production clones deleted.
+    """
+    from opal_common.logger import logger as opal_logger
+
+    ours = [_scope(f"prod{i}", f"https://git/prod{i}.git") for i in range(5)]
+    clones = [_clone_dir_for(tmp_path, s) for s in ours]
+    # The store answers with two unrelated scopes from another environment.
+    theirs = [
+        _scope("other-a", "https://git/other-a.git"),
+        _scope("other-b", "https://git/other-b.git"),
+    ]
+    pubsub = FakePubSubEndpoint()
+
+    records = []
+    sink = opal_logger.add(lambda m: records.append(str(m)), level="ERROR")
+    try:
+        await LeaderScopePurger(
+            base_dir=tmp_path,
+            scopes=FakeScopeRepository(theirs),
+            pubsub_endpoint=pubsub,
+        ).sweep_orphans()
+    finally:
+        opal_logger.remove(sink)
+
+    assert all(c.exists() for c in clones), "a wrong keyspace wiped the clone tree"
+    assert pubsub.published == []
+    assert any("look orphaned in a single pass" in r for r in records), records
+
+
+@pytest.mark.asyncio
+async def test_single_candidate_is_always_allowed(tmp_path):
+    """The ordinary case — one stale dir beside one live scope — must never be
+    blocked by the ceiling, or a small tree would never be swept at all."""
+    live = _scope("live", "https://git/live.git")
+    live_clone = _clone_dir_for(tmp_path, live)
+    orphan = _git_sources(tmp_path) / _SID
+    orphan.mkdir()
+
+    await LeaderScopePurger(
+        base_dir=tmp_path, scopes=FakeScopeRepository([live]), pubsub_endpoint=None
+    ).sweep_orphans()
+
+    assert not orphan.exists(), "the ordinary single-orphan reclaim was blocked"
     assert live_clone.exists()
 
 
 @pytest.mark.asyncio
-async def test_sweep_refreshes_the_live_set_on_a_cadence(tmp_path, monkeypatch):
-    """The batched fresh read is re-taken every _FRESH_READ_EVERY candidates,
-    not once for the whole pass.
-
-    That cadence is what bounds how stale the live set can be at the moment a
-    dir is deleted: with a single read per pass, a PUT that re-claims a source
-    after the read is never observed and its just-cloned dir is reclaimed (the
-    git-leak bed caught exactly that when the wiped-store reclaim was left on
-    bed-wide). Mutation: pinning the read to `i == 0` must fail here.
-    """
-    monkeypatch.setattr("opal_server.scopes.purge._FRESH_READ_EVERY", 2)
+async def test_ceiling_can_be_disabled_for_a_deliberate_reshard(tmp_path, monkeypatch):
+    """A SCOPES_REPO_CLONES_SHARDS reconfig legitimately orphans most of the
+    tree; the operator has a dial for it."""
+    monkeypatch.setattr(
+        opal_server_config, "SCOPES_ORPHAN_SWEEP_MAX_RECLAIM_FRACTION", 0.0
+    )
     live = _scope("live", "https://git/live.git")
-    live_clone = _clone_dir_for(tmp_path, live)
+    _clone_dir_for(tmp_path, live)
     orphans = []
-    for i in range(5):
+    for i in range(4):
         d = _git_sources(tmp_path) / (f"{i}" * 64 + "-0")
         d.mkdir()
         orphans.append(d)
 
-    class CountingRepo(FakeScopeRepository):
-        def __init__(self, scopes):
-            super().__init__(scopes)
-            self.all_calls = 0
-
-        async def all(self):
-            self.all_calls += 1
-            return await super().all()
-
-    repo = CountingRepo([live])
     await LeaderScopePurger(
-        base_dir=tmp_path, scopes=repo, pubsub_endpoint=None
+        base_dir=tmp_path, scopes=FakeScopeRepository([live]), pubsub_endpoint=None
     ).sweep_orphans()
 
-    # 1 snapshot + ceil(5 candidates / 2 per batch) = 4
-    assert repo.all_calls == 4, f"cadence not honoured ({repo.all_calls} scans)"
-    assert all(not d.exists() for d in orphans)
+    assert all(not d.exists() for d in orphans), "ceiling still applied when disabled"
+
+
+@pytest.mark.asyncio
+async def test_opted_in_empty_store_reclaim_is_not_vetoed_by_the_ceiling(
+    tmp_path, monkeypatch
+):
+    """The empty-store opt-in is itself a declaration of intent for a mass
+    reclaim, so the ceiling must not turn it into a no-op on any tree bigger
+    than one dir."""
+    monkeypatch.setattr(
+        opal_server_config, "SCOPES_ORPHAN_SWEEP_RECLAIM_ON_EMPTY_STORE", True
+    )
+    dirs = [
+        _clone_dir_for(tmp_path, _scope(f"s{i}", f"https://git/r{i}.git"))
+        for i in range(4)
+    ]
+
+    await LeaderScopePurger(
+        base_dir=tmp_path, scopes=FakeScopeRepository([]), pubsub_endpoint=None
+    ).sweep_orphans()
+
+    assert all(not d.exists() for d in dirs)
+
+
+@pytest.mark.asyncio
+async def test_heartbeat_reports_outcome_and_partial_count_on_abort(
+    tmp_path, monkeypatch
+):
+    """Every exit path logs the heartbeat with an explicit outcome, including
+    aborts — an aborted pass must not be indistinguishable from a healthy
+    "swept, found nothing" one, and must not discard what it already
+    reclaimed."""
+    from opal_common.logger import logger as opal_logger
+
+    live = [_scope(f"live{i}", f"https://git/live{i}.git") for i in range(4)]
+    for s in live:
+        _clone_dir_for(tmp_path, s)
+    first = _git_sources(tmp_path) / ("1" * 64 + "-0")
+    first.mkdir()
+    second = _git_sources(tmp_path) / ("2" * 64 + "-0")
+    second.mkdir()
+
+    class EmptiesAfterOneDelete(FakeScopeRepository):
+        def __init__(self, scopes):
+            super().__init__(scopes)
+            self.reads = 0
+
+        async def all(self):
+            self.reads += 1
+            # snapshot + first candidate's check are normal; then the store goes
+            # empty mid-pass (a FLUSHDB / failover / wrong reload).
+            if self.reads > 2:
+                return []
+            return list(self._scopes.values())
+
+    records = []
+    sink = opal_logger.add(lambda m: records.append(str(m)), level="INFO")
+    try:
+        await LeaderScopePurger(
+            base_dir=tmp_path,
+            scopes=EmptiesAfterOneDelete(live),
+            pubsub_endpoint=None,
+        ).sweep_orphans()
+    finally:
+        opal_logger.remove(sink)
+
+    beat = [r for r in records if "Orphan sweep" in r and "scanned" in r]
+    assert len(beat) == 1, f"expected exactly one heartbeat, got: {beat}"
+    assert "aborted" in beat[0], f"abort not reported in the heartbeat: {beat[0]}"
+    assert (
+        "reclaimed 1" in beat[0]
+    ), f"heartbeat discarded the dir already reclaimed before the abort: {beat[0]}"
+
+
+@pytest.mark.asyncio
+async def test_failed_rmtree_leaves_no_stray_repo_lock(tmp_path, monkeypatch):
+    """A dir that can never be reclaimed (EPERM, read-only mount, a symlink)
+    must not leak the repo_locks entry lock_source minted for it — one stray
+    per distinct failing source id, forever, in a PR whose purpose is not
+    leaking these dicts (invariant I4).
+
+    Mutation: `continue` past the pop -> stray lock.
+    """
+    live = _scope("live", "https://git/live.git")
+    _clone_dir_for(tmp_path, live)
+    orphan = _git_sources(tmp_path) / _SID
+    orphan.mkdir()
+
+    def _boom(path, *a, **kw):
+        raise PermissionError(13, "Permission denied", str(path))
+
+    monkeypatch.setattr(shutil, "rmtree", _boom)
+
+    await LeaderScopePurger(
+        base_dir=tmp_path, scopes=FakeScopeRepository([live]), pubsub_endpoint=None
+    ).sweep_orphans()
+
+    assert orphan.exists()  # unreclaimable, as expected
+    assert (
+        _SID not in GitPolicyFetcher.repo_locks
+    ), "a failed reclaim left a stray repo_locks entry"
+
+
+@pytest.mark.asyncio
+async def test_sweep_inline_confirmation_does_not_deadlock(tmp_path, monkeypatch):
+    """The sweep's confirmation publish re-enters lock_source, exactly like the
+    leader delete path's.
+
+    ``publish()`` runs local subscribers inline on this task, and
+    ``handle_purge_message`` takes ``lock_source(source_id)`` — the same
+    non-reentrant lock the sweep is holding. The only reason it is not a deadlock
+    is that ``repo_locks.pop`` runs BEFORE the publish, so the handler mints a
+    fresh lock. Every other sweep test uses ``FakePubSubEndpoint``, which appends
+    to a list and never delivers inline, so none of them can observe this.
+
+    Mutation: move the pop below the publish ("clean up last") -> this hangs,
+    hence the wait_for, and fails fast instead of wedging CI.
+    """
+    monkeypatch.setattr(
+        "opal_server.scopes.purge.opal_server_config.BASE_DIR", str(tmp_path)
+    )
+    live = _scope("live", "https://git/live.git")
+    _clone_dir_for(tmp_path, live)
+    orphan = _git_sources(tmp_path) / _SID
+    orphan.mkdir()
+    GitPolicyFetcher.repos[str(orphan)] = object()
+
+    endpoint = PubSubEndpoint()  # real EventNotifier, inline local delivery
+    await subscribe_worker_purge_handler(endpoint)  # the every-worker handler
+    received = []
+
+    async def _recorder(subscription, data):
+        received.append(data)
+
+    await endpoint.subscribe([opal_server_config.SCOPES_PURGE_CHANNEL], _recorder)
+
+    await asyncio.wait_for(
+        LeaderScopePurger(
+            base_dir=tmp_path,
+            scopes=FakeScopeRepository([live]),
+            pubsub_endpoint=endpoint,
+        ).sweep_orphans(),
+        timeout=3,
+    )
+
+    assert not orphan.exists()
+    # Proves the confirmation really was delivered inline, so the no-deadlock
+    # assertion above is meaningful rather than vacuous.
+    assert [d["reason"] for d in received] == ["orphan"]
+    assert _SID not in GitPolicyFetcher.repo_locks
+
+
+@pytest.mark.asyncio
+async def test_sweep_waits_for_the_source_lock_before_deleting(tmp_path):
+    """The per-candidate ``lock_source`` is the sweep's only serialisation
+    against a concurrent clone/fetch for that source — every
+    ``run_in_git_executor`` call site sits inside
+    ``fetch_and_notify_on_changes`` or ``_clone``, both under the same lock —
+    and both the sweep's docstring and its under-lock re-check lean on it being
+    held.
+
+    Mutation: neutralise the ``async with lock_source(name)`` -> the dir is
+    deleted while a holder owns the lock and this fails.
+    """
+    live = _scope("live", "https://git/live.git")
+    live_clone = _clone_dir_for(tmp_path, live)
+    orphan = _git_sources(tmp_path) / _SID
+    orphan.mkdir()
+
+    holder = GitPolicyFetcher.repo_locks.setdefault(_SID, asyncio.Lock())
+    await holder.acquire()  # stands in for a sync holding the source
+    task = asyncio.create_task(
+        LeaderScopePurger(
+            base_dir=tmp_path,
+            scopes=FakeScopeRepository([live]),
+            pubsub_endpoint=None,
+        ).sweep_orphans()
+    )
+    try:
+        for _ in range(10):
+            await asyncio.sleep(0)
+        assert orphan.exists(), "swept a dir while another holder owned lock_source"
+        assert not task.done()
+    finally:
+        holder.release()
+
+    await asyncio.wait_for(task, timeout=2)
+    assert not orphan.exists()  # reclaimed once the lock was free
     assert live_clone.exists()
+
+
+@pytest.mark.asyncio
+async def test_missing_base_dir_still_heartbeats(tmp_path):
+    """A monitor must never see the same thing for "the sweeper ran and had
+    nothing to do" and "the sweeper died" — including on the no-clone-dir
+    path."""
+    from opal_common.logger import logger as opal_logger
+
+    records = []
+    sink = opal_logger.add(lambda m: records.append(str(m)), level="INFO")
+    try:
+        await LeaderScopePurger(
+            base_dir=tmp_path / "never-created",
+            scopes=FakeScopeRepository([]),
+            pubsub_endpoint=None,
+        ).sweep_orphans()
+    finally:
+        opal_logger.remove(sink)
+
+    beat = [r for r in records if "Orphan sweep" in r and "scanned" in r]
+    assert len(beat) == 1, f"no heartbeat on the no-clone-dir path: {records}"
+    assert "skipped (no clone dir)" in beat[0], beat[0]
