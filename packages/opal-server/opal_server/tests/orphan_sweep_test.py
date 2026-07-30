@@ -677,10 +677,23 @@ async def test_failed_rmtree_leaves_no_stray_repo_lock(tmp_path, monkeypatch):
 
     monkeypatch.setattr(shutil, "rmtree", _boom)
 
-    await LeaderScopePurger(
-        base_dir=tmp_path, scopes=FakeScopeRepository([live]), pubsub_endpoint=None
-    ).sweep_orphans()
+    from opal_common.logger import logger as opal_logger
 
+    records = []
+    sink = opal_logger.add(lambda m: records.append(str(m)), level="WARNING")
+    try:
+        await LeaderScopePurger(
+            base_dir=tmp_path, scopes=FakeScopeRepository([live]), pubsub_endpoint=None
+        ).sweep_orphans()
+    finally:
+        opal_logger.remove(sink)
+
+    # Not vacuous: prove the reclaim was actually ATTEMPTED. Without this the
+    # test would pass if some future guard stopped the candidate from ever
+    # reaching the deletion (both assertions below hold when nothing happened).
+    assert any(
+        "Failed to reclaim orphan" in r for r in records
+    ), f"the reclaim was never attempted, so this test proves nothing: {records}"
     assert orphan.exists()  # unreclaimable, as expected
     assert (
         _SID not in GitPolicyFetcher.repo_locks
@@ -796,3 +809,138 @@ async def test_missing_base_dir_still_heartbeats(tmp_path):
     beat = [r for r in records if "Orphan sweep" in r and "scanned" in r]
     assert len(beat) == 1, f"no heartbeat on the no-clone-dir path: {records}"
     assert "skipped (no clone dir)" in beat[0], beat[0]
+
+
+@pytest.mark.asyncio
+async def test_no_stray_lock_when_a_candidate_is_kept_or_the_pass_aborts(
+    tmp_path, monkeypatch
+):
+    """A candidate is by definition a source no live scope claims, so the
+    repo_locks entry lock_source mints for it must not outlive the pass on ANY
+    path — including the two that decline to delete.
+
+    The keep-on-error and mid-pass-abort paths are reached precisely
+    when the store could not confirm the source is live, so leaving the
+    entry behind is a stray lock with no live scope (invariant I4, which
+    the git-leak bed checks at every teardown). Mutation: move the pop
+    back inside the deletion attempt -> one stray per aborted or kept
+    candidate.
+    """
+    live = [_scope(f"l{i}", f"https://git/l{i}.git") for i in range(4)]
+    for s in live:
+        _clone_dir_for(tmp_path, s)
+    orphan = _git_sources(tmp_path) / _SID
+    orphan.mkdir()
+    live_ids = {GitPolicyFetcher.source_id(s.policy) for s in live}
+
+    class EmptiesMidPass(FakeScopeRepository):
+        def __init__(self, scopes):
+            super().__init__(scopes)
+            self.reads = 0
+
+        async def all(self):
+            self.reads += 1
+            return [] if self.reads > 1 else list(self._scopes.values())
+
+    class RaisesMidPass(FakeScopeRepository):
+        def __init__(self, scopes):
+            super().__init__(scopes)
+            self.reads = 0
+
+        async def all(self):
+            self.reads += 1
+            if self.reads > 1:
+                raise RuntimeError("store blip on the under-lock re-check")
+            return list(self._scopes.values())
+
+    for store in (EmptiesMidPass(live), RaisesMidPass(live)):
+        GitPolicyFetcher.repo_locks.clear()
+        await LeaderScopePurger(
+            base_dir=tmp_path, scopes=store, pubsub_endpoint=None
+        ).sweep_orphans()
+        stray = set(GitPolicyFetcher.repo_locks) - live_ids
+        assert not stray, (
+            f"{type(store).__name__} left a stray repo_locks entry with no live "
+            f"scope (I4): {sorted(stray)}"
+        )
+        assert orphan.exists(), "neither path should have deleted the dir"
+
+
+@pytest.mark.asyncio
+async def test_out_of_range_reclaim_fraction_warns_once(tmp_path, monkeypatch):
+    """A typo'd fraction (1.5, -1) disables the mass-reclaim ceiling.
+
+    Disabling is the right reading, but doing it SILENTLY turns a typo
+    into a disabled safety guard — the same shape as an unclamped
+    negative SCOPES_GIT_MAX_ZOMBIES. It must say so, and only once.
+    """
+    from opal_common.logger import logger as opal_logger
+
+    monkeypatch.setattr(
+        "opal_server.scopes.purge._ceiling_range_warned", False, raising=False
+    )
+    monkeypatch.setattr(
+        opal_server_config, "SCOPES_ORPHAN_SWEEP_MAX_RECLAIM_FRACTION", 1.5
+    )
+    live = _scope("live", "https://git/live.git")
+    _clone_dir_for(tmp_path, live)
+    orphans = []
+    for i in range(4):
+        d = _git_sources(tmp_path) / (f"{i}" * 64 + "-0")
+        d.mkdir()
+        orphans.append(d)
+
+    records = []
+    sink = opal_logger.add(lambda m: records.append(str(m)), level="WARNING")
+    try:
+        purger = LeaderScopePurger(
+            base_dir=tmp_path, scopes=FakeScopeRepository([live]), pubsub_endpoint=None
+        )
+        await purger.sweep_orphans()
+        await purger.sweep_orphans()  # second pass must not repeat the warning
+    finally:
+        opal_logger.remove(sink)
+
+    warned = [r for r in records if "outside (0, 1)" in r]
+    assert len(warned) == 1, f"expected exactly one warning, got {len(warned)}"
+    assert all(not d.exists() for d in orphans), "ceiling should be disabled"
+
+
+@pytest.mark.asyncio
+async def test_hung_store_read_does_not_pin_the_source_lock(tmp_path, monkeypatch):
+    """The under-lock store read must be bounded.
+
+    RedisDB is built with no socket_timeout/socket_connect_timeout, so redis-py
+    waits forever; since this read is held under the candidate's lock_source (it
+    has to be, to be authoritative), an unreachable store would otherwise pin
+    that source's lock for the life of the process and block all of its syncs.
+    Expiry is safe: the candidate is KEPT. Mutation: drop the wait_for and this
+    hangs.
+    """
+    monkeypatch.setattr("opal_server.scopes.purge._STORE_READ_TIMEOUT", 0.05)
+    live = _scope("live", "https://git/live.git")
+    live_clone = _clone_dir_for(tmp_path, live)
+    orphan = _git_sources(tmp_path) / _SID
+    orphan.mkdir()
+
+    class HangsOnRecheck(FakeScopeRepository):
+        def __init__(self, scopes):
+            super().__init__(scopes)
+            self.reads = 0
+
+        async def all(self):
+            self.reads += 1
+            if self.reads > 1:  # the snapshot succeeds; the re-check hangs
+                await asyncio.sleep(3600)
+            return list(self._scopes.values())
+
+    await asyncio.wait_for(
+        LeaderScopePurger(
+            base_dir=tmp_path, scopes=HangsOnRecheck([live]), pubsub_endpoint=None
+        ).sweep_orphans(),
+        timeout=5,
+    )
+
+    assert orphan.exists(), "a timed-out re-check must keep the dir"
+    assert live_clone.exists()
+    assert not GitPolicyFetcher.repo_locks, "the hung read left the source lock held"

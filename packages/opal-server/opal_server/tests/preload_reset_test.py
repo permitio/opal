@@ -105,3 +105,81 @@ def test_preload_scopes_drains_before_teardown(monkeypatch):
     finally:
         asyncio.set_event_loop(asyncio.new_event_loop())
     assert events == ["sync_scopes", "drain", "shutdown", "reset_caches"], events
+
+
+def test_preload_warns_when_the_drain_times_out_with_ops_still_in_flight(monkeypatch):
+    """A drain that times out means git threads survive into the forked
+    workers, where they can race a worker on the shared clone dir.
+
+    That is the one condition carrying this risk, and the warning is its
+    only signal — nothing else reports it, and reset_caches deliberately
+    skips those handles rather than failing loudly. Mutation: drop the
+    `if not drained` warning and the whole condition becomes invisible.
+    """
+    from opal_common.logger import logger as opal_logger
+
+    class _StubService:
+        def __init__(self, *a, **k):
+            pass
+
+        async def sync_scopes(self, *a, **k):
+            return None
+
+    class _StubGPF:
+        @staticmethod
+        def reset_caches():
+            return None
+
+    monkeypatch.setattr(task_module, "ScopesService", _StubService)
+    monkeypatch.setattr(task_module, "drain_git_ops", lambda t: False)  # timed out
+    monkeypatch.setattr(task_module, "git_busy_count", lambda: 3)
+    monkeypatch.setattr(task_module, "shutdown_git_executor", lambda: None)
+    monkeypatch.setattr(task_module, "GitPolicyFetcher", _StubGPF)
+    monkeypatch.setattr(opal_server_config, "SCOPES", True)
+
+    records = []
+    sink = opal_logger.add(lambda m: records.append(str(m)), level="WARNING")
+    try:
+        task_module.ScopesPolicyWatcherTask.preload_scopes()
+    finally:
+        opal_logger.remove(sink)
+        asyncio.set_event_loop(asyncio.new_event_loop())
+
+    warned = [r for r in records if "Preload drain timed out" in r]
+    assert warned, f"a timed-out drain was not reported at all: {records}"
+    assert "3" in warned[0], f"the in-flight count is missing: {warned[0]}"
+
+
+def test_preload_does_not_warn_when_the_drain_succeeds(monkeypatch):
+    """The inverse, so the test above cannot pass by always-warning."""
+    from opal_common.logger import logger as opal_logger
+
+    class _StubService:
+        def __init__(self, *a, **k):
+            pass
+
+        async def sync_scopes(self, *a, **k):
+            return None
+
+    class _StubGPF:
+        @staticmethod
+        def reset_caches():
+            return None
+
+    monkeypatch.setattr(task_module, "ScopesService", _StubService)
+    monkeypatch.setattr(task_module, "drain_git_ops", lambda t: True)  # drained
+    monkeypatch.setattr(task_module, "shutdown_git_executor", lambda: None)
+    monkeypatch.setattr(task_module, "GitPolicyFetcher", _StubGPF)
+    monkeypatch.setattr(opal_server_config, "SCOPES", True)
+
+    records = []
+    sink = opal_logger.add(lambda m: records.append(str(m)), level="WARNING")
+    try:
+        task_module.ScopesPolicyWatcherTask.preload_scopes()
+    finally:
+        opal_logger.remove(sink)
+        asyncio.set_event_loop(asyncio.new_event_loop())
+
+    assert not [
+        r for r in records if "Preload drain timed out" in r
+    ], f"warned on a clean drain: {records}"

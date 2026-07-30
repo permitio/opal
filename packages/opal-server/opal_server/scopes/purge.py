@@ -32,6 +32,19 @@ _SOURCE_ID_RE = re.compile(r"\A[0-9a-f]{64}-\d+\Z")
 # raising this can never widen a staleness window.
 _YIELD_EVERY = 200
 
+# Bound on the per-candidate store read, which is taken while holding that
+# source's lock_source (it has to be — see _classify_candidate). RedisDB is
+# built without socket_timeout/socket_connect_timeout, so redis-py would wait
+# forever and an unreachable store would pin one source's lock for the life of
+# the process, blocking its syncs. Deliberately a constant, not a confi key:
+# expiry is safe by construction (the candidate is KEPT, no deletion decision is
+# made on a timed-out read), so there is nothing an operator would tune it for.
+_STORE_READ_TIMEOUT = 10.0
+
+# One-shot latch so an out-of-range reclaim fraction is reported once, not on
+# every sweep pass (mirrors git_fetcher's _zombie_cap_logged).
+_ceiling_range_warned = False
+
 
 def _confined_clone_path(base_dir, source_id: str):
     """Derive the on-disk clone dir for ``source_id``, or ``None`` if the id is
@@ -369,7 +382,17 @@ class LeaderScopePurger:
         caps how many candidates can ever get here in one pass.
         """
         try:
-            fresh = await self._scopes.all()
+            fresh = await asyncio.wait_for(
+                self._scopes.all(), timeout=_STORE_READ_TIMEOUT
+            )
+        except asyncio.TimeoutError:
+            logger.warning(
+                "Orphan re-check for {sid} timed out after {t}s, keeping dir "
+                "(the store read is held under this source's lock)",
+                sid=source_id,
+                t=_STORE_READ_TIMEOUT,
+            )
+            return "claimed"
         except Exception as e:
             logger.warning(
                 f"Orphan re-check for {source_id} failed, keeping dir: {e!r}"
@@ -410,8 +433,23 @@ class LeaderScopePurger:
         reclaims — a SCOPES_REPO_CLONES_SHARDS reconfig — are operator-initiated
         and can raise SCOPES_ORPHAN_SWEEP_MAX_RECLAIM_FRACTION deliberately.
         """
+        global _ceiling_range_warned
         fraction = opal_server_config.SCOPES_ORPHAN_SWEEP_MAX_RECLAIM_FRACTION
         if not (0 < fraction < 1):
+            # 0 and 1 are the documented "disable" values. Anything else out of
+            # range (a negative, 1.5, 2) also disables the ceiling, and doing that
+            # SILENTLY would turn a typo into a disabled safety guard — the same
+            # shape as an unclamped negative SCOPES_GIT_MAX_ZOMBIES. Say so once
+            # (not every pass, 300s apart, forever).
+            if fraction not in (0, 1) and not _ceiling_range_warned:
+                _ceiling_range_warned = True
+                logger.warning(
+                    "SCOPES_ORPHAN_SWEEP_MAX_RECLAIM_FRACTION={fraction} is "
+                    "outside (0, 1); the orphan sweep's mass-reclaim ceiling is "
+                    "DISABLED. Use a fraction like 0.5, or 0/1 to disable it "
+                    "deliberately.",
+                    fraction=fraction,
+                )
             return True  # ceiling disabled
         if len(candidates) <= 1 or len(candidates) < len(dir_names) * fraction:
             return True
@@ -419,8 +457,11 @@ class LeaderScopePurger:
             "Orphan sweep aborted: {n} of {total} clone dirs look orphaned in a "
             "single pass, at/over SCOPES_ORPHAN_SWEEP_MAX_RECLAIM_FRACTION="
             "{fraction} — refusing to reclaim (a store pointed at the wrong "
-            "keyspace looks exactly like this). Confirm REDIS_URL; if this is a "
-            "deliberate SCOPES_REPO_CLONES_SHARDS reconfig, raise the fraction.",
+            "keyspace looks exactly like this). Confirm REDIS_URL first. If it is "
+            "correct, this is either a deliberate SCOPES_REPO_CLONES_SHARDS "
+            "reconfig or a bulk delete whose purge broadcasts were lost (the "
+            "delete path removes each dir inline, so many orphans at once is "
+            "itself anomalous) — raise the fraction to let the pass proceed.",
             n=len(candidates),
             total=len(dir_names),
             fraction=fraction,
@@ -598,65 +639,71 @@ class LeaderScopePurger:
 
         reclaimed = 0
         for i, (name, safe_path) in enumerate(candidates):
-            # Yield periodically: every check below is O(1) or a bounded await,
-            # and an uncontended lock_source does not yield on its own.
+            # Yield periodically so a very large clone tree cannot starve the loop
+            # between awaits, and because an uncontended lock_source does not
+            # yield on its own.
             if i and i % _YIELD_EVERY == 0:
                 await asyncio.sleep(0)
             async with GitPolicyFetcher.lock_source(name):
-                # Authoritative, under THIS source's lock (see
-                # _classify_candidate for why it cannot be hoisted out of the
-                # loop): the lock excludes a concurrent clone/fetch for the
-                # source, and the read inside it is what makes "no live scope
-                # claims this dir" true at the moment we delete.
-                verdict = await self._classify_candidate(name, dir_names)
-                if verdict == "abort":
-                    return "aborted (empty store mid-pass)", reclaimed
-                if verdict == "claimed":
-                    continue
-                if git_op_in_flight(name):
-                    # A lingering (timed-out) git op still touches the repo on a
-                    # pool thread, so defer the dir removal + handle free to a
-                    # later sweep (freeing now risks a crash). But DRAIN the
-                    # event-loop-side entries under the held lock — including the
-                    # repo_locks entry lock_source just minted for this candidate
-                    # (via setdefault) — or that lock leaks as a stray with no
-                    # live scope (invariant I4). Mirrors purge_source_if_unshared's
-                    # in-flight branch.
-                    logger.info(f"Orphan sweep deferring {name}: git op in flight")
-                    GitPolicyFetcher.repos_last_fetched.pop(name, None)
-                    GitPolicyFetcher.repo_locks.pop(name, None)
-                    continue
-                logger.info("Reclaiming orphan clone dir: {path}", path=safe_path)
-                GitPolicyFetcher.forget_repo(safe_path)
-                GitPolicyFetcher.repos_last_fetched.pop(name, None)
-                removed = False
+                # EVERY exit from this block pops the repo_locks entry lock_source
+                # minted via setdefault (see the `finally` below). A candidate is by
+                # definition a source no live scope claims, so leaving that entry
+                # behind is a stray lock (invariant I4) — and the keep/abort paths
+                # need the pop as much as the deletion paths, since they are reached
+                # precisely when the store could NOT confirm the source is live.
                 try:
-                    await run_sync(shutil.rmtree, safe_path)
-                    removed = True
-                except FileNotFoundError:
-                    removed = True  # already gone — the intended end state
-                except OSError as e:
-                    if os.path.islink(safe_path):
-                        # scandir's is_dir() follows symlinks, so a symlink named
-                        # like a source id is enumerated and then refused by
-                        # rmtree. Containment held (the target is untouched), but
-                        # this dir can never be reclaimed — an anomaly worth an
-                        # error, not a recurring "reclaim failed" warning.
-                        logger.error(
-                            "Orphan sweep found a SYMLINK where a clone dir "
-                            "should be, refusing to follow it: {path} ({err})",
-                            path=safe_path,
-                            err=repr(e),
-                        )
-                    else:
-                        logger.warning(f"Failed to reclaim orphan {safe_path}: {e!r}")
+                    # Authoritative, under THIS source's lock (see
+                    # _classify_candidate for why it cannot be hoisted out of the
+                    # loop): the lock excludes a concurrent clone/fetch for the
+                    # source, and the read inside it is what makes "no live scope
+                    # claims this dir" true at the moment we delete.
+                    verdict = await self._classify_candidate(name, dir_names)
+                    if verdict == "abort":
+                        return "aborted (empty store mid-pass)", reclaimed
+                    if verdict == "claimed":
+                        continue
+                    if git_op_in_flight(name):
+                        # A lingering (timed-out) git op still touches the repo on a
+                        # pool thread, so defer the dir removal + handle free to a
+                        # later sweep (freeing now risks a crash). But DRAIN the
+                        # event-loop-side entries under the held lock — including the
+                        # repo_locks entry lock_source just minted for this candidate
+                        # (via setdefault) — or that lock leaks as a stray with no
+                        # live scope (invariant I4). Mirrors purge_source_if_unshared's
+                        # in-flight branch.
+                        logger.info(f"Orphan sweep deferring {name}: git op in flight")
+                        GitPolicyFetcher.repos_last_fetched.pop(name, None)
+                        continue
+                    logger.info("Reclaiming orphan clone dir: {path}", path=safe_path)
+                    GitPolicyFetcher.forget_repo(safe_path)
+                    GitPolicyFetcher.repos_last_fetched.pop(name, None)
+                    removed = False
+                    try:
+                        await run_sync(shutil.rmtree, safe_path)
+                        removed = True
+                    except FileNotFoundError:
+                        removed = True  # already gone — the intended end state
+                    except OSError as e:
+                        if os.path.islink(safe_path):
+                            # scandir's is_dir() follows symlinks, so a symlink named
+                            # like a source id is enumerated and then refused by
+                            # rmtree. Containment held (the target is untouched), but
+                            # this dir can never be reclaimed — an anomaly worth an
+                            # error, not a recurring "reclaim failed" warning.
+                            logger.error(
+                                "Orphan sweep found a SYMLINK where a clone dir "
+                                "should be, refusing to follow it: {path} ({err})",
+                                path=safe_path,
+                                err=repr(e),
+                            )
+                        else:
+                            logger.warning(
+                                f"Failed to reclaim orphan {safe_path}: {e!r}"
+                            )
                 finally:
-                    # Popped under the held lock on EVERY exit from the deletion
-                    # attempt (a failed rmtree used to `continue` past this,
-                    # leaking one stray lock per permanently-unreclaimable dir —
-                    # invariant I4), AND deliberately BEFORE the confirmation
-                    # publish below: see purge_source_if_unshared for why moving
-                    # it after the publish deadlocks.
+                    # Under the held lock, and deliberately BEFORE the confirmation
+                    # publish below: see purge_source_if_unshared for why moving it
+                    # after the publish deadlocks.
                     GitPolicyFetcher.repo_locks.pop(name, None)
                 if not removed:
                     continue
