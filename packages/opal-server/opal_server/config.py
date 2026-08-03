@@ -538,18 +538,31 @@ class OpalServerConfig(Confi):
         "provably means 'no scopes exist' and reclaiming everything is wanted.",
     )
 
-    SCOPES_ORPHAN_SWEEP_MAX_RECLAIM_FRACTION = confi.float(
-        "SCOPES_ORPHAN_SWEEP_MAX_RECLAIM_FRACTION",
-        0.5,
-        description="Safety ceiling on a single orphan-sweep pass: if this "
-        "fraction or more of the clone dirs on disk look orphaned at once, the "
-        "pass is refused and logged at error level instead of reclaiming them. A "
-        "scope store pointed at the wrong keyspace answers successfully with "
-        "someone else's scopes, so every local clone looks unreferenced — this "
-        "catches that, where the zero-scope check cannot. Reclaiming a single dir "
-        "is always allowed (the ordinary case). Raise it (or set 0 / 1 to disable "
-        "the ceiling) for a deliberate SCOPES_REPO_CLONES_SHARDS reconfig, which "
-        "legitimately orphans a large share of the tree at once.",
+    SCOPES_ORPHAN_SWEEP_MAX_RECLAIM_PER_PASS = confi.int(
+        "SCOPES_ORPHAN_SWEEP_MAX_RECLAIM_PER_PASS",
+        3,
+        description="Maximum clone dirs the leader's orphan sweep may reclaim in a "
+        "single pass. Bounds the blast radius of a store that answers wrongly — a "
+        "REDIS_URL on another environment's keyspace, a lagging replica, an LRU "
+        "eviction of scope records — because such a store makes local clones look "
+        "unreferenced, and this caps how many can be deleted before an operator "
+        "sees the alert. A genuine backlog drains over consecutive passes rather "
+        "than in one, so nothing is leaked, only deferred. Raise it for a "
+        "deliberate SCOPES_REPO_CLONES_SHARDS reconfig, which orphans a large "
+        "share of the tree at once (0 or negative disables the cap entirely, "
+        "which is logged at warning).",
+    )
+
+    SCOPES_ORPHAN_SWEEP_STORE_READ_TIMEOUT = confi.float(
+        "SCOPES_ORPHAN_SWEEP_STORE_READ_TIMEOUT",
+        10.0,
+        description="Timeout for the scope-store read the orphan sweep takes while "
+        "holding a source's lock. The Redis client is built without a socket "
+        "timeout, so without this an unreachable store would pin that lock for the "
+        "life of the process and block the source's syncs. On expiry the candidate "
+        "is KEPT (never deleted on an unanswered read) and the pass is reported as "
+        "degraded. Raise it for a large scope store, where the read is a SCAN plus "
+        "a GET per key (0 or negative means no timeout).",
     )
 
     def on_load(self):
