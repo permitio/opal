@@ -147,7 +147,12 @@ def test_preload_warns_when_the_drain_times_out_with_ops_still_in_flight(monkeyp
 
     warned = [r for r in records if "Preload drain timed out" in r]
     assert warned, f"a timed-out drain was not reported at all: {records}"
-    assert "3" in warned[0], f"the in-flight count is missing: {warned[0]}"
+    # Against the RENDERED payload, not the formatted record: a bare "3" is
+    # supplied by the timestamp and the source line number, so `"3" in record`
+    # holds for any drain warning at all and cannot fail.
+    assert (
+        "in flight (3)" in warned[0]
+    ), f"the in-flight count is missing from the warning: {warned[0]}"
 
 
 def test_preload_does_not_warn_when_the_drain_succeeds(monkeypatch):

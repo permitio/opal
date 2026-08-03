@@ -14,20 +14,22 @@ import pytest
 from opal_server import config as server_config_module
 from opal_server.config import opal_server_config
 
-# Keys added by the scopes git-resilience / leak series. Deliberately explicit:
-# a new key belongs in the public reference AND in this list.
-_TRACKED_KEYS = (
-    "SCOPES_GIT_FETCH_TIMEOUT",
-    "SCOPES_GIT_MAX_WORKERS",
-    "SCOPES_GIT_MAX_ZOMBIES",
-    "SCOPES_GIT_PRELOAD_DRAIN_TIMEOUT",
-    "SCOPES_ORPHAN_SWEEP_INTERVAL",
-    "SCOPES_ORPHAN_SWEEP_RECLAIM_ON_EMPTY_STORE",
-    "SCOPES_ORPHAN_SWEEP_MAX_RECLAIM_FRACTION",
-    "SCOPES_PURGE_CHANNEL",
-)
+_CONFIG_PY_PATH = Path(server_config_module.__file__)
 
-_CONFIG_PY = Path(server_config_module.__file__)
+
+def _tracked_keys(source: str):
+    """Every SCOPES_* key declared in config.py.
+
+    Derived, not hand-listed: the previous version carried a comment
+    stating the invariant ("a new key belongs in the public reference
+    AND in this list") with nothing enforcing it, so a new key was
+    unguarded by omission — the exact failure this file exists to
+    prevent, one level up.
+    """
+    return tuple(sorted(set(re.findall(r"\n    (SCOPES_\w+) = confi\.", source))))
+
+
+_CONFIG_PY = _CONFIG_PY_PATH
 _MDX = (
     _CONFIG_PY.parents[3]
     / "documentation"
@@ -56,6 +58,31 @@ def _declared_description(source: str, key: str) -> str:
     return _normalize("".join(literals).replace('\\"', '"'))
 
 
+def _declared_default(source: str, key: str) -> str:
+    """The default literal as written in config.py, rendered the way the docs
+    write it."""
+    decl = re.search(
+        r"\n    %s = confi\.(\w+)\(\n\s*\"%s\",\n(.*?)\n    \)\n"
+        % (re.escape(key), re.escape(key)),
+        source,
+        re.S,
+    )
+    assert decl, f"{key} is not declared in {_CONFIG_PY.name}"
+    body = decl.group(2)
+    # first non-comment line after the name is the default
+    for line in body.splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or line.startswith("description="):
+            continue
+        literal = line.rstrip(",")
+        # The docs render the VALUE, not the Python literal: a str default is
+        # written `Default: \`__opal_scope_purge__\``, not with its quotes.
+        if len(literal) >= 2 and literal[0] == literal[-1] and literal[0] in "\"'":
+            literal = literal[1:-1]
+        return literal
+    raise AssertionError(f"could not find {key}'s default literal")
+
+
 def _section_for(mdx: str, key: str) -> str:
     """The `#### OPAL_<key>` section only, so a description found under some
     OTHER key's heading cannot satisfy this key's assertion."""
@@ -69,21 +96,25 @@ def _section_for(mdx: str, key: str) -> str:
     return mdx[start : nxt if nxt != -1 else len(mdx)]
 
 
-@pytest.mark.parametrize("key", _TRACKED_KEYS)
+@pytest.mark.parametrize("key", _tracked_keys(_CONFIG_PY_PATH.read_text()))
 def test_scopes_key_description_is_verbatim_in_the_public_reference(key):
     if not _MDX.exists():
-        # Absence is only legitimate outside a checkout (an installed package
-        # has no documentation/ tree). Inside one, a moved or renamed docs file
-        # must FAIL: skipping would turn this whole guard into a green no-op
-        # exactly when someone reorganises the docs — the likeliest way for the
-        # drift to come back.
-        if (_CONFIG_PY.parents[3] / "documentation").is_dir():
+        # Absence is only legitimate outside a checkout. "Am I in a checkout" is
+        # answered by something that CANNOT move with the docs — asking the docs
+        # tree itself (the previous version) meant relocating `documentation/`
+        # wholesale, e.g. a docusaurus reorg to `website/docs/`, silently skipped
+        # every key instead of failing.
+        repo_root = _CONFIG_PY.parents[3]
+        in_checkout = (repo_root / ".git").exists() or (
+            repo_root / "packages" / "opal-server" / "setup.py"
+        ).exists()
+        if in_checkout:
             pytest.fail(
-                f"{_MDX} is missing from this checkout — the docs file moved or "
-                f"was renamed, so this drift guard is no longer guarding "
-                f"anything. Update _MDX."
+                f"{_MDX} is missing from this checkout — the public config "
+                f"reference moved or was renamed, so this drift guard is no "
+                f"longer guarding anything. Update _MDX to its new location."
             )
-        pytest.skip("documentation/ tree not present (installed package)")
+        pytest.skip("not a source checkout (installed package)")
 
     description = _declared_description(_CONFIG_PY.read_text(), key)
     # Slice to this key's own section: asserting the heading and the description
@@ -95,8 +126,12 @@ def test_scopes_key_description_is_verbatim_in_the_public_reference(key):
         f"OPAL_{key}'s description in {_MDX.name} is a paraphrase, not the "
         f"config.py text. Copy it verbatim:\n\n{description}"
     )
-    default = getattr(opal_server_config, key)
-    assert f"Default: `{default}`" in section, (
-        f"OPAL_{key}'s documented default does not match config.py "
-        f"(expected 'Default: `{default}`')"
+    # The DECLARED literal, not getattr(opal_server_config, key): the latter is
+    # the effective value after Confi has consulted OPAL_<KEY>, so exporting one
+    # (this repo's own bed does) reddened a test about doc-vs-source drift with a
+    # doc-vs-environment mismatch, pointing the reader at an .mdx that was right.
+    declared = _declared_default(_CONFIG_PY.read_text(), key)
+    assert f"Default: `{declared}`" in section, (
+        f"OPAL_{key}'s documented default does not match the literal declared in "
+        f"{_CONFIG_PY.name} (expected 'Default: `{declared}`')"
     )

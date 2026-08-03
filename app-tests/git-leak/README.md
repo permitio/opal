@@ -3,16 +3,17 @@
 Reproduces (as failing tests) the issues fixed by PR2–PR5: memory leak,
 offline-repo hang, slow serial boot, broadcaster no-reconnect.
 
-Every assertion is driven through `GET /internal/git-fetcher-cache-stats`, which
-**PR1 adds** — it does not exist on `master`. The suite therefore runs against
-this branch series, not true `master` (there it would error at setup on the
-missing endpoint, not "fail for the targeted bug").
+Every assertion is driven through `GET /internal/git-fetcher-cache-stats`
+(`OPAL_DEBUG_INTERNAL_STATS`), added by PR1 and now on `master`, so the suite
+runs against `master` as well as this branch — `git checkout origin/master && cd
+app-tests/git-leak && pytest -k postgres_bounce` is exactly how the baseline
+below was measured.
 
 **Status: 20/21 green as of PR3.** PR2 and PR3 were the last planned code
 changes for this bed. Every gate below passes on the PR3 head except assertion
 (d) of `test_server_recovers_after_postgres_bounce`, which fails at the same rate
-on the pre-PR3 merge-base and is an artifact of this bed running with no
-`opal-client` service and statistics off — see its row. The one knob still
+on the pre-PR3 merge-base — see its row for the mechanism and what it does and
+does not imply for a deployment. The one knob still
 open is PR4's: `test_boot_loads_all_scopes` passes against the loose default
 boot target and is meant to be tightened (`BOOT_TARGET_SECONDS`, plan: 120 @ 50)
 when the parallel-boot work lands. The "fails without X" wording in the matrix is
@@ -60,7 +61,7 @@ Gate-coverage matrix (what each flagship test actually does):
 | `test_offline_repo_does_not_block_healthy_scopes` | **gate (PR3)** | PASSES since PR3's fetch timeout — fails without it, where 40 hung clones starve the executor and a healthy scope never serves |
 | `test_boot_loads_all_scopes` | **baseline → gate (PR4)** | PASSES with the loose default target; set `BOOT_TARGET_SECONDS` low (plan: 120 @ 50) on PR4 to gate the parallel-boot fix |
 | `test_repeat_sync_rss_stays_bounded` | **RSS guard** | PASSES; an RSS-budget guard against per-sync allocation leaks (the cache *count* can't grow for any impl, so there is no count assertion — see below) |
-| `test_server_recovers_after_postgres_bounce` | **guard (PER-15065)** + **(d) red in this bed only** | Assertions (a)-(c) PASS — the broadcaster reconnects in place (PID-stable), the reader really dropped and reconnected, and a post-bounce PUT becomes servable. **Assertion (d) fails intermittently HERE, and did so before PR3 too**: measured on `origin/master` (this branch's merge-base) 1 pass / 4 runs, and on the PR3 head 2 passes / 6 runs — same assertion, same line, same message. It is a property of the BED's shape, not a production bug: a worker receives backbone messages only if its broadcaster reader is running, which starts via `STATISTICS_ENABLED` (default off) or a connected websocket client (`PubSubEndpoint.main_loop` enters the broadcaster context) — `subscribe()` alone does not start it. This bed has no `opal-client` service and statistics off, so the non-leader worker is deaf to the backbone and a publish it buffers during the outage never replays. The leader does have a reader (via the watcher's listening context), which is why (a)-(c) pass. With clients connected or statistics on, the reader runs and the replay works. See the PR description's "Known limitation" section. The only difference PR3 makes is the status in the failure text — 500 on master, 503 on this branch — because PR3 turns clone-vanish into a retryable 503 |
+| `test_server_recovers_after_postgres_bounce` | **guard (PER-15065)** + **(d) intermittently red** | Assertions (a)-(c) PASS. **Assertion (d) fails intermittently, and did so before PR3**: measured on `origin/master` (this branch's merge-base) 1 pass / 4 runs, and on the PR3 head 2 passes / 6 runs — same assertion, same line, same message. That measurement supports "PR3 did not introduce this", and nothing more. The mechanism is a **production property, not a bed artifact**: `_flush_outbound_buffer()` is reached only from `_recover_after_gap()`, scheduled only from inside the reader loop, which runs only inside a listening context — entered by the leader's watcher, or globally only under `STATISTICS_ENABLED` (default `False`). A worker with no connected websocket client and statistics off therefore has no reader, never schedules gap recovery, and never replays its outbound buffer; `is_in_backbone_gap()` also returns `False` without a reader, so the publish is not frozen either. The bed hits it because it has no `opal-client` service and statistics off; a deployment avoids it only insofar as its workers actually have clients or statistics on — a config property worth confirming rather than assuming. Owned by the broadcaster work (#933), not by PR3: `pubsub_resilience.py` gets zero lines from this branch |
 | `test_delete_recreate_storm` | **guard (lock re-mint)** | PASSES — rapid delete/re-create of the same source serializes on the repo lock and ends with clean caches; guards 89e090be |
 | `test_randomized_churn_holds_invariants` | **guard (seeded churn)** | PASSES — seeded random put/refresh/delete churn holds invariants at every settle point (replay a failure with `CHURN_SEED=<seed>`); `repoint` ops remain deliberately excluded (covered separately by the red repoint gates), but the delete-vs-inflight-sync exclusion is lifted now that PR3's fleet purge lands |
 | `test_delete_during_hung_fetch_no_crash` | **guard (use-after-free)** | PASSES — deleting a scope whose clone is hung never crashes a worker; guards the use-after-free class 89e090be fixed |
