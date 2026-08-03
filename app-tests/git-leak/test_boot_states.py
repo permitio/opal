@@ -133,6 +133,18 @@ def test_orphan_clone_dir_is_reclaimed(opal):
         f"mkdir -p /opal/git_sources/{fake_sid} && touch /opal/git_sources/{fake_sid}/junk",
     )
     try:
+        # The sweep reclaims a dir only once it has looked orphaned on
+        # CONSECUTIVE passes, so one refresh-all merely corroborates. Two
+        # triggers is the honest way to exercise that here; in production the
+        # always-on timer supplies the second pass. Asserting the dir is still
+        # present after the first pass is what pins the guard itself — without
+        # it this test would pass just as well with corroboration removed.
+        opal.refresh_all()
+        time.sleep(5)
+        assert fake_sid in clone_dirs(), (
+            "reclaimed on the first pass — a dir must be corroborated across "
+            "consecutive passes before it can be deleted"
+        )
         opal.refresh_all()
         assert wait_until(
             lambda: fake_sid not in clone_dirs(), timeout=60
@@ -305,6 +317,9 @@ def test_shard_reconfig_still_serves_but_orphans_old_clones(opal, tmp_path):
             lambda: opal.get_scope_policy("shard-0").status_code == 200,
             timeout=300,
         ), "scope stopped serving after the shard reconfig (green half broken!)"
+        # Second trigger: the first pass only corroborates the old-shard dirs
+        # (see test_orphan_clone_dir_is_reclaimed for why).
+        opal.refresh_all()
         assert wait_until(
             lambda: clone_dirs() <= live_source_ids(opal, shards=4), timeout=60
         ), (
