@@ -12,8 +12,8 @@ below was measured.
 **Status as of PR3: the three orphan-sweep gates are RED again by design.** The
 reconciliation sweep was split out of PR3 (it is where the review kept finding
 defects, and a distributed reclaim policy wants its own change) — see the
-follow-up. PR3 delivers the offline-repo resilience and the fleet-wide purge; the
-sweep gates flip when the follow-up lands. Every gate below passes on the PR3 head except assertion
+follow-up, **PER-15612**. PR3 delivers the offline-repo resilience and the
+fleet-wide purge; the sweep gates flip when PER-15612 lands. Every gate below passes on the PR3 head except assertion
 (d) of `test_server_recovers_after_postgres_bounce`, which fails at the same rate
 on the pre-PR3 merge-base — see its row for the mechanism and what it does and
 does not imply for a deployment. The one knob still
@@ -73,10 +73,10 @@ Gate-coverage matrix (what each flagship test actually does):
 | `test_multiworker_churn_drains_every_worker` | **gate (PR3, broadcast)** | PASSES since PR3's fleet-wide purge — fails without it, where purges are process-local and a worker whose caches were populated by something other than the DELETE it served (e.g. the leader's watcher syncs) leaks permanently; this was the HIGH finding from the PR2 review, as a gate |
 | `test_warm_boot_reuses_clones` | **guard (S2)** | PASSES — a restart with intact clones must serve without re-cloning |
 | `test_corrupt_clone_recovers_without_clone_loop` | **guard (S3/T7)** | PASSES — emptying a clone's object store in place while the server holds a warm cached handle is detected as invalid and recovers through the invalid-repo branch with exactly one re-clone, no serve-500s wedge and no re-clone loop; verifies the gutted-object-store detection fix |
-| `test_orphan_clone_dir_is_reclaimed` | **gate (orphan sweep, unowned)** | FAILS — a clone dir with no live scope is never reclaimed; no orphan sweep exists yet (PR3+, currently unowned) |
-| `test_redis_wiped_boot_reclaims_clones` | **gate (orphan sweep, unowned)** | FAILS — after a scope-store wipe, on-disk clones referencing nothing are never reclaimed; same missing-sweep class as the orphan-dir gate |
+| `test_orphan_clone_dir_is_reclaimed` | **gate (orphan sweep, PER-15612)** | FAILS — a clone dir with no live scope is never reclaimed; no orphan sweep exists yet (PR3+, currently unowned) |
+| `test_redis_wiped_boot_reclaims_clones` | **gate (orphan sweep, PER-15612)** | FAILS — after a scope-store wipe, on-disk clones referencing nothing are never reclaimed; same missing-sweep class as the orphan-dir gate |
 | `test_boot_with_unreachable_remotes_still_serves_healthy` | **gate (PR3)** | PASSES since PR3's fetch timeout — fails without it, where unreachable remotes present at boot hang the preload/first-sync clones and starve the executor so a healthy scope can't serve |
-| `test_shard_reconfig_still_serves_but_orphans_old_clones` | **half-gate (S5, orphan sweep)** | Green half PASSES — serving survives a `SCOPES_REPO_CLONES_SHARDS` reconfig (re-clone under new ids); red half FAILS — the old-shard dirs are orphaned until the orphan sweep lands |
+| `test_shard_reconfig_still_serves_but_orphans_old_clones` | **half-gate (S5, orphan sweep)** | Green half PASSES — serving survives a `SCOPES_REPO_CLONES_SHARDS` reconfig (re-clone under new ids); red half FAILS (PER-15612) — the old-shard dirs are orphaned until the orphan sweep lands |
 | `test_force_push_rewrite_recovers` | **characterization** | PASSES — a force-pushed (rewritten) head is picked up on refresh, pinning today's behavior (pygit2's forced default fetch refspec plus `set_target` moving the local ref) |
 | `test_deleted_branch_keeps_serving_last_head` | **characterization** | PASSES — deleting the tracked branch upstream doesn't crash anything; fetch doesn't prune, so OPAL silently keeps serving the last known head (documented, not necessarily desirable, behavior) |
 

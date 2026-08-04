@@ -7,10 +7,10 @@ purged source. The leader additionally registers ``LeaderScopePurger.handle``
 clone tree.
 
 NOTE: the reconciliation sweep that reclaimed clone dirs referencing no live
-scope was split out of this PR — see PER-15157's follow-up. What remains here is
+scope was split out of this PR and is tracked as PER-15612. What remains here is
 the purge driven by an actual scope delete/repoint, which removes the dir inline
 on the leader. A purge broadcast that never arrives therefore leaves the dir on
-disk, exactly as on master today, until that follow-up lands.
+disk, exactly as on master today, until PER-15612 lands.
 """
 import asyncio
 import re
