@@ -516,53 +516,16 @@ class OpalServerConfig(Confi):
         description="Policy polling refresh interval",
     )
 
-    SCOPES_ORPHAN_SWEEP_INTERVAL = confi.int(
-        "SCOPES_ORPHAN_SWEEP_INTERVAL",
-        300,
-        description="Interval (seconds) for the leader's always-on orphan clone-dir "
-        "sweep, independent of POLICY_REFRESH_INTERVAL, so the backstop that reclaims "
-        "clone dirs referencing no live scope runs even with polling disabled "
-        "(0 disables the timer; boot and refresh-all still sweep once).",
-    )
-
-    SCOPES_ORPHAN_SWEEP_RECLAIM_ON_EMPTY_STORE = confi.bool(
-        "SCOPES_ORPHAN_SWEEP_RECLAIM_ON_EMPTY_STORE",
-        False,
-        description="Allow the orphan sweep to reclaim clone dirs when the scope "
-        "store returns ZERO scopes. Off by default: from inside the sweep a "
-        "genuinely wiped store is indistinguishable from a misdirected one (a "
-        "REDIS_URL pointed at the wrong DB index, a failover to an empty replica, "
-        "a stray FLUSHDB), and only one of those is safe to act on — reclaiming "
-        "would delete every tenant's local clone at once. When off, such a pass is "
-        "logged at error level and aborted; turn it on only where an empty store "
-        "provably means 'no scopes exist' and reclaiming everything is wanted.",
-    )
-
-    SCOPES_ORPHAN_SWEEP_MAX_RECLAIM_PER_PASS = confi.int(
-        "SCOPES_ORPHAN_SWEEP_MAX_RECLAIM_PER_PASS",
-        3,
-        description="Maximum clone dirs the leader's orphan sweep may reclaim in a "
-        "single pass. Bounds the blast radius of a store that answers wrongly — a "
-        "REDIS_URL on another environment's keyspace, a lagging replica, an LRU "
-        "eviction of scope records — because such a store makes local clones look "
-        "unreferenced, and this caps how many can be deleted before an operator "
-        "sees the alert. A genuine backlog drains over consecutive passes rather "
-        "than in one, so nothing is leaked, only deferred. Raise it for a "
-        "deliberate SCOPES_REPO_CLONES_SHARDS reconfig, which orphans a large "
-        "share of the tree at once (0 or negative disables the cap entirely, "
-        "which is logged at warning).",
-    )
-
-    SCOPES_ORPHAN_SWEEP_STORE_READ_TIMEOUT = confi.float(
-        "SCOPES_ORPHAN_SWEEP_STORE_READ_TIMEOUT",
+    SCOPES_STORE_READ_TIMEOUT = confi.float(
+        "SCOPES_STORE_READ_TIMEOUT",
         10.0,
-        description="Timeout for the scope-store read the orphan sweep takes while "
-        "holding a source's lock. The Redis client is built without a socket "
-        "timeout, so without this an unreachable store would pin that lock for the "
-        "life of the process and block the source's syncs. On expiry the candidate "
-        "is KEPT (never deleted on an unanswered read) and the pass is reported as "
-        "degraded. Raise it for a large scope store, where the read is a SCAN plus "
-        "a GET per key (0 or negative means no timeout).",
+        description="Timeout for a scope-store read taken while holding a source's "
+        "lock — the sibling check a delete/repoint purge runs before removing a "
+        "clone dir. The Redis client is built without a socket timeout, so without "
+        "this an unreachable store would pin that lock for the life of the process "
+        "and block every later sync, purge and delete for the source. On expiry the "
+        "clone is KEPT (never removed on an unanswered read) and the purge returns "
+        "(0 or negative means no timeout).",
     )
 
     def on_load(self):

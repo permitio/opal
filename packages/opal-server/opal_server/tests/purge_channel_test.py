@@ -23,10 +23,6 @@ def test_purge_channel_config_default():
     assert clean.SCOPES_PURGE_CHANNEL == "__opal_scope_purge__"
 
 
-def test_orphan_sweep_interval_config_default():
-    assert OpalServerConfig(prefix="OPAL_").SCOPES_ORPHAN_SWEEP_INTERVAL == 300
-
-
 @pytest.fixture(autouse=True)
 def clear_caches():
     GitPolicyFetcher.repos.clear()

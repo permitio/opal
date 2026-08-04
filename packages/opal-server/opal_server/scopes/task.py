@@ -21,10 +21,9 @@ from opal_server.scopes.service import ScopesService
 # Upper bound on the shutdown drain of in-flight scope purges. The drain is
 # best-effort: a purge's rmtree runs on a worker thread and completes whether or
 # not we are still awaiting it, and anything abandoned here is reclaimed by the
-# next boot's orphan sweep — UNLESS the store then reads empty (e.g. the
-# abandoned dir belonged to the last scope), which the sweep refuses to act on
-# by default; see SCOPES_ORPHAN_SWEEP_RECLAIM_ON_EMPTY_STORE. Blocking shutdown
-# longer would be strictly worse —
+# next leader to purge that source. (The reconciliation sweep that would have
+# backstopped it unconditionally is split out of this PR — see the note in
+# scopes/purge.py.) Blocking shutdown longer would be strictly worse —
 # stop() runs while the leadership lock is still held, so no other worker can
 # take over, and k8s's terminationGracePeriodSeconds (30s by default) would
 # SIGKILL us anyway.
@@ -70,17 +69,10 @@ class ScopesPolicyWatcherTask(BasePolicyWatcherTask):
             [opal_server_config.SCOPES_PURGE_CHANNEL],
             self._purger.handle,
         )
-        self._tasks.append(asyncio.create_task(self._sync_all_then_sweep()))
+        self._tasks.append(asyncio.create_task(self._sync_all()))
 
         if opal_server_config.POLICY_REFRESH_INTERVAL > 0:
             self._tasks.append(asyncio.create_task(self._periodic_polling()))
-
-        # Always-on orphan-sweep backstop, independent of POLICY_REFRESH_INTERVAL
-        # (as the key's docs state). _periodic_polling deliberately does NOT
-        # sweep, so this timer is the single periodic sweeper — no duplicate
-        # scans or confirmed-orphan purge broadcasts even when polling is on.
-        if opal_server_config.SCOPES_ORPHAN_SWEEP_INTERVAL > 0:
-            self._tasks.append(asyncio.create_task(self._periodic_orphan_sweep()))
 
     async def stop(self):
         # stop() runs TWICE on the normal path — once from
@@ -114,33 +106,21 @@ class ScopesPolicyWatcherTask(BasePolicyWatcherTask):
         except asyncio.TimeoutError:
             logger.warning(
                 "Abandoned in-flight scope purges at shutdown after {timeout}s; "
-                "the next boot's orphan sweep reclaims what is left behind "
-                "unless the scope store then reads empty (see "
-                "SCOPES_ORPHAN_SWEEP_RECLAIM_ON_EMPTY_STORE)",
+                "their clone dirs stay on disk until the source is purged again",
                 timeout=_PURGE_DRAIN_TIMEOUT,
             )
         return result
 
-    async def _sync_all_then_sweep(self):
-        # sync_scopes must be wrapped too: this coroutine is launched
-        # fire-and-forget from start() (boot), so an unhandled raise here would
-        # die silently — the exception is never retrieved (stop() gathers with
+    async def _sync_all(self):
+        # sync_scopes must be wrapped: this coroutine is launched fire-and-forget
+        # from start() (boot), so an unhandled raise here would die silently —
+        # the exception is never retrieved (stop() gathers with
         # return_exceptions=True and discards it), not even asyncio's
-        # "never retrieved" warning until GC. Log it and still run the sweep.
+        # "never retrieved" warning until GC.
         try:
             await self._service.sync_scopes()
         except Exception:
             logger.exception("Scope sync (sync_scopes) failed")
-        # After sync, disk state is settled: anything on disk that no live
-        # scope references is an orphan (crash leftovers, redis-wiped boot,
-        # old-shard dirs after a SCOPES_REPO_CLONES_SHARDS change).
-        # Runs on boot and on refresh-all triggers.
-        try:
-            await self._purger.sweep_orphans()
-        except Exception:
-            # The backstop must never kill the watcher task or fail silently;
-            # the periodic pass retries (and logs) on its own schedule.
-            logger.exception("Orphan sweep failed")
 
     async def _periodic_polling(self):
         try:
@@ -149,9 +129,6 @@ class ScopesPolicyWatcherTask(BasePolicyWatcherTask):
                 logger.info("Periodic sync")
                 try:
                     await self._service.sync_scopes(only_poll_updates=True)
-                    # Orphan sweeping runs on its own always-on timer
-                    # (_periodic_orphan_sweep), not here — running both would
-                    # double the disk scans and confirmed-orphan purge broadcasts.
                 except asyncio.CancelledError:
                     raise
                 except Exception as e:
@@ -159,30 +136,6 @@ class ScopesPolicyWatcherTask(BasePolicyWatcherTask):
 
         except asyncio.CancelledError:
             logger.info("Periodic sync cancelled")
-            raise
-
-    async def _periodic_orphan_sweep(self):
-        """The single periodic sweeper, always-on and independent of
-        POLICY_REFRESH_INTERVAL.
-
-        _periodic_polling deliberately does NOT sweep (running both
-        would double the disk scans and confirmed-orphan purge
-        broadcasts), so without this timer boot's _sync_all_then_sweep
-        would be the sole sweep and a delete/repoint whose purge
-        broadcast never reached the leader would leak until the next
-        refresh-all.
-        """
-        try:
-            while True:
-                await asyncio.sleep(opal_server_config.SCOPES_ORPHAN_SWEEP_INTERVAL)
-                try:
-                    await self._purger.sweep_orphans()
-                except asyncio.CancelledError:
-                    raise
-                except Exception:
-                    logger.exception("Periodic orphan sweep failed")
-        except asyncio.CancelledError:
-            logger.info("Periodic orphan sweep cancelled")
             raise
 
     async def trigger(self, topic: Topic, data: Any):
@@ -201,7 +154,7 @@ class ScopesPolicyWatcherTask(BasePolicyWatcherTask):
                 )
         else:
             # Refresh all scopes
-            await self._sync_all_then_sweep()
+            await self._sync_all()
 
     @staticmethod
     def preload_scopes():

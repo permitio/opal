@@ -108,22 +108,9 @@ def test_corrupt_clone_recovers_without_clone_loop(opal):
 @pytest.mark.timeout(900)
 @pytest.mark.invariant_exempt("I1")
 def test_orphan_clone_dir_is_reclaimed(opal):
-    """Gate for PR3's orphan sweep: a clone dir with no live scope must
-    eventually be removed, while a live scope's clone is left alone.
-
-    Deliberately runs with a live scope present rather than an empty scope
-    store: a zero-scope read is refused by the sweep unless
-    OPAL_SCOPES_ORPHAN_SWEEP_RECLAIM_ON_EMPTY_STORE is set (see
-    test_redis_wiped_boot_reclaims_clones), and the shape worth gating is the
-    production one — real scopes alongside a stale dir, where reclaiming the
-    stale dir must not touch the live clone.
-    """
+    """RED until an orphan sweep exists (PR3+, currently unowned): a clone dir
+    with no live scope must eventually be removed."""
     fake_sid = "f" * 64 + "-0"
-    opal.put_scope("orphan-live", gitea_repo_url(list_seeded_repos(1)[0]))
-    assert wait_until(
-        lambda: opal.get_scope_policy("orphan-live").status_code == 200, timeout=300
-    ), "the live scope never served, so the sweep has nothing to protect"
-    live_dirs = clone_dirs()
     compose(
         "exec",
         "-T",
@@ -133,26 +120,10 @@ def test_orphan_clone_dir_is_reclaimed(opal):
         f"mkdir -p /opal/git_sources/{fake_sid} && touch /opal/git_sources/{fake_sid}/junk",
     )
     try:
-        # The sweep reclaims a dir only once it has looked orphaned on
-        # CONSECUTIVE passes, so one refresh-all merely corroborates. Two
-        # triggers is the honest way to exercise that here; in production the
-        # always-on timer supplies the second pass. Asserting the dir is still
-        # present after the first pass is what pins the guard itself — without
-        # it this test would pass just as well with corroboration removed.
-        opal.refresh_all()
-        time.sleep(5)
-        assert fake_sid in clone_dirs(), (
-            "reclaimed on the first pass — a dir must be corroborated across "
-            "consecutive passes before it can be deleted"
-        )
         opal.refresh_all()
         assert wait_until(
             lambda: fake_sid not in clone_dirs(), timeout=60
         ), "orphan clone dir never reclaimed (needs an orphan sweep)"
-        assert live_dirs <= clone_dirs(), (
-            f"the sweep also reclaimed a live scope's clone "
-            f"(missing: {sorted(live_dirs - clone_dirs())})"
-        )
     finally:
         # red gate leaves state on purpose; clean it so later tests' I1 holds
         compose(
@@ -165,56 +136,18 @@ def test_orphan_clone_dir_is_reclaimed(opal):
         )
 
 
-@pytest.fixture
-def reclaim_on_empty_store(opal):
-    """Turn OPAL_SCOPES_ORPHAN_SWEEP_RECLAIM_ON_EMPTY_STORE on for ONE test.
-
-    The teardown owns the restore from the moment the variable is set, so a
-    failure anywhere in setup — the recreate, wait_healthy, a slow seed — cannot
-    leave the destructive reclaim enabled for the rest of the bed run. compose()
-    inherits os.environ, and docker-compose.yml reads
-    ${OPAL_TEST_RECLAIM_ON_EMPTY_STORE:-false}, so a leaked "true" would silently
-    disable the refusal for every later test that recreates opal_server.
-
-    --force-recreate is what picks up the new env, and it also empties the
-    container's clone tree — so the test must seed its clone AFTER this fixture.
-    pop() rather than writing "false" keeps the compose default authoritative.
-    """
-    os.environ["OPAL_TEST_RECLAIM_ON_EMPTY_STORE"] = "true"
-    try:
-        compose("up", "-d", "--no-deps", "--force-recreate", "opal_server")
-        opal.wait_healthy()
-        yield
-    finally:
-        os.environ.pop("OPAL_TEST_RECLAIM_ON_EMPTY_STORE", None)
-        compose("up", "-d", "--no-deps", "--force-recreate", "opal_server")
-        opal.wait_healthy()
-
-
 @pytest.mark.timeout(900)
 @pytest.mark.allow_worker_restart
 @pytest.mark.invariant_exempt("I1")
-def test_redis_wiped_boot_reclaims_clones(opal, reclaim_on_empty_store):
-    """Gate for PR3's orphan sweep (same class as the orphan-dir gate): after a
-    scope-store wipe, on-disk clones reference nothing and must be reclaimed.
-
-    Reclaiming on a zero-scope read is opt-in
-    (OPAL_SCOPES_ORPHAN_SWEEP_RECLAIM_ON_EMPTY_STORE, default off): from
-    inside the sweep this deliberate FLUSHALL is indistinguishable from a
-    REDIS_URL pointed at the wrong DB, a failover to an empty replica, or
-    a stray FLUSHDB — where reclaiming would delete every tenant's clone.
-    So this test flips the key on for its own container and restores the
-    default afterwards, rather than the bed running with it on
-    everywhere: every OTHER test here must keep exercising the shipped
-    refusal behaviour.
-    """
+def test_redis_wiped_boot_reclaims_clones(opal):
+    """RED until the orphan sweep (same class as the orphan-dir gate): after a
+    scope-store wipe, on-disk clones reference nothing and must be
+    reclaimed."""
     opal.put_scope("wipe-0", gitea_repo_url(list_seeded_repos(1)[0]))
     assert wait_until(
         lambda: opal.get_scope_policy("wipe-0").status_code == 200, timeout=300
     ), "wipe-0 never served before the wipe"
     try:
-        # stop/start (not recreate) so the clone tree survives the restart —
-        # the whole point is that clones outlive the store that referenced them.
         compose("stop", "opal_server")
         compose("exec", "-T", "redis", "redis-cli", "FLUSHALL")
         compose("start", "opal_server")
@@ -298,28 +231,11 @@ def test_shard_reconfig_still_serves_but_orphans_old_clones(opal, tmp_path):
         opal.wait_healthy()
         # restore the old-shard dirs next to whatever the new boot creates
         compose("cp", str(tmp_path / "saved") + "/.", "opal_server:/opal/git_sources")
-        # docker cp writes root-owned files; the sweep runs as the non-root
-        # `opal` user (uid 1000), so it would PermissionError on the rmtree
-        # without this.
-        compose(
-            "exec",
-            "-u",
-            "root",
-            "-T",
-            "opal_server",
-            "chown",
-            "-R",
-            "opal:opal",
-            "/opal/git_sources",
-        )
         opal.refresh_all()
         assert wait_until(
             lambda: opal.get_scope_policy("shard-0").status_code == 200,
             timeout=300,
         ), "scope stopped serving after the shard reconfig (green half broken!)"
-        # Second trigger: the first pass only corroborates the old-shard dirs
-        # (see test_orphan_clone_dir_is_reclaimed for why).
-        opal.refresh_all()
         assert wait_until(
             lambda: clone_dirs() <= live_source_ids(opal, shards=4), timeout=60
         ), (

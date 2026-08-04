@@ -8,9 +8,8 @@ from opal_server.scopes.task import ScopesPolicyWatcherTask
 
 
 class _Recorder:
-    def __init__(self, events, fail_sweep=False, fail_sync=False):
+    def __init__(self, events, fail_sync=False):
         self._events = events
-        self._fail_sweep = fail_sweep
         self._fail_sync = fail_sync
 
     async def sync_scopes(self, *args, **kwargs):
@@ -20,11 +19,6 @@ class _Recorder:
 
     async def sync_scope(self, *args, **kwargs):
         self._events.append("sync_one")
-
-    async def sweep_orphans(self):
-        self._events.append("sweep")
-        if self._fail_sweep:
-            raise PermissionError("disk broke")
 
     async def handle(self, *args, **kwargs):  # the purge-channel subscriber
         return None
@@ -49,52 +43,14 @@ class FakeNotifier:
         self.unsubs.append((subscriber_id, list(topics) if topics else None))
 
 
-def _bare_task(events, fail_sweep=False, fail_sync=False):
+def _bare_task(events, fail_sync=False):
     """Construct without __init__ (it needs Redis); wire only what the methods
     under test use."""
     t = ScopesPolicyWatcherTask.__new__(ScopesPolicyWatcherTask)
-    rec = _Recorder(events, fail_sweep=fail_sweep, fail_sync=fail_sync)
+    rec = _Recorder(events, fail_sync=fail_sync)
     t._service = rec
     t._purger = rec
     return t
-
-
-@pytest.mark.asyncio
-async def test_sync_all_then_sweep_runs_in_order():
-    events = []
-    await _bare_task(events)._sync_all_then_sweep()
-    assert events == ["sync", "sweep"]
-
-
-@pytest.mark.asyncio
-async def test_sweep_failure_is_swallowed_and_does_not_mask_sync():
-    events = []
-    await _bare_task(events, fail_sweep=True)._sync_all_then_sweep()  # no raise
-    assert events == ["sync", "sweep"]
-
-
-@pytest.mark.asyncio
-async def test_sweep_failure_is_logged():
-    """Swallowing the sweep failure must not make it invisible — boot-time
-    sweep failures need to surface somewhere an operator can find them."""
-    from opal_common.logger import logger as opal_logger
-
-    events = []
-    records = []
-    sink_id = opal_logger.add(lambda m: records.append(str(m)), level="ERROR")
-    try:
-        await _bare_task(events, fail_sweep=True)._sync_all_then_sweep()
-    finally:
-        opal_logger.remove(sink_id)
-
-    assert any("Orphan sweep failed" in r for r in records), f"not logged: {records}"
-
-
-@pytest.mark.asyncio
-async def test_refresh_all_trigger_sweeps():
-    events = []
-    await _bare_task(events).trigger(topic=None, data=None)
-    assert events == ["sync", "sweep"]
 
 
 @pytest.mark.asyncio
@@ -102,47 +58,6 @@ async def test_single_scope_trigger_does_not_sweep():
     events = []
     await _bare_task(events).trigger(topic=None, data={"scope_id": "s1"})
     assert events == ["sync_one"]
-
-
-@pytest.mark.asyncio
-async def test_periodic_orphan_sweep_runs_with_polling_disabled(monkeypatch):
-    from opal_server.config import opal_server_config
-
-    monkeypatch.setattr(opal_server_config, "POLICY_REFRESH_INTERVAL", 0)
-    monkeypatch.setattr(opal_server_config, "SCOPES_ORPHAN_SWEEP_INTERVAL", 300)
-    calls = {"n": 0}
-
-    async def fake_sleep(_):
-        calls["n"] += 1
-        if calls["n"] >= 2:
-            raise asyncio.CancelledError
-
-    monkeypatch.setattr(asyncio, "sleep", fake_sleep)
-    events = []
-    with pytest.raises(asyncio.CancelledError):
-        await _bare_task(events)._periodic_orphan_sweep()
-    assert events.count("sweep") == 1
-    assert "sync" not in events
-
-
-@pytest.mark.asyncio
-async def test_periodic_polling_syncs_but_does_not_sweep(monkeypatch):
-    # Polling must NOT sweep: the always-on _periodic_orphan_sweep owns that,
-    # independent of POLICY_REFRESH_INTERVAL (per the config docs). Sweeping here
-    # too would double the disk scans and confirmed-orphan purge broadcasts.
-    from opal_server.config import opal_server_config
-
-    monkeypatch.setattr(opal_server_config, "POLICY_REFRESH_INTERVAL", 0.001)
-    events = []
-    task = asyncio.create_task(_bare_task(events)._periodic_polling())
-    try:
-        while events.count("sync") < 2:
-            await asyncio.sleep(0)
-    finally:
-        task.cancel()
-        with pytest.raises(asyncio.CancelledError):
-            await task
-    assert "sweep" not in events
 
 
 @pytest.mark.asyncio
@@ -181,9 +96,6 @@ async def test_start_subscribes_leader_purge_handler(monkeypatch):
 
     class FakePurger:
         async def handle(self, *a, **k):
-            return None
-
-        async def sweep_orphans(self):
             return None
 
     class FakeService:
@@ -250,52 +162,6 @@ def _clean_fetcher_caches():
 
 
 @pytest.mark.asyncio
-async def test_sync_all_then_sweep_still_sweeps_when_sync_raises():
-    """A raising boot sync must not skip the sweep (nor die silently: stop()
-    gathers with return_exceptions=True and discards the exception).
-
-    Mutation: deleting the try/except around sync_scopes must fail here.
-    """
-    events = []
-    await _bare_task(events, fail_sync=True)._sync_all_then_sweep()  # no raise
-    assert events == ["sync", "sweep"]
-
-
-@pytest.mark.asyncio
-async def test_orphan_sweep_timer_starts_even_when_polling_is_enabled(monkeypatch):
-    """The sweep timer is always-on: _periodic_polling deliberately does not
-    sweep, so gating this timer on `POLICY_REFRESH_INTERVAL <= 0` would leave a
-    polling-enabled deployment with no periodic sweep at all.
-
-    Mutation: re-adding that gate must fail here.
-    """
-    from opal_server.config import opal_server_config
-    from opal_server.policy.watcher.task import BasePolicyWatcherTask
-
-    async def _noop_start(self):
-        return None
-
-    monkeypatch.setattr(BasePolicyWatcherTask, "start", _noop_start)
-    monkeypatch.setattr(opal_server_config, "POLICY_REFRESH_INTERVAL", 3600)
-    monkeypatch.setattr(opal_server_config, "SCOPES_ORPHAN_SWEEP_INTERVAL", 300)
-
-    events = []
-    t = _bare_task(events)
-    t._pubsub_endpoint = _FakeEndpoint()
-    t._tasks = []
-    t._purger_sub_id = None
-    await t.start()
-    try:
-        running = {task.get_coro().__name__ for task in t._tasks}
-        assert "_periodic_orphan_sweep" in running, running
-        assert "_periodic_polling" in running, running
-    finally:
-        for task in t._tasks:
-            task.cancel()
-        await asyncio.gather(*t._tasks, return_exceptions=True)
-
-
-@pytest.mark.asyncio
 async def test_stop_does_not_unsubscribe_the_every_worker_purge_handler(
     tmp_path, monkeypatch, _clean_fetcher_caches
 ):
@@ -324,7 +190,6 @@ async def test_stop_does_not_unsubscribe_the_every_worker_purge_handler(
         "opal_server.scopes.purge.opal_server_config.BASE_DIR", str(tmp_path)
     )
     monkeypatch.setattr(opal_server_config, "POLICY_REFRESH_INTERVAL", 0)
-    monkeypatch.setattr(opal_server_config, "SCOPES_ORPHAN_SWEEP_INTERVAL", 0)
 
     endpoint = PubSubEndpoint()  # real EventNotifier
     await subscribe_worker_purge_handler(endpoint)  # boot-time, every worker
@@ -340,9 +205,6 @@ async def test_stop_does_not_unsubscribe_the_every_worker_purge_handler(
             leader_calls.append(data)
 
         async def sync_scopes(self, *a, **k):
-            return None
-
-        async def sweep_orphans(self):
             return None
 
         def signal_stop(self):
@@ -445,7 +307,6 @@ async def test_stop_is_idempotent(monkeypatch):
 
     monkeypatch.setattr(BasePolicyWatcherTask, "start", _noop_start)
     monkeypatch.setattr(opal_server_config, "POLICY_REFRESH_INTERVAL", 0)
-    monkeypatch.setattr(opal_server_config, "SCOPES_ORPHAN_SWEEP_INTERVAL", 0)
 
     stops = []
 
@@ -454,9 +315,6 @@ async def test_stop_is_idempotent(monkeypatch):
             return None
 
         async def sync_scopes(self, *a, **k):
-            return None
-
-        async def sweep_orphans(self):
             return None
 
         def signal_stop(self):
