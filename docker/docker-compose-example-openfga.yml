@@ -47,9 +47,8 @@ services:
       # Configure OpenFGA as the policy engine
       - OPAL_POLICY_STORE_TYPE=OPENFGA
       - OPAL_POLICY_STORE_URL=http://0.0.0.0:8080
-      - OPAL_OPENFGA_STORE_ID=01JAT34GM6T5WRVMXXDYWGSYKN
-      # Enable inline OpenFGA mode
-      - OPAL_INLINE_OPENFGA_ENABLED=true
+      # No OPAL_OPENFGA_STORE_ID set: start-openfga.sh creates a fresh store
+      # on startup and uses that. Set this explicitly to reuse an existing store.
       #- OPAL_LOG_LEVEL=DEBUG
 
     ports:
@@ -64,7 +63,7 @@ services:
     depends_on:
       - opal_server
     # Ensures opal-server is ready before starting the client
-    command: sh -c "exec ./wait-for.sh opal_server:7002 --timeout=20 -- ./start.sh"
+    command: sh -c "exec ./wait-for.sh opal_server:7002 --timeout=20 -- ./start-openfga.sh"
     volumes:
       - openfga_backup:/opal/backup:rw
 

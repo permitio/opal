@@ -1,4 +1,5 @@
 import asyncio
+import functools
 import os
 import signal
 import tempfile

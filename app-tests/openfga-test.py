@@ -1,4 +1,6 @@
 import json
+import time
+import urllib.request
 from typing import Any, Dict, List, Tuple
 
 import aiohttp
@@ -6,7 +8,31 @@ import pytest
 
 # Constants
 FGA_URL = "http://localhost:8080"
-STORE_ID = "01JAT34GM6T5WRVMXXDYWGSYKN"
+
+
+def _discover_store_id(retries: int = 20, delay_seconds: float = 1.0) -> str:
+    """Look up the store id of the store created for this test run.
+
+    start-openfga.sh creates a fresh OpenFGA store per container start (see
+    docker-compose-app-tests-openfga.yml), so the id isn't known up front -
+    it has to be discovered from the running server instead of hardcoded.
+    """
+    last_error: Exception | None = None
+    for _ in range(retries):
+        try:
+            with urllib.request.urlopen(f"{FGA_URL}/stores") as response:
+                stores = json.load(response).get("stores", [])
+            if stores:
+                return stores[0]["id"]
+        except Exception as error:  # server not up yet
+            last_error = error
+        time.sleep(delay_seconds)
+    raise RuntimeError(
+        f"No OpenFGA store found at {FGA_URL} after {retries} retries"
+    ) from last_error
+
+
+STORE_ID = _discover_store_id()
 
 # Test cases
 TEST_CASES = [

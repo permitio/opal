@@ -383,6 +383,22 @@ class OpenFGARunner(PolicyEngineRunner):
         await log_engine_output_simple(line)
         return False
 
+    async def health_check(self) -> bool:
+        """Performs a health check on the OpenFGA server by calling its health
+        endpoint."""
+        try:
+            health_url = f"{opal_client_config.POLICY_STORE_URL}/healthz"
+            timeout_seconds = opal_client_config.POLICY_STORE_CONN_RETRY.wait_time
+            timeout = aiohttp.ClientTimeout(total=timeout_seconds)
+            async with aiohttp.ClientSession(
+                trust_env=True, timeout=timeout
+            ) as session:
+                response = await session.get(health_url)
+                return response.status == 200
+        except Exception as e:
+            logger.debug(f"OpenFGA health check failed: {e}")
+            return False
+
     def get_executable_path(self) -> str:
         """Gets the path to OpenFGA executable, preferring configured path."""
         if opal_client_config.INLINE_OPENFGA_EXEC_PATH:

@@ -21,7 +21,8 @@ OPAL_SERVER_URL ?= http://host.docker.internal:7002
 OPAL_AUTH_PRIVATE_KEY ?= /root/ssh/opal_rsa
 OPAL_AUTH_PUBLIC_KEY ?= /root/ssh/opal_rsa.pub
 OPAL_POLICY_STORE_URL ?= http://host.docker.internal:8181
-OPENFGA_STORE_ID ?= 01JAT34GM6T5WRVMXXDYWGSYKN #change id
+# If unset, the client-openfga image creates a fresh store on startup and uses that.
+OPENFGA_STORE_ID ?=
 
 # python packages (pypi)
 clean:
@@ -159,7 +160,6 @@ docker-run-client-openfga: create-openfga-volume
 	    -e "OPAL_POLICY_STORE_TYPE=OPENFGA" \
 	    -e "OPAL_POLICY_STORE_URL=http://0.0.0.0:8080" \
 	    -e "OPAL_OPENFGA_STORE_ID=$(OPENFGA_STORE_ID)" \
-	    -e "OPAL_INLINE_OPENFGA_ENABLED=true" \
 	    -e "OPAL_LOG_FORMAT_INCLUDE_PID=true" \
 	    -v openfga_backup:/opal/backup:rw \
 	    -p 7766:7000 \

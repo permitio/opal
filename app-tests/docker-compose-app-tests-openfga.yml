@@ -32,8 +32,9 @@ services:
       - OPAL_LOG_FORMAT_INCLUDE_PID=true
       - OPAL_POLICY_STORE_TYPE=OPENFGA
       - OPAL_POLICY_STORE_URL=http://0.0.0.0:8080
-      - OPAL_OPENFGA_STORE_ID=01JAT34GM6T5WRVMXXDYWGSYKN
-      - OPAL_INLINE_OPENFGA_ENABLED=true
+      # No OPAL_OPENFGA_STORE_ID: start-openfga.sh creates a fresh store for
+      # this run, so each `docker compose up` gets an isolated store instead
+      # of every test run sharing one fixed, pre-existing store id.
       #- OPAL_LOG_LEVEL=DEBUG
 
     ports:
@@ -44,7 +45,7 @@ services:
       - opal-network
     depends_on:
       - opal_server
-    command: sh -c "exec ./wait-for.sh opal_server:7002 --timeout=40 -- ./start.sh"
+    command: sh -c "exec ./wait-for.sh opal_server:7002 --timeout=40 -- ./start-openfga.sh"
     volumes:
       - openfga_backup:/opal/backup:rw
 
