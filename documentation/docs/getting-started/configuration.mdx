@@ -1065,9 +1065,9 @@ _Added in OPAL v0.6.0_
 
 Default: `opa`
 
-Type of policy store to use. Options: `opa`, `cedar`.
+Type of policy store to use. Options: `opa`, `cedar`, `openfga`.
 
-For more information, see [Cedar and OPAL](/tutorials/cedar).
+For more information, see [Cedar and OPAL](/tutorials/cedar) or [OpenFGA and OPAL](/tutorials/openfga).
 
 #### OPAL_POLICY_STORE_URL
 
@@ -1277,6 +1277,44 @@ The log format for inline Cedar. Options: `none`, `minimal`, `http`, `full`.
 _Added in OPAL v0.7.0_
 
 For more information, see [Cedar and OPAL](/tutorials/cedar).
+
+#### OPAL_INLINE_OPENFGA_ENABLED
+
+Default: `False`
+
+Whether OPAL should run OpenFGA by itself in the same container.
+
+For more information, see [OpenFGA and OPAL](/tutorials/openfga).
+
+#### OPAL_INLINE_OPENFGA_EXEC_PATH
+
+Default: `/usr/local/bin/openfga`
+
+The path to the OpenFGA executable.
+
+For more information, see [OpenFGA and OPAL](/tutorials/openfga).
+
+#### OPAL_INLINE_OPENFGA_CONFIG
+
+Default: `{}`
+
+If inline OpenFGA is enabled, provide options for running the OpenFGA server.
+
+For more information, see [OpenFGA and OPAL](/tutorials/openfga).
+
+#### OPAL_INLINE_OPENFGA_LOG_FORMAT
+
+Default: `none`
+
+The log format for inline OpenFGA. Options: `none`, `minimal`, `http`, `full`.
+
+#### OPAL_OPENFGA_STORE_ID
+
+Default: `None`
+
+The OpenFGA store ID that OPAL client will write policy/data updates into.
+
+For more information, see [OpenFGA and OPAL](/tutorials/openfga).
 
 ### Policy Updates Configuration
 

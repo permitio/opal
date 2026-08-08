@@ -43,8 +43,9 @@ def test_is_policy_module():
     assert is_policy_module(Path("some/dir/to/file.rego")) == True
     assert is_policy_module(Path("rbac.rego")) == True
 
-    # files with other extensions are not rego modules
-    assert is_policy_module(Path("rbac.json")) == False
+    # openfga supports both .yaml and .json files
+    assert is_policy_module(Path("authorization.json")) == True
+    assert is_policy_module(Path("authorization.yaml")) == True
 
     # directories are not data modules
     assert is_policy_module(Path(".")) == False
