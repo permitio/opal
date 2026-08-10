@@ -1,0 +1,67 @@
+name: opal-cerbos-example
+
+services:
+  # When scaling the opal-server to multiple nodes and/or multiple workers, we use
+  # a *broadcast* channel to sync between all the instances of opal-server.
+  # Under the hood, this channel is implemented by encode/broadcaster.
+  broadcast_channel:
+    image: postgres:alpine
+    environment:
+      - POSTGRES_DB=postgres
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+    networks:
+      - opal-network
+
+  # OPAL server configuration
+  # Handles policy updates and coordinates with the broadcast channel
+  opal_server:
+    image: permitio/opal-server:latest
+    environment:
+      - OPAL_BROADCAST_URI=postgres://postgres:postgres@broadcast_channel:5432/postgres
+      - UVICORN_NUM_WORKERS=4
+      # cerbos/example-cerbos-policy-repository - a real, public example repo maintained by
+      # Cerbos, containing a resourcePolicy (basicResource.yaml) plus its own test suite
+      - OPAL_POLICY_REPO_URL=https://github.com/cerbos/example-cerbos-policy-repository
+      # this repo's default branch is "main", not OPAL's own default of "master"
+      - OPAL_POLICY_REPO_MAIN_BRANCH=main
+      # Cerbos policies are .yaml/.json, not .rego - this must be set explicitly per
+      # deployment rather than changed globally, since raising the shared default would
+      # affect every OPA/Cedar deployment too, picking up unrelated .yaml/.json files
+      # as if they were policy modules.
+      - OPAL_POLICY_REPO_POLICY_EXTENSIONS=.yaml,.yml,.json
+      - OPAL_POLICY_REPO_POLLING_INTERVAL=30
+      - OPAL_LOG_FORMAT_INCLUDE_PID=true
+      # No OPAL_DATA_CONFIG_SOURCES: Cerbos has no data-document store to sync -
+      # see CerbosClient.set_policy_data.
+    ports:
+      - "7002:7002"
+    depends_on:
+      - broadcast_channel
+    networks:
+      - opal-network
+
+  # OPAL client configured for Cerbos, running Cerbos inline
+  opal_client_cerbos:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      target: client-cerbos
+    environment:
+      - OPAL_SERVER_URL=http://opal_server:7002
+      - OPAL_LOG_FORMAT_INCLUDE_PID=true
+    ports:
+      # exposes opal client API at: http://localhost:7766
+      - "7766:7000"
+      # exposes the Cerbos HTTP API (check/admin) at: http://localhost:3592
+      - "3592:3592"
+    depends_on:
+      - opal_server
+    networks:
+      - opal-network
+    # Ensures opal-server is ready before starting the client
+    command: sh -c "exec ./wait-for.sh opal_server:7002 --timeout=20 -- ./start.sh"
+
+networks:
+  opal-network:
+    driver: bridge

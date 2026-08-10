@@ -152,6 +152,16 @@ class PolicyStoreClientFactory:
                 cedar_auth_token=store_token,
                 auth_type=auth_type,
             )
+        elif PolicyStoreTypes.CERBOS == store_type:
+            from opal_client.policy_store.cerbos_client import CerbosClient
+
+            res = CerbosClient(
+                url,
+                cerbos_auth_token=store_token,
+                auth_type=auth_type,
+                admin_username=opal_client_config.CERBOS_ADMIN_USERNAME,
+                admin_password=opal_client_config.CERBOS_ADMIN_PASSWORD,
+            )
         # MOCK
         elif PolicyStoreTypes.MOCK == store_type:
             from opal_client.policy_store.mock_policy_store_client import (

@@ -181,6 +181,48 @@ ENV OPAL_POLICY_STORE_URL=http://localhost:8180
 EXPOSE 8180
 USER opal
 
+# CERBOS BINARY DOWNLOAD STAGE -----------------------
+# ---------------------------------------------------
+FROM alpine:latest AS cerbos-extractor
+USER root
+
+RUN apk add --no-cache wget
+
+WORKDIR /download
+
+# Download pre-built Cerbos binary based on architecture
+ARG cerbos_tag=v0.54.0
+ARG TARGETARCH
+RUN case "${TARGETARCH}" in \
+        "amd64") CERBOS_ARCH="x86_64" ;; \
+        "arm64") CERBOS_ARCH="arm64" ;; \
+        *) echo "Unsupported architecture: ${TARGETARCH}" && exit 1 ;; \
+    esac && \
+    echo "Downloading Cerbos for Linux_${CERBOS_ARCH}" && \
+    wget -O cerbos.tar.gz "https://github.com/cerbos/cerbos/releases/download/${cerbos_tag}/cerbos_${cerbos_tag#v}_Linux_${CERBOS_ARCH}.tar.gz" && \
+    tar xzf cerbos.tar.gz && \
+    chmod +x cerbos
+
+# CERBOS CLIENT IMAGE --------------------------------
+# Using standalone image as base --------------------
+# ---------------------------------------------------
+FROM client-standalone AS client-cerbos
+
+# Temporarily move back to root for additional setup
+USER root
+
+# copy cerbos from cerbos-extractor
+COPY --from=cerbos-extractor /download/cerbos /bin/cerbos
+
+# enable inline Cerbos PDP
+ENV OPAL_POLICY_STORE_TYPE=CERBOS
+ENV OPAL_INLINE_CERBOS_ENABLED=true
+ENV OPAL_INLINE_CERBOS_EXEC_PATH=/bin/cerbos
+ENV OPAL_POLICY_STORE_URL=http://localhost:3592
+# expose cerbos HTTP port
+EXPOSE 3592
+USER opal
+
 # SERVER IMAGE --------------------------------------
 # ---------------------------------------------------
 FROM common AS server

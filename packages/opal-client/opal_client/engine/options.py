@@ -158,3 +158,45 @@ class CedarServerOptions(BaseModel):
         yield match.group("port") or "8180"
 
         # TODO: files
+
+
+class CerbosServerOptions(BaseModel):
+    """Options to configure the Cerbos PDP (apply when choosing to run Cerbos
+    inline).
+
+    Cerbos's admin API requires a bcrypt password hash, base64-encoded -
+    not a plaintext password. The default below is the hash of Cerbos's
+    own documented default password ("cerbosAdmin"); change it (and the
+    username) for anything beyond local/demo use. Generate a new one
+    with:     echo "<password>" | htpasswd -niBC 10 <username> | cut -d
+    ':' -f 2 | base64
+    """
+
+    addr: str = Field(
+        "0.0.0.0:3592",
+        description="listening address of the Cerbos HTTP API (e.g., [ip]:<port> for TCP)",
+    )
+    sqlite_dsn: str = Field(
+        "file::memory:?cache=shared",
+        description="DSN for Cerbos's sqlite3 storage driver, which OPAL uses because it's "
+        "the store admin API pushes actually accept - Cerbos's disk/git/blob drivers only "
+        "support triggering a reload of files already present, not accepting pushed content",
+    )
+    admin_username: str = Field("cerbos", description="username for Cerbos's admin API")
+    admin_password_hash: str = Field(
+        "JDJ5JDEwJHdIc29ZSEFRNEdTVWE1YTcyQzhvWS5DcVlXOVFaNnhXWkdaNWFxSmlmRXBDckphS2tPVU9L",
+        description="base64-encoded bcrypt hash of the admin API password",
+    )
+
+    def get_args(self) -> Iterable[str]:
+        if not HOST_ADDR_PATTERN.match(self.addr):
+            raise ValueError(
+                f"Invalid addr format: {self.addr}. Expected [ip]:<port>, e.g. '0.0.0.0:3592', ':3592'"
+            )
+
+        yield "--set=storage.driver=sqlite3"
+        yield f"--set=storage.sqlite3.dsn={self.sqlite_dsn}"
+        yield f"--set=server.httpListenAddr={self.addr}"
+        yield "--set=server.adminAPI.enabled=true"
+        yield f"--set=server.adminAPI.adminCredentials.username={self.admin_username}"
+        yield f"--set=server.adminAPI.adminCredentials.passwordHash={self.admin_password_hash}"

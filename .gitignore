@@ -140,3 +140,4 @@ dmypy.json
 
 # Private Claude Code working artifacts (plans/specs) — never commit
 .claude/
+/.mcp.json

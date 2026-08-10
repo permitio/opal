@@ -1,0 +1,49 @@
+name: opal-cerbos-app-tests
+
+services:
+  broadcast_channel:
+    image: postgres:alpine
+    environment:
+      - POSTGRES_DB=postgres
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+    networks:
+      - opal-network
+
+  opal_server:
+    image: permitio/opal-server:latest
+    environment:
+      - OPAL_BROADCAST_URI=postgres://postgres:postgres@broadcast_channel:5432/postgres
+      - UVICORN_NUM_WORKERS=4
+      - OPAL_POLICY_REPO_URL=https://github.com/cerbos/example-cerbos-policy-repository
+      - OPAL_POLICY_REPO_MAIN_BRANCH=main
+      - OPAL_POLICY_REPO_POLICY_EXTENSIONS=.yaml,.yml,.json
+      - OPAL_POLICY_REPO_POLLING_INTERVAL=30
+      - OPAL_LOG_FORMAT_INCLUDE_PID=true
+    ports:
+      - "7002:7002"
+    depends_on:
+      - broadcast_channel
+    networks:
+      - opal-network
+
+  opal_client_cerbos:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      target: client-cerbos
+    environment:
+      - OPAL_SERVER_URL=http://opal_server:7002
+      - OPAL_LOG_FORMAT_INCLUDE_PID=true
+    ports:
+      - "7766:7000"
+      - "3592:3592"
+    depends_on:
+      - opal_server
+    networks:
+      - opal-network
+    command: sh -c "exec ./wait-for.sh opal_server:7002 --timeout=40 -- ./start.sh"
+
+networks:
+  opal-network:
+    driver: bridge

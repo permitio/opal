@@ -16,6 +16,7 @@ help:
 	@echo "  docker-run-client     - Run opal-client in Docker"
 	@echo "  docker-run-server     - Run opal-server in Docker"
 	@echo "  docker-build-client-eopa - Build opal-client-eopa Docker image"
+	@echo "  docker-build-client-cerbos - Build opal-client-cerbos Docker image"
 
 OPAL_SERVER_URL ?= http://host.docker.internal:7002
 OPAL_AUTH_PRIVATE_KEY ?= /root/ssh/opal_rsa
@@ -65,6 +66,9 @@ docker-build-client-eopa:
 
 docker-build-client-cedar:
 	@docker build -t permitio/opal-client-cedar --target client-cedar -f docker/Dockerfile .
+
+docker-build-client-cerbos:
+	@docker build -t permitio/opal-client-cerbos --target client-cerbos -f docker/Dockerfile .
 
 docker-build-client-standalone:
 	@docker build -t permitio/opal-client-standalone --target client-standalone -f docker/Dockerfile .

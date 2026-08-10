@@ -8,7 +8,11 @@ from typing import Callable, Coroutine, List, Optional
 import aiohttp
 from opal_client.config import EngineLogFormat, opal_client_config
 from opal_client.engine.logger import log_engine_output_opa, log_engine_output_simple
-from opal_client.engine.options import CedarServerOptions, OpaServerOptions
+from opal_client.engine.options import (
+    CedarServerOptions,
+    CerbosServerOptions,
+    OpaServerOptions,
+)
 from opal_client.logger import logger
 from tenacity import retry, stop_after_attempt, wait_exponential
 
@@ -431,6 +435,87 @@ class CedarRunner(PolicyEngineRunner):
             cedar_runner.register_process_restart_callbacks(rehydration_callbacks)
 
         return cedar_runner
+
+    async def handle_log_line(self, line: bytes) -> bool:
+        await log_engine_output_simple(line)
+
+        return False
+
+
+class CerbosRunner(PolicyEngineRunner):
+    def __init__(
+        self,
+        options: Optional[CerbosServerOptions] = None,
+        piped_logs_format: EngineLogFormat = EngineLogFormat.NONE,
+    ):
+        super().__init__(piped_logs_format)
+        self._options = options or CerbosServerOptions()
+
+    def get_executable_path(self) -> str:
+        if opal_client_config.INLINE_CERBOS_EXEC_PATH:
+            return opal_client_config.INLINE_CERBOS_EXEC_PATH
+        else:
+            logger.warning(
+                "Cerbos executable path not set, looking for 'cerbos' binary in system PATH. "
+                "It is recommended to set the INLINE_CERBOS_EXEC_PATH configuration."
+            )
+            path = shutil.which("cerbos")
+            if path is None:
+                raise FileNotFoundError("Cerbos executable not found in PATH")
+            return path
+
+    def get_arguments(self) -> list[str]:
+        return ["server"] + list(self._options.get_args())
+
+    async def health_check(self) -> bool:
+        """Performs a health check on the Cerbos PDP by calling its health
+        endpoint."""
+        try:
+            health_url = f"{opal_client_config.POLICY_STORE_URL}/_cerbos/health"
+            timeout_seconds = opal_client_config.POLICY_STORE_CONN_RETRY.wait_time
+            timeout = aiohttp.ClientTimeout(total=timeout_seconds)
+            async with aiohttp.ClientSession(
+                trust_env=True, timeout=timeout
+            ) as session:
+                response = await session.get(health_url)
+                return response.status == 200
+        except Exception as e:
+            logger.debug(f"Cerbos health check failed: {e}")
+            return False
+
+    @staticmethod
+    def setup_cerbos_runner(
+        options: Optional[CerbosServerOptions] = None,
+        piped_logs_format: EngineLogFormat = EngineLogFormat.NONE,
+        initial_start_callbacks: Optional[List[AsyncCallback]] = None,
+        rehydration_callbacks: Optional[List[AsyncCallback]] = None,
+    ):
+        """Factory for CerbosRunner, accept optional callbacks to run in
+        certain lifecycle events.
+
+        Initial Start Callbacks:
+            The first time we start the engine, we might want to do certain actions (like launch tasks)
+            that are dependent on the policy store being up (such as PolicyUpdater, DataUpdater).
+
+        Rehydration Callbacks:
+            when the engine restarts, its policies are gone (disk storage starts empty)
+            and it does not have the state necessary to handle authorization queries.
+            therefore it is necessary that we rehydrate the store with fresh policies
+            fetched from the server.
+        """
+        cerbos_runner = CerbosRunner(
+            options=options, piped_logs_format=piped_logs_format
+        )
+
+        if initial_start_callbacks:
+            cerbos_runner.register_process_initial_start_callbacks(
+                initial_start_callbacks
+            )
+
+        if rehydration_callbacks:
+            cerbos_runner.register_process_restart_callbacks(rehydration_callbacks)
+
+        return cerbos_runner
 
     async def handle_log_line(self, line: bytes) -> bool:
         await log_engine_output_simple(line)

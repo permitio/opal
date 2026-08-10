@@ -1,6 +1,10 @@
 from enum import Enum
 
-from opal_client.engine.options import CedarServerOptions, OpaServerOptions
+from opal_client.engine.options import (
+    CedarServerOptions,
+    CerbosServerOptions,
+    OpaServerOptions,
+)
 from opal_client.policy.options import ConnRetryOptions
 from opal_client.policy_store.schemas import PolicyStoreAuth, PolicyStoreTypes
 from opal_common.confi import Confi, confi
@@ -227,6 +231,53 @@ class OpalClientConfig(Confi):
         EngineLogFormat,
         EngineLogFormat.NONE,
         description="The log format to use for inline Cedar logs",
+    )
+
+    # Cerbos runner configuration (Cerbos-engine can optionally be run by OPAL) --------
+
+    # whether or not OPAL should run the Cerbos PDP by itself in the same container
+    INLINE_CERBOS_ENABLED = confi.bool(
+        "INLINE_CERBOS_ENABLED",
+        True,
+        description="Whether or not OPAL should run the Cerbos PDP by itself in the same container",
+    )
+
+    INLINE_CERBOS_EXEC_PATH = confi.str(
+        "INLINE_CERBOS_EXEC_PATH",
+        None,
+        description="Path to the Cerbos executable. Defaults to searching for 'cerbos' binary in PATH if not specified.",
+    )
+
+    # if inline Cerbos is indeed enabled, user can pass cli options
+    # (configuration) that affects how the PDP will run
+    INLINE_CERBOS_CONFIG = confi.model(
+        "INLINE_CERBOS_CONFIG",
+        CerbosServerOptions,
+        {},  # defaults are being set according to CerbosServerOptions pydantic definitions (see class)
+        description="CLI options used when running the Cerbos PDP inline",
+    )
+
+    INLINE_CERBOS_LOG_FORMAT: EngineLogFormat = confi.enum(
+        "INLINE_CERBOS_LOG_FORMAT",
+        EngineLogFormat,
+        EngineLogFormat.NONE,
+        description="The log format to use for inline Cerbos logs",
+    )
+
+    # Credentials OPAL client uses to authenticate against the Cerbos admin API when
+    # pushing policies. Must match whatever the Cerbos PDP is actually configured with -
+    # for inline mode that's INLINE_CERBOS_CONFIG's admin_username/admin_password_hash
+    # (a bcrypt hash of this same password, not the plaintext value below).
+    CERBOS_ADMIN_USERNAME = confi.str(
+        "CERBOS_ADMIN_USERNAME",
+        "cerbos",
+        description="Username OPAL client uses to authenticate against the Cerbos admin API",
+    )
+    CERBOS_ADMIN_PASSWORD = confi.str(
+        "CERBOS_ADMIN_PASSWORD",
+        "cerbosAdmin",
+        description="Password OPAL client uses to authenticate against the Cerbos admin API "
+        "(plaintext here - Cerbos itself is configured with a bcrypt hash of this value)",
     )
 
     # configuration for fastapi routes
