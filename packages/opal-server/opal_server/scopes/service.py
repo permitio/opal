@@ -1,5 +1,6 @@
 import asyncio
 import datetime
+import shutil
 from functools import partial
 from pathlib import Path
 from typing import List, Optional, Set, cast
@@ -7,6 +8,7 @@ from typing import List, Optional, Set, cast
 import git
 from ddtrace import tracer
 from fastapi_websocket_pubsub import PubSubEndpoint
+from opal_common.async_utils import run_sync
 from opal_common.git_utils.commit_viewer import VersionedFile
 from opal_common.http_utils import redact_url
 from opal_common.logger import logger
@@ -18,12 +20,13 @@ from opal_server.git_fetcher import (
     GitConcurrencyLimitExceeded,
     GitPolicyFetcher,
     PolicyFetcherCallbacks,
+    git_op_in_flight,
 )
 from opal_server.policy.watcher.callbacks import (
     create_policy_update,
     create_update_all_directories_in_repo,
 )
-from opal_server.scopes.purge import ScopePurgeCommand
+from opal_server.scopes.purge import ScopePurgeCommand, find_scope_sharing_source
 from opal_server.scopes.scope_repository import (
     Scope,
     ScopeNotFoundError,
@@ -120,6 +123,9 @@ class ScopesService:
         self._base_dir = base_dir
         self._scopes = scopes
         self._pubsub_endpoint = pubsub_endpoint
+        # Strong refs to the best-effort local clone purges delete_scope spawns
+        # (create_task results are otherwise GC-able); discarded on completion.
+        self._local_purges: Set[asyncio.Task] = set()
 
     async def sync_scope(
         self,
@@ -158,7 +164,8 @@ class ScopesService:
             async def _scope_still_exists() -> bool:
                 # Also confirms the scope still points at the source this
                 # fetcher is syncing: after a repoint the old source was
-                # already purged, so cloning it again would orphan a dir.
+                # already purged, so cloning it again would strand a dir that
+                # nothing reclaims (no later purge names that source).
                 try:
                     fresh = await self._scopes.get(scope.scope_id)
                 except ScopeNotFoundError:
@@ -235,6 +242,110 @@ class ScopesService:
                             reason="delete",
                         ).dict(),
                     )
+                # FLOOR, not the primary path. The publish above is the fleet-
+                # wide purge, but it is droppable at shipped defaults: a DELETE
+                # usually lands on a non-leader worker (SERVER_WORKER_COUNT
+                # defaults to the core count) and must traverse the broadcaster,
+                # while the leader keeps a reader alive only if it has a
+                # connected client or STATISTICS_ENABLED (default False). If it
+                # never arrives, nothing removes the dir — and on master
+                # delete_scope removed it INLINE here, with no broadcast
+                # involved, so without this the lost-broadcast case is a
+                # regression against the merge base rather than parity with it.
+                #
+                # Backgrounded because DELETE's latency is bounded by contract
+                # and this takes lock_source, which a sync holds across a whole
+                # clone/fetch (unbounded when SCOPES_GIT_FETCH_TIMEOUT is 0).
+                #
+                # It is a floor, not a guarantee: master serialized the record
+                # delete and the sibling check under one lock, so the LAST of
+                # two concurrent sibling deleters always saw no sharer. Here the
+                # record delete is outside the lock, so an unlucky interleaving
+                # can have both deleters see the other as still-live and both
+                # skip. The leader's sibling-checked purge is the authoritative
+                # path; this only guarantees that a delete reclaims at least the
+                # serving pod's copy regardless of broadcaster state.
+                task = asyncio.create_task(
+                    self._purge_local_clone_best_effort(
+                        deleted_source_id, scope_dir, scope_id
+                    )
+                )
+                self._local_purges.add(task)
+                task.add_done_callback(self._local_purges.discard)
+
+    async def _purge_local_clone_best_effort(
+        self, deleted_source_id: str, scope_dir: Path, scope_id: str
+    ):
+        """Remove THIS process's clone dir + fetcher cache entries for a
+        deleted scope's source, unless a surviving scope still shares them.
+
+        Restores the floor master had (``_purge_source_cache_if_unshared``),
+        with two changes master did not have:
+
+        - the store read is bounded by SCOPES_STORE_READ_TIMEOUT, because it is
+          taken under ``lock_source`` and the Redis client has no socket timeout;
+        - the removal is skipped while a git op is in flight for the source.
+          Master freed the handle unconditionally; freeing one a lingering
+          timed-out pygit2 call still holds on a pool thread is the
+          use-after-free class 89e090be fixed. Skipping is safe here — the
+          leader's purge (and its deferred retry) still owns that case.
+        """
+        try:
+            async with GitPolicyFetcher.lock_source(deleted_source_id):
+                try:
+                    timeout = opal_server_config.SCOPES_STORE_READ_TIMEOUT
+                    # Excludes scope_id like master did: if the record delete
+                    # reported an ambiguous failure and the record survived,
+                    # over-purging self-heals (the scope re-clones on its next
+                    # sync) while under-purging would strand the dir for good.
+                    check = find_scope_sharing_source(
+                        self._scopes, deleted_source_id, scope_id
+                    )
+                    sharer = await (
+                        asyncio.wait_for(check, timeout=timeout)
+                        if timeout > 0
+                        else check
+                    )
+                except Exception as e:
+                    logger.warning(
+                        f"Local sibling check for {deleted_source_id} failed after "
+                        f"deleting scope {scope_id}; purging defensively: {e!r}"
+                    )
+                    sharer = None
+                if sharer is not None:
+                    logger.info(
+                        f"Scope {sharer} still shares source {deleted_source_id}, "
+                        "keeping this worker's clone"
+                    )
+                    return
+                if git_op_in_flight(deleted_source_id):
+                    logger.info(
+                        f"Skipping the local clone purge for {deleted_source_id}: "
+                        "a git operation is still in flight (the leader's purge "
+                        "owns this case)"
+                    )
+                    return
+                GitPolicyFetcher.forget_repo(str(scope_dir))
+                GitPolicyFetcher.repos_last_fetched.pop(deleted_source_id, None)
+                try:
+                    await run_sync(shutil.rmtree, str(scope_dir))
+                except FileNotFoundError:
+                    pass  # never cloned (or already gone) — nothing to clean
+                except OSError as e:
+                    logger.warning(
+                        f"Failed to remove clone dir {scope_dir} of deleted "
+                        f"scope {scope_id}: {e!r}"
+                    )
+                # Popped while the lock is held: lock_source waiters re-check the
+                # dict entry after acquiring and retry on the fresh lock.
+                GitPolicyFetcher.repo_locks.pop(deleted_source_id, None)
+        except Exception:
+            # Detached background task: without this an unexpected failure
+            # surfaces only as asyncio's unretrieved-exception noise.
+            logger.exception(
+                f"Best-effort local clone purge for source {deleted_source_id} "
+                f"(scope {scope_id}) failed"
+            )
 
     async def sync_scopes(self, only_poll_updates=False, notify_on_changes=True):
         with tracer.trace("scopes_service.sync_scopes"):

@@ -350,9 +350,9 @@ class OpalServerConfig(Confi):
         "SCOPES_PURGE_CHANNEL",
         "__opal_scope_purge__",
         description="Pub/sub channel (worker-to-worker, over the broadcaster) used to "
-        "purge GitPolicyFetcher caches fleet-wide when a scope is deleted, repointed "
-        "to a new source, or its clone dir is reclaimed as an orphan. Every worker "
-        "subscribes; the leader additionally removes the clone dir.",
+        "purge GitPolicyFetcher caches fleet-wide when a scope is deleted or "
+        "repointed to a new source. Every worker subscribes; the leader "
+        "additionally removes the clone dir.",
     )
 
     # Data updates
@@ -524,8 +524,24 @@ class OpalServerConfig(Confi):
         "clone dir. The Redis client is built without a socket timeout, so without "
         "this an unreachable store would pin that lock for the life of the process "
         "and block every later sync, purge and delete for the source. On expiry the "
-        "clone is KEPT (never removed on an unanswered read) and the purge returns "
+        "outcome follows the purge reason: a DELETE purges defensively (its record "
+        "is already gone, so under-purging is a permanent leak and over-purging "
+        "self-heals on the surviving sibling's next sync), a REPOINT keeps the "
+        "clone (the old source's record is still live, just moved) "
         "(0 or negative means no timeout).",
+    )
+
+    SCOPES_DEFERRED_PURGE_TIMEOUT = confi.float(
+        "SCOPES_DEFERRED_PURGE_TIMEOUT",
+        300.0,
+        description="Max seconds the leader keeps retrying a clone-dir removal that "
+        "was deferred because a timed-out git op still holds the source on a pool "
+        "thread (freeing the pygit2 handle or deleting the dir under it is a "
+        "use-after-free). The retry re-runs the full sibling check when the "
+        "in-flight marker clears. On expiry the clone dir and the leader's handle "
+        "are kept for the life of the process — the scope record is already gone, "
+        "so no later purge will ever name that source (0 or negative = do not "
+        "retry, abandon immediately).",
     )
 
     def on_load(self):

@@ -11,7 +11,11 @@ import pytest
 from opal_common.schemas.policy_source import GitPolicyScopeSource, NoAuthData
 from opal_common.schemas.scopes import Scope
 from opal_server.config import opal_server_config
-from opal_server.git_fetcher import GitPolicyFetcher
+from opal_server.git_fetcher import (
+    GitPolicyFetcher,
+    _mark_git_op_done,
+    _mark_git_op_started,
+)
 from opal_server.scopes.scope_repository import ScopeNotFoundError
 from opal_server.scopes.service import ScopesService
 
@@ -67,6 +71,17 @@ def clear_caches():
     GitPolicyFetcher.repo_locks.clear()
 
 
+async def _drain_floor(svc):
+    """Await the best-effort local clone purge delete_scope spawns.
+
+    It is deliberately backgrounded (DELETE's latency is bounded by
+    contract), so a test that asserts on its effect without draining is
+    a coin flip.
+    """
+    while svc._local_purges:
+        await asyncio.gather(*list(svc._local_purges), return_exceptions=True)
+
+
 @pytest.mark.asyncio
 async def test_delete_publishes_request_without_touching_local_memory(tmp_path):
     scope = _scope("only", "https://git/repo-a.git")
@@ -83,7 +98,9 @@ async def test_delete_publishes_request_without_touching_local_memory(tmp_path):
 
     await svc.delete_scope("only")
 
-    # Caches drop only on the leader's confirmation broadcast, not here.
+    # Fleet-wide, caches drop on the leader's confirmation broadcast. On THIS
+    # worker they also drop from the local floor — but only once it has run,
+    # which is why the request-side assertions come first.
     assert clone_path in GitPolicyFetcher.repos
     assert sid in GitPolicyFetcher.repos_last_fetched
     assert GitPolicyFetcher.repo_locks[sid] is lock
@@ -100,10 +117,22 @@ async def test_delete_publishes_request_without_touching_local_memory(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_delete_does_not_touch_disk(tmp_path):
+async def test_delete_reclaims_this_workers_clone_as_a_floor(tmp_path):
+    """Master removed the clone dir INLINE in the DELETE-serving process, with
+    no broadcast involved. The fleet purge that replaced it is droppable at
+    shipped defaults, so without a local floor the lost-broadcast case is a
+    regression against the merge base rather than parity with it.
+
+    Mutation: dropping the _purge_local_clone_best_effort task leaves the dir
+    and the cache entries and fails here.
+    """
     scope = _scope("only", "https://git/repo-a.git")
     clone = GitPolicyFetcher.repo_clone_path(tmp_path, scope.policy)
     clone.mkdir(parents=True)
+    sid = GitPolicyFetcher.source_id(scope.policy)
+    GitPolicyFetcher.repos[str(clone)] = object()
+    GitPolicyFetcher.repos_last_fetched[sid] = "ts"
+    GitPolicyFetcher.repo_locks[sid] = asyncio.Lock()
     svc = ScopesService(
         base_dir=tmp_path,
         scopes=FakeScopeRepository([scope]),
@@ -111,14 +140,72 @@ async def test_delete_does_not_touch_disk(tmp_path):
     )
 
     await svc.delete_scope("only")
+    await _drain_floor(svc)
 
-    assert clone.exists(), "disk mutation belongs to the leader's handler"
+    assert not clone.exists(), "the serving worker's own copy was never reclaimed"
+    assert str(clone) not in GitPolicyFetcher.repos
+    assert sid not in GitPolicyFetcher.repos_last_fetched
+    assert sid not in GitPolicyFetcher.repo_locks
 
 
 @pytest.mark.asyncio
-async def test_delete_without_pubsub_endpoint_does_not_crash(tmp_path):
-    """pubsub_endpoint=None (preload path / degraded mode) must not crash;
-    caches are untouched (degraded mode: the orphan sweep is the backstop)."""
+async def test_local_floor_keeps_the_clone_when_a_sibling_shares_the_source(tmp_path):
+    """The floor is master's sibling-checked purge, not an unconditional
+    rmtree: a surviving scope on the same source_id still needs the clone."""
+    doomed = _scope("doomed", "https://git/shared.git")
+    sibling = _scope("sibling", "https://git/shared.git")
+    clone = GitPolicyFetcher.repo_clone_path(tmp_path, doomed.policy)
+    clone.mkdir(parents=True)
+    svc = ScopesService(
+        base_dir=tmp_path,
+        scopes=FakeScopeRepository([doomed, sibling]),
+        pubsub_endpoint=FakePubSubEndpoint(),
+    )
+
+    await svc.delete_scope("doomed")
+    await _drain_floor(svc)
+
+    assert clone.exists(), "purged a clone a live sibling scope still shares"
+
+
+@pytest.mark.asyncio
+async def test_local_floor_skips_while_a_git_op_is_in_flight(tmp_path):
+    """Master freed the handle unconditionally here.
+
+    Freeing one a lingering timed-out pygit2 call still holds on a pool
+    thread is the use-after-free class 89e090be fixed — the leader's
+    purge (and its deferred retry) owns that case instead.
+    """
+    scope = _scope("only", "https://git/repo-a.git")
+    clone = GitPolicyFetcher.repo_clone_path(tmp_path, scope.policy)
+    clone.mkdir(parents=True)
+    sid = GitPolicyFetcher.source_id(scope.policy)
+    GitPolicyFetcher.repos[str(clone)] = object()
+    svc = ScopesService(
+        base_dir=tmp_path,
+        scopes=FakeScopeRepository([scope]),
+        pubsub_endpoint=FakePubSubEndpoint(),
+    )
+
+    _mark_git_op_started(sid)
+    try:
+        await svc.delete_scope("only")
+        await _drain_floor(svc)
+    finally:
+        _mark_git_op_done(sid)
+
+    assert clone.exists(), "rmtree while a git thread touches the repo is unsafe"
+    assert str(clone) in GitPolicyFetcher.repos, "handle freed under a live thread"
+
+
+@pytest.mark.asyncio
+async def test_delete_without_pubsub_endpoint_still_reclaims_locally(tmp_path):
+    """pubsub_endpoint=None (preload path / degraded mode) must not crash.
+
+    With no broadcast there is no leader-side purge at all, so the local
+    floor is the ONLY thing that reclaims — which is the case master
+    covered and the publish-only version did not.
+    """
     scope = _scope("only", "https://git/repo-a.git")
     repo = FakeScopeRepository([scope])
     svc = ScopesService(base_dir=tmp_path, scopes=repo, pubsub_endpoint=None)
@@ -128,11 +215,12 @@ async def test_delete_without_pubsub_endpoint_does_not_crash(tmp_path):
     GitPolicyFetcher.repos_last_fetched[sid] = "ts"
 
     await svc.delete_scope("only")
+    await _drain_floor(svc)
 
     with pytest.raises(ScopeNotFoundError):
         await repo.get("only")
-    assert clone_path in GitPolicyFetcher.repos
-    assert sid in GitPolicyFetcher.repos_last_fetched
+    assert clone_path not in GitPolicyFetcher.repos
+    assert sid not in GitPolicyFetcher.repos_last_fetched
 
 
 @pytest.mark.asyncio
