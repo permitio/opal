@@ -1,6 +1,7 @@
-"""ScopesPolicyWatcherTask wiring: sync-then-sweep ordering on the boot and
-refresh-all paths (the bed's orphan gates depend on the trigger path
-sweeping; unit-pins the wiring so a refactor can't silently drop it)."""
+"""ScopesPolicyWatcherTask wiring: what start(), stop() and trigger() must
+actually do — the periodic-polling timer, the fire-and-forget sync wrapper, the
+boot and refresh-all sync paths, and the leader purge subscription's separate
+subscriber id. Unit-pins them so a refactor can't silently drop one."""
 import asyncio
 
 import pytest
@@ -54,7 +55,10 @@ def _bare_task(events, fail_sync=False):
 
 
 @pytest.mark.asyncio
-async def test_single_scope_trigger_does_not_sweep():
+async def test_single_scope_trigger_does_not_sync_all():
+    """A single-scope refresh must dispatch to sync_scope, never fall through
+    to the refresh-all branch (which would re-sync every scope on every
+    webhook)."""
     events = []
     await _bare_task(events).trigger(topic=None, data={"scope_id": "s1"})
     assert events == ["sync_one"]
@@ -341,3 +345,74 @@ async def test_stop_is_idempotent(monkeypatch):
         (sub_id, [opal_server_config.SCOPES_PURGE_CHANNEL])
     ]
     assert len(stops) == 2  # draining twice is harmless (the set is empty)
+
+
+# --- Round-6 review: splitting the orphan sweep out deleted six tests here,
+# three of which each carried a SECOND assertion about task.py code that
+# survives. Those halves are restored below, sweep-free. ---
+
+
+@pytest.mark.asyncio
+async def test_periodic_polling_starts_when_enabled(monkeypatch):
+    """The polling timer is the leader's only re-sync of scope repos outside
+    webhooks and refresh-all.
+
+    Mutation: dropping `if POLICY_REFRESH_INTERVAL > 0: create_task(
+    self._periodic_polling())` from start() must fail here. Nothing else covers
+    it — the git-leak bed runs with OPAL_POLICY_REFRESH_INTERVAL=0, so it never
+    starts the task either.
+    """
+    from opal_server.config import opal_server_config
+    from opal_server.policy.watcher.task import BasePolicyWatcherTask
+
+    async def _noop_start(self):
+        return None
+
+    monkeypatch.setattr(BasePolicyWatcherTask, "start", _noop_start)
+    monkeypatch.setattr(opal_server_config, "POLICY_REFRESH_INTERVAL", 30)
+
+    events = []
+    rec = _Recorder(events)
+    t = ScopesPolicyWatcherTask.__new__(ScopesPolicyWatcherTask)
+    t._pubsub_endpoint = _FakeEndpoint()
+    t._purger = rec
+    t._service = rec
+    t._tasks = []
+    t._purger_sub_id = None
+
+    await t.start()
+    try:
+        running = {task.get_coro().__name__ for task in t._tasks}
+        assert "_periodic_polling" in running, running
+    finally:
+        for task in t._tasks:
+            task.cancel()
+        await asyncio.gather(*t._tasks, return_exceptions=True)
+
+
+@pytest.mark.asyncio
+async def test_sync_all_survives_a_raising_sync():
+    """_sync_all is launched fire-and-forget from start(), so an unhandled
+    raise dies silently: stop() gathers with return_exceptions=True and
+    discards it, so not even asyncio's "never retrieved" warning fires until
+    GC. The five-line comment above the try/except in task.py says exactly
+    this; this is what enforces it.
+
+    Mutation: stripping the try/except around `await self._service.sync_scopes()`
+    must fail here.
+    """
+    events = []
+    await _bare_task(events, fail_sync=True)._sync_all()  # must not raise
+    assert events == ["sync"]
+
+
+@pytest.mark.asyncio
+async def test_refresh_all_trigger_syncs():
+    """Trigger() with no scope_id is the refresh-all path.
+
+    Mutation: replacing `await self._sync_all()` in trigger's else-branch must
+    fail here.
+    """
+    events = []
+    await _bare_task(events).trigger(topic=None, data=None)
+    assert events == ["sync"]

@@ -115,7 +115,26 @@ def test_live_scope_oserror_returns_retryable_503(tmp_path, monkeypatch):
 
 
 def test_missing_scope_still_falls_back_to_default_bundle(tmp_path, monkeypatch):
-    """The record-missing fallback is the contract — unchanged."""
+    """Pre-existing behaviour, pinned as CHARACTERIZATION — not endorsed.
+
+    A missing record serves the `default` scope's policy modules at HTTP 200,
+    while `_allowed_scoped_authenticator` authorized the caller for `scope_id`
+    only and says nothing about "default". A PDP holding
+    `allowed_scopes: ["acme"]` therefore loads another tenant's bundle into OPA
+    whenever `acme` is deleted or the store briefly raises ScopeNotFoundError —
+    no 4xx, no alert.
+
+    That is the same cross-tenant hand-off the 503 introduced below exists to
+    prevent ("Serving the default scope's bundle here would hand a live tenant
+    another tenant's policy"), and it is inconsistent with `get_scope` and
+    `refresh_scope`, which 404 the identical condition. It is left unchanged
+    here only to keep PR3 scoped to the git-resilience work; the fix (404, or
+    gating the fallback on the caller being authorized for "default") needs its
+    own compatibility discussion, recorded on PER-15157.
+
+    So this pins WHAT HAPPENS TODAY, so a change is deliberate — it does not
+    say the behaviour is right.
+    """
     default = _scope("default", "https://git/default.git")
     repo = FakeScopeRepository([default])
 

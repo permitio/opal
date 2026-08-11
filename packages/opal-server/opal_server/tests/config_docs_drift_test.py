@@ -96,25 +96,47 @@ def _section_for(mdx: str, key: str) -> str:
     return mdx[start : nxt if nxt != -1 else len(mdx)]
 
 
-@pytest.mark.parametrize("key", _tracked_keys(_CONFIG_PY_PATH.read_text()))
+_TRACKED_KEYS = _tracked_keys(_CONFIG_PY_PATH.read_text())
+
+# A guard that derives its own parameters can silently stop guarding: an empty
+# list feeds @parametrize an empty set and pytest reports `1 skipped — got empty
+# parameter set`, not a failure. Renaming the Confi handle inside the class
+# (`confi.` -> `_confi.`) or moving the SCOPES_* keys to their own module both do
+# it, and config.py still imports and every key still resolves. Lines below
+# already hard-fail when the .mdx goes missing; this is the structurally
+# identical "guarding nothing" state one level up.
+assert _TRACKED_KEYS, (
+    f"no SCOPES_* keys derived from {_CONFIG_PY_PATH.name} — this drift guard "
+    f"is no longer guarding anything. Did the keys move, or the Confi handle "
+    f"get renamed? Update _tracked_keys()."
+)
+
+
+def _require_mdx():
+    """Fail (not skip) when the public reference is missing from a checkout."""
+    if _MDX.exists():
+        return
+    # Absence is only legitimate outside a checkout. "Am I in a checkout" is
+    # answered by something that CANNOT move with the docs — asking the docs
+    # tree itself (the previous version) meant relocating `documentation/`
+    # wholesale, e.g. a docusaurus reorg to `website/docs/`, silently skipped
+    # every key instead of failing.
+    repo_root = _CONFIG_PY.parents[3]
+    in_checkout = (repo_root / ".git").exists() or (
+        repo_root / "packages" / "opal-server" / "setup.py"
+    ).exists()
+    if in_checkout:
+        pytest.fail(
+            f"{_MDX} is missing from this checkout — the public config "
+            f"reference moved or was renamed, so this drift guard is no "
+            f"longer guarding anything. Update _MDX to its new location."
+        )
+    pytest.skip("not a source checkout (installed package)")
+
+
+@pytest.mark.parametrize("key", _TRACKED_KEYS)
 def test_scopes_key_description_is_verbatim_in_the_public_reference(key):
-    if not _MDX.exists():
-        # Absence is only legitimate outside a checkout. "Am I in a checkout" is
-        # answered by something that CANNOT move with the docs — asking the docs
-        # tree itself (the previous version) meant relocating `documentation/`
-        # wholesale, e.g. a docusaurus reorg to `website/docs/`, silently skipped
-        # every key instead of failing.
-        repo_root = _CONFIG_PY.parents[3]
-        in_checkout = (repo_root / ".git").exists() or (
-            repo_root / "packages" / "opal-server" / "setup.py"
-        ).exists()
-        if in_checkout:
-            pytest.fail(
-                f"{_MDX} is missing from this checkout — the public config "
-                f"reference moved or was renamed, so this drift guard is no "
-                f"longer guarding anything. Update _MDX to its new location."
-            )
-        pytest.skip("not a source checkout (installed package)")
+    _require_mdx()
 
     description = _declared_description(_CONFIG_PY.read_text(), key)
     # Slice to this key's own section: asserting the heading and the description
@@ -134,4 +156,23 @@ def test_scopes_key_description_is_verbatim_in_the_public_reference(key):
     assert f"Default: `{declared}`" in section, (
         f"OPAL_{key}'s documented default does not match the literal declared in "
         f"{_CONFIG_PY.name} (expected 'Default: `{declared}`')"
+    )
+
+
+def test_no_documented_scopes_key_is_undeclared():
+    """The reverse direction: a `#### OPAL_SCOPES_*` section for a key config.py
+    no longer declares.
+
+    The parametrized guard above only walks config.py -> .mdx, so a doc entry
+    left behind by a removed key is invisible to it — the operator reads a knob
+    that does nothing. This PR deletes keys from both files, which is exactly
+    when that matters.
+    """
+    _require_mdx()
+
+    documented = set(re.findall(r"^#### OPAL_(SCOPES_\w+)$", _MDX.read_text(), re.M))
+    stale = documented - set(_TRACKED_KEYS)
+    assert not stale, (
+        f"{_MDX.name} documents OPAL_SCOPES_* keys that {_CONFIG_PY.name} does "
+        f"not declare (setting them does nothing): {sorted(stale)}"
     )
