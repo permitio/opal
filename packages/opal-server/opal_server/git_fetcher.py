@@ -916,7 +916,7 @@ class GitPolicyFetcher(PolicyFetcher):
                 # Still in use on a pool thread — drop the reference, never free
                 # (free()'ing a handle a daemon thread holds is a use-after-free).
                 # GC reclaims it once the blocking call returns. Mirrors
-                # purge_local_memory / the orphan sweep guard.
+                # purge_local_memory's guard.
                 GitPolicyFetcher.repos.pop(path, None)
                 continue
             GitPolicyFetcher.forget_repo(path)

@@ -227,7 +227,7 @@ class PubSub:
             # keepalive — dropping those corrupts state no resync rebuilds). The coordination
             # channels are exempted by their CONFIGURED names: the endpoint's own "__" prefix
             # rule covers only the defaults, and every one of these is operator-overridable.
-            # Worker-to-worker cache purge on scope delete/repoint/orphan-reclaim.
+            # Worker-to-worker cache purge on scope delete/repoint.
             # Freezing it during a backbone gap would leave stale GitPolicyFetcher
             # caches fleet-wide with nothing to replay the purge. Exempt by its
             # CONFIGURED name because it is operator-overridable to a non-"__" value.
@@ -365,7 +365,7 @@ class PubSub:
         ``SCOPES_PURGE_CHANNEL`` is a server-internal control channel: a purge
         command evicts every worker's ``GitPolicyFetcher`` caches and (via the
         leader) deletes clone dirs fleet-wide. The only legitimate publishers
-        are opal-server itself (delete / repoint / orphan-sweep) and the
+        are opal-server itself (delete / repoint) and the
         cross-server broadcaster relay — both call ``notify()`` with
         ``channel=None``, and channel restrictions run **only when a channel is
         present** (see ``EventNotifier.notify``/``subscribe``: ``if channel:``).

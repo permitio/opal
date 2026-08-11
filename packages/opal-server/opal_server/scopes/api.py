@@ -129,8 +129,9 @@ def init_scope_router(
             pass  # brand-new scope — nothing to repoint away from
         except Exception as e:
             # An unreadable old record must not block the overwrite that
-            # fixes it. Its source_id is unknowable anyway — a missed
-            # repoint purge is reclaimed by the leader's orphan sweep.
+            # fixes it. Its source_id is unknowable anyway, so no purge can be
+            # published for it and nothing later will name it — the old clone
+            # dir stays on disk until PER-15612's sweep lands.
             logger.warning(
                 f"Could not read previous record for scope "
                 f"{scope_in.scope_id}, skipping repoint purge: {e!r}"

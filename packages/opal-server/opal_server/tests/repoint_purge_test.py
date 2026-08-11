@@ -183,7 +183,8 @@ def test_repoint_purge_still_publishes_when_put_raises_ambiguously(
 
 def test_put_with_unreadable_old_record_still_succeeds(tmp_path, monkeypatch):
     """A corrupted/unreadable prior record must not 500 the PUT that overwrites
-    it; the purge is skipped (orphan sweep backstops it)."""
+    it; the purge is skipped, and the old clone dir then stays on disk until
+    PER-15612's sweep lands (nothing else will name that source)."""
     monkeypatch.setattr(
         "opal_server.scopes.api.opal_server_config.BASE_DIR", str(tmp_path)
     )

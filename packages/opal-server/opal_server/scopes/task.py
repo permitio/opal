@@ -20,10 +20,10 @@ from opal_server.scopes.service import ScopesService
 
 # Upper bound on the shutdown drain of in-flight scope purges. The drain is
 # best-effort: a purge's rmtree runs on a worker thread and completes whether or
-# not we are still awaiting it, and anything abandoned here is reclaimed by the
-# next leader to purge that source. (The reconciliation sweep that would have
-# backstopped it unconditionally is split out of this PR — see the note in
-# scopes/purge.py.) Blocking shutdown longer would be strictly worse —
+# not we are still awaiting it. What is abandoned before it starts is NOT
+# recovered — no reconciliation sweep exists in this PR (split out, PER-15612),
+# and no later purge will name a deleted scope's source. Blocking shutdown
+# longer would be strictly worse —
 # stop() runs while the leadership lock is still held, so no other worker can
 # take over, and k8s's terminationGracePeriodSeconds (30s by default) would
 # SIGKILL us anyway.
