@@ -321,3 +321,49 @@ async def test_sync_scopes_skips_scope_deleted_after_snapshot(tmp_path, monkeypa
     assert not GitPolicyFetcher.repos
     assert not GitPolicyFetcher.repos_last_fetched
     assert not GitPolicyFetcher.repo_locks
+
+
+class _RaisingPubSubEndpoint:
+    """A broadcaster that is down.
+
+    SCOPES_PURGE_CHANNEL is freeze-exempt, so a publish during a
+    backbone gap is attempted and fails rather than deferred.
+    """
+
+    async def publish(self, topics, data=None):
+        raise ConnectionError("broadcaster is down")
+
+
+@pytest.mark.asyncio
+async def test_floor_runs_even_when_the_purge_publish_raises(tmp_path):
+    """The degraded case is the whole reason the floor exists, so the floor
+    must not be downstream of the thing that is degraded.
+
+    publish() can raise a broadcaster error (LeaderScopePurger._purge_and_log
+    documents exactly that), and it runs in delete_scope's `finally`, so
+    scheduling the floor after it skips the floor precisely when the broadcast
+    is lost — the dir then leaks with nothing to reclaim it.
+
+    Mutation: moving the create_task below the publish must fail here.
+    """
+    scope = _scope("only", "https://git/repo-a.git")
+    clone = GitPolicyFetcher.repo_clone_path(tmp_path, scope.policy)
+    clone.mkdir(parents=True)
+    sid = GitPolicyFetcher.source_id(scope.policy)
+    GitPolicyFetcher.repos[str(clone)] = object()
+    GitPolicyFetcher.repos_last_fetched[sid] = "ts"
+    svc = ScopesService(
+        base_dir=tmp_path,
+        scopes=FakeScopeRepository([scope]),
+        pubsub_endpoint=_RaisingPubSubEndpoint(),
+    )
+
+    # The broadcaster error still propagates — the caller must not be told the
+    # fleet purge succeeded.
+    with pytest.raises(ConnectionError):
+        await svc.delete_scope("only")
+    await _drain_floor(svc)
+
+    assert not clone.exists(), "floor skipped when the purge broadcast failed"
+    assert str(clone) not in GitPolicyFetcher.repos
+    assert sid not in GitPolicyFetcher.repos_last_fetched

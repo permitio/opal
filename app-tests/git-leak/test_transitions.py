@@ -219,3 +219,60 @@ def test_multiworker_churn_drains_every_worker(opal_multiworker, repo_count):
         "a worker kept caches the churn's DELETEs never reached (PR3 gate): "
         f"{ {p: {k: v for k, v in s.items() if isinstance(v, int)} for p, s in stats_by_pid(opal).items()} }"
     )
+
+
+def test_delete_reclaims_clone_when_the_purge_broadcast_is_lost(
+    opal_multiworker, repo_count
+):
+    """Gate for the local delete floor (round-6 review).
+
+    Master's ``delete_scope`` removed the clone dir INLINE in the process
+    serving the DELETE, depending on no broadcast at all. PR3 replaced that with
+    a publish on ``SCOPES_PURGE_CHANNEL``, which is droppable: the DELETE usually
+    lands on a non-leader worker and must traverse the broadcaster, and that
+    channel is freeze-exempt, so during a backbone gap the publish is *attempted
+    and lost* rather than deferred and replayed. With nothing else reclaiming
+    (the reconciliation sweep is split out, PER-15612), the dir would then
+    survive restart, redeploy and leader failover.
+
+    This is the only test in the bed that measures that: every other delete path
+    here runs with a healthy backbone, where the leader's purge would have
+    removed the dir anyway and the floor's contribution is invisible.
+
+    Runs 2 workers so the backbone is genuinely in the path (a single worker
+    fans out in-process and never touches Postgres).
+
+    Fails without the floor: with the broadcaster down no worker ever receives
+    the purge, so every clone dir stays on disk.
+    """
+    import requests
+    from helpers import bounce_postgres
+    from invariants import clone_dirs
+
+    opal = opal_multiworker
+    n = min(repo_count, 6)
+
+    baseline = clone_dirs()
+    for i, repo in enumerate(list_seeded_repos(n)):
+        opal.put_scope(f"lost-{i}", gitea_repo_url(repo))
+
+    assert wait_until(
+        lambda: len(clone_dirs() - baseline) >= n, timeout=600
+    ), f"clones never appeared on disk: {clone_dirs() - baseline}"
+    ours = clone_dirs() - baseline
+
+    def _delete_during_the_outage():
+        for i in range(n):
+            # A 5xx is EXPECTED and not a failure of this test: the fleet purge
+            # publish is attempted against a dead backbone and raises, so the
+            # caller is correctly NOT told the fleet purge succeeded. The record
+            # delete and the local floor both still run — the floor is scheduled
+            # before the publish precisely so this case reaches it.
+            requests.delete(f"{opal.base_url}/scopes/lost-{i}", timeout=60)
+
+    bounce_postgres(down_seconds=10, during=_delete_during_the_outage)
+
+    assert wait_until(lambda: not (clone_dirs() & ours), timeout=180), (
+        "clone dirs survived deletes whose purge broadcast was lost — the local "
+        f"floor never ran: still on disk {sorted(clone_dirs() & ours)}"
+    )

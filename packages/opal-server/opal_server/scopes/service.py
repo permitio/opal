@@ -232,16 +232,6 @@ class ScopesService:
                 # record and keeps everything. Memory entries (all workers,
                 # this one included) drop when the leader's confirmation
                 # broadcast arrives.
-                if self._pubsub_endpoint is not None:
-                    await self._pubsub_endpoint.publish(
-                        [opal_server_config.SCOPES_PURGE_CHANNEL],
-                        ScopePurgeCommand(
-                            source_id=deleted_source_id,
-                            clone_path=str(scope_dir),
-                            scope_id=scope_id,
-                            reason="delete",
-                        ).dict(),
-                    )
                 # FLOOR, not the primary path. The publish above is the fleet-
                 # wide purge, but it is droppable at shipped defaults: a DELETE
                 # usually lands on a non-leader worker (SERVER_WORKER_COUNT
@@ -256,6 +246,15 @@ class ScopesService:
                 # Backgrounded because DELETE's latency is bounded by contract
                 # and this takes lock_source, which a sync holds across a whole
                 # clone/fetch (unbounded when SCOPES_GIT_FETCH_TIMEOUT is 0).
+                #
+                # LOAD-BEARING ORDER: scheduled BEFORE the publish below, never
+                # after it. publish() can raise a broadcaster error (see
+                # LeaderScopePurger._purge_and_log), and SCOPES_PURGE_CHANNEL is
+                # freeze-exempt, so during a backbone gap it is attempted and
+                # fails rather than being deferred. Scheduling after it would
+                # therefore skip the floor in precisely the degraded case the
+                # floor exists to cover. create_task only schedules — the floor
+                # cannot delay the publish or the response.
                 #
                 # It is a floor, not a guarantee: master serialized the record
                 # delete and the sibling check under one lock, so the LAST of
@@ -272,6 +271,16 @@ class ScopesService:
                 )
                 self._local_purges.add(task)
                 task.add_done_callback(self._local_purges.discard)
+                if self._pubsub_endpoint is not None:
+                    await self._pubsub_endpoint.publish(
+                        [opal_server_config.SCOPES_PURGE_CHANNEL],
+                        ScopePurgeCommand(
+                            source_id=deleted_source_id,
+                            clone_path=str(scope_dir),
+                            scope_id=scope_id,
+                            reason="delete",
+                        ).dict(),
+                    )
 
     async def _purge_local_clone_best_effort(
         self, deleted_source_id: str, scope_dir: Path, scope_id: str
