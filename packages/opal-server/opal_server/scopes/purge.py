@@ -319,9 +319,13 @@ class LeaderScopePurger:
             return
         confirm = False
         async with GitPolicyFetcher.lock_source(cmd.source_id):
-            # I4 (no stray repo_locks key for a source nobody holds): every exit
-            # drains the entry lock_source minted, including the fail-open
-            # returns below. Guarded by lock identity — see the `finally`.
+            # I4 is "no stray repo_locks key for a source NOBODY holds", so the
+            # drain below covers the exits where we abandon the source — the two
+            # fail-open returns, and the confirmed purge — but NOT the path where
+            # a live sibling still shares it. Popping there is safe (lock_source
+            # re-mints) but wrong: it churns a lock the sibling is using, and the
+            # bed asserts the entry survives a sibling delete
+            # (test_shared_repo_survives_sibling_scope_delete).
             minted = GitPolicyFetcher.repo_locks.get(cmd.source_id)
             try:
                 try:
@@ -380,6 +384,7 @@ class LeaderScopePurger:
                         f"Scope {sharer} still shares source {cmd.source_id}, "
                         "keeping the fleet's cache entries"
                     )
+                    minted = None  # live source — leave its lock alone
                 else:
                     confirm = True
                 # Published under the lock: publish() runs local subscribers

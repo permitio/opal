@@ -914,3 +914,44 @@ async def test_handle_ignores_purge_requests_once_stopping(tmp_path):
 
     assert await purger.handle(None, _cmd(sid=_real_sid()).dict()) is None
     assert not purger._pending_purges
+
+
+@pytest.mark.asyncio
+async def test_live_sibling_keeps_its_repo_lock_entry(tmp_path):
+    """I4 drains the repo_locks entry for a source NOBODY holds. A source a
+    live sibling still shares is not that source.
+
+    Popping there is safe (lock_source re-mints on the next acquisition) but
+    wrong: it churns a lock the sibling is actively using, and the bed asserts
+    the entry survives a sibling delete
+    (test_shared_repo_survives_sibling_scope_delete, which is what caught this
+    — no unit test did).
+
+    Mutation: draining unconditionally in purge_source_if_unshared's `finally`
+    fails here.
+    """
+    doomed = _scope("doomed", "https://git/shared.git")
+    sibling = _scope("sibling", "https://git/shared.git")
+    sid = GitPolicyFetcher.source_id(doomed.policy)
+    assert sid == GitPolicyFetcher.source_id(sibling.policy)
+    clone = _make_clone(tmp_path, doomed.policy)
+    pubsub = _RecordingPubSub()
+
+    purger = LeaderScopePurger(
+        base_dir=tmp_path,
+        scopes=FakeScopeRepository([sibling]),  # doomed's record already gone
+        pubsub_endpoint=pubsub,
+    )
+    await purger.purge_source_if_unshared(
+        ScopePurgeCommand(
+            source_id=sid,
+            clone_path=str(clone),
+            scope_id="doomed",
+            reason="delete",
+        )
+    )
+
+    assert not _confirmations(pubsub), "authorized a purge a live sibling needs"
+    assert (
+        sid in GitPolicyFetcher.repo_locks
+    ), "drained the lock entry of a source a live sibling still shares"
