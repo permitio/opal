@@ -279,6 +279,24 @@ def _scope(scope_id, url, branch="main"):
     )
 
 
+class _RecordingPubSub:
+    """Records confirmations.
+
+    The leader's observable effect is now the confirmation it publishes,
+    not a disk mutation.
+    """
+
+    def __init__(self):
+        self.published = []
+
+    async def publish(self, topics, data=None):
+        self.published.append((list(topics), data))
+
+
+def _confirmations(pubsub):
+    return [d for _, d in pubsub.published if d.get("confirmed")]
+
+
 def _make_clone(tmp_path, source):
     clone = GitPolicyFetcher.repo_clone_path(tmp_path, source)
     clone.mkdir(parents=True)
@@ -287,16 +305,22 @@ def _make_clone(tmp_path, source):
 
 
 @pytest.mark.asyncio
-async def test_leader_purges_unshared_source_from_disk(tmp_path):
+async def test_leader_confirms_memory_purge_for_unshared_source(tmp_path):
+    """The leader authorizes the fleet-wide MEMORY purge and touches no disk.
+
+    Disk reclaim on delete belongs to the DELETE-serving worker's floor
+    (ScopesService._purge_local_clone_best_effort); distributed disk
+    reclaim is PER-15612. Mutation: dropping the confirmation publish
+    fails here.
+    """
     dead = _scope("dead", "https://git/repo-a.git")
     sid = GitPolicyFetcher.source_id(dead.policy)
     clone = _make_clone(tmp_path, dead.policy)
-    GitPolicyFetcher.repos[str(clone)] = object()
-    GitPolicyFetcher.repos_last_fetched[sid] = "ts"
     GitPolicyFetcher.repo_locks[sid] = asyncio.Lock()
+    pubsub = _RecordingPubSub()
 
     purger = LeaderScopePurger(
-        base_dir=tmp_path, scopes=FakeScopeRepository([]), pubsub_endpoint=None
+        base_dir=tmp_path, scopes=FakeScopeRepository([]), pubsub_endpoint=pubsub
     )
     task = await purger.handle(
         None,
@@ -306,9 +330,8 @@ async def test_leader_purges_unshared_source_from_disk(tmp_path):
     )
     await task
 
-    assert not clone.exists()
-    assert str(clone) not in GitPolicyFetcher.repos
-    assert sid not in GitPolicyFetcher.repos_last_fetched
+    assert _confirmations(pubsub), "no memory purge was authorized"
+    assert clone.exists(), "the leader must not mutate the clone tree"
     assert sid not in GitPolicyFetcher.repo_locks  # popped under the held lock
 
 
@@ -338,26 +361,14 @@ async def test_leader_keeps_disk_when_live_sibling_shares_source(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_leader_inflight_defers_disk_but_drains_lock_and_timestamp(tmp_path):
-    """With a lingering git op: the clone dir and the (thread-visible) repo
-    handle must survive, but the lock/timestamp entries drain and the purge
-    is confirmed — the repoint-during-hung-fetch gate measures exactly the
-    lock/timestamp drain."""
-
-    class FakePubSubEndpoint:
-        def __init__(self):
-            self.published = []
-
-        async def publish(self, topics, data=None):
-            self.published.append((list(topics), data))
-
+async def test_leader_confirms_even_while_a_git_op_is_in_flight(tmp_path):
+    """The leader has no disk work left to defer, so an in-flight git op no
+    longer gates the confirmation — each worker's purge_local_memory applies
+    its own in-flight guard when freeing its own handle."""
     dead = _scope("dead", "https://git/repo-a.git")
     sid = GitPolicyFetcher.source_id(dead.policy)
     clone = _make_clone(tmp_path, dead.policy)
-    GitPolicyFetcher.repos[str(clone)] = object()
-    GitPolicyFetcher.repos_last_fetched[sid] = "ts"
-    GitPolicyFetcher.repo_locks[sid] = asyncio.Lock()
-    pubsub = FakePubSubEndpoint()
+    pubsub = _RecordingPubSub()
 
     purger = LeaderScopePurger(
         base_dir=tmp_path, scopes=FakeScopeRepository([]), pubsub_endpoint=pubsub
@@ -377,17 +388,9 @@ async def test_leader_inflight_defers_disk_but_drains_lock_and_timestamp(tmp_pat
     finally:
         _mark_git_op_done(sid)
 
+    assert _confirmations(pubsub), "in-flight op wrongly withheld the memory purge"
     assert clone.exists(), "rmtree while a git thread touches the repo is unsafe"
-    assert str(clone) in GitPolicyFetcher.repos, "handle freed under a live thread"
-    assert sid not in GitPolicyFetcher.repos_last_fetched
-    assert sid not in GitPolicyFetcher.repo_locks
-    assert len(pubsub.published) == 1
-    _, payload = pubsub.published[0]
-    assert payload["confirmed"] is True
-    # The dir is deferred, NOT abandoned: a retry is armed and owned by the
-    # drain, so shutdown still waits for it.
-    assert purger._pending_purges, "no retry was scheduled for the deferred removal"
-    await purger.stop()  # _stopping short-circuits the poll loop
+    assert not purger._pending_purges, "nothing should be queued after the purge"
 
 
 @pytest.mark.asyncio
@@ -403,8 +406,9 @@ async def test_leader_purges_defensively_when_sibling_check_raises(tmp_path):
     sid = GitPolicyFetcher.source_id(dead.policy)
     clone = _make_clone(tmp_path, dead.policy)
 
+    pubsub = _RecordingPubSub()
     purger = LeaderScopePurger(
-        base_dir=tmp_path, scopes=BrokenRepo([]), pubsub_endpoint=None
+        base_dir=tmp_path, scopes=BrokenRepo([]), pubsub_endpoint=pubsub
     )
     warnings = []
     sink_id = logger.add(lambda m: warnings.append(str(m)), level="WARNING")
@@ -419,8 +423,11 @@ async def test_leader_purges_defensively_when_sibling_check_raises(tmp_path):
     finally:
         logger.remove(sink_id)
 
-    assert not clone.exists()
-    assert any("purging defensively" in w for w in warnings), f"not emitted: {warnings}"
+    assert _confirmations(pubsub), "a raising scan withheld the purge on a delete"
+    assert clone.exists(), "the leader must not mutate the clone tree"
+    assert any(
+        "confirming defensively" in w for w in warnings
+    ), f"not emitted: {warnings}"
 
 
 @pytest.mark.asyncio
@@ -462,8 +469,9 @@ async def test_leader_handle_returns_fast_and_purge_waits_for_lock(tmp_path):
     sid = GitPolicyFetcher.source_id(dead.policy)
     clone = _make_clone(tmp_path, dead.policy)
 
+    pubsub = _RecordingPubSub()
     purger = LeaderScopePurger(
-        base_dir=tmp_path, scopes=FakeScopeRepository([]), pubsub_endpoint=None
+        base_dir=tmp_path, scopes=FakeScopeRepository([]), pubsub_endpoint=pubsub
     )
     lock = GitPolicyFetcher.repo_locks.setdefault(sid, asyncio.Lock())
     await lock.acquire()
@@ -483,12 +491,12 @@ async def test_leader_handle_returns_fast_and_purge_waits_for_lock(tmp_path):
         for _ in range(10):
             await asyncio.sleep(0)
         assert not task.done(), "purge ran while the fetch held the source lock"
-        assert clone.exists()
+        assert not _confirmations(pubsub), "confirmed without taking the lock"
     finally:
         lock.release()
 
     await asyncio.wait_for(task, timeout=5)
-    assert not clone.exists()
+    assert _confirmations(pubsub)
 
 
 @pytest.mark.asyncio
@@ -551,7 +559,6 @@ async def test_leader_publishes_confirmation_after_purge(tmp_path):
         ).dict(),
     )
     await task
-    assert not clone.exists()
     assert len(pubsub.published) == 1
     _, payload = pubsub.published[0]
     assert payload["confirmed"] is True
@@ -665,7 +672,7 @@ async def test_leader_ignores_forged_clone_path(tmp_path):
     )
     await task
     assert forged.exists(), "forged clone_path was deleted — path came off the wire"
-    assert not derived.exists(), "the real (derived) clone dir should be purged"
+    assert derived.exists(), "the leader must not mutate the clone tree at all"
 
 
 @pytest.mark.asyncio
@@ -697,7 +704,8 @@ async def test_concurrent_purges_for_shared_source_do_not_both_skip(tmp_path):
     assert sid == GitPolicyFetcher.source_id(b.policy)
     clone = _make_clone(tmp_path, a.policy)
     repo = FakeScopeRepository([a, b])
-    purger = LeaderScopePurger(base_dir=tmp_path, scopes=repo, pubsub_endpoint=None)
+    pubsub = _RecordingPubSub()
+    purger = LeaderScopePurger(base_dir=tmp_path, scopes=repo, pubsub_endpoint=pubsub)
 
     async def delete_then_purge(scope_id):
         await repo.delete(scope_id)
@@ -710,7 +718,9 @@ async def test_concurrent_purges_for_shared_source_do_not_both_skip(tmp_path):
         await task
 
     await asyncio.gather(delete_then_purge("a"), delete_then_purge("b"))
-    assert not clone.exists(), "both purges skipped — shared source leaked"
+    assert _confirmations(
+        pubsub
+    ), "both purges skipped — the shared source's caches leaked fleet-wide"
 
 
 @pytest.mark.asyncio
@@ -744,15 +754,18 @@ async def test_recreate_after_delete_serializes_and_sees_clean_caches(
     monkeypatch.setattr(
         "opal_server.scopes.purge.opal_server_config.BASE_DIR", str(tmp_path)
     )
-    monkeypatch.setattr("opal_server.scopes.purge.shutil.rmtree", lambda *a, **k: None)
     sid = _real_sid()
     clone_path = _derived_path(tmp_path, sid)
     GitPolicyFetcher.repos[clone_path] = object()  # stale handle from before the delete
 
-    # Leader purge for a source no live scope maps to (it was deleted): purges
-    # under lock_source, dropping the cached handle.
+    # Leader purge for a source no live scope maps to (it was deleted). It
+    # authorizes under lock_source and publishes; publish() runs the every-worker
+    # handler INLINE on this task, and that is what drops the cached handle — so
+    # a real endpoint is required for the "clean caches" half to mean anything.
+    endpoint = PubSubEndpoint()
+    await subscribe_worker_purge_handler(endpoint)
     purger = LeaderScopePurger(
-        base_dir=tmp_path, scopes=FakeScopeRepository([]), pubsub_endpoint=None
+        base_dir=tmp_path, scopes=FakeScopeRepository([]), pubsub_endpoint=endpoint
     )
     cmd = _cmd(sid=sid, path=clone_path, confirmed=False)
 
@@ -860,7 +873,6 @@ async def test_inline_confirmation_delivery_does_not_deadlock(tmp_path, monkeypa
         purger.purge_source_if_unshared(_cmd(sid=sid, path=str(clone))), timeout=2
     )
 
-    assert not clone.exists()
     # Proves the confirmation really was delivered inline on this task (so the
     # no-deadlock assertion above is meaningful, not vacuous).
     assert [d["confirmed"] for d in received] == [True]
@@ -902,202 +914,3 @@ async def test_handle_ignores_purge_requests_once_stopping(tmp_path):
 
     assert await purger.handle(None, _cmd(sid=_real_sid()).dict()) is None
     assert not purger._pending_purges
-
-
-# --- Round-6 review: the deferred branch was a permanent leak (no later purge
-# ever names a deleted scope's source), and the store-read timeout reversed
-# master's documented fail-safe direction. ---
-
-
-@pytest.mark.asyncio
-async def test_deferred_removal_completes_once_the_git_op_clears(tmp_path):
-    """The in-flight branch must not abandon the dir.
-
-    Mutation: dropping the _schedule(self._retry_and_log(cmd)) call leaves the
-    clone on disk forever and fails here.
-    """
-    dead = _scope("dead", "https://git/repo-a.git")
-    sid = GitPolicyFetcher.source_id(dead.policy)
-    clone = _make_clone(tmp_path, dead.policy)
-    GitPolicyFetcher.repos[str(clone)] = object()
-
-    purger = LeaderScopePurger(
-        base_dir=tmp_path, scopes=FakeScopeRepository([]), pubsub_endpoint=None
-    )
-    monkey_interval = 0.01
-    import opal_server.scopes.purge as purge_mod
-
-    original = purge_mod._DEFERRED_PURGE_POLL_INTERVAL
-    purge_mod._DEFERRED_PURGE_POLL_INTERVAL = monkey_interval
-    _mark_git_op_started(sid)
-    try:
-        task = await purger.handle(
-            None,
-            ScopePurgeCommand(
-                source_id=sid,
-                clone_path=str(clone),
-                scope_id="dead",
-                reason="delete",
-            ).dict(),
-        )
-        await task
-        assert clone.exists(), "deferral did not happen — nothing to retry"
-        retries = [t for t in purger._pending_purges]
-        assert retries, "no retry armed"
-        _mark_git_op_done(sid)  # the lingering pygit2 call finally returns
-        await asyncio.wait_for(asyncio.gather(*retries), timeout=5)
-    finally:
-        purge_mod._DEFERRED_PURGE_POLL_INTERVAL = original
-        _mark_git_op_done(sid)
-
-    assert not clone.exists(), "the deferred clone dir was never reclaimed"
-    assert str(clone) not in GitPolicyFetcher.repos
-    assert sid not in GitPolicyFetcher.repo_locks
-
-
-@pytest.mark.asyncio
-async def test_deferred_retry_gives_up_within_its_budget(tmp_path, monkeypatch):
-    """A black-holed remote keeps the marker set for the life of the process —
-    the retry must be bounded, not spin forever (stop() awaits it)."""
-    monkeypatch.setattr(
-        opal_server_config, "SCOPES_DEFERRED_PURGE_TIMEOUT", 0.05, raising=False
-    )
-    dead = _scope("dead", "https://git/repo-a.git")
-    sid = GitPolicyFetcher.source_id(dead.policy)
-    clone = _make_clone(tmp_path, dead.policy)
-
-    purger = LeaderScopePurger(
-        base_dir=tmp_path, scopes=FakeScopeRepository([]), pubsub_endpoint=None
-    )
-    import opal_server.scopes.purge as purge_mod
-
-    original = purge_mod._DEFERRED_PURGE_POLL_INTERVAL
-    purge_mod._DEFERRED_PURGE_POLL_INTERVAL = 0.01
-    _mark_git_op_started(sid)
-    try:
-        task = await purger.handle(
-            None,
-            ScopePurgeCommand(
-                source_id=sid,
-                clone_path=str(clone),
-                scope_id="dead",
-                reason="delete",
-            ).dict(),
-        )
-        await task
-        await asyncio.wait_for(asyncio.gather(*list(purger._pending_purges)), timeout=5)
-    finally:
-        purge_mod._DEFERRED_PURGE_POLL_INTERVAL = original
-        _mark_git_op_done(sid)
-
-    assert clone.exists(), "gave up but still removed the dir under a live thread"
-
-
-@pytest.mark.asyncio
-async def test_deferred_retry_keeps_the_clone_if_the_source_was_recreated(tmp_path):
-    """The retry re-runs the FULL sibling check: a delete/re-create storm can
-    put a live scope back on this source while we waited."""
-    dead = _scope("dead", "https://git/repo-a.git")
-    sid = GitPolicyFetcher.source_id(dead.policy)
-    clone = _make_clone(tmp_path, dead.policy)
-    store = FakeScopeRepository([])
-
-    purger = LeaderScopePurger(base_dir=tmp_path, scopes=store, pubsub_endpoint=None)
-    import opal_server.scopes.purge as purge_mod
-
-    original = purge_mod._DEFERRED_PURGE_POLL_INTERVAL
-    purge_mod._DEFERRED_PURGE_POLL_INTERVAL = 0.01
-    _mark_git_op_started(sid)
-    try:
-        task = await purger.handle(
-            None,
-            ScopePurgeCommand(
-                source_id=sid,
-                clone_path=str(clone),
-                scope_id="dead",
-                reason="delete",
-            ).dict(),
-        )
-        await task
-        # re-created against the very same source while the op lingered
-        store._scopes["reborn"] = _scope("reborn", "https://git/repo-a.git")
-        _mark_git_op_done(sid)
-        await asyncio.wait_for(asyncio.gather(*list(purger._pending_purges)), timeout=5)
-    finally:
-        purge_mod._DEFERRED_PURGE_POLL_INTERVAL = original
-        _mark_git_op_done(sid)
-
-    assert clone.exists(), "the retry deleted a live scope's clone"
-
-
-@pytest.mark.asyncio
-async def test_store_read_timeout_purges_on_delete_but_keeps_on_repoint(
-    tmp_path, monkeypatch
-):
-    """Master's rule, which the timeout branch used to invert: over-purging
-    self-heals, under-purging is a permanent leak. A delete's record is already
-    gone, so keeping the clone there strands it; a repoint's is still live.
-
-    Mutation: returning on TimeoutError for a delete (the previous behaviour)
-    leaves the dir and fails the first half.
-    """
-    monkeypatch.setattr(opal_server_config, "SCOPES_STORE_READ_TIMEOUT", 0.02)
-
-    class _HangingStore:
-        async def all(self):
-            await asyncio.sleep(3600)
-
-    for reason, expect_exists in (("delete", False), ("repoint", True)):
-        scope = _scope("dead", f"https://git/{reason}.git")
-        sid = GitPolicyFetcher.source_id(scope.policy)
-        clone = _make_clone(tmp_path, scope.policy)
-        GitPolicyFetcher.repo_locks[sid] = asyncio.Lock()
-
-        purger = LeaderScopePurger(
-            base_dir=tmp_path, scopes=_HangingStore(), pubsub_endpoint=None
-        )
-        await purger.purge_source_if_unshared(
-            ScopePurgeCommand(
-                source_id=sid,
-                clone_path=str(clone),
-                scope_id="dead",
-                reason=reason,
-            )
-        )
-        assert (
-            clone.exists() is expect_exists
-        ), f"{reason}: clone.exists()={clone.exists()}, expected {expect_exists}"
-        # I4 on BOTH paths, including the fail-open return.
-        assert (
-            sid not in GitPolicyFetcher.repo_locks
-        ), f"{reason} left a stray repo_locks entry (invariant I4)"
-
-
-@pytest.mark.asyncio
-async def test_fail_open_repoint_scan_error_still_drains_the_repo_lock(tmp_path):
-    """The other fail-open return: it keeps the clone (correctly) but used to
-    return with the lock_source entry still in the dict."""
-
-    class _RaisingStore:
-        async def all(self):
-            raise RuntimeError("store scan failed")
-
-    scope = _scope("dead", "https://git/repo-a.git")
-    sid = GitPolicyFetcher.source_id(scope.policy)
-    clone = _make_clone(tmp_path, scope.policy)
-    GitPolicyFetcher.repo_locks[sid] = asyncio.Lock()
-
-    purger = LeaderScopePurger(
-        base_dir=tmp_path, scopes=_RaisingStore(), pubsub_endpoint=None
-    )
-    await purger.purge_source_if_unshared(
-        ScopePurgeCommand(
-            source_id=sid,
-            clone_path=str(clone),
-            scope_id="dead",
-            reason="repoint",
-        )
-    )
-
-    assert clone.exists(), "a repoint with an unreadable store must keep the clone"
-    assert sid not in GitPolicyFetcher.repo_locks, "stray repo_locks entry (I4)"

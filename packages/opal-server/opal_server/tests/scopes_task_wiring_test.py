@@ -254,6 +254,10 @@ async def test_stop_cancels_lock_holders_before_draining_purges(
     that very cancellation — shutdown hangs, still holding the leadership lock,
     until k8s SIGKILLs the pod.
 
+    The drained purge's observable completion is the confirmation it publishes
+    (the leader no longer mutates the clone tree — that is the DELETE-serving
+    worker's floor, and distributed disk reclaim is PER-15612).
+
     Mutation: awaiting the drain before super().stop() must fail here (it blocks
     for the whole _PURGE_DRAIN_TIMEOUT, past this wait_for).
     """
@@ -264,12 +268,20 @@ async def test_stop_cancels_lock_holders_before_draining_purges(
         async def all(self):
             return []
 
+    class _RecordingPubSub:
+        def __init__(self):
+            self.published = []
+
+        async def publish(self, topics, data=None):
+            self.published.append(data)
+
     dead_dir = GitPolicyFetcher.base_dir(tmp_path) / ("c" * 64 + "-0")
     dead_dir.mkdir(parents=True)
     sid = dead_dir.name
 
+    pubsub = _RecordingPubSub()
     purger = LeaderScopePurger(
-        base_dir=tmp_path, scopes=_EmptyStore(), pubsub_endpoint=None
+        base_dir=tmp_path, scopes=_EmptyStore(), pubsub_endpoint=pubsub
     )
 
     holding = asyncio.Event()
@@ -291,11 +303,13 @@ async def test_stop_cancels_lock_holders_before_draining_purges(
     await purger.handle(None, _purge_cmd(sid, False))  # queues behind the lock
     for _ in range(5):
         await asyncio.sleep(0)
-    assert dead_dir.exists(), "purge should still be blocked on the held lock"
+    assert not pubsub.published, "purge should still be blocked on the held lock"
 
     await asyncio.wait_for(t.stop(), timeout=2)
 
-    assert not dead_dir.exists(), "the drained purge never completed"
+    assert [
+        d for d in pubsub.published if d.get("confirmed")
+    ], "the drained purge never completed"
 
 
 @pytest.mark.asyncio

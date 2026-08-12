@@ -25,11 +25,9 @@ client or STATISTICS_ENABLED (default False).
 """
 import asyncio
 import re
-import shutil
 from pathlib import Path
 from typing import Any, Optional
 
-from opal_common.async_utils import run_sync
 from opal_common.logger import logger
 from opal_common.schemas.policy_source import GitPolicyScopeSource
 from opal_server.config import opal_server_config
@@ -43,10 +41,6 @@ from pydantic import BaseModel, ValidationError
 # under base_dir and could not exist), but the id this validates is a sha256
 # hex digest + an ASCII shard index, so say that.
 _SOURCE_ID_RE = re.compile(r"\A[0-9a-f]{64}-[0-9]+\Z")
-
-# How often the deferred-removal retry re-checks the in-flight marker. Short so
-# a shutdown (which awaits these tasks) is not held for a whole poll.
-_DEFERRED_PURGE_POLL_INTERVAL = 0.5
 
 
 def _confined_clone_path(base_dir, source_id: str):
@@ -93,11 +87,9 @@ def purge_local_memory(source_id: str, clone_path: str) -> None:
 
     A skipped free is NOT self-healing on this worker: ``forget_repo`` is
     otherwise only reached from the invalid-repo branch of a SYNC, and a purged
-    source by construction has no live scope to sync. The leader re-runs the
-    full purge when the marker clears (``_retry_deferred_removal``) and
-    re-publishes a confirmation, which is what brings the other workers back
-    here to free theirs; if that retry expires, the handle stays for the life of
-    the process.
+    source by construction has no live scope to sync. So a handle pinned by a
+    lingering timed-out op stays cached for the life of the process. Nothing in
+    this PR revisits it — that is PER-15612's job, along with the clone dir.
     """
     if not git_op_in_flight(source_id):
         GitPolicyFetcher.forget_repo(clone_path)
@@ -231,12 +223,12 @@ class LeaderScopePurger:
         if self._stopping:
             # Shutdown started: the watcher has already unsubscribed us and is
             # about to drain what is in flight. Queuing more work here would
-            # either be abandoned by that bounded drain or start an rmtree
-            # nothing waits on. NOTHING recovers this in-process: no periodic
+            # either be abandoned by that bounded drain or publish a
+            # confirmation nothing waits on. NOTHING recovers this: no periodic
             # reconciliation exists in this PR, and no later purge will name the
-            # source (the record is already gone). The serving worker's local
-            # floor may still have reclaimed its own pod's copy; anything past
-            # that stays on disk until PER-15612's sweep lands.
+            # source (the record is already gone), so the fleet keeps its cache
+            # entries for it until PER-15612 lands. The serving worker's local
+            # floor has still reclaimed its own pod's clone dir.
             logger.info(
                 f"Ignoring purge request for {cmd.source_id} ({cmd.reason}): "
                 "purger is stopping"
@@ -252,8 +244,9 @@ class LeaderScopePurger:
         self._stopping = True
 
     async def stop(self) -> None:
-        """Await in-flight background purges so a shutdown can't abandon an
-        rmtree mid-flight (or run a fresh one after the watcher stopped).
+        """Await in-flight background purges so a shutdown can't abandon a
+        sibling check mid-flight (or start a fresh one after the watcher
+        stopped).
 
         These tasks are spawned detached in ``handle`` and are NOT in the
         watcher's ``self._tasks``, so ``BasePolicyWatcherTask.stop`` never waits
@@ -279,67 +272,26 @@ class LeaderScopePurger:
         task.add_done_callback(self._pending_purges.discard)
         return task
 
-    async def _retry_and_log(self, cmd: ScopePurgeCommand) -> None:
-        try:
-            await self._retry_deferred_removal(cmd)
-        except Exception:
-            logger.exception(
-                f"Deferred purge retry for source {cmd.source_id} "
-                f"({cmd.reason}) failed"
-            )
+    async def purge_source_if_unshared(self, cmd: ScopePurgeCommand) -> None:
+        """Leader-only: authorize the fleet-wide MEMORY purge for a source.
 
-    async def _retry_deferred_removal(self, cmd: ScopePurgeCommand) -> None:
-        """Finish a removal the in-flight branch had to defer.
+        Only the leader can sibling-check (it reads the scope store), so only
+        the leader may authorize a memory purge: acting on the raw request
+        would drop cache entries a surviving sibling scope still uses. It
+        publishes the confirmation, and every worker's ``handle_purge_message``
+        acts on that.
 
-        That branch cannot rmtree the dir or free the pygit2 handle while a
-        lingering timed-out git op still holds the source on a pool thread. And
-        nothing else will come back for it: ``handle`` is only reached from a
-        scope delete or repoint, and by then no live record names this source —
-        so "a later purge removes it" is false for exactly the case that gets
-        here (deleting a scope whose remote hangs is how you reach it).
-
-        So poll the marker and re-run the FULL purge once it clears —
-        sibling check included, because the source can have been re-created
-        while we waited (delete/re-create storm), in which case the re-check
-        keeps the clone.
-
-        Bounded by SCOPES_DEFERRED_PURGE_TIMEOUT: against a black-holed remote
-        the marker can stay set for the life of the process (git_fetcher's
-        "until the blocking pygit2 call actually returns"), and ``stop()``
-        awaits this task.
+        This deliberately does NOT touch the clone tree. Disk reclaim on delete
+        happens on the DELETE-serving worker at master's semantics
+        (``ScopesService._purge_local_clone_best_effort``); distributed disk
+        reclaim — a leader-side rmtree, a retry for a dir a lingering git op
+        pins, and the reconciliation sweep — is PER-15612, where the reclaim
+        policy is agreed before implementation. Under-purging disk leaks
+        forever and over-purging forces a re-clone, so it has no self-healing
+        direction; a memory purge self-heals both ways (a wrongly-dropped
+        handle just re-opens on next use), which is why the two split here.
         """
-        budget = opal_server_config.SCOPES_DEFERRED_PURGE_TIMEOUT
-        loop = asyncio.get_running_loop()
-        deadline = loop.time() + budget
-        while git_op_in_flight(cmd.source_id):
-            if self._stopping:
-                logger.info(
-                    f"Abandoning the deferred clone-dir removal for "
-                    f"{cmd.source_id}: purger is stopping"
-                )
-                return
-            if loop.time() >= deadline:
-                logger.warning(
-                    f"Clone dir for {cmd.source_id} ({cmd.reason}) was NOT "
-                    f"reclaimed: a git operation is still in flight after "
-                    f"{budget}s. No live record names this source, so no later "
-                    "purge will reach it — the dir and this process's pygit2 "
-                    "handle stay until PER-15612's sweep lands"
-                )
-                return
-            await asyncio.sleep(_DEFERRED_PURGE_POLL_INTERVAL)
-        logger.info(
-            f"Git op for {cmd.source_id} cleared; resuming the deferred "
-            "clone-dir removal"
-        )
-        # defer_retry=False: we ARE the retry. Re-arming here would loop.
-        await self.purge_source_if_unshared(cmd, defer_retry=False)
-
-    async def purge_source_if_unshared(
-        self, cmd: ScopePurgeCommand, defer_retry: bool = True
-    ) -> None:
-        safe_path = _confined_clone_path(self._base_dir, cmd.source_id)
-        if safe_path is None:
+        if _confined_clone_path(self._base_dir, cmd.source_id) is None:
             logger.warning(
                 f"Ignoring leader purge with malformed source_id: {cmd.source_id}"
             )
@@ -347,11 +299,9 @@ class LeaderScopePurger:
         confirm = False
         async with GitPolicyFetcher.lock_source(cmd.source_id):
             # I4 (no stray repo_locks key for a source nobody holds): every exit
-            # from this block drains the entry lock_source minted, including the
-            # fail-open returns below — the removed sweep's `finally` used to be
-            # the only thing doing that. Safe on the keep-the-clone paths too:
-            # lock_source re-checks the dict after acquiring and re-mints, so a
-            # waiter for a still-live source just takes a fresh lock.
+            # drains the entry lock_source minted, including the fail-open
+            # returns below. Guarded by lock identity — see the `finally`.
+            minted = GitPolicyFetcher.repo_locks.get(cmd.source_id)
             try:
                 try:
                     timeout = opal_server_config.SCOPES_STORE_READ_TIMEOUT
@@ -365,31 +315,28 @@ class LeaderScopePurger:
                     # Bounded because this read is held under lock_source and the
                     # Redis client has no socket timeout — an unreachable store
                     # would otherwise wedge this source's lock for the life of
-                    # the process, every later sync and purge for it included.
+                    # the process.
                     #
-                    # The DIRECTION follows master's rule, which this file kept
-                    # for a raising scan and used to reverse for a timing-out
-                    # one: "over-purging self-heals (a surviving sibling
-                    # re-clones on its next sync); under-purging is a permanent
-                    # leak". A repoint's old source still has a live record, so
-                    # an unanswered read must not be read as "unshared". A
-                    # delete's record is already gone, so keeping the clone here
-                    # IS the permanent leak — nothing names that source again.
+                    # Direction follows master's rule: over-purging self-heals,
+                    # under-purging is a permanent leak. A repoint's old source
+                    # may still be referenced, so an unanswered read must not be
+                    # read as "unshared"; a delete's record is already gone.
                     if cmd.reason == "repoint":
                         logger.warning(
                             "Sibling check for {sid} timed out after {t}s on a "
-                            "repoint; keeping the clone (the old source's record "
-                            "is still live, just moved). If it is in fact "
-                            "unreferenced, PER-15612's sweep reclaims it",
+                            "repoint; not confirming — the fleet keeps its cache "
+                            "entries for this source until something names it "
+                            "again",
                             sid=cmd.source_id,
                             t=timeout,
                         )
                         return
                     logger.warning(
                         "Sibling check for {sid} timed out after {t}s on {reason}; "
-                        "purging defensively — its record is already gone, so "
-                        "keeping the clone would be a permanent leak (a surviving "
-                        "sibling re-clones on its next sync)",
+                        "confirming defensively — its record is already gone, so "
+                        "withholding the purge would leak the fleet's cache "
+                        "entries permanently (a surviving sibling re-opens its "
+                        "handle on the next sync)",
                         sid=cmd.source_id,
                         t=timeout,
                         reason=cmd.reason,
@@ -397,86 +344,22 @@ class LeaderScopePurger:
                     sharer = None
                 except Exception as e:
                     if cmd.reason == "repoint":
-                        # The old source's record wasn't deleted — it was just
-                        # repointed elsewhere — so a raising scan can't be told
-                        # apart from "still shared". Keep the clone; if it is in
-                        # fact unreferenced, PER-15612's sweep reclaims it (no
-                        # later purge will name this source).
                         logger.warning(
                             f"Sibling check for {cmd.source_id} failed on repoint; "
-                            f"keeping the clone: {e!r}"
+                            f"not confirming: {e!r}"
                         )
                         return
                     logger.warning(
                         f"Sibling check for {cmd.source_id} failed on {cmd.reason}; "
-                        f"purging defensively: {e!r}"
+                        f"confirming defensively: {e!r}"
                     )
                     sharer = None
                 if sharer is not None:
                     logger.info(
                         f"Scope {sharer} still shares source {cmd.source_id}, "
-                        "keeping the clone"
+                        "keeping the fleet's cache entries"
                     )
-                elif git_op_in_flight(cmd.source_id):
-                    # A lingering (timed-out) git op still touches the repo on a
-                    # pool thread: freeing the pygit2 handle or deleting the dir
-                    # now risks a crash. The lock and timestamp entries are
-                    # event-loop-side objects the thread never touches — drain
-                    # them now (under the held lock, per the lock-identity rule)
-                    # and confirm, so workers drop their memory entries; the
-                    # leader's own handle survives via purge_local_memory's
-                    # in-flight guard.
-                    #
-                    # The dir is NOT abandoned here. No live record names this
-                    # source any more, so no later purge would ever reach it —
-                    # a bounded retry finishes the removal when the marker
-                    # clears (see _retry_deferred_removal). defer_retry is False
-                    # when we already ARE that retry.
-                    GitPolicyFetcher.repos_last_fetched.pop(cmd.source_id, None)
-                    GitPolicyFetcher.repo_locks.pop(cmd.source_id, None)
-                    confirm = True
-                    if defer_retry and not self._stopping:
-                        if opal_server_config.SCOPES_DEFERRED_PURGE_TIMEOUT > 0:
-                            logger.warning(
-                                f"Deferring clone-dir removal for {cmd.source_id}: "
-                                "a git operation is still in flight; draining "
-                                "lock/timestamp entries now and retrying the "
-                                "removal until it clears"
-                            )
-                            self._schedule(self._retry_and_log(cmd))
-                        else:
-                            logger.warning(
-                                f"Clone dir for {cmd.source_id} ({cmd.reason}) "
-                                "kept: a git operation is still in flight and "
-                                "the deferred-purge retry is disabled. No later "
-                                "purge names this source — it stays until "
-                                "PER-15612's sweep lands"
-                            )
                 else:
-                    GitPolicyFetcher.forget_repo(safe_path)
-                    GitPolicyFetcher.repos_last_fetched.pop(cmd.source_id, None)
-                    try:
-                        await run_sync(shutil.rmtree, safe_path)
-                    except FileNotFoundError:
-                        pass  # already gone — the intended end state
-                    except OSError as e:
-                        logger.warning(f"Failed to remove clone dir {safe_path}: {e!r}")
-                    # Popped while the lock is held: lock_source waiters re-check
-                    # the dict entry after acquiring and retry on the fresh lock.
-                    #
-                    # LOAD-BEARING ORDER: this pop must stay BEFORE the
-                    # confirmation publish below, not moved after it as a "clean
-                    # up last" tidy-up. publish() runs local subscribers inline
-                    # on this very task, and handle_purge_message re-enters
-                    # lock_source(source_id) — the same non-reentrant
-                    # asyncio.Lock still held here. Popping first makes that
-                    # handler's setdefault mint a FRESH lock instead of waiting
-                    # on ours; popping after would wedge lock_source for this
-                    # source permanently, hanging every later sync and purge for
-                    # it (and, via the watcher's stop(), shutdown too). The
-                    # `finally` below is a backstop for the other exits, not a
-                    # replacement for this one.
-                    GitPolicyFetcher.repo_locks.pop(cmd.source_id, None)
                     confirm = True
                 # Published under the lock: publish() runs local subscribers
                 # inline, so the confirmation frees this process's cached pygit2
@@ -486,9 +369,26 @@ class LeaderScopePurger:
                 # then calls set_target() on it — while this stale confirmation
                 # frees it underneath (use-after-free).
                 if confirm and self._pubsub_endpoint is not None:
+                    # LOAD-BEARING ORDER: pop BEFORE the publish. publish() runs
+                    # local subscribers inline on this task, and
+                    # handle_purge_message re-enters lock_source(source_id) — the
+                    # same non-reentrant Lock still held here. Popping first makes
+                    # its setdefault mint a FRESH lock instead of waiting on ours;
+                    # popping after would wedge this source's lock permanently.
+                    GitPolicyFetcher.repo_locks.pop(cmd.source_id, None)
+                    minted = None  # handed off; the finally must not pop a successor
                     await self._pubsub_endpoint.publish(
                         [opal_server_config.SCOPES_PURGE_CHANNEL],
                         cmd.copy(update={"confirmed": True}).dict(),
                     )
             finally:
-                GitPolicyFetcher.repo_locks.pop(cmd.source_id, None)
+                # Lock-identity guarded: the pop-before-publish above hands the
+                # dict entry off, and the awaited publish lets another coroutine
+                # mint a SUCCESSOR lock. Popping unconditionally here would
+                # discard that successor while its holder still runs, putting two
+                # coroutines inside lock_source for the same source at once.
+                if (
+                    minted is not None
+                    and GitPolicyFetcher.repo_locks.get(cmd.source_id) is minted
+                ):
+                    GitPolicyFetcher.repo_locks.pop(cmd.source_id, None)

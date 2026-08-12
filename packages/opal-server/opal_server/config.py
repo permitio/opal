@@ -531,19 +531,6 @@ class OpalServerConfig(Confi):
         "(0 or negative means no timeout).",
     )
 
-    SCOPES_DEFERRED_PURGE_TIMEOUT = confi.float(
-        "SCOPES_DEFERRED_PURGE_TIMEOUT",
-        300.0,
-        description="Max seconds the leader keeps retrying a clone-dir removal that "
-        "was deferred because a timed-out git op still holds the source on a pool "
-        "thread (freeing the pygit2 handle or deleting the dir under it is a "
-        "use-after-free). The retry re-runs the full sibling check when the "
-        "in-flight marker clears. On expiry the clone dir and the leader's handle "
-        "are kept for the life of the process — the scope record is already gone, "
-        "so no later purge will ever name that source (0 or negative = do not "
-        "retry, abandon immediately).",
-    )
-
     def on_load(self):
         if self.SERVER_PORT is not None and self.SERVER_PORT.isdigit():
             # Backward compatibility - if SERVER_PORT is set with a valid value, use it as SERVER_BIND_PORT
