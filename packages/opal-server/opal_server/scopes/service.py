@@ -303,13 +303,21 @@ class ScopesService:
             async with GitPolicyFetcher.lock_source(deleted_source_id):
                 try:
                     timeout = opal_server_config.SCOPES_STORE_READ_TIMEOUT
-                    # Excludes scope_id like master did: if the record delete
-                    # reported an ambiguous failure and the record survived,
-                    # over-purging self-heals (the scope re-clones on its next
-                    # sync) while under-purging would strand the dir for good.
-                    check = find_scope_sharing_source(
-                        self._scopes, deleted_source_id, scope_id
-                    )
+                    # Excludes NOTHING, unlike master. Master passed scope_id so
+                    # an ambiguous delete (record survived) would still purge,
+                    # reasoning that over-purging self-heals. On disk it does
+                    # not: excluding the id blinds this check to a scope that
+                    # has been RE-CREATED on the same source under the same id
+                    # between the delete and this backgrounded purge, and the
+                    # rmtree then takes a live scope's clone. Delete-then-
+                    # re-create is a normal workflow (the bed has
+                    # test_delete_recreate_storm).
+                    #
+                    # Dropping the exclusion costs only the ambiguous-delete
+                    # case, where the surviving record now reads as a sharer and
+                    # the dir is kept — the safe direction, and the same choice
+                    # LeaderScopePurger already makes.
+                    check = find_scope_sharing_source(self._scopes, deleted_source_id)
                     sharer = await (
                         asyncio.wait_for(check, timeout=timeout)
                         if timeout > 0

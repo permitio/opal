@@ -367,3 +367,32 @@ async def test_floor_runs_even_when_the_purge_publish_raises(tmp_path):
     assert not clone.exists(), "floor skipped when the purge broadcast failed"
     assert str(clone) not in GitPolicyFetcher.repos
     assert sid not in GitPolicyFetcher.repos_last_fetched
+
+
+@pytest.mark.asyncio
+async def test_local_floor_keeps_the_clone_of_a_re_created_scope(tmp_path):
+    """DELETE + re-create of the SAME scope id on the SAME source, before the
+    backgrounded floor runs.
+
+    The floor's sibling check must not exclude the deleted scope_id: excluding
+    it blinds the check to the re-created record and the rmtree then takes a
+    live scope's clone. Delete-then-re-create is a normal workflow — the bed has
+    test_delete_recreate_storm.
+
+    Mutation: passing scope_id as excluded_scope_id to find_scope_sharing_source
+    (what master did, and what this shipped as) fails here.
+    """
+    scope = _scope("only", "https://git/repo-a.git")
+    clone = GitPolicyFetcher.repo_clone_path(tmp_path, scope.policy)
+    clone.mkdir(parents=True)
+    repo = FakeScopeRepository([scope])
+    svc = ScopesService(
+        base_dir=tmp_path, scopes=repo, pubsub_endpoint=FakePubSubEndpoint()
+    )
+
+    await svc.delete_scope("only")
+    # the operator re-creates it on the same source before the floor runs
+    repo._scopes["only"] = _scope("only", "https://git/repo-a.git")
+    await _drain_floor(svc)
+
+    assert clone.exists(), "the floor deleted a live re-created scope's clone"
