@@ -3,25 +3,45 @@
 Every worker subscribes ``handle_purge_message`` to SCOPES_PURGE_CHANNEL at
 startup (see ``server.py``) and drops its in-memory cache entries for the
 purged source. The leader additionally registers ``LeaderScopePurger.handle``
-(at watcher start) which removes the clone dir — only the leader mutates the
-clone tree.
+(at watcher start), which sibling-checks and then authorizes that drop by
+broadcasting the confirmation.
+
+WHO MUTATES THE CLONE TREE. Not "only the leader" — that claim was in this
+docstring and was never true. The leader is the only mutator on SYNC paths
+(clone/fetch are leader-only). A delete additionally removes the dir on the
+worker that SERVED the DELETE, best-effort, exactly as master did
+(``ScopesService._purge_local_clone_best_effort``). Its guards — ``lock_source``
+(an asyncio.Lock) and ``git_op_in_flight`` (a module-global set) — are
+PROCESS-LOCAL, so they do not serialize that worker against the leader cloning
+the same source in a sibling process on the same pod. Master had the identical
+exposure with no in-flight guard at all; measured head-to-head, master orphans
+the tree unconditionally where this branch reclaims it whenever the purge
+broadcast is delivered. It is not a regression, and it is not an invariant —
+closing it cross-process is PER-15612.
 
 NOTE: the reconciliation sweep that reclaimed clone dirs referencing no live
 scope was split out of this PR and is tracked as PER-15612. What remains here is
 the purge driven by an actual scope delete/repoint.
 
-There is therefore NO periodic reconciliation in this PR: the only paths that
-remove a clone dir are the leader's handler below and the best-effort local
-floor ``ScopesService.delete_scope`` spawns for the worker serving the DELETE
-(master removed the dir there inline, with no broadcast involved, so the floor
-is what keeps a dropped broadcast from regressing against the merge base — it
-guarantees the serving pod reclaims its own copy regardless of broadcaster
-state). Whatever neither reaches — every pod that is not the serving one, when
-the broadcast is lost — stays on disk until PER-15612 lands. The broadcast IS
-droppable at shipped defaults: a DELETE usually lands on a non-leader worker
-(SERVER_WORKER_COUNT defaults to the core count) and must traverse the
-broadcaster, while a leader keeps a reader alive only if it has a connected
-client or STATISTICS_ENABLED (default False).
+There is therefore NO reconciliation of any kind in this PR, and exactly ONE
+path removes a clone dir: the best-effort local floor
+``ScopesService.delete_scope`` spawns on the worker serving the DELETE. That is
+master's behaviour (master removed it inline there, with no broadcast involved),
+kept so a dropped broadcast does not regress against the merge base.
+
+What that leaves on disk, stated plainly because nothing else will reclaim it:
+
+- a DELETE's dir on every pod EXCEPT the serving one, when the broadcast is
+  lost — and the broadcast is droppable at shipped defaults, since a DELETE
+  usually lands on a non-leader worker (SERVER_WORKER_COUNT defaults to the
+  core count) and must traverse the broadcaster, while a leader keeps a reader
+  alive only if it has a connected client or STATISTICS_ENABLED (default False);
+- a REPOINT's old dir on EVERY pod, always — there is no floor on that path;
+- a dir whose source_id is unknowable because the prior record would not parse
+  (see ``scopes/api.py``).
+
+All three are PER-15612. The memory purge is unaffected by them: it is
+authorized by the leader's confirmation and is self-healing in both directions.
 """
 import asyncio
 import re
@@ -187,8 +207,9 @@ class LeaderScopePurger:
     """Leader-only: removes clone dirs for purged sources.
 
     Registered on SCOPES_PURGE_CHANNEL when leadership is acquired (the
-    watcher task's start), preserving the invariant that only the leader
-    mutates the clone tree.
+    watcher task's start). It performs the sibling check no other worker can
+    do, and authorizes the fleet's memory purge; it does not touch the clone
+    tree (see the module docstring on who does).
     """
 
     def __init__(self, base_dir: Path, scopes, pubsub_endpoint):

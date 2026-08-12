@@ -53,7 +53,8 @@ class ScopesPolicyWatcherTask(BasePolicyWatcherTask):
         await super().start()
         # Leader-only disk purge: this task starts only on the leader, so
         # registering here (not at worker boot) preserves the invariant that
-        # only the leader mutates the clone tree.
+        # the leader is the only mutator on sync paths (see the note in
+        # scopes/purge.py — a delete also removes on the serving worker).
         #
         # Registered under a DEDICATED subscriber id rather than through
         # PubSubEndpoint.subscribe, which files every server-side subscription
