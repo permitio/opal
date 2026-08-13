@@ -494,11 +494,12 @@ async def test_floor_refuses_a_path_that_is_not_the_derived_one(tmp_path, monkey
     refuses a mismatch. This one took the caller's Path — not wire-controlled,
     but it was the one rmtree in the series skipping the check.
 
-    Mutation: the comparison alone is only an assertion — the protection is that
-    the body operates on the DERIVED path throughout. Reverting forget_repo and
-    rmtree to the caller's scope_dir (the pre-fix behaviour) deletes the decoy
-    and fails here; removing only the comparison does not, which is why it is
-    stated this way.
+    Mutation: the guard is DISJUNCTIVE — the comparison short-circuits before
+    the rmtree, and the body separately operates on the derived path. Removing
+    EITHER alone leaves this green; only removing BOTH deletes the decoy. An
+    earlier version of this docstring claimed the revert alone killed it, which
+    is false, and invited a reader to drop the comparison as "only an
+    assertion". Belt and braces, deliberately, and stated as such.
     """
     scope = _scope("only", "https://git/repo-a.git")
     decoy = tmp_path / "not-a-clone-dir"

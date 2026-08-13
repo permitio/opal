@@ -71,11 +71,20 @@ def confined_clone_path(base_dir, source_id: str):
     malformed.
 
     SECURITY: a purge command's ``clone_path`` field arrives over pub/sub and
-    must NEVER reach the filesystem — a forged message could otherwise carry
-    an arbitrary path into ``rmtree``/``free()``. ``source_id`` is a sha256
-    hex digest + shard index (no separators, no traversal), so the derived
-    path is always confined to ``base_dir/git_sources``. The result is also
-    the exact key used in ``GitPolicyFetcher.repos``.
+    must NEVER reach the filesystem. ``source_id`` is a sha256 hex digest +
+    shard index (no separators, no traversal), so the derived path is always
+    confined to ``base_dir/git_sources``. The result is also the exact key used
+    in ``GitPolicyFetcher.repos``.
+
+    What a forged message can still reach, now that the disk reclaim is cut: a
+    ``free()`` of a cached pygit2 handle under an attacker-chosen key (via
+    ``purge_local_memory`` -> ``forget_repo``). It can no longer reach an
+    ``rmtree`` — no wire-driven path in this module removes a directory, and the
+    one remaining removal (``ScopesService``'s delete floor) derives its target
+    from the stored scope record, not from a message. Keeping the validation is
+    still right: it is the only thing standing between a forged ``source_id``
+    and an arbitrary ``repos`` key, and it is what makes the confinement
+    property survive PER-15612 putting an rmtree back on this path.
     """
     if not _SOURCE_ID_RE.match(source_id):
         return None

@@ -449,15 +449,22 @@ async def test_leader_keeps_clone_on_repoint_when_sibling_check_raises(
     sid = _real_sid()
     clone = Path(_derived_path(tmp_path, sid))
     clone.mkdir(parents=True)
+    pubsub = _RecordingPubSub()
     purger = LeaderScopePurger(
-        base_dir=Path(tmp_path), scopes=RaisingRepo(), pubsub_endpoint=None
+        base_dir=Path(tmp_path), scopes=RaisingRepo(), pubsub_endpoint=pubsub
     )
     await purger.purge_source_if_unshared(
         ScopePurgeCommand(
             source_id=sid, clone_path=str(clone), scope_id="s1", reason="repoint"
         )
     )
-    assert clone.exists(), "repoint must not purge defensively on a raising scan"
+    # The observable effect is the WITHHELD confirmation. Asserting clone.exists()
+    # alone pinned nothing once the leader lost its disk role — nothing in the
+    # process could have deleted it, so that assertion was true by construction.
+    assert not _confirmations(
+        pubsub
+    ), "repoint fail-open authorized a fleet-wide purge on a raising scan"
+    assert clone.exists()
 
 
 @pytest.mark.asyncio
@@ -992,3 +999,78 @@ async def test_scope_repository_all_skips_a_key_deleted_mid_scan():
     repo._redis_db = _RacingRedis([b"{not json"])  # present but corrupt
     with pytest.raises(Exception):
         await repo.all()
+
+
+# --- The SECURITY confinement guard had no falsifiable test: gutting
+# _SOURCE_ID_RE so confined_clone_path never rejects anything left the whole
+# suite green. These fail when it does. ---
+
+
+@pytest.mark.parametrize(
+    "hostile",
+    [
+        "../../etc/passwd",
+        "../victim",
+        "a" * 64 + "-0/../../escape",
+        "a" * 63 + "-0",  # one hex short
+        "A" * 64 + "-0",  # uppercase is not [0-9a-f]
+        "a" * 64,  # no shard index
+        "a" * 64 + "-",  # empty shard index
+        "a" * 64 + "-0\n",  # trailing newline (\Z, not $)
+        "a" * 64 + "-٠",  # Arabic-Indic digit: \d would match, [0-9] must not
+        "",
+    ],
+)
+def test_confined_clone_path_rejects_hostile_source_ids(tmp_path, hostile):
+    """Mutation: relaxing _SOURCE_ID_RE (e.g. to r".*") fails here."""
+    from opal_server.scopes.purge import confined_clone_path
+
+    assert confined_clone_path(tmp_path, hostile) is None, hostile
+
+
+def test_confined_clone_path_confines_a_valid_source_id(tmp_path):
+    from opal_server.scopes.purge import confined_clone_path
+
+    sid = "a" * 64 + "-3"
+    derived = confined_clone_path(tmp_path, sid)
+    base = str(GitPolicyFetcher.base_dir(Path(tmp_path)))
+    assert derived == f"{base}/{sid}"
+    # confined: no traversal out of git_sources
+    assert Path(derived).resolve().is_relative_to(Path(base).resolve())
+
+
+@pytest.mark.asyncio
+async def test_forged_source_id_cannot_free_an_arbitrary_cached_handle(
+    tmp_path, monkeypatch
+):
+    """A forged source_id must not let a pub/sub message evict an arbitrary
+    GitPolicyFetcher.repos entry.
+
+    The wire's own clone_path is never used, but the DERIVED path is only safe
+    because source_id is validated — with the validation relaxed, a traversal
+    id derives straight onto a victim key.
+
+    Mutation: relaxing _SOURCE_ID_RE fails here.
+    """
+    monkeypatch.setattr(
+        "opal_server.scopes.purge.opal_server_config.BASE_DIR", str(tmp_path)
+    )
+    forged_sid = "../victim"
+    victim_key = f"{GitPolicyFetcher.base_dir(Path(tmp_path))}/{forged_sid}"
+    sentinel = object()
+    GitPolicyFetcher.repos[victim_key] = sentinel
+
+    await handle_purge_message(
+        None,
+        {
+            "source_id": forged_sid,
+            "clone_path": "/etc",  # wire path, must be ignored entirely
+            "scope_id": "s1",
+            "reason": "delete",
+            "confirmed": True,
+        },
+    )
+
+    assert (
+        GitPolicyFetcher.repos.get(victim_key) is sentinel
+    ), "a forged source_id evicted a cached handle"

@@ -74,8 +74,20 @@ async def test_periodic_polling_survives_a_raising_sync(monkeypatch):
     events = []
     task = asyncio.create_task(_bare_task(events, fail_sync=True)._periodic_polling())
     try:
-        while events.count("sync") < 2:
+        # Bounded, and it asserts the task is ALIVE each turn. Spinning on
+        # `while events.count("sync") < 2` alone wedges forever the moment the
+        # loop dies — so stripping the try/except under test hung the run
+        # instead of reddening it, and there is no pytest-timeout in the unit
+        # suite's dependencies to catch that.
+        for _ in range(10_000):
+            if events.count("sync") >= 2:
+                break
+            assert not task.done(), (
+                "the polling loop died on a raising sync instead of surviving "
+                f"it: {task.exception() if task.done() else None!r}"
+            )
             await asyncio.sleep(0)
+        assert events.count("sync") >= 2, "the polling loop never ran twice"
         assert not task.done()
     finally:
         task.cancel()
