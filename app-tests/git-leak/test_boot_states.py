@@ -106,6 +106,13 @@ def test_corrupt_clone_recovers_without_clone_loop(opal):
 
 
 @pytest.mark.timeout(900)
+# I3/I4 were exempted here while the docstring already claimed the gate was
+# green — exempting exactly the invariants the purge under test exists to
+# satisfy. Measured on this head: all three of these gates pass with I3/I4
+# enforced, so the exemptions were stale and are gone. I1 stays: a delete or
+# repoint that races a hung clone still leaves the DIR on disk (nothing
+# reconciles in this PR — PER-15612), which is the documented trade, not a
+# memory leak.
 @pytest.mark.invariant_exempt("I1")
 def test_orphan_clone_dir_is_reclaimed(opal):
     """RED until an orphan sweep exists (PR3+, tracked as PER-15612): a clone
@@ -173,7 +180,7 @@ def test_redis_wiped_boot_reclaims_clones(opal):
 
 @pytest.mark.timeout(1200)
 @pytest.mark.allow_worker_restart
-@pytest.mark.invariant_exempt("I1", "I3", "I4")
+@pytest.mark.invariant_exempt("I1")
 def test_boot_with_unreachable_remotes_still_serves_healthy(opal):
     """Gate for PR3's fetch timeout; green since it landed.
 

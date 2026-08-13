@@ -6,6 +6,8 @@ tenant must never be served another tenant's policy (PR3 flip of the
 PR2-era regression lock).
 """
 
+import asyncio
+
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -376,3 +378,61 @@ def test_mid_clone_503_is_identical_on_a_non_leader_worker(tmp_path, monkeypatch
 
     assert resp.status_code == 503, "non-leader worker answered the wrong verdict"
     assert resp.headers["retry-after"] == "30"
+
+
+def test_unknown_scope_without_a_default_is_404_not_500(tmp_path, monkeypatch):
+    """A deployment with no "default" scope is ordinary — the git-leak bed is
+    one. Asking for an unknown scope there re-raised ScopeNotFoundError out of
+    the route, and nothing registers a handler for it, so it surfaced as an
+    unhandled 500. get_scope and refresh_scope already answer 404.
+
+    Mutation: restoring `raise ScopeNotFoundError(scope_id)` fails here.
+    """
+    repo = FakeScopeRepository([])  # no scopes at all, "default" included
+    monkeypatch.setattr(
+        "opal_server.scopes.api.opal_server_config.BASE_DIR", str(tmp_path)
+    )
+
+    resp = _client(repo, tmp_path).get("/scopes/ghost/policy")
+
+    assert resp.status_code == 404, "unknown scope surfaced as a server error"
+    assert "ghost" in resp.json()["detail"]
+
+
+def test_default_bundle_build_does_not_block_the_event_loop(tmp_path, monkeypatch):
+    """_generate_default_scope_bundle builds a full bundle: open the repo, walk
+    the tree, read and encode every file. On the loop that stalls every other
+    request this worker is serving.
+
+    Asserts it is dispatched off-loop by checking make_bundle does not run on
+    the loop's thread. Mutation: dropping run_sync fails here.
+    """
+    default = _scope("default", "https://git/default.git")
+    repo = FakeScopeRepository([default])
+    seen = {}
+
+    def fake_make_bundle(self, base_hash):
+        # asyncio.get_running_loop() succeeds ONLY on the thread running the
+        # loop. In an executor thread it raises RuntimeError. That is the exact
+        # discriminator; comparing thread NAMES is not — TestClient runs the
+        # loop in a worker thread of its own, so "not MainThread" is true either
+        # way and an earlier version of this test passed with run_sync removed.
+        try:
+            asyncio.get_running_loop()
+            seen["on_loop"] = True
+        except RuntimeError:
+            seen["on_loop"] = False
+        return _default_bundle()
+
+    monkeypatch.setattr(GitPolicyFetcher, "make_bundle", fake_make_bundle)
+    monkeypatch.setattr(
+        "opal_server.scopes.api.opal_server_config.BASE_DIR", str(tmp_path)
+    )
+
+    resp = _client(repo, tmp_path).get("/scopes/ghost/policy")
+
+    assert resp.status_code == 200
+    assert seen["on_loop"] is False, (
+        "the default bundle was built ON the event loop — every other request "
+        "this worker is serving stalls for the whole build"
+    )

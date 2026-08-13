@@ -179,7 +179,12 @@ def test_shared_repo_survives_sibling_scope_delete(opal, repo_count):
 
 
 @pytest.mark.timeout(900)
-@pytest.mark.invariant_exempt("I1", "I3", "I4")
+# I3/I4 were exempted here too, alongside a docstring calling this a "GREEN
+# GUARD, not a red gate" — excusing the very invariants the repoint purge under
+# test exists to satisfy. Measured on this head: it passes with I3/I4 enforced.
+# I1 stays: the repoint path has no local floor, so the OLD source's clone dir
+# is expected to remain on disk (PER-15612).
+@pytest.mark.invariant_exempt("I1")
 def test_scope_repoint_releases_old_repo_cache(opal, repo_count):
     """Re-pointing a scope to a new repo URL must drain the OLD URL's cache
     entries once the new source has taken over serving.
@@ -221,6 +226,18 @@ def test_scope_repoint_releases_old_repo_cache(opal, repo_count):
         lambda: opal.get_scope_policy("repoint").status_code == 200, timeout=120
     )
     assert served, "repo_a never served before the repoint"
+
+    # NON-VACUITY: the final assertion is "old_sid is absent from the key
+    # lists". Nothing proved it was ever PRESENT. old_sid comes from
+    # invariants.source_id(), a hand-maintained mirror of
+    # GitPolicyFetcher.source_id — any drift in the hashing or the shard rule
+    # makes the final check true at t=0 and the gate passes on a mismatch
+    # rather than on a purge.
+    assert old_sid in opal.stats()["repo_locks_keys"], (
+        f"old source {old_sid} was never cached, so the purge assertion below "
+        f"would be vacuous — has invariants.source_id drifted from "
+        f"GitPolicyFetcher.source_id? stats={opal.stats()}"
+    )
     content_a = opal.get_scope_policy("repoint").content
 
     # Re-point the same scope_id at a different repo; repo_a's entries are now

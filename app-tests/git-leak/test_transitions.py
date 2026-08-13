@@ -95,7 +95,14 @@ def test_randomized_churn_holds_invariants(opal, repo_count):
 
 @pytest.mark.timeout(900)
 @pytest.mark.allow_worker_restart
-@pytest.mark.invariant_exempt("I1", "I3", "I4")
+# I3/I4 were exempted here while the docstring already claimed the gate was
+# green — exempting exactly the invariants the purge under test exists to
+# satisfy. Measured on this head: all three of these gates pass with I3/I4
+# enforced, so the exemptions were stale and are gone. I1 stays: a delete or
+# repoint that races a hung clone still leaves the DIR on disk (nothing
+# reconciles in this PR — PER-15612), which is the documented trade, not a
+# memory leak.
+@pytest.mark.invariant_exempt("I1")
 def test_delete_during_hung_fetch_no_crash(opal):
     """Deleting a scope whose clone is hung must never crash a worker (the use-
     after-free class 89e090be fixed).
@@ -121,7 +128,7 @@ def test_delete_during_hung_fetch_no_crash(opal):
 
 @pytest.mark.timeout(900)
 @pytest.mark.allow_worker_restart
-@pytest.mark.invariant_exempt("I1", "I3", "I4")
+@pytest.mark.invariant_exempt("I1")
 def test_delete_during_hung_fetch_returns_bounded(opal):
     """Gate for PR3's fetch timeout; green since it landed.
 
@@ -144,7 +151,7 @@ def test_delete_during_hung_fetch_returns_bounded(opal):
 
 @pytest.mark.timeout(900)
 @pytest.mark.allow_worker_restart
-@pytest.mark.invariant_exempt("I1", "I3", "I4")
+@pytest.mark.invariant_exempt("I1")
 def test_repoint_during_inflight_fetch_drains_old_source(opal, repo_count):
     """Gate for PR3's update-path purge; green since it landed.
 
@@ -222,6 +229,13 @@ def test_multiworker_churn_drains_every_worker(opal_multiworker, repo_count):
 
 
 @pytest.mark.timeout(600)
+# I1 only, and for a session-level reason rather than anything this test does:
+# earlier tests in this file deliberately strand clone dirs (delete or repoint
+# racing a hung clone), and NOTHING in this PR reconciles them — so by the time
+# this test's teardown runs, the tree already holds orphans it did not create.
+# I2/I3/I4 are enforced: this test breaks the BROADCASTER, not the memory purge,
+# and the serving worker's floor still drains its own entries.
+@pytest.mark.invariant_exempt("I1")
 def test_delete_reclaims_clone_when_the_purge_broadcast_is_lost(
     opal_multiworker, repo_count
 ):

@@ -436,15 +436,35 @@ def init_scope_router(
                 scope.scope_id,
                 cast(GitPolicyScopeSource, scope.policy),
             )
-            return fetcher.make_bundle(None)
+            # run_sync, like the primary path at the top of this route. Without
+            # it a full bundle build — open the repo, walk the commit tree, read
+            # and encode every matching file — runs ON THE EVENT LOOP, stalling
+            # every other request this worker is serving, including other
+            # tenants' bundles and the pub/sub websocket traffic. Reached by any
+            # GET for an unknown scope, which a PDP with a stale id re-hits on
+            # its normal poll cadence.
+            return await run_sync(fetcher.make_bundle, None)
         except (
             ScopeNotFoundError,
             InvalidGitRepositoryError,
             NoSuchPathError,
             pygit2.GitError,
+            OSError,
             ValueError,
         ):
-            raise ScopeNotFoundError(scope_id)
+            # 404, not a bare ScopeNotFoundError. Nothing registers an exception
+            # handler for that, so it escaped the route as an unhandled 500 —
+            # for the ordinary case of an unknown scope on a deployment that has
+            # no "default" scope at all. get_scope and refresh_scope already
+            # answer 404 here; this now matches them.
+            #
+            # OSError added to the tuple for the same reason the primary path
+            # has it: NoSuchPathError is an OSError subclass but a raw OSError
+            # from a vanishing clone is not otherwise caught, and it would
+            # likewise have surfaced as a 500.
+            raise HTTPException(
+                status.HTTP_404_NOT_FOUND, detail=f"No such scope: {scope_id}"
+            )
 
     @router.get(
         "/{scope_id}/data",

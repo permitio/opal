@@ -341,10 +341,11 @@ async def test_leader_keeps_disk_when_live_sibling_shares_source(tmp_path):
     sid = GitPolicyFetcher.source_id(survivor.policy)
     clone = _make_clone(tmp_path, survivor.policy)
 
+    pubsub = _RecordingPubSub()
     purger = LeaderScopePurger(
         base_dir=tmp_path,
         scopes=FakeScopeRepository([survivor]),
-        pubsub_endpoint=None,
+        pubsub_endpoint=pubsub,
     )
     task = await purger.handle(
         None,
@@ -357,6 +358,14 @@ async def test_leader_keeps_disk_when_live_sibling_shares_source(tmp_path):
     )
     await task
 
+    # The withheld confirmation is the assertion with teeth. clone.exists()
+    # alone could not fail once the leader lost its disk role — nothing in the
+    # process could delete it — so deleting the whole keep-branch left this
+    # test green while killing two others.
+    assert not _confirmations(
+        pubsub
+    ), "authorized a fleet-wide purge of a source a live sibling still shares"
+    assert sid in GitPolicyFetcher.repo_locks, "drained a live source's lock"
     assert clone.exists(), "shared clone must survive a sibling's delete"
 
 

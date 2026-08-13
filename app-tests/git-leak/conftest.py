@@ -100,7 +100,7 @@ def opal(stack, request) -> OpalServerClient:
 
 
 @pytest.fixture()
-def opal_multiworker(stack) -> OpalServerClient:
+def opal_multiworker(stack, request) -> OpalServerClient:
     """opal_server reconfigured to 2 gunicorn workers, for the broadcaster
     test.
 
@@ -124,6 +124,23 @@ def opal_multiworker(stack) -> OpalServerClient:
         stack.wait_healthy()
         stack.delete_all_scopes()
         yield stack
+        # Invariants are checked here too. They were NOT before: this fixture
+        # yielded and returned, so every multiworker test ran with zero
+        # invariant assertions while carrying no exempt marker — reading, to an
+        # auditor, as though I1-I6 held.
+        #
+        # NOTE on what a single stats() sample means here: /internal/...-stats
+        # answers from whichever worker serves the request, so the per-process
+        # memory invariants (I2/I3/I4) are checked against ONE arbitrary worker
+        # of the two. That makes them sound but incomplete — a violation on the
+        # other worker can be missed. I1 (disk) is process-independent and fully
+        # checked. Tightening the memory side needs stats_by_pid, which
+        # test_multiworker_churn_drains_every_worker already uses directly.
+        stack.delete_all_scopes()
+        exempt_marker = request.node.get_closest_marker("invariant_exempt")
+        check_invariants(
+            stack, exempt=set(exempt_marker.args) if exempt_marker else set()
+        )
     finally:
         os.environ["OPAL_TEST_WORKERS"] = "1"
         compose("up", "-d", "--no-deps", "--force-recreate", "opal_server")
