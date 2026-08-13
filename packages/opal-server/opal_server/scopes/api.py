@@ -42,10 +42,21 @@ from opal_common.topics.publisher import (
 from opal_common.urls import set_url_query_param
 from opal_server.config import opal_server_config
 from opal_server.data.data_update_publisher import DataUpdatePublisher
-from opal_server.git_fetcher import BranchHeadNotFoundError, GitPolicyFetcher
+from opal_server.git_fetcher import (
+    BranchHeadNotFoundError,
+    GitPolicyFetcher,
+    git_op_in_flight,
+)
 from opal_server.scopes.purge import ScopePurgeCommand
 from opal_server.scopes.scope_repository import ScopeNotFoundError, ScopeRepository
 from opal_server.scopes.service import ScopesService
+
+# Retry-After hints, in seconds. Two constants rather than one escalating
+# value: escalation would need per-client retry state on a stateless endpoint,
+# and the expected wait genuinely differs between "a sync will re-create this
+# on its next tick" and "a clone is running right now".
+_RETRY_AFTER_CLONE_UNAVAILABLE = "5"
+_RETRY_AFTER_CLONE_IN_PROGRESS = "30"
 
 
 def verify_private_key(private_key: str, key_format: EncryptionKeyFormat) -> bool:
@@ -330,6 +341,44 @@ def init_scope_router(
         try:
             return await run_sync(fetcher.make_bundle, base_hash)
         except BranchHeadNotFoundError as exc:
+            # "Branch not found" is only permanent when nothing is writing the
+            # repo. _clone() rmtree's the destination and clones INTO THE FINAL
+            # PATH, so for the whole duration of a recovery re-clone the dir
+            # exists with no origin/<branch> ref yet — indistinguishable, from
+            # here, from a misconfigured branch name. Telling a client its
+            # config is wrong and non-retryable during the very recovery that
+            # fixes it is the opposite of the truth, and third-party consumers
+            # (unlike opal-client, which retries regardless) will act on it.
+            #
+            # The in-flight marker is exactly the discriminator: it is set for
+            # the whole clone and clear otherwise. A genuinely wrong branch that
+            # happens to coincide with a fetch briefly gets the 503, then the
+            # 409 once the marker clears — right answers, right order.
+            if git_op_in_flight(GitPolicyFetcher.source_id(scope.policy)):
+                logger.info(
+                    "Scope {scope_id} branch not resolvable yet: a git operation "
+                    "is in flight (clone in progress), returning 503",
+                    scope_id=scope_id,
+                )
+                metrics.event(
+                    "ScopePolicyUnavailable",
+                    message=f"Scope {scope_id} policy 503 (clone in progress)",
+                    tags={"scope_id": scope_id, "status": "503", "retryable": "true"},
+                )
+                raise HTTPException(
+                    status.HTTP_503_SERVICE_UNAVAILABLE,
+                    detail=(
+                        f"Policy clone for scope {scope_id} is being created, "
+                        "retry shortly"
+                    ),
+                    # Longer than the plain-503 case below: a clone in progress
+                    # runs for tens of seconds on a large repo, so a 5s hint
+                    # would spend the whole clone burning round-trips, each one
+                    # a Repo() open and a tree walk on this server. Stateless by
+                    # design — escalating this per client would need per-client
+                    # retry state, and opal-client ignores the header anyway.
+                    headers={"Retry-After": _RETRY_AFTER_CLONE_IN_PROGRESS},
+                )
             logger.error(
                 "Scope {scope_id} bundle unavailable: {exc!r} (non-retryable)",
                 scope_id=scope_id,
@@ -377,7 +426,7 @@ def init_scope_router(
                     f"Policy clone for scope {scope_id} is temporarily "
                     "unavailable, retry shortly"
                 ),
-                headers={"Retry-After": "5"},
+                headers={"Retry-After": _RETRY_AFTER_CLONE_UNAVAILABLE},
             )
 
     async def _generate_default_scope_bundle(scope_id: str) -> PolicyBundle:

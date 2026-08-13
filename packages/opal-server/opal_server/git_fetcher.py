@@ -94,6 +94,15 @@ class _DaemonThreadPoolExecutor(ThreadPoolExecutor):
             worker is None
             or not hasattr(cf_thread, "_threads_queues")
             or not hasattr(self, "_initializer")
+            # _idle_semaphore is used below and is just as private as the rest.
+            # A CPython that drops it would rewrite its own _adjust_thread_count
+            # accordingly, so the stdlib fallback would still work — but ours
+            # would raise AttributeError out of submit(), failing every scope
+            # git op. Guarding it is what routes that case to the fallback.
+            # (Not demonstrable by deleting the attribute at runtime: that
+            # leaves the stdlib's method still using it, a state CPython can
+            # never actually be in.)
+            or not hasattr(self, "_idle_semaphore")
         ):
             return super()._adjust_thread_count()
         try:

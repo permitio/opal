@@ -263,3 +263,47 @@ def test_transient_object_store_giterror_returns_retryable_503(tmp_path, monkeyp
     resp = _client(repo, tmp_path).get("/scopes/live/policy")
     assert resp.status_code == 503
     assert resp.headers["retry-after"] == "5"
+
+
+def test_branch_missing_mid_clone_is_a_retryable_503(tmp_path, monkeypatch):
+    """_clone() rmtree's the destination and clones INTO THE FINAL PATH, so for
+    the whole duration of a recovery re-clone the dir has no origin/<branch>
+    ref yet — indistinguishable here from a misconfigured branch.
+
+    Telling a client its config is permanently wrong during the very recovery
+    that fixes it is the opposite of the truth. The in-flight marker
+    discriminates: set for the whole clone, clear otherwise.
+
+    Mutation: removing the git_op_in_flight check returns 409 and fails here.
+    """
+    from opal_server.git_fetcher import (
+        BranchHeadNotFoundError,
+        _mark_git_op_done,
+        _mark_git_op_started,
+    )
+
+    live = _scope("live", "https://git/live.git")
+    repo = FakeScopeRepository([live])
+    sid = GitPolicyFetcher.source_id(live.policy)
+
+    def fake_make_bundle(self, base_hash):
+        raise BranchHeadNotFoundError("Could not find current branch head")
+
+    monkeypatch.setattr(GitPolicyFetcher, "make_bundle", fake_make_bundle)
+    monkeypatch.setattr(
+        "opal_server.scopes.api.opal_server_config.BASE_DIR", str(tmp_path)
+    )
+
+    client = _client(repo, tmp_path)
+
+    _mark_git_op_started(sid)
+    try:
+        mid_clone = client.get("/scopes/live/policy")
+    finally:
+        _mark_git_op_done(sid)
+    settled = client.get("/scopes/live/policy")
+
+    assert mid_clone.status_code == 503, "mid-clone reported as a config error"
+    assert mid_clone.headers["retry-after"] == "30"
+    # ...and once nothing is writing the repo, the branch really is missing.
+    assert settled.status_code == 409

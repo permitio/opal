@@ -396,3 +396,60 @@ async def test_local_floor_keeps_the_clone_of_a_re_created_scope(tmp_path):
     await _drain_floor(svc)
 
     assert clone.exists(), "the floor deleted a live re-created scope's clone"
+
+
+@pytest.mark.asyncio
+async def test_local_floor_keeps_the_clone_when_the_sibling_check_raises(tmp_path):
+    """A store blip must not take a live tenant's policy offline.
+
+    Master purged defensively on any scan failure. Here that would rmtree a
+    clone a sibling scope may still share, 503ing that tenant until the
+    re-clone finishes — triggered by a transient Redis error, which is far more
+    common than the ambiguous-delete case master was protecting against. The
+    cost of keeping is an orphan dir (PER-15612).
+
+    Mutation: restoring `sharer = None` on the exception fails here.
+    """
+
+    class _RaisingStore(FakeScopeRepository):
+        async def all(self):
+            raise RuntimeError("store scan failed")
+
+    scope = _scope("only", "https://git/repo-a.git")
+    clone = GitPolicyFetcher.repo_clone_path(tmp_path, scope.policy)
+    clone.mkdir(parents=True)
+    svc = ScopesService(
+        base_dir=tmp_path,
+        scopes=_RaisingStore([scope]),
+        pubsub_endpoint=FakePubSubEndpoint(),
+    )
+
+    await svc.delete_scope("only")
+    await _drain_floor(svc)
+
+    assert clone.exists(), "a store fault deleted a clone a sibling may still share"
+
+
+@pytest.mark.asyncio
+async def test_service_stop_drains_the_floor(tmp_path):
+    """A DELETE returns 204, then SIGTERM arrives. Without a drain the floor is
+    a detached task nobody references and the dir survives with nothing left to
+    reclaim it.
+
+    Mutation: making ScopesService.stop() a no-op fails here.
+    """
+    scope = _scope("only", "https://git/repo-a.git")
+    clone = GitPolicyFetcher.repo_clone_path(tmp_path, scope.policy)
+    clone.mkdir(parents=True)
+    svc = ScopesService(
+        base_dir=tmp_path,
+        scopes=FakeScopeRepository([scope]),
+        pubsub_endpoint=FakePubSubEndpoint(),
+    )
+
+    await svc.delete_scope("only")
+    assert svc._local_purges, "nothing was spawned to drain"
+    await svc.stop()
+
+    assert not svc._local_purges, "stop() returned with the floor still in flight"
+    assert not clone.exists(), "the drained floor never completed"

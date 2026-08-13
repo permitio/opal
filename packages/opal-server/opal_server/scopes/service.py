@@ -324,11 +324,26 @@ class ScopesService:
                         else check
                     )
                 except Exception as e:
+                    # KEEP the clone, unlike master. Master purged defensively on
+                    # any scan failure, reasoning that over-purging self-heals.
+                    # It does not self-heal cheaply here: if a sibling scope does
+                    # share this source, deleting its clone takes a LIVE tenant's
+                    # policy offline until the re-clone completes (503s
+                    # throughout) — and the trigger is a transient store blip,
+                    # which is far more common than the case master was
+                    # protecting against.
+                    #
+                    # The cost of keeping is an orphan dir, reclaimed by
+                    # PER-15612. Disk against availability, and this is a
+                    # best-effort floor: it is the optimistic path by
+                    # construction, so it takes the conservative branch when it
+                    # cannot tell.
                     logger.warning(
                         f"Local sibling check for {deleted_source_id} failed after "
-                        f"deleting scope {scope_id}; purging defensively: {e!r}"
+                        f"deleting scope {scope_id}; keeping this worker's clone "
+                        f"(it stays until PER-15612's sweep lands): {e!r}"
                     )
-                    sharer = None
+                    return
                 if sharer is not None:
                     logger.info(
                         f"Scope {sharer} still shares source {deleted_source_id}, "
@@ -363,6 +378,22 @@ class ScopesService:
                 f"Best-effort local clone purge for source {deleted_source_id} "
                 f"(scope {scope_id}) failed"
             )
+
+    async def stop(self) -> None:
+        """Await the best-effort local clone purges delete_scope spawned.
+
+        Without this a DELETE that returns 204 and is followed by SIGTERM loses
+        its floor: the task is detached, nothing else references it, and the
+        clone dir it was about to remove survives with nothing left to reclaim
+        it (no reconciliation in this PR — PER-15612).
+
+        Best-effort and expected to be bounded by the caller: each task takes
+        lock_source, which a sync can hold across a whole clone/fetch. The
+        watcher calls this after cancelling its tasks and under a wait_for, the
+        same discipline LeaderScopePurger.stop() already gets.
+        """
+        if self._local_purges:
+            await asyncio.gather(*list(self._local_purges), return_exceptions=True)
 
     async def sync_scopes(self, only_poll_updates=False, notify_on_changes=True):
         with tracer.trace("scopes_service.sync_scopes"):

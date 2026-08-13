@@ -332,20 +332,24 @@ async def test_stop_is_idempotent(monkeypatch):
         async def handle(self, *a, **k):
             return None
 
-        async def sync_scopes(self, *a, **k):
-            return None
-
         def signal_stop(self):
             return None
 
         async def stop(self):
-            stops.append(1)
+            stops.append("purger")
+
+    class _Service:
+        async def sync_scopes(self, *a, **k):
+            return None
+
+        async def stop(self):
+            stops.append("service")
 
     t = ScopesPolicyWatcherTask.__new__(ScopesPolicyWatcherTask)
     purger = _Purger()
     t._pubsub_endpoint = _FakeEndpoint()
     t._purger = purger
-    t._service = purger
+    t._service = _Service()
     t._tasks = []
     t._webhook_tasks = []
     t._purger_sub_id = None
@@ -358,7 +362,10 @@ async def test_stop_is_idempotent(monkeypatch):
     assert t._pubsub_endpoint.notifier.unsubs == [
         (sub_id, [opal_server_config.SCOPES_PURGE_CHANNEL])
     ]
-    assert len(stops) == 2  # draining twice is harmless (the set is empty)
+    # BOTH drains run, and run on every stop() — draining twice is harmless
+    # (both sets are empty the second time). The service drain is what keeps a
+    # DELETE's backgrounded floor from being dropped by a SIGTERM.
+    assert stops == ["purger", "service", "purger", "service"]
 
 
 # --- Round-6 review: splitting the orphan sweep out deleted six tests here,

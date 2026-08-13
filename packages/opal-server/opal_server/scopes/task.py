@@ -101,9 +101,14 @@ class ScopesPolicyWatcherTask(BasePolicyWatcherTask):
         # shutdown hang, taken while the leadership lock is still held.
         result = await super().stop()
 
-        # Best-effort, bounded (see _PURGE_DRAIN_TIMEOUT).
+        # Best-effort, bounded (see _PURGE_DRAIN_TIMEOUT). Both drains share the
+        # bound: the service's floor tasks and the leader's purges take the same
+        # lock_source, so a hung source stalls either the same way.
         try:
-            await asyncio.wait_for(self._purger.stop(), timeout=_PURGE_DRAIN_TIMEOUT)
+            await asyncio.wait_for(
+                asyncio.gather(self._purger.stop(), self._service.stop()),
+                timeout=_PURGE_DRAIN_TIMEOUT,
+            )
         except asyncio.TimeoutError:
             logger.warning(
                 "Abandoned in-flight scope purges at shutdown after {timeout}s; "
