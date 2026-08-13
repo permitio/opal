@@ -236,10 +236,12 @@ class OpalServerConfig(Confi):
         "phase 1 (the network clone/fetch of each distinct repo) AND phase 2 (the "
         "local change-check of scopes that reuse an already-cloned repo), so it "
         "sets how many scopes are synced at once in either phase. A timed-out "
-        "operation stops counting against this limit — its lingering daemon "
-        "thread persists on its own (a black-holed remote's can persist for the "
-        "life of the process; SCOPES_GIT_MAX_ZOMBIES caps how many accumulate), "
-        "so capacity is never starved by hung remotes.",
+        "operation stops counting against this limit, so one hung remote does not "
+        "hold a concurrency slot — its lingering daemon thread persists on its own "
+        "(a black-holed remote's can persist for the life of the process). That "
+        "tail is bounded by SCOPES_GIT_MAX_ZOMBIES, which is a GLOBAL ceiling: "
+        "read its description, because at that ceiling new git ops are refused "
+        "for every scope, healthy ones included.",
     )
     SCOPES_GIT_PRELOAD_DRAIN_TIMEOUT = confi.float(
         "SCOPES_GIT_PRELOAD_DRAIN_TIMEOUT",
@@ -257,10 +259,17 @@ class OpalServerConfig(Confi):
         # threads drain, bounding worst-case thread growth during an outage.
         40,
         description="Maximum number of in-flight scope git operations (live plus "
-        "lingering timed-out) allowed to hold a daemon thread at once. New git ops "
-        "are refused (and retried next cycle) while at this cap, bounding thread "
-        "growth when remotes hang (0 = no cap; a negative value is clamped to 0 "
-        "and also means no cap).",
+        "lingering timed-out) allowed to hold a daemon thread at once, counted "
+        "GLOBALLY across all sources. It is a last-resort ceiling on thread "
+        "growth when remotes hang, not a per-source guard — that is handled "
+        "separately, by skipping a source that already has an operation in "
+        "flight. Once the ceiling is reached, new git ops are refused (logged, "
+        "and retried next cycle) for EVERY scope, healthy ones included, until "
+        "enough threads drain; with remotes that never return, that state can "
+        "persist. Set it well above SCOPES_GIT_MAX_WORKERS and alert on the "
+        "refusal log (0 = no cap; a negative value is clamped to 0 and also "
+        "means no cap, at the cost of unbounded thread growth during an "
+        "outage).",
     )
     LEADER_LOCK_FILE_PATH = confi.str(
         "LEADER_LOCK_FILE_PATH",
