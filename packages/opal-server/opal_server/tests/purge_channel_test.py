@@ -955,3 +955,40 @@ async def test_live_sibling_keeps_its_repo_lock_entry(tmp_path):
     assert (
         sid in GitPolicyFetcher.repo_locks
     ), "drained the lock entry of a source a live sibling still shares"
+
+
+@pytest.mark.asyncio
+async def test_scope_repository_all_skips_a_key_deleted_mid_scan():
+    """Scan() lists keys, then each is read — a scope deleted in between comes
+    back None, and Scope.parse_raw(None) raises ValidationError, killing the
+    whole scan.
+
+    Consequences seen in the bed: an entire sync_scopes pass aborted by one
+    concurrent delete, and a delete's own sibling check failing so its clone dir
+    was stranded. A key that no longer exists is simply not a scope.
+
+    Mutation: dropping the `if not value: continue` guard fails here.
+    A record that is PRESENT but malformed must still raise.
+    """
+    from opal_server.scopes.scope_repository import ScopeRepository
+
+    live = _scope("live", "https://git/repo-a.git")
+
+    class _RacingRedis:
+        def __init__(self, values):
+            self._values = values
+
+        async def scan(self, pattern):
+            for v in self._values:
+                yield v
+
+    repo = ScopeRepository.__new__(ScopeRepository)
+    repo._prefix = "scope"
+    repo._redis_db = _RacingRedis([live.json(), None])  # second key vanished
+
+    scopes = await repo.all()
+    assert [s.scope_id for s in scopes] == ["live"]
+
+    repo._redis_db = _RacingRedis([b"{not json"])  # present but corrupt
+    with pytest.raises(Exception):
+        await repo.all()

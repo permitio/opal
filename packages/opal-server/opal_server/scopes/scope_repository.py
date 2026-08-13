@@ -25,6 +25,20 @@ class ScopeRepository:
         scopes = []
 
         async for value in self._redis_db.scan(f"{self._prefix}:*"):
+            if not value:
+                # The scan lists keys and then reads each one, so a scope
+                # deleted in between comes back as None. Passing that to
+                # parse_raw raises ValidationError and kills the WHOLE scan —
+                # one concurrently-deleted scope would abort an entire
+                # sync_scopes pass, and poison the sibling check a delete's
+                # purge depends on (observed under the bed's churn: two
+                # deletes' clone dirs stranded because their own delete raced
+                # the scan). A key that no longer exists is simply not a scope.
+                #
+                # Deliberately narrow: a record that IS present but does not
+                # parse still raises, because that is corruption and should not
+                # be silently skipped.
+                continue
             scope = Scope.parse_raw(value)
             scopes.append(scope)
 
