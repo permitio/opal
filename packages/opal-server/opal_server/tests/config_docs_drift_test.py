@@ -98,18 +98,24 @@ def _section_for(mdx: str, key: str) -> str:
 
 _TRACKED_KEYS = _tracked_keys(_CONFIG_PY_PATH.read_text())
 
-# A guard that derives its own parameters can silently stop guarding: an empty
-# list feeds @parametrize an empty set and pytest reports `1 skipped — got empty
-# parameter set`, not a failure. Renaming the Confi handle inside the class
-# (`confi.` -> `_confi.`) or moving the SCOPES_* keys to their own module both do
-# it, and config.py still imports and every key still resolves. Lines below
-# already hard-fail when the .mdx goes missing; this is the structurally
-# identical "guarding nothing" state one level up.
-assert _TRACKED_KEYS, (
-    f"no SCOPES_* keys derived from {_CONFIG_PY_PATH.name} — this drift guard "
-    f"is no longer guarding anything. Did the keys move, or the Confi handle "
-    f"get renamed? Update _tracked_keys()."
-)
+
+def test_the_guard_derives_at_least_one_key():
+    """A guard that derives its own parameters can silently stop guarding: an
+    empty list feeds @parametrize an empty set and pytest reports `1 skipped —
+    got empty parameter set`, not a failure. Renaming the Confi handle inside
+    the class (`confi.` -> `_confi.`) or moving the SCOPES_* keys to their own
+    module both do it, and config.py still imports and every key still resolves.
+
+    A test rather than a module-level assert: an assert at import time raises
+    during COLLECTION, and pytest aborts the entire run on a collection error —
+    so one drifted regex would hide every other test's result. This fails loudly
+    and locally instead.
+    """
+    assert _TRACKED_KEYS, (
+        f"no SCOPES_* keys derived from {_CONFIG_PY_PATH.name} — this drift "
+        f"guard is no longer guarding anything. Did the keys move, or the Confi "
+        f"handle get renamed? Update _tracked_keys()."
+    )
 
 
 def _require_mdx():

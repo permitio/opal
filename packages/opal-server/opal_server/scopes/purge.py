@@ -63,7 +63,7 @@ from pydantic import BaseModel, ValidationError
 _SOURCE_ID_RE = re.compile(r"\A[0-9a-f]{64}-[0-9]+\Z")
 
 
-def _confined_clone_path(base_dir, source_id: str):
+def confined_clone_path(base_dir, source_id: str):
     """Derive the on-disk clone dir for ``source_id``, or ``None`` if the id is
     malformed.
 
@@ -126,7 +126,7 @@ async def handle_purge_message(subscription, data: Any) -> None:
     if not cmd.confirmed:
         # A request — only the leader acts on those (sibling-check first).
         return
-    safe_path = _confined_clone_path(opal_server_config.BASE_DIR, cmd.source_id)
+    safe_path = confined_clone_path(opal_server_config.BASE_DIR, cmd.source_id)
     if safe_path is None:
         logger.warning(
             "Ignoring scope purge with malformed source_id: {sid}",
@@ -312,7 +312,7 @@ class LeaderScopePurger:
         direction; a memory purge self-heals both ways (a wrongly-dropped
         handle just re-opens on next use), which is why the two split here.
         """
-        if _confined_clone_path(self._base_dir, cmd.source_id) is None:
+        if confined_clone_path(self._base_dir, cmd.source_id) is None:
             logger.warning(
                 f"Ignoring leader purge with malformed source_id: {cmd.source_id}"
             )

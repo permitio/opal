@@ -93,17 +93,14 @@ async def test_delete_publishes_request_without_touching_local_memory(tmp_path):
     clone_path = str(GitPolicyFetcher.repo_clone_path(tmp_path, scope.policy))
     GitPolicyFetcher.repos[clone_path] = object()
     GitPolicyFetcher.repos_last_fetched[sid] = "ts"
-    lock = asyncio.Lock()
-    GitPolicyFetcher.repo_locks[sid] = lock
-
     await svc.delete_scope("only")
 
-    # Fleet-wide, caches drop on the leader's confirmation broadcast. On THIS
-    # worker they also drop from the local floor — but only once it has run,
-    # which is why the request-side assertions come first.
-    assert clone_path in GitPolicyFetcher.repos
-    assert sid in GitPolicyFetcher.repos_last_fetched
-    assert GitPolicyFetcher.repo_locks[sid] is lock
+    # Only the publish contract is asserted here. The cache state at this
+    # instant depends on whether the backgrounded floor has been scheduled yet —
+    # asserting either way would be a coin flip on the fake's timing, and
+    # "local memory is untouched" stopped being the contract when the floor
+    # landed. The floor's effect is pinned deterministically by the tests below,
+    # which drain it.
     assert len(pubsub.published) == 1
     topics, payload = pubsub.published[0]
     assert topics == [opal_server_config.SCOPES_PURGE_CHANNEL]
@@ -453,3 +450,66 @@ async def test_service_stop_drains_the_floor(tmp_path):
 
     assert not svc._local_purges, "stop() returned with the floor still in flight"
     assert not clone.exists(), "the drained floor never completed"
+
+
+@pytest.mark.asyncio
+async def test_floor_early_returns_drain_the_repo_lock(tmp_path):
+    """lock_source MINTS an entry on the way in, so an early return leaks one
+    for a source nothing holds — invariant I4, which the leader path enforces
+    with a finally and this one did not.
+
+    Uses the in-flight branch (the source really is dead, so draining is
+    correct); the live-sibling branch is deliberately excluded and is covered by
+    test_local_floor_keeps_the_clone_when_a_sibling_shares_the_source.
+
+    Mutation: dropping the `finally` fails here.
+    """
+    scope = _scope("only", "https://git/repo-a.git")
+    clone = GitPolicyFetcher.repo_clone_path(tmp_path, scope.policy)
+    clone.mkdir(parents=True)
+    sid = GitPolicyFetcher.source_id(scope.policy)
+    svc = ScopesService(
+        base_dir=tmp_path,
+        scopes=FakeScopeRepository([scope]),
+        pubsub_endpoint=FakePubSubEndpoint(),
+    )
+
+    _mark_git_op_started(sid)
+    try:
+        await svc.delete_scope("only")
+        await _drain_floor(svc)
+    finally:
+        _mark_git_op_done(sid)
+
+    assert clone.exists(), "rmtree while a git thread touches the repo is unsafe"
+    assert sid not in GitPolicyFetcher.repo_locks, "early return leaked a lock (I4)"
+
+
+@pytest.mark.asyncio
+async def test_floor_refuses_a_path_that_is_not_the_derived_one(tmp_path, monkeypatch):
+    """Every other destructive path derives its target from source_id and
+    refuses a mismatch. This one took the caller's Path — not wire-controlled,
+    but it was the one rmtree in the series skipping the check.
+
+    Mutation: the comparison alone is only an assertion — the protection is that
+    the body operates on the DERIVED path throughout. Reverting forget_repo and
+    rmtree to the caller's scope_dir (the pre-fix behaviour) deletes the decoy
+    and fails here; removing only the comparison does not, which is why it is
+    stated this way.
+    """
+    scope = _scope("only", "https://git/repo-a.git")
+    decoy = tmp_path / "not-a-clone-dir"
+    decoy.mkdir()
+    svc = ScopesService(
+        base_dir=tmp_path,
+        scopes=FakeScopeRepository([scope]),
+        pubsub_endpoint=FakePubSubEndpoint(),
+    )
+    monkeypatch.setattr(
+        GitPolicyFetcher, "repo_clone_path", staticmethod(lambda *a, **k: decoy)
+    )
+
+    await svc.delete_scope("only")
+    await _drain_floor(svc)
+
+    assert decoy.exists(), "rmtree'd a path that is not the derived clone dir"

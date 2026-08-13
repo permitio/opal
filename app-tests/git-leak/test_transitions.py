@@ -221,10 +221,11 @@ def test_multiworker_churn_drains_every_worker(opal_multiworker, repo_count):
     )
 
 
+@pytest.mark.timeout(600)
 def test_delete_reclaims_clone_when_the_purge_broadcast_is_lost(
     opal_multiworker, repo_count
 ):
-    """Gate for the local delete floor (round-6 review).
+    """Gate for the local delete floor.
 
     Master's ``delete_scope`` removed the clone dir INLINE in the process
     serving the DELETE, depending on no broadcast at all. PR3 replaced that with
@@ -235,15 +236,25 @@ def test_delete_reclaims_clone_when_the_purge_broadcast_is_lost(
     (the reconciliation sweep is split out, PER-15612), the dir would then
     survive restart, redeploy and leader failover.
 
-    This is the only test in the bed that measures that: every other delete path
-    here runs with a healthy backbone, where the leader's purge would have
-    removed the dir anyway and the floor's contribution is invisible.
+    This is the only test in the bed that measures the floor: every other delete
+    path here runs with a healthy backbone, where the confirmation arrives and
+    the floor's contribution is invisible.
+
+    ATTRIBUTION. An earlier version of this docstring claimed the leader's purge
+    would otherwise have removed the dir. That was true when written and is not
+    now: the leader's disk role was cut out of this PR (PER-15612), so the floor
+    is the ONLY path in the server that removes a clone dir. Nothing else can
+    satisfy this assertion, which is what makes it a gate rather than a
+    coincidence.
 
     Runs 2 workers so the backbone is genuinely in the path (a single worker
     fans out in-process and never touches Postgres).
 
-    Fails without the floor: with the broadcaster down no worker ever receives
-    the purge, so every clone dir stays on disk.
+    Measured both ways when the floor still had competition, against the
+    pre-cut code: with the floor, 0 dirs left; with the floor removed, 4 of 6
+    survived — the other 2 were DELETEs that happened to land on the leader,
+    where publish() reaches the local subscriber before the dead backbone. Post
+    cut, none would survive removal of the floor.
     """
     import requests
     from helpers import bounce_postgres

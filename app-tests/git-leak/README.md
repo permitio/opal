@@ -15,7 +15,7 @@ defects, and a distributed reclaim policy wants its own change) — see the
 follow-up, **PER-15612**. PR3 delivers the offline-repo resilience and the
 fleet-wide purge; the sweep gates flip when PER-15612 lands.
 
-Of the 21 rows below: **17 pass outright**; the three orphan-sweep gates are red
+Of the 22 rows below: **18 pass outright**; the three orphan-sweep gates are red
 by design (`test_orphan_clone_dir_is_reclaimed` and
 `test_redis_wiped_boot_reclaims_clones` fail outright,
 `test_shard_reconfig_still_serves_but_orphans_old_clones` passes its green half
@@ -77,6 +77,7 @@ Gate-coverage matrix (what each flagship test actually does):
 | `test_delete_during_hung_fetch_returns_bounded` | **gate (PR3)** | PASSES since PR3's fetch timeout — fails without it, where the purge waits on a repo lock a hung clone holds indefinitely and the DELETE never returns in bounded time |
 | `test_repoint_during_inflight_fetch_drains_old_source` | **gate (PR3, update path)** | PASSES, both halves — repointing while the old source's clone is hung still serves the new source, AND the old source's cache entries drain (the half that needs PR3's update-path purge) |
 | `test_multiworker_churn_drains_every_worker` | **gate (PR3, broadcast)** | PASSES since PR3's fleet-wide purge — fails without it, where purges are process-local and a worker whose caches were populated by something other than the DELETE it served (e.g. the leader's watcher syncs) leaks permanently; this was the HIGH finding from the PR2 review, as a gate |
+| `test_delete_reclaims_clone_when_the_purge_broadcast_is_lost` | **gate (PR3, delete floor)** | PASSES — with Postgres stopped so the purge broadcast is lost, a DELETE still reclaims the serving pod's clone dir. The only test here that measures the floor at all: every other delete path runs with a healthy backbone. Since the leader's disk role was cut to PER-15612, the floor is the only path in the server that removes a clone dir, so nothing else can satisfy this |
 | `test_warm_boot_reuses_clones` | **guard (S2)** | PASSES — a restart with intact clones must serve without re-cloning |
 | `test_corrupt_clone_recovers_without_clone_loop` | **guard (S3/T7)** | PASSES — emptying a clone's object store in place while the server holds a warm cached handle is detected as invalid and recovers through the invalid-repo branch with exactly one re-clone, no serve-500s wedge and no re-clone loop; verifies the gutted-object-store detection fix |
 | `test_orphan_clone_dir_is_reclaimed` | **gate (orphan sweep, PER-15612)** | FAILS — a clone dir with no live scope is never reclaimed; no orphan sweep exists yet (PR3+, tracked as PER-15612) |

@@ -139,12 +139,16 @@ class OpalServerClient:
             compose("start", "opal_server")
             self._created_scopes.clear()
             self.wait_healthy(timeout=timeout)
-            # wait_healthy returns once HTTP is up, but the boot orphan sweep is
-            # still reclaiming the clone dirs the flushed scopes left behind
-            # (minting+popping one repo_locks entry per dir). Wait for it to
-            # settle to repo_locks==0 so the fixture-teardown invariant check
-            # can't race the sweep and catch a transient minted-not-yet-popped
-            # lock (a flaky I4 on the offline-repo test).
+            # wait_healthy returns once HTTP is up, but boot sync is still
+            # settling (each source it touches mints and pops a repo_locks
+            # entry). Wait for repo_locks==0 so the fixture-teardown invariant
+            # check can't catch a transient minted-not-yet-popped lock (a flaky
+            # I4 on the offline-repo test).
+            #
+            # NOTE: this does NOT wait for clone dirs to be reclaimed — nothing
+            # reclaims them. The flushed scopes' dirs stay on disk (no
+            # reconciliation in this PR; PER-15612), which is why the tests that
+            # call hard_reset carry an I1 exemption.
             deadline = time.time() + 30
             while time.time() < deadline:
                 try:

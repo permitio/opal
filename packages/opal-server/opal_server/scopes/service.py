@@ -26,7 +26,11 @@ from opal_server.policy.watcher.callbacks import (
     create_policy_update,
     create_update_all_directories_in_repo,
 )
-from opal_server.scopes.purge import ScopePurgeCommand, find_scope_sharing_source
+from opal_server.scopes.purge import (
+    ScopePurgeCommand,
+    confined_clone_path,
+    find_scope_sharing_source,
+)
 from opal_server.scopes.scope_repository import (
     Scope,
     ScopeNotFoundError,
@@ -299,78 +303,90 @@ class ScopesService:
           use-after-free class 89e090be fixed. Skipping is safe here — the
           leader's purge (and its deferred retry) still owns that case.
         """
+        # Every other destructive path in this series derives its target from
+        # source_id via confined_clone_path and refuses a malformed id; this one
+        # took the caller's Path. It is not wire-controlled (it comes from the
+        # stored record, not a pub/sub message), so this is consistency rather
+        # than a live hole — but "the one rmtree that skips the check" is not a
+        # sentence worth leaving in a series about unsafe deletes.
+        safe_path = confined_clone_path(self._base_dir, deleted_source_id)
+        if safe_path is None or safe_path != str(scope_dir):
+            logger.warning(
+                f"Skipping the local clone purge for scope {scope_id}: derived "
+                f"path {safe_path!r} does not match {str(scope_dir)!r}"
+            )
+            return
         try:
             async with GitPolicyFetcher.lock_source(deleted_source_id):
+                # I4: drain the entry lock_source minted on every exit that
+                # abandons this source — the early returns below included, which
+                # previously leaked one each. NOT on the live-sibling path: that
+                # source is still in use, and the bed asserts the entry survives
+                # a sibling delete. Same rule and same lock-identity guard as
+                # LeaderScopePurger.purge_source_if_unshared.
+                minted = GitPolicyFetcher.repo_locks.get(deleted_source_id)
                 try:
-                    timeout = opal_server_config.SCOPES_STORE_READ_TIMEOUT
-                    # Excludes NOTHING, unlike master. Master passed scope_id so
-                    # an ambiguous delete (record survived) would still purge,
-                    # reasoning that over-purging self-heals. On disk it does
-                    # not: excluding the id blinds this check to a scope that
-                    # has been RE-CREATED on the same source under the same id
-                    # between the delete and this backgrounded purge, and the
-                    # rmtree then takes a live scope's clone. Delete-then-
-                    # re-create is a normal workflow (the bed has
-                    # test_delete_recreate_storm).
-                    #
-                    # Dropping the exclusion costs only the ambiguous-delete
-                    # case, where the surviving record now reads as a sharer and
-                    # the dir is kept — the safe direction, and the same choice
-                    # LeaderScopePurger already makes.
-                    check = find_scope_sharing_source(self._scopes, deleted_source_id)
-                    sharer = await (
-                        asyncio.wait_for(check, timeout=timeout)
-                        if timeout > 0
-                        else check
-                    )
-                except Exception as e:
-                    # KEEP the clone, unlike master. Master purged defensively on
-                    # any scan failure, reasoning that over-purging self-heals.
-                    # It does not self-heal cheaply here: if a sibling scope does
-                    # share this source, deleting its clone takes a LIVE tenant's
-                    # policy offline until the re-clone completes (503s
-                    # throughout) — and the trigger is a transient store blip,
-                    # which is far more common than the case master was
-                    # protecting against.
-                    #
-                    # The cost of keeping is an orphan dir, reclaimed by
-                    # PER-15612. Disk against availability, and this is a
-                    # best-effort floor: it is the optimistic path by
-                    # construction, so it takes the conservative branch when it
-                    # cannot tell.
-                    logger.warning(
-                        f"Local sibling check for {deleted_source_id} failed after "
-                        f"deleting scope {scope_id}; keeping this worker's clone "
-                        f"(it stays until PER-15612's sweep lands): {e!r}"
-                    )
-                    return
-                if sharer is not None:
-                    logger.info(
-                        f"Scope {sharer} still shares source {deleted_source_id}, "
-                        "keeping this worker's clone"
-                    )
-                    return
-                if git_op_in_flight(deleted_source_id):
-                    logger.info(
-                        f"Skipping the local clone purge for {deleted_source_id}: "
-                        "a git operation is still in flight (the leader's purge "
-                        "owns this case)"
-                    )
-                    return
-                GitPolicyFetcher.forget_repo(str(scope_dir))
-                GitPolicyFetcher.repos_last_fetched.pop(deleted_source_id, None)
-                try:
-                    await run_sync(shutil.rmtree, str(scope_dir))
-                except FileNotFoundError:
-                    pass  # never cloned (or already gone) — nothing to clean
-                except OSError as e:
-                    logger.warning(
-                        f"Failed to remove clone dir {scope_dir} of deleted "
-                        f"scope {scope_id}: {e!r}"
-                    )
-                # Popped while the lock is held: lock_source waiters re-check the
-                # dict entry after acquiring and retry on the fresh lock.
-                GitPolicyFetcher.repo_locks.pop(deleted_source_id, None)
+                    try:
+                        timeout = opal_server_config.SCOPES_STORE_READ_TIMEOUT
+                        check = find_scope_sharing_source(
+                            self._scopes, deleted_source_id
+                        )
+                        sharer = await (
+                            asyncio.wait_for(check, timeout=timeout)
+                            if timeout > 0
+                            else check
+                        )
+                    except Exception as e:
+                        # KEEP the clone, unlike master. Master purged defensively
+                        # on any scan failure, reasoning that over-purging
+                        # self-heals. It does not self-heal cheaply here: if a
+                        # sibling scope does share this source, deleting its clone
+                        # takes a LIVE tenant's policy offline until the re-clone
+                        # completes — and the trigger is a transient store blip.
+                        # The cost of keeping is an orphan dir (PER-15612): disk
+                        # against availability, and this is a best-effort floor,
+                        # so it takes the conservative branch when it cannot tell.
+                        logger.warning(
+                            f"Local sibling check for {deleted_source_id} failed "
+                            f"after deleting scope {scope_id}; keeping this "
+                            f"worker's clone (it stays until PER-15612's sweep "
+                            f"lands): {e!r}"
+                        )
+                        return
+                    if sharer is not None:
+                        logger.info(
+                            f"Scope {sharer} still shares source "
+                            f"{deleted_source_id}, keeping this worker's clone"
+                        )
+                        minted = None  # live source — leave its lock alone
+                        return
+                    if git_op_in_flight(deleted_source_id):
+                        logger.info(
+                            f"Skipping the local clone purge for "
+                            f"{deleted_source_id}: a git operation is still in "
+                            "flight; the dir stays until PER-15612's sweep lands"
+                        )
+                        return
+                    GitPolicyFetcher.forget_repo(safe_path)
+                    GitPolicyFetcher.repos_last_fetched.pop(deleted_source_id, None)
+                    try:
+                        await run_sync(shutil.rmtree, safe_path)
+                    except FileNotFoundError:
+                        pass  # never cloned (or already gone) — nothing to clean
+                    except OSError as e:
+                        logger.warning(
+                            f"Failed to remove clone dir {safe_path} of deleted "
+                            f"scope {scope_id}: {e!r}"
+                        )
+                finally:
+                    if (
+                        minted is not None
+                        and GitPolicyFetcher.repo_locks.get(deleted_source_id) is minted
+                    ):
+                        # Popped while the lock is held: lock_source waiters
+                        # re-check the dict entry after acquiring and retry on the
+                        # freshly-minted lock.
+                        GitPolicyFetcher.repo_locks.pop(deleted_source_id, None)
         except Exception:
             # Detached background task: without this an unexpected failure
             # surfaces only as asyncio's unretrieved-exception noise.
