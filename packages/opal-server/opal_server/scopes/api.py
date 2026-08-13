@@ -44,8 +44,8 @@ from opal_server.config import opal_server_config
 from opal_server.data.data_update_publisher import DataUpdatePublisher
 from opal_server.git_fetcher import (
     BranchHeadNotFoundError,
+    CloneNotPopulatedError,
     GitPolicyFetcher,
-    git_op_in_flight,
 )
 from opal_server.scopes.purge import ScopePurgeCommand
 from opal_server.scopes.scope_repository import ScopeNotFoundError, ScopeRepository
@@ -238,7 +238,8 @@ def init_scope_router(
         try:
             # Deletes the record and broadcasts a ScopePurgeCommand; every worker
             # drops its in-memory caches when the leader's confirmation broadcast
-            # arrives, and the leader removes the clone dir (fleet-wide purge, PR3).
+            # arrives. The clone dir is removed by THIS worker's best-effort
+            # floor, not by the leader — the leader does no disk work (PER-15612).
             await scopes_service.delete_scope(scope_id)
         except ScopeNotFoundError:
             # Deleting a missing scope was always a silent no-op (204); keep it.
@@ -340,45 +341,37 @@ def init_scope_router(
 
         try:
             return await run_sync(fetcher.make_bundle, base_hash)
-        except BranchHeadNotFoundError as exc:
-            # "Branch not found" is only permanent when nothing is writing the
-            # repo. _clone() rmtree's the destination and clones INTO THE FINAL
-            # PATH, so for the whole duration of a recovery re-clone the dir
-            # exists with no origin/<branch> ref yet — indistinguishable, from
-            # here, from a misconfigured branch name. Telling a client its
-            # config is wrong and non-retryable during the very recovery that
-            # fixes it is the opposite of the truth, and third-party consumers
-            # (unlike opal-client, which retries regardless) will act on it.
+        except CloneNotPopulatedError as exc:
+            # The clone has no refs/remotes/<remote>/* at all, so it is being
+            # populated right now — _clone() rmtree's the destination and clones
+            # INTO the final path, so this window is the whole clone. Telling a
+            # client its configuration is permanently wrong during the recovery
+            # that fixes it is the opposite of the truth.
             #
-            # The in-flight marker is exactly the discriminator: it is set for
-            # the whole clone and clear otherwise. A genuinely wrong branch that
-            # happens to coincide with a fetch briefly gets the 503, then the
-            # 409 once the marker clears — right answers, right order.
-            if git_op_in_flight(GitPolicyFetcher.source_id(scope.policy)):
-                logger.info(
-                    "Scope {scope_id} branch not resolvable yet: a git operation "
-                    "is in flight (clone in progress), returning 503",
-                    scope_id=scope_id,
-                )
-                metrics.event(
-                    "ScopePolicyUnavailable",
-                    message=f"Scope {scope_id} policy 503 (clone in progress)",
-                    tags={"scope_id": scope_id, "status": "503", "retryable": "true"},
-                )
-                raise HTTPException(
-                    status.HTTP_503_SERVICE_UNAVAILABLE,
-                    detail=(
-                        f"Policy clone for scope {scope_id} is being created, "
-                        "retry shortly"
-                    ),
-                    # Longer than the plain-503 case below: a clone in progress
-                    # runs for tens of seconds on a large repo, so a 5s hint
-                    # would spend the whole clone burning round-trips, each one
-                    # a Repo() open and a tree walk on this server. Stateless by
-                    # design — escalating this per client would need per-client
-                    # retry state, and opal-client ignores the header anyway.
-                    headers={"Retry-After": _RETRY_AFTER_CLONE_IN_PROGRESS},
-                )
+            # Derived from disk, NOT from the in-flight marker: that marker is a
+            # per-process global written only by the leader's sync, while this
+            # route is served by any worker, so keying on it answered 409 on
+            # every non-leader — N-1 of N workers.
+            logger.info(
+                "Scope {scope_id} clone is not populated yet ({exc!r}), "
+                "returning 503",
+                scope_id=scope_id,
+                exc=exc,
+            )
+            metrics.event(
+                "ScopePolicyUnavailable",
+                message=f"Scope {scope_id} policy 503 (clone in progress)",
+                tags={"scope_id": scope_id, "status": "503", "retryable": "true"},
+            )
+            raise HTTPException(
+                status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=(
+                    f"Policy clone for scope {scope_id} is being created, "
+                    "retry shortly"
+                ),
+                headers={"Retry-After": _RETRY_AFTER_CLONE_IN_PROGRESS},
+            )
+        except BranchHeadNotFoundError as exc:
             logger.error(
                 "Scope {scope_id} bundle unavailable: {exc!r} (non-retryable)",
                 scope_id=scope_id,

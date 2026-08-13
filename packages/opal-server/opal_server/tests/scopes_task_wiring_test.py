@@ -362,10 +362,12 @@ async def test_stop_is_idempotent(monkeypatch):
     assert t._pubsub_endpoint.notifier.unsubs == [
         (sub_id, [opal_server_config.SCOPES_PURGE_CHANNEL])
     ]
-    # BOTH drains run, and run on every stop() — draining twice is harmless
-    # (both sets are empty the second time). The service drain is what keeps a
-    # DELETE's backgrounded floor from being dropped by a SIGTERM.
-    assert stops == ["purger", "service", "purger", "service"]
+    # Only the purger is drained here, on every stop(). The DELETE floor's
+    # drain is deliberately NOT the watcher's job — the floor's tasks live on
+    # the ScopesService init_scope_router received, and the watcher exists only
+    # on the leader while a DELETE usually lands on a non-leader. That drain is
+    # pinned by test_shutdown_drains_the_routers_scopes_service.
+    assert stops == ["purger", "purger"]
 
 
 # --- Round-6 review: splitting the orphan sweep out deleted six tests here,

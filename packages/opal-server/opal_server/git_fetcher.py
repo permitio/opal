@@ -57,6 +57,27 @@ class GitConcurrencyLimitExceeded(RuntimeError):
     SCOPES_GIT_MAX_ZOMBIES."""
 
 
+class CloneNotPopulatedError(ValueError):
+    """The remote-tracking namespace is EMPTY: no refs/remotes/<remote>/* at
+    all, so this clone has not been populated yet.
+
+    Distinct from BranchHeadNotFoundError, which means the namespace has refs
+    but not the configured one — a real misconfiguration. This is transient by
+    construction: _clone() rmtree's the destination and clones INTO the final
+    path, so for the whole duration of a recovery re-clone the dir exists with
+    no remote refs.
+
+    Deliberately derived from DISK, not from the in-flight marker: that marker
+    is a per-process module global, written only by the leader's sync, while
+    GET /scopes/{id}/policy is served by any worker. Keying the 503/409 split
+    on it made every NON-leader worker answer 409 "not retryable" throughout a
+    recovery — the exact inversion the split exists to prevent, on N-1 of N
+    workers. Disk truth is identical on every worker.
+
+    Subclasses ValueError so broad handlers still catch it.
+    """
+
+
 class BranchHeadNotFoundError(ValueError):
     """Configured branch has no resolvable HEAD (permanent misconfig), NOT a
     transient clone gap.
@@ -614,7 +635,7 @@ class GitPolicyFetcher(PolicyFetcher):
                 # DELETE that landed during this sync already broadcast its
                 # purge; cloning now would resurrect the dead scope's repo
                 # and re-populate the caches. Runs under lock_source, so it
-                # is serialized against the leader's disk purge. Fails open:
+                # is serialized against any purge on THIS process. Fails open:
                 # a store hiccup must not block the sync.
                 if self._liveness_probe is not None:
                     try:
@@ -826,6 +847,15 @@ class GitPolicyFetcher(PolicyFetcher):
                 commit, _ = repo.resolve_refish(f"{self._remote}/{self._source.branch}")
                 head_commit_hash = commit.hex
             except KeyError:
+                # Split the KeyError by DISK STATE, not by the in-flight marker:
+                # an empty remote-tracking namespace means the clone has not been
+                # populated yet (transient), whereas siblings present but ours
+                # missing means the configured branch is wrong (permanent).
+                prefix = f"refs/remotes/{self._remote}/"
+                if not any(ref.startswith(prefix) for ref in repo.listall_references()):
+                    raise CloneNotPopulatedError(
+                        f"No {prefix}* refs yet at {self._repo_path}"
+                    )
                 head_commit_hash = None
         finally:
             free = getattr(repo, "free", None)

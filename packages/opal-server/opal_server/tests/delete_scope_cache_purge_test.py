@@ -8,6 +8,7 @@ sync skip — both still hold unchanged.
 import asyncio
 
 import pytest
+from fastapi import FastAPI
 from opal_common.schemas.policy_source import GitPolicyScopeSource, NoAuthData
 from opal_common.schemas.scopes import Scope
 from opal_server.config import opal_server_config
@@ -16,6 +17,7 @@ from opal_server.git_fetcher import (
     _mark_git_op_done,
     _mark_git_op_started,
 )
+from opal_server.scopes import api as opal_server_api
 from opal_server.scopes.scope_repository import ScopeNotFoundError
 from opal_server.scopes.service import ScopesService
 
@@ -171,7 +173,8 @@ async def test_local_floor_skips_while_a_git_op_is_in_flight(tmp_path):
 
     Freeing one a lingering timed-out pygit2 call still holds on a pool
     thread is the use-after-free class 89e090be fixed — the leader's
-    purge (and its deferred retry) owns that case instead.
+    purge owned that case; since the disk-reclaim cut, nothing does —
+    the dir stays until PER-15612.
     """
     scope = _scope("only", "https://git/repo-a.git")
     clone = GitPolicyFetcher.repo_clone_path(tmp_path, scope.policy)
@@ -513,3 +516,88 @@ async def test_floor_refuses_a_path_that_is_not_the_derived_one(tmp_path, monkey
     await _drain_floor(svc)
 
     assert decoy.exists(), "rmtree'd a path that is not the derived clone dir"
+
+
+@pytest.mark.asyncio
+async def test_shutdown_drains_the_routers_scopes_service(tmp_path, monkeypatch):
+    """The drain must target the instance init_scope_router received.
+
+    There are TWO ScopesService objects per process: the one server.py builds
+    for the router (which delete_scope runs on, so its _local_purges holds the
+    floor tasks) and a second one ScopesPolicyWatcherTask builds for itself. An
+    earlier version drained the watcher's — always an empty set — so a DELETE
+    followed by SIGTERM stranded the clone dir, which is a regression against
+    the merge base, where the rmtree completed before the 204.
+
+    This asserts on the object the router was handed, because that is the only
+    thing the bug could distinguish. Both prior tests used a locally built or
+    hand-injected service and passed throughout.
+
+    Mutation: pointing OpalServer._drain_scopes_service at any other instance,
+    or dropping it from stop_server_background_tasks, fails here.
+    """
+    from opal_server.server import OpalServer
+
+    captured = {}
+    real_init = opal_server_api.init_scope_router
+
+    def _capture(scopes, authenticator, pubsub_endpoint, scopes_service):
+        captured["service"] = scopes_service
+        return real_init(scopes, authenticator, pubsub_endpoint, scopes_service)
+
+    monkeypatch.setattr("opal_server.server.init_scope_router", _capture)
+    monkeypatch.setattr(opal_server_config, "SCOPES", True)
+    monkeypatch.setattr(opal_server_config, "BASE_DIR", str(tmp_path))
+
+    from opal_common.authentication.signer import JWTSigner
+    from opal_common.authentication.types import JWTAlgorithm
+
+    server = OpalServer.__new__(OpalServer)
+    server._scopes_service = None
+    server._scopes = FakeScopeRepository([_scope("only", "https://git/repo-a.git")])
+    server.watcher = None
+    server.publisher = None
+    server.broadcast_keepalive = None
+    server.opal_statistics = None
+    server.jwks_endpoint = None
+    server.master_token = None
+    server.loadlimit_notation = None
+    server.data_sources_config = None
+    # keys=None -> verifier disabled, which is all the router needs here
+    server.signer = JWTSigner(
+        private_key=None,
+        public_key=None,
+        algorithm=getattr(JWTAlgorithm, "RS256"),
+        audience="test",
+        issuer="test",
+    )
+
+    from fastapi import APIRouter
+
+    class _FakePubSub:
+        endpoint = FakePubSubEndpoint()
+        pubsub_router = APIRouter()
+        api_router = APIRouter()
+
+    server.pubsub = _FakePubSub()
+    app = FastAPI()
+    server._configure_api_routes(app)
+
+    assert (
+        captured["service"] is server._scopes_service
+    ), "the drained instance is not the one the router serves DELETE on"
+
+    # a real pending floor task on that instance must be awaited by shutdown
+    drained = []
+
+    async def _slow_floor():
+        await asyncio.sleep(0.05)
+        drained.append(True)
+
+    task = asyncio.create_task(_slow_floor())
+    server._scopes_service._local_purges.add(task)
+    task.add_done_callback(server._scopes_service._local_purges.discard)
+
+    await server.stop_server_background_tasks()
+
+    assert drained == [True], "shutdown returned without awaiting the floor"

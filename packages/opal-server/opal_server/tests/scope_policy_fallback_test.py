@@ -181,14 +181,24 @@ from opal_server.git_fetcher import GitPolicyFetcher as _Fetcher  # noqa: E402
 
 
 class _FakeRepo:
-    """Stand-in for pygit2.Repository whose resolve_refish outcome we
-    control."""
+    """Stand-in for pygit2.Repository whose resolve_refish outcome we control.
 
-    def __init__(self, resolve):
+    ``refs`` is the on-disk reference list. It decides the KeyError split: an
+    empty remote-tracking namespace means the clone is still being populated
+    (transient), refs present but not ours means the branch is misconfigured
+    (permanent). Defaults to a populated namespace so existing callers keep
+    exercising the permanent case.
+    """
+
+    def __init__(self, resolve, refs=("refs/remotes/origin/some-other-branch",)):
         self._resolve = resolve
+        self._refs = list(refs)
 
     def resolve_refish(self, refish):
         return self._resolve()
+
+    def listall_references(self):
+        return self._refs
 
     def free(self):  # _get_current_branch_head free()s the handle in finally
         pass
@@ -217,7 +227,8 @@ def _branch_head_fetcher(tmp_path, branch="main"):
 
 
 def test_branch_head_missing_ref_is_permanent_branchheadnotfound(tmp_path, monkeypatch):
-    # resolve_refish raises KeyError: the branch ref genuinely does not exist.
+    # resolve_refish raises KeyError AND the remote namespace has other refs:
+    # the clone is populated, our branch simply is not there -> permanent.
     monkeypatch.setattr(
         "opal_server.git_fetcher.Repository",
         lambda path: _FakeRepo(_raise(KeyError("no such ref"))),
@@ -265,45 +276,103 @@ def test_transient_object_store_giterror_returns_retryable_503(tmp_path, monkeyp
     assert resp.headers["retry-after"] == "5"
 
 
-def test_branch_missing_mid_clone_is_a_retryable_503(tmp_path, monkeypatch):
-    """_clone() rmtree's the destination and clones INTO THE FINAL PATH, so for
-    the whole duration of a recovery re-clone the dir has no origin/<branch>
-    ref yet — indistinguishable here from a misconfigured branch.
+def test_route_splits_clone_in_progress_from_wrong_branch(tmp_path, monkeypatch):
+    """End-to-end, both verdicts, on the SAME route.
 
-    Telling a client its config is permanently wrong during the very recovery
-    that fixes it is the opposite of the truth. The in-flight marker
-    discriminates: set for the whole clone, clear otherwise.
-
-    Mutation: removing the git_op_in_flight check returns 409 and fails here.
+    Replaces an earlier version of this test that drove the split with the
+    in-flight marker (`_mark_git_op_started`). That mechanism was wrong: the
+    marker is per-process and leader-only, so it produced the right answer on
+    one worker and the wrong one on the rest. The split is now disk-derived, so
+    a test that fakes the marker would prove nothing.
     """
-    from opal_server.git_fetcher import (
-        BranchHeadNotFoundError,
-        _mark_git_op_done,
-        _mark_git_op_started,
+    from opal_server.git_fetcher import CloneNotPopulatedError
+
+    live = _scope("live", "https://git/live.git")
+    repo = FakeScopeRepository([live])
+    monkeypatch.setattr(
+        "opal_server.scopes.api.opal_server_config.BASE_DIR", str(tmp_path)
     )
+    client = _client(repo, tmp_path)
+
+    # clone still being populated: no refs/remotes/<remote>/* on disk yet
+    monkeypatch.setattr(
+        GitPolicyFetcher,
+        "make_bundle",
+        lambda self, base_hash: (_ for _ in ()).throw(
+            CloneNotPopulatedError("No refs/remotes/origin/* yet")
+        ),
+    )
+    populating = client.get("/scopes/live/policy")
+
+    # namespace populated, our branch simply absent: a real misconfiguration
+    monkeypatch.setattr(
+        GitPolicyFetcher,
+        "make_bundle",
+        lambda self, base_hash: (_ for _ in ()).throw(
+            BranchHeadNotFoundError("Could not find current branch head")
+        ),
+    )
+    misconfigured = client.get("/scopes/live/policy")
+
+    assert populating.status_code == 503, "a clone in progress is not a config error"
+    assert populating.headers["retry-after"] == "30"
+    assert misconfigured.status_code == 409, "a wrong branch is not transient"
+    assert "retry-after" not in {k.lower() for k in misconfigured.headers}
+
+
+def test_branch_head_with_no_remote_refs_is_transient_not_permanent(
+    tmp_path, monkeypatch
+):
+    """_clone() rmtree's the destination and clones INTO the final path, so for
+    the whole duration of a recovery re-clone the dir exists with NO
+    refs/remotes/<remote>/* at all. That is indistinguishable from a wrong
+    branch by resolve_refish alone, and it is the opposite verdict.
+
+    Mutation: dropping the listall_references check raises
+    BranchHeadNotFoundError (the 409 path) and fails here.
+    """
+    from opal_server.git_fetcher import CloneNotPopulatedError
+
+    monkeypatch.setattr(
+        "opal_server.git_fetcher.Repository",
+        lambda path: _FakeRepo(_raise(KeyError("no such ref")), refs=[]),
+    )
+    with pytest.raises(CloneNotPopulatedError):
+        _branch_head_fetcher(tmp_path)._get_current_branch_head()
+
+
+def test_mid_clone_503_is_identical_on_a_non_leader_worker(tmp_path, monkeypatch):
+    """The 503/409 split must not depend on the in-flight marker.
+
+    That marker is a per-process module global, written only by
+    run_in_git_executor via fetch_and_notify_on_changes, whose only caller is
+    sync_scope — and the watcher that drives sync is constructed under the
+    leadership lock. GET /scopes/{id}/policy has no leader affinity, so on every
+    NON-leader worker the marker is permanently empty. Keying the split on it
+    answered 409 "not retryable" on N-1 of N workers throughout a recovery
+    re-clone: the exact inversion the split exists to prevent.
+
+    This test never sets the marker, so it IS the non-leader case.
+
+    Mutation: reinstating `if git_op_in_flight(...)` as the discriminator in
+    api.py returns 409 and fails here.
+    """
+    from opal_server.git_fetcher import CloneNotPopulatedError, git_op_in_flight
 
     live = _scope("live", "https://git/live.git")
     repo = FakeScopeRepository([live])
     sid = GitPolicyFetcher.source_id(live.policy)
 
     def fake_make_bundle(self, base_hash):
-        raise BranchHeadNotFoundError("Could not find current branch head")
+        raise CloneNotPopulatedError("No refs/remotes/origin/* yet")
 
     monkeypatch.setattr(GitPolicyFetcher, "make_bundle", fake_make_bundle)
     monkeypatch.setattr(
         "opal_server.scopes.api.opal_server_config.BASE_DIR", str(tmp_path)
     )
 
-    client = _client(repo, tmp_path)
+    assert not git_op_in_flight(sid), "this test must run as a non-leader"
+    resp = _client(repo, tmp_path).get("/scopes/live/policy")
 
-    _mark_git_op_started(sid)
-    try:
-        mid_clone = client.get("/scopes/live/policy")
-    finally:
-        _mark_git_op_done(sid)
-    settled = client.get("/scopes/live/policy")
-
-    assert mid_clone.status_code == 503, "mid-clone reported as a config error"
-    assert mid_clone.headers["retry-after"] == "30"
-    # ...and once nothing is writing the repo, the branch really is missing.
-    assert settled.status_code == 409
+    assert resp.status_code == 503, "non-leader worker answered the wrong verdict"
+    assert resp.headers["retry-after"] == "30"

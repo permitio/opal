@@ -51,7 +51,7 @@ class ScopesPolicyWatcherTask(BasePolicyWatcherTask):
 
     async def start(self):
         await super().start()
-        # Leader-only disk purge: this task starts only on the leader, so
+        # Leader-only purge authorization: this task starts only on the leader, so
         # registering here (not at worker boot) preserves the invariant that
         # the leader is the only mutator on sync paths (see the note in
         # scopes/purge.py — a delete also removes on the serving worker).
@@ -101,14 +101,17 @@ class ScopesPolicyWatcherTask(BasePolicyWatcherTask):
         # shutdown hang, taken while the leadership lock is still held.
         result = await super().stop()
 
-        # Best-effort, bounded (see _PURGE_DRAIN_TIMEOUT). Both drains share the
-        # bound: the service's floor tasks and the leader's purges take the same
-        # lock_source, so a hung source stalls either the same way.
+        # Best-effort, bounded (see _PURGE_DRAIN_TIMEOUT).
+        #
+        # ONLY the purger is drained here. The DELETE floor's tasks live on the
+        # ScopesService that init_scope_router received (built in server.py), NOT
+        # on self._service — the watcher constructs its own, and only ever syncs
+        # with it. Draining self._service gathered an empty set. This is also the
+        # wrong place structurally: the watcher exists only on the leader, while
+        # a DELETE usually lands on a non-leader. That drain is per-worker, on
+        # OpalServer.stop_server_background_tasks.
         try:
-            await asyncio.wait_for(
-                asyncio.gather(self._purger.stop(), self._service.stop()),
-                timeout=_PURGE_DRAIN_TIMEOUT,
-            )
+            await asyncio.wait_for(self._purger.stop(), timeout=_PURGE_DRAIN_TIMEOUT)
         except asyncio.TimeoutError:
             logger.warning(
                 "Abandoned in-flight scope purges at shutdown after {timeout}s; "

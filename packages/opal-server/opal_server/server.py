@@ -47,6 +47,12 @@ from opal_server.security.api import init_security_router
 from opal_server.security.jwks import JwksStaticEndpoint
 from opal_server.statistics import OpalStatistics, init_statistics_router
 
+# Upper bound on the shutdown drain of the DELETE floor's clone purges. Same
+# rationale and same order of magnitude as the watcher's _PURGE_DRAIN_TIMEOUT:
+# stop() runs while k8s's terminationGracePeriodSeconds (30s default) is
+# counting down, so blocking longer just converts a clean exit into a SIGKILL.
+_SCOPES_DRAIN_TIMEOUT = 5.0
+
 
 class OpalServer:
     def __init__(
@@ -192,6 +198,10 @@ class OpalServer:
             self._scopes = ScopeRepository(self._redis_db)
             logger.info("OPAL Scopes: server is connected to scopes repository")
 
+        # Set BEFORE _init_fast_api_app(): _configure_api_routes assigns it,
+        # and it must exist even when SCOPES is off (shutdown reads it).
+        self._scopes_service: Optional[ScopesService] = None
+
         # init fastapi app
         self.app: FastAPI = self._init_fast_api_app()
 
@@ -278,6 +288,14 @@ class OpalServer:
                 scopes=self._scopes,
                 pubsub_endpoint=self.pubsub.endpoint,
             )
+            # Held so shutdown can drain it. THIS is the instance DELETE runs on
+            # (api.py -> scopes_service.delete_scope), so this is the one whose
+            # _local_purges accumulates the backgrounded clone-dir purges. The
+            # watcher builds its own separate ScopesService and only ever syncs
+            # with it — draining that one drains an empty set. The watcher is
+            # also leader-only, and a DELETE usually lands on a non-leader, so
+            # it could not be the drain point even if it shared the object.
+            self._scopes_service = scopes_service
             app.include_router(
                 init_scope_router(
                     self._scopes, authenticator, self.pubsub.endpoint, scopes_service
@@ -442,6 +460,15 @@ class OpalServer:
 
         tasks: List[asyncio.Task] = []
 
+        if self._scopes_service is not None:
+            # Bounded: a floor task's first act is to take lock_source, which a
+            # sync can hold across a whole clone/fetch. Unbounded here would
+            # hang shutdown; abandoning is the same outcome as not draining at
+            # all, so the timeout is the safe direction.
+            tasks.append(
+                asyncio.create_task(self._drain_scopes_service(_SCOPES_DRAIN_TIMEOUT))
+            )
+
         if self.watcher is not None:
             tasks.append(asyncio.create_task(self.watcher.stop()))
         if self.publisher is not None:
@@ -455,6 +482,27 @@ class OpalServer:
             await asyncio.gather(*tasks)
         except Exception:
             logger.exception("exception while shutting down background tasks")
+
+    async def _drain_scopes_service(self, timeout: float) -> None:
+        """Await the DELETE floor's backgrounded clone-dir purges, bounded.
+
+        Without this, a DELETE that returns 204 followed by SIGTERM loses its
+        floor: the task is detached, nothing else references it, and the clone
+        dir it was about to remove survives with nothing left to reclaim it (no
+        reconciliation in this PR — PER-15612). Master removed the dir inline,
+        before returning 204, so an undrained floor is a regression against the
+        merge base rather than merely a missing improvement.
+        """
+        try:
+            await asyncio.wait_for(self._scopes_service.stop(), timeout=timeout)
+        except asyncio.TimeoutError:
+            logger.warning(
+                "Abandoned in-flight scope clone purges at shutdown after "
+                "{timeout}s; their clone dirs stay on disk (PER-15612)",
+                timeout=timeout,
+            )
+        except Exception:
+            logger.exception("Failed to drain scope clone purges at shutdown")
 
     def _wire_broadcaster_give_up(self):
         """Graceful-restart the worker if the reconnecting broadcaster gives
