@@ -95,19 +95,6 @@ services:
       GITEA_ADMIN_USER: "opaladmin"
       GITEA_ADMIN_PASSWORD: "opaladmin"
       REPO_COUNT: "${REPO_COUNT:-50}"
-      # Optional main-tier (shared-repo, many-branches) seed mode for the
-      # SHARDS boot-sharding demo (test_boot_sharding_demo.py). Unset (0)
-      # leaves the existing distinct-repo seeding as the only shape seeded.
-      MAIN_REPO_BRANCHES: "${MAIN_REPO_BRANCHES:-0}"
-      # Content-size knobs for the main-tier seed mode (see
-      # seed/seed_gitea.py docstring): a ~1MB shared base commit on `main`
-      # (40 files x 25KB), shared by every branch's history, plus one small
-      # (~20-50KB, jittered) branch-distinct tenant data.json diff per
-      # branch — prod-representative shared-history + small-per-branch-tips
-      # shape, not the old fully-distinct-per-branch design.
-      MAIN_REPO_REGO_FILES: "${MAIN_REPO_REGO_FILES:-40}"
-      MAIN_REPO_REGO_FILE_KB: "${MAIN_REPO_REGO_FILE_KB:-25}"
-      MAIN_REPO_DATA_JSON_KB: "${MAIN_REPO_DATA_JSON_KB:-35}"
     restart: "no"
 
   opal_server:
@@ -131,27 +118,13 @@ services:
       # changing SCOPES_REPO_CLONES_SHARDS between boots moves every source_id,
       # orphaning all previous clone dirs — a real ops event worth gating.
       OPAL_SCOPES_REPO_CLONES_SHARDS: "${OPAL_TEST_SHARDS:-1}"
-      # Overridable for the SHARDS boot-sharding demo's MAX_WORKERS-inert
-      # confirmation sub-sweep (fixed SHARDS, MAX_WORKERS varied). Unset
-      # falls through to the code default (10) — every other test in this
-      # bed is unaffected.
-      OPAL_SCOPES_GIT_MAX_WORKERS: "${OPAL_TEST_GIT_MAX_WORKERS:-10}"
-      # PROTOTYPE ONLY (see git_fetcher.py's _CLONE_STRATEGY): clone-strategy
-      # experiment for the clone-strategy report. Unset -> "full" -> exact
-      # prior clone_repository() behavior; every other test in this bed is
-      # unaffected. Only meaningful when set to "shallow" or "single_branch".
-      OPAL_CLONE_STRATEGY: "${OPAL_TEST_CLONE_STRATEGY:-full}"
       OPAL_SCOPES: "1"
       # Fail hung clones/fetches fast. The code default (120s) exceeds the
       # bed's serve windows: with FIFO queueing over SCOPES_GIT_MAX_WORKERS
       # slots, a burst of blackholed sources delays a healthy scope by up to
       # ceil(burst/slots) x timeout — 10s keeps that well under every gate's
       # window while still exercising the timeout+zombie machinery for real.
-      # Overridable for the SHARDS boot-sharding demo (test_boot_sharding_demo.py),
-      # whose prod-realistic per-branch content makes a real (large,
-      # non-shallow) clone take longer than 10s — default unchanged at 10s so
-      # every other test in this bed keeps its fast-fail assumption.
-      OPAL_SCOPES_GIT_FETCH_TIMEOUT: "${OPAL_TEST_GIT_FETCH_TIMEOUT:-10}"
+      OPAL_SCOPES_GIT_FETCH_TIMEOUT: "10"
       OPAL_REDIS_URL: "redis://redis:6379"
       OPAL_BROADCAST_URI: "postgres://opal:opal@postgres:5432/opal"
       # Make the broadcaster reconnect fast + deterministic for the postgres-
@@ -166,11 +139,6 @@ services:
       # JWT verifier is disabled, so the harness can call scope routes without
       # minting JWTs. Local test bed only; never a production setting.
       OPAL_LOG_FORMAT_INCLUDE_PID: "true"
-      # DEBUG is needed by the SHARDS boot-sharding demo (test_boot_sharding_demo.py)
-      # to parse per-branch "Created local branch" timestamps out of the logs
-      # for its phase-1/phase-2 breakdown. Defaults to INFO so the normal bed
-      # suite's log volume/format is unaffected.
-      OPAL_LOG_LEVEL: "${OPAL_TEST_LOG_LEVEL:-INFO}"
     ports:
       - "7002:7002"
     depends_on:
