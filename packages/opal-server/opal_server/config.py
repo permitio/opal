@@ -360,8 +360,10 @@ class OpalServerConfig(Confi):
         "__opal_scope_purge__",
         description="Pub/sub channel (worker-to-worker, over the broadcaster) used to "
         "purge GitPolicyFetcher caches fleet-wide when a scope is deleted or "
-        "repointed to a new source. Every worker subscribes; the leader "
-        "additionally removes the clone dir.",
+        "repointed to a new source. Every worker subscribes and drops its own "
+        "cache entries; the leader is the only actor that may authorize that, "
+        "because only it can check whether a surviving scope still shares the "
+        "source. It does not remove the clone dir.",
     )
 
     # Data updates
@@ -529,8 +531,8 @@ class OpalServerConfig(Confi):
         "SCOPES_STORE_READ_TIMEOUT",
         10.0,
         description="Timeout for a scope-store read taken while holding a source's "
-        "lock — the sibling check a delete/repoint purge runs before removing a "
-        "clone dir. The Redis client is built without a socket timeout, so without "
+        "lock — the sibling check a delete/repoint purge runs before authorizing "
+        "the fleet-wide cache purge. The Redis client is built without a socket timeout, so without "
         "this an unreachable store would pin that lock for the life of the process "
         "and block every later sync, purge and delete for the source. On expiry the "
         "outcome follows the purge reason: a DELETE purges defensively (its record "

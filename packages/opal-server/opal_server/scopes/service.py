@@ -240,8 +240,12 @@ class ScopesService:
                 # wide purge, but it is droppable at shipped defaults: a DELETE
                 # usually lands on a non-leader worker (SERVER_WORKER_COUNT
                 # defaults to the core count) and must traverse the broadcaster,
-                # while the leader keeps a reader alive only if it has a
-                # connected client or STATISTICS_ENABLED (default False). If it
+                # while a NON-LEADER worker only has a broadcaster reader if it
+                # has a connected client or STATISTICS_ENABLED (default False).
+                # (The LEADER always has one: its watcher enters a listening
+                # context unconditionally — policy/watcher/task.py — so the
+                # earlier claim that the leader could be deaf was backwards.)
+                # A backbone outage still loses the message for everyone. If it
                 # never arrives, nothing removes the dir — and on master
                 # delete_scope removed it INLINE here, with no broadcast
                 # involved, so without this the lost-broadcast case is a
@@ -300,8 +304,9 @@ class ScopesService:
         - the removal is skipped while a git op is in flight for the source.
           Master freed the handle unconditionally; freeing one a lingering
           timed-out pygit2 call still holds on a pool thread is the
-          use-after-free class 89e090be fixed. Skipping is safe here — the
-          leader's purge (and its deferred retry) still owns that case.
+          use-after-free class 89e090be fixed. NOTHING else owns that case:
+          the leader does no disk work and the deferred retry was cut, so a
+          delete whose remote is hung leaves the dir until PER-15612.
         """
         # Every other destructive path in this series derives its target from
         # source_id via confined_clone_path and refuses a malformed id; this one

@@ -364,7 +364,7 @@ class PubSub:
 
         ``SCOPES_PURGE_CHANNEL`` is a server-internal control channel: a purge
         command evicts every worker's ``GitPolicyFetcher`` caches and (via the
-        leader) deletes clone dirs fleet-wide. The only legitimate publishers
+        every worker's GitPolicyFetcher caches fleet-wide. The only legitimate publishers
         are opal-server itself (delete / repoint) and the
         cross-server broadcaster relay — both call ``notify()`` with
         ``channel=None``, and channel restrictions run **only when a channel is

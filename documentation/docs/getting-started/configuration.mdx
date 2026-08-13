@@ -495,7 +495,7 @@ Maximum number of concurrent scope git operations. It bounds phase 1 (the networ
 
 Default: `__opal_scope_purge__`
 
-Pub/sub channel (worker-to-worker, over the broadcaster) used to purge GitPolicyFetcher caches fleet-wide when a scope is deleted or repointed to a new source. Every worker subscribes; the leader additionally removes the clone dir.
+Pub/sub channel (worker-to-worker, over the broadcaster) used to purge GitPolicyFetcher caches fleet-wide when a scope is deleted or repointed to a new source. Every worker subscribes and drops its own cache entries; the leader is the only actor that may authorize that, because only it can check whether a surviving scope still shares the source. It does not remove the clone dir.
 
 #### OPAL_SCOPES_GIT_PRELOAD_DRAIN_TIMEOUT
 
@@ -513,7 +513,7 @@ Maximum number of in-flight scope git operations (live plus lingering timed-out)
 
 Default: `10.0`
 
-Timeout for a scope-store read taken while holding a source's lock — the sibling check a delete/repoint purge runs before removing a clone dir. The Redis client is built without a socket timeout, so without this an unreachable store would pin that lock for the life of the process and block every later sync, purge and delete for the source. On expiry the outcome follows the purge reason: a DELETE purges defensively (its record is already gone, so under-purging is a permanent leak and over-purging self-heals on the surviving sibling's next sync), a REPOINT keeps the clone (the old source's record is still live, just moved) (0 or negative means no timeout).
+Timeout for a scope-store read taken while holding a source's lock — the sibling check a delete/repoint purge runs before authorizing the fleet-wide cache purge. The Redis client is built without a socket timeout, so without this an unreachable store would pin that lock for the life of the process and block every later sync, purge and delete for the source. On expiry the outcome follows the purge reason: a DELETE purges defensively (its record is already gone, so under-purging is a permanent leak and over-purging self-heals on the surviving sibling's next sync), a REPOINT keeps the clone (the old source's record is still live, just moved) (0 or negative means no timeout).
 
 #### OPAL_LEADER_LOCK_FILE_PATH
 

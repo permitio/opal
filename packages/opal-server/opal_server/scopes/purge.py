@@ -14,10 +14,10 @@ worker that SERVED the DELETE, best-effort, exactly as master did
 (an asyncio.Lock) and ``git_op_in_flight`` (a module-global set) — are
 PROCESS-LOCAL, so they do not serialize that worker against the leader cloning
 the same source in a sibling process on the same pod. Master had the identical
-exposure with no in-flight guard at all; measured head-to-head, master orphans
-the tree unconditionally where this branch reclaims it whenever the purge
-broadcast is delivered. It is not a regression, and it is not an invariant —
-closing it cross-process is PER-15612.
+exposure with no in-flight guard at all, so this is not a regression — but note
+the branch does not reclaim that orphan either: delivering the purge broadcast
+drains MEMORY on every worker and touches no disk. It is also not an invariant.
+Closing it cross-process is PER-15612.
 
 NOTE: the reconciliation sweep that reclaimed clone dirs referencing no live
 scope was split out of this PR and is tracked as PER-15612. What remains here is
@@ -35,7 +35,10 @@ What that leaves on disk, stated plainly because nothing else will reclaim it:
   lost — and the broadcast is droppable at shipped defaults, since a DELETE
   usually lands on a non-leader worker (SERVER_WORKER_COUNT defaults to the
   core count) and must traverse the broadcaster, while a leader keeps a reader
-  alive only if it has a connected client or STATISTICS_ENABLED (default False);
+  alive only if it has a connected client or STATISTICS_ENABLED (default False).
+  The LEADER always has a reader — its watcher enters a listening context
+  unconditionally (policy/watcher/task.py) — so it is non-leader workers that
+  can be deaf, not the leader; a backbone outage still loses it for everyone;
 - a REPOINT's old dir on EVERY pod, always — there is no floor on that path;
 - a dir whose source_id is unknowable because the prior record would not parse
   (see ``scopes/api.py``).
@@ -100,8 +103,8 @@ def purge_local_memory(source_id: str, clone_path: str) -> None:
     """Drop this process's in-memory cache entries for a source.
 
     Never pops ``repo_locks``: lock_source's recheck loop protects waiters,
-    not a current holder — popping is only safe while holding the lock (the
-    leader's disk purge does it there). ``forget_repo`` is skipped while a
+    not a current holder — popping is only safe while holding the lock, which
+    this function does not (its callers that DO hold it pop there). ``forget_repo`` is skipped while a
     git op is in flight: freeing a pygit2 handle a pool thread still uses
     (e.g. a lingering timed-out fetch) is a crash risk.
 
