@@ -534,11 +534,16 @@ class OpalServerConfig(Confi):
         "lock — the sibling check a delete/repoint purge runs before authorizing "
         "the fleet-wide cache purge. The Redis client is built without a socket timeout, so without "
         "this an unreachable store would pin that lock for the life of the process "
-        "and block every later sync, purge and delete for the source. On expiry the "
-        "outcome follows the purge reason: a DELETE purges defensively (its record "
-        "is already gone, so under-purging is a permanent leak and over-purging "
-        "self-heals on the surviving sibling's next sync), a REPOINT keeps the "
-        "clone (the old source's record is still live, just moved) "
+        "and block every later sync, purge and delete for the source. On expiry "
+        "the sibling check fails open, and what that decides is the fleet-wide "
+        "MEMORY purge only — the leader no longer touches the clone tree: a "
+        "DELETE confirms it defensively (its record is already gone, so "
+        "withholding would strand the fleet's cache entries, while over-purging "
+        "self-heals on the surviving sibling's next sync), a REPOINT withholds "
+        "it (the old source's record is still live, just moved). The clone dir "
+        "is unaffected either way: on a store fault the delete floor KEEPS this "
+        "worker's clone rather than risk deleting one a live sibling shares, "
+        "leaving an orphan tracked by PER-15612 "
         "(0 or negative means no timeout).",
     )
 

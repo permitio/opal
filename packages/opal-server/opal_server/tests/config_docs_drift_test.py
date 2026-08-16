@@ -17,16 +17,29 @@ from opal_server.config import opal_server_config
 _CONFIG_PY_PATH = Path(server_config_module.__file__)
 
 
-def _tracked_keys(source: str):
-    """Every SCOPES_* key declared in config.py.
+def _tracked_keys(_source_unused=None):
+    """Every SCOPES_* key the running config actually exposes.
 
-    Derived, not hand-listed: the previous version carried a comment
-    stating the invariant ("a new key belongs in the public reference
-    AND in this list") with nothing enforcing it, so a new key was
-    unguarded by omission — the exact failure this file exists to
-    prevent, one level up.
+    Derived, not hand-listed: the version before that carried a comment stating
+    the invariant ("a new key belongs in the public reference AND in this list")
+    with nothing enforcing it, so a new key was unguarded by omission.
+
+    Derived from the LIVE OBJECT, not the source text. The previous derivation
+    regex-matched `\n    SCOPES_\w+ = confi\.`, which demands exactly four
+    spaces of indent and exactly one space around `=`. Two ordinary declaration
+    styles fell outside it —
+
+        SCOPES_SNEAKY_KNOB: str = confi.str(...)   # type annotation
+        SCOPES_SNEAKY_KNOB  = confi.str(...)       # stray second space
+
+    — and a key written either way is fully live at runtime yet invisible to
+    this guard, escaping BOTH directions at once: the forward test never
+    requires it in the .mdx, and the reverse test cannot flag it because an
+    undocumented key is not in the .mdx to be found. That is the same
+    unguarded-by-omission failure, moved from the list level to the formatting
+    level. dir() cannot be fooled by formatting.
     """
-    return tuple(sorted(set(re.findall(r"\n    (SCOPES_\w+) = confi\.", source))))
+    return tuple(sorted(k for k in dir(opal_server_config) if k.startswith("SCOPES_")))
 
 
 _CONFIG_PY = _CONFIG_PY_PATH
@@ -96,7 +109,7 @@ def _section_for(mdx: str, key: str) -> str:
     return mdx[start : nxt if nxt != -1 else len(mdx)]
 
 
-_TRACKED_KEYS = _tracked_keys(_CONFIG_PY_PATH.read_text())
+_TRACKED_KEYS = _tracked_keys()
 
 
 def test_the_guard_derives_at_least_one_key():
@@ -150,6 +163,14 @@ def test_scopes_key_description_is_verbatim_in_the_public_reference(key):
     # under a different key's heading and this key's body is a paraphrase.
     section = _section_for(_MDX.read_text(), key)
 
+    # A single heading per key: a SECOND `#### OPAL_<key>` section with a
+    # contradicting default renders on the page, but _section_for uses find()
+    # so first-match-wins hides it, and the reverse test only flags keys
+    # config.py does not declare.
+    assert _MDX.read_text().count(f"#### OPAL_{key}\n") == 1, (
+        f"OPAL_{key} has more than one `#### ` section in {_MDX.name}; the "
+        f"later one renders but this guard only ever reads the first"
+    )
     assert _normalize(description) in _normalize(section), (
         f"OPAL_{key}'s description in {_MDX.name} is a paraphrase, not the "
         f"config.py text. Copy it verbatim:\n\n{description}"

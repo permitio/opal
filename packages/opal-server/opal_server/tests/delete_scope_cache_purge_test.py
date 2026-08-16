@@ -6,6 +6,7 @@ at the bottom: the lock_source waiter-retry invariant and the stale-snapshot
 sync skip — both still hold unchanged.
 """
 import asyncio
+import pathlib
 
 import pytest
 from fastapi import FastAPI
@@ -602,3 +603,80 @@ async def test_shutdown_drains_the_routers_scopes_service(tmp_path, monkeypatch)
     await server.stop_server_background_tasks()
 
     assert drained == [True], "shutdown returned without awaiting the floor"
+
+
+@pytest.mark.asyncio
+async def test_floor_keeps_a_live_siblings_repo_lock_entry(tmp_path):
+    """The floor's copy of d359ffb2's I4 fix had no test.
+
+    The leader's identical guard is pinned by two tests; this one — the copy
+    that runs on whichever worker served the DELETE — reddened nothing. The
+    bed's test_shared_repo_survives_sibling_scope_delete does not cover it
+    either: single-worker against a healthy backbone, so the LEADER's
+    confirmation drives the drain and the floor's branch is never isolated.
+
+    Mutation: removing `minted = None` on the floor's live-sibling path fails
+    here.
+    """
+    doomed = _scope("doomed", "https://git/shared.git")
+    sibling = _scope("sibling", "https://git/shared.git")
+    sid = GitPolicyFetcher.source_id(doomed.policy)
+    assert sid == GitPolicyFetcher.source_id(sibling.policy)
+    clone = GitPolicyFetcher.repo_clone_path(tmp_path, doomed.policy)
+    clone.mkdir(parents=True)
+    svc = ScopesService(
+        base_dir=tmp_path,
+        scopes=FakeScopeRepository([doomed, sibling]),
+        pubsub_endpoint=FakePubSubEndpoint(),
+    )
+
+    await svc.delete_scope("doomed")
+    await _drain_floor(svc)
+
+    assert clone.exists(), "purged a clone a live sibling still shares"
+    assert (
+        sid in GitPolicyFetcher.repo_locks
+    ), "drained the lock entry of a source a live sibling is actively using"
+
+
+@pytest.mark.asyncio
+async def test_floor_aborts_when_the_derived_path_disagrees(tmp_path, monkeypatch):
+    """The confinement COMPARISON must abort the floor, not merely assert.
+
+    An earlier version of this pin only died when the derived-path usage was
+    ALSO reverted, so the comparison itself was unpinned and its docstring said
+    so — which invites deleting it. Here the DERIVED path is real and populated
+    while the caller's scope_dir points elsewhere: with the comparison removed
+    the floor proceeds and rmtree's the derived path, which is exactly the
+    mismatch the check exists to refuse.
+
+    Mutation: removing `if safe_path is None or safe_path != str(scope_dir)`
+    fails here.
+    """
+    from opal_server.scopes.purge import confined_clone_path
+
+    scope = _scope("only", "https://git/repo-a.git")
+    sid = GitPolicyFetcher.source_id(scope.policy)
+    derived = pathlib.Path(confined_clone_path(tmp_path, sid))
+    derived.mkdir(parents=True)
+    (derived / "marker").write_text("x")
+
+    elsewhere = tmp_path / "somewhere-else"
+    elsewhere.mkdir()
+    monkeypatch.setattr(
+        GitPolicyFetcher, "repo_clone_path", staticmethod(lambda *a, **k: elsewhere)
+    )
+
+    svc = ScopesService(
+        base_dir=tmp_path,
+        scopes=FakeScopeRepository([scope]),
+        pubsub_endpoint=FakePubSubEndpoint(),
+    )
+    await svc.delete_scope("only")
+    await _drain_floor(svc)
+
+    assert derived.exists(), (
+        "the floor acted on the derived path even though the caller's path "
+        "disagreed — the mismatch must abort, not be silently reconciled"
+    )
+    assert elsewhere.exists(), "rmtree'd the caller-supplied path"

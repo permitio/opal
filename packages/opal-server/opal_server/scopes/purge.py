@@ -24,8 +24,16 @@ scope was split out of this PR and is tracked as PER-15612. What remains here is
 the purge driven by an actual scope delete/repoint.
 
 There is therefore NO reconciliation of any kind in this PR, and exactly ONE
-path removes a clone dir: the best-effort local floor
-``ScopesService.delete_scope`` spawns on the worker serving the DELETE. That is
+path RECLAIMS a clone dir — removes it and leaves it removed: the best-effort
+local floor ``ScopesService.delete_scope`` spawns on the worker serving the
+DELETE.
+
+Two other ``rmtree`` sites exist and are not reclamation: ``git_fetcher``'s
+invalid-repo recovery and ``_clone``'s partial-dir wipe both delete-and-replace
+a dir they are about to re-create. Both run under ``lock_source`` and target
+``self._repo_path``, derived from ``GitPolicyFetcher.source_id(source)`` — a
+sha256 digest of the URL, never wire input. An audit of "can caller-controlled
+input reach an rmtree?" has to account for all three. That is
 master's behaviour (master removed it inline there, with no broadcast involved),
 kept so a dropped broadcast does not regress against the merge base.
 
@@ -414,7 +422,6 @@ class LeaderScopePurger:
                     # its setdefault mint a FRESH lock instead of waiting on ours;
                     # popping after would wedge this source's lock permanently.
                     GitPolicyFetcher.repo_locks.pop(cmd.source_id, None)
-                    minted = None  # handed off; the finally must not pop a successor
                     await self._pubsub_endpoint.publish(
                         [opal_server_config.SCOPES_PURGE_CHANNEL],
                         cmd.copy(update={"confirmed": True}).dict(),
@@ -425,6 +432,14 @@ class LeaderScopePurger:
                 # mint a SUCCESSOR lock. Popping unconditionally here would
                 # discard that successor while its holder still runs, putting two
                 # coroutines inside lock_source for the same source at once.
+                #
+                # The identity check is what prevents that, on its own: after the
+                # hand-off `minted` is no longer the mapped lock, so `is minted`
+                # is False whether a successor appeared or the key is simply
+                # absent. An explicit `minted = None` used to sit on that path as
+                # well; it was removed because it is unreachable-as-true and so
+                # could not be tested — mutating it changed nothing, while
+                # mutating this check fails three tests.
                 if (
                     minted is not None
                     and GitPolicyFetcher.repo_locks.get(cmd.source_id) is minted

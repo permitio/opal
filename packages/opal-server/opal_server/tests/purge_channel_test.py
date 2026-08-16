@@ -1083,3 +1083,64 @@ async def test_forged_source_id_cannot_free_an_arbitrary_cached_handle(
     assert (
         GitPolicyFetcher.repos.get(victim_key) is sentinel
     ), "a forged source_id evicted a cached handle"
+
+
+@pytest.mark.asyncio
+async def test_finally_does_not_pop_a_successor_lock_minted_during_the_publish(
+    tmp_path, monkeypatch
+):
+    """The `minted = None` hand-off at the pop-before-publish had no test.
+
+    Its own comment names the hazard — "two coroutines inside lock_source for
+    the same source at once" — and nothing exercised it. The sequence: the
+    leader pops the entry so the inline confirmation handler can mint a fresh
+    lock instead of deadlocking on the held one, then AWAITS the publish. During
+    that await another coroutine can enter lock_source and mint a SUCCESSOR. If
+    the `finally` then pops unconditionally, it discards that successor while
+    its holder is still inside the critical section, and the next entrant mints
+    a third lock — two coroutines in at once.
+
+    Mutation: replacing `minted = None  # handed off` with `pass` fails here.
+    """
+    monkeypatch.setattr(
+        "opal_server.scopes.purge.opal_server_config.BASE_DIR", str(tmp_path)
+    )
+    dead = _scope("dead", "https://git/repo-a.git")
+    sid = GitPolicyFetcher.source_id(dead.policy)
+    _make_clone(tmp_path, dead.policy)
+    successor_in = asyncio.Event()
+
+    class _SlowPubSub:
+        """Publishes with a real await, the window a successor can appear
+        in."""
+
+        def __init__(self):
+            self.published = []
+
+        async def publish(self, topics, data=None):
+            self.published.append((list(topics), data))
+            entrant = asyncio.create_task(_take_the_lock())
+            await successor_in.wait()  # a successor now holds a freshly-minted lock
+            self._entrant = entrant
+
+    async def _take_the_lock():
+        async with GitPolicyFetcher.lock_source(sid):
+            successor_in.set()
+            await asyncio.sleep(0.05)
+
+    pubsub = _SlowPubSub()
+    purger = LeaderScopePurger(
+        base_dir=tmp_path, scopes=FakeScopeRepository([]), pubsub_endpoint=pubsub
+    )
+    await purger.purge_source_if_unshared(
+        ScopePurgeCommand(
+            source_id=sid, clone_path="/ignored", scope_id="dead", reason="delete"
+        )
+    )
+    successor_lock = GitPolicyFetcher.repo_locks.get(sid)
+    await pubsub._entrant
+
+    assert successor_lock is not None, (
+        "the finally popped a lock minted by another coroutine during the "
+        "publish — its holder was still inside lock_source"
+    )

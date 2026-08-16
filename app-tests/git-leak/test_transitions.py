@@ -229,13 +229,22 @@ def test_multiworker_churn_drains_every_worker(opal_multiworker, repo_count):
 
 
 @pytest.mark.timeout(600)
-# I1 only, and for a session-level reason rather than anything this test does:
-# earlier tests in this file deliberately strand clone dirs (delete or repoint
-# racing a hung clone), and NOTHING in this PR reconciles them — so by the time
-# this test's teardown runs, the tree already holds orphans it did not create.
-# I2/I3/I4 are enforced: this test breaks the BROADCASTER, not the memory purge,
-# and the serving worker's floor still drains its own entries.
-@pytest.mark.invariant_exempt("I1")
+# I2/I3/I4, and I1 deliberately ENFORCED — the reverse of what this carried
+# before. The previous marker exempted I1 on the theory that earlier tests leave
+# orphan dirs; that reason cannot apply, because opal_multiworker force-recreates
+# opal_server and its clone tree is container-local (no volume at /opal), so the
+# recreate wipes it. Measured: disk is EMPTY at teardown and I1 holds — this test
+# is precisely the one that proves the floor reclaims the dir, so exempting I1
+# would have suppressed its own gate.
+#
+# What legitimately does NOT hold is the MEMORY side. The test stops Postgres,
+# so the leader's confirmation cannot cross to the other worker, and that
+# worker's cache entries survive by construction — that IS the scenario under
+# test. /internal/...-stats answers from whichever worker serves it, so whether
+# the violation is observed is a coin flip; without these three the test passes
+# or fails on which worker replies, which is how the wrong marker survived two
+# green runs before failing.
+@pytest.mark.invariant_exempt("I2", "I3", "I4")
 def test_delete_reclaims_clone_when_the_purge_broadcast_is_lost(
     opal_multiworker, repo_count
 ):

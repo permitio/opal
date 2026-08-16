@@ -436,3 +436,34 @@ def test_default_bundle_build_does_not_block_the_event_loop(tmp_path, monkeypatc
         "the default bundle was built ON the event loop — every other request "
         "this worker is serving stalls for the whole build"
     )
+
+
+def test_transient_fault_building_the_default_bundle_is_503_not_404(
+    tmp_path, monkeypatch
+):
+    """A "default" scope that EXISTS but whose clone is momentarily unavailable
+    is a transient fault, not "no such scope".
+
+    These are the same exceptions the primary path answers with 503 forty lines
+    up. Folding them into the 404 told a client to stop asking about a condition
+    that self-heals in seconds, and §6 tells third-party consumers to act on
+    these codes.
+
+    Mutation: restoring the single wide `except (ScopeNotFoundError, ...)` tuple
+    that maps everything to 404 fails here.
+    """
+    default = _scope("default", "https://git/default.git")
+    repo = FakeScopeRepository([default])  # "default" EXISTS
+
+    def fake_make_bundle(self, base_hash):
+        raise OSError(5, "Input/output error")
+
+    monkeypatch.setattr(GitPolicyFetcher, "make_bundle", fake_make_bundle)
+    monkeypatch.setattr(
+        "opal_server.scopes.api.opal_server_config.BASE_DIR", str(tmp_path)
+    )
+
+    resp = _client(repo, tmp_path).get("/scopes/ghost/policy")
+
+    assert resp.status_code == 503, "a transient fault was reported as permanent"
+    assert resp.headers["retry-after"] == "5"

@@ -123,7 +123,23 @@ class _DaemonThreadPoolExecutor(ThreadPoolExecutor):
             # (Not demonstrable by deleting the attribute at runtime: that
             # leaves the stdlib's method still using it, a state CPython can
             # never actually be in.)
-            or not hasattr(self, "_idle_semaphore")
+            # Every private this method goes on to touch, not just the ones
+            # whose absence seemed likely. The argument above for
+            # _idle_semaphore applies verbatim to each: a CPython that drops
+            # one would rewrite its own _adjust_thread_count accordingly, so
+            # the stdlib fallback still works while ours raises AttributeError
+            # out of submit() and fails every scope git op.
+            or not all(
+                hasattr(self, name)
+                for name in (
+                    "_idle_semaphore",
+                    "_initargs",
+                    "_max_workers",
+                    "_thread_name_prefix",
+                    "_threads",
+                    "_work_queue",
+                )
+            )
         ):
             return super()._adjust_thread_count()
         try:

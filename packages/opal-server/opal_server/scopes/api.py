@@ -444,26 +444,42 @@ def init_scope_router(
             # GET for an unknown scope, which a PDP with a stale id re-hits on
             # its normal poll cadence.
             return await run_sync(fetcher.make_bundle, None)
-        except (
-            ScopeNotFoundError,
-            InvalidGitRepositoryError,
-            NoSuchPathError,
-            pygit2.GitError,
-            OSError,
-            ValueError,
-        ):
+        except ScopeNotFoundError:
             # 404, not a bare ScopeNotFoundError. Nothing registers an exception
             # handler for that, so it escaped the route as an unhandled 500 —
             # for the ordinary case of an unknown scope on a deployment that has
             # no "default" scope at all. get_scope and refresh_scope already
             # answer 404 here; this now matches them.
-            #
-            # OSError added to the tuple for the same reason the primary path
-            # has it: NoSuchPathError is an OSError subclass but a raw OSError
-            # from a vanishing clone is not otherwise caught, and it would
-            # likewise have surfaced as a 500.
             raise HTTPException(
                 status.HTTP_404_NOT_FOUND, detail=f"No such scope: {scope_id}"
+            )
+        except (
+            InvalidGitRepositoryError,
+            NoSuchPathError,
+            pygit2.GitError,
+            OSError,
+            ValueError,
+        ) as exc:
+            # A TRANSIENT fault building the default scope's bundle is not
+            # "no such scope". These are the same exceptions the primary path
+            # answers with 503 forty lines up, on the same reasoning: the clone
+            # is being recovered and will be back. Folding them into the 404
+            # told a client to stop asking about a condition that self-heals in
+            # seconds — and §6 explicitly tells third-party consumers to act on
+            # these codes, so it was wrong in the unsafe direction.
+            logger.warning(
+                "Default-scope bundle for {scope_id} is temporarily unavailable "
+                "({exc!r}), returning 503",
+                scope_id=scope_id,
+                exc=exc,
+            )
+            raise HTTPException(
+                status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=(
+                    f"Policy clone for scope {scope_id} is temporarily "
+                    "unavailable, retry shortly"
+                ),
+                headers={"Retry-After": _RETRY_AFTER_CLONE_UNAVAILABLE},
             )
 
     @router.get(
