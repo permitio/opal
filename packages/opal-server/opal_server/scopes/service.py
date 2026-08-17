@@ -21,6 +21,7 @@ from opal_server.git_fetcher import (
     GitConcurrencyLimitExceeded,
     GitPolicyFetcher,
     PolicyFetcherCallbacks,
+    _emit_sources_in_backoff,
     git_op_in_flight,
 )
 from opal_server.policy.watcher.callbacks import (
@@ -459,6 +460,10 @@ class ScopesService:
             # Emitted before the poll-updates filter below, so this is always the
             # true total rather than flapping with the caller's filter.
             metrics.gauge("opal_server.scopes.count", len(scopes))
+            # Once per pass as well as on transitions: a DogStatsD gauge is
+            # NO DATA between sends, and the steady state the backoff creates
+            # (dead sources parked for the cap) has almost no transitions.
+            _emit_sources_in_backoff()
             if only_poll_updates:
                 # Only sync scopes that have polling enabled (in a periodic check)
                 scopes = [scope for scope in scopes if scope.policy.poll_updates]

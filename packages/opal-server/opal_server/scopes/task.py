@@ -71,7 +71,18 @@ class ScopesPolicyWatcherTask(BasePolicyWatcherTask):
             [opal_server_config.SCOPES_PURGE_CHANNEL],
             self._purger.handle,
         )
-        self._tasks.append(asyncio.create_task(self._sync_all()))
+        # The boot sync honours the backoff only when a periodic pass will
+        # follow it: with POLICY_REFRESH_INTERVAL <= 0 this is the ONLY
+        # pass-originated sync this process ever runs, so a source that failed
+        # transiently during the pre-fork preload (whose entry survives
+        # reset_caches on purpose) would otherwise never be attempted again.
+        self._tasks.append(
+            asyncio.create_task(
+                self._sync_all(
+                    honor_backoff=opal_server_config.POLICY_REFRESH_INTERVAL > 0
+                )
+            )
+        )
 
         if opal_server_config.POLICY_REFRESH_INTERVAL > 0:
             self._tasks.append(asyncio.create_task(self._periodic_polling()))
@@ -175,8 +186,10 @@ class ScopesPolicyWatcherTask(BasePolicyWatcherTask):
                 )
         else:
             # Refresh all scopes. This branch is reached only from something
-            # asking for a sync NOW — POST /scopes/refresh, or a git provider's
-            # webhook — so it does not honour the per-source backoff: the
+            # asking for a sync NOW — POST /scopes/refresh (the git-provider
+            # webhook publishes on this topic too, but only when
+            # POLICY_REPO_URL is set, which scopes mode does not use) — so it
+            # does not honour the per-source backoff: the
             # sources an operator hits this endpoint for are precisely the ones
             # they have just repaired, and answering them with a silent skip
             # makes the endpoint useless in the only situation it is used.

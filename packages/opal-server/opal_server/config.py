@@ -273,15 +273,20 @@ class OpalServerConfig(Confi):
     )
     SCOPES_GIT_BACKOFF_MAX_SECONDS = confi.float(
         "SCOPES_GIT_BACKOFF_MAX_SECONDS",
-        1800.0,
+        900.0,
         description="Longest a source that keeps failing is skipped by the "
         "periodic sync pass. When a scope's git clone or fetch fails "
         "(unreachable host, revoked credentials, deleted repo) that SOURCE is "
         "put in backoff, and pass-originated syncs skip it until the delay "
         "expires: the first skip lasts one POLICY_REFRESH_INTERVAL (60s when "
         "polling is disabled, since one skipped pass is the smallest useful "
-        "unit), and every further consecutive failure doubles it, capped at "
-        "this value. A jitter of ±20% is applied to the capped delay, so the "
+        "unit) or one SCOPES_GIT_FETCH_TIMEOUT, whichever is longer (a delay "
+        "shorter than one failed attempt would expire before the pass that "
+        "armed it finished), and every further consecutive failure doubles it, "
+        "capped at this value (which is itself floored at that first delay, so "
+        "a low value means 'one pass at a time', never 'inert'). Lowering the "
+        "key at runtime is not retroactive for delays already armed; only "
+        "disabling it is. A jitter of ±20% is applied to the capped delay, so the "
         "longest effective wait is 1.2x this key and a fleet's dead sources do "
         "not all retry in lockstep. It exists because nothing else records a "
         "failure: without it every pass re-attempts every dead repo, and so "

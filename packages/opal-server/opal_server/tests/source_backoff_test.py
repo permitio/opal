@@ -47,6 +47,10 @@ def _reset_class_state(monkeypatch):
     # Pin the schedule inputs: the suite must not depend on the ambient
     # OPAL_POLICY_REFRESH_INTERVAL of whatever shell runs it.
     monkeypatch.setattr(opal_server_config, "POLICY_REFRESH_INTERVAL", int(_BASE))
+    # The base is floored at SCOPES_GIT_FETCH_TIMEOUT (a delay shorter than one
+    # failed attempt is pointless); pin the timeout at the interval so the
+    # schedule tests read `_BASE` exactly. The floor itself has its own test.
+    monkeypatch.setattr(opal_server_config, "SCOPES_GIT_FETCH_TIMEOUT", _BASE)
     monkeypatch.setattr(opal_server_config, "SCOPES_GIT_BACKOFF_MAX_SECONDS", 3600.0)
     yield
     for d in (
@@ -133,7 +137,7 @@ def _fail_clone_with(monkeypatch, exc):
     """
     calls = []
 
-    async def _fake(func, *args, timeout=None, busy_key=None, **kwargs):
+    async def _fake(func, *args, timeout, busy_key=None, **kwargs):
         calls.append(busy_key)
         raise exc
 
@@ -151,7 +155,7 @@ class _FakeRepo:
 def _succeed_clone(monkeypatch):
     calls = []
 
-    async def _fake(func, *args, timeout=None, busy_key=None, **kwargs):
+    async def _fake(func, *args, timeout, busy_key=None, **kwargs):
         calls.append(busy_key)
         return _FakeRepo()
 
@@ -820,8 +824,10 @@ async def test_refresh_all_does_not_honour_the_backoff(monkeypatch):
     default. POST /scopes/refresh is an operator explicitly asking every scope
     to sync now; answering it with a silent skip for the sources they most
     likely just repaired makes the endpoint useless in the one situation it is
-    reached for. The boot call in ``start()`` keeps the default (honouring),
-    which is what lets a forked leader inherit the master's boot failures."""
+    reached for. The boot call in ``start()`` honours it only when a periodic
+    pass will follow (see the dedicated test), which is what lets a forked
+    leader inherit the master's boot failures without stranding a source when
+    polling is disabled."""
     from opal_server.scopes.task import ScopesPolicyWatcherTask
 
     seen = []
@@ -838,3 +844,271 @@ async def test_refresh_all_does_not_honour_the_backoff(monkeypatch):
 
     await task._sync_all()  # the boot path
     assert seen == [False, True]
+
+
+# ---------------------------------------------------------------------------
+# Review round 1: the schedule arithmetic vs the deployed timings.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_concurrent_duplicates_of_a_dead_source_attempt_it_once(
+    tmp_path, monkeypatch, no_jitter
+):
+    """Mutation: drop the second ``_backoff_entry()`` check — the one taken
+    AFTER ``lock_source`` is acquired. Phase 2 runs the duplicates of a source
+    concurrently (a semaphore of SCOPES_GIT_MAX_WORKERS), so all of them pass
+    the cheap pre-lock check before the first has failed and recorded; without
+    the re-check under the lock each then performs its own full clone attempt
+    against the dead remote — the 56-scope repo costs min(N, 10) attempts per
+    pass instead of 1.
+
+    The stand-in clone takes long enough that every coroutine is queued on
+    the lock before the first records.
+    """
+    calls = []
+
+    async def _slow_fail(func, *args, timeout, busy_key=None, **kwargs):
+        calls.append(busy_key)
+        await asyncio.sleep(0.05)
+        raise pygit2.GitError("dead")
+
+    monkeypatch.setattr("opal_server.git_fetcher.run_in_git_executor", _slow_fail)
+    fetchers = [_fetcher(tmp_path, scope_id=f"dup-{i}") for i in range(6)]
+
+    await asyncio.gather(
+        *(f.fetch_and_notify_on_changes(honor_backoff=True) for f in fetchers)
+    )
+
+    assert len(calls) == 1
+    entry = GitPolicyFetcher.source_backoff[fetchers[0]._source_id]
+    assert entry.consecutive_failures == 1
+
+
+def test_the_base_is_never_shorter_than_one_failed_attempt(monkeypatch):
+    """Mutation: drop the ``max(base, SCOPES_GIT_FETCH_TIMEOUT)`` floor. At
+    prod defaults the interval is 60s and the fetch timeout 120s: a hung host
+    costs 120s per attempt, so a first delay of 60s has expired before the
+    pass that armed it finishes — its phase-2 duplicates attempt again in the
+    SAME pass and the next pass never sees a skip. Nothing is gained by
+    re-attempting a source sooner than one attempt against it takes.
+    """
+    from opal_server import git_fetcher as gf
+
+    monkeypatch.setattr(opal_server_config, "POLICY_REFRESH_INTERVAL", 60)
+    monkeypatch.setattr(opal_server_config, "SCOPES_GIT_FETCH_TIMEOUT", 120.0)
+    assert gf._backoff_base_seconds() == 120.0
+
+    monkeypatch.setattr(opal_server_config, "SCOPES_GIT_FETCH_TIMEOUT", 30.0)
+    assert gf._backoff_base_seconds() == 60.0
+
+    monkeypatch.setattr(opal_server_config, "SCOPES_GIT_FETCH_TIMEOUT", 0)
+    assert gf._backoff_base_seconds() == 60.0  # 0 = no timeout = no floor
+
+
+@pytest.mark.asyncio
+async def test_a_cap_below_the_base_still_skips_one_pass(
+    tmp_path, monkeypatch, no_jitter
+):
+    """Mutation: drop ``cap = max(cap, base)``. A cap shorter than the base
+    (POLICY_REFRESH_INTERVAL=3600 with the default cap, say) would make every
+    delay shorter than one pass, so nothing is ever skipped and the feature is
+    silently inert — with no log to say so. Flooring the cap at the base turns
+    a low value into "one pass at a time" instead.
+    """
+    monkeypatch.setattr(opal_server_config, "SCOPES_GIT_BACKOFF_MAX_SECONDS", 1.0)
+    fetcher = _fetcher(tmp_path)
+    _fail_clone_with(monkeypatch, pygit2.GitError("dead"))
+    before = time.monotonic()
+
+    await fetcher.fetch_and_notify_on_changes()
+
+    entry = GitPolicyFetcher.source_backoff[fetcher._source_id]
+    assert entry.next_attempt_at - before == pytest.approx(_BASE, abs=0.5)
+
+
+@pytest.mark.asyncio
+async def test_the_gauge_counts_live_entries_only_and_is_emitted_per_pass(
+    tmp_path, monkeypatch, emitted
+):
+    """Mutations: (a) count ``len(source_backoff)`` instead of live entries —
+    an expired entry (kept only so the consecutive-failure count survives) and
+    a boot-preload failure for a source the timer never visits would then be
+    reported as "being skipped" for the life of the process; (b) drop the
+    per-pass emission in ``sync_scopes`` — a DogStatsD gauge is NO DATA
+    between sends, and the steady state this feature creates has almost no
+    transitions, so the one fleet-level number would gap out exactly during
+    the incident it exists for.
+    """
+    from opal_server import git_fetcher as gf
+
+    fetcher = _fetcher(tmp_path)
+    live = _fetcher(tmp_path, scope_id="s2", url="https://git/live.git")
+    GitPolicyFetcher.source_backoff[fetcher._source_id] = SourceBackoff(
+        consecutive_failures=3, next_attempt_at=time.monotonic() - 1, last_error="x"
+    )
+    GitPolicyFetcher.source_backoff[live._source_id] = SourceBackoff(
+        consecutive_failures=1, next_attempt_at=time.monotonic() + 600, last_error="x"
+    )
+
+    gf._emit_sources_in_backoff()
+    gauges = [
+        c for c in emitted["gauge"] if c[0] == "opal_server.scopes.sources_in_backoff"
+    ]
+    assert gauges and gauges[-1][1] == 1
+
+    # And sync_scopes emits it once per pass even with nothing to sync.
+    from opal_server.scopes.service import ScopesService
+
+    class _NoScopes:
+        async def all(self):
+            return []
+
+    service = ScopesService.__new__(ScopesService)
+    service._scopes = _NoScopes()
+    service._base_dir = tmp_path
+    service._pubsub_endpoint = None
+    before = len(gauges)
+    await service.sync_scopes()
+    gauges = [
+        c for c in emitted["gauge"] if c[0] == "opal_server.scopes.sources_in_backoff"
+    ]
+    assert len(gauges) == before + 1
+
+
+@pytest.mark.asyncio
+async def test_only_entering_backoff_and_reaching_the_cap_warn(
+    tmp_path, monkeypatch, no_jitter
+):
+    """Mutation: WARN on every recorded failure. The timer's own attempts get
+    rarer as the delay grows, but an explicit refresh that keeps failing
+    (policy-sync re-issues them constantly for a broken repo) bypasses the
+    backoff and would then WARN on every call, on top of the ERROR the failing
+    op already logs. Only the two transitions an operator can act on stay at
+    WARNING: the source enters backoff, and its delay reaches the cap.
+    """
+    monkeypatch.setattr(opal_server_config, "SCOPES_GIT_BACKOFF_MAX_SECONDS", 4 * _BASE)
+    fetcher = _fetcher(tmp_path)
+    _fail_clone_with(monkeypatch, pygit2.GitError("dead"))
+    records, sink = _capture_logs("WARNING")
+    try:
+        for _ in range(6):  # delays: 60,120,240,240,240,240 -> cap reached at #3
+            await fetcher.fetch_and_notify_on_changes()  # explicit path: bypasses
+    finally:
+        logger.remove(sink)
+    warns = [r for r in records if "Backing off" in r]
+    assert len(warns) == 2, warns
+    assert "1 consecutive" in warns[0] and "3 consecutive" in warns[1]
+
+
+@pytest.mark.asyncio
+async def test_the_boot_sync_honours_the_backoff_only_when_a_periodic_pass_follows(
+    monkeypatch,
+):
+    """Mutation: make ``start()`` call ``_sync_all()`` with the default. With
+    POLICY_REFRESH_INTERVAL <= 0 the boot sync is the ONLY pass-originated
+    sync this process ever runs, so a source that failed transiently during
+    the pre-fork preload (whose entry survives reset_caches on purpose) would
+    otherwise never be attempted again by anything but an explicit refresh.
+    """
+    from opal_server.scopes.task import ScopesPolicyWatcherTask
+
+    seen = []
+
+    async def _record(self, honor_backoff=True):
+        seen.append(honor_backoff)
+
+    monkeypatch.setattr(ScopesPolicyWatcherTask, "_sync_all", _record)
+    # Only the boot-sync line of start() is under test: strip the rest.
+    src = ScopesPolicyWatcherTask.start
+    task = ScopesPolicyWatcherTask.__new__(ScopesPolicyWatcherTask)
+
+    class _Notifier:
+        def gen_subscriber_id(self):
+            return "sub"
+
+        async def subscribe(self, *a, **k):
+            return None
+
+    class _Endpoint:
+        notifier = _Notifier()
+
+    task._pubsub_endpoint = _Endpoint()
+    task._purger = type("P", (), {"handle": None})()
+    task._tasks = []
+    task._should_stop = None  # BasePolicyWatcherTask.start() initialises this
+
+    async def _base_start(self):
+        return None
+
+    from opal_server.policy.watcher.task import BasePolicyWatcherTask
+
+    monkeypatch.setattr(BasePolicyWatcherTask, "start", _base_start)
+
+    monkeypatch.setattr(opal_server_config, "POLICY_REFRESH_INTERVAL", 0)
+    await src(task)
+    await asyncio.gather(*task._tasks)
+    assert seen == [False], seen
+
+    seen.clear()
+    task._tasks = []
+    monkeypatch.setattr(opal_server_config, "POLICY_REFRESH_INTERVAL", 60)
+    monkeypatch.setattr(
+        ScopesPolicyWatcherTask, "_periodic_polling", lambda self: asyncio.sleep(0)
+    )
+    await src(task)
+    await asyncio.gather(*task._tasks)
+    assert seen == [True], seen
+
+
+@pytest.mark.asyncio
+async def test_a_liveness_skip_is_not_a_source_failure(tmp_path, monkeypatch):
+    """Mutation: record a failure when the liveness probe says the scope is
+    gone. That skip returns before ``_clone()`` and says nothing about the
+    remote; recording it would back off a source a re-created scope will need
+    immediately."""
+    calls = _fail_clone_with(monkeypatch, pygit2.GitError("never reached"))
+
+    async def _dead():
+        return False
+
+    fetcher = GitPolicyFetcher(
+        base_dir=tmp_path,
+        scope_id="s1",
+        source=_source("https://git/backoff.git"),
+        liveness_probe=_dead,
+    )
+    await fetcher.fetch_and_notify_on_changes()
+    assert calls == []
+    assert fetcher._source_id not in GitPolicyFetcher.source_backoff
+
+
+@pytest.mark.asyncio
+async def test_a_pass_that_does_not_fetch_leaves_the_entry_alone(tmp_path, monkeypatch):
+    """Mutation: clear the entry whenever ``fetch_and_notify_on_changes``
+    finds a repo, even when ``_should_fetch`` says no. No remote contact took
+    place, so nothing has been learned about the remote; clearing would reset
+    a dead source's history every time a hinted-hash sync short-circuits."""
+    fetcher = _fetcher(tmp_path)
+    GitPolicyFetcher.source_backoff[fetcher._source_id] = SourceBackoff(
+        consecutive_failures=2, next_attempt_at=time.monotonic() - 1, last_error="x"
+    )
+
+    class _Repo:
+        remotes = {}
+
+    monkeypatch.setattr(fetcher, "_discover_repository", lambda path: True)
+    monkeypatch.setattr(fetcher, "_get_valid_repo", lambda: _Repo())
+
+    async def _no_fetch(*a, **k):
+        return False
+
+    monkeypatch.setattr(fetcher, "_should_fetch", _no_fetch)
+
+    async def _no_notify(repo):
+        return None
+
+    monkeypatch.setattr(fetcher, "_notify_on_changes", _no_notify)
+
+    await fetcher.fetch_and_notify_on_changes(honor_backoff=True)
+    assert GitPolicyFetcher.source_backoff[fetcher._source_id].consecutive_failures == 2

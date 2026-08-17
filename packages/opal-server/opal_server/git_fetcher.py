@@ -317,9 +317,9 @@ class SourceBackoff:
 
 
 # The exponent is clamped here rather than left to grow with the failure count.
-# 2**(n-1) is an exact int, so a source failing once a minute reaches n>1000 in
-# under a day and `base * 2**(n-1)` then raises OverflowError converting to
-# float — from inside the except clause that is handling the git failure. Any
+# `2.0 ** (n-1)` raises OverflowError once the exponent passes ~1023 — from
+# inside the except clause that is handling the git failure — and a source
+# failing once a minute gets there in under a day. Any
 # value past ~2**64 * 60s already exceeds every plausible cap, so clamping
 # changes no reachable outcome.
 _MAX_BACKOFF_DOUBLINGS = 64
@@ -358,33 +358,58 @@ def _backoff_max_seconds() -> float:
 
 
 def _backoff_base_seconds() -> float:
-    """The first delay: one periodic pass.
+    """The first delay: one periodic pass, but never shorter than one failed op.
 
     One skipped pass is the smallest unit that changes anything — a shorter
     delay is indistinguishable from no backoff at all, since the source is only
     re-attempted when the pass comes round again. POLICY_REFRESH_INTERVAL
     defaults to 0 (polling disabled), which is not a delay, so fall back to the
     60s the deployed configuration actually uses.
+
+    The floor at SCOPES_GIT_FETCH_TIMEOUT matters for the timeout population:
+    a hung host costs a full timeout per attempt (120s at defaults) while the
+    interval is 60s, so a first delay of one interval would already have
+    expired by the time the pass that armed it finished — the duplicates in
+    phase 2 would then attempt again in the SAME pass, and the next pass would
+    never see a skip. Nothing is gained by re-attempting a source sooner than
+    one attempt against it takes.
     """
+    base = 60.0
     try:
         interval = float(opal_server_config.POLICY_REFRESH_INTERVAL)
     except (TypeError, ValueError):
-        return 60.0
-    if not math.isfinite(interval) or interval <= 0:
-        return 60.0
-    return interval
+        interval = 0.0
+    if math.isfinite(interval) and interval > 0:
+        base = interval
+    try:
+        op_timeout = float(opal_server_config.SCOPES_GIT_FETCH_TIMEOUT)
+    except (TypeError, ValueError):
+        op_timeout = 0.0
+    if math.isfinite(op_timeout) and op_timeout > 0:
+        base = max(base, op_timeout)
+    return base
 
 
 def _emit_sources_in_backoff() -> None:
-    # Continuous gauge of how many sources the periodic pass is currently
+    # Gauge of how many sources the periodic pass is currently
     # skipping — the one number that says "this pod is not syncing N of your
     # repos" without reading logs. Tagged by pid for the same reason as
     # _emit_git_ops_in_flight: every worker emits this series, so untagged it
     # is last-write-wins per flush. Never tagged by scope or source — that
     # would make the cardinality proportional to the customer count.
+    # LIVE entries only: an entry whose delay has expired is kept so the
+    # consecutive-failure count survives until the next attempt, but the pass
+    # is not skipping it any more, and the gauge answers "how many sources is
+    # this pod not syncing right now". Emitted on every transition AND once
+    # per pass (sync_scopes), because DogStatsD gauges report nothing between
+    # sends and the steady state this feature creates has few transitions.
+    now = time.monotonic()
+    live = sum(
+        1 for e in GitPolicyFetcher.source_backoff.values() if e.next_attempt_at > now
+    )
     metrics.gauge(
         "opal_server.scopes.sources_in_backoff",
-        len(GitPolicyFetcher.source_backoff),
+        live,
         tags={"pid": str(os.getpid())},
     )
 
@@ -685,22 +710,40 @@ class GitPolicyFetcher(PolicyFetcher):
         cap = _backoff_max_seconds()
         if cap <= 0:
             return  # kill switch: record nothing, so nothing is ever skipped
+        base = _backoff_base_seconds()
+        # A cap below the base would make the feature silently inert (every
+        # delay shorter than one pass, so nothing is ever skipped): the base is
+        # the floor, so setting the key low means "back off one pass at a time".
+        cap = max(cap, base)
         previous = GitPolicyFetcher.source_backoff.get(self._source_id)
         n = (previous.consecutive_failures if previous is not None else 0) + 1
-        delay = _jittered(
-            min(
-                _backoff_base_seconds() * 2.0 ** min(n - 1, _MAX_BACKOFF_DOUBLINGS), cap
-            )
-        )
+        raw = min(base * 2.0 ** min(n - 1, _MAX_BACKOFF_DOUBLINGS), cap)
+        delay = _jittered(raw)
         GitPolicyFetcher.source_backoff[self._source_id] = SourceBackoff(
             consecutive_failures=n,
             next_attempt_at=time.monotonic() + delay,
             last_error=repr(err),
         )
-        # One line per recorded failure, not per skipped pass: attempts get
-        # rarer as the delay grows, so this log rate-limits itself, while the
-        # skips it causes are DEBUG (one per source per pass otherwise).
-        logger.warning(
+        # WARNING only when something changes for the operator: the source
+        # ENTERS backoff, or its delay reaches the cap (it will now be retried
+        # at the slowest rate). Every other recorded failure is DEBUG. The
+        # timer's own attempts already get rarer as the delay grows, but an
+        # explicit refresh that keeps failing (policy-sync re-issues them
+        # constantly for a broken repo) would otherwise WARN on every call, on
+        # top of the ERROR the failing op already logged.
+        previous_raw = (
+            min(
+                base
+                * 2.0 ** min(previous.consecutive_failures - 1, _MAX_BACKOFF_DOUBLINGS),
+                cap,
+            )
+            if previous is not None
+            else None
+        )
+        entering = previous is None
+        reached_cap = raw >= cap and (previous_raw is None or previous_raw < cap)
+        log = logger.warning if (entering or reached_cap) else logger.debug
+        log(
             "Backing off {url} for {delay:.0f}s after {n} consecutive "
             "failures: {err}",
             url=redact_url(self._source.url),
@@ -788,6 +831,27 @@ class GitPolicyFetcher(PolicyFetcher):
                 )
                 return
         async with GitPolicyFetcher.lock_source(self._source_id):
+            # Re-checked under the lock: N pass-originated duplicates of one
+            # source (phase 2 runs them concurrently) all pass the cheap
+            # pre-lock check before the first one has failed and recorded, then
+            # serialise here — without this second look each of them would
+            # perform its own full clone attempt against the dead remote.
+            if honor_backoff:
+                entry = self._backoff_entry()
+                if entry is not None:
+                    metrics.increment(
+                        "opal_server.scopes.git_op_skipped",
+                        tags={"reason": "backoff"},
+                    )
+                    logger.debug(
+                        "Skipping sync for {url}: in backoff for another "
+                        "{left:.0f}s after {n} consecutive failures ({err})",
+                        url=redact_url(self._source.url),
+                        left=max(0.0, entry.next_attempt_at - time.monotonic()),
+                        n=entry.consecutive_failures,
+                        err=entry.last_error,
+                    )
+                    return
             if git_op_in_flight(self._source_id):
                 # A previous git op for this repo exceeded its timeout and is
                 # still running on a pool thread. pygit2 Repository objects are
