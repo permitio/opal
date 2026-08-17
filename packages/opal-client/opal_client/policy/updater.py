@@ -1,4 +1,5 @@
 import asyncio
+import random
 from typing import List, Optional
 
 import pydantic
@@ -29,6 +30,17 @@ from opal_common.utils import get_authorization_header
 # backoff. Used when the server did not send a `Retry-After` (or sent a smaller
 # one than the round's backoff).
 DEFERRED_REFETCH_BASE_SECONDS = 5.0
+
+
+def _jittered(delay: float) -> float:
+    """Spreads a deferred re-fetch uniformly over [delay/2, delay].
+
+    Without this every client that hit the same outage re-fetches on the
+    same tick, so the fleet arrives at the server in lockstep and re-
+    creates the stampede the backoff exists to prevent. Module-level so
+    tests can replace it with the identity function.
+    """
+    return random.uniform(delay / 2.0, delay)
 
 
 class PolicyUpdater:
@@ -159,6 +171,11 @@ class PolicyUpdater:
                 set(self._subscription_directories)
             )
         )
+        # A real policy update means the source moved on: the previous failure
+        # episode is over, so the deferred round budget starts fresh. This is the
+        # only *incoming* signal that resets it -- notably not a reconnect, which
+        # would otherwise make MAX_DEFERRED_ROUNDS unreachable.
+        self._deferred_refetch_rounds = 0
         await self.trigger_update_policy(directories)
 
     async def trigger_update_policy(
@@ -166,16 +183,25 @@ class PolicyUpdater:
     ):
         # A freshly-triggered update supersedes any pending deferred re-fetch:
         # we are about to do the work that the timer was waiting to do.
+        # NOTE: deliberately does NOT reset `_deferred_refetch_rounds`. This runs
+        # on every WebSocket reconnect (via _on_connect), and reconnects are
+        # frequent during exactly the outages the round budget is meant to bound
+        # -- resetting here would make MAX_DEFERRED_ROUNDS unreachable. Only a
+        # genuine incoming policy update, or a successful fetch, resets it.
         self._cancel_deferred_refetch()
-        self._deferred_refetch_rounds = 0
         await self._policy_update_queue.put((directories, force_full_update))
 
-    def _cancel_deferred_refetch(self):
-        """Cancels the pending deferred re-fetch, if any."""
+    def _cancel_deferred_refetch(self) -> Optional[asyncio.Task]:
+        """Cancels the pending deferred re-fetch, if any, and returns it.
+
+        The caller may await the returned task to make sure it has
+        actually finished unwinding (see stop()).
+        """
         task = self._deferred_refetch_task
         if task is not None:
             self._deferred_refetch_task = None
             task.cancel()
+        return task
 
     def _deferred_refetch_delay(
         self, retry_after: Optional[float], round_index: int
@@ -183,17 +209,19 @@ class PolicyUpdater:
         """How long to wait before the next deferred bundle re-fetch.
 
         Whichever is longer: the server's `Retry-After` hint, or our own
-        per-round exponential backoff. Both are bounded by
-        POLICY_UPDATER_MAX_RETRY_AFTER so that neither a hostile header
-        nor a long-running outage pushes the next attempt hours out.
+        per-round exponential backoff (5, 10, 20, 40, ... seconds). The
+        result is then bounded above by POLICY_UPDATER_MAX_RETRY_AFTER --
+        so neither a hostile header nor a long outage pushes the next
+        attempt hours out -- and below by DEFERRED_REFETCH_BASE_SECONDS,
+        so a mis-set (or zero) ceiling cannot collapse the deferral into
+        a back-to-back loop. Finally it is jittered into [delay/2, delay]
+        so a whole fleet does not come back on the same tick.
         """
         ceiling = float(opal_client_config.POLICY_UPDATER_MAX_RETRY_AFTER)
-        backoff = min(
-            DEFERRED_REFETCH_BASE_SECONDS * (2 ** max(round_index - 1, 0)), ceiling
-        )
-        if retry_after is None:
-            return backoff
-        return min(max(retry_after, backoff), ceiling)
+        backoff = DEFERRED_REFETCH_BASE_SECONDS * (2 ** max(round_index - 1, 0))
+        raw = backoff if retry_after is None else max(retry_after, backoff)
+        bounded = max(min(raw, ceiling), DEFERRED_REFETCH_BASE_SECONDS)
+        return _jittered(bounded)
 
     def _maybe_schedule_deferred_refetch(
         self,
@@ -306,8 +334,11 @@ class PolicyUpdater:
         self._stopping = True
         logger.info("Stopping policy updater")
 
-        # drop any pending deferred bundle re-fetch
-        self._cancel_deferred_refetch()
+        # drop any pending deferred bundle re-fetch, and wait for it to unwind
+        # so we do not leave a half-cancelled task behind at shutdown
+        deferred_refetch = self._cancel_deferred_refetch()
+        if deferred_refetch is not None:
+            await asyncio.gather(deferred_refetch, return_exceptions=True)
 
         # disconnect from Pub/Sub
         if self._client is not None:
@@ -393,7 +424,19 @@ class PolicyUpdater:
             logger.info("full update was forced (ignoring stored hash if exists)")
             base_hash = None
         else:
-            base_hash = await self._policy_store.get_policy_version()
+            try:
+                base_hash = await self._policy_store.get_policy_version()
+            except Exception as err:
+                # The policy store can be restarting alongside the server. If we
+                # let this escape, update_policy() never reaches the fetch, so no
+                # deferred re-fetch is armed and the client waits for an external
+                # event to recover. Degrade to a full bundle instead.
+                logger.warning(
+                    "Could not read the current policy version from the policy "
+                    "store ({err}); falling back to a full bundle fetch",
+                    err=repr(err),
+                )
+                base_hash = None
 
         if base_hash is None:
             logger.info("Refetching policy code (full bundle)")

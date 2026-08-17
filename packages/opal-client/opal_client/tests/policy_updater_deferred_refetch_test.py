@@ -130,19 +130,25 @@ async def drain():
     await asyncio.sleep(0)
 
 
+@pytest.fixture
+def no_jitter(monkeypatch):
+    """Makes the deferred delay deterministic (jitter is tested separately)."""
+    monkeypatch.setattr(updater_module, "_jittered", lambda delay: delay)
+
+
 # ---------------------------------------------------------------------------
 # delay computation
 # ---------------------------------------------------------------------------
 
 
-def test_deferred_delay_honours_retry_after():
+def test_deferred_delay_honours_retry_after(no_jitter):
     updater = make_updater()
     # MUTATION: ignoring `retry_after` and always returning the base backoff
     # gives 5.0 and fails -- the server's "come back in 30s" would be discarded.
     assert updater._deferred_refetch_delay(30.0, round_index=1) == pytest.approx(30.0)
 
 
-def test_deferred_delay_falls_back_to_the_base_when_no_retry_after():
+def test_deferred_delay_falls_back_to_the_base_when_no_retry_after(no_jitter):
     updater = make_updater()
     # MUTATION: returning 0 when retry_after is None turns the deferral into a
     # busy-loop against a server that is already refusing us.
@@ -151,7 +157,7 @@ def test_deferred_delay_falls_back_to_the_base_when_no_retry_after():
     )
 
 
-def test_deferred_delay_backs_off_across_rounds():
+def test_deferred_delay_backs_off_across_rounds(no_jitter):
     updater = make_updater()
     first = updater._deferred_refetch_delay(None, round_index=1)
     second = updater._deferred_refetch_delay(None, round_index=2)
@@ -161,7 +167,7 @@ def test_deferred_delay_backs_off_across_rounds():
     assert third > second
 
 
-def test_deferred_delay_is_capped(monkeypatch):
+def test_deferred_delay_is_capped(monkeypatch, no_jitter):
     monkeypatch.setattr(opal_client_config, "POLICY_UPDATER_MAX_RETRY_AFTER", 60.0)
     updater = make_updater()
     # MUTATION: dropping the cap lets round 20 compute 5 * 2**19 == ~2.9 days.
@@ -377,3 +383,207 @@ async def test_the_failed_fetch_is_still_recorded_on_the_store_transaction():
     assert "503" in error
 
     await updater.stop()
+
+
+# ---------------------------------------------------------------------------
+# HIGH-1: jitter, so a fleet does not re-fetch in lockstep
+# ---------------------------------------------------------------------------
+
+
+def test_jittered_stays_inside_the_lower_half_of_its_window():
+    for _ in range(500):
+        assert 5.0 <= updater_module._jittered(10.0) <= 10.0
+
+
+def test_jittered_actually_spreads_the_delay():
+    samples = {updater_module._jittered(20.0) for _ in range(200)}
+    # MUTATION: `return delay` (no jitter) collapses this to a single value, and
+    # every client in the fleet re-fetches on the same tick.
+    assert len(samples) > 100
+
+
+def test_the_deferred_delay_routes_through_the_jitter(monkeypatch):
+    seen = []
+
+    def fake_jitter(delay):
+        seen.append(delay)
+        return 1.23
+
+    monkeypatch.setattr(updater_module, "_jittered", fake_jitter)
+    updater = make_updater()
+
+    assert updater._deferred_refetch_delay(30.0, round_index=1) == pytest.approx(1.23)
+    # MUTATION: computing the delay without calling _jittered leaves `seen` empty.
+    assert seen == [pytest.approx(30.0)]
+
+
+def test_two_clients_in_the_same_round_get_different_delays():
+    a = make_updater()
+    b = make_updater()
+    draws_a = [a._deferred_refetch_delay(30.0, round_index=2) for _ in range(50)]
+    draws_b = [b._deferred_refetch_delay(30.0, round_index=2) for _ in range(50)]
+    assert draws_a != draws_b
+
+
+# ---------------------------------------------------------------------------
+# MEDIUM-1: a zero ceiling must not collapse the deferred backoff
+# ---------------------------------------------------------------------------
+
+
+def test_a_zero_ceiling_does_not_collapse_the_deferred_delay(monkeypatch, no_jitter):
+    monkeypatch.setattr(opal_client_config, "POLICY_UPDATER_MAX_RETRY_AFTER", 0.0)
+    updater = make_updater()
+
+    # MUTATION: without the base-seconds floor both of these are 0.0, and the
+    # client burns all 20 deferred rounds back-to-back with no wait at all.
+    assert updater._deferred_refetch_delay(None, round_index=1) == pytest.approx(5.0)
+    assert updater._deferred_refetch_delay(30.0, round_index=3) == pytest.approx(5.0)
+
+
+def test_a_tiny_ceiling_is_still_floored(monkeypatch, no_jitter):
+    monkeypatch.setattr(opal_client_config, "POLICY_UPDATER_MAX_RETRY_AFTER", 0.5)
+    updater = make_updater()
+    assert updater._deferred_refetch_delay(0.1, round_index=1) == pytest.approx(5.0)
+
+
+# ---------------------------------------------------------------------------
+# MEDIUM-2: only a genuine policy update resets the round counter
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_a_websocket_reconnect_does_not_reset_the_round_counter():
+    updater = make_updater(RetryableBundleError(503, retry_after=30.0))
+
+    await updater.update_policy(["."], force_full_update=False)
+    assert updater._deferred_refetch_rounds == 1
+    updater._deferred_refetch_task.cancel()
+    updater._deferred_refetch_task = None
+
+    # _on_connect fires on every reconnect, and reconnects are frequent
+    await updater._on_connect(client=None, channel=None)
+
+    # MUTATION: resetting the counter in trigger_update_policy (as the first
+    # version did) means a client that reconnects every few minutes never
+    # reaches MAX_DEFERRED_ROUNDS and re-fetches forever.
+    assert updater._deferred_refetch_rounds == 1
+
+    await updater.stop()
+
+
+@pytest.mark.asyncio
+async def test_a_genuine_incoming_policy_update_resets_the_round_counter():
+    updater = make_updater(RetryableBundleError(503, retry_after=30.0))
+
+    await updater.update_policy(["."], force_full_update=False)
+    assert updater._deferred_refetch_rounds == 1
+
+    await updater._update_policy_callback(
+        data={
+            "old_policy_hash": "aaa",
+            "new_policy_hash": "bbb",
+            "changed_directories": ["."],
+        },
+        topic="policy:.",
+    )
+
+    # MUTATION: never resetting means a scope that recovers after 20 rounds
+    # stays permanently un-deferrable.
+    assert updater._deferred_refetch_rounds == 0
+
+    await updater.stop()
+
+
+@pytest.mark.asyncio
+async def test_a_malformed_policy_update_message_does_not_reset_the_counter():
+    updater = make_updater(RetryableBundleError(503, retry_after=30.0))
+    await updater.update_policy(["."], force_full_update=False)
+
+    await updater._update_policy_callback(data=None, topic="policy:.")
+    await updater._update_policy_callback(data={"garbage": True}, topic="policy:.")
+
+    assert updater._deferred_refetch_rounds == 1
+
+    await updater.stop()
+
+
+# ---------------------------------------------------------------------------
+# MEDIUM-3: a policy-store read failure must not swallow the deferral
+# ---------------------------------------------------------------------------
+
+
+class ExplodingVersionStore(FakePolicyStore):
+    async def get_policy_version(self):
+        raise RuntimeError("OPA is restarting")
+
+
+@pytest.mark.asyncio
+async def test_a_policy_store_read_failure_still_fetches_and_still_defers():
+    updater = make_updater(RetryableBundleError(503, retry_after=30.0))
+    updater._policy_store = ExplodingVersionStore()
+
+    await updater.update_policy(["."], force_full_update=False)
+
+    # falls back to a full bundle rather than aborting
+    assert updater._policy_fetcher.calls == [((".",), None)]
+    # MUTATION: leaving get_policy_version outside the try lets the RuntimeError
+    # escape update_policy, so the deferral never arms and a client whose OPA
+    # restarted alongside the server never recovers on its own.
+    assert updater._deferred_refetch_task is not None
+
+    await updater.stop()
+
+
+# ---------------------------------------------------------------------------
+# MEDIUM-4: the deferral round-trips through the real update loop
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_the_deferral_round_trips_through_handle_policy_updates(monkeypatch):
+    """Fail(503) -> timer -> queue -> handler -> update_policy -> success."""
+    updater = make_updater(
+        RetryableBundleError(503, retry_after=30.0), make_bundle("recovered")
+    )
+    monkeypatch.setattr(
+        updater, "_deferred_refetch_delay", lambda retry_after, round_index: 0.0
+    )
+    updater._policy_update_task = asyncio.create_task(updater.handle_policy_updates())
+
+    await updater.trigger_update_policy(["."], force_full_update=False)
+
+    loop = asyncio.get_event_loop()
+    deadline = loop.time() + 3.0
+    while not updater._policy_store.set_policies_calls:
+        if loop.time() > deadline:
+            pytest.fail("the deferred re-fetch never round-tripped through the loop")
+        await asyncio.sleep(0.01)
+
+    # MUTATION: if the timer never re-queues (or the handler never picks it up)
+    # this test times out -- it is the only end-to-end proof the loop closes.
+    assert len(updater._policy_fetcher.calls) == 2
+    assert updater._policy_store.set_policies_calls[0].hash == "recovered"
+    assert updater._deferred_refetch_rounds == 0
+    assert updater._deferred_refetch_task is None
+
+    await updater.stop()
+
+
+# ---------------------------------------------------------------------------
+# LOW-2: stop() must await the timer it cancelled
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_stop_awaits_the_timer_it_cancelled():
+    updater = make_updater(RetryableBundleError(503, retry_after=30.0))
+    await updater.update_policy(["."], force_full_update=False)
+    pending = updater._deferred_refetch_task
+    assert pending is not None
+
+    await updater.stop()
+
+    # MUTATION: cancelling without awaiting leaves the task un-finalised at the
+    # moment stop() returns, which surfaces as "Task was destroyed but it is
+    # pending!" when the client shuts down.
+    assert pending.done()

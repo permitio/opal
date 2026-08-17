@@ -20,6 +20,7 @@ future refactor that silently drops a guard fails here.
 import asyncio
 import os
 import sys
+import time
 from datetime import datetime, timedelta, timezone
 from email.utils import format_datetime
 
@@ -27,6 +28,7 @@ import aiohttp
 import pytest
 from fastapi import HTTPException
 from tenacity import RetryCallState, wait_fixed
+from tenacity.stop import stop_after_attempt, stop_after_delay, stop_any
 
 # Add parent path to use local src as package for tests
 root_dir = os.path.abspath(
@@ -35,6 +37,7 @@ root_dir = os.path.abspath(
 sys.path.append(root_dir)
 
 from opal_client.config import opal_client_config
+from opal_client.logger import logger
 from opal_client.policy.fetcher import (
     BundlePathNotFoundError,
     NonRetryableBundleError,
@@ -43,6 +46,7 @@ from opal_client.policy.fetcher import (
     parse_retry_after,
     wait_retry_after_or_backoff,
 )
+from opal_client.policy.options import ConnRetryOptions
 
 # ---------------------------------------------------------------------------
 # aiohttp test doubles
@@ -492,3 +496,126 @@ async def test_detail_extraction_survives_a_non_json_body(scripted_session, no_s
     # MUTATION: calling `await response.json()` unguarded raises ValueError here,
     # which would be *retried* (wrong class) instead of failing fast.
     assert excinfo.value.status_code == 409
+
+
+# ---------------------------------------------------------------------------
+# HIGH-2: one fetch must not block the serial update queue for attempts x cap
+# ---------------------------------------------------------------------------
+
+
+def test_the_stop_condition_is_bounded_by_both_attempts_and_total_delay(monkeypatch):
+    monkeypatch.setattr(opal_client_config, "POLICY_UPDATER_MAX_RETRY_AFTER", 42.0)
+    fetcher = PolicyFetcher(backend_url="http://opal-server:7002", token="t")
+
+    stop = fetcher._retry_config["stop"]
+    # MUTATION: leaving `stop` as the bare stop_after_attempt lets a proxy's
+    # `Retry-After: 300` hold the policy-update queue for attempts x cap.
+    assert isinstance(stop, stop_any)
+    assert any(isinstance(s, stop_after_attempt) for s in stop.stops)
+    delay_stops = [s for s in stop.stops if isinstance(s, stop_after_delay)]
+    assert len(delay_stops) == 1
+    assert delay_stops[0].max_delay == pytest.approx(42.0)
+
+
+@pytest.mark.asyncio
+async def test_a_huge_retry_after_cannot_hold_the_fetch_past_the_cap(
+    scripted_session, monkeypatch
+):
+    """`Retry-After: 300` from a proxy must not stall one fetch for minutes.
+
+    Uses the real clock and real (tiny) sleeps on purpose: `stop_after_delay`
+    is wall-clock based, so a faked sleep would never let it fire.
+    """
+    monkeypatch.setattr(opal_client_config, "POLICY_UPDATER_MAX_RETRY_AFTER", 0.2)
+    monkeypatch.setattr(
+        opal_client_config,
+        "POLICY_UPDATER_CONN_RETRY",
+        ConnRetryOptions(wait_strategy="fixed", wait_time=0.01, attempts=10),
+    )
+    scripted_session(FakeResponse(503, headers={"Retry-After": "300"}, body={}))
+    fetcher = PolicyFetcher(backend_url="http://opal-server:7002", token="t")
+
+    started = time.monotonic()
+    with pytest.raises(RetryableBundleError):
+        await fetcher.fetch_policy_bundle()
+    elapsed = time.monotonic() - started
+
+    # Without the delay bound this is 10 attempts x 0.2s == ~2s; with it, the
+    # fetch gives up as soon as it has spent `cap` seconds waiting.
+    assert elapsed < 0.8, f"one fetch blocked the queue for {elapsed:.2f}s"
+    assert total_requests() <= 3
+
+
+# ---------------------------------------------------------------------------
+# LOW-1: exactly one WARNING per exhausted fetch; per-attempt logs are DEBUG
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def captured_logs():
+    records = []
+    sink_id = logger.add(lambda m: records.append(m.record), level="DEBUG")
+    yield records
+    logger.remove(sink_id)
+
+
+def _warnings(records):
+    return [r for r in records if r["level"].name == "WARNING"]
+
+
+def _messages(records, level):
+    return [r["message"] for r in records if r["level"].name == level]
+
+
+@pytest.mark.asyncio
+async def test_a_retried_503_logs_one_warning_not_one_per_attempt(
+    scripted_session, no_sleep, captured_logs
+):
+    scripted_session(FakeResponse(503, headers={"Retry-After": "30"}, body={}))
+    fetcher = make_fetcher(no_sleep, attempts=4)
+
+    with pytest.raises(RetryableBundleError):
+        await fetcher.fetch_policy_bundle()
+
+    assert total_requests() == 4
+    # MUTATION: leaving the per-attempt classification at WARNING emits one line
+    # per attempt, so a fleet-wide outage floods the log budget 4x over.
+    warnings = _warnings(captured_logs)
+    assert len(warnings) == 1, [w["message"] for w in warnings]
+    assert "retryable" in warnings[0]["message"]
+    assert "503" in warnings[0]["message"]
+    # the per-attempt detail is still available, at debug
+    assert len([m for m in _messages(captured_logs, "DEBUG") if "503" in m]) == 4
+
+
+@pytest.mark.asyncio
+async def test_a_409_logs_exactly_one_warning(
+    scripted_session, no_sleep, captured_logs
+):
+    scripted_session(FakeResponse(409, body={"detail": "branch not found"}))
+    fetcher = make_fetcher(no_sleep, attempts=5)
+
+    with pytest.raises(NonRetryableBundleError):
+        await fetcher.fetch_policy_bundle()
+
+    warnings = _warnings(captured_logs)
+    assert len(warnings) == 1, [w["message"] for w in warnings]
+    assert "non-retryable" in warnings[0]["message"]
+    assert "branch not found" in warnings[0]["message"]
+
+
+@pytest.mark.asyncio
+async def test_a_404_logs_exactly_one_warning(
+    scripted_session, no_sleep, captured_logs
+):
+    scripted_session(FakeResponse(404, body={"detail": "no such path"}))
+    fetcher = make_fetcher(no_sleep, attempts=5)
+
+    with pytest.raises(BundlePathNotFoundError):
+        await fetcher.fetch_policy_bundle()
+
+    # MUTATION: leaving the "requested paths not found" line at WARNING makes
+    # this 2 and breaks the one-warning-per-exhausted-fetch contract.
+    warnings = _warnings(captured_logs)
+    assert len(warnings) == 1, [w["message"] for w in warnings]
+    assert "404" in warnings[0]["message"]

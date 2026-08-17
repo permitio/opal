@@ -15,7 +15,7 @@ from opal_common.utils import (
     tuple_to_dict,
 )
 from pydantic import ValidationError
-from tenacity import retry, retry_if_not_exception_type, stop, wait
+from tenacity import retry, retry_if_not_exception_type, stop, stop_after_delay, wait
 from tenacity.wait import wait_base
 
 # Statuses the OPAL server uses to say "this will work later, come back":
@@ -230,6 +230,14 @@ class PolicyFetcher:
             self._retry_config["wait"],
             max_retry_after=opal_client_config.POLICY_UPDATER_MAX_RETRY_AFTER,
         )
+        # Bound the wall-clock cost of ONE fetch. `update_policy` runs off a
+        # serial queue, so honouring a large `Retry-After` inside the tenacity
+        # loop would block every other policy update for attempts x cap. Past
+        # this budget we give up and let the deferred re-fetch (which does not
+        # hold the queue) own the long horizon.
+        self._retry_config["stop"] = self._retry_config["stop"] | stop_after_delay(
+            opal_client_config.POLICY_UPDATER_MAX_RETRY_AFTER
+        )
 
         scope_id = opal_client_config.SCOPE_ID
 
@@ -256,6 +264,24 @@ class PolicyFetcher:
         attempter = retry(**self._retry_config)(self._fetch_policy_bundle)
         try:
             return await attempter(directories=directories, base_hash=base_hash)
+        except NonRetryableBundleError as err:
+            # Exactly one WARNING per fetch that gave up: the per-attempt
+            # classification lines are debug, so a fleet-wide outage does not
+            # multiply the log volume by the attempt count.
+            logger.warning(
+                "Bundle fetch non-retryable ({status}): {detail}",
+                status=err.status_code,
+                detail=err.detail,
+            )
+            raise
+        except RetryableBundleError as err:
+            logger.warning(
+                "Bundle fetch retryable ({status}); server asked to retry after "
+                "{retry_after}s, giving up this round after exhausting retries",
+                status=err.status_code,
+                retry_after=err.retry_after,
+            )
+            raise
         except Exception as err:
             logger.warning(
                 "Failed all attempts to fetch bundle, got error: {err}",
@@ -273,7 +299,7 @@ class PolicyFetcher:
         if response.status in RETRYABLE_BUNDLE_STATUSES:
             retry_after = parse_retry_after(response.headers.get("Retry-After"))
             detail = await _response_detail(response)
-            logger.warning(
+            logger.debug(
                 "Bundle fetch retryable ({status}); server asked to retry after {retry_after}s",
                 status=response.status,
                 retry_after=retry_after,
@@ -284,7 +310,7 @@ class PolicyFetcher:
 
         if response.status in NON_RETRYABLE_BUNDLE_STATUSES:
             detail = await _response_detail(response)
-            logger.warning(
+            logger.debug(
                 "Bundle fetch non-retryable ({status}): {detail}",
                 status=response.status,
                 detail=detail,
@@ -321,7 +347,7 @@ class PolicyFetcher:
                     **self._ssl_context_kwargs,
                 ) as response:
                     if response.status == status.HTTP_404_NOT_FOUND:
-                        logger.warning(
+                        logger.debug(
                             "requested paths not found: {paths}",
                             paths=directories,
                         )
