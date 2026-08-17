@@ -217,7 +217,13 @@ async def _make_bundle_waiting_for_clone(
     try:
         while True:
             remaining = deadline - loop.time()
-            if remaining <= 0:
+            # `not (remaining > 0)` rather than `remaining <= 0`: NaN compares
+            # False against BOTH, so the `<=` form does not break on a NaN
+            # deadline — it polls forever, holding a capped slot for the life
+            # of the process. _bounded_clone_wait already refuses a NaN budget,
+            # so this is defence in depth: it makes the loop itself unable to
+            # spin if that guard is ever weakened or bypassed.
+            if not (remaining > 0):
                 outcome = "timeout"
                 break
             # Clamped to what is left of the budget, so the last poll cannot

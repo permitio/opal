@@ -336,7 +336,9 @@ def test_wait_disabled_answers_503_after_a_single_attempt(bed, emitted, sleeps):
     )
 
 
-@pytest.mark.parametrize("bad", [float("nan"), float("-inf"), -1.0, None, "twenty"])
+@pytest.mark.parametrize(
+    "bad", [float("nan"), float("inf"), float("-inf"), -1.0, None, "twenty"]
+)
 def test_a_wait_that_is_not_a_positive_number_disables_the_hold(bed, sleeps, bad):
     """NaN is the one that matters: `nan <= 0` is False, so a NaN budget slips
     past an ordinary sign check and every arithmetic on it yields NaN —
@@ -360,6 +362,37 @@ def test_a_wait_that_is_not_a_positive_number_disables_the_hold(bed, sleeps, bad
     assert len(calls) == 1, f"a {bad} budget was treated as a real one"
     assert not sleeps
     assert elapsed < 1.0
+
+
+def test_the_deadline_loop_cannot_spin_even_if_a_nan_budget_reaches_it(
+    bed, emitted, sleeps, monkeypatch
+):
+    """Defence in depth for the one value that turns a bounded loop unbounded.
+
+    `_bounded_clone_wait` refuses a NaN budget, so in the shipped code this
+    cannot happen — which is exactly why it is worth pinning separately. NaN
+    compares False against BOTH `<= 0` and `> 0`, so a loop written
+    `if remaining <= 0: break` does not terminate on a NaN deadline: it polls
+    for the life of the process while holding one of the capped slots. That is
+    a worse failure than the one the budget guard prevents, and it depends on a
+    check three frames away staying correct.
+
+    Hands the loop a NaN budget directly, past that guard.
+
+    Mutation: `if remaining <= 0:` in place of `if not (remaining > 0):` never
+    returns, and this test fails on the pytest timeout instead of passing.
+    """
+    monkeypatch.setattr(
+        "opal_server.scopes.api._bounded_clone_wait", lambda: float("nan")
+    )
+
+    resp, calls, elapsed = bed.run(_populating)
+
+    assert resp.status_code == 503
+    assert elapsed < 2.0, f"a NaN budget held the request {elapsed:.1f}s"
+    assert len(calls) == 1, f"a NaN deadline was polled against: {len(calls)}"
+    assert not sleeps, "the loop slept against a deadline it can never reach"
+    assert _wait_outcomes(emitted) == ["timeout"], _wait_outcomes(emitted)
 
 
 def test_an_oversized_wait_is_clamped_below_the_load_balancer_timeout(
