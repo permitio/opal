@@ -10,7 +10,7 @@ from opal_client.callbacks.reporter import CallbacksReporter
 from opal_client.config import opal_client_config
 from opal_client.data.fetcher import DataFetcher
 from opal_client.logger import logger
-from opal_client.policy.fetcher import PolicyFetcher
+from opal_client.policy.fetcher import PolicyFetcher, RetryableBundleError
 from opal_client.policy.topics import default_subscribed_policy_directories
 from opal_client.policy_store.base_policy_store_client import BasePolicyStoreClient
 from opal_client.policy_store.policy_store_client_factory import (
@@ -24,6 +24,11 @@ from opal_common.schemas.store import TransactionType
 from opal_common.security.sslcontext import get_custom_ssl_context
 from opal_common.topics.utils import pubsub_topics_from_directories
 from opal_common.utils import get_authorization_header
+
+# Floor for a deferred re-fetch, and the base of its per-round exponential
+# backoff. Used when the server did not send a `Retry-After` (or sent a smaller
+# one than the round's backoff).
+DEFERRED_REFETCH_BASE_SECONDS = 5.0
 
 
 class PolicyUpdater:
@@ -106,6 +111,11 @@ class PolicyUpdater:
             else {}
         )
         self._policy_update_queue = asyncio.Queue()
+        # At most ONE pending deferred bundle re-fetch, armed when a fetch
+        # exhausts its retries against a retryable error (e.g. the server is
+        # still cloning the scope's repo). See _maybe_schedule_deferred_refetch.
+        self._deferred_refetch_task: Optional[asyncio.Task] = None
+        self._deferred_refetch_rounds: int = 0
         self._tasks = TasksPool()
         self._on_connect_callbacks = on_connect or []
         self._on_disconnect_callbacks = on_disconnect or []
@@ -154,6 +164,97 @@ class PolicyUpdater:
     async def trigger_update_policy(
         self, directories: List[str] = None, force_full_update: bool = False
     ):
+        # A freshly-triggered update supersedes any pending deferred re-fetch:
+        # we are about to do the work that the timer was waiting to do.
+        self._cancel_deferred_refetch()
+        self._deferred_refetch_rounds = 0
+        await self._policy_update_queue.put((directories, force_full_update))
+
+    def _cancel_deferred_refetch(self):
+        """Cancels the pending deferred re-fetch, if any."""
+        task = self._deferred_refetch_task
+        if task is not None:
+            self._deferred_refetch_task = None
+            task.cancel()
+
+    def _deferred_refetch_delay(
+        self, retry_after: Optional[float], round_index: int
+    ) -> float:
+        """How long to wait before the next deferred bundle re-fetch.
+
+        Whichever is longer: the server's `Retry-After` hint, or our own
+        per-round exponential backoff. Both are bounded by
+        POLICY_UPDATER_MAX_RETRY_AFTER so that neither a hostile header
+        nor a long-running outage pushes the next attempt hours out.
+        """
+        ceiling = float(opal_client_config.POLICY_UPDATER_MAX_RETRY_AFTER)
+        backoff = min(
+            DEFERRED_REFETCH_BASE_SECONDS * (2 ** max(round_index - 1, 0)), ceiling
+        )
+        if retry_after is None:
+            return backoff
+        return min(max(retry_after, backoff), ceiling)
+
+    def _maybe_schedule_deferred_refetch(
+        self,
+        error: RetryableBundleError,
+        directories: List[str],
+        force_full_update: bool,
+    ):
+        """Arms a single deferred bundle re-fetch after a retryable failure.
+
+        Without this, a client whose bundle request exhausted its
+        retries sits on a stale policy store until the next pub/sub
+        message or WebSocket reconnect -- which for a low-churn scope
+        can be hours.
+        """
+        if not opal_client_config.POLICY_UPDATER_RESCHEDULE_ON_RETRYABLE:
+            return
+
+        if self._stopping:
+            return
+
+        # Coalesce: one pending timer at a time, never a stack of them.
+        if self._deferred_refetch_task is not None:
+            return
+
+        max_rounds = opal_client_config.POLICY_UPDATER_MAX_DEFERRED_ROUNDS
+        if self._deferred_refetch_rounds >= max_rounds:
+            logger.warning(
+                "Giving up on deferred bundle re-fetch after {rounds} rounds; "
+                "waiting for the next policy update or reconnect",
+                rounds=self._deferred_refetch_rounds,
+            )
+            return
+
+        self._deferred_refetch_rounds += 1
+        delay = self._deferred_refetch_delay(
+            error.retry_after, self._deferred_refetch_rounds
+        )
+        logger.warning(
+            "Deferring bundle re-fetch by {delay}s (round {round}/{max_rounds})",
+            delay=delay,
+            round=self._deferred_refetch_rounds,
+            max_rounds=max_rounds,
+        )
+        self._deferred_refetch_task = asyncio.create_task(
+            self._deferred_refetch(delay, directories, force_full_update)
+        )
+
+    async def _deferred_refetch(
+        self, delay: float, directories: List[str], force_full_update: bool
+    ):
+        """Sleeps, then re-queues the update that failed.
+
+        Goes through the update queue rather than calling
+        update_policy() directly so that the re-fetch stays serialized
+        with every other policy update -- two concurrent policy-store
+        transactions would race.
+        """
+        await asyncio.sleep(delay)
+        # Clear our own handle before queueing: from here on there is nothing
+        # left to cancel, and the next failure is free to arm a new timer.
+        self._deferred_refetch_task = None
         await self._policy_update_queue.put((directories, force_full_update))
 
     async def _on_connect(self, client: PubSubClient, channel: RpcChannel):
@@ -187,6 +288,7 @@ class PolicyUpdater:
         """Resets internal state so the updater can be started again after
         being stopped."""
         self._stopping = False
+        self._deferred_refetch_rounds = 0
         self._tasks.restart()
 
     async def start(self):
@@ -203,6 +305,9 @@ class PolicyUpdater:
         """Stops the policy updater."""
         self._stopping = True
         logger.info("Stopping policy updater")
+
+        # drop any pending deferred bundle re-fetch
+        self._cancel_deferred_refetch()
 
         # disconnect from Pub/Sub
         if self._client is not None:
@@ -300,6 +405,7 @@ class PolicyUpdater:
         bundle_error = None
         bundle = None
         bundle_succeeded = True
+        retryable_error: Optional[RetryableBundleError] = None
         try:
             bundle: Optional[
                 PolicyBundle
@@ -331,6 +437,17 @@ class PolicyUpdater:
         except Exception as err:
             bundle_error = repr(err)
             bundle_succeeded = False
+            if isinstance(err, RetryableBundleError):
+                retryable_error = err
+
+        if bundle_succeeded:
+            # We are in sync again: drop any timer armed by an earlier failure.
+            self._cancel_deferred_refetch()
+            self._deferred_refetch_rounds = 0
+        elif retryable_error is not None:
+            self._maybe_schedule_deferred_refetch(
+                retryable_error, directories, force_full_update
+            )
 
         bundle_hash = None if bundle is None else bundle.hash
 
