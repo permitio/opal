@@ -1314,6 +1314,38 @@ Default:
 
 Retry options when connecting to the policy source (e.g., the policy bundle server).
 
+#### OPAL_POLICY_UPDATER_MAX_RETRY_AFTER
+
+Default: `60.0`
+
+Upper bound, in seconds, on a `Retry-After` header sent by the policy source. When the
+OPAL Server answers a bundle request with `503` (for example while it is still cloning
+the scope's policy repository) it may include `Retry-After`. The client waits for
+whichever is longer — the server's hint or its own `OPAL_POLICY_UPDATER_CONN_RETRY`
+backoff — but never longer than this value, so a hostile or buggy header cannot stall
+policy updates. This bound applies only to the server-supplied hint; it does not clamp
+the backoff you configured in `OPAL_POLICY_UPDATER_CONN_RETRY`.
+
+#### OPAL_POLICY_UPDATER_RESCHEDULE_ON_RETRYABLE
+
+Default: `True`
+
+If `True`, when a bundle fetch exhausts `OPAL_POLICY_UPDATER_CONN_RETRY` against a
+retryable error (such as `503` while the server clones the policy repository), the client
+schedules one deferred re-fetch instead of waiting for the next Pub/Sub message or
+WebSocket reconnect. Non-retryable answers (`409` — the branch could not be resolved, and
+`404` — the requested path is not in the repository) are never rescheduled. Set to `False`
+to restore the previous fire-and-forget behaviour.
+
+#### OPAL_POLICY_UPDATER_MAX_DEFERRED_ROUNDS
+
+Default: `20`
+
+Maximum number of consecutive deferred bundle re-fetches before the client gives up and
+waits for the next Pub/Sub message or reconnect. A successful fetch, or an incoming policy
+update, resets the counter. Only relevant when
+`OPAL_POLICY_UPDATER_RESCHEDULE_ON_RETRYABLE` is enabled.
+
 ### Data Updates Configuration
 
 #### OPAL_DATA_UPDATER_ENABLED
