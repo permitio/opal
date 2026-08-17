@@ -273,7 +273,7 @@ class OpalServerConfig(Confi):
     )
     SCOPES_GIT_BACKOFF_MAX_SECONDS = confi.float(
         "SCOPES_GIT_BACKOFF_MAX_SECONDS",
-        3600.0,
+        1800.0,
         description="Longest a source that keeps failing is skipped by the "
         "periodic sync pass. When a scope's git clone or fetch fails "
         "(unreachable host, revoked credentials, deleted repo) that SOURCE is "
