@@ -504,7 +504,13 @@ async def test_detail_extraction_survives_a_non_json_body(scripted_session, no_s
 
 
 def test_the_stop_condition_is_bounded_by_both_attempts_and_total_delay(monkeypatch):
+    # operator budget (fixed 1s x 5 == 5s) is smaller than the cap, so the cap wins
     monkeypatch.setattr(opal_client_config, "POLICY_UPDATER_MAX_RETRY_AFTER", 42.0)
+    monkeypatch.setattr(
+        opal_client_config,
+        "POLICY_UPDATER_CONN_RETRY",
+        ConnRetryOptions(wait_strategy="fixed", wait_time=1, attempts=5),
+    )
     fetcher = PolicyFetcher(backend_url="http://opal-server:7002", token="t")
 
     stop = fetcher._retry_config["stop"]
@@ -619,3 +625,120 @@ async def test_a_404_logs_exactly_one_warning(
     warnings = _warnings(captured_logs)
     assert len(warnings) == 1, [w["message"] for w in warnings]
     assert "404" in warnings[0]["message"]
+
+
+# ---------------------------------------------------------------------------
+# NEW-2/NEW-5: the whole-fetch bound must never truncate the operator's own
+# POLICY_UPDATER_CONN_RETRY budget
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "strategy,wait_time,max_wait,attempts,expected",
+    [
+        ("fixed", 0.2, 10, 5, 1.0),  # fixed -> attempts x wait_time
+        ("exponential", 1, 10, 5, 50.0),  # exponential -> attempts x max_wait
+        ("random_exponential", 1, 10, 5, 50.0),
+        ("fixed", 2, 10, 0, 0.0),
+    ],
+)
+def test_conn_retry_options_report_their_worst_case_total_wait(
+    strategy, wait_time, max_wait, attempts, expected
+):
+    options = ConnRetryOptions(
+        wait_strategy=strategy,
+        wait_time=wait_time,
+        max_wait=max_wait,
+        attempts=attempts,
+    )
+    # MUTATION: using wait_time for the exponential strategies (or max_wait for
+    # fixed) under-reports the budget, and the whole-fetch bound then truncates
+    # a retry policy the operator explicitly configured.
+    assert options.worstCaseTotalWait() == pytest.approx(expected)
+
+
+def test_the_delay_bound_is_the_larger_of_the_cap_and_the_operator_budget(monkeypatch):
+    monkeypatch.setattr(opal_client_config, "POLICY_UPDATER_MAX_RETRY_AFTER", 0.3)
+    monkeypatch.setattr(
+        opal_client_config,
+        "POLICY_UPDATER_CONN_RETRY",
+        ConnRetryOptions(wait_strategy="fixed", wait_time=0.2, attempts=5),
+    )
+    fetcher = PolicyFetcher(backend_url="http://opal-server:7002", token="t")
+
+    delay_stop = [
+        s
+        for s in fetcher._retry_config["stop"].stops
+        if isinstance(s, stop_after_delay)
+    ][0]
+    # MUTATION: `stop_after_delay(cap)` alone gives 0.3 here and cuts the
+    # operator's 5 attempts down to 2.
+    assert delay_stop.max_delay == pytest.approx(1.0)
+
+
+@pytest.mark.asyncio
+async def test_the_operators_attempts_survive_a_smaller_cap(
+    scripted_session, monkeypatch
+):
+    """`wait_fixed(0.2) x 5` with cap 0.3 must still make all 5 attempts."""
+    monkeypatch.setattr(opal_client_config, "POLICY_UPDATER_MAX_RETRY_AFTER", 0.3)
+    monkeypatch.setattr(
+        opal_client_config,
+        "POLICY_UPDATER_CONN_RETRY",
+        ConnRetryOptions(wait_strategy="fixed", wait_time=0.2, attempts=5),
+    )
+    scripted_session(FakeResponse(503, headers={}, body={}))
+    fetcher = PolicyFetcher(backend_url="http://opal-server:7002", token="t")
+
+    with pytest.raises(RetryableBundleError):
+        await fetcher.fetch_policy_bundle()
+
+    assert total_requests() == 5
+
+
+@pytest.mark.asyncio
+async def test_a_zero_cap_does_not_disable_the_operators_retries(
+    scripted_session, monkeypatch
+):
+    """NEW-5: `MAX_RETRY_AFTER=0` means "honour no server hint", not "no retries"."""
+    monkeypatch.setattr(opal_client_config, "POLICY_UPDATER_MAX_RETRY_AFTER", 0.0)
+    monkeypatch.setattr(
+        opal_client_config,
+        "POLICY_UPDATER_CONN_RETRY",
+        ConnRetryOptions(wait_strategy="fixed", wait_time=0.05, attempts=3),
+    )
+    scripted_session(FakeResponse(503, headers={"Retry-After": "900"}, body={}))
+    fetcher = PolicyFetcher(backend_url="http://opal-server:7002", token="t")
+
+    with pytest.raises(RetryableBundleError):
+        await fetcher.fetch_policy_bundle()
+
+    # MUTATION: `stop_after_delay(0)` (no max() with the operator budget) stops
+    # after a single attempt, silently disabling retries for anyone who set the
+    # cap to 0 to mean "ignore Retry-After".
+    assert total_requests() == 3
+
+
+# ---------------------------------------------------------------------------
+# NEW-4: a connection error must also cost exactly one WARNING
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_a_connection_error_logs_exactly_one_warning(
+    scripted_session, no_sleep, captured_logs
+):
+    scripted_session(aiohttp.ClientConnectionError("connection refused"))
+    fetcher = make_fetcher(no_sleep, attempts=4)
+
+    with pytest.raises(aiohttp.ClientError):
+        await fetcher.fetch_policy_bundle()
+
+    assert total_requests() == 4
+    # MUTATION: leaving the per-attempt "server connection error" line at WARNING
+    # makes this 5 (4 per-attempt + 1 summary) -- a server outage then costs the
+    # log budget one line per attempt per client.
+    warnings = _warnings(captured_logs)
+    assert len(warnings) == 1, [w["message"] for w in warnings]
+    assert "connection refused" in warnings[0]["message"]
+    assert len([m for m in _messages(captured_logs, "DEBUG") if "refused" in m]) == 4

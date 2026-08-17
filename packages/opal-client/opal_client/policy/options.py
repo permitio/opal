@@ -35,6 +35,24 @@ class ConnRetryOptions(BaseModel):
         description="max time to wait in total (for exponential strategies only)",
     )
 
+    def worstCaseTotalWait(self) -> float:
+        """Upper bound (seconds) on the time this policy can spend *waiting*.
+
+        Callers use it to size a wall-clock stop condition without truncating a
+        retry budget the operator asked for. Note that the exponential
+        strategies default `max_wait` to tenacity's MAX_WAIT, so an operator who
+        configures an unbounded backoff gets an unbounded bound -- which is the
+        point: their configuration wins.
+        """
+        if self.wait_strategy in (
+            WaitStrategy.exponential,
+            WaitStrategy.random_exponential,
+        ):
+            per_wait = self.max_wait
+        else:
+            per_wait = self.wait_time
+        return max(self.attempts, 0) * per_wait
+
     def toTenacityConfig(self):
         if self.wait_strategy == WaitStrategy.exponential:
             wait = wait_exponential(multiplier=self.wait_time, max=self.max_wait)

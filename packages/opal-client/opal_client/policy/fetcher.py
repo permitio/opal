@@ -18,7 +18,12 @@ from pydantic import ValidationError
 from tenacity import retry, retry_if_not_exception_type, stop, stop_after_delay, wait
 from tenacity.wait import wait_base
 
-# Statuses the OPAL server uses to say "this will work later, come back":
+# The classification below follows the contract introduced by opal-server
+# PR #924 (scopes API). On older servers only the 503 path is exercised -- they
+# do not emit 409 for an unresolved branch -- so this is safe to run against a
+# mixed fleet.
+#
+# Statuses that mean "this will work later, come back":
 #   503 - the scope's repo clone is in progress, or its clone vanished/is corrupt
 #   429 - the server (or something in front of it) is shedding load
 # Both may carry a `Retry-After` header telling us how long to wait.
@@ -235,8 +240,16 @@ class PolicyFetcher:
         # loop would block every other policy update for attempts x cap. Past
         # this budget we give up and let the deferred re-fetch (which does not
         # hold the queue) own the long horizon.
+        #
+        # The bound is the LARGER of the cap and the operator's own
+        # POLICY_UPDATER_CONN_RETRY budget: this exists to stop a *server-
+        # supplied* hint from monopolising the queue, not to quietly shorten a
+        # retry policy someone configured on purpose.
         self._retry_config["stop"] = self._retry_config["stop"] | stop_after_delay(
-            opal_client_config.POLICY_UPDATER_MAX_RETRY_AFTER
+            max(
+                opal_client_config.POLICY_UPDATER_MAX_RETRY_AFTER,
+                opal_client_config.POLICY_UPDATER_CONN_RETRY.worstCaseTotalWait(),
+            )
         )
 
         scope_id = opal_client_config.SCOPE_ID
@@ -370,5 +383,7 @@ class PolicyFetcher:
 
                     return bundle
             except aiohttp.ClientError as e:
-                logger.warning("server connection error: {err}", err=repr(e))
+                # debug, not warning: `fetch_policy_bundle` emits exactly one
+                # summary WARNING once the attempts are exhausted.
+                logger.debug("server connection error: {err}", err=repr(e))
                 raise

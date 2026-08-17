@@ -128,6 +128,10 @@ class PolicyUpdater:
         # still cloning the scope's repo). See _maybe_schedule_deferred_refetch.
         self._deferred_refetch_task: Optional[asyncio.Task] = None
         self._deferred_refetch_rounds: int = 0
+        # True once the escalation budget is spent and we have fallen back to a
+        # flat re-fetch cadence. Tracked so the notice is logged once per
+        # episode rather than once per round.
+        self._deferred_flat_phase: bool = False
         self._tasks = TasksPool()
         self._on_connect_callbacks = on_connect or []
         self._on_disconnect_callbacks = on_disconnect or []
@@ -176,6 +180,7 @@ class PolicyUpdater:
         # only *incoming* signal that resets it -- notably not a reconnect, which
         # would otherwise make MAX_DEFERRED_ROUNDS unreachable.
         self._deferred_refetch_rounds = 0
+        self._deferred_flat_phase = False
         await self.trigger_update_policy(directories)
 
     async def trigger_update_policy(
@@ -223,6 +228,18 @@ class PolicyUpdater:
         bounded = max(min(raw, ceiling), DEFERRED_REFETCH_BASE_SECONDS)
         return _jittered(bounded)
 
+    def _flat_refetch_delay(self) -> float:
+        """Steady-state cadence once the escalation budget is spent.
+
+        Flat rather than growing: the client must keep asking, because a
+        WebSocket that never reconnects and a scope that never receives a
+        commit would otherwise leave it permanently stale after a long
+        clone. Jittered and floored for the same reasons the escalating
+        delay is.
+        """
+        ceiling = float(opal_client_config.POLICY_UPDATER_MAX_RETRY_AFTER)
+        return _jittered(max(ceiling, DEFERRED_REFETCH_BASE_SECONDS))
+
     def _maybe_schedule_deferred_refetch(
         self,
         error: RetryableBundleError,
@@ -248,23 +265,28 @@ class PolicyUpdater:
 
         max_rounds = opal_client_config.POLICY_UPDATER_MAX_DEFERRED_ROUNDS
         if self._deferred_refetch_rounds >= max_rounds:
-            logger.warning(
-                "Giving up on deferred bundle re-fetch after {rounds} rounds; "
-                "waiting for the next policy update or reconnect",
-                rounds=self._deferred_refetch_rounds,
+            # The budget bounds ESCALATION, not the deferral itself: stopping
+            # here would strand a client whose WebSocket never reconnects and
+            # whose scope never receives a commit. Keep asking, at a flat rate.
+            if not self._deferred_flat_phase:
+                self._deferred_flat_phase = True
+                logger.warning(
+                    "Bundle re-fetch budget exhausted; continuing at a flat "
+                    "{cap}s cadence",
+                    cap=float(opal_client_config.POLICY_UPDATER_MAX_RETRY_AFTER),
+                )
+            delay = self._flat_refetch_delay()
+        else:
+            self._deferred_refetch_rounds += 1
+            delay = self._deferred_refetch_delay(
+                error.retry_after, self._deferred_refetch_rounds
             )
-            return
-
-        self._deferred_refetch_rounds += 1
-        delay = self._deferred_refetch_delay(
-            error.retry_after, self._deferred_refetch_rounds
-        )
-        logger.warning(
-            "Deferring bundle re-fetch by {delay}s (round {round}/{max_rounds})",
-            delay=delay,
-            round=self._deferred_refetch_rounds,
-            max_rounds=max_rounds,
-        )
+            logger.warning(
+                "Deferring bundle re-fetch by {delay}s (round {round}/{max_rounds})",
+                delay=delay,
+                round=self._deferred_refetch_rounds,
+                max_rounds=max_rounds,
+            )
         self._deferred_refetch_task = asyncio.create_task(
             self._deferred_refetch(delay, directories, force_full_update)
         )
@@ -317,6 +339,7 @@ class PolicyUpdater:
         being stopped."""
         self._stopping = False
         self._deferred_refetch_rounds = 0
+        self._deferred_flat_phase = False
         self._tasks.restart()
 
     async def start(self):
@@ -487,6 +510,7 @@ class PolicyUpdater:
             # We are in sync again: drop any timer armed by an earlier failure.
             self._cancel_deferred_refetch()
             self._deferred_refetch_rounds = 0
+            self._deferred_flat_phase = False
         elif retryable_error is not None:
             self._maybe_schedule_deferred_refetch(
                 retryable_error, directories, force_full_update

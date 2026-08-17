@@ -32,6 +32,7 @@ from opal_client.policy.fetcher import (
     RetryableBundleError,
 )
 from opal_client.policy.updater import PolicyUpdater
+from opal_common.config import opal_common_config
 from opal_common.schemas.policy import PolicyBundle
 
 # ---------------------------------------------------------------------------
@@ -307,7 +308,12 @@ async def test_stop_cancels_the_pending_deferred_refetch():
 
 
 @pytest.mark.asyncio
-async def test_deferred_rounds_are_bounded(monkeypatch):
+async def test_the_escalation_stops_at_the_round_budget(monkeypatch):
+    """The budget bounds how far the backoff *escalates*, not the deferral.
+
+    Past it the client keeps re-fetching, but at the flat cadence (see
+    test_the_deferral_continues_past_the_escalation_budget).
+    """
     monkeypatch.setattr(opal_client_config, "POLICY_UPDATER_MAX_DEFERRED_ROUNDS", 3)
     updater = make_updater(RetryableBundleError(503, retry_after=30.0))
 
@@ -319,13 +325,15 @@ async def test_deferred_rounds_are_bounded(monkeypatch):
         updater._deferred_refetch_task = None
 
     assert updater._deferred_refetch_rounds == 3
+    assert updater._deferred_flat_phase is False
 
     await updater.update_policy(["."], force_full_update=False)
 
-    # MUTATION: dropping the `rounds >= max` guard lets a permanently-503 scope
-    # re-fetch forever, which is a slow-motion self-inflicted DoS on the server.
-    assert updater._deferred_refetch_task is None
+    # MUTATION: dropping the `rounds >= max` guard lets the backoff keep
+    # doubling (and the round counter keep climbing) instead of settling into
+    # the bounded flat cadence.
     assert updater._deferred_refetch_rounds == 3
+    assert updater._deferred_flat_phase is True
 
     await updater.stop()
 
@@ -452,7 +460,10 @@ def test_a_tiny_ceiling_is_still_floored(monkeypatch, no_jitter):
 
 
 @pytest.mark.asyncio
-async def test_a_websocket_reconnect_does_not_reset_the_round_counter():
+async def test_a_websocket_reconnect_does_not_reset_the_round_counter(monkeypatch):
+    # _on_connect publishes statistics when this is on, which would need a live
+    # pubsub client; pin it off so the test exercises only the reconnect path.
+    monkeypatch.setattr(opal_common_config, "STATISTICS_ENABLED", False)
     updater = make_updater(RetryableBundleError(503, retry_after=30.0))
 
     await updater.update_policy(["."], force_full_update=False)
@@ -587,3 +598,153 @@ async def test_stop_awaits_the_timer_it_cancelled():
     # moment stop() returns, which surfaces as "Task was destroyed but it is
     # pending!" when the client shuts down.
     assert pending.done()
+
+
+# ---------------------------------------------------------------------------
+# NEW-1: the round budget bounds ESCALATION, not the deferral itself
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def captured_logs():
+    from opal_client.logger import logger
+
+    records = []
+    sink_id = logger.add(lambda m: records.append(m.record), level="DEBUG")
+    yield records
+    logger.remove(sink_id)
+
+
+def _warnings(records):
+    return [r for r in records if r["level"].name == "WARNING"]
+
+
+async def _burn_rounds(updater, rounds: int):
+    """Fails `rounds` times, pretending each armed timer then fired."""
+    for _ in range(rounds):
+        await updater.update_policy(["."], force_full_update=False)
+        if updater._deferred_refetch_task is not None:
+            updater._deferred_refetch_task.cancel()
+            updater._deferred_refetch_task = None
+
+
+def test_the_flat_cadence_is_the_ceiling(monkeypatch, no_jitter):
+    monkeypatch.setattr(opal_client_config, "POLICY_UPDATER_MAX_RETRY_AFTER", 60.0)
+    updater = make_updater()
+    assert updater._flat_refetch_delay() == pytest.approx(60.0)
+
+
+def test_the_flat_cadence_is_also_floored(monkeypatch, no_jitter):
+    monkeypatch.setattr(opal_client_config, "POLICY_UPDATER_MAX_RETRY_AFTER", 0.0)
+    updater = make_updater()
+    # MUTATION: `_jittered(ceiling)` without the floor makes the steady state a
+    # zero-delay busy loop against a server that is already refusing us.
+    assert updater._flat_refetch_delay() == pytest.approx(5.0)
+
+
+def test_the_flat_cadence_is_jittered():
+    samples = {make_updater()._flat_refetch_delay() for _ in range(200)}
+    assert len(samples) > 100
+
+
+@pytest.mark.asyncio
+async def test_the_deferral_continues_past_the_escalation_budget(monkeypatch):
+    monkeypatch.setattr(opal_client_config, "POLICY_UPDATER_MAX_DEFERRED_ROUNDS", 3)
+    updater = make_updater(RetryableBundleError(503, retry_after=30.0))
+
+    await _burn_rounds(updater, 3)
+    assert updater._deferred_refetch_rounds == 3
+
+    # past the budget: the client must NOT go permanently silent, because a WS
+    # that never reconnects and a scope that never gets a commit would otherwise
+    # leave it stale forever
+    for _ in range(3):
+        await updater.update_policy(["."], force_full_update=False)
+        # MUTATION: `return` at the budget (the round-2 behaviour) leaves this
+        # None and strands the client.
+        assert updater._deferred_refetch_task is not None
+        assert updater._deferred_flat_phase is True
+        assert updater._deferred_refetch_rounds == 3
+        updater._deferred_refetch_task.cancel()
+        updater._deferred_refetch_task = None
+
+    await updater.stop()
+
+
+@pytest.mark.asyncio
+async def test_the_flat_phase_warning_fires_exactly_once(monkeypatch, captured_logs):
+    monkeypatch.setattr(opal_client_config, "POLICY_UPDATER_MAX_DEFERRED_ROUNDS", 2)
+    updater = make_updater(RetryableBundleError(503, retry_after=30.0))
+
+    await _burn_rounds(updater, 2)
+    captured_logs.clear()
+    await _burn_rounds(updater, 5)
+
+    flat = [w for w in _warnings(captured_logs) if "budget exhausted" in w["message"]]
+    # MUTATION: logging the flat-phase notice per round turns a stuck scope into
+    # a permanent warning stream (one line per client per minute, forever).
+    assert len(flat) == 1, [w["message"] for w in _warnings(captured_logs)]
+    # and no per-round "Deferring ... (round n/max)" lines once flat
+    assert not [w for w in _warnings(captured_logs) if "round" in w["message"]]
+
+    await updater.stop()
+
+
+@pytest.mark.asyncio
+async def test_a_success_clears_the_flat_phase(monkeypatch):
+    monkeypatch.setattr(opal_client_config, "POLICY_UPDATER_MAX_DEFERRED_ROUNDS", 2)
+    updater = make_updater(RetryableBundleError(503, retry_after=30.0))
+
+    await _burn_rounds(updater, 3)
+    assert updater._deferred_flat_phase is True
+
+    updater._policy_fetcher.outcomes = [make_bundle()]
+    await updater.update_policy(["."], force_full_update=False)
+
+    # MUTATION: not clearing the flag means the next unrelated outage skips the
+    # escalation ramp and starts hammering at the flat cadence immediately.
+    assert updater._deferred_flat_phase is False
+    assert updater._deferred_refetch_rounds == 0
+
+    await updater.stop()
+
+
+@pytest.mark.asyncio
+async def test_an_incoming_update_clears_the_flat_phase(monkeypatch):
+    monkeypatch.setattr(opal_client_config, "POLICY_UPDATER_MAX_DEFERRED_ROUNDS", 2)
+    updater = make_updater(RetryableBundleError(503, retry_after=30.0))
+
+    await _burn_rounds(updater, 3)
+    assert updater._deferred_flat_phase is True
+
+    await updater._update_policy_callback(
+        data={
+            "old_policy_hash": "aaa",
+            "new_policy_hash": "bbb",
+            "changed_directories": ["."],
+        },
+        topic="policy:.",
+    )
+
+    assert updater._deferred_flat_phase is False
+    assert updater._deferred_refetch_rounds == 0
+
+    await updater.stop()
+
+
+@pytest.mark.asyncio
+async def test_disabling_rescheduling_also_disables_the_flat_phase(monkeypatch):
+    monkeypatch.setattr(opal_client_config, "POLICY_UPDATER_MAX_DEFERRED_ROUNDS", 1)
+    monkeypatch.setattr(
+        opal_client_config, "POLICY_UPDATER_RESCHEDULE_ON_RETRYABLE", False
+    )
+    updater = make_updater(RetryableBundleError(503, retry_after=30.0))
+
+    await _burn_rounds(updater, 4)
+
+    # MUTATION: checking the config gate only on the escalation path would make
+    # the kill switch stop working once the budget is spent.
+    assert updater._deferred_refetch_task is None
+    assert updater._deferred_flat_phase is False
+
+    await updater.stop()
