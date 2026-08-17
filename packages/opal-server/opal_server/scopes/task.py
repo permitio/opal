@@ -71,18 +71,17 @@ class ScopesPolicyWatcherTask(BasePolicyWatcherTask):
             [opal_server_config.SCOPES_PURGE_CHANNEL],
             self._purger.handle,
         )
-        # The boot sync honours the backoff only when a periodic pass will
-        # follow it: with POLICY_REFRESH_INTERVAL <= 0 this is the ONLY
+        # With POLICY_REFRESH_INTERVAL <= 0 this boot sync is the ONLY
         # pass-originated sync this process ever runs, so a source that failed
         # transiently during the pre-fork preload (whose entry survives
-        # reset_caches on purpose) would otherwise never be attempted again.
-        self._tasks.append(
-            asyncio.create_task(
-                self._sync_all(
-                    honor_backoff=opal_server_config.POLICY_REFRESH_INTERVAL > 0
-                )
-            )
-        )
+        # reset_caches on purpose) must not be inherited — it would never be
+        # attempted again. Clearing the inherited entries (rather than not
+        # honouring the backoff) keeps the within-pass property: phase-2
+        # duplicates of a source that fails in THIS pass are still collapsed
+        # to one attempt.
+        if opal_server_config.POLICY_REFRESH_INTERVAL <= 0:
+            GitPolicyFetcher.source_backoff.clear()
+        self._tasks.append(asyncio.create_task(self._sync_all()))
 
         if opal_server_config.POLICY_REFRESH_INTERVAL > 0:
             self._tasks.append(asyncio.create_task(self._periodic_polling()))

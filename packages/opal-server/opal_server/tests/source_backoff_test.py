@@ -1002,26 +1002,34 @@ async def test_only_entering_backoff_and_reaching_the_cap_warn(
 
 
 @pytest.mark.asyncio
-async def test_the_boot_sync_honours_the_backoff_only_when_a_periodic_pass_follows(
+async def test_without_a_periodic_pass_the_boot_sync_drops_inherited_entries_but_still_dedups(
     monkeypatch,
 ):
-    """Mutation: make ``start()`` call ``_sync_all()`` with the default. With
-    POLICY_REFRESH_INTERVAL <= 0 the boot sync is the ONLY pass-originated
-    sync this process ever runs, so a source that failed transiently during
-    the pre-fork preload (whose entry survives reset_caches on purpose) would
-    otherwise never be attempted again by anything but an explicit refresh.
+    """Mutations: (a) keep the inherited entries when POLICY_REFRESH_INTERVAL
+    <= 0 — the boot sync is then the ONLY pass-originated sync this process
+    ever runs, so a source that failed transiently during the pre-fork preload
+    (whose entry survives reset_caches on purpose) would never be attempted
+    again; (b) "fix" that by passing honor_backoff=False instead — that also
+    switches off the within-pass duplicate collapse for the whole boot pass,
+    so a dead repo shared by 56 scopes costs 56 clone attempts at boot.
     """
+    from opal_server.policy.watcher.task import BasePolicyWatcherTask
     from opal_server.scopes.task import ScopesPolicyWatcherTask
 
     seen = []
 
     async def _record(self, honor_backoff=True):
-        seen.append(honor_backoff)
+        seen.append((honor_backoff, dict(GitPolicyFetcher.source_backoff)))
 
     monkeypatch.setattr(ScopesPolicyWatcherTask, "_sync_all", _record)
-    # Only the boot-sync line of start() is under test: strip the rest.
-    src = ScopesPolicyWatcherTask.start
-    task = ScopesPolicyWatcherTask.__new__(ScopesPolicyWatcherTask)
+
+    async def _base_start(self):
+        return None
+
+    monkeypatch.setattr(BasePolicyWatcherTask, "start", _base_start)
+    monkeypatch.setattr(
+        ScopesPolicyWatcherTask, "_periodic_polling", lambda self: asyncio.sleep(0)
+    )
 
     class _Notifier:
         def gen_subscriber_id(self):
@@ -1033,32 +1041,34 @@ async def test_the_boot_sync_honours_the_backoff_only_when_a_periodic_pass_follo
     class _Endpoint:
         notifier = _Notifier()
 
-    task._pubsub_endpoint = _Endpoint()
-    task._purger = type("P", (), {"handle": None})()
-    task._tasks = []
-    task._should_stop = None  # BasePolicyWatcherTask.start() initialises this
+    def _task():
+        t = ScopesPolicyWatcherTask.__new__(ScopesPolicyWatcherTask)
+        t._pubsub_endpoint = _Endpoint()
+        t._purger = type("P", (), {"handle": None})()
+        t._tasks = []
+        t._should_stop = None
+        return t
 
-    async def _base_start(self):
-        return None
-
-    from opal_server.policy.watcher.task import BasePolicyWatcherTask
-
-    monkeypatch.setattr(BasePolicyWatcherTask, "start", _base_start)
-
-    monkeypatch.setattr(opal_server_config, "POLICY_REFRESH_INTERVAL", 0)
-    await src(task)
-    await asyncio.gather(*task._tasks)
-    assert seen == [False], seen
-
-    seen.clear()
-    task._tasks = []
-    monkeypatch.setattr(opal_server_config, "POLICY_REFRESH_INTERVAL", 60)
-    monkeypatch.setattr(
-        ScopesPolicyWatcherTask, "_periodic_polling", lambda self: asyncio.sleep(0)
+    inherited = SourceBackoff(
+        consecutive_failures=1, next_attempt_at=time.monotonic() + 600, last_error="x"
     )
-    await src(task)
-    await asyncio.gather(*task._tasks)
-    assert seen == [True], seen
+
+    # No periodic pass: inherited entries are dropped, honouring stays on.
+    GitPolicyFetcher.source_backoff["preload-failed"] = inherited
+    monkeypatch.setattr(opal_server_config, "POLICY_REFRESH_INTERVAL", 0)
+    t = _task()
+    await ScopesPolicyWatcherTask.start(t)
+    await asyncio.gather(*t._tasks)
+    assert seen == [(True, {})], seen
+
+    # A periodic pass follows: inherited entries are kept.
+    seen.clear()
+    GitPolicyFetcher.source_backoff["preload-failed"] = inherited
+    monkeypatch.setattr(opal_server_config, "POLICY_REFRESH_INTERVAL", 60)
+    t = _task()
+    await ScopesPolicyWatcherTask.start(t)
+    await asyncio.gather(*t._tasks)
+    assert seen[0][0] is True and "preload-failed" in seen[0][1]
 
 
 @pytest.mark.asyncio

@@ -414,6 +414,11 @@ def _emit_sources_in_backoff() -> None:
     )
 
 
+# Public name for callers outside this module (the per-pass emission in
+# scopes/service.py); the underscore-prefixed one stays for in-module use.
+emit_sources_in_backoff = _emit_sources_in_backoff
+
+
 def _consume_future_result(fut) -> None:
     # A future left running after its awaiter timed out is never awaited again;
     # retrieve its outcome so asyncio doesn't log "exception never retrieved".
