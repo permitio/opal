@@ -121,14 +121,20 @@ class ScopesPolicyWatcherTask(BasePolicyWatcherTask):
             )
         return result
 
-    async def _sync_all(self):
+    async def _sync_all(self, honor_backoff: bool = True):
         # sync_scopes must be wrapped: this coroutine is launched fire-and-forget
         # from start() (boot), so an unhandled raise here would die silently —
         # the exception is never retrieved (stop() gathers with
         # return_exceptions=True and discards it), not even asyncio's
         # "never retrieved" warning until GC.
+        #
+        # honor_backoff defaults to True for the boot call in start(): this
+        # process may have been forked from a master whose preload already
+        # discovered which repos are unreachable, and re-attempting all of them
+        # at boot is the storm the backoff exists to prevent. trigger() passes
+        # False for the operator-driven refresh-all — see there.
         try:
-            await self._service.sync_scopes()
+            await self._service.sync_scopes(honor_backoff=honor_backoff)
         except Exception:
             logger.exception("Scope sync (sync_scopes) failed")
 
@@ -168,8 +174,13 @@ class ScopesPolicyWatcherTask(BasePolicyWatcherTask):
                     "Got invalid keyword args for single scope refresh: %s", data
                 )
         else:
-            # Refresh all scopes
-            await self._sync_all()
+            # Refresh all scopes. This branch is reached only from something
+            # asking for a sync NOW — POST /scopes/refresh, or a git provider's
+            # webhook — so it does not honour the per-source backoff: the
+            # sources an operator hits this endpoint for are precisely the ones
+            # they have just repaired, and answering them with a silent skip
+            # makes the endpoint useless in the only situation it is used.
+            await self._sync_all(honor_backoff=False)
 
     @staticmethod
     def preload_scopes():

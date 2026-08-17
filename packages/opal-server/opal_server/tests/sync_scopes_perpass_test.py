@@ -91,7 +91,14 @@ async def test_both_passes_bounded_by_the_git_worker_knob(tmp_path, monkeypatch)
     in_flight = {True: 0, False: 0}
     peak = {True: 0, False: 0}
 
-    async def fake_sync_scope(*, scope_id, force_fetch, notify_on_changes):
+    # Keyword-only and exhaustive on purpose: this double is what pins the
+    # call shape _sync_one uses, so a parameter silently dropped there (e.g.
+    # honor_backoff, which decides whether the pass skips a failing source)
+    # reddens here instead of shipping.
+    async def fake_sync_scope(
+        *, scope_id, force_fetch, notify_on_changes, honor_backoff
+    ):
+        assert honor_backoff is True, "a periodic pass must honour the backoff"
         in_flight[force_fetch] += 1
         peak[force_fetch] = max(peak[force_fetch], in_flight[force_fetch])
         await asyncio.sleep(0.02)
@@ -126,7 +133,9 @@ async def test_git_pass_still_respects_the_cap(tmp_path, monkeypatch):
     in_flight = 0
     peak = 0
 
-    async def fake_sync_scope(*, scope_id, force_fetch, notify_on_changes):
+    async def fake_sync_scope(
+        *, scope_id, force_fetch, notify_on_changes, honor_backoff
+    ):
         nonlocal in_flight, peak
         in_flight += 1
         peak = max(peak, in_flight)

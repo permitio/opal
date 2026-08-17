@@ -3,7 +3,9 @@ import codecs
 import datetime
 import hashlib
 import inspect
+import math
 import os
+import random
 import shutil
 import threading
 import time
@@ -11,8 +13,9 @@ import weakref
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import thread as cf_thread
 from contextlib import asynccontextmanager
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Awaitable, Callable, Optional, cast
+from typing import Awaitable, Callable, Dict, Optional, cast
 
 import aiofiles.os
 import pygit2
@@ -299,6 +302,93 @@ def git_busy_count() -> int:
         return len(_git_busy)
 
 
+@dataclass
+class SourceBackoff:
+    """How long a repeatedly-failing source is skipped by the periodic pass.
+
+    ``next_attempt_at`` is a ``time.monotonic()`` reading, not wall clock: the
+    schedule must survive an NTP step or a container clock jump, and it is only
+    ever compared against another monotonic reading in this process.
+    """
+
+    consecutive_failures: int
+    next_attempt_at: float
+    last_error: str
+
+
+# The exponent is clamped here rather than left to grow with the failure count.
+# 2**(n-1) is an exact int, so a source failing once a minute reaches n>1000 in
+# under a day and `base * 2**(n-1)` then raises OverflowError converting to
+# float — from inside the except clause that is handling the git failure. Any
+# value past ~2**64 * 60s already exceeds every plausible cap, so clamping
+# changes no reachable outcome.
+_MAX_BACKOFF_DOUBLINGS = 64
+
+
+def _jittered(delay: float) -> float:
+    """±20% spread, so a fleet's dead sources do not retry in lockstep.
+
+    A module-level function rather than an inline expression purely so tests
+    can pin it: with the jitter live, an exact-delay assertion is untestable,
+    and an assertion loose enough to tolerate it stops catching the schedule.
+    """
+    return random.uniform(0.8, 1.2) * delay
+
+
+def _backoff_max_seconds() -> float:
+    """SCOPES_GIT_BACKOFF_MAX_SECONDS, validated. 0.0 means "disabled".
+
+    Same finiteness discipline as ``_bounded_clone_wait`` in scopes/api.py, and
+    for the same reason: `nan` and `inf` parse cleanly, so a process configured
+    with either starts normally and reaches here. `inf` would mean a source
+    that fails once is never retried again, and `nan` makes every comparison
+    against ``next_attempt_at`` False — neither is a budget anyone meant to
+    set, so both are read as the kill switch.
+    """
+    try:
+        cap = float(opal_server_config.SCOPES_GIT_BACKOFF_MAX_SECONDS)
+    except (TypeError, ValueError):
+        # Confi parses the environment at import, so a non-numeric value fails
+        # the process at startup and never reaches this line; what this covers
+        # is a value assigned to the config object at runtime.
+        return 0.0
+    if not math.isfinite(cap) or cap <= 0:
+        return 0.0
+    return cap
+
+
+def _backoff_base_seconds() -> float:
+    """The first delay: one periodic pass.
+
+    One skipped pass is the smallest unit that changes anything — a shorter
+    delay is indistinguishable from no backoff at all, since the source is only
+    re-attempted when the pass comes round again. POLICY_REFRESH_INTERVAL
+    defaults to 0 (polling disabled), which is not a delay, so fall back to the
+    60s the deployed configuration actually uses.
+    """
+    try:
+        interval = float(opal_server_config.POLICY_REFRESH_INTERVAL)
+    except (TypeError, ValueError):
+        return 60.0
+    if not math.isfinite(interval) or interval <= 0:
+        return 60.0
+    return interval
+
+
+def _emit_sources_in_backoff() -> None:
+    # Continuous gauge of how many sources the periodic pass is currently
+    # skipping — the one number that says "this pod is not syncing N of your
+    # repos" without reading logs. Tagged by pid for the same reason as
+    # _emit_git_ops_in_flight: every worker emits this series, so untagged it
+    # is last-write-wins per flush. Never tagged by scope or source — that
+    # would make the cardinality proportional to the customer count.
+    metrics.gauge(
+        "opal_server.scopes.sources_in_backoff",
+        len(GitPolicyFetcher.source_backoff),
+        tags={"pid": str(os.getpid())},
+    )
+
+
 def _consume_future_result(fut) -> None:
     # A future left running after its awaiter timed out is never awaited again;
     # retrieve its outcome so asyncio doesn't log "exception never retrieved".
@@ -515,6 +605,16 @@ class GitPolicyFetcher(PolicyFetcher):
     repo_locks = {}
     repos = {}
     repos_last_fetched = {}
+    # source_id -> how long the periodic pass keeps skipping this source after
+    # consecutive clone/fetch failures. Per process and in memory only.
+    #
+    # Mutated ONLY on the event loop: the awaited outcome of a git op is what
+    # counts, so a daemon thread that finally returns long after its awaiter
+    # timed out never touches this (that late result is unobserved by
+    # construction — see run_in_git_executor). No lock is therefore needed, and
+    # the read in fetch_and_notify_on_changes deliberately happens before
+    # lock_source so a skipped source costs nothing.
+    source_backoff: Dict[str, SourceBackoff] = {}
 
     def __init__(
         self,
@@ -557,6 +657,84 @@ class GitPolicyFetcher(PolicyFetcher):
                     yield
                     return
 
+    def _backoff_entry(self) -> Optional[SourceBackoff]:
+        """This source's live backoff entry, or None if it may be attempted.
+
+        Returns None while the key is disabled even when an entry exists: an
+        operator who sets SCOPES_GIT_BACKOFF_MAX_SECONDS=0 during an incident
+        must get the old behaviour back on the next pass, not have to wait out
+        the delays already recorded.
+        """
+        if _backoff_max_seconds() <= 0:
+            return None
+        entry = GitPolicyFetcher.source_backoff.get(self._source_id)
+        if entry is None or time.monotonic() >= entry.next_attempt_at:
+            return None
+        return entry
+
+    def _record_source_failure(self, err: BaseException) -> None:
+        """Count one failed clone/fetch against this source and re-arm the
+        delay.
+
+        Called only for failures that say something about the REMOTE (a
+        GitError or a timeout). Backpressure from the global zombie cap is
+        deliberately not recorded: at that ceiling every scope is refused,
+        healthy ones included, so recording it would put the whole fleet into
+        backoff because of one bad repo.
+        """
+        cap = _backoff_max_seconds()
+        if cap <= 0:
+            return  # kill switch: record nothing, so nothing is ever skipped
+        previous = GitPolicyFetcher.source_backoff.get(self._source_id)
+        n = (previous.consecutive_failures if previous is not None else 0) + 1
+        delay = _jittered(
+            min(
+                _backoff_base_seconds() * 2.0 ** min(n - 1, _MAX_BACKOFF_DOUBLINGS), cap
+            )
+        )
+        GitPolicyFetcher.source_backoff[self._source_id] = SourceBackoff(
+            consecutive_failures=n,
+            next_attempt_at=time.monotonic() + delay,
+            last_error=repr(err),
+        )
+        # One line per recorded failure, not per skipped pass: attempts get
+        # rarer as the delay grows, so this log rate-limits itself, while the
+        # skips it causes are DEBUG (one per source per pass otherwise).
+        logger.warning(
+            "Backing off {url} for {delay:.0f}s after {n} consecutive "
+            "failures: {err}",
+            url=redact_url(self._source.url),
+            delay=delay,
+            n=n,
+            err=repr(err),
+        )
+        _emit_sources_in_backoff()
+
+    def _clear_source_backoff(self) -> None:
+        """A git op against this source succeeded — drop its failure
+        history."""
+        previous = GitPolicyFetcher.source_backoff.pop(self._source_id, None)
+        if previous is None:
+            return
+        logger.info(
+            "Source {url} recovered after {n} failures",
+            url=redact_url(self._source.url),
+            n=previous.consecutive_failures,
+        )
+        _emit_sources_in_backoff()
+
+    @staticmethod
+    def forget_source_backoff(source_id: str) -> None:
+        """Drop a source's backoff entry when the source itself goes away.
+
+        Called from the purge paths (delete/repoint), never from ``forget_repo``
+        — that one is keyed by clone PATH and is also reached mid-sync from the
+        invalid-repo recovery branch, where the source is very much still ours
+        and its failure history must survive.
+        """
+        if GitPolicyFetcher.source_backoff.pop(source_id, None) is not None:
+            _emit_sources_in_backoff()
+
     async def _was_fetched_after(self, t: datetime.datetime):
         last_fetched = GitPolicyFetcher.repos_last_fetched.get(self._source_id, None)
         if last_fetched is None:
@@ -568,6 +746,8 @@ class GitPolicyFetcher(PolicyFetcher):
         hinted_hash: Optional[str] = None,
         force_fetch: bool = False,
         req_time: datetime.datetime = None,
+        *,
+        honor_backoff: bool = False,
     ):
         """Makes sure the repo is already fetched and is up to date.
 
@@ -576,7 +756,37 @@ class GitPolicyFetcher(PolicyFetcher):
         - if after a fetch new commits are detected, a callback will be triggered.
         - if the hinted commit hash is provided and is already found in the local clone
         we use this hint to avoid an necessary fetch.
+
+        ``honor_backoff`` says this call is pass-originated (the periodic sync
+        and the boot preload) and may be skipped while the source is serving
+        out a failure backoff. It defaults to False so every explicit path —
+        POST /scopes/{id}/refresh, POST /scopes/refresh, PUT /scopes — attempts
+        the source immediately: those are someone asking for this repo, now,
+        and the most likely reason they are asking is that they just fixed it.
         """
+        # Before lock_source on purpose. A hung source holds that lock for the
+        # whole clone, so a check inside it would make every skipped duplicate
+        # queue behind the very operation the skip exists to avoid; and a
+        # skipped source must consume no git-executor slot, so it can never be
+        # refused by (or contribute to) the SCOPES_GIT_MAX_ZOMBIES cap.
+        if honor_backoff:
+            entry = self._backoff_entry()
+            if entry is not None:
+                metrics.increment(
+                    "opal_server.scopes.git_op_skipped",
+                    tags={"reason": "backoff"},
+                )
+                # DEBUG, not INFO: this fires once per backed-off source per
+                # pass, on every pass, for as long as the repo stays broken.
+                logger.debug(
+                    "Skipping sync for {url}: in backoff for another {left:.0f}s "
+                    "after {n} consecutive failures ({err})",
+                    url=redact_url(self._source.url),
+                    left=max(0.0, entry.next_attempt_at - time.monotonic()),
+                    n=entry.consecutive_failures,
+                    err=entry.last_error,
+                )
+                return
         async with GitPolicyFetcher.lock_source(self._source_id):
             if git_op_in_flight(self._source_id):
                 # A previous git op for this repo exceeded its timeout and is
@@ -634,15 +844,35 @@ class GitPolicyFetcher(PolicyFetcher):
                                     "opal_server.scopes.git_op_failures",
                                     tags={"op": "fetch", "reason": "timeout"},
                                 )
+                                self._record_source_failure(exc)
                                 logger.error(
                                     "Timed out fetching {url}, skipping: {err}",
                                     url=redact_url(self._source.url),
                                     err=repr(exc),
                                 )
                                 return
+                            except pygit2.GitError as exc:
+                                # The fast-fail half of the same problem, on a
+                                # source that already has a local copy: revoked
+                                # credentials or a deleted remote fail here in
+                                # ~1s, every pass, forever. Counted as well as
+                                # backed off — git_op_failures previously
+                                # covered only the CLONE side of git_error, so
+                                # a fleet whose fetches were all failing read
+                                # as zero failures on the dashboard.
+                                metrics.increment(
+                                    "opal_server.scopes.git_op_failures",
+                                    tags={"op": "fetch", "reason": "git_error"},
+                                )
+                                self._record_source_failure(exc)
+                                # Re-raised, not swallowed: sync_scope's
+                                # per-scope handler logs it with a traceback
+                                # today, and that is left exactly as it was.
+                                raise
                             GitPolicyFetcher.repos_last_fetched[
                                 self._source_id
                             ] = fetch_started
+                            self._clear_source_backoff()
                             logger.debug(
                                 f"Fetch completed: {redact_url(self._source.url)}"
                             )
@@ -746,6 +976,7 @@ class GitPolicyFetcher(PolicyFetcher):
                     else "git_error",
                 },
             )
+            self._record_source_failure(exc)
             logger.error(
                 "Could not clone repo at {url}: {err}",
                 url=redact_url(self._source.url),
@@ -753,6 +984,11 @@ class GitPolicyFetcher(PolicyFetcher):
             )
         else:
             logger.info(f"Clone completed: {redact_url(self._source.url)}")
+            # Cleared on the awaited SUCCESS of the git op itself, before the
+            # local bookkeeping below: the remote is demonstrably reachable, so
+            # a later failure inside _notify_on_changes (a corrupt object
+            # store, say) must not leave the source marked as unreachable.
+            self._clear_source_backoff()
             # Cache the fresh handle so the next sync's _get_repo() reuses it
             # instead of reopening (or hitting a stale predecessor).
             GitPolicyFetcher.repos[str(self._repo_path)] = repo
@@ -1004,6 +1240,15 @@ class GitPolicyFetcher(PolicyFetcher):
         may still be reading from it — free()'ing it here would be a
         use-after-free. GC reclaims it once the blocking call actually
         returns.
+
+        ``source_backoff`` is deliberately NOT cleared. It holds no handles,
+        no fds and no loop-bound objects, so none of the reasons above apply —
+        and the preload this runs after is exactly where a dead repo's clone
+        failures are discovered. Letting the forked leader inherit them is the
+        point: otherwise every worker starts by re-hammering the same
+        unreachable repos, which is the boot storm the backoff exists to
+        collapse. ``_reset_git_executor_after_fork`` leaves it alone for the
+        same reason.
         """
         for path in list(GitPolicyFetcher.repos):
             source_id = os.path.basename(path.rstrip("/"))

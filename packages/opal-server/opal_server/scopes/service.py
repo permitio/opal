@@ -140,7 +140,18 @@ class ScopesService:
         force_fetch: bool = False,
         notify_on_changes: bool = True,
         req_time: datetime.datetime = None,
+        honor_backoff: bool = False,
     ):
+        """Sync one scope's policy source.
+
+        ``honor_backoff`` marks this call as pass-originated, letting the
+        fetcher skip a source that keeps failing (see
+        SCOPES_GIT_BACKOFF_MAX_SECONDS). It defaults to False so the explicit
+        callers — POST /scopes/{id}/refresh and PUT /scopes, both of which
+        arrive here through the watcher's ``trigger`` — always attempt the
+        source: a customer who has just repaired credentials must not be told
+        200 OK and then wait out an hour of backoff.
+        """
         if scope is None:
             assert scope_id, ValueError("scope_id not set for sync_scope")
             scope = await self._scopes.get(scope_id)
@@ -189,7 +200,10 @@ class ScopesService:
 
             try:
                 await fetcher.fetch_and_notify_on_changes(
-                    hinted_hash=hinted_hash, force_fetch=force_fetch, req_time=req_time
+                    hinted_hash=hinted_hash,
+                    force_fetch=force_fetch,
+                    req_time=req_time,
+                    honor_backoff=honor_backoff,
                 )
             except GitConcurrencyLimitExceeded as e:
                 # Expected backpressure, not a fault: the zombie cap
@@ -375,6 +389,13 @@ class ScopesService:
                         return
                     GitPolicyFetcher.forget_repo(safe_path)
                     GitPolicyFetcher.repos_last_fetched.pop(deleted_source_id, None)
+                    # Same reason as repos_last_fetched: no live scope on this
+                    # worker points at the source any more, so an entry kept
+                    # here is counted in the sources_in_backoff gauge for the
+                    # life of the process — and would suppress the first sync
+                    # of a scope later re-created against the same URL, on the
+                    # strength of a deleted scope's failure history.
+                    GitPolicyFetcher.forget_source_backoff(deleted_source_id)
                     try:
                         await run_sync(shutil.rmtree, safe_path)
                     except FileNotFoundError:
@@ -417,7 +438,22 @@ class ScopesService:
         if self._local_purges:
             await asyncio.gather(*list(self._local_purges), return_exceptions=True)
 
-    async def sync_scopes(self, only_poll_updates=False, notify_on_changes=True):
+    async def sync_scopes(
+        self, only_poll_updates=False, notify_on_changes=True, honor_backoff=True
+    ):
+        """Sync every scope, in two phases.
+
+        ``honor_backoff`` defaults to True because a whole-fleet pass is what
+        the per-source backoff exists for: the periodic poll and the pre-fork
+        boot preload both land here, and both re-attempt every source they
+        know about. Honouring it in BOTH phases is what collapses the
+        duplicate storm — phase 2 visits every scope that merely reuses a
+        source, and for a source with no local clone each of those goes
+        straight to a clone of its own, so one dead repo shared by N scopes
+        costs N attempts per pass without it.
+
+        The refresh-all endpoint passes False: see ScopesPolicyWatcherTask.
+        """
         with tracer.trace("scopes_service.sync_scopes"):
             scopes = await self._scopes.all()
             # Emitted before the poll-updates filter below, so this is always the
@@ -460,6 +496,7 @@ class ScopesService:
                 git_semaphore,
                 force_fetch=True,
                 notify_on_changes=notify_on_changes,
+                honor_backoff=honor_backoff,
             )
 
             # Phase 2 is local-only in the common case: the repos were just
@@ -479,10 +516,11 @@ class ScopesService:
                 local_semaphore,
                 force_fetch=False,
                 notify_on_changes=notify_on_changes,
+                honor_backoff=honor_backoff,
             )
 
     async def _sync_scopes_concurrently(
-        self, scopes, semaphore, *, force_fetch, notify_on_changes
+        self, scopes, semaphore, *, force_fetch, notify_on_changes, honor_backoff=False
     ):
         """Sync ``scopes`` concurrently, bounded by ``semaphore``.
 
@@ -502,6 +540,7 @@ class ScopesService:
                         scope_id=scope.scope_id,
                         force_fetch=force_fetch,
                         notify_on_changes=notify_on_changes,
+                        honor_backoff=honor_backoff,
                     )
                 except ScopeNotFoundError:
                     logger.info(
