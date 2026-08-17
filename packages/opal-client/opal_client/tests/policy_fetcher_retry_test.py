@@ -636,9 +636,12 @@ async def test_a_404_logs_exactly_one_warning(
 @pytest.mark.parametrize(
     "strategy,wait_time,max_wait,attempts,expected",
     [
-        ("fixed", 0.2, 10, 5, 1.0),  # fixed -> attempts x wait_time
-        ("exponential", 1, 10, 5, 50.0),  # exponential -> attempts x max_wait
-        ("random_exponential", 1, 10, 5, 50.0),
+        # n attempts are separated by n-1 waits
+        ("fixed", 0.2, 10, 5, 0.8),  # 4 x 0.2
+        ("exponential", 1, 10, 5, 15.0),  # 1 + 2 + 4 + 8
+        ("random_exponential", 1, 10, 5, 15.0),
+        ("exponential", 1, 3, 5, 9.0),  # 1 + 2 + 3 + 3, max_wait bites
+        ("fixed", 2, 10, 1, 0.0),  # a single attempt never waits
         ("fixed", 2, 10, 0, 0.0),
     ],
 )
@@ -651,10 +654,36 @@ def test_conn_retry_options_report_their_worst_case_total_wait(
         max_wait=max_wait,
         attempts=attempts,
     )
-    # MUTATION: using wait_time for the exponential strategies (or max_wait for
-    # fixed) under-reports the budget, and the whole-fetch bound then truncates
-    # a retry policy the operator explicitly configured.
+    # MUTATION: using `attempts` instead of `attempts - 1` waits, or a flat
+    # `per_wait` instead of the per-step exponential sum, mis-sizes the budget
+    # and the whole-fetch bound then truncates (or fails to bound) a retry
+    # policy the operator explicitly configured.
     assert options.worstCaseTotalWait() == pytest.approx(expected)
+
+
+def test_worst_case_total_wait_is_finite_without_an_explicit_max_wait():
+    """`max_wait` defaults to tenacity's MAX_WAIT (~4.6e18)."""
+    options = ConnRetryOptions(wait_strategy="exponential", wait_time=1, attempts=5)
+
+    # MUTATION: `attempts x max_wait` gives ~2.3e19 here, so the whole-fetch
+    # bound becomes effectively infinite and the HIGH-2 queue protection is
+    # silently gone for anyone who configures an exponential backoff without
+    # pinning max_wait.
+    assert options.worstCaseTotalWait() == pytest.approx(15.0)
+
+
+def test_worst_case_total_wait_does_not_overflow_on_many_attempts():
+    """`wait_time * 2**i` with an int exponent raises OverflowError past
+    ~1024."""
+    options = ConnRetryOptions(
+        wait_strategy="exponential", wait_time=1, max_wait=10, attempts=3000
+    )
+
+    # 2999 waits: 1 + 2 + 4 + 8, then 2995 more clamped to max_wait.
+    # MUTATION: doubling all the way with `wait_time * 2 ** i` raises
+    # OverflowError here at PolicyFetcher construction, i.e. the client fails to
+    # start for anyone with a large `attempts`.
+    assert options.worstCaseTotalWait() == pytest.approx(1 + 2 + 4 + 8 + 2995 * 10)
 
 
 def test_the_delay_bound_is_the_larger_of_the_cap_and_the_operator_budget(monkeypatch):
@@ -673,7 +702,7 @@ def test_the_delay_bound_is_the_larger_of_the_cap_and_the_operator_budget(monkey
     ][0]
     # MUTATION: `stop_after_delay(cap)` alone gives 0.3 here and cuts the
     # operator's 5 attempts down to 2.
-    assert delay_stop.max_delay == pytest.approx(1.0)
+    assert delay_stop.max_delay == pytest.approx(0.8)  # 4 waits x 0.2s
 
 
 @pytest.mark.asyncio
