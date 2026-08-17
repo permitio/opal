@@ -7,6 +7,7 @@ PR2-era regression lock).
 """
 
 import asyncio
+import time
 
 import pytest
 from fastapi import FastAPI
@@ -158,6 +159,16 @@ from opal_server.git_fetcher import BranchHeadNotFoundError
 
 
 def test_wrong_branch_returns_non_retryable_409(tmp_path, monkeypatch):
+    """Deliberately runs with the clone wait at its DEFAULT, unlike the two
+    tests below that pin it at 0.
+
+    BranchHeadNotFoundError and CloneNotPopulatedError are both
+    ValueError subclasses, so widening the exception the wait catches by
+    a single level would swallow this permanent misconfiguration into a
+    20s hold — still a 409, just twenty seconds late, on every poll of
+    every affected PDP. The wall-clock assertion is what makes that
+    visible here.
+    """
     live = _scope("live", "https://git/live.git", branch="does-not-exist")
     repo = FakeScopeRepository([live])
 
@@ -168,9 +179,15 @@ def test_wrong_branch_returns_non_retryable_409(tmp_path, monkeypatch):
     monkeypatch.setattr(
         "opal_server.scopes.api.opal_server_config.BASE_DIR", str(tmp_path)
     )
+    started = time.monotonic()
     resp = _client(repo, tmp_path).get("/scopes/live/policy")
+    elapsed = time.monotonic() - started
     assert resp.status_code == 409
     assert "retry-after" not in resp.headers
+    assert elapsed < 5.0, (
+        f"a permanent misconfiguration was held for {elapsed:.1f}s by the "
+        "clone wait, which only an unpopulated clone should enter"
+    )
 
 
 # --- F17/F7: _get_current_branch_head must distinguish a PERMANENT missing

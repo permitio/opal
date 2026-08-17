@@ -1,4 +1,6 @@
 import asyncio
+import math
+import os
 import pathlib
 from typing import List, Optional, cast
 
@@ -10,6 +12,7 @@ from fastapi import (
     HTTPException,
     Path,
     Query,
+    Request,
     Response,
     status,
 )
@@ -66,11 +69,82 @@ _RETRY_AFTER_CLONE_IN_PROGRESS = "30"
 # published reference. One poll is a cheap disk read (open the repo, list its
 # refs), so a second between polls costs at most one such read per waiting
 # request per second and still returns within a second of the clone landing.
+# The published description says "once a second"; a test couples the two.
 _CLONE_WAIT_POLL_SECONDS = 1.0
+
+# Ceiling on the configured hold. Above the load balancer's 60s idle timeout a
+# hold stops being a hold and becomes a 504 — the exact failure the wait exists
+# to prevent — so an over-large value is clamped rather than honoured.
+_CLONE_WAIT_MAX_SECONDS = 55.0
+
+# Requests this process is currently holding in the wait. A plain int, no lock:
+# it is read and written only from the event loop thread, between awaits, so
+# the increment and the cap check cannot interleave with another request's.
+_clone_wait_inflight = 0
+
+# The clamp warning latches: on a misconfigured fleet it would otherwise be one
+# identical line per request.
+_clone_wait_clamp_logged = False
+
+_CLONE_WAIT_METRIC = "opal_server.scopes.policy_clone_wait"
+_CLONE_WAIT_INFLIGHT_METRIC = "opal_server.scopes.policy_clone_wait_inflight"
+_CLONE_WAIT_SECONDS_METRIC = "opal_server.scopes.policy_clone_wait_seconds"
+
+
+def _bounded_clone_wait() -> float:
+    """The configured hold, validated and clamped. 0.0 means "do not wait".
+
+    NaN is the case worth spelling out: `nan <= 0` is False and every
+    arithmetic on it yields NaN, so a NaN budget would pass a plain sign check
+    and then make `remaining <= 0` false forever — an unbounded hold from a
+    typo in an environment variable.
+    """
+    global _clone_wait_clamp_logged
+
+    try:
+        wait = float(opal_server_config.SCOPES_POLICY_CLONE_WAIT_SECONDS)
+    except (TypeError, ValueError):
+        # A budget that is not a number at all disables the wait rather than
+        # raising out of the route: this is read on the request path, so the
+        # alternative is a 500 on every clone-in-progress request.
+        return 0.0
+    if not math.isfinite(wait) or wait <= 0:
+        return 0.0
+    if wait > _CLONE_WAIT_MAX_SECONDS:
+        if not _clone_wait_clamp_logged:
+            _clone_wait_clamp_logged = True
+            logger.warning(
+                "SCOPES_POLICY_CLONE_WAIT_SECONDS={configured}s exceeds the "
+                "{ceiling}s ceiling and is clamped: a hold longer than the load "
+                "balancer's idle timeout is served as a 504, not as a bundle",
+                configured=wait,
+                ceiling=_CLONE_WAIT_MAX_SECONDS,
+            )
+        return _CLONE_WAIT_MAX_SECONDS
+    return wait
+
+
+def _publish_clone_wait_inflight() -> None:
+    """Publish the held-request count for this process.
+
+    Tagged by pid only. A pod's workers each hold their own count, so an
+    untagged series would be last-write-wins across them and a saturated
+    worker would be invisible. Deliberately NOT tagged by scope_id or
+    source_id: the cap is a per-process resource, and those tags are unbounded
+    cardinality.
+    """
+    metrics.gauge(
+        _CLONE_WAIT_INFLIGHT_METRIC,
+        _clone_wait_inflight,
+        tags={"pid": str(os.getpid())},
+    )
 
 
 async def _make_bundle_waiting_for_clone(
-    fetcher: GitPolicyFetcher, base_hash: Optional[str], scope_id: str
+    fetcher: GitPolicyFetcher,
+    base_hash: Optional[str],
+    scope_id: str,
+    request: Optional[Request] = None,
 ) -> PolicyBundle:
     """Build the bundle, holding the request while the clone is populated.
 
@@ -86,57 +160,115 @@ async def _make_bundle_waiting_for_clone(
     so this works on the workers that are not running the clone — which is all
     of them but one.
 
+    What is bounded is the WAIT plus at most one more bundle attempt. The
+    attempt itself runs on the loop's shared default executor, so time spent
+    queued behind other builds is outside the deadline; that queue is what
+    SCOPES_POLICY_CLONE_WAIT_MAX_INFLIGHT bounds, by capping how many requests
+    can be released into it at once. Excess requests are shed with the answer
+    they would have got before the wait existed.
+
     The hold takes no lock, touches no cache and occupies no thread between
     polls, so it is cancellation-safe: a client that hangs up mid-wait unwinds
-    at the next await with nothing to undo.
+    at the next await with nothing to undo. It is also abandoned as soon as the
+    client is seen to have disconnected — nobody is waiting for that bundle,
+    and the slot is worth more to a caller that is still listening.
 
     Returns the bundle, or re-raises CloneNotPopulatedError once the budget is
-    spent, so the caller's existing handler shapes that answer. Every OTHER
-    exception propagates untouched from whichever attempt raised it: a clone
-    can finish and still fail to build a bundle (an absent branch is a 409, a
-    gutted object store a retryable 503), and the wait must not re-label those.
+    spent, so EACH caller's own handler shapes that answer (the primary path
+    answers Retry-After 30, the default-scope path 5). Every OTHER exception
+    propagates untouched from whichever attempt raised it: a clone can finish
+    and still fail to build a bundle (an absent branch is a 409, a gutted
+    object store a retryable 503), and the wait must not re-label those.
+
+    Exactly one `policy_clone_wait` count is emitted per request that reaches
+    the wait, tagged with how it ended: served, timeout, shed, disconnected,
+    cancelled or error.
     """
+    global _clone_wait_inflight
+
     try:
         return await run_sync(fetcher.make_bundle, base_hash)
     except CloneNotPopulatedError as first_exc:
-        wait = opal_server_config.SCOPES_POLICY_CLONE_WAIT_SECONDS
+        wait = _bounded_clone_wait()
         if wait <= 0:
+            first_exc.waited_seconds = 0.0
             raise
         pending = first_exc
+
+    cap = opal_server_config.SCOPES_POLICY_CLONE_WAIT_MAX_INFLIGHT
+    if 0 < cap <= _clone_wait_inflight:
+        logger.info(
+            "Scope {scope_id} clone wait is at its {cap}-request cap; "
+            "answering 503 without waiting",
+            scope_id=scope_id,
+            cap=cap,
+        )
+        metrics.increment(_CLONE_WAIT_METRIC, tags={"outcome": "shed"})
+        pending.waited_seconds = 0.0
+        raise pending
 
     loop = asyncio.get_running_loop()
     started = loop.time()
     deadline = started + wait
+    outcome = "error"
 
-    while True:
-        remaining = deadline - loop.time()
-        if remaining <= 0:
-            break
-        # Clamped to what is left of the budget, so the last poll cannot
-        # overshoot the hold an operator configured.
-        await asyncio.sleep(min(_CLONE_WAIT_POLL_SECONDS, remaining))
-        try:
-            bundle = await run_sync(fetcher.make_bundle, base_hash)
-        except CloneNotPopulatedError as exc:
-            pending = exc
-            continue
-        logger.info(
-            "Scope {scope_id} clone became available after {waited:.1f}s wait",
-            scope_id=scope_id,
-            waited=loop.time() - started,
-        )
-        metrics.increment(
-            "opal_server.scopes.policy_clone_wait", tags={"outcome": "served"}
-        )
-        return bundle
+    _clone_wait_inflight += 1
+    _publish_clone_wait_inflight()
+    try:
+        while True:
+            remaining = deadline - loop.time()
+            if remaining <= 0:
+                outcome = "timeout"
+                break
+            # Clamped to what is left of the budget, so the last poll cannot
+            # overshoot the hold an operator configured.
+            await asyncio.sleep(min(_CLONE_WAIT_POLL_SECONDS, remaining))
 
-    metrics.increment(
-        "opal_server.scopes.policy_clone_wait", tags={"outcome": "timeout"}
-    )
-    # Carried on the exception so the caller can report the hold without this
-    # function having to know how the 503 it falls through to is shaped.
-    pending.waited_seconds = loop.time() - started
-    raise pending
+            if request is not None and await request.is_disconnected():
+                outcome = "disconnected"
+                logger.info(
+                    "Scope {scope_id} clone wait abandoned after {waited:.1f}s: "
+                    "the client disconnected",
+                    scope_id=scope_id,
+                    waited=loop.time() - started,
+                )
+                pending.waited_seconds = loop.time() - started
+                raise pending
+
+            try:
+                bundle = await run_sync(fetcher.make_bundle, base_hash)
+            except CloneNotPopulatedError as exc:
+                pending = exc
+                continue
+            outcome = "served"
+            logger.info(
+                "Scope {scope_id} clone became available after {waited:.1f}s wait",
+                scope_id=scope_id,
+                waited=loop.time() - started,
+            )
+            return bundle
+
+        # Carried on the exception so each caller can report the hold without
+        # this function having to know how the 503 it falls through to is
+        # shaped.
+        pending.waited_seconds = loop.time() - started
+        raise pending
+    except asyncio.CancelledError:
+        # A BaseException since 3.8, so no `except Exception` arm would see it.
+        # Left uncounted, a fleet whose waits are all being torn down would
+        # look exactly like one where nothing is waiting.
+        outcome = "cancelled"
+        raise
+    finally:
+        _clone_wait_inflight -= 1
+        _publish_clone_wait_inflight()
+        metrics.increment(_CLONE_WAIT_METRIC, tags={"outcome": outcome})
+        if outcome in ("served", "timeout"):
+            metrics.gauge(
+                _CLONE_WAIT_SECONDS_METRIC,
+                loop.time() - started,
+                tags={"outcome": outcome},
+            )
 
 
 def verify_private_key(private_key: str, key_format: EncryptionKeyFormat) -> bool:
@@ -392,6 +524,7 @@ def init_scope_router(
     )
     async def get_scope_policy(
         *,
+        request: Request,
         scope_id: str = Path(..., title="Scope ID"),
         base_hash: Optional[str] = Query(
             None,
@@ -405,7 +538,7 @@ def init_scope_router(
                 "Requested scope {scope_id} not found, returning default scope",
                 scope_id=scope_id,
             )
-            return await _generate_default_scope_bundle(scope_id)
+            return await _generate_default_scope_bundle(scope_id, request)
 
         if not isinstance(scope.policy, GitPolicyScopeSource):
             raise HTTPException(
@@ -420,7 +553,9 @@ def init_scope_router(
         )
 
         try:
-            return await _make_bundle_waiting_for_clone(fetcher, base_hash, scope_id)
+            return await _make_bundle_waiting_for_clone(
+                fetcher, base_hash, scope_id, request
+            )
         except CloneNotPopulatedError as exc:
             # The clone has no refs/remotes/<remote>/* at all, so it is being
             # populated right now — _clone() rmtree's the destination and clones
@@ -433,15 +568,17 @@ def init_scope_router(
             # route is served by any worker, so keying on it answered 409 on
             # every non-leader — N-1 of N workers.
             #
-            # Reached only once SCOPES_POLICY_CLONE_WAIT_SECONDS is spent: this
-            # clone is slower than a client's whole retry budget, so the 503 is
-            # now a report that waiting did not help, not a first reflex.
+            # Reached once the wait budget, if any, is spent — or straight
+            # away when the wait is disabled, shed at the in-flight cap, or the
+            # client has already hung up. When a budget was spent, this clone is
+            # slower than a client's whole retry budget, so the 503 is a report
+            # that waiting did not help rather than a first reflex.
             logger.info(
                 "Scope {scope_id} clone is not populated yet ({exc!r}), "
                 "returning 503 after waiting {waited:.1f}s",
                 scope_id=scope_id,
                 exc=exc,
-                waited=getattr(exc, "waited_seconds", 0.0),
+                waited=exc.waited_seconds,
             )
             metrics.event(
                 "ScopePolicyUnavailable",
@@ -507,7 +644,9 @@ def init_scope_router(
                 headers={"Retry-After": _RETRY_AFTER_CLONE_UNAVAILABLE},
             )
 
-    async def _generate_default_scope_bundle(scope_id: str) -> PolicyBundle:
+    async def _generate_default_scope_bundle(
+        scope_id: str, request: Optional[Request] = None
+    ) -> PolicyBundle:
         metrics.event(
             "ScopeNotFound",
             message=f"Scope {scope_id} not found. Serving default scope instead",
@@ -528,7 +667,16 @@ def init_scope_router(
             # tenants' bundles and the pub/sub websocket traffic. Reached by any
             # GET for an unknown scope, which a PDP with a stale id re-hits on
             # its normal poll cadence.
-            return await run_sync(fetcher.make_bundle, None)
+            #
+            # Waits for the default clone on the same terms as the primary
+            # path: this is the branch every PDP holding a stale scope id
+            # takes, and the default scope's clone is populated by the same
+            # recovery as any other. On expiry the re-raised
+            # CloneNotPopulatedError lands in the broad tuple below, so this
+            # path keeps ITS contract (Retry-After 5), not the primary path's.
+            return await _make_bundle_waiting_for_clone(
+                fetcher, None, scope.scope_id, request
+            )
         except ScopeNotFoundError:
             # 404, not a bare ScopeNotFoundError. Nothing registers an exception
             # handler for that, so it escaped the route as an unhandled 500 —

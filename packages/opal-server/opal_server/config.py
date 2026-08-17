@@ -286,17 +286,47 @@ class OpalServerConfig(Confi):
         "scope that was syncing, so siblings sharing the same clone are not "
         "woken. Holding the request converts that gap into latency the client "
         "already tolerates: five client attempts against a 20s hold cover about "
-        "two minutes of clone time, so short and medium re-clones produce no "
-        "client-visible gap. The bound matters in both directions — 20s is well "
+        "two minutes of clone time, so short and medium re-clones — meaning the "
+        "download phase; the rmtree-and-init window before it answers 503 + "
+        "Retry-After 5 and is not waited on — produce no client-visible gap. "
+        "What this bounds is the WAIT plus at most one more bundle attempt: "
+        "time queued behind other bundle builds on the shared executor is "
+        "outside the deadline, which is what SCOPES_POLICY_CLONE_WAIT_MAX_INFLIGHT "
+        "bounds instead. The budget matters in both directions — 20s is well "
         "under the 60s ALB idle timeout (a longer hold surfaces as a 504, which "
         "the client cannot tell apart from a dead server) and far under the "
         "client's 300s aiohttp total timeout. Readiness is derived from DISK (the "
         "clone still has no remote-tracking refs), never from an in-process "
         "marker, so every worker answers alike: the clone runs in the leader "
         "while this route is served by any worker. The hold is an awaited sleep "
-        "loop, so it occupies no thread and leaves the event loop and the "
-        "gunicorn worker heartbeat unaffected (0 = do not wait, answer 503 "
-        "immediately).",
+        "loop, so it occupies no thread between polls and leaves the event loop "
+        "and the gunicorn worker heartbeat unaffected; it is abandoned early if "
+        "the client disconnects. 0 or negative disables the wait (answer 503 "
+        "immediately), a non-finite value is treated as disabled, and values "
+        "above 55s are clamped to 55s so the hold can never outlive the load "
+        "balancer's idle timeout.",
+    )
+    SCOPES_POLICY_CLONE_WAIT_MAX_INFLIGHT = confi.int(
+        "SCOPES_POLICY_CLONE_WAIT_MAX_INFLIGHT",
+        64,
+        description="Maximum number of requests one worker process may hold at "
+        "once inside the SCOPES_POLICY_CLONE_WAIT_SECONDS wait. Requests beyond "
+        "the cap get the immediate 503 + Retry-After 30 they would have got "
+        "before the wait existed, so the cap can never make things worse than "
+        "not waiting. It exists because polling is cheap but RELEASING is not: "
+        "when the clone lands, every held request builds a full bundle on the "
+        "loop's shared default executor — the same pool SCOPES_GIT_MAX_WORKERS "
+        "bounds on the sync side, about min(32, cpu+4) threads with an "
+        "unbounded queue — whose measured throughput falls from ~52 bundles/s at 32 "
+        "concurrent builds to ~18/s at 1000. Size it so the cap divided by the "
+        "bundles-per-second that pod can really build fits inside the 60s ALB "
+        "idle timeout MINUS the hold: above that, released requests queue past "
+        "the timeout and 504 — the very failure the hold exists to prevent — and "
+        "a rolling restart drains worse, because uvicorn waits for in-flight "
+        "requests while gunicorn SIGKILLs the worker at 30s, dropping every "
+        "websocket that worker still holds. The count is per process, not per "
+        "pod: a pod running N workers holds up to N times this number. 0 or "
+        "negative means no cap.",
     )
     LEADER_LOCK_FILE_PATH = confi.str(
         "LEADER_LOCK_FILE_PATH",

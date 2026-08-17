@@ -75,7 +75,15 @@ class CloneNotPopulatedError(ValueError):
     workers. Disk truth is identical on every worker.
 
     Subclasses ValueError so broad handlers still catch it.
+
+    ``waited_seconds`` is how long a request was held waiting for this clone
+    before the error was surfaced. Declared here with a 0.0 default rather
+    than read with a getattr default at each handler: a raise path that
+    forgets to set it then shows up as an explicit 0.0 in one place, instead
+    of being indistinguishable from "did not wait" at every reader.
     """
+
+    waited_seconds: float = 0.0
 
 
 class BranchHeadNotFoundError(ValueError):
