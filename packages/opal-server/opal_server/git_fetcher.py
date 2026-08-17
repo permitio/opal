@@ -219,7 +219,14 @@ def _emit_git_ops_in_flight(count: int) -> None:
     # the SCOPES_GIT_MAX_ZOMBIES cap. datadog.statsd is fail-silent and
     # thread-safe, so this is safe to call from the git-op daemon threads even
     # when metrics are unconfigured.
-    metrics.gauge("opal_server.scopes.git_ops_in_flight", count)
+    # Tagged by pid: every worker in the gunicorn pool emits this same series,
+    # so untagged it is last-write-wins per flush and reads as one arbitrary
+    # worker's count rather than anything about the pod.
+    metrics.gauge(
+        "opal_server.scopes.git_ops_in_flight",
+        count,
+        tags={"pid": str(os.getpid())},
+    )
 
 
 def _mark_git_op_started(key: str) -> None:
@@ -347,6 +354,12 @@ async def run_in_git_executor(func, *args, timeout: float, busy_key=None, **kwar
                 count=git_busy_count(),
                 cap=max_zombies,
             )
+        # Counted on EVERY refusal, unlike the log above which latches once per
+        # episode: the log answers "did we hit the cap", the counter answers
+        # "how hard and for how long" — the part an operator needs mid-outage.
+        metrics.increment(
+            "opal_server.scopes.git_ops_refused", tags={"pid": str(os.getpid())}
+        )
         raise GitConcurrencyLimitExceeded(
             f"in-flight git ops ({git_busy_count()}) reached "
             f"SCOPES_GIT_MAX_ZOMBIES ({max_zombies})"
@@ -606,6 +619,10 @@ class GitPolicyFetcher(PolicyFetcher):
                                 # (no traceback) and skip, matching the clone path.
                                 # repos_last_fetched stays stale so the next cycle
                                 # retries and force_fetch is not wrongly suppressed.
+                                metrics.increment(
+                                    "opal_server.scopes.git_op_failures",
+                                    tags={"op": "fetch", "reason": "timeout"},
+                                )
                                 logger.error(
                                     "Timed out fetching {url}, skipping: {err}",
                                     url=redact_url(self._source.url),
@@ -706,6 +723,18 @@ class GitPolicyFetcher(PolicyFetcher):
                 busy_key=self._source_id,
             )
         except (pygit2.GitError, TimeoutError) as exc:
+            metrics.increment(
+                "opal_server.scopes.git_op_failures",
+                tags={
+                    "op": "clone",
+                    # The distinction the log line cannot carry: a steady rate of
+                    # timeouts against known-unreachable repos is expected after
+                    # SCOPES_GIT_FETCH_TIMEOUT landed; a git_error is not.
+                    "reason": "timeout"
+                    if isinstance(exc, TimeoutError)
+                    else "git_error",
+                },
+            )
             logger.error(
                 "Could not clone repo at {url}: {err}",
                 url=redact_url(self._source.url),

@@ -331,15 +331,23 @@ class OpalServer:
             # and k8s can route away from / restart this worker. Stays ok through a
             # normal transient reconnect (see ReconnectingBroadcaster.is_reader_healthy).
             broadcaster = self.pubsub.broadcaster
-            if (
-                opal_server_config.BROADCAST_HEALTHCHECK_ENABLED
-                and isinstance(broadcaster, ReconnectingBroadcaster)
-                and not broadcaster.is_reader_healthy()
+            if opal_server_config.BROADCAST_HEALTHCHECK_ENABLED and isinstance(
+                broadcaster, ReconnectingBroadcaster
             ):
-                return JSONResponse(
-                    status_code=503,
-                    content={"status": "error", "broadcaster": "unhealthy"},
+                healthy = broadcaster.is_reader_healthy()
+                # Publish what the probe already decided. A wedged reader is
+                # otherwise invisible outside this handler: staging runs no
+                # liveness probe, so nothing acts on the 503 below.
+                metrics.gauge(
+                    "opal_server.broadcaster_reader_healthy",
+                    1 if healthy else 0,
+                    tags={"pid": str(os.getpid())},
                 )
+                if not healthy:
+                    return JSONResponse(
+                        status_code=503,
+                        content={"status": "error", "broadcaster": "unhealthy"},
+                    )
             return {"status": "ok"}
 
         register_internal_stats_route(

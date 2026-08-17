@@ -12,6 +12,7 @@ from opal_common.async_utils import run_sync
 from opal_common.git_utils.commit_viewer import VersionedFile
 from opal_common.http_utils import redact_url
 from opal_common.logger import logger
+from opal_common.monitoring import metrics
 from opal_common.schemas.policy import PolicyUpdateMessageNotification
 from opal_common.schemas.policy_source import GitPolicyScopeSource
 from opal_common.topics.publisher import ScopedServerSideTopicPublisher
@@ -419,6 +420,9 @@ class ScopesService:
     async def sync_scopes(self, only_poll_updates=False, notify_on_changes=True):
         with tracer.trace("scopes_service.sync_scopes"):
             scopes = await self._scopes.all()
+            # Emitted before the poll-updates filter below, so this is always the
+            # true total rather than flapping with the caller's filter.
+            metrics.gauge("opal_server.scopes.count", len(scopes))
             if only_poll_updates:
                 # Only sync scopes that have polling enabled (in a periodic check)
                 scopes = [scope for scope in scopes if scope.policy.poll_updates]

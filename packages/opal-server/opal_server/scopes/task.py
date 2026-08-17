@@ -5,6 +5,7 @@ from typing import Any
 
 from fastapi_websocket_pubsub import Topic
 from opal_common.logger import logger
+from opal_common.monitoring import metrics
 from opal_server.config import opal_server_config
 from opal_server.git_fetcher import (
     GitPolicyFetcher,
@@ -135,6 +136,11 @@ class ScopesPolicyWatcherTask(BasePolicyWatcherTask):
         try:
             while True:
                 await asyncio.sleep(opal_server_config.POLICY_REFRESH_INTERVAL)
+                # Leader heartbeat. This loop runs only inside the leadership
+                # lock, so `sum by env` reaching 0 means no worker holds it
+                # anywhere and scope syncing has silently stopped — pods stay
+                # Ready and /healthcheck stays 200 throughout.
+                metrics.gauge("opal_server.scopes.leader", 1)
                 logger.info("Periodic sync")
                 try:
                     await self._service.sync_scopes(only_poll_updates=True)
