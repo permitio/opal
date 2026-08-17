@@ -15,6 +15,7 @@ from git import NoSuchPathError
 from opal_common.schemas.policy import PolicyBundle
 from opal_common.schemas.policy_source import GitPolicyScopeSource, NoAuthData
 from opal_common.schemas.scopes import Scope
+from opal_server.config import opal_server_config
 from opal_server.git_fetcher import GitPolicyFetcher
 from opal_server.scopes.api import init_scope_router
 from opal_server.scopes.scope_repository import ScopeNotFoundError
@@ -294,6 +295,12 @@ def test_route_splits_clone_in_progress_from_wrong_branch(tmp_path, monkeypatch)
     monkeypatch.setattr(
         "opal_server.scopes.api.opal_server_config.BASE_DIR", str(tmp_path)
     )
+    # The wait is off here on purpose: what this test pins is the VERDICT the
+    # route reaches for each condition, and the wait only decides how long the
+    # 503 verdict takes to arrive. Leaving it on would hold this test for the
+    # full SCOPES_POLICY_CLONE_WAIT_SECONDS budget while asserting nothing
+    # about it (scope_policy_clone_wait_test owns the hold itself).
+    monkeypatch.setattr(opal_server_config, "SCOPES_POLICY_CLONE_WAIT_SECONDS", 0)
     client = _client(repo, tmp_path)
 
     # clone still being populated: no refs/remotes/<remote>/* on disk yet
@@ -372,6 +379,10 @@ def test_mid_clone_503_is_identical_on_a_non_leader_worker(tmp_path, monkeypatch
     monkeypatch.setattr(
         "opal_server.scopes.api.opal_server_config.BASE_DIR", str(tmp_path)
     )
+    # See the note in test_route_splits_clone_in_progress_from_wrong_branch:
+    # the claim here is about WHICH verdict a non-leader reaches, not how long
+    # it holds the request first.
+    monkeypatch.setattr(opal_server_config, "SCOPES_POLICY_CLONE_WAIT_SECONDS", 0)
 
     assert not git_op_in_flight(sid), "this test must run as a non-leader"
     resp = _client(repo, tmp_path).get("/scopes/live/policy")

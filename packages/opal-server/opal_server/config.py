@@ -271,6 +271,33 @@ class OpalServerConfig(Confi):
         "means no cap, at the cost of unbounded thread growth during an "
         "outage).",
     )
+    SCOPES_POLICY_CLONE_WAIT_SECONDS = confi.float(
+        "SCOPES_POLICY_CLONE_WAIT_SECONDS",
+        20.0,
+        description="How long GET /scopes/:scope_id/policy holds a request while "
+        "that scope's clone is still being populated, before falling through to "
+        "the 503 + Retry-After it answers today. The route re-checks once a "
+        "second and returns the bundle the moment the clone is usable. It exists "
+        "because the opal-client PDP ignores Retry-After: it makes five attempts "
+        "with random-exponential backoff capped at 10s (~20-40s of coverage) and "
+        "then stays quiet until the next pub/sub policy message or a reconnect, "
+        "so a clone that outlives those attempts strands that PDP with no policy "
+        "— and the update-all published when a clone completes names only the "
+        "scope that was syncing, so siblings sharing the same clone are not "
+        "woken. Holding the request converts that gap into latency the client "
+        "already tolerates: five client attempts against a 20s hold cover about "
+        "two minutes of clone time, so short and medium re-clones produce no "
+        "client-visible gap. The bound matters in both directions — 20s is well "
+        "under the 60s ALB idle timeout (a longer hold surfaces as a 504, which "
+        "the client cannot tell apart from a dead server) and far under the "
+        "client's 300s aiohttp total timeout. Readiness is derived from DISK (the "
+        "clone still has no remote-tracking refs), never from an in-process "
+        "marker, so every worker answers alike: the clone runs in the leader "
+        "while this route is served by any worker. The hold is an awaited sleep "
+        "loop, so it occupies no thread and leaves the event loop and the "
+        "gunicorn worker heartbeat unaffected (0 = do not wait, answer 503 "
+        "immediately).",
+    )
     LEADER_LOCK_FILE_PATH = confi.str(
         "LEADER_LOCK_FILE_PATH",
         "/tmp/opal_server_leader.lock",

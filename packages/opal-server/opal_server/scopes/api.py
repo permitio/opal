@@ -1,3 +1,4 @@
+import asyncio
 import pathlib
 from typing import List, Optional, cast
 
@@ -57,6 +58,85 @@ from opal_server.scopes.service import ScopesService
 # on its next tick" and "a clone is running right now".
 _RETRY_AFTER_CLONE_UNAVAILABLE = "5"
 _RETRY_AFTER_CLONE_IN_PROGRESS = "30"
+
+# How often the clone wait re-checks the clone. A module constant rather than a
+# second config key: the operator-visible quantity is the total hold
+# (SCOPES_POLICY_CLONE_WAIT_SECONDS), while every SCOPES_* key is permanent
+# public surface — config_docs_drift_test pins each one verbatim into the
+# published reference. One poll is a cheap disk read (open the repo, list its
+# refs), so a second between polls costs at most one such read per waiting
+# request per second and still returns within a second of the clone landing.
+_CLONE_WAIT_POLL_SECONDS = 1.0
+
+
+async def _make_bundle_waiting_for_clone(
+    fetcher: GitPolicyFetcher, base_hash: Optional[str], scope_id: str
+) -> PolicyBundle:
+    """Build the bundle, holding the request while the clone is populated.
+
+    The immediate 503 this replaces is honest and useless: opal-client
+    ignores Retry-After, makes five attempts with random-exponential backoff
+    capped at 10s, then stays quiet until the next pub/sub policy message or
+    a reconnect. A clone that outlives those attempts leaves that PDP with no
+    policy and nothing scheduled to fix it — the update-all published when the
+    clone completes names only the scope that was syncing, so siblings sharing
+    the clone are never woken.
+
+    Readiness comes from CloneNotPopulatedError, which is derived from disk,
+    so this works on the workers that are not running the clone — which is all
+    of them but one.
+
+    The hold takes no lock, touches no cache and occupies no thread between
+    polls, so it is cancellation-safe: a client that hangs up mid-wait unwinds
+    at the next await with nothing to undo.
+
+    Returns the bundle, or re-raises CloneNotPopulatedError once the budget is
+    spent, so the caller's existing handler shapes that answer. Every OTHER
+    exception propagates untouched from whichever attempt raised it: a clone
+    can finish and still fail to build a bundle (an absent branch is a 409, a
+    gutted object store a retryable 503), and the wait must not re-label those.
+    """
+    try:
+        return await run_sync(fetcher.make_bundle, base_hash)
+    except CloneNotPopulatedError as first_exc:
+        wait = opal_server_config.SCOPES_POLICY_CLONE_WAIT_SECONDS
+        if wait <= 0:
+            raise
+        pending = first_exc
+
+    loop = asyncio.get_running_loop()
+    started = loop.time()
+    deadline = started + wait
+
+    while True:
+        remaining = deadline - loop.time()
+        if remaining <= 0:
+            break
+        # Clamped to what is left of the budget, so the last poll cannot
+        # overshoot the hold an operator configured.
+        await asyncio.sleep(min(_CLONE_WAIT_POLL_SECONDS, remaining))
+        try:
+            bundle = await run_sync(fetcher.make_bundle, base_hash)
+        except CloneNotPopulatedError as exc:
+            pending = exc
+            continue
+        logger.info(
+            "Scope {scope_id} clone became available after {waited:.1f}s wait",
+            scope_id=scope_id,
+            waited=loop.time() - started,
+        )
+        metrics.increment(
+            "opal_server.scopes.policy_clone_wait", tags={"outcome": "served"}
+        )
+        return bundle
+
+    metrics.increment(
+        "opal_server.scopes.policy_clone_wait", tags={"outcome": "timeout"}
+    )
+    # Carried on the exception so the caller can report the hold without this
+    # function having to know how the 503 it falls through to is shaped.
+    pending.waited_seconds = loop.time() - started
+    raise pending
 
 
 def verify_private_key(private_key: str, key_format: EncryptionKeyFormat) -> bool:
@@ -340,7 +420,7 @@ def init_scope_router(
         )
 
         try:
-            return await run_sync(fetcher.make_bundle, base_hash)
+            return await _make_bundle_waiting_for_clone(fetcher, base_hash, scope_id)
         except CloneNotPopulatedError as exc:
             # The clone has no refs/remotes/<remote>/* at all, so it is being
             # populated right now — _clone() rmtree's the destination and clones
@@ -352,11 +432,16 @@ def init_scope_router(
             # per-process global written only by the leader's sync, while this
             # route is served by any worker, so keying on it answered 409 on
             # every non-leader — N-1 of N workers.
+            #
+            # Reached only once SCOPES_POLICY_CLONE_WAIT_SECONDS is spent: this
+            # clone is slower than a client's whole retry budget, so the 503 is
+            # now a report that waiting did not help, not a first reflex.
             logger.info(
                 "Scope {scope_id} clone is not populated yet ({exc!r}), "
-                "returning 503",
+                "returning 503 after waiting {waited:.1f}s",
                 scope_id=scope_id,
                 exc=exc,
+                waited=getattr(exc, "waited_seconds", 0.0),
             )
             metrics.event(
                 "ScopePolicyUnavailable",
