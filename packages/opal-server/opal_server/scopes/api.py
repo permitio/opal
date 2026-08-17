@@ -94,19 +94,23 @@ _CLONE_WAIT_SECONDS_METRIC = "opal_server.scopes.policy_clone_wait_seconds"
 def _bounded_clone_wait() -> float:
     """The configured hold, validated and clamped. 0.0 means "do not wait".
 
-    NaN is the case worth spelling out: `nan <= 0` is False and every
-    arithmetic on it yields NaN, so a NaN budget would pass a plain sign check
-    and then make `remaining <= 0` false forever — an unbounded hold from a
-    typo in an environment variable.
+    The non-finite trio is what this exists for: `nan`, `inf` and `-inf` all
+    parse cleanly, so a process configured with one of them starts normally
+    and reaches here. `inf` would silently become the clamped maximum on every
+    clone-in-progress request — a 55s hold nobody asked for — and `nan` makes
+    every comparison against the deadline False, which the loop is written to
+    survive but which is not a budget anyone meant to set.
     """
     global _clone_wait_clamp_logged
 
     try:
         wait = float(opal_server_config.SCOPES_POLICY_CLONE_WAIT_SECONDS)
     except (TypeError, ValueError):
-        # A budget that is not a number at all disables the wait rather than
-        # raising out of the route: this is read on the request path, so the
-        # alternative is a 500 on every clone-in-progress request.
+        # Belt and braces, and NOT the load-bearing half: Confi parses the
+        # environment once, when this module is imported, so
+        # OPAL_SCOPES_POLICY_CLONE_WAIT_SECONDS=abc already fails the process
+        # at startup and never reaches this line. What this covers is a value
+        # assigned to the config object at runtime.
         return 0.0
     if not math.isfinite(wait) or wait <= 0:
         return 0.0
@@ -213,8 +217,11 @@ async def _make_bundle_waiting_for_clone(
     outcome = "error"
 
     _clone_wait_inflight += 1
-    _publish_clone_wait_inflight()
     try:
+        # Inside the try, not before it: this call ends in a metrics sink, and
+        # a sink that raises between the increment and the try would leak the
+        # slot for the life of the process — permanently lowering the cap.
+        _publish_clone_wait_inflight()
         while True:
             remaining = deadline - loop.time()
             # `not (remaining > 0)` rather than `remaining <= 0`: NaN compares
@@ -239,6 +246,7 @@ async def _make_bundle_waiting_for_clone(
                     waited=loop.time() - started,
                 )
                 pending.waited_seconds = loop.time() - started
+                pending.client_disconnected = True
                 raise pending
 
             try:
@@ -264,6 +272,26 @@ async def _make_bundle_waiting_for_clone(
         # Left uncounted, a fleet whose waits are all being torn down would
         # look exactly like one where nothing is waiting.
         outcome = "cancelled"
+        logger.info(
+            "Scope {scope_id} clone wait cancelled after {waited:.1f}s",
+            scope_id=scope_id,
+            waited=loop.time() - started,
+        )
+        raise
+    except Exception as exc:
+        # Only the UNCLASSIFIED failure: `outcome` is already timeout or
+        # disconnected when the exception being unwound is `pending`, and
+        # those two are logged by whoever shapes the response. This arm is
+        # what makes the `error` count readable — a bundle build that failed
+        # for its own reasons AFTER the clone appeared.
+        if outcome == "error":
+            logger.info(
+                "Scope {scope_id} held {waited:.1f}s waiting for its clone "
+                "before failing: {exc!r}",
+                scope_id=scope_id,
+                waited=loop.time() - started,
+                exc=exc,
+            )
         raise
     finally:
         _clone_wait_inflight -= 1
@@ -579,18 +607,25 @@ def init_scope_router(
             # client has already hung up. When a budget was spent, this clone is
             # slower than a client's whole retry budget, so the 503 is a report
             # that waiting did not help rather than a first reflex.
-            logger.info(
-                "Scope {scope_id} clone is not populated yet ({exc!r}), "
-                "returning 503 after waiting {waited:.1f}s",
-                scope_id=scope_id,
-                exc=exc,
-                waited=exc.waited_seconds,
-            )
-            metrics.event(
-                "ScopePolicyUnavailable",
-                message=f"Scope {scope_id} policy 503 (clone in progress)",
-                tags={"scope_id": scope_id, "status": "503", "retryable": "true"},
-            )
+            #
+            # Both the line and the event are skipped when the caller has
+            # already hung up: this 503 is shaped for a socket nobody is
+            # reading, so counting it would inflate the very rate an operator
+            # watches to decide whether clients are being served — and the
+            # wait has already logged the abandonment once, with the hold.
+            if not exc.client_disconnected:
+                logger.info(
+                    "Scope {scope_id} clone is not populated yet ({exc!r}), "
+                    "returning 503 after waiting {waited:.1f}s",
+                    scope_id=scope_id,
+                    exc=exc,
+                    waited=exc.waited_seconds,
+                )
+                metrics.event(
+                    "ScopePolicyUnavailable",
+                    message=f"Scope {scope_id} policy 503 (clone in progress)",
+                    tags={"scope_id": scope_id, "status": "503", "retryable": "true"},
+                )
             raise HTTPException(
                 status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail=(
@@ -691,6 +726,31 @@ def init_scope_router(
             # answer 404 here; this now matches them.
             raise HTTPException(
                 status.HTTP_404_NOT_FOUND, detail=f"No such scope: {scope_id}"
+            )
+        except CloneNotPopulatedError as exc:
+            # Its own arm, ahead of the broad tuple that would otherwise catch
+            # it (CloneNotPopulatedError subclasses ValueError), for one
+            # reason: only this exception carries the hold, and a 503 that does
+            # not say how long the server waited cannot be told apart from one
+            # that never waited. Same 503 + Retry-After 5 as the tuple below —
+            # this path's contract is unchanged. Silent when the caller has
+            # already hung up, like the primary path.
+            if not exc.client_disconnected:
+                logger.warning(
+                    "Default-scope bundle for {scope_id} is temporarily "
+                    "unavailable after waiting {waited:.1f}s ({exc!r}), "
+                    "returning 503",
+                    scope_id=scope_id,
+                    waited=exc.waited_seconds,
+                    exc=exc,
+                )
+            raise HTTPException(
+                status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=(
+                    f"Policy clone for scope {scope_id} is temporarily "
+                    "unavailable, retry shortly"
+                ),
+                headers={"Retry-After": _RETRY_AFTER_CLONE_UNAVAILABLE},
             )
         except (
             InvalidGitRepositoryError,

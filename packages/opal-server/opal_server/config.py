@@ -302,9 +302,12 @@ class OpalServerConfig(Confi):
         "loop, so it occupies no thread between polls and leaves the event loop "
         "and the gunicorn worker heartbeat unaffected; it is abandoned early if "
         "the client disconnects. 0 or negative disables the wait (answer 503 "
-        "immediately), a non-finite value is treated as disabled, and values "
-        "above 55s are clamped to 55s so the hold can never outlive the load "
-        "balancer's idle timeout.",
+        "immediately). nan, inf and -inf are treated as disabled too: unlike a "
+        "non-numeric value, which fails this process at startup when the "
+        "environment is parsed, they parse cleanly — inf would otherwise mean "
+        "the clamped maximum hold on every clone-in-progress request, and nan "
+        "is not a budget at all. Values above 55s are clamped to 55s so the "
+        "hold can never outlive the load balancer's idle timeout.",
     )
     SCOPES_POLICY_CLONE_WAIT_MAX_INFLIGHT = confi.int(
         "SCOPES_POLICY_CLONE_WAIT_MAX_INFLIGHT",
@@ -315,10 +318,14 @@ class OpalServerConfig(Confi):
         "before the wait existed, so the cap can never make things worse than "
         "not waiting. It exists because polling is cheap but RELEASING is not: "
         "when the clone lands, every held request builds a full bundle on the "
-        "loop's shared default executor — the same pool SCOPES_GIT_MAX_WORKERS "
-        "bounds on the sync side, about min(32, cpu+4) threads with an "
-        "unbounded queue — whose measured throughput falls from ~52 bundles/s at 32 "
-        "concurrent builds to ~18/s at 1000. Size it so the cap divided by the "
+        "loop's DEFAULT executor: about min(32, cpu+4) threads shared by every "
+        "off-loop call this process makes, in front of an unbounded queue. "
+        "Measured throughput there falls from ~52 bundles/s at 32 concurrent "
+        "builds to ~18/s at 1000. Scope git clone/fetch does NOT share that "
+        "pool — each op runs on its own single-use daemon-thread executor, "
+        "bounded by SCOPES_GIT_MAX_WORKERS through a semaphore — so this key is "
+        "the only bound on how many bundle builds can pile up at once. "
+        "Size it so the cap divided by the "
         "bundles-per-second that pod can really build fits inside the 60s ALB "
         "idle timeout MINUS the hold: above that, released requests queue past "
         "the timeout and 504 — the very failure the hold exists to prevent — and "

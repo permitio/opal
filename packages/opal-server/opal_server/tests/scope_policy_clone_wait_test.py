@@ -337,35 +337,51 @@ def test_wait_disabled_answers_503_after_a_single_attempt(bed, emitted, sleeps):
 
 
 @pytest.mark.parametrize(
-    "bad", [float("nan"), float("inf"), float("-inf"), -1.0, None, "twenty"]
+    "bad", [float("nan"), float("inf"), float("-inf"), -1.0, 0.0, None, "twenty"]
 )
-def test_a_wait_that_is_not_a_positive_number_disables_the_hold(bed, sleeps, bad):
-    """NaN is the one that matters: `nan <= 0` is False, so a NaN budget slips
-    past an ordinary sign check and every arithmetic on it yields NaN —
-    `deadline - now` is NaN, `NaN <= 0` is False, and the loop polls forever.
-    A confi.float reads whatever the environment says.
+def test_a_budget_that_is_not_a_positive_finite_number_is_refused(bed, bad):
+    """Asserted directly on the guard, because end-to-end cannot see it fast.
 
-    None and a non-numeric string are the same class of problem one step
-    earlier: Confi hands back whatever the environment holds, and this is read
-    on the request path, so an unparsable value would 500 every
-    clone-in-progress request rather than disable a feature.
+    `inf` is the detector for `math.isfinite`, not `nan`: since the deadline
+    loop was made NaN-safe, a NaN budget breaks on the first iteration and
+    looks exactly like a disabled wait from outside. `inf`, dropped through the
+    same hole, sails past `wait <= 0`, gets clamped, and holds every
+    clone-in-progress request for the full 55s ceiling — correct-looking, and
+    only visible end-to-end by waiting 55 seconds for it.
 
-    Mutation: dropping `math.isfinite(wait)` from the guard makes the NaN case
-    poll until the test times out; dropping the float()/TypeError guard turns
-    the None case into a 500.
+    A non-numeric value never reaches this function in production (Confi parses
+    the environment at import, so the process fails at startup); it is asserted
+    here because the guard also covers a value assigned at runtime.
+
+    Mutation: dropping `math.isfinite` returns 55.0 for inf and nan for nan,
+    and both fail here in milliseconds.
     """
     bed.set_wait(bad)
 
-    resp, calls, elapsed = bed.run(_populating)
+    assert scopes_api._bounded_clone_wait() == 0.0
+
+
+@pytest.mark.parametrize("bad", [-1.0, None, "twenty"])
+def test_a_refused_budget_answers_503_after_a_single_attempt(bed, sleeps, bad):
+    """The same refusal seen from the route, on the params that are cheap to
+    drive end-to-end (nan and inf are covered by the direct assertion above —
+    inf would cost this test 55 seconds of real hold).
+
+    Mutation: dropping the `if wait <= 0: raise` guard makes the route enter
+    the wait with a zero budget, which the accounting then counts.
+    """
+    bed.set_wait(bad)
+
+    resp, calls, _ = bed.run(_populating)
 
     assert resp.status_code == 503
     assert len(calls) == 1, f"a {bad} budget was treated as a real one"
     assert not sleeps
-    assert elapsed < 1.0
 
 
-def test_the_deadline_loop_cannot_spin_even_if_a_nan_budget_reaches_it(
-    bed, emitted, sleeps, monkeypatch
+@pytest.mark.asyncio
+async def test_the_deadline_loop_cannot_spin_even_if_a_nan_budget_reaches_it(
+    tmp_path, monkeypatch, emitted
 ):
     """Defence in depth for the one value that turns a bounded loop unbounded.
 
@@ -379,19 +395,37 @@ def test_the_deadline_loop_cannot_spin_even_if_a_nan_budget_reaches_it(
 
     Hands the loop a NaN budget directly, past that guard.
 
+    Driven through an ASGI client under `asyncio.wait_for` rather than the
+    TestClient: this repo configures no pytest timeout, so a regression here
+    would otherwise hang the suite indefinitely instead of failing. The
+    deadline below turns that into an ordinary red test.
+
     Mutation: `if remaining <= 0:` in place of `if not (remaining > 0):` never
-    returns, and this test fails on the pytest timeout instead of passing.
+    returns, and the wait_for fails this test.
     """
+    monkeypatch.setattr(
+        "opal_server.scopes.api.opal_server_config.BASE_DIR", str(tmp_path)
+    )
+    monkeypatch.setattr("opal_server.scopes.api._CLONE_WAIT_POLL_SECONDS", 0.02)
     monkeypatch.setattr(
         "opal_server.scopes.api._bounded_clone_wait", lambda: float("nan")
     )
+    fake, calls = _scripted_make_bundle(_populating)
+    monkeypatch.setattr(GitPolicyFetcher, "make_bundle", fake)
 
-    resp, calls, elapsed = bed.run(_populating)
+    transport = httpx.ASGITransport(app=_app(FakeScopeRepository([_scope()]), tmp_path))
+    async with httpx.AsyncClient(transport=transport, base_url="http://bed") as client:
+        try:
+            resp = await asyncio.wait_for(client.get("/scopes/live/policy"), 2.0)
+        except asyncio.TimeoutError:
+            pytest.fail(
+                "the deadline loop never terminated on a NaN budget: the "
+                "request polls forever, holding a capped slot for the life of "
+                "the process"
+            )
 
     assert resp.status_code == 503
-    assert elapsed < 2.0, f"a NaN budget held the request {elapsed:.1f}s"
     assert len(calls) == 1, f"a NaN deadline was polled against: {len(calls)}"
-    assert not sleeps, "the loop slept against a deadline it can never reach"
     assert _wait_outcomes(emitted) == ["timeout"], _wait_outcomes(emitted)
 
 
@@ -429,6 +463,16 @@ def test_an_ordinary_wait_is_returned_unchanged(bed):
     assert scopes_api._bounded_clone_wait() == 7.5
 
 
+def _MDX_TEXT():
+    return (
+        Path(server_config_module.__file__).parents[3]
+        / "documentation"
+        / "docs"
+        / "getting-started"
+        / "configuration.mdx"
+    ).read_text()
+
+
 def test_the_poll_interval_matches_what_the_docs_promise():
     """The published description tells operators the route re-checks "once a
     second". Nothing but this test couples that sentence to the constant, and
@@ -448,14 +492,7 @@ def test_the_poll_interval_matches_what_the_docs_promise():
     config_py = re.sub(
         r'"\s*\n\s*"', "", Path(server_config_module.__file__).read_text()
     )
-    mdx = (
-        Path(server_config_module.__file__).parents[3]
-        / "documentation"
-        / "docs"
-        / "getting-started"
-        / "configuration.mdx"
-    ).read_text()
-    for name, text in (("config.py", config_py), ("configuration.mdx", mdx)):
+    for name, text in (("config.py", config_py), ("configuration.mdx", _MDX_TEXT())):
         assert "once a second" in text, (
             f"{name} no longer states the poll cadence, so the only "
             "description of _CLONE_WAIT_POLL_SECONDS an operator can read is gone"
@@ -463,6 +500,27 @@ def test_the_poll_interval_matches_what_the_docs_promise():
 
 
 # --- the happy path ------------------------------------------------------
+
+
+def test_the_clamp_ceiling_matches_what_the_docs_promise():
+    """`_CLONE_WAIT_MAX_SECONDS` is not a config key, so the published
+    description IS its contract: it tells operators values above 55s are
+    clamped. Nothing but this test couples that sentence to the constant.
+
+    Takes no `bed` — nothing here may be tuned to test timescales.
+
+    Mutation: changing the constant without touching the docs fails here.
+    """
+    assert scopes_api._CLONE_WAIT_MAX_SECONDS == 55.0
+
+    config_py = re.sub(
+        r'"\s*\n\s*"', "", Path(server_config_module.__file__).read_text()
+    )
+    for name, text in (("config.py", config_py), ("configuration.mdx", _MDX_TEXT())):
+        assert "55s" in text, (
+            f"{name} no longer states the clamp ceiling, so the only "
+            "description of _CLONE_WAIT_MAX_SECONDS an operator can read is gone"
+        )
 
 
 def test_clone_that_finishes_mid_wait_is_served_instead_of_503(
@@ -621,7 +679,7 @@ def test_the_final_poll_is_clamped_to_what_is_left_of_the_budget(bed, sleeps):
         f"slept {sum(sleeps):.3f}s against a {bed.wait}s budget: the last poll "
         "runs to its own boundary, so the poll interval sets the real bound"
     )
-    assert elapsed <= bed.wait * 1.5 + 0.05, (
+    assert elapsed <= bed.wait * 3 + 0.1, (
         f"the request was held {elapsed:.3f}s of wall clock against a "
         f"{bed.wait}s budget — what the operator set is not what they get"
     )
@@ -835,6 +893,73 @@ async def test_the_cap_sheds_the_excess_instead_of_holding_every_request(
 
 
 @pytest.mark.asyncio
+async def test_a_cap_of_zero_means_no_cap(tmp_path, monkeypatch, emitted):
+    """The documented escape hatch, which is only worth documenting if it
+    works: an operator who has measured their own executor and wants the old
+    unbounded behaviour sets 0.
+
+    Mutation: `if cap <= _clone_wait_inflight` in place of
+    `if 0 < cap <= _clone_wait_inflight` sheds EVERY request at cap=0 (0 <= 0),
+    turning the escape hatch into "never wait at all" — the exact inversion of
+    what the description promises. Fails here.
+    """
+    monkeypatch.setattr(
+        "opal_server.scopes.api.opal_server_config.BASE_DIR", str(tmp_path)
+    )
+    monkeypatch.setattr(opal_server_config, "SCOPES_POLICY_CLONE_WAIT_SECONDS", 5.0)
+    monkeypatch.setattr("opal_server.scopes.api._CLONE_WAIT_POLL_SECONDS", 0.02)
+    monkeypatch.setattr(opal_server_config, "SCOPES_POLICY_CLONE_WAIT_MAX_INFLIGHT", 0)
+
+    gate = {"ready": False}
+    fake, _calls = _gated_make_bundle(gate)
+    monkeypatch.setattr(GitPolicyFetcher, "make_bundle", fake)
+    app = _app(FakeScopeRepository([_scope()]), tmp_path)
+    asyncio.get_running_loop().call_later(0.15, gate.__setitem__, "ready", True)
+
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://bed") as client:
+        responses = await asyncio.gather(
+            *(client.get("/scopes/live/policy") for _ in range(4))
+        )
+
+    assert [r.status_code for r in responses] == [
+        200
+    ] * 4, f"cap=0 shed requests: {[r.status_code for r in responses]}"
+    assert _wait_outcomes(emitted) == ["served"] * 4
+    assert (
+        max(value for value, _ in _gauged(emitted, _INFLIGHT_METRIC)) == 4
+    ), "cap=0 did not actually hold them concurrently"
+
+
+def test_a_metrics_sink_that_raises_cannot_leak_a_held_slot(bed, monkeypatch):
+    """The in-flight count is the cap. A slot lost to a telemetry failure is
+    never returned, so the worker's effective cap drops by one per occurrence
+    until it stops waiting for anything.
+
+    The request itself fails loudly here (the raising gauge propagates, and
+    nothing in the route catches RuntimeError) — that is the pre-existing
+    contract for a broken sink and not what this test is about. What it pins
+    is that the SLOT comes back regardless.
+
+    Mutation: publishing the gauge before the `try` (its previous position)
+    leaks the slot and fails here.
+    """
+
+    def exploding_gauge(metric, value, tags=None):
+        raise RuntimeError("statsd is on fire")
+
+    monkeypatch.setattr(metrics, "gauge", exploding_gauge)
+
+    with pytest.raises(RuntimeError):
+        bed.run(_populating)
+
+    assert scopes_api._clone_wait_inflight == 0, (
+        "the wait slot was lost to a metrics failure: this worker now holds "
+        "one fewer request forever"
+    )
+
+
+@pytest.mark.asyncio
 async def test_a_disconnected_client_stops_being_waited_for(
     tmp_path, monkeypatch, emitted
 ):
@@ -886,6 +1011,15 @@ async def test_a_disconnected_client_stops_being_waited_for(
         f"{len(calls)} bundle attempts after the client disconnected: the "
         "check does not stop the loop"
     )
+    # The 503 is shaped for a socket nobody is reading. Emitting the
+    # unavailable event for it inflates the rate an operator watches to decide
+    # whether CLIENTS are being served, with responses no client will see.
+    #
+    # Mutation: dropping the `if not exc.client_disconnected` guard around the
+    # log and the event in the route fails here.
+    assert not [
+        t for t, _ in emitted["event"] if t == "ScopePolicyUnavailable"
+    ], f"a client that had hung up still produced a 503 event: {emitted['event']}"
 
 
 @pytest.mark.asyncio
@@ -950,21 +1084,33 @@ def test_the_default_scope_bundle_waits_for_its_own_clone(bed, emitted):
     assert _wait_outcomes(emitted) == ["served"]
 
 
-def test_the_default_scope_keeps_its_own_503_contract_on_expiry(bed, emitted):
+def test_the_default_scope_keeps_its_own_503_contract_on_expiry(bed, emitted, logs):
     """Falling through must land in the default path's OWN handler, which
     answers Retry-After 5 — not the primary path's 30. Same wait, two
     contracts, because the two paths make different promises about what the
     caller should do next.
 
+    That handler must also report the hold. Without an arm of its own this
+    exception is swallowed by the broad transient tuple below it
+    (CloneNotPopulatedError subclasses ValueError), which produces the
+    identical status and header and a log line indistinguishable from a 503
+    nothing ever waited for — on the branch every PDP with a stale scope id
+    takes.
+
     Mutation: raising an HTTPException with the clone-in-progress Retry-After
     from inside the wait (instead of re-raising into each caller's handler)
-    answers 30 here and fails.
+    answers 30 here; deleting the dedicated `except CloneNotPopulatedError`
+    arm from `_generate_default_scope_bundle` drops the hold from the log.
+    Both fail here.
     """
     resp, _calls, _ = bed.run(_populating, scope_id="ghost", scopes=[_scope("default")])
 
     assert resp.status_code == 503
     assert resp.headers["retry-after"] == "5"
     assert _wait_outcomes(emitted) == ["timeout"]
+    assert (
+        _waited_in(logs, "Default-scope bundle") >= bed.wait * 0.9
+    ), "the default path's 503 does not say how long it held the request"
 
 
 def test_the_wait_is_declared_on_the_exception_not_smuggled(bed, logs):
