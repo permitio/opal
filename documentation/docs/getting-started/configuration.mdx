@@ -1318,28 +1318,30 @@ Retry options when connecting to the policy source (e.g., the policy bundle serv
 
 Default: `60.0`
 
-Upper bound, in seconds, on how long the client will wait because a policy source asked
-it to. When the OPAL Server answers a bundle request with `503` (for example while it is
+Upper bound, in seconds, on how long the client will wait *because a policy source asked
+it to*. When the OPAL Server answers a bundle request with `503` (for example while it is
 still cloning the scope's policy repository) or `429`, it may include a `Retry-After`
-header. The client waits for whichever is longer — the server's hint or its own
-`OPAL_POLICY_UPDATER_CONN_RETRY` backoff — but never longer than this value, so a hostile
-or buggy header cannot stall policy updates. `Retry-After` is accepted in both forms
-allowed by RFC 9110 (delta-seconds and an HTTP-date); a header the client cannot parse is ignored.
+header. `Retry-After` is accepted in both forms allowed by RFC 9110 (delta-seconds and an
+HTTP-date); a header the client cannot parse is ignored.
 
 This key does three things:
 
-1. It caps each individual `Retry-After` the client honours. The bound applies only to
-   the server-supplied hint — it does not clamp the backoff you configured in
-   `OPAL_POLICY_UPDATER_CONN_RETRY`.
-2. It caps the **total** wall-clock time of a single bundle fetch. Policy updates run off
-   a serial queue, so a proxy answering `Retry-After: 300` would otherwise block every
-   other update for `attempts x 300` seconds. Once a fetch has spent this budget it gives
-   up, and the deferred re-fetch below takes over the long horizon.
-3. It ceilings the deferred re-fetch backoff described under
+1. **Caps each honoured `Retry-After`.** Per attempt the client waits for whichever is
+   longer, the server's hint or its own `OPAL_POLICY_UPDATER_CONN_RETRY` backoff, but it
+   never honours a hint beyond this value — so a hostile or buggy header cannot stall
+   policy updates.
+2. **Bounds the extra wall-clock time one fetch may spend beyond the operator's own
+   backoff.** Policy updates run off a serial queue, so a proxy answering
+   `Retry-After: 300` would otherwise block every other update for `attempts x 300`
+   seconds. The actual bound is `max(this key, the worst case of
+   OPAL_POLICY_UPDATER_CONN_RETRY)`, so a retry policy you configured deliberately is
+   never shortened; only server-driven waiting is capped.
+3. **Ceilings the deferred re-fetch backoff and the flat cadence** described under
    `OPAL_POLICY_UPDATER_RESCHEDULE_ON_RETRYABLE`.
 
-Setting it to `0` disables in-fetch waiting entirely (one attempt per fetch); the deferred
-re-fetch still applies, floored at 5 seconds.
+Setting it to `0` means "honour no server hint at all". It does **not** disable retries:
+your `OPAL_POLICY_UPDATER_CONN_RETRY` attempts still run in full, and the deferred
+re-fetch continues at its 5-second floor.
 
 #### OPAL_POLICY_UPDATER_RESCHEDULE_ON_RETRYABLE
 
@@ -1347,10 +1349,11 @@ Default: `True`
 
 If `True`, when a bundle fetch exhausts `OPAL_POLICY_UPDATER_CONN_RETRY` against a
 retryable error (`503` while the server clones the policy repository, or `429`), the
-client schedules one deferred re-fetch instead of waiting for the next Pub/Sub message or
+client schedules a deferred re-fetch instead of waiting for the next Pub/Sub message or
 WebSocket reconnect. Non-retryable answers (`409` — the branch could not be resolved, and
 `404` — the requested path is not in the repository) are never rescheduled. Set to `False`
-to restore the previous fire-and-forget behaviour.
+to restore the previous fire-and-forget behaviour; this switch disables *all* deferral,
+including the flat cadence below.
 
 At most one deferred re-fetch is pending at a time. The delay for round _n_ is the longer
 of the server's `Retry-After` and an exponential backoff of `5, 10, 20, 40, 60, 60, …`
@@ -1363,17 +1366,23 @@ cancelled by a successful fetch, by an incoming policy update, and by client shu
 
 Default: `20`
 
-Maximum number of consecutive deferred bundle re-fetches before the client gives up and
-waits for the next Pub/Sub message or reconnect. Only relevant when
-`OPAL_POLICY_UPDATER_RESCHEDULE_ON_RETRYABLE` is enabled.
+Number of **escalation** rounds before the deferred re-fetch settles into a flat cadence.
+Only relevant when `OPAL_POLICY_UPDATER_RESCHEDULE_ON_RETRYABLE` is enabled.
 
-The counter is reset by a successful fetch and by an incoming policy update. It is
-deliberately **not** reset by a WebSocket reconnect: reconnects are frequent during
-exactly the outages this budget is meant to bound, so resetting there would make the
-limit unreachable. With the defaults, one outage therefore costs a client at most
-20 deferred rounds: the deferred waits alone sum to `5 + 10 + 20 + 40 + 16x60 = 1035 s`
-before jitter, so between about 8.5 and 17 minutes of re-fetching, after which the client
-falls silent and waits for a real policy update or a reconnect.
+For the first `MAX_DEFERRED_ROUNDS` rounds the delay grows as described above. After that
+the client does not give up — a client whose WebSocket never reconnects and whose scope
+never receives a commit would otherwise stay stale forever after a long clone — it keeps
+re-fetching at a flat `OPAL_POLICY_UPDATER_MAX_RETRY_AFTER` cadence, jittered into
+`[cap/2, cap]`. At the defaults that is one bundle request every 30–60 seconds per client
+(mean ~45 s, so roughly 1.3 requests per minute) until a fetch succeeds. Entering the flat
+phase logs a single warning, not one per round.
+
+The round counter, and the flat phase, are cleared by a successful fetch and by an
+incoming policy update. They are deliberately **not** cleared by a WebSocket reconnect:
+reconnects are frequent during exactly the outages this budget is meant to bound, so
+resetting there would make the escalation limit unreachable. With the defaults the
+escalating phase lasts `5 + 10 + 20 + 40 + 16x60 = 1035 s` before jitter — roughly 8.5 to
+17 minutes — after which the flat cadence takes over.
 
 ### Data Updates Configuration
 

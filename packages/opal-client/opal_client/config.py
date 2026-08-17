@@ -103,11 +103,14 @@ class OpalClientConfig(Confi):
     POLICY_UPDATER_MAX_RETRY_AFTER = confi.float(
         "POLICY_UPDATER_MAX_RETRY_AFTER",
         60.0,
-        description="Upper bound (in seconds) on a `Retry-After` header sent by the "
-        "policy source. The client honours the server's hint when it is longer than "
-        "the configured backoff, but never waits longer than this, so a hostile or "
-        "buggy header cannot stall policy updates. Does not clamp "
-        "POLICY_UPDATER_CONN_RETRY's own backoff.",
+        description="Upper bound (in seconds) on how long the client waits because a "
+        "policy source asked it to. It (1) caps each `Retry-After` header the client "
+        "honours, so a hostile or buggy header cannot stall policy updates; (2) bounds "
+        "the extra wall-clock time one bundle fetch may spend beyond the operator's own "
+        "backoff -- the effective limit is max(this key, the worst case of "
+        "POLICY_UPDATER_CONN_RETRY), so a deliberately configured retry policy is never "
+        "shortened; and (3) ceilings the deferred re-fetch backoff and its flat cadence. "
+        "Setting it to 0 means 'honour no server hint'; it does not disable retries.",
     )
 
     POLICY_UPDATER_RESCHEDULE_ON_RETRYABLE = confi.bool(
@@ -115,17 +118,22 @@ class OpalClientConfig(Confi):
         True,
         description="If True, when a bundle fetch exhausts POLICY_UPDATER_CONN_RETRY "
         "against a retryable error (e.g. HTTP 503 while the server clones the policy "
-        "repo), the client schedules one deferred re-fetch instead of waiting for the "
+        "repo), the client schedules a deferred re-fetch instead of waiting for the "
         "next pub/sub message or WebSocket reconnect. Set to False to restore the "
-        "previous fire-and-forget behaviour.",
+        "previous fire-and-forget behaviour; this disables all deferral, including the "
+        "flat cadence described under POLICY_UPDATER_MAX_DEFERRED_ROUNDS.",
     )
 
     POLICY_UPDATER_MAX_DEFERRED_ROUNDS = confi.int(
         "POLICY_UPDATER_MAX_DEFERRED_ROUNDS",
         20,
-        description="Maximum number of consecutive deferred bundle re-fetches before "
-        "the client gives up and waits for the next pub/sub message or reconnect. "
-        "A successful fetch or an incoming policy update resets the counter.",
+        description="Number of escalation rounds before the deferred bundle re-fetch "
+        "settles into a flat cadence. For the first N rounds the delay grows (5, 10, 20, "
+        "40, ... seconds, jittered); after that the client keeps re-fetching at a flat "
+        "POLICY_UPDATER_MAX_RETRY_AFTER cadence rather than giving up, so a client whose "
+        "WebSocket never reconnects and whose scope never receives a commit still "
+        "recovers. A successful fetch or an incoming policy update resets the counter; a "
+        "reconnect deliberately does not.",
     )
 
     DATA_STORE_CONN_RETRY: ConnRetryOptions = confi.model(
