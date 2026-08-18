@@ -34,6 +34,7 @@ from opal_server.policy.bundles.api import router as bundles_router
 from opal_server.policy.watcher.factory import setup_watcher_task
 from opal_server.policy.watcher.task import PolicyWatcherTask
 from opal_server.policy.webhook.api import init_git_webhook_router
+from opal_server.metrics_setup import configure_server_metrics
 from opal_server.publisher import setup_broadcaster_keepalive_task
 from opal_server.pubsub import PubSub
 from opal_server.pubsub_resilience import ReconnectingBroadcaster
@@ -242,12 +243,7 @@ class OpalServer:
 
         apm.configure_apm(opal_server_config.ENABLE_DATADOG_APM, "opal-server")
 
-        metrics.configure_metrics(
-            enable_metrics=opal_common_config.ENABLE_METRICS,
-            statsd_host=os.environ.get("DD_AGENT_HOST", "localhost"),
-            statsd_port=8125,
-            namespace="opal",
-        )
+        configure_server_metrics()
 
     def _configure_api_routes(self, app: FastAPI):
         """Mounts the api routes on the app object."""
