@@ -147,7 +147,7 @@ class ScopesService:
 
         ``honor_backoff`` marks this call as pass-originated, letting the
         fetcher skip a source that keeps failing (see
-        SCOPES_GIT_BACKOFF_MAX_SECONDS). It defaults to False so the explicit
+        SCOPES_GIT_BACKOFF_BASE_SECONDS). It defaults to False so the explicit
         callers — POST /scopes/{id}/refresh and PUT /scopes, both of which
         arrive here through the watcher's ``trigger`` — always attempt the
         source: a customer who has just repaired credentials must not be told

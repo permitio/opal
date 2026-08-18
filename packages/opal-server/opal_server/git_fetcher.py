@@ -5,7 +5,6 @@ import hashlib
 import inspect
 import math
 import os
-import random
 import shutil
 import threading
 import time
@@ -693,10 +692,10 @@ class GitPolicyFetcher(PolicyFetcher):
     def _backoff_entry(self) -> Optional[SourceBackoff]:
         """This source's live backoff entry, or None if it may be attempted.
 
-        Returns None while the key is disabled even when an entry exists: an
-        operator who sets SCOPES_GIT_BACKOFF_MAX_SECONDS=0 during an incident
-        must get the old behaviour back on the next pass, not have to wait out
-        the delays already recorded.
+        Returns None while the feature is disabled even when an entry exists:
+        an operator who sets SCOPES_GIT_BACKOFF_BASE_SECONDS=0 during an
+        incident must get the old behaviour back on the next pass, not have to
+        wait out the delays already recorded.
         """
         if _backoff_base_seconds() <= 0:
             return None
