@@ -179,13 +179,25 @@ class OpalServer:
         else:
             self.opal_statistics = None
 
-        # if stats are enabled, the server workers must be listening on the broadcast
-        # channel for their own synchronization, not just for their clients. therefore
-        # we need a "global" listening context
+        # A worker's backbone READER (EventBroadcaster listening context) is
+        # otherwise only entered while a WebSocket client is connected to that
+        # worker: server-side subscriptions on a worker with zero clients hear
+        # nothing from the fleet. Two features need every worker listening for
+        # its own sake, not its clients':
+        #   - statistics: workers synchronise their own view over the backbone
+        #   - scopes: the fleet purge broadcast (scopes/purge.py) must reach
+        #     EVERY worker so it drops its GitPolicyFetcher caches for a
+        #     deleted/repointed source. Measured on staging (~23 WS conns over
+        #     16 workers): 5 of 8 workers per pod never received a single purge
+        #     and kept stale repo_locks entries for the life of the process.
+        # So the "global" listening context is held whenever either is on and a
+        # broadcaster exists (single-process deployments have nothing to read).
         self.broadcast_listening_context: Optional[
             EventBroadcasterContextManager
         ] = None
-        if self.broadcaster_uri is not None and opal_common_config.STATISTICS_ENABLED:
+        if self.broadcaster_uri is not None and (
+            opal_common_config.STATISTICS_ENABLED or opal_server_config.SCOPES
+        ):
             self.broadcast_listening_context = (
                 self.pubsub.endpoint.broadcaster.get_listening_context()
             )
@@ -398,16 +410,26 @@ class OpalServer:
         """
         if self.publisher is not None:
             async with self.publisher:
-                if self.opal_statistics is not None:
-                    if self.broadcast_listening_context is not None:
-                        logger.info(
-                            "listening on broadcast channel for statistics events..."
-                        )
-                        await self.broadcast_listening_context.__aenter__()
+                if self.broadcast_listening_context is not None:
+                    # Entered ONCE per worker, whatever the reason(s) it exists for
+                    # (statistics and/or scopes — see __init__). Entering it twice
+                    # would double the listener count and leak a reader on exit.
+                    logger.info(
+                        "listening on the broadcast channel on this worker "
+                        "(statistics={stats}, scopes={scopes})",
+                        stats=self.opal_statistics is not None,
+                        scopes=bool(opal_server_config.SCOPES),
+                    )
+                    await self.broadcast_listening_context.__aenter__()
+                    if self.opal_statistics is not None:
                         # if the broadcast channel is closed, we want to restart worker process because statistics can't be reliable anymore
                         self.broadcast_listening_context._event_broadcaster.get_reader_task().add_done_callback(
                             lambda _: self._graceful_shutdown()
                         )
+                    # For scopes-only workers a reader that gives up is handled by
+                    # _wire_broadcaster_give_up (graceful restart on give-up,
+                    # never on clean cancellation), so no done-callback here.
+                if self.opal_statistics is not None:
                     asyncio.create_task(self.opal_statistics.run())
                     self.pubsub.endpoint.notifier.register_unsubscribe_event(
                         self.opal_statistics.remove_client
@@ -454,13 +476,10 @@ class OpalServer:
                             # Worker should restart when watcher stops
                             self._graceful_shutdown()
 
-                if (
-                    self.opal_statistics is not None
-                    and self.broadcast_listening_context is not None
-                ):
+                if self.broadcast_listening_context is not None:
                     await self.broadcast_listening_context.__aexit__()
                     logger.info(
-                        "stopped listening for statistics events on the broadcast channel"
+                        "stopped listening on the broadcast channel on this worker"
                     )
 
     async def stop_server_background_tasks(self):
