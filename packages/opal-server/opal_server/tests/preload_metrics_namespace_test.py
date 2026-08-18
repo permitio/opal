@@ -35,7 +35,12 @@ def statsd_reset(monkeypatch):
     client.namespace = saved["namespace"]
     client.host = saved["host"]
     client.port = saved["port"]
-    client.socket = saved["socket"]
+    # datadog.initialize() closes the previous socket; the setter probes the
+    # new one with getsockopt and a closed socket raises EBADF. A closed one
+    # is worth nothing to the next test either: leave None and let the client
+    # re-create it lazily, exactly as it does on first use.
+    sock = saved["socket"]
+    client.socket = sock if (sock is not None and sock.fileno() != -1) else None
     if saved["aggregation_disabled"] is False and client._disable_aggregation:
         client.enable_aggregation()
     elif saved["aggregation_disabled"] is True and not client._disable_aggregation:
