@@ -32,29 +32,38 @@ class _FakeEventBroadcaster:
 
 
 class _FakeListeningContext:
-    """Stands in for EventBroadcasterContextManager: counts enters/exits."""
+    """Stands in for EventBroadcasterContextManager: counts enters/exits AND
+    mirrors the library's shared ``_listen_count`` — incremented in __aenter__
+    BEFORE the reader is started, decremented in __aexit__ — because that
+    ordering is what the failed-enter unwind is about."""
 
     def __init__(self):
         self.entered = 0
         self.exited = 0
+        self.listen_count = 0
         self.entered_event = asyncio.Event()
         self._event_broadcaster = _FakeEventBroadcaster()
 
     async def __aenter__(self):
+        self.listen_count += 1  # library: count first...
         self.entered += 1
         self.entered_event.set()
+        await self._start_reader()  # ...then start the reader (may raise)
         return self
 
+    async def _start_reader(self):
+        pass
+
     async def __aexit__(self, exc_type, exc, tb):  # STRICT arity, like the real one
+        self.listen_count -= 1
         self.exited += 1
 
 
 class _RaisingListeningContext(_FakeListeningContext):
-    """The eager-connect failure of the legacy broadcaster: __aenter__ raises."""
+    """The eager-connect failure of the legacy broadcaster: the reader start
+    inside __aenter__ raises — AFTER the shared count was incremented."""
 
-    async def __aenter__(self):
-        self.entered += 1
-        self.entered_event.set()
+    async def _start_reader(self):
         raise ConnectionRefusedError("backbone down at boot")
 
 
@@ -84,10 +93,10 @@ class _GrantingLock:
     """A leadership lock that grants immediately: the worker under test becomes
     the leader, runs the (stubbed) leader block and reaches the exit path."""
 
+    acquired = 0
+
     def __init__(self, *a, **k):
         _GrantingLock.acquired += 1
-
-    acquired = 0
 
     async def __aenter__(self):
         return self
@@ -309,4 +318,81 @@ async def test_a_raising_enter_is_logged_and_the_rest_of_the_background_task_sti
     assert any(
         "Could not start listening on the broadcast channel" in m for m in warnings
     ), warnings
-    assert ctx.exited == 0, "a context that failed to enter must not be exited"
+    # The real __aenter__ increments the shared listen count BEFORE it starts the
+    # reader, so a raise leaves it at 1 unless we unwind: every later client
+    # context would take it to 2, 3, ... and the reader would never start again.
+    assert ctx.exited == 1, "a failed enter must be unwound with __aexit__"
+    assert ctx.listen_count == 0, "listen count must be back to 0 after the unwind"
+
+
+def test_legacy_broadcaster_with_statistics_arms_the_context_and_stays_quiet(
+    scopes_config, statistics, monkeypatch
+):
+    """Statistics arm the context on ANY broadcaster (pre-existing behaviour),
+    and then purges are delivered too — so the "not guaranteed" INFO line must
+    not be logged in that combination."""
+    statistics(True)
+    monkeypatch.setattr(opal_server_config, "BROADCAST_RECONNECT_ENABLED", False)
+    infos = []
+    monkeypatch.setattr(
+        server_module.logger, "info", lambda msg, *a, **k: infos.append(str(msg))
+    )
+    server = _build("postgres://localhost/test")
+    assert server.broadcast_listening_context is not None
+    assert not any("BROADCAST_RECONNECT_ENABLED is off" in m for m in infos), infos
+
+
+class _FakeWatcher:
+    """A watcher whose run ends immediately: the mainline leader shape
+    (watcher stops -> _graceful_shutdown -> exit path)."""
+
+    def __init__(self, *a, **k):
+        pass
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *exc):
+        return False
+
+    async def wait_until_should_stop(self):
+        return None
+
+
+@pytest.mark.asyncio
+async def test_exit_path_through_the_mainline_watcher_shape(
+    scopes_config, statistics, monkeypatch
+):
+    """Same invariant as the fall-through test, but through the shape prod
+    actually takes: leader runs the watcher, the watcher stops, the worker
+    asks for a graceful shutdown and the listening context is exited once."""
+    statistics(False)
+    server = _build("postgres://localhost/test")
+    ctx = _FakeListeningContext()
+    server.broadcast_listening_context = ctx
+    shutdowns = []
+    monkeypatch.setattr(server, "_graceful_shutdown", lambda: shutdowns.append(1))
+    monkeypatch.setattr(
+        server_module, "setup_watcher_task", lambda *a, **k: _FakeWatcher()
+    )
+    _GrantingLock.acquired = 0
+    monkeypatch.setattr(server_module, "NamedLock", _GrantingLock)
+
+    async def _fake_load(scopes):
+        pass
+
+    async def _fake_subscribe(endpoint):
+        pass
+
+    monkeypatch.setattr(server_module, "load_scopes", _fake_load)
+    monkeypatch.setattr(
+        server_module, "subscribe_worker_purge_handler", _fake_subscribe
+    )
+    server.publisher = _FakePublisher()
+    server.broadcast_keepalive = None
+    server._init_policy_watcher = True
+
+    await asyncio.wait_for(server.start_server_background_tasks(), 5.0)
+
+    assert shutdowns == [1], "watcher stop must request a graceful shutdown"
+    assert ctx.entered == 1 and ctx.exited == 1 and ctx.listen_count == 0

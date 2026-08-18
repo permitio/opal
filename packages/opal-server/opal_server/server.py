@@ -197,24 +197,27 @@ class OpalServer:
             EventBroadcasterContextManager
         ] = None
         if self.broadcaster_uri is not None:
+            # Legacy EventBroadcaster (BROADCAST_RECONNECT_ENABLED=false): its
+            # reader connects EAGERLY in __aenter__ and re-raises, so a backbone
+            # that is down at boot would abort the background task before the
+            # purge subscription and the leadership lock. The reconnecting
+            # broadcaster connects lazily and never raises here, so the scopes
+            # reason is honoured only for it.
             wants_reader_for_scopes = bool(opal_server_config.SCOPES) and isinstance(
                 self.pubsub.broadcaster, ReconnectingBroadcaster
             )
-            if opal_server_config.SCOPES and not wants_reader_for_scopes:
-                # Legacy EventBroadcaster (BROADCAST_RECONNECT_ENABLED=false):
-                # its reader connects EAGERLY in __aenter__ and re-raises, so a
-                # backbone that is down at boot would abort the background
-                # task before the purge subscription and the leadership lock.
-                # The reconnecting broadcaster connects lazily and never raises
-                # here, so the scopes reason is honoured only for it.
+            if opal_common_config.STATISTICS_ENABLED or wants_reader_for_scopes:
+                self.broadcast_listening_context = (
+                    self.pubsub.endpoint.broadcaster.get_listening_context()
+                )
+            if opal_server_config.SCOPES and self.broadcast_listening_context is None:
+                # Accurate in all four combinations: statistics on the legacy
+                # broadcaster DOES arm the context (for its own reason), and
+                # then purges are delivered too.
                 logger.info(
                     "OPAL_SCOPES is on but BROADCAST_RECONNECT_ENABLED is off: "
                     "workers without a WebSocket client keep no backbone reader, "
                     "so fleet purge delivery to them is not guaranteed"
-                )
-            if opal_common_config.STATISTICS_ENABLED or wants_reader_for_scopes:
-                self.broadcast_listening_context = (
-                    self.pubsub.endpoint.broadcaster.get_listening_context()
                 )
 
         self.watcher: PolicyWatcherTask = None
@@ -465,6 +468,23 @@ class OpalServer:
                             etype=type(exc).__name__,
                             err=exc,
                         )
+                        # UNWIND before dropping the reference: the library's
+                        # __aenter__ increments _listen_count BEFORE it starts the
+                        # reader, so a raise leaves the count at 1. Left there,
+                        # every later client context takes it to 2, 3, ... and
+                        # start_reader_task() never fires again — that worker
+                        # would serve clients that never receive a broadcast,
+                        # forever, with /healthcheck 200. __aexit__ decrements to
+                        # 0, skips the cancel (no task) and swallows its own errors.
+                        try:
+                            await self.broadcast_listening_context.__aexit__(
+                                None, None, None
+                            )
+                        except Exception:  # noqa: BLE001 — best effort, already failing
+                            logger.exception(
+                                "Could not unwind the broadcast listening context "
+                                "after a failed enter"
+                            )
                         self.broadcast_listening_context = None
                     if (
                         self.broadcast_listening_context is not None
