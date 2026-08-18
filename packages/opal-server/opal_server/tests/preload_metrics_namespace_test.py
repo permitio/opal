@@ -18,11 +18,28 @@ from opal_server.scopes import task as task_module
 
 @pytest.fixture
 def statsd_reset(monkeypatch):
-    """Isolate the process-wide client: fresh namespace before, restore after."""
-    saved_ns = datadog.statsd.namespace
-    datadog.statsd.namespace = None
+    """Isolate the process-wide DogStatsD client: snapshot namespace, host,
+    port, socket and the aggregation toggle before, restore all of them after
+    (configure_metrics re-initialises the global client; one test disables
+    aggregation) so no global state leaks into other tests."""
+    client = datadog.statsd
+    saved = {
+        "namespace": client.namespace,
+        "host": client.host,
+        "port": client.port,
+        "socket": client.socket,
+        "aggregation_disabled": getattr(client, "_disable_aggregation", None),
+    }
+    client.namespace = None
     yield
-    datadog.statsd.namespace = saved_ns
+    client.namespace = saved["namespace"]
+    client.host = saved["host"]
+    client.port = saved["port"]
+    client.socket = saved["socket"]
+    if saved["aggregation_disabled"] is False and client._disable_aggregation:
+        client.enable_aggregation()
+    elif saved["aggregation_disabled"] is True and not client._disable_aggregation:
+        client.disable_aggregation()
 
 
 def test_configure_server_metrics_sets_the_permit_opal_namespace(

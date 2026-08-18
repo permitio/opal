@@ -248,11 +248,14 @@ class ScopesPolicyWatcherTask(BasePolicyWatcherTask):
             # Drop every cached repo handle/lock/timestamp built during preload
             # so none of it is inherited by forked workers. Sync (the only path
             # that populates these caches) is leader-only, so a non-leader worker
-            # that inherited a handle could never purge it — the fleet-wide purge
-            # broadcast reaches a worker only when its broadcaster reader runs
-            # (STATISTICS_ENABLED or a connected client), leaving a client-less
-            # non-leader to pin the handle for life. The on-disk clones remain;
-            # workers re-open handles lazily.
+            # that inherited a handle would only ever release it through the
+            # fleet-wide purge broadcast. Since 0.9.9-rc.3 every worker keeps a
+            # backbone reader when SCOPES is on and the broadcaster is the
+            # reconnecting one, so that broadcast does reach client-less workers;
+            # with BROADCAST_RECONNECT_ENABLED=false (legacy broadcaster) the reader
+            # runs only while a client is connected and an inherited handle could
+            # still be pinned for life — clearing here keeps both cases safe. The
+            # on-disk clones remain; workers re-open handles lazily.
             GitPolicyFetcher.reset_caches()
 
             logger.warning("Finished preloading repo clones for scopes.")

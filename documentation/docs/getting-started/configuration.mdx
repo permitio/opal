@@ -789,7 +789,7 @@ Default: `True`
 
 Enable repository watching for policy changes.
 
-In scopes mode (`OPAL_SCOPES=true`) this same flag enables the **scopes sync task** on the leader worker: the periodic `sync_scopes` pass (every `OPAL_POLICY_REFRESH_INTERVAL` seconds), the boot-time sync of all scopes, and the fleet-wide purge of deleted or repointed scopes. With it set to `false` in scopes mode, scopes can be registered and served but are never synced or purged — the server logs a warning at startup when it detects this combination.
+In scopes mode (`OPAL_SCOPES=true`) this same flag enables the **scopes sync task** on the leader worker: the boot-time sync of all scopes, the periodic `sync_scopes` pass when `OPAL_POLICY_REFRESH_INTERVAL` is greater than 0 (it defaults to 0, which skips the periodic pass), and the fleet-wide purge handler for deleted or repointed scopes. With it set to `false` in scopes mode, scopes can be registered and served but are never synced or purged — the server logs a warning at startup when it detects this combination.
 
 #### OPAL_POLICY_REFRESH_INTERVAL
 

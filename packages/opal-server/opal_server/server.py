@@ -196,12 +196,26 @@ class OpalServer:
         self.broadcast_listening_context: Optional[
             EventBroadcasterContextManager
         ] = None
-        if self.broadcaster_uri is not None and (
-            opal_common_config.STATISTICS_ENABLED or opal_server_config.SCOPES
-        ):
-            self.broadcast_listening_context = (
-                self.pubsub.endpoint.broadcaster.get_listening_context()
+        if self.broadcaster_uri is not None:
+            wants_reader_for_scopes = bool(opal_server_config.SCOPES) and isinstance(
+                self.pubsub.broadcaster, ReconnectingBroadcaster
             )
+            if opal_server_config.SCOPES and not wants_reader_for_scopes:
+                # Legacy EventBroadcaster (BROADCAST_RECONNECT_ENABLED=false):
+                # its reader connects EAGERLY in __aenter__ and re-raises, so a
+                # backbone that is down at boot would abort the background
+                # task before the purge subscription and the leadership lock.
+                # The reconnecting broadcaster connects lazily and never raises
+                # here, so the scopes reason is honoured only for it.
+                logger.info(
+                    "OPAL_SCOPES is on but BROADCAST_RECONNECT_ENABLED is off: "
+                    "workers without a WebSocket client keep no backbone reader, "
+                    "so fleet purge delivery to them is not guaranteed"
+                )
+            if opal_common_config.STATISTICS_ENABLED or wants_reader_for_scopes:
+                self.broadcast_listening_context = (
+                    self.pubsub.endpoint.broadcaster.get_listening_context()
+                )
 
         self.watcher: PolicyWatcherTask = None
         self.leadership_lock: Optional[NamedLock] = None
@@ -433,15 +447,40 @@ class OpalServer:
                         stats=self.opal_statistics is not None,
                         scopes=bool(opal_server_config.SCOPES),
                     )
-                    await self.broadcast_listening_context.__aenter__()
-                    if self.opal_statistics is not None:
+                    try:
+                        await self.broadcast_listening_context.__aenter__()
+                    except (
+                        Exception
+                    ) as exc:  # noqa: BLE001 — everything below must still run
+                        # Belt and braces for the eager-connect case the isinstance
+                        # gate above should already exclude: an unreadable backbone
+                        # must not cost this worker its purge subscription, the
+                        # leadership lock and the watcher. Leave the context None
+                        # so the exit path does not touch a half-entered manager.
+                        logger.warning(
+                            "Could not start listening on the broadcast channel on "
+                            "this worker ({etype}: {err}); continuing without a "
+                            "global reader — fleet purges reach this worker only "
+                            "while it has a WebSocket client",
+                            etype=type(exc).__name__,
+                            err=exc,
+                        )
+                        self.broadcast_listening_context = None
+                    if (
+                        self.broadcast_listening_context is not None
+                        and self.opal_statistics is not None
+                    ):
                         # if the broadcast channel is closed, we want to restart worker process because statistics can't be reliable anymore
                         self.broadcast_listening_context._event_broadcaster.get_reader_task().add_done_callback(
                             lambda _: self._graceful_shutdown()
                         )
-                    # For scopes-only workers a reader that gives up is handled by
-                    # _wire_broadcaster_give_up (graceful restart on give-up,
-                    # never on clean cancellation), so no done-callback here.
+                    # No done-callback for the scopes reason: the context exists
+                    # for scopes only on a ReconnectingBroadcaster (see __init__),
+                    # whose reader never completes on its own except by GIVING UP
+                    # after BROADCAST_RECONNECT_MAX_RETRIES — and that case already
+                    # restarts every worker through _wire_broadcaster_give_up
+                    # (fires on give-up, never on clean cancellation). The legacy
+                    # broadcaster is skipped for scopes altogether.
                 if self.opal_statistics is not None:
                     asyncio.create_task(self.opal_statistics.run())
                     self.pubsub.endpoint.notifier.register_unsubscribe_event(
@@ -490,7 +529,11 @@ class OpalServer:
                             self._graceful_shutdown()
 
                 if self.broadcast_listening_context is not None:
-                    await self.broadcast_listening_context.__aexit__()
+                    # __aexit__(exc_type, exc, tb): the real
+                    # EventBroadcasterContextManager has no defaults, and a
+                    # TypeError here (in an un-awaited background task) leaves
+                    # _listen_count at 1 and the reader never cancelled.
+                    await self.broadcast_listening_context.__aexit__(None, None, None)
                     logger.info(
                         "stopped listening on the broadcast channel on this worker"
                     )

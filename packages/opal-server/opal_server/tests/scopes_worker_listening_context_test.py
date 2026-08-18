@@ -45,8 +45,17 @@ class _FakeListeningContext:
         self.entered_event.set()
         return self
 
-    async def __aexit__(self, *exc):
+    async def __aexit__(self, exc_type, exc, tb):  # STRICT arity, like the real one
         self.exited += 1
+
+
+class _RaisingListeningContext(_FakeListeningContext):
+    """The eager-connect failure of the legacy broadcaster: __aenter__ raises."""
+
+    async def __aenter__(self):
+        self.entered += 1
+        self.entered_event.set()
+        raise ConnectionRefusedError("backbone down at boot")
 
 
 class _FakePublisher:
@@ -66,6 +75,22 @@ class _BlockingLock:
 
     async def __aenter__(self):
         await asyncio.Event().wait()  # block until cancelled
+
+    async def __aexit__(self, *exc):
+        return False
+
+
+class _GrantingLock:
+    """A leadership lock that grants immediately: the worker under test becomes
+    the leader, runs the (stubbed) leader block and reaches the exit path."""
+
+    def __init__(self, *a, **k):
+        _GrantingLock.acquired += 1
+
+    acquired = 0
+
+    async def __aenter__(self):
+        return self
 
     async def __aexit__(self, *exc):
         return False
@@ -140,6 +165,32 @@ async def _run_until_entered(server, ctx, monkeypatch, timeout=5.0):
     return subscribed
 
 
+async def _run_to_completion(server, monkeypatch, timeout=5.0):
+    """Drive start_server_background_tasks on a worker that WINS leadership,
+    with no keepalive and no watcher, so the whole background task returns and
+    the exit path (listening-context __aexit__) actually executes."""
+    _GrantingLock.acquired = 0
+    monkeypatch.setattr(server_module, "NamedLock", _GrantingLock)
+
+    async def _fake_load(scopes):
+        pass
+
+    monkeypatch.setattr(server_module, "load_scopes", _fake_load)
+    subscribed = []
+
+    async def _fake_subscribe(endpoint):
+        subscribed.append(endpoint)
+
+    monkeypatch.setattr(
+        server_module, "subscribe_worker_purge_handler", _fake_subscribe
+    )
+    server.publisher = _FakePublisher()
+    server.broadcast_keepalive = None
+    server._init_policy_watcher = False
+    await asyncio.wait_for(server.start_server_background_tasks(), timeout)
+    return subscribed
+
+
 async def _never_called(*a, **k):
     raise AssertionError("load_scopes is leader-only and this worker is not the leader")
 
@@ -188,3 +239,74 @@ def test_no_broadcaster_means_no_listening_context(scopes_config, statistics):
     assert (
         server.broadcast_listening_context is None
     ), "single-process deployment: nothing to read from"
+
+
+@pytest.mark.asyncio
+async def test_exit_path_leaves_the_listening_context_with_the_right_arity(
+    scopes_config, statistics, monkeypatch
+):
+    """The real EventBroadcasterContextManager.__aexit__(exc_type, exc, tb) has
+    no defaults: a zero-arg call raises TypeError inside the un-awaited
+    background task, leaving _listen_count at 1 and the reader never
+    cancelled — on every scopes LEADER whose watcher stops. The double is
+    strict about arity so this cannot regress silently."""
+    statistics(False)
+    server = _build("postgres://localhost/test")
+    ctx = _FakeListeningContext()
+    server.broadcast_listening_context = ctx
+
+    await _run_to_completion(server, monkeypatch)
+
+    assert ctx.entered == 1 and ctx.exited == 1, (ctx.entered, ctx.exited)
+
+
+def test_legacy_broadcaster_does_not_get_a_scopes_reader(
+    scopes_config, statistics, monkeypatch
+):
+    """BROADCAST_RECONNECT_ENABLED=false builds the legacy EventBroadcaster,
+    whose reader connects EAGERLY in __aenter__ and re-raises: with the
+    backbone down at boot that would abort the background task before the
+    purge subscription and the leadership lock. The scopes reason therefore
+    applies only to the ReconnectingBroadcaster."""
+    statistics(False)
+    monkeypatch.setattr(opal_server_config, "BROADCAST_RECONNECT_ENABLED", False)
+    infos = []
+    monkeypatch.setattr(
+        server_module.logger, "info", lambda msg, *a, **k: infos.append(str(msg))
+    )
+    server = _build("postgres://localhost/test")
+    assert not isinstance(
+        server.pubsub.broadcaster, server_module.ReconnectingBroadcaster
+    )
+    assert server.broadcast_listening_context is None
+    assert any("BROADCAST_RECONNECT_ENABLED is off" in m for m in infos), infos
+
+
+@pytest.mark.asyncio
+async def test_a_raising_enter_is_logged_and_the_rest_of_the_background_task_still_runs(
+    scopes_config, statistics, monkeypatch
+):
+    """Belt and braces: if entering the context raises anyway, the worker must
+    still subscribe the purge handler and take the leadership lock; the failure
+    is one WARNING and the context is dropped (so exit does not touch it)."""
+    statistics(False)
+    server = _build("postgres://localhost/test")
+    ctx = _RaisingListeningContext()
+    server.broadcast_listening_context = ctx
+    warnings = []
+    monkeypatch.setattr(
+        server_module.logger, "warning", lambda msg, *a, **k: warnings.append(str(msg))
+    )
+
+    subscribed = await _run_to_completion(server, monkeypatch)
+
+    assert ctx.entered == 1
+    assert subscribed, "purge subscription must still happen after a failed enter"
+    assert (
+        _GrantingLock.acquired == 1
+    ), "leadership must still be attempted after a failed enter"
+    assert server.broadcast_listening_context is None
+    assert any(
+        "Could not start listening on the broadcast channel" in m for m in warnings
+    ), warnings
+    assert ctx.exited == 0, "a context that failed to enter must not be exited"
