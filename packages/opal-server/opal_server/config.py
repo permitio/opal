@@ -288,7 +288,7 @@ class OpalServerConfig(Confi):
         "per hour. Only the periodic pass and the boot preload honour it (in "
         "both phases, and re-checked under the source lock, so duplicates of a "
         "source that fails in a pass cost one attempt, not one per scope): an "
-        "explicit POST /scopes/{scope_id}/refresh, POST /scopes/refresh or "
+        "explicit POST /scopes/:scope_id/refresh, POST /scopes/refresh or "
         "PUT /scopes attempts the source immediately, so an operator who has "
         "just repaired credentials recovers at once, and any successful clone or "
         "fetch clears both the delay and the consecutive-failure count. The state "
