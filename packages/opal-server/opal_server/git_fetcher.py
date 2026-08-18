@@ -404,9 +404,17 @@ def _emit_sources_in_backoff() -> None:
     # per pass (sync_scopes), because DogStatsD gauges report nothing between
     # sends and the steady state this feature creates has few transitions.
     now = time.monotonic()
-    live = sum(
-        1 for e in GitPolicyFetcher.source_backoff.values() if e.next_attempt_at > now
-    )
+    # With the kill switch on nothing is skipped regardless of the entries
+    # still recorded, so the gauge must read 0 — otherwise the dashboard says
+    # "N sources in backoff" every pass while the feature is off.
+    if _backoff_max_seconds() <= 0:
+        live = 0
+    else:
+        live = sum(
+            1
+            for e in GitPolicyFetcher.source_backoff.values()
+            if e.next_attempt_at > now
+        )
     metrics.gauge(
         "opal_server.scopes.sources_in_backoff",
         live,
@@ -812,11 +820,12 @@ class GitPolicyFetcher(PolicyFetcher):
         the source immediately: those are someone asking for this repo, now,
         and the most likely reason they are asking is that they just fixed it.
         """
-        # Before lock_source on purpose. A hung source holds that lock for the
-        # whole clone, so a check inside it would make every skipped duplicate
-        # queue behind the very operation the skip exists to avoid; and a
-        # skipped source must consume no git-executor slot, so it can never be
-        # refused by (or contribute to) the SCOPES_GIT_MAX_ZOMBIES cap.
+        # Checked before lock_source on purpose (and again under it, below).
+        # A hung source holds that lock for the whole clone, so a check ONLY
+        # inside it would make every skipped duplicate queue behind the very
+        # operation the skip exists to avoid; and a skipped source must
+        # consume no git-executor slot, so it can never be refused by (or
+        # contribute to) the SCOPES_GIT_MAX_ZOMBIES cap.
         if honor_backoff:
             entry = self._backoff_entry()
             if entry is not None:
@@ -836,11 +845,13 @@ class GitPolicyFetcher(PolicyFetcher):
                 )
                 return
         async with GitPolicyFetcher.lock_source(self._source_id):
-            # Re-checked under the lock: N pass-originated duplicates of one
-            # source (phase 2 runs them concurrently) all pass the cheap
-            # pre-lock check before the first one has failed and recorded, then
-            # serialise here — without this second look each of them would
-            # perform its own full clone attempt against the dead remote.
+            # Re-checked under the lock: N pass-originated syncs of one source
+            # that arrive together — phase 2 runs the duplicates concurrently,
+            # and phase 1 may have recorded nothing for it (refused at the
+            # zombie cap, scope gone, no fetch needed) — all pass the cheap
+            # pre-lock check before the first has failed and recorded, then
+            # serialise here; without this second look each would perform its
+            # own full clone attempt against the dead remote.
             if honor_backoff:
                 entry = self._backoff_entry()
                 if entry is not None:
@@ -1313,11 +1324,14 @@ class GitPolicyFetcher(PolicyFetcher):
         ``source_backoff`` is deliberately NOT cleared. It holds no handles,
         no fds and no loop-bound objects, so none of the reasons above apply —
         and the preload this runs after is exactly where a dead repo's clone
-        failures are discovered. Letting the forked leader inherit them is the
-        point: otherwise every worker starts by re-hammering the same
-        unreachable repos, which is the boot storm the backoff exists to
-        collapse. ``_reset_git_executor_after_fork`` leaves it alone for the
-        same reason.
+        failures are discovered. Letting the forked leader inherit them is
+        the point when a periodic pass follows: otherwise the leader starts
+        by re-hammering the same unreachable repos, which is the boot storm the
+        backoff exists to collapse. (When no periodic pass follows,
+        ScopesPolicyWatcherTask.start() drops the inherited entries itself, so
+        the one boot sync still attempts every source once.)
+        ``_reset_git_executor_after_fork`` leaves it alone for the same
+        reason.
         """
         for path in list(GitPolicyFetcher.repos):
             source_id = os.path.basename(path.rstrip("/"))

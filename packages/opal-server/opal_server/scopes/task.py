@@ -79,6 +79,9 @@ class ScopesPolicyWatcherTask(BasePolicyWatcherTask):
         # honouring the backoff) keeps the within-pass property: phase-2
         # duplicates of a source that fails in THIS pass are still collapsed
         # to one attempt.
+        # Clearing the whole dict is safe here: this runs once, right after
+        # this process won leadership, and a freshly forked worker cannot have
+        # recorded anything of its own before that (only leaders sync).
         if opal_server_config.POLICY_REFRESH_INTERVAL <= 0:
             GitPolicyFetcher.source_backoff.clear()
         self._tasks.append(asyncio.create_task(self._sync_all()))

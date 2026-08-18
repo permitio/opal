@@ -905,6 +905,14 @@ def test_the_base_is_never_shorter_than_one_failed_attempt(monkeypatch):
     monkeypatch.setattr(opal_server_config, "SCOPES_GIT_FETCH_TIMEOUT", 0)
     assert gf._backoff_base_seconds() == 60.0  # 0 = no timeout = no floor
 
+    # The configured interval is what is used, not the 60s fallback
+    # (mutation: `base = interval` deleted, leaving only the fallback).
+    monkeypatch.setattr(opal_server_config, "POLICY_REFRESH_INTERVAL", 30)
+    assert gf._backoff_base_seconds() == 30.0
+    # A non-finite timeout is not a floor (mutation: drop the isfinite guard).
+    monkeypatch.setattr(opal_server_config, "SCOPES_GIT_FETCH_TIMEOUT", float("inf"))
+    assert gf._backoff_base_seconds() == 30.0
+
 
 @pytest.mark.asyncio
 async def test_a_cap_below_the_base_still_skips_one_pass(
@@ -1122,3 +1130,61 @@ async def test_a_pass_that_does_not_fetch_leaves_the_entry_alone(tmp_path, monke
 
     await fetcher.fetch_and_notify_on_changes(honor_backoff=True)
     assert GitPolicyFetcher.source_backoff[fetcher._source_id].consecutive_failures == 2
+
+
+def test_forgetting_a_source_re_emits_the_gauge(tmp_path, emitted):
+    """Mutation: ``forget_source_backoff`` pops without emitting. The gauge is
+    then stale until the next transition or pass boundary — a deleted scope's
+    source keeps being reported as skipped."""
+    fetcher = _fetcher(tmp_path)
+    GitPolicyFetcher.source_backoff[fetcher._source_id] = SourceBackoff(
+        consecutive_failures=1, next_attempt_at=time.monotonic() + 600, last_error="x"
+    )
+    before = len(emitted["gauge"])
+    GitPolicyFetcher.forget_source_backoff(fetcher._source_id)
+    gauges = [
+        c
+        for c in emitted["gauge"][before:]
+        if c[0] == "opal_server.scopes.sources_in_backoff"
+    ]
+    assert gauges and gauges[-1][1] == 0
+
+
+def test_purge_forgets_the_backoff_even_while_a_git_op_is_in_flight(
+    tmp_path, monkeypatch
+):
+    """Mutation: gate ``purge_local_memory``'s forget on ``git_op_in_flight``
+    like ``forget_repo``. The backoff entry holds no handle a lingering pool
+    thread could be reading, so the in-flight guard does not apply — and a
+    source purged mid-zombie would otherwise keep its entry (and its gauge
+    count) for the life of the process."""
+    from opal_server.scopes.purge import purge_local_memory
+
+    fetcher = _fetcher(tmp_path)
+    GitPolicyFetcher.source_backoff[fetcher._source_id] = SourceBackoff(
+        consecutive_failures=1, next_attempt_at=time.monotonic() + 600, last_error="x"
+    )
+    monkeypatch.setattr("opal_server.scopes.purge.git_op_in_flight", lambda sid: True)
+    purge_local_memory(fetcher._source_id, str(fetcher._repo_path))
+    assert fetcher._source_id not in GitPolicyFetcher.source_backoff
+
+
+def test_the_gauge_reads_zero_while_the_kill_switch_is_on(
+    tmp_path, monkeypatch, emitted
+):
+    """Mutation: emit the live count regardless of the kill switch. With the
+    key at 0 nothing is skipped, but entries recorded earlier still have a
+    future ``next_attempt_at`` — and the per-pass emission would then report
+    "N sources in backoff" every pass while the feature is off."""
+    from opal_server import git_fetcher as gf
+
+    fetcher = _fetcher(tmp_path)
+    GitPolicyFetcher.source_backoff[fetcher._source_id] = SourceBackoff(
+        consecutive_failures=1, next_attempt_at=time.monotonic() + 600, last_error="x"
+    )
+    monkeypatch.setattr(opal_server_config, "SCOPES_GIT_BACKOFF_MAX_SECONDS", 0.0)
+    gf._emit_sources_in_backoff()
+    gauges = [
+        c for c in emitted["gauge"] if c[0] == "opal_server.scopes.sources_in_backoff"
+    ]
+    assert gauges and gauges[-1][1] == 0
