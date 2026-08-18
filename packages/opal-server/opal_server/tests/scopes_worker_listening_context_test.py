@@ -16,8 +16,8 @@ import asyncio
 
 import pytest
 from opal_common.config import opal_common_config
-from opal_server.config import opal_server_config
 from opal_server import server as server_module
+from opal_server.config import opal_server_config
 from opal_server.server import OpalServer
 
 
@@ -121,7 +121,9 @@ async def _run_until_entered(server, ctx, monkeypatch, timeout=5.0):
     async def _fake_subscribe(endpoint):
         subscribed.append(endpoint)
 
-    monkeypatch.setattr(server_module, "subscribe_worker_purge_handler", _fake_subscribe)
+    monkeypatch.setattr(
+        server_module, "subscribe_worker_purge_handler", _fake_subscribe
+    )
     server.publisher = _FakePublisher()
     server.broadcast_keepalive = None
     task = asyncio.create_task(server.start_server_background_tasks())
@@ -156,7 +158,9 @@ async def test_scopes_worker_enters_the_listening_context_without_statistics(
 
     subscribed = await _run_until_entered(server, ctx, monkeypatch)
 
-    assert ctx.entered == 1, "client-less worker never started reading the backbone: fleet purges would not reach it"
+    assert (
+        ctx.entered == 1
+    ), "client-less worker never started reading the backbone: fleet purges would not reach it"
     assert subscribed, "purge handler subscription must still be registered"
 
 
@@ -173,10 +177,14 @@ async def test_scopes_and_statistics_enter_the_context_exactly_once(
 
     await _run_until_entered(server, ctx, monkeypatch)
 
-    assert ctx.entered == 1, "the context must be entered once even when both statistics and scopes want it"
+    assert (
+        ctx.entered == 1
+    ), "the context must be entered once even when both statistics and scopes want it"
 
 
 def test_no_broadcaster_means_no_listening_context(scopes_config, statistics):
     statistics(False)
     server = _build(None)
-    assert server.broadcast_listening_context is None, "single-process deployment: nothing to read from"
+    assert (
+        server.broadcast_listening_context is None
+    ), "single-process deployment: nothing to read from"

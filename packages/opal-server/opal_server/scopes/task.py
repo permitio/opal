@@ -7,13 +7,13 @@ from fastapi_websocket_pubsub import Topic
 from opal_common.logger import logger
 from opal_common.monitoring import metrics
 from opal_server.config import opal_server_config
-from opal_server.metrics_setup import configure_server_metrics
 from opal_server.git_fetcher import (
     GitPolicyFetcher,
     drain_git_ops,
     git_busy_count,
     shutdown_git_executor,
 )
+from opal_server.metrics_setup import configure_server_metrics
 from opal_server.policy.watcher.task import BasePolicyWatcherTask
 from opal_server.redis_utils import RedisDB
 from opal_server.scopes.purge import LeaderScopePurger

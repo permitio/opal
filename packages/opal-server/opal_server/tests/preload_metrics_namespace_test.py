@@ -12,8 +12,8 @@ import pytest
 from opal_common.config import opal_common_config
 from opal_common.monitoring import metrics
 from opal_server import metrics_setup
-from opal_server.scopes import task as task_module
 from opal_server.config import opal_server_config
+from opal_server.scopes import task as task_module
 
 
 @pytest.fixture
@@ -25,16 +25,22 @@ def statsd_reset(monkeypatch):
     datadog.statsd.namespace = saved_ns
 
 
-def test_configure_server_metrics_sets_the_permit_opal_namespace(monkeypatch, statsd_reset):
+def test_configure_server_metrics_sets_the_permit_opal_namespace(
+    monkeypatch, statsd_reset
+):
     monkeypatch.setattr(opal_common_config, "ENABLE_METRICS", True)
     metrics_setup.configure_server_metrics()
     assert datadog.statsd.namespace == "permit.opal"
 
 
-def test_configure_server_metrics_is_fail_silent_when_disabled(monkeypatch, statsd_reset):
+def test_configure_server_metrics_is_fail_silent_when_disabled(
+    monkeypatch, statsd_reset
+):
     monkeypatch.setattr(opal_common_config, "ENABLE_METRICS", False)
     metrics_setup.configure_server_metrics()
-    assert datadog.statsd.namespace is None, "disabled metrics must not touch the client"
+    assert (
+        datadog.statsd.namespace is None
+    ), "disabled metrics must not touch the client"
 
 
 def test_gauge_after_configure_is_namespaced_on_the_wire(monkeypatch, statsd_reset):
@@ -80,7 +86,9 @@ def test_preload_configures_metrics_before_syncing(monkeypatch):
     monkeypatch.setattr(task_module, "ScopeRepository", lambda db: object())
     monkeypatch.setattr(task_module, "drain_git_ops", lambda t: True)
     monkeypatch.setattr(task_module, "shutdown_git_executor", lambda: None)
-    monkeypatch.setattr(task_module.GitPolicyFetcher, "reset_caches", staticmethod(lambda: None))
+    monkeypatch.setattr(
+        task_module.GitPolicyFetcher, "reset_caches", staticmethod(lambda: None)
+    )
 
     task_module.ScopesPolicyWatcherTask.preload_scopes()
 
