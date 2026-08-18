@@ -218,8 +218,26 @@ class ScopesService:
                     err=e,
                 )
             except Exception as e:
-                logger.exception(
-                    f"Could not fetch policy for scope {scope.scope_id}, got error: {e}"
+                # ERROR without the traceback: with a broken tail of dozens of
+                # sources this line is emitted per source per pass, and the
+                # ~40-line traceback that used to ride along rotated the
+                # container log (10 MiB) within minutes of a boot — the boot
+                # markers were gone before anyone could read them, and in prod
+                # it is the mechanism behind opal-server being 56% of the org's
+                # log bytes. The traceback is still there at DEBUG for anyone
+                # chasing a specific source; the source, scope and reason are
+                # in the ERROR line.
+                logger.error(
+                    "Could not fetch policy for scope {scope_id} "
+                    "(remote: {url}): {etype}: {err}",
+                    scope_id=scope.scope_id,
+                    url=redact_url(scope.policy.url),
+                    etype=type(e).__name__,
+                    err=e,
+                )
+                logger.opt(exception=True).debug(
+                    "traceback for the failed sync of scope {scope_id}",
+                    scope_id=scope.scope_id,
                 )
 
     async def delete_scope(self, scope_id: str):
@@ -551,7 +569,19 @@ class ScopesService:
                     logger.info(
                         f"scope {scope.scope_id} was deleted while sync was queued, skipping"
                     )
-                except Exception:
-                    logger.exception(f"sync_scope failed for {scope.scope_id}")
+                except Exception as e:
+                    # sync_scope already logs its own git failures without a
+                    # traceback (see there); this catches anything that escaped
+                    # it. Same rule: one ERROR line, traceback at DEBUG.
+                    logger.error(
+                        "sync_scope failed for {scope_id}: {etype}: {err}",
+                        scope_id=scope.scope_id,
+                        etype=type(e).__name__,
+                        err=e,
+                    )
+                    logger.opt(exception=True).debug(
+                        "traceback for the failed sync of scope {scope_id}",
+                        scope_id=scope.scope_id,
+                    )
 
         await asyncio.gather(*(_sync_one(scope) for scope in scopes))
