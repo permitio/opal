@@ -27,9 +27,8 @@ from opal_server.scopes.purge import purge_local_memory
 from opal_server.scopes.scope_repository import ScopeNotFoundError
 from opal_server.scopes.service import ScopesService
 
-# The default POLICY_REFRESH_INTERVAL is 0 (polling disabled); prod runs 60.
-# Tests that assert on the schedule pin it explicitly so the fallback and the
-# configured base are each covered by a test that names which one it is.
+# The shipped base is 10s; the suite pins a round 60s so the doubling and the
+# per-pass arithmetic read cleanly. Nothing here depends on the real default.
 _BASE = 60.0
 
 
@@ -45,13 +44,10 @@ def _reset_class_state(monkeypatch):
     ):
         d.clear()
     # Pin the schedule inputs: the suite must not depend on the ambient
-    # OPAL_POLICY_REFRESH_INTERVAL of whatever shell runs it.
-    monkeypatch.setattr(opal_server_config, "POLICY_REFRESH_INTERVAL", int(_BASE))
-    # The base is floored at SCOPES_GIT_FETCH_TIMEOUT (a delay shorter than one
-    # failed attempt is pointless); pin the timeout at the interval so the
-    # schedule tests read `_BASE` exactly. The floor itself has its own test.
-    monkeypatch.setattr(opal_server_config, "SCOPES_GIT_FETCH_TIMEOUT", _BASE)
-    monkeypatch.setattr(opal_server_config, "SCOPES_GIT_BACKOFF_MAX_SECONDS", 3600.0)
+    # OPAL_* of whatever shell runs it. Base = _BASE, no cap (the default).
+    monkeypatch.setattr(opal_server_config, "SCOPES_GIT_BACKOFF_BASE_SECONDS", _BASE)
+    monkeypatch.setattr(opal_server_config, "SCOPES_GIT_BACKOFF_MAX_SECONDS", 0.0)
+    monkeypatch.setattr(opal_server_config, "POLICY_REFRESH_INTERVAL", 60)
     yield
     for d in (
         GitPolicyFetcher.repos,
@@ -60,16 +56,6 @@ def _reset_class_state(monkeypatch):
         GitPolicyFetcher.source_backoff,
     ):
         d.clear()
-
-
-@pytest.fixture
-def no_jitter(monkeypatch):
-    """Pin the ±20% jitter to 1.0 so delays are exact.
-
-    Patched on the module seam rather than on ``random``: the seam is what the
-    envelope test below proves is really wired up.
-    """
-    monkeypatch.setattr("opal_server.git_fetcher._jittered", lambda delay: delay)
 
 
 @pytest.fixture
@@ -180,9 +166,7 @@ def _capture_logs(level):
 
 
 @pytest.mark.asyncio
-async def test_a_failed_clone_records_one_base_interval(
-    tmp_path, monkeypatch, no_jitter
-):
+async def test_a_failed_clone_records_one_base_interval(tmp_path, monkeypatch):
     """Mutation: delete the ``_record_source_failure`` call from ``_clone``'s
     ``except (pygit2.GitError, TimeoutError)`` — nothing is ever recorded, so
     nothing is ever skipped and the whole feature is inert while every other
@@ -201,7 +185,7 @@ async def test_a_failed_clone_records_one_base_interval(
 
 
 @pytest.mark.asyncio
-async def test_consecutive_failures_double_the_delay(tmp_path, monkeypatch, no_jitter):
+async def test_consecutive_failures_double_the_delay(tmp_path, monkeypatch):
     """Mutation: ``base * 2 ** (n - 1)`` -> ``base`` (or ``base * n``). A flat
     or linear schedule keeps hammering a repo that has been dead for hours,
     which is the cost this key exists to bound — and the first-failure test
@@ -224,10 +208,12 @@ async def test_consecutive_failures_double_the_delay(tmp_path, monkeypatch, no_j
 
 
 @pytest.mark.asyncio
-async def test_the_delay_is_capped(tmp_path, monkeypatch, no_jitter):
-    """Mutation: drop the ``min(..., cap)`` — doubling from 60s reaches a
-    ~19-day wait after 15 failures, so a repo fixed on day two is never retried
-    and the operator sees a scope that simply stopped syncing."""
+async def test_a_configured_cap_bounds_the_delay(tmp_path, monkeypatch):
+    """Mutation: ignore SCOPES_GIT_BACKOFF_MAX_SECONDS when it is positive.
+    Uncapped is the default and the intended production behaviour (a repo
+    dead for a day is checked in two, then four ...), but an operator who
+    sets a cap wants the staleness of a repo that comes back on its own to be
+    bounded, and would get unbounded doubling instead."""
     monkeypatch.setattr(opal_server_config, "SCOPES_GIT_BACKOFF_MAX_SECONDS", 300.0)
     fetcher = _fetcher(tmp_path)
     _fail_clone_with(monkeypatch, pygit2.GitError("remote unauthorized"))
@@ -241,15 +227,29 @@ async def test_the_delay_is_capped(tmp_path, monkeypatch, no_jitter):
 
 
 @pytest.mark.asyncio
-async def test_a_source_failing_for_days_does_not_overflow(
-    tmp_path, monkeypatch, no_jitter
-):
+async def test_without_a_cap_the_delay_keeps_doubling(tmp_path, monkeypatch):
+    """Mutation: apply some hidden ceiling when no cap is configured. The
+    default is deliberately unbounded: after a day of failures the next check
+    is in two days, then four — "probably dead, look again at the next
+    restart or explicit refresh"."""
+    fetcher = _fetcher(tmp_path)
+    _fail_clone_with(monkeypatch, pygit2.GitError("remote unauthorized"))
+
+    for _ in range(20):
+        before = time.monotonic()
+        await fetcher.fetch_and_notify_on_changes()
+    delay = GitPolicyFetcher.source_backoff[fetcher._source_id].next_attempt_at - before
+
+    assert delay == pytest.approx(_BASE * 2**19, rel=1e-6)  # ~364 days at 60s
+
+
+@pytest.mark.asyncio
+async def test_a_source_failing_for_days_does_not_overflow(tmp_path, monkeypatch):
     """Mutation: compute the doubling as ``base * 2 ** (n - 1)`` with an
     unclamped integer exponent. A source failing once a minute reaches n>1000
     in under a day, and ``60.0 * 2**1024`` raises OverflowError from inside the
     except clause that is handling the git failure — turning a backed-off repo
     into an unhandled exception on the sync pass."""
-    monkeypatch.setattr(opal_server_config, "SCOPES_GIT_BACKOFF_MAX_SECONDS", 3600.0)
     fetcher = _fetcher(tmp_path)
     _fail_clone_with(monkeypatch, pygit2.GitError("remote unauthorized"))
 
@@ -266,54 +266,21 @@ async def test_a_source_failing_for_days_does_not_overflow(
 
     entry = GitPolicyFetcher.source_backoff[fetcher._source_id]
     assert entry.consecutive_failures == 2001
-    assert entry.next_attempt_at - before == pytest.approx(3600.0, abs=0.5)
+    delay = entry.next_attempt_at - before
+    assert math.isfinite(delay)
+    assert delay == pytest.approx(
+        _BASE * 2.0**64, rel=1e-6
+    )  # clamped, not overflowed
 
 
 @pytest.mark.asyncio
-async def test_jitter_stays_inside_its_envelope_and_actually_varies(
-    tmp_path, monkeypatch
-):
-    """Mutation (two of them): ``_jittered`` -> ``return delay`` removes the
-    spread that keeps a fleet's dead sources from re-attempting in lockstep
-    (caught by the "varies" half); widening it to ``uniform(0, 5)`` makes the
-    schedule unrecognisable (caught by the envelope half).
-
-    No ``no_jitter``
-    fixture here on purpose — this is the one test that runs the real seam.
-    """
-    fetcher = _fetcher(tmp_path)
-    _fail_clone_with(monkeypatch, pygit2.GitError("remote unauthorized"))
-
-    samples = []
-    for _ in range(60):
-        GitPolicyFetcher.source_backoff.clear()
-        before = time.monotonic()
-        await fetcher.fetch_and_notify_on_changes()
-        samples.append(
-            GitPolicyFetcher.source_backoff[fetcher._source_id].next_attempt_at - before
-        )
-
-    assert all(0.8 * _BASE <= s <= 1.2 * _BASE + 0.5 for s in samples), samples
-    # Spread in SECONDS, not merely "the values differ": every sample is derived
-    # from a time.monotonic() reading, so scheduling noise alone makes them all
-    # distinct and a `len(set(...)) > 1` assertion passes with the jitter removed
-    # entirely. A live ±20% seam spans ~24s of the 60s base; noise spans
-    # microseconds.
-    assert max(samples) - min(samples) > 1.0, (
-        f"jitter spread was {max(samples) - min(samples):.6f}s — the seam is "
-        f"returning the delay unchanged"
-    )
-
-
-@pytest.mark.asyncio
-async def test_the_base_falls_back_when_polling_is_disabled(
-    tmp_path, monkeypatch, no_jitter
-):
-    """Mutation: ``base = POLICY_REFRESH_INTERVAL if > 0 else 60.0`` ->
-    ``base = POLICY_REFRESH_INTERVAL``. The shipped default is 0, so every
-    delay becomes 0 and the entry is created already expired — recorded,
-    reported, and skipping nothing."""
-    monkeypatch.setattr(opal_server_config, "POLICY_REFRESH_INTERVAL", 0)
+async def test_the_base_is_the_configured_key(tmp_path, monkeypatch):
+    """Mutation: hardcode the base (or read POLICY_REFRESH_INTERVAL for it).
+    The first delay is SCOPES_GIT_BACKOFF_BASE_SECONDS, nothing else — short
+    on purpose, so the schedule bites within a few failures rather than
+    waiting out a whole refresh interval per step."""
+    monkeypatch.setattr(opal_server_config, "SCOPES_GIT_BACKOFF_BASE_SECONDS", 10.0)
+    monkeypatch.setattr(opal_server_config, "POLICY_REFRESH_INTERVAL", 3600)
     fetcher = _fetcher(tmp_path)
     _fail_clone_with(monkeypatch, pygit2.GitError("remote unauthorized"))
 
@@ -321,7 +288,7 @@ async def test_the_base_falls_back_when_polling_is_disabled(
     await fetcher.fetch_and_notify_on_changes()
     delay = GitPolicyFetcher.source_backoff[fetcher._source_id].next_attempt_at - before
 
-    assert delay == pytest.approx(60.0, abs=0.5)
+    assert delay == pytest.approx(10.0, abs=0.5)
 
 
 # --------------------------------------------------------------------------
@@ -596,11 +563,11 @@ async def test_backpressure_is_not_a_source_failure(tmp_path, monkeypatch):
 @pytest.mark.asyncio
 @pytest.mark.parametrize("disabled", [0.0, -1.0, float("nan"), float("inf")])
 async def test_the_key_disables_the_feature(tmp_path, monkeypatch, emitted, disabled):
-    """Mutation: ``if cap <= 0`` -> ``if cap < 0`` (0 stops disabling), or drop
-    the ``math.isfinite`` guard (inf means "back off forever", nan makes every
-    comparison False). This key is the operator's only way out if the backoff
-    ever suppresses a source it should not have."""
-    monkeypatch.setattr(opal_server_config, "SCOPES_GIT_BACKOFF_MAX_SECONDS", disabled)
+    """Mutation: ``if base <= 0`` -> ``if base < 0`` (0 stops disabling), or
+    drop the ``math.isfinite`` guard (inf means "wait forever", nan makes every
+    comparison False). SCOPES_GIT_BACKOFF_BASE_SECONDS is the operator's only
+    way out if the backoff ever suppresses a source it should not have."""
+    monkeypatch.setattr(opal_server_config, "SCOPES_GIT_BACKOFF_BASE_SECONDS", disabled)
     fetcher = _fetcher(tmp_path)
     _fail_clone_with(monkeypatch, pygit2.GitError("remote unauthorized"))
 
@@ -625,7 +592,7 @@ async def test_the_key_disables_the_feature(tmp_path, monkeypatch, emitted, disa
 
 @pytest.mark.asyncio
 async def test_the_gauge_is_tagged_by_pid_and_nothing_else(
-    tmp_path, monkeypatch, emitted, no_jitter
+    tmp_path, monkeypatch, emitted
 ):
     """Mutation: tag the gauge by source_id or scope_id. Every worker in the
     gunicorn pool emits this same series, so an untagged gauge reads as one
@@ -853,7 +820,7 @@ async def test_refresh_all_does_not_honour_the_backoff(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_concurrent_duplicates_of_a_dead_source_attempt_it_once(
-    tmp_path, monkeypatch, no_jitter
+    tmp_path, monkeypatch
 ):
     """Mutation: drop the second ``_backoff_entry()`` check — the one taken
     AFTER ``lock_source`` is acquired. Phase 2 runs the duplicates of a source
@@ -885,44 +852,12 @@ async def test_concurrent_duplicates_of_a_dead_source_attempt_it_once(
     assert entry.consecutive_failures == 1
 
 
-def test_the_base_is_never_shorter_than_one_failed_attempt(monkeypatch):
-    """Mutation: drop the ``max(base, SCOPES_GIT_FETCH_TIMEOUT)`` floor. At
-    prod defaults the interval is 60s and the fetch timeout 120s: a hung host
-    costs 120s per attempt, so a first delay of 60s has expired before the
-    pass that armed it finishes — its phase-2 duplicates attempt again in the
-    SAME pass and the next pass never sees a skip. Nothing is gained by
-    re-attempting a source sooner than one attempt against it takes.
-    """
-    from opal_server import git_fetcher as gf
-
-    monkeypatch.setattr(opal_server_config, "POLICY_REFRESH_INTERVAL", 60)
-    monkeypatch.setattr(opal_server_config, "SCOPES_GIT_FETCH_TIMEOUT", 120.0)
-    assert gf._backoff_base_seconds() == 120.0
-
-    monkeypatch.setattr(opal_server_config, "SCOPES_GIT_FETCH_TIMEOUT", 30.0)
-    assert gf._backoff_base_seconds() == 60.0
-
-    monkeypatch.setattr(opal_server_config, "SCOPES_GIT_FETCH_TIMEOUT", 0)
-    assert gf._backoff_base_seconds() == 60.0  # 0 = no timeout = no floor
-
-    # The configured interval is what is used, not the 60s fallback
-    # (mutation: `base = interval` deleted, leaving only the fallback).
-    monkeypatch.setattr(opal_server_config, "POLICY_REFRESH_INTERVAL", 30)
-    assert gf._backoff_base_seconds() == 30.0
-    # A non-finite timeout is not a floor (mutation: drop the isfinite guard).
-    monkeypatch.setattr(opal_server_config, "SCOPES_GIT_FETCH_TIMEOUT", float("inf"))
-    assert gf._backoff_base_seconds() == 30.0
-
-
 @pytest.mark.asyncio
-async def test_a_cap_below_the_base_still_skips_one_pass(
-    tmp_path, monkeypatch, no_jitter
-):
-    """Mutation: drop ``cap = max(cap, base)``. A cap shorter than the base
-    (POLICY_REFRESH_INTERVAL=3600 with the default cap, say) would make every
-    delay shorter than one pass, so nothing is ever skipped and the feature is
-    silently inert — with no log to say so. Flooring the cap at the base turns
-    a low value into "one pass at a time" instead.
+async def test_a_cap_below_the_base_still_skips_one_pass(tmp_path, monkeypatch):
+    """Mutation: drop the ``max(cap, base)`` floor on a configured cap. A cap
+    shorter than the base would make every delay shorter than the base, i.e.
+    the operator's "bound the staleness" knob would silently turn the feature
+    off. Flooring it at the base turns a low value into "one pass at a time".
     """
     monkeypatch.setattr(opal_server_config, "SCOPES_GIT_BACKOFF_MAX_SECONDS", 1.0)
     fetcher = _fetcher(tmp_path)
@@ -985,9 +920,7 @@ async def test_the_gauge_counts_live_entries_only_and_is_emitted_per_pass(
 
 
 @pytest.mark.asyncio
-async def test_only_entering_backoff_and_reaching_the_cap_warn(
-    tmp_path, monkeypatch, no_jitter
-):
+async def test_only_entering_backoff_and_reaching_the_cap_warn(tmp_path, monkeypatch):
     """Mutation: WARN on every recorded failure. The timer's own attempts get
     rarer as the delay grows, but an explicit refresh that keeps failing
     (policy-sync re-issues them constantly for a broken repo) bypasses the
@@ -1000,7 +933,9 @@ async def test_only_entering_backoff_and_reaching_the_cap_warn(
     _fail_clone_with(monkeypatch, pygit2.GitError("dead"))
     records, sink = _capture_logs("WARNING")
     try:
-        for _ in range(6):  # delays: 60,120,240,240,240,240 -> cap reached at #3
+        for _ in range(
+            6
+        ):  # delays: 60,120,240,240,240,240 -> cap reached at #3 (cap configured)
             await fetcher.fetch_and_notify_on_changes()  # explicit path: bypasses
     finally:
         logger.remove(sink)
@@ -1182,9 +1117,32 @@ def test_the_gauge_reads_zero_while_the_kill_switch_is_on(
     GitPolicyFetcher.source_backoff[fetcher._source_id] = SourceBackoff(
         consecutive_failures=1, next_attempt_at=time.monotonic() + 600, last_error="x"
     )
-    monkeypatch.setattr(opal_server_config, "SCOPES_GIT_BACKOFF_MAX_SECONDS", 0.0)
+    monkeypatch.setattr(opal_server_config, "SCOPES_GIT_BACKOFF_BASE_SECONDS", 0.0)
     gf._emit_sources_in_backoff()
     gauges = [
         c for c in emitted["gauge"] if c[0] == "opal_server.scopes.sources_in_backoff"
     ]
     assert gauges and gauges[-1][1] == 0
+
+
+@pytest.mark.asyncio
+async def test_crossing_a_day_of_backoff_warns_once(tmp_path, monkeypatch):
+    """Mutation: drop the abandoned-threshold WARNING. Uncapped, a source's
+    delay passes a day after ~11 doublings from 60s and from then on it is,
+    for practical purposes, abandoned until a restart or an explicit refresh
+    — the one later moment an operator should hear about, exactly once."""
+    fetcher = _fetcher(tmp_path)
+    _fail_clone_with(monkeypatch, pygit2.GitError("dead"))
+    # Seed just below the day boundary: n=11 -> 60 * 2**10 = 61,440s < 86,400
+    # < 122,880s = n=12. Three more failures: 11 (no), 12 (crosses), 13 (no).
+    GitPolicyFetcher.source_backoff[fetcher._source_id] = SourceBackoff(
+        consecutive_failures=10, next_attempt_at=time.monotonic() - 1, last_error="x"
+    )
+    records, sink = _capture_logs("WARNING")
+    try:
+        for _ in range(3):
+            await fetcher.fetch_and_notify_on_changes()
+    finally:
+        logger.remove(sink)
+    warns = [r for r in records if "Backing off" in r]
+    assert len(warns) == 1 and "12 consecutive" in warns[0], warns

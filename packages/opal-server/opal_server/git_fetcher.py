@@ -318,76 +318,71 @@ class SourceBackoff:
 
 # The exponent is clamped here rather than left to grow with the failure count.
 # `2.0 ** (n-1)` raises OverflowError once the exponent passes ~1023 — from
-# inside the except clause that is handling the git failure — and a source
-# failing once a minute gets there in under a day. Any
-# value past ~2**64 * 60s already exceeds every plausible cap, so clamping
-# changes no reachable outcome.
+# inside the except clause that is handling the git failure. With a 10s base,
+# 2**64 * 10s is ~5.8e12 years: the clamp changes no reachable outcome, it
+# only keeps a very old dead source from raising instead of being skipped.
 _MAX_BACKOFF_DOUBLINGS = 64
 
-
-def _jittered(delay: float) -> float:
-    """±20% spread, so a fleet's dead sources do not retry in lockstep.
-
-    A module-level function rather than an inline expression purely so tests
-    can pin it: with the jitter live, an exact-delay assertion is untestable,
-    and an assertion loose enough to tolerate it stops catching the schedule.
-    """
-    return random.uniform(0.8, 1.2) * delay
+# Past this delay a source is, for practical purposes, abandoned until an
+# explicit refresh/PUT or a process restart — worth one WARNING when crossed.
+_BACKOFF_ABANDONED_SECONDS = 24 * 3600.0
 
 
-def _backoff_max_seconds() -> float:
-    """SCOPES_GIT_BACKOFF_MAX_SECONDS, validated. 0.0 means "disabled".
+def _finite_positive_or_zero(value) -> float:
+    """Read a config number as a positive finite float, else 0.0.
 
-    Same finiteness discipline as ``_bounded_clone_wait`` in scopes/api.py, and
-    for the same reason: `nan` and `inf` parse cleanly, so a process configured
-    with either starts normally and reaches here. `inf` would mean a source
-    that fails once is never retried again, and `nan` makes every comparison
-    against ``next_attempt_at`` False — neither is a budget anyone meant to
-    set, so both are read as the kill switch.
+    Confi parses the environment at import, so a non-numeric value fails the
+    process at startup and never reaches this; what this covers is a value
+    assigned to the config object at runtime, plus `nan`/`inf`, which parse
+    cleanly, start the process, and are not durations anyone meant to set.
     """
     try:
-        cap = float(opal_server_config.SCOPES_GIT_BACKOFF_MAX_SECONDS)
+        f = float(value)
     except (TypeError, ValueError):
-        # Confi parses the environment at import, so a non-numeric value fails
-        # the process at startup and never reaches this line; what this covers
-        # is a value assigned to the config object at runtime.
         return 0.0
-    if not math.isfinite(cap) or cap <= 0:
+    if not math.isfinite(f) or f <= 0:
         return 0.0
-    return cap
+    return f
 
 
 def _backoff_base_seconds() -> float:
-    """The first delay: one periodic pass, but never shorter than one failed op.
+    """SCOPES_GIT_BACKOFF_BASE_SECONDS, validated. 0.0 means "disabled".
 
-    One skipped pass is the smallest unit that changes anything — a shorter
-    delay is indistinguishable from no backoff at all, since the source is only
-    re-attempted when the pass comes round again. POLICY_REFRESH_INTERVAL
-    defaults to 0 (polling disabled), which is not a delay, so fall back to the
-    60s the deployed configuration actually uses.
-
-    The floor at SCOPES_GIT_FETCH_TIMEOUT matters for the timeout population:
-    a hung host costs a full timeout per attempt (120s at defaults) while the
-    interval is 60s, so a first delay of one interval would already have
-    expired by the time the pass that armed it finished — the duplicates in
-    phase 2 would then attempt again in the SAME pass, and the next pass would
-    never see a skip. Nothing is gained by re-attempting a source sooner than
-    one attempt against it takes.
+    The first delay after a source's first failure; each further
+    consecutive failure doubles it. Deliberately short (10s by default):
+    a delay shorter than the gap to the next pass simply does not skip
+    that pass, so the first few doublings cost one attempt per pass
+    exactly as before, and the schedule bites from roughly the fourth
+    consecutive failure — minutes, then hours, then days. Duplicates of
+    a source in the SAME pass are collapsed regardless of the delay by
+    the re-check under lock_source.
     """
-    base = 60.0
-    try:
-        interval = float(opal_server_config.POLICY_REFRESH_INTERVAL)
-    except (TypeError, ValueError):
-        interval = 0.0
-    if math.isfinite(interval) and interval > 0:
-        base = interval
-    try:
-        op_timeout = float(opal_server_config.SCOPES_GIT_FETCH_TIMEOUT)
-    except (TypeError, ValueError):
-        op_timeout = 0.0
-    if math.isfinite(op_timeout) and op_timeout > 0:
-        base = max(base, op_timeout)
-    return base
+    return _finite_positive_or_zero(opal_server_config.SCOPES_GIT_BACKOFF_BASE_SECONDS)
+
+
+def _backoff_max_seconds() -> float:
+    """SCOPES_GIT_BACKOFF_MAX_SECONDS, validated. 0.0 means "no cap".
+
+    Uncapped by default on purpose: a repository that has been unreachable
+    for a day is, in all likelihood, dead — check it again in two days, then
+    four, and before long "at the next restart or explicit refresh". A cap
+    is available for operators who would rather bound the staleness of a
+    repository that comes back on its own without anyone touching the scope.
+    """
+    return _finite_positive_or_zero(opal_server_config.SCOPES_GIT_BACKOFF_MAX_SECONDS)
+
+
+def _backoff_delay(n: int) -> float:
+    """The delay armed after the n-th consecutive failure (n >= 1)."""
+    base = _backoff_base_seconds()
+    raw = base * 2.0 ** min(n - 1, _MAX_BACKOFF_DOUBLINGS)
+    cap = _backoff_max_seconds()
+    if cap > 0:
+        # A cap below the base would make the feature silently inert (every
+        # delay shorter than one pass, nothing ever skipped): the base is the
+        # floor, so a low cap means "one pass at a time", never "off".
+        raw = min(raw, max(cap, base))
+    return raw
 
 
 def _emit_sources_in_backoff() -> None:
@@ -407,7 +402,7 @@ def _emit_sources_in_backoff() -> None:
     # With the kill switch on nothing is skipped regardless of the entries
     # still recorded, so the gauge must read 0 — otherwise the dashboard says
     # "N sources in backoff" every pass while the feature is off.
-    if _backoff_max_seconds() <= 0:
+    if _backoff_base_seconds() <= 0:
         live = 0
     else:
         live = sum(
@@ -703,7 +698,7 @@ class GitPolicyFetcher(PolicyFetcher):
         must get the old behaviour back on the next pass, not have to wait out
         the delays already recorded.
         """
-        if _backoff_max_seconds() <= 0:
+        if _backoff_base_seconds() <= 0:
             return None
         entry = GitPolicyFetcher.source_backoff.get(self._source_id)
         if entry is None or time.monotonic() >= entry.next_attempt_at:
@@ -720,42 +715,48 @@ class GitPolicyFetcher(PolicyFetcher):
         healthy ones included, so recording it would put the whole fleet into
         backoff because of one bad repo.
         """
-        cap = _backoff_max_seconds()
-        if cap <= 0:
+        if _backoff_base_seconds() <= 0:
             return  # kill switch: record nothing, so nothing is ever skipped
-        base = _backoff_base_seconds()
-        # A cap below the base would make the feature silently inert (every
-        # delay shorter than one pass, so nothing is ever skipped): the base is
-        # the floor, so setting the key low means "back off one pass at a time".
-        cap = max(cap, base)
         previous = GitPolicyFetcher.source_backoff.get(self._source_id)
         n = (previous.consecutive_failures if previous is not None else 0) + 1
-        raw = min(base * 2.0 ** min(n - 1, _MAX_BACKOFF_DOUBLINGS), cap)
-        delay = _jittered(raw)
+        delay = _backoff_delay(n)
         GitPolicyFetcher.source_backoff[self._source_id] = SourceBackoff(
             consecutive_failures=n,
             next_attempt_at=time.monotonic() + delay,
             last_error=repr(err),
         )
         # WARNING only when something changes for the operator: the source
-        # ENTERS backoff, or its delay reaches the cap (it will now be retried
-        # at the slowest rate). Every other recorded failure is DEBUG. The
-        # timer's own attempts already get rarer as the delay grows, but an
-        # explicit refresh that keeps failing (policy-sync re-issues them
-        # constantly for a broken repo) would otherwise WARN on every call, on
-        # top of the ERROR the failing op already logged.
-        previous_raw = (
-            min(
-                base
-                * 2.0 ** min(previous.consecutive_failures - 1, _MAX_BACKOFF_DOUBLINGS),
-                cap,
-            )
+        # ENTERS backoff, its delay first exceeds a day (from here on it is
+        # effectively abandoned until a restart or an explicit refresh), or —
+        # if a cap is configured — its delay first reaches the cap. Every other
+        # recorded failure is DEBUG: the timer's own attempts already get rarer
+        # as the delay grows, but an explicit refresh that keeps failing
+        # (policy-sync re-issues them constantly for a broken repo) bypasses
+        # the backoff and would otherwise WARN on every call, on top of the
+        # ERROR the failing op already logged.
+        previous_delay = (
+            _backoff_delay(previous.consecutive_failures)
             if previous is not None
             else None
         )
         entering = previous is None
-        reached_cap = raw >= cap and (previous_raw is None or previous_raw < cap)
-        log = logger.warning if (entering or reached_cap) else logger.debug
+        crossed_abandoned = delay >= _BACKOFF_ABANDONED_SECONDS and (
+            previous_delay is None or previous_delay < _BACKOFF_ABANDONED_SECONDS
+        )
+        cap = _backoff_max_seconds()
+        reached_cap = (
+            cap > 0
+            and delay >= max(cap, _backoff_base_seconds())
+            and (
+                previous_delay is None
+                or previous_delay < max(cap, _backoff_base_seconds())
+            )
+        )
+        log = (
+            logger.warning
+            if (entering or crossed_abandoned or reached_cap)
+            else logger.debug
+        )
         log(
             "Backing off {url} for {delay:.0f}s after {n} consecutive "
             "failures: {err}",

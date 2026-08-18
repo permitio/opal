@@ -151,7 +151,7 @@ class ScopesService:
         callers — POST /scopes/{id}/refresh and PUT /scopes, both of which
         arrive here through the watcher's ``trigger`` — always attempt the
         source: a customer who has just repaired credentials must not be told
-        200 OK and then wait out half an hour of backoff.
+        200 OK and then wait out hours or days of backoff.
         """
         if scope is None:
             assert scope_id, ValueError("scope_id not set for sync_scope")
