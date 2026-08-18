@@ -61,6 +61,23 @@ from opal_common.schemas.store import StoreTransaction, TransactionType
 from tenacity import retry
 
 
+def _to_write_tuple_keys(read_tuples: List[dict]) -> List[dict]:
+    """Reshapes /read's response tuples ({"key": {...}, "timestamp": ...})
+    into the flat {"user", "relation", "object"} shape /write expects.
+    Caught via real integration testing: full_export was writing the raw
+    /read shape straight into the export file, which full_import then fed
+    unmodified to set_policy_data — /write rejected it outright ("the
+    'user' field is malformed") since it doesn't have a "key" wrapper."""
+    return [
+        {
+            "user": t["key"]["user"],
+            "relation": t["key"]["relation"],
+            "object": t["key"]["object"],
+        }
+        for t in read_tuples
+    ]
+
+
 class OpenFGAClient(LivenessProbeMixin, BasePolicyStoreClient):
     def __init__(
         self,
@@ -226,14 +243,7 @@ class OpenFGAClient(LivenessProbeMixin, BasePolicyStoreClient):
         if not tuples:
             return None
 
-        delete_keys = [
-            {
-                "user": t["key"]["user"],
-                "relation": t["key"]["relation"],
-                "object": t["key"]["object"],
-            }
-            for t in tuples
-        ]
+        delete_keys = _to_write_tuple_keys(tuples)
 
         async with aiohttp.ClientSession(trust_env=True) as session:
             try:
@@ -335,7 +345,10 @@ class OpenFGAClient(LivenessProbeMixin, BasePolicyStoreClient):
         return self._engine_reachable
 
     async def full_export(self, writer: AsyncTextIOWrapper) -> None:
-        tuples = await self._read_all_tuples()
+        # Store the flat write-shaped tuples (not /read's raw {"key": ...,
+        # "timestamp": ...} response shape) so full_import can feed them
+        # straight back into set_policy_data without reshaping.
+        tuples = _to_write_tuple_keys(await self._read_all_tuples())
         headers = await self._get_auth_headers()
         model = None
         async with aiohttp.ClientSession(trust_env=True) as session:
