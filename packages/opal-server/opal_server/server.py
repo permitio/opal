@@ -210,6 +210,23 @@ class OpalServer:
             self._redis_db = RedisDB(opal_server_config.REDIS_URL)
             self._scopes = ScopeRepository(self._redis_db)
             logger.info("OPAL Scopes: server is connected to scopes repository")
+            if not self._init_policy_watcher:
+                # The flag's name reads as "single-repo watcher", but in scopes
+                # mode it gates setup_watcher_task() -> ScopesPolicyWatcherTask:
+                # the periodic sync_scopes pass, the boot sync-all and the fleet
+                # purger. With it off the leader parks on the keepalive forever,
+                # nothing is ever cloned/synced/purged, and the pods still report
+                # Ready. A WARNING rather than a hard refusal: an existing
+                # deployment must not stop booting on upgrade over a flag it may
+                # have set deliberately (e.g. a read-only replica behind another
+                # OPAL that does the syncing).
+                logger.warning(
+                    "OPAL_REPO_WATCHER_ENABLED is off while OPAL_SCOPES is on: this "
+                    "server will REGISTER and SERVE scopes but never SYNC or PURGE "
+                    "them (no periodic sync_scopes pass, no boot sync-all, no "
+                    "fleet purge). If that is not intended, set "
+                    "OPAL_REPO_WATCHER_ENABLED=true."
+                )
 
         # Set BEFORE _init_fast_api_app(): _configure_api_routes assigns it,
         # and it must exist even when SCOPES is off (shutdown reads it).

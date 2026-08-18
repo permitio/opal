@@ -424,7 +424,12 @@ class OpalServerConfig(Confi):
     )
 
     REPO_WATCHER_ENABLED = confi.bool(
-        "REPO_WATCHER_ENABLED", True, description="Enable the repository watcher"
+        "REPO_WATCHER_ENABLED",
+        True,
+        description="Enable the repository watcher. In scopes mode (SCOPES=true) this "
+        "same flag enables the scopes sync task on the leader worker: the periodic "
+        "sync_scopes pass, the boot-time sync of all scopes and the fleet purger. "
+        "With it off, scopes can be registered but are never synced or purged.",
     )
 
     # publisher
