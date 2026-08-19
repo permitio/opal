@@ -30,6 +30,7 @@ from opal_common.authentication.verifier import Unauthorized
 from opal_common.confi.confi import load_conf_if_none
 from opal_common.config import opal_common_config
 from opal_common.logger import logger
+from opal_server.broadcaster_keepalive import install_postgres_pool_keepalive
 from opal_server.config import opal_server_config
 from opal_server.pubsub_resilience import (
     FreezablePubSubEndpoint,
@@ -41,6 +42,40 @@ from starlette.datastructures import QueryParams
 
 OPAL_CLIENT_INFO_PARAM_PREFIX = "__opal_"
 OPAL_CLIENT_INFO_CLIENT_ID = f"{OPAL_CLIENT_INFO_PARAM_PREFIX}client_id"
+
+
+def effective_reader_silence_timeout() -> float:
+    """The reader silence timeout actually handed to the broadcaster.
+
+    The watchdog only makes sense when the fleet is guaranteed to speak: every
+    pod's leader publishes a keepalive every ``BROADCAST_KEEPALIVE_INTERVAL``
+    seconds. With the keepalive disabled (0) a quiet channel would look dead and
+    the watchdog would reconnect a healthy worker every timeout, so it is turned
+    off (with a warning). A timeout shorter than twice the keepalive interval is
+    raised to that, so one late or lost keepalive can never trip it.
+    """
+    timeout = float(opal_server_config.BROADCAST_READER_SILENCE_TIMEOUT)
+    if timeout <= 0:
+        return 0.0
+    keepalive = int(opal_server_config.BROADCAST_KEEPALIVE_INTERVAL)
+    if keepalive <= 0:
+        logger.warning(
+            "BROADCAST_READER_SILENCE_TIMEOUT is set but BROADCAST_KEEPALIVE_INTERVAL is 0: "
+            "without keepalives a quiet backbone is indistinguishable from a dead one, so the "
+            "reader silence watchdog is DISABLED. Set a keepalive interval to enable it."
+        )
+        return 0.0
+    floor = 2.0 * keepalive
+    if timeout < floor:
+        logger.warning(
+            "BROADCAST_READER_SILENCE_TIMEOUT ({t}s) is below twice BROADCAST_KEEPALIVE_INTERVAL "
+            "({k}s); raising it to {f}s so a single late keepalive cannot trip the watchdog",
+            t=timeout,
+            k=keepalive,
+            f=floor,
+        )
+        return floor
+    return timeout
 
 
 class ClientInfo(BaseModel):
@@ -153,6 +188,17 @@ class PubSub:
                 logger.info(
                     "Initializing reconnecting broadcaster for server<->server communication"
                 )
+                tcp_keepalive = None
+                if opal_server_config.BROADCAST_TCP_KEEPALIVE_ENABLED:
+                    tcp_keepalive = {
+                        "idle": opal_server_config.BROADCAST_TCP_KEEPALIVE_IDLE,
+                        "interval": opal_server_config.BROADCAST_TCP_KEEPALIVE_INTERVAL,
+                        "count": opal_server_config.BROADCAST_TCP_KEEPALIVE_COUNT,
+                    }
+                    if broadcaster_uri.startswith("postgres"):
+                        # Every pooled connection (listen AND publish) gets keepalive;
+                        # the broadcaster also re-applies it to its own listener.
+                        install_postgres_pool_keepalive(**tcp_keepalive)
                 self.broadcaster = ReconnectingBroadcaster(
                     broadcaster_uri,
                     notifier=self.notifier,
@@ -162,6 +208,8 @@ class PubSub:
                     reconnect_backoff_max=opal_server_config.BROADCAST_RECONNECT_BACKOFF_MAX_SECONDS,
                     replay_buffer_size=opal_server_config.BROADCAST_REPLAY_BUFFER_SIZE,
                     resync_settle_seconds=opal_server_config.BROADCAST_RESYNC_SETTLE_SECONDS,
+                    reader_silence_timeout=effective_reader_silence_timeout(),
+                    tcp_keepalive=tcp_keepalive,
                 )
             else:
                 logger.info(
