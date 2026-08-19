@@ -22,6 +22,7 @@ backbone that simply goes quiet (no close, no error) and check that:
 import asyncio
 import socket
 import time
+from contextlib import contextmanager  # noqa: E402
 from types import SimpleNamespace
 
 import pytest
@@ -34,6 +35,26 @@ from opal_server.tests.reconnecting_broadcaster_test import (
 )
 
 # --------------------------------------------------------------------- helpers
+
+
+@contextmanager
+def _patched_metrics(emitted, incremented):
+    """Capture the gauge/counter calls pubsub_resilience makes."""
+    from opal_server import pubsub_resilience as pr
+
+    real_gauge, real_inc = pr.metrics.gauge, pr.metrics.increment
+
+    def gauge(name, value, tags=None):
+        emitted.append((name, value))
+
+    def increment(name, tags=None):
+        incremented.append(name)
+
+    pr.metrics.gauge, pr.metrics.increment = gauge, increment
+    try:
+        yield
+    finally:
+        pr.metrics.gauge, pr.metrics.increment = real_gauge, real_inc
 
 
 def _make(bus, **overrides):
@@ -60,6 +81,14 @@ async def _cancel(task):
 # ------------------------------------------------------------ silence watchdog
 
 
+async def _first_message(bus, broadcaster):
+    """The silence clock only arms once the reader has HEARD the backbone; push
+    one message and wait until it is handled."""
+    n = len(broadcaster._notifier.notified)
+    await bus.push(["t"], {"hello": 1}, notifier_id="peer")
+    await _wait_for(lambda: len(broadcaster._notifier.notified) > n)
+
+
 @pytest.mark.asyncio
 async def test_silent_backbone_trips_the_watchdog_and_reconnects_once():
     bus = FakeBus()
@@ -68,40 +97,76 @@ async def test_silent_backbone_trips_the_watchdog_and_reconnects_once():
     task = await broadcaster.start_reader_task()
     try:
         await _wait_for(lambda: bus.subscribes >= 1)
+        await _first_message(bus, broadcaster)
         assert broadcaster.is_reader_healthy() is True
         # The backbone neither closes nor errors — it just never speaks again.
         await _wait_for(lambda: bus.subscribes >= 2, timeout=3.0)
         # Silence was treated as a gap: a NEW subscription (reconnect), one gap
-        # generation bumped, and the reader task still pending.
+        # generation bumped, one trip counted, and the reader task still pending.
         assert bus.connects == 2
         assert broadcaster.backbone_gap_generation() == 1
+        assert broadcaster.silence_trips() == 1
         assert not task.done()
-        # Re-subscribed => healthy again and the silent flag cleared.
-        await _wait_for(lambda: broadcaster.is_reader_healthy())
-        assert broadcaster.is_reader_silent() is False
+        # Re-subscribed => the silent flag clears.
+        await _wait_for(lambda: not broadcaster.is_reader_silent())
+        # And it stays re-subscribed: with the clock unarmed until the next message,
+        # a quiet-but-healthy backbone does not trip again and again.
+        await asyncio.sleep(0.6)
+        assert bus.subscribes == 2
+        assert broadcaster.silence_trips() == 1
     finally:
         await _cancel(task)
 
 
 @pytest.mark.asyncio
-async def test_watchdog_marks_reader_unhealthy_while_tripped_and_not_resubscribed():
-    # After the trip the reconnect must FAIL for a while (connect refused), so we
-    # can observe the unhealthy window: pending task, listeners present, but the
-    # watchdog said "deaf" and nothing has re-subscribed yet.
+async def test_silence_trip_keeps_the_reader_healthy_and_exposes_state_instead():
+    # A silence trip is a transient reconnect as far as readiness is concerned:
+    # /healthcheck must NOT flip (a real backbone outage would otherwise 503 every
+    # worker at once and clients could not even reconnect). The state is exposed
+    # through is_reader_silent()/silence_trips() and the metrics.
     bus = FakeBus()
     broadcaster = _make(bus)
+    broadcaster._listen_count = 1
+    emitted = []
+    incremented = []
+    with _patched_metrics(emitted, incremented):
+        task = await broadcaster.start_reader_task()
+        try:
+            await _wait_for(lambda: bus.subscribes >= 1)
+            await _first_message(bus, broadcaster)
+            bus.fail_connect = True  # the reconnect will be refused for a while
+            await _wait_for(lambda: broadcaster.is_reader_silent(), timeout=3.0)
+            assert not task.done()
+            assert broadcaster.is_reader_healthy() is True  # NOT flipped
+            assert broadcaster.silence_trips() == 1
+            assert ("opal_server.broadcaster_reader_silent", 1) in emitted
+            assert "opal_server.broadcaster_silence_trips" in incremented
+            bus.fail_connect = False
+            await _wait_for(lambda: not broadcaster.is_reader_silent(), timeout=3.0)
+            assert ("opal_server.broadcaster_reader_silent", 0) in emitted
+        finally:
+            await _cancel(task)
+
+
+@pytest.mark.asyncio
+async def test_no_trip_before_the_first_message_regardless_of_elapsed_time():
+    # Subscribed but nothing heard yet (boot before the leader's keepalive
+    # publisher starts; single pod whose own keepalive has not fired): the clock
+    # is unarmed, so no amount of waiting trips it.
+    bus = FakeBus()
+    broadcaster = _make(bus, reader_silence_timeout=0.2)
     broadcaster._listen_count = 1
     task = await broadcaster.start_reader_task()
     try:
         await _wait_for(lambda: bus.subscribes >= 1)
-        bus.fail_connect = True  # reconnect attempts will be refused
-        await _wait_for(lambda: broadcaster.is_reader_silent(), timeout=3.0)
-        assert not task.done()
-        assert broadcaster.is_reader_healthy() is False
-        # Backbone comes back: the next connect succeeds, health recovers.
-        bus.fail_connect = False
-        await _wait_for(lambda: broadcaster.is_reader_healthy(), timeout=3.0)
-        assert broadcaster.is_reader_silent() is False
+        await asyncio.sleep(1.0)  # 5x the timeout
+        assert bus.connects == 1
+        assert broadcaster.silence_trips() == 0
+        assert broadcaster.backbone_gap_generation() == 0
+        # first message arms it; then real silence trips
+        await _first_message(bus, broadcaster)
+        await _wait_for(lambda: bus.subscribes >= 2, timeout=3.0)
+        assert broadcaster.silence_trips() == 1
     finally:
         await _cancel(task)
 
@@ -114,14 +179,15 @@ async def test_short_silence_does_not_trip():
     task = await broadcaster.start_reader_task()
     try:
         await _wait_for(lambda: bus.subscribes >= 1)
+        await _first_message(bus, broadcaster)
         await asyncio.sleep(0.6)  # well under the 5 s limit, several poll cycles
         assert bus.connects == 1
         assert broadcaster.backbone_gap_generation() == 0
         assert broadcaster.is_reader_silent() is False
         assert broadcaster.is_reader_healthy() is True
-        # a message resets the clock (and is still delivered)
+        # a later message is still delivered (the pending read survived the polls)
         await bus.push(["t"], {"x": 1}, notifier_id="peer")
-        await _wait_for(lambda: broadcaster._notifier.notified)
+        await _wait_for(lambda: len(broadcaster._notifier.notified) >= 2)
     finally:
         await _cancel(task)
 
@@ -140,6 +206,38 @@ async def test_messages_keep_the_watchdog_quiet():
             await asyncio.sleep(0.1)
         assert bus.connects == 1
         assert broadcaster.backbone_gap_generation() == 0
+        assert len(broadcaster._notifier.notified) == 8  # every event delivered
+    finally:
+        await _cancel(task)
+
+
+@pytest.mark.asyncio
+async def test_a_handler_slower_than_the_timeout_is_not_silence():
+    # Fan-out to many clients can take longer than the timeout; that time is not
+    # backbone silence (the stamp is taken after the handler returns as well).
+    bus = FakeBus()
+    broadcaster = _make(bus, reader_silence_timeout=0.3)
+    broadcaster._listen_count = 1
+    handled = []
+
+    async def slow_handle(event):
+        await asyncio.sleep(0.5)  # > timeout
+        handled.append(event)
+
+    broadcaster._handle_broadcast_event = slow_handle
+    task = await broadcaster.start_reader_task()
+    try:
+        await _wait_for(lambda: bus.subscribes >= 1)
+        await bus.push(["t"], {"x": 1}, notifier_id="peer")
+        await _wait_for(lambda: len(handled) == 1, timeout=3.0)
+        # A quiet moment after the slow handler returns: measured from the
+        # after-handler stamp it is well under the timeout; measured from the
+        # before-handler stamp it would be 0.5 + 0.15 > 0.3 and trip.
+        await asyncio.sleep(0.15)
+        await bus.push(["t"], {"x": 2}, notifier_id="peer")
+        await _wait_for(lambda: len(handled) == 2, timeout=3.0)
+        assert bus.connects == 1
+        assert broadcaster.silence_trips() == 0
     finally:
         await _cancel(task)
 
@@ -152,6 +250,7 @@ async def test_watchdog_disabled_means_plain_passthrough():
     task = await broadcaster.start_reader_task()
     try:
         await _wait_for(lambda: bus.subscribes >= 1)
+        await _first_message(bus, broadcaster)
         await asyncio.sleep(0.6)
         assert bus.connects == 1  # silence is not a gap when the watchdog is off
         assert broadcaster.is_reader_healthy() is True
@@ -162,7 +261,7 @@ async def test_watchdog_disabled_means_plain_passthrough():
 @pytest.mark.asyncio
 async def test_watchdog_does_not_run_before_the_first_subscribe():
     # Backbone down from the start: the reader is retrying connects; no silence
-    # trip may be counted (the clock starts on a successful subscribe).
+    # trip may be counted (the clock starts on a successful subscribe + message).
     bus = FakeBus(fail_connect_times=3)
     broadcaster = _make(bus, reader_silence_timeout=0.2)
     broadcaster._listen_count = 1
@@ -170,7 +269,7 @@ async def test_watchdog_does_not_run_before_the_first_subscribe():
     try:
         await _wait_for(lambda: bus.subscribes >= 1, timeout=3.0)
         assert broadcaster.backbone_gap_generation() == 0
-        assert broadcaster._last_silence_trip_at is None
+        assert broadcaster.silence_trips() == 0
     finally:
         await _cancel(task)
 
@@ -184,10 +283,13 @@ async def test_trip_floor_limits_reconnect_storm():
     broadcaster._listen_count = 1
     task = await broadcaster.start_reader_task()
     try:
+        await _wait_for(lambda: bus.subscribes >= 1)
+        await _first_message(bus, broadcaster)
         await _wait_for(lambda: bus.subscribes >= 2, timeout=3.0)  # first trip
-        await asyncio.sleep(0.6)  # would be 2-3 more trips without the floor
+        await _first_message(bus, broadcaster)  # re-arm the clock after reconnect
+        await asyncio.sleep(0.7)  # would be 2-3 more trips without the floor
         assert bus.subscribes == 2
-        assert broadcaster.backbone_gap_generation() == 1
+        assert broadcaster.silence_trips() == 1
     finally:
         await _cancel(task)
 
@@ -216,10 +318,12 @@ async def test_silence_trip_terminates_the_listening_connection_before_release()
     broadcaster._listen_count = 1
     task = await broadcaster.start_reader_task()
     try:
+        await _wait_for(lambda: bus.subscribes >= 1)
+        await _first_message(bus, broadcaster)
         await _wait_for(lambda: bus.subscribes >= 2, timeout=3.0)  # silence trip
         assert calls["terminate"] == 1
         # Now a CLEAN close by the peer: no terminate (the pool release suffices).
-        await bus.push(["t"], {"x": 1}, notifier_id="peer")  # proves liveness first
+        await _first_message(bus, broadcaster)
         await bus.drop()
         await _wait_for(lambda: bus.subscribes >= 3, timeout=3.0)
         assert calls["terminate"] == 1
@@ -395,3 +499,44 @@ def test_effective_silence_timeout_is_coupled_to_the_keepalive(monkeypatch):
     monkeypatch.setattr(c, "BROADCAST_READER_SILENCE_TIMEOUT", 180.0)
     monkeypatch.setattr(c, "PUBLISHER_ENABLED", False)
     assert pubsub.effective_reader_silence_timeout() == 0.0
+
+
+def test_pool_hook_second_install_with_other_timings_warns_and_keeps_first(monkeypatch):
+    import types
+
+    captured = {}
+
+    class _FakeAsyncpg:
+        @staticmethod
+        def create_pool(*args, **kwargs):
+            captured["kwargs"] = kwargs
+            return "pool"
+
+    fake_backend = types.ModuleType("broadcaster._backends.postgres")
+    fake_backend.asyncpg = _FakeAsyncpg
+    monkeypatch.setitem(
+        __import__("sys").modules, "broadcaster._backends.postgres", fake_backend
+    )
+    monkeypatch.setattr(keepalive, "_POOL_HOOK_INSTALLED", False)
+    monkeypatch.setattr(keepalive, "_POOL_HOOK_TIMINGS", None)
+    warnings = []
+    monkeypatch.setattr(
+        keepalive.logger, "warning", lambda *a, **k: warnings.append(a[0])
+    )
+    assert keepalive.install_postgres_pool_keepalive(30, 10, 3) is True
+    assert keepalive.install_postgres_pool_keepalive(5, 5, 5) is True
+    assert any("first install wins" in w for w in warnings)
+    assert keepalive._POOL_HOOK_TIMINGS == (30, 10, 3)
+
+
+def test_keepalive_publisher_starts_before_load_scopes_in_the_leader():
+    """M4: the heartbeat the watchdog listens for must not wait for load_scopes
+    (which can exceed the silence timeout on a big fleet)."""
+    import inspect
+
+    from opal_server import server as server_mod
+
+    src = inspect.getsource(server_mod.OpalServer.start_server_background_tasks)
+    start = src.index("self.broadcast_keepalive.start()")
+    load = src.index("await load_scopes(self._scopes)")
+    assert start < load, "keepalive publisher must start before load_scopes"
