@@ -31,6 +31,7 @@ from typing import Any, Optional
 from opal_common.logger import logger
 
 _POOL_HOOK_INSTALLED = False
+_POOL_HOOK_TIMINGS: Optional[tuple] = None
 
 
 def apply_tcp_keepalive(sock: Any, idle: int, interval: int, count: int) -> bool:
@@ -48,9 +49,9 @@ def apply_tcp_keepalive(sock: Any, idle: int, interval: int, count: int) -> bool
         sock.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
     except (OSError, AttributeError, TypeError):
         return False
-    idle_opt = getattr(socket, "TCP_KEEPIDLE", None) or getattr(
-        socket, "TCP_KEEPALIVE", None
-    )
+    idle_opt = getattr(socket, "TCP_KEEPIDLE", None)
+    if idle_opt is None:  # macOS spells the idle timer TCP_KEEPALIVE
+        idle_opt = getattr(socket, "TCP_KEEPALIVE", None)
     for opt, value in (
         (idle_opt, idle),
         (getattr(socket, "TCP_KEEPINTVL", None), interval),
@@ -88,7 +89,8 @@ def apply_keepalive_to_connection(
     conn: Any, idle: int, interval: int, count: int, *, what: str = "connection"
 ) -> bool:
     """Apply :func:`apply_tcp_keepalive` to an asyncpg connection (or pool
-    proxy); logs once at INFO on success and WARNING on failure."""
+    proxy); logs one INFO line per connection on success and one WARNING on
+    failure."""
     sock = _socket_of(conn)
     ok = apply_tcp_keepalive(sock, idle, interval, count)
     if ok:
@@ -121,8 +123,16 @@ def install_postgres_pool_keepalive(idle: int, interval: int, count: int) -> boo
     importable (no asyncpg / different backend), in which case nothing
     is patched.
     """
-    global _POOL_HOOK_INSTALLED
+    global _POOL_HOOK_INSTALLED, _POOL_HOOK_TIMINGS
     if _POOL_HOOK_INSTALLED:
+        if _POOL_HOOK_TIMINGS != (idle, interval, count):
+            logger.warning(
+                "Broadcaster Postgres pool keepalive hook already installed with "
+                "idle/interval/count {first}; ignoring the later request for {later} "
+                "(first install wins for the process)",
+                first=_POOL_HOOK_TIMINGS,
+                later=(idle, interval, count),
+            )
         return True
     try:
         from broadcaster._backends import postgres as pg_backend  # type: ignore
@@ -154,6 +164,7 @@ def install_postgres_pool_keepalive(idle: int, interval: int, count: int) -> boo
 
     pg_backend.asyncpg = _KeepaliveAsyncpg()
     _POOL_HOOK_INSTALLED = True
+    _POOL_HOOK_TIMINGS = (idle, interval, count)
     logger.info(
         "Broadcaster Postgres pool: TCP keepalive hook installed (idle {idle}s, "
         "interval {interval}s, count {count})",
