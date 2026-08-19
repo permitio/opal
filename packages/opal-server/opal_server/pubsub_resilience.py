@@ -83,9 +83,7 @@ class _WatchedIterator:
     async def next(self, timeout: Optional[float] = None):
         if self._pending is None:
             self._pending = asyncio.ensure_future(self._iterator.__anext__())
-        if timeout is None:
-            done = {self._pending}
-        else:
+        if timeout is not None:
             done, _ = await asyncio.wait({self._pending}, timeout=timeout)
             if not done:
                 return _POLL_TIMEOUT
@@ -101,7 +99,10 @@ class _WatchedIterator:
             future.cancel()
             try:
                 await future
-            except (asyncio.CancelledError, StopAsyncIteration, Exception):
+            # CancelledError is caught on purpose: the future was cancelled one
+            # line up, so awaiting it surfaces THAT cancellation, which is the
+            # expected outcome here, not a signal to unwind the caller.
+            except (asyncio.CancelledError, Exception):
                 pass
         aclose = getattr(self._iterator, "aclose", None)
         if aclose is not None:
@@ -191,6 +192,7 @@ class ReconnectingBroadcaster(EventBroadcaster):
         reader_silence_timeout: float = 0.0,
         silence_min_trip_interval: float = 60.0,
         silence_poll_seconds: float = 1.0,
+        silence_first_message_grace: Optional[float] = None,
         tcp_keepalive: Optional[dict] = None,
         **kwargs,
     ):
@@ -216,14 +218,29 @@ class ReconnectingBroadcaster(EventBroadcaster):
         self._silence_min_trip_interval = max(0.0, float(silence_min_trip_interval))
         self._silence_poll_seconds = max(0.05, float(silence_poll_seconds))
         # monotonic() of the last backbone message of ANY kind (own keepalives
-        # included — they prove the pipe, not the peer). None until the FIRST
-        # message of a session: the clock only starts once this worker has
-        # actually heard the backbone, so a slow boot (the leader's keepalive
-        # publisher starts after load_scopes), a single-pod deployment before
-        # its leader publishes, or a fresh subscribe can never trip it — and it
-        # is stamped again AFTER each event is handled, so time spent fanning an
-        # event out to clients is not counted as silence.
+        # included — they prove the pipe, not the peer). Stamped before AND
+        # after each event is handled, so time spent fanning an event out to
+        # clients is not counted as silence. Arming:
+        #   * until this PROCESS has heard the backbone at least once
+        #     (_ever_heard_backbone) the clock is unarmed — a slow boot, a
+        #     single-pod deployment before its leader publishes, a keepalive
+        #     publisher that is not up yet can never trip it;
+        #   * once it has heard once, every later subscription is armed AT
+        #     SUBSCRIBE with a first-message grace of
+        #     silence_first_message_grace (>= the timeout; the caller passes
+        #     2x the keepalive interval) — a session that goes half-open
+        #     BEFORE its first message (a reconnect that lands on a stale
+        #     endpoint after a failover) is the PR's own scenario one step
+        #     earlier and must not be a blind spot.
         self._last_backbone_message_at: Optional[float] = None
+        self._ever_heard_backbone = False
+        self._awaiting_first_message = False
+        grace = (
+            self._reader_silence_timeout
+            if silence_first_message_grace is None
+            else float(silence_first_message_grace)
+        )
+        self._silence_first_message_grace = max(self._reader_silence_timeout, grace)
         self._last_silence_trip_at: Optional[float] = None
         # True from a silence trip until the next successful subscribe. NOT fed
         # into is_reader_healthy(): a silence trip is a normal transient
@@ -371,12 +388,37 @@ class ReconnectingBroadcaster(EventBroadcaster):
             tags=tags,
         )
 
+    def _note_backbone_message(self) -> None:
+        """Stamp the silence clock: this process has now heard the backbone."""
+        self._last_backbone_message_at = time.monotonic()
+        self._ever_heard_backbone = True
+        self._awaiting_first_message = False
+
+    def _arm_silence_clock_for_new_session(self) -> None:
+        """Called on every successful subscribe.
+
+        Unarmed until the process has heard the backbone once (boot-
+        safe); armed at subscribe, with the first- message grace, for
+        every session after that (no half-open blind spot).
+        """
+        if self._ever_heard_backbone:
+            self._last_backbone_message_at = time.monotonic()
+            self._awaiting_first_message = True
+        else:
+            self._last_backbone_message_at = None
+            self._awaiting_first_message = False
+
     def _silence_deadline_exceeded(self, now: float) -> bool:
         """True when the reader has heard nothing for longer than
         ``reader_silence_timeout`` and the trip floor has elapsed."""
         if self._reader_silence_timeout <= 0 or self._last_backbone_message_at is None:
             return False
-        if now - self._last_backbone_message_at < self._reader_silence_timeout:
+        limit = (
+            self._silence_first_message_grace
+            if self._awaiting_first_message
+            else self._reader_silence_timeout
+        )
+        if now - self._last_backbone_message_at < limit:
             return False
         if (
             self._last_silence_trip_at is not None
@@ -482,10 +524,11 @@ class ReconnectingBroadcaster(EventBroadcaster):
                     # peers again — reopen the publish gate (see FreezablePubSubEndpoint).
                     self._backbone_connected = True
                     self._had_backbone_connection = True
-                    # A fresh subscription ends a previous silence trip; the silence
-                    # clock itself stays unarmed until the first message of this session
-                    # (see _last_backbone_message_at).
-                    self._last_backbone_message_at = None
+                    # A fresh subscription ends a previous silence trip. The silence
+                    # clock: unarmed until this process has heard the backbone at least
+                    # once; armed at subscribe (with the first-message grace) for every
+                    # session after that (see _last_backbone_message_at).
+                    self._arm_silence_clock_for_new_session()
                     if self._reader_silent:
                         self._reader_silent = False
                         self._emit_silence_metrics()
@@ -505,13 +548,13 @@ class ReconnectingBroadcaster(EventBroadcaster):
                             event = await self._next_backbone_event(watched)
                             if event is _SUBSCRIBER_ENDED:
                                 break
-                            self._last_backbone_message_at = time.monotonic()
+                            self._note_backbone_message()
                             if not sustained:
                                 sustained = True
                                 attempt = 0
                             await self._handle_broadcast_event(event)
                             # Time spent fanning the event out is not silence.
-                            self._last_backbone_message_at = time.monotonic()
+                            self._note_backbone_message()
                     finally:
                         await watched.close()
                 if sustained:
@@ -756,6 +799,11 @@ class ReconnectingBroadcaster(EventBroadcaster):
             now = time.monotonic()
             if self._silence_deadline_exceeded(now):
                 silent_for = now - (self._last_backbone_message_at or now)
+                limit = (
+                    self._silence_first_message_grace
+                    if self._awaiting_first_message
+                    else self._reader_silence_timeout
+                )
                 self._reader_silent = True
                 self._silence_trips += 1
                 self._last_silence_trip_at = now
@@ -767,7 +815,8 @@ class ReconnectingBroadcaster(EventBroadcaster):
                 await watched.close()
                 raise BackboneSilent(
                     f"no backbone message for {silent_for:.0f}s "
-                    f"(limit {self._reader_silence_timeout:.0f}s)"
+                    f"(limit {limit:.0f}s"
+                    f"{', first message of the session' if self._awaiting_first_message else ''})"
                 )
 
     def _listening_backend_connection(self):
@@ -787,8 +836,9 @@ class ReconnectingBroadcaster(EventBroadcaster):
             # the docs is honest for those backbones.
             logger.info(
                 "Broadcaster listening connection: backend exposes no Postgres "
-                "connection, TCP keepalive not applied (the silence watchdog still "
-                "covers half-open detection)"
+                "connection, TCP keepalive not applied (the silence watchdog covers "
+                "half-open detection once this worker has heard the backbone at "
+                "least once; before that only TCP keepalive could)"
             )
             return
         try:

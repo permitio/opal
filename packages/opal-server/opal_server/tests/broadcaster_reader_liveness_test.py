@@ -109,9 +109,13 @@ async def test_silent_backbone_trips_the_watchdog_and_reconnects_once():
         assert not task.done()
         # Re-subscribed => the silent flag clears.
         await _wait_for(lambda: not broadcaster.is_reader_silent())
-        # And it stays re-subscribed: with the clock unarmed until the next message,
-        # a quiet-but-healthy backbone does not trip again and again.
-        await asyncio.sleep(0.6)
+        # The new session is armed at subscribe (this process has heard the
+        # backbone before): a backbone that speaks again within the grace does
+        # not trip again — the worker is simply back to normal.
+        await _first_message(bus, broadcaster)
+        await asyncio.sleep(0.15)
+        await _first_message(bus, broadcaster)
+        await asyncio.sleep(0.15)
         assert bus.subscribes == 2
         assert broadcaster.silence_trips() == 1
     finally:
@@ -167,6 +171,78 @@ async def test_no_trip_before_the_first_message_regardless_of_elapsed_time():
         await _first_message(bus, broadcaster)
         await _wait_for(lambda: bus.subscribes >= 2, timeout=3.0)
         assert broadcaster.silence_trips() == 1
+    finally:
+        await _cancel(task)
+
+
+@pytest.mark.asyncio
+async def test_a_later_session_is_armed_at_subscribe_with_the_first_message_grace():
+    # The blind spot this guards: a process that HAS heard the backbone
+    # reconnects (clean close here; a post-failover reconnect landing on a stale
+    # endpoint in life) and the new session goes half-open before its first
+    # message. Arming only at first-message would never detect it. Instead the
+    # session is armed at subscribe, with the (longer) first-message grace.
+    bus = FakeBus()
+    broadcaster = _make(
+        bus, reader_silence_timeout=0.3, silence_first_message_grace=0.8
+    )
+    broadcaster._listen_count = 1
+    task = await broadcaster.start_reader_task()
+    try:
+        await _wait_for(lambda: bus.subscribes >= 1)
+        await _first_message(bus, broadcaster)  # the process has now heard it
+        await bus.drop()  # clean close -> reconnect; the new session never speaks
+        await _wait_for(lambda: bus.subscribes >= 2, timeout=3.0)
+        assert broadcaster.silence_trips() == 0
+        await asyncio.sleep(0.5)  # past the timeout, within the grace
+        assert broadcaster.silence_trips() == 0
+        assert bus.subscribes == 2
+        await _wait_for(lambda: broadcaster.silence_trips() == 1, timeout=2.0)
+        await _wait_for(lambda: bus.subscribes >= 3, timeout=3.0)  # reconnected
+        # one gap for the clean drop, one for the silence trip
+        assert broadcaster.backbone_gap_generation() == 2
+        assert not task.done()
+    finally:
+        await _cancel(task)
+
+
+@pytest.mark.asyncio
+async def test_the_grace_ends_with_the_first_message_of_the_session():
+    # Once a later session has spoken, the normal (shorter) timeout applies
+    # again — the grace is for the first message only.
+    bus = FakeBus()
+    broadcaster = _make(
+        bus, reader_silence_timeout=0.3, silence_first_message_grace=1.5
+    )
+    broadcaster._listen_count = 1
+    task = await broadcaster.start_reader_task()
+    try:
+        await _wait_for(lambda: bus.subscribes >= 1)
+        await _first_message(bus, broadcaster)
+        await bus.drop()
+        await _wait_for(lambda: bus.subscribes >= 2, timeout=3.0)
+        await _first_message(bus, broadcaster)  # the later session speaks once
+        await asyncio.sleep(0.6)  # > timeout, << grace
+        assert broadcaster.silence_trips() == 1
+    finally:
+        await _cancel(task)
+
+
+@pytest.mark.asyncio
+async def test_a_process_that_never_heard_the_backbone_never_trips_even_across_resubscribes():
+    # Boot property kept: until the process has heard the backbone once, no
+    # session is armed — not the first and not a later one either.
+    bus = FakeBus()
+    broadcaster = _make(bus, reader_silence_timeout=0.2)
+    broadcaster._listen_count = 1
+    task = await broadcaster.start_reader_task()
+    try:
+        await _wait_for(lambda: bus.subscribes >= 1)
+        await bus.drop()  # a clean close before anything was ever heard
+        await _wait_for(lambda: bus.subscribes >= 2, timeout=3.0)
+        await asyncio.sleep(1.0)  # 5x the timeout
+        assert broadcaster.silence_trips() == 0
+        assert bus.subscribes == 2
     finally:
         await _cancel(task)
 
@@ -499,6 +575,17 @@ def test_effective_silence_timeout_is_coupled_to_the_keepalive(monkeypatch):
     monkeypatch.setattr(c, "BROADCAST_READER_SILENCE_TIMEOUT", 180.0)
     monkeypatch.setattr(c, "PUBLISHER_ENABLED", False)
     assert pubsub.effective_reader_silence_timeout() == 0.0
+
+
+def test_first_message_grace_is_at_least_two_keepalives(monkeypatch):
+    from opal_server import pubsub
+    from opal_server.config import opal_server_config as c
+
+    monkeypatch.setattr(c, "BROADCAST_KEEPALIVE_INTERVAL", 60)
+    assert pubsub.silence_first_message_grace(180.0) == 180.0
+    assert pubsub.silence_first_message_grace(90.0) == 120.0
+    monkeypatch.setattr(c, "BROADCAST_KEEPALIVE_INTERVAL", 0)
+    assert pubsub.silence_first_message_grace(180.0) == 180.0
 
 
 def test_pool_hook_second_install_with_other_timings_warns_and_keeps_first(monkeypatch):

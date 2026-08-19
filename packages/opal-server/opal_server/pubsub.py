@@ -88,6 +88,14 @@ def effective_reader_silence_timeout() -> float:
     return timeout
 
 
+def silence_first_message_grace(timeout: float) -> float:
+    """How long a later session may stay silent before its FIRST message: at
+    least the timeout, and at least two keepalive intervals, so a reconnect that
+    lands just after a heartbeat always gets to hear the next one."""
+    keepalive = max(0, int(opal_server_config.BROADCAST_KEEPALIVE_INTERVAL))
+    return max(float(timeout), 2.0 * keepalive)
+
+
 class ClientInfo(BaseModel):
     client_id: str
     source_host: Optional[str]
@@ -209,6 +217,7 @@ class PubSub:
                         # Every pooled connection (listen AND publish) gets keepalive;
                         # the broadcaster also re-applies it to its own listener.
                         install_postgres_pool_keepalive(**tcp_keepalive)
+                silence_timeout = effective_reader_silence_timeout()
                 self.broadcaster = ReconnectingBroadcaster(
                     broadcaster_uri,
                     notifier=self.notifier,
@@ -218,7 +227,10 @@ class PubSub:
                     reconnect_backoff_max=opal_server_config.BROADCAST_RECONNECT_BACKOFF_MAX_SECONDS,
                     replay_buffer_size=opal_server_config.BROADCAST_REPLAY_BUFFER_SIZE,
                     resync_settle_seconds=opal_server_config.BROADCAST_RESYNC_SETTLE_SECONDS,
-                    reader_silence_timeout=effective_reader_silence_timeout(),
+                    reader_silence_timeout=silence_timeout,
+                    silence_first_message_grace=silence_first_message_grace(
+                        silence_timeout
+                    ),
                     tcp_keepalive=tcp_keepalive,
                 )
             else:
