@@ -343,6 +343,13 @@ class OpalServer:
                     1 if healthy else 0,
                     tags={"pid": str(os.getpid())},
                 )
+                # The silence gauge is edge-triggered inside the reader; re-emit it
+                # here so it has a steady 0 baseline on every probe.
+                metrics.gauge(
+                    "opal_server.broadcaster_reader_silent",
+                    1 if broadcaster.is_reader_silent() else 0,
+                    tags={"pid": str(os.getpid())},
+                )
                 if not healthy:
                     return JSONResponse(
                         status_code=503,
