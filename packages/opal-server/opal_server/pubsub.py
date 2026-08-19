@@ -57,6 +57,16 @@ def effective_reader_silence_timeout() -> float:
     timeout = float(opal_server_config.BROADCAST_READER_SILENCE_TIMEOUT)
     if timeout <= 0:
         return 0.0
+    if not opal_server_config.PUBLISHER_ENABLED:
+        # No publisher means this server never emits the keepalive heartbeat; a
+        # single-server deployment would then hear nothing by design and the
+        # watchdog would recycle its clients every timeout for no reason.
+        logger.warning(
+            "BROADCAST_READER_SILENCE_TIMEOUT is set but PUBLISHER_ENABLED is false: this "
+            "server publishes no keepalive heartbeat, so the reader silence watchdog is "
+            "DISABLED (silence could be a quiet fleet, not a dead connection)."
+        )
+        return 0.0
     keepalive = int(opal_server_config.BROADCAST_KEEPALIVE_INTERVAL)
     if keepalive <= 0:
         logger.warning(

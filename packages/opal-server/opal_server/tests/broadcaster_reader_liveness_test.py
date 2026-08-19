@@ -391,3 +391,7 @@ def test_effective_silence_timeout_is_coupled_to_the_keepalive(monkeypatch):
     monkeypatch.setattr(c, "BROADCAST_KEEPALIVE_INTERVAL", 60)
     monkeypatch.setattr(c, "BROADCAST_READER_SILENCE_TIMEOUT", 0)
     assert pubsub.effective_reader_silence_timeout() == 0.0
+    # publisher off -> this server emits no heartbeat -> watchdog off
+    monkeypatch.setattr(c, "BROADCAST_READER_SILENCE_TIMEOUT", 180.0)
+    monkeypatch.setattr(c, "PUBLISHER_ENABLED", False)
+    assert pubsub.effective_reader_silence_timeout() == 0.0
