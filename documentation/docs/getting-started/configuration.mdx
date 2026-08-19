@@ -657,7 +657,7 @@ Reader liveness by silence. If the broadcaster reader receives no backbone messa
 
 Default: `True`
 
-Enable TCP keepalive on the broadcaster's Postgres connections (listen and publish), so a half-open peer is declared dead by the kernel after `OPAL_BROADCAST_TCP_KEEPALIVE_IDLE` + `OPAL_BROADCAST_TCP_KEEPALIVE_INTERVAL` × `OPAL_BROADCAST_TCP_KEEPALIVE_COUNT` seconds (60 s at the defaults) instead of never. Applied through the pool's connection-init hook; fail-open (logged) where the platform refuses the options; Postgres backbones only. Other backends log one INFO line; for them the silence watchdog is the only half-open detector, and it covers a session once the worker has heard the backbone at least once — before that, only TCP keepalive could.
+Enable TCP keepalive on the broadcaster's Postgres connections (listen and publish), so a half-open peer is declared dead by the kernel after `OPAL_BROADCAST_TCP_KEEPALIVE_IDLE` + `OPAL_BROADCAST_TCP_KEEPALIVE_INTERVAL` × `OPAL_BROADCAST_TCP_KEEPALIVE_COUNT` seconds (60 s at the defaults) instead of never. Applied through the pool's connection-init hook; fail-open (logged) where the platform refuses the options; Postgres backbones only. Other backends log one INFO line; for them the silence watchdog is the only half-open detector, and it covers a session once the worker has heard the backbone at least once — before that first message nothing detects a half-open listener on those backbones (on Postgres, TCP keepalive does).
 
 #### OPAL_BROADCAST_TCP_KEEPALIVE_IDLE
 
