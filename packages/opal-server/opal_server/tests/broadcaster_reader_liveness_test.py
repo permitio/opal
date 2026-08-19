@@ -15,18 +15,17 @@ backbone that simply goes quiet (no close, no error) and check that:
 * ``is_reader_healthy()`` goes False while tripped and back to True on
   re-subscribe;
 * the dead listening connection is terminated (not handed back to the pool);
-* TCP keepalive is applied on connect, skipped gracefully where unsupported,
-  and the pool hook wraps ``create_pool`` with an ``init``;
 * the config defaults and the keepalive/timeout coupling guard behave.
+
+TCP keepalive on the Postgres connections themselves is the permit-broadcaster
+library's job (>= 0.2.7, on by default); it is not tested here.
 """
 import asyncio
-import socket
 import time
 from contextlib import contextmanager  # noqa: E402
 from types import SimpleNamespace
 
 import pytest
-from opal_server import broadcaster_keepalive as keepalive
 from opal_server.pubsub_resilience import ReconnectingBroadcaster
 from opal_server.tests.reconnecting_broadcaster_test import (
     FakeBus,
@@ -407,138 +406,6 @@ async def test_silence_trip_terminates_the_listening_connection_before_release()
         await _cancel(task)
 
 
-# ---------------------------------------------------------------- keepalive
-
-
-class _FakeSocket:
-    def __init__(self, refuse_timings=False, refuse_all=False):
-        self.opts = []
-        self.refuse_timings = refuse_timings
-        self.refuse_all = refuse_all
-
-    def setsockopt(self, level, opt, value):
-        if self.refuse_all:
-            raise OSError("nope")
-        if self.refuse_timings and level == socket.IPPROTO_TCP:
-            raise OSError("unsupported option")
-        self.opts.append((level, opt, value))
-
-
-def test_apply_tcp_keepalive_sets_flag_and_timings():
-    sock = _FakeSocket()
-    assert keepalive.apply_tcp_keepalive(sock, 30, 10, 3) is True
-    assert (socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1) in sock.opts
-    idle_opt = getattr(socket, "TCP_KEEPIDLE", None) or getattr(
-        socket, "TCP_KEEPALIVE", None
-    )
-    tcp_opts = {opt: val for lvl, opt, val in sock.opts if lvl == socket.IPPROTO_TCP}
-    if idle_opt is not None:
-        assert tcp_opts[idle_opt] == 30
-    if getattr(socket, "TCP_KEEPINTVL", None) is not None:
-        assert tcp_opts[socket.TCP_KEEPINTVL] == 10
-    if getattr(socket, "TCP_KEEPCNT", None) is not None:
-        assert tcp_opts[socket.TCP_KEEPCNT] == 3
-
-
-def test_apply_tcp_keepalive_is_fail_open():
-    # timings refused -> flag still on, returns True; everything refused -> False;
-    # no socket -> False. None of them raise.
-    sock = _FakeSocket(refuse_timings=True)
-    assert keepalive.apply_tcp_keepalive(sock, 30, 10, 3) is True
-    assert sock.opts == [(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)]
-    assert (
-        keepalive.apply_tcp_keepalive(_FakeSocket(refuse_all=True), 30, 10, 3) is False
-    )
-    assert keepalive.apply_tcp_keepalive(None, 30, 10, 3) is False
-
-
-def test_apply_keepalive_to_connection_digs_through_pool_proxy_and_transport():
-    sock = _FakeSocket()
-    transport = SimpleNamespace(
-        get_extra_info=lambda name: sock if name == "socket" else None
-    )
-    inner = SimpleNamespace(_transport=transport)
-    proxy = SimpleNamespace(_con=inner)  # asyncpg PoolConnectionProxy shape
-    assert keepalive.apply_keepalive_to_connection(proxy, 30, 10, 3) is True
-    assert (socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1) in sock.opts
-    # a connection without a transport is a clean False, not an exception
-    assert (
-        keepalive.apply_keepalive_to_connection(SimpleNamespace(), 30, 10, 3) is False
-    )
-
-
-@pytest.mark.asyncio
-async def test_reconnecting_broadcaster_applies_keepalive_to_its_listener():
-    bus = FakeBus()
-    sock = _FakeSocket()
-    transport = SimpleNamespace(
-        get_extra_info=lambda name: sock if name == "socket" else None
-    )
-    real_factory = bus.channel_factory
-
-    def factory(url):
-        channel = real_factory(url)
-        channel._backend = SimpleNamespace(_conn=SimpleNamespace(_transport=transport))
-        return channel
-
-    broadcaster = _make(
-        bus,
-        broadcast_type=factory,
-        reader_silence_timeout=0,
-        tcp_keepalive={"idle": 7, "interval": 2, "count": 4},
-    )
-    broadcaster._listen_count = 1
-    task = await broadcaster.start_reader_task()
-    try:
-        await _wait_for(lambda: bus.subscribes >= 1)
-        assert (socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1) in sock.opts
-        idle_opt = getattr(socket, "TCP_KEEPIDLE", None) or getattr(
-            socket, "TCP_KEEPALIVE", None
-        )
-        if idle_opt is not None:
-            assert (socket.IPPROTO_TCP, idle_opt, 7) in sock.opts
-    finally:
-        await _cancel(task)
-
-
-def test_pool_hook_wraps_create_pool_with_an_init(monkeypatch):
-    # Install the hook against a fake backend module and check create_pool gets an
-    # init that applies keepalive to the connection it is handed.
-    import types
-
-    captured = {}
-
-    class _FakeAsyncpg:
-        @staticmethod
-        def create_pool(*args, **kwargs):
-            captured["kwargs"] = kwargs
-            return "pool"
-
-        some_other_attr = "forwarded"
-
-    fake_backend = types.ModuleType("broadcaster._backends.postgres")
-    fake_backend.asyncpg = _FakeAsyncpg
-    monkeypatch.setitem(
-        __import__("sys").modules, "broadcaster._backends.postgres", fake_backend
-    )
-    monkeypatch.setattr(keepalive, "_POOL_HOOK_INSTALLED", False)
-
-    assert keepalive.install_postgres_pool_keepalive(30, 10, 3) is True
-    # idempotent
-    assert keepalive.install_postgres_pool_keepalive(30, 10, 3) is True
-    assert fake_backend.asyncpg.create_pool("postgres://x", max_size=10) == "pool"
-    assert "init" in captured["kwargs"]
-    assert fake_backend.asyncpg.some_other_attr == "forwarded"  # other names forwarded
-
-    sock = _FakeSocket()
-    transport = SimpleNamespace(
-        get_extra_info=lambda name: sock if name == "socket" else None
-    )
-    conn = SimpleNamespace(_transport=transport)
-    asyncio.run(captured["kwargs"]["init"](conn))
-    assert (socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1) in sock.opts
-
-
 # ------------------------------------------------------------------ config
 
 
@@ -547,10 +414,6 @@ def test_config_defaults():
 
     assert c.BROADCAST_KEEPALIVE_INTERVAL == 60
     assert c.BROADCAST_READER_SILENCE_TIMEOUT == 180.0
-    assert c.BROADCAST_TCP_KEEPALIVE_ENABLED is True
-    assert c.BROADCAST_TCP_KEEPALIVE_IDLE == 30
-    assert c.BROADCAST_TCP_KEEPALIVE_INTERVAL == 10
-    assert c.BROADCAST_TCP_KEEPALIVE_COUNT == 3
 
 
 def test_effective_silence_timeout_is_coupled_to_the_keepalive(monkeypatch):
@@ -586,34 +449,6 @@ def test_first_message_grace_is_at_least_two_keepalives(monkeypatch):
     assert pubsub.silence_first_message_grace(90.0) == 120.0
     monkeypatch.setattr(c, "BROADCAST_KEEPALIVE_INTERVAL", 0)
     assert pubsub.silence_first_message_grace(180.0) == 180.0
-
-
-def test_pool_hook_second_install_with_other_timings_warns_and_keeps_first(monkeypatch):
-    import types
-
-    captured = {}
-
-    class _FakeAsyncpg:
-        @staticmethod
-        def create_pool(*args, **kwargs):
-            captured["kwargs"] = kwargs
-            return "pool"
-
-    fake_backend = types.ModuleType("broadcaster._backends.postgres")
-    fake_backend.asyncpg = _FakeAsyncpg
-    monkeypatch.setitem(
-        __import__("sys").modules, "broadcaster._backends.postgres", fake_backend
-    )
-    monkeypatch.setattr(keepalive, "_POOL_HOOK_INSTALLED", False)
-    monkeypatch.setattr(keepalive, "_POOL_HOOK_TIMINGS", None)
-    warnings = []
-    monkeypatch.setattr(
-        keepalive.logger, "warning", lambda *a, **k: warnings.append(a[0])
-    )
-    assert keepalive.install_postgres_pool_keepalive(30, 10, 3) is True
-    assert keepalive.install_postgres_pool_keepalive(5, 5, 5) is True
-    assert any("first install wins" in w for w in warnings)
-    assert keepalive._POOL_HOOK_TIMINGS == (30, 10, 3)
 
 
 def test_keepalive_publisher_starts_before_load_scopes_in_the_leader():

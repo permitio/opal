@@ -30,7 +30,6 @@ from opal_common.authentication.verifier import Unauthorized
 from opal_common.confi.confi import load_conf_if_none
 from opal_common.config import opal_common_config
 from opal_common.logger import logger
-from opal_server.broadcaster_keepalive import install_postgres_pool_keepalive
 from opal_server.config import opal_server_config
 from opal_server.pubsub_resilience import (
     FreezablePubSubEndpoint,
@@ -206,17 +205,6 @@ class PubSub:
                 logger.info(
                     "Initializing reconnecting broadcaster for server<->server communication"
                 )
-                tcp_keepalive = None
-                if opal_server_config.BROADCAST_TCP_KEEPALIVE_ENABLED:
-                    tcp_keepalive = {
-                        "idle": opal_server_config.BROADCAST_TCP_KEEPALIVE_IDLE,
-                        "interval": opal_server_config.BROADCAST_TCP_KEEPALIVE_INTERVAL,
-                        "count": opal_server_config.BROADCAST_TCP_KEEPALIVE_COUNT,
-                    }
-                    if broadcaster_uri.startswith("postgres"):
-                        # Every pooled connection (listen AND publish) gets keepalive;
-                        # the broadcaster also re-applies it to its own listener.
-                        install_postgres_pool_keepalive(**tcp_keepalive)
                 silence_timeout = effective_reader_silence_timeout()
                 self.broadcaster = ReconnectingBroadcaster(
                     broadcaster_uri,
@@ -231,7 +219,6 @@ class PubSub:
                     silence_first_message_grace=silence_first_message_grace(
                         silence_timeout
                     ),
-                    tcp_keepalive=tcp_keepalive,
                 )
             else:
                 logger.info(

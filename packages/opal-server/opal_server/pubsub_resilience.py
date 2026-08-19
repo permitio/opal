@@ -51,7 +51,6 @@ from fastapi_websocket_pubsub.util import pydantic_serialize
 from fastapi_websocket_rpc.connection_manager import ConnectionManager
 from opal_common.logger import logger
 from opal_common.monitoring import metrics
-from opal_server.broadcaster_keepalive import apply_keepalive_to_connection
 
 ReconnectCallback = Callable[[], Awaitable[None]]
 
@@ -193,7 +192,6 @@ class ReconnectingBroadcaster(EventBroadcaster):
         silence_min_trip_interval: float = 60.0,
         silence_poll_seconds: float = 1.0,
         silence_first_message_grace: Optional[float] = None,
-        tcp_keepalive: Optional[dict] = None,
         **kwargs,
     ):
         super().__init__(*args, **kwargs)
@@ -207,7 +205,12 @@ class ReconnectingBroadcaster(EventBroadcaster):
         # failover moves the name to another host and the old one is yanked; a
         # firewall drops packets): the socket stays ESTABLISHED, the reader waits
         # forever, nothing reconnects, and this worker's clients silently miss
-        # every update published elsewhere. The fleet is never silent for long —
+        # every update published elsewhere. On Postgres the permit-broadcaster
+        # library (>= 0.2.7) enables TCP keepalive on every pooled connection,
+        # which catches an unreachable peer at the kernel level; this watchdog is
+        # the backend-agnostic detector and the one that also catches a peer
+        # whose kernel is alive but whose backbone is mute (keepalive probes are
+        # answered, no message ever arrives). The fleet is never silent for long —
         # every pod publishes a keepalive on the backbone — so "no message of any
         # kind for longer than reader_silence_timeout" is treated as a gap: the
         # listening connection is terminated (so the pool cannot hand the dead
@@ -251,9 +254,6 @@ class ReconnectingBroadcaster(EventBroadcaster):
         # counter instead; give-up -> graceful shutdown remains the escalation.
         self._reader_silent = False
         self._silence_trips = 0
-        # TCP keepalive timings applied to the listening connection on connect
-        # ({"idle": s, "interval": s, "count": n}); None = leave the socket alone.
-        self._tcp_keepalive = dict(tcp_keepalive) if tcp_keepalive else None
         # (B) bounded outbound replay buffer; deque(maxlen) drops the oldest on overflow.
         self._outbound_buffer: deque = deque(
             maxlen=replay_buffer_size if replay_buffer_size > 0 else None
@@ -774,7 +774,6 @@ class ReconnectingBroadcaster(EventBroadcaster):
         if self.listening_broadcast_channel is None:
             self.listening_broadcast_channel = self._broadcast_type(self._broadcast_url)
             await self.listening_broadcast_channel.connect()
-            self._apply_keepalive_to_listening_connection()
         return self.listening_broadcast_channel
 
     async def _next_backbone_event(self, watched: "_WatchedIterator"):
@@ -825,32 +824,6 @@ class ReconnectingBroadcaster(EventBroadcaster):
         channel = self.listening_broadcast_channel
         backend = getattr(channel, "_backend", None)
         return getattr(backend, "_conn", None)
-
-    def _apply_keepalive_to_listening_connection(self) -> None:
-        if not self._tcp_keepalive:
-            return
-        conn = self._listening_backend_connection()
-        if conn is None:
-            # Redis/Kafka/memory backends expose no asyncpg connection (the hook
-            # is Postgres-only); say so once per connect so "on by default" in
-            # the docs is honest for those backbones.
-            logger.info(
-                "Broadcaster listening connection: backend exposes no Postgres "
-                "connection, TCP keepalive not applied (the silence watchdog covers "
-                "half-open detection once this worker has heard the backbone at "
-                "least once; before that only TCP keepalive could)"
-            )
-            return
-        try:
-            apply_keepalive_to_connection(
-                conn,
-                self._tcp_keepalive.get("idle", 30),
-                self._tcp_keepalive.get("interval", 10),
-                self._tcp_keepalive.get("count", 3),
-                what="listening connection",
-            )
-        except Exception as e:  # fail-open by contract
-            logger.warning(f"Could not apply TCP keepalive to the listener: {e!r}")
 
     async def _terminate_listening_connection(self) -> None:
         """Hard-close the listening connection after a silence trip.

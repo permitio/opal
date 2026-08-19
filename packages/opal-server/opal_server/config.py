@@ -109,30 +109,6 @@ class OpalServerConfig(Confi):
         "(it is raised to twice that if set lower); 0 disables. A trip costs one "
         "reconnect and one client resync — the same as a peer-announced disconnect.",
     )
-    BROADCAST_TCP_KEEPALIVE_ENABLED = confi.bool(
-        "BROADCAST_TCP_KEEPALIVE_ENABLED",
-        True,
-        description="Enable TCP keepalive on the broadcaster's Postgres connections "
-        "(listen and publish) so a half-open peer is declared dead by the kernel after "
-        "BROADCAST_TCP_KEEPALIVE_IDLE + INTERVAL x COUNT seconds (60 s at defaults) "
-        "instead of never. Applied via the pool's connection init hook; fail-open "
-        "(logged) where the platform refuses the options.",
-    )
-    BROADCAST_TCP_KEEPALIVE_IDLE = confi.int(
-        "BROADCAST_TCP_KEEPALIVE_IDLE",
-        30,
-        description="Seconds of idleness before the first TCP keepalive probe.",
-    )
-    BROADCAST_TCP_KEEPALIVE_INTERVAL = confi.int(
-        "BROADCAST_TCP_KEEPALIVE_INTERVAL",
-        10,
-        description="Seconds between TCP keepalive probes once the first went unanswered.",
-    )
-    BROADCAST_TCP_KEEPALIVE_COUNT = confi.int(
-        "BROADCAST_TCP_KEEPALIVE_COUNT",
-        3,
-        description="Unanswered TCP keepalive probes before the connection is declared dead.",
-    )
     BROADCAST_HEALTHCHECK_ENABLED = confi.bool(
         "BROADCAST_HEALTHCHECK_ENABLED",
         True,
