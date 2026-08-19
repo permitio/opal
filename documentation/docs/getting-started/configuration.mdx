@@ -643,9 +643,39 @@ Make `/healthcheck` reflect the broadcaster reader's health, so a Kubernetes rea
 
 #### OPAL_BROADCAST_KEEPALIVE_INTERVAL
 
-Default: `3600`
+Default: `60`
 
-The time to wait between sending two consecutive broadcaster keepalive messages, in seconds.
+Seconds between two consecutive broadcaster keepalive messages (published by each pod's leader worker on the backbone). Besides keeping idle backbone sessions warm, these are the heartbeat the reader silence watchdog (`OPAL_BROADCAST_READER_SILENCE_TIMEOUT`) listens for: a healthy fleet is never silent for longer than this. `0` disables the keepalive — and with it the silence watchdog, which would otherwise mistake a quiet channel for a dead one. The default was `3600` before 0.9.9; it was lowered so that silence on the backbone means something.
+
+#### OPAL_BROADCAST_READER_SILENCE_TIMEOUT
+
+Default: `180.0`
+
+Reader liveness by silence. If the broadcaster reader receives no backbone message of any kind (keepalives included) for this many seconds, the listening connection is treated as dead — it is terminated so the connection pool cannot reuse it — and the normal reconnect + client-resync path runs. This is what catches a *half-open* backbone connection (for example after a database failover that moves the endpoint to another host without closing the old sockets), where nothing else ever fires. While tripped, `/healthcheck` reports the reader unhealthy until it re-subscribes. Must be comfortably above `OPAL_BROADCAST_KEEPALIVE_INTERVAL` (it is raised to twice that if set lower); `0` disables. A trip costs one reconnect and one client resync — the same as a peer-announced disconnect.
+
+#### OPAL_BROADCAST_TCP_KEEPALIVE_ENABLED
+
+Default: `True`
+
+Enable TCP keepalive on the broadcaster's Postgres connections (listen and publish), so a half-open peer is declared dead by the kernel after `OPAL_BROADCAST_TCP_KEEPALIVE_IDLE` + `OPAL_BROADCAST_TCP_KEEPALIVE_INTERVAL` × `OPAL_BROADCAST_TCP_KEEPALIVE_COUNT` seconds (60 s at the defaults) instead of never. Applied through the pool's connection-init hook; fail-open (logged) where the platform refuses the options.
+
+#### OPAL_BROADCAST_TCP_KEEPALIVE_IDLE
+
+Default: `30`
+
+Seconds of idleness before the first TCP keepalive probe.
+
+#### OPAL_BROADCAST_TCP_KEEPALIVE_INTERVAL
+
+Default: `10`
+
+Seconds between TCP keepalive probes once the first went unanswered.
+
+#### OPAL_BROADCAST_TCP_KEEPALIVE_COUNT
+
+Default: `3`
+
+Unanswered TCP keepalive probes before the connection is declared dead.
 
 #### OPAL_BROADCAST_KEEPALIVE_TOPIC
 
