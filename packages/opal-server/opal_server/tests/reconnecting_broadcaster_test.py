@@ -150,17 +150,26 @@ class _FakeSubscription:
 
 
 class _FakeSubscriber:
+    """Faithful to ``broadcaster._base.Subscriber``: ``__aiter__`` is an ASYNC
+    GENERATOR, so cancelling one in-flight ``__anext__()`` (e.g. by wrapping it
+    in ``asyncio.wait_for``) throws CancelledError into the generator and
+    closes it for good — the next ``__anext__()`` raises StopAsyncIteration and
+    the reader reads "subscriber ended".
+
+    A watchdog that polls by cancelling the iterator therefore
+    reconnects on every poll; the liveness tests rely on this fake
+    having the same trap.
+    """
+
     def __init__(self, bus):
         self._bus = bus
 
-    def __aiter__(self):
-        return self
-
-    async def __anext__(self):
-        item = await self._bus.queue.get()
-        if item is _END:
-            raise StopAsyncIteration
-        return item
+    async def __aiter__(self):
+        while True:
+            item = await self._bus.queue.get()
+            if item is _END:
+                return
+            yield item
 
 
 async def _wait_for(predicate, timeout=2.0):
