@@ -13,7 +13,28 @@ stay) empty.
 import asyncio
 
 import opal_server.scopes.task as task_module
+import pytest
 from opal_server.config import opal_server_config
+
+
+@pytest.fixture(autouse=True)
+def _fresh_loop_and_stubbed_redis(monkeypatch):
+    """Two isolation guards these tests need on Python 3.9.
+
+    An earlier test's asyncio.run() (e.g. the preload call in
+    preload_metrics_namespace_test.py, which sorts right before this file)
+    leaves the main thread with NO current event loop. preload_scopes()
+    evaluates ``ScopeRepository(RedisDB(...))`` before the stubbed
+    ScopesService ever sees the arguments, and redis.asyncio's
+    ConnectionPool builds an ``asyncio.Lock()`` in ``__init__`` — which on
+    3.9 (and only 3.9) calls ``get_event_loop()`` and raises "no current
+    event loop". Give every test a fresh loop AND stub the redis layer: a
+    unit test of preload wiring must not construct a real redis client.
+    """
+    asyncio.set_event_loop(asyncio.new_event_loop())
+    monkeypatch.setattr(task_module, "RedisDB", lambda url: object())
+    monkeypatch.setattr(task_module, "ScopeRepository", lambda db: object())
+    yield
 
 
 def test_preload_scopes_resets_fetcher_caches_after_shutdown(monkeypatch):

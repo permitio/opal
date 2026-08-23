@@ -7,6 +7,8 @@ Observed after the 0.9.9-rc.2 staging rollout: ``opal_server.scopes.count`` /
 DogStatsD client, so its gauges went out bare and no dashboard/monitor built on
 the namespaced names could see the boot phase.
 """
+import asyncio
+
 import datadog
 import pytest
 from opal_common.config import opal_common_config
@@ -112,6 +114,13 @@ def test_preload_configures_metrics_before_syncing(monkeypatch):
         task_module.GitPolicyFetcher, "reset_caches", staticmethod(lambda: None)
     )
 
-    task_module.ScopesPolicyWatcherTask.preload_scopes()
+    try:
+        task_module.ScopesPolicyWatcherTask.preload_scopes()
+    finally:
+        # preload_scopes runs asyncio.run(), which unsets the main thread's
+        # event loop on exit; on Python 3.9 the next sync test that builds an
+        # asyncio primitive would raise "no current event loop". Restore one
+        # so this test never poisons whatever sorts after it.
+        asyncio.set_event_loop(asyncio.new_event_loop())
 
     assert order == ["configure", "sync"], order
