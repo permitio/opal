@@ -78,8 +78,8 @@ async def proxy_response_unless_invalid(
     if response.status_code not in accepted_status_codes:
         try:
             error = await raw_response.json()
-        except json.JSONDecodeError:
-            error = ""
+        except (aiohttp.ContentTypeError, json.JSONDecodeError):
+            error = response.body.decode(errors="replace") if response.body else ""
         raise ValueError(
             "OPA Client: unexpected status code: {}, error: {}".format(
                 response.status_code, error
