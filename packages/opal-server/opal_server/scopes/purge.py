@@ -40,13 +40,13 @@ kept so a dropped broadcast does not regress against the merge base.
 What that leaves on disk, stated plainly because nothing else will reclaim it:
 
 - a DELETE's dir on every pod EXCEPT the serving one, when the broadcast is
-  lost — and the broadcast is droppable at shipped defaults, since a DELETE
-  usually lands on a non-leader worker (SERVER_WORKER_COUNT defaults to the
-  core count) and must traverse the broadcaster, while a leader keeps a reader
-  alive only if it has a connected client or STATISTICS_ENABLED (default False).
-  The LEADER always has a reader — its watcher enters a listening context
-  unconditionally (policy/watcher/task.py) — so it is non-leader workers that
-  can be deaf, not the leader; a backbone outage still loses it for everyone;
+  lost. Since 0.9.9-rc.3 every worker keeps a backbone reader for the whole
+  process when SCOPES is on and the broadcaster is the reconnecting one
+  (server.py holds the global listening context; the default), so a
+  client-less non-leader is no longer deaf to the purge; the residual is
+  BROADCAST_RECONNECT_ENABLED=false (legacy broadcaster, reader only while a
+  client is connected) and a backbone outage, which still loses the message
+  for everyone;
 - a REPOINT's old dir on EVERY pod, always — there is no floor on that path;
 - a dir whose source_id is unknowable because the prior record would not parse
   (see ``scopes/api.py``).

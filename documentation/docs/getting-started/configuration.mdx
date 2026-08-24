@@ -583,6 +583,14 @@ Default: `None`
 
 URI for the broadcast backend (Redis, PostgreSQL, etc.).
 
+**Postgres TCP keepalive (opal-server ≥ 0.9.9-rc.3 / `permit-broadcaster` ≥ 0.2.7):** the Postgres backend enables TCP keepalive on every backbone connection by default (idle 30 s, interval 10 s, 3 lost probes → a silently vanished server — e.g. an RDS Multi-AZ failover — is detected within ~60 s instead of never). It can be tuned or disabled with libpq-style parameters in the URI: `postgres://…/db?keepalives=1&keepalives_idle=30&keepalives_interval=10&keepalives_count=3` (`keepalives=0` disables).
+
+:::danger version constraint
+Only set `keepalives*` parameters when **every** opal-server that shares this URI runs ≥ 0.9.9-rc.3. Earlier versions (`permit-broadcaster` ≤ 0.2.6) forward these parameters to Postgres as session settings, and Postgres rejects the connection with `FATAL: unrecognized configuration parameter` — a pod rolled back (or a canary slice still on the old image) would have **zero backbone connectivity while its health checks stay green**. The defaults require no URI change at all; only add the parameters once the fleet is uniformly upgraded.
+:::
+
+**Connection budget (Postgres backend):** each worker process that holds a backbone reader opens a connection *pool*: 10 connections at boot (asyncpg's default `min_size`, not configurable downward via `BROADCASTER_PG_MAX_POOL_SIZE`, which only raises the ceiling), decaying to ~1 idle connection after ~300 s. Size the broadcast database's `max_connections` for **10 × workers × pods during a rolling restart**, not for the steady state.
+
 For more information, see [running OPAL with Kafka](/tutorials/run_opal_with_kafka) and [running OPAL with Apache Pulsar](/tutorials/run_opal_with_pulsar).
 
 #### OPAL_BROADCAST_CHANNEL_NAME
@@ -788,6 +796,8 @@ Timeout for Git clone operations in seconds. If set to 0, waits indefinitely unt
 Default: `True`
 
 Enable repository watching for policy changes.
+
+In scopes mode (`OPAL_SCOPES=true`) this same flag enables the **scopes sync task** on the leader worker: the boot-time sync of all scopes, the periodic `sync_scopes` pass when `OPAL_POLICY_REFRESH_INTERVAL` is greater than 0 (it defaults to 0, which skips the periodic pass), and the fleet-wide purge handler for deleted or repointed scopes. With it set to `false` in scopes mode, scopes are registered, preloaded and served but never re-synced or purged afterwards — the server logs a warning at startup when it detects this combination. Note that this flag does **not** gate the gunicorn master's pre-fork preload: every registered scope is still cloned/fetched once at every boot, so boot-time git traffic and clone-tree disk usage are expected even with the flag off.
 
 #### OPAL_POLICY_REFRESH_INTERVAL
 

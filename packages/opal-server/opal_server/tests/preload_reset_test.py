@@ -13,7 +13,30 @@ stay) empty.
 import asyncio
 
 import opal_server.scopes.task as task_module
+import pytest
 from opal_server.config import opal_server_config
+
+
+@pytest.fixture(autouse=True)
+def _stub_redis_layer(monkeypatch):
+    """preload_scopes() evaluates ``ScopeRepository(RedisDB(...))`` before the
+    stubbed ScopesService ever sees the arguments, so without this stub these
+    unit tests construct a REAL redis client. That is wrong in itself, and on
+    Python 3.9 it is the CI failure this fixture pins: redis.asyncio's
+    ConnectionPool builds an ``asyncio.Lock()`` in ``__init__``, which on 3.9
+    (and only 3.9) calls ``get_event_loop()`` — and an earlier test's
+    ``asyncio.run()`` (e.g. preload_metrics_namespace_test.py, which sorts
+    right before this file) leaves the main thread with no current loop.
+
+    NOTE this stub is load-bearing ONLY on 3.9: on 3.10+ asyncio
+    primitives don't grab a loop at construction, so removing it keeps
+    3.10+ green and breaks the 3.9 CI matrix job. The sibling file stubs
+    RedisDB per-test in its arrange instead — same mechanism, applied
+    where each file needs it.
+    """
+    monkeypatch.setattr(task_module, "RedisDB", lambda url: object())
+    monkeypatch.setattr(task_module, "ScopeRepository", lambda db: object())
+    yield
 
 
 def test_preload_scopes_resets_fetcher_caches_after_shutdown(monkeypatch):
