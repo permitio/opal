@@ -428,8 +428,10 @@ class OpalServerConfig(Confi):
         True,
         description="Enable the repository watcher. In scopes mode (SCOPES=true) this "
         "same flag enables the scopes sync task on the leader worker: the periodic "
-        "sync_scopes pass, the boot-time sync of all scopes and the fleet purger. "
-        "With it off, scopes can be registered but are never synced or purged.",
+        "sync_scopes pass, the post-leadership sync of all scopes and the fleet "
+        "purger. It does NOT gate the pre-fork preload, which still clones/fetches "
+        "every registered scope at boot. With the flag off, scopes are registered, "
+        "preloaded at boot and served, but never re-synced or purged afterwards.",
     )
 
     # publisher

@@ -203,6 +203,12 @@ class OpalServer:
             # purge subscription and the leadership lock. The reconnecting
             # broadcaster connects lazily and never raises here, so the scopes
             # reason is honoured only for it.
+            # Rollout cost (Postgres backbone): entering the context makes THIS
+            # worker open the broadcaster pool - asyncpg's default min_size is
+            # 10 eager connections at boot, decaying to ~1 after ~300 s
+            # (BROADCASTER_PG_MAX_POOL_SIZE can only raise the ceiling, not
+            # lower the floor). Budget the broadcast DB's max_connections for
+            # 10 x workers x pods at a rolling restart, not the steady state.
             wants_reader_for_scopes = bool(opal_server_config.SCOPES) and isinstance(
                 self.pubsub.broadcaster, ReconnectingBroadcaster
             )
@@ -230,19 +236,26 @@ class OpalServer:
             if not self._init_policy_watcher:
                 # The flag's name reads as "single-repo watcher", but in scopes
                 # mode it gates setup_watcher_task() -> ScopesPolicyWatcherTask:
-                # the periodic sync_scopes pass, the boot sync-all and the fleet
-                # purger. With it off the leader parks on the keepalive forever,
-                # nothing is ever cloned/synced/purged, and the pods still report
+                # the periodic sync_scopes pass, the leader's post-leadership
+                # sync-all and the fleet purger. It does NOT gate the gunicorn
+                # master's pre-fork preload (gunicorn_conf.py when_ready ->
+                # preload_scopes), which clones/fetches every registered scope
+                # on every boot regardless - the flag cannot mean "no git
+                # activity", only "no ongoing sync". With it off the leader
+                # parks on the keepalive forever and the pods still report
                 # Ready. A WARNING rather than a hard refusal: an existing
                 # deployment must not stop booting on upgrade over a flag it may
                 # have set deliberately (e.g. a read-only replica behind another
                 # OPAL that does the syncing).
                 logger.warning(
-                    "OPAL_REPO_WATCHER_ENABLED is off while OPAL_SCOPES is on: this "
-                    "server will REGISTER and SERVE scopes but never SYNC or PURGE "
-                    "them (no periodic sync_scopes pass, no boot sync-all, no "
-                    "fleet purge). If that is not intended, set "
-                    "OPAL_REPO_WATCHER_ENABLED=true."
+                    "OPAL_REPO_WATCHER_ENABLED is off while OPAL_SCOPES is on: the "
+                    "leader worker will never SYNC or PURGE scopes (no periodic "
+                    "sync_scopes pass, no post-leadership sync-all, no fleet "
+                    "purge). NOTE the gunicorn master's PRE-FORK PRELOAD still "
+                    "clones/fetches every registered scope on every boot - this "
+                    "flag does not gate it, so git traffic and clone-tree growth "
+                    "at boot are expected regardless. If ongoing sync is "
+                    "intended, set OPAL_REPO_WATCHER_ENABLED=true."
                 )
 
         # Set BEFORE _init_fast_api_app(): _configure_api_routes assigns it,
@@ -490,9 +503,23 @@ class OpalServer:
                         self.broadcast_listening_context is not None
                         and self.opal_statistics is not None
                     ):
-                        # if the broadcast channel is closed, we want to restart worker process because statistics can't be reliable anymore
+                        # If the broadcast channel DIES, statistics on this worker
+                        # can't be trusted anymore - restart. Guarded against the
+                        # exit path's own clean cancellation (__aexit__ cancels the
+                        # reader): on master the zero-arg __aexit__ raised TypeError
+                        # before the reader was ever cancelled, so this callback
+                        # never saw a cancelled task - firing on one now would be a
+                        # NEW self-SIGTERM at the end of every fall-through boot
+                        # (statistics on + keepalive off + watcher off = a restart
+                        # loop of the leader slot). Give-up (the task RETURNING) is
+                        # also covered fleet-wide by _wire_broadcaster_give_up; the
+                        # duplicate SIGTERM in that overlap is a harmless no-op.
+                        def _restart_if_reader_died(task):
+                            if not task.cancelled():
+                                self._graceful_shutdown()
+
                         self.broadcast_listening_context._event_broadcaster.get_reader_task().add_done_callback(
-                            lambda _: self._graceful_shutdown()
+                            _restart_if_reader_died
                         )
                     # No done-callback for the scopes reason: the context exists
                     # for scopes only on a ReconnectingBroadcaster (see __init__),

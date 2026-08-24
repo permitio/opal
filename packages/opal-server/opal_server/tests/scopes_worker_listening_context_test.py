@@ -22,13 +22,38 @@ from opal_server.server import OpalServer
 
 
 class _FakeReaderTask:
+    """Stable stand-in for the reader asyncio.Task.
+
+    STABLE matters: the real
+    ``get_reader_task()`` returns the same task on every call, so a done
+    callback attached to it can actually fire — an earlier double returned a
+    fresh object per call, which made every callback assertion vacuous.
+    """
+
+    def __init__(self):
+        self.callbacks = []
+        self._cancelled = False
+
     def add_done_callback(self, cb):
-        self.cb = cb
+        self.callbacks.append(cb)
+
+    def cancelled(self):
+        return self._cancelled
+
+    def complete(self, cancelled):
+        """Finish the task the way asyncio would: mark the state, then run
+        the done callbacks with the task as the argument."""
+        self._cancelled = cancelled
+        for cb in list(self.callbacks):
+            cb(self)
 
 
 class _FakeEventBroadcaster:
+    def __init__(self):
+        self.reader_task = _FakeReaderTask()
+
     def get_reader_task(self):
-        return _FakeReaderTask()
+        return self.reader_task
 
 
 class _FakeListeningContext:
@@ -57,6 +82,9 @@ class _FakeListeningContext:
     async def __aexit__(self, exc_type, exc, tb):  # STRICT arity, like the real one
         self.listen_count -= 1
         self.exited += 1
+        if self.listen_count == 0:
+            # library behaviour: the last exit CANCELS the reader task
+            self._event_broadcaster.reader_task.complete(cancelled=True)
 
 
 class _RaisingListeningContext(_FakeListeningContext):
@@ -396,3 +424,101 @@ async def test_exit_path_through_the_mainline_watcher_shape(
 
     assert shutdowns == [1], "watcher stop must request a graceful shutdown"
     assert ctx.entered == 1 and ctx.exited == 1 and ctx.listen_count == 0
+
+
+def test_no_context_without_scopes_even_on_a_reconnecting_broadcaster(
+    scopes_config, statistics, monkeypatch
+):
+    """Pins the SCOPES half of the arming gate (P5's blast radius): an ordinary
+    SCOPES=False server with a reconnecting broadcaster and statistics off must
+    NOT gain a permanent backbone reader.
+
+    Dropping the
+    ``SCOPES`` condition from ``wants_reader_for_scopes`` fails here.
+    """
+    statistics(False)
+    monkeypatch.setattr(opal_server_config, "SCOPES", False)
+    server = _build("postgres://localhost/test")
+    assert server.broadcast_listening_context is None, (
+        "SCOPES=False must not arm the listening context: widening P5 to every "
+        "broadcaster deployment would give non-scopes servers a reader (and a "
+        "10-connection pool at boot) they have no purge handler to feed"
+    )
+
+
+@pytest.mark.asyncio
+async def test_statistics_off_attaches_no_reader_done_callback(
+    scopes_config, statistics, monkeypatch
+):
+    """Pins the ``opal_statistics is not None`` guard on the restart
+    callback: a scopes-only worker must not restart itself over reader
+    completion (give-up is _wire_broadcaster_give_up's job)."""
+    statistics(False)
+    server = _build("postgres://localhost/test")
+    ctx = _FakeListeningContext()
+    server.broadcast_listening_context = ctx
+    server.opal_statistics = None
+
+    await _run_until_entered(server, ctx, monkeypatch)
+
+    assert (
+        ctx._event_broadcaster.reader_task.callbacks == []
+    ), "with statistics off no done-callback may be attached to the reader"
+
+
+@pytest.mark.asyncio
+async def test_clean_exit_with_statistics_does_not_restart_the_worker(
+    scopes_config, statistics, monkeypatch
+):
+    """The arity fix makes __aexit__ actually cancel the reader on the way out.
+
+    With statistics on, the restart callback must NOT fire on that clean
+    cancellation — on master it never did (the zero-arg __aexit__ raised
+    first), so firing would be a new self-SIGTERM: a boot restart loop
+    of the leader slot under statistics on + keepalive off + watcher
+    off.
+    """
+    statistics(True)
+    server = _build("postgres://localhost/test")
+    ctx = _FakeListeningContext()
+    server.broadcast_listening_context = ctx
+    server.opal_statistics = _FakeStatistics()
+    shutdowns = []
+    monkeypatch.setattr(server, "_graceful_shutdown", lambda: shutdowns.append(1))
+
+    await _run_to_completion(server, monkeypatch)
+
+    assert ctx.exited == 1, "the exit path must leave the context"
+    assert (
+        ctx._event_broadcaster.reader_task.cancelled()
+    ), "the last __aexit__ cancels the reader (library behaviour the double mirrors)"
+    assert (
+        shutdowns == []
+    ), "clean cancellation on the exit path must not trigger a worker restart"
+
+
+@pytest.mark.asyncio
+async def test_reader_death_with_statistics_still_restarts_the_worker(
+    scopes_config, statistics, monkeypatch
+):
+    """The counterpart guard-rail: when the reader task completes WITHOUT
+    being cancelled (backbone died / gave up), statistics are no longer
+    reliable and the worker must restart — the pre-existing behaviour the
+    cancellation guard must not lose."""
+    statistics(True)
+    server = _build("postgres://localhost/test")
+    ctx = _FakeListeningContext()
+    server.broadcast_listening_context = ctx
+    server.opal_statistics = _FakeStatistics()
+    shutdowns = []
+    monkeypatch.setattr(server, "_graceful_shutdown", lambda: shutdowns.append(1))
+
+    await _run_until_entered(server, ctx, monkeypatch)
+    assert (
+        ctx._event_broadcaster.reader_task.callbacks
+    ), "with statistics on, the restart callback must be attached"
+    ctx._event_broadcaster.reader_task.complete(cancelled=False)
+
+    assert shutdowns == [
+        1
+    ], "a reader that died (not cancelled) must still restart the worker"
