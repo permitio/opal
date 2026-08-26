@@ -39,10 +39,7 @@ from opal_common.schemas.policy import PolicyBundle, PolicyUpdateMessageNotifica
 from opal_common.schemas.policy_source import GitPolicyScopeSource, SSHAuthData
 from opal_common.schemas.scopes import Scope
 from opal_common.schemas.security import PeerType
-from opal_common.topics.publisher import (
-    ScopedServerSideTopicPublisher,
-    ServerSideTopicPublisher,
-)
+from opal_common.topics.publisher import ServerSideTopicPublisher
 from opal_common.urls import set_url_query_param
 from opal_server.config import opal_server_config
 from opal_server.data.data_update_publisher import DataUpdatePublisher
@@ -828,10 +825,10 @@ def init_scope_router(
             restrict_optional_topics_to_publish(authenticator, claims, update)
 
             for entry in update.entries:
-                entry.topics = [f"data:{topic}" for topic in entry.topics]
+                entry.topics = [f"{scope_id}:data:{topic}" for topic in entry.topics]
 
             await DataUpdatePublisher(
-                ScopedServerSideTopicPublisher(pubsub_endpoint, scope_id)
+                ServerSideTopicPublisher(pubsub_endpoint)
             ).publish_data_updates(update)
         except Unauthorized as ex:
             logger.error(f"Unauthorized to publish update: {repr(ex)}")
