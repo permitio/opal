@@ -9,6 +9,7 @@ import shutil
 import threading
 import time
 import weakref
+from collections import OrderedDict
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import thread as cf_thread
 from contextlib import asynccontextmanager
@@ -635,7 +636,10 @@ class RepoInterface:
 
 class GitPolicyFetcher(PolicyFetcher):
     repo_locks = {}
-    repos = {}
+    # Ordered so the bound in SCOPES_REPO_HANDLE_CACHE_SIZE can evict the
+    # least-recently-used handle. Insertion order alone would drop a repo that
+    # is read every pass in favour of one nothing has touched in hours.
+    repos = OrderedDict()
     repos_last_fetched = {}
     # source_id -> how long the periodic pass keeps skipping this source after
     # consecutive clone/fetch failures. Per process and in memory only.
@@ -1071,7 +1075,7 @@ class GitPolicyFetcher(PolicyFetcher):
             self._clear_source_backoff()
             # Cache the fresh handle so the next sync's _get_repo() reuses it
             # instead of reopening (or hitting a stale predecessor).
-            GitPolicyFetcher.repos[str(self._repo_path)] = repo
+            GitPolicyFetcher.cache_repo(str(self._repo_path), repo)
             # A reclone just downloaded current remote state — record it so
             # _was_fetched_after() doesn't force a redundant fetch next cycle.
             GitPolicyFetcher.repos_last_fetched[self._source_id] = clone_started
@@ -1079,9 +1083,13 @@ class GitPolicyFetcher(PolicyFetcher):
 
     def _get_repo(self) -> Repository:
         path = str(self._repo_path)
-        if path not in GitPolicyFetcher.repos:
-            GitPolicyFetcher.repos[path] = Repository(path)
-        return GitPolicyFetcher.repos[path]
+        repo = GitPolicyFetcher.repos.get(path)
+        if repo is None:
+            repo = Repository(path)
+            GitPolicyFetcher.cache_repo(path, repo)
+        else:
+            GitPolicyFetcher.touch_repo(path)
+        return repo
 
     def _get_valid_repo(self) -> Optional[Repository]:
         try:
@@ -1275,6 +1283,60 @@ class GitPolicyFetcher(PolicyFetcher):
     @staticmethod
     def repo_clone_path(base_dir: Path, source: GitPolicyScopeSource) -> Path:
         return GitPolicyFetcher.base_dir(base_dir) / GitPolicyFetcher.source_id(source)
+
+    @staticmethod
+    def touch_repo(path: str) -> None:
+        """Mark a cached handle as most-recently-used.
+
+        Called on every cache hit, so the bound evicts genuinely cold
+        sources rather than whichever happened to be opened first.
+        """
+        if path in GitPolicyFetcher.repos:
+            GitPolicyFetcher.repos.move_to_end(path)
+
+    @staticmethod
+    def cache_repo(path: str, repo: Repository) -> None:
+        """Admit a handle to the cache, then evict down to the bound.
+
+        The single admission point for both callers (a completed clone
+        and a lazy open), so the bound cannot be bypassed by adding a
+        third.
+        """
+        GitPolicyFetcher.repos[path] = repo
+        GitPolicyFetcher.repos.move_to_end(path)
+        GitPolicyFetcher._evict_repo_handles_over_cap(protect=path)
+
+    @staticmethod
+    def _evict_repo_handles_over_cap(protect: Optional[str] = None) -> None:
+        """Drop least-recently-used handles until the cache fits the bound.
+
+        Only the in-memory handle goes: the clone stays on disk and _get_repo
+        reopens it lazily, so a miss costs a local open and never a re-clone
+        (the same property the post-fork purge relies on).
+
+        Two entries are skipped rather than freed. ``protect`` is the handle the
+        caller is about to return -- freeing it would hand back a dead object.
+        A source with a git op in flight is skipped for the reason
+        purge_local_memory documents: Repository.free() while a pool thread is
+        still reading is a use-after-free. Both mean the live size can sit above
+        the bound transiently; correctness outranks the bound, and the next
+        admission retries the eviction.
+
+        A cap of 0 (or negative) disables the bound entirely, restoring the
+        unbounded behaviour that shipped before this key existed.
+        """
+        cap = opal_server_config.SCOPES_REPO_HANDLE_CACHE_SIZE
+        if cap <= 0:
+            return
+        # list() because forget_repo mutates the dict we are walking.
+        for path in list(GitPolicyFetcher.repos):
+            if len(GitPolicyFetcher.repos) <= cap:
+                break
+            if path == protect:
+                continue
+            if git_op_in_flight(os.path.basename(path.rstrip("/"))):
+                continue
+            GitPolicyFetcher.forget_repo(path)
 
     @staticmethod
     def forget_repo(path: str) -> None:

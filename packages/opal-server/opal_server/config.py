@@ -631,6 +631,25 @@ class OpalServerConfig(Confi):
         description="The max number of local clones to use for the same repo (reused across scopes)",
     )
 
+    SCOPES_REPO_HANDLE_CACHE_SIZE = confi.int(
+        "SCOPES_REPO_HANDLE_CACHE_SIZE",
+        1024,
+        description="Maximum open pygit2 repository handles kept per worker "
+        "process. Each cached handle pins OS file descriptors and mmapped pack "
+        "indexes, so this cache is a memory cost that scales with the number of "
+        "DISTINCT sources a worker has touched, not with fleet activity. Before "
+        "this key the cache had no bound and exactly one runtime eviction path "
+        "- a scope purge (delete/repoint) - so a deployment that rarely deletes "
+        "scopes grew it for the life of the process. Eviction is "
+        "least-recently-used and drops only the in-memory handle: the clone "
+        "stays on disk and the next access reopens it lazily, so a miss costs a "
+        "local open, never a re-clone. A source with a git op in flight is never "
+        "evicted (freeing a handle a pool thread still reads is a use-after-"
+        "free), so the live size can exceed this bound transiently. Size it "
+        "above the number of sources one worker touches in a pass, or 0 to "
+        "disable the bound and restore the previous unbounded behaviour.",
+    )
+
     REDIS_URL = confi.str(
         "REDIS_URL",
         default="redis://localhost",
