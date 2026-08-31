@@ -43,6 +43,58 @@ OPAL_CLIENT_INFO_PARAM_PREFIX = "__opal_"
 OPAL_CLIENT_INFO_CLIENT_ID = f"{OPAL_CLIENT_INFO_PARAM_PREFIX}client_id"
 
 
+def effective_reader_silence_timeout() -> float:
+    """The reader silence timeout actually handed to the broadcaster.
+
+    The watchdog only makes sense when the fleet is guaranteed to speak: every
+    pod's leader publishes a keepalive every ``BROADCAST_KEEPALIVE_INTERVAL``
+    seconds. With the keepalive disabled (0) a quiet channel would look dead and
+    the watchdog would reconnect a healthy worker every timeout, so it is turned
+    off (with a warning). A timeout shorter than twice the keepalive interval is
+    raised to that, so one late or lost keepalive can never trip it.
+    """
+    timeout = float(opal_server_config.BROADCAST_READER_SILENCE_TIMEOUT)
+    if timeout <= 0:
+        return 0.0
+    if not opal_server_config.PUBLISHER_ENABLED:
+        # No publisher means this server never emits the keepalive heartbeat; a
+        # single-server deployment would then hear nothing by design and the
+        # watchdog would recycle its clients every timeout for no reason.
+        logger.warning(
+            "BROADCAST_READER_SILENCE_TIMEOUT is set but PUBLISHER_ENABLED is false: this "
+            "server publishes no keepalive heartbeat, so the reader silence watchdog is "
+            "DISABLED (silence could be a quiet fleet, not a dead connection)."
+        )
+        return 0.0
+    keepalive = int(opal_server_config.BROADCAST_KEEPALIVE_INTERVAL)
+    if keepalive <= 0:
+        logger.warning(
+            "BROADCAST_READER_SILENCE_TIMEOUT is set but BROADCAST_KEEPALIVE_INTERVAL is 0: "
+            "without keepalives a quiet backbone is indistinguishable from a dead one, so the "
+            "reader silence watchdog is DISABLED. Set a keepalive interval to enable it."
+        )
+        return 0.0
+    floor = 2.0 * keepalive
+    if timeout < floor:
+        logger.warning(
+            "BROADCAST_READER_SILENCE_TIMEOUT ({t}s) is below twice BROADCAST_KEEPALIVE_INTERVAL "
+            "({k}s); raising it to {f}s so a single late keepalive cannot trip the watchdog",
+            t=timeout,
+            k=keepalive,
+            f=floor,
+        )
+        return floor
+    return timeout
+
+
+def silence_first_message_grace(timeout: float) -> float:
+    """How long a later session may stay silent before its FIRST message: at
+    least the timeout, and at least two keepalive intervals, so a reconnect that
+    lands just after a heartbeat always gets to hear the next one."""
+    keepalive = max(0, int(opal_server_config.BROADCAST_KEEPALIVE_INTERVAL))
+    return max(float(timeout), 2.0 * keepalive)
+
+
 class ClientInfo(BaseModel):
     client_id: str
     source_host: Optional[str]
@@ -153,6 +205,7 @@ class PubSub:
                 logger.info(
                     "Initializing reconnecting broadcaster for server<->server communication"
                 )
+                silence_timeout = effective_reader_silence_timeout()
                 self.broadcaster = ReconnectingBroadcaster(
                     broadcaster_uri,
                     notifier=self.notifier,
@@ -162,6 +215,10 @@ class PubSub:
                     reconnect_backoff_max=opal_server_config.BROADCAST_RECONNECT_BACKOFF_MAX_SECONDS,
                     replay_buffer_size=opal_server_config.BROADCAST_REPLAY_BUFFER_SIZE,
                     resync_settle_seconds=opal_server_config.BROADCAST_RESYNC_SETTLE_SECONDS,
+                    reader_silence_timeout=silence_timeout,
+                    silence_first_message_grace=silence_first_message_grace(
+                        silence_timeout
+                    ),
                 )
             else:
                 logger.info(

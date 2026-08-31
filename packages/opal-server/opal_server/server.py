@@ -398,6 +398,13 @@ class OpalServer:
                     1 if healthy else 0,
                     tags={"pid": str(os.getpid())},
                 )
+                # The silence gauge is edge-triggered inside the reader; re-emit it
+                # here so it has a steady 0 baseline on every probe.
+                metrics.gauge(
+                    "opal_server.broadcaster_reader_silent",
+                    1 if broadcaster.is_reader_silent() else 0,
+                    tags={"pid": str(os.getpid())},
+                )
                 if not healthy:
                     return JSONResponse(
                         status_code=503,
@@ -555,11 +562,19 @@ class OpalServer:
                         pid=os.getpid(),
                     )
 
+                    # Start the keepalive heartbeat FIRST, before load_scopes: it is
+                    # the backbone heartbeat every worker's reader-silence watchdog
+                    # listens for, and on a large scopes fleet load_scopes can take
+                    # longer than that watchdog's timeout. One publisher per pod (the
+                    # leader) — the watchdog arms only once a worker has heard the
+                    # backbone, so the ordering is belt and braces, not load-bearing.
+                    if self.broadcast_keepalive is not None:
+                        self.broadcast_keepalive.start()
+
                     if opal_server_config.SCOPES:
                         await load_scopes(self._scopes)
 
                     if self.broadcast_keepalive is not None:
-                        self.broadcast_keepalive.start()
                         if not self._init_policy_watcher:
                             # Wait on keepalive instead to keep leadership lock acquired
                             await self.broadcast_keepalive.wait_until_done()

@@ -213,3 +213,8 @@ def test_healthcheck_publishes_what_the_probe_decided(
     value, tags = readings[-1]
     assert value == expected_gauge
     assert tags and "pid" in tags, f"reader-health gauge is untagged: {tags}"
+    # The silence gauge is edge-triggered inside the reader; the probe re-emits
+    # it so it has a steady baseline (0 here: nothing has tripped).
+    silent = _values(emitted, "opal_server.broadcaster_reader_silent")
+    assert silent, "/healthcheck published no reader-silent gauge"
+    assert silent[-1][0] == 0

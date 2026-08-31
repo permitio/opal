@@ -37,7 +37,9 @@ worker's client connections (staggered) to drive the resync. All of this is a
 stop-gap until the fixes land in the upstream libraries (see Phase 2 of the plan).
 """
 import asyncio
+import os
 import random
+import time
 from collections import deque
 from typing import Awaitable, Callable, Optional
 
@@ -48,8 +50,65 @@ from fastapi_websocket_pubsub.event_notifier import Subscription
 from fastapi_websocket_pubsub.util import pydantic_serialize
 from fastapi_websocket_rpc.connection_manager import ConnectionManager
 from opal_common.logger import logger
+from opal_common.monitoring import metrics
 
 ReconnectCallback = Callable[[], Awaitable[None]]
+
+
+class BackboneSilent(Exception):
+    """Raised inside the reader loop when the silence watchdog declares the
+    listening connection dead (see ``ReconnectingBroadcaster``)."""
+
+
+_SUBSCRIBER_ENDED = object()
+_POLL_TIMEOUT = object()
+
+
+class _WatchedIterator:
+    """Pulls events off an async iterator while letting the caller wake up on a
+    timer WITHOUT cancelling the iterator's in-flight ``__anext__``.
+
+    ``next(timeout=t)`` returns the next event, ``_SUBSCRIBER_ENDED`` when the
+    iterator is exhausted, or ``_POLL_TIMEOUT`` when nothing arrived within
+    ``t`` — in which case the same pending ``__anext__`` future is kept and
+    re-awaited on the next call. ``close()`` cancels whatever is pending; it is
+    only called when the session is being ended (trip, clean exit, shutdown).
+    """
+
+    def __init__(self, iterator):
+        self._iterator = iterator
+        self._pending: Optional[asyncio.Future] = None
+
+    async def next(self, timeout: Optional[float] = None):
+        if self._pending is None:
+            self._pending = asyncio.ensure_future(self._iterator.__anext__())
+        if timeout is not None:
+            done, _ = await asyncio.wait({self._pending}, timeout=timeout)
+            if not done:
+                return _POLL_TIMEOUT
+        future, self._pending = self._pending, None
+        try:
+            return await future
+        except StopAsyncIteration:
+            return _SUBSCRIBER_ENDED
+
+    async def close(self) -> None:
+        future, self._pending = self._pending, None
+        if future is not None and not future.done():
+            future.cancel()
+            try:
+                await future
+            # CancelledError is caught on purpose: the future was cancelled one
+            # line up, so awaiting it surfaces THAT cancellation, which is the
+            # expected outcome here, not a signal to unwind the caller.
+            except (asyncio.CancelledError, Exception):
+                pass
+        aclose = getattr(self._iterator, "aclose", None)
+        if aclose is not None:
+            try:
+                await aclose()
+            except Exception:
+                pass
 
 
 class SafeConnectionManager(ConnectionManager):
@@ -129,6 +188,10 @@ class ReconnectingBroadcaster(EventBroadcaster):
         reconnect_backoff_max: float = 30.0,
         replay_buffer_size: int = 10000,
         resync_settle_seconds: float = 2.0,
+        reader_silence_timeout: float = 0.0,
+        silence_min_trip_interval: float = 60.0,
+        silence_poll_seconds: float = 1.0,
+        silence_first_message_grace: Optional[float] = None,
         **kwargs,
     ):
         super().__init__(*args, **kwargs)
@@ -137,6 +200,60 @@ class ReconnectingBroadcaster(EventBroadcaster):
         self._reconnect_backoff_max = reconnect_backoff_max
         self._replay_buffer_size = replay_buffer_size
         self._resync_settle_seconds = resync_settle_seconds
+        # --- reader liveness by silence (P9) ---------------------------------
+        # A backbone connection can die WITHOUT the peer saying goodbye (a DB
+        # failover moves the name to another host and the old one is yanked; a
+        # firewall drops packets): the socket stays ESTABLISHED, the reader waits
+        # forever, nothing reconnects, and this worker's clients silently miss
+        # every update published elsewhere. On Postgres the permit-broadcaster
+        # library (>= 0.2.7) enables TCP keepalive on every pooled connection,
+        # which catches an unreachable peer at the kernel level; this watchdog is
+        # the backend-agnostic detector and the one that also catches a peer
+        # whose kernel is alive but whose backbone is mute (keepalive probes are
+        # answered, no message ever arrives). The fleet is never silent for long —
+        # every pod publishes a keepalive on the backbone — so "no message of any
+        # kind for longer than reader_silence_timeout" is treated as a gap: the
+        # listening connection is terminated (so the pool cannot hand the dead
+        # socket back), and the normal reconnect + resync path runs. 0 disables.
+        self._reader_silence_timeout = max(0.0, float(reader_silence_timeout))
+        # Floor between two silence-triggered reconnects, so a flapping path
+        # cannot turn into a resync storm.
+        self._silence_min_trip_interval = max(0.0, float(silence_min_trip_interval))
+        self._silence_poll_seconds = max(0.05, float(silence_poll_seconds))
+        # monotonic() of the last backbone message of ANY kind (own keepalives
+        # included — they prove the pipe, not the peer). Stamped before AND
+        # after each event is handled, so time spent fanning an event out to
+        # clients is not counted as silence. Arming:
+        #   * until this PROCESS has heard the backbone at least once
+        #     (_ever_heard_backbone) the clock is unarmed — a slow boot, a
+        #     single-pod deployment before its leader publishes, a keepalive
+        #     publisher that is not up yet can never trip it;
+        #   * once it has heard once, every later subscription is armed AT
+        #     SUBSCRIBE with a first-message grace of
+        #     silence_first_message_grace (>= the timeout; the caller passes
+        #     2x the keepalive interval) — a session that goes half-open
+        #     BEFORE its first message (a reconnect that lands on a stale
+        #     endpoint after a failover) is the PR's own scenario one step
+        #     earlier and must not be a blind spot.
+        self._last_backbone_message_at: Optional[float] = None
+        self._ever_heard_backbone = False
+        self._awaiting_first_message = False
+        grace = (
+            self._reader_silence_timeout
+            if silence_first_message_grace is None
+            else float(silence_first_message_grace)
+        )
+        self._silence_first_message_grace = max(self._reader_silence_timeout, grace)
+        self._last_silence_trip_at: Optional[float] = None
+        # True from a silence trip until the next successful subscribe. NOT fed
+        # into is_reader_healthy(): a silence trip is a normal transient
+        # reconnect as far as readiness is concerned (a real backbone outage
+        # would otherwise 503 every worker at once and PDPs could not even
+        # reconnect or fetch bundles, which need no backbone). It is exposed as
+        # the broadcaster_reader_silent gauge / broadcaster_silence_trips
+        # counter instead; give-up -> graceful shutdown remains the escalation.
+        self._reader_silent = False
+        self._silence_trips = 0
         # (B) bounded outbound replay buffer; deque(maxlen) drops the oldest on overflow.
         self._outbound_buffer: deque = deque(
             maxlen=replay_buffer_size if replay_buffer_size > 0 else None
@@ -240,9 +357,75 @@ class ReconnectingBroadcaster(EventBroadcaster):
         """
         if self._listen_count <= 0:
             return True
+        # A silence trip (see _reader_silent) deliberately does NOT flip this: while
+        # the reader re-subscribes it is a pending task mid-reconnect, exactly like
+        # a peer-announced disconnect, and readiness must keep the worker so its
+        # clients can still reconnect and fetch bundles/data (which need no
+        # backbone). The state is observable through the broadcaster_reader_silent
+        # gauge; the escalation for a backbone that never comes back is the
+        # existing give-up -> graceful-shutdown path.
         return (
             self._subscription_task is not None and not self._subscription_task.done()
         )
+
+    def is_reader_silent(self) -> bool:
+        """Whether the silence watchdog has declared the listener dead and the
+        reader has not re-subscribed yet (metrics/diagnostics; not a health
+        input)."""
+        return self._reader_silent
+
+    def silence_trips(self) -> int:
+        """How many times the silence watchdog has tripped in this process."""
+        return self._silence_trips
+
+    def _emit_silence_metrics(self) -> None:
+        """Gauge 1/0 while tripped/recovered, counter per trip; tagged by pid
+        because every worker in the pool emits its own series."""
+        tags = {"pid": str(os.getpid())}
+        metrics.gauge(
+            "opal_server.broadcaster_reader_silent",
+            1 if self._reader_silent else 0,
+            tags=tags,
+        )
+
+    def _note_backbone_message(self) -> None:
+        """Stamp the silence clock: this process has now heard the backbone."""
+        self._last_backbone_message_at = time.monotonic()
+        self._ever_heard_backbone = True
+        self._awaiting_first_message = False
+
+    def _arm_silence_clock_for_new_session(self) -> None:
+        """Called on every successful subscribe.
+
+        Unarmed until the process has heard the backbone once (boot-
+        safe); armed at subscribe, with the first- message grace, for
+        every session after that (no half-open blind spot).
+        """
+        if self._ever_heard_backbone:
+            self._last_backbone_message_at = time.monotonic()
+            self._awaiting_first_message = True
+        else:
+            self._last_backbone_message_at = None
+            self._awaiting_first_message = False
+
+    def _silence_deadline_exceeded(self, now: float) -> bool:
+        """True when the reader has heard nothing for longer than
+        ``reader_silence_timeout`` and the trip floor has elapsed."""
+        if self._reader_silence_timeout <= 0 or self._last_backbone_message_at is None:
+            return False
+        limit = (
+            self._silence_first_message_grace
+            if self._awaiting_first_message
+            else self._reader_silence_timeout
+        )
+        if now - self._last_backbone_message_at < limit:
+            return False
+        if (
+            self._last_silence_trip_at is not None
+            and now - self._last_silence_trip_at < self._silence_min_trip_interval
+        ):
+            return False
+        return True
 
     def backbone_gap_generation(self) -> int:
         """Monotonic count of backbone gaps: bumped each time an established
@@ -341,6 +524,14 @@ class ReconnectingBroadcaster(EventBroadcaster):
                     # peers again — reopen the publish gate (see FreezablePubSubEndpoint).
                     self._backbone_connected = True
                     self._had_backbone_connection = True
+                    # A fresh subscription ends a previous silence trip. The silence
+                    # clock: unarmed until this process has heard the backbone at least
+                    # once; armed at subscribe (with the first-message grace) for every
+                    # session after that (see _last_backbone_message_at).
+                    self._arm_silence_clock_for_new_session()
+                    if self._reader_silent:
+                        self._reader_silent = False
+                        self._emit_silence_metrics()
                     # We are subscribed again; recover concurrently so we keep reading
                     # (and can receive peers' replays) during the settle window.
                     if had_prior_connection:
@@ -351,11 +542,21 @@ class ReconnectingBroadcaster(EventBroadcaster):
                     # counter — otherwise a connect-OK/instant-close loop would never
                     # increment ``attempt`` and ``reconnect_max_retries`` could never trip.
                     sustained = False
-                    async for event in subscriber:
-                        if not sustained:
-                            sustained = True
-                            attempt = 0
-                        await self._handle_broadcast_event(event)
+                    watched = _WatchedIterator(subscriber.__aiter__())
+                    try:
+                        while True:
+                            event = await self._next_backbone_event(watched)
+                            if event is _SUBSCRIBER_ENDED:
+                                break
+                            self._note_backbone_message()
+                            if not sustained:
+                                sustained = True
+                                attempt = 0
+                            await self._handle_broadcast_event(event)
+                            # Time spent fanning the event out is not silence.
+                            self._note_backbone_message()
+                    finally:
+                        await watched.close()
                 if sustained:
                     logger.warning(
                         "Broadcast subscriber ended (backbone connection closed); "
@@ -374,6 +575,17 @@ class ReconnectingBroadcaster(EventBroadcaster):
                 logger.info("Broadcaster listener cancelled; stopping")
                 await self._cancel_pending_tasks()
                 raise
+            except BackboneSilent as e:
+                # Counted like any other failed session so a capped-retry deployment
+                # still reaches give-up on a backbone that never speaks again.
+                attempt += 1
+                logger.warning(
+                    f"Broadcaster listener: {e} — treating the listening connection as "
+                    f"dead and reconnecting (attempt {attempt})"
+                )
+                if self._gave_up(attempt):
+                    await self._fire_give_up()
+                    return
             except Exception as e:
                 attempt += 1
                 logger.error(f"Broadcaster listener error (attempt {attempt}): {e!r}")
@@ -389,6 +601,10 @@ class ReconnectingBroadcaster(EventBroadcaster):
                 if self._backbone_connected:
                     self._gap_generation += 1
                 self._backbone_connected = False
+                if self._reader_silent:
+                    # The socket is half-open: releasing it back to the pool would let
+                    # the very next connect reuse the dead connection. Kill it first.
+                    await self._terminate_listening_connection()
                 await self._safe_disconnect_channel()
             await asyncio.sleep(self._backoff_seconds(attempt))
 
@@ -559,6 +775,77 @@ class ReconnectingBroadcaster(EventBroadcaster):
             self.listening_broadcast_channel = self._broadcast_type(self._broadcast_url)
             await self.listening_broadcast_channel.connect()
         return self.listening_broadcast_channel
+
+    async def _next_backbone_event(self, watched: "_WatchedIterator"):
+        """Next event from the subscriber, or ``_SUBSCRIBER_ENDED`` when the
+        subscription closed — waking every ``silence_poll_seconds`` to check
+        the silence deadline WITHOUT ever cancelling the in-flight
+        ``__anext__``.
+
+        The library's subscriber is an async generator: cancelling one
+        ``__anext__`` (the ``asyncio.wait_for`` pattern) throws CancelledError
+        into it and closes it for good, which reads as "subscriber ended" and
+        reconnects on every poll. So the pending ``__anext__`` future is kept
+        across polls and only ever cancelled at a real trip, when the session is
+        being ended on purpose anyway.
+        """
+        if self._reader_silence_timeout <= 0:
+            return await watched.next()
+        while True:
+            event = await watched.next(timeout=self._silence_poll_seconds)
+            if event is not _POLL_TIMEOUT:
+                return event
+            now = time.monotonic()
+            if self._silence_deadline_exceeded(now):
+                silent_for = now - (self._last_backbone_message_at or now)
+                limit = (
+                    self._silence_first_message_grace
+                    if self._awaiting_first_message
+                    else self._reader_silence_timeout
+                )
+                self._reader_silent = True
+                self._silence_trips += 1
+                self._last_silence_trip_at = now
+                self._emit_silence_metrics()
+                metrics.increment(
+                    "opal_server.broadcaster_silence_trips",
+                    tags={"pid": str(os.getpid())},
+                )
+                await watched.close()
+                raise BackboneSilent(
+                    f"no backbone message for {silent_for:.0f}s "
+                    f"(limit {limit:.0f}s"
+                    f"{', first message of the session' if self._awaiting_first_message else ''})"
+                )
+
+    def _listening_backend_connection(self):
+        """The asyncpg connection (or pool proxy) behind the listening channel,
+        or None for backends that do not expose one."""
+        channel = self.listening_broadcast_channel
+        backend = getattr(channel, "_backend", None)
+        return getattr(backend, "_conn", None)
+
+    async def _terminate_listening_connection(self) -> None:
+        """Hard-close the listening connection after a silence trip.
+
+        asyncpg ``terminate()`` closes the transport immediately without the
+        goodbye handshake that a half-open peer would never answer; the pool then
+        discards the closed connection instead of handing it to the reconnect.
+        Best-effort: backends without the hook are simply disconnected as usual.
+        """
+        conn = self._listening_backend_connection()
+        if conn is None:
+            return
+        inner = getattr(conn, "_con", conn)
+        terminate = getattr(inner, "terminate", None)
+        if terminate is None:
+            return
+        try:
+            result = terminate()
+            if asyncio.iscoroutine(result):
+                await result
+        except Exception as e:
+            logger.debug(f"terminate() on the dead listener raised {e!r}; ignoring")
 
     async def _handle_broadcast_event(self, event):
         """Forward one incoming broadcast to the internal notifier.

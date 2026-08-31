@@ -651,9 +651,15 @@ Make `/healthcheck` reflect the broadcaster reader's health, so a Kubernetes rea
 
 #### OPAL_BROADCAST_KEEPALIVE_INTERVAL
 
-Default: `3600`
+Default: `60`
 
-The time to wait between sending two consecutive broadcaster keepalive messages, in seconds.
+Seconds between two consecutive broadcaster keepalive messages (published by each pod's leader worker on the backbone). Besides keeping idle backbone sessions warm, these are the heartbeat the reader silence watchdog (`OPAL_BROADCAST_READER_SILENCE_TIMEOUT`) listens for: a healthy fleet is never silent for longer than this. `0` disables the keepalive — and with it the silence watchdog, which would otherwise mistake a quiet channel for a dead one. The default was `3600` before 0.9.9; it was lowered so that silence on the backbone means something.
+
+#### OPAL_BROADCAST_READER_SILENCE_TIMEOUT
+
+Default: `180.0`
+
+Reader liveness by silence. If the broadcaster reader receives no backbone message of any kind (keepalives included) for this many seconds, the listening connection is treated as dead — it is terminated so the connection pool cannot reuse it — and the normal reconnect + client-resync path runs. This is what catches a *half-open* backbone connection (for example after a database failover that moves the endpoint to another host without closing the old sockets), where nothing else in OPAL ever fires. (On a Postgres backbone the `permit-broadcaster` library, from 0.2.7, also enables TCP keepalive on every pooled connection — on by default, tunable with the libpq-style `keepalives`, `keepalives_idle`, `keepalives_interval` and `keepalives_count` query parameters of `OPAL_BROADCAST_URI` — which lets the kernel detect an *unreachable* peer within about a minute. The silence watchdog is OPAL's backend-agnostic detector, and the only one that also catches a peer whose kernel still answers but whose backbone delivers nothing.) A trip does **not** flip `/healthcheck` (the worker is mid-reconnect, exactly like a peer-announced disconnect, and its clients can still fetch bundles and data); it is visible as the `opal_server.broadcaster_reader_silent` gauge (per pid, 1 while tripped) and the `opal_server.broadcaster_silence_trips` counter. The clock is unarmed until this worker has heard the backbone at least once (so a slow boot, or a single pod whose leader has not published yet, is never counted as silence); from then on every subscription is armed as soon as it is established, with a first-message grace of at least two keepalive intervals, so a reconnect that lands on a stale endpoint and never hears anything is caught too. The time spent fanning an event out to clients is not counted as silence. Must be comfortably above `OPAL_BROADCAST_KEEPALIVE_INTERVAL` (it is raised to twice that if set lower); `0` disables. A trip costs one reconnect and one client resync — the same as a peer-announced disconnect.
 
 #### OPAL_BROADCAST_KEEPALIVE_TOPIC
 

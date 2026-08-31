@@ -95,6 +95,20 @@ class OpalServerConfig(Confi):
         description="Grace period after a broadcaster reconnect before replaying "
         "buffered broadcasts and resyncing clients, to let peer servers re-subscribe.",
     )
+    BROADCAST_READER_SILENCE_TIMEOUT = confi.float(
+        "BROADCAST_READER_SILENCE_TIMEOUT",
+        180.0,
+        description="Reader liveness by silence: if the broadcaster reader receives no "
+        "backbone message of any kind (keepalives included) for this many seconds, "
+        "the listening connection is treated as dead — terminated so the pool cannot "
+        "reuse it — and the normal reconnect + resync path runs. This is what catches "
+        "a HALF-OPEN backbone connection (e.g. after a database failover that moves "
+        "the endpoint to another host without closing the old sockets), where nothing "
+        "else ever fires. While tripped, /healthcheck reports the reader unhealthy "
+        "until it re-subscribes. Must be comfortably above BROADCAST_KEEPALIVE_INTERVAL "
+        "(it is raised to twice that if set lower); 0 disables. A trip costs one "
+        "reconnect and one client resync — the same as a peer-announced disconnect.",
+    )
     BROADCAST_HEALTHCHECK_ENABLED = confi.bool(
         "BROADCAST_HEALTHCHECK_ENABLED",
         True,
@@ -442,8 +456,14 @@ class OpalServerConfig(Confi):
     # broadcaster keepalive
     BROADCAST_KEEPALIVE_INTERVAL = confi.int(
         "BROADCAST_KEEPALIVE_INTERVAL",
-        3600,
-        description="the time to wait between sending two consecutive broadcaster keepalive messages",
+        60,
+        description="Seconds between two consecutive broadcaster keepalive messages "
+        "(published by each pod's leader worker on the backbone). Besides keeping "
+        "idle backbone sessions warm, these are the heartbeat the reader silence "
+        "watchdog (BROADCAST_READER_SILENCE_TIMEOUT) listens for: a healthy fleet "
+        "is never silent for longer than this. 0 disables the keepalive (and with "
+        "it the silence watchdog, which would otherwise mistake a quiet channel for "
+        "a dead one). Was 3600 before 0.9.9; lowered so silence means something.",
     )
     BROADCAST_KEEPALIVE_TOPIC = confi.str(
         "BROADCAST_KEEPALIVE_TOPIC",
