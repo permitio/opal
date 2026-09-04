@@ -203,6 +203,9 @@ class ScopedServerSideTopicPublisher(ServerSideTopicPublisher):
         self._scope_id = scope_id
 
     async def publish(self, topics: TopicList, data: Any = None):
-        scoped_topics = [f"{self._scope_id}:{topic}" for topic in topics]
+        scoped_topics = [
+            topic if topic.startswith(f"{self._scope_id}:") else f"{self._scope_id}:{topic}"
+            for topic in topics
+        ]
         logger.info("Publishing to topics: {topics}", topics=scoped_topics)
         await super().publish(scoped_topics, data)
