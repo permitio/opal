@@ -1,0 +1,140 @@
+# Dependabot version updates for OPAL.
+#
+# This repo had no dependency automation. It matters beyond OPAL itself, because OPAL is
+# the upstream that DOWNSTREAM consumers inherit: permitio/pdp-v2 installs opal-client and
+# opal-common, so the floors and caps declared here decide what a PDP image can resolve.
+# Several CVE waivers in the PDP exist purely because a cap here forbids the fixed version
+# (see the note at the bottom of this file). See PER-15358.
+#
+# Shape mirrors the agent-security, PDP and permit-opa configs - same schedule, cooldown,
+# groups, limits, commit prefixes and labels - so every repo behaves alike.
+#
+# `cooldown` is supply-chain defence, not noise reduction: most malicious-release incidents
+# are caught within a week, which is why GitHub made a 3-day cooldown the platform default
+# in July 2026. Security updates are never delayed by it. Only semver-strict ecosystems
+# support the semver-specific knobs, so pip and npm get them while docker and
+# github-actions get default-days only.
+version: 2
+updates:
+  # Root requirements.txt - the dev/test/publish toolchain.
+  #
+  # IMPORTANT SCOPE LIMIT, so nobody assumes this covers OPAL's library dependencies:
+  # it does not. The real dependency declarations live in packages/requires.txt and
+  # packages/*/requires.txt, and each setup.py loads them at runtime with a plain
+  # `open(...)` inside get_install_requires(). Dependabot's pip parser reads standard
+  # manifests (requirements.txt, setup.py's literal install_requires, setup.cfg,
+  # pyproject.toml) and cannot resolve a dynamic file read, so `requires.txt` is
+  # invisible to it under any filename that is not one it already recognises.
+  #
+  # Consequence: bumping OPAL's actual caps stays a manual job until those files become
+  # a pyproject.toml (or are renamed to something Dependabot parses). That migration is
+  # the highest-value follow-up here and deserves its own PR.
+  #
+  # What this entry DOES cover is still worth having - note that two of the pins in
+  # requirements.txt (setuptools>=70.0.0, zipp>=3.19.1) are there with the comment
+  # "pinned by Snyk to avoid a vulnerability", i.e. someone was already doing this by
+  # hand.
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    cooldown:
+      default-days: 7
+      semver-major-days: 14
+    groups:
+      minor-and-patch:
+        update-types: ["minor", "patch"]
+    commit-message:
+      prefix: "deps"
+      prefix-development: "deps-dev"
+    labels:
+      - "dependencies"
+
+  # Docusaurus documentation site.
+  - package-ecosystem: "npm"
+    directory: "/documentation"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    cooldown:
+      default-days: 7
+      semver-major-days: 14
+    groups:
+      minor-and-patch:
+        update-types: ["minor", "patch"]
+    commit-message:
+      prefix: "deps"
+      prefix-development: "deps-dev"
+    labels:
+      - "dependencies"
+
+  # Docker base images.
+  # Note: cooldown.semver-major-days is not supported for docker (Dependabot only
+  # supports it on semver-strict ecosystems like pip and npm).
+  #
+  # There is real work waiting here. docker/Dockerfile builds on python:3.10-bookworm
+  # and python:3.10-slim-bookworm, and Python 3.10 reaches END OF LIFE in October 2026 -
+  # the PDP already moved off python:3.10 for that reason plus four CPython CVEs that
+  # only had 3.13 fixes (PER-15358). It also pulls `alpine:latest` twice, which is a
+  # floating tag with no reproducibility at all, and pins openpolicyagent/opa:1.9.0-static
+  # and permitio/cedar-agent:0.2.1 by hand.
+  - package-ecosystem: "docker"
+    directory: "/docker"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    cooldown:
+      default-days: 7
+    commit-message:
+      prefix: "deps"
+    labels:
+      - "dependencies"
+
+  # GitHub Actions versions.
+  # Note: cooldown.semver-major-days is not supported for github-actions.
+  #
+  # This is the entry with the most immediate payoff. The workflows currently mix
+  # actions/checkout@v2, @v3, @v4 and a bare commit SHA; actions/setup-python@v2, @v4 and
+  # @v5; docker/build-push-action@v2 and @v6; docker/setup-buildx-action@v1 and @v3; and
+  # docker/setup-qemu-action@v1 and @v3. The @v1/@v2 generations are several years old and
+  # run on Node runtimes GitHub has already deprecated.
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    cooldown:
+      default-days: 7
+    groups:
+      minor-and-patch:
+        update-types: ["minor", "patch"]
+    commit-message:
+      prefix: "deps"
+      prefix-development: "deps-dev"
+    labels:
+      - "dependencies"
+
+# DOWNSTREAM NOTE (PER-15358)
+# ---------------------------
+# These caps in packages/requires.txt and packages/opal-common/requires.txt are the reason
+# permitio/pdp-v2 carries CVE waivers it cannot otherwise retire. Dependabot cannot see
+# those files (see the pip entry above), so they need raising by hand:
+#
+#   starlette>=0.40.0,<1   - the <1 cap forbids the fixed versions of CVE-2026-48710
+#                            (1.0.1), CVE-2026-48817 / CVE-2026-48818 (1.1.0) and
+#                            CVE-2026-54283 (1.3.1). All four are waived in the PDP as
+#                            unreachable; none can be upgraded away while this cap stands.
+#   ddtrace>=3.0.0,<4      - the <4 cap forbids 4.8.2, which fixes CVE-2026-50271. The PDP
+#                            works around it by dropping "baggage" from
+#                            DD_TRACE_PROPAGATION_STYLE_EXTRACT.
+#   gitpython>=3.1.32,<4   - the FLOOR is the problem here, not the cap. 3.1.59 fixes
+#                            CVE-2026-78676, a CRITICAL (CVSS 9.8) argument-injection RCE
+#                            via git-config re-serialization into core.hooksPath, and
+#                            3.1.58 fixes six more. A floor of 3.1.32 lets any consumer
+#                            resolve a vulnerable version; pdp-v2:0.9.14 shipped 3.1.57 and
+#                            had to add its own explicit floor to get out of it.
