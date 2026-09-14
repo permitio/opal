@@ -42,7 +42,7 @@ from opal_common.schemas.store import TransactionType
 from opal_common.security.sslcontext import get_custom_ssl_context
 from opal_common.synchronization.hierarchical_lock import HierarchicalLock
 from opal_common.utils import get_authorization_header
-from pydantic.json import pydantic_encoder
+from pydantic_core import to_jsonable_python
 
 
 class DataUpdater:
@@ -191,7 +191,7 @@ class DataUpdater:
             reason = "Periodic update"
 
         logger.info("Updating policy data, reason: {reason}", reason=reason)
-        update = DataUpdate.parse_obj(data)
+        update = DataUpdate.model_validate(data)
         await self.trigger_data_update(update)
 
     async def trigger_data_update(self, update: DataUpdate):
@@ -242,7 +242,7 @@ class DataUpdater:
             ) as session:
                 response = await session.get(url, **self._ssl_context_kwargs)
                 if response.status == 200:
-                    return DataSourceConfig.parse_obj(await response.json())
+                    return DataSourceConfig.model_validate(await response.json())
                 else:
                     error_details = await response.json()
                     raise ClientError(
@@ -451,7 +451,7 @@ class DataUpdater:
         """
         try:
             if not isinstance(data, str):
-                data = json.dumps(data, default=pydantic_encoder)
+                data = json.dumps(data, default=to_jsonable_python)
             return hashlib.sha256(data.encode("utf-8")).hexdigest()
         except Exception:
             # Don't interpolate ``data`` - it may be an inline credential-bearing

@@ -111,7 +111,7 @@ class NewCommitsCallbacks(PolicyFetcherCallbacks):
 
     async def trigger_notification(self, notification: PolicyUpdateMessageNotification):
         logger.info(
-            f"Triggering policy update for scope {self._scope_id}: {notification.dict()}"
+            f"Triggering policy update for scope {self._scope_id}: {notification.model_dump()}"
         )
         async with ScopedServerSideTopicPublisher(
             self._pubsub_endpoint, self._scope_id
@@ -321,7 +321,7 @@ class ScopesService:
                             clone_path=str(scope_dir),
                             scope_id=scope_id,
                             reason="delete",
-                        ).dict(),
+                        ).model_dump(),
                     )
 
     async def _purge_local_clone_best_effort(

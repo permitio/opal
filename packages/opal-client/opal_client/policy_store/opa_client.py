@@ -163,25 +163,25 @@ class OpaTransactionLogState:
     def last_policy_transaction(self):
         if self._last_policy_transaction is None:
             return {}
-        return self._last_policy_transaction.dict()
+        return self._last_policy_transaction.model_dump()
 
     @property
     def last_data_transaction(self):
         if self._last_data_transaction is None:
             return {}
-        return self._last_data_transaction.dict()
+        return self._last_data_transaction.model_dump()
 
     @property
     def last_failed_policy_transaction(self):
         if self._last_failed_policy_transaction is None:
             return {}
-        return self._last_failed_policy_transaction.dict()
+        return self._last_failed_policy_transaction.model_dump()
 
     @property
     def last_failed_data_transaction(self):
         if self._last_failed_data_transaction is None:
             return {}
-        return self._last_failed_data_transaction.dict()
+        return self._last_failed_data_transaction.model_dump()
 
     @property
     def transaction_policy_statistics(self):
@@ -208,7 +208,7 @@ class OpaTransactionLogState:
         hardcoded policy."""
         logger.debug(
             "processing store transaction: {transaction}",
-            transaction=transaction.dict(),
+            transaction=transaction.model_dump(),
         )
         if self._is_policy_transaction(transaction):
             if transaction.success:
@@ -931,7 +931,7 @@ class OpaClient(LivenessProbeMixin, BasePolicyStoreClient):
         https://www.openpolicyagent.org/docs/latest/rest-api/#get-a-document-with-input
         """
         # opa data api format needs the input to sit under "input"
-        opa_input = {"input": input.dict()}
+        opa_input = {"input": input.model_dump()}
         if path.startswith("/"):
             path = path[1:]
         try:

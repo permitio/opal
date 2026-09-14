@@ -2,11 +2,21 @@ import re
 from enum import Enum
 from typing import Any, Iterable, List, Optional
 
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validator
 
 HOST_ADDR_PATTERN = re.compile(
     r"^(?P<addr>(?:\d{1,3}\.){3}\d{1,3}|)(?::(?P<port>\d+))?$"
 )
+
+
+def _cli_alias(field_name: str) -> str:
+    """Converts a field named tls_private_key_file to --tls-private-key-file
+    (to be used by the opa/cedar cli).
+
+    Was a ``Config.alias_generator`` classmethod under pydantic v1; v2
+    takes the generator as a plain callable on ``model_config``.
+    """
+    return "--{}".format(field_name.replace("_", "-"))
 
 
 class LogLevel(str, Enum):
@@ -76,19 +86,15 @@ class OpaServerOptions(BaseModel):
         description="set to true to enable the OPA v0 compatibility mode (default false)",
     )
 
-    class Config:
-        use_enum_values = True
-        allow_population_by_field_name = True
-
-        @classmethod
-        def alias_generator(cls, string: str) -> str:
-            """Converts field named tls_private_key_file to --tls-private-key-
-            file (to be used by opa cli)"""
-            return "--{}".format(string.replace("_", "-"))
+    model_config = ConfigDict(
+        use_enum_values=True,
+        populate_by_name=True,
+        alias_generator=_cli_alias,
+    )
 
     def get_cli_options_dict(self):
         """Returns a dict that can be passed to the OPA cli."""
-        return self.dict(
+        return self.model_dump(
             exclude_none=True, by_alias=True, exclude={"files", "v0_compatible"}
         )
 
@@ -114,25 +120,23 @@ class CedarServerOptions(BaseModel):
         description="list of built-in policies files that must be loaded on startup.",
     )
 
-    class Config:
-        use_enum_values = True
-        allow_population_by_field_name = True
+    model_config = ConfigDict(
+        use_enum_values=True,
+        populate_by_name=True,
+        alias_generator=_cli_alias,
+    )
 
-        @classmethod
-        def alias_generator(cls, string: str) -> str:
-            """Converts field named tls_private_key_file to --tls-private-key-
-            file (to be used by opa cli)"""
-            return "--{}".format(string.replace("_", "-"))
-
-    @validator("authentication")
+    @field_validator("authentication")
+    @classmethod
     def validate_authentication(cls, v: AuthenticationScheme):
         if v not in [AuthenticationScheme.off, AuthenticationScheme.token]:
             raise ValueError("Invalid AuthenticationScheme for Cedar.")
         return v
 
-    @validator("authentication_token")
-    def validate_authentication_token(cls, v: Optional[str], values: dict[str, Any]):
-        if values["authentication"] == AuthenticationScheme.token and v is None:
+    @field_validator("authentication_token")
+    @classmethod
+    def validate_authentication_token(cls, v: Optional[str], info: ValidationInfo):
+        if info.data.get("authentication") == AuthenticationScheme.token and v is None:
             raise ValueError(
                 "A token must be specified for AuthenticationScheme.token."
             )

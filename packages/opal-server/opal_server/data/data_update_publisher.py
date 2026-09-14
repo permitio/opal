@@ -110,5 +110,5 @@ class DataUpdatePublisher:
         )
 
         await self._publisher.publish(
-            list(all_topic_combos), update.dict(by_alias=True)
+            list(all_topic_combos), update.model_dump(by_alias=True)
         )

@@ -1,14 +1,18 @@
 idna>=3.3,<4
 typer>=0.4.1,<1
-fastapi>=0.109.1,<1
-fastapi_websocket_pubsub[all]>=1.0.0,<2
-fastapi_websocket_rpc>=0.1.28,<1
+fastapi>=0.135.0,<1
+fastapi_websocket_pubsub[all]>=1.0.1,<2
+fastapi_websocket_rpc>=0.1.29,<1
 websockets>=10.3
 gunicorn>=23.0.0
-pydantic[email]>=1.9.1,<2
-typing-extensions;python_version<'3.8'
-starlette>=0.40.0,<1
+pydantic[email]>=2.9.0,<3
+starlette>=1.0.1,<2
 uvicorn[standard]>=0.17.6,<1
-fastapi-utils>=0.2.1,<1
+fastapi-utils>=0.8.0,<1
+# fastapi-utils imports typing_inspect unconditionally (fastapi_utils/cbv.py, reached
+# via `import fastapi_utils.tasks`) but declares it only under its `all` extra -
+# https://github.com/fastapiutils/fastapi-utils/issues/318 (open). Declare it here so
+# the import works without dragging in the rest of `all` (sqlalchemy, pydantic-settings).
+typing-inspect>=0.9.0,<0.10
 setuptools>=70.0.0 # not directly required, pinned by Snyk to avoid a vulnerability
 anyio>=4.4.0 # not directly required, pinned by Snyk to avoid a vulnerability

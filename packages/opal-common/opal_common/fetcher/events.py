@@ -1,7 +1,7 @@
 from typing import ClassVar, List, Optional, Set
 
 from opal_common.logging_utils.redaction import RedactedReprMixin
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class FetcherConfig(RedactedReprMixin, BaseModel):
@@ -34,14 +34,31 @@ class FetchEvent(RedactedReprMixin, BaseModel):
     _redacted_url_fields: ClassVar[Set[str]] = {"url"}
 
     # Event id to be filled by the engine
-    id: str = None
+    id: Optional[str] = None
     # optional name of the specific event
-    name: str = None
+    name: Optional[str] = None
     # A string identifying the fetcher class to use (as registered in the fetcher register)
     fetcher: str
     # The url the event targets for fetching
     url: str
     # Specific fetcher configuration (overridden by deriving event classes (FetcherConfig)
-    config: dict = None
+    config: Optional[dict] = None
     # Tenacity.retry - Override default retry configuration for this event
-    retry: dict = None
+    retry: Optional[dict] = None
+
+    @field_validator("config", mode="before")
+    @classmethod
+    def _coerce_model_config(cls, value):
+        """Accept a ``FetcherConfig`` where a plain ``dict`` is declared.
+
+        pydantic v1 silently coerced a BaseModel into a ``dict`` field (it fell
+        back to ``dict(model)``); v2 rejects it with a ``dict_type`` error.
+        Callers legitimately pass a config *model* here - notably
+        ``FetchingEngine.queue_url(url, callback, HttpFetcherConfig(...))`` -
+        so keep the v1 contract. Subclasses that re-declare ``config`` with a
+        concrete model type just re-validate the resulting mapping, which is
+        lossless for these flat config models.
+        """
+        if isinstance(value, BaseModel):
+            return dict(value)
+        return value

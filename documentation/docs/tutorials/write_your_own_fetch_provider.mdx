@@ -93,7 +93,19 @@ The `provider.py` module should have the following structure:
 
 This example code shows the class structure and some comments:
 
+:::note pydantic v2
+Since OPAL 0.9, `opal-common` requires **pydantic v2**. Custom fetch providers are
+pydantic models, so they must be v2-compatible: use `@field_validator` /
+`@model_validator` instead of `@validator` / `@root_validator`, `model_config =
+ConfigDict(...)` instead of an inner `class Config`, and `.model_dump()` /
+`.model_validate()` instead of `.dict()` / `.parse_obj()`. Note also that a bare
+`Optional[X]` annotation is **required** under v2 - write `Optional[X] = None` when
+you want the field to be optional.
+:::
+
 ```python
+from typing import Optional
+
 from pydantic import BaseModel, Field
 
 from opal_common.fetcher.fetch_provider import BaseFetchProvider
@@ -116,7 +128,7 @@ class PostgresFetchEvent(FetchEvent):
     * set the type of the `config` key to be your custom config class (the one just above).
     """
     fetcher: str = "PostgresFetchProvider"
-    config: PostgresFetcherConfig = None
+    config: Optional[PostgresFetcherConfig] = None
 
 
 class PostgresFetchProvider(BaseFetchProvider):
@@ -180,7 +192,7 @@ Your `FetchEvent` derived class is more straightforward, simply:
 ```python
 class PostgresFetchEvent(FetchEvent):
     fetcher: str = "PostgresFetchProvider"
-    config: PostgresFetcherConfig = None
+    config: Optional[PostgresFetcherConfig] = None
 ```
 
 ### Step 4 - implementing your FetchProvider class
