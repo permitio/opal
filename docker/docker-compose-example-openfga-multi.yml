@@ -1,0 +1,100 @@
+name: opal-openfga-multi-example
+
+# Like docker/docker-compose-example-openfga.yml, but with TWO opal-clients,
+# each keeping its own OpenFGA instance in sync - OPAL fans out every policy
+# and data update to the whole fleet, keeping multiple OpenFGA deployments
+# consistent.
+#
+# Run: docker compose -f docker/docker-compose-example-openfga-multi.yml up -d
+
+services:
+  broadcast_channel:
+    image: postgres:alpine
+    environment:
+      - POSTGRES_DB=postgres
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+
+  # one-shot: turn the mounted policy files into a local git repo that
+  # opal-server can clone and watch
+  policy_repo:
+    image: alpine/git:latest
+    working_dir: /repo
+    volumes:
+      - ./docker_files/openfga_policy_repo:/repo:rw
+    command: >
+      sh -c "git init -b master /repo &&
+             git -C /repo add -A &&
+             git -C /repo -c user.name='opal-demo' -c user.email='opal@demo.local' commit -m 'Initial OpenFGA policy'"
+
+  # first OpenFGA instance (e.g. region A)
+  openfga_1:
+    image: openfga/openfga:latest
+    command: run
+    ports:
+      - "8080:8080"
+
+  # second OpenFGA instance (e.g. region B)
+  openfga_2:
+    image: openfga/openfga:latest
+    command: run
+    ports:
+      - "8081:8080"
+
+  # serves the "external" data source (relationship tuples) for this demo
+  openfga_data_nginx:
+    image: nginx:latest
+    volumes:
+      - "./docker_files/openfga_data:/usr/share/nginx/html:ro"
+
+  opal_server:
+    image: permitio/opal-server:latest
+    environment:
+      - OPAL_BROADCAST_URI=postgres://postgres:postgres@broadcast_channel:5432/postgres
+      - UVICORN_NUM_WORKERS=1
+      - OPAL_POLICY_REPO_URL=/opal/policy-repo
+      - OPAL_POLICY_REPO_POLLING_INTERVAL=10
+      - OPAL_POLICY_REPO_POLICY_EXTENSIONS=.fga
+      - OPAL_FILTER_FILE_EXTENSIONS=.fga,.json
+      - OPAL_DATA_CONFIG_SOURCES={"config":{"entries":[{"url":"http://openfga_data_nginx/tuples.json","topics":["policy_data"],"dst_path":""}]}}
+      - OPAL_LOG_FORMAT_INCLUDE_PID=true
+    volumes:
+      - ./docker_files/openfga_policy_repo:/opal/policy-repo:ro
+    ports:
+      - "7002:7002"
+    depends_on:
+      - broadcast_channel
+      - policy_repo
+
+  opal_client_1:
+    image: permitio/opal-client:latest
+    environment:
+      - OPAL_SERVER_URL=http://opal_server:7002
+      - OPAL_LOG_FORMAT_INCLUDE_PID=true
+      - OPAL_POLICY_STORE_TYPE=OPENFGA
+      - OPAL_POLICY_STORE_URL=http://openfga_1:8080
+      # each client manages its own OpenFGA store named after the client
+      - OPAL_POLICY_STORE_OPENFGA_STORE_NAME=opal-1
+      - OPAL_INLINE_OPA_ENABLED=False
+    ports:
+      - "7766:7000"
+    depends_on:
+      - opal_server
+      - openfga_1
+    command: sh -c "exec ./wait-for.sh opal_server:7002 --timeout=20 -- ./start.sh"
+
+  opal_client_2:
+    image: permitio/opal-client:latest
+    environment:
+      - OPAL_SERVER_URL=http://opal_server:7002
+      - OPAL_LOG_FORMAT_INCLUDE_PID=true
+      - OPAL_POLICY_STORE_TYPE=OPENFGA
+      - OPAL_POLICY_STORE_URL=http://openfga_2:8080
+      - OPAL_POLICY_STORE_OPENFGA_STORE_NAME=opal-2
+      - OPAL_INLINE_OPA_ENABLED=False
+    ports:
+      - "7767:7000"
+    depends_on:
+      - opal_server
+      - openfga_2
+    command: sh -c "exec ./wait-for.sh opal_server:7002 --timeout=20 -- ./start.sh"

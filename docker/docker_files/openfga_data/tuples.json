@@ -1,0 +1,8 @@
+{
+  "document:roadmap": {
+    "viewer": ["user:carol"]
+  },
+  "folder:public": {
+    "viewer": ["user:*"]
+  }
+}
