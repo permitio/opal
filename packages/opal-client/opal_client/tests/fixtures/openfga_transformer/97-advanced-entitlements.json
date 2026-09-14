@@ -1,0 +1,122 @@
+{
+  "schema_version": "1.1",
+  "type_definitions": [
+    {
+      "type": "user",
+      "metadata": null,
+      "relations": {}
+    },
+    {
+      "metadata": {
+        "relations": {
+          "member": {
+            "directly_related_user_types": [
+              {
+                "type": "user"
+              }
+            ]
+          }
+        }
+      },
+      "relations": {
+        "member": {
+          "this": {}
+        }
+      },
+      "type": "organization"
+    },
+    {
+      "metadata": {
+        "relations": {
+          "subscriber": {
+            "directly_related_user_types": [
+              {
+                "relation": "member",
+                "type": "organization"
+              }
+            ]
+          }
+        }
+      },
+      "relations": {
+        "subscriber": {
+          "this": {}
+        }
+      },
+      "type": "plan"
+    },
+    {
+      "metadata": {
+        "relations": {
+          "has_feature": {
+            "directly_related_user_types": [
+              {
+                "relation": "subscriber",
+                "type": "plan"
+              },
+              {
+                "condition": "is_below_collaborator_limit",
+                "relation": "subscriber",
+                "type": "plan"
+              },
+              {
+                "condition": "is_below_row_sync_limit",
+                "relation": "subscriber",
+                "type": "plan"
+              },
+              {
+                "condition": "is_below_page_history_days_limit",
+                "relation": "subscriber",
+                "type": "plan"
+              }
+            ]
+          }
+        }
+      },
+      "relations": {
+        "has_feature": {
+          "this": {}
+        }
+      },
+      "type": "feature"
+    }
+  ],
+  "conditions": {
+    "is_below_collaborator_limit": {
+      "expression": "collaborator_count <= collaborator_limit",
+      "name": "is_below_collaborator_limit",
+      "parameters": {
+        "collaborator_count": {
+          "type_name": "TYPE_NAME_INT"
+        },
+        "collaborator_limit": {
+          "type_name": "TYPE_NAME_INT"
+        }
+      }
+    },
+    "is_below_page_history_days_limit": {
+      "expression": "page_history_days_count <= page_history_days_limit",
+      "name": "is_below_page_history_days_limit",
+      "parameters": {
+        "page_history_days_count": {
+          "type_name": "TYPE_NAME_INT"
+        },
+        "page_history_days_limit": {
+          "type_name": "TYPE_NAME_INT"
+        }
+      }
+    },
+    "is_below_row_sync_limit": {
+      "expression": "row_sync_count <= row_sync_limit",
+      "name": "is_below_row_sync_limit",
+      "parameters": {
+        "row_sync_count": {
+          "type_name": "TYPE_NAME_INT"
+        },
+        "row_sync_limit": {
+          "type_name": "TYPE_NAME_INT"
+        }
+      }
+    }
+  }
+}
