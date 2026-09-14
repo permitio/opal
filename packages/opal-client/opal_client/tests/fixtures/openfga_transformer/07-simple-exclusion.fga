@@ -1,0 +1,8 @@
+model
+  schema 1.1
+
+type user
+  relations
+    define blocked: [user]
+    define follower: [user]
+    define viewer: follower but not blocked

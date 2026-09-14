@@ -1,0 +1,190 @@
+{
+  "schema_version": "1.1",
+  "type_definitions": [
+    {
+      "type": "user",
+      "relations": {},
+      "metadata": null
+    },
+    {
+      "type": "document",
+      "relations": {
+        "allowed": {
+          "this": {}
+        },
+        "blocked": {
+          "this": {}
+        },
+        "relation1": {
+          "difference": {
+            "base": {
+              "intersection": {
+                "child": [
+                  {
+                    "this": {}
+                  },
+                  {
+                    "computedUserset": {
+                      "relation": "allowed"
+                    }
+                  }
+                ]
+              }
+            },
+            "subtract": {
+              "computedUserset": {
+                "relation": "blocked"
+              }
+            }
+          }
+        },
+        "relation2": {
+          "intersection": {
+            "child": [
+              {
+                "this": {}
+              },
+              {
+                "difference": {
+                  "base": {
+                    "computedUserset": {
+                      "relation": "allowed"
+                    }
+                  },
+                  "subtract": {
+                    "computedUserset": {
+                      "relation": "blocked"
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        },
+        "relation3": {
+          "union": {
+            "child": [
+              {
+                "this": {}
+              },
+              {
+                "difference": {
+                  "base": {
+                    "intersection": {
+                      "child": [
+                        {
+                          "computedUserset": {
+                            "relation": "relation1"
+                          }
+                        },
+                        {
+                          "computedUserset": {
+                            "relation": "relation2"
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "subtract": {
+                    "computedUserset": {
+                      "relation": "blocked"
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        },
+        "relation4": {
+          "difference": {
+            "base": {
+              "union": {
+                "child": [
+                  {
+                    "this": {}
+                  },
+                  {
+                    "intersection": {
+                      "child": [
+                        {
+                          "computedUserset": {
+                            "relation": "relation1"
+                          }
+                        },
+                        {
+                          "computedUserset": {
+                            "relation": "relation2"
+                          }
+                        }
+                      ]
+                    }
+                  }
+                ]
+              }
+            },
+            "subtract": {
+              "computedUserset": {
+                "relation": "relation3"
+              }
+            }
+          }
+        }
+      },
+      "metadata": {
+        "relations": {
+          "allowed": {
+            "directly_related_user_types": [
+              {
+                "type": "user"
+              }
+            ]
+          },
+          "blocked": {
+            "directly_related_user_types": [
+              {
+                "type": "user"
+              }
+            ]
+          },
+          "relation1": {
+            "directly_related_user_types": [
+              {
+                "type": "user"
+              }
+            ]
+          },
+          "relation2": {
+            "directly_related_user_types": [
+              {
+                "type": "user"
+              }
+            ]
+          },
+          "relation3": {
+            "directly_related_user_types": [
+              {
+                "type": "user"
+              },
+              {
+                "type": "user",
+                "wildcard": {}
+              },
+              {
+                "type": "user",
+                "condition": "cond",
+                "relation": "follower"
+              }
+            ]
+          },
+          "relation4": {
+            "directly_related_user_types": [
+              {
+                "type": "user"
+              }
+            ]
+          }
+        }
+      }
+    }
+  ]
+}

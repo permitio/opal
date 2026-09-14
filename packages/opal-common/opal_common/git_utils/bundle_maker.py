@@ -40,6 +40,15 @@ class BundleMaker:
     - a diff bundle, representing only the *changes* made to the policy between two commits (the diff).
     """
 
+    @staticmethod
+    def _get_module_package_name(path: Path, contents: str) -> str:
+        """Extracts a rego module's package name; non-rego policy modules
+        (e.g. OpenFGA ".fga" models, served to other policy stores) have no
+        rego package and get an empty one."""
+        if path.suffix == ".rego":
+            return get_rego_package(contents) or ""
+        return ""
+
     def __init__(
         self,
         repo: Repo,
@@ -269,7 +278,7 @@ class BundleMaker:
                     policy_modules.append(
                         RegoModule(
                             path=str(path),
-                            package_name=get_rego_package(contents) or "",
+                            package_name=self._get_module_package_name(path, contents),
                             rego=contents,
                         )
                     )
@@ -333,7 +342,7 @@ class BundleMaker:
                     policy_modules.append(
                         RegoModule(
                             path=str(path),
-                            package_name=get_rego_package(contents) or "",
+                            package_name=self._get_module_package_name(path, contents),
                             rego=contents,
                         )
                     )

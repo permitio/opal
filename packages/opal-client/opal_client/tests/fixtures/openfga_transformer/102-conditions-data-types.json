@@ -1,0 +1,155 @@
+{
+  "schema_version": "1.1",
+  "type_definitions": [
+    {
+      "type": "user",
+      "metadata": null,
+      "relations": {}
+    },
+    {
+      "metadata": {
+        "relations": {
+          "is_valid": {
+            "directly_related_user_types": [
+              {
+                "condition": "is_valid_string",
+                "type": "user"
+              },
+              {
+                "condition": "is_valid_int",
+                "type": "user"
+              },
+              {
+                "condition": "is_valid_uint",
+                "type": "user"
+              },
+              {
+                "condition": "is_valid_double",
+                "type": "user"
+              },
+              {
+                "condition": "is_valid_duration",
+                "type": "user"
+              },
+              {
+                "condition": "is_valid_timestamp",
+                "type": "user"
+              },
+              {
+                "condition": "is_valid_map_string",
+                "type": "user"
+              },
+              {
+                "condition": "is_valid_list_string",
+                "type": "user"
+              },
+              {
+                "condition": "is_valid_ipaddress",
+                "type": "user"
+              }
+            ]
+          }
+        }
+      },
+      "relations": {
+        "is_valid": {
+          "this": {}
+        }
+      },
+      "type": "datatype_test"
+    }
+  ],
+  "conditions": {
+    "is_valid_double": {
+      "expression": "_double != 0.0 \u0026\u0026 _double \u003e 0.0",
+      "name": "is_valid_double",
+      "parameters": {
+        "_double": {
+          "type_name": "TYPE_NAME_DOUBLE"
+        }
+      }
+    },
+    "is_valid_duration": {
+      "expression": "_duration != null \u0026\u0026 _duration != duration(\"0s\") \u0026\u0026 _duration \u003e duration(\"0s\")",
+      "name": "is_valid_duration",
+      "parameters": {
+        "_duration": {
+          "type_name": "TYPE_NAME_DURATION"
+        }
+      }
+    },
+    "is_valid_int": {
+      "expression": "_int != 0 \u0026\u0026 _int \u003e 0",
+      "name": "is_valid_int",
+      "parameters": {
+        "_int": {
+          "type_name": "TYPE_NAME_INT"
+        }
+      }
+    },
+    "is_valid_ipaddress": {
+      "expression": "_ipaddress != null \u0026\u0026  _ipaddress != ipaddress(\"192.0.0.1\")",
+      "name": "is_valid_ipaddress",
+      "parameters": {
+        "_ipaddress": {
+          "type_name": "TYPE_NAME_IPADDRESS"
+        }
+      }
+    },
+    "is_valid_list_string": {
+      "expression": "\"1\" in _liststring \u0026\u0026 _liststring[0] != \"\" \u0026\u0026 _liststring[0] \u003e \"\" \u0026\u0026 _liststring.exists(x, x \u003e \"\") \u0026\u0026 _liststring.exists_one(x, x \u003e \"\") \u0026\u0026 _liststring.all(x, x \u003e \"\")",
+      "name": "is_valid_list_string",
+      "parameters": {
+        "_liststring": {
+          "generic_types": [
+            {
+              "type_name": "TYPE_NAME_STRING"
+            }
+          ],
+          "type_name": "TYPE_NAME_LIST"
+        }
+      }
+    },
+    "is_valid_map_string": {
+      "expression": "\"key\" in _mapstring \u0026\u0026 _mapstring[\"key\"] != \"\"  \u0026\u0026 _mapstring[\"key\"] \u003e \"\"",
+      "name": "is_valid_map_string",
+      "parameters": {
+        "_mapstring": {
+          "generic_types": [
+            {
+              "type_name": "TYPE_NAME_STRING"
+            }
+          ],
+          "type_name": "TYPE_NAME_MAP"
+        }
+      }
+    },
+    "is_valid_string": {
+      "expression": "_string != \"\" \u0026\u0026 _string.startsWith(\"1\") \u0026\u0026 _string.endsWith(\"1\") \u0026\u0026 _string.contains(\"1\") \u0026\u0026 _string.matches(\"[0-9]\")",
+      "name": "is_valid_string",
+      "parameters": {
+        "_string": {
+          "type_name": "TYPE_NAME_STRING"
+        }
+      }
+    },
+    "is_valid_timestamp": {
+      "expression": "_timestamp != null \u0026\u0026 _timestamp != timestamp(\"2019-01-01T00:00:00Z\") \u0026\u0026 _timestamp \u003e timestamp(\"2019-01-01T00:00:00Z\")",
+      "name": "is_valid_timestamp",
+      "parameters": {
+        "_timestamp": {
+          "type_name": "TYPE_NAME_TIMESTAMP"
+        }
+      }
+    },
+    "is_valid_uint": {
+      "expression": "_uint != 0u \u0026\u0026 _uint \u003e 0u",
+      "name": "is_valid_uint",
+      "parameters": {
+        "_uint": {
+          "type_name": "TYPE_NAME_UINT"
+        }
+      }
+    }
+  }
+}

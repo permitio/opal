@@ -59,6 +59,47 @@ class OpalClientConfig(Confi):
         description="The client secret OPAL will use to authenticate against the OAuth server.",
     )
 
+    # OpenFGA policy store configuration (used when POLICY_STORE_TYPE=OPENFGA) --
+    POLICY_STORE_OPENFGA_STORE_ID = confi.str(
+        "POLICY_STORE_OPENFGA_STORE_ID",
+        None,
+        description="The id of the OpenFGA store OPAL client will manage. "
+        "If empty, a store named POLICY_STORE_OPENFGA_STORE_NAME is created "
+        "(or looked up by name) on first use.",
+    )
+    POLICY_STORE_OPENFGA_STORE_NAME = confi.str(
+        "POLICY_STORE_OPENFGA_STORE_NAME",
+        "opal",
+        description="The name of the OpenFGA store to create/lookup when "
+        "POLICY_STORE_OPENFGA_STORE_ID is not set.",
+    )
+    POLICY_STORE_OPENFGA_AUTO_CREATE_STORE = confi.bool(
+        "POLICY_STORE_OPENFGA_AUTO_CREATE_STORE",
+        True,
+        description="If set, OPAL client will create the OpenFGA store (named "
+        "POLICY_STORE_OPENFGA_STORE_NAME) automatically when it does not exist.",
+    )
+    POLICY_STORE_OPENFGA_AUTHORIZATION_MODEL_ID = confi.str(
+        "POLICY_STORE_OPENFGA_AUTHORIZATION_MODEL_ID",
+        None,
+        description="Optional OpenFGA authorization model id to pin for tuple "
+        "writes and checks. When OPAL writes a new authorization model (from "
+        "the policy repo) the freshly written model is used instead.",
+    )
+    POLICY_STORE_OPENFGA_MAX_TUPLES_PER_WRITE = confi.int(
+        "POLICY_STORE_OPENFGA_MAX_TUPLES_PER_WRITE",
+        100,
+        description="Maximum number of relationship tuples per OpenFGA write "
+        "request (the OpenFGA API caps this at 100).",
+    )
+    POLICY_STORE_OPENFGA_IGNORE_DUPLICATE_TUPLES = confi.bool(
+        "POLICY_STORE_OPENFGA_IGNORE_DUPLICATE_TUPLES",
+        True,
+        description="If set, tuple writes are sent with `on_duplicate: ignore` "
+        "so re-applying the same data update is idempotent (requires OpenFGA "
+        "v1.3.6+).",
+    )
+
     POLICY_STORE_CONN_RETRY: ConnRetryOptions = confi.model(
         "POLICY_STORE_CONN_RETRY",
         ConnRetryOptions,

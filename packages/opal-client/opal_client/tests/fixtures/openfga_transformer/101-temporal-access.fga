@@ -1,0 +1,12 @@
+model
+  schema 1.1
+
+type user
+
+type document
+  relations
+    define viewer: [user, user with non_expired_grant]
+
+condition non_expired_grant(current_time: timestamp, grant_duration: duration, grant_time: timestamp) {
+  current_time < grant_time + grant_duration
+}
