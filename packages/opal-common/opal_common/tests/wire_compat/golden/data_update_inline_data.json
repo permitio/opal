@@ -1,0 +1,145 @@
+{
+  "case": "data_update_inline_data",
+  "dict": {
+    "callback": {
+      "callbacks": []
+    },
+    "entries": [
+      {
+        "config": null,
+        "data": {
+          "count": 3,
+          "users": {
+            "alice": {
+              "roles": [
+                "admin"
+              ]
+            }
+          }
+        },
+        "dst_path": "/acl",
+        "save_method": "PUT",
+        "topics": [
+          "policy_data"
+        ],
+        "url": "https://backend.example.com/v1/policy/data"
+      }
+    ],
+    "id": "22222222-2222-2222-2222-222222222222",
+    "reason": "corpus: inline data payload"
+  },
+  "dict_by_alias": {
+    "callback": {
+      "callbacks": []
+    },
+    "entries": [
+      {
+        "config": null,
+        "data": {
+          "count": 3,
+          "users": {
+            "alice": {
+              "roles": [
+                "admin"
+              ]
+            }
+          }
+        },
+        "dst_path": "/acl",
+        "save_method": "PUT",
+        "topics": [
+          "policy_data"
+        ],
+        "url": "https://backend.example.com/v1/policy/data"
+      }
+    ],
+    "id": "22222222-2222-2222-2222-222222222222",
+    "reason": "corpus: inline data payload"
+  },
+  "json": {
+    "callback": {
+      "callbacks": []
+    },
+    "entries": [
+      {
+        "config": null,
+        "data": {
+          "count": 3,
+          "users": {
+            "alice": {
+              "roles": [
+                "admin"
+              ]
+            }
+          }
+        },
+        "dst_path": "/acl",
+        "save_method": "PUT",
+        "topics": [
+          "policy_data"
+        ],
+        "url": "https://backend.example.com/v1/policy/data"
+      }
+    ],
+    "id": "22222222-2222-2222-2222-222222222222",
+    "reason": "corpus: inline data payload"
+  },
+  "json_by_alias": {
+    "callback": {
+      "callbacks": []
+    },
+    "entries": [
+      {
+        "config": null,
+        "data": {
+          "count": 3,
+          "users": {
+            "alice": {
+              "roles": [
+                "admin"
+              ]
+            }
+          }
+        },
+        "dst_path": "/acl",
+        "save_method": "PUT",
+        "topics": [
+          "policy_data"
+        ],
+        "url": "https://backend.example.com/v1/policy/data"
+      }
+    ],
+    "id": "22222222-2222-2222-2222-222222222222",
+    "reason": "corpus: inline data payload"
+  },
+  "model": "opal_common.schemas.data:DataUpdate",
+  "note": "inline data rides the JsonableValue union - trap 4 (smart vs left-to-right)",
+  "payload": {
+    "callback": {
+      "callbacks": []
+    },
+    "entries": [
+      {
+        "data": {
+          "count": 3,
+          "users": {
+            "alice": {
+              "roles": [
+                "admin"
+              ]
+            }
+          }
+        },
+        "dst_path": "/acl",
+        "save_method": "PUT",
+        "topics": [
+          "policy_data"
+        ],
+        "url": "https://backend.example.com/v1/policy/data"
+      }
+    ],
+    "id": "22222222-2222-2222-2222-222222222222",
+    "reason": "corpus: inline data payload"
+  },
+  "pydantic": "1.10.26"
+}

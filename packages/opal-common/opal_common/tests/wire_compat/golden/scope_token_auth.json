@@ -1,0 +1,240 @@
+{
+  "case": "scope_token_auth",
+  "dict": {
+    "data": {
+      "entries": [
+        {
+          "config": {
+            "data": null,
+            "fetcher": null,
+            "headers": {
+              "Authorization": "Bearer corpus-token",
+              "X-Trace": "abc"
+            },
+            "is_json": true,
+            "method": "get",
+            "process_data": true
+          },
+          "data": null,
+          "dst_path": "/acl",
+          "periodic_update_interval": null,
+          "save_method": "PUT",
+          "topics": [
+            "policy_data",
+            "policy_data/tenant_1"
+          ],
+          "url": "https://backend.example.com/v1/policy/data"
+        }
+      ]
+    },
+    "policy": {
+      "auth": {
+        "auth_type": "github_token",
+        "token": "ghp_corpus"
+      },
+      "branch": "main",
+      "bundle_ignore": null,
+      "directories": [
+        "policies"
+      ],
+      "extensions": [
+        ".rego"
+      ],
+      "manifest": ".manifest",
+      "poll_updates": true,
+      "source_type": "git",
+      "url": "https://github.com/acme/policy.git"
+    },
+    "scope_id": "tenant-b"
+  },
+  "dict_by_alias": {
+    "data": {
+      "entries": [
+        {
+          "config": {
+            "data": null,
+            "fetcher": null,
+            "headers": {
+              "Authorization": "Bearer corpus-token",
+              "X-Trace": "abc"
+            },
+            "is_json": true,
+            "method": "get",
+            "process_data": true
+          },
+          "data": null,
+          "dst_path": "/acl",
+          "periodic_update_interval": null,
+          "save_method": "PUT",
+          "topics": [
+            "policy_data",
+            "policy_data/tenant_1"
+          ],
+          "url": "https://backend.example.com/v1/policy/data"
+        }
+      ]
+    },
+    "policy": {
+      "auth": {
+        "auth_type": "github_token",
+        "token": "ghp_corpus"
+      },
+      "branch": "main",
+      "bundle_ignore": null,
+      "directories": [
+        "policies"
+      ],
+      "extensions": [
+        ".rego"
+      ],
+      "manifest": ".manifest",
+      "poll_updates": true,
+      "source_type": "git",
+      "url": "https://github.com/acme/policy.git"
+    },
+    "scope_id": "tenant-b"
+  },
+  "json": {
+    "data": {
+      "entries": [
+        {
+          "config": {
+            "data": null,
+            "fetcher": null,
+            "headers": {
+              "Authorization": "Bearer corpus-token",
+              "X-Trace": "abc"
+            },
+            "is_json": true,
+            "method": "get",
+            "process_data": true
+          },
+          "data": null,
+          "dst_path": "/acl",
+          "periodic_update_interval": null,
+          "save_method": "PUT",
+          "topics": [
+            "policy_data",
+            "policy_data/tenant_1"
+          ],
+          "url": "https://backend.example.com/v1/policy/data"
+        }
+      ]
+    },
+    "policy": {
+      "auth": {
+        "auth_type": "github_token",
+        "token": "ghp_corpus"
+      },
+      "branch": "main",
+      "bundle_ignore": null,
+      "directories": [
+        "policies"
+      ],
+      "extensions": [
+        ".rego"
+      ],
+      "manifest": ".manifest",
+      "poll_updates": true,
+      "source_type": "git",
+      "url": "https://github.com/acme/policy.git"
+    },
+    "scope_id": "tenant-b"
+  },
+  "json_by_alias": {
+    "data": {
+      "entries": [
+        {
+          "config": {
+            "data": null,
+            "fetcher": null,
+            "headers": {
+              "Authorization": "Bearer corpus-token",
+              "X-Trace": "abc"
+            },
+            "is_json": true,
+            "method": "get",
+            "process_data": true
+          },
+          "data": null,
+          "dst_path": "/acl",
+          "periodic_update_interval": null,
+          "save_method": "PUT",
+          "topics": [
+            "policy_data",
+            "policy_data/tenant_1"
+          ],
+          "url": "https://backend.example.com/v1/policy/data"
+        }
+      ]
+    },
+    "policy": {
+      "auth": {
+        "auth_type": "github_token",
+        "token": "ghp_corpus"
+      },
+      "branch": "main",
+      "bundle_ignore": null,
+      "directories": [
+        "policies"
+      ],
+      "extensions": [
+        ".rego"
+      ],
+      "manifest": ".manifest",
+      "poll_updates": true,
+      "source_type": "git",
+      "url": "https://github.com/acme/policy.git"
+    },
+    "scope_id": "tenant-b"
+  },
+  "model": "opal_common.schemas.scopes:Scope",
+  "note": "the discriminated auth union, other arm, with a populated data config",
+  "payload": {
+    "data": {
+      "entries": [
+        {
+          "config": {
+            "data": null,
+            "fetcher": null,
+            "headers": {
+              "Authorization": "Bearer corpus-token",
+              "X-Trace": "abc"
+            },
+            "is_json": true,
+            "method": "get",
+            "process_data": true
+          },
+          "data": null,
+          "dst_path": "/acl",
+          "periodic_update_interval": null,
+          "save_method": "PUT",
+          "topics": [
+            "policy_data",
+            "policy_data/tenant_1"
+          ],
+          "url": "https://backend.example.com/v1/policy/data"
+        }
+      ]
+    },
+    "policy": {
+      "auth": {
+        "auth_type": "github_token",
+        "token": "ghp_corpus"
+      },
+      "branch": "main",
+      "directories": [
+        "policies"
+      ],
+      "extensions": [
+        ".rego"
+      ],
+      "manifest": ".manifest",
+      "poll_updates": true,
+      "source_type": "git",
+      "url": "https://github.com/acme/policy.git"
+    },
+    "scope_id": "tenant-b"
+  },
+  "pydantic": "1.10.26"
+}

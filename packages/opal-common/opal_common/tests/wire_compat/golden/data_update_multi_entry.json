@@ -1,0 +1,381 @@
+{
+  "case": "data_update_multi_entry",
+  "dict": {
+    "callback": {
+      "callbacks": []
+    },
+    "entries": [
+      {
+        "config": {
+          "data": null,
+          "fetcher": null,
+          "headers": {
+            "Authorization": "Bearer corpus-token",
+            "X-Trace": "abc"
+          },
+          "is_json": true,
+          "method": "get",
+          "process_data": true
+        },
+        "data": null,
+        "dst_path": "/acl",
+        "save_method": "PUT",
+        "topics": [
+          "policy_data",
+          "policy_data/tenant_1"
+        ],
+        "url": "https://backend.example.com/v1/policy/data"
+      },
+      {
+        "config": null,
+        "data": {
+          "count": 3,
+          "users": {
+            "alice": {
+              "roles": [
+                "admin"
+              ]
+            }
+          }
+        },
+        "dst_path": "/acl",
+        "save_method": "PUT",
+        "topics": [
+          "policy_data"
+        ],
+        "url": "https://backend.example.com/v1/policy/data"
+      },
+      {
+        "config": null,
+        "data": [
+          {
+            "from_field": null,
+            "op": "add",
+            "path": "/users/bob",
+            "value": {
+              "roles": [
+                "viewer"
+              ]
+            }
+          },
+          {
+            "from_field": null,
+            "op": "remove",
+            "path": "/users/carol",
+            "value": null
+          }
+        ],
+        "dst_path": "/acl",
+        "save_method": "PATCH",
+        "topics": [
+          "policy_data"
+        ],
+        "url": "https://backend.example.com/v1/policy/data"
+      }
+    ],
+    "id": "55555555-5555-5555-5555-555555555555",
+    "reason": "corpus: mixed entries"
+  },
+  "dict_by_alias": {
+    "callback": {
+      "callbacks": []
+    },
+    "entries": [
+      {
+        "config": {
+          "data": null,
+          "fetcher": null,
+          "headers": {
+            "Authorization": "Bearer corpus-token",
+            "X-Trace": "abc"
+          },
+          "is_json": true,
+          "method": "get",
+          "process_data": true
+        },
+        "data": null,
+        "dst_path": "/acl",
+        "save_method": "PUT",
+        "topics": [
+          "policy_data",
+          "policy_data/tenant_1"
+        ],
+        "url": "https://backend.example.com/v1/policy/data"
+      },
+      {
+        "config": null,
+        "data": {
+          "count": 3,
+          "users": {
+            "alice": {
+              "roles": [
+                "admin"
+              ]
+            }
+          }
+        },
+        "dst_path": "/acl",
+        "save_method": "PUT",
+        "topics": [
+          "policy_data"
+        ],
+        "url": "https://backend.example.com/v1/policy/data"
+      },
+      {
+        "config": null,
+        "data": [
+          {
+            "from": null,
+            "op": "add",
+            "path": "/users/bob",
+            "value": {
+              "roles": [
+                "viewer"
+              ]
+            }
+          },
+          {
+            "from": null,
+            "op": "remove",
+            "path": "/users/carol",
+            "value": null
+          }
+        ],
+        "dst_path": "/acl",
+        "save_method": "PATCH",
+        "topics": [
+          "policy_data"
+        ],
+        "url": "https://backend.example.com/v1/policy/data"
+      }
+    ],
+    "id": "55555555-5555-5555-5555-555555555555",
+    "reason": "corpus: mixed entries"
+  },
+  "json": {
+    "callback": {
+      "callbacks": []
+    },
+    "entries": [
+      {
+        "config": {
+          "data": null,
+          "fetcher": null,
+          "headers": {
+            "Authorization": "Bearer corpus-token",
+            "X-Trace": "abc"
+          },
+          "is_json": true,
+          "method": "get",
+          "process_data": true
+        },
+        "data": null,
+        "dst_path": "/acl",
+        "save_method": "PUT",
+        "topics": [
+          "policy_data",
+          "policy_data/tenant_1"
+        ],
+        "url": "https://backend.example.com/v1/policy/data"
+      },
+      {
+        "config": null,
+        "data": {
+          "count": 3,
+          "users": {
+            "alice": {
+              "roles": [
+                "admin"
+              ]
+            }
+          }
+        },
+        "dst_path": "/acl",
+        "save_method": "PUT",
+        "topics": [
+          "policy_data"
+        ],
+        "url": "https://backend.example.com/v1/policy/data"
+      },
+      {
+        "config": null,
+        "data": [
+          {
+            "from_field": null,
+            "op": "add",
+            "path": "/users/bob",
+            "value": {
+              "roles": [
+                "viewer"
+              ]
+            }
+          },
+          {
+            "from_field": null,
+            "op": "remove",
+            "path": "/users/carol",
+            "value": null
+          }
+        ],
+        "dst_path": "/acl",
+        "save_method": "PATCH",
+        "topics": [
+          "policy_data"
+        ],
+        "url": "https://backend.example.com/v1/policy/data"
+      }
+    ],
+    "id": "55555555-5555-5555-5555-555555555555",
+    "reason": "corpus: mixed entries"
+  },
+  "json_by_alias": {
+    "callback": {
+      "callbacks": []
+    },
+    "entries": [
+      {
+        "config": {
+          "data": null,
+          "fetcher": null,
+          "headers": {
+            "Authorization": "Bearer corpus-token",
+            "X-Trace": "abc"
+          },
+          "is_json": true,
+          "method": "get",
+          "process_data": true
+        },
+        "data": null,
+        "dst_path": "/acl",
+        "save_method": "PUT",
+        "topics": [
+          "policy_data",
+          "policy_data/tenant_1"
+        ],
+        "url": "https://backend.example.com/v1/policy/data"
+      },
+      {
+        "config": null,
+        "data": {
+          "count": 3,
+          "users": {
+            "alice": {
+              "roles": [
+                "admin"
+              ]
+            }
+          }
+        },
+        "dst_path": "/acl",
+        "save_method": "PUT",
+        "topics": [
+          "policy_data"
+        ],
+        "url": "https://backend.example.com/v1/policy/data"
+      },
+      {
+        "config": null,
+        "data": [
+          {
+            "from": null,
+            "op": "add",
+            "path": "/users/bob",
+            "value": {
+              "roles": [
+                "viewer"
+              ]
+            }
+          },
+          {
+            "from": null,
+            "op": "remove",
+            "path": "/users/carol",
+            "value": null
+          }
+        ],
+        "dst_path": "/acl",
+        "save_method": "PATCH",
+        "topics": [
+          "policy_data"
+        ],
+        "url": "https://backend.example.com/v1/policy/data"
+      }
+    ],
+    "id": "55555555-5555-5555-5555-555555555555",
+    "reason": "corpus: mixed entries"
+  },
+  "model": "opal_common.schemas.data:DataUpdate",
+  "note": "realistic multi-entry update",
+  "payload": {
+    "callback": {
+      "callbacks": []
+    },
+    "entries": [
+      {
+        "config": {
+          "data": null,
+          "fetcher": null,
+          "headers": {
+            "Authorization": "Bearer corpus-token",
+            "X-Trace": "abc"
+          },
+          "is_json": true,
+          "method": "get",
+          "process_data": true
+        },
+        "data": null,
+        "dst_path": "/acl",
+        "save_method": "PUT",
+        "topics": [
+          "policy_data",
+          "policy_data/tenant_1"
+        ],
+        "url": "https://backend.example.com/v1/policy/data"
+      },
+      {
+        "data": {
+          "count": 3,
+          "users": {
+            "alice": {
+              "roles": [
+                "admin"
+              ]
+            }
+          }
+        },
+        "dst_path": "/acl",
+        "save_method": "PUT",
+        "topics": [
+          "policy_data"
+        ],
+        "url": "https://backend.example.com/v1/policy/data"
+      },
+      {
+        "data": [
+          {
+            "op": "add",
+            "path": "/users/bob",
+            "value": {
+              "roles": [
+                "viewer"
+              ]
+            }
+          },
+          {
+            "op": "remove",
+            "path": "/users/carol"
+          }
+        ],
+        "dst_path": "/acl",
+        "save_method": "PATCH",
+        "topics": [
+          "policy_data"
+        ],
+        "url": "https://backend.example.com/v1/policy/data"
+      }
+    ],
+    "id": "55555555-5555-5555-5555-555555555555",
+    "reason": "corpus: mixed entries"
+  },
+  "pydantic": "1.10.26"
+}

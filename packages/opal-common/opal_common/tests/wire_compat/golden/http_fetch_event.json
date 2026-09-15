@@ -1,0 +1,84 @@
+{
+  "case": "http_fetch_event",
+  "dict": {
+    "config": {
+      "data": null,
+      "fetcher": null,
+      "headers": {
+        "Authorization": "Bearer corpus"
+      },
+      "is_json": true,
+      "method": "get",
+      "process_data": true
+    },
+    "fetcher": "HttpFetchProvider",
+    "id": "cccccccc-9999-9999-9999-999999999999",
+    "name": null,
+    "retry": null,
+    "url": "https://backend.example.com/v1/data"
+  },
+  "dict_by_alias": {
+    "config": {
+      "data": null,
+      "fetcher": null,
+      "headers": {
+        "Authorization": "Bearer corpus"
+      },
+      "is_json": true,
+      "method": "get",
+      "process_data": true
+    },
+    "fetcher": "HttpFetchProvider",
+    "id": "cccccccc-9999-9999-9999-999999999999",
+    "name": null,
+    "retry": null,
+    "url": "https://backend.example.com/v1/data"
+  },
+  "json": {
+    "config": {
+      "data": null,
+      "fetcher": null,
+      "headers": {
+        "Authorization": "Bearer corpus"
+      },
+      "is_json": true,
+      "method": "get",
+      "process_data": true
+    },
+    "fetcher": "HttpFetchProvider",
+    "id": "cccccccc-9999-9999-9999-999999999999",
+    "name": null,
+    "retry": null,
+    "url": "https://backend.example.com/v1/data"
+  },
+  "json_by_alias": {
+    "config": {
+      "data": null,
+      "fetcher": null,
+      "headers": {
+        "Authorization": "Bearer corpus"
+      },
+      "is_json": true,
+      "method": "get",
+      "process_data": true
+    },
+    "fetcher": "HttpFetchProvider",
+    "id": "cccccccc-9999-9999-9999-999999999999",
+    "name": null,
+    "retry": null,
+    "url": "https://backend.example.com/v1/data"
+  },
+  "model": "opal_common.fetcher.providers.http_fetch_provider:HttpFetchEvent",
+  "note": "declared-model config; the coercion shim must leave this arm alone",
+  "payload": {
+    "config": {
+      "headers": {
+        "Authorization": "Bearer corpus"
+      },
+      "method": "get"
+    },
+    "id": "cccccccc-9999-9999-9999-999999999999",
+    "url": "https://backend.example.com/v1/data"
+  },
+  "pydantic": "1.10.26"
+}

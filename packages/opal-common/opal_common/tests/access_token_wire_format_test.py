@@ -41,7 +41,9 @@ def test_ttl_never_serializes_an_iso_duration():
     """``P1Y`` is the specific value a v1 server cannot parse."""
     for days in (1, 30, 364, 365, 366, 730, 1095):
         body = json.loads(
-            AccessTokenRequest(type="client", ttl=timedelta(days=days)).model_dump_json()
+            AccessTokenRequest(
+                type="client", ttl=timedelta(days=days)
+            ).model_dump_json()
         )
         assert not isinstance(body["ttl"], str), f"{days}d serialized as a duration"
 

@@ -930,8 +930,13 @@ class OpaClient(LivenessProbeMixin, BasePolicyStoreClient):
         see api reference:
         https://www.openpolicyagent.org/docs/latest/rest-api/#get-a-document-with-input
         """
-        # opa data api format needs the input to sit under "input"
-        opa_input = {"input": input.model_dump()}
+        # opa data api format needs the input to sit under "input".
+        # ``mode="json"`` because this dump is handed to json.dumps below and
+        # ``input`` is caller-supplied: this is a public extension point, so the
+        # model may carry enums or other non-JSON types. pydantic v1's ``.dict()``
+        # unwrapped those at dump time; v2's python mode does not, which would
+        # raise TypeError here for a caller whose model worked before.
+        opa_input = {"input": input.model_dump(mode="json")}
         if path.startswith("/"):
             path = path[1:]
         try:

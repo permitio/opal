@@ -1,0 +1,52 @@
+{
+  "case": "http_fetcher_config",
+  "dict": {
+    "data": null,
+    "fetcher": null,
+    "headers": {
+      "Authorization": "Bearer corpus"
+    },
+    "is_json": true,
+    "method": "post",
+    "process_data": true
+  },
+  "dict_by_alias": {
+    "data": null,
+    "fetcher": null,
+    "headers": {
+      "Authorization": "Bearer corpus"
+    },
+    "is_json": true,
+    "method": "post",
+    "process_data": true
+  },
+  "json": {
+    "data": null,
+    "fetcher": null,
+    "headers": {
+      "Authorization": "Bearer corpus"
+    },
+    "is_json": true,
+    "method": "post",
+    "process_data": true
+  },
+  "json_by_alias": {
+    "data": null,
+    "fetcher": null,
+    "headers": {
+      "Authorization": "Bearer corpus"
+    },
+    "is_json": true,
+    "method": "post",
+    "process_data": true
+  },
+  "model": "opal_common.fetcher.providers.http_fetch_provider:HttpFetcherConfig",
+  "note": "method is a non-str Enum: v1 .dict() unwrapped it, v2 python-mode does not",
+  "payload": {
+    "headers": {
+      "Authorization": "Bearer corpus"
+    },
+    "method": "post"
+  },
+  "pydantic": "1.10.26"
+}
