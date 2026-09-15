@@ -94,13 +94,32 @@ The `provider.py` module should have the following structure:
 This example code shows the class structure and some comments:
 
 :::note pydantic v2
-Since OPAL 0.9, `opal-common` requires **pydantic v2**. Custom fetch providers are
-pydantic models, so they must be v2-compatible: use `@field_validator` /
-`@model_validator` instead of `@validator` / `@root_validator`, `model_config =
-ConfigDict(...)` instead of an inner `class Config`, and `.model_dump()` /
-`.model_validate()` instead of `.dict()` / `.parse_obj()`. Note also that a bare
-`Optional[X]` annotation is **required** under v2 - write `Optional[X] = None` when
-you want the field to be optional.
+From OPAL 0.10, `opal-common` requires **pydantic v2** (0.9.x and earlier ship
+pydantic v1). Custom fetch providers are pydantic models, so they must be
+v2-compatible.
+
+The one change that breaks at **import time**, before any of your code runs, is a
+bare `@root_validator` - it raises `PydanticUserError`. Replace it with
+`@model_validator(mode="before")` or `@model_validator(mode="after")`.
+
+The rest are quieter:
+
+- A bare `Optional[X]` annotation is **required** under v2. Write `Optional[X] =
+  None` when you want the field to be optional - otherwise a config that used to
+  default to `None` becomes a mandatory field.
+- `@validator` still works through a deprecation shim; prefer `@field_validator`.
+- An inner `class Config` still works through a shim; prefer `model_config =
+  ConfigDict(...)`.
+- `.dict()` / `.parse_obj()` still work through shims; prefer `.model_dump()` /
+  `.model_validate()`. They are removed in pydantic v3.
+
+Two things OPAL handles for you, so you do not need to work around them:
+
+- Passing a config **model** where a `dict` is declared (e.g.
+  `FetchingEngine.queue_url(url, callback, MyConfig(...))`) still works.
+- A provider event that re-declares `config` with your own config type keeps
+  your instance intact, including subclass-only fields and fields that are
+  populated by alias.
 :::
 
 ```python
@@ -258,7 +277,7 @@ Simply replace the custom FetchEvent type (in this example `PostgresFetchEvent`)
 
 ```python
 def parse_event(self, event: FetchEvent) -> PostgresFetchEvent:
-    return PostgresFetchEvent(**event.dict(exclude={"config"}), config=event.config)
+    return PostgresFetchEvent(**event.model_dump(exclude={"config"}), config=event.config)
 ```
 
 #### Manage a context with `__aenter__` and `__aexit__`
@@ -279,7 +298,7 @@ async def __aenter__(self):
     # initializing parameters from the event/config
     self._event: PostgresFetchEvent
     dsn: str = self._event.url
-    connection_params: dict = {} if self._event.config.connection_params is None else self._event.config.connection_params.dict(exclude_none=True)
+    connection_params: dict = {} if self._event.config.connection_params is None else self._event.config.connection_params.model_dump(exclude_none=True)
 
     # connect to the postgres database
     self._connection: asyncpg.Connection = await asyncpg.connect(dsn, **connection_params)

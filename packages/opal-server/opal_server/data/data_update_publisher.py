@@ -2,7 +2,6 @@ import asyncio
 import os
 from typing import List
 
-from fastapi_utils.tasks import repeat_every
 from opal_common.http_utils import redact_url
 from opal_common.logger import logger
 from opal_common.schemas.data import (
@@ -109,6 +108,11 @@ class DataUpdatePublisher:
             entries=logged_entries,
         )
 
+        # ``mode="json"`` so the published payload is plain JSON types. A
+        # python-mode dump keeps enum members (e.g. ``HttpMethods.GET`` inside a
+        # fetcher config), which pydantic v1's ``.dict()`` unwrapped at dump
+        # time but v2 does not - leaving a payload that any downstream
+        # ``json.dumps`` rejects.
         await self._publisher.publish(
-            list(all_topic_combos), update.model_dump(by_alias=True)
+            list(all_topic_combos), update.model_dump(by_alias=True, mode="json")
         )

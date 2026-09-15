@@ -29,7 +29,18 @@ class AccessTokenRequest(BaseModel):
     ttl: timedelta = Field(timedelta(days=365), description=TTL_DESCRIPTION)
     claims: dict = Field({}, description=CLAIMS_DESCRIPTION)
 
-    model_config = ConfigDict(use_enum_values=True, populate_by_name=True)
+    # ``ser_json_timedelta="float"`` keeps ``ttl`` on the wire as float seconds,
+    # the way pydantic v1 sent it. v2 defaults to an ISO-8601 duration and
+    # collapses 365 days - the CLI default, and now the published OpenAPI
+    # default - to "P1Y", which a v1 duration parser cannot read (it has no year
+    # group). Without this, `opal-client obtain-token` from an upgraded CLI 422s
+    # against a server that has not restarted yet. The reverse direction is
+    # safe: v2 still accepts the float form.
+    model_config = ConfigDict(
+        use_enum_values=True,
+        populate_by_name=True,
+        ser_json_timedelta="float",
+    )
 
     @field_validator("type")
     @classmethod

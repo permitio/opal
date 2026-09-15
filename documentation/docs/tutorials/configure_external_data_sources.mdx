@@ -109,6 +109,26 @@ The external API should do the following:
 - The endpoint should validate that the token is a valid OPAL JWT (by using the OPAL public key to verify) and use the custom claims in the JWT to determine what data sources to return.
 - The endpoint should return a JSON, containing the unique value (to that OPAL client) of `OPAL_DATA_CONFIG_SOURCES` (i.e: the actual Data Source Entries).
 
+:::warning Breaking change in OPAL 0.10: string fields are no longer coerced
+OPAL 0.10 moves to pydantic v2, which **no longer converts numbers into strings**.
+Bodies that OPAL 0.9 accepted are now rejected with a `422`.
+
+This affects any backend posting to `POST /data/config` (and
+`POST /scopes/{scope_id}/data/update`). The string-typed fields are `reason`,
+and per entry `url`, `dst_path`, `save_method` and each item of `topics`:
+
+```jsonc
+// rejected from 0.10 - 422 "Input should be a valid string"
+{"reason": 12345, "entries": [{"url": "https://api/data", "dst_path": 7}]}
+
+// correct
+{"reason": "12345", "entries": [{"url": "https://api/data", "dst_path": "7"}]}
+```
+
+A numeric `reason` - a ticket or revision number - is the most likely to bite.
+Cast these values to strings before sending.
+:::
+
 ## Real code samples of an External Data Source API server in python
 
 You can use the following code samples in your **external API server** that serves data sources.

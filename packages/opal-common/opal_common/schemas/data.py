@@ -1,5 +1,6 @@
 from typing import Any, ClassVar, Dict, List, Optional, Set, Tuple, Union
 
+from opal_common.fetcher.events import coerce_config_model_to_dict
 from opal_common.fetcher.providers.http_fetch_provider import HttpFetcherConfig
 from opal_common.logging_utils.redaction import RedactedReprMixin
 from opal_common.schemas.store import JSONPatchAction
@@ -30,6 +31,16 @@ class DataSourceEntry(RedactedReprMixin, BaseModel):
     # ``url`` can embed credentials (``user:token@host`` / ``?token=``); strip
     # them via redact_url while keeping host/path visible for debugging.
     _redacted_url_fields: ClassVar[Set[str]] = {"url"}
+
+    @field_validator("config", mode="before")
+    @classmethod
+    def _coerce_model_config(cls, value):
+        """Accept a ``FetcherConfig`` where a plain ``dict`` is declared.
+
+        ``DataSourceEntry(config=HttpFetcherConfig(...))`` is the pattern
+        ``configure_external_data_sources.mdx`` tells integrators to use.
+        """
+        return coerce_config_model_to_dict(cls, value)
 
     @field_validator("data")
     @classmethod
@@ -99,6 +110,32 @@ class DataSourceConfig(BaseModel):
     entries: List[DataSourceEntryWithPollingInterval] = Field(
         [], description="list of data sources and how to fetch from them"
     )
+
+    @field_validator("entries", mode="before")
+    @classmethod
+    def _accept_base_entries(cls, value):
+        """Accept plain ``DataSourceEntry`` instances in the list.
+
+        ``DataSourceEntryWithPollingInterval`` is a strict superset of
+        ``DataSourceEntry`` - it only adds the optional
+        ``periodic_update_interval`` - and pydantic v1 validated a parent
+        instance into the child by reading its fields. v2 requires an instance
+        of the declared type or a mapping, which broke the
+        ``DataSourceConfig(entries=[DataSourceEntry(...)])`` form used in
+        ``configure_external_data_sources.mdx``. Flattening the parent is
+        lossless; an instance that is already the child type is left alone.
+        """
+        if not isinstance(value, (list, tuple)):
+            return value
+        return [
+            (
+                dict(entry)
+                if isinstance(entry, DataSourceEntry)
+                and not isinstance(entry, DataSourceEntryWithPollingInterval)
+                else entry
+            )
+            for entry in value
+        ]
 
 
 class ServerDataSourceConfig(BaseModel):
