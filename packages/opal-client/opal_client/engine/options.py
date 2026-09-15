@@ -93,9 +93,22 @@ class OpaServerOptions(BaseModel):
     )
 
     def get_cli_options_dict(self):
-        """Returns a dict that can be passed to the OPA cli."""
+        """Returns a dict that can be passed to the OPA cli.
+
+        Dumped in JSON mode so enum members come out as their values.
+        ``use_enum_values`` is applied at *validation* time under pydantic v2,
+        and defaults are not validated - so a field left at its default (the
+        default production path: ``OpaServerOptions.model_validate({})``) keeps
+        the enum member, and python-mode ``model_dump()`` does not unwrap it.
+        ``runner.py`` then f-strings the value into argv, which on python 3.11+
+        renders ``LogLevel.info`` rather than ``info`` (``Enum.__format__``
+        changed in 3.11) and OPA rejects the flag at parse time.
+        """
         return self.model_dump(
-            exclude_none=True, by_alias=True, exclude={"files", "v0_compatible"}
+            mode="json",
+            exclude_none=True,
+            by_alias=True,
+            exclude={"files", "v0_compatible"},
         )
 
 

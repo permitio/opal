@@ -116,7 +116,11 @@ class OpalStatistics:
             uptime=self._state.uptime,
             version=self._state.version,
             client_count=len(self._state.clients),
-            server_count=len(self._state.servers) / self._workers_count,
+            # floor division: ``server_count`` is an int, and pydantic v2 - unlike
+            # v1, which truncated - rejects a float carrying a fractional part.
+            # ``_state.servers`` is the fleet-wide worker set, so the ratio is
+            # only integral once every worker has exchanged keepalives.
+            server_count=len(self._state.servers) // self._workers_count,
         )
 
     async def _expire_old_servers(self):
