@@ -57,8 +57,9 @@ requires_opa = pytest.mark.skipif(
 def _run_opa(args) -> str:
     """Start opa with these args and return its first output.
 
-    A flag error makes opa exit immediately; a good argv starts the server, so
-    the call is bounded by a timeout and the process killed either way.
+    A flag error makes opa exit immediately; a good argv starts the
+    server, so the call is bounded by a timeout and the process killed
+    either way.
     """
     proc = subprocess.Popen(
         [OPA_BINARY] + list(args),
@@ -97,7 +98,7 @@ OPTION_CASES = {
 @requires_opa
 @pytest.mark.parametrize("name", sorted(OPTION_CASES))
 def test_real_opa_accepts_generated_argv(name):
-    """opa must not reject any flag OPAL generates."""
+    """Opa must not reject any flag OPAL generates."""
     argv = _argv_for(OPTION_CASES[name])
 
     output = _run_opa(argv)

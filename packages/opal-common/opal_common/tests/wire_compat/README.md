@@ -9,12 +9,20 @@ at the same version. This corpus pins the v1 wire form so the v2 tree is
 asserted against a peer it can no longer import.
 
 ```
-payloads.py          the corpus: inputs only, no pydantic import
-canon.py             type-preserving rendering of a python-mode dump
-generate_golden.py   run ONCE under pydantic v1 to capture golden/
-golden/*.json        the contract - one file per case
-wire_compat_test.py  what CI runs
+payloads.py                the corpus: inputs only, no pydantic import
+canon.py                   type-preserving rendering of a python-mode dump
+generate_golden.py         run ONCE under pydantic v1 to capture golden/
+golden/*.json              the contract - one file per case
+wire_compat_test.py        what CI runs
+enum_inventory_test.py     new enum-bearing models must be covered or excused
+redis_roundtrip.py         cross-version Scope persistence (driver, needs Redis)
+run_redis_roundtrip.sh     orchestrates both directions in one command
 ```
+
+Related, outside this directory:
+`opal-client/opal_client/tests/opa_argv_real_binary_test.py` hands the argv
+OPAL generates to the **real** `opa` binary. It inherits the CI python matrix,
+which is what makes it able to catch a version-gated regression.
 
 ## What each case asserts
 
@@ -78,6 +86,25 @@ A difference we have decided to keep goes in `ACCEPTED_DELTAS` **with the
 evidence that established it is safe** — not just a claim that it is. Nothing
 is tolerated silently. The current entries are all python-mode-only; every
 JSON-form assertion passes, so the wire itself is unchanged.
+
+## Scope persistence (`run_redis_roundtrip.sh`)
+
+`Scope` is the only OPAL model that is **persisted** rather than sent — it lives
+in Redis under `permit.io/Scope:*`. During a rolling upgrade both versions read
+the same keyspace, so it has to work in both directions, and a rollback depends
+on the second one:
+
+```bash
+./run_redis_roundtrip.sh /path/to/pre-migration/venv/bin/python
+```
+
+It brings up its own Redis, runs v1→v2 and v2→v1 through the real
+`ScopeRepository` and `RedisDB._serialize` (not just the model), and tears down.
+`0 PASS · 1 FAIL · 2 INVALID RUN`, where INVALID means a precondition was unmet —
+an unreachable Redis, or a writer and reader on the same major version, which
+would assert nothing.
+
+Not part of CI: it needs Redis and two interpreters.
 
 ## What this does not cover
 

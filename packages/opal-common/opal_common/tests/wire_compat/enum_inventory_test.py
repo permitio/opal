@@ -78,7 +78,9 @@ def _discover() -> Dict[str, Tuple[type, Set[str]]]:
         for info in pkgutil.walk_packages(package.__path__, f"{package_name}."):
             try:
                 modules.append(importlib.import_module(info.name))
-            except Exception:  # noqa: BLE001 - an unimportable module is not our subject
+            except (
+                Exception
+            ):  # noqa: BLE001 - an unimportable module is not our subject
                 continue
         for module in modules:
             for attr in vars(module).values():
@@ -98,7 +100,8 @@ DISCOVERED = _discover()
 
 
 def test_sweep_actually_found_models():
-    """Guard against the sweep silently finding nothing and passing vacuously."""
+    """Guard against the sweep silently finding nothing and passing
+    vacuously."""
     assert DISCOVERED, (
         f"no enum-bearing models discovered in {SWEPT_PACKAGES} - the sweep is "
         "broken, and every assertion below would pass for the wrong reason"
