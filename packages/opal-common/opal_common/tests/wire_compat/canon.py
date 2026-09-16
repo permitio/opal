@@ -34,7 +34,8 @@ _PLAIN = (str, int, float, bool, type(None))
 
 
 def canonical(value: Any) -> Any:
-    """Render a python-mode dump into a JSON-safe, type-preserving structure."""
+    """Render a python-mode dump into a JSON-safe, type-preserving
+    structure."""
     # bool is an int subclass; check enum first since IntEnum/StrEnum are too
     if isinstance(value, _enum.Enum):
         return {

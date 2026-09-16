@@ -63,9 +63,18 @@ ACCEPTED_DELTAS: Dict[Tuple[str, str], str] = {
     # and all pass, so the wire is unchanged. Recorded rather than "fixed":
     # forcing the value back would mean removing force_enum, which callers rely
     # on for `.value` and isinstance checks.
-    ("http_fetcher_config", "method"): "enum member in python-mode dump; see note above",
-    ("http_fetch_event", "config.method"): "enum member in python-mode dump; see note above",
-    ("callback_entry", "config.method"): "enum member in python-mode dump; see note above",
+    (
+        "http_fetcher_config",
+        "method",
+    ): "enum member in python-mode dump; see note above",
+    (
+        "http_fetch_event",
+        "config.method",
+    ): "enum member in python-mode dump; see note above",
+    (
+        "callback_entry",
+        "config.method",
+    ): "enum member in python-mode dump; see note above",
     (
         "data_update_with_callbacks",
         "callback.callbacks[1].__tuple__[1].method",
@@ -184,7 +193,9 @@ def test_parses_what_pydantic_v1_emitted(case: Case):
 
     # and it must survive the round trip unchanged
     reserialized = json.loads(instance.model_dump_json(by_alias=True))
-    diffs = _filter_accepted(case.name, _diff(golden["json_by_alias"], reserialized, ""))
+    diffs = _filter_accepted(
+        case.name, _diff(golden["json_by_alias"], reserialized, "")
+    )
     assert not diffs, (
         f"\n{case.name}: v2 parsed the v1 document but re-serialized it "
         f"differently.\n  " + "\n  ".join(diffs)
