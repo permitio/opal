@@ -35,6 +35,35 @@ The script will:
    - Statistics verification
    - Broadcast channel disconnection handling
 
+## Running a mixed-version fleet
+
+By default the client and server use the same image tag, so a run tests one
+version against itself. `OPAL_CLIENT_IMAGE_TAG` overrides the client
+independently:
+
+```bash
+# a released client against a server built from this tree
+docker build -f docker/Dockerfile --target server -t permitio/opal-server:test .
+OPAL_IMAGE_TAG=test OPAL_CLIENT_IMAGE_TAG=0.9.6 ./run.sh
+```
+
+This matters because **opal-client is customer-deployed and upgrades on its own
+schedule**. A server-side change therefore has to keep working against clients
+that are several releases behind - that is the steady state in the field, not a
+transient rollout window. Running both sides from the same commit cannot see a
+break there.
+
+It is the check to run whenever a change touches a payload that crosses the
+wire: `DataUpdate`, `DataSourceConfig`, `PolicyBundle`, `DataUpdateReport`. The
+serialization half of the same contract is pinned in
+`packages/opal-common/opal_common/tests/wire_compat/`, which runs in CI; this
+covers the behaviour the wire format alone cannot.
+
+Note `run.sh` retries up to 5 times. The broadcaster-reconnect assertions after
+the *ungraceful* kill are timing-sensitive and can need a retry on a slow
+machine, independently of which images are in play - so judge a run by its final
+verdict, not by whether attempt 1 passed.
+
 ## Test Policy Files
 
 The test policies are stored in `opal-tests-policy-repo-main/` and include:
