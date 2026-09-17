@@ -1,0 +1,44 @@
+{
+  "case": "access_token_request_explicit_ttl",
+  "dict": {
+    "claims": {},
+    "id": {
+      "__uuid__": "aaaaaaaa-9999-9999-9999-999999999999"
+    },
+    "ttl": {
+      "__timedelta__": 3600.0
+    },
+    "type": "datasource"
+  },
+  "dict_by_alias": {
+    "claims": {},
+    "id": {
+      "__uuid__": "aaaaaaaa-9999-9999-9999-999999999999"
+    },
+    "ttl": {
+      "__timedelta__": 3600.0
+    },
+    "type": "datasource"
+  },
+  "json": {
+    "claims": {},
+    "id": "aaaaaaaa-9999-9999-9999-999999999999",
+    "ttl": 3600.0,
+    "type": "datasource"
+  },
+  "json_by_alias": {
+    "claims": {},
+    "id": "aaaaaaaa-9999-9999-9999-999999999999",
+    "ttl": 3600.0,
+    "type": "datasource"
+  },
+  "model": "opal_common.schemas.security:AccessTokenRequest",
+  "note": "explicit numeric ttl must round trip as a number",
+  "payload": {
+    "claims": {},
+    "id": "aaaaaaaa-9999-9999-9999-999999999999",
+    "ttl": 3600,
+    "type": "datasource"
+  },
+  "pydantic": "1.10.26"
+}

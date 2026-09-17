@@ -42,9 +42,9 @@ class CallbacksReporter:
             # all callback request tuples (url, config, None) that will be eventually called by the fetcher
             callback_requests = []
             if self._get_user_data_handler is not None:
-                report = report.copy()
+                report = report.model_copy()
                 report.user_data = await self._get_user_data_handler(report)
-            report_data = report.json()
+            report_data = report.model_dump_json()
 
             # first we add the callback urls from the callback register
             for entry in self._register.all():

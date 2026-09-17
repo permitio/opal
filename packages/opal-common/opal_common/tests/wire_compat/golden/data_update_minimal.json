@@ -1,0 +1,89 @@
+{
+  "case": "data_update_minimal",
+  "dict": {
+    "callback": {
+      "callbacks": []
+    },
+    "entries": [
+      {
+        "config": null,
+        "data": null,
+        "dst_path": "",
+        "save_method": "PUT",
+        "topics": [
+          "policy_data"
+        ],
+        "url": "https://x.example.com/d"
+      }
+    ],
+    "id": null,
+    "reason": null
+  },
+  "dict_by_alias": {
+    "callback": {
+      "callbacks": []
+    },
+    "entries": [
+      {
+        "config": null,
+        "data": null,
+        "dst_path": "",
+        "save_method": "PUT",
+        "topics": [
+          "policy_data"
+        ],
+        "url": "https://x.example.com/d"
+      }
+    ],
+    "id": null,
+    "reason": null
+  },
+  "json": {
+    "callback": {
+      "callbacks": []
+    },
+    "entries": [
+      {
+        "config": null,
+        "data": null,
+        "dst_path": "",
+        "save_method": "PUT",
+        "topics": [
+          "policy_data"
+        ],
+        "url": "https://x.example.com/d"
+      }
+    ],
+    "id": null,
+    "reason": null
+  },
+  "json_by_alias": {
+    "callback": {
+      "callbacks": []
+    },
+    "entries": [
+      {
+        "config": null,
+        "data": null,
+        "dst_path": "",
+        "save_method": "PUT",
+        "topics": [
+          "policy_data"
+        ],
+        "url": "https://x.example.com/d"
+      }
+    ],
+    "id": null,
+    "reason": null
+  },
+  "model": "opal_common.schemas.data:DataUpdate",
+  "note": "every optional field omitted - catches trap 1 (Optional becoming required)",
+  "payload": {
+    "entries": [
+      {
+        "url": "https://x.example.com/d"
+      }
+    ]
+  },
+  "pydantic": "1.10.26"
+}

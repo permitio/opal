@@ -1,0 +1,120 @@
+{
+  "case": "scope_no_auth",
+  "dict": {
+    "data": {
+      "entries": []
+    },
+    "policy": {
+      "auth": {
+        "auth_type": "none"
+      },
+      "branch": "main",
+      "bundle_ignore": null,
+      "directories": [
+        "."
+      ],
+      "extensions": [
+        ".rego"
+      ],
+      "manifest": ".manifest",
+      "poll_updates": false,
+      "source_type": "git",
+      "url": "https://github.com/acme/public.git"
+    },
+    "scope_id": "tenant-c"
+  },
+  "dict_by_alias": {
+    "data": {
+      "entries": []
+    },
+    "policy": {
+      "auth": {
+        "auth_type": "none"
+      },
+      "branch": "main",
+      "bundle_ignore": null,
+      "directories": [
+        "."
+      ],
+      "extensions": [
+        ".rego"
+      ],
+      "manifest": ".manifest",
+      "poll_updates": false,
+      "source_type": "git",
+      "url": "https://github.com/acme/public.git"
+    },
+    "scope_id": "tenant-c"
+  },
+  "json": {
+    "data": {
+      "entries": []
+    },
+    "policy": {
+      "auth": {
+        "auth_type": "none"
+      },
+      "branch": "main",
+      "bundle_ignore": null,
+      "directories": [
+        "."
+      ],
+      "extensions": [
+        ".rego"
+      ],
+      "manifest": ".manifest",
+      "poll_updates": false,
+      "source_type": "git",
+      "url": "https://github.com/acme/public.git"
+    },
+    "scope_id": "tenant-c"
+  },
+  "json_by_alias": {
+    "data": {
+      "entries": []
+    },
+    "policy": {
+      "auth": {
+        "auth_type": "none"
+      },
+      "branch": "main",
+      "bundle_ignore": null,
+      "directories": [
+        "."
+      ],
+      "extensions": [
+        ".rego"
+      ],
+      "manifest": ".manifest",
+      "poll_updates": false,
+      "source_type": "git",
+      "url": "https://github.com/acme/public.git"
+    },
+    "scope_id": "tenant-c"
+  },
+  "model": "opal_common.schemas.scopes:Scope",
+  "note": "no-auth arm; also the shape t3_contract case 3.8 probes",
+  "payload": {
+    "data": {
+      "entries": []
+    },
+    "policy": {
+      "auth": {
+        "auth_type": "none"
+      },
+      "branch": "main",
+      "directories": [
+        "."
+      ],
+      "extensions": [
+        ".rego"
+      ],
+      "manifest": ".manifest",
+      "poll_updates": false,
+      "source_type": "git",
+      "url": "https://github.com/acme/public.git"
+    },
+    "scope_id": "tenant-c"
+  },
+  "pydantic": "1.10.26"
+}

@@ -1,0 +1,50 @@
+{
+  "case": "store_transaction_minimal",
+  "dict": {
+    "actions": [],
+    "creation_time": null,
+    "end_time": null,
+    "error": "",
+    "id": "88888888-8888-8888-8888-888888888888",
+    "remotes_status": null,
+    "success": false,
+    "transaction_type": null
+  },
+  "dict_by_alias": {
+    "actions": [],
+    "creation_time": null,
+    "end_time": null,
+    "error": "",
+    "id": "88888888-8888-8888-8888-888888888888",
+    "remotes_status": null,
+    "success": false,
+    "transaction_type": null
+  },
+  "json": {
+    "actions": [],
+    "creation_time": null,
+    "end_time": null,
+    "error": "",
+    "id": "88888888-8888-8888-8888-888888888888",
+    "remotes_status": null,
+    "success": false,
+    "transaction_type": null
+  },
+  "json_by_alias": {
+    "actions": [],
+    "creation_time": null,
+    "end_time": null,
+    "error": "",
+    "id": "88888888-8888-8888-8888-888888888888",
+    "remotes_status": null,
+    "success": false,
+    "transaction_type": null
+  },
+  "model": "opal_common.schemas.store:StoreTransaction",
+  "note": "every optional omitted - transaction_type default must stay null",
+  "payload": {
+    "actions": [],
+    "id": "88888888-8888-8888-8888-888888888888"
+  },
+  "pydantic": "1.10.26"
+}

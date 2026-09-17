@@ -57,7 +57,7 @@ def init_data_updates_router(
         """
         logger.info(
             "Received update report: {report}",
-            report=report.dict(
+            report=report.model_dump(
                 exclude={"reports": {"__all__": {"entry": {"config", "data"}}}}
             ),
         )

@@ -45,8 +45,12 @@ OPAL_CLIENT_INFO_CLIENT_ID = f"{OPAL_CLIENT_INFO_PARAM_PREFIX}client_id"
 
 class ClientInfo(BaseModel):
     client_id: str
-    source_host: Optional[str]
-    source_port: Optional[int]
+    # NOTE: the ``= None`` defaults are load-bearing. Under pydantic v1 a bare
+    # ``Optional[X]`` annotation implied a ``None`` default; under v2 it is a
+    # REQUIRED field. Without them these two become required and the model (and
+    # its OpenAPI contract) changes behaviour.
+    source_host: Optional[str] = None
+    source_port: Optional[int] = None
     connect_time: float
     subscribed_topics: Set[str] = set()
     refcount: int = 0  # Only change this while locking ClientTracker._client_lock

@@ -1,0 +1,71 @@
+{
+  "case": "policy_update_notification",
+  "dict": {
+    "topics": [
+      "policy:default"
+    ],
+    "update": {
+      "changed_directories": [
+        "/",
+        "tenants"
+      ],
+      "new_policy_hash": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "old_policy_hash": "dddddddddddddddddddddddddddddddddddddddd"
+    }
+  },
+  "dict_by_alias": {
+    "topics": [
+      "policy:default"
+    ],
+    "update": {
+      "changed_directories": [
+        "/",
+        "tenants"
+      ],
+      "new_policy_hash": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "old_policy_hash": "dddddddddddddddddddddddddddddddddddddddd"
+    }
+  },
+  "json": {
+    "topics": [
+      "policy:default"
+    ],
+    "update": {
+      "changed_directories": [
+        "/",
+        "tenants"
+      ],
+      "new_policy_hash": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "old_policy_hash": "dddddddddddddddddddddddddddddddddddddddd"
+    }
+  },
+  "json_by_alias": {
+    "topics": [
+      "policy:default"
+    ],
+    "update": {
+      "changed_directories": [
+        "/",
+        "tenants"
+      ],
+      "new_policy_hash": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "old_policy_hash": "dddddddddddddddddddddddddddddddddddddddd"
+    }
+  },
+  "model": "opal_common.schemas.policy:PolicyUpdateMessageNotification",
+  "note": "the policy-update publish payload",
+  "payload": {
+    "topics": [
+      "policy:default"
+    ],
+    "update": {
+      "changed_directories": [
+        "/",
+        "tenants"
+      ],
+      "new_policy_hash": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "old_policy_hash": "dddddddddddddddddddddddddddddddddddddddd"
+    }
+  },
+  "pydantic": "1.10.26"
+}

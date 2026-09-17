@@ -1,0 +1,299 @@
+{
+  "case": "data_update_report",
+  "dict": {
+    "policy_hash": "0000000000000000000000000000000000000000",
+    "reports": [
+      {
+        "entry": {
+          "config": {
+            "data": null,
+            "fetcher": null,
+            "headers": {
+              "Authorization": "Bearer corpus-token",
+              "X-Trace": "abc"
+            },
+            "is_json": true,
+            "method": "get",
+            "process_data": true
+          },
+          "data": null,
+          "dst_path": "/acl",
+          "save_method": "PUT",
+          "topics": [
+            "policy_data",
+            "policy_data/tenant_1"
+          ],
+          "url": "https://backend.example.com/v1/policy/data"
+        },
+        "fetched": true,
+        "hash": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+        "saved": true
+      },
+      {
+        "entry": {
+          "config": null,
+          "data": {
+            "count": 3,
+            "users": {
+              "alice": {
+                "roles": [
+                  "admin"
+                ]
+              }
+            }
+          },
+          "dst_path": "/acl",
+          "save_method": "PUT",
+          "topics": [
+            "policy_data"
+          ],
+          "url": "https://backend.example.com/v1/policy/data"
+        },
+        "fetched": true,
+        "hash": null,
+        "saved": false
+      }
+    ],
+    "update_id": "66666666-6666-6666-6666-666666666666",
+    "user_data": {
+      "pdp": "pdp-a-0"
+    }
+  },
+  "dict_by_alias": {
+    "policy_hash": "0000000000000000000000000000000000000000",
+    "reports": [
+      {
+        "entry": {
+          "config": {
+            "data": null,
+            "fetcher": null,
+            "headers": {
+              "Authorization": "Bearer corpus-token",
+              "X-Trace": "abc"
+            },
+            "is_json": true,
+            "method": "get",
+            "process_data": true
+          },
+          "data": null,
+          "dst_path": "/acl",
+          "save_method": "PUT",
+          "topics": [
+            "policy_data",
+            "policy_data/tenant_1"
+          ],
+          "url": "https://backend.example.com/v1/policy/data"
+        },
+        "fetched": true,
+        "hash": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+        "saved": true
+      },
+      {
+        "entry": {
+          "config": null,
+          "data": {
+            "count": 3,
+            "users": {
+              "alice": {
+                "roles": [
+                  "admin"
+                ]
+              }
+            }
+          },
+          "dst_path": "/acl",
+          "save_method": "PUT",
+          "topics": [
+            "policy_data"
+          ],
+          "url": "https://backend.example.com/v1/policy/data"
+        },
+        "fetched": true,
+        "hash": null,
+        "saved": false
+      }
+    ],
+    "update_id": "66666666-6666-6666-6666-666666666666",
+    "user_data": {
+      "pdp": "pdp-a-0"
+    }
+  },
+  "json": {
+    "policy_hash": "0000000000000000000000000000000000000000",
+    "reports": [
+      {
+        "entry": {
+          "config": {
+            "data": null,
+            "fetcher": null,
+            "headers": {
+              "Authorization": "Bearer corpus-token",
+              "X-Trace": "abc"
+            },
+            "is_json": true,
+            "method": "get",
+            "process_data": true
+          },
+          "data": null,
+          "dst_path": "/acl",
+          "save_method": "PUT",
+          "topics": [
+            "policy_data",
+            "policy_data/tenant_1"
+          ],
+          "url": "https://backend.example.com/v1/policy/data"
+        },
+        "fetched": true,
+        "hash": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+        "saved": true
+      },
+      {
+        "entry": {
+          "config": null,
+          "data": {
+            "count": 3,
+            "users": {
+              "alice": {
+                "roles": [
+                  "admin"
+                ]
+              }
+            }
+          },
+          "dst_path": "/acl",
+          "save_method": "PUT",
+          "topics": [
+            "policy_data"
+          ],
+          "url": "https://backend.example.com/v1/policy/data"
+        },
+        "fetched": true,
+        "hash": null,
+        "saved": false
+      }
+    ],
+    "update_id": "66666666-6666-6666-6666-666666666666",
+    "user_data": {
+      "pdp": "pdp-a-0"
+    }
+  },
+  "json_by_alias": {
+    "policy_hash": "0000000000000000000000000000000000000000",
+    "reports": [
+      {
+        "entry": {
+          "config": {
+            "data": null,
+            "fetcher": null,
+            "headers": {
+              "Authorization": "Bearer corpus-token",
+              "X-Trace": "abc"
+            },
+            "is_json": true,
+            "method": "get",
+            "process_data": true
+          },
+          "data": null,
+          "dst_path": "/acl",
+          "save_method": "PUT",
+          "topics": [
+            "policy_data",
+            "policy_data/tenant_1"
+          ],
+          "url": "https://backend.example.com/v1/policy/data"
+        },
+        "fetched": true,
+        "hash": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+        "saved": true
+      },
+      {
+        "entry": {
+          "config": null,
+          "data": {
+            "count": 3,
+            "users": {
+              "alice": {
+                "roles": [
+                  "admin"
+                ]
+              }
+            }
+          },
+          "dst_path": "/acl",
+          "save_method": "PUT",
+          "topics": [
+            "policy_data"
+          ],
+          "url": "https://backend.example.com/v1/policy/data"
+        },
+        "fetched": true,
+        "hash": null,
+        "saved": false
+      }
+    ],
+    "update_id": "66666666-6666-6666-6666-666666666666",
+    "user_data": {
+      "pdp": "pdp-a-0"
+    }
+  },
+  "model": "opal_common.schemas.data:DataUpdateReport",
+  "note": "POST /data/callback_report body, sent by a v1 client to a v2 server",
+  "payload": {
+    "policy_hash": "0000000000000000000000000000000000000000",
+    "reports": [
+      {
+        "entry": {
+          "config": {
+            "data": null,
+            "fetcher": null,
+            "headers": {
+              "Authorization": "Bearer corpus-token",
+              "X-Trace": "abc"
+            },
+            "is_json": true,
+            "method": "get",
+            "process_data": true
+          },
+          "data": null,
+          "dst_path": "/acl",
+          "save_method": "PUT",
+          "topics": [
+            "policy_data",
+            "policy_data/tenant_1"
+          ],
+          "url": "https://backend.example.com/v1/policy/data"
+        },
+        "fetched": true,
+        "hash": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+        "saved": true
+      },
+      {
+        "entry": {
+          "data": {
+            "count": 3,
+            "users": {
+              "alice": {
+                "roles": [
+                  "admin"
+                ]
+              }
+            }
+          },
+          "dst_path": "/acl",
+          "save_method": "PUT",
+          "topics": [
+            "policy_data"
+          ],
+          "url": "https://backend.example.com/v1/policy/data"
+        },
+        "fetched": true,
+        "saved": false
+      }
+    ],
+    "update_id": "66666666-6666-6666-6666-666666666666",
+    "user_data": {
+      "pdp": "pdp-a-0"
+    }
+  },
+  "pydantic": "1.10.26"
+}

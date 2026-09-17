@@ -1,0 +1,35 @@
+{
+  "case": "json_patch_action_with_from",
+  "dict": {
+    "from_field": "/users/david",
+    "op": "move",
+    "path": "/users/dave",
+    "value": null
+  },
+  "dict_by_alias": {
+    "from": "/users/david",
+    "op": "move",
+    "path": "/users/dave",
+    "value": null
+  },
+  "json": {
+    "from_field": "/users/david",
+    "op": "move",
+    "path": "/users/dave",
+    "value": null
+  },
+  "json_by_alias": {
+    "from": "/users/david",
+    "op": "move",
+    "path": "/users/dave",
+    "value": null
+  },
+  "model": "opal_common.schemas.store:JSONPatchAction",
+  "note": "from_field carries alias='from' - populate-by-alias round trip",
+  "payload": {
+    "from": "/users/david",
+    "op": "move",
+    "path": "/users/dave"
+  },
+  "pydantic": "1.10.26"
+}
