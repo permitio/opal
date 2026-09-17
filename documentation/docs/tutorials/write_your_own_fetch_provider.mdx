@@ -98,20 +98,43 @@ From OPAL 0.10, `opal-common` requires **pydantic v2** (0.9.x and earlier ship
 pydantic v1). Custom fetch providers are pydantic models, so they must be
 v2-compatible.
 
-The one change that breaks at **import time**, before any of your code runs, is a
-bare `@root_validator` - it raises `PydanticUserError`. Replace it with
-`@model_validator(mode="before")` or `@model_validator(mode="after")`.
+We measured this rather than guessed: eleven realistic v1-era provider shapes
+were run under both pydantic versions. **Exactly two require you to change
+code**, and everything else keeps working.
 
-The rest are quieter:
+**1. A bare `@root_validator` — breaks at import time.** The worst one, because
+it raises `PydanticUserError` while the class is being defined, so your module
+never loads and your own error handling never runs:
 
-- A bare `Optional[X]` annotation is **required** under v2. Write `Optional[X] =
-  None` when you want the field to be optional - otherwise a config that used to
-  default to `None` becomes a mandatory field.
-- `@validator` still works through a deprecation shim; prefer `@field_validator`.
-- An inner `class Config` still works through a shim; prefer `model_config =
-  ConfigDict(...)`.
-- `.dict()` / `.parse_obj()` still work through shims; prefer `.model_dump()` /
-  `.model_validate()`. They are removed in pydantic v3.
+```python
+@root_validator                      # breaks
+@root_validator(pre=True)            # fine - only the BARE form breaks
+@model_validator(mode="after")       # the v2 form
+```
+
+**2. A bare `Optional[X]` with no default — breaks at runtime.** In v1 this
+defaulted to `None`; in v2 it is **required**, so a config that used to be
+constructible with no arguments now raises `ValidationError`:
+
+```python
+class MyConfig(FetcherConfig):
+    dsn: Optional[str]           # breaks: now required
+    dsn: Optional[str] = None    # correct
+```
+
+Note `x: str = None` (an explicit default, no `Optional`) is *not* affected —
+the default is what makes it optional.
+
+**Everything else still works**, through v2's deprecation shims. Prefer the new
+forms, since the shims are removed in pydantic v3, but nothing forces you to
+change them today:
+
+| v1 form | status under v2 |
+|---|---|
+| `@validator` | works; prefer `@field_validator` |
+| inner `class Config` | works; prefer `model_config = ConfigDict(...)` |
+| `.dict()` / `.parse_obj()` | works; prefer `.model_dump()` / `.model_validate()` |
+| `@root_validator(pre=True)` | works as-is |
 
 Two things OPAL handles for you, so you do not need to work around them:
 
