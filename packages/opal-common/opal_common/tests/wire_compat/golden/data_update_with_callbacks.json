@@ -1,4 +1,5 @@
 {
+  "builder": null,
   "case": "data_update_with_callbacks",
   "dict": {
     "callback": {
@@ -143,6 +144,52 @@
     "reason": "corpus: callbacks"
   },
   "json_by_alias": {
+    "callback": {
+      "callbacks": [
+        "https://callback.example.com/plain",
+        [
+          "https://callback.example.com/configured",
+          {
+            "data": null,
+            "fetcher": null,
+            "headers": {
+              "Authorization": "Bearer corpus-token",
+              "X-Trace": "abc"
+            },
+            "is_json": true,
+            "method": "get",
+            "process_data": true
+          }
+        ]
+      ]
+    },
+    "entries": [
+      {
+        "config": {
+          "data": null,
+          "fetcher": null,
+          "headers": {
+            "Authorization": "Bearer corpus-token",
+            "X-Trace": "abc"
+          },
+          "is_json": true,
+          "method": "get",
+          "process_data": true
+        },
+        "data": null,
+        "dst_path": "/acl",
+        "save_method": "PUT",
+        "topics": [
+          "policy_data",
+          "policy_data/tenant_1"
+        ],
+        "url": "https://backend.example.com/v1/policy/data"
+      }
+    ],
+    "id": "44444444-4444-4444-4444-444444444444",
+    "reason": "corpus: callbacks"
+  },
+  "json_reparsed": {
     "callback": {
       "callbacks": [
         "https://callback.example.com/plain",

@@ -1,4 +1,5 @@
 {
+  "builder": null,
   "case": "store_transaction_minimal",
   "dict": {
     "actions": [],
@@ -31,6 +32,16 @@
     "transaction_type": null
   },
   "json_by_alias": {
+    "actions": [],
+    "creation_time": null,
+    "end_time": null,
+    "error": "",
+    "id": "88888888-8888-8888-8888-888888888888",
+    "remotes_status": null,
+    "success": false,
+    "transaction_type": null
+  },
+  "json_reparsed": {
     "actions": [],
     "creation_time": null,
     "end_time": null,

@@ -54,16 +54,37 @@ docker exec "$CONTAINER" redis-cli ping 2>/dev/null | grep -q PONG \
 URL="redis://localhost:$REDIS_PORT"
 rc=$EXIT_PASS
 
+# Run one leg and record its verdict.
+#
+# The driver's status is captured DIRECTLY, not through ${PIPESTATUS[0]} after a
+# command substitution. `out=$(cmd | grep)` is a simple command in the parent
+# shell, so PIPESTATUS there describes that assignment - i.e. grep's status, not
+# the driver's. Measured on bash 3.2.57 and 5.2: the previous form reported 0
+# for a driver exiting 1 AND for one exiting 2, so this orchestrator could never
+# report FAIL or INVALID at all.
 step() {
   local label="$1" py="$2"; shift 2
+  local raw code
+  raw="$STATE_DIR/$(printf '%s' "$label" | tr -c 'A-Za-z0-9' '_').out"
+
+  "$py" "$DRIVER" "$@" --redis-url "$URL" > "$raw" 2>&1
+  code=$?
+
+  # loguru's default line is `2026-09-17 15:37:27.398 | DEBUG | ...` - two
+  # whitespace-separated tokens before the pipe, which `^\S+ \| DEBUG` never
+  # matched. Drop the level anywhere on the line instead.
   local out
-  out=$("$py" "$DRIVER" "$@" --redis-url "$URL" 2>&1 | grep -viE '^\S+ \| DEBUG')
-  local code=${PIPESTATUS[0]}
+  out=$(grep -viE '\| *DEBUG *\|' "$raw" || true)
+
   printf '  %-26s %s\n' "$label" "$(printf '%s' "$out" | tail -1)"
   case $code in
     0) ;;
-    2) echo "$out" | sed 's/^/      /' >&2; rc=$EXIT_INVALID ;;
-    *) echo "$out" | sed 's/^/      /' >&2; [ $rc -ne $EXIT_INVALID ] && rc=$EXIT_FAIL ;;
+    # On a non-zero code print the WHOLE filtered output, not tail -1: the last
+    # line is the success-looking "verified N scopes" summary, so tail -1 hid
+    # every FAIL reason the driver had just printed.
+    2) printf '%s\n' "$out" | sed 's/^/      /' >&2; rc=$EXIT_INVALID ;;
+    *) printf '%s\n' "$out" | sed 's/^/      /' >&2
+       [ "$rc" -ne "$EXIT_INVALID" ] && rc=$EXIT_FAIL ;;
   esac
 }
 

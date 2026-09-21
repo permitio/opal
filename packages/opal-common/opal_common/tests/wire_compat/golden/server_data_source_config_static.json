@@ -1,4 +1,5 @@
 {
+  "builder": null,
   "case": "server_data_source_config_static",
   "dict": {
     "config": {
@@ -88,6 +89,35 @@
     "external_source_url": null
   },
   "json_by_alias": {
+    "config": {
+      "entries": [
+        {
+          "config": {
+            "data": null,
+            "fetcher": null,
+            "headers": {
+              "Authorization": "Bearer corpus-token",
+              "X-Trace": "abc"
+            },
+            "is_json": true,
+            "method": "get",
+            "process_data": true
+          },
+          "data": null,
+          "dst_path": "/acl",
+          "periodic_update_interval": null,
+          "save_method": "PUT",
+          "topics": [
+            "policy_data",
+            "policy_data/tenant_1"
+          ],
+          "url": "https://backend.example.com/v1/policy/data"
+        }
+      ]
+    },
+    "external_source_url": null
+  },
+  "json_reparsed": {
     "config": {
       "entries": [
         {

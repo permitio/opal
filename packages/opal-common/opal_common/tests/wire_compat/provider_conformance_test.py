@@ -70,6 +70,26 @@ EXPECTED = {
     ),
 }
 
+# The evidence each "ok" shape must still produce, captured under pydantic
+# 1.10.26 and asserted here against v2. `status` alone is not enough: a shape
+# that still LOADS but comes back with a different value is the silent class -
+# `alias_only_config` losing its api_key is exactly that, and it would read as
+# "ok" if only the status were checked.
+EXPECTED_EVIDENCE = {
+    "alias_only_config": {"value": "SECRET", "preserved": True},
+    "subclassed_config_extra_field": {"value": "keepme", "preserved": True},
+    "config_model_where_dict_declared": {"value": "d"},
+    "dict_based_parse_event": {"value": "d"},
+    "inner_class_config": {"value": "t"},
+    "root_validator_pre_true": {"value": "x"},
+    "v1_validator": {"value": 5432, "validator_enforced": True},
+    "optional_config_annotated": {
+        "config_optional": True,
+        "value": "postgres://h/db",
+    },
+    "bare_config_default_none": {"config_optional": True},
+}
+
 RESULTS = run_all()
 
 
@@ -84,7 +104,24 @@ def test_provider_shape_matches_the_documented_contract(shape):
         "reason, and to write_your_own_fetch_provider.mdx if it breaks."
     )
     expected, why = EXPECTED[shape]
-    actual = RESULTS[shape]["status"]
+    record = RESULTS[shape]
+    actual = record["status"]
+
+    # The shapes capture more than a verdict - `preserved` and `value` record
+    # what actually came back. Assert those too: a shape whose status stays "ok"
+    # while its captured value changes is exactly the silent-credential-loss
+    # class this corpus exists for, and reading only `status` would pass it.
+    if expected == "ok" and actual == "ok" and shape in EXPECTED_EVIDENCE:
+        for key, want in EXPECTED_EVIDENCE[shape].items():
+            assert record.get(key) == want, (
+                f"\nprovider shape {shape!r} still loads, but its captured "
+                f"{key!r} changed: {record.get(key)!r} (expected {want!r}).\n"
+                f"  documented reason: {why}\n"
+                f"  full record: {record}\n\n"
+                "A value that changes while the status stays 'ok' is a SILENT "
+                "break for provider authors - nothing raises, the provider just "
+                "runs with different data."
+            )
 
     assert actual == expected, (
         f"\nprovider shape {shape!r} is {actual!r}, expected {expected!r}.\n"
@@ -110,6 +147,23 @@ def test_only_the_documented_shapes_break():
         f"the set of breaking provider shapes changed: {broken}.\n"
         "write_your_own_fetch_provider.mdx names exactly these two; update both "
         "together or provider authors get a surprise."
+    )
+
+
+def test_every_ok_shape_has_recorded_evidence():
+    """An "ok" shape with no evidence entry is only checked for status.
+
+    That is the gap this list closes, so it must not silently reopen
+    when a shape is added.
+    """
+    missing = sorted(
+        name
+        for name, (expected, _) in EXPECTED.items()
+        if expected == "ok" and name not in EXPECTED_EVIDENCE
+    )
+    assert not missing, (
+        f"these shapes are expected 'ok' but have no EXPECTED_EVIDENCE entry, "
+        f"so only their status is asserted: {missing}"
     )
 
 

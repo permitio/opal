@@ -1,4 +1,5 @@
 {
+  "builder": null,
   "case": "data_update_minimal",
   "dict": {
     "callback": {
@@ -58,6 +59,25 @@
     "reason": null
   },
   "json_by_alias": {
+    "callback": {
+      "callbacks": []
+    },
+    "entries": [
+      {
+        "config": null,
+        "data": null,
+        "dst_path": "",
+        "save_method": "PUT",
+        "topics": [
+          "policy_data"
+        ],
+        "url": "https://x.example.com/d"
+      }
+    ],
+    "id": null,
+    "reason": null
+  },
+  "json_reparsed": {
     "callback": {
       "callbacks": []
     },

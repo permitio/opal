@@ -1,4 +1,5 @@
 {
+  "builder": null,
   "case": "policy_update_notification",
   "dict": {
     "topics": [
@@ -40,6 +41,19 @@
     }
   },
   "json_by_alias": {
+    "topics": [
+      "policy:default"
+    ],
+    "update": {
+      "changed_directories": [
+        "/",
+        "tenants"
+      ],
+      "new_policy_hash": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "old_policy_hash": "dddddddddddddddddddddddddddddddddddddddd"
+    }
+  },
+  "json_reparsed": {
     "topics": [
       "policy:default"
     ],

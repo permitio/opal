@@ -8,6 +8,7 @@ from pydantic import (
     AnyHttpUrl,
     BaseModel,
     Field,
+    SerializeAsAny,
     ValidationInfo,
     field_validator,
     model_validator,
@@ -214,7 +215,12 @@ class DataUpdate(BaseModel):
 
     # a UUID to identify this update (used as part of an updates complition callback)
     id: Optional[str] = None
-    entries: List[DataSourceEntry] = Field(
+    # ``SerializeAsAny`` because pydantic v2 serializes a nested model with the
+    # DECLARED type's serializer, so a ``DataSourceEntryWithPollingInterval``
+    # assigned here would silently lose ``periodic_update_interval``. v1
+    # serialized the runtime instance and kept it. Do not drop the wrapper
+    # without checking the wire form against a v1 peer.
+    entries: SerializeAsAny[List[DataSourceEntry]] = Field(
         ..., description="list of related updates the OPAL client should perform"
     )
     reason: Optional[str] = Field(None, description="Reason for triggering the update")
@@ -225,7 +231,12 @@ class DataUpdate(BaseModel):
 class DataEntryReport(BaseModel):
     """A report of the processing of a single DataSourceEntry."""
 
-    entry: DataSourceEntry = Field(..., description="The entry that was processed")
+    # ``SerializeAsAny`` for the same reason as ``DataUpdate.entries`` above -
+    # and this is the one that reaches the wire, since the report is POSTed to
+    # the callback URL by ``CallbacksReporter``.
+    entry: SerializeAsAny[DataSourceEntry] = Field(
+        ..., description="The entry that was processed"
+    )
     # Was the entry successfully fetched
     fetched: Optional[bool] = False
     # Was the entry successfully saved into the policy-data-store

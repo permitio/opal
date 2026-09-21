@@ -1,4 +1,5 @@
 {
+  "builder": null,
   "case": "http_fetcher_config",
   "dict": {
     "data": null,
@@ -31,6 +32,16 @@
     "process_data": true
   },
   "json_by_alias": {
+    "data": null,
+    "fetcher": null,
+    "headers": {
+      "Authorization": "Bearer corpus"
+    },
+    "is_json": true,
+    "method": "post",
+    "process_data": true
+  },
+  "json_reparsed": {
     "data": null,
     "fetcher": null,
     "headers": {

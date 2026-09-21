@@ -26,12 +26,29 @@ from pydantic import BaseModel
 
 from .payloads import CASES
 
-# Packages swept for models. Scoped to where schemas live rather than the whole
-# tree: importing opal_server.main and friends has side effects, and models that
-# reach a wire do not live there.
+# Packages swept for models.
+#
+# Must cover opal_client and opal_server, not just opal_common: the inline-OPA
+# regression this PR fixes lived in `opal_client.engine.options`, and a sweep
+# that cannot see that package cannot claim to force a decision on the shape
+# that produced it. Two of the NOT_ON_THE_WIRE entries below name models there
+# and were INERT - never consulted - until this list was widened.
+#
+# Entries must be PACKAGES, not modules: `_discover` calls
+# `pkgutil.walk_packages(package.__path__, ...)` and a module has no
+# `__path__`. So `opal_client.policy_store`, not
+# `opal_client.policy_store.schemas`.
+#
+# Deliberately NOT swept: `opal_server.server`, `opal_server.main` and
+# `opal_client.client`, whose import has side effects (app construction,
+# config binding). Models that reach a wire do not live there.
 SWEPT_PACKAGES = (
     "opal_common.schemas",
     "opal_common.fetcher",
+    "opal_client.engine",
+    "opal_client.policy_store",
+    "opal_client.policy",
+    "opal_server.scopes",
 )
 
 # Enum-bearing models that deliberately never reach a wire. A reason is
@@ -45,6 +62,13 @@ NOT_ON_THE_WIRE: Dict[str, str] = {
     "opal_client.engine.options:CedarServerOptions": (
         "get_args() yields explicit strings and never formats an enum into an "
         "argument, so the dump path does not apply."
+    ),
+    "opal_client.policy.options:ConnRetryOptions": (
+        "configuration, not a payload: read via confi.model for the four "
+        "OPAL_*_CONN_RETRY keys and consumed in-process by toTenacityConfig(), "
+        "which reads the attribute rather than a dump. `WaitStrategy` is a str "
+        "mixin compared as an enum, so neither the member nor its value changes "
+        "that comparison. Never serialized to a peer."
     ),
     "opal_common.schemas.webhook:GitWebhookRequestParams": (
         "configuration, not a payload: it is OPAL_POLICY_REPO_WEBHOOK_PARAMS, read "
@@ -69,6 +93,13 @@ def _enum_fields(model: type) -> Set[str]:
     return found
 
 
+# Modules the sweep could not import, as (module, error). A module that fails
+# to import is silently absent from the sweep, so an uncovered model inside it
+# passes - the coverage gap and the import failure are indistinguishable from
+# the outside. Collected here and asserted empty rather than discarded.
+IMPORT_FAILURES: list = []
+
+
 def _discover() -> Dict[str, Tuple[type, Set[str]]]:
     """Every model in SWEPT_PACKAGES carrying at least one enum field."""
     out = {}
@@ -78,9 +109,8 @@ def _discover() -> Dict[str, Tuple[type, Set[str]]]:
         for info in pkgutil.walk_packages(package.__path__, f"{package_name}."):
             try:
                 modules.append(importlib.import_module(info.name))
-            except (
-                Exception
-            ):  # noqa: BLE001 - an unimportable module is not our subject
+            except Exception as exc:  # noqa: BLE001 - recorded, not swallowed
+                IMPORT_FAILURES.append((info.name, f"{type(exc).__name__}: {exc}"))
                 continue
         for module in modules:
             for attr in vars(module).values():
@@ -105,6 +135,40 @@ def test_sweep_actually_found_models():
     assert DISCOVERED, (
         f"no enum-bearing models discovered in {SWEPT_PACKAGES} - the sweep is "
         "broken, and every assertion below would pass for the wrong reason"
+    )
+
+
+def test_sweep_imported_every_module():
+    """A module the sweep could not import is a module it cannot police.
+
+    Non-empty is not the same as complete: a sweep that quietly covers less than
+    it did yesterday still satisfies `assert DISCOVERED`. The realistic trigger
+    is a circular import that only manifests under a different collection order,
+    or an optional dependency missing on one leg of the matrix.
+    """
+    assert not IMPORT_FAILURES, (
+        "the enum sweep could not import these modules, so any enum-bearing "
+        "model inside them is invisible to it:\n  "
+        + "\n  ".join(f"{name}: {err}" for name, err in IMPORT_FAILURES)
+    )
+
+
+def test_sweep_covers_every_package_it_claims_to():
+    """Each SWEPT_PACKAGES entry must actually be walkable.
+
+    `pkgutil.walk_packages` needs `__path__`, so a MODULE listed here would
+    raise rather than contribute - and the entry would read as covered while
+    contributing nothing.
+    """
+    not_packages = []
+    for name in SWEPT_PACKAGES:
+        mod = importlib.import_module(name)
+        if not hasattr(mod, "__path__"):
+            not_packages.append(name)
+
+    assert not not_packages, (
+        f"these SWEPT_PACKAGES entries are modules, not packages, so they are "
+        f"not walked: {not_packages}. Use the containing package instead."
     )
 
 

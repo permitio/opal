@@ -1,16 +1,15 @@
 {
   "builder": null,
-  "case": "scope_ssh_auth",
+  "case": "scope_userpass_auth",
   "dict": {
     "data": {
       "entries": []
     },
     "policy": {
       "auth": {
-        "auth_type": "ssh",
-        "private_key": "-----BEGIN OPENSSH PRIVATE KEY-----\\nCORPUS\\n",
-        "public_key": null,
-        "username": "git"
+        "auth_type": "userpass",
+        "password": "corpus-password",
+        "username": "ci-bot"
       },
       "branch": "main",
       "bundle_ignore": null,
@@ -22,11 +21,11 @@
         ".json"
       ],
       "manifest": ".manifest",
-      "poll_updates": false,
+      "poll_updates": true,
       "source_type": "git",
-      "url": "git@github.com:acme/policy.git"
+      "url": "https://git.example.com/acme/policy.git"
     },
-    "scope_id": "tenant-a"
+    "scope_id": "tenant-d"
   },
   "dict_by_alias": {
     "data": {
@@ -34,10 +33,9 @@
     },
     "policy": {
       "auth": {
-        "auth_type": "ssh",
-        "private_key": "-----BEGIN OPENSSH PRIVATE KEY-----\\nCORPUS\\n",
-        "public_key": null,
-        "username": "git"
+        "auth_type": "userpass",
+        "password": "corpus-password",
+        "username": "ci-bot"
       },
       "branch": "main",
       "bundle_ignore": null,
@@ -49,11 +47,11 @@
         ".json"
       ],
       "manifest": ".manifest",
-      "poll_updates": false,
+      "poll_updates": true,
       "source_type": "git",
-      "url": "git@github.com:acme/policy.git"
+      "url": "https://git.example.com/acme/policy.git"
     },
-    "scope_id": "tenant-a"
+    "scope_id": "tenant-d"
   },
   "json": {
     "data": {
@@ -61,10 +59,9 @@
     },
     "policy": {
       "auth": {
-        "auth_type": "ssh",
-        "private_key": "-----BEGIN OPENSSH PRIVATE KEY-----\\nCORPUS\\n",
-        "public_key": null,
-        "username": "git"
+        "auth_type": "userpass",
+        "password": "corpus-password",
+        "username": "ci-bot"
       },
       "branch": "main",
       "bundle_ignore": null,
@@ -76,11 +73,11 @@
         ".json"
       ],
       "manifest": ".manifest",
-      "poll_updates": false,
+      "poll_updates": true,
       "source_type": "git",
-      "url": "git@github.com:acme/policy.git"
+      "url": "https://git.example.com/acme/policy.git"
     },
-    "scope_id": "tenant-a"
+    "scope_id": "tenant-d"
   },
   "json_by_alias": {
     "data": {
@@ -88,10 +85,9 @@
     },
     "policy": {
       "auth": {
-        "auth_type": "ssh",
-        "private_key": "-----BEGIN OPENSSH PRIVATE KEY-----\\nCORPUS\\n",
-        "public_key": null,
-        "username": "git"
+        "auth_type": "userpass",
+        "password": "corpus-password",
+        "username": "ci-bot"
       },
       "branch": "main",
       "bundle_ignore": null,
@@ -103,11 +99,11 @@
         ".json"
       ],
       "manifest": ".manifest",
-      "poll_updates": false,
+      "poll_updates": true,
       "source_type": "git",
-      "url": "git@github.com:acme/policy.git"
+      "url": "https://git.example.com/acme/policy.git"
     },
-    "scope_id": "tenant-a"
+    "scope_id": "tenant-d"
   },
   "json_reparsed": {
     "data": {
@@ -115,10 +111,9 @@
     },
     "policy": {
       "auth": {
-        "auth_type": "ssh",
-        "private_key": "-----BEGIN OPENSSH PRIVATE KEY-----\\nCORPUS\\n",
-        "public_key": null,
-        "username": "git"
+        "auth_type": "userpass",
+        "password": "corpus-password",
+        "username": "ci-bot"
       },
       "branch": "main",
       "bundle_ignore": null,
@@ -130,24 +125,23 @@
         ".json"
       ],
       "manifest": ".manifest",
-      "poll_updates": false,
+      "poll_updates": true,
       "source_type": "git",
-      "url": "git@github.com:acme/policy.git"
+      "url": "https://git.example.com/acme/policy.git"
     },
-    "scope_id": "tenant-a"
+    "scope_id": "tenant-d"
   },
   "model": "opal_common.schemas.scopes:Scope",
-  "note": "persisted to Redis by the server; v1-written records must read under v2",
+  "note": "the fourth auth arm, and the only one carrying a credential in TWO fields; also extends the Redis round-trip driver, which enumerates these same cases",
   "payload": {
     "data": {
       "entries": []
     },
     "policy": {
       "auth": {
-        "auth_type": "ssh",
-        "private_key": "-----BEGIN OPENSSH PRIVATE KEY-----\\nCORPUS\\n",
-        "public_key": null,
-        "username": "git"
+        "auth_type": "userpass",
+        "password": "corpus-password",
+        "username": "ci-bot"
       },
       "branch": "main",
       "directories": [
@@ -158,11 +152,11 @@
         ".json"
       ],
       "manifest": ".manifest",
-      "poll_updates": false,
+      "poll_updates": true,
       "source_type": "git",
-      "url": "git@github.com:acme/policy.git"
+      "url": "https://git.example.com/acme/policy.git"
     },
-    "scope_id": "tenant-a"
+    "scope_id": "tenant-d"
   },
   "pydantic": "1.10.26"
 }

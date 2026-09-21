@@ -68,13 +68,19 @@ def main() -> int:
     for case in CASES:
         try:
             model = resolve(case.model)
-            instance = model.parse_obj(case.payload)
+            if case.builder:
+                from payload_builders import BUILDERS
+
+                instance = BUILDERS[case.builder]()
+            else:
+                instance = model.parse_obj(case.payload)
             record = {
                 "case": case.name,
                 "model": case.model,
                 "note": case.note,
                 "pydantic": str(version),
                 "payload": case.payload,
+                "builder": case.builder,
                 # Stored parsed, not as a string: the contract is the JSON
                 # document, not the byte order pydantic happened to emit.
                 "json": json.loads(instance.json()),
@@ -84,6 +90,17 @@ def main() -> int:
                 # see the use_enum_values trap - see canon.py.
                 "dict": canonical(instance.dict()),
                 "dict_by_alias": canonical(instance.dict(by_alias=True)),
+                # What v1 produces when it PARSES its own wire document and
+                # re-serializes. Not always equal to `json_by_alias`: parsing a
+                # dict yields the field's DECLARED type, so a document carrying
+                # a subclass field comes back without it - on v1 too. Recording
+                # v1's own answer keeps the reverse assertion meaningful for
+                # those cases instead of demanding something that was never true.
+                "json_reparsed": json.loads(
+                    model.parse_obj(json.loads(instance.json(by_alias=True))).json(
+                        by_alias=True
+                    )
+                ),
             }
         except Exception as exc:  # noqa: BLE001 - report, do not abort the sweep
             failures.append(f"{case.name}: {type(exc).__name__}: {exc}")

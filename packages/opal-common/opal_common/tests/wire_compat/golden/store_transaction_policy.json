@@ -1,4 +1,5 @@
 {
+  "builder": null,
   "case": "store_transaction_policy",
   "dict": {
     "actions": [
@@ -79,6 +80,30 @@
     "transaction_type": "policy"
   },
   "json_by_alias": {
+    "actions": [
+      "set_policies",
+      "delete_policies"
+    ],
+    "creation_time": "2026-09-15T10:00:00Z",
+    "end_time": "2026-09-15T10:00:02Z",
+    "error": "",
+    "id": "77777777-7777-7777-7777-777777777777",
+    "remotes_status": [
+      {
+        "error": null,
+        "remote_url": "https://git.example.com/p.git",
+        "succeed": true
+      },
+      {
+        "error": "GitError",
+        "remote_url": "https://git.example.com/q.git",
+        "succeed": false
+      }
+    ],
+    "success": true,
+    "transaction_type": "policy"
+  },
+  "json_reparsed": {
     "actions": [
       "set_policies",
       "delete_policies"

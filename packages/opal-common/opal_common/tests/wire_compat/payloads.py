@@ -12,7 +12,7 @@ Add a case whenever a model reaches the wire: published to clients, served by
 a route, persisted to Redis, or posted back by a client.
 """
 
-from typing import Any, Dict, List, NamedTuple
+from typing import Any, Dict, List, NamedTuple, Optional
 
 
 class Case(NamedTuple):
@@ -22,12 +22,19 @@ class Case(NamedTuple):
     model     "module.path:ClassName", resolved by import in both trees
     payload   the dict fed to ``parse_obj`` (v1) / ``model_validate`` (v2)
     note      why this case is in the corpus - shown on failure
+    builder   optional key into ``payload_builders.BUILDERS``. When set, the
+              instance is CONSTRUCTED by that function rather than validated
+              from ``payload``, which is the only way to exercise a subclass
+              instance assigned to a parent-typed field - a dict can only ever
+              validate into the declared type. ``payload`` is still recorded in
+              the golden for reference.
     """
 
     name: str
     model: str
     payload: Dict[str, Any]
     note: str
+    builder: Optional[str] = None
 
 
 # --- building blocks ---------------------------------------------------------
@@ -223,6 +230,27 @@ CASES: List[Case] = [
         },
         "POST /data/callback_report body, sent by a v1 client to a v2 server",
     ),
+    # --- subclass instance in a parent-typed field ---------------------------
+    # These are BUILT, not validated from a dict. A dict validates into the
+    # declared type, so it cannot exercise the case where code assigns a
+    # subclass - which is exactly how `periodic_update_interval` went missing
+    # from every callback report under v2 until SerializeAsAny was added.
+    Case(
+        "data_update_report_subclass_entry",
+        "opal_common.schemas.data:DataUpdateReport",
+        {},
+        "the callback report as CallbacksReporter actually builds it: a "
+        "DataSourceEntryWithPollingInterval assigned to a DataSourceEntry field",
+        builder="data_update_report_with_polling_entry",
+    ),
+    Case(
+        "data_update_subclass_entry",
+        "opal_common.schemas.data:DataUpdate",
+        {},
+        "the publish sibling: a polling entry assigned to DataUpdate.entries, "
+        "which is declared List[DataSourceEntry]",
+        builder="data_update_with_polling_entry",
+    ),
     Case(
         "callback_entry",
         "opal_common.schemas.data:CallbackEntry",
@@ -394,6 +422,47 @@ CASES: List[Case] = [
             "data": {"entries": []},
         },
         "no-auth arm; also the shape t3_contract case 3.8 probes",
+    ),
+    Case(
+        "scope_userpass_auth",
+        "opal_common.schemas.scopes:Scope",
+        {
+            "scope_id": "tenant-d",
+            "policy": {
+                "source_type": "git",
+                "url": "https://git.example.com/acme/policy.git",
+                "auth": {
+                    "auth_type": "userpass",
+                    "username": "ci-bot",
+                    "password": "corpus-password",
+                },
+                "directories": ["."],
+                "extensions": [".rego", ".json"],
+                "manifest": ".manifest",
+                "poll_updates": True,
+                "branch": "main",
+            },
+            "data": {"entries": []},
+        },
+        "the fourth auth arm, and the only one carrying a credential in TWO "
+        "fields; also extends the Redis round-trip driver, which enumerates "
+        "these same cases",
+    ),
+    # --- client-served -------------------------------------------------------
+    Case(
+        "policy_store_details",
+        "opal_client.policy_store.schemas:PolicyStoreDetails",
+        {"url": "http://localhost:8181/v1", "type": "OPA", "auth_type": "token"},
+        "GET /policy-store/config response_model. Two NON-str Enums under "
+        "use_enum_values with a force_enum validator - the exact shape that "
+        "produced the inline-OPA regression, so the wire form is pinned here",
+    ),
+    Case(
+        "policy_store_details_defaults",
+        "opal_client.policy_store.schemas:PolicyStoreDetails",
+        {"url": "http://localhost:8181/v1"},
+        "the same model with both enums left at their DEFAULTS - the path "
+        "use_enum_values does not fire on under v2",
     ),
     # --- fetcher ------------------------------------------------------------
     Case(

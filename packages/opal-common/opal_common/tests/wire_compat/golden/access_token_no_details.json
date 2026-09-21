@@ -1,4 +1,5 @@
 {
+  "builder": null,
   "case": "access_token_no_details",
   "dict": {
     "details": null,
@@ -16,6 +17,11 @@
     "type": "bearer"
   },
   "json_by_alias": {
+    "details": null,
+    "token": "eyJhbGciOiJSUzI1NiJ9.corpus.signature",
+    "type": "bearer"
+  },
+  "json_reparsed": {
     "details": null,
     "token": "eyJhbGciOiJSUzI1NiJ9.corpus.signature",
     "type": "bearer"

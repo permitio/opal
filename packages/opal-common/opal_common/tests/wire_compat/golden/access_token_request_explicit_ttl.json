@@ -1,4 +1,5 @@
 {
+  "builder": null,
   "case": "access_token_request_explicit_ttl",
   "dict": {
     "claims": {},
@@ -27,6 +28,12 @@
     "type": "datasource"
   },
   "json_by_alias": {
+    "claims": {},
+    "id": "aaaaaaaa-9999-9999-9999-999999999999",
+    "ttl": 3600.0,
+    "type": "datasource"
+  },
+  "json_reparsed": {
     "claims": {},
     "id": "aaaaaaaa-9999-9999-9999-999999999999",
     "ttl": 3600.0,

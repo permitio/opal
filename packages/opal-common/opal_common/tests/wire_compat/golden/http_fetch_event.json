@@ -1,4 +1,5 @@
 {
+  "builder": null,
   "case": "http_fetch_event",
   "dict": {
     "config": {
@@ -52,6 +53,23 @@
     "url": "https://backend.example.com/v1/data"
   },
   "json_by_alias": {
+    "config": {
+      "data": null,
+      "fetcher": null,
+      "headers": {
+        "Authorization": "Bearer corpus"
+      },
+      "is_json": true,
+      "method": "get",
+      "process_data": true
+    },
+    "fetcher": "HttpFetchProvider",
+    "id": "cccccccc-9999-9999-9999-999999999999",
+    "name": null,
+    "retry": null,
+    "url": "https://backend.example.com/v1/data"
+  },
+  "json_reparsed": {
     "config": {
       "data": null,
       "fetcher": null,

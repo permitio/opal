@@ -42,6 +42,20 @@ jobs:
         python -m pip install flake8
         if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
         if [ -f ./tests/requirements.txt ]; then pip install -r ./tests/requirements.txt; fi
+    # opa_argv_real_binary_test.py hands the argv OPAL generates to the REAL
+    # binary. Without it those assertions SKIP, and the inline-OPA regression
+    # they exist for is python-version-gated - it is invisible on 3.10 and fatal
+    # on 3.11+ - so they need to run on every leg of this matrix, not just
+    # wherever a developer happens to have opa installed.
+    - name: Install OPA (for the inline-OPA argv tests)
+      run: |
+        curl -fsSL -o /usr/local/bin/opa \
+          https://openpolicyagent.org/downloads/v${OPA_VERSION}/opa_linux_amd64_static
+        chmod +x /usr/local/bin/opa
+        opa version
+      env:
+        # pinned: an unpinned `latest` would make a flag rename look like our bug
+        OPA_VERSION: 1.20.2
     - name: Lint with flake8
       run: |
         # stop the build if there are Python syntax errors or undefined names

@@ -1,4 +1,5 @@
 {
+  "builder": null,
   "case": "access_token",
   "dict": {
     "details": {
@@ -51,6 +52,18 @@
     "type": "bearer"
   },
   "json_by_alias": {
+    "details": {
+      "claims": {
+        "permit_client_id": "pdp-1"
+      },
+      "expired": "2027-09-15T10:00:00+00:00",
+      "id": "bbbbbbbb-9999-9999-9999-999999999999",
+      "type": "client"
+    },
+    "token": "eyJhbGciOiJSUzI1NiJ9.corpus.signature",
+    "type": "bearer"
+  },
+  "json_reparsed": {
     "details": {
       "claims": {
         "permit_client_id": "pdp-1"

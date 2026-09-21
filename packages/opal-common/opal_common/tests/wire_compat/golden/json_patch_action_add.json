@@ -1,4 +1,5 @@
 {
+  "builder": null,
   "case": "json_patch_action_add",
   "dict": {
     "from_field": null,
@@ -25,6 +26,14 @@
     }
   },
   "json_by_alias": {
+    "from": null,
+    "op": "add",
+    "path": "/users/erin",
+    "value": {
+      "roles": []
+    }
+  },
+  "json_reparsed": {
     "from": null,
     "op": "add",
     "path": "/users/erin",

@@ -1,4 +1,5 @@
 {
+  "builder": null,
   "case": "scope_no_auth",
   "dict": {
     "data": {
@@ -70,6 +71,29 @@
     "scope_id": "tenant-c"
   },
   "json_by_alias": {
+    "data": {
+      "entries": []
+    },
+    "policy": {
+      "auth": {
+        "auth_type": "none"
+      },
+      "branch": "main",
+      "bundle_ignore": null,
+      "directories": [
+        "."
+      ],
+      "extensions": [
+        ".rego"
+      ],
+      "manifest": ".manifest",
+      "poll_updates": false,
+      "source_type": "git",
+      "url": "https://github.com/acme/public.git"
+    },
+    "scope_id": "tenant-c"
+  },
+  "json_reparsed": {
     "data": {
       "entries": []
     },

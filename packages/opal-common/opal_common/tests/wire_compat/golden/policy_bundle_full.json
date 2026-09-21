@@ -1,4 +1,5 @@
 {
+  "builder": null,
   "case": "policy_bundle_full",
   "dict": {
     "data_modules": [
@@ -96,6 +97,35 @@
     ]
   },
   "json_by_alias": {
+    "data_modules": [
+      {
+        "data": "{\"x\": 1}",
+        "path": "tenants/tenant_1"
+      }
+    ],
+    "deleted_files": {
+      "data_modules": [
+        "tenants/tenant_9/data.json"
+      ],
+      "policy_modules": [
+        "old/policy.rego"
+      ]
+    },
+    "hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "manifest": [
+      "acl.rego",
+      "data.json"
+    ],
+    "old_hash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "policy_modules": [
+      {
+        "package_name": "app.acl",
+        "path": "acl.rego",
+        "rego": "package app.acl\n\ndefault allow = false\n"
+      }
+    ]
+  },
+  "json_reparsed": {
     "data_modules": [
       {
         "data": "{\"x\": 1}",

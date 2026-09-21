@@ -1,4 +1,5 @@
 {
+  "builder": null,
   "case": "policy_bundle_no_deleted",
   "dict": {
     "data_modules": [],
@@ -31,6 +32,16 @@
     "policy_modules": []
   },
   "json_by_alias": {
+    "data_modules": [],
+    "deleted_files": null,
+    "hash": "cccccccccccccccccccccccccccccccccccccccc",
+    "manifest": [
+      "acl.rego"
+    ],
+    "old_hash": null,
+    "policy_modules": []
+  },
+  "json_reparsed": {
     "data_modules": [],
     "deleted_files": null,
     "hash": "cccccccccccccccccccccccccccccccccccccccc",

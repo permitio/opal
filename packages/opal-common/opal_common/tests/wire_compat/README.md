@@ -1,8 +1,9 @@
 # wire_compat — the pydantic v1 wire contract, asserted forever
 
-Every OPAL client in the field runs `opal-client` 0.9.6, which is **pydantic
-v1** (`0.9.9-rc.2`, the newest tag, still pins `pydantic[email]>=1.9.1,<2`). A
-pydantic-v2 server therefore publishes to, and is posted to by, v1 peers.
+Released `opal-client` is still **pydantic v1** — `0.9.9-rc.2`, the newest tag,
+pins `pydantic[email]>=1.9.1,<2`. Clients upgrade on their own schedule, so a
+pydantic-v2 server publishes to, and is posted to by, v1 peers for as long as
+any un-upgraded client is deployed.
 
 Ordinary unit tests cannot see a break there, because they exercise both sides
 at the same version. This corpus pins the v1 wire form so the v2 tree is
@@ -10,19 +11,25 @@ asserted against a peer it can no longer import.
 
 ```
 payloads.py                the corpus: inputs only, no pydantic import
+payload_builders.py        cases built as INSTANCES (subclass-in-parent-field)
 canon.py                   type-preserving rendering of a python-mode dump
 generate_golden.py         run ONCE under pydantic v1 to capture golden/
 golden/*.json              the contract - one file per case
 wire_compat_test.py        what CI runs
 enum_inventory_test.py     new enum-bearing models must be covered or excused
+provider_shapes.py         v1-era third-party provider shapes
+provider_conformance.py    runs them under either version; --compare builds the matrix
+provider_conformance_test.py  pins the v2 column in CI
 redis_roundtrip.py         cross-version Scope persistence (driver, needs Redis)
 run_redis_roundtrip.sh     orchestrates both directions in one command
 ```
 
 Related, outside this directory:
 `opal-client/opal_client/tests/opa_argv_real_binary_test.py` hands the argv
-OPAL generates to the **real** `opa` binary. It inherits the CI python matrix,
-which is what makes it able to catch a version-gated regression.
+OPAL generates to the **real** `opa` binary. CI installs a pinned `opa` in the
+unit job, so those assertions run on every leg of the 3.10/3.11/3.12 matrix —
+which is what makes them able to catch a version-gated regression. Without a
+binary on `PATH` they SKIP rather than pass.
 
 ## What each case asserts
 
@@ -80,12 +87,25 @@ case (it would silently stop being asserted) or a case has no golden.
 Pin anything non-deterministic (uuids, timestamps) in the payload. A golden
 that changes run to run cannot be compared.
 
+A dict payload can only ever validate into the field's **declared** type, so it
+cannot exercise a subclass instance assigned to a parent-typed field — the gap
+that hid `periodic_update_interval` disappearing from every callback report. For
+that, add a builder to `payload_builders.py` and name it in the case's
+`builder=`; the instance is then constructed rather than validated.
+
 ## Accepted deltas
 
 A difference we have decided to keep goes in `ACCEPTED_DELTAS` **with the
 evidence that established it is safe** — not just a claim that it is. Nothing
-is tolerated silently. The current entries are all python-mode-only; every
-JSON-form assertion passes, so the wire itself is unchanged.
+is tolerated silently.
+
+Entries are keyed by `(case, assertion, path)`, so an exemption written for a
+python-mode dump cannot also switch off the JSON-wire assertion at that path.
+All but one entry are python-mode only; the exception is
+`access_token.details.expired`, an accepted **JSON-form** difference (`+00:00`
+vs `Z`) whose entry records the measurement showing a v1 peer parses both to the
+same instant. Every other JSON-form assertion passes, so the wire is otherwise
+unchanged.
 
 ## Scope persistence (`run_redis_roundtrip.sh`)
 

@@ -1,4 +1,5 @@
 {
+  "builder": null,
   "case": "data_update_json_patch",
   "dict": {
     "callback": {
@@ -109,6 +110,42 @@
     "reason": "corpus: PATCH save_method"
   },
   "json_by_alias": {
+    "callback": {
+      "callbacks": []
+    },
+    "entries": [
+      {
+        "config": null,
+        "data": [
+          {
+            "from": null,
+            "op": "add",
+            "path": "/users/bob",
+            "value": {
+              "roles": [
+                "viewer"
+              ]
+            }
+          },
+          {
+            "from": null,
+            "op": "remove",
+            "path": "/users/carol",
+            "value": null
+          }
+        ],
+        "dst_path": "/acl",
+        "save_method": "PATCH",
+        "topics": [
+          "policy_data"
+        ],
+        "url": "https://backend.example.com/v1/policy/data"
+      }
+    ],
+    "id": "33333333-3333-3333-3333-333333333333",
+    "reason": "corpus: PATCH save_method"
+  },
+  "json_reparsed": {
     "callback": {
       "callbacks": []
     },

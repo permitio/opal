@@ -1,4 +1,5 @@
 {
+  "builder": null,
   "case": "callback_entry",
   "dict": {
     "config": {
@@ -46,6 +47,21 @@
     "url": "https://callback.example.com/hook"
   },
   "json_by_alias": {
+    "config": {
+      "data": null,
+      "fetcher": null,
+      "headers": {
+        "Authorization": "Bearer corpus-token",
+        "X-Trace": "abc"
+      },
+      "is_json": true,
+      "method": "get",
+      "process_data": true
+    },
+    "key": "cb-1",
+    "url": "https://callback.example.com/hook"
+  },
+  "json_reparsed": {
     "config": {
       "data": null,
       "fetcher": null,

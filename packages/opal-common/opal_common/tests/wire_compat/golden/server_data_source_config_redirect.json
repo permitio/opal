@@ -1,4 +1,5 @@
 {
+  "builder": null,
   "case": "server_data_source_config_redirect",
   "dict": {
     "config": null,
@@ -13,6 +14,10 @@
     "external_source_url": "https://backend.example.com/opal/data-sources"
   },
   "json_by_alias": {
+    "config": null,
+    "external_source_url": "https://backend.example.com/opal/data-sources"
+  },
+  "json_reparsed": {
     "config": null,
     "external_source_url": "https://backend.example.com/opal/data-sources"
   },
