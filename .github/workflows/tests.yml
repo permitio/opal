@@ -29,6 +29,16 @@ jobs:
     strategy:
       matrix:
         python-version: ["3.10", "3.11", "3.12"]
+        # 3.13 leg: opal-common and opal-client only. Their python_requires
+        # admits 3.13; opal-server's does not, because its pinned pygit2<1.15
+        # ships no cp313 wheel and the sdist needs libgit2 1.7 headers. So this
+        # leg cannot install requirements.txt (which pulls in all three) and
+        # instead pip-installs the two relaxed packages - with pip, deliberately:
+        # uv does not enforce Requires-Python for local path sources, so a uv
+        # install here would pass even if the metadata still said <3.13.
+        include:
+          - python-version: "3.13"
+            common-and-client-only: true
 
     steps:
     - uses: actions/checkout@v2
@@ -40,8 +50,13 @@ jobs:
       run: |
         python -m pip install --upgrade pip
         python -m pip install flake8
-        if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
-        if [ -f ./tests/requirements.txt ]; then pip install -r ./tests/requirements.txt; fi
+        if [ "${{ matrix.common-and-client-only }}" = "true" ]; then
+          pip install -e ./packages/opal-common -e ./packages/opal-client \
+            pytest pytest-asyncio pytest-rerunfailures
+        else
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+          if [ -f ./tests/requirements.txt ]; then pip install -r ./tests/requirements.txt; fi
+        fi
     # opa_argv_real_binary_test.py hands the argv OPAL generates to the REAL
     # binary. Without it those assertions SKIP, and the inline-OPA regression
     # they exist for is python-version-gated - it is invisible on 3.10 and fatal
@@ -64,7 +79,18 @@ jobs:
         flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
     - name: Test with pytest
       run: |
-        pytest
+        if [ "${{ matrix.common-and-client-only }}" = "true" ]; then
+          # These three need a running/importable opal-server, which this leg
+          # cannot install (see the matrix note). Everything else in the two
+          # relaxed packages runs - including the wire_compat corpus, the enum
+          # inventory sweep and the real-binary OPA argv tests.
+          pytest packages/opal-common packages/opal-client \
+            --ignore=packages/opal-common/opal_common/tests/test_config.py \
+            --ignore=packages/opal-client/opal_client/tests/data_updater_test.py \
+            --ignore=packages/opal-client/opal_client/tests/server_to_client_intergation_test.py
+        else
+          pytest
+        fi
 
   e2e-tests:
     runs-on: ubuntu-latest

@@ -17,6 +17,7 @@ model, which is exactly when the decision should be made.
 
 import enum
 import importlib
+import importlib.util
 import pkgutil
 import typing
 from typing import Dict, Set, Tuple
@@ -99,12 +100,31 @@ def _enum_fields(model: type) -> Set[str]:
 # the outside. Collected here and asserted empty rather than discarded.
 IMPORT_FAILURES: list = []
 
+# Swept packages whose DISTRIBUTION is not installed in this environment at
+# all, as (package, top-level name). Distinct from IMPORT_FAILURES on purpose:
+# a package that is installed but fails to import is a bug the sweep must
+# surface; a package that is simply absent (the CI 3.13 leg installs only
+# opal-common and opal-client, because opal-server's pygit2 has no cp313 wheel)
+# is a known, checkable gap. `test_sweep_skips_only_genuinely_absent_packages`
+# guarantees nothing installed can ever land here.
+NOT_INSTALLED: list = []
+
+# Swept packages that were actually imported and walked. A package can be
+# walked and legitimately contribute zero enum-bearing models, so "walked" is
+# recorded explicitly rather than inferred from DISCOVERED.
+WALKED: list = []
+
 
 def _discover() -> Dict[str, Tuple[type, Set[str]]]:
     """Every model in SWEPT_PACKAGES carrying at least one enum field."""
     out = {}
     for package_name in SWEPT_PACKAGES:
+        top = package_name.split(".")[0]
+        if importlib.util.find_spec(top) is None:
+            NOT_INSTALLED.append((package_name, top))
+            continue
         package = importlib.import_module(package_name)
+        WALKED.append(package_name)
         modules = [package]
         for info in pkgutil.walk_packages(package.__path__, f"{package_name}."):
             try:
@@ -160,8 +180,11 @@ def test_sweep_covers_every_package_it_claims_to():
     raise rather than contribute - and the entry would read as covered while
     contributing nothing.
     """
+    absent = {name for name, _ in NOT_INSTALLED}
     not_packages = []
     for name in SWEPT_PACKAGES:
+        if name in absent:
+            continue
         mod = importlib.import_module(name)
         if not hasattr(mod, "__path__"):
             not_packages.append(name)
@@ -169,6 +192,33 @@ def test_sweep_covers_every_package_it_claims_to():
     assert not not_packages, (
         f"these SWEPT_PACKAGES entries are modules, not packages, so they are "
         f"not walked: {not_packages}. Use the containing package instead."
+    )
+
+
+def test_sweep_skips_only_genuinely_absent_packages():
+    """An entry in NOT_INSTALLED must be a package that truly is not installed.
+
+    This is the guard that keeps the absent-package path from becoming a
+    silent way to shrink the sweep: if a package IS importable, it belongs in
+    DISCOVERED (or IMPORT_FAILURES), never here. On a full install this list
+    is empty; on the CI 3.13 leg it holds exactly the opal_server entries.
+    """
+    wrongly_skipped = [
+        (name, top)
+        for name, top in NOT_INSTALLED
+        if importlib.util.find_spec(top) is not None
+    ]
+    assert not wrongly_skipped, (
+        f"these packages were skipped as not-installed but ARE importable, so "
+        f"the sweep silently covered less than it could: {wrongly_skipped}"
+    )
+    # and every swept package is accounted for: either walked, or recorded as
+    # absent. A package that is neither was silently lost by the sweep.
+    absent = {name for name, _ in NOT_INSTALLED}
+    lost = [p for p in SWEPT_PACKAGES if p not in WALKED and p not in absent]
+    assert not lost, (
+        f"these SWEPT_PACKAGES entries were neither walked nor recorded as "
+        f"not-installed - the sweep lost them: {lost}"
     )
 
 
