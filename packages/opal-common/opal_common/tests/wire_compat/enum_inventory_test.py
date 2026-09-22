@@ -106,8 +106,15 @@ IMPORT_FAILURES: list = []
 # surface; a package that is simply absent (the CI 3.13 leg installs only
 # opal-common and opal-client, because opal-server's pygit2 has no cp313 wheel)
 # is a known, checkable gap. `test_sweep_skips_only_genuinely_absent_packages`
-# guarantees nothing installed can ever land here.
+# guarantees nothing installed can ever land here, and nothing outside
+# ALLOWED_ABSENT either.
 NOT_INSTALLED: list = []
+
+# The only swept package that MAY be absent: the CI 3.13 leg installs
+# opal-common and opal-client only, because opal-server's pinned pygit2 has no
+# cp313 wheel. Any other absence is the sweep shrinking, and the guard test
+# fails on it rather than reporting green over less coverage.
+ALLOWED_ABSENT = frozenset({"opal_server.scopes"})
 
 # Swept packages that were actually imported and walked. A package can be
 # walked and legitimately contribute zero enum-bearing models, so "walked" is
@@ -196,12 +203,16 @@ def test_sweep_covers_every_package_it_claims_to():
 
 
 def test_sweep_skips_only_genuinely_absent_packages():
-    """An entry in NOT_INSTALLED must be a package that truly is not installed.
+    """NOT_INSTALLED holds only packages that truly are not installed, and only
+    the one the CI 3.13 leg is designed to omit.
 
-    This is the guard that keeps the absent-package path from becoming a
-    silent way to shrink the sweep: if a package IS importable, it belongs in
-    DISCOVERED (or IMPORT_FAILURES), never here. On a full install this list
-    is empty; on the CI 3.13 leg it holds exactly the opal_server entries.
+    Both halves are needed to keep the absent-package path from becoming a
+    silent way to shrink the sweep. First: if a package IS importable, it
+    belongs in DISCOVERED (or IMPORT_FAILURES), never here. Second: an absence
+    is tolerated only for ALLOWED_ABSENT - so on a full install this list is
+    empty, on the 3.13 leg it is exactly `opal_server.scopes`, and an
+    environment missing anything else fails here instead of passing over a
+    smaller sweep.
     """
     wrongly_skipped = [
         (name, top)
@@ -211,6 +222,11 @@ def test_sweep_skips_only_genuinely_absent_packages():
     assert not wrongly_skipped, (
         f"these packages were skipped as not-installed but ARE importable, so "
         f"the sweep silently covered less than it could: {wrongly_skipped}"
+    )
+    unexpected = [name for name, _ in NOT_INSTALLED if name not in ALLOWED_ABSENT]
+    assert not unexpected, (
+        f"these SWEPT_PACKAGES entries fell out of the sweep and are not the "
+        f"known 3.13-leg gap {sorted(ALLOWED_ABSENT)}: {unexpected}"
     )
     # and every swept package is accounted for: either walked, or recorded as
     # absent. A package that is neither was silently lost by the sweep.
@@ -249,10 +265,21 @@ def _reachable_models(root: type, seen=None) -> Set[str]:
     return seen
 
 
+def _in_absent_distribution(module_path: str) -> bool:
+    """True when ``module_path`` lives in a distribution recorded in
+    NOT_INSTALLED, so importing it here would raise for a known reason."""
+    return module_path.split(".")[0] in {top for _, top in NOT_INSTALLED}
+
+
 def _covered_by_corpus() -> Set[str]:
     covered: Set[str] = set()
     for case in CASES:
         module_path, _, class_name = case.model.partition(":")
+        if _in_absent_distribution(module_path):
+            # Its DISCOVERED entries are absent too (the package was not
+            # walked), so there is nothing on this leg for the case to cover.
+            # The full-install legs still exercise it.
+            continue
         model = getattr(importlib.import_module(module_path), class_name)
         covered |= _reachable_models(model)
     return covered
@@ -283,6 +310,10 @@ def test_exclusions_still_exist():
     missing = []
     for dotted in NOT_ON_THE_WIRE:
         module_path, _, class_name = dotted.partition(":")
+        if _in_absent_distribution(module_path):
+            # Not "no longer exists" - not installed here. Checked on the
+            # full-install legs.
+            continue
         try:
             getattr(importlib.import_module(module_path), class_name)
         except (ImportError, AttributeError):
