@@ -274,7 +274,7 @@ def github_mode_server():
 @pytest.fixture()
 def gitlab_mode_server():
     # configure server in Gitlab mode
-    webhook_config = GitWebhookRequestParams.parse_obj(
+    webhook_config = GitWebhookRequestParams.model_validate(
         {
             "secret_header_name": "X-Gitlab-Token",
             "secret_type": "token",
@@ -296,7 +296,7 @@ def gitlab_mode_server():
 @pytest.fixture()
 def azure_git_mode_server():
     # configure server in Azure-git mode
-    webhook_config = GitWebhookRequestParams.parse_obj(
+    webhook_config = GitWebhookRequestParams.model_validate(
         {
             "secret_header_name": "x-api-key",
             "secret_type": "token",
@@ -319,7 +319,7 @@ def azure_git_mode_server():
 @pytest.fixture()
 def bitbucket_mode_server():
     # configure server in Azure-git mode
-    webhook_config = GitWebhookRequestParams.parse_obj(
+    webhook_config = GitWebhookRequestParams.model_validate(
         {
             "secret_header_name": "x-hook-uuid",
             "secret_type": "token",

@@ -1,0 +1,62 @@
+{
+  "builder": null,
+  "case": "access_token_request_default_ttl",
+  "dict": {
+    "claims": {
+      "permit_client_id": "pdp-1"
+    },
+    "id": {
+      "__uuid__": "99999999-9999-9999-9999-999999999999"
+    },
+    "ttl": {
+      "__timedelta__": 31536000.0
+    },
+    "type": "client"
+  },
+  "dict_by_alias": {
+    "claims": {
+      "permit_client_id": "pdp-1"
+    },
+    "id": {
+      "__uuid__": "99999999-9999-9999-9999-999999999999"
+    },
+    "ttl": {
+      "__timedelta__": 31536000.0
+    },
+    "type": "client"
+  },
+  "json": {
+    "claims": {
+      "permit_client_id": "pdp-1"
+    },
+    "id": "99999999-9999-9999-9999-999999999999",
+    "ttl": 31536000.0,
+    "type": "client"
+  },
+  "json_by_alias": {
+    "claims": {
+      "permit_client_id": "pdp-1"
+    },
+    "id": "99999999-9999-9999-9999-999999999999",
+    "ttl": 31536000.0,
+    "type": "client"
+  },
+  "json_reparsed": {
+    "claims": {
+      "permit_client_id": "pdp-1"
+    },
+    "id": "99999999-9999-9999-9999-999999999999",
+    "ttl": 31536000.0,
+    "type": "client"
+  },
+  "model": "opal_common.schemas.security:AccessTokenRequest",
+  "note": "the 365d default: v2 emitted P1Y, which a v1 server cannot parse",
+  "payload": {
+    "claims": {
+      "permit_client_id": "pdp-1"
+    },
+    "id": "99999999-9999-9999-9999-999999999999",
+    "type": "client"
+  },
+  "pydantic": "1.10.26"
+}

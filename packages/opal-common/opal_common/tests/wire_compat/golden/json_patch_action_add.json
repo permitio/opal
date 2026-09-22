@@ -1,0 +1,54 @@
+{
+  "builder": null,
+  "case": "json_patch_action_add",
+  "dict": {
+    "from_field": null,
+    "op": "add",
+    "path": "/users/erin",
+    "value": {
+      "roles": []
+    }
+  },
+  "dict_by_alias": {
+    "from": null,
+    "op": "add",
+    "path": "/users/erin",
+    "value": {
+      "roles": []
+    }
+  },
+  "json": {
+    "from_field": null,
+    "op": "add",
+    "path": "/users/erin",
+    "value": {
+      "roles": []
+    }
+  },
+  "json_by_alias": {
+    "from": null,
+    "op": "add",
+    "path": "/users/erin",
+    "value": {
+      "roles": []
+    }
+  },
+  "json_reparsed": {
+    "from": null,
+    "op": "add",
+    "path": "/users/erin",
+    "value": {
+      "roles": []
+    }
+  },
+  "model": "opal_common.schemas.store:JSONPatchAction",
+  "note": "the add branch of value_must_be_present (trap 3: ValueError not TypeError)",
+  "payload": {
+    "op": "add",
+    "path": "/users/erin",
+    "value": {
+      "roles": []
+    }
+  },
+  "pydantic": "1.10.26"
+}

@@ -1,0 +1,30 @@
+{
+  "builder": null,
+  "case": "server_data_source_config_redirect",
+  "dict": {
+    "config": null,
+    "external_source_url": "https://backend.example.com/opal/data-sources"
+  },
+  "dict_by_alias": {
+    "config": null,
+    "external_source_url": "https://backend.example.com/opal/data-sources"
+  },
+  "json": {
+    "config": null,
+    "external_source_url": "https://backend.example.com/opal/data-sources"
+  },
+  "json_by_alias": {
+    "config": null,
+    "external_source_url": "https://backend.example.com/opal/data-sources"
+  },
+  "json_reparsed": {
+    "config": null,
+    "external_source_url": "https://backend.example.com/opal/data-sources"
+  },
+  "model": "opal_common.schemas.data:ServerDataSourceConfig",
+  "note": "the redirect form - the other arm of the same model",
+  "payload": {
+    "external_source_url": "https://backend.example.com/opal/data-sources"
+  },
+  "pydantic": "1.10.26"
+}

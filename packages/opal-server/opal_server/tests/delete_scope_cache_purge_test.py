@@ -228,9 +228,9 @@ async def test_delete_without_pubsub_endpoint_still_reclaims_locally(tmp_path):
 async def test_delete_non_git_scope_deletes_record_only(tmp_path):
     # Scope.policy is a required field typed Union[GitPolicyScopeSource] (the
     # only concrete policy-source type today), so a non-git policy can't be
-    # constructed through normal validation; .construct() bypasses it to
+    # constructed through normal validation; .model_construct() bypasses it to
     # exercise the isinstance() early-return branch directly.
-    scope = Scope.construct(scope_id="plain", policy=None, data={"entries": []})
+    scope = Scope.model_construct(scope_id="plain", policy=None, data={"entries": []})
     repo = FakeScopeRepository([scope])
     pubsub = FakePubSubEndpoint()
     svc = ScopesService(base_dir=tmp_path, scopes=repo, pubsub_endpoint=pubsub)

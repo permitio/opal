@@ -109,6 +109,14 @@ The external API should do the following:
 - The endpoint should validate that the token is a valid OPAL JWT (by using the OPAL public key to verify) and use the custom claims in the JWT to determine what data sources to return.
 - The endpoint should return a JSON, containing the unique value (to that OPAL client) of `OPAL_DATA_CONFIG_SOURCES` (i.e: the actual Data Source Entries).
 
+:::note Breaking change in OPAL 0.10 if you also PUBLISH updates
+This page covers the flow where OPAL **fetches** config from your server, which
+is unaffected. If your backend also **posts** data updates to OPAL, note that
+from 0.10 pydantic v2 no longer coerces numbers to strings and any string-typed
+field rejects a numeric value — see
+[Triggering Data Updates](/tutorials/trigger_data_updates).
+:::
+
 ## Real code samples of an External Data Source API server in python
 
 You can use the following code samples in your **external API server** that serves data sources.

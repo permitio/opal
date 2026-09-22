@@ -1,0 +1,107 @@
+{
+  "builder": "data_update_with_polling_entry",
+  "case": "data_update_subclass_entry",
+  "dict": {
+    "callback": {
+      "callbacks": []
+    },
+    "entries": [
+      {
+        "config": null,
+        "data": null,
+        "dst_path": "/acl",
+        "periodic_update_interval": 45.0,
+        "save_method": "PUT",
+        "topics": [
+          "policy_data"
+        ],
+        "url": "https://backend.example.com/v1/policy/data"
+      }
+    ],
+    "id": "eeeeeeee-1111-1111-1111-111111111111",
+    "reason": "corpus: subclass instance in a parent-typed field"
+  },
+  "dict_by_alias": {
+    "callback": {
+      "callbacks": []
+    },
+    "entries": [
+      {
+        "config": null,
+        "data": null,
+        "dst_path": "/acl",
+        "periodic_update_interval": 45.0,
+        "save_method": "PUT",
+        "topics": [
+          "policy_data"
+        ],
+        "url": "https://backend.example.com/v1/policy/data"
+      }
+    ],
+    "id": "eeeeeeee-1111-1111-1111-111111111111",
+    "reason": "corpus: subclass instance in a parent-typed field"
+  },
+  "json": {
+    "callback": {
+      "callbacks": []
+    },
+    "entries": [
+      {
+        "config": null,
+        "data": null,
+        "dst_path": "/acl",
+        "periodic_update_interval": 45.0,
+        "save_method": "PUT",
+        "topics": [
+          "policy_data"
+        ],
+        "url": "https://backend.example.com/v1/policy/data"
+      }
+    ],
+    "id": "eeeeeeee-1111-1111-1111-111111111111",
+    "reason": "corpus: subclass instance in a parent-typed field"
+  },
+  "json_by_alias": {
+    "callback": {
+      "callbacks": []
+    },
+    "entries": [
+      {
+        "config": null,
+        "data": null,
+        "dst_path": "/acl",
+        "periodic_update_interval": 45.0,
+        "save_method": "PUT",
+        "topics": [
+          "policy_data"
+        ],
+        "url": "https://backend.example.com/v1/policy/data"
+      }
+    ],
+    "id": "eeeeeeee-1111-1111-1111-111111111111",
+    "reason": "corpus: subclass instance in a parent-typed field"
+  },
+  "json_reparsed": {
+    "callback": {
+      "callbacks": []
+    },
+    "entries": [
+      {
+        "config": null,
+        "data": null,
+        "dst_path": "/acl",
+        "save_method": "PUT",
+        "topics": [
+          "policy_data"
+        ],
+        "url": "https://backend.example.com/v1/policy/data"
+      }
+    ],
+    "id": "eeeeeeee-1111-1111-1111-111111111111",
+    "reason": "corpus: subclass instance in a parent-typed field"
+  },
+  "model": "opal_common.schemas.data:DataUpdate",
+  "note": "the publish sibling: a polling entry assigned to DataUpdate.entries, which is declared List[DataSourceEntry]",
+  "payload": {},
+  "pydantic": "1.10.26"
+}

@@ -61,7 +61,7 @@ class CallbacksRegister:
         """Gets a unique hash key from a callback url and config."""
         m = hashlib.sha256()
         m.update(url.encode())
-        m.update(config.json().encode())
+        m.update(config.model_dump_json().encode())
         return m.hexdigest()
 
     def get(self, key: str) -> Optional[CallbackEntry]:

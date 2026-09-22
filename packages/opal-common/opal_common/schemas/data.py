@@ -1,9 +1,18 @@
 from typing import Any, ClassVar, Dict, List, Optional, Set, Tuple, Union
 
+from opal_common.fetcher.events import coerce_config_model_to_dict
 from opal_common.fetcher.providers.http_fetch_provider import HttpFetcherConfig
 from opal_common.logging_utils.redaction import RedactedReprMixin
 from opal_common.schemas.store import JSONPatchAction
-from pydantic import AnyHttpUrl, BaseModel, Field, root_validator, validator
+from pydantic import (
+    AnyHttpUrl,
+    BaseModel,
+    Field,
+    SerializeAsAny,
+    ValidationInfo,
+    field_validator,
+    model_validator,
+)
 
 JsonableValue = Union[List[JSONPatchAction], List[Any], Dict[str, Any]]
 
@@ -24,22 +33,37 @@ class DataSourceEntry(RedactedReprMixin, BaseModel):
     # them via redact_url while keeping host/path visible for debugging.
     _redacted_url_fields: ClassVar[Set[str]] = {"url"}
 
-    @validator("data")
-    def validate_save_method(cls, value, values):
-        if values["save_method"] not in ["PUT", "PATCH"]:
+    @field_validator("config", mode="before")
+    @classmethod
+    def _coerce_model_config(cls, value):
+        """Accept a ``FetcherConfig`` where a plain ``dict`` is declared.
+
+        ``DataSourceEntry(config=HttpFetcherConfig(...))`` is the pattern
+        ``configure_external_data_sources.mdx`` tells integrators to use.
+        """
+        return coerce_config_model_to_dict(cls, value)
+
+    @field_validator("data")
+    @classmethod
+    def validate_save_method(cls, value, info: ValidationInfo):
+        save_method = info.data.get("save_method")
+        if save_method not in ["PUT", "PATCH"]:
             raise ValueError("'save_method' must be either PUT or PATCH")
-        if values["save_method"] == "PATCH" and (
+        if save_method == "PATCH" and (
             not isinstance(value, list)
             or not all(isinstance(elem, JSONPatchAction) for elem in value)
         ):
-            raise TypeError(
+            # NOTE: raise ValueError (not TypeError) - pydantic v2 only wraps
+            # ValueError/AssertionError into a ValidationError, while v1 also
+            # wrapped TypeError. This keeps the v1 caller contract.
+            raise ValueError(
                 "'data' must be of type JSON patch request when save_method is PATCH"
             )
         return value
 
     # How to obtain the data
     url: str = Field(..., description="Url source to query for data")
-    config: dict = Field(
+    config: Optional[dict] = Field(
         None,
         description="Suggested fetcher configuration (e.g. auth or method) to fetch data with",
     )
@@ -56,6 +80,12 @@ class DataSourceEntry(RedactedReprMixin, BaseModel):
     )
     data: Optional[JsonableValue] = Field(
         None,
+        # ``JsonableValue`` is an ordered union: a JSON-patch list must win over
+        # the catch-all ``List[Any]``. pydantic v2 defaults to "smart" union
+        # mode, which would match ``List[Any]`` first and leave raw dicts -
+        # breaking the ``isinstance(elem, JSONPatchAction)`` check below and the
+        # PATCH save_method path. v1 semantics == left-to-right.
+        union_mode="left_to_right",
         description="Data payload to embed within the data update (instead of having "
         "the client fetch it from the url).",
     )
@@ -81,6 +111,32 @@ class DataSourceConfig(BaseModel):
     entries: List[DataSourceEntryWithPollingInterval] = Field(
         [], description="list of data sources and how to fetch from them"
     )
+
+    @field_validator("entries", mode="before")
+    @classmethod
+    def _accept_base_entries(cls, value):
+        """Accept plain ``DataSourceEntry`` instances in the list.
+
+        ``DataSourceEntryWithPollingInterval`` is a strict superset of
+        ``DataSourceEntry`` - it only adds the optional
+        ``periodic_update_interval`` - and pydantic v1 validated a parent
+        instance into the child by reading its fields. v2 requires an instance
+        of the declared type or a mapping, which broke the
+        ``DataSourceConfig(entries=[DataSourceEntry(...)])`` form used in
+        ``configure_external_data_sources.mdx``. Flattening the parent is
+        lossless; an instance that is already the child type is left alone.
+        """
+        if not isinstance(value, (list, tuple)):
+            return value
+        return [
+            (
+                dict(entry)
+                if isinstance(entry, DataSourceEntry)
+                and not isinstance(entry, DataSourceEntryWithPollingInterval)
+                else entry
+            )
+            for entry in value
+        ]
 
 
 class ServerDataSourceConfig(BaseModel):
@@ -112,9 +168,9 @@ class ServerDataSourceConfig(BaseModel):
         + " if set, the clients will be redirected to this url when requesting to fetch data sources.",
     )
 
-    @root_validator
-    def check_passwords_match(cls, values):
-        config, redirect_url = values.get("config"), values.get("external_source_url")
+    @model_validator(mode="after")
+    def check_passwords_match(self):
+        config, redirect_url = self.config, self.external_source_url
         if config is None and redirect_url is None:
             raise ValueError(
                 "you must provide one of these fields: config, external_source_url"
@@ -123,7 +179,7 @@ class ServerDataSourceConfig(BaseModel):
             raise ValueError(
                 "you must provide ONLY ONE of these fields: config, external_source_url"
             )
-        return values
+        return self
 
 
 class CallbackEntry(BaseModel):
@@ -159,10 +215,15 @@ class DataUpdate(BaseModel):
 
     # a UUID to identify this update (used as part of an updates complition callback)
     id: Optional[str] = None
-    entries: List[DataSourceEntry] = Field(
+    # ``SerializeAsAny`` because pydantic v2 serializes a nested model with the
+    # DECLARED type's serializer, so a ``DataSourceEntryWithPollingInterval``
+    # assigned here would silently lose ``periodic_update_interval``. v1
+    # serialized the runtime instance and kept it. Do not drop the wrapper
+    # without checking the wire form against a v1 peer.
+    entries: SerializeAsAny[List[DataSourceEntry]] = Field(
         ..., description="list of related updates the OPAL client should perform"
     )
-    reason: str = Field(None, description="Reason for triggering the update")
+    reason: Optional[str] = Field(None, description="Reason for triggering the update")
     # Configuration for how to notify other services on the status of Update
     callback: UpdateCallback = UpdateCallback(callbacks=[])
 
@@ -170,7 +231,12 @@ class DataUpdate(BaseModel):
 class DataEntryReport(BaseModel):
     """A report of the processing of a single DataSourceEntry."""
 
-    entry: DataSourceEntry = Field(..., description="The entry that was processed")
+    # ``SerializeAsAny`` for the same reason as ``DataUpdate.entries`` above -
+    # and this is the one that reaches the wire, since the report is POSTed to
+    # the callback URL by ``CallbacksReporter``.
+    entry: SerializeAsAny[DataSourceEntry] = Field(
+        ..., description="The entry that was processed"
+    )
     # Was the entry successfully fetched
     fetched: Optional[bool] = False
     # Was the entry successfully saved into the policy-data-store

@@ -163,25 +163,25 @@ class OpaTransactionLogState:
     def last_policy_transaction(self):
         if self._last_policy_transaction is None:
             return {}
-        return self._last_policy_transaction.dict()
+        return self._last_policy_transaction.model_dump()
 
     @property
     def last_data_transaction(self):
         if self._last_data_transaction is None:
             return {}
-        return self._last_data_transaction.dict()
+        return self._last_data_transaction.model_dump()
 
     @property
     def last_failed_policy_transaction(self):
         if self._last_failed_policy_transaction is None:
             return {}
-        return self._last_failed_policy_transaction.dict()
+        return self._last_failed_policy_transaction.model_dump()
 
     @property
     def last_failed_data_transaction(self):
         if self._last_failed_data_transaction is None:
             return {}
-        return self._last_failed_data_transaction.dict()
+        return self._last_failed_data_transaction.model_dump()
 
     @property
     def transaction_policy_statistics(self):
@@ -208,7 +208,7 @@ class OpaTransactionLogState:
         hardcoded policy."""
         logger.debug(
             "processing store transaction: {transaction}",
-            transaction=transaction.dict(),
+            transaction=transaction.model_dump(),
         )
         if self._is_policy_transaction(transaction):
             if transaction.success:
@@ -930,8 +930,13 @@ class OpaClient(LivenessProbeMixin, BasePolicyStoreClient):
         see api reference:
         https://www.openpolicyagent.org/docs/latest/rest-api/#get-a-document-with-input
         """
-        # opa data api format needs the input to sit under "input"
-        opa_input = {"input": input.dict()}
+        # opa data api format needs the input to sit under "input".
+        # ``mode="json"`` because this dump is handed to json.dumps below and
+        # ``input`` is caller-supplied: this is a public extension point, so the
+        # model may carry enums or other non-JSON types. pydantic v1's ``.dict()``
+        # unwrapped those at dump time; v2's python mode does not, which would
+        # raise TypeError here for a caller whose model worked before.
+        opa_input = {"input": input.model_dump(mode="json")}
         if path.startswith("/"):
             path = path[1:]
         try:
