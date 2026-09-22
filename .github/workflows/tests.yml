@@ -54,8 +54,7 @@ jobs:
           pip install -e ./packages/opal-common -e ./packages/opal-client \
             pytest pytest-asyncio pytest-rerunfailures
         else
-          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
-          if [ -f ./tests/requirements.txt ]; then pip install -r ./tests/requirements.txt; fi
+          pip install -r requirements.txt
         fi
     # opa_argv_real_binary_test.py hands the argv OPAL generates to the REAL
     # binary. Without it those assertions SKIP, and the inline-OPA regression
