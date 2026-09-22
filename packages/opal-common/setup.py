@@ -69,9 +69,19 @@ setup(
         "Programming Language :: Python :: 3.10",
         "Programming Language :: Python :: 3.11",
         "Programming Language :: Python :: 3.12",
+        "Programming Language :: Python :: 3.13",
         "Topic :: Internet :: WWW/HTTP :: HTTP Servers",
         "Topic :: Internet :: WWW/HTTP :: WSGI",
     ],
-    python_requires=">=3.10,<3.13",
+    # <3.14, not <3.13: the ceiling PR #924 added was justified by the CPython
+    # concurrent.futures internals that opal-server's _DaemonThreadPoolExecutor
+    # mirrors. That executor lives in opal-server, and so does the only thing
+    # that actually fails to install on 3.13 - its pygit2<1.15, which has no
+    # cp313 wheel. This package depends on neither, and the CI 3.13 leg installs
+    # it with pip, which enforces this field. (The executor guard was also
+    # re-checked by hand on 3.13.14 in #960; that check is not CI-covered, since
+    # opal-server cannot install on 3.13.) 3.14 is untested, and the internals
+    # that executor mirrors have already changed shape there, hence the cap.
+    python_requires=">=3.10,<3.14",
     install_requires=common_install_requires + about.get_install_requires(project_root),
 )
