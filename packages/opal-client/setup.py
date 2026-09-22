@@ -74,8 +74,9 @@ setup(
         "Topic :: Internet :: WWW/HTTP :: WSGI",
     ],
     # <3.14: see the matching note in opal-common/setup.py. opal-client pins
-    # opal-common by exact version, so the two must move together; opal-server
-    # stays at <3.13 until its pygit2 is bumped to a release with cp313 wheels.
+    # opal-common by exact version and has no pygit2 dependency, so both can
+    # move. opal-server carries the same pin but stays at <3.13 until its
+    # pygit2 is bumped to a release with cp313 wheels.
     python_requires=">=3.10,<3.14",
     install_requires=client_install_requires + about.get_install_requires(project_root),
     entry_points="""
