@@ -7,7 +7,7 @@ title: Run OPAL as Python Packages
 
 ## CLI execution
 
-Python version **3.10 or greater** is required (and below 3.13).
+Python **3.10 to 3.13** is required for `opal-client` (and `opal-common`). `opal-server` requires **3.10 to 3.12**: its pinned `pygit2` ships no Python 3.13 wheel yet. Note that on Python 3.13 `pip install opal-server` does not fail - pip silently picks the newest release whose metadata admits 3.13, which is the old 0.9.6 - so run the server on 3.12 or lower.
 
 ### Server
 
