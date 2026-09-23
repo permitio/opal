@@ -369,6 +369,7 @@ class OpenFGAClient(LivenessProbeMixin, BasePolicyStoreClient):
                 ValueError,
                 KeyError,
                 TypeError,
+                AttributeError,
                 json.JSONDecodeError,
             ) as err:
                 logger.warning(
@@ -379,7 +380,13 @@ class OpenFGAClient(LivenessProbeMixin, BasePolicyStoreClient):
         if reconstruct_model:
             try:
                 self._base_model = await self._read_latest_authorization_model()
-            except (aiohttp.ClientError, ValueError, KeyError, TypeError) as err:
+            except (
+                aiohttp.ClientError,
+                ValueError,
+                KeyError,
+                TypeError,
+                AttributeError,
+            ) as err:
                 logger.warning(
                     "Could not reconstruct existing OpenFGA authorization model: {err}",
                     err=repr(err),

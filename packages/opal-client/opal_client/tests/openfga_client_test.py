@@ -1131,6 +1131,31 @@ async def test_restart_delta_reconstructs_an_existing_store_without_sidecar():
 
 
 @pytest.mark.asyncio
+async def test_invalid_sidecar_falls_back_to_store_reconstruction():
+    async with fake_openfga_server() as server:
+        first = _make_client(server.base_url)
+        try:
+            await first.set_policies(TWO_MODULE_BUNDLE)
+            state_path = Path(first._module_state_path)
+        finally:
+            await first.stop_liveness_probe()
+        state_path.write_text("{invalid", encoding="utf-8")
+
+        second = _make_client(server.base_url)
+        try:
+            await second.set_policies(TWO_MODULE_DELTA)
+            body = server.fake.authorization_model_bodies[-1]
+            assert {item["type"] for item in body["type_definitions"]} == {
+                "user",
+                "folder",
+                "document",
+                "team",
+            }
+        finally:
+            await second.stop_liveness_probe()
+
+
+@pytest.mark.asyncio
 async def test_deleted_data_module_removes_only_its_tuples():
     async with fake_openfga_server() as server:
         client = _make_client(server.base_url)
