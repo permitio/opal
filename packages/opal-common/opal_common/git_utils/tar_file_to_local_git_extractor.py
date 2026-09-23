@@ -43,7 +43,7 @@ class TarFileToLocalGitExtractor:
         prev_commit = None
         if len(local_git.index.repo.heads):
             prev_commit = local_git.index.repo.head.commit
-        local_git.index.add(self.policy_bundle_git_add_pattern)
+        local_git.git.add(self.policy_bundle_git_add_pattern, all=True)
         new_commit = local_git.index.commit(init_commit_msg)
         return local_git, prev_commit, new_commit
 
