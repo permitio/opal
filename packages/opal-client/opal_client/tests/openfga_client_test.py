@@ -121,6 +121,13 @@ def _override_config(**overrides):
             setattr(opal_client_config, key, value)
 
 
+@pytest.fixture(autouse=True)
+def _temporary_store_backup_path(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        opal_client_config, "STORE_BACKUP_PATH", str(tmp_path / "backup.json")
+    )
+
+
 class _FakeOpenFGA:
     """Stateful fake of the OpenFGA HTTP API (enough surface for OPAL)."""
 
@@ -155,7 +162,8 @@ class _FakeOpenFGA:
         object_id: str,
         depth: int = 0,
     ) -> bool:
-        """Evaluates `<user> is <relation> of <object>` against the latest model."""
+        """Evaluates `<user> is <relation> of <object>` against the latest
+        model."""
         if depth > 10:
             return False
         userset = (type_def.get("relations") or {}).get(relation)
@@ -267,6 +275,12 @@ class _FakeOpenFGA:
         app.router.add_post(
             "/stores/{store_id}/authorization-models", self._handle_write_model
         )
+        app.router.add_get(
+            "/stores/{store_id}/authorization-models", self._handle_list_models
+        )
+        app.router.add_get(
+            "/stores/{store_id}/authorization-models/{model_id}", self._handle_get_model
+        )
         app.router.add_post("/stores/{store_id}/write", self._handle_write)
         app.router.add_post("/stores/{store_id}/read", self._handle_read)
         app.router.add_post("/stores/{store_id}/check", self._handle_check)
@@ -320,6 +334,25 @@ class _FakeOpenFGA:
         self._models.setdefault(store_id, []).append(body)
         self._model_ids.setdefault(store_id, []).append(model_id)
         return web.json_response({"authorization_model_id": model_id}, status=201)
+
+    async def _handle_list_models(self, request: web.Request) -> web.Response:
+        if not await self._guard(request):
+            return web.Response(status=500, text="down")
+        store_id = request.match_info["store_id"]
+        return web.json_response(
+            {"authorization_model_ids": self._model_ids.get(store_id, [])}
+        )
+
+    async def _handle_get_model(self, request: web.Request) -> web.Response:
+        if not await self._guard(request):
+            return web.Response(status=500, text="down")
+        store_id = request.match_info["store_id"]
+        model_id = request.match_info["model_id"]
+        try:
+            position = self._model_ids.get(store_id, []).index(model_id)
+            return web.json_response(self._models[store_id][position])
+        except (ValueError, IndexError):
+            return web.json_response({"error": "not found"}, status=404)
 
     async def _handle_write(self, request: web.Request) -> web.Response:
         if not await self._guard(request):
@@ -1011,6 +1044,186 @@ async def test_get_data_with_input_validation_and_extras():
                 ),
             )
             assert allowed == {"allowed": True}
+        finally:
+            await client.stop_liveness_probe()
+
+
+EXTRA_MODEL_FGA = """model
+  schema 1.1
+
+type team
+  relations
+    define member: [user]
+"""
+
+TWO_MODULE_BUNDLE = PolicyBundle(
+    manifest=["model.fga", "team.fga"],
+    hash="commit-two-modules",
+    data_modules=[],
+    policy_modules=[
+        RegoModule(path="model.fga", package_name="", rego=DEMO_MODEL_FGA),
+        RegoModule(path="team.fga", package_name="", rego=EXTRA_MODEL_FGA),
+    ],
+)
+
+TWO_MODULE_DELTA = PolicyBundle(
+    manifest=["model.fga"],
+    hash="commit-two-modules-v2",
+    old_hash="commit-two-modules",
+    data_modules=[],
+    policy_modules=[
+        RegoModule(path="model.fga", package_name="", rego=DEMO_MODEL_V2_FGA)
+    ],
+)
+
+
+@pytest.mark.asyncio
+async def test_restart_delta_preserves_unchanged_modules():
+    async with fake_openfga_server() as server:
+        first = _make_client(server.base_url)
+        try:
+            await first.set_policies(TWO_MODULE_BUNDLE)
+        finally:
+            await first.stop_liveness_probe()
+
+        second = _make_client(server.base_url)
+        try:
+            assert set(await second.get_policy_module_ids()) == {
+                "model.fga",
+                "team.fga",
+            }
+            await second.set_policies(TWO_MODULE_DELTA)
+            body = server.fake.authorization_model_bodies[-1]
+            assert {item["type"] for item in body["type_definitions"]} == {
+                "user",
+                "folder",
+                "document",
+                "team",
+            }
+        finally:
+            await second.stop_liveness_probe()
+
+
+@pytest.mark.asyncio
+async def test_restart_delta_reconstructs_an_existing_store_without_sidecar():
+    async with fake_openfga_server() as server:
+        first = _make_client(server.base_url)
+        try:
+            await first.set_policies(TWO_MODULE_BUNDLE)
+            state_path = first._module_state_path
+        finally:
+            await first.stop_liveness_probe()
+        state_path = Path(state_path)
+        state_path.unlink()
+
+        second = _make_client(server.base_url)
+        try:
+            await second.set_policies(TWO_MODULE_DELTA)
+            body = server.fake.authorization_model_bodies[-1]
+            assert {item["type"] for item in body["type_definitions"]} == {
+                "user",
+                "folder",
+                "document",
+                "team",
+            }
+        finally:
+            await second.stop_liveness_probe()
+
+
+@pytest.mark.asyncio
+async def test_deleted_data_module_removes_only_its_tuples():
+    async with fake_openfga_server() as server:
+        client = _make_client(server.base_url)
+        try:
+            await client.set_policies(FULL_BUNDLE)
+            await client.set_policy_data(
+                {"document:external": {"viewer": ["user:ext"]}}
+            )
+            delta = PolicyBundle(
+                manifest=[],
+                hash="commit-data-delete",
+                old_hash="commit-1",
+                data_modules=[],
+                policy_modules=[],
+                deleted_files=DeletedFiles(data_modules=[Path("data")]),
+            )
+            await client.set_policies(delta)
+            keys = {
+                (tuple_data["user"], tuple_data["relation"], tuple_data["object"])
+                for tuple_data in (await client.get_data(""))["tuples"]
+            }
+            assert ("user:anne", "viewer", "document:readme") not in keys
+            assert ("user:ext", "viewer", "document:external") in keys
+        finally:
+            await client.stop_liveness_probe()
+
+
+@pytest.mark.asyncio
+async def test_full_import_replaces_owned_state_and_preserves_unrelated_tuples(
+    tmp_path,
+):
+    async with fake_openfga_server() as server:
+        client = _make_client(server.base_url)
+        try:
+            await client.set_policies(FULL_BUNDLE)
+            await client.set_policy_data(
+                {"document:before": {"viewer": ["user:before"]}}
+            )
+            store_id = client._store_id
+            server.fake._tuples[store_id][
+                ("user:outside", "viewer", "document:outside")
+            ] = None
+            backup_path = tmp_path / "replacement.json"
+            async with aiofiles.open(backup_path, "w") as backup_file:
+                await client.full_export(backup_file)
+            await client.set_policy_data({"document:after": {"viewer": ["user:after"]}})
+
+            async with aiofiles.open(backup_path, "r") as backup_file:
+                await client.full_import(backup_file)
+
+            keys = {
+                (tuple_data["user"], tuple_data["relation"], tuple_data["object"])
+                for tuple_data in (await client.get_data(""))["tuples"]
+            }
+            assert ("user:before", "viewer", "document:before") in keys
+            assert ("user:after", "viewer", "document:after") not in keys
+            assert ("user:outside", "viewer", "document:outside") in keys
+        finally:
+            await client.stop_liveness_probe()
+
+
+@pytest.mark.asyncio
+async def test_deleting_the_final_policy_module_clears_managed_state():
+    async with fake_openfga_server() as server:
+        client = _make_client(server.base_url)
+        try:
+            await client.set_policies(FULL_BUNDLE)
+            await client.delete_policy("model.fga")
+            assert await client.get_policy_module_ids() == []
+            assert await client.get_policy_version() is None
+            assert (await client.get_data(""))["tuples"] == []
+        finally:
+            await client.stop_liveness_probe()
+
+
+@pytest.mark.asyncio
+async def test_ordinary_policy_update_preserves_other_modules():
+    async with fake_openfga_server() as server:
+        client = _make_client(server.base_url)
+        try:
+            await client.set_policies(TWO_MODULE_BUNDLE)
+            await client.set_policy("team.fga", EXTRA_MODEL_FGA)
+            assert set(await client.get_policy_module_ids()) == {
+                "model.fga",
+                "team.fga",
+            }
+            body = server.fake.authorization_model_bodies[-1]
+            assert {item["type"] for item in body["type_definitions"]} == {
+                "user",
+                "folder",
+                "document",
+                "team",
+            }
         finally:
             await client.stop_liveness_probe()
 

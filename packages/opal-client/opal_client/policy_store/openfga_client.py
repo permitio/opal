@@ -21,9 +21,14 @@ POLICY_STORE_OPENFGA_STORE_NAME is created (or looked up by name) on first use.
 """
 
 import asyncio
+import copy
+import hashlib
 import json
+import os
+import tempfile
 from typing import Any, Dict, List, Optional
 
+import aiofiles
 import aiohttp
 from aiofiles.threadpool.text import AsyncTextIOWrapper
 from opal_client.config import opal_client_config
@@ -61,8 +66,9 @@ from tenacity import retry
 class OpenFGATransactionLogState:
     """In-memory transaction/health state (mirrors the OPA client semantics).
 
-    The state honors disabled updaters (unlike the Cedar client): a disabled
-    updater can never fail, so it must not render the store not-ready.
+    The state honors disabled updaters (unlike the Cedar client): a
+    disabled updater can never fail, so it must not render the store
+    not-ready.
     """
 
     def __init__(
@@ -149,6 +155,7 @@ class OpenFGAClient(LivenessProbeMixin, BasePolicyStoreClient):
         data_updater_enabled: bool = True,
         policy_updater_enabled: bool = True,
         cache_policy_data: bool = False,
+        module_state_path: Optional[str] = None,
     ):
         base_url = openfga_server_url or opal_client_config.POLICY_STORE_URL
         self._openfga_url = base_url.rstrip("/")
@@ -161,6 +168,11 @@ class OpenFGAClient(LivenessProbeMixin, BasePolicyStoreClient):
             store_id or opal_client_config.POLICY_STORE_OPENFGA_STORE_ID
         )
         self._store_name: str = opal_client_config.POLICY_STORE_OPENFGA_STORE_NAME
+        self._module_state_path = module_state_path or _openfga_module_state_path(
+            self._openfga_url,
+            self._store_id or f"name:{self._store_name}",
+            opal_client_config.STORE_BACKUP_PATH,
+        )
         self._auto_create_store: bool = (
             opal_client_config.POLICY_STORE_OPENFGA_AUTO_CREATE_STORE
         )
@@ -177,9 +189,12 @@ class OpenFGAClient(LivenessProbeMixin, BasePolicyStoreClient):
             opal_client_config.POLICY_STORE_OPENFGA_IGNORE_DUPLICATE_TUPLES
         )
 
-        # in-memory policy state: policy_id (module path) -> normalized model
-        # fragment; combined into a single authorization model on every write.
         self._modules: Dict[str, Dict] = {}
+        self._base_model: Optional[Dict] = None
+        self._data_modules: Dict[str, List[Dict]] = {}
+        self._owned_tuples: Dict[Any, Dict] = {}
+        self._state_loaded = False
+        self._state_from_file = False
         self._model_lock = asyncio.Lock()
         self._policy_version: Optional[str] = None
 
@@ -222,8 +237,8 @@ class OpenFGAClient(LivenessProbeMixin, BasePolicyStoreClient):
     # ------------------------------------------------------------------
 
     async def _ensure_store_id(self) -> str:
-        """Returns the configured store id, creating/looking up a store by
-        name when none was configured (OpenFGA ids are server generated)."""
+        """Returns the configured store id, creating/looking up a store by name
+        when none was configured (OpenFGA ids are server generated)."""
         if self._store_id:
             return self._store_id
         async with self._store_lock:
@@ -289,6 +304,113 @@ class OpenFGAClient(LivenessProbeMixin, BasePolicyStoreClient):
             if not continuation_token:
                 return stores
 
+    async def _read_latest_authorization_model(self) -> Optional[Dict]:
+        await self._ensure_store_id()
+        headers = self._get_auth_headers()
+        async with aiohttp.ClientSession(trust_env=True) as session:
+            async with session.get(
+                self._store_url("/authorization-models"),
+                params={"page_size": 1},
+                headers=headers,
+            ) as response:
+                if response.status != 200:
+                    raise ValueError(
+                        f"failed listing OpenFGA authorization models: HTTP {response.status}"
+                    )
+                result = await response.json()
+            model_ids = result.get("authorization_model_ids") or []
+            if not model_ids:
+                return None
+            async with session.get(
+                f"{self._store_url('/authorization-models')}/{model_ids[0]}",
+                headers=headers,
+            ) as response:
+                if response.status != 200:
+                    raise ValueError(
+                        f"failed reading OpenFGA authorization model: HTTP {response.status}"
+                    )
+                return normalize_model(await response.json())
+
+    async def _load_state(self, reconstruct_model: bool) -> None:
+        if self._state_loaded:
+            return
+        await self._ensure_store_id()
+        if os.path.exists(self._module_state_path):
+            try:
+                async with aiofiles.open(self._module_state_path, "r") as state_file:
+                    payload = json.loads(await state_file.read())
+                if payload.get("version") != 1:
+                    raise ValueError("unsupported OpenFGA state version")
+                if payload.get("store_id") != self._store_id:
+                    raise ValueError("OpenFGA state belongs to a different store")
+                modules = {
+                    str(path): normalize_model(fragment)
+                    for path, fragment in payload.get("modules", {}).items()
+                }
+                data_modules = {
+                    str(path): convert_to_tuples(tuples)
+                    for path, tuples in payload.get("data_modules", {}).items()
+                }
+                owned_tuples = convert_to_tuples(payload.get("tuples", []))
+                base_model = payload.get("base_model")
+                self._modules = modules
+                self._data_modules = data_modules
+                self._owned_tuples = {
+                    _tuple_key(tuple_data): tuple_data for tuple_data in owned_tuples
+                }
+                self._base_model = (
+                    normalize_model(base_model) if base_model is not None else None
+                )
+                self._state_from_file = True
+                self._state_loaded = True
+                return
+            except (
+                OSError,
+                ValueError,
+                KeyError,
+                TypeError,
+                json.JSONDecodeError,
+            ) as err:
+                logger.warning(
+                    "Ignoring invalid OpenFGA module state {path}: {err}",
+                    path=self._module_state_path,
+                    err=repr(err),
+                )
+        if reconstruct_model:
+            try:
+                self._base_model = await self._read_latest_authorization_model()
+            except (aiohttp.ClientError, ValueError, KeyError, TypeError) as err:
+                logger.warning(
+                    "Could not reconstruct existing OpenFGA authorization model: {err}",
+                    err=repr(err),
+                )
+        self._state_loaded = True
+
+    async def _persist_state(self) -> None:
+        state = {
+            "version": 1,
+            "store_id": self._store_id,
+            "modules": self._modules,
+            "base_model": self._base_model,
+            "data_modules": self._data_modules,
+            "tuples": list(self._owned_tuples.values()),
+        }
+        directory = os.path.dirname(self._module_state_path) or "."
+        os.makedirs(directory, exist_ok=True)
+        descriptor, temporary_path = tempfile.mkstemp(
+            dir=directory, prefix=".openfga-state-", suffix=".tmp"
+        )
+        os.close(descriptor)
+        try:
+            async with aiofiles.open(temporary_path, "w") as state_file:
+                await state_file.write(json.dumps(state, sort_keys=True))
+            os.chmod(temporary_path, 0o600)
+            await aiofiles.os.replace(temporary_path, self._module_state_path)
+            self._state_from_file = True
+        finally:
+            if os.path.exists(temporary_path):
+                os.remove(temporary_path)
+
     # ------------------------------------------------------------------
     # policy (authorization model) management
     # ------------------------------------------------------------------
@@ -320,13 +442,12 @@ class OpenFGAClient(LivenessProbeMixin, BasePolicyStoreClient):
                 f"OpenFGA policy module {policy_id} must be .fga DSL or JSON: {err}"
             )
 
-    async def _write_combined_model(self) -> Optional[str]:
-        """Merges all tracked modules into one authorization model and writes
-        it to OpenFGA. Returns the new authorization model id (or None when
-        there is nothing to write)."""
-        if not self._modules:
+    async def _write_combined_model(
+        self, modules: Dict[str, Dict], base_model: Optional[Dict]
+    ) -> Optional[str]:
+        model = _combined_authorization_model(modules, base_model)
+        if model is None:
             return None
-        model = strip_extend(merge_models(list(self._modules.values())))
         body: Dict[str, Any] = {
             "schema_version": model["schema_version"],
             "type_definitions": model["type_definitions"],
@@ -334,7 +455,7 @@ class OpenFGAClient(LivenessProbeMixin, BasePolicyStoreClient):
         if model.get("conditions"):
             body["conditions"] = model["conditions"]
 
-        store_id = await self._ensure_store_id()
+        await self._ensure_store_id()
         async with aiohttp.ClientSession(trust_env=True) as session:
             try:
                 async with session.post(
@@ -354,7 +475,7 @@ class OpenFGAClient(LivenessProbeMixin, BasePolicyStoreClient):
                     "Wrote combined OpenFGA authorization model {id} "
                     "({n} modules, {t} type definitions)",
                     id=model_id,
-                    n=len(self._modules),
+                    n=len(modules),
                     t=len(body["type_definitions"]),
                 )
                 return model_id
@@ -379,43 +500,107 @@ class OpenFGAClient(LivenessProbeMixin, BasePolicyStoreClient):
             )
             return
         async with self._model_lock:
-            self._modules[policy_id] = self._parse_policy_code(policy_id, policy_code)
-            model_id = await self._write_combined_model()
+            await self._load_state(reconstruct_model=True)
+            modules = dict(self._modules)
+            modules[policy_id] = self._parse_policy_code(policy_id, policy_code)
+            model_id = await self._write_combined_model(modules, self._base_model)
+            self._modules = modules
             if model_id is not None:
                 self._policy_version = model_id
+            await self._persist_state()
 
     @affects_transaction
     async def set_policies(
         self, bundle: PolicyBundle, transaction_id: Optional[str] = None
     ):
-        """Applies a policy bundle (full or delta) to the store.
-
-        Each policy module in the bundle is parsed (OpenFGA DSL or JSON) and
-        merged into the in-memory combined model, which is then written to
-        OpenFGA as a new immutable authorization-model version. Static data
-        modules bundled in the policy repo are converted into tuples.
-        """
         async with self._model_lock:
-            if bundle.old_hash is None:
-                # a complete bundle replaces the previous state
-                self._modules = {}
-
-            deleted_modules: List[str] = []
+            full_bundle = bundle.old_hash is None
+            await self._load_state(reconstruct_model=not full_bundle)
+            modules = {} if full_bundle else dict(self._modules)
+            data_modules = (
+                {}
+                if full_bundle
+                else {path: list(tuples) for path, tuples in self._data_modules.items()}
+            )
+            deleted_modules = []
+            deleted_data_modules = []
             if bundle.old_hash is not None and bundle.deleted_files is not None:
                 deleted_modules = [
                     str(module) for module in bundle.deleted_files.policy_modules
                 ]
+                deleted_data_modules = [
+                    str(module) for module in bundle.deleted_files.data_modules
+                ]
             for module_id in deleted_modules:
-                self._modules.pop(str(module_id), None)
+                modules.pop(module_id, None)
+            for module_id in deleted_data_modules:
+                data_modules.pop(module_id, None)
 
             for policy in bundle.policy_modules:
-                self._modules[policy.path] = self._parse_policy_code(
-                    policy.path, policy.rego
-                )
+                modules[policy.path] = self._parse_policy_code(policy.path, policy.rego)
 
-            model_id = await self._write_combined_model()
+            for module in bundle.data_modules:
+                try:
+                    module_data = json.loads(module.data)
+                    data_modules[module.path] = convert_to_tuples(module_data)
+                except (json.JSONDecodeError, TupleConversionError) as err:
+                    logger.warning(
+                        "bundle contains invalid data module {module_path}: {err}",
+                        module_path=module.path,
+                        err=repr(err),
+                    )
+
+            stale_keys = set()
+            for path, old_tuples in self._data_modules.items():
+                if data_modules.get(path) != old_tuples:
+                    stale_keys.update(
+                        _tuple_key(tuple_data) for tuple_data in old_tuples
+                    )
+            candidate_owned = {
+                key: tuple_data
+                for key, tuple_data in self._owned_tuples.items()
+                if key not in stale_keys
+            }
+            for tuples in data_modules.values():
+                for tuple_data in tuples:
+                    candidate_owned[_tuple_key(tuple_data)] = tuple_data
+
+            if not modules:
+                stale_keys = set(candidate_owned)
+                candidate_owned = {}
+                data_modules = {}
+                tuples_to_write = []
+            else:
+                tuples_to_write = [
+                    tuple_data
+                    for tuples in data_modules.values()
+                    for tuple_data in tuples
+                    if self._owned_tuples.get(_tuple_key(tuple_data)) != tuple_data
+                ]
+
+            stale_tuples = [
+                self._owned_tuples[key]
+                for key in stale_keys
+                if key in self._owned_tuples
+            ]
+            for chunk in _chunks(stale_tuples, self._max_tuples_per_write):
+                await self._write_tuples(deletes=chunk)
+
+            base_model = None if full_bundle else self._base_model
+            model_id = await self._write_combined_model(modules, base_model)
             if model_id is not None:
                 self._policy_version = model_id
+            for chunk in _chunks(tuples_to_write, self._max_tuples_per_write):
+                await self._write_tuples(writes=chunk)
+
+            self._modules = modules
+            self._base_model = base_model
+            self._data_modules = data_modules
+            self._owned_tuples = candidate_owned
+            if model_id is None and not modules:
+                self._policy_version = None
+            await self._persist_state()
+
             if deleted_modules:
                 logger.warning(
                     "OpenFGA authorization models are immutable - deleted "
@@ -423,27 +608,13 @@ class OpenFGAClient(LivenessProbeMixin, BasePolicyStoreClient):
                     "model, which was re-written as a new version",
                     modules=deleted_modules,
                 )
-
-        # data modules (e.g. static tuples checked into the policy repo)
-        for module in bundle.data_modules:
-            try:
-                module_data = json.loads(module.data)
-            except json.JSONDecodeError as err:
-                logger.warning(
-                    "bundle contains non-json data module: {module_path}",
-                    module_path=module.path,
-                    err=repr(err),
-                )
-                continue
-            await self.set_policy_data(module_data, path=module.path)
-
         logger.debug("OpenFGA set_policies done, bundle hash {hash}", hash=bundle.hash)
 
     @fail_silently()
     @retry(**RETRY_CONFIG, reraise=True)
     async def get_policy(self, policy_id: str) -> Optional[str]:
-        """Returns a policy module's normalized model fragment as JSON."""
         async with self._model_lock:
+            await self._load_state(reconstruct_model=True)
             module = self._modules.get(policy_id)
         if module is None:
             return None
@@ -453,20 +624,17 @@ class OpenFGAClient(LivenessProbeMixin, BasePolicyStoreClient):
     @retry(**RETRY_CONFIG, reraise=True)
     async def get_policies(self) -> Optional[Dict[str, str]]:
         async with self._model_lock:
+            await self._load_state(reconstruct_model=True)
             return {path: json.dumps(module) for path, module in self._modules.items()}
 
     async def get_policy_module_ids(self) -> List[str]:
         async with self._model_lock:
+            await self._load_state(reconstruct_model=True)
             return list(self._modules.keys())
 
     @affects_transaction
     @retry(**RETRY_CONFIG, reraise=True)
     async def delete_policy(self, policy_id: str, transaction_id: Optional[str] = None):
-        """Removes a module from the in-memory combined model and rewrites it.
-
-        OpenFGA authorization models are immutable, so "deleting" a policy
-        means writing a new model version without the module's definitions.
-        """
         if should_ignore_path(
             policy_id, opal_client_config.POLICY_STORE_POLICY_PATHS_TO_IGNORE
         ):
@@ -475,16 +643,31 @@ class OpenFGAClient(LivenessProbeMixin, BasePolicyStoreClient):
             )
             return
         async with self._model_lock:
+            await self._load_state(reconstruct_model=True)
             if policy_id not in self._modules:
                 logger.warning(
                     "attempted to delete unknown OpenFGA policy module {id}",
                     id=policy_id,
                 )
                 return
-            del self._modules[policy_id]
-            model_id = await self._write_combined_model()
+            modules = dict(self._modules)
+            del modules[policy_id]
+            if modules:
+                model_id = await self._write_combined_model(modules, self._base_model)
+            else:
+                model_id = None
+                owned = list(self._owned_tuples.values())
+                for chunk in _chunks(owned, self._max_tuples_per_write):
+                    await self._write_tuples(deletes=chunk)
+                self._data_modules = {}
+                self._owned_tuples = {}
+                self._base_model = None
+            self._modules = modules
             if model_id is not None:
                 self._policy_version = model_id
+            elif not modules:
+                self._policy_version = None
+            await self._persist_state()
 
     async def get_policy_version(self) -> Optional[str]:
         """The id of the latest authorization model written to the store."""
@@ -502,13 +685,6 @@ class OpenFGAClient(LivenessProbeMixin, BasePolicyStoreClient):
         path: str = "",
         transaction_id: Optional[str] = None,
     ):
-        """Writes data updates into OpenFGA as relationship tuples.
-
-        `policy_data` is converted by `openfga_tuples.convert_to_tuples`
-        (tuple-native shapes and a nested object->relation->users form are
-        supported). `path` is accepted for interface compatibility (OPAL data
-        paths do not exist in OpenFGA); it is ignored for writes.
-        """
         if path:
             logger.warning(
                 "OpenFGA has no data paths - ignoring dst_path {path!r} for "
@@ -527,11 +703,17 @@ class OpenFGAClient(LivenessProbeMixin, BasePolicyStoreClient):
             logger.info("Data update contained no tuples; nothing to write")
             return
 
-        for chunk in _chunks(tuples, self._max_tuples_per_write):
-            await self._write_tuples(writes=chunk)
-
-        if self._policy_data_cache is not None:
-            self._policy_data_cache = _upsert_tuples(self._policy_data_cache, tuples)
+        async with self._model_lock:
+            await self._load_state(reconstruct_model=False)
+            for chunk in _chunks(tuples, self._max_tuples_per_write):
+                await self._write_tuples(writes=chunk)
+            for tuple_data in tuples:
+                self._owned_tuples[_tuple_key(tuple_data)] = tuple_data
+            if self._policy_data_cache is not None:
+                self._policy_data_cache = _upsert_tuples(
+                    self._policy_data_cache, tuples
+                )
+            await self._persist_state()
 
     @affects_transaction
     @retry(**RETRY_CONFIG, reraise=True)
@@ -550,41 +732,53 @@ class OpenFGAClient(LivenessProbeMixin, BasePolicyStoreClient):
     async def delete_policy_data(
         self, path: str = "", transaction_id: Optional[str] = None
     ):
-        """Deletes relationship tuples from OpenFGA.
-
-        OpenFGA cannot delete "by path"; the tuples to delete are read first
-        (filtered by object prefix when `path` is given) and then deleted
-        explicitly. An empty path deletes *all* tuples in the store.
-        """
-        # an exact object path ("type:id") can be filtered server-side;
-        # prefix paths are filtered client-side below
-        object_filter = path if ":" in path else ""
-        existing = await self._read_all_tuples(object_filter=object_filter)
-        existing = filter_tuples_by_object_prefix(existing, path)
-        if not existing:
-            logger.info("No tuples matched path {path!r}; nothing to delete", path=path)
-            return
-        delete_keys = [
-            {"user": t["user"], "relation": t["relation"], "object": t["object"]}
-            for t in existing
-        ]
-        for chunk in _chunks(delete_keys, self._max_tuples_per_write):
-            await self._write_tuples(deletes=chunk)
-
-        if self._policy_data_cache is not None:
-            self._policy_data_cache = [
-                t
-                for t in self._policy_data_cache
-                if (t["user"], t["relation"], t["object"])
-                not in {(d["user"], d["relation"], d["object"]) for d in delete_keys}
+        async with self._model_lock:
+            await self._load_state(reconstruct_model=False)
+            object_filter = path if ":" in path else ""
+            existing = (
+                await self._read_all_tuples(object_filter=object_filter) if path else []
+            )
+            existing = filter_tuples_by_object_prefix(existing, path)
+            owned_matching = [
+                tuple_data
+                for tuple_data in self._owned_tuples.values()
+                if filter_tuples_by_object_prefix([tuple_data], path)
             ]
+            delete_by_key = {
+                _tuple_key(tuple_data): {
+                    "user": tuple_data["user"],
+                    "relation": tuple_data["relation"],
+                    "object": tuple_data["object"],
+                }
+                for tuple_data in [*existing, *owned_matching]
+            }
+            if not delete_by_key:
+                logger.info(
+                    "No tuples matched path {path!r}; nothing to delete", path=path
+                )
+                return
+            delete_keys = list(delete_by_key.values())
+            for chunk in _chunks(delete_keys, self._max_tuples_per_write):
+                await self._write_tuples(deletes=chunk)
+            for key in delete_by_key:
+                self._owned_tuples.pop(key, None)
+            if self._policy_data_cache is not None:
+                self._policy_data_cache = [
+                    tuple_data
+                    for tuple_data in self._policy_data_cache
+                    if _tuple_key(tuple_data) not in delete_by_key
+                ]
+            await self._persist_state()
 
     @fail_silently(fallback={"tuples": []})
     @retry(**RETRY_CONFIG, reraise=True)
     async def get_data(self, path: str) -> Dict:
         """Returns relationship tuples as {"tuples": [...]} (flat write-shaped
-        tuples). When `path` is given, only tuples whose object matches the
-        path (exact match or prefix) are returned."""
+        tuples).
+
+        When `path` is given, only tuples whose object matches the
+        path (exact match or prefix) are returned.
+        """
         tuples = await self._read_all_tuples(object_filter=path)
         tuples = filter_tuples_by_object_prefix(tuples, path)
         return {"tuples": tuples}
@@ -657,7 +851,7 @@ class OpenFGAClient(LivenessProbeMixin, BasePolicyStoreClient):
         if model_id:
             body["authorization_model_id"] = model_id
 
-        store_id = await self._ensure_store_id()
+        await self._ensure_store_id()
         async with aiohttp.ClientSession(trust_env=True) as session:
             try:
                 async with session.post(
@@ -683,7 +877,7 @@ class OpenFGAClient(LivenessProbeMixin, BasePolicyStoreClient):
         """
         tuples: List[Dict] = []
         continuation_token = ""
-        store_id = await self._ensure_store_id()
+        await self._ensure_store_id()
         headers = self._get_auth_headers()
         async with aiohttp.ClientSession(trust_env=True) as session:
             while True:
@@ -754,31 +948,133 @@ class OpenFGAClient(LivenessProbeMixin, BasePolicyStoreClient):
     # ------------------------------------------------------------------
 
     async def full_export(self, writer: AsyncTextIOWrapper) -> None:
-        """Exports the combined model and flat tuples to a backup file."""
         async with self._model_lock:
-            model = (
-                strip_extend(merge_models(list(self._modules.values())))
-                if self._modules
-                else None
+            await self._load_state(reconstruct_model=True)
+            model = _combined_authorization_model(self._modules, self._base_model)
+            modules = copy.deepcopy(self._modules)
+            base_model = copy.deepcopy(self._base_model)
+            data_modules = copy.deepcopy(self._data_modules)
+            if self._state_from_file:
+                tuples = list(self._owned_tuples.values())
+            elif self._policy_data_cache is not None:
+                tuples = list(self._policy_data_cache)
+            else:
+                tuples = await self._read_all_tuples()
+        await writer.write(
+            json.dumps(
+                {
+                    "model": model,
+                    "modules": modules,
+                    "base_model": base_model,
+                    "data_modules": data_modules,
+                    "tuples": tuples,
+                },
+                default=str,
             )
-        if self._policy_data_cache is not None:
-            tuples = list(self._policy_data_cache)
-        else:
-            tuples = await self._read_all_tuples()
-        await writer.write(json.dumps({"model": model, "tuples": tuples}, default=str))
+        )
 
     async def full_import(self, reader: AsyncTextIOWrapper) -> None:
-        """Restores the store from a backup file (model + tuples)."""
         import_data = json.loads(await reader.read())
-        model = import_data.get("model")
-        if model:
-            await self.set_policy("backup/openfga.json", json.dumps(model))
-        await self.set_policy_data(import_data.get("tuples", []))
+        raw_modules = import_data.get("modules")
+        if raw_modules is None:
+            model = import_data.get("model")
+            modules = (
+                {"backup/openfga.json": normalize_model(model)}
+                if model is not None
+                else {}
+            )
+        else:
+            modules = {
+                str(path): normalize_model(fragment)
+                for path, fragment in raw_modules.items()
+            }
+        base_model = import_data.get("base_model")
+        base_model = normalize_model(base_model) if base_model is not None else None
+        data_modules = {
+            str(path): convert_to_tuples(tuples)
+            for path, tuples in import_data.get("data_modules", {}).items()
+        }
+        imported_tuples = convert_to_tuples(import_data.get("tuples", []))
+
+        async with self._model_lock:
+            await self._load_state(reconstruct_model=False)
+            imported_by_key = {
+                _tuple_key(tuple_data): tuple_data for tuple_data in imported_tuples
+            }
+            stale = [
+                tuple_data
+                for key, tuple_data in self._owned_tuples.items()
+                if key not in imported_by_key
+            ]
+            for chunk in _chunks(stale, self._max_tuples_per_write):
+                await self._write_tuples(deletes=chunk)
+            model_id = await self._write_combined_model(modules, base_model)
+            if model_id is not None:
+                self._policy_version = model_id
+            for chunk in _chunks(imported_tuples, self._max_tuples_per_write):
+                await self._write_tuples(writes=chunk)
+            self._modules = modules
+            self._base_model = base_model
+            self._data_modules = data_modules
+            self._owned_tuples = imported_by_key
+            if model_id is None and not modules:
+                self._policy_version = None
+            if self._policy_data_cache is not None:
+                self._policy_data_cache = list(imported_tuples)
+            await self._persist_state()
 
 
 # ---------------------------------------------------------------------------
 # helpers
 # ---------------------------------------------------------------------------
+
+
+def _openfga_module_state_path(
+    base_url: str, store_reference: str, backup_path: str
+) -> str:
+    backup_path = backup_path or "opa.json"
+    root, extension = os.path.splitext(backup_path)
+    digest = hashlib.sha256(
+        f"{base_url}\0{store_reference}".encode("utf-8")
+    ).hexdigest()[:20]
+    return f"{root}.openfga-{digest}{extension or '.json'}"
+
+
+def _tuple_key(tuple_data: Dict) -> Any:
+    return tuple_data["user"], tuple_data["relation"], tuple_data["object"]
+
+
+def _combined_authorization_model(
+    modules: Dict[str, Dict], base_model: Optional[Dict]
+) -> Optional[Dict]:
+    if not modules:
+        return (
+            strip_extend(normalize_model(base_model))
+            if base_model is not None
+            else None
+        )
+    if base_model is None:
+        return strip_extend(merge_models(list(modules.values())))
+
+    incoming = strip_extend(merge_models(list(modules.values())))
+    merged = copy.deepcopy(base_model)
+    incoming_types = {
+        type_definition.get("type")
+        for type_definition in incoming.get("type_definitions", [])
+    }
+    merged["type_definitions"] = [
+        type_definition
+        for type_definition in merged.get("type_definitions", [])
+        if type_definition.get("type") not in incoming_types
+    ] + list(incoming.get("type_definitions", []))
+    if incoming.get("conditions"):
+        conditions = dict(merged.get("conditions", {}))
+        conditions.update(incoming["conditions"])
+        merged["conditions"] = conditions
+    merged["schema_version"] = incoming.get(
+        "schema_version", merged.get("schema_version", "1.1")
+    )
+    return strip_extend(normalize_model(merged))
 
 
 def _chunks(items: List[Dict], size: int):
