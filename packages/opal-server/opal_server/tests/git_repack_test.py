@@ -92,6 +92,24 @@ def test_count_pack_files_missing_dir_is_zero(tmp_path):
     assert _count_pack_files(tmp_path / "never-cloned") == 0
 
 
+def test_count_pack_files_counts_only_packs_with_their_index(tmp_path):
+    """The one definition of a pack, for the trigger, the logged count and
+    the success check alike: a ``pack-*.pack`` with its ``.idx``."""
+    pack = _pack_dir(tmp_path / "clone")
+    pack.mkdir(parents=True)
+    for name in (
+        "pack-aaaa.pack",
+        "pack-aaaa.idx",
+        "pack-bbbb.pack",  # a repack died between its two renames
+        "pack-cccc.idx",  # libgit2 commits the .idx first
+        ".tmp-7-pack-dddd.pack",
+        "tmp_pack_Ab12Cd",
+        "pack_git2_0cfe7f06b9343d09",
+    ):
+        (pack / name).write_bytes(b"x")
+    assert _count_pack_files(tmp_path / "clone") == 1
+
+
 def test_repack_merges_fetch_packs_into_one_and_keeps_every_commit(tmp_path):
     clone_path, commits = _clone_with_fetch_packs(tmp_path, fetches=5)
     assert _count_pack_files(clone_path) == 5  # the premise: one pack per fetch
@@ -194,10 +212,31 @@ def _wait_for(condition, deadline_seconds: float = 30.0) -> bool:
     return True
 
 
+def _hold_lock(path: Path) -> int:
+    """Take the repack lock on the directory ``path`` the way another
+    process would: through an open file of its own. Returns its fd."""
+    fd = os.open(path, os.O_RDONLY | os.O_DIRECTORY)
+    fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    return fd
+
+
+def _reap(pid: int, deadline_seconds: float = 5.0) -> None:
+    """Reap a forked child, SIGKILLing it first if it is still alive at the
+    deadline: a test waits for its child, never hangs on it."""
+    deadline = time.monotonic() + deadline_seconds
+    while os.waitpid(pid, os.WNOHANG) == (0, 0):
+        if time.monotonic() > deadline:
+            os.kill(pid, signal.SIGKILL)
+            os.waitpid(pid, 0)
+            return
+        time.sleep(0.01)
+
+
 def _lock_is_free(path: Path) -> bool:
-    """Whether the repack lock at ``path`` can be taken, probing it the way
-    another process would: through an open file of its own."""
-    fd = os.open(path, os.O_RDWR | os.O_CREAT)
+    """Whether the repack lock on the directory ``path`` can be taken,
+    probing it the way another process would: through an open file of its
+    own."""
+    fd = os.open(path, os.O_RDONLY | os.O_DIRECTORY)
     try:
         fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
     except BlockingIOError:
@@ -223,8 +262,6 @@ def test_timeout_stops_git_and_removes_its_temp_packs(
     period ends them.
     """
     clone_path = _fake_clone(tmp_path)
-    # Unindexed too, but there before this repack: not known to be its own.
-    (_pack_dir(clone_path) / "pack-cccc.pack").write_bytes(b"x")
     state = tmp_path / "state"
     state.mkdir()
     if ignores_term:
@@ -272,25 +309,32 @@ def test_timeout_stops_git_and_removes_its_temp_packs(
     assert sorted(os.listdir(_pack_dir(clone_path))) == [
         "pack-aaaa.idx",
         "pack-aaaa.pack",
-        "pack-cccc.pack",
         "pack_git2_Zz9Yy8",  # libgit2's name: never ours to delete
         "pack_git2_old",
     ]  # tmp_pack_stale went before git started: see the next test
     assert git_fetcher._repack_lock_fds == set()
-    assert _lock_is_free(git_fetcher._repack_lock_path(clone_path))
+    assert _lock_is_free(git_fetcher._repack_lock_dir(clone_path))
 
 
 def test_leftovers_of_a_dead_repack_are_removed_before_git_runs(tmp_path, monkeypatch):
     """Under the repack lock no other repack is alive, so every git temp file
-    in the pack dir was left by one that died, say one orphaned by a killed
-    leader and later killed itself, and nothing else ever removes it.
+    in the pack dir, and every pack without its index, was left by one that
+    died, say one orphaned by a killed leader and later killed itself, and
+    nothing else ever removes it.
 
-    Packs stay, an unindexed one included: only a repack's OWN unindexed
-    pack is known to be garbage.
+    libgit2's files stay: its in-flight names, and a fetched pack's ``.idx``
+    committed before its ``.pack`` (measured on libgit2 1.7.2).
     """
     clone_path = _fake_clone(tmp_path)
     pack = _pack_dir(clone_path)
-    for name in (".tmp-999-pack-dead.pack", ".tmp-999-pack-dead.idx", "pack-cccc.pack"):
+    for name in (
+        ".tmp-999-pack-dead.pack",
+        ".tmp-999-pack-dead.idx",
+        "pack-cccc.pack",  # killed between git's two renames
+        "pack-dddd.idx",  # libgit2 about to link in pack-dddd.pack
+        "pack_git2_0cfe7f06b9343d09",
+        "pack_git2_0cfe7f06b934idx.lock",
+    ):
         (pack / name).write_bytes(b"x")
     seen = tmp_path / "seen"
     _install_git_shim(
@@ -302,9 +346,31 @@ def test_leftovers_of_a_dead_repack_are_removed_before_git_runs(tmp_path, monkey
     assert sorted(seen.read_text().split()) == [
         "pack-aaaa.idx",
         "pack-aaaa.pack",
-        "pack-cccc.pack",
+        "pack-dddd.idx",
+        "pack_git2_0cfe7f06b9343d09",
+        "pack_git2_0cfe7f06b934idx.lock",
         "pack_git2_old",
     ]
+
+
+def test_pack_whose_index_the_listing_missed_stays(tmp_path, monkeypatch):
+    """A listing is no snapshot: one taken while libgit2 installs a pack can
+    hold its ``.pack`` and miss the ``.idx`` renamed in just before it. Such a
+    pack is checked on disk and kept; a pack truly without its index goes."""
+    pack = _pack_dir(tmp_path / "clone")
+    pack.mkdir(parents=True)
+    for name in ("pack-eeee.pack", "pack-eeee.idx", "pack-ffff.pack"):
+        (pack / name).write_bytes(b"x")
+    real_names = git_fetcher._pack_dir_names
+    monkeypatch.setattr(
+        git_fetcher,
+        "_pack_dir_names",
+        lambda path: real_names(path) - {"pack-eeee.idx"},
+    )
+
+    git_fetcher._remove_repack_leftovers(pack, "in this test")
+
+    assert sorted(os.listdir(pack)) == ["pack-eeee.idx", "pack-eeee.pack"]
 
 
 @pytest.mark.parametrize(
@@ -382,7 +448,7 @@ def test_exit_zero_that_leaves_packs_behind_is_a_failure(tmp_path, monkeypatch):
 
 
 def test_cleanup_that_cannot_list_the_pack_dir_never_hides_the_failure(
-    tmp_path, monkeypatch
+    tmp_path, monkeypatch, records
 ):
     """The sweep after a failure is best-effort: an EIO listing the pack dir
     is logged, and the caller still sees git's own error."""
@@ -401,40 +467,86 @@ def test_cleanup_that_cannot_list_the_pack_dir_never_hides_the_failure(
         _repack_clone(clone_path, timeout=60)
     assert info.value.returncode == 5
     assert "disk on fire" in info.value.stderr_tail
+    assert [
+        r
+        for r in records
+        if r["level"].name == "WARNING" and r["message"].startswith("Could not list")
+    ], "the failed listing was not logged"
 
 
-def test_unindexed_pack_stays_once_the_lock_file_was_replaced(tmp_path, monkeypatch):
-    """With the lock file deleted while held, a repack started since may have
-    locked a new one and be installing a pack in this clone right now, so a
-    ``.pack`` without its ``.idx`` is no longer known to be garbage and is left
-    alone.
-
-    Temp files still go: a repack that loses one fails before it
-    deletes any old pack.
-    """
-    clone_path = _fake_clone(tmp_path)
+def test_sweeping_the_clones_dir_mid_repack_lets_no_second_repack_run(
+    tmp_path, monkeypatch
+):
+    """The lock is the clones' directory itself, so deleting everything in it
+    but the clones (an orphan sweep, say) while a repack runs leaves nothing
+    that would let a second one start beside it and sweep the first one's
+    files."""
+    clones_dir = tmp_path / "git_sources"
+    clone_path = clones_dir / "clone"
+    _pack_dir(clone_path).mkdir(parents=True)
+    (clones_dir / "stray").write_bytes(b"x")  # something for the sweep to take
+    assert git_fetcher._repack_lock_dir(clone_path) == clones_dir
+    state = tmp_path / "state"
+    state.mkdir()
     _install_git_shim(
         tmp_path,
         monkeypatch,
-        'pack="$2/.git/objects/pack"\n'
-        f'rm -f "$2/../{git_fetcher._REPACK_LOCK_FILE}"\n'
-        ': > "$pack/pack-bbbb.pack"\n: > "$pack/tmp_pack_Rt5Yu6"\n'
-        "exit 3\n",
+        f'if [ -e "{state}/first" ]; then echo run >> "{state}/second"; exit 0; fi\n'
+        f': > "{state}/first"\n'
+        f'find "{clones_dir}" -mindepth 1 -maxdepth 1 ! -name clone -exec rm -rf {{}} +\n'
+        f': > "{state}/swept"\n'
+        f'while [ ! -e "{state}/release" ]; do /bin/sleep 0.05; done\n',
     )
-    with pytest.raises(GitRepackError):
-        _repack_clone(clone_path, timeout=60)
-    names = os.listdir(_pack_dir(clone_path))
-    assert "pack-bbbb.pack" in names
-    assert "tmp_pack_Rt5Yu6" not in names
+    first: dict = {}
+
+    def _first_repack():
+        try:
+            first["result"] = _repack_clone(clone_path, timeout=60)
+        except BaseException as e:  # reported below, not lost in the thread
+            first["result"] = e
+
+    thread = threading.Thread(target=_first_repack)
+    thread.start()
+    try:
+        assert _wait_for(lambda: (state / "swept").exists()), "first repack never ran"
+        assert _repack_clone(clone_path, timeout=60) is False
+        assert not (state / "second").exists()
+    finally:
+        (state / "release").touch()
+        thread.join(30)
+    assert first == {"result": True}
+    assert sorted(os.listdir(clones_dir)) == ["clone"]
 
 
 # --- the repack lock -------------------------------------------------------------
 
 
 def test_one_lock_for_every_clone_in_the_directory(tmp_path):
-    assert git_fetcher._repack_lock_path(
-        tmp_path / "a"
-    ) == git_fetcher._repack_lock_path(tmp_path / "b")
+    """One lock per pod holds only while every scope clone sits directly in
+    the one clones directory: checked through the fetcher's own layout."""
+    clones = [
+        GitPolicyFetcher.repo_clone_path(
+            tmp_path,
+            GitPolicyScopeSource(
+                source_type="git", url=url, branch="master", auth=NoAuthData()
+            ),
+        )
+        for url in ("https://example.com/a.git", "https://example.com/b.git")
+    ]
+    assert clones[0] != clones[1]
+    assert {git_fetcher._repack_lock_dir(c) for c in clones} == {
+        GitPolicyFetcher.base_dir(tmp_path)
+    }
+
+
+def test_repack_leaves_nothing_but_the_clones_in_their_directory(tmp_path, monkeypatch):
+    """No lock file: nothing an orphan sweep of the clones directory could
+    delete, and so let a second repack in."""
+    clones_dir = tmp_path / "git_sources"
+    _pack_dir(clones_dir / "clone").mkdir(parents=True)
+    _install_git_shim(tmp_path, monkeypatch, "exit 0\n")
+    assert _repack_clone(clones_dir / "clone", timeout=60) is True
+    assert os.listdir(clones_dir) == ["clone"]
 
 
 def test_repack_is_skipped_while_another_repack_holds_the_lock(tmp_path, monkeypatch):
@@ -443,9 +555,8 @@ def test_repack_is_skipped_while_another_repack_holds_the_lock(tmp_path, monkeyp
     clone_path = _fake_clone(tmp_path)
     runs = tmp_path / "runs"
     _install_git_shim(tmp_path, monkeypatch, f'echo run >> "{runs}"\n')
-    lock = git_fetcher._repack_lock_path(clone_path)
-    held = os.open(lock, os.O_RDWR | os.O_CREAT)  # its own open file, as in
-    fcntl.flock(held, fcntl.LOCK_EX | fcntl.LOCK_NB)  # another process
+    lock = git_fetcher._repack_lock_dir(clone_path)
+    held = _hold_lock(lock)
     try:
         assert _repack_clone(clone_path, timeout=60) is False
         assert not runs.exists()
@@ -502,7 +613,7 @@ def test_the_lock_outlives_the_process_that_started_git(tmp_path, monkeypatch):
         leader.kill()
         _, leader_stderr = leader.communicate()
     assert started, f"git never started: {leader_stderr.decode()[-2000:]}"
-    lock = git_fetcher._repack_lock_path(clone_path)
+    lock = git_fetcher._repack_lock_dir(clone_path)
     [git_pid] = [int(p) for p in (state / "runs").read_text().split()]
     child_pid = int((state / "child.pid").read_text())
     try:
@@ -535,25 +646,39 @@ def test_forked_child_closes_its_copy_of_the_lock_without_unlocking_it(tmp_path)
     worker's whole life; the fork handler closes it, and must not unlock
     it, which would release the parent's (and its git's) lock too.
     """
-    lock = tmp_path / git_fetcher._REPACK_LOCK_FILE
+    lock = tmp_path  # the clones' directory
     fd = git_fetcher._take_repack_lock(lock)
     assert fd is not None
+    locked = os.stat(lock)
     to_child_r, to_child_w = os.pipe()
     to_parent_r, to_parent_w = os.pipe()
     pid = os.fork()
-    if pid == 0:  # the forked child: report, then live on until told
+    if pid == 0:  # the forked child: report, then live on until its pipe closes
         try:
+            os.close(to_parent_r)
+            os.close(to_child_w)
             try:
-                os.fstat(fd)
-                closed = 0
+                held = os.fstat(fd)
+                # Compared, not only fstat'd: the fd number reused for some
+                # other file must not read as "kept".
+                closed = int(
+                    (held.st_dev, held.st_ino) != (locked.st_dev, locked.st_ino)
+                )
             except OSError:
                 closed = 1
             still_locked = 0 if _lock_is_free(lock) else 1
             os.write(to_parent_w, b"%d%d" % (closed, still_locked))
-            select.select([to_child_r], [], [], 10)
+            select.select([to_child_r], [], [], 10)  # EOF ends the wait
         finally:
             os._exit(0)
+    # With the parent's own copies closed, a child that dies before it
+    # reports reads as EOF below, and one that hangs as a timeout: a
+    # failure either way, never a hung test.
+    os.close(to_parent_w)
+    os.close(to_child_r)
     try:
+        ready, _, _ = select.select([to_parent_r], [], [], 10)
+        assert ready, "the forked child never reported"
         report = os.read(to_parent_r, 2)
         assert report == b"11", "child kept its copy (1st) or unlocked it (2nd)"
         git_fetcher._drop_repack_lock(fd)
@@ -562,10 +687,9 @@ def test_forked_child_closes_its_copy_of_the_lock_without_unlocking_it(tmp_path)
     finally:
         if fd in git_fetcher._repack_lock_fds:
             git_fetcher._drop_repack_lock(fd)
-        os.write(to_child_w, b"x")
-        os.waitpid(pid, 0)
-        for end in (to_child_r, to_child_w, to_parent_r, to_parent_w):
-            os.close(end)
+        os.close(to_child_w)  # the child's cue to exit
+        os.close(to_parent_r)
+        _reap(pid)
 
 
 def test_repack_runs_git_with_expected_args_and_minimal_env(tmp_path, monkeypatch):
@@ -610,8 +734,8 @@ def test_repack_runs_git_with_expected_args_and_minimal_env(tmp_path, monkeypatc
 
 
 @pytest.mark.parametrize("kind", ["empty-string", "empty-dir", "unsearchable-dir"])
-def test_missing_git_raises_file_not_found(tmp_path, monkeypatch, kind):
-    """No git on PATH is FileNotFoundError, whatever else PATH holds.
+def test_missing_git_raises_git_not_found(tmp_path, monkeypatch, kind):
+    """No git on PATH is GitNotFoundError, whatever else PATH holds.
 
     "unsearchable-dir" is the official image's case: its PATH lists
     /root/.local/bin, which the opal user cannot search, and a bare exec
@@ -732,6 +856,37 @@ def _repack_seconds(calls) -> list:
     ]
 
 
+def _skips(calls) -> list:
+    return [
+        tags
+        for metric, tags in calls["increment"]
+        if metric == "opal_server.scopes.git_op_skipped"
+    ]
+
+
+class _RecordingTracer:
+    """The real ddtrace tracer, keeping every span it starts."""
+
+    def __init__(self, real):
+        self._real = real
+        self.spans: list = []
+
+    def trace(self, name, *args, **kwargs):
+        span = self._real.trace(name, *args, **kwargs)
+        self.spans.append(span)
+        return span
+
+    def repack_spans(self) -> list:
+        return [s for s in self.spans if s.name == "git_policy_fetcher.repack"]
+
+
+@pytest.fixture
+def spans(monkeypatch):
+    recorder = _RecordingTracer(git_fetcher.tracer)
+    monkeypatch.setattr(git_fetcher, "tracer", recorder)
+    return recorder
+
+
 @pytest.fixture
 def records():
     captured = []
@@ -850,7 +1005,7 @@ def _watch_free(handle: pygit2.Repository, path: str) -> list:
 
 @pytest.mark.asyncio
 async def test_sync_repacks_the_clone_once_its_packs_reach_the_limit(
-    tmp_path, emitted, records
+    tmp_path, emitted, records, spans
 ):
     scope = _ScopeRepo(tmp_path, "s1")
     await scope.fetched(_LIMIT - 1)
@@ -877,6 +1032,9 @@ async def test_sync_repacks_the_clone_once_its_packs_reach_the_limit(
     assert done["extra"]["packs_after"] == 1
     assert done["extra"]["bytes_before"] > 0
     assert done["extra"]["bytes_after"] > 0
+    [span] = spans.repack_spans()
+    assert span.resource == "s1"
+    assert span.get_tag("skipped") is None
 
     # The next sync reopens the clone and both it and a bundle serve the
     # newest commit, full and as a diff against the pre-repack tip.
@@ -887,6 +1045,7 @@ async def test_sync_repacks_the_clone_once_its_packs_reach_the_limit(
     diff = await run_sync(scope.fetcher.make_bundle, tip)
     assert (diff.old_hash, diff.hash) == (tip, newest)
     assert _repack_outcomes(emitted) == ["ok"]  # 2 packs now: nothing to do
+    assert _skips(emitted) == []  # below the limit is not a skip worth a count
 
 
 @pytest.mark.asyncio
@@ -925,21 +1084,28 @@ async def test_repack_holds_lock_source_so_a_second_sync_of_the_clone_waits(
 
 
 @pytest.mark.asyncio
-async def test_repack_running_in_another_process_is_a_skip(tmp_path, emitted, records):
+async def test_repack_running_in_another_process_is_a_skip(
+    tmp_path, emitted, records, spans
+):
     """A previous leader's orphaned git (any repack another process runs next
     to this clone) holds the repack lock: the sync skips, reports nothing as
-    done and keeps its handle, and a later fetch repacks once it is gone."""
+    done and keeps its handle, and a later fetch repacks once it is gone.
+
+    The skip is counted, and its span says it was one: a lock that is
+    never released must not read as a string of millisecond repacks.
+    """
     scope = _ScopeRepo(tmp_path, "s1")
     await scope.fetched(_LIMIT - 1)
     path = str(scope.clone_path)
-    lock = git_fetcher._repack_lock_path(scope.clone_path)
-    held = os.open(lock, os.O_RDWR | os.O_CREAT)  # another process's open file
-    fcntl.flock(held, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    held = _hold_lock(git_fetcher._repack_lock_dir(scope.clone_path))
     try:
         tip = await scope.push_and_sync()
         assert scope.notified[-1][1] == tip
         assert _count_pack_files(scope.clone_path) == _LIMIT
         assert _repack_outcomes(emitted) == []
+        assert _skips(emitted) == [{"reason": "repack_running"}]
+        [span] = spans.repack_spans()
+        assert span.get_tag("skipped") == "repack_running"
         assert not [r for r in records if r["message"].startswith("Repacked")]
         assert path in GitPolicyFetcher.repos, "nothing was repacked: keep it"
         assert git_fetcher._repack_failed_at == {}  # a skip is not a failure
@@ -949,6 +1115,8 @@ async def test_repack_running_in_another_process_is_a_skip(tmp_path, emitted, re
     await scope.push_and_sync()
     assert _count_pack_files(scope.clone_path) == 1
     assert _repack_outcomes(emitted) == ["ok"]
+    assert _skips(emitted) == [{"reason": "repack_running"}]
+    assert spans.repack_spans()[-1].get_tag("skipped") is None
 
 
 @pytest.mark.parametrize("limit", [0, -1])
@@ -989,13 +1157,39 @@ async def test_only_a_fetch_made_by_this_sync_triggers_a_repack(tmp_path, monkey
     assert _count_pack_files(scope.clone_path) == _LIMIT - 1
 
 
+@pytest.mark.asyncio
+async def test_only_packs_with_their_index_count_toward_the_limit(
+    tmp_path, monkeypatch, records
+):
+    """What a dead repack left in the pack dir (a pack without its index, a
+    staged temp pack) is no pack: it neither brings the repack forward nor
+    shows in the logged counts, and the next repack removes it."""
+    spy = _RepackSpy()
+    monkeypatch.setattr(git_fetcher, "_repack_clone", spy)
+    scope = _ScopeRepo(tmp_path, "s1")
+    await scope.fetched(_LIMIT - 2)
+    pack = _pack_dir(scope.clone_path)
+    leftovers = {"pack-0badc0de.pack", ".tmp-99-pack-0badc0de.pack"}
+    for name in leftovers:
+        (pack / name).write_bytes(b"x")
+
+    await scope.push_and_sync()  # one pack short of the limit, leftovers aside
+    assert spy.calls == []
+
+    await scope.push_and_sync()  # the fetch that reaches the limit
+    assert spy.calls == [str(scope.clone_path)]
+    [done] = [r for r in records if r["message"].startswith("Repacked scope clone")]
+    assert (done["extra"]["packs_before"], done["extra"]["packs_after"]) == (_LIMIT, 1)
+    assert not leftovers & set(os.listdir(pack))
+
+
 @pytest.mark.parametrize(
     "exc, outcome",
     [
         (GitRepackError(128, "fatal: no space left on device"), "error"),
         (TimeoutError("git repack exceeded 300.0s"), "timeout"),
-        # Not "git is missing": the clones' dir vanished under the lock file.
-        (FileNotFoundError(errno.ENOENT, "No such file", ".opal-repack.lock"), "error"),
+        # Not "git is missing": the clones' dir, the lock, vanished.
+        (FileNotFoundError(errno.ENOENT, "No such file", "git_sources"), "error"),
     ],
     ids=["error", "timeout", "vanished-dir"],
 )
@@ -1093,6 +1287,7 @@ async def test_second_repack_is_skipped_while_one_runs_not_queued(
         assert second.notified[-1][1] == tip
         assert spy.calls == [str(first.clone_path)]
         assert _count_pack_files(second.clone_path) == _LIMIT
+        assert _skips(emitted) == [{"reason": "repack_running"}]
         assert not first_sync.done()
     finally:
         gate.set()
