@@ -1,11 +1,14 @@
 import asyncio
 import codecs
 import datetime
+import errno
 import hashlib
 import inspect
 import math
 import os
 import shutil
+import signal
+import subprocess
 import threading
 import time
 import weakref
@@ -97,6 +100,21 @@ class BranchHeadNotFoundError(ValueError):
 
     Subclasses ValueError so broad handlers still catch it.
     """
+
+
+class GitRepackError(RuntimeError):
+    """``git repack`` on a scope clone exited non-zero.
+
+    ``stderr_tail`` is the end of what git wrote to stderr (the ``fatal:``
+    line comes last), capped so a chatty failure cannot flood the log line
+    that reports it.
+    """
+
+    def __init__(self, returncode: int, stderr_tail: str) -> None:
+        message = f"git repack exited with status {returncode}"
+        super().__init__(f"{message}: {stderr_tail}" if stderr_tail else message)
+        self.returncode = returncode
+        self.stderr_tail = stderr_tail
 
 
 _zombie_cap_logged = False
@@ -384,6 +402,26 @@ def _backoff_delay(n: int) -> float:
     return raw
 
 
+# SCOPES_GIT_REPACK_TIMEOUT's declared default; a test pins the two together.
+_REPACK_DEFAULT_TIMEOUT_SECONDS = 300.0
+
+
+def _repack_timeout_or_default(value) -> float:
+    """``value`` as a positive finite number of seconds, else the default.
+
+    Unlike run_in_git_executor's timeout, 0 does NOT mean "no limit": a
+    repack holds the clone's sync lock, so an unbounded one would stall
+    every scope on that clone behind a stuck git process. 0, negative,
+    nan and inf all fall back to the default.
+    """
+    return _finite_positive_or_zero(value) or _REPACK_DEFAULT_TIMEOUT_SECONDS
+
+
+def _repack_timeout_seconds() -> float:
+    """SCOPES_GIT_REPACK_TIMEOUT, validated; never 0 or "no limit"."""
+    return _repack_timeout_or_default(opal_server_config.SCOPES_GIT_REPACK_TIMEOUT)
+
+
 def _emit_sources_in_backoff() -> None:
     # Gauge of how many sources the periodic pass is currently
     # skipping — the one number that says "this pod is not syncing N of your
@@ -551,6 +589,228 @@ async def run_in_git_executor(func, *args, timeout: float, busy_key=None, **kwar
         return fut.result()
     finally:
         _release_once()
+
+
+# --- scope clone repack -------------------------------------------------------
+#
+# libgit2 writes one pack per fetch and never merges them, so a scope clone's
+# pack dir grows without bound; ``_repack_clone`` merges them with the git CLI.
+# Everything here is plain blocking code with no module-level mutable state:
+# the caller runs it on a git-executor daemon thread.
+
+# How long git gets to exit on SIGTERM before SIGKILL. On TERM, repack removes
+# its own ``.tmp-<pid>-pack-*`` files; pack-objects just dies (see the sweep).
+_REPACK_TERM_GRACE_SECONDS = 10.0
+# How long to wait for the group to be reaped after SIGKILL. Only a process
+# stuck in uninterruptible I/O outlives it. The worst case for one call is
+# therefore timeout + grace + this; the caller's outer timeout must allow it.
+_REPACK_KILL_WAIT_SECONDS = 10.0
+_REPACK_STDERR_TAIL_CHARS = 2000
+# The only variables git inherits. An allowlist, not os.environ minus a few:
+# an inherited GIT_DIR / GIT_OBJECT_DIRECTORY / GIT_INDEX_FILE / GIT_WORK_TREE
+# overrides ``-C`` and would repack some other repository, and OPAL's own
+# secrets (OPAL_AUTH_MASTER_TOKEN, keys, BROADCAST_URI) have no business in
+# git's environment. HOME / XDG_CONFIG_HOME keep the operator's global git
+# config (safe.directory, for one) in effect.
+_REPACK_ENV_ALLOWLIST = ("PATH", "HOME", "XDG_CONFIG_HOME")
+# Git's temporary names in objects/pack. Measured on git 2.39 (the image's)
+# and 2.54: a signalled or failed pack-objects leaves its in-progress
+# ``tmp_pack_XXXXXX`` (also tmp_idx_/tmp_rev_/...) behind; git never removes
+# it. Repack stages the finished pack as ``.tmp-<pid>-pack-<hash>.*`` before
+# renaming it into place. libgit2's indexer names its temp ``pack_git2_*``,
+# which neither prefix matches.
+_GIT_TEMP_PACK_PREFIXES = ("tmp_", ".tmp-")
+
+
+def _clone_pack_dir(repo_path: str | os.PathLike[str]) -> Path:
+    # Scope clones are non-bare (clone_repository with bare=False).
+    return Path(repo_path) / ".git" / "objects" / "pack"
+
+
+def _count_pack_files(repo_path: str | os.PathLike[str]) -> int:
+    """Number of ``*.pack`` files in a scope clone, 0 without a pack dir."""
+    try:
+        with os.scandir(_clone_pack_dir(repo_path)) as entries:
+            return sum(1 for e in entries if e.name.endswith(".pack"))
+    except FileNotFoundError:
+        return 0
+
+
+def _git_temp_pack_names(pack_dir: Path) -> frozenset[str]:
+    # A missing dir is "none" rather than FileNotFoundError: the caller reads
+    # FileNotFoundError out of _repack_clone as "git is not installed".
+    try:
+        with os.scandir(pack_dir) as entries:
+            return frozenset(
+                e.name for e in entries if e.name.startswith(_GIT_TEMP_PACK_PREFIXES)
+            )
+    except FileNotFoundError:
+        return frozenset()
+
+
+def _remove_git_temp_packs(pack_dir: Path, keep: frozenset[str]) -> None:
+    """Delete the git temp files this repack left in ``pack_dir``.
+
+    Only names that were NOT there when it started (``keep``), and only
+    after the whole process group is gone, so no writer is left to race.
+    Names alone cannot attribute a ``tmp_pack_XXXXXX`` to a run, and this is
+    a deletion: files some earlier run left stay where they are. Never
+    raises; a partial pack left behind is a disk cost, not a reason to mask
+    the error the caller is about to see.
+    """
+    for name in sorted(_git_temp_pack_names(pack_dir) - keep):
+        try:
+            os.unlink(pack_dir / name)
+        except FileNotFoundError:
+            pass
+        except OSError as e:
+            logger.warning(
+                "Could not remove git temp file {path} after a failed repack: {err!r}",
+                path=pack_dir / name,
+                err=e,
+            )
+        else:
+            logger.info(
+                "Removed git temp file {path} after a failed repack",
+                path=pack_dir / name,
+            )
+
+
+def _signal_repack_group(proc: subprocess.Popen[bytes], sig: int) -> None:
+    # The group id is git's pid (start_new_session made it a session leader).
+    # Signalled only while that pid is unreaped (returncode None): a reaped
+    # leader's pid, and so its group id, could have been reused.
+    if proc.returncode is not None:
+        return
+    try:
+        os.killpg(proc.pid, sig)
+    except ProcessLookupError:
+        pass  # the whole group has already exited
+
+
+def _stop_repack(proc: subprocess.Popen[bytes], grace: float) -> None:
+    """SIGTERM git's process group, then SIGKILL it if still running after
+    ``grace`` seconds (``grace`` <= 0 kills at once).
+
+    Waits with communicate(), not wait(): it drains stderr (a child
+    blocked writing to a full pipe could not exit) and returns only once
+    every process holding the pipe has exited, pack-objects included.
+    """
+    if grace > 0:
+        _signal_repack_group(proc, signal.SIGTERM)
+        try:
+            proc.communicate(timeout=grace)
+            return
+        except subprocess.TimeoutExpired:
+            logger.warning(
+                "git repack (pid {pid}) still running {grace}s after SIGTERM; "
+                "sending SIGKILL",
+                pid=proc.pid,
+                grace=grace,
+            )
+    _signal_repack_group(proc, signal.SIGKILL)
+    try:
+        proc.communicate(timeout=_REPACK_KILL_WAIT_SECONDS)
+    except subprocess.TimeoutExpired:
+        logger.error(
+            "git repack (pid {pid}) still running {secs}s after SIGKILL "
+            "(stuck in uninterruptible I/O?)",
+            pid=proc.pid,
+            secs=_REPACK_KILL_WAIT_SECONDS,
+        )
+
+
+def _repack_clone(
+    repo_path: str | os.PathLike[str],
+    timeout: float,
+    *,
+    term_grace: float = _REPACK_TERM_GRACE_SECONDS,
+) -> None:
+    """Merge every pack of a scope clone into one: ``git repack -a -d``.
+
+    Blocking; run it off the event loop. ``-a -d`` writes one pack holding
+    every object reachable from a ref or reflog, deletes the packs it
+    replaced, and (via prune-packed) the loose objects now in it. Readers
+    are safe meanwhile: git and libgit2 both treat an object missing from
+    the packs they loaded as a miss, re-scan the pack dir and retry, so even
+    a pygit2 handle opened before the repack keeps finding everything.
+    ``pack.threads=1`` caps the CPU and memory it takes from a pod that is
+    also serving requests.
+
+    ``timeout`` is hard. When it expires git gets SIGTERM, then SIGKILL
+    after ``term_grace`` seconds, the temp files it left are removed, and
+    ``TimeoutError`` is raised; the clone keeps the packs it had, because
+    git deletes the old packs only after the new one is in place. A
+    ``timeout`` that is not a positive finite number falls back to the
+    default: this never runs unbounded.
+
+    Raises:
+        TimeoutError: the repack ran past ``timeout``.
+        GitRepackError: git exited non-zero; carries the tail of its stderr.
+        FileNotFoundError: there is no ``git`` on PATH.
+    """
+    timeout = _repack_timeout_or_default(timeout)
+    env = {k: os.environ[k] for k in _REPACK_ENV_ALLOWLIST if k in os.environ}
+    # repack never contacts a remote, but it must never be able to block on
+    # a credential prompt either (and with its own session it has no tty).
+    env["GIT_TERMINAL_PROMPT"] = "0"
+    # Resolved here rather than by exec: when no PATH entry has git, exec
+    # reports the FIRST non-ENOENT error, and the official image's PATH lists
+    # /root/.local/bin, which the opal user cannot search, so a missing git
+    # would surface as PermissionError. Callers rely on FileNotFoundError.
+    git = shutil.which("git", path=env.get("PATH"))
+    if git is None:
+        raise FileNotFoundError(errno.ENOENT, "git not found on PATH", "git")
+    pack_dir = _clone_pack_dir(repo_path)
+    preexisting = _git_temp_pack_names(pack_dir)
+    # start_new_session: git runs in its own process group, so one killpg()
+    # reaches the pack-objects child that does the actual work. Signalling
+    # only git's pid orphans pack-objects (measured): it keeps running, then
+    # renames its output to .tmp-<pid>-pack-* after the sweep below is done.
+    # (Same pattern as opal-client's engine runner.) Unlike preexec_fn it is
+    # safe to use from a thread. The cost: a Ctrl-C or a signal sent to
+    # OPAL's own group no longer reaches git; the handler below covers
+    # anything that unwinds through here. (A worker SIGKILLed mid-repack
+    # leaves git to run to completion either way: gunicorn signals the
+    # worker's pid, not its group.)
+    proc = subprocess.Popen(
+        [
+            git,
+            "-C",
+            os.fspath(repo_path),
+            "-c",
+            "pack.threads=1",
+            "repack",
+            "-a",
+            "-d",
+            "-q",
+        ],
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.PIPE,
+        env=env,
+        start_new_session=True,
+    )
+    try:
+        _, stderr = proc.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        _stop_repack(proc, term_grace)
+        _remove_git_temp_packs(pack_dir, preexisting)
+        raise TimeoutError(
+            f"git repack of {os.fspath(repo_path)} exceeded {timeout}s"
+        ) from None
+    except BaseException:
+        # Anything else unwinding through communicate() (a KeyboardInterrupt
+        # in a foreground run): no grace, but no orphaned git either.
+        _stop_repack(proc, 0.0)
+        _remove_git_temp_packs(pack_dir, preexisting)
+        raise
+    if proc.returncode != 0:
+        # A pack-objects that died (ENOSPC, OOM kill) leaves its partial
+        # tmp_pack_* behind, on the disk this repack was meant to free.
+        _remove_git_temp_packs(pack_dir, preexisting)
+        tail = stderr.decode("utf-8", "replace").strip()
+        raise GitRepackError(proc.returncode, tail[-_REPACK_STDERR_TAIL_CHARS:])
 
 
 class PolicyFetcherCallbacks:
