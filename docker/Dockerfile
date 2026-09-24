@@ -1,7 +1,7 @@
 # BUILD STAGE ---------------------------------------
 # split this stage to save time and reduce image size
 # ---------------------------------------------------
-FROM python:3.10-bookworm AS build-stage
+FROM python:3.12-bookworm AS build-stage
 # from now on, work in the /app directory
 WORKDIR /app/
 # Layer dependency install (for caching)
@@ -14,11 +14,11 @@ RUN pip install --no-cache-dir --upgrade pip && pip install --no-cache-dir -r ./
 
 # COMMON IMAGE --------------------------------------
 # ---------------------------------------------------
-FROM python:3.10-slim-bookworm AS common
+FROM python:3.12-slim-bookworm AS common
 
 # copy libraries from build stage (This won't copy redundant libraries we used in build-stage)
 # also remove the default python site-packages that has older versions of packages that won't be overridden
-RUN rm -r /usr/local/lib/python3.10/site-packages
+RUN rm -r /usr/local/lib/python3.12/site-packages
 COPY --from=build-stage /usr/local /usr/local
 
 # Add non-root user (with home dir at /opal)
@@ -161,7 +161,7 @@ USER opal
 # Extract the Cedar Agent binary from the existing image
 # CEDAR AGENT DOWNLOAD STAGE -----------------------
 # Stage to locate and extract the cedar-agent binary
-FROM permitio/cedar-agent:0.2.1 AS cedar-extractor
+FROM permitio/cedar-agent:0.2.2 AS cedar-extractor
 
 FROM client-standalone AS client-cedar
 
@@ -244,14 +244,14 @@ USER opal
 # ===================== ALPINE VARIANTS =====================
 # BUILD STAGE (ALPINE) --------------------------------------
 # -----------------------------------------------------------
-FROM python:3.10-alpine AS build-stage-alpine
-ARG LIBGIT2_VERSION=1.7.2
+FROM python:3.12-alpine AS build-stage-alpine
 WORKDIR /app/
 RUN apk add --no-cache \
   bash \
   build-base \
   musl-dev \
   libffi-dev \
+  libgit2-dev \
   openssl-dev \
   pkgconfig \
   cmake \
@@ -262,17 +262,6 @@ RUN apk add --no-cache \
   openssh-client \
   jq \
   wget
-RUN wget -O /tmp/libgit2.tar.gz https://github.com/libgit2/libgit2/archive/refs/tags/v${LIBGIT2_VERSION}.tar.gz && \
-  tar -xzf /tmp/libgit2.tar.gz -C /tmp && \
-  cd /tmp/libgit2-${LIBGIT2_VERSION} && \
-  cmake -S . -B build \
-    -DCMAKE_BUILD_TYPE=Release \
-    -DCMAKE_INSTALL_PREFIX=/usr/local \
-    -DBUILD_SHARED_LIBS=ON \
-    -DBUILD_TESTS=OFF \
-    -DUSE_SSH=ON && \
-  cmake --build build --config Release --target install && \
-  rm -rf /tmp/libgit2*
 COPY ./packages/requires.txt ./base_requires.txt
 COPY ./packages/opal-common/requires.txt ./common_requires.txt
 COPY ./packages/opal-client/requires.txt ./client_requires.txt
@@ -281,8 +270,8 @@ RUN pip install --no-cache-dir --upgrade pip && pip install --no-cache-dir -r ./
 
 # COMMON IMAGE (ALPINE) -------------------------------------
 # -----------------------------------------------------------
-FROM python:3.10-alpine AS common-alpine
-RUN rm -r /usr/local/lib/python3.10/site-packages || true
+FROM python:3.12-alpine AS common-alpine
+RUN rm -r /usr/local/lib/python3.12/site-packages || true
 COPY --from=build-stage-alpine /usr/local /usr/local
 RUN adduser -D -h /opal -s /bin/bash opal && apk add --no-cache bash netcat-openbsd jq wget
 RUN apk add --no-cache libssh2 http-parser
