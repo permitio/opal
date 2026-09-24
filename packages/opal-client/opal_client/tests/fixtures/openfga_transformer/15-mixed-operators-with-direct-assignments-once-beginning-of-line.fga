@@ -1,0 +1,13 @@
+model
+  schema 1.1
+
+type user
+
+type document
+  relations
+    define allowed: [user]
+    define blocked: [user]
+    define relation1: ([user] and allowed) but not blocked
+    define relation2: [user] and (allowed but not blocked)
+    define relation3: [user, user:*, user#follower with cond] or ((relation1 and relation2) but not blocked)
+    define relation4: ([user] or (relation1 and relation2)) but not relation3

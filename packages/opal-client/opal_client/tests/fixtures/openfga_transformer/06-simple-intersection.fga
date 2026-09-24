@@ -1,0 +1,9 @@
+model
+  schema 1.1
+
+type user
+
+type document
+  relations
+    define member: [user]
+    define writer: [user] and member

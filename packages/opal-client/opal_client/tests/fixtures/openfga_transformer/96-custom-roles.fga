@@ -1,0 +1,41 @@
+model
+  schema 1.1
+
+type user
+
+type team
+  relations
+    define member: [user]
+
+type role
+  relations
+    define assignee: [user, team#member, org#member]
+
+type org
+  relations
+    define asset_category_creator: [role#assignee] or owner
+    define asset_commenter: [role#assignee] or asset_editor
+    define asset_creator: [role#assignee] or owner
+    define asset_editor: [role#assignee] or owner
+    define asset_viewer: [role#assignee] or asset_commenter
+    define member: [user] or owner
+    define owner: [user]
+    define role_assigner: [role#assignee] or owner
+    define role_creator: [role#assignee] or owner
+    define team_assigner: [role#assignee] or owner
+    define team_creator: [role#assignee] or owner
+
+type asset-category
+  relations
+    define asset_creator: [role#assignee] or asset_creator from org
+    define commenter: [role#assignee] or editor or asset_commenter from org
+    define editor: [role#assignee] or asset_editor from org
+    define org: [org]
+    define viewer: [role#assignee] or commenter or asset_viewer from org
+
+type asset
+  relations
+    define category: [asset-category]
+    define comment: [role#assignee] or edit or commenter from category
+    define edit: [role#assignee] or editor from category
+    define view: [role#assignee] or comment or viewer from category
