@@ -322,6 +322,35 @@ class OpalServerConfig(Confi):
         "the base (one pass at a time), never inert. Lowering the cap at "
         "runtime is not retroactive for delays already armed.",
     )
+    SCOPES_GIT_REPACK_PACK_LIMIT = confi.int(
+        "SCOPES_GIT_REPACK_PACK_LIMIT",
+        50,
+        description="Pack-file count at which a scope clone is repacked: after a "
+        "successful fetch, once the clone holds at least this many pack files, "
+        "the sync runs git repack -a -d on it, merging them into a single pack "
+        "and dropping the duplicate objects. It exists because the scopes git "
+        "fetcher (pygit2 on libgit2) writes one new pack file per fetch and never "
+        "consolidates them, and a fetch of a repository with many branches can "
+        "re-download history the clone already has, so without it the clone's "
+        "disk grows without bound until the volume holding the clones fills. It "
+        "only affects scopes mode (SCOPES=true): the classic policy-repo path "
+        "fetches with the git command line, which cleans up its own packs. The "
+        "git binary must be on PATH (the official images ship it). Raise it to "
+        "repack less often; 0 or negative disables repacking.",
+    )
+    SCOPES_GIT_REPACK_TIMEOUT = confi.float(
+        "SCOPES_GIT_REPACK_TIMEOUT",
+        300.0,
+        description="Hard timeout in seconds for one scope clone repack (see "
+        "SCOPES_GIT_REPACK_PACK_LIMIT). Unlike SCOPES_GIT_FETCH_TIMEOUT it is "
+        "HARD: when it expires the git process is stopped and its temporary files "
+        "are removed, so a stuck repack leaves neither a process nor partial "
+        "packs behind, and the clone keeps the packs it already had. It must "
+        "stay bounded because the repack holds the clone's sync lock while it "
+        "runs, so every sync and refresh of the scopes on that clone waits for "
+        "it. For that reason 0, negative, nan or inf fall back to the default of "
+        "300 seconds; there is no way to set no limit.",
+    )
     SCOPES_POLICY_CLONE_WAIT_SECONDS = confi.float(
         "SCOPES_POLICY_CLONE_WAIT_SECONDS",
         20.0,
