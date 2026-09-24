@@ -139,6 +139,11 @@ class _FakeOpenFGA:
         self.writes_ignored_duplicates = False
         self.fail_create_store = False
         self.fail_list_stores = False
+        self.fail_model_writes = 0
+        self.fail_tuple_writes = 0
+        self.malformed_model_writes = 0
+        self.fail_model_after_tuple_failure = False
+        self._tuple_failure_seen = False
         self.page_size_cap = None
         self.stores_page_size_cap = None
         # server state
@@ -326,6 +331,12 @@ class _FakeOpenFGA:
     async def _handle_write_model(self, request: web.Request) -> web.Response:
         if not await self._guard(request):
             return web.Response(status=500, text="down")
+        if self.fail_model_after_tuple_failure and self._tuple_failure_seen:
+            self.fail_model_after_tuple_failure = False
+            return web.Response(status=500, text="compensation model write failed")
+        if self.fail_model_writes:
+            self.fail_model_writes -= 1
+            return web.Response(status=500, text="model write failed")
         store_id = request.match_info["store_id"]
         body = await request.json()
         assert "schema_version" in body and "type_definitions" in body
@@ -333,6 +344,9 @@ class _FakeOpenFGA:
         model_id = f"M{len(self.authorization_model_bodies)}"
         self._models.setdefault(store_id, []).append(body)
         self._model_ids.setdefault(store_id, []).append(model_id)
+        if self.malformed_model_writes:
+            self.malformed_model_writes -= 1
+            return web.json_response({}, status=201)
         return web.json_response({"authorization_model_id": model_id}, status=201)
 
     async def _handle_list_models(self, request: web.Request) -> web.Response:
@@ -360,6 +374,10 @@ class _FakeOpenFGA:
         store_id = request.match_info["store_id"]
         body = await request.json()
         self.write_requests.append(body)
+        if self.fail_tuple_writes:
+            self.fail_tuple_writes -= 1
+            self._tuple_failure_seen = True
+            return web.Response(status=500, text="tuple write failed")
         tuples = self._tuples.setdefault(store_id, {})
         for key in (body.get("writes") or {}).get("tuple_keys", []):
             k = (key["user"], key["relation"], key["object"])
@@ -936,13 +954,14 @@ async def test_empty_data_update_is_noop():
 
 
 @pytest.mark.asyncio
-async def test_delete_unknown_policy_module_is_noop():
+async def test_delete_unknown_policy_module_fails_closed():
     async with fake_openfga_server() as server:
         client = _make_client(server.base_url)
         try:
             await client.set_policies(FULL_BUNDLE)
             bodies_before = len(server.fake.authorization_model_bodies)
-            await client.delete_policy("missing.fga")
+            with pytest.raises(ValueError, match="unknown OpenFGA policy module"):
+                await client.delete_policy("missing.fga")
             assert len(server.fake.authorization_model_bodies) == bodies_before
         finally:
             await client.stop_liveness_probe()
@@ -1137,6 +1156,29 @@ async def test_restart_delta_reconstructs_an_existing_store_without_sidecar():
 
 
 @pytest.mark.asyncio
+async def test_opal_sidecarless_update_then_delete_marker_fails_closed():
+    async with fake_openfga_server() as server:
+        first = _make_client(server.base_url)
+        try:
+            await first.set_policies(TWO_MODULE_BUNDLE)
+            state_path = Path(first._module_state_path)
+        finally:
+            await first.stop_liveness_probe()
+        state_path.unlink()
+
+        second = _make_client(server.base_url)
+        try:
+            await second.set_policies(TWO_MODULE_DELTA)
+            assert await second.get_policy_module_ids() == ["model.fga"]
+            with pytest.raises(ValueError, match="unknown OpenFGA policy module"):
+                await second.delete_policy("team.fga")
+            body = server.fake.authorization_model_bodies[-1]
+            assert "team" in {item["type"] for item in body["type_definitions"]}
+        finally:
+            await second.stop_liveness_probe()
+
+
+@pytest.mark.asyncio
 async def test_invalid_sidecar_fails_closed_without_wiping_store_state():
     async with fake_openfga_server() as server:
         first = _make_client(server.base_url)
@@ -1237,6 +1279,210 @@ async def test_opal_sidecarless_delete_marker_fails_closed():
             assert len(server.fake.write_requests) == write_count
         finally:
             await second.stop_liveness_probe()
+
+
+@pytest.mark.asyncio
+async def test_opal_reconciliation_model_failure_preserves_stale_tuples():
+    delta = PolicyBundle(
+        manifest=[],
+        hash="commit-model-failure",
+        old_hash="commit-1",
+        data_modules=[],
+        policy_modules=[],
+        deleted_files=DeletedFiles(data_modules=[Path("data")]),
+    )
+    async with fake_openfga_server() as server:
+        client = _make_client(server.base_url)
+        try:
+            await client.set_policies(FULL_BUNDLE)
+            before = {
+                (tuple_data["user"], tuple_data["relation"], tuple_data["object"])
+                for tuple_data in (await client.get_data(""))["tuples"]
+            }
+            server.fake.fail_model_writes = 1
+            with pytest.raises(ValueError, match="model write failed"):
+                await client.set_policies(delta)
+            after = {
+                (tuple_data["user"], tuple_data["relation"], tuple_data["object"])
+                for tuple_data in (await client.get_data(""))["tuples"]
+            }
+            assert after == before
+            state = json.loads(
+                Path(client._module_state_path).read_text(encoding="utf-8")
+            )
+            assert state.get("pending_reconciliation") is None
+            assert set(client._data_modules["data"][0]) == {
+                "user",
+                "relation",
+                "object",
+            }
+        finally:
+            await client.stop_liveness_probe()
+
+
+@pytest.mark.asyncio
+async def test_opal_reconciliation_malformed_model_response_compensates():
+    delta = PolicyBundle(
+        manifest=[],
+        hash="commit-malformed-model-response",
+        old_hash="commit-1",
+        data_modules=[],
+        policy_modules=[],
+        deleted_files=DeletedFiles(data_modules=[Path("data")]),
+    )
+    async with fake_openfga_server() as server:
+        client = _make_client(server.base_url)
+        try:
+            await client.set_policies(FULL_BUNDLE)
+            before = {
+                (tuple_data["user"], tuple_data["relation"], tuple_data["object"])
+                for tuple_data in (await client.get_data(""))["tuples"]
+            }
+            models_before = len(server.fake.authorization_model_bodies)
+            server.fake.malformed_model_writes = 1
+            with pytest.raises(KeyError):
+                await client.set_policies(delta)
+            after = {
+                (tuple_data["user"], tuple_data["relation"], tuple_data["object"])
+                for tuple_data in (await client.get_data(""))["tuples"]
+            }
+            assert after == before
+            assert len(server.fake.authorization_model_bodies) >= models_before + 2
+            assert {
+                item["type"]
+                for item in server.fake.authorization_model_bodies[-1][
+                    "type_definitions"
+                ]
+            } == {
+                "user",
+                "folder",
+                "document",
+            }
+            state = json.loads(
+                Path(client._module_state_path).read_text(encoding="utf-8")
+            )
+            assert state.get("pending_reconciliation") is None
+        finally:
+            await client.stop_liveness_probe()
+
+
+@pytest.mark.asyncio
+async def test_opal_reconciliation_failure_compensates_retries_and_restarts():
+    delta = PolicyBundle(
+        manifest=["model.fga", "data/data.json"],
+        hash="commit-tuple-failure",
+        old_hash="commit-1",
+        data_modules=[
+            DataModule(
+                path="data",
+                data=json.dumps({"document:readme": {"viewer": ["user:after"]}}),
+            )
+        ],
+        policy_modules=[
+            RegoModule(path="model.fga", package_name="", rego=DEMO_MODEL_V2_FGA)
+        ],
+    )
+    async with fake_openfga_server() as server:
+        server.fake.writes_ignored_duplicates = True
+        client = _make_client(server.base_url)
+        try:
+            await client.set_policies(FULL_BUNDLE)
+            before = {
+                (tuple_data["user"], tuple_data["relation"], tuple_data["object"])
+                for tuple_data in (await client.get_data(""))["tuples"]
+            }
+            server.fake.fail_tuple_writes = 1
+            with pytest.raises(ValueError, match="tuple write failed"):
+                await client.set_policies(delta)
+            after_failure = {
+                (tuple_data["user"], tuple_data["relation"], tuple_data["object"])
+                for tuple_data in (await client.get_data(""))["tuples"]
+            }
+            assert after_failure == before
+            state = json.loads(
+                Path(client._module_state_path).read_text(encoding="utf-8")
+            )
+            assert state.get("pending_reconciliation") is None
+
+            await client.set_policies(delta)
+            after_retry = {
+                (tuple_data["user"], tuple_data["relation"], tuple_data["object"])
+                for tuple_data in (await client.get_data(""))["tuples"]
+            }
+            assert ("user:after", "viewer", "document:readme") in after_retry
+            assert ("user:anne", "viewer", "document:readme") not in after_retry
+        finally:
+            await client.stop_liveness_probe()
+
+        restarted = _make_client(server.base_url)
+        try:
+            await restarted.get_data("")
+            after_restart = {
+                (tuple_data["user"], tuple_data["relation"], tuple_data["object"])
+                for tuple_data in (await restarted.get_data(""))["tuples"]
+            }
+            assert ("user:after", "viewer", "document:readme") in after_restart
+            assert ("user:anne", "viewer", "document:readme") not in after_restart
+        finally:
+            await restarted.stop_liveness_probe()
+
+
+@pytest.mark.asyncio
+async def test_opal_reconciliation_journal_recovers_after_compensation_failure():
+    delta = PolicyBundle(
+        manifest=["model.fga", "data/data.json"],
+        hash="commit-journal-recovery",
+        old_hash="commit-1",
+        data_modules=[
+            DataModule(
+                path="data",
+                data=json.dumps({"document:readme": {"viewer": ["user:after"]}}),
+            )
+        ],
+        policy_modules=[
+            RegoModule(path="model.fga", package_name="", rego=DEMO_MODEL_V2_FGA)
+        ],
+    )
+    async with fake_openfga_server() as server:
+        server.fake.writes_ignored_duplicates = True
+        client = _make_client(server.base_url)
+        try:
+            await client.set_policies(FULL_BUNDLE)
+            before = {
+                (tuple_data["user"], tuple_data["relation"], tuple_data["object"])
+                for tuple_data in (await client.get_data(""))["tuples"]
+            }
+            server.fake.fail_tuple_writes = 1
+            server.fake.fail_model_after_tuple_failure = True
+            with pytest.raises(ValueError, match="compensation is pending"):
+                await client.set_policies(delta)
+            state = json.loads(
+                Path(client._module_state_path).read_text(encoding="utf-8")
+            )
+            assert state.get("pending_reconciliation") is not None
+        finally:
+            await client.stop_liveness_probe()
+
+        restarted = _make_client(server.base_url)
+        try:
+            assert await restarted.get_policy_module_ids() == ["model.fga"]
+            after_restart = {
+                (tuple_data["user"], tuple_data["relation"], tuple_data["object"])
+                for tuple_data in (await restarted.get_data(""))["tuples"]
+            }
+            assert after_restart == before
+            state = json.loads(
+                Path(restarted._module_state_path).read_text(encoding="utf-8")
+            )
+            assert state.get("pending_reconciliation") is None
+            await restarted.set_policies(delta)
+            after_retry = {
+                (tuple_data["user"], tuple_data["relation"], tuple_data["object"])
+                for tuple_data in (await restarted.get_data(""))["tuples"]
+            }
+            assert ("user:after", "viewer", "document:readme") in after_retry
+        finally:
+            await restarted.stop_liveness_probe()
 
 
 @pytest.mark.asyncio

@@ -205,6 +205,7 @@ class OpenFGAClient(LivenessProbeMixin, BasePolicyStoreClient):
         self._state_status = "unloaded"
         self._model_lock = asyncio.Lock()
         self._policy_version: Optional[str] = None
+        self._pending_reconciliation: Optional[Dict] = None
 
         # optional in-memory cache of written tuples (offline/backup mode)
         self._policy_data_cache: Optional[List[Dict]] = (
@@ -341,6 +342,12 @@ class OpenFGAClient(LivenessProbeMixin, BasePolicyStoreClient):
 
     async def _load_state(self, reconstruct_model: bool) -> str:
         if self._state_loaded:
+            if self._pending_reconciliation is not None:
+                try:
+                    await self._recover_pending_reconciliation()
+                except Exception:
+                    self._state_loaded = False
+                    raise
             if (
                 reconstruct_model
                 and self._state_status == "missing"
@@ -383,9 +390,16 @@ class OpenFGAClient(LivenessProbeMixin, BasePolicyStoreClient):
                     normalize_model(base_model) if base_model is not None else None
                 )
                 self._policy_version = payload.get("policy_version")
+                self._pending_reconciliation = payload.get("pending_reconciliation")
                 self._state_from_file = True
                 self._state_status = "valid"
                 self._state_loaded = True
+                if self._pending_reconciliation is not None:
+                    try:
+                        await self._recover_pending_reconciliation()
+                    except Exception:
+                        self._state_loaded = False
+                        raise
                 return self._state_status
             except (
                 OSError,
@@ -415,6 +429,7 @@ class OpenFGAClient(LivenessProbeMixin, BasePolicyStoreClient):
             "tuples": list(self._owned_tuples.values()),
             "tuple_owners": self._tuple_owner_records(),
             "policy_version": self._policy_version,
+            "pending_reconciliation": self._pending_reconciliation,
         }
         directory = os.path.dirname(self._module_state_path) or "."
         os.makedirs(directory, exist_ok=True)
@@ -510,6 +525,159 @@ class OpenFGAClient(LivenessProbeMixin, BasePolicyStoreClient):
         return {
             key: values[key] for key in owners if owners.get(key) and key in values
         }, owners
+
+    def _tuple_owner_records_for(
+        self, owned_tuples: Dict[Any, Dict], owners: Dict[Any, Set[str]]
+    ) -> List[Dict]:
+        return [
+            {
+                "tuple": owned_tuples[key],
+                "owners": sorted(tuple_owners),
+            }
+            for key, tuple_owners in owners.items()
+            if key in owned_tuples and tuple_owners
+        ]
+
+    def _state_snapshot(self) -> Dict:
+        return {
+            "modules": copy.deepcopy(self._modules),
+            "base_model": copy.deepcopy(self._base_model),
+            "data_modules": copy.deepcopy(self._data_modules),
+            "tuples": list(self._owned_tuples.values()),
+            "tuple_owners": self._tuple_owner_records(),
+            "policy_version": self._policy_version,
+        }
+
+    def _restore_state_snapshot(self, snapshot: Dict) -> None:
+        modules = {
+            str(path): normalize_model(fragment)
+            for path, fragment in snapshot.get("modules", {}).items()
+        }
+        data_modules = {
+            str(path): convert_to_tuples(tuples)
+            for path, tuples in snapshot.get("data_modules", {}).items()
+        }
+        owned_tuples = convert_to_tuples(snapshot.get("tuples", []))
+        tuple_owners, normalized_owned = _deserialize_tuple_owners(
+            snapshot.get("tuple_owners"), data_modules, owned_tuples
+        )
+        base_model = snapshot.get("base_model")
+        self._modules = modules
+        self._data_modules = data_modules
+        self._owned_tuples = {
+            _tuple_key(tuple_data): tuple_data for tuple_data in normalized_owned
+        }
+        self._tuple_owners = tuple_owners
+        self._base_model = (
+            normalize_model(base_model) if base_model is not None else None
+        )
+        self._policy_version = snapshot.get("policy_version")
+
+    def _candidate_state_snapshot(
+        self,
+        modules: Dict[str, Dict],
+        base_model: Optional[Dict],
+        data_modules: Dict[str, List[Dict]],
+        owned_tuples: Dict[Any, Dict],
+        owners: Dict[Any, Set[str]],
+    ) -> Dict:
+        return {
+            "modules": copy.deepcopy(modules),
+            "base_model": copy.deepcopy(base_model),
+            "data_modules": copy.deepcopy(data_modules),
+            "tuples": list(owned_tuples.values()),
+            "tuple_owners": self._tuple_owner_records_for(owned_tuples, owners),
+            "policy_version": None,
+        }
+
+    async def _recover_pending_reconciliation(self) -> None:
+        pending = self._pending_reconciliation
+        if pending is None:
+            return
+        old_state = pending.get("old_state")
+        candidate_state = pending.get("candidate_state")
+        if not isinstance(old_state, dict) or not isinstance(candidate_state, dict):
+            raise OpenFGAStateError("invalid pending OpenFGA reconciliation journal")
+        self._restore_state_snapshot(old_state)
+        old_model = (
+            _combined_authorization_model(self._modules, self._base_model)
+            or _restrictive_authorization_model()
+        )
+        restored_model_id = await self._write_authorization_model(
+            old_model, len(self._modules)
+        )
+        self._policy_version = restored_model_id
+        old_owned = dict(self._owned_tuples)
+        candidate_owned = {
+            _tuple_key(tuple_data): tuple_data
+            for tuple_data in convert_to_tuples(candidate_state.get("tuples", []))
+        }
+        managed_tuples = dict(old_owned)
+        managed_tuples.update(candidate_owned)
+        for chunk in _chunks(list(managed_tuples.values()), self._max_tuples_per_write):
+            await self._write_tuples(deletes=chunk)
+        for chunk in _chunks(list(old_owned.values()), self._max_tuples_per_write):
+            await self._write_tuples(writes=chunk, ignore_duplicates=True)
+        self._restore_state_snapshot(old_state)
+        self._policy_version = restored_model_id
+        self._pending_reconciliation = None
+        await self._persist_state()
+
+    async def _apply_reconciliation(
+        self,
+        modules: Dict[str, Dict],
+        base_model: Optional[Dict],
+        data_modules: Dict[str, List[Dict]],
+        candidate_owned: Dict[Any, Dict],
+        candidate_owners: Dict[Any, Set[str]],
+    ) -> str:
+        old_state = self._state_snapshot()
+        candidate_state = self._candidate_state_snapshot(
+            modules, base_model, data_modules, candidate_owned, candidate_owners
+        )
+        stale_keys = set(self._owned_tuples) - set(candidate_owned)
+        stale_tuples = [self._owned_tuples[key] for key in stale_keys]
+        tuples_to_write = [
+            tuple_data
+            for key, tuple_data in candidate_owned.items()
+            if self._owned_tuples.get(key) != tuple_data
+        ]
+        self._pending_reconciliation = {
+            "old_state": old_state,
+            "candidate_state": candidate_state,
+            "model_written": False,
+        }
+        await self._persist_state()
+        try:
+            if modules:
+                model_id = await self._write_combined_model(modules, base_model)
+            else:
+                model_id = await self._write_restrictive_model()
+            self._policy_version = model_id
+            self._pending_reconciliation["model_written"] = True
+            self._pending_reconciliation["model_id"] = model_id
+            await self._persist_state()
+            for chunk in _chunks(stale_tuples, self._max_tuples_per_write):
+                await self._write_tuples(deletes=chunk)
+            for chunk in _chunks(tuples_to_write, self._max_tuples_per_write):
+                await self._write_tuples(writes=chunk)
+        except Exception:
+            self._pending_reconciliation["model_written"] = True
+            try:
+                await self._recover_pending_reconciliation()
+            except Exception as recovery_error:
+                raise OpenFGAStateError(
+                    "OpenFGA reconciliation failed and compensation is pending"
+                ) from recovery_error
+            raise
+        self._modules = modules
+        self._base_model = base_model
+        self._data_modules = data_modules
+        self._owned_tuples = candidate_owned
+        self._tuple_owners = candidate_owners
+        self._pending_reconciliation = None
+        await self._persist_state()
+        return model_id
 
     # ------------------------------------------------------------------
     # policy (authorization model) management
@@ -674,39 +842,14 @@ class OpenFGAClient(LivenessProbeMixin, BasePolicyStoreClient):
             candidate_owned, candidate_owners = self._candidate_tuple_state(
                 data_modules, full_bundle, modules
             )
-            stale_keys = set(self._owned_tuples) - set(candidate_owned)
-            tuples_to_write = [
-                tuple_data
-                for key, tuple_data in candidate_owned.items()
-                if self._owned_tuples.get(key) != tuple_data
-            ]
-            stale_tuples = [
-                self._owned_tuples[key]
-                for key in stale_keys
-                if key in self._owned_tuples
-            ]
             base_model = None if full_bundle else self._base_model
-            previous_version = self._policy_version
-            try:
-                for chunk in _chunks(stale_tuples, self._max_tuples_per_write):
-                    await self._write_tuples(deletes=chunk)
-                if modules:
-                    model_id = await self._write_combined_model(modules, base_model)
-                else:
-                    model_id = await self._write_restrictive_model()
-                self._policy_version = model_id
-                for chunk in _chunks(tuples_to_write, self._max_tuples_per_write):
-                    await self._write_tuples(writes=chunk)
-            except Exception:
-                self._policy_version = previous_version
-                raise
-
-            self._modules = modules
-            self._base_model = base_model
-            self._data_modules = data_modules
-            self._owned_tuples = candidate_owned
-            self._tuple_owners = candidate_owners
-            await self._persist_state()
+            await self._apply_reconciliation(
+                modules,
+                base_model,
+                data_modules,
+                candidate_owned,
+                candidate_owners,
+            )
 
             if deleted_modules:
                 logger.warning(
@@ -756,36 +899,31 @@ class OpenFGAClient(LivenessProbeMixin, BasePolicyStoreClient):
                     f"cannot delete OpenFGA policy {policy_id!r} without module state"
                 )
             if policy_id not in self._modules:
-                logger.warning(
-                    "attempted to delete unknown OpenFGA policy module {id}",
-                    id=policy_id,
+                raise OpenFGAStateError(
+                    f"cannot delete unknown OpenFGA policy module {policy_id!r}"
                 )
-                return
             modules = dict(self._modules)
             del modules[policy_id]
-            previous_version = self._policy_version
-            try:
-                if modules:
-                    model_id = await self._write_combined_model(
-                        modules, self._base_model
-                    )
-                else:
-                    for chunk in _chunks(
-                        list(self._owned_tuples.values()), self._max_tuples_per_write
-                    ):
-                        await self._write_tuples(deletes=chunk)
-                    model_id = await self._write_restrictive_model()
-                self._policy_version = model_id
-            except Exception:
-                self._policy_version = previous_version
-                raise
-            self._modules = modules
-            if not modules:
-                self._base_model = None
-                self._data_modules = {}
-                self._owned_tuples = {}
-                self._tuple_owners = {}
-            await self._persist_state()
+            if modules:
+                data_modules = copy.deepcopy(self._data_modules)
+                candidate_owned = copy.deepcopy(self._owned_tuples)
+                candidate_owners = {
+                    key: set(tuple_owners)
+                    for key, tuple_owners in self._tuple_owners.items()
+                }
+                base_model = self._base_model
+            else:
+                data_modules = {}
+                candidate_owned = {}
+                candidate_owners = {}
+                base_model = None
+            await self._apply_reconciliation(
+                modules,
+                base_model,
+                data_modules,
+                candidate_owned,
+                candidate_owners,
+            )
 
     async def get_policy_version(self) -> Optional[str]:
         """The id of the latest authorization model written to the store."""
@@ -957,13 +1095,16 @@ class OpenFGAClient(LivenessProbeMixin, BasePolicyStoreClient):
                 raise
 
     async def _write_tuples(
-        self, writes: Optional[List[Dict]] = None, deletes: Optional[List[Dict]] = None
+        self,
+        writes: Optional[List[Dict]] = None,
+        deletes: Optional[List[Dict]] = None,
+        ignore_duplicates: bool = False,
     ) -> None:
         """Issues one /write request with the given tuple writes/deletes."""
         body: Dict[str, Any] = {}
         if writes:
             writes_body: Dict[str, Any] = {"tuple_keys": writes}
-            if self._ignore_duplicate_tuples:
+            if self._ignore_duplicate_tuples or ignore_duplicates:
                 writes_body["on_duplicate"] = "ignore"
             body["writes"] = writes_body
         if deletes:
@@ -1133,33 +1274,15 @@ class OpenFGAClient(LivenessProbeMixin, BasePolicyStoreClient):
             imported_by_key = {
                 _tuple_key(tuple_data): tuple_data for tuple_data in normalized_owned
             }
-            stale = [
-                tuple_data
-                for key, tuple_data in self._owned_tuples.items()
-                if key not in imported_by_key
-            ]
-            previous_version = self._policy_version
-            try:
-                for chunk in _chunks(stale, self._max_tuples_per_write):
-                    await self._write_tuples(deletes=chunk)
-                if modules:
-                    model_id = await self._write_combined_model(modules, base_model)
-                else:
-                    model_id = await self._write_restrictive_model()
-                self._policy_version = model_id
-                for chunk in _chunks(normalized_owned, self._max_tuples_per_write):
-                    await self._write_tuples(writes=chunk)
-            except Exception:
-                self._policy_version = previous_version
-                raise
-            self._modules = modules
-            self._base_model = base_model
-            self._data_modules = data_modules
-            self._owned_tuples = imported_by_key
-            self._tuple_owners = tuple_owners
+            await self._apply_reconciliation(
+                modules,
+                base_model,
+                data_modules,
+                imported_by_key,
+                tuple_owners,
+            )
             if self._policy_data_cache is not None:
                 self._policy_data_cache = list(normalized_owned)
-            await self._persist_state()
 
 
 # ---------------------------------------------------------------------------
