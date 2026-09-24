@@ -858,9 +858,10 @@ async def test_server_error_responses_raise_value_error():
         # in error mode) so the model/tuple error paths are exercised directly
         client = OpenFGAClient(openfga_server_url=server.base_url, store_id="S1")
         try:
+            await client.set_policy("model.fga", DEMO_MODEL_FGA)
             server.fake.mode = _FakeOpenFGA.ERROR
             with pytest.raises(ValueError, match="failed writing authorization model"):
-                await client.set_policy("model.fga", DEMO_MODEL_FGA)
+                await client.set_policy("model.fga", DEMO_MODEL_V2_FGA)
             with pytest.raises(ValueError, match="tuple write failed"):
                 await client.set_policy_data({"document:x": {"viewer": ["user:u1"]}})
             with pytest.raises(ValueError, match="tuple read failed"):
@@ -948,7 +949,7 @@ async def test_delete_unknown_policy_module_is_noop():
 
 
 @pytest.mark.asyncio
-async def test_delta_bundle_with_deleted_modules_and_bad_data_module():
+async def test_invalid_data_module_does_not_wipe_existing_state():
     deleted = PolicyBundle(
         manifest=[],
         hash="commit-3",
@@ -962,10 +963,15 @@ async def test_delta_bundle_with_deleted_modules_and_bad_data_module():
         try:
             await client.set_policies(FULL_BUNDLE)
             await client.set_policies(DELTA_BUNDLE)
-            # the delta deletes model.fga and ships a non-json data module
-            # (which must be skipped with a warning, not crash the update)
-            await client.set_policies(deleted)
-            assert await client.get_policy_module_ids() == []
+            model_count = len(server.fake.authorization_model_bodies)
+            write_count = len(server.fake.write_requests)
+            data_before = await client.get_data("")
+            with pytest.raises(ValueError, match="invalid data module data"):
+                await client.set_policies(deleted)
+            assert len(server.fake.authorization_model_bodies) == model_count
+            assert len(server.fake.write_requests) == write_count
+            assert await client.get_data("") == data_before
+            assert await client.get_policy_module_ids() == ["model.fga"]
         finally:
             await client.stop_liveness_probe()
 
@@ -1131,26 +1137,104 @@ async def test_restart_delta_reconstructs_an_existing_store_without_sidecar():
 
 
 @pytest.mark.asyncio
-async def test_invalid_sidecar_falls_back_to_store_reconstruction():
+async def test_invalid_sidecar_fails_closed_without_wiping_store_state():
     async with fake_openfga_server() as server:
         first = _make_client(server.base_url)
         try:
-            await first.set_policies(TWO_MODULE_BUNDLE)
+            await first.set_policies(FULL_BUNDLE)
             state_path = Path(first._module_state_path)
         finally:
             await first.stop_liveness_probe()
         state_path.write_text("{invalid", encoding="utf-8")
+        model_count = len(server.fake.authorization_model_bodies)
+        write_count = len(server.fake.write_requests)
 
         second = _make_client(server.base_url)
         try:
-            await second.set_policies(TWO_MODULE_DELTA)
-            body = server.fake.authorization_model_bodies[-1]
-            assert {item["type"] for item in body["type_definitions"]} == {
-                "user",
-                "folder",
-                "document",
-                "team",
+            with pytest.raises(ValueError, match="invalid OpenFGA module state"):
+                await second.set_policies(TWO_MODULE_DELTA)
+            assert len(server.fake.authorization_model_bodies) == model_count
+            assert len(server.fake.write_requests) == write_count
+            assert {
+                (tuple_data["user"], tuple_data["relation"], tuple_data["object"])
+                for tuple_data in (await second.get_data(""))["tuples"]
+            } == {
+                ("user:anne", "viewer", "document:readme"),
+                ("folder:company", "parent", "document:readme"),
+                ("user:bob", "owner", "folder:company"),
             }
+        finally:
+            await second.stop_liveness_probe()
+
+
+@pytest.mark.asyncio
+async def test_opal_shared_tuple_loss_marker():
+    shared_data = json.dumps({"document:shared": {"viewer": ["user:shared"]}})
+    first = PolicyBundle(
+        manifest=["model.fga", "data-a.json"],
+        hash="shared-1",
+        data_modules=[DataModule(path="data-a", data=shared_data)],
+        policy_modules=[
+            RegoModule(path="model.fga", package_name="", rego=DEMO_MODEL_FGA)
+        ],
+    )
+    second = PolicyBundle(
+        manifest=["model.fga", "data-b.json"],
+        hash="shared-2",
+        old_hash="shared-1",
+        data_modules=[DataModule(path="data-b", data=shared_data)],
+        policy_modules=[
+            RegoModule(path="model.fga", package_name="", rego=DEMO_MODEL_FGA)
+        ],
+    )
+    remove_first = PolicyBundle(
+        manifest=[],
+        hash="shared-3",
+        old_hash="shared-2",
+        data_modules=[],
+        policy_modules=[],
+        deleted_files=DeletedFiles(data_modules=[Path("data-a")]),
+    )
+    async with fake_openfga_server() as server:
+        client = _make_client(server.base_url)
+        try:
+            await client.set_policies(first)
+            await client.set_policies(second)
+            await client.set_policies(remove_first)
+            data = await client.get_data("document:shared")
+            assert any(
+                tuple_data["user"] == "user:shared"
+                and tuple_data["relation"] == "viewer"
+                for tuple_data in data["tuples"]
+            )
+            key = ("user:shared", "viewer", "document:shared")
+            assert client._tuple_owners[key] == {"data-b"}
+            state = json.loads(
+                Path(client._module_state_path).read_text(encoding="utf-8")
+            )
+            assert state["tuple_owners"][0]["owners"] == ["data-b"]
+        finally:
+            await client.stop_liveness_probe()
+
+
+@pytest.mark.asyncio
+async def test_opal_sidecarless_delete_marker_fails_closed():
+    async with fake_openfga_server() as server:
+        first = _make_client(server.base_url)
+        try:
+            await first.set_policies(FULL_BUNDLE)
+            state_path = Path(first._module_state_path)
+        finally:
+            await first.stop_liveness_probe()
+        state_path.unlink()
+        model_count = len(server.fake.authorization_model_bodies)
+        write_count = len(server.fake.write_requests)
+        second = _make_client(server.base_url)
+        try:
+            with pytest.raises(ValueError, match="without module state"):
+                await second.delete_policy("model.fga")
+            assert len(server.fake.authorization_model_bodies) == model_count
+            assert len(server.fake.write_requests) == write_count
         finally:
             await second.stop_liveness_probe()
 
@@ -1225,7 +1309,13 @@ async def test_deleting_the_final_policy_module_clears_managed_state():
             await client.set_policies(FULL_BUNDLE)
             await client.delete_policy("model.fga")
             assert await client.get_policy_module_ids() == []
-            assert await client.get_policy_version() is None
+            assert await client.get_policy_version() is not None
+            assert {
+                item["type"]
+                for item in server.fake.authorization_model_bodies[-1][
+                    "type_definitions"
+                ]
+            } == {"user"}
             assert (await client.get_data(""))["tuples"] == []
         finally:
             await client.stop_liveness_probe()
