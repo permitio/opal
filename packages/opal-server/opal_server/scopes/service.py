@@ -94,17 +94,21 @@ class NewCommitsCallbacks(PolicyFetcherCallbacks):
 
         notification: Optional[PolicyUpdateMessageNotification] = None
         predicate = partial(is_rego_source_file, extensions=self._source.extensions)
-        if previous_head is None:
-            notification = await create_update_all_directories_in_repo(
-                repo.commit(head), repo.commit(head), predicate=predicate
-            )
-        else:
-            notification = await create_policy_update(
-                repo.commit(previous_head),
-                repo.commit(head),
-                self._source.extensions,
-                predicate=predicate,
-            )
+        # Closed once the notification is built, as in make_bundle: an open
+        # Repo's `git cat-file` processes would hold the packs they read open
+        # until the garbage collector gets to it, a repack's deleted ones too.
+        with repo:
+            if previous_head is None:
+                notification = await create_update_all_directories_in_repo(
+                    repo.commit(head), repo.commit(head), predicate=predicate
+                )
+            else:
+                notification = await create_policy_update(
+                    repo.commit(previous_head),
+                    repo.commit(head),
+                    self._source.extensions,
+                    predicate=predicate,
+                )
 
         if notification is not None:
             await self.trigger_notification(notification)
