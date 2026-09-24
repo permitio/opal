@@ -1,5 +1,6 @@
-"""The scope-clone repack primitive: ``_count_pack_files`` and
-``_repack_clone``.
+"""The scope-clone repack: the primitive (``_count_pack_files``,
+``_repack_clone``) and its wiring into the scope sync
+(``GitPolicyFetcher._maybe_repack``).
 
 The repository tests use real git: a bare remote and a libgit2 clone of it,
 the way the scopes fetcher builds its clones. A libgit2 clone of a local path
@@ -10,22 +11,32 @@ The process-control tests put a ``git`` shim on PATH instead, because a real
 repack cannot be made to hang on cue.
 """
 
+import asyncio
 import math
 import os
 import stat
 import subprocess
+import threading
 import time
 from pathlib import Path
 
 import pygit2
 import pytest
+from opal_common.async_utils import run_sync
+from opal_common.logger import logger
+from opal_common.monitoring import metrics
+from opal_common.schemas.policy_source import GitPolicyScopeSource, NoAuthData
 from opal_server import git_fetcher
 from opal_server.config import OpalServerConfig, opal_server_config
 from opal_server.git_fetcher import (
+    GitConcurrencyLimitExceeded,
+    GitPolicyFetcher,
     GitRepackError,
+    PolicyFetcherCallbacks,
     _count_pack_files,
     _repack_clone,
     _repack_timeout_seconds,
+    git_op_in_flight,
 )
 
 _SIG = pygit2.Signature("opal-test", "opal-test@example.com")
@@ -376,3 +387,524 @@ def test_repack_clone_refuses_to_run_unbounded(tmp_path, monkeypatch, bad):
     monkeypatch.setattr(git_fetcher, "_REPACK_DEFAULT_TIMEOUT_SECONDS", 0.3)
     with pytest.raises(TimeoutError):
         _repack_clone(clone_path, timeout=bad, term_grace=2.0)
+
+
+# --- wired into the sync: GitPolicyFetcher.fetch_and_notify_on_changes ---------
+#
+# A real GitPolicyFetcher syncing a local bare remote. Its first sync clones
+# (loose objects, no pack); every forced sync after a push fetches and adds one
+# pack, so with the limit at 3 the third fetch is the one that repacks.
+
+_LIMIT = 3
+
+
+@pytest.fixture(autouse=True)
+def _clean_fetcher_state(monkeypatch):
+    """Limit 3, and a clean slate of the per-process state the sync keeps: the
+    fetcher's class-level caches (as invalid_repo_recovery_test does) and the
+    repack's failure cooldowns and git-missing latch."""
+    monkeypatch.setattr(opal_server_config, "SCOPES_GIT_REPACK_PACK_LIMIT", _LIMIT)
+    monkeypatch.setattr(git_fetcher, "_repack_git_missing", False)
+    monkeypatch.setattr(git_fetcher, "_repack_failed_at", {})
+    GitPolicyFetcher.reset_caches()
+    GitPolicyFetcher.source_backoff.clear()
+    yield
+    GitPolicyFetcher.reset_caches()
+    GitPolicyFetcher.source_backoff.clear()
+    assert not git_fetcher._repack_lock.locked(), "a test leaked a running repack"
+
+
+@pytest.fixture
+def emitted(monkeypatch):
+    """Capture calls through the metrics facade (metrics_emission_test's
+    pattern: every emitting module shares the one ``metrics`` module)."""
+    calls = {"gauge": [], "increment": []}
+    monkeypatch.setattr(
+        metrics,
+        "gauge",
+        lambda metric, value, tags=None: calls["gauge"].append((metric, value, tags)),
+    )
+    monkeypatch.setattr(
+        metrics,
+        "increment",
+        lambda metric, tags=None: calls["increment"].append((metric, tags)),
+    )
+    return calls
+
+
+def _repack_outcomes(calls) -> list:
+    return [
+        tags["outcome"]
+        for metric, tags in calls["increment"]
+        if metric == "opal_server.scopes.git_repack"
+    ]
+
+
+def _repack_seconds(calls) -> list:
+    return [
+        (value, tags)
+        for metric, value, tags in calls["gauge"]
+        if metric == "opal_server.scopes.git_repack_seconds"
+    ]
+
+
+@pytest.fixture
+def records():
+    captured = []
+    sink = logger.add(lambda m: captured.append(m.record), level="DEBUG")
+    yield captured
+    logger.remove(sink)
+
+
+class _RepackSpy:
+    """Stands in for ``_repack_clone``: records each call, then optionally
+    blocks until ``gate`` opens, then raises ``raises`` or runs the real
+    repack."""
+
+    def __init__(self, raises: BaseException | None = None, gate=None):
+        self.raises = raises
+        self.gate = gate
+        self.calls: list = []
+        self.started = threading.Event()
+
+    def __call__(self, repo_path, timeout, **kwargs):
+        self.calls.append(os.fspath(repo_path))
+        self.started.set()
+        if self.gate is not None:
+            self.gate.wait(10)
+        if self.raises is not None:
+            raise self.raises
+        _repack_clone(repo_path, timeout, **kwargs)
+
+
+class _ScopeRepo:
+    """A bare remote the test pushes to, and a scope fetcher syncing it.
+
+    ``notified`` records every ``on_update`` as (old head, new head, pack
+    count of the clone at that moment).
+    """
+
+    def __init__(self, tmp_path: Path, name: str):
+        remote_path = tmp_path / f"{name}.git"
+        self.remote = pygit2.init_repository(str(remote_path), bare=True)
+        self._revision = 0
+        self.tip: pygit2.Oid | None = None
+        self.push()
+        self.notified: list = []
+        outer = self
+
+        class _Recorder(PolicyFetcherCallbacks):
+            async def on_update(self, old_head, head):
+                outer.notified.append(
+                    (old_head, head, _count_pack_files(outer.clone_path))
+                )
+
+        self.fetcher = GitPolicyFetcher(
+            base_dir=tmp_path / "base",
+            scope_id=name,
+            source=GitPolicyScopeSource(
+                source_type="git",
+                url=str(remote_path),
+                branch="master",
+                auth=NoAuthData(),
+            ),
+            callbacks=_Recorder(),
+        )
+
+    @property
+    def clone_path(self) -> Path:
+        return self.fetcher._repo_path
+
+    @property
+    def source_id(self) -> str:
+        return self.fetcher._source_id
+
+    def _next_content(self) -> str:
+        self._revision += 1
+        return f"package policy\n# rev {self._revision}\n"
+
+    def push(self) -> pygit2.Oid:
+        self.tip = _commit(self.remote, self._next_content(), self.tip)
+        return self.tip
+
+    def force_push(self, onto: pygit2.Oid) -> pygit2.Oid:
+        """Rewrite the branch to a new commit on ``onto``, dropping the tip."""
+        blob = self.remote.create_blob(self._next_content().encode())
+        builder = self.remote.TreeBuilder()
+        builder.insert("policy.rego", blob, pygit2.GIT_FILEMODE_BLOB)
+        rewritten = self.remote.create_commit(
+            None, _SIG, _SIG, "rewrite", builder.write(), [onto]
+        )
+        self.remote.references["refs/heads/master"].set_target(rewritten)
+        self.tip = rewritten
+        return rewritten
+
+    async def sync(self, **kwargs) -> None:
+        kwargs.setdefault("force_fetch", True)
+        await self.fetcher.fetch_and_notify_on_changes(**kwargs)
+
+    async def push_and_sync(self) -> str:
+        tip = self.push()
+        await self.sync()
+        return str(tip)
+
+    async def fetched(self, times: int) -> None:
+        """Clone, then fetch ``times`` pushes: ``times`` packs."""
+        await self.sync()
+        for _ in range(times):
+            await self.push_and_sync()
+        assert _count_pack_files(self.clone_path) == times
+
+
+@pytest.mark.asyncio
+async def test_sync_repacks_the_clone_once_its_packs_reach_the_limit(
+    tmp_path, emitted, records
+):
+    scope = _ScopeRepo(tmp_path, "s1")
+    await scope.fetched(_LIMIT - 1)
+    assert _repack_outcomes(emitted) == []  # below the limit: left alone
+    path = str(scope.clone_path)
+    assert path in GitPolicyFetcher.repos
+
+    tip = await scope.push_and_sync()  # the fetch that reaches the limit
+
+    assert _count_pack_files(scope.clone_path) == 1
+    # PDPs heard about the new commit before the repack started.
+    assert scope.notified[-1][1:] == (tip, _LIMIT)
+    assert (
+        path not in GitPolicyFetcher.repos
+    ), "the cached handle was kept, holding the deleted packs open"
+    assert _repack_outcomes(emitted) == ["ok"]
+    [(seconds, tags)] = _repack_seconds(emitted)
+    assert seconds >= 0
+    assert tags == {"pid": str(os.getpid()), "outcome": "ok"}
+    [done] = [r for r in records if r["message"].startswith("Repacked scope clone")]
+    assert done["level"].name == "INFO"
+    assert done["extra"]["packs_before"] == _LIMIT
+    assert done["extra"]["packs_after"] == 1
+    assert done["extra"]["bytes_before"] > 0
+    assert done["extra"]["bytes_after"] > 0
+
+    # The next sync reopens the clone and both it and a bundle serve the
+    # newest commit, full and as a diff against the pre-repack tip.
+    newest = await scope.push_and_sync()
+    assert scope.notified[-1][:2] == (tip, newest)
+    assert path in GitPolicyFetcher.repos
+    assert scope.fetcher.make_bundle().hash == newest
+    diff = await run_sync(scope.fetcher.make_bundle, tip)
+    assert (diff.old_hash, diff.hash) == (tip, newest)
+    assert _repack_outcomes(emitted) == ["ok"]  # 2 packs now: nothing to do
+
+
+@pytest.mark.parametrize("limit", [0, -1])
+@pytest.mark.asyncio
+async def test_limit_of_zero_or_less_never_repacks(
+    tmp_path, monkeypatch, emitted, limit
+):
+    monkeypatch.setattr(opal_server_config, "SCOPES_GIT_REPACK_PACK_LIMIT", limit)
+    spy = _RepackSpy()
+    monkeypatch.setattr(git_fetcher, "_repack_clone", spy)
+    scope = _ScopeRepo(tmp_path, "s1")
+
+    await scope.fetched(_LIMIT + 1)
+
+    assert spy.calls == []
+    assert _repack_outcomes(emitted) == []
+
+
+@pytest.mark.asyncio
+async def test_only_a_fetch_made_by_this_sync_triggers_a_repack(tmp_path, monkeypatch):
+    """A sync that fetched nothing added no pack (phase 2 of a pass), and a
+    fetch that failed raised before the housekeeping; neither repacks, even
+    with the clone already at the limit."""
+    spy = _RepackSpy()
+    monkeypatch.setattr(git_fetcher, "_repack_clone", spy)
+    scope = _ScopeRepo(tmp_path, "s1")
+    await scope.fetched(_LIMIT - 1)
+    monkeypatch.setattr(opal_server_config, "SCOPES_GIT_REPACK_PACK_LIMIT", _LIMIT - 1)
+
+    await scope.sync(force_fetch=False)  # the branch is there: no fetch
+    assert spy.calls == []
+
+    scope.remote.free()
+    os.rename(tmp_path / "s1.git", tmp_path / "gone.git")
+    with pytest.raises(pygit2.GitError):
+        await scope.sync()
+    assert spy.calls == []
+    assert _count_pack_files(scope.clone_path) == _LIMIT - 1
+
+
+@pytest.mark.parametrize(
+    "exc, outcome",
+    [
+        (GitRepackError(128, "fatal: no space left on device"), "error"),
+        (TimeoutError("git repack exceeded 300.0s"), "timeout"),
+    ],
+    ids=["error", "timeout"],
+)
+@pytest.mark.asyncio
+async def test_failed_repack_still_completes_the_sync_and_waits_out_an_hour(
+    tmp_path, monkeypatch, emitted, records, exc, outcome
+):
+    spy = _RepackSpy(raises=exc)
+    monkeypatch.setattr(git_fetcher, "_repack_clone", spy)
+    scope = _ScopeRepo(tmp_path, "s1")
+    await scope.fetched(_LIMIT - 1)
+    path = str(scope.clone_path)
+
+    tip = await scope.push_and_sync()  # must not raise
+
+    assert spy.calls == [path]
+    assert scope.notified[-1][1] == tip, "the sync did not complete"
+    assert _count_pack_files(scope.clone_path) == _LIMIT
+    assert _repack_outcomes(emitted) == [outcome]
+    [(_, tags)] = _repack_seconds(emitted)
+    assert tags == {"pid": str(os.getpid()), "outcome": outcome}
+    [warning] = [r for r in records if r["level"].name == "WARNING"]
+    assert str(exc) in warning["message"]
+    # git ran and exited, so it may have deleted packs: release the handle.
+    assert path not in GitPolicyFetcher.repos
+
+    # Within the hour the clone is left alone, fetch after fetch.
+    newer = await scope.push_and_sync()
+    assert scope.notified[-1][1] == newer
+    assert spy.calls == [path]
+    assert _repack_outcomes(emitted) == [outcome]
+
+    # Once the hour is up it is tried again.
+    git_fetcher._repack_failed_at[
+        scope.source_id
+    ] -= git_fetcher._REPACK_FAILURE_COOLDOWN_SECONDS
+    spy.raises = None
+    await scope.push_and_sync()
+    assert spy.calls == [path, path]
+    assert _count_pack_files(scope.clone_path) == 1
+    assert _repack_outcomes(emitted) == [outcome, "ok"]
+
+
+@pytest.mark.asyncio
+async def test_missing_git_is_logged_once_and_then_never_tried_again(
+    tmp_path, monkeypatch, emitted, records
+):
+    no_git = tmp_path / "no-git"
+    no_git.mkdir()
+    monkeypatch.setenv("PATH", str(no_git))  # the real primitive, finding no git
+    spy = _RepackSpy()
+    monkeypatch.setattr(git_fetcher, "_repack_clone", spy)
+    first = _ScopeRepo(tmp_path, "s1")
+    second = _ScopeRepo(tmp_path, "s2")
+    await first.fetched(_LIMIT - 1)
+    await second.fetched(_LIMIT - 1)
+
+    tip = await first.push_and_sync()
+
+    assert first.notified[-1][1] == tip
+    assert spy.calls == [str(first.clone_path)]
+    assert _repack_outcomes(emitted) == ["git_missing"]
+    assert _repack_seconds(emitted) == []  # nothing ran, so no duration
+    [error] = [r for r in records if r["level"].name == "ERROR"]
+    assert "git" in error["message"]
+
+    await second.push_and_sync()  # another clone, same process: still off
+    await first.push_and_sync()
+    assert spy.calls == [str(first.clone_path)]
+    assert _repack_outcomes(emitted) == ["git_missing"]
+    assert [r for r in records if r["level"].name == "ERROR"] == [error]
+
+
+@pytest.mark.asyncio
+async def test_second_repack_is_skipped_while_one_runs_not_queued(
+    tmp_path, monkeypatch, emitted
+):
+    """Waiting would hold the second clone's lock_source, stalling its syncs,
+    to buy nothing: the skipped clone just repacks on a later fetch."""
+    gate = threading.Event()
+    spy = _RepackSpy(gate=gate)
+    monkeypatch.setattr(git_fetcher, "_repack_clone", spy)
+    first = _ScopeRepo(tmp_path, "s1")
+    second = _ScopeRepo(tmp_path, "s2")
+    await first.fetched(_LIMIT - 1)
+    await second.fetched(_LIMIT - 1)
+
+    first_sync = asyncio.ensure_future(first.push_and_sync())
+    try:
+        assert await run_sync(spy.started.wait, 5), "first repack never started"
+        tip = await asyncio.wait_for(second.push_and_sync(), timeout=5)
+        assert second.notified[-1][1] == tip
+        assert spy.calls == [str(first.clone_path)]
+        assert _count_pack_files(second.clone_path) == _LIMIT
+        assert not first_sync.done()
+    finally:
+        gate.set()
+    await asyncio.wait_for(first_sync, timeout=10)
+    assert _count_pack_files(first.clone_path) == 1
+    assert _repack_outcomes(emitted) == ["ok"]
+    assert git_fetcher._repack_failed_at == {}  # a skip is not a failure
+
+    await second.push_and_sync()
+    assert spy.calls == [str(first.clone_path), str(second.clone_path)]
+    assert _count_pack_files(second.clone_path) == 1
+
+
+def test_repack_clone_exclusive_returns_none_while_another_holds_the_lock(
+    tmp_path, monkeypatch
+):
+    """The decision is the thread's own non-blocking acquire; the event loop's
+    peek at the lock only saves a thread when the answer is obvious."""
+    spy = _RepackSpy()
+    monkeypatch.setattr(git_fetcher, "_repack_clone", spy)
+    assert git_fetcher._repack_lock.acquire(blocking=False)
+    try:
+        assert git_fetcher._repack_clone_exclusive(_fake_clone(tmp_path), 60) is None
+    finally:
+        git_fetcher._repack_lock.release()
+    assert spy.calls == []
+
+
+@pytest.mark.asyncio
+async def test_repack_outliving_its_awaiter_keeps_the_single_flight_and_the_handle(
+    tmp_path, monkeypatch, emitted
+):
+    """run_in_git_executor stopped waiting but the thread (and git) runs on.
+
+    The sync still completes, the outcome is a timeout with a cooldown,
+    a repack of another clone is still refused (the disk bound is about
+    git processes, not awaiters), and the cached handle is dropped from
+    the cache but never free()'d while its source has a git op in
+    flight.
+    """
+    monkeypatch.setattr(opal_server_config, "SCOPES_GIT_REPACK_TIMEOUT", 0.2)
+    monkeypatch.setattr(git_fetcher, "_REPACK_EXECUTOR_SLACK_SECONDS", 0.1)
+    gate = threading.Event()
+    spy = _RepackSpy(gate=gate)  # stuck where no timeout of ours reaches
+    monkeypatch.setattr(git_fetcher, "_repack_clone", spy)
+    first = _ScopeRepo(tmp_path, "s1")
+    second = _ScopeRepo(tmp_path, "s2")
+    await first.fetched(_LIMIT - 1)
+    await second.fetched(_LIMIT - 1)
+    path = str(first.clone_path)
+    handle = GitPolicyFetcher.repos[path]
+    freed = []
+    real_free = handle.free
+    handle.free = lambda: (freed.append(path), real_free())
+    try:
+        tip = await first.push_and_sync()
+
+        assert first.notified[-1][1] == tip
+        assert _repack_outcomes(emitted) == ["timeout"]
+        assert first.source_id in git_fetcher._repack_failed_at
+        assert git_op_in_flight(first.source_id)
+        assert path not in GitPolicyFetcher.repos
+        assert freed == []
+
+        await second.push_and_sync()
+        assert spy.calls == [path]
+        assert _count_pack_files(second.clone_path) == _LIMIT
+    finally:
+        gate.set()
+    assert await run_sync(git_fetcher.drain_git_ops, 10)
+    assert freed == []
+
+
+@pytest.mark.asyncio
+async def test_cancelled_sync_propagates_and_single_flight_ends_with_git(
+    tmp_path, monkeypatch, emitted
+):
+    gate = threading.Event()
+    spy = _RepackSpy(gate=gate)
+    monkeypatch.setattr(git_fetcher, "_repack_clone", spy)
+    scope = _ScopeRepo(tmp_path, "s1")
+    await scope.fetched(_LIMIT - 1)
+
+    sync = asyncio.ensure_future(scope.push_and_sync())
+    try:
+        assert await run_sync(spy.started.wait, 5), "repack never started"
+        sync.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await sync
+        assert git_fetcher._repack_lock.locked(), "released while git still runs"
+    finally:
+        gate.set()
+    assert await run_sync(git_fetcher.drain_git_ops, 10)
+    assert not git_fetcher._repack_lock.locked()
+    assert _repack_outcomes(emitted) == []  # nobody observed an outcome
+
+
+@pytest.mark.asyncio
+async def test_zombie_cap_refusal_is_not_an_attempt_and_arms_no_cooldown(
+    tmp_path, monkeypatch, emitted
+):
+    """Nothing ran and the refusal says nothing about this clone (the cap is
+    process-wide backpressure, which is why fetch failures at the cap arm no
+    source backoff either), so the next fetch simply tries again."""
+    real_run = git_fetcher.run_in_git_executor
+    refusals = [GitConcurrencyLimitExceeded("in-flight git ops (40) reached cap")]
+
+    async def _run(func, *args, **kwargs):
+        if func is git_fetcher._repack_clone_exclusive and refusals:
+            raise refusals.pop()
+        return await real_run(func, *args, **kwargs)
+
+    monkeypatch.setattr(git_fetcher, "run_in_git_executor", _run)
+    scope = _ScopeRepo(tmp_path, "s1")
+    await scope.fetched(_LIMIT - 1)
+
+    tip = await scope.push_and_sync()
+    assert refusals == []
+    assert scope.notified[-1][1] == tip
+    assert _count_pack_files(scope.clone_path) == _LIMIT
+    assert _repack_outcomes(emitted) == []
+    assert git_fetcher._repack_failed_at == {}
+
+    await scope.push_and_sync()
+    assert _count_pack_files(scope.clone_path) == 1
+    assert _repack_outcomes(emitted) == ["ok"]
+
+
+@pytest.mark.asyncio
+async def test_tip_dropped_by_a_force_push_is_still_readable_after_the_repack(
+    tmp_path,
+):
+    """``-a -d`` drops what nothing references, and a PDP's diff base may be a
+    commit a force-push took off the branch.
+
+    The reflogs keep it.
+    """
+    scope = _ScopeRepo(tmp_path, "s1")
+    await scope.fetched(_LIMIT - 2)
+    base = scope.tip
+    old_tip = await scope.push_and_sync()
+    assert _count_pack_files(scope.clone_path) == _LIMIT - 1
+
+    new_tip = str(scope.force_push(onto=base))
+    await scope.sync()  # force-updates origin/master, then repacks
+
+    assert _count_pack_files(scope.clone_path) == 1
+    assert scope.notified[-1][:2] == (old_tip, new_tip)
+    reachable = subprocess.run(
+        ["git", "-C", str(scope.clone_path), "rev-list", "--all"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.split()
+    assert old_tip not in reachable  # the premise: only a reflog names it now
+    fresh = pygit2.Repository(str(scope.clone_path))
+    try:
+        assert fresh.get(old_tip) is not None
+    finally:
+        fresh.free()
+    diff = await run_sync(scope.fetcher.make_bundle, old_tip)
+    assert (diff.old_hash, diff.hash) == (old_tip, new_tip)
+
+
+def test_forked_child_starts_with_the_single_flight_free():
+    """A repack thread running in the parent at fork does not exist in the
+    child, so nothing there could release the lock it inherited held."""
+    held = git_fetcher._repack_lock
+    assert held.acquire(blocking=False)
+    try:
+        git_fetcher._reset_git_executor_after_fork()
+        assert not git_fetcher._repack_lock.locked()
+    finally:
+        if held.locked():
+            held.release()
