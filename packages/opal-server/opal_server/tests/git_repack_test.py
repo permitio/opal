@@ -266,10 +266,16 @@ def test_timeout_stops_git_and_removes_its_temp_packs(
     state.mkdir()
     if ignores_term:
         child = "( trap '' TERM; exec /bin/sleep 30 ) &"
+        # `sleep & wait`, not a foreground `sleep`: bash runs a trap only
+        # once its foreground command returns, and a `sleep 1` forked just
+        # after the group SIGTERM never got it, so the trap could wait out
+        # that whole second, past the 0.3 s grace, and SIGKILL landed first
+        # (seen on a CI runner). The `wait` builtin returns at once on a
+        # trapped signal.
         tail = (
             f"trap 'echo TERM >> \"{state}/signals\"' TERM\n"
             f': > "{state}/ready"\n'
-            "while :; do /bin/sleep 1; done\n"
+            "while :; do /bin/sleep 1 & wait $!; done\n"
         )
     else:
         child = "/bin/sleep 30 &"
@@ -289,7 +295,8 @@ def test_timeout_stops_git_and_removes_its_temp_packs(
     )
     # The timeout is also the shim's window to get to "ready" (and, in the
     # "kill" case, to install its TERM trap first): generous for a slow runner.
-    timeout, grace = 3.0, (0.3 if ignores_term else 5.0)
+    # The "kill" grace also has to cover a starved runner scheduling the trap.
+    timeout, grace = 3.0, (1.0 if ignores_term else 5.0)
 
     started = time.monotonic()
     with pytest.raises(TimeoutError):
