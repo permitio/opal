@@ -765,11 +765,11 @@ def test_missing_git_raises_git_not_found(tmp_path, monkeypatch, kind):
     "configured, expected",
     [
         (12.5, 12.5),
-        (0, 300.0),
-        (-1.0, 300.0),
-        (math.nan, 300.0),
-        (math.inf, 300.0),
-        (-math.inf, 300.0),
+        (0, 120.0),
+        (-1.0, 120.0),
+        (math.nan, 120.0),
+        (math.inf, 120.0),
+        (-math.inf, 120.0),
     ],
 )
 def test_repack_timeout_seconds_never_means_no_limit(monkeypatch, configured, expected):
@@ -1187,7 +1187,7 @@ async def test_only_packs_with_their_index_count_toward_the_limit(
     "exc, outcome",
     [
         (GitRepackError(128, "fatal: no space left on device"), "error"),
-        (TimeoutError("git repack exceeded 300.0s"), "timeout"),
+        (TimeoutError("git repack exceeded 120.0s"), "timeout"),
         # Not "git is missing": the clones' dir, the lock, vanished.
         (FileNotFoundError(errno.ENOENT, "No such file", "git_sources"), "error"),
     ],

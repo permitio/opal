@@ -445,7 +445,7 @@ def _backoff_delay(n: int) -> float:
 
 
 # SCOPES_GIT_REPACK_TIMEOUT's declared default; a test pins the two together.
-_REPACK_DEFAULT_TIMEOUT_SECONDS = 300.0
+_REPACK_DEFAULT_TIMEOUT_SECONDS = 120.0
 
 
 def _repack_timeout_or_default(value) -> float:

@@ -340,7 +340,7 @@ class OpalServerConfig(Confi):
     )
     SCOPES_GIT_REPACK_TIMEOUT = confi.float(
         "SCOPES_GIT_REPACK_TIMEOUT",
-        300.0,
+        120.0,
         description="Hard timeout in seconds for one scope clone repack (see "
         "SCOPES_GIT_REPACK_PACK_LIMIT). Unlike SCOPES_GIT_FETCH_TIMEOUT it is "
         "HARD: when it expires the git process is stopped and its temporary files "
@@ -348,8 +348,14 @@ class OpalServerConfig(Confi):
         "packs behind, and the clone keeps the packs it already had. It must "
         "stay bounded because the repack holds the clone's sync lock while it "
         "runs, so every sync and refresh of the scopes on that clone waits for "
-        "it. For that reason 0, negative, nan or inf fall back to the default of "
-        "300 seconds; there is no way to set no limit.",
+        "it, and each waiting sync holds a SCOPES_GIT_MAX_WORKERS slot, so a "
+        "long repack stalls the whole sync pass, not just its clone. The "
+        "default is about 7x a repack measured on a production clone (16s "
+        "for 61k branches, most of it CPU); too low a value is worse than too "
+        "high, since a repack that always times out never reclaims any disk. "
+        "Watch opal_server.scopes.git_repack{outcome:timeout} and "
+        "git_repack_seconds. 0, negative, nan or inf fall back to the default "
+        "of 120 seconds; there is no way to set no limit.",
     )
     SCOPES_POLICY_CLONE_WAIT_SECONDS = confi.float(
         "SCOPES_POLICY_CLONE_WAIT_SECONDS",
