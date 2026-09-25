@@ -353,7 +353,7 @@ class OpalServerConfig(Confi):
         "default is about 7x a repack measured on a production clone (16s "
         "for 61k branches, most of it CPU); too low a value is worse than too "
         "high, since a repack that always times out never reclaims any disk. "
-        "Watch opal_server.scopes.git_repack{outcome:timeout} and "
+        "Watch opal_server.scopes.git_repack with outcome:timeout and "
         "git_repack_seconds. 0, negative, nan or inf fall back to the default "
         "of 120 seconds; there is no way to set no limit.",
     )
