@@ -21,10 +21,10 @@ from opal_client.policy_store.opa_client import (
     should_ignore_path,
 )
 from opal_client.policy_store.schemas import PolicyStoreAuth
+from opal_common.git_utils.bundle_utils import BundleUtils
 from opal_common.schemas.policy import PolicyBundle
 from opal_common.schemas.store import StoreTransaction, TransactionType
 from tenacity import retry
-
 
 class CedarClient(LivenessProbeMixin, BasePolicyStoreClient):
     def __init__(
@@ -335,13 +335,43 @@ class CedarClient(LivenessProbeMixin, BasePolicyStoreClient):
     async def get_policy_version(self) -> Optional[str]:
         return self._policy_version
 
+    def _entities_from_bundle_data_modules(
+        self, bundle: PolicyBundle
+    ) -> Optional[List]:
+        entities: List = []
+        found_entity_list = False
+
+        for module in BundleUtils.sorted_data_modules_to_load(bundle):
+            try:
+                module_data = json.loads(module.data)
+            except json.JSONDecodeError:
+                logger.warning(
+                    "Cedar policy store ignoring data module '{path}': contents are not valid JSON.",
+                    path=module.path,
+                )
+                continue
+
+            if isinstance(module_data, list):
+                entities.extend(module_data)
+                found_entity_list = True
+            else:
+                logger.warning(
+                    "Cedar policy store ignoring data module '{path}': Cedar entities must be a JSON list.",
+                    path=module.path,
+                )
+
+        return entities if found_entity_list else None
+
     @affects_transaction
     async def set_policies(
         self, bundle: PolicyBundle, transaction_id: Optional[str] = None
     ):
+        entities = self._entities_from_bundle_data_modules(bundle)
+        if entities is not None:
+            await self.set_policy_data(entities)
+
         for policy in bundle.policy_modules:
             await self.set_policy(policy.path, policy.rego)
-
         deleted_modules: Union[List[str], Set[str]] = []
 
         if bundle.old_hash is None:
