@@ -7,24 +7,31 @@ Adding typing support and parsing with Pydantic and Enum.
 import inspect
 import json
 import logging
+import os
 import string
 from collections import OrderedDict
 from functools import partial, wraps
 from typing import Any, Callable, Dict, List, Optional, Tuple, TypeVar, Union
 
-from decouple import Csv, UndefinedValueError, config, text_type, undefined
+from decouple import AutoConfig, Csv, UndefinedValueError, text_type, undefined
 from opal_common.authentication.casting import cast_private_key, cast_public_key
 from opal_common.authentication.types import EncryptionKeyFormat, PrivateKey, PublicKey
-from opal_common.confi.cli import get_cli_object_for_config_objects
-from opal_common.confi.types import ConfiDelay, ConfiEntry, no_cast
+from opal_common.confi.cli import get_cli_object_for_config_objectsfrom opal_common.confi.types import ConfiDelay, ConfiEntry, no_cast
 from opal_common.logging_utils.decorators import log_exception
 from pydantic import BaseModel, ValidationError
 from typer import Typer
 
 
+class WorkingDirectoryAutoConfig(AutoConfig):
+    def _caller_path(self):
+        return os.getcwd()
+
+
+config = WorkingDirectoryAutoConfig()
+
+
 class Placeholder(object):
     """Placeholder instead of default value for decouple."""
-
     pass
 
 

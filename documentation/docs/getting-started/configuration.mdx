@@ -6,10 +6,9 @@ OPAL supports multiple ways to configure your deployment:
 
 - **Environment Variables** (recommended) - `export OPAL_SERVER_URL=http://localhost:7002`
 - **Command Line Arguments** - `opal-server run --server-url http://localhost:7002`
-- **Configuration Files** - `.env` or `.ini` files in your project
+- **Configuration Files** - `.env` or `settings.ini` files, looked up in the working directory of the OPAL process and its parent directories (in the official docker images, the working directory is `/opal`, so mounting `/opal/.env` works). Environment variables take precedence over values in these files.
 
 ### Essential Configuration
-
 Let's get OPAL running! You'll need to set a few environment variables that tell OPAL where to find your policies and how to connect everything together.
 
 #### OPAL Server
