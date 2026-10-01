@@ -5,6 +5,7 @@ from typing import Any, Coroutine, List, Optional
 
 from fastapi_websocket_pubsub import Topic
 from fastapi_websocket_pubsub.pub_sub_server import PubSubEndpoint
+from opal_common.http_utils import redact_url_in_text
 from opal_common.logger import logger
 from opal_common.sources.base_policy_source import BasePolicySource
 from opal_server.config import opal_server_config
@@ -28,11 +29,19 @@ class BasePolicyWatcherTask:
 
     async def _on_webhook(self, topic: Topic, data: Any):
         logger.info(f"Webhook listener triggered ({len(self._webhook_tasks)})")
-        for task in self._webhook_tasks:
-            if task.done():
-                # Clean references to finished tasks
-                self._webhook_tasks.remove(task)
-
+        # Rebuild rather than remove-while-iterating: list.remove() inside a
+        # `for t in self._webhook_tasks` loop skips the element after each removal,
+        # so finished tasks accumulate. Retrieve exceptions before dropping the
+        # references — otherwise a failed trigger() is only reported by asyncio's
+        # generic "Task exception was never retrieved" at GC time.
+        for t in self._webhook_tasks:
+            if t.done() and not t.cancelled() and t.exception() is not None:
+                # git exceptions can embed a credentialed remote URL verbatim;
+                # scrub here as well as in the global log patcher, which only
+                # runs once configure_logs() has installed it.
+                exc_text = redact_url_in_text(repr(t.exception()))
+                logger.error(f"Webhook trigger task failed: {exc_text}")
+        self._webhook_tasks = [t for t in self._webhook_tasks if not t.done()]
         self._webhook_tasks.append(asyncio.create_task(self.trigger(topic, data)))
 
     async def _listen_to_webhook_notifications(self):
@@ -73,7 +82,7 @@ class BasePolicyWatcherTask:
         for task in self._tasks + self._webhook_tasks:
             if not task.done():
                 task.cancel()
-        await asyncio.gather(*self._tasks, return_exceptions=True)
+        await asyncio.gather(*self._tasks, *self._webhook_tasks, return_exceptions=True)
 
     async def trigger(self, topic: Topic, data: Any):
         """Triggers the policy watcher from outside to check for changes (git

@@ -1,0 +1,19 @@
+# Build configuration for the opal-docs Netlify site (Docusaurus + pnpm).
+#
+# Netlify automatically runs `pnpm install` when it finds a pnpm-lock.yaml in
+# the base directory, and provisions the pnpm version from package.json's
+# "packageManager" field via Corepack. This file pins the build in-repo so the
+# production deploy does not depend on dashboard build settings.
+[build]
+  base = "documentation"
+  command = "pnpm build"
+  # Relative to `base`, i.e. documentation/build (Docusaurus output).
+  publish = "build"
+
+[build.environment]
+  # Matches documentation/.nvmrc; Node 22 ships the Corepack used to fetch pnpm.
+  NODE_VERSION = "22"
+  # Corepack's signature check can fail to download newer pnpm on Netlify's
+  # build image; this is the documented workaround. The pnpm version is still
+  # integrity-pinned by the sha512 hash in package.json's "packageManager".
+  COREPACK_INTEGRITY_KEYS = "0"

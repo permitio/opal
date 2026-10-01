@@ -52,10 +52,74 @@ class OpalServerConfig(Confi):
         "EventNotifier",
         description="The name to be used for segmentation in the backbone pub/sub",
     )
-    BROADCAST_CONN_LOSS_BUGFIX_EXPERIMENT_ENABLED = confi.bool(
-        "BROADCAST_CONN_LOSS_BUGFIX_EXPERIMENT_ENABLED",
+    BROADCAST_RECONNECT_ENABLED = confi.bool(
+        "BROADCAST_RECONNECT_ENABLED",
         True,
-        description="Enable experimental bugfix for broadcast connection loss",
+        description="Reconnect the broadcaster reader on a backbone disconnect instead "
+        "of dropping all client connections. Set to False to revert to the legacy "
+        "(non-reconnecting) broadcaster.",
+    )
+    BROADCAST_RECONNECT_MAX_RETRIES = confi.int(
+        "BROADCAST_RECONNECT_MAX_RETRIES",
+        0,
+        description="Maximum consecutive broadcaster reconnect attempts before giving "
+        "up and letting the worker restart (0 = retry forever).",
+    )
+    BROADCAST_RECONNECT_BACKOFF_MIN_SECONDS = confi.float(
+        "BROADCAST_RECONNECT_BACKOFF_MIN_SECONDS",
+        0.5,
+        description="Minimum backoff in seconds between broadcaster reconnect attempts.",
+    )
+    BROADCAST_RECONNECT_BACKOFF_MAX_SECONDS = confi.float(
+        "BROADCAST_RECONNECT_BACKOFF_MAX_SECONDS",
+        30.0,
+        description="Maximum backoff in seconds between broadcaster reconnect attempts.",
+    )
+    BROADCAST_REPLAY_BUFFER_SIZE = confi.int(
+        "BROADCAST_REPLAY_BUFFER_SIZE",
+        10000,
+        description="Max number of outbound broadcasts buffered while the backbone is "
+        "down and replayed on reconnect (0 disables buffering). On overflow the oldest "
+        "buffered broadcasts are dropped; the resync on reconnect still reconciles clients.",
+    )
+    BROADCAST_RESYNC_ON_RECONNECT = confi.bool(
+        "BROADCAST_RESYNC_ON_RECONNECT",
+        True,
+        description="After a backbone gap that may have lost updates, force this "
+        "worker's connected clients to reconnect so they re-fetch full policy + data "
+        "state (guarantees cross-instance consistency).",
+    )
+    BROADCAST_RESYNC_SETTLE_SECONDS = confi.float(
+        "BROADCAST_RESYNC_SETTLE_SECONDS",
+        2.0,
+        description="Grace period after a broadcaster reconnect before replaying "
+        "buffered broadcasts and resyncing clients, to let peer servers re-subscribe.",
+    )
+    BROADCAST_HEALTHCHECK_ENABLED = confi.bool(
+        "BROADCAST_HEALTHCHECK_ENABLED",
+        True,
+        description="Make /healthcheck reflect the broadcaster reader's health so a "
+        "k8s readiness/liveness probe can route away from or restart a worker whose "
+        "reader is wedged while clients depend on it. Set to False to revert "
+        "/healthcheck to always returning ok.",
+    )
+    BROADCAST_FREEZE_ON_DISCONNECT = confi.bool(
+        "BROADCAST_FREEZE_ON_DISCONNECT",
+        True,
+        description="During a broadcaster backbone gap, freeze client-facing publishes on "
+        "every worker instead of applying them locally — so a write that cannot fan out to "
+        "the whole fleet is never served by just one worker (fleet consistency over "
+        "freshness). Recovery is the reconnect resync: clients re-fetch their configured "
+        "data sources and policy, so updates covered by those are reconciled; one-off "
+        "updates outside them (inline data payloads, ad-hoc fetch URLs) are DROPPED by a "
+        "freeze, not deferred. Internal coordination topics (statistics, keepalive, the git "
+        "webhook trigger) are exempt and keep the deliver-locally + buffer-for-replay "
+        "behavior. Engages only with BROADCAST_RECONNECT_ENABLED (without the reconnecting "
+        "broadcaster there is no gap signal, so the flag is a no-op) and requires "
+        "BROADCAST_RESYNC_ON_RECONNECT (if the resync is disabled, freezing is refused "
+        "with a warning). Set to False for "
+        "the previous behavior, where the receiving worker's own clients update immediately "
+        "and peers only after reconnect.",
     )
 
     # server security
@@ -147,6 +211,181 @@ class OpalServerConfig(Confi):
         0,
         description="The timeout for cloning the policy repository (0 means wait forever)",
     )
+    SCOPES_GIT_FETCH_TIMEOUT = confi.float(
+        "SCOPES_GIT_FETCH_TIMEOUT",
+        120.0,
+        description="Soft timeout in seconds for a single scope git clone/fetch: "
+        "the awaiting operation is abandoned (the event loop and the sync pass "
+        "move on) and the op is logged and skipped, retried next cycle. It is a "
+        "SOFT timeout: the underlying git call keeps running on its own thread, "
+        "and the pinned libgit2 sets no socket/server read timeout, so a "
+        "black-holed remote can keep that thread — and the source's in-flight "
+        "marker — alive for the life of the process (that source is then skipped "
+        "until it recovers or the process restarts); SCOPES_GIT_MAX_ZOMBIES "
+        "bounds how many such threads accumulate. Either way one unreachable repo "
+        "never blocks boot or other scopes (0 = no timeout).",
+    )
+    SCOPES_GIT_MAX_WORKERS = confi.int(
+        "SCOPES_GIT_MAX_WORKERS",
+        # Worst-case OS-thread count during an outage is this limit plus the
+        # number of lingering timed-out ("zombie") ops: a timed-out op releases
+        # its concurrency slot but keeps a daemon thread running on its own.
+        # SCOPES_GIT_MAX_ZOMBIES bounds that tail.
+        10,
+        description="Maximum number of concurrent scope git operations. It bounds "
+        "phase 1 (the network clone/fetch of each distinct repo) AND phase 2 (the "
+        "local change-check of scopes that reuse an already-cloned repo), so it "
+        "sets how many scopes are synced at once in either phase. A timed-out "
+        "operation stops counting against this limit, so one hung remote does not "
+        "hold a concurrency slot — its lingering daemon thread persists on its own "
+        "(a black-holed remote's can persist for the life of the process). That "
+        "tail is bounded by SCOPES_GIT_MAX_ZOMBIES, which is a GLOBAL ceiling: "
+        "read its description, because at that ceiling new git ops are refused "
+        "for every scope, healthy ones included.",
+    )
+    SCOPES_GIT_PRELOAD_DRAIN_TIMEOUT = confi.float(
+        "SCOPES_GIT_PRELOAD_DRAIN_TIMEOUT",
+        10.0,
+        description="Max seconds the pre-fork scope preload waits for in-flight git "
+        "ops to finish before tearing down and forking workers. Ops still lingering "
+        "past this bound are left running on their daemon threads and their cached "
+        "handles are left unfreed by the pre-fork cache reset, avoiding a use-after-free "
+        "(0 = don't wait).",
+    )
+    SCOPES_GIT_MAX_ZOMBIES = confi.int(
+        "SCOPES_GIT_MAX_ZOMBIES",
+        # 4x the default SCOPES_GIT_MAX_WORKERS. Once this many git ops (live +
+        # lingering timed-out) hold a daemon thread, new ops are refused until
+        # threads drain, bounding worst-case thread growth during an outage.
+        40,
+        description="Maximum number of in-flight scope git operations (live plus "
+        "lingering timed-out) allowed to hold a daemon thread at once, counted "
+        "GLOBALLY across all sources. It is a last-resort ceiling on thread "
+        "growth when remotes hang, not a per-source guard — that is handled "
+        "separately, by skipping a source that already has an operation in "
+        "flight. Once the ceiling is reached, new git ops are refused (logged, "
+        "and retried next cycle) for EVERY scope, healthy ones included, until "
+        "enough threads drain; with remotes that never return, that state can "
+        "persist. Set it well above SCOPES_GIT_MAX_WORKERS and alert on the "
+        "refusal log (0 = no cap; a negative value is clamped to 0 and also "
+        "means no cap, at the cost of unbounded thread growth during an "
+        "outage).",
+    )
+    SCOPES_GIT_BACKOFF_BASE_SECONDS = confi.float(
+        "SCOPES_GIT_BACKOFF_BASE_SECONDS",
+        10.0,
+        description="First delay before the periodic sync pass re-attempts a "
+        "SOURCE whose git clone or fetch just failed (unreachable host, revoked "
+        "credentials, deleted repo); every further consecutive failure doubles "
+        "it — 10s, 20s, 40s, ... minutes, hours, days — with no upper bound "
+        "unless SCOPES_GIT_BACKOFF_MAX_SECONDS is set. A delay shorter than the "
+        "gap to the next pass simply does not skip that pass, so the first few "
+        "doublings cost one attempt per pass exactly as before and the schedule "
+        "bites from roughly the fourth consecutive failure. It exists because "
+        "nothing else records a failure: without it every pass re-attempts every "
+        "dead repo, and so does every duplicate scope sharing that repo — a "
+        "handful of dead repositories can account for thousands of clone attempts "
+        "per hour. Only the periodic pass and the boot preload honour it (in "
+        "both phases, and re-checked under the source lock, so duplicates of a "
+        "source that fails in a pass cost one attempt, not one per scope): an "
+        "explicit POST /scopes/:scope_id/refresh, POST /scopes/refresh or "
+        "PUT /scopes attempts the source immediately, so an operator who has "
+        "just repaired credentials recovers at once, and any successful clone or "
+        "fetch clears both the delay and the consecutive-failure count. The state "
+        "is in-memory and per process — it resets on restart. When a periodic "
+        "pass runs (POLICY_REFRESH_INTERVAL > 0) a forked worker inherits "
+        "whatever the pre-fork preload recorded, so the leader does not re-hammer "
+        "repos that already failed at boot; without one, the boot sync is the "
+        "only pass-originated sync, so it drops the inherited entries and "
+        "attempts every source once. Watch "
+        "opal_server.scopes.sources_in_backoff (gauge of sources currently being "
+        "skipped, tagged by pid) and opal_server.scopes.git_op_skipped with "
+        "reason:backoff (counter); the WARNING logged when a source enters "
+        "backoff, and again when its delay first exceeds a day, names the "
+        "repository. 0 or negative disables the backoff entirely — nothing is "
+        "recorded and nothing is skipped; nan and inf are treated as disabled "
+        "too, because they parse cleanly rather than failing the process at "
+        "startup and neither is a duration.",
+    )
+    SCOPES_GIT_BACKOFF_MAX_SECONDS = confi.float(
+        "SCOPES_GIT_BACKOFF_MAX_SECONDS",
+        0.0,
+        description="Optional cap on the per-source doubling backoff of "
+        "SCOPES_GIT_BACKOFF_BASE_SECONDS. 0 (the default), negative, nan or inf "
+        "means NO cap: a repository that has been unreachable for a day is "
+        "checked again in two, then four, and before long only at the next "
+        "restart or explicit refresh — a repository that keeps failing is, in "
+        "all likelihood, dead. Set a positive value to bound instead how stale "
+        "a repository that comes back on its own (without anyone touching its "
+        "scope) can get: the periodic pass then re-attempts it at most that "
+        "long after the previous attempt. A value below the base is floored at "
+        "the base (one pass at a time), never inert. Lowering the cap at "
+        "runtime is not retroactive for delays already armed.",
+    )
+    SCOPES_POLICY_CLONE_WAIT_SECONDS = confi.float(
+        "SCOPES_POLICY_CLONE_WAIT_SECONDS",
+        20.0,
+        description="How long GET /scopes/:scope_id/policy holds a request while "
+        "that scope's clone is still being populated, before falling through to "
+        "the 503 + Retry-After it answers today. The route re-checks once a "
+        "second and returns the bundle the moment the clone is usable. It exists "
+        "because the opal-client PDP ignores Retry-After: it makes five attempts "
+        "with random-exponential backoff capped at 10s (~20-40s of coverage) and "
+        "then stays quiet until the next pub/sub policy message or a reconnect, "
+        "so a clone that outlives those attempts strands that PDP with no policy "
+        "— and the update-all published when a clone completes names only the "
+        "scope that was syncing, so siblings sharing the same clone are not "
+        "woken. Holding the request converts that gap into latency the client "
+        "already tolerates: five client attempts against a 20s hold cover about "
+        "two minutes of clone time, so short and medium re-clones — meaning the "
+        "download phase; the rmtree-and-init window before it answers 503 + "
+        "Retry-After 5 and is not waited on — produce no client-visible gap. "
+        "What this bounds is the WAIT plus at most one more bundle attempt: "
+        "time queued behind other bundle builds on the shared executor is "
+        "outside the deadline, which is what SCOPES_POLICY_CLONE_WAIT_MAX_INFLIGHT "
+        "bounds instead. The budget matters in both directions — 20s is well "
+        "under the 60s ALB idle timeout (a longer hold surfaces as a 504, which "
+        "the client cannot tell apart from a dead server) and far under the "
+        "client's 300s aiohttp total timeout. Readiness is derived from DISK (the "
+        "clone still has no remote-tracking refs), never from an in-process "
+        "marker, so every worker answers alike: the clone runs in the leader "
+        "while this route is served by any worker. The hold is an awaited sleep "
+        "loop, so it occupies no thread between polls and leaves the event loop "
+        "and the gunicorn worker heartbeat unaffected; it is abandoned early if "
+        "the client disconnects. 0 or negative disables the wait (answer 503 "
+        "immediately). nan, inf and -inf are treated as disabled too: unlike a "
+        "non-numeric value, which fails this process at startup when the "
+        "environment is parsed, they parse cleanly — inf would otherwise mean "
+        "the clamped maximum hold on every clone-in-progress request, and nan "
+        "is not a budget at all. Values above 55s are clamped to 55s so the "
+        "hold can never outlive the load balancer's idle timeout.",
+    )
+    SCOPES_POLICY_CLONE_WAIT_MAX_INFLIGHT = confi.int(
+        "SCOPES_POLICY_CLONE_WAIT_MAX_INFLIGHT",
+        64,
+        description="Maximum number of requests one worker process may hold at "
+        "once inside the SCOPES_POLICY_CLONE_WAIT_SECONDS wait. Requests beyond "
+        "the cap get the immediate 503 + Retry-After 30 they would have got "
+        "before the wait existed, so the cap can never make things worse than "
+        "not waiting. It exists because polling is cheap but RELEASING is not: "
+        "when the clone lands, every held request builds a full bundle on the "
+        "loop's DEFAULT executor: about min(32, cpu+4) threads shared by every "
+        "off-loop call this process makes, in front of an unbounded queue. "
+        "Measured throughput there falls from ~52 bundles/s at 32 concurrent "
+        "builds to ~18/s at 1000. Scope git clone/fetch does NOT share that "
+        "pool — each op runs on its own single-use daemon-thread executor, "
+        "bounded by SCOPES_GIT_MAX_WORKERS through a semaphore — so this key is "
+        "the only bound on how many bundle builds can pile up at once. "
+        "Size it so the cap divided by the "
+        "bundles-per-second that pod can really build fits inside the 60s ALB "
+        "idle timeout MINUS the hold: above that, released requests queue past "
+        "the timeout and 504 — the very failure the hold exists to prevent — and "
+        "a rolling restart drains worse, because uvicorn waits for in-flight "
+        "requests while gunicorn SIGKILLs the worker at 30s, dropping every "
+        "websocket that worker still holds. The count is per process, not per "
+        "pod: a pod running N workers holds up to N times this number. 0 or "
+        "negative means no cap.",
+    )
     LEADER_LOCK_FILE_PATH = confi.str(
         "LEADER_LOCK_FILE_PATH",
         "/tmp/opal_server_leader.lock",
@@ -185,7 +424,14 @@ class OpalServerConfig(Confi):
     )
 
     REPO_WATCHER_ENABLED = confi.bool(
-        "REPO_WATCHER_ENABLED", True, description="Enable the repository watcher"
+        "REPO_WATCHER_ENABLED",
+        True,
+        description="Enable the repository watcher. In scopes mode (SCOPES=true) this "
+        "same flag enables the scopes sync task on the leader worker: the periodic "
+        "sync_scopes pass, the post-leadership sync of all scopes and the fleet "
+        "purger. It does NOT gate the pre-fork preload, which still clones/fetches "
+        "every registered scope at boot. With the flag off, scopes are registered, "
+        "preloaded at boot and served, but never re-synced or purged afterwards.",
     )
 
     # publisher
@@ -230,6 +476,16 @@ class OpalServerConfig(Confi):
         "STATISTICS_SERVER_KEEPALIVE_TIMEOUT",
         20,
         description="Timeout for forgetting a server from which a keep-alive haven't been seen (keep-alive frequency would be half of this value)",
+    )
+    SCOPES_PURGE_CHANNEL = confi.str(
+        "SCOPES_PURGE_CHANNEL",
+        "__opal_scope_purge__",
+        description="Pub/sub channel (worker-to-worker, over the broadcaster) used to "
+        "purge GitPolicyFetcher caches fleet-wide when a scope is deleted or "
+        "repointed to a new source. Every worker subscribes and drops its own "
+        "cache entries; the leader is the only actor that may authorize that, "
+        "because only it can check whether a surviving scope still shares the "
+        "source. It does not remove the clone dir.",
     )
 
     # Data updates
@@ -358,6 +614,15 @@ class OpalServerConfig(Confi):
         description="Set if OPAL server should enable tracing with datadog APM",
     )
 
+    DEBUG_INTERNAL_STATS = confi.bool(
+        "DEBUG_INTERNAL_STATS",
+        False,
+        description=(
+            "Expose GET /internal/git-fetcher-cache-stats with in-memory cache "
+            "sizes and process RSS. For diagnostics/tests only; keep off in production."
+        ),
+    )
+
     SCOPES = confi.bool("SCOPES", default=False, description="Enable scopes")
 
     SCOPES_REPO_CLONES_SHARDS = confi.int(
@@ -382,6 +647,26 @@ class OpalServerConfig(Confi):
         "POLICY_REFRESH_INTERVAL",
         default=0,
         description="Policy polling refresh interval",
+    )
+
+    SCOPES_STORE_READ_TIMEOUT = confi.float(
+        "SCOPES_STORE_READ_TIMEOUT",
+        10.0,
+        description="Timeout for a scope-store read taken while holding a source's "
+        "lock — the sibling check a delete/repoint purge runs before authorizing "
+        "the fleet-wide cache purge. The Redis client is built without a socket timeout, so without "
+        "this an unreachable store would pin that lock for the life of the process "
+        "and block every later sync, purge and delete for the source. On expiry "
+        "the sibling check fails open, and what that decides is the fleet-wide "
+        "MEMORY purge only — the leader no longer touches the clone tree: a "
+        "DELETE confirms it defensively (its record is already gone, so "
+        "withholding would strand the fleet's cache entries, while over-purging "
+        "self-heals on the surviving sibling's next sync), a REPOINT withholds "
+        "it (the old source's record is still live, just moved). The clone dir "
+        "is unaffected either way: on a store fault the delete floor KEEPS this "
+        "worker's clone rather than risk deleting one a live sibling shares, "
+        "leaving an orphan tracked by PER-15612 "
+        "(0 or negative means no timeout).",
     )
 
     def on_load(self):

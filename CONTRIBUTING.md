@@ -148,20 +148,21 @@ When contributing to the documentation, you can run the documentation locally an
 - [Node.js](https://nodejs.org/en/download/)
 
 #### Setting Up
-1. Navigate to the `docs` directory:
+1. Navigate to the `documentation` directory:
     ```bash
     cd documentation
     ```
-2. Install the dependencies:
+2. Enable [Corepack](https://nodejs.org/api/corepack.html) (provides the pinned pnpm version) and install the dependencies:
     ```bash
-    npm install
+    corepack enable
+    pnpm install
     ```
 
 #### Running the Documentation Live
 
 You can run the documentation live using the following command:
 ```bash
-npm run start
+pnpm start
 ```
 
 ### Linting and Formatting

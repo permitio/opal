@@ -1,3 +1,5 @@
+import asyncio
+import random
 import time
 from contextlib import contextmanager
 from contextvars import ContextVar
@@ -29,6 +31,11 @@ from opal_common.confi.confi import load_conf_if_none
 from opal_common.config import opal_common_config
 from opal_common.logger import logger
 from opal_server.config import opal_server_config
+from opal_server.pubsub_resilience import (
+    FreezablePubSubEndpoint,
+    ReconnectingBroadcaster,
+    SafeConnectionManager,
+)
 from pydantic import BaseModel
 from starlette.datastructures import QueryParams
 
@@ -38,8 +45,12 @@ OPAL_CLIENT_INFO_CLIENT_ID = f"{OPAL_CLIENT_INFO_PARAM_PREFIX}client_id"
 
 class ClientInfo(BaseModel):
     client_id: str
-    source_host: Optional[str]
-    source_port: Optional[int]
+    # NOTE: the ``= None`` defaults are load-bearing. Under pydantic v1 a bare
+    # ``Optional[X]`` annotation implied a ``None`` default; under v2 it is a
+    # REQUIRED field. Without them these two become required and the model (and
+    # its OpenAPI contract) changes behaviour.
+    source_host: Optional[str] = None
+    source_port: Optional[int] = None
     connect_time: float
     subscribed_topics: Set[str] = set()
     refcount: int = 0  # Only change this while locking ClientTracker._client_lock
@@ -135,30 +146,127 @@ class PubSub:
         # Pub/Sub Internals
         self.notifier = WebSocketRpcEventNotifier()
         self.notifier.add_channel_restriction(type(self)._verify_permitted_topics)
+        self.notifier.add_channel_restriction(type(self)._reject_external_purge_channel)
         self.client_tracker = ClientTracker()
         self.notifier.register_subscribe_event(self.client_tracker.on_subscribe)
         self.notifier.register_unsubscribe_event(self.client_tracker.on_unsubscribe)
 
         self.broadcaster = None
         if broadcaster_uri is not None:
-            logger.info(f"Initializing broadcaster for server<->server communication")
-            self.broadcaster = EventBroadcaster(
-                broadcaster_uri,
-                notifier=self.notifier,
-                channel=opal_server_config.BROADCAST_CHANNEL_NAME,
-            )
+            if opal_server_config.BROADCAST_RECONNECT_ENABLED:
+                logger.info(
+                    "Initializing reconnecting broadcaster for server<->server communication"
+                )
+                self.broadcaster = ReconnectingBroadcaster(
+                    broadcaster_uri,
+                    notifier=self.notifier,
+                    channel=opal_server_config.BROADCAST_CHANNEL_NAME,
+                    reconnect_max_retries=opal_server_config.BROADCAST_RECONNECT_MAX_RETRIES,
+                    reconnect_backoff_min=opal_server_config.BROADCAST_RECONNECT_BACKOFF_MIN_SECONDS,
+                    reconnect_backoff_max=opal_server_config.BROADCAST_RECONNECT_BACKOFF_MAX_SECONDS,
+                    replay_buffer_size=opal_server_config.BROADCAST_REPLAY_BUFFER_SIZE,
+                    resync_settle_seconds=opal_server_config.BROADCAST_RESYNC_SETTLE_SECONDS,
+                )
+            else:
+                logger.info(
+                    "Initializing broadcaster for server<->server communication"
+                )
+                self.broadcaster = EventBroadcaster(
+                    broadcaster_uri,
+                    notifier=self.notifier,
+                    channel=opal_server_config.BROADCAST_CHANNEL_NAME,
+                )
         else:
             logger.info("Pub/Sub broadcaster is off")
 
-        # The server endpoint
-        self.endpoint = PubSubEndpoint(
+        # The server endpoint.
+        #
+        # ignore_broadcaster_disconnected=False races each client's main_loop against the
+        # shared broadcaster reader task, so a completed reader surfaces the disconnect and
+        # the client reconnects. That is only safe with ReconnectingBroadcaster, whose
+        # reader stays *pending* across transient drops and completes only after
+        # BROADCAST_RECONNECT_MAX_RETRIES is exhausted (the intended last resort). For the
+        # stock EventBroadcaster (reconnect disabled) the reader dies on the first drop, so
+        # we keep the library-safe default (True) to degrade to "stale but connected"
+        # rather than the fleet-wide drop storm. (Replaces an earlier experimental
+        # broadcast-connection-loss flag.)
+        # The reconnect resync is the freeze's ONLY recovery path (frozen publishes are
+        # dropped, not buffered) — with the resync disabled the combination would silently
+        # lose every update published during every gap, so refuse it rather than honor it.
+        # Both guardrails apply only where a freeze can actually engage, i.e. when the
+        # reconnecting broadcaster (the gap signal) was built above — warning a single-
+        # worker or reconnect-disabled deployment about the resync would be misdirection.
+        freeze_on_disconnect = opal_server_config.BROADCAST_FREEZE_ON_DISCONNECT
+        if freeze_on_disconnect and isinstance(
+            self.broadcaster, ReconnectingBroadcaster
+        ):
+            if not opal_server_config.BROADCAST_RESYNC_ON_RECONNECT:
+                logger.warning(
+                    "BROADCAST_FREEZE_ON_DISCONNECT is enabled but BROADCAST_RESYNC_ON_RECONNECT "
+                    "is disabled — the resync is the freeze's only recovery path, so freezing is "
+                    "DISABLED to avoid silently losing updates published during a backbone gap. "
+                    "Re-enable BROADCAST_RESYNC_ON_RECONNECT to get the fleet-consistency freeze."
+                )
+                freeze_on_disconnect = False
+        elif freeze_on_disconnect and self.broadcaster is not None:
+            logger.info(
+                "BROADCAST_FREEZE_ON_DISCONNECT is enabled but BROADCAST_RECONNECT_ENABLED "
+                "is disabled — the freeze engages only on the reconnecting broadcaster's "
+                "backbone-gap signal, so it is a no-op with the stock broadcaster."
+            )
+        self.endpoint = FreezablePubSubEndpoint(
             broadcaster=self.broadcaster,
             notifier=self.notifier,
             rpc_channel_get_remote_id=opal_common_config.STATISTICS_ENABLED,
-            ignore_broadcaster_disconnected=(
-                not opal_server_config.BROADCAST_CONN_LOSS_BUGFIX_EXPERIMENT_ENABLED
+            ignore_broadcaster_disconnected=not isinstance(
+                self.broadcaster, ReconnectingBroadcaster
             ),
+            # Freeze client-facing publishes during a backbone gap so a write that cannot
+            # reach the whole fleet is not applied on a single worker (see
+            # FreezablePubSubEndpoint). No-op unless the reconnecting broadcaster is in use.
+            freeze_on_disconnect=freeze_on_disconnect,
+            # Exempt: the git-webhook trigger (targets the server-side policy watcher, not
+            # clients — freezing it would drop repo-pull triggers with nothing to replay
+            # them) and the server-to-server coordination channels (statistics + broadcaster
+            # keepalive — dropping those corrupts state no resync rebuilds). The coordination
+            # channels are exempted by their CONFIGURED names: the endpoint's own "__" prefix
+            # rule covers only the defaults, and every one of these is operator-overridable.
+            # Worker-to-worker cache purge on scope delete/repoint.
+            # Freezing it during a backbone gap would leave stale GitPolicyFetcher
+            # caches fleet-wide with nothing to replay the purge. Exempt by its
+            # CONFIGURED name because it is operator-overridable to a non-"__" value.
+            freeze_exempt_topics=[
+                opal_server_config.POLICY_REPO_WEBHOOK_TOPIC,
+                opal_server_config.BROADCAST_KEEPALIVE_TOPIC,
+                opal_server_config.STATISTICS_WAKEUP_CHANNEL,
+                opal_server_config.STATISTICS_STATE_SYNC_CHANNEL,
+                opal_server_config.STATISTICS_SERVER_KEEPALIVE_CHANNEL,
+                opal_common_config.STATISTICS_ADD_CLIENT_CHANNEL,
+                opal_common_config.STATISTICS_REMOVE_CLIENT_CHANNEL,
+                opal_server_config.SCOPES_PURGE_CHANNEL,
+            ],
         )
+        # fastapi_websocket_rpc's ConnectionManager.disconnect is not idempotent: the RPC
+        # endpoint can call it twice for one socket (handle_disconnect plus the outer
+        # except in WebsocketRPCEndpoint.main_loop), raising
+        # ValueError('list.remove(x): x not in list'). Swap in an idempotent manager
+        # before any connection is served. Reaching into the wrapped endpoint is the
+        # only injection point the library offers (PubSubEndpoint takes no manager),
+        # so fail loudly if its internals ever move (a bare assert would be stripped
+        # under python -O, silently restoring the storm).
+        if not (
+            hasattr(self.endpoint, "endpoint")
+            and hasattr(self.endpoint.endpoint, "manager")
+        ):
+            raise RuntimeError(
+                "Unexpected fastapi_websocket_pubsub internals: cannot install "
+                "SafeConnectionManager (endpoint.endpoint.manager not found)"
+            )
+        self.endpoint.endpoint.manager = SafeConnectionManager()
+
+        if isinstance(self.broadcaster, ReconnectingBroadcaster):
+            self._wire_broadcaster_resync()
+
         authenticator = WebsocketJWTAuthenticator(signer)
 
         @self.api_router.get(
@@ -202,6 +310,42 @@ class PubSub:
             finally:
                 await websocket.close()
 
+    def _wire_broadcaster_resync(self):
+        """Register the post-gap resync.
+
+        After any backbone gap, force this worker's clients to reconnect
+        so they re-run their full (scope-aware) policy + data
+        reconciliation. Every worker hit the same gap, so each
+        reconciles its own clients and the fleet converges — this is the
+        consistency guarantee; the broadcaster's replay buffer only
+        narrows the staleness window.
+        """
+        manager = self.endpoint.endpoint.manager
+        broadcaster = self.broadcaster
+        resync_enabled = opal_server_config.BROADCAST_RESYNC_ON_RECONNECT
+        settle = opal_server_config.BROADCAST_RESYNC_SETTLE_SECONDS
+
+        async def _on_broadcaster_reconnect():
+            if not resync_enabled:
+                logger.info("Broadcaster recovered after a gap; client resync disabled")
+                return
+            # Every worker hit the same gap; add a per-worker random delay so the
+            # fleet does not recycle its clients in lockstep.
+            if settle > 0:
+                await asyncio.sleep(random.uniform(0, settle))
+            logger.warning(
+                "Broadcaster recovered after a gap; resyncing this worker's clients "
+                "so they re-fetch current policy + data state"
+            )
+            # The reader is kept alive across this recycle by the listening context the
+            # broadcaster pins around the whole recovery (see _recover_after_gap), so
+            # closing every client here cannot cancel it.
+            await manager.close_all_staggered()
+            if settle > 0:
+                await asyncio.sleep(settle)
+
+        broadcaster.set_reconnect_callback(_on_broadcaster_reconnect)
+
     @staticmethod
     async def _verify_permitted_topics(
         topics: Union[TopicList, ALL_TOPICS], channel: RpcChannel
@@ -214,4 +358,54 @@ class PubSub:
         if unauthorized_topics:
             raise Unauthorized(
                 description=f"Invalid 'topics' to subscribe {unauthorized_topics}"
+            )
+
+    @staticmethod
+    async def _reject_external_purge_channel(
+        topics: Union[TopicList, ALL_TOPICS], channel: RpcChannel
+    ):
+        """Forbid external RPC peers from touching the scope-purge channel.
+
+        ``SCOPES_PURGE_CHANNEL`` is a server-internal control channel: a purge
+        command evicts every worker's ``GitPolicyFetcher`` caches fleet-wide.
+        The only legitimate publishers
+        are opal-server itself (delete / repoint) and the
+        cross-server broadcaster relay — both call ``notify()`` with
+        ``channel=None``, and channel restrictions run **only when a channel is
+        present** (see ``EventNotifier.notify``/``subscribe``: ``if channel:``).
+        So this restriction never fires for legitimate server traffic; it only
+        sees an external websocket peer (a client/PDP).
+
+        Without this gate any connected peer could forge a purge and churn the
+        whole fleet's caches, because ``_verify_permitted_topics`` above
+        default-allows tokens that carry no ``permitted_topics`` claim (the
+        common case). No legitimate client ever names this channel — clients
+        only publish to ``STATISTICS_ADD_CLIENT_CHANNEL`` — so rejecting it here
+        blocks the forgery without affecting any real client (publish or
+        subscribe); no client change/redeploy is required.
+
+        ``ALL_TOPICS`` is rejected too. It is exempt for *publish* (a publish
+        never fans out to a specific-topic subscriber through it), but the same
+        callback also guards *subscribe*, and ``EventNotifier.notify`` fans
+        every published topic — the purge channel included — to the
+        ``ALL_TOPICS`` subscriber bucket. So a peer subscribing to
+        ``ALL_TOPICS`` would still receive purge traffic. No opal-client ever
+        subscribes to ``ALL_TOPICS`` (only the broadcaster does, and that is
+        ``channel=None`` so it never reaches this callback), so rejecting it
+        from external peers is safe.
+        """
+        # Normalize: the notifier may hand us a single topic (str), a list, or
+        # the ALL_TOPICS sentinel (also a str). An external peer may name
+        # neither the purge channel nor ALL_TOPICS.
+        topic_list = [topics] if isinstance(topics, str) else list(topics)
+        if (
+            ALL_TOPICS in topic_list
+            or opal_server_config.SCOPES_PURGE_CHANNEL in topic_list
+        ):
+            raise Unauthorized(
+                description=(
+                    f"Topic '{opal_server_config.SCOPES_PURGE_CHANNEL}' (and "
+                    "ALL_TOPICS, which would receive it) is server-internal and "
+                    "may not be published or subscribed by external peers"
+                )
             )

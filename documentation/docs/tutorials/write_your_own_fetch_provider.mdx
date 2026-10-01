@@ -93,7 +93,95 @@ The `provider.py` module should have the following structure:
 
 This example code shows the class structure and some comments:
 
+:::note pydantic v2
+From OPAL 0.10, `opal-common` requires **pydantic v2** (0.9.x and earlier ship
+pydantic v1). Custom fetch providers are pydantic models, so they must be
+v2-compatible.
+
+Eleven realistic v1-era provider shapes were run under both pydantic versions;
+of those, **two require a code change**. Three removed `Field` keyword arguments
+and one class of `class Config` key also break and are listed below — the
+eleven-shape measurement covers the shapes, not every API pydantic removed.
+
+**1. A bare `@root_validator` — breaks at import time.** The worst one, because
+it raises `PydanticUserError` while the class is being defined, so your module
+never loads and your own error handling never runs:
+
 ```python
+@root_validator                      # breaks
+@root_validator(pre=True)            # fine - only the BARE form breaks
+@model_validator(mode="after")       # the v2 form
+```
+
+**2. A bare `Optional[X]` with no default — breaks at runtime.** In v1 this
+defaulted to `None`; in v2 it is **required**, so a config that used to be
+constructible with no arguments now raises `ValidationError`:
+
+```python
+class MyConfig(FetcherConfig):
+    dsn: Optional[str]           # breaks: now required
+    dsn: Optional[str] = None    # correct
+```
+
+Note `x: str = None` (an explicit default, no `Optional`) is *not* affected —
+the default is what makes it optional.
+
+**3. Three removed `Field` keyword arguments — break at import time.** Same
+severity as the `@root_validator` case: they raise while the class body runs.
+
+| removed | replacement |
+|---|---|
+| `Field(..., regex=...)` | `Field(..., pattern=...)` |
+| `Field(..., const=True)` | `Literal[...]` |
+| `Field(..., unique_items=True)` | `Set[...]` |
+
+**4. Renamed `class Config` keys — accepted, then silently ignored.** This is
+the quietest failure on the page, so check for it even though an inner
+`class Config` still works in general. A key v2 renamed is carried through
+verbatim and never applied; you get a `UserWarning` and a provider that runs
+with a setting it believes is on:
+
+```python
+class MyConfig(FetcherConfig):
+    api_key: Optional[str] = Field(None, alias="apiKey")
+
+    class Config:
+        allow_population_by_field_name = True    # v2: ignored
+
+# v1: MyConfig(api_key="SECRET").api_key -> 'SECRET'
+# v2: MyConfig(api_key="SECRET").api_key -> None      <- fetches with no credential
+```
+
+Affects `allow_population_by_field_name` (now `populate_by_name`),
+`anystr_strip_whitespace`, `min_anystr_length`, `schema_extra`,
+`allow_mutation`, `fields`, `validate_all` and `error_msg_templates`. Migrate to
+`model_config = ConfigDict(...)`, where an unknown key is an error rather than a
+warning. (`orm_mode` is a separate case: it raises a `ValidationError` at
+validation time rather than being ignored.)
+
+**Everything else still works**, through v2's deprecation shims. Prefer the new
+forms, since the shims are removed in pydantic v3, but nothing forces you to
+change them today:
+
+| v1 form | status under v2 |
+|---|---|
+| `@validator` | works; prefer `@field_validator` |
+| inner `class Config` | works **for keys v2 kept by name** — see point 4 |
+| `.dict()` / `.parse_obj()` | works; prefer `.model_dump()` / `.model_validate()` |
+| `@root_validator(pre=True)` | works as-is |
+
+Two things OPAL handles for you, so you do not need to work around them:
+
+- Passing a config **model** where a `dict` is declared (e.g.
+  `FetchingEngine.queue_url(url, callback, MyConfig(...))`) still works.
+- A provider event that re-declares `config` with your own config type keeps
+  your instance intact, including subclass-only fields and fields that are
+  populated by alias.
+:::
+
+```python
+from typing import Optional
+
 from pydantic import BaseModel, Field
 
 from opal_common.fetcher.fetch_provider import BaseFetchProvider
@@ -116,7 +204,7 @@ class PostgresFetchEvent(FetchEvent):
     * set the type of the `config` key to be your custom config class (the one just above).
     """
     fetcher: str = "PostgresFetchProvider"
-    config: PostgresFetcherConfig = None
+    config: Optional[PostgresFetcherConfig] = None
 
 
 class PostgresFetchProvider(BaseFetchProvider):
@@ -180,7 +268,7 @@ Your `FetchEvent` derived class is more straightforward, simply:
 ```python
 class PostgresFetchEvent(FetchEvent):
     fetcher: str = "PostgresFetchProvider"
-    config: PostgresFetcherConfig = None
+    config: Optional[PostgresFetcherConfig] = None
 ```
 
 ### Step 4 - implementing your FetchProvider class
@@ -246,7 +334,7 @@ Simply replace the custom FetchEvent type (in this example `PostgresFetchEvent`)
 
 ```python
 def parse_event(self, event: FetchEvent) -> PostgresFetchEvent:
-    return PostgresFetchEvent(**event.dict(exclude={"config"}), config=event.config)
+    return PostgresFetchEvent(**event.model_dump(exclude={"config"}), config=event.config)
 ```
 
 #### Manage a context with `__aenter__` and `__aexit__`
@@ -267,7 +355,7 @@ async def __aenter__(self):
     # initializing parameters from the event/config
     self._event: PostgresFetchEvent
     dsn: str = self._event.url
-    connection_params: dict = {} if self._event.config.connection_params is None else self._event.config.connection_params.dict(exclude_none=True)
+    connection_params: dict = {} if self._event.config.connection_params is None else self._event.config.connection_params.model_dump(exclude_none=True)
 
     # connect to the postgres database
     self._connection: asyncpg.Connection = await asyncpg.connect(dsn, **connection_params)

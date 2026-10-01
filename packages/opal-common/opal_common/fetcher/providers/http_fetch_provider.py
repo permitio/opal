@@ -1,7 +1,7 @@
 """Simple HTTP get data fetcher using requests supports."""
 
 from enum import Enum
-from typing import Any, Union, cast
+from typing import Any, ClassVar, Optional, Set, Union, cast
 
 import httpx
 from aiohttp import ClientResponse, ClientSession, ClientTimeout
@@ -9,9 +9,9 @@ from opal_common.config import opal_common_config
 from opal_common.fetcher.events import FetcherConfig, FetchEvent
 from opal_common.fetcher.fetch_provider import BaseFetchProvider
 from opal_common.fetcher.logger import get_logger
-from opal_common.http_utils import is_http_error_response
+from opal_common.http_utils import is_http_error_response, redact_url
 from opal_common.security.sslcontext import get_custom_ssl_context
-from pydantic import validator
+from pydantic import ConfigDict, field_validator
 
 logger = get_logger("http_fetch_provider")
 
@@ -28,13 +28,20 @@ class HttpMethods(Enum):
 class HttpFetcherConfig(FetcherConfig):
     """Config for HttpFetchProvider's Adding HTTP headers."""
 
-    headers: dict = None
+    # ``headers`` carries Authorization tokens and ``data`` the (possibly
+    # sensitive) payload - mask both in repr/str so they never leak into logs.
+    _redacted_repr_fields: ClassVar[Set[str]] = {"headers", "data"}
+
+    model_config = ConfigDict(use_enum_values=True)
+
+    headers: Optional[dict] = None
     is_json: bool = True
     process_data: bool = True
     method: HttpMethods = HttpMethods.GET
     data: Any = None
 
-    @validator("method")
+    @field_validator("method")
+    @classmethod
     def force_enum(cls, v):
         if isinstance(v, str):
             return HttpMethods(v)
@@ -42,13 +49,10 @@ class HttpFetcherConfig(FetcherConfig):
             return v
         raise ValueError(f"invalid value: {v}")
 
-    class Config:
-        use_enum_values = True
-
 
 class HttpFetchEvent(FetchEvent):
     fetcher: str = "HttpFetchProvider"
-    config: HttpFetcherConfig = None
+    config: Optional[HttpFetcherConfig] = None
 
 
 class HttpFetchProvider(BaseFetchProvider):
@@ -66,7 +70,9 @@ class HttpFetchProvider(BaseFetchProvider):
         )
 
     def parse_event(self, event: FetchEvent) -> HttpFetchEvent:
-        return HttpFetchEvent(**event.dict(exclude={"config"}), config=event.config)
+        return HttpFetchEvent(
+            **event.model_dump(exclude={"config"}), config=event.config
+        )
 
     async def __aenter__(self):
         headers = {}
@@ -91,7 +97,7 @@ class HttpFetchProvider(BaseFetchProvider):
         await self._session.__aexit__(exc_type, exc_val, tb)
 
     async def _fetch_(self):
-        logger.debug(f"{self.__class__.__name__} fetching from {self._url}")
+        logger.debug(f"{self.__class__.__name__} fetching from {redact_url(self._url)}")
         http_method = self.match_http_method_from_type(
             self._session, self._event.config.method
         )

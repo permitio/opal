@@ -51,9 +51,9 @@ def cast_boolean(value):
 def cast_pydantic(model: BaseModel):
     def cast_pydantic_by_model(value):
         if isinstance(value, str):
-            return model.parse_raw(value)
+            return model.model_validate_json(value)
         else:
-            return model.parse_obj(value)
+            return model.model_validate(value)
 
     return cast_pydantic_by_model
 

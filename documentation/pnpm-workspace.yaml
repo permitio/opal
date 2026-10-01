@@ -1,0 +1,13 @@
+# Transitive security pins (formerly yarn `resolutions`):
+#   node-forge 1.4.0  - clears RSA/Ed25519 signature forgery + basicConstraints bypass
+#   lodash     4.18.1 - clears _.template code injection
+overrides:
+  node-forge: 1.4.0
+  lodash: 4.18.1
+
+# Build-script permissions (pnpm blocks postinstall scripts by default).
+#   @parcel/watcher - native module for fast file-watching in `pnpm start`; allowed.
+#   core-js         - postinstall only prints a funding message; not built.
+allowBuilds:
+  '@parcel/watcher': true
+  core-js: false

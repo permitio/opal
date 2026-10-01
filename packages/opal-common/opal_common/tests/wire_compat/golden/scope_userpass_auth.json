@@ -1,0 +1,162 @@
+{
+  "builder": null,
+  "case": "scope_userpass_auth",
+  "dict": {
+    "data": {
+      "entries": []
+    },
+    "policy": {
+      "auth": {
+        "auth_type": "userpass",
+        "password": "corpus-password",
+        "username": "ci-bot"
+      },
+      "branch": "main",
+      "bundle_ignore": null,
+      "directories": [
+        "."
+      ],
+      "extensions": [
+        ".rego",
+        ".json"
+      ],
+      "manifest": ".manifest",
+      "poll_updates": true,
+      "source_type": "git",
+      "url": "https://git.example.com/acme/policy.git"
+    },
+    "scope_id": "tenant-d"
+  },
+  "dict_by_alias": {
+    "data": {
+      "entries": []
+    },
+    "policy": {
+      "auth": {
+        "auth_type": "userpass",
+        "password": "corpus-password",
+        "username": "ci-bot"
+      },
+      "branch": "main",
+      "bundle_ignore": null,
+      "directories": [
+        "."
+      ],
+      "extensions": [
+        ".rego",
+        ".json"
+      ],
+      "manifest": ".manifest",
+      "poll_updates": true,
+      "source_type": "git",
+      "url": "https://git.example.com/acme/policy.git"
+    },
+    "scope_id": "tenant-d"
+  },
+  "json": {
+    "data": {
+      "entries": []
+    },
+    "policy": {
+      "auth": {
+        "auth_type": "userpass",
+        "password": "corpus-password",
+        "username": "ci-bot"
+      },
+      "branch": "main",
+      "bundle_ignore": null,
+      "directories": [
+        "."
+      ],
+      "extensions": [
+        ".rego",
+        ".json"
+      ],
+      "manifest": ".manifest",
+      "poll_updates": true,
+      "source_type": "git",
+      "url": "https://git.example.com/acme/policy.git"
+    },
+    "scope_id": "tenant-d"
+  },
+  "json_by_alias": {
+    "data": {
+      "entries": []
+    },
+    "policy": {
+      "auth": {
+        "auth_type": "userpass",
+        "password": "corpus-password",
+        "username": "ci-bot"
+      },
+      "branch": "main",
+      "bundle_ignore": null,
+      "directories": [
+        "."
+      ],
+      "extensions": [
+        ".rego",
+        ".json"
+      ],
+      "manifest": ".manifest",
+      "poll_updates": true,
+      "source_type": "git",
+      "url": "https://git.example.com/acme/policy.git"
+    },
+    "scope_id": "tenant-d"
+  },
+  "json_reparsed": {
+    "data": {
+      "entries": []
+    },
+    "policy": {
+      "auth": {
+        "auth_type": "userpass",
+        "password": "corpus-password",
+        "username": "ci-bot"
+      },
+      "branch": "main",
+      "bundle_ignore": null,
+      "directories": [
+        "."
+      ],
+      "extensions": [
+        ".rego",
+        ".json"
+      ],
+      "manifest": ".manifest",
+      "poll_updates": true,
+      "source_type": "git",
+      "url": "https://git.example.com/acme/policy.git"
+    },
+    "scope_id": "tenant-d"
+  },
+  "model": "opal_common.schemas.scopes:Scope",
+  "note": "the fourth auth arm, and the only one carrying a credential in TWO fields; also extends the Redis round-trip driver, which enumerates these same cases",
+  "payload": {
+    "data": {
+      "entries": []
+    },
+    "policy": {
+      "auth": {
+        "auth_type": "userpass",
+        "password": "corpus-password",
+        "username": "ci-bot"
+      },
+      "branch": "main",
+      "directories": [
+        "."
+      ],
+      "extensions": [
+        ".rego",
+        ".json"
+      ],
+      "manifest": ".manifest",
+      "poll_updates": true,
+      "source_type": "git",
+      "url": "https://git.example.com/acme/policy.git"
+    },
+    "scope_id": "tenant-d"
+  },
+  "pydantic": "1.10.26"
+}

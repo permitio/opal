@@ -1,0 +1,282 @@
+{
+  "builder": null,
+  "case": "data_source_config",
+  "dict": {
+    "entries": [
+      {
+        "config": {
+          "data": null,
+          "fetcher": null,
+          "headers": {
+            "Authorization": "Bearer corpus-token",
+            "X-Trace": "abc"
+          },
+          "is_json": true,
+          "method": "get",
+          "process_data": true
+        },
+        "data": null,
+        "dst_path": "/acl",
+        "periodic_update_interval": null,
+        "save_method": "PUT",
+        "topics": [
+          "policy_data",
+          "policy_data/tenant_1"
+        ],
+        "url": "https://backend.example.com/v1/policy/data"
+      },
+      {
+        "config": null,
+        "data": {
+          "count": 3,
+          "users": {
+            "alice": {
+              "roles": [
+                "admin"
+              ]
+            }
+          }
+        },
+        "dst_path": "/acl",
+        "periodic_update_interval": 45.0,
+        "save_method": "PUT",
+        "topics": [
+          "policy_data"
+        ],
+        "url": "https://backend.example.com/v1/policy/data"
+      }
+    ]
+  },
+  "dict_by_alias": {
+    "entries": [
+      {
+        "config": {
+          "data": null,
+          "fetcher": null,
+          "headers": {
+            "Authorization": "Bearer corpus-token",
+            "X-Trace": "abc"
+          },
+          "is_json": true,
+          "method": "get",
+          "process_data": true
+        },
+        "data": null,
+        "dst_path": "/acl",
+        "periodic_update_interval": null,
+        "save_method": "PUT",
+        "topics": [
+          "policy_data",
+          "policy_data/tenant_1"
+        ],
+        "url": "https://backend.example.com/v1/policy/data"
+      },
+      {
+        "config": null,
+        "data": {
+          "count": 3,
+          "users": {
+            "alice": {
+              "roles": [
+                "admin"
+              ]
+            }
+          }
+        },
+        "dst_path": "/acl",
+        "periodic_update_interval": 45.0,
+        "save_method": "PUT",
+        "topics": [
+          "policy_data"
+        ],
+        "url": "https://backend.example.com/v1/policy/data"
+      }
+    ]
+  },
+  "json": {
+    "entries": [
+      {
+        "config": {
+          "data": null,
+          "fetcher": null,
+          "headers": {
+            "Authorization": "Bearer corpus-token",
+            "X-Trace": "abc"
+          },
+          "is_json": true,
+          "method": "get",
+          "process_data": true
+        },
+        "data": null,
+        "dst_path": "/acl",
+        "periodic_update_interval": null,
+        "save_method": "PUT",
+        "topics": [
+          "policy_data",
+          "policy_data/tenant_1"
+        ],
+        "url": "https://backend.example.com/v1/policy/data"
+      },
+      {
+        "config": null,
+        "data": {
+          "count": 3,
+          "users": {
+            "alice": {
+              "roles": [
+                "admin"
+              ]
+            }
+          }
+        },
+        "dst_path": "/acl",
+        "periodic_update_interval": 45.0,
+        "save_method": "PUT",
+        "topics": [
+          "policy_data"
+        ],
+        "url": "https://backend.example.com/v1/policy/data"
+      }
+    ]
+  },
+  "json_by_alias": {
+    "entries": [
+      {
+        "config": {
+          "data": null,
+          "fetcher": null,
+          "headers": {
+            "Authorization": "Bearer corpus-token",
+            "X-Trace": "abc"
+          },
+          "is_json": true,
+          "method": "get",
+          "process_data": true
+        },
+        "data": null,
+        "dst_path": "/acl",
+        "periodic_update_interval": null,
+        "save_method": "PUT",
+        "topics": [
+          "policy_data",
+          "policy_data/tenant_1"
+        ],
+        "url": "https://backend.example.com/v1/policy/data"
+      },
+      {
+        "config": null,
+        "data": {
+          "count": 3,
+          "users": {
+            "alice": {
+              "roles": [
+                "admin"
+              ]
+            }
+          }
+        },
+        "dst_path": "/acl",
+        "periodic_update_interval": 45.0,
+        "save_method": "PUT",
+        "topics": [
+          "policy_data"
+        ],
+        "url": "https://backend.example.com/v1/policy/data"
+      }
+    ]
+  },
+  "json_reparsed": {
+    "entries": [
+      {
+        "config": {
+          "data": null,
+          "fetcher": null,
+          "headers": {
+            "Authorization": "Bearer corpus-token",
+            "X-Trace": "abc"
+          },
+          "is_json": true,
+          "method": "get",
+          "process_data": true
+        },
+        "data": null,
+        "dst_path": "/acl",
+        "periodic_update_interval": null,
+        "save_method": "PUT",
+        "topics": [
+          "policy_data",
+          "policy_data/tenant_1"
+        ],
+        "url": "https://backend.example.com/v1/policy/data"
+      },
+      {
+        "config": null,
+        "data": {
+          "count": 3,
+          "users": {
+            "alice": {
+              "roles": [
+                "admin"
+              ]
+            }
+          }
+        },
+        "dst_path": "/acl",
+        "periodic_update_interval": 45.0,
+        "save_method": "PUT",
+        "topics": [
+          "policy_data"
+        ],
+        "url": "https://backend.example.com/v1/policy/data"
+      }
+    ]
+  },
+  "model": "opal_common.schemas.data:DataSourceConfig",
+  "note": "GET /data/config response; entries are the polling subclass",
+  "payload": {
+    "entries": [
+      {
+        "config": {
+          "data": null,
+          "fetcher": null,
+          "headers": {
+            "Authorization": "Bearer corpus-token",
+            "X-Trace": "abc"
+          },
+          "is_json": true,
+          "method": "get",
+          "process_data": true
+        },
+        "data": null,
+        "dst_path": "/acl",
+        "periodic_update_interval": null,
+        "save_method": "PUT",
+        "topics": [
+          "policy_data",
+          "policy_data/tenant_1"
+        ],
+        "url": "https://backend.example.com/v1/policy/data"
+      },
+      {
+        "data": {
+          "count": 3,
+          "users": {
+            "alice": {
+              "roles": [
+                "admin"
+              ]
+            }
+          }
+        },
+        "dst_path": "/acl",
+        "periodic_update_interval": 45.0,
+        "save_method": "PUT",
+        "topics": [
+          "policy_data"
+        ],
+        "url": "https://backend.example.com/v1/policy/data"
+      }
+    ]
+  },
+  "pydantic": "1.10.26"
+}

@@ -1,0 +1,81 @@
+{
+  "builder": null,
+  "case": "access_token_naive_expiry",
+  "dict": {
+    "details": {
+      "claims": {},
+      "expired": {
+        "__datetime__": "2027-09-15T10:00:00"
+      },
+      "id": {
+        "__uuid__": "dddddddd-9999-9999-9999-999999999999"
+      },
+      "type": {
+        "__enum__": "PeerType.client",
+        "value": "client"
+      }
+    },
+    "token": "eyJhbGciOiJSUzI1NiJ9.corpus.signature",
+    "type": "bearer"
+  },
+  "dict_by_alias": {
+    "details": {
+      "claims": {},
+      "expired": {
+        "__datetime__": "2027-09-15T10:00:00"
+      },
+      "id": {
+        "__uuid__": "dddddddd-9999-9999-9999-999999999999"
+      },
+      "type": {
+        "__enum__": "PeerType.client",
+        "value": "client"
+      }
+    },
+    "token": "eyJhbGciOiJSUzI1NiJ9.corpus.signature",
+    "type": "bearer"
+  },
+  "json": {
+    "details": {
+      "claims": {},
+      "expired": "2027-09-15T10:00:00",
+      "id": "dddddddd-9999-9999-9999-999999999999",
+      "type": "client"
+    },
+    "token": "eyJhbGciOiJSUzI1NiJ9.corpus.signature",
+    "type": "bearer"
+  },
+  "json_by_alias": {
+    "details": {
+      "claims": {},
+      "expired": "2027-09-15T10:00:00",
+      "id": "dddddddd-9999-9999-9999-999999999999",
+      "type": "client"
+    },
+    "token": "eyJhbGciOiJSUzI1NiJ9.corpus.signature",
+    "type": "bearer"
+  },
+  "json_reparsed": {
+    "details": {
+      "claims": {},
+      "expired": "2027-09-15T10:00:00",
+      "id": "dddddddd-9999-9999-9999-999999999999",
+      "type": "client"
+    },
+    "token": "eyJhbGciOiJSUzI1NiJ9.corpus.signature",
+    "type": "bearer"
+  },
+  "model": "opal_common.schemas.security:AccessToken",
+  "note": "naive expiry, as POST /token actually emits it (datetime.utcnow())",
+  "payload": {
+    "details": {
+      "claims": {},
+      "expired": "2027-09-15T10:00:00",
+      "id": "dddddddd-9999-9999-9999-999999999999",
+      "type": "client"
+    },
+    "token": "eyJhbGciOiJSUzI1NiJ9.corpus.signature",
+    "type": "bearer"
+  },
+  "pydantic": "1.10.26"
+}

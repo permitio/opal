@@ -1,10 +1,16 @@
 from fastapi import FastAPI, Request, status
 from fastapi.encoders import jsonable_encoder
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from opal_common.config import opal_common_config
 from opal_common.logger import logger
 from pydantic import BaseModel
+
+# Keys pydantic v2 adds to each validation error that we must not echo back:
+# ``input`` carries the offending value verbatim (and, unlike ``str(exc)``, is
+# not truncated), ``ctx`` can embed it too, and ``url`` is just a docs link.
+_UNSAFE_ERROR_KEYS = frozenset({"input", "ctx", "url"})
 
 
 class ErrorResponse(BaseModel):
@@ -13,7 +19,7 @@ class ErrorResponse(BaseModel):
 
 def get_response() -> JSONResponse:
     error = ErrorResponse(error="Uncaught server exception")
-    json_error = jsonable_encoder(error.dict())
+    json_error = jsonable_encoder(error.model_dump())
     return JSONResponse(
         content=json_error, status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
     )
@@ -73,6 +79,38 @@ def register_default_server_exception_handler(app: FastAPI):
         return response
 
 
+def register_request_validation_exception_handler(app: FastAPI):
+    """Strips the rejected input out of 422 validation responses.
+
+    From pydantic v2 each error object carries an ``input`` key holding the
+    value that failed validation, and FastAPI's default handler serializes
+    ``exc.errors()`` wholesale. On routes that accept credential-bearing bodies
+    (``/data/config``, ``/data/callback_report``, ``/scopes``, ``/callbacks``)
+    that echoes fetcher ``Authorization`` headers and git deploy keys straight
+    back to the caller - and into whatever proxy logs, APM traces and error
+    trackers sit in front of them. It also routes around ``RedactedReprMixin``,
+    since pydantic-core builds the error from the raw input and never consults
+    the model's repr.
+
+    Note ``ConfigDict(hide_input_in_errors=True)`` only cleans the *string*
+    form, and ``exc.errors(include_input=False)`` raises ``TypeError`` -
+    FastAPI's ``RequestValidationError.errors()`` takes no keyword arguments.
+    """
+
+    @app.exception_handler(RequestValidationError)
+    async def request_validation_exception_handler(
+        request: Request, exc: RequestValidationError
+    ) -> JSONResponse:
+        sanitized = [
+            {k: v for k, v in error.items() if k not in _UNSAFE_ERROR_KEYS}
+            for error in exc.errors()
+        ]
+        return JSONResponse(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            content=jsonable_encoder({"detail": sanitized}),
+        )
+
+
 def configure_cors_middleware(app: FastAPI):
     app.add_middleware(
         CORSMiddleware,
@@ -85,4 +123,5 @@ def configure_cors_middleware(app: FastAPI):
 
 def configure_middleware(app: FastAPI):
     register_default_server_exception_handler(app)
+    register_request_validation_exception_handler(app)
     configure_cors_middleware(app)

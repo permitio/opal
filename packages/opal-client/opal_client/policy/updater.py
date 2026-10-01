@@ -141,7 +141,7 @@ class PolicyUpdater:
         logger.info(
             "Received policy update: topic={topic}, message={message}",
             topic=topic,
-            message=message.dict(),
+            message=message.model_dump(),
         )
 
         directories = list(
@@ -319,7 +319,7 @@ class PolicyUpdater:
                     deleted_files = (
                         None
                         if bundle.deleted_files is None
-                        else bundle.deleted_files.dict()
+                        else bundle.deleted_files.model_dump()
                     )
                     logger.info(
                         "got policy bundle (delta): '{diff_against_hash}' -> '{commit_hash}', manifest: {manifest}, deleted: {deleted}",
