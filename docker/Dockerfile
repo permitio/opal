@@ -86,12 +86,19 @@ USER root
 RUN apk update && apk add skopeo tar
 WORKDIR /opal
 
-# copy opa from official docker image
-ARG opa_image=openpolicyagent/opa
+# copy opa from official docker image. `opa_image` / `opa_tag` are documented build
+# args (#322) for supplying your own OPA image, so this stays a skopeo copy rather than
+# a `FROM`. `--override-arch` picks the TARGET architecture explicitly, so the binary
+# is right for arm64 even if this stage ever runs on the build host's platform.
+#
 # 1.21.1 (built with Go 1.27.1). Was 1.9.0, built with Go 1.25.1, which carries
-# CVE-2025-68121 and later Go stdlib CVEs.
+# CVE-2025-68121 and later Go stdlib CVEs. NOTE for users: OPA 1.19-1.21 tightened the
+# compiler (stricter `:=` safety, typed empty composite literals, YAML 1.2 parsing), so
+# a policy that compiled on 1.9 can be rejected at load time - see the release notes.
+ARG opa_image=openpolicyagent/opa
 ARG opa_tag=1.21.1-static
-RUN skopeo copy "docker://${opa_image}:${opa_tag}" docker-archive:./image.tar && \
+ARG TARGETARCH
+RUN skopeo copy --override-arch "${TARGETARCH}" "docker://${opa_image}:${opa_tag}" docker-archive:./image.tar && \
   mkdir image && tar xf image.tar -C ./image && cat image/*.tar | tar xf - -C ./image -i && \
   find image/ -name "opa*" -type f -executable -print0 | xargs -0 -I "{}" cp {} ./opa && chmod 755 ./opa && \
   rm -r image image.tar
@@ -130,9 +137,11 @@ WORKDIR /download
 # the release's own checksums.txt. Bump the tag and both sums together.
 #
 # v1.45.1 is the LAST EOPA release: open-policy-agent/eopa is archived upstream,
-# so nothing newer will ship. It still bundles jackc/pgx/v5 v5.7.6, so
-# CVE-2026-33815 and CVE-2026-33816 (fixed in pgx >= 5.9.0) stay unresolved in
-# the EOPA client image for good. Plan to retire the EOPA variant rather than
+# so nothing newer will ship. That binary is built with go1.25.4 on OPA v1.10.1 and
+# bundles jackc/pgx/v5 v5.7.6, so in the EOPA client image these stay unfixed for
+# good: CVE-2026-33815 / CVE-2026-33816 (pgx >= 5.9.0), the Go stdlib CVEs fixed after
+# 1.25.4, and every OPA server fix after 1.10.1 (e.g. 1.11.1's gzip-header memory
+# exhaustion, 1.19.0's Compile API fix). Plan to retire the EOPA variant rather than
 # wait for an upstream fix.
 ARG eopa_tag=v1.45.1
 ARG EOPA_SHA256_x86_64=588ba9c7149b74ba0c497293615abca2aef668c29dbdef7cfe8a449829bf83fe
