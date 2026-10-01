@@ -10,8 +10,7 @@
 # groups, limits, commit prefixes and labels - so every repo behaves alike.
 #
 # `cooldown` is supply-chain defence, not noise reduction: most malicious-release incidents
-# are caught within a week, which is why GitHub made a 3-day cooldown the platform default
-# in July 2026. Security updates are never delayed by it. Only semver-strict ecosystems
+# are caught within a week. Security updates are never delayed by it. Only semver-strict ecosystems
 # support the semver-specific knobs, so pip and npm get them while docker and
 # github-actions get default-days only.
 version: 2
@@ -79,8 +78,8 @@ updates:
   # and python:3.10-slim-bookworm, and Python 3.10 reaches END OF LIFE in October 2026 -
   # the PDP already moved off python:3.10 for that reason plus four CPython CVEs that
   # only had 3.13 fixes (PER-15358). It also pulls `alpine:latest` twice, which is a
-  # floating tag with no reproducibility at all, and pins openpolicyagent/opa:1.9.0-static
-  # and permitio/cedar-agent:0.2.1 by hand.
+  # floating tag with no reproducibility at all, and pins openpolicyagent/opa and
+  # permitio/cedar-agent by hand.
   - package-ecosystem: "docker"
     directory: "/docker"
     schedule:
@@ -98,10 +97,10 @@ updates:
   # Note: cooldown.semver-major-days is not supported for github-actions.
   #
   # This is the entry with the most immediate payoff. The workflows currently mix
-  # actions/checkout@v2, @v3, @v4 and a bare commit SHA; actions/setup-python@v2, @v4 and
-  # @v5; docker/build-push-action@v2 and @v6; docker/setup-buildx-action@v1 and @v3; and
-  # docker/setup-qemu-action@v1 and @v3. The @v1/@v2 generations are several years old and
-  # run on Node runtimes GitHub has already deprecated.
+  # actions/checkout@v2, @v3 and a bare commit SHA; actions/setup-python@v2, @v4 and @v5;
+  # docker/build-push-action@v2 and @v6; docker/setup-buildx-action@v1 and @v3;
+  # docker/setup-qemu-action@v1 and @v3; and docker/login-action@v2. The @v1/@v2
+  # generations are several years old and run on Node runtimes GitHub has deprecated.
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
@@ -115,20 +114,17 @@ updates:
         update-types: ["minor", "patch"]
     commit-message:
       prefix: "deps"
-      prefix-development: "deps-dev"
     labels:
       - "dependencies"
 
 # DOWNSTREAM NOTE (PER-15358)
 # ---------------------------
-# These caps in packages/requires.txt and packages/opal-common/requires.txt are the reason
-# permitio/pdp-v2 carries CVE waivers it cannot otherwise retire. Dependabot cannot see
-# those files (see the pip entry above), so they need raising by hand:
+# These pins in packages/opal-common/requires.txt (and packages/opal-server/requires.txt
+# for gitpython) are the reason permitio/pdp-v2 carries CVE waivers it cannot otherwise
+# retire. Dependabot cannot see
+# those files (see the pip entry above), so they need raising by hand. (The starlette
+# <1 cap that used to be here was lifted to >=1.3.1,<2 by #959.)
 #
-#   starlette>=0.40.0,<1   - the <1 cap forbids the fixed versions of CVE-2026-48710
-#                            (1.0.1), CVE-2026-48817 / CVE-2026-48818 (1.1.0) and
-#                            CVE-2026-54283 (1.3.1). All four are waived in the PDP as
-#                            unreachable; none can be upgraded away while this cap stands.
 #   ddtrace>=3.0.0,<4      - the <4 cap forbids 4.8.2, which fixes CVE-2026-50271. The PDP
 #                            works around it by dropping "baggage" from
 #                            DD_TRACE_PROPAGATION_STYLE_EXTRACT.
