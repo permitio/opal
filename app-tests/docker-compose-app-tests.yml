@@ -91,7 +91,12 @@ services:
       - gitea
 
   opal_client:
-    image: permitio/opal-client:${OPAL_IMAGE_TAG:-latest}
+    # Defaults to OPAL_IMAGE_TAG, so the normal same-version run is unchanged.
+    # Set OPAL_CLIENT_IMAGE_TAG on its own to run a MIXED-VERSION fleet - e.g.
+    # a released pydantic-v1 client against a server built from this tree, which
+    # is the steady state in the field: opal-client is customer-deployed and
+    # upgrades on its own schedule. See app-tests/README.md.
+    image: permitio/opal-client:${OPAL_CLIENT_IMAGE_TAG:-${OPAL_IMAGE_TAG:-latest}}
     deploy:
       mode: replicated
       replicas: 2

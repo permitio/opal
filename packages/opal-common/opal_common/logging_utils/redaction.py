@@ -4,7 +4,7 @@ from opal_common.http_utils import redact_url
 
 
 class RedactedReprMixin:
-    """Mixin for pydantic (v1) models that may carry credentials.
+    """Mixin for pydantic models that may carry credentials.
 
     Overrides ``repr()`` / ``str()`` so that sensitive fields are masked instead
     of rendering their real value. Two flavours of masking are supported:
@@ -31,7 +31,8 @@ class RedactedReprMixin:
     introduces a new secret-bearing field must still list it here.
 
     Note: this only affects human / log rendering. Wire serialization uses
-    ``.dict()`` / ``.json()``, which are untouched, so transport is unaffected.
+    ``.model_dump()`` / ``.model_dump_json()``, which are untouched, so transport
+    is unaffected.
 
     Caveat: this masks whole *fields* of the model. It does not protect a secret
     that is logged by reaching *into* the model (e.g. ``logger.info("{h}",

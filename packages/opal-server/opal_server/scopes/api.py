@@ -420,7 +420,7 @@ def init_scope_router(
                         clone_path=old_clone_path,
                         scope_id=scope_in.scope_id,
                         reason="repoint",
-                    ).dict(),
+                    ).model_dump(),
                 )
 
         force_fetch_str = " (force fetch)" if force_fetch else ""

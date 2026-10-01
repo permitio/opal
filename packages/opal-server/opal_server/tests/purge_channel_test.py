@@ -92,7 +92,9 @@ async def test_handle_purge_message_parses_and_purges(tmp_path, monkeypatch):
     GitPolicyFetcher.repos[path] = object()
     GitPolicyFetcher.repos_last_fetched[sid] = "ts"
 
-    await handle_purge_message(None, _cmd(sid=sid, path=path, confirmed=True).dict())
+    await handle_purge_message(
+        None, _cmd(sid=sid, path=path, confirmed=True).model_dump()
+    )
 
     assert path not in GitPolicyFetcher.repos
     assert sid not in GitPolicyFetcher.repos_last_fetched
@@ -111,7 +113,9 @@ async def test_handle_purge_message_leaves_no_stray_repo_lock(tmp_path, monkeypa
     path = _derived_path(tmp_path, sid)
     GitPolicyFetcher.repos[path] = object()
 
-    await handle_purge_message(None, _cmd(sid=sid, path=path, confirmed=True).dict())
+    await handle_purge_message(
+        None, _cmd(sid=sid, path=path, confirmed=True).model_dump()
+    )
 
     assert sid not in GitPolicyFetcher.repo_locks, "worker purge left a stray lock"
 
@@ -137,7 +141,7 @@ async def test_handle_purge_message_ignores_unconfirmed_requests(tmp_path, monke
     GitPolicyFetcher.repos_last_fetched[sid] = "ts"
 
     # confirmed defaults False -> a raw request; the gate must stop it.
-    await handle_purge_message(None, _cmd(sid=sid, path=path).dict())
+    await handle_purge_message(None, _cmd(sid=sid, path=path).model_dump())
 
     assert path in GitPolicyFetcher.repos
     assert sid in GitPolicyFetcher.repos_last_fetched
@@ -326,7 +330,7 @@ async def test_leader_confirms_memory_purge_for_unshared_source(tmp_path):
         None,
         ScopePurgeCommand(
             source_id=sid, clone_path=str(clone), scope_id="dead", reason="delete"
-        ).dict(),
+        ).model_dump(),
     )
     await task
 
@@ -354,7 +358,7 @@ async def test_leader_keeps_disk_when_live_sibling_shares_source(tmp_path):
             clone_path=str(clone),
             scope_id="deleted-sibling",
             reason="delete",
-        ).dict(),
+        ).model_dump(),
     )
     await task
 
@@ -391,7 +395,7 @@ async def test_leader_confirms_even_while_a_git_op_is_in_flight(tmp_path):
                 clone_path=str(clone),
                 scope_id="dead",
                 reason="repoint",
-            ).dict(),
+            ).model_dump(),
         )
         await task
     finally:
@@ -426,7 +430,7 @@ async def test_leader_purges_defensively_when_sibling_check_raises(tmp_path):
             None,
             ScopePurgeCommand(
                 source_id=sid, clone_path=str(clone), scope_id="dead", reason="delete"
-            ).dict(),
+            ).model_dump(),
         )
         await task
     finally:
@@ -500,7 +504,7 @@ async def test_leader_handle_returns_fast_and_purge_waits_for_lock(tmp_path):
                     clone_path=str(clone),
                     scope_id="dead",
                     reason="delete",
-                ).dict(),
+                ).model_dump(),
             ),
             timeout=1,
         )
@@ -543,7 +547,7 @@ async def test_leader_ignores_confirmation_broadcasts(tmp_path):
             scope_id="dead",
             reason="delete",
             confirmed=True,
-        ).dict(),
+        ).model_dump(),
     )
     assert task is None
     assert clone.exists(), "leader acted on its own confirmation broadcast"
@@ -572,7 +576,7 @@ async def test_leader_publishes_confirmation_after_purge(tmp_path):
             clone_path=str(clone),
             scope_id="dead",
             reason="delete",
-        ).dict(),
+        ).model_dump(),
     )
     await task
     assert len(pubsub.published) == 1
@@ -607,7 +611,7 @@ async def test_leader_does_not_confirm_when_shared(tmp_path):
             clone_path=str(clone),
             scope_id="deleted-sibling",
             reason="delete",
-        ).dict(),
+        ).model_dump(),
     )
     await task
     assert pubsub.published == []  # shared → no confirmation
@@ -653,7 +657,7 @@ async def test_confirmation_is_published_while_holding_the_source_lock(tmp_path)
             clone_path=str(clone),
             scope_id="dead",
             reason="delete",
-        ).dict(),
+        ).model_dump(),
     )
     await task
     assert lock_state_at_publish == [
@@ -684,7 +688,7 @@ async def test_leader_ignores_forged_clone_path(tmp_path):
             clone_path=str(forged),  # <-- forged path
             scope_id="d",
             reason="delete",
-        ).dict(),
+        ).model_dump(),
     )
     await task
     assert forged.exists(), "forged clone_path was deleted — path came off the wire"
@@ -705,7 +709,7 @@ async def test_leader_rejects_malformed_source_id(tmp_path):
             clone_path=str(evil),
             scope_id="d",
             reason="delete",
-        ).dict(),
+        ).model_dump(),
     )
     if task is not None:
         await task
@@ -729,7 +733,7 @@ async def test_concurrent_purges_for_shared_source_do_not_both_skip(tmp_path):
             None,
             ScopePurgeCommand(
                 source_id=sid, clone_path=str(clone), scope_id=scope_id, reason="delete"
-            ).dict(),
+            ).model_dump(),
         )
         await task
 
@@ -837,7 +841,9 @@ async def test_handle_purge_message_waits_for_the_source_lock(tmp_path, monkeypa
     holder = GitPolicyFetcher.repo_locks.setdefault(sid, asyncio.Lock())
     await holder.acquire()  # stands in for the sync holding the handle
     task = asyncio.create_task(
-        handle_purge_message(None, _cmd(sid=sid, path=path, confirmed=True).dict())
+        handle_purge_message(
+            None, _cmd(sid=sid, path=path, confirmed=True).model_dump()
+        )
     )
     try:
         for _ in range(10):
@@ -910,7 +916,7 @@ async def test_stop_awaits_a_slow_pending_purge(tmp_path):
 
     purger.purge_source_if_unshared = _slow
     sid = _real_sid()
-    await purger.handle(None, _cmd(sid=sid).dict())
+    await purger.handle(None, _cmd(sid=sid).model_dump())
     assert finished == [], "handle must return before the purge completes"
 
     await purger.stop()
@@ -928,7 +934,7 @@ async def test_handle_ignores_purge_requests_once_stopping(tmp_path):
     )
     purger.signal_stop()
 
-    assert await purger.handle(None, _cmd(sid=_real_sid()).dict()) is None
+    assert await purger.handle(None, _cmd(sid=_real_sid()).model_dump()) is None
     assert not purger._pending_purges
 
 
@@ -976,8 +982,8 @@ async def test_live_sibling_keeps_its_repo_lock_entry(tmp_path):
 @pytest.mark.asyncio
 async def test_scope_repository_all_skips_a_key_deleted_mid_scan():
     """Scan() lists keys, then each is read — a scope deleted in between comes
-    back None, and Scope.parse_raw(None) raises ValidationError, killing the
-    whole scan.
+    back None, and Scope.model_validate_json(None) raises ValidationError,
+    killing the whole scan.
 
     Consequences seen in the bed: an entire sync_scopes pass aborted by one
     concurrent delete, and a delete's own sibling check failing so its clone dir
@@ -1000,7 +1006,7 @@ async def test_scope_repository_all_skips_a_key_deleted_mid_scan():
 
     repo = ScopeRepository.__new__(ScopeRepository)
     repo._prefix = "scope"
-    repo._redis_db = _RacingRedis([live.json(), None])  # second key vanished
+    repo._redis_db = _RacingRedis([live.model_dump_json(), None])  # second key vanished
 
     scopes = await repo.all()
     assert [s.scope_id for s in scopes] == ["live"]

@@ -97,7 +97,7 @@ class FakeBus:
 
     async def push(self, topics, data, notifier_id):
         note = BroadcastNotification(notifier_id=notifier_id, topics=topics, data=data)
-        await self.queue.put(_Event(note.json()))
+        await self.queue.put(_Event(note.model_dump_json()))
 
 
 class _FakeChannel:
@@ -525,13 +525,13 @@ async def test_skips_own_broadcasts():
     own = BroadcastNotification(
         notifier_id=broadcaster._id, topics=["policy_data"], data={"x": 1}
     )
-    await broadcaster._handle_broadcast_event(_Event(own.json()))
+    await broadcaster._handle_broadcast_event(_Event(own.model_dump_json()))
     assert notifier.notified == []
 
     other = BroadcastNotification(
         notifier_id="other-server", topics=["policy_data"], data={"x": 2}
     )
-    await broadcaster._handle_broadcast_event(_Event(other.json()))
+    await broadcaster._handle_broadcast_event(_Event(other.model_dump_json()))
     await _wait_for(lambda: notifier.notified)
     assert notifier.notified[0][0] == ["policy_data"]
 

@@ -6,7 +6,7 @@ whole models (e.g. ``logger.info("... {entry}", entry=entry)``) or relied on
 loguru's ``serialize=True`` sink, which dumps ``record["extra"]`` as JSON and
 falls back to ``str()`` for non-JSON objects. ``RedactedReprMixin`` masks the
 secret-bearing fields at the model layer so every current and future log site is
-protected at once - while leaving ``.dict()`` / ``.json()`` (the wire format)
+protected at once - while leaving ``.model_dump()`` / ``.model_dump_json()`` (the wire format)
 untouched.
 """
 
@@ -63,7 +63,7 @@ def test_repr_and_str_redact_secrets(name, model):
 
 
 def test_wire_serialization_is_not_redacted():
-    """Redaction is only for human/log rendering - ``.dict()`` (the transport
+    """Redaction is only for human/log rendering - ``.model_dump()`` (the transport
     format) must still carry the real values so fetching keeps working."""
     cfg = HttpFetcherConfig(headers={"Authorization": SECRET_TOKEN})
     entry = DataSourceEntry(
@@ -71,8 +71,8 @@ def test_wire_serialization_is_not_redacted():
         save_method="PUT",
         config={"headers": {"Authorization": SECRET_TOKEN}},
     )
-    assert cfg.dict()["headers"]["Authorization"] == SECRET_TOKEN
-    assert entry.dict()["config"]["headers"]["Authorization"] == SECRET_TOKEN
+    assert cfg.model_dump()["headers"]["Authorization"] == SECRET_TOKEN
+    assert entry.model_dump()["config"]["headers"]["Authorization"] == SECRET_TOKEN
 
 
 def test_nested_container_models_redact_transitively():
@@ -97,7 +97,7 @@ def test_nested_container_models_redact_transitively():
     assert SECRET_TOKEN not in str(update)
     assert SECRET_TOKEN not in f"{update}"
     # wire format still carries the real value
-    assert update.dict()["entries"][0]["config"]["headers"]["Authorization"] == (
+    assert update.model_dump()["entries"][0]["config"]["headers"]["Authorization"] == (
         SECRET_TOKEN
     )
 
@@ -294,11 +294,11 @@ def test_url_field_credentials_redacted_in_repr(model):
 
 
 def test_url_field_wire_serialization_keeps_real_url():
-    """Redaction is log-only: ``.dict()`` must keep the real (credentialed) url
+    """Redaction is log-only: ``.model_dump()`` must keep the real (credentialed) url
     so fetching still works."""
     url = f"https://user:{_URL_SECRET}@host/path"
     entry = DataSourceEntry(url=url, save_method="PUT")
-    assert entry.dict()["url"] == url
+    assert entry.model_dump()["url"] == url
 
 
 def test_scrubbing_stream_redacts_thirdparty_exception_traceback():

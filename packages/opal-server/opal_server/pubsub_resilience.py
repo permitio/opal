@@ -567,7 +567,7 @@ class ReconnectingBroadcaster(EventBroadcaster):
         reconnect loop above stays readable.
         """
         try:
-            notification = BroadcastNotification.parse_raw(event.message)
+            notification = BroadcastNotification.model_validate_json(event.message)
             # Avoid re-publishing our own broadcasts
             if notification.notifier_id != self._id:
                 logger.debug(

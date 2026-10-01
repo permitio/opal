@@ -431,7 +431,7 @@ class LeaderScopePurger:
                     GitPolicyFetcher.repo_locks.pop(cmd.source_id, None)
                     await self._pubsub_endpoint.publish(
                         [opal_server_config.SCOPES_PURGE_CHANNEL],
-                        cmd.copy(update={"confirmed": True}).dict(),
+                        cmd.model_copy(update={"confirmed": True}).model_dump(),
                     )
             finally:
                 # Lock-identity guarded: the pop-before-publish above hands the

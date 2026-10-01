@@ -1,0 +1,57 @@
+{
+  "builder": null,
+  "case": "policy_store_details",
+  "dict": {
+    "auth_type": "token",
+    "oauth_client_id": null,
+    "oauth_client_secret": null,
+    "oauth_server": null,
+    "token": null,
+    "type": "OPA",
+    "url": "http://localhost:8181/v1"
+  },
+  "dict_by_alias": {
+    "auth_type": "token",
+    "oauth_client_id": null,
+    "oauth_client_secret": null,
+    "oauth_server": null,
+    "token": null,
+    "type": "OPA",
+    "url": "http://localhost:8181/v1"
+  },
+  "json": {
+    "auth_type": "token",
+    "oauth_client_id": null,
+    "oauth_client_secret": null,
+    "oauth_server": null,
+    "token": null,
+    "type": "OPA",
+    "url": "http://localhost:8181/v1"
+  },
+  "json_by_alias": {
+    "auth_type": "token",
+    "oauth_client_id": null,
+    "oauth_client_secret": null,
+    "oauth_server": null,
+    "token": null,
+    "type": "OPA",
+    "url": "http://localhost:8181/v1"
+  },
+  "json_reparsed": {
+    "auth_type": "token",
+    "oauth_client_id": null,
+    "oauth_client_secret": null,
+    "oauth_server": null,
+    "token": null,
+    "type": "OPA",
+    "url": "http://localhost:8181/v1"
+  },
+  "model": "opal_client.policy_store.schemas:PolicyStoreDetails",
+  "note": "GET /policy-store/config response_model. Two NON-str Enums under use_enum_values with a force_enum validator - the exact shape that produced the inline-OPA regression, so the wire form is pinned here",
+  "payload": {
+    "auth_type": "token",
+    "type": "OPA",
+    "url": "http://localhost:8181/v1"
+  },
+  "pydantic": "1.10.26"
+}

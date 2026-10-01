@@ -2,7 +2,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
-from pydantic import BaseModel, Field, root_validator
+from pydantic import BaseModel, Field, model_validator
 
 
 class TransactionType(str, Enum):
@@ -11,9 +11,13 @@ class TransactionType(str, Enum):
 
 
 class RemoteStatus(BaseModel):
-    remote_url: str = Field(None, description="Url of remote data/policy source")
+    remote_url: Optional[str] = Field(
+        None, description="Url of remote data/policy source"
+    )
     succeed: bool = Field(True, description="Is request succeed")
-    error: str = Field(None, description="If failed contains the type of exception")
+    error: Optional[str] = Field(
+        None, description="If failed contains the type of exception"
+    )
 
 
 class StoreTransaction(BaseModel):
@@ -23,7 +27,7 @@ class StoreTransaction(BaseModel):
     actions: List[str] = Field(
         ..., description="The write actions performed as part of the transaction"
     )
-    transaction_type: TransactionType = Field(
+    transaction_type: Optional[TransactionType] = Field(
         None, description="Type of transaction,is it data/policy transaction"
     )
     success: bool = Field(
@@ -32,11 +36,13 @@ class StoreTransaction(BaseModel):
     error: str = Field(
         "", description="Error message in case of failure, defaults to empty string"
     )
-    creation_time: str = Field(
+    creation_time: Optional[str] = Field(
         None, description="Creation time for this store transaction"
     )
-    end_time: str = Field(None, description="Finish time for this store transaction")
-    remotes_status: List[RemoteStatus] = Field(
+    end_time: Optional[str] = Field(
+        None, description="Finish time for this store transaction"
+    )
+    remotes_status: Optional[List[RemoteStatus]] = Field(
         None,
         description="List of the remote sources for this transaction and their status",
     )
@@ -54,11 +60,15 @@ class JSONPatchAction(BaseModel):
         None, description="source location in json", alias="from"
     )
 
-    @root_validator
-    def value_must_be_present(cls, values):
-        if values.get("op") in ["add", "replace"] and values.get("value") is None:
-            raise TypeError("'value' must be present when op is either add or replace")
-        return values
+    @model_validator(mode="after")
+    def value_must_be_present(self):
+        if self.op in ["add", "replace"] and self.value is None:
+            # NOTE: pydantic v1 wrapped TypeError from a validator into a
+            # ValidationError; pydantic v2 only wraps ValueError/AssertionError
+            # and lets TypeError escape. Raise ValueError to keep the caller
+            # contract (a ValidationError) identical to v1.
+            raise ValueError("'value' must be present when op is either add or replace")
+        return self
 
 
 class ArrayAppendAction(JSONPatchAction):

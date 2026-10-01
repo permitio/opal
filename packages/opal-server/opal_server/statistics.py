@@ -116,7 +116,11 @@ class OpalStatistics:
             uptime=self._state.uptime,
             version=self._state.version,
             client_count=len(self._state.clients),
-            server_count=len(self._state.servers) / self._workers_count,
+            # floor division: ``server_count`` is an int, and pydantic v2 - unlike
+            # v1, which truncated - rejects a float carrying a fractional part.
+            # ``_state.servers`` is the fleet-wide worker set, so the ratio is
+            # only integral once every worker has exchanged keepalives.
+            server_count=len(self._state.servers) // self._workers_count,
         )
 
     async def _expire_old_servers(self):
@@ -137,7 +141,7 @@ class OpalStatistics:
                 await self._expire_old_servers()
                 self._publish(
                     opal_server_config.STATISTICS_SERVER_KEEPALIVE_CHANNEL,
-                    ServerKeepalive(worker_id=self._worker_id).dict(),
+                    ServerKeepalive(worker_id=self._worker_id).model_dump(),
                 )
                 await asyncio.sleep(
                     float(opal_server_config.STATISTICS_SERVER_KEEPALIVE_TIMEOUT) / 2
@@ -185,7 +189,7 @@ class OpalStatistics:
         logger.info(f"sending stats wakeup message: {self._worker_id}")
         self._publish(
             opal_server_config.STATISTICS_WAKEUP_CHANNEL,
-            SyncRequest(requesting_worker_id=self._worker_id).dict(),
+            SyncRequest(requesting_worker_id=self._worker_id).model_dump(),
         )
         self._periodic_keepalive_task = asyncio.create_task(
             self._periodic_server_keepalive()
@@ -248,7 +252,7 @@ class OpalStatistics:
                         requesting_worker_id=request.requesting_worker_id,
                         clients=self._state.clients,
                         rpc_id_to_client_id=self._rpc_id_to_client_id,
-                    ).dict(),
+                    ).model_dump(),
                 )
 
     async def _receive_other_worker_synced_state(
