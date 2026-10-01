@@ -88,8 +88,9 @@ WORKDIR /opal
 
 # copy opa from official docker image
 ARG opa_image=openpolicyagent/opa
-# Bumped from 1.9.0-static to fix CVE-2025-68121 (golang/stdlib@1.25.1 -> Go 1.26.2)
-ARG opa_tag=1.16.1-static
+# 1.21.1 (built with Go 1.27.1). Was 1.9.0, built with Go 1.25.1, which carries
+# CVE-2025-68121 and later Go stdlib CVEs.
+ARG opa_tag=1.21.1-static
 RUN skopeo copy "docker://${opa_image}:${opa_tag}" docker-archive:./image.tar && \
   mkdir image && tar xf image.tar -C ./image && cat image/*.tar | tar xf - -C ./image -i && \
   find image/ -name "opa*" -type f -executable -print0 | xargs -0 -I "{}" cp {} ./opa && chmod 755 ./opa && \
@@ -125,19 +126,26 @@ RUN apk add --no-cache wget
 # Set working directory
 WORKDIR /download
 
-# Download pre-built EOPA binary based on architecture
-# Bumped from v1.44.0 to latest available release.
-# TODO: CVE-2026-33815 and CVE-2026-33816 (jackc/pgx/v5@5.7.6, fix: >= 5.9.0) are NOT resolved.
-#       EOPA v1.45.1 still ships pgx v5.7.6. Waiting for a new EOPA release from Styra with updated dependencies.
+# Download the pre-built EOPA binary for the target architecture, checked against
+# the release's own checksums.txt. Bump the tag and both sums together.
+#
+# v1.45.1 is the LAST EOPA release: open-policy-agent/eopa is archived upstream,
+# so nothing newer will ship. It still bundles jackc/pgx/v5 v5.7.6, so
+# CVE-2026-33815 and CVE-2026-33816 (fixed in pgx >= 5.9.0) stay unresolved in
+# the EOPA client image for good. Plan to retire the EOPA variant rather than
+# wait for an upstream fix.
 ARG eopa_tag=v1.45.1
+ARG EOPA_SHA256_x86_64=588ba9c7149b74ba0c497293615abca2aef668c29dbdef7cfe8a449829bf83fe
+ARG EOPA_SHA256_arm64=1e8ed5b4f97d133f932a0af98656136f2ecda9bfdc68c82b3c63a999a43345d4
 ARG TARGETARCH
 RUN case "${TARGETARCH}" in \
-        "amd64") EOPA_ARCH="x86_64" ;; \
-        "arm64") EOPA_ARCH="arm64" ;; \
+        "amd64") EOPA_ARCH="x86_64"; EOPA_SHA256="${EOPA_SHA256_x86_64}" ;; \
+        "arm64") EOPA_ARCH="arm64"; EOPA_SHA256="${EOPA_SHA256_arm64}" ;; \
         *) echo "Unsupported architecture: ${TARGETARCH}" && exit 1 ;; \
     esac && \
-    echo "Downloading EOPA for Linux_${EOPA_ARCH}" && \
+    echo "Downloading EOPA ${eopa_tag} for Linux_${EOPA_ARCH}" && \
     wget -O eopa "https://github.com/open-policy-agent/eopa/releases/download/${eopa_tag}/eopa_Linux_${EOPA_ARCH}" && \
+    echo "${EOPA_SHA256}  eopa" | sha256sum -c - && \
     chmod +x eopa
 
 # EOPA CLIENT IMAGE ---------------------------------
