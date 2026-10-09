@@ -44,10 +44,10 @@ Multi-stream updates fetch a complete snapshot from the changed source so OPAL c
 ```yaml
 OPAL_POLICY_BUNDLE_SOURCES: >-
     {"sources":[
-        {"source_id":"team-a","url":"http://bundle-server","filename":"team-a.tar.gz"},
-        {"source_id":"team-b","url":"http://bundle-server","filename":"team-b.tar.gz"}
+        {"source_id":"bundle-a","url":"http://bundle-server","filename":"bundle-a.tar.gz"},
+        {"source_id":"bundle-b","url":"http://bundle-server","filename":"bundle-b.tar.gz"}
     ]}
-OPAL_POLICY_SOURCE_IDS: team-a,team-b
+OPAL_POLICY_SOURCE_IDS: bundle-a,bundle-b
 ```
 
 See the [multi-source Docker Compose example](https://github.com/permitio/opal/blob/master/docker/docker-compose-multi-api-policy-sources-example.yml) for a complete setup with statically declared sources.
@@ -60,14 +60,14 @@ Remote discovery is an alternative to `OPAL_POLICY_BUNDLE_SOURCES` and `OPAL_POL
 {
     "sources": [
         {
-            "source_id": "team-a",
-            "url": "http://bundle-server/team-a",
-            "filename": "team-a.tar.gz"
+            "source_id": "bundle-a",
+            "url": "http://bundle-server/bundle-a",
+            "filename": "bundle-a.tar.gz"
         },
         {
-            "source_id": "team-b",
-            "url": "http://bundle-server/team-b",
-            "filename": "team-b.tar.gz"
+            "source_id": "bundle-b",
+            "url": "http://bundle-server/bundle-b",
+            "filename": "bundle-b.tar.gz"
         }
     ]
 }
