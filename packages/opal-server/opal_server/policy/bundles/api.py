@@ -12,6 +12,7 @@ from opal_common.git_utils.repo_cloner import RepoClonePathFinder
 from opal_common.logger import logger
 from opal_common.schemas.policy import PolicyBundle
 from opal_server.config import opal_server_config
+from opal_server.policy.watcher.manifest import get_active_policy_bundle_sources
 from starlette.responses import RedirectResponse
 
 router = APIRouter()
@@ -21,6 +22,7 @@ async def get_repo(
     base_clone_path: str = None,
     clone_subdirectory_prefix: str = None,
     use_fixed_path: bool = None,
+    source_id: Optional[str] = Query(None),
 ) -> Repo:
     base_clone_path = load_conf_if_none(
         base_clone_path, opal_server_config.POLICY_REPO_CLONE_PATH
@@ -31,12 +33,56 @@ async def get_repo(
     use_fixed_path = load_conf_if_none(
         use_fixed_path, opal_server_config.POLICY_REPO_REUSE_CLONE_PATH
     )
-    clone_path_finder = RepoClonePathFinder(
-        base_clone_path=base_clone_path,
-        clone_subdirectory_prefix=clone_subdirectory_prefix,
-        use_fixed_path=use_fixed_path,
-    )
-    repo_path = clone_path_finder.get_clone_path()
+    try:
+        configured_sources = (
+            await get_active_policy_bundle_sources()
+        ).sources
+    except Exception as exc:
+        logger.warning(
+            "Policy bundle source registry is unavailable (error type: {error_type})",
+            error_type=type(exc).__name__,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="policy source registry is not ready",
+        ) from exc
+    if configured_sources or opal_server_config.POLICY_BUNDLE_MANIFEST_URL:
+        if source_id is None and len(configured_sources) == 1:
+            source = configured_sources[0]
+        else:
+            source = next(
+                (item for item in configured_sources if item.source_id == source_id),
+                None,
+            )
+        if source is None:
+            if source_id is None:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="source_id is required when multiple API bundle sources are configured",
+                )
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"unknown API bundle source: {source_id}",
+            )
+        repo_path = str(
+            Path(
+                source.clone_path
+                or Path(base_clone_path)
+                / f"{clone_subdirectory_prefix}_{source.source_id}"
+            ).expanduser()
+        )
+    else:
+        if source_id is not None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"unknown API bundle source: {source_id}",
+            )
+        clone_path_finder = RepoClonePathFinder(
+            base_clone_path=base_clone_path,
+            clone_subdirectory_prefix=clone_subdirectory_prefix,
+            use_fixed_path=use_fixed_path,
+        )
+        repo_path = clone_path_finder.get_clone_path()
 
     policy_repo_not_found_error = HTTPException(
         status_code=status.HTTP_503_SERVICE_UNAVAILABLE,

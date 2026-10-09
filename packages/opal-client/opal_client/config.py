@@ -307,6 +307,17 @@ class OpalClientConfig(Confi):
         delimiter=":",
         description="Directories in the policy repo to subscribe to for policy code (rego) modules",
     )
+    POLICY_SOURCE_ID = confi.str(
+        "POLICY_SOURCE_ID",
+        None,
+        description="Single API bundle source ID for this client",
+    )
+    POLICY_SOURCE_IDS = confi.list(
+        "POLICY_SOURCE_IDS",
+        [],
+        delimiter=",",
+        description="Comma-separated API bundle source IDs for this client",
+    )
 
     # Data updater configuration --------------------------------------------------
     DATA_UPDATER_ENABLED = confi.bool(

@@ -44,6 +44,7 @@ class PolicyUpdateMessage(BaseSchema):
     old_policy_hash: str
     new_policy_hash: str
     changed_directories: List[str]
+    source_id: Optional[str] = None
 
 
 class PolicyUpdateMessageNotification(BaseSchema):

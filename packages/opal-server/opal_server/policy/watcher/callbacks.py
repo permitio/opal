@@ -26,6 +26,7 @@ async def create_update_all_directories_in_repo(
     file_extensions: Optional[List[str]] = None,
     bundle_ignore: Optional[List[str]] = None,
     predicate: Optional[FileFilter] = None,
+    source_id: Optional[str] = None,
 ) -> PolicyUpdateMessageNotification:
     """Publishes policy topics matching all relevant directories in tracked
     repo, prompting the client to ask for *all* contents of these directories
@@ -43,11 +44,12 @@ async def create_update_all_directories_in_repo(
             "Publishing policy update, directories: {directories}",
             directories=[str(d) for d in directories],
         )
-        topics = policy_topics(directories)
+        topics = policy_topics(directories, source_id=source_id)
         message = PolicyUpdateMessage(
             old_policy_hash=old_commit.hexsha,
             new_policy_hash=new_commit.hexsha,
             changed_directories=[str(path) for path in directories],
+            source_id=source_id,
         )
 
         return PolicyUpdateMessageNotification(topics=topics, update=message)
@@ -59,6 +61,7 @@ async def create_policy_update(
     file_extensions: Optional[List[str]] = None,
     bundle_ignore: Optional[List[str]] = None,
     predicate: Optional[FileFilter] = None,
+    source_id: Optional[str] = None,
 ) -> Optional[PolicyUpdateMessageNotification]:
     if new_commit == old_commit:
         return await create_update_all_directories_in_repo(
@@ -67,6 +70,7 @@ async def create_policy_update(
             file_extensions=file_extensions,
             bundle_ignore=bundle_ignore,
             predicate=predicate,
+            source_id=source_id,
         )
 
     with DiffViewer(old_commit, new_commit) as viewer:
@@ -91,11 +95,12 @@ async def create_policy_update(
             "Generating policy update notification, directories: {directories}",
             directories=[str(d) for d in directories],
         )
-        topics = policy_topics(directories)
+        topics = policy_topics(directories, source_id=source_id)
         message = PolicyUpdateMessage(
             old_policy_hash=old_commit.hexsha,
             new_policy_hash=new_commit.hexsha,
             changed_directories=[str(path) for path in directories],
+            source_id=source_id,
         )
 
         return PolicyUpdateMessageNotification(topics=topics, update=message)
@@ -107,12 +112,13 @@ async def publish_changed_directories(
     publisher: TopicPublisher,
     file_extensions: Optional[List[str]] = None,
     bundle_ignore: Optional[List[str]] = None,
+    source_id: Optional[str] = None,
 ):
     """Publishes policy topics matching all relevant directories in tracked
     repo, prompting the client to ask for *all* contents of these directories
     (and not just diffs)."""
     notification = await create_policy_update(
-        old_commit, new_commit, file_extensions, bundle_ignore
+        old_commit, new_commit, file_extensions, bundle_ignore, source_id=source_id
     )
 
     if notification:

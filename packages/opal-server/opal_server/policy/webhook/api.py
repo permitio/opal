@@ -1,7 +1,7 @@
 from typing import Callable, List
 from urllib.parse import SplitResult, urlparse
 
-from fastapi import APIRouter, Depends, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi_websocket_pubsub.pub_sub_server import PubSubEndpoint
 from opal_common.authentication.deps import JWTAuthenticator
 from opal_common.logger import logger
@@ -12,6 +12,8 @@ from opal_server.policy.webhook.deps import (
     extracted_git_changes,
     validate_git_secret_or_throw,
 )
+from opal_server.policy.watcher.task import policy_webhook_topic
+from opal_server.policy.watcher.manifest import get_active_policy_bundle_sources
 
 
 def init_git_webhook_router(
@@ -133,12 +135,63 @@ def get_webhook_router(
                 )
 
         elif source_type == PolicySourceTypes.Api:
-            logger.info("Triggered webhook to check API bundle URL")
-            await publish(opal_server_config.POLICY_REPO_WEBHOOK_TOPIC)
+            try:
+                sources = (await get_active_policy_bundle_sources()).sources
+            except Exception as exc:
+                logger.warning(
+                    "Policy bundle source registry is unavailable "
+                    "(error type: {error_type})",
+                    error_type=type(exc).__name__,
+                )
+                raise HTTPException(
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    detail="policy source registry is not ready",
+                ) from exc
+            source_id = request.query_params.get("source_id")
+            if sources or opal_server_config.POLICY_BUNDLE_MANIFEST_URL:
+                if source_id is None and len(sources) == 1:
+                    source_id = sources[0].source_id
+                if source_id is None:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="source_id is required when multiple API bundle sources are configured",
+                    )
+                source = next(
+                    (item for item in sources if item.source_id == source_id), None
+                )
+                if source is None:
+                    raise HTTPException(
+                        status_code=status.HTTP_404_NOT_FOUND,
+                        detail=f"unknown API bundle source: {source_id}",
+                    )
+                repo_url = source.url
+                webhook_topic = (
+                    opal_server_config.POLICY_REPO_WEBHOOK_TOPIC
+                    if opal_server_config.POLICY_BUNDLE_MANIFEST_URL
+                    else policy_webhook_topic(source_id)
+                )
+            else:
+                if source_id is not None:
+                    raise HTTPException(
+                        status_code=status.HTTP_404_NOT_FOUND,
+                        detail=f"unknown API bundle source: {source_id}",
+                    )
+                repo_url = opal_server_config.POLICY_BUNDLE_URL
+                webhook_topic = opal_server_config.POLICY_REPO_WEBHOOK_TOPIC
+
+            logger.info(
+                "Triggered webhook to check API bundle source: {source_id}",
+                source_id=source_id,
+            )
+            if opal_server_config.POLICY_BUNDLE_MANIFEST_URL:
+                await publish(webhook_topic, data={"source_id": source_id})
+            else:
+                await publish(webhook_topic)
             return {
                 "status": "ok",
                 "event": "webhook_trigger",
-                "repo_url": opal_server_config.POLICY_BUNDLE_URL,
+                "repo_url": repo_url,
+                "source_id": source_id,
             }
 
         return {"status": "ignored", "event": event}

@@ -13,11 +13,11 @@ We have a [docker compose example file](https://github.com/permitio/opal/blob/ma
 
 ## How policy syncing from an API server works
 
-The OPAL server is configured to get its data from API bundle server, extract the bundle, and sync it to the clients. The API server must have a `bundle.tar.gz` file and be able to serve it to the OPAL server. The OPAL server will always aspire to keep the most up-to-date "state" of the bundle supplied by the bundle server.
+The OPAL server is configured to get its data from an API bundle server, extract the bundle, and sync it to clients. By default the API server serves `bundle.tar.gz`; a configured source can use a different filename. The OPAL server keeps the most up-to-date state of each configured bundle.
 
 Going into greater technical detail - the OPAL Server will:
 
-- Send a request to get the bundle.tar.gz file.
+- Send a request to get the configured bundle filename.
 
 - Extract it to the configured local path.
 
@@ -27,11 +27,53 @@ Going into greater technical detail - the OPAL Server will:
 
 Currently OPAL server supports two ways to detect changes in the tracked repo / bundle server:
 
-- **Polling by fixed intervals** - checks every `OPAL_POLICY_REPO_POLLING_INTERVAL` seconds if there's a new bundle file in the API bundle server by running `GET <base-url>/bundle.tar.gz` periodically.
+- **Polling by fixed intervals** - checks every `OPAL_POLICY_REPO_POLLING_INTERVAL` seconds if there's a new bundle file in the API bundle server by running `GET <base-url>/<filename>` periodically.
 
 - **Webhook** - By issuing an HTTP REST request to OPAL server `<opal-server-url>/webhook` with your auth access token upon each update bundle file event, you can trigger the OPAL server to fetch a new bundle.
 
 The rest of the policy syncing process is the same as with a [git policy source](track_a_git_repo).
+
+### Multiple independent bundle sources
+
+Set `OPAL_POLICY_BUNDLE_SOURCES` to a JSON object containing a `sources` array. Each entry has a unique `source_id` and `url`; it may also set `filename`, `token`, `token_id`, `server_type`, `region`, `polling_interval`, `clone_path`, `tmp_path`, and `git_add_pattern`. Each source is stored in its own local Git repository and has independent change detection and webhook routing.
+
+An OPAL client can select one stream with `OPAL_POLICY_SOURCE_ID` or several streams with the comma-separated `OPAL_POLICY_SOURCE_IDS`. A multi-stream client merges the selected sources into one policy store and tracks their hashes independently. The ID order also defines source manifest order when applying policies. It rejects duplicate policy module paths, Rego package names, and overlapping data-module destinations instead of applying last-writer-wins. For multiple configured sources, include `source_id` when calling `/policy` or `/webhook`.
+
+Multi-stream updates fetch a complete snapshot from the changed source so OPAL can safely rebuild the aggregate; this uses more bandwidth than fetching a delta. If a source is temporarily unavailable during startup, the client retries the full synchronization until all selected sources have snapshots.
+
+```yaml
+OPAL_POLICY_BUNDLE_SOURCES: >-
+    {"sources":[
+        {"source_id":"team-a","url":"http://bundle-server","filename":"team-a.tar.gz"},
+        {"source_id":"team-b","url":"http://bundle-server","filename":"team-b.tar.gz"}
+    ]}
+OPAL_POLICY_SOURCE_IDS: team-a,team-b
+```
+
+See the [multi-source Docker Compose example](https://github.com/permitio/opal/blob/master/docker/docker-compose-multi-api-policy-sources-example.yml) for a complete setup with statically declared sources.
+
+#### Remote manifest discovery
+
+Remote discovery is an alternative to `OPAL_POLICY_BUNDLE_SOURCES` and `OPAL_POLICY_BUNDLE_URL`. Set `OPAL_POLICY_BUNDLE_MANIFEST_URL` to an HTTP(S) or AWS S3 JSON endpoint; configure authentication with the `OPAL_POLICY_BUNDLE_MANIFEST_SERVER_*` settings. The response uses the same full source-entry schema as the static list:
+
+```json
+{
+    "sources": [
+        {
+            "source_id": "team-a",
+            "url": "http://bundle-server/team-a",
+            "filename": "team-a.tar.gz"
+        },
+        {
+            "source_id": "team-b",
+            "url": "http://bundle-server/team-b",
+            "filename": "team-b.tar.gz"
+        }
+    ]
+}
+```
+
+OPAL refreshes the manifest at `OPAL_POLICY_BUNDLE_MANIFEST_REFRESH_INTERVAL`, using ETags when available. Invalid manifests and refresh failures leave the last valid source set running. Additions start new watchers; changed entries replace only their watcher; removed entries stop being watched. Removing a source does not remove its already-loaded policy from clients. Clients continue to select streams explicitly with `OPAL_POLICY_SOURCE_IDS`; discovery does not automatically select all manifest entries. Static source-list configuration and remote discovery cannot be enabled together.
 
 ### Authenticating with Bundle server
 

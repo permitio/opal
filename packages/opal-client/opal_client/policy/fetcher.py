@@ -28,7 +28,7 @@ def force_valid_bundle(bundle) -> PolicyBundle:
 class PolicyFetcher:
     """Fetches policy from backend."""
 
-    def __init__(self, backend_url=None, token=None):
+    def __init__(self, backend_url=None, token=None, source_id=None):
         """
         Args:
             backend_url (str): Defaults to opal_client_config.SERVER_URL.
@@ -36,6 +36,7 @@ class PolicyFetcher:
         """
         self._token = token or opal_client_config.CLIENT_TOKEN
         self._backend_url = backend_url or opal_client_config.SERVER_URL
+        self._source_id = source_id or opal_client_config.POLICY_SOURCE_ID
         self._auth_headers = tuple_to_dict(get_authorization_header(self._token))
 
         self._retry_config = (
@@ -63,11 +64,16 @@ class PolicyFetcher:
         return self._policy_endpoint_url
 
     async def fetch_policy_bundle(
-        self, directories: List[str] = ["."], base_hash: Optional[str] = None
+        self,
+        directories: List[str] = ["."],
+        base_hash: Optional[str] = None,
+        source_id: Optional[str] = None,
     ) -> Optional[PolicyBundle]:
         attempter = retry(**self._retry_config)(self._fetch_policy_bundle)
         try:
-            return await attempter(directories=directories, base_hash=base_hash)
+            return await attempter(
+                directories=directories, base_hash=base_hash, source_id=source_id
+            )
         except Exception as err:
             logger.warning(
                 "Failed all attempts to fetch bundle, got error: {err}",
@@ -76,13 +82,19 @@ class PolicyFetcher:
             raise
 
     async def _fetch_policy_bundle(
-        self, directories: List[str] = ["."], base_hash: Optional[str] = None
+        self,
+        directories: List[str] = ["."],
+        base_hash: Optional[str] = None,
+        source_id: Optional[str] = None,
     ) -> Optional[PolicyBundle]:
         """Fetches the bundle.
 
         May throw, in which case we retry again.
         """
         params = {"path": directories}
+        source_id = self._source_id if source_id is None else source_id
+        if source_id is not None:
+            params["source_id"] = source_id
         if base_hash is not None:
             params["base_hash"] = base_hash
         async with aiohttp.ClientSession(

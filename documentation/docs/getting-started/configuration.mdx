@@ -841,6 +841,56 @@ Set your API bundle URL - relevant only for API source type.
 
 For more information, see [tracking an API bundle server](/tutorials/track_an_api_bundle_server).
 
+#### OPAL_POLICY_BUNDLE_SOURCES
+
+Default: `{"sources":[]}`
+
+JSON configuration for multiple independent API bundle sources. Each source requires a unique `source_id` and `url`; optional fields include `filename`, `token`, `token_id`, `server_type`, `region`, `polling_interval`, `clone_path`, `tmp_path`, and `git_add_pattern`. When this list is non-empty, each source uses a separate local Git repository and temporary archive. The scalar `OPAL_POLICY_BUNDLE_*` settings remain the fallback when the list is empty.
+
+For more information, see [tracking an API bundle server](/tutorials/track_an_api_bundle_server).
+
+#### OPAL_POLICY_BUNDLE_MANIFEST_URL
+
+Default: `None`
+
+URL of a remote JSON manifest listing API bundle sources. Mutually exclusive with `OPAL_POLICY_BUNDLE_SOURCES` and `OPAL_POLICY_BUNDLE_URL`.
+
+#### OPAL_POLICY_BUNDLE_MANIFEST_REFRESH_INTERVAL
+
+Default: `60`
+
+Interval in seconds for refreshing the remote API bundle source manifest.
+
+#### OPAL_POLICY_BUNDLE_MANIFEST_REQUEST_TIMEOUT
+
+Default: `10`
+
+Timeout in seconds for fetching the remote API bundle source manifest.
+
+#### OPAL_POLICY_BUNDLE_MANIFEST_SERVER_TYPE
+
+Default: `HTTP`
+
+Authentication type for the remote manifest. Options: `HTTP` (bearer token) and `AWS-S3` (AWS REST authentication).
+
+#### OPAL_POLICY_BUNDLE_MANIFEST_SERVER_TOKEN
+
+Default: `None`
+
+Bearer token for `HTTP`, or AWS secret key for `AWS-S3`. AWS-S3 mode also requires `OPAL_POLICY_BUNDLE_MANIFEST_SERVER_TOKEN_ID`.
+
+#### OPAL_POLICY_BUNDLE_MANIFEST_SERVER_TOKEN_ID
+
+Default: `None`
+
+AWS access key ID used when the manifest server type is `AWS-S3`.
+
+#### OPAL_POLICY_BUNDLE_MANIFEST_SERVER_AWS_REGION
+
+Default: `us-east-1`
+
+AWS region for fetching the remote manifest.
+
 #### OPAL_POLICY_BUNDLE_SERVER_TYPE
 
 Default: `HTTP`
@@ -1369,6 +1419,18 @@ Default: `["."]`
 The directories in a policy repository to subscribe to for policy code (rego) modules.
 
 For more information, see [tracking a Git repository](/tutorials/track_a_git_repo).
+
+#### OPAL_POLICY_SOURCE_ID
+
+Default: `None`
+
+Select one API bundle source for this client when `OPAL_POLICY_BUNDLE_SOURCES` is configured. Use `OPAL_POLICY_SOURCE_IDS` to select several streams into one client and policy store.
+
+#### OPAL_POLICY_SOURCE_IDS
+
+Default: `[]`
+
+Comma-separated API bundle source IDs for this client. IDs must be unique and cannot be set together with `OPAL_POLICY_SOURCE_ID`. When multiple streams are selected, duplicate policy module paths, Rego package names, and overlapping data destinations are rejected.
 
 #### OPAL_POLICY_UPDATER_CONN_RETRY
 
