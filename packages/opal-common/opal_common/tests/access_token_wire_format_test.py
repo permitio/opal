@@ -55,6 +55,25 @@ def test_openapi_default_is_numeric():
     assert schema["properties"]["ttl"]["default"] == 31536000.0
 
 
+@pytest.mark.parametrize("mode", ["validation", "serialization"])
+def test_openapi_types_ttl_as_its_wire_form(mode):
+    """Pydantic 2.14 types a timedelta's input schema as an ISO-8601 string.
+
+    That is the validation-mode schema, which FastAPI publishes for the
+    ``/token`` request body. A client generated from it would send
+    ``"P1Y"``, the value a v1 server cannot parse; the schema must say
+    number, as the wire does. The validation case reproduces the 2.14 bug.
+    The serialization case passes on 2.14 without the fix too: it is a
+    regression guard for the response schema, which ``ser_json_timedelta``
+    keeps numeric today.
+    """
+    ttl = AccessTokenRequest.model_json_schema(mode=mode)["properties"]["ttl"]
+
+    assert ttl["type"] == "number"
+    assert "format" not in ttl
+    assert ttl["default"] == 31536000.0
+
+
 @pytest.mark.parametrize("wire_ttl", [31536000.0, 31536000, 60.5])
 def test_numeric_wire_form_still_round_trips(wire_ttl):
     """The reverse direction - old client to new server - must keep working."""
