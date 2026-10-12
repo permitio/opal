@@ -335,8 +335,13 @@ class OpalServerConfig(Confi):
         "disk grows without bound until the volume holding the clones fills. It "
         "only affects scopes mode (SCOPES=true): the classic policy-repo path "
         "fetches with the git command line, which cleans up its own packs. The "
-        "git binary must be on PATH (the official images ship it). Raise it to "
-        "repack less often; 0 or negative disables repacking.",
+        "git binary must be on PATH (the official images ship it). The repack "
+        "runs inside the opal-server container, one clone at a time per pod, and "
+        "its memory counts against the container's limit: allow about 0.5 KB per "
+        "object of the repository (measured 1.2 GB for a 61k-branch repository "
+        "of 2.3 million objects, 0.8 GB for 1.6 million). A container already "
+        "near its limit can be OOM-killed by the repack. Raise it to repack less "
+        "often; 0 or negative disables repacking.",
     )
     SCOPES_GIT_REPACK_TIMEOUT = confi.float(
         "SCOPES_GIT_REPACK_TIMEOUT",
