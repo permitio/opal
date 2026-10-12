@@ -134,6 +134,23 @@ def test_repack_merges_fetch_packs_into_one_and_keeps_every_commit(tmp_path):
     )
 
 
+def test_repack_writes_no_dumb_http_catalog(tmp_path):
+    """No update-server-info: nothing serves a scope clone over dumb HTTP.
+
+    By default ``git repack`` also runs ``git update-server-info``, which
+    writes ``.git/info/refs`` with one line per ref: 7 MB on each clone of a
+    61k-branch repository (measured in the pr961 staging drill), rewritten
+    on every repack while the clone's lock is held.
+    """
+    clone_path, _ = _clone_with_fetch_packs(tmp_path, fetches=3)
+
+    _repack_clone(clone_path, timeout=60)
+
+    assert _count_pack_files(clone_path) == 1
+    assert not (clone_path / ".git" / "info" / "refs").exists()
+    assert not (clone_path / ".git" / "objects" / "info" / "packs").exists()
+
+
 def test_handle_opened_before_repack_reads_every_commit_after(tmp_path):
     """The cached pygit2 handle survives the packs it knows being deleted.
 
@@ -727,6 +744,7 @@ def test_repack_runs_git_with_expected_args_and_minimal_env(tmp_path, monkeypatc
         "repack",
         "-a",
         "-d",
+        "-n",
         "-q",
     ]
     env = dict(

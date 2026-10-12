@@ -986,6 +986,9 @@ def _run_repack(
     # anything that unwinds through here. (A worker SIGKILLed mid-repack
     # leaves git to run to completion either way: gunicorn signals the
     # worker's pid, not its group. git keeps the repack lock meanwhile.)
+    # -n: no update-server-info. Nothing serves a scope clone over dumb HTTP,
+    # and on a repository with many branches .git/info/refs is large (7 MB
+    # per clone of a 61k-branch one), rewritten on every repack.
     proc = subprocess.Popen(
         [
             git,
@@ -996,6 +999,7 @@ def _run_repack(
             "repack",
             "-a",
             "-d",
+            "-n",
             "-q",
         ],
         stdin=subprocess.DEVNULL,
