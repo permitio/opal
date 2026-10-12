@@ -139,8 +139,8 @@ def test_repack_writes_no_dumb_http_catalog(tmp_path):
 
     By default ``git repack`` also runs ``git update-server-info``, which
     writes ``.git/info/refs`` with one line per ref: 7 MB on each clone of a
-    61k-branch repository (measured in the pr961 staging drill), rewritten
-    on every repack while the clone's lock is held.
+    61k-branch repository, rewritten on every repack while the clone's lock
+    is held.
     """
     clone_path, _ = _clone_with_fetch_packs(tmp_path, fetches=3)
 
