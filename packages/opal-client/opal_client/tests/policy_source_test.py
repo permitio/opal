@@ -234,6 +234,7 @@ async def test_source_update_removal_does_not_delete_another_stream(monkeypatch)
             )
 
     updater = object.__new__(PolicyUpdater)
+    updater._subscription_directories = ["policy-a", "policy-b"]
     updater._source_ids = ["team-a", "team-b"]
     updater._source_bundles = {
         "team-a": _bundle(
@@ -253,7 +254,7 @@ async def test_source_update_removal_does_not_delete_another_stream(monkeypatch)
     monkeypatch.setattr(
         updater_module,
         "default_subscribed_policy_directories",
-        lambda: ["policy-a", "policy-b"],
+        lambda directories: ["policy-a", "policy-b"],
     )
 
     await updater._update_multiple_source_policies(

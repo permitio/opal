@@ -4,6 +4,7 @@ from typing import Optional, Tuple
 from urllib.parse import urlparse
 
 import aiohttp
+from aiohttp import ClientSession
 from fastapi import status
 from fastapi.exceptions import HTTPException
 from opal_common.git_utils.tar_file_to_local_git_extractor import (
@@ -178,7 +179,7 @@ class ApiPolicySource(BasePolicySource):
 
         full_url = f"{url.rstrip('/')}/{self.bundle_filename}"
 
-        async with aiohttp.ClientSession(
+        async with ClientSession(
             trust_env=True,
         ) as session:
             try:

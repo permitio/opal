@@ -270,21 +270,17 @@ async def test_manifest_watcher_dispatches_stable_webhook_by_source_id():
     assert source_b.triggers == 1
 
 
-def test_manifest_rejects_colliding_resolved_paths():
+def test_manifest_rejects_overlapping_resolved_paths():
     sources = manifest_module.ApiPolicyBundleSources(
         sources=[
             {
                 "source_id": "team-a",
                 "url": "https://example.test/a",
                 "clone_path": "/tmp/shared",
-            },
-            {
-                "source_id": "team-b",
-                "url": "https://example.test/b",
-                "clone_path": "/tmp/shared",
+                "tmp_path": "/tmp/shared/bundle.tar.gz",
             },
         ]
     )
 
-    with pytest.raises(ValueError, match="distinct clone paths"):
+    with pytest.raises(ValueError, match="must not overlap"):
         manifest_module.validate_resolved_source_paths(sources.sources)
