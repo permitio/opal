@@ -42,7 +42,7 @@ async def _invalid_bundle(request: web.Request) -> web.Response:
 
 
 async def _redirect_loop(request: web.Request) -> web.Response:
-    raise web.HTTPFound(request.path)
+    raise web.HTTPFound("/policy")
 
 
 async def _html_bad_gateway(request: web.Request) -> web.Response:

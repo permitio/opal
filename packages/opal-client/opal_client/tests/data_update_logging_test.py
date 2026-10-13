@@ -150,7 +150,7 @@ async def test_stored_data_error_names_an_exception_without_a_message(
 
 
 async def _redirect_loop(request: web.Request) -> web.Response:
-    raise web.HTTPFound(request.path)
+    raise web.HTTPFound("/loadlimit")
 
 
 @pytest.mark.asyncio
