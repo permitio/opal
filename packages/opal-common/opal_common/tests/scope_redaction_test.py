@@ -8,7 +8,6 @@ and a ValidationError raised on bad scope input must not quote them.
 ``model_dump()`` is the wire / Redis format and must keep the real values.
 """
 
-from typing import List
 
 import pytest
 from loguru import logger
@@ -19,6 +18,7 @@ from opal_common.schemas.policy_source import (
     UserPassAuthData,
 )
 from opal_common.schemas.scopes import Scope
+from opal_common.tests.redaction_fixtures import capture_logs
 from pydantic import ValidationError
 
 FAKE_TOKEN = "FAKE-KEY-123"
@@ -88,16 +88,12 @@ def test_scope_wire_format_is_unchanged(auth_name):
 
 
 def test_loguru_serialize_sink_masks_scope():
-    captured: List[str] = []
-    sink_id = logger.add(lambda m: captured.append(str(m)), serialize=True)
-    try:
+    with capture_logs() as logs:
         for auth in AUTHS.values():
             logger.info("scope {scope}", scope=_scope(auth))
-    finally:
-        logger.remove(sink_id)
 
-    assert len(captured) == len(AUTHS)
-    _assert_absent("\n".join(captured))
+    assert len(logs.serialized) == len(AUTHS)
+    _assert_absent(logs.combined)
 
 
 BAD_SCOPE_INPUTS = {

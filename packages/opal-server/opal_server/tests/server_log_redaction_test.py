@@ -2,8 +2,9 @@
 
 Covers auth carried in URLs, client reports, git errors and RPC payloads.
 Each test checks a text sink and a ``serialize=True`` sink: loguru keeps bound
-kwargs in ``record["extra"]``, which the JSON sink prints verbatim and the
-message-only patcher installed by ``configure_logs`` never touches.
+kwargs in ``record["extra"]``, which the JSON sink prints verbatim. Both capture
+with the patcher ``configure_logs`` installs disabled, so they see what the
+call site itself emits.
 """
 
 import asyncio
@@ -16,9 +17,9 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from fastapi_websocket_rpc.logger import get_logger as get_rpc_library_logger
-from opal_common.logger import logger
 from opal_common.logging_utils.intercept import InterceptHandler
 from opal_common.schemas.data import ServerDataSourceConfig
+from opal_common.tests.redaction_fixtures import capture_logs
 from opal_server import server as server_module
 from opal_server.config import opal_server_config
 from opal_server.data.api import init_data_updates_router
@@ -32,17 +33,8 @@ FAKE_HEADER = "Bearer FAKE-KEY-789"
 
 @contextmanager
 def _captured_logs() -> Iterator[Tuple[List[str], List[str]]]:
-    text: List[str] = []
-    serialized: List[str] = []
-    sink_ids = [
-        logger.add(lambda m: text.append(str(m)), level="DEBUG"),
-        logger.add(lambda m: serialized.append(str(m)), level="DEBUG", serialize=True),
-    ]
-    try:
-        yield text, serialized
-    finally:
-        for sink_id in sink_ids:
-            logger.remove(sink_id)
+    with capture_logs() as logs:
+        yield logs.text, logs.serialized
 
 
 def _assert_absent(values, *outputs: List[str]):
@@ -239,8 +231,8 @@ def test_no_rpc_logs_drops_library_debug_records(monkeypatch, stdlib_logs_to_log
         _emit_rpc_library_records()
 
     assert any("Client connected" in line for line in text), text
-    # Checked on the record text, not just the header value: a loguru patcher
-    # installed by an earlier configure_logs() call masks the header anyway.
+    # Checked on the record text as well as the header value: the records must
+    # be dropped, not just masked.
     assert not any("Handling RPC request" in line for line in text), text
     assert not any("notify" in line for line in text), text
     _assert_absent([FAKE_HEADER], text, serialized)

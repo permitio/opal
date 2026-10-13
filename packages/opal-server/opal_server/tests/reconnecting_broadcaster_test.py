@@ -14,7 +14,7 @@ from contextlib import asynccontextmanager, suppress
 import pytest
 from fastapi_websocket_pubsub import EventBroadcaster
 from fastapi_websocket_pubsub.event_broadcaster import BroadcastNotification
-from opal_common.logger import logger
+from opal_common.tests.redaction_fixtures import capture_logs
 from opal_server.pubsub_resilience import (
     FreezablePubSubEndpoint,
     ReconnectingBroadcaster,
@@ -579,21 +579,14 @@ async def test_malformed_broadcast_log_hides_payload(message):
     broadcaster = ReconnectingBroadcaster(
         "memory://", notifier=notifier, channel="test"
     )
-    text, serialized = [], []
-    sink_ids = [
-        logger.add(lambda m: text.append(str(m)), level="DEBUG"),
-        logger.add(lambda m: serialized.append(str(m)), level="DEBUG", serialize=True),
-    ]
-    try:
+    with capture_logs() as logs:
         await broadcaster._handle_broadcast_event(_Event(message))
-    finally:
-        for sink_id in sink_ids:
-            logger.remove(sink_id)
 
     assert notifier.notified == []
-    assert any("Dropping malformed incoming broadcast" in line for line in text), text
-    assert _FAKE_AUTH_HEADER not in "\n".join(text)
-    assert _FAKE_AUTH_HEADER not in "\n".join(serialized)
+    assert any(
+        "Dropping malformed incoming broadcast" in line for line in logs.text
+    ), logs.text
+    assert _FAKE_AUTH_HEADER not in logs.combined
 
 
 @pytest.mark.asyncio

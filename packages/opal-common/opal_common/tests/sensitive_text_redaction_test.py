@@ -12,12 +12,25 @@ from opal_common.http_utils import redact_sensitive_text, redact_url_in_text
 from opal_common.logger import _scrub_record_message
 from opal_common.logging_utils.errors import describe_error, describe_validation_error
 from opal_common.logging_utils.scrubbing import CredentialScrubbingStream
-from opal_common.tests.redaction_fixtures import capture_logs, response_error
+from opal_common.tests.redaction_fixtures import (
+    capture_logs,
+    response_error,
+    without_log_patcher,
+)
 from pydantic import BaseModel, ValidationError
 
 FAKE_KEY = "FAKE-KEY-123"
 # base64("fake-user:FAKE-KEY-123")
 FAKE_BASIC = "ZmFrZS11c2VyOkZBS0UtS0VZLTEyMw=="
+
+
+@pytest.fixture(autouse=True)
+def _no_global_log_patcher():
+    """The stream tests below check what the stream wrapper masks, so nothing
+    may be masked before it (by the patcher an earlier ``configure_logs()``
+    installed)."""
+    with without_log_patcher():
+        yield
 
 
 @pytest.mark.parametrize(
@@ -43,6 +56,8 @@ def test_redact_url_in_text_masks_sensitive_query_params(text, expected):
     [
         "http://h/p?page=2&monkey=1",  # "key" only as a suffix of another name
         "token=FAKE-KEY-123 without a separator before it",
+        # already masked: the text right after the value stays
+        "fetch http://h/p?token=***: TimeoutError",
         "",
     ],
 )
@@ -71,7 +86,10 @@ MASKED_CASES = [
         "Proxy-Authorization: ***\nHost: h",
     ),
     ("authorization: FAKE-KEY-123", "authorization: ***"),
+    ("Authorization: ***: rejected", "Authorization: ***: rejected"),
     ("sent bearer FAKE-KEY-123 to h", "sent bearer *** to h"),
+    # a lowercase word of 16+ characters is a credential, not prose
+    ("sent Bearer abcdefghijklmnop to h", "sent Bearer *** to h"),
     ("sent Basic " + FAKE_BASIC + " to h", "sent Basic *** to h"),
     (
         "fatal: https://user:FAKE-KEY-123@h/r.git?access_token=FAKE-KEY-123",
@@ -102,6 +120,7 @@ def test_redact_sensitive_text_masks_real_aiohttp_error_repr():
     [
         "Bearer token is not valid!",
         "Basic handler to queue a fetch event",
+        "Bearer abcdefghijklmno is fifteen letters",
         "opa run --authorization=basic --authentication=token",
         "Authorization header is required!",
     ],

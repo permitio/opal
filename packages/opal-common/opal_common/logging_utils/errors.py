@@ -28,7 +28,7 @@ def describe_validation_error(err: ValidationError) -> str:
     return f"{count} validation {noun} for {err.title}: {locations}"
 
 
-def describe_error(err: BaseException) -> str:
+def describe_error(err: BaseException, url: str = "") -> str:
     """Render an exception for a log line or an error string.
 
     Use instead of ``repr(err)``: aiohttp's ``ClientResponseError`` and
@@ -39,14 +39,16 @@ def describe_error(err: BaseException) -> str:
 
     Args:
         err: The exception to describe.
+        url: A URL the message may quote (e.g. the one being fetched), redacted
+            as a whole before the generic masking runs.
 
     Returns:
         ``"<ExceptionType>: <redacted message>"``, or just the type name when the
-        exception has no message.
+        exception has no message (e.g. a ``TimeoutError``).
     """
     if isinstance(err, ValidationError):
         message = describe_validation_error(err)
     else:
-        message = redact_sensitive_text(str(err))
+        message = redact_sensitive_text(str(err), url)
     name = type(err).__name__
     return f"{name}: {message}" if message else name

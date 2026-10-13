@@ -7,7 +7,6 @@ import aiohttp
 import pytest
 from aiohttp import web
 from aiohttp.test_utils import TestServer
-from loguru import logger
 from pydantic import BaseModel
 
 # Add parent path to use local src as package for tests
@@ -43,16 +42,8 @@ def capture_loguru():
     serialize too — otherwise the default format string hides ``extra`` fields
     and the test passes vacuously.
     """
-    captured: list[str] = []
-    sink_id = logger.add(
-        lambda message: captured.append(str(message)),
-        level="DEBUG",
-        serialize=True,
-    )
-    try:
-        yield captured
-    finally:
-        logger.remove(sink_id)
+    with capture_logs() as logs:
+        yield logs.serialized
 
 
 @pytest.mark.asyncio

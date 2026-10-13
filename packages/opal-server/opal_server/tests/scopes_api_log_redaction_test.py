@@ -13,10 +13,10 @@ from typing import Iterator, List, Tuple
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from opal_common.logger import logger
 from opal_common.schemas.policy import PolicyBundle
 from opal_common.schemas.policy_source import GitPolicyScopeSource, NoAuthData
 from opal_common.schemas.scopes import Scope
+from opal_common.tests.redaction_fixtures import capture_logs
 from opal_server.config import opal_server_config
 from opal_server.git_fetcher import (
     BranchHeadNotFoundError,
@@ -68,17 +68,8 @@ class FakePubSub:
 
 @contextmanager
 def _captured_logs() -> Iterator[Tuple[List[str], List[str]]]:
-    text: List[str] = []
-    serialized: List[str] = []
-    sink_ids = [
-        logger.add(lambda m: text.append(str(m)), level="DEBUG"),
-        logger.add(lambda m: serialized.append(str(m)), level="DEBUG", serialize=True),
-    ]
-    try:
-        yield text, serialized
-    finally:
-        for sink_id in sink_ids:
-            logger.remove(sink_id)
+    with capture_logs() as logs:
+        yield logs.text, logs.serialized
 
 
 def _scope(scope_id):

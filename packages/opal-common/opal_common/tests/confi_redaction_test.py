@@ -238,6 +238,8 @@ def test_server_credential_entries_are_sensitive(name):
         "CLIENT_TOKEN",
         "POLICY_STORE_AUTH_TOKEN",
         "POLICY_STORE_AUTH_OAUTH_CLIENT_SECRET",
+        "DEFAULT_UPDATE_CALLBACKS",
+        "DEFAULT_UPDATE_CALLBACK_CONFIG",
     ],
 )
 def test_client_credential_entries_are_sensitive(name):

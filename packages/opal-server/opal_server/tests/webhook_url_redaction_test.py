@@ -8,7 +8,8 @@ logged) with the auth stripped.
 
 Logs are checked through a ``serialize=True`` sink as well as a text sink:
 loguru stores bound kwargs in ``record["extra"]``, which the JSON sink prints
-verbatim and the message-only patcher in ``configure_logs`` never touches.
+verbatim. Both capture with the patcher ``configure_logs`` installs disabled,
+so they see what the call site itself emits.
 """
 
 from contextlib import contextmanager
@@ -17,8 +18,8 @@ from typing import Iterator, List, Tuple
 import pytest
 from fastapi import Depends, FastAPI
 from fastapi.testclient import TestClient
-from opal_common.logger import logger
 from opal_common.schemas.webhook import GitWebhookRequestParams
+from opal_common.tests.redaction_fixtures import capture_logs
 from opal_server.config import PolicySourceTypes, opal_server_config
 from opal_server.policy.webhook.api import get_webhook_router
 from opal_server.policy.webhook.deps import extracted_git_changes
@@ -43,17 +44,8 @@ GITHUB_PARAMS = GitWebhookRequestParams(
 
 @contextmanager
 def _captured_logs() -> Iterator[Tuple[List[str], List[str]]]:
-    text: List[str] = []
-    serialized: List[str] = []
-    sink_ids = [
-        logger.add(lambda m: text.append(str(m)), level="DEBUG"),
-        logger.add(lambda m: serialized.append(str(m)), level="DEBUG", serialize=True),
-    ]
-    try:
-        yield text, serialized
-    finally:
-        for sink_id in sink_ids:
-            logger.remove(sink_id)
+    with capture_logs() as logs:
+        yield logs.text, logs.serialized
 
 
 async def _no_publish(*args, **kwargs):
