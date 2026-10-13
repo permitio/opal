@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi_websocket_pubsub import Topic
-from opal_common.logger import logger
+from opal_common.logger import configure_logs, logger
 from opal_common.monitoring import metrics
 from opal_server.config import opal_server_config
 from opal_server.git_fetcher import (
@@ -207,10 +207,16 @@ class ScopesPolicyWatcherTask(BasePolicyWatcherTask):
         """
         if opal_server_config.SCOPES:
             # This runs in the gunicorn MASTER (scripts/gunicorn_conf.py:when_ready)
-            # before any worker configured monitoring. Without this the git
-            # metrics emitted during preload (git_ops_in_flight, scopes.count,
-            # sources_in_backoff, git_op_failures...) go out un-namespaced and
-            # never reach the dashboards/monitors built on permit.opal.*.
+            # before any worker configured monitoring.
+            #
+            # Without configure_logs() the master logs with loguru's defaults
+            # (DEBUG level, diagnose=True, no URL redaction) while preload logs
+            # git errors that can carry the remote URL and its auth.
+            configure_logs()
+            # Without configure_server_metrics() the git metrics emitted during
+            # preload (git_ops_in_flight, scopes.count, sources_in_backoff,
+            # git_op_failures...) go out un-namespaced and never reach the
+            # dashboards/monitors built on permit.opal.*.
             configure_server_metrics()
             logger.info("Preloading repo clones for scopes")
 

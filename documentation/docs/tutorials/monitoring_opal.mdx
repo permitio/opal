@@ -78,4 +78,5 @@ Available through `/pubsub_client_info` api route on the server.
 
 ### Caveats:
 - When `UVICORN_NUM_WORKERS > 1`, retrieved information would only include clients connected to the replying server process.
+- The values of query parameters with auth-like names (e.g. `token`, `api_key`, `password`) in a client's websocket URL are reported as `***`.
 - This is an early access feature and is likely to change. Backward compatibility is not garaunteed.

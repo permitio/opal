@@ -1,6 +1,7 @@
 from typing import Generator
 
 import redis.asyncio as redis
+from opal_common.http_utils import redact_url
 from opal_common.logger import logger
 from pydantic import BaseModel
 
@@ -10,7 +11,7 @@ class RedisDB:
 
     def __init__(self, redis_url):
         self._url = redis_url
-        logger.debug("Connecting to Redis: {url}", url=self._url)
+        logger.debug("Connecting to Redis: {url}", url=redact_url(self._url))
 
         self._redis = redis.Redis.from_url(self._url)
 

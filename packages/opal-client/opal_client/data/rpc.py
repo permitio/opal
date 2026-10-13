@@ -10,12 +10,8 @@ class TenantAwareRpcEventClientMethods(RpcEventClientMethods):
 
     async def notify(self, subscription=None, data=None):
         topic = subscription["topic"]
-        logger.info(
-            "Received notification of event: {topic}",
-            topic=topic,
-            subscription=subscription,
-            data=data,
-        )
+        # Log the topic only: ``data`` is the raw update, fetcher auth headers included.
+        logger.info("Received notification of event: {topic}", topic=topic)
         if self.TOPIC_SEPARATOR in topic:
             topic_parts = topic.split(self.TOPIC_SEPARATOR)
             if len(topic_parts) > 1:
