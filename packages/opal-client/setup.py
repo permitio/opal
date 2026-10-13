@@ -70,10 +70,14 @@ setup(
         "Programming Language :: Python :: 3.10",
         "Programming Language :: Python :: 3.11",
         "Programming Language :: Python :: 3.12",
+        "Programming Language :: Python :: 3.13",
         "Topic :: Internet :: WWW/HTTP :: HTTP Servers",
         "Topic :: Internet :: WWW/HTTP :: WSGI",
     ],
-    python_requires=">=3.9,<3.13",
+    # <3.14: see the matching note in opal-common/setup.py. opal-client pins
+    # opal-common by exact version and has no pygit2 dependency, so both can
+    # move. opal-server stays at <3.13.
+    python_requires=">=3.9,<3.14",
     install_requires=client_install_requires + about.get_install_requires(project_root),
     entry_points="""
     [console_scripts]

@@ -29,6 +29,13 @@ jobs:
     strategy:
       matrix:
         python-version: ["3.9", "3.10", "3.11", "3.12"]
+        # 3.13 leg: opal-common and opal-client only. opal-server's
+        # python_requires stays <3.13 (pygit2<1.15 has no cp313 wheel), so this
+        # leg cannot install requirements.txt and pip-installs the two packages
+        # instead - with pip, which enforces Requires-Python.
+        include:
+          - python-version: "3.13"
+            common-and-client-only: true
 
     steps:
     - uses: actions/checkout@v2
@@ -40,8 +47,13 @@ jobs:
       run: |
         python -m pip install --upgrade pip
         python -m pip install flake8
-        if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
-        if [ -f ./tests/requirements.txt ]; then pip install -r ./tests/requirements.txt; fi
+        if [ "${{ matrix.common-and-client-only }}" = "true" ]; then
+          pip install -e ./packages/opal-common -e ./packages/opal-client \
+            pytest pytest-asyncio pytest-rerunfailures
+        else
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+          if [ -f ./tests/requirements.txt ]; then pip install -r ./tests/requirements.txt; fi
+        fi
     - name: Lint with flake8
       run: |
         # stop the build if there are Python syntax errors or undefined names
@@ -50,7 +62,16 @@ jobs:
         flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
     - name: Test with pytest
       run: |
-        pytest
+        if [ "${{ matrix.common-and-client-only }}" = "true" ]; then
+          # These three need an importable opal-server, which this leg cannot
+          # install (see the matrix note).
+          pytest packages/opal-common packages/opal-client \
+            --ignore=packages/opal-common/opal_common/tests/test_config.py \
+            --ignore=packages/opal-client/opal_client/tests/data_updater_test.py \
+            --ignore=packages/opal-client/opal_client/tests/server_to_client_intergation_test.py
+        else
+          pytest
+        fi
 
   e2e-tests:
     runs-on: ubuntu-latest
