@@ -5,7 +5,7 @@ name: Tests
 
 on:
   push:
-    branches: [ master ]
+    branches: [ master, 'release/**' ]
   pull_request:
     branches: [ master, 'release/**' ]
 
@@ -27,6 +27,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     strategy:
+      # Every leg reports its own result; with fail-fast one failing leg
+      # cancels the others and hides whether they pass.
+      fail-fast: false
       matrix:
         python-version: ["3.9", "3.10", "3.11", "3.12"]
         # 3.13 leg: opal-common and opal-client only. opal-server's
@@ -207,3 +210,47 @@ jobs:
 
       - name: Output container logs (alpine)
         run: docker compose -f docker/docker-compose-test-alpine.yml logs
+
+  ci:
+    # The branch ruleset requires only this check, so the jobs above and their
+    # matrix legs can be renamed without editing the ruleset. always(): GitHub
+    # counts a skipped required check as passing, so this job must run, and
+    # fail, when a needed job fails or is cancelled.
+    name: CI
+    if: always()
+    needs: [build, e2e-tests, e2e-tests-alpine]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Check that the CI job needs every other job
+        run: |
+          workflow=.github/workflows/tests.yml
+          # The parentheses matter: yq reads a - b - c as a - (b - c).
+          unlisted=$(yq -r '((.jobs | keys) - ["ci"]) - .jobs.ci.needs | .[]' "$workflow")
+          unknown=$(yq -r '.jobs.ci.needs - ((.jobs | keys) - ["ci"]) | .[]' "$workflow")
+          if [[ -n "$unlisted" ]]; then
+            echo "Add these jobs to the needs list of the CI job in $workflow:" >&2
+            echo "$unlisted" >&2
+          fi
+          if [[ -n "$unknown" ]]; then
+            echo "These names in the needs list of the CI job in $workflow are not jobs:" >&2
+            echo "$unknown" >&2
+          fi
+          if [[ -n "$unlisted" || -n "$unknown" ]]; then
+            exit 1
+          fi
+      - name: Require every job to succeed
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: |
+          jq -r 'to_entries[] | "\(.key): \(.value.result)"' <<<"$NEEDS"
+          if ! jq -e 'all(.[]; .result == "success")' <<<"$NEEDS" >/dev/null; then
+            echo "A required job did not succeed." >&2
+            exit 1
+          fi
