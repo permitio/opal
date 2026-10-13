@@ -1,11 +1,10 @@
 import pytest
-from opal_common.schemas.policy import DataModule, PolicyBundle, RegoModule
-
 from opal_client.policy import fetcher as fetcher_module
 from opal_client.policy import updater as updater_module
 from opal_client.policy.fetcher import PolicyFetcher
 from opal_client.policy.topics import resolve_policy_source_ids
 from opal_client.policy.updater import PolicyUpdater, merge_source_policy_bundles
+from opal_common.schemas.policy import DataModule, PolicyBundle, RegoModule
 
 
 class _Response:
@@ -263,9 +262,7 @@ async def test_source_update_removal_does_not_delete_another_stream(monkeypatch)
         source_id="team-a",
     )
 
-    assert updater._policy_fetcher.calls == [
-        (["policy-a", "policy-b"], "team-a", None)
-    ]
+    assert updater._policy_fetcher.calls == [(["policy-a", "policy-b"], "team-a", None)]
     assert {module.path for module in updater._policy_store.bundle.policy_modules} == {
         "a-new.rego",
         "b.rego",

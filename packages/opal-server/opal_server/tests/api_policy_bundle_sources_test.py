@@ -3,19 +3,18 @@ from pathlib import Path
 import pytest
 from fastapi import HTTPException
 from git import Repo
-from pydantic import ValidationError
-from starlette.requests import Request
-
-from opal_server.policy.bundles import api as bundle_api
 from opal_server.config import (
     ApiPolicyBundleSources,
+    PolicySourceTypes,
     opal_server_config,
     validate_policy_bundle_source_mode,
 )
+from opal_server.policy.bundles import api as bundle_api
 from opal_server.policy.bundles.api import get_repo
-from opal_server.policy.webhook import api as webhook_api
 from opal_server.policy.watcher.task import MultiPolicyWatcherTask
-from opal_server.config import PolicySourceTypes
+from opal_server.policy.webhook import api as webhook_api
+from pydantic import ValidationError
+from starlette.requests import Request
 
 
 def test_remote_manifest_mode_excludes_other_source_settings():
@@ -26,9 +25,7 @@ def test_remote_manifest_mode_excludes_other_source_settings():
     with pytest.raises(ValueError, match="Configure only one"):
         validate_policy_bundle_source_mode(
             ApiPolicyBundleSources(
-                sources=[
-                    {"source_id": "team-a", "url": "https://example.test/a"}
-                ]
+                sources=[{"source_id": "team-a", "url": "https://example.test/a"}]
             ),
             None,
             "https://example.test/manifest.json",
@@ -76,7 +73,9 @@ def test_bundle_sources_reject_duplicate_ids():
 
 
 def test_bundle_sources_reject_shared_local_paths():
-    with pytest.raises(ValidationError, match="configured clone_path values must be unique"):
+    with pytest.raises(
+        ValidationError, match="configured clone_path values must be unique"
+    ):
         ApiPolicyBundleSources(
             sources=[
                 {
@@ -244,9 +243,7 @@ async def test_manifest_webhook_publishes_source_id_on_stable_topic(monkeypatch)
         "POLICY_BUNDLE_MANIFEST_URL",
         "https://example.test/manifest.json",
     )
-    router = webhook_api.get_webhook_router(
-        [], None, PolicySourceTypes.Api, publish
-    )
+    router = webhook_api.get_webhook_router([], None, PolicySourceTypes.Api, publish)
     request = Request(
         {
             "type": "http",

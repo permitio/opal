@@ -124,6 +124,7 @@ def setup_watcher_task(
             opal_server_config.POLICY_BUNDLE_MANIFEST_URL,
         )
         if opal_server_config.POLICY_BUNDLE_MANIFEST_URL:
+
             def create_manifest_source(source_config):
                 default_tmp_path = Path(opal_server_config.POLICY_BUNDLE_TMP_PATH)
                 source = ApiPolicySource(

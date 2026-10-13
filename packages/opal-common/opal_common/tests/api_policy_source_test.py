@@ -1,5 +1,4 @@
 import pytest
-
 from opal_common.sources import api_policy_source
 from opal_server.config import PolicyBundleServerType
 
@@ -50,9 +49,7 @@ async def test_custom_bundle_filename_is_used_for_request_and_aws_signature(
         "ClientSession",
         lambda **kwargs: _Session(record_request),
     )
-    monkeypatch.setattr(
-        api_policy_source, "build_aws_rest_auth_headers", sign_request
-    )
+    monkeypatch.setattr(api_policy_source, "build_aws_rest_auth_headers", sign_request)
     source = api_policy_source.ApiPolicySource(
         remote_source_url="https://bucket.example/policies",
         local_clone_path=str(tmp_path / "repo"),

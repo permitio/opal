@@ -365,9 +365,7 @@ def test_policy_update_omits_unset_source_id_but_serializes_configured_source():
 
     update_with_source = update.model_copy(update={"source_id": "team-a"})
     assert update_with_source.model_dump()["source_id"] == "team-a"
-    assert (
-        json.loads(update_with_source.model_dump_json())["source_id"] == "team-a"
-    )
+    assert json.loads(update_with_source.model_dump_json())["source_id"] == "team-a"
 
 
 @pytest.mark.parametrize("case", CASES, ids=_ids(CASES))

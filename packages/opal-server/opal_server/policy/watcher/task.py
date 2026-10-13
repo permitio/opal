@@ -265,9 +265,7 @@ class MultiPolicyWatcherTask(BasePolicyWatcherTask):
     async def stop(self):
         if self._manifest_refresh_task is not None:
             self._manifest_refresh_task.cancel()
-            await asyncio.gather(
-                self._manifest_refresh_task, return_exceptions=True
-            )
+            await asyncio.gather(self._manifest_refresh_task, return_exceptions=True)
             self._manifest_refresh_task = None
         await asyncio.gather(
             *(source.stop() for source in self._policy_sources.values()),

@@ -14,8 +14,10 @@ from opal_client.config import opal_client_config
 from opal_client.data.fetcher import DataFetcher
 from opal_client.logger import logger
 from opal_client.policy.fetcher import PolicyFetcher
-from opal_client.policy.topics import default_subscribed_policy_directories
-from opal_client.policy.topics import resolve_policy_source_ids
+from opal_client.policy.topics import (
+    default_subscribed_policy_directories,
+    resolve_policy_source_ids,
+)
 from opal_client.policy_store.base_policy_store_client import BasePolicyStoreClient
 from opal_client.policy_store.policy_store_client_factory import (
     DEFAULT_POLICY_STORE_GETTER,
@@ -66,13 +68,10 @@ def merge_source_policy_bundles(
         for module in bundle.data_modules:
             destination = PurePosixPath(module.path)
             for previous_destination, previous_source in data_destinations:
-                if (
-                    previous_source != source_id
-                    and (
-                        destination == previous_destination
-                        or destination in previous_destination.parents
-                        or previous_destination in destination.parents
-                    )
+                if previous_source != source_id and (
+                    destination == previous_destination
+                    or destination in previous_destination.parents
+                    or previous_destination in destination.parents
                 ):
                     raise ValueError(
                         f"Data destinations '{previous_destination}' and "
@@ -86,12 +85,11 @@ def merge_source_policy_bundles(
         manifest.extend(bundle.manifest)
 
     source_hashes = {
-        source_id: source_bundles[source_id].hash for source_id in sorted(source_bundles)
+        source_id: source_bundles[source_id].hash
+        for source_id in sorted(source_bundles)
     }
     combined_hash = hashlib.sha256(
-        json.dumps(source_hashes, sort_keys=True, separators=(",", ":")).encode(
-            "utf-8"
-        )
+        json.dumps(source_hashes, sort_keys=True, separators=(",", ":")).encode("utf-8")
     ).hexdigest()
     return PolicyBundle(
         manifest=list(dict.fromkeys(manifest)),
@@ -492,9 +490,7 @@ class PolicyUpdater:
             return
 
         source_ids = (
-            self._source_ids
-            if force_full_update or source_id is None
-            else [source_id]
+            self._source_ids if force_full_update or source_id is None else [source_id]
         )
         updated_bundles = {}
         source_errors = {}
@@ -537,7 +533,9 @@ class PolicyUpdater:
         try:
             aggregate_bundle = merge_source_policy_bundles(candidate_bundles)
         except ValueError as exc:
-            logger.error("Rejecting conflicting policy sources: {error}", error=str(exc))
+            logger.error(
+                "Rejecting conflicting policy sources: {error}", error=str(exc)
+            )
             return
 
         bundle_succeeded = True
@@ -572,9 +570,7 @@ class PolicyUpdater:
             self._schedule_multi_source_retry()
         if self._should_send_reports:
             report = DataUpdateReport(policy_hash=aggregate_bundle.hash, reports=[])
-            self._tasks.add_task(
-                self._callbacks_reporter.report_update_results(report)
-            )
+            self._tasks.add_task(self._callbacks_reporter.report_update_results(report))
 
     def _schedule_multi_source_retry(self):
         if self._stopping:
@@ -598,9 +594,11 @@ class PolicyUpdater:
     async def handle_policy_updates(self):
         while True:
             try:
-                directories, force_full_update, source_id = (
-                    await self._policy_update_queue.get()
-                )
+                (
+                    directories,
+                    force_full_update,
+                    source_id,
+                ) = await self._policy_update_queue.get()
                 await self.update_policy(directories, force_full_update, source_id)
             except asyncio.CancelledError:
                 logger.debug("PolicyUpdater policy update task was cancelled")

@@ -1,7 +1,6 @@
 import asyncio
 
 import pytest
-
 from opal_server.config import opal_server_config
 from opal_server.policy.watcher import manifest as manifest_module
 from opal_server.policy.watcher.manifest import (
@@ -46,7 +45,9 @@ class _Session:
 @pytest.mark.asyncio
 async def test_manifest_fetcher_uses_bearer_auth_and_etag(monkeypatch):
     monkeypatch.setattr(
-        opal_server_config, "POLICY_BUNDLE_MANIFEST_URL", "https://example.test/manifest"
+        opal_server_config,
+        "POLICY_BUNDLE_MANIFEST_URL",
+        "https://example.test/manifest",
     )
     monkeypatch.setattr(
         opal_server_config, "POLICY_BUNDLE_MANIFEST_REQUEST_TIMEOUT", 10
@@ -63,9 +64,7 @@ async def test_manifest_fetcher_uses_bearer_auth_and_etag(monkeypatch):
             200,
             headers={"ETag": '"manifest-v1"'},
             payload={
-                "sources": [
-                    {"source_id": "team-a", "url": "https://example.test/a"}
-                ]
+                "sources": [{"source_id": "team-a", "url": "https://example.test/a"}]
             },
         ),
         _Response(304),
@@ -95,7 +94,9 @@ async def test_manifest_fetcher_uses_bearer_auth_and_etag(monkeypatch):
 
 def test_aws_manifest_auth_requires_access_key_and_secret(monkeypatch):
     monkeypatch.setattr(
-        opal_server_config, "POLICY_BUNDLE_MANIFEST_URL", "https://s3.example.test/manifest"
+        opal_server_config,
+        "POLICY_BUNDLE_MANIFEST_URL",
+        "https://s3.example.test/manifest",
     )
     monkeypatch.setattr(
         opal_server_config, "POLICY_BUNDLE_MANIFEST_REQUEST_TIMEOUT", 10
@@ -103,9 +104,7 @@ def test_aws_manifest_auth_requires_access_key_and_secret(monkeypatch):
     monkeypatch.setattr(
         opal_server_config, "POLICY_BUNDLE_MANIFEST_SERVER_TYPE", "AWS-S3"
     )
-    monkeypatch.setattr(
-        opal_server_config, "POLICY_BUNDLE_MANIFEST_SERVER_TOKEN", None
-    )
+    monkeypatch.setattr(opal_server_config, "POLICY_BUNDLE_MANIFEST_SERVER_TOKEN", None)
     monkeypatch.setattr(
         opal_server_config, "POLICY_BUNDLE_MANIFEST_SERVER_TOKEN_ID", None
     )

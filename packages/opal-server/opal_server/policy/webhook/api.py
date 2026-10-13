@@ -7,13 +7,13 @@ from opal_common.authentication.deps import JWTAuthenticator
 from opal_common.logger import logger
 from opal_common.schemas.webhook import GitWebhookRequestParams
 from opal_server.config import PolicySourceTypes, opal_server_config
+from opal_server.policy.watcher.manifest import get_active_policy_bundle_sources
+from opal_server.policy.watcher.task import policy_webhook_topic
 from opal_server.policy.webhook.deps import (
     GitChanges,
     extracted_git_changes,
     validate_git_secret_or_throw,
 )
-from opal_server.policy.watcher.task import policy_webhook_topic
-from opal_server.policy.watcher.manifest import get_active_policy_bundle_sources
 
 
 def init_git_webhook_router(

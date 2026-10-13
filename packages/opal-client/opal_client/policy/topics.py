@@ -24,7 +24,9 @@ def resolve_policy_source_ids(single_source_id=None, source_ids=None) -> List[st
         )
         for source_id in selected_ids
     ):
-        raise ValueError("Policy source IDs may contain only letters, digits, '-' or '_'")
+        raise ValueError(
+            "Policy source IDs may contain only letters, digits, '-' or '_'"
+        )
     if len(selected_ids) != len(set(selected_ids)):
         raise ValueError("Policy source IDs must be unique")
     return selected_ids

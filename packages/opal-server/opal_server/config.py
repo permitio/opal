@@ -5,12 +5,11 @@ from enum import Enum
 from pathlib import Path
 from typing import List, Optional
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
-
 from opal_common.authentication.types import EncryptionKeyFormat
 from opal_common.confi import Confi
 from opal_common.schemas.data import DEFAULT_DATA_TOPIC, ServerDataSourceConfig
 from opal_common.schemas.webhook import GitWebhookRequestParams
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 confi = Confi(prefix="OPAL_")
 
@@ -43,8 +42,12 @@ class ApiPolicyBundleSource(BaseModel):
     @field_validator("source_id")
     @classmethod
     def validate_source_id(cls, value):
-        if not value[0].isascii() or not value[0].isalnum() or not all(
-            char.isascii() and (char.isalnum() or char in "-_") for char in value
+        if (
+            not value[0].isascii()
+            or not value[0].isalnum()
+            or not all(
+                char.isascii() and (char.isalnum() or char in "-_") for char in value
+            )
         ):
             raise ValueError("source_id must contain only letters, digits, '-' or '_'")
         return value

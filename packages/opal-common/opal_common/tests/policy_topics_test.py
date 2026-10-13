@@ -11,9 +11,7 @@ def test_policy_topics_include_source_id_only_when_configured():
     directories = [Path("policy")]
 
     assert policy_topics(directories) == ["policy:policy"]
-    assert policy_topics(directories, source_id="team-a") == [
-        "policy:team-a:policy"
-    ]
+    assert policy_topics(directories, source_id="team-a") == ["policy:team-a:policy"]
 
 
 def test_client_topic_builder_uses_source_namespaces():

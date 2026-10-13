@@ -126,9 +126,7 @@ class PolicyBundleSourceRegistry:
             opal_server_config.POLICY_BUNDLE_MANIFEST_REFRESH_INTERVAL
         )
         if self.refresh_interval <= 0:
-            raise ValueError(
-                "POLICY_BUNDLE_MANIFEST_REFRESH_INTERVAL must be positive"
-            )
+            raise ValueError("POLICY_BUNDLE_MANIFEST_REFRESH_INTERVAL must be positive")
         self._sources: Optional[ApiPolicyBundleSources] = None
         self._last_error: Optional[Exception] = None
         self._last_refresh = 0.0
@@ -138,7 +136,9 @@ class PolicyBundleSourceRegistry:
         if not force and time.monotonic() - self._last_refresh < self.refresh_interval:
             if self._sources is not None:
                 return self._sources
-            raise RuntimeError("Remote API bundle source manifest is not ready") from self._last_error
+            raise RuntimeError(
+                "Remote API bundle source manifest is not ready"
+            ) from self._last_error
 
         async with self._lock:
             if (

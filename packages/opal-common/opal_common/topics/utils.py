@@ -20,9 +20,7 @@ def remove_prefix(topic: str, prefix: str = POLICY_PREFIX):
     return topic
 
 
-def pubsub_topics_from_directories(
-    dirs: List[str], source_id: str = None
-) -> List[str]:
+def pubsub_topics_from_directories(dirs: List[str], source_id: str = None) -> List[str]:
     """Converts a list of directories on the policy repository that the client
     wants to subscribe to into a list of topics.
 
@@ -34,9 +32,7 @@ def pubsub_topics_from_directories(
     return policy_topics(policy_directories, source_id=source_id)
 
 
-def pubsub_topics_from_sources(
-    dirs: List[str], source_ids: List[str]
-) -> List[str]:
+def pubsub_topics_from_sources(dirs: List[str], source_ids: List[str]) -> List[str]:
     return [
         topic
         for source_id in source_ids

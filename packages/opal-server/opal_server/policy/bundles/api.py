@@ -34,9 +34,7 @@ async def get_repo(
         use_fixed_path, opal_server_config.POLICY_REPO_REUSE_CLONE_PATH
     )
     try:
-        configured_sources = (
-            await get_active_policy_bundle_sources()
-        ).sources
+        configured_sources = (await get_active_policy_bundle_sources()).sources
     except Exception as exc:
         logger.warning(
             "Policy bundle source registry is unavailable (error type: {error_type})",
