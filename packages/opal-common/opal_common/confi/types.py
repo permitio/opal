@@ -1,21 +1,60 @@
 import inspect
+import re
+from enum import Enum
 from typing import Any, Callable, List, Type
 
+import click
 from decouple import text_type, undefined
+from opal_common.logging_utils.errors import describe_validation_error
+from pydantic import ValidationError
+
+#: Entry keys treated as sensitive even when not flagged ``sensitive=True``.
+SENSITIVE_KEY_PATTERN = re.compile(
+    r"TOKEN|SECRET|PASSWORD|PASSPHRASE|API_KEY|PRIVATE_KEY|SSH_KEY", re.IGNORECASE
+)
+#: How a sensitive entry's value is shown in a printed config or ``--help``.
+REDACTED = "<redacted>"
+
+
+def holds_no_credential(value: Any) -> bool:
+    """Unset, empty, flag and enum values (e.g. ``AUTH_PRIVATE_KEY_FORMAT``,
+    caught by the name fallback) are shown even for a sensitive entry."""
+    return (
+        value is None
+        or value is undefined
+        or (isinstance(value, str) and not value)
+        or isinstance(value, (bool, Enum))
+    )
 
 
 class FromStr:
-    """Placeholder for values parsed from strings into more complex objects."""
+    """Placeholder for values parsed from strings into more complex objects.
 
-    def __init__(self, type, cast):
+    On a ValueError while parsing a CLI option, click prints the rejected value
+    itself (click < 8.2) or the error's str() - which for a pydantic JSON decode
+    error holds that same value. Errors that could carry the value are raised
+    as ``click.BadParameter``, which click prints as given.
+    """
+
+    def __init__(self, type, cast, sensitive: bool = False):
         self._type = type
         self.cast = cast
+        self._sensitive = sensitive
 
     def __call__(self, arg) -> Any:
-        if arg is not undefined:
-            return self.cast(arg)
-        else:
+        if arg is undefined:
             return undefined
+        try:
+            return self.cast(arg)
+        except ValidationError as err:
+            raise click.BadParameter(describe_validation_error(err)) from None
+        except ValueError as err:
+            if not self._sensitive:
+                raise
+            # e.g. a private key that does not load - click < 8.2 would print it
+            raise click.BadParameter(
+                f"could not be parsed ({type(err).__name__})"
+            ) from None
 
     @property
     def __name__(self) -> str:
@@ -38,6 +77,7 @@ class ConfiEntry:
     cast_from_json: Callable
     kwargs: dict
     flags: List[str]
+    sensitive: bool
     value: Any
 
     def __init__(
@@ -51,6 +91,7 @@ class ConfiEntry:
         type=str,
         index=-1,
         flags: List[str] = None,
+        sensitive: bool = False,
         **kwargs,
     ) -> None:
         self.key = key
@@ -63,13 +104,15 @@ class ConfiEntry:
         self.type = type
         self.kwargs = kwargs
         self.flags = flags
+        # flagged explicitly, or named like a credential
+        self.sensitive = sensitive or SENSITIVE_KEY_PATTERN.search(key) is not None
         self.value = undefined
 
     def get_cli_type(self):
         if self.type in {str, int, float, list, dict, bool}:
             return self.type
         else:
-            return FromStr(self.type, self.cast)
+            return FromStr(self.type, self.cast, sensitive=self.sensitive)
 
     def get_cli_option_kwargs(self):
         res = {
@@ -80,6 +123,10 @@ class ConfiEntry:
         if self.default is not undefined:
             res["default"] = self.value if self.value is not undefined else self.default
             res["show_default"] = self.default
+            if self.sensitive and not holds_no_credential(self.default):
+                # click renders a non-str show_default as the default it was given,
+                # i.e. the value resolved from the environment.
+                res["show_default"] = REDACTED
         return res
 
 

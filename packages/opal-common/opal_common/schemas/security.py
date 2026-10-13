@@ -1,8 +1,9 @@
 from datetime import datetime, timedelta
 from enum import Enum
-from typing import Optional
+from typing import ClassVar, Optional, Set
 from uuid import UUID, uuid4
 
+from opal_common.logging_utils.redaction import RedactedReprMixin
 from pydantic import BaseModel, Field, validator
 
 PEER_TYPE_DESCRIPTION = (
@@ -49,7 +50,9 @@ class TokenDetails(BaseModel):
     claims: dict
 
 
-class AccessToken(BaseModel):
+class AccessToken(RedactedReprMixin, BaseModel):
+    _redacted_repr_fields: ClassVar[Set[str]] = {"token"}
+
     token: str
     type: str = "bearer"
     details: Optional[TokenDetails]
