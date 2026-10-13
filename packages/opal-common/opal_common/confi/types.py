@@ -3,7 +3,10 @@ import re
 from enum import Enum
 from typing import Any, Callable, List, Type
 
+import click
 from decouple import text_type, undefined
+from opal_common.logging_utils.errors import describe_validation_error
+from pydantic import ValidationError
 
 #: Entry keys treated as sensitive even when not flagged ``sensitive=True``.
 SENSITIVE_KEY_PATTERN = re.compile(
@@ -25,17 +28,33 @@ def holds_no_credential(value: Any) -> bool:
 
 
 class FromStr:
-    """Placeholder for values parsed from strings into more complex objects."""
+    """Placeholder for values parsed from strings into more complex objects.
 
-    def __init__(self, type, cast):
+    On a ValueError while parsing a CLI option, click prints the rejected value
+    itself (click < 8.2) or the error's str() - which for a pydantic error
+    embeds the input. Errors that could carry the value are raised as
+    ``click.BadParameter``, which click prints as given.
+    """
+
+    def __init__(self, type, cast, sensitive: bool = False):
         self._type = type
         self.cast = cast
+        self._sensitive = sensitive
 
     def __call__(self, arg) -> Any:
-        if arg is not undefined:
-            return self.cast(arg)
-        else:
+        if arg is undefined:
             return undefined
+        try:
+            return self.cast(arg)
+        except ValidationError as err:
+            raise click.BadParameter(describe_validation_error(err)) from None
+        except ValueError as err:
+            if not self._sensitive:
+                raise
+            # e.g. a private key that does not load - click < 8.2 would print it
+            raise click.BadParameter(
+                f"could not be parsed ({type(err).__name__})"
+            ) from None
 
     @property
     def __name__(self) -> str:
@@ -93,7 +112,7 @@ class ConfiEntry:
         if self.type in {str, int, float, list, dict, bool}:
             return self.type
         else:
-            return FromStr(self.type, self.cast)
+            return FromStr(self.type, self.cast, sensitive=self.sensitive)
 
     def get_cli_option_kwargs(self):
         res = {

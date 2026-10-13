@@ -8,6 +8,7 @@ from typing import Optional
 
 import pytest
 from click.testing import CliRunner
+from opal_common.authentication.types import EncryptionKeyFormat
 from opal_common.confi import Confi, confi
 from pydantic import BaseModel
 
@@ -51,6 +52,9 @@ class _SampleConfig(Confi):
     WEBHOOK_PASSPHRASE = confi.str("WEBHOOK_PASSPHRASE", "")
     EXCLUDE_PASSWORDS = confi.bool("EXCLUDE_PASSWORDS", True)
     PRIVATE_KEY_FORMAT = confi.enum("PRIVATE_KEY_FORMAT", _KeyFormat, _KeyFormat.pem)
+    SIGNING_PRIVATE_KEY = confi.private_key(
+        "SIGNING_PRIVATE_KEY", None, key_format=EncryptionKeyFormat.pem
+    )
     # not sensitive
     REPO_URL = confi.str("REPO_URL", "https://example.com/repo.git")
     LOG_LEVEL = confi.str("LOG_LEVEL", "INFO")
@@ -88,6 +92,29 @@ def test_invalid_model_value_error_names_the_failing_fields(monkeypatch):
         "Failed parsing config key SAMPLE_SOURCE: "
         "1 validation error for _Source: retries (int_parsing)"
     )
+
+
+def _invoke_cli(*args: str):
+    cli = _SampleConfig(prefix="SAMPLE_").get_cli_object()
+    return CliRunner().invoke(cli, list(args), terminal_width=200)
+
+
+def test_invalid_model_cli_option_error_omits_the_value():
+    """For a bad option value, click prints the value (< 8.2) or str() of the
+    error, which for a pydantic error embeds the input."""
+    result = _invoke_cli("--source", json.dumps(SOURCES_WITH_AUTH)[:-2])
+
+    assert result.exit_code != 0
+    assert FAKE_KEY not in result.output
+    assert "1 validation error for _Source: <root> (json_invalid)" in result.output
+
+
+def test_invalid_sensitive_cli_option_error_omits_the_value():
+    result = _invoke_cli("--signing-private-key", FAKE_KEY)
+
+    assert result.exit_code != 0
+    assert FAKE_KEY not in result.output
+    assert "could not be parsed (ValueError)" in result.output
 
 
 def _sample_config(monkeypatch, **env: str) -> _SampleConfig:
@@ -173,8 +200,10 @@ def test_help_does_not_show_sensitive_defaults(monkeypatch):
     assert "dev-placeholder" not in result.output
     assert "[default: (<redacted>)]" in result.output
     assert "[default: (INFO)]" in result.output
-    # an enum named like a credential holds none
-    assert "[default: (_KeyFormat.pem)]" in result.output
+    # only the two flagged entries with a default; an enum named like a
+    # credential holds none (rendered "pem" or "_KeyFormat.pem" by Python version)
+    assert result.output.count("<redacted>") == 2
+    assert "pem)]" in result.output
 
 
 def test_sensitive_is_not_passed_to_the_value_lookup():

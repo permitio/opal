@@ -52,19 +52,34 @@ def _client() -> TestClient:
     return TestClient(app)
 
 
+# Tokens are signed when the test runs: one signed at collection time can
+# expire before a long suite reaches it, and fail on "expired" instead.
 @pytest.mark.parametrize(
-    "path,token,error",
+    "path,make_token,error",
     [
-        ("/jwt", "FAKE-KEY-123", "Could not decode access token"),
-        ("/jwt", _signed(exp=int(time.time()) - 60), "Access token is expired"),
-        ("/jwt", _signed(aud="https://other.example/"), "invalid audience claim"),
-        ("/jwt", _signed(iss="https://other.example/"), "invalid issuer claim"),
-        ("/jwt", _signed(nbf=int(time.time()) + 3600), "Unknown JWT error"),
-        ("/static", "FAKE-KEY-123", "unauthorized to access this endpoint!"),
+        ("/jwt", lambda: "FAKE-KEY-123", "Could not decode access token"),
+        (
+            "/jwt",
+            lambda: _signed(exp=int(time.time()) - 60),
+            "Access token is expired",
+        ),
+        (
+            "/jwt",
+            lambda: _signed(aud="https://other.example/"),
+            "invalid audience claim",
+        ),
+        (
+            "/jwt",
+            lambda: _signed(iss="https://other.example/"),
+            "invalid issuer claim",
+        ),
+        ("/jwt", lambda: _signed(nbf=int(time.time()) + 3600), "Unknown JWT error"),
+        ("/static", lambda: "FAKE-KEY-123", "unauthorized to access this endpoint!"),
     ],
     ids=["undecodable", "expired", "audience", "issuer", "not-yet-valid", "static"],
 )
-def test_rejected_token_is_not_echoed(path, token, error):
+def test_rejected_token_is_not_echoed(path, make_token, error):
+    token = make_token()
     with capture_logs() as logs:
         response = _client().get(path, headers={"Authorization": f"Bearer {token}"})
 
