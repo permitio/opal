@@ -6,10 +6,8 @@ import pytest
 from aiohttp import web
 from aiohttp.test_utils import TestServer
 from loguru import logger
-from opal_common.sources.api_policy_source import ApiPolicySource
 from opal_common.tests.redaction_fixtures import capture_logs
 from opal_common.utils import throw_if_bad_status_code
-from opal_server.config import PolicyBundleServerType
 
 FAKE_KEY = "FAKE-KEY-123"
 
@@ -60,12 +58,14 @@ async def test_bad_status_with_json_body_logs_the_parsed_details():
     assert "Unexpected response code 500: {'error': 'no such bundle'}" in logs.text[0]
 
 
-def _bundle_source(server: TestServer, tmp_path) -> ApiPolicySource:
-    return ApiPolicySource(
+def _bundle_source(server: TestServer, tmp_path):
+    # ApiPolicySource imports opal-server's config, which a client-only install lacks
+    api_policy_source = pytest.importorskip("opal_common.sources.api_policy_source")
+    return api_policy_source.ApiPolicySource(
         remote_source_url=str(server.make_url("")),
         local_clone_path=str(tmp_path / "clone"),
         token=FAKE_KEY,
-        bundle_server_type=PolicyBundleServerType.HTTP,
+        bundle_server_type=api_policy_source.PolicyBundleServerType.HTTP,
         policy_bundle_path=str(tmp_path / "bundle.tar.gz"),
     )
 

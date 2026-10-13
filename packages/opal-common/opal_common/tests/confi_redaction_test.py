@@ -227,7 +227,7 @@ def test_sensitive_is_not_passed_to_the_value_lookup():
     ],
 )
 def test_server_credential_entries_are_sensitive(name):
-    from opal_server.config import opal_server_config
+    opal_server_config = pytest.importorskip("opal_server.config").opal_server_config
 
     assert opal_server_config.entries[name].sensitive
 
@@ -247,7 +247,7 @@ def test_client_credential_entries_are_sensitive(name):
 
 
 def test_server_print_config_masks_credentials(monkeypatch, capsys):
-    from opal_server.cli import print_config
+    print_config = pytest.importorskip("opal_server.cli").print_config
     from opal_server.config import opal_server_config
 
     monkeypatch.setattr(opal_server_config, "AUTH_MASTER_TOKEN", FAKE_KEY)
