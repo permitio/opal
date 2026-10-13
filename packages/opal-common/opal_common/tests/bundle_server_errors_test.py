@@ -23,7 +23,7 @@ async def _json_error(request: web.Request) -> web.Response:
 
 
 async def _redirect_loop(request: web.Request) -> web.Response:
-    raise web.HTTPFound(request.path)
+    raise web.HTTPFound("/bundle.tar.gz")
 
 
 def _server(handler) -> TestServer:
