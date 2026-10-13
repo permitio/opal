@@ -8,11 +8,13 @@ control: the stock EventBroadcaster reader DOES complete on the same disconnect,
 proving these tests actually catch the regression.
 """
 import asyncio
+import json
 from contextlib import asynccontextmanager, suppress
 
 import pytest
 from fastapi_websocket_pubsub import EventBroadcaster
 from fastapi_websocket_pubsub.event_broadcaster import BroadcastNotification
+from opal_common.logger import logger
 from opal_server.pubsub_resilience import (
     FreezablePubSubEndpoint,
     ReconnectingBroadcaster,
@@ -534,6 +536,64 @@ async def test_skips_own_broadcasts():
     await broadcaster._handle_broadcast_event(_Event(other.model_dump_json()))
     await _wait_for(lambda: notifier.notified)
     assert notifier.notified[0][0] == ["policy_data"]
+
+
+_FAKE_AUTH_HEADER = "Bearer FAKE-KEY-123"
+_UPDATE_WITH_HEADERS = {
+    "entries": [
+        {
+            "url": "https://data.example.com/v1",
+            "config": {"headers": {"Authorization": _FAKE_AUTH_HEADER}},
+        }
+    ]
+}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "message",
+    [
+        # valid JSON missing ``topics``: the error quotes the whole object
+        json.dumps({"notifier_id": "other-server", "data": _UPDATE_WITH_HEADERS}),
+        # wrong type for ``notifier_id``: the error quotes that value
+        json.dumps(
+            {
+                "notifier_id": _UPDATE_WITH_HEADERS,
+                "topics": ["policy_data"],
+                "data": {},
+            }
+        ),
+        # truncated JSON: the error quotes the raw message
+        json.dumps(
+            {
+                "notifier_id": "other-server",
+                "topics": ["policy_data"],
+                "data": _UPDATE_WITH_HEADERS,
+            }
+        )[:-5],
+    ],
+    ids=["missing_topics", "wrong_notifier_id_type", "truncated_json"],
+)
+async def test_malformed_broadcast_log_hides_payload(message):
+    notifier = FakeNotifier()
+    broadcaster = ReconnectingBroadcaster(
+        "memory://", notifier=notifier, channel="test"
+    )
+    text, serialized = [], []
+    sink_ids = [
+        logger.add(lambda m: text.append(str(m)), level="DEBUG"),
+        logger.add(lambda m: serialized.append(str(m)), level="DEBUG", serialize=True),
+    ]
+    try:
+        await broadcaster._handle_broadcast_event(_Event(message))
+    finally:
+        for sink_id in sink_ids:
+            logger.remove(sink_id)
+
+    assert notifier.notified == []
+    assert any("Dropping malformed incoming broadcast" in line for line in text), text
+    assert _FAKE_AUTH_HEADER not in "\n".join(text)
+    assert _FAKE_AUTH_HEADER not in "\n".join(serialized)
 
 
 @pytest.mark.asyncio
