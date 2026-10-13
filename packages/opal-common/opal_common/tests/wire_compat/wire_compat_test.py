@@ -352,6 +352,24 @@ def _ids(cases):
     return [c.name for c in cases]
 
 
+def test_policy_update_omits_unset_source_id_but_serializes_configured_source():
+    from opal_common.schemas.policy import PolicyUpdateMessage
+
+    update = PolicyUpdateMessage(
+        old_policy_hash="d" * 40,
+        new_policy_hash="e" * 40,
+        changed_directories=["/"],
+    )
+    assert "source_id" not in update.model_dump()
+    assert "source_id" not in json.loads(update.model_dump_json())
+
+    update_with_source = update.model_copy(update={"source_id": "team-a"})
+    assert update_with_source.model_dump()["source_id"] == "team-a"
+    assert (
+        json.loads(update_with_source.model_dump_json())["source_id"] == "team-a"
+    )
+
+
 @pytest.mark.parametrize("case", CASES, ids=_ids(CASES))
 def test_serializes_as_pydantic_v1_did(case: Case):
     """Forward: what a v2 server emits must be what a v1 peer expects."""

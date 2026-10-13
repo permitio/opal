@@ -1,7 +1,7 @@
 from pathlib import Path
 from typing import List, Optional
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_serializer
 
 
 class BaseSchema(BaseModel):
@@ -45,6 +45,13 @@ class PolicyUpdateMessage(BaseSchema):
     new_policy_hash: str
     changed_directories: List[str]
     source_id: Optional[str] = None
+
+    @model_serializer(mode="wrap")
+    def _serialize_without_default_source_id(self, handler):
+        serialized = handler(self)
+        if self.source_id is None:
+            serialized.pop("source_id", None)
+        return serialized
 
 
 class PolicyUpdateMessageNotification(BaseSchema):
