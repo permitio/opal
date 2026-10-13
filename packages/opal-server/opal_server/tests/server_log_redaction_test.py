@@ -239,6 +239,10 @@ def test_no_rpc_logs_drops_library_debug_records(monkeypatch, stdlib_logs_to_log
         _emit_rpc_library_records()
 
     assert any("Client connected" in line for line in text), text
+    # Checked on the record text, not just the header value: a loguru patcher
+    # installed by an earlier configure_logs() call masks the header anyway.
+    assert not any("Handling RPC request" in line for line in text), text
+    assert not any("notify" in line for line in text), text
     _assert_absent([FAKE_HEADER], text, serialized)
 
 
@@ -253,4 +257,5 @@ def test_rpc_library_debug_records_flow_when_no_rpc_logs_is_off(
     with _captured_logs() as (text, _serialized):
         _emit_rpc_library_records()
 
-    assert any(FAKE_HEADER in line for line in text), text
+    assert any("Handling RPC request" in line for line in text), text
+    assert any("notify" in line for line in text), text
