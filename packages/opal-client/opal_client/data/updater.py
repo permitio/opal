@@ -26,11 +26,8 @@ from opal_client.policy_store.policy_store_client_factory import (
 )
 from opal_common.async_utils import TasksPool, repeated_call
 from opal_common.config import opal_common_config
-from opal_common.http_utils import (
-    is_http_error_response,
-    redact_url,
-    redact_url_in_text,
-)
+from opal_common.http_utils import is_http_error_response, redact_url
+from opal_common.logging_utils.errors import describe_error
 from opal_common.schemas.data import (
     DataEntryReport,
     DataSourceConfig,
@@ -564,7 +561,7 @@ class DataUpdater:
             store_transaction._update_remote_status(
                 url=redact_url(entry.url),
                 status=False,
-                error=redact_url_in_text(str(e), entry.url),
+                error=describe_error(e, entry.url),
             )
             return DataEntryReport(entry=entry, fetched=False, saved=False)
 
@@ -578,7 +575,7 @@ class DataUpdater:
                 url=redact_url(entry.url),
                 status=False,
                 error=f"Failed to save data to policy store: "
-                f"{redact_url_in_text(str(e), entry.url)}",
+                f"{describe_error(e, entry.url)}",
             )
             return DataEntryReport(
                 entry=entry, hash=self.calc_hash(result), fetched=True, saved=False
@@ -618,7 +615,7 @@ class DataUpdater:
             )
             raise Exception(
                 f"Failed to fetch data for entry {redact_url(entry.url)}: "
-                f"{redact_url_in_text(str(e), entry.url)}"
+                f"{describe_error(e, entry.url)}"
             )
 
         if result is None:

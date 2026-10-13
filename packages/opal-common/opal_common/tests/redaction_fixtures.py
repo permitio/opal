@@ -24,24 +24,49 @@ class CapturedLogs:
         return "\n".join(self.text + self.serialized)
 
 
+def _no_patching(record) -> None:
+    pass
+
+
+@contextmanager
+def without_log_patcher() -> Iterator[None]:
+    """Disables loguru's global patcher, restoring the previous one on exit.
+
+    ``configure_logs`` installs a patcher that masks credentials in every
+    record before any sink sees it, and it stays installed for the rest of
+    the process: once any test has built an OpalServer or OpalClient, a sink
+    added later only ever sees masked records, and a test could pass without
+    the call-site fix it is meant to check.
+    """
+    previous = logger._core.patcher
+    logger.configure(patcher=_no_patching)
+    try:
+        yield
+    finally:
+        # configure() ignores patcher=None, so restore the attribute itself
+        logger._core.patcher = previous
+
+
 @contextmanager
 def capture_logs() -> Iterator[CapturedLogs]:
     """Captures loguru output in both forms OPAL can write it.
 
-    Neither sink runs the scrubbing patcher or stream wrapper installed by
-    ``configure_logs``, so what is captured is what the call site itself
-    emits. ``diagnose`` is off, as in OPAL's default config.
+    The global patcher ``configure_logs`` installs is disabled while capturing
+    (see ``without_log_patcher``), and neither sink is wrapped in its scrubbing
+    stream, so what is captured is what the call site itself emits.
+    ``diagnose`` is off, as in OPAL's default config.
     """
     logs = CapturedLogs()
-    sink_ids = [
-        logger.add(logs.text.append, level="DEBUG", colorize=False, diagnose=False),
-        logger.add(logs.serialized.append, level="DEBUG", serialize=True),
-    ]
-    try:
-        yield logs
-    finally:
-        for sink_id in sink_ids:
-            logger.remove(sink_id)
+    with without_log_patcher():
+        sink_ids = [
+            logger.add(logs.text.append, level="DEBUG", colorize=False, diagnose=False),
+            logger.add(logs.serialized.append, level="DEBUG", serialize=True),
+        ]
+        try:
+            yield logs
+        finally:
+            for sink_id in sink_ids:
+                logger.remove(sink_id)
 
 
 def response_error(

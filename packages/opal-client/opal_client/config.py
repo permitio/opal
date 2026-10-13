@@ -352,6 +352,8 @@ class OpalClientConfig(Confi):
             "process_data": False,
         },
         description="Configuration for the default update callback",
+        # headers may carry the callback's auth
+        sensitive=True,
     )
 
     DEFAULT_UPDATE_CALLBACKS = confi.model(
@@ -361,6 +363,8 @@ class OpalClientConfig(Confi):
             lambda SERVER_URL="": {"callbacks": [f"{SERVER_URL}/data/callback_report"]}
         ),
         description="Where/How the client should report on the completion of data updates",
+        # callback urls can embed auth, and their configs auth headers
+        sensitive=True,
     )
 
     # OPA transaction log / healthcheck policy ------------------------------------
