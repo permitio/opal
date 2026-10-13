@@ -593,7 +593,14 @@ class OpalServerConfig(Confi):
         "BUNDLE_IGNORE", [], description="List of patterns to ignore in the bundle"
     )
 
-    NO_RPC_LOGS = confi.bool("NO_RPC_LOGS", True, description="Disable RPC logs")
+    NO_RPC_LOGS = confi.bool(
+        "NO_RPC_LOGS",
+        True,
+        description=(
+            "Suppress DEBUG logs of the websocket RPC/pub-sub libraries, which "
+            "include message payloads (INFO and above are kept)"
+        ),
+    )
 
     # client-api server
     SERVER_WORKER_COUNT = confi.int(

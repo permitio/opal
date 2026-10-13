@@ -97,6 +97,8 @@ def test_preload_configures_metrics_before_syncing(monkeypatch):
     monkeypatch.setattr(
         task_module, "configure_server_metrics", lambda: order.append("configure")
     )
+    # Keep the process-wide loguru/logging setup untouched by this test.
+    monkeypatch.setattr(task_module, "configure_logs", lambda: None)
 
     class _FakeService:
         def __init__(self, *a, **k):

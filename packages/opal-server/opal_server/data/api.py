@@ -9,6 +9,7 @@ from opal_common.authentication.authz import (
 from opal_common.authentication.deps import JWTAuthenticator, get_token_from_header
 from opal_common.authentication.types import JWTClaims
 from opal_common.authentication.verifier import Unauthorized
+from opal_common.http_utils import redact_url
 from opal_common.logger import logger
 from opal_common.schemas.data import (
     DataSourceConfig,
@@ -20,6 +21,21 @@ from opal_common.schemas.security import PeerType
 from opal_common.urls import set_url_query_param
 from opal_server.config import opal_server_config
 from opal_server.data.data_update_publisher import DataUpdatePublisher
+
+
+def _report_for_log(report: DataUpdateReport) -> dict:
+    """Render a client's update report for logging.
+
+    Drops each entry's ``config`` (fetcher auth headers) and ``data``
+    (inline payload) and strips auth embedded in each entry's ``url``.
+    """
+    rendered = report.model_dump(
+        exclude={"reports": {"__all__": {"entry": {"config", "data"}}}}
+    )
+    for entry_report in rendered["reports"]:
+        entry = entry_report["entry"]
+        entry["url"] = redact_url(entry["url"])
+    return rendered
 
 
 def init_data_updates_router(
@@ -55,12 +71,7 @@ def init_data_updates_router(
         OPAL_DEFAULT_UPDATE_CALLBACKS properly, this method will be
         called as the default callback (will simply log the report).
         """
-        logger.info(
-            "Received update report: {report}",
-            report=report.model_dump(
-                exclude={"reports": {"__all__": {"entry": {"config", "data"}}}}
-            ),
-        )
+        logger.info("Received update report: {report}", report=_report_for_log(report))
         return {}  # simply returns 200
 
     @router.get(
@@ -92,7 +103,7 @@ def init_data_updates_router(
             short_token = token[:5] + "..." + token[-5:]
             logger.info(
                 "Source configuration is available at '{url}', redirecting with token={token} (abbrv.)",
-                url=url,
+                url=redact_url(url),
                 token=short_token,
             )
             redirect_url = set_url_query_param(url, "token", token)
