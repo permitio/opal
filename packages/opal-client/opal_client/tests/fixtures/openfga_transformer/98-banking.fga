@@ -1,0 +1,24 @@
+model
+  schema 1.1
+
+type employee
+
+type customer
+
+type bank
+  relations
+    define account_manager: [employee]
+    define customer: [customer]
+    define transfer_limit_policy: [bank#customer with transfer_limit_policy, bank#account_manager with transfer_limit_policy]
+
+type account
+  relations
+    define account_manager: [employee]
+    define bank: [bank]
+    define can_make_bank_transfer: owner_or_account_manager and transfer_limit_policy from bank
+    define owner: [customer]
+    define owner_or_account_manager: owner or account_manager
+
+condition transfer_limit_policy(new_transaction_limit_approved: double, transaction_amount: double, transaction_limit: double) {
+  transaction_amount <= transaction_limit || transaction_amount <= new_transaction_limit_approved
+}

@@ -1,0 +1,6 @@
+model
+  schema 1.1
+
+type user
+  relations
+    define viewer: [user, user:*, user#viewer]

@@ -1,0 +1,541 @@
+{
+  "schema_version": "1.1",
+  "type_definitions": [
+    {
+      "type": "user",
+      "relations": {},
+      "metadata": null
+    },
+    {
+      "type": "team",
+      "relations": {
+        "member": {
+          "this": {}
+        }
+      },
+      "metadata": {
+        "relations": {
+          "member": {
+            "directly_related_user_types": [
+              {
+                "type": "user"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "type": "role",
+      "relations": {
+        "assignee": {
+          "this": {}
+        }
+      },
+      "metadata": {
+        "relations": {
+          "assignee": {
+            "directly_related_user_types": [
+              {
+                "type": "user"
+              },
+              {
+                "type": "team",
+                "relation": "member"
+              },
+              {
+                "type": "org",
+                "relation": "member"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "type": "org",
+      "relations": {
+        "asset_category_creator": {
+          "union": {
+            "child": [
+              {
+                "this": {}
+              },
+              {
+                "computedUserset": {
+                  "relation": "owner"
+                }
+              }
+            ]
+          }
+        },
+        "asset_commenter": {
+          "union": {
+            "child": [
+              {
+                "this": {}
+              },
+              {
+                "computedUserset": {
+                  "relation": "asset_editor"
+                }
+              }
+            ]
+          }
+        },
+        "asset_creator": {
+          "union": {
+            "child": [
+              {
+                "this": {}
+              },
+              {
+                "computedUserset": {
+                  "relation": "owner"
+                }
+              }
+            ]
+          }
+        },
+        "asset_editor": {
+          "union": {
+            "child": [
+              {
+                "this": {}
+              },
+              {
+                "computedUserset": {
+                  "relation": "owner"
+                }
+              }
+            ]
+          }
+        },
+        "asset_viewer": {
+          "union": {
+            "child": [
+              {
+                "this": {}
+              },
+              {
+                "computedUserset": {
+                  "relation": "asset_commenter"
+                }
+              }
+            ]
+          }
+        },
+        "member": {
+          "union": {
+            "child": [
+              {
+                "this": {}
+              },
+              {
+                "computedUserset": {
+                  "relation": "owner"
+                }
+              }
+            ]
+          }
+        },
+        "owner": {
+          "this": {}
+        },
+        "role_assigner": {
+          "union": {
+            "child": [
+              {
+                "this": {}
+              },
+              {
+                "computedUserset": {
+                  "relation": "owner"
+                }
+              }
+            ]
+          }
+        },
+        "role_creator": {
+          "union": {
+            "child": [
+              {
+                "this": {}
+              },
+              {
+                "computedUserset": {
+                  "relation": "owner"
+                }
+              }
+            ]
+          }
+        },
+        "team_assigner": {
+          "union": {
+            "child": [
+              {
+                "this": {}
+              },
+              {
+                "computedUserset": {
+                  "relation": "owner"
+                }
+              }
+            ]
+          }
+        },
+        "team_creator": {
+          "union": {
+            "child": [
+              {
+                "this": {}
+              },
+              {
+                "computedUserset": {
+                  "relation": "owner"
+                }
+              }
+            ]
+          }
+        }
+      },
+      "metadata": {
+        "relations": {
+          "asset_category_creator": {
+            "directly_related_user_types": [
+              {
+                "type": "role",
+                "relation": "assignee"
+              }
+            ]
+          },
+          "asset_commenter": {
+            "directly_related_user_types": [
+              {
+                "type": "role",
+                "relation": "assignee"
+              }
+            ]
+          },
+          "asset_creator": {
+            "directly_related_user_types": [
+              {
+                "type": "role",
+                "relation": "assignee"
+              }
+            ]
+          },
+          "asset_editor": {
+            "directly_related_user_types": [
+              {
+                "type": "role",
+                "relation": "assignee"
+              }
+            ]
+          },
+          "asset_viewer": {
+            "directly_related_user_types": [
+              {
+                "type": "role",
+                "relation": "assignee"
+              }
+            ]
+          },
+          "member": {
+            "directly_related_user_types": [
+              {
+                "type": "user"
+              }
+            ]
+          },
+          "owner": {
+            "directly_related_user_types": [
+              {
+                "type": "user"
+              }
+            ]
+          },
+          "role_assigner": {
+            "directly_related_user_types": [
+              {
+                "type": "role",
+                "relation": "assignee"
+              }
+            ]
+          },
+          "role_creator": {
+            "directly_related_user_types": [
+              {
+                "type": "role",
+                "relation": "assignee"
+              }
+            ]
+          },
+          "team_assigner": {
+            "directly_related_user_types": [
+              {
+                "type": "role",
+                "relation": "assignee"
+              }
+            ]
+          },
+          "team_creator": {
+            "directly_related_user_types": [
+              {
+                "type": "role",
+                "relation": "assignee"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "type": "asset-category",
+      "relations": {
+        "asset_creator": {
+          "union": {
+            "child": [
+              {
+                "this": {}
+              },
+              {
+                "tupleToUserset": {
+                  "tupleset": {
+                    "relation": "org"
+                  },
+                  "computedUserset": {
+                    "relation": "asset_creator"
+                  }
+                }
+              }
+            ]
+          }
+        },
+        "commenter": {
+          "union": {
+            "child": [
+              {
+                "this": {}
+              },
+              {
+                "computedUserset": {
+                  "relation": "editor"
+                }
+              },
+              {
+                "tupleToUserset": {
+                  "tupleset": {
+                    "relation": "org"
+                  },
+                  "computedUserset": {
+                    "relation": "asset_commenter"
+                  }
+                }
+              }
+            ]
+          }
+        },
+        "editor": {
+          "union": {
+            "child": [
+              {
+                "this": {}
+              },
+              {
+                "tupleToUserset": {
+                  "tupleset": {
+                    "relation": "org"
+                  },
+                  "computedUserset": {
+                    "relation": "asset_editor"
+                  }
+                }
+              }
+            ]
+          }
+        },
+        "org": {
+          "this": {}
+        },
+        "viewer": {
+          "union": {
+            "child": [
+              {
+                "this": {}
+              },
+              {
+                "computedUserset": {
+                  "relation": "commenter"
+                }
+              },
+              {
+                "tupleToUserset": {
+                  "tupleset": {
+                    "relation": "org"
+                  },
+                  "computedUserset": {
+                    "relation": "asset_viewer"
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      "metadata": {
+        "relations": {
+          "asset_creator": {
+            "directly_related_user_types": [
+              {
+                "type": "role",
+                "relation": "assignee"
+              }
+            ]
+          },
+          "commenter": {
+            "directly_related_user_types": [
+              {
+                "type": "role",
+                "relation": "assignee"
+              }
+            ]
+          },
+          "editor": {
+            "directly_related_user_types": [
+              {
+                "type": "role",
+                "relation": "assignee"
+              }
+            ]
+          },
+          "org": {
+            "directly_related_user_types": [
+              {
+                "type": "org"
+              }
+            ]
+          },
+          "viewer": {
+            "directly_related_user_types": [
+              {
+                "type": "role",
+                "relation": "assignee"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "type": "asset",
+      "relations": {
+        "category": {
+          "this": {}
+        },
+        "comment": {
+          "union": {
+            "child": [
+              {
+                "this": {}
+              },
+              {
+                "computedUserset": {
+                  "relation": "edit"
+                }
+              },
+              {
+                "tupleToUserset": {
+                  "tupleset": {
+                    "relation": "category"
+                  },
+                  "computedUserset": {
+                    "relation": "commenter"
+                  }
+                }
+              }
+            ]
+          }
+        },
+        "edit": {
+          "union": {
+            "child": [
+              {
+                "this": {}
+              },
+              {
+                "tupleToUserset": {
+                  "tupleset": {
+                    "relation": "category"
+                  },
+                  "computedUserset": {
+                    "relation": "editor"
+                  }
+                }
+              }
+            ]
+          }
+        },
+        "view": {
+          "union": {
+            "child": [
+              {
+                "this": {}
+              },
+              {
+                "computedUserset": {
+                  "relation": "comment"
+                }
+              },
+              {
+                "tupleToUserset": {
+                  "tupleset": {
+                    "relation": "category"
+                  },
+                  "computedUserset": {
+                    "relation": "viewer"
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      "metadata": {
+        "relations": {
+          "category": {
+            "directly_related_user_types": [
+              {
+                "type": "asset-category"
+              }
+            ]
+          },
+          "comment": {
+            "directly_related_user_types": [
+              {
+                "type": "role",
+                "relation": "assignee"
+              }
+            ]
+          },
+          "edit": {
+            "directly_related_user_types": [
+              {
+                "type": "role",
+                "relation": "assignee"
+              }
+            ]
+          },
+          "view": {
+            "directly_related_user_types": [
+              {
+                "type": "role",
+                "relation": "assignee"
+              }
+            ]
+          }
+        }
+      }
+    }
+  ]
+}

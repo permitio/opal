@@ -1,0 +1,28 @@
+model
+  schema 1.1
+
+type user
+
+type organization
+  relations
+    define member: [user]
+
+type plan
+  relations
+    define subscriber: [organization#member]
+
+type feature
+  relations
+    define has_feature: [plan#subscriber, plan#subscriber with is_below_collaborator_limit, plan#subscriber with is_below_row_sync_limit, plan#subscriber with is_below_page_history_days_limit]
+
+condition is_below_collaborator_limit(collaborator_count: int, collaborator_limit: int) {
+  collaborator_count <= collaborator_limit
+}
+
+condition is_below_page_history_days_limit(page_history_days_count: int, page_history_days_limit: int) {
+  page_history_days_count <= page_history_days_limit
+}
+
+condition is_below_row_sync_limit(row_sync_count: int, row_sync_limit: int) {
+  row_sync_count <= row_sync_limit
+}

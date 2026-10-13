@@ -1,0 +1,32 @@
+{
+  "schema_version": "1.1",
+  "type_definitions": [
+    {
+      "type": "user",
+      "relations": {
+        "follower": {
+          "this": {}
+        },
+        "viewer": {
+          "computedUserset": {
+            "relation": "follower"
+          }
+        }
+      },
+      "metadata": {
+        "relations": {
+          "follower": {
+            "directly_related_user_types": [
+              {
+                "type": "user"
+              }
+            ]
+          },
+          "viewer": {
+            "directly_related_user_types": []
+          }
+        }
+      }
+    }
+  ]
+}

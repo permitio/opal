@@ -1,0 +1,18 @@
+model
+  schema 1.1
+
+type user
+
+type document
+  relations
+    define allowed: [user]
+    define base: [user]
+    define blocked: [user]
+    define relation1: (base and allowed) but not blocked
+    define relation2: base and (allowed but not blocked)
+    define relation3: ((relation1 and relation2) or (allowed but not blocked)) and allowed
+    define relation4: (allowed but not (relation1 or relation2 or relation3)) but not (base and blocked)
+    define relation5: (relation1 and relation2 and relation3) but not relation4
+    define relation6: relation1 and ((relation2 but not relation3) but not relation4)
+    define relation7: allowed and ((base but not blocked) or (relation1 and (relation2 but not relation3 from relation4)))
+    define relation8: relation1 and (relation2 but not (relation3 but not relation4))

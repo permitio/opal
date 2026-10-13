@@ -1,0 +1,146 @@
+# OpenFGA and OPAL
+
+[OpenFGA](https://openfga.dev) is an open source fine-grained authorization engine based on Google's [Zanzibar](https://zanzibar.academy/), originally developed at Auth0/Okta. OPAL can manage OpenFGA as a policy store (alongside [OPA](https://www.openpolicyagent.org/) and [Cedar](/tutorials/cedar)): it keeps OpenFGA's **authorization model** in sync with a git repo, and keeps its **relationship tuples** in sync with external data sources, in real time.
+
+## How OpenFGA maps to OPAL's concepts
+
+OpenFGA does not store independently addressable "policy files" like OPA or Cedar. Instead, an OpenFGA *store* holds:
+
+- one **authorization model** (immutable, versioned) - written as type definitions, e.g. `document` with a `viewer` relation;
+- many **relationship tuples** - the `user`, `relation`, `object` triples that make up your permission data.
+
+OPAL maps these as follows:
+
+| OPAL concept | OpenFGA equivalent |
+| --- | --- |
+| policy repo files (`.fga` DSL or JSON model fragments) | one combined **authorization model** (a new immutable version is written on every policy update) |
+| data updates (fetched from external data sources) | **relationship tuples** (written via OpenFGA's write API) |
+| policy store url | the OpenFGA HTTP API url (default port `8080`) |
+
+## Quick start (docker compose)
+
+Run the end-to-end demo (OpenFGA + opal-server + opal-client, with a local policy repo and a mock external data source):
+
+```bash
+git clone https://github.com/permitio/opal.git
+cd opal
+docker compose -f docker/docker-compose-example-openfga.yml up -d
+```
+
+The demo stack:
+
+- **openfga** - the OpenFGA server (in-memory datastore) at `http://localhost:8080`;
+- **opal-server** - watches the policy repo at `docker/docker_files/openfga_policy_repo` (a one-shot container commits it into a local git repo that opal-server clones and tracks);
+- **opal-client** - configured with `OPAL_POLICY_STORE_TYPE=OPENFGA`; it transpiles the `.fga` model and writes tuples fetched from the mock data source (`docker/docker_files/openfga_data/tuples.json`).
+
+To run **multiple OPAL clients** (each keeping its own OpenFGA instance in sync):
+
+```bash
+docker compose -f docker/docker-compose-example-openfga-multi.yml up -d
+```
+
+## What the demo policy looks like
+
+The demo repo contains an authorization model in the OpenFGA DSL (`model.fga`):
+
+```fga
+model
+  schema 1.1
+
+type user
+
+type folder
+  relations
+    define owner: [user]
+    define viewer: [user] or owner
+
+type document
+  relations
+    define parent: [folder]
+    define owner: [user] or owner from parent
+    define editor: [user] or editor from parent
+    define viewer: [user] or editor or viewer from parent
+```
+
+OPAL transpiles `.fga` files (or JSON model fragments) into OpenFGA's JSON format and writes the combined authorization model on every policy update. The repo also contains static data (`data/data.json`), which is converted into tuples:
+
+```json
+{
+  "document:readme": {
+    "parent": ["folder:company"],
+    "editor": ["user:alice"],
+    "viewer": ["user:bob"]
+  }
+}
+```
+
+The nested `{object: {relation: [users]}}` shape is converted by the client into `user`, `relation`, `object` tuples. Data sources that already speak OpenFGA can serve `{"tuples": [{"user": ..., "relation": ..., "object": ...}]}` directly instead.
+
+## Verifying the demo
+
+Once the stack is up, check that the client is healthy (it performs both a policy and a data transaction on startup):
+
+```bash
+curl http://localhost:7766/healthcheck
+# {"status":"ok","online":true}
+```
+
+Find the store OPAL created, and run a **check** against OpenFGA:
+
+```bash
+STORE_ID=$(curl -s http://localhost:8080/stores | python -c "import sys,json; print(json.load(sys.stdin)['stores'][0]['id'])")
+
+curl -s -X POST "http://localhost:8080/stores/$STORE_ID/check" \
+  -H "Content-Type: application/json" \
+  -d '{"tuple_key": {"user": "user:alice", "relation": "editor", "object": "document:readme"}}'
+# {"allowed": true}
+```
+
+`user:alice` is an editor of `document:readme` (a direct tuple from the data source), while `user:carol` can view `document:roadmap`, and everyone can view documents in `folder:public` (via the `user:*` wildcard tuple).
+
+Now change the policy: edit `docker/docker_files/openfga_policy_repo/model.fga` and commit it into the local repo (in production you would push to a real git repo):
+
+```bash
+cd docker/docker_files/openfga_policy_repo
+git add -A && git commit -m "update model"
+```
+
+Within seconds (polling interval), opal-server publishes a policy update, the client transpiles the changed model and writes a **new authorization model version** to OpenFGA - no restarts needed.
+
+## Configuring OPAL for OpenFGA
+
+Minimal client configuration:
+
+```bash
+export OPAL_POLICY_STORE_TYPE=OPENFGA
+export OPAL_POLICY_STORE_URL=http://openfga:8080
+```
+
+Optional OpenFGA-specific environment variables:
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `OPAL_POLICY_STORE_OPENFGA_STORE_ID` | `None` | Pin a specific store id. If empty, a store is created/looked-up by name. |
+| `OPAL_POLICY_STORE_OPENFGA_STORE_NAME` | `opal` | Store name used when creating/looking up a store. |
+| `OPAL_POLICY_STORE_OPENFGA_AUTO_CREATE_STORE` | `True` | Create the store automatically when it does not exist. |
+| `OPAL_POLICY_STORE_OPENFGA_AUTHORIZATION_MODEL_ID` | `None` | Pin an authorization model id for tuple writes/checks. |
+| `OPAL_POLICY_STORE_OPENFGA_MAX_TUPLES_PER_WRITE` | `100` | Max tuples per write request (OpenFGA's API limit). |
+| `OPAL_POLICY_STORE_OPENFGA_IGNORE_DUPLICATE_TUPLES` | `True` | Send `on_duplicate: ignore` so repeated data updates are idempotent. |
+
+Authentication: OpenFGA stores can require a bearer token (`--auth-method token` on the OpenFGA server). Configure it with `OPAL_POLICY_STORE_AUTH_TYPE=token` and `OPAL_POLICY_STORE_AUTH_TOKEN=<token>`.
+
+On the **opal-server** side, make sure `.fga` files are treated as policy modules:
+
+```bash
+export OPAL_POLICY_REPO_POLICY_EXTENSIONS=.fga
+export OPAL_FILTER_FILE_EXTENSIONS=.fga,.json
+```
+
+(If your repo also holds rego policies, add `.rego` to `OPAL_POLICY_REPO_POLICY_EXTENSIONS`.)
+
+## Notes and limitations
+
+- OpenFGA authorization models are **immutable**: every policy update writes a new model version (OpenFGA keeps old versions, and tuples remain valid). "Deleting" a policy module rewrites the combined model without it.
+- OpenFGA has no data paths (unlike OPA's `/v1/data` tree) - OPAL data-update destination paths are ignored for OpenFGA; tuples carry their own object ids.
+- `get_data_with_input` maps onto OpenFGA's [Check API](https://openfga.dev/api/service#Authorization%20Checks/Check): the input must carry `user` and `relation`, and the path is the object being checked.
+- Tuple writes honor OpenFGA's max-100-tuples-per-write limit by chunking requests.

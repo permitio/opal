@@ -1,0 +1,44 @@
+model
+  schema 1.1
+
+type user
+
+type datatype_test
+  relations
+    define is_valid: [user with is_valid_string, user with is_valid_int, user with is_valid_uint, user with is_valid_double, user with is_valid_duration, user with is_valid_timestamp, user with is_valid_map_string, user with is_valid_list_string, user with is_valid_ipaddress]
+
+condition is_valid_double(_double: double) {
+  _double != 0.0 && _double > 0.0
+}
+
+condition is_valid_duration(_duration: duration) {
+  _duration != null && _duration != duration("0s") && _duration > duration("0s")
+}
+
+condition is_valid_int(_int: int) {
+  _int != 0 && _int > 0
+}
+
+condition is_valid_ipaddress(_ipaddress: ipaddress) {
+  _ipaddress != null &&  _ipaddress != ipaddress("192.0.0.1")
+}
+
+condition is_valid_list_string(_liststring: list<string>) {
+  "1" in _liststring && _liststring[0] != "" && _liststring[0] > "" && _liststring.exists(x, x > "") && _liststring.exists_one(x, x > "") && _liststring.all(x, x > "")
+}
+
+condition is_valid_map_string(_mapstring: map<string>) {
+  "key" in _mapstring && _mapstring["key"] != ""  && _mapstring["key"] > ""
+}
+
+condition is_valid_string(_string: string) {
+  _string != "" && _string.startsWith("1") && _string.endsWith("1") && _string.contains("1") && _string.matches("[0-9]")
+}
+
+condition is_valid_timestamp(_timestamp: timestamp) {
+  _timestamp != null && _timestamp != timestamp("2019-01-01T00:00:00Z") && _timestamp > timestamp("2019-01-01T00:00:00Z")
+}
+
+condition is_valid_uint(_uint: uint) {
+  _uint != 0u && _uint > 0u
+}

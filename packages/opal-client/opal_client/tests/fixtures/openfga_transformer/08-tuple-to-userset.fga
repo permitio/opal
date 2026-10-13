@@ -1,0 +1,9 @@
+model
+  schema 1.1
+
+type user
+
+type folder
+  relations
+    define owner: [user] or owner from parent
+    define parent: [folder]

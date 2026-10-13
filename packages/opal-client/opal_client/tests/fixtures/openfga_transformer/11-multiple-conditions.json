@@ -1,0 +1,97 @@
+{
+  "schema_version": "1.1",
+  "type_definitions": [
+    {
+      "type": "user",
+      "relations": {},
+      "metadata": null
+    },
+    {
+      "type": "document",
+      "relations": {
+        "viewer": {
+          "this": {}
+        }
+      },
+      "metadata": {
+        "relations": {
+          "viewer": {
+            "directly_related_user_types": [
+              {
+                "type": "user",
+                "condition": "non_expired_grant_and_valid_ip"
+              },
+              {
+                "condition": "name_starts_with_a",
+                "type": "user"
+              },
+              {
+                "condition": "version_count_less_than_100",
+                "type": "user"
+              },
+              {
+                "condition": "doc_viewer_condition",
+                "type": "user"
+              }
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "conditions": {
+    "non_expired_grant_and_valid_ip": {
+      "name": "non_expired_grant_and_valid_ip",
+      "expression": "(current_timestamp < grant_timestamp + grant_duration) && user_ip.in_cidr(cidr)",
+      "parameters": {
+        "cidr": {
+          "type_name": "TYPE_NAME_STRING"
+        },
+        "current_timestamp": {
+          "type_name": "TYPE_NAME_TIMESTAMP"
+        },
+        "grant_duration": {
+          "type_name": "TYPE_NAME_DURATION"
+        },
+        "grant_timestamp": {
+          "type_name": "TYPE_NAME_TIMESTAMP"
+        },
+        "user_ip": {
+          "type_name": "TYPE_NAME_IPADDRESS"
+        }
+      }
+    },
+    "name_starts_with_a": {
+      "name": "name_starts_with_a",
+      "expression": "document_name == \"hello\"",
+      "parameters": {
+        "document_name": {
+          "type_name": "TYPE_NAME_STRING"
+        }
+      }
+    },
+    "version_count_less_than_100": {
+      "name": "version_count_less_than_100",
+      "expression": "version_count < 100",
+      "parameters": {
+        "version_count": {
+          "type_name": "TYPE_NAME_INT"
+        }
+      }
+    },
+    "doc_viewer_condition": {
+      "name": "doc_viewer_condition",
+      "expression": "document_attributes[\"state\"] in allowed_states",
+      "parameters": {
+        "tags": {
+          "type_name": "TYPE_NAME_MAP",
+          "generic_types": [{ "type_name": "TYPE_NAME_STRING" }]
+        },
+        "allowed_states": {
+          "type_name": "TYPE_NAME_LIST",
+          "generic_types": [{ "type_name": "TYPE_NAME_STRING" }]
+        }
+      }
+    }
+  }
+}

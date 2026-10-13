@@ -1,0 +1,12 @@
+model
+  schema 1.1
+
+type user
+
+type folder
+  relations
+    define parent: [folder]
+
+type employee
+  relations
+    define manager: [employee]

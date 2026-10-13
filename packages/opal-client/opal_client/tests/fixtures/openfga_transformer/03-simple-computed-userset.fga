@@ -1,0 +1,7 @@
+model
+  schema 1.1
+
+type user
+  relations
+    define follower: [user]
+    define viewer: follower

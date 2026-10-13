@@ -1,0 +1,48 @@
+{
+  "schema_version": "1.1",
+  "type_definitions": [
+    {
+      "type": "user",
+      "relations": {},
+      "metadata": null
+    },
+    {
+      "type": "folder",
+      "relations": {
+        "parent": {
+          "this": {}
+        }
+      },
+      "metadata": {
+        "relations": {
+          "parent": {
+            "directly_related_user_types": [
+              {
+                "type": "folder"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "type": "employee",
+      "relations": {
+        "manager": {
+          "this": {}
+        }
+      },
+      "metadata": {
+        "relations": {
+          "manager": {
+            "directly_related_user_types": [
+              {
+                "type": "employee"
+              }
+            ]
+          }
+        }
+      }
+    }
+  ]
+}

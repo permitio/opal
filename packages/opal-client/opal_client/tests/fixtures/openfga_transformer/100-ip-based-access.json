@@ -1,0 +1,108 @@
+{
+  "schema_version": "1.1",
+  "type_definitions": [
+    {
+      "type": "user",
+      "metadata": null,
+      "relations": {}
+    },
+    {
+      "metadata": {
+        "relations": {
+          "ip_based_access_policy": {
+            "directly_related_user_types": [
+              {
+                "condition": "in_company_network",
+                "relation": "member",
+                "type": "organization"
+              }
+            ]
+          },
+          "member": {
+            "directly_related_user_types": [
+              {
+                "type": "user"
+              }
+            ]
+          }
+        }
+      },
+      "relations": {
+        "ip_based_access_policy": {
+          "this": {}
+        },
+        "member": {
+          "this": {}
+        }
+      },
+      "type": "organization"
+    },
+    {
+      "metadata": {
+        "relations": {
+          "can_view": {
+            "directly_related_user_types": []
+          },
+          "organization": {
+            "directly_related_user_types": [
+              {
+                "type": "organization"
+              }
+            ]
+          },
+          "viewer": {
+            "directly_related_user_types": [
+              {
+                "type": "user"
+              }
+            ]
+          }
+        }
+      },
+      "relations": {
+        "can_view": {
+          "intersection": {
+            "child": [
+              {
+                "computedUserset": {
+                  "relation": "viewer"
+                }
+              },
+              {
+                "tupleToUserset": {
+                  "computedUserset": {
+                    "relation": "ip_based_access_policy"
+                  },
+                  "tupleset": {
+                    "relation": "organization"
+                  }
+                }
+              }
+            ]
+          }
+        },
+        "organization": {
+          "this": {}
+        },
+        "viewer": {
+          "this": {}
+        }
+      },
+      "type": "document"
+    }
+  ],
+  "conditions": {
+    "in_company_network": {
+      "expression": "user_ip.in_cidr(cidr)",
+      "name": "in_company_network",
+      "parameters": {
+        "cidr": {
+          "type_name": "TYPE_NAME_STRING"
+        },
+        "user_ip": {
+          "type_name": "TYPE_NAME_IPADDRESS"
+        }
+      }
+    }
+  }
+}

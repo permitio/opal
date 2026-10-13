@@ -1,0 +1,108 @@
+name: opal-openfga-example
+
+# A working end-to-end demo: OPAL keeps a single OpenFGA instance in sync.
+#
+# - the policy repo (an OpenFGA authorization model in the ".fga" DSL plus
+#   static data) is mounted from ./docker_files/openfga_policy_repo and
+#   committed into a local git repo by the one-shot `policy_repo` service.
+# - opal-server watches that repo and serves policy bundles to opal-client.
+# - opal-client is configured with POLICY_STORE_TYPE=OPENFGA: it compiles the
+#   ".fga" model into an OpenFGA authorization model and converts data
+#   updates (fetched from the nginx-served tuples.json) into relationship
+#   tuples.
+#
+# Run: docker compose -f docker/docker-compose-example-openfga.yml up -d
+# See documentation/docs/tutorials/openfga.mdx for a walkthrough.
+
+services:
+  # When scaling the opal-server to multiple nodes and/or multiple workers, we use
+  # a *broadcast* channel to sync between all the instances of opal-server.
+  # The format of the broadcaster URI string (the one we pass to opal server as `OPAL_BROADCAST_URI`) is specified here:
+  # https://github.com/encode/broadcaster#available-backends
+  broadcast_channel:
+    image: postgres:alpine
+    environment:
+      - POSTGRES_DB=postgres
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+
+  # one-shot: turn the mounted policy files into a local git repo that
+  # opal-server can clone and watch (in production you would point
+  # OPAL_POLICY_REPO_URL at a real git server).
+  policy_repo:
+    image: alpine/git:latest
+    working_dir: /repo
+    volumes:
+      - ./docker_files/openfga_policy_repo:/repo:rw
+    command: >
+      sh -c "git init -b master /repo &&
+             git -C /repo add -A &&
+             git -C /repo -c user.name='opal-demo' -c user.email='opal@demo.local' commit -m 'Initial OpenFGA policy'"
+
+  # the OpenFGA server that OPAL client keeps in sync (in-memory datastore)
+  openfga:
+    image: openfga/openfga:latest
+    command: run
+    ports:
+      # exposes the OpenFGA HTTP api on the host machine - api docs at https://openfga.dev/api/service
+      - "8080:8080"
+
+  # serves the "external" data source (relationship tuples) for this demo
+  openfga_data_nginx:
+    image: nginx:latest
+    volumes:
+      - "./docker_files/openfga_data:/usr/share/nginx/html:ro"
+
+  opal_server:
+    # by default we run opal-server from latest official image
+    image: permitio/opal-server:latest
+    environment:
+      - OPAL_BROADCAST_URI=postgres://postgres:postgres@broadcast_channel:5432/postgres
+      - UVICORN_NUM_WORKERS=1
+      # the git repo hosting our policy: in this demo it is a local repo
+      # prepared by the `policy_repo` service above
+      - OPAL_POLICY_REPO_URL=/opal/policy-repo
+      - OPAL_POLICY_REPO_POLLING_INTERVAL=10
+      # the demo repo holds the authorization model in the OpenFGA DSL,
+      # so the server must treat ".fga" files as policy modules
+      - OPAL_POLICY_REPO_POLICY_EXTENSIONS=.fga
+      - OPAL_FILTER_FILE_EXTENSIONS=.fga,.json
+      # configures from where the opal client should initially fetch data
+      # (here: tuples served by nginx, converted to OpenFGA tuples by the client)
+      - OPAL_DATA_CONFIG_SOURCES={"config":{"entries":[{"url":"http://openfga_data_nginx/tuples.json","topics":["policy_data"],"dst_path":""}]}}
+      - OPAL_LOG_FORMAT_INCLUDE_PID=true
+    volumes:
+      - ./docker_files/openfga_policy_repo:/opal/policy-repo:ro
+    ports:
+      # exposes opal server on the host machine, you can access the server at: http://localhost:7002
+      - "7002:7002"
+    depends_on:
+      - broadcast_channel
+      - policy_repo
+
+  opal_client:
+    # by default we run opal-client from latest official image
+    image: permitio/opal-client:latest
+    environment:
+      - OPAL_SERVER_URL=http://opal_server:7002
+      - OPAL_LOG_FORMAT_INCLUDE_PID=true
+      # use OpenFGA as the policy store
+      - OPAL_POLICY_STORE_TYPE=OPENFGA
+      - OPAL_POLICY_STORE_URL=http://openfga:8080
+      # the client creates a store named "opal" automatically; you can pin a
+      # store id instead via OPAL_POLICY_STORE_OPENFGA_STORE_ID
+      - OPAL_POLICY_STORE_OPENFGA_STORE_NAME=opal
+      # OpenFGA runs as its own service - no inline engine needed
+      - OPAL_INLINE_OPA_ENABLED=False
+    ports:
+      # exposes opal client on the host machine, you can access the client at: http://localhost:7766
+      - "7766:7000"
+    depends_on:
+      - opal_server
+      - openfga
+    # this command is not necessary when deploying OPAL for real, it is simply a trick for dev environments
+    # to make sure that opal-server is already up before starting the client.
+    command: sh -c "exec ./wait-for.sh opal_server:7002 --timeout=20 -- ./start.sh"
+    links:
+      - openfga
+      - openfga_data_nginx

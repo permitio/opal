@@ -40,7 +40,7 @@ export OPAL_SERVER_URL=http://localhost:7002
 # Authentication token (change in production!)
 export OPAL_CLIENT_TOKEN=your-secret-token
 
-# Policy engine type (OPA is default, Cedar also available)
+# Policy engine type (OPA is default; Cedar and OpenFGA are also available)
 export OPAL_POLICY_STORE_TYPE=opa
 ```
 
@@ -1243,6 +1243,54 @@ Default: `2`
 
 Per-request HTTP timeout (in seconds) for liveness probes against the policy
 store. A probe that exceeds this timeout is treated as an unreachable sample.
+
+#### OPAL_POLICY_STORE_OPENFGA_STORE_ID
+
+Default: `None`
+
+The id of the OpenFGA store OPAL Client will manage. If empty, a store named `OPAL_POLICY_STORE_OPENFGA_STORE_NAME` is created (or looked up by name) on first use.
+
+For more information, see [OpenFGA and OPAL](/tutorials/openfga).
+
+#### OPAL_POLICY_STORE_OPENFGA_STORE_NAME
+
+Default: `opal`
+
+The name of the OpenFGA store to create/lookup when `OPAL_POLICY_STORE_OPENFGA_STORE_ID` is not set.
+
+For more information, see [OpenFGA and OPAL](/tutorials/openfga).
+
+#### OPAL_POLICY_STORE_OPENFGA_AUTO_CREATE_STORE
+
+Default: `True`
+
+If set, OPAL Client will create the OpenFGA store (named `OPAL_POLICY_STORE_OPENFGA_STORE_NAME`) automatically when it does not exist.
+
+For more information, see [OpenFGA and OPAL](/tutorials/openfga).
+
+#### OPAL_POLICY_STORE_OPENFGA_AUTHORIZATION_MODEL_ID
+
+Default: `None`
+
+Optional OpenFGA authorization model id to pin for tuple writes and checks. When OPAL writes a new authorization model (from the policy repo) the freshly written model is used instead.
+
+For more information, see [OpenFGA and OPAL](/tutorials/openfga).
+
+#### OPAL_POLICY_STORE_OPENFGA_MAX_TUPLES_PER_WRITE
+
+Default: `100`
+
+Maximum number of relationship tuples per OpenFGA write request (the OpenFGA API caps this at 100).
+
+For more information, see [OpenFGA and OPAL](/tutorials/openfga).
+
+#### OPAL_POLICY_STORE_OPENFGA_IGNORE_DUPLICATE_TUPLES
+
+Default: `True`
+
+If set, tuple writes are sent with `on_duplicate: ignore` so re-applying the same data update is idempotent (requires OpenFGA v1.3.6+).
+
+For more information, see [OpenFGA and OPAL](/tutorials/openfga).
 
 #### OPAL_POLICY_STORE_POLICY_PATHS_TO_IGNORE
 

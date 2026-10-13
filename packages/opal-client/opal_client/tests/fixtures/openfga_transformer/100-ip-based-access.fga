@@ -1,0 +1,19 @@
+model
+  schema 1.1
+
+type user
+
+type organization
+  relations
+    define ip_based_access_policy: [organization#member with in_company_network]
+    define member: [user]
+
+type document
+  relations
+    define can_view: viewer and ip_based_access_policy from organization
+    define organization: [organization]
+    define viewer: [user]
+
+condition in_company_network(cidr: string, user_ip: ipaddress) {
+  user_ip.in_cidr(cidr)
+}

@@ -1,0 +1,160 @@
+{
+  "schema_version": "1.1",
+  "type_definitions": [
+    {
+      "type": "employee",
+      "metadata": null,
+      "relations": {}
+    },
+    {
+      "type": "customer",
+      "metadata": null,
+      "relations": {}
+    },
+    {
+      "metadata": {
+        "relations": {
+          "account_manager": {
+            "directly_related_user_types": [
+              {
+                "type": "employee"
+              }
+            ]
+          },
+          "customer": {
+            "directly_related_user_types": [
+              {
+                "type": "customer"
+              }
+            ]
+          },
+          "transfer_limit_policy": {
+            "directly_related_user_types": [
+              {
+                "condition": "transfer_limit_policy",
+                "relation": "customer",
+                "type": "bank"
+              },
+              {
+                "condition": "transfer_limit_policy",
+                "relation": "account_manager",
+                "type": "bank"
+              }
+            ]
+          }
+        }
+      },
+      "relations": {
+        "account_manager": {
+          "this": {}
+        },
+        "customer": {
+          "this": {}
+        },
+        "transfer_limit_policy": {
+          "this": {}
+        }
+      },
+      "type": "bank"
+    },
+    {
+      "metadata": {
+        "relations": {
+          "account_manager": {
+            "directly_related_user_types": [
+              {
+                "type": "employee"
+              }
+            ]
+          },
+          "bank": {
+            "directly_related_user_types": [
+              {
+                "type": "bank"
+              }
+            ]
+          },
+          "can_make_bank_transfer": {
+            "directly_related_user_types": []
+          },
+          "owner": {
+            "directly_related_user_types": [
+              {
+                "type": "customer"
+              }
+            ]
+          },
+          "owner_or_account_manager": {
+            "directly_related_user_types": []
+          }
+        }
+      },
+      "relations": {
+        "account_manager": {
+          "this": {}
+        },
+        "bank": {
+          "this": {}
+        },
+        "can_make_bank_transfer": {
+          "intersection": {
+            "child": [
+              {
+                "computedUserset": {
+                  "relation": "owner_or_account_manager"
+                }
+              },
+              {
+                "tupleToUserset": {
+                  "computedUserset": {
+                    "relation": "transfer_limit_policy"
+                  },
+                  "tupleset": {
+                    "relation": "bank"
+                  }
+                }
+              }
+            ]
+          }
+        },
+        "owner": {
+          "this": {}
+        },
+        "owner_or_account_manager": {
+          "union": {
+            "child": [
+              {
+                "computedUserset": {
+                  "relation": "owner"
+                }
+              },
+              {
+                "computedUserset": {
+                  "relation": "account_manager"
+                }
+              }
+            ]
+          }
+        }
+      },
+      "type": "account"
+    }
+  ],
+  "conditions": {
+    "transfer_limit_policy": {
+      "expression": "transaction_amount <= transaction_limit || transaction_amount <= new_transaction_limit_approved",
+      "name": "transfer_limit_policy",
+      "parameters": {
+        "new_transaction_limit_approved": {
+          "type_name": "TYPE_NAME_DOUBLE"
+        },
+        "transaction_amount": {
+          "type_name": "TYPE_NAME_DOUBLE"
+        },
+        "transaction_limit": {
+          "type_name": "TYPE_NAME_DOUBLE"
+        }
+      }
+    }
+  }
+}

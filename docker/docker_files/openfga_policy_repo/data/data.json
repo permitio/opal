@@ -1,0 +1,10 @@
+{
+  "document:readme": {
+    "parent": ["folder:company"],
+    "editor": ["user:alice"],
+    "viewer": ["user:bob"]
+  },
+  "folder:company": {
+    "owner": ["user:anne"]
+  }
+}

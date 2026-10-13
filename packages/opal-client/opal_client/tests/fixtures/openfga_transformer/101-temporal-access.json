@@ -1,0 +1,50 @@
+{
+  "schema_version": "1.1",
+  "type_definitions": [
+    {
+      "type": "user",
+      "metadata": null,
+      "relations": {}
+    },
+    {
+      "metadata": {
+        "relations": {
+          "viewer": {
+            "directly_related_user_types": [
+              {
+                "type": "user"
+              },
+              {
+                "condition": "non_expired_grant",
+                "type": "user"
+              }
+            ]
+          }
+        }
+      },
+      "relations": {
+        "viewer": {
+          "this": {}
+        }
+      },
+      "type": "document"
+    }
+  ],
+  "conditions": {
+    "non_expired_grant": {
+      "expression": "current_time < grant_time + grant_duration",
+      "name": "non_expired_grant",
+      "parameters": {
+        "current_time": {
+          "type_name": "TYPE_NAME_TIMESTAMP"
+        },
+        "grant_duration": {
+          "type_name": "TYPE_NAME_DURATION"
+        },
+        "grant_time": {
+          "type_name": "TYPE_NAME_TIMESTAMP"
+        }
+      }
+    }
+  }
+}

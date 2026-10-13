@@ -1,0 +1,41 @@
+{
+  "schema_version": "1.1",
+  "type_definitions": [
+    {
+      "type": "user",
+      "relations": {},
+      "metadata": null
+    },
+    {
+      "metadata": {
+        "relations": {
+          "viewer": {
+            "directly_related_user_types": [
+              {
+                "condition": "conditionX",
+                "type": "user"
+              }
+            ]
+          }
+        }
+      },
+      "relations": {
+        "viewer": {
+          "this": {}
+        }
+      },
+      "type": "document"
+    }
+  ],
+  "conditions": {
+    "conditionX": {
+      "expression": "x==\"{}\"",
+      "name": "conditionX",
+      "parameters": {
+        "x": {
+          "type_name": "TYPE_NAME_STRING"
+        }
+      }
+    }
+  }
+}

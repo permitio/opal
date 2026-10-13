@@ -1,0 +1,24 @@
+model
+  schema 1.1
+
+type user
+
+type document
+  relations
+    define viewer: [user with non_expired_grant_and_valid_ip, user with name_starts_with_a, user with version_count_less_than_100, user with doc_viewer_condition]
+
+condition doc_viewer_condition(allowed_states: list<string>, tags: map<string>) {
+  document_attributes["state"] in allowed_states
+}
+
+condition name_starts_with_a(document_name: string) {
+  document_name == "hello"
+}
+
+condition non_expired_grant_and_valid_ip(cidr: string, current_timestamp: timestamp, grant_duration: duration, grant_timestamp: timestamp, user_ip: ipaddress) {
+  (current_timestamp < grant_timestamp + grant_duration) && user_ip.in_cidr(cidr)
+}
+
+condition version_count_less_than_100(version_count: int) {
+  version_count < 100
+}

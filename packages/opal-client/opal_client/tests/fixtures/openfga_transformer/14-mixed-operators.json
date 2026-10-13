@@ -1,0 +1,379 @@
+{
+  "schema_version": "1.1",
+  "type_definitions": [
+    {
+      "type": "user",
+      "relations": {},
+      "metadata": null
+    },
+    {
+      "type": "document",
+      "relations": {
+        "allowed": {
+          "this": {}
+        },
+        "base": {
+          "this": {}
+        },
+        "blocked": {
+          "this": {}
+        },
+        "relation1": {
+          "difference": {
+            "base": {
+              "intersection": {
+                "child": [
+                  {
+                    "computedUserset": {
+                      "relation": "base"
+                    }
+                  },
+                  {
+                    "computedUserset": {
+                      "relation": "allowed"
+                    }
+                  }
+                ]
+              }
+            },
+            "subtract": {
+              "computedUserset": {
+                "relation": "blocked"
+              }
+            }
+          }
+        },
+        "relation2": {
+          "intersection": {
+            "child": [
+              {
+                "computedUserset": {
+                  "relation": "base"
+                }
+              },
+              {
+                "difference": {
+                  "base": {
+                    "computedUserset": {
+                      "relation": "allowed"
+                    }
+                  },
+                  "subtract": {
+                    "computedUserset": {
+                      "relation": "blocked"
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        },
+        "relation3": {
+          "intersection": {
+            "child": [
+              {
+                "union": {
+                  "child": [
+                    {
+                      "intersection": {
+                        "child": [
+                          {
+                            "computedUserset": {
+                              "relation": "relation1"
+                            }
+                          },
+                          {
+                            "computedUserset": {
+                              "relation": "relation2"
+                            }
+                          }
+                        ]
+                      }
+                    },
+                    {
+                      "difference": {
+                        "base": {
+                          "computedUserset": {
+                            "relation": "allowed"
+                          }
+                        },
+                        "subtract": {
+                          "computedUserset": {
+                            "relation": "blocked"
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              },
+              {
+                "computedUserset": {
+                  "relation": "allowed"
+                }
+              }
+            ]
+          }
+        },
+        "relation4": {
+          "difference": {
+            "base": {
+              "difference": {
+                "base": {
+                  "computedUserset": {
+                    "relation": "allowed"
+                  }
+                },
+                "subtract": {
+                  "union": {
+                    "child": [
+                      {
+                        "computedUserset": {
+                          "relation": "relation1"
+                        }
+                      },
+                      {
+                        "computedUserset": {
+                          "relation": "relation2"
+                        }
+                      },
+                      {
+                        "computedUserset": {
+                          "relation": "relation3"
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            },
+            "subtract": {
+              "intersection": {
+                "child": [
+                  {
+                    "computedUserset": {
+                      "relation": "base"
+                    }
+                  },
+                  {
+                    "computedUserset": {
+                      "relation": "blocked"
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "relation5": {
+          "difference": {
+            "base": {
+              "intersection": {
+                "child": [
+                  {
+                    "computedUserset": {
+                      "relation": "relation1"
+                    }
+                  },
+                  {
+                    "computedUserset": {
+                      "relation": "relation2"
+                    }
+                  },
+                  {
+                    "computedUserset": {
+                      "relation": "relation3"
+                    }
+                  }
+                ]
+              }
+            },
+            "subtract": {
+              "computedUserset": {
+                "relation": "relation4"
+              }
+            }
+          }
+        },
+        "relation6": {
+          "intersection": {
+            "child": [
+              {
+                "computedUserset": {
+                  "relation": "relation1"
+                }
+              },
+              {
+                "difference": {
+                  "base": {
+                    "difference": {
+                      "base": {
+                        "computedUserset": {
+                          "relation": "relation2"
+                        }
+                      },
+                      "subtract": {
+                        "computedUserset": {
+                          "relation": "relation3"
+                        }
+                      }
+                    }
+                  },
+                  "subtract": {
+                    "computedUserset": {
+                      "relation": "relation4"
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        },
+        "relation7": {
+          "intersection": {
+            "child": [
+              {
+                "computedUserset": {
+                  "relation": "allowed"
+                }
+              },
+              {
+                "union": {
+                  "child": [
+                    {
+                      "difference": {
+                        "base": {
+                          "computedUserset": {
+                            "relation": "base"
+                          }
+                        },
+                        "subtract": {
+                          "computedUserset": {
+                            "relation": "blocked"
+                          }
+                        }
+                      }
+                    },
+                    {
+                      "intersection": {
+                        "child": [
+                          {
+                            "computedUserset": {
+                              "relation": "relation1"
+                            }
+                          },
+                          {
+                            "difference": {
+                              "base": {
+                                "computedUserset": {
+                                  "relation": "relation2"
+                                }
+                              },
+                              "subtract": {
+                                "tupleToUserset": {
+                                  "computedUserset": {
+                                    "relation": "relation3"
+                                  },
+                                  "tupleset": {
+                                    "relation": "relation4"
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        ]
+                      }
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        },
+        "relation8": {
+          "intersection": {
+            "child": [
+              {
+                "computedUserset": {
+                  "relation": "relation1"
+                }
+              },
+              {
+                "difference": {
+                  "base": {
+                    "computedUserset": {
+                      "relation": "relation2"
+                    }
+                  },
+                  "subtract": {
+                    "difference": {
+                      "base": {
+                        "computedUserset": {
+                          "relation": "relation3"
+                        }
+                      },
+                      "subtract": {
+                        "computedUserset": {
+                          "relation": "relation4"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      "metadata": {
+        "relations": {
+          "allowed": {
+            "directly_related_user_types": [
+              {
+                "type": "user"
+              }
+            ]
+          },
+          "base": {
+            "directly_related_user_types": [
+              {
+                "type": "user"
+              }
+            ]
+          },
+          "blocked": {
+            "directly_related_user_types": [
+              {
+                "type": "user"
+              }
+            ]
+          },
+          "relation1": {
+            "directly_related_user_types": []
+          },
+          "relation2": {
+            "directly_related_user_types": []
+          },
+          "relation3": {
+            "directly_related_user_types": []
+          },
+          "relation4": {
+            "directly_related_user_types": []
+          },
+          "relation5": {
+            "directly_related_user_types": []
+          },
+          "relation6": {
+            "directly_related_user_types": []
+          },
+          "relation7": {
+            "directly_related_user_types": []
+          },
+          "relation8": {
+            "directly_related_user_types": []
+          }
+        }
+      }
+    }
+  ]
+}
