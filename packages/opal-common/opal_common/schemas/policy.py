@@ -30,6 +30,9 @@ class DeletedFiles(BaseSchema):
 
 
 class PolicyBundle(BaseSchema):
+    # Keep policy and data contents out of ValidationError text.
+    model_config = ConfigDict(hide_input_in_errors=True)
+
     manifest: List[str]
     hash: str = Field(..., description="commit hash (debug version)")
     old_hash: Optional[str] = Field(

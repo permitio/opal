@@ -3,6 +3,7 @@ import base64
 import glob
 import hashlib
 import hmac
+import json
 import logging
 import os
 import threading
@@ -35,8 +36,13 @@ async def throw_if_bad_status_code(
     if response.status in expected:
         return response
 
-    # else, bad status code
-    details = await response.json()
+    # else, bad status code. The body is not necessarily JSON (e.g. an HTML 502
+    # page from a proxy), and response.json() would raise ContentTypeError.
+    body = await response.text(errors="replace")
+    try:
+        details = json.loads(body)
+    except json.JSONDecodeError:
+        details = body
     if logger:
         logger.warning(
             "Unexpected response code {status}: {details}",

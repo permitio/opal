@@ -8,6 +8,7 @@ from typing import Any, Dict, List, Optional, Union
 from aiofiles.threadpool.text import AsyncTextIOWrapper
 from opal_client.config import opal_client_config
 from opal_client.logger import logger
+from opal_common.logging_utils.errors import describe_error
 from opal_common.schemas.data import JsonableValue
 from opal_common.schemas.policy import PolicyBundle
 from opal_common.schemas.store import RemoteStatus, StoreTransaction
@@ -208,7 +209,7 @@ class BasePolicyStoreClient(AbstractPolicyStore):
         if exc is not None or exception_fetching_transaction:
             try:
                 if exc is not None:
-                    error_message = repr(exc)
+                    error_message = describe_error(exc)
                 elif exception_fetching_transaction:
                     network_errors = [
                         remote.get("error", None)

@@ -3,7 +3,7 @@ import sys
 
 from loguru import logger
 from opal_common.config import opal_common_config
-from opal_common.http_utils import redact_url_in_text
+from opal_common.http_utils import redact_sensitive_text
 from opal_common.logging_utils.filter import ModuleFilter
 from opal_common.logging_utils.formatter import Formatter
 from opal_common.logging_utils.intercept import InterceptHandler
@@ -13,18 +13,28 @@ from opal_common.monitoring.apm import fix_ddtrace_logging
 
 
 def _scrub_record_message(record):
-    """loguru patcher: scrub embedded URL credentials from every record's
-    message before it reaches any sink.
+    """loguru patcher: mask credentials (URL userinfo, sensitive query params,
+    Authorization header values, Bearer/Basic tokens) in every record's message
+    and in its top-level ``str`` extra values before it reaches any sink.
+
+    The extra values matter because loguru also stores every keyword argument
+    of a log call in ``record["extra"]``, which a ``serialize=True`` sink
+    dumps even when the message does not reference it.
 
     Runs once per record (order-independent across sinks), so it also protects
     the optional rotating file sink, which is path-based and cannot be
     stream-wrapped. The stream sink is *additionally* wrapped with
-    ``CredentialScrubbingStream`` to scrub rendered exception tracebacks, which
-    this message-only pass does not touch.
+    ``CredentialScrubbingStream`` to scrub rendered exception tracebacks and
+    non-``str`` extra values, which this pass does not touch.
     """
     message = record.get("message")
     if message:
-        record["message"] = redact_url_in_text(message)
+        record["message"] = redact_sensitive_text(message)
+    extra = record.get("extra")
+    if extra:
+        for key, value in extra.items():
+            if isinstance(value, str):
+                extra[key] = redact_sensitive_text(value)
 
 
 def configure_logs():
@@ -45,15 +55,15 @@ def configure_logs():
         hijack_uvicorn_logs(intercept_handler)
     # Clean slate
     logger.remove()
-    # Scrub credentialed URLs from every record's message, for all sinks.
+    # Mask credentials in every record's message and str extras, for all sinks.
     logger.configure(patcher=_scrub_record_message)
     # Logger configuration
     pipe = sys.stderr if opal_common_config.LOG_PIPE_TO_STDERR else sys.stdout
-    # Wrap the stream so embedded URL credentials are scrubbed from the final
-    # formatted record - including third-party exception tracebacks (e.g. aiohttp
-    # rendering ``https://user:pw@host?token=...``) that the model-layer
-    # redaction cannot reach. Message-level scrubbing for all sinks (incl. the
-    # rotating file sink, which cannot be wrapped) is handled by the patcher above.
+    # Wrap the stream so credentials are masked in the final formatted record -
+    # including third-party exception tracebacks (e.g. aiohttp rendering
+    # ``https://user:pw@host?token=...``) that the model-layer redaction cannot
+    # reach. Message/extra scrubbing for all sinks (incl. the rotating file sink,
+    # which cannot be wrapped) is handled by the patcher above.
     logger.add(
         CredentialScrubbingStream(pipe),
         filter=filter.filter,

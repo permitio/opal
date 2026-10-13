@@ -1,7 +1,27 @@
 import inspect
+import re
+from enum import Enum
 from typing import Any, Callable, List, Type
 
 from decouple import text_type, undefined
+
+#: Entry keys treated as sensitive even when not flagged ``sensitive=True``.
+SENSITIVE_KEY_PATTERN = re.compile(
+    r"TOKEN|SECRET|PASSWORD|PASSPHRASE|API_KEY|PRIVATE_KEY|SSH_KEY", re.IGNORECASE
+)
+#: How a sensitive entry's value is shown in a printed config or ``--help``.
+REDACTED = "<redacted>"
+
+
+def holds_no_credential(value: Any) -> bool:
+    """Unset, empty, flag and enum values (e.g. ``AUTH_PRIVATE_KEY_FORMAT``,
+    caught by the name fallback) are shown even for a sensitive entry."""
+    return (
+        value is None
+        or value is undefined
+        or (isinstance(value, str) and not value)
+        or isinstance(value, (bool, Enum))
+    )
 
 
 class FromStr:
@@ -38,6 +58,7 @@ class ConfiEntry:
     cast_from_json: Callable
     kwargs: dict
     flags: List[str]
+    sensitive: bool
     value: Any
 
     def __init__(
@@ -51,6 +72,7 @@ class ConfiEntry:
         type=str,
         index=-1,
         flags: List[str] = None,
+        sensitive: bool = False,
         **kwargs,
     ) -> None:
         self.key = key
@@ -63,6 +85,8 @@ class ConfiEntry:
         self.type = type
         self.kwargs = kwargs
         self.flags = flags
+        # flagged explicitly, or named like a credential
+        self.sensitive = sensitive or SENSITIVE_KEY_PATTERN.search(key) is not None
         self.value = undefined
 
     def get_cli_type(self):
@@ -80,6 +104,10 @@ class ConfiEntry:
         if self.default is not undefined:
             res["default"] = self.value if self.value is not undefined else self.default
             res["show_default"] = self.default
+            if self.sensitive and not holds_no_credential(self.default):
+                # click renders a non-str show_default as the default it was given,
+                # i.e. the value resolved from the environment.
+                res["show_default"] = REDACTED
         return res
 
 
