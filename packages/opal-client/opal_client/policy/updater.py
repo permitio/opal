@@ -1,5 +1,8 @@
 import asyncio
-from typing import List, Optional
+import hashlib
+import json
+from pathlib import PurePosixPath
+from typing import Dict, List, Optional
 
 import pydantic
 from fastapi_websocket_pubsub import PubSubClient
@@ -11,7 +14,10 @@ from opal_client.config import opal_client_config
 from opal_client.data.fetcher import DataFetcher
 from opal_client.logger import logger
 from opal_client.policy.fetcher import PolicyFetcher
-from opal_client.policy.topics import default_subscribed_policy_directories
+from opal_client.policy.topics import (
+    default_subscribed_policy_directories,
+    resolve_policy_source_ids,
+)
 from opal_client.policy_store.base_policy_store_client import BasePolicyStoreClient
 from opal_client.policy_store.policy_store_client_factory import (
     DEFAULT_POLICY_STORE_GETTER,
@@ -22,8 +28,76 @@ from opal_common.schemas.data import DataUpdateReport
 from opal_common.schemas.policy import PolicyBundle, PolicyUpdateMessage
 from opal_common.schemas.store import TransactionType
 from opal_common.security.sslcontext import get_custom_ssl_context
-from opal_common.topics.utils import pubsub_topics_from_directories
+from opal_common.topics.utils import (
+    pubsub_topics_from_directories,
+    pubsub_topics_from_sources,
+)
 from opal_common.utils import get_authorization_header
+
+
+def merge_source_policy_bundles(
+    source_bundles: Dict[str, PolicyBundle],
+) -> PolicyBundle:
+    policy_modules = []
+    data_modules = []
+    manifest = []
+    module_paths = {}
+    package_names = {}
+    data_destinations = []
+
+    for source_id in source_bundles:
+        bundle = source_bundles[source_id]
+        for module in bundle.policy_modules:
+            previous_source = module_paths.get(module.path)
+            if previous_source is not None and previous_source != source_id:
+                raise ValueError(
+                    f"Policy module path '{module.path}' is shared by sources "
+                    f"'{previous_source}' and '{source_id}'"
+                )
+            module_paths[module.path] = source_id
+
+            if module.package_name:
+                previous_source = package_names.get(module.package_name)
+                if previous_source is not None and previous_source != source_id:
+                    raise ValueError(
+                        f"Rego package '{module.package_name}' is shared by sources "
+                        f"'{previous_source}' and '{source_id}'"
+                    )
+                package_names[module.package_name] = source_id
+
+        for module in bundle.data_modules:
+            destination = PurePosixPath(module.path)
+            for previous_destination, previous_source in data_destinations:
+                if previous_source != source_id and (
+                    destination == previous_destination
+                    or destination in previous_destination.parents
+                    or previous_destination in destination.parents
+                ):
+                    raise ValueError(
+                        f"Data destinations '{previous_destination}' and "
+                        f"'{destination}' overlap between sources "
+                        f"'{previous_source}' and '{source_id}'"
+                    )
+            data_destinations.append((destination, source_id))
+
+        policy_modules.extend(bundle.policy_modules)
+        data_modules.extend(bundle.data_modules)
+        manifest.extend(bundle.manifest)
+
+    source_hashes = {
+        source_id: source_bundles[source_id].hash
+        for source_id in sorted(source_bundles)
+    }
+    combined_hash = hashlib.sha256(
+        json.dumps(source_hashes, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()
+    return PolicyBundle(
+        manifest=list(dict.fromkeys(manifest)),
+        hash=combined_hash,
+        old_hash=None,
+        data_modules=data_modules,
+        policy_modules=policy_modules,
+    )
 
 
 class PolicyUpdater:
@@ -66,6 +140,17 @@ class PolicyUpdater:
         )
         self._opal_client_id = opal_client_id
         self._scope_id = opal_client_config.SCOPE_ID
+        self._source_ids = resolve_policy_source_ids(
+            opal_client_config.POLICY_SOURCE_ID,
+            opal_client_config.POLICY_SOURCE_IDS,
+        )
+        self._multi_source = len(self._source_ids) > 1
+        if self._multi_source and self._scope_id != "default":
+            raise ValueError(
+                "POLICY_SOURCE_IDS is not supported with OPAL_SCOPE_ID; use default policy mode"
+            )
+        self._source_bundles: Dict[str, PolicyBundle] = {}
+        self._source_hashes: Dict[str, str] = {}
 
         # The policy store we'll save policy modules into (i.e: OPA)
         self._policy_store = policy_store or DEFAULT_POLICY_STORE_GETTER()
@@ -78,9 +163,14 @@ class PolicyUpdater:
             self._extra_headers = [get_authorization_header(self._token)]
         # Pub/Sub topics we subscribe to for policy updates
         if self._scope_id == "default":
-            self._topics = pubsub_topics_from_directories(
-                self._subscription_directories
-            )
+            if self._source_ids:
+                self._topics = pubsub_topics_from_sources(
+                    self._subscription_directories, self._source_ids
+                )
+            else:
+                self._topics = pubsub_topics_from_directories(
+                    self._subscription_directories
+                )
         else:
             self._topics = [f"{self._scope_id}:policy:."]
         # The pub/sub client for data updates
@@ -90,7 +180,9 @@ class PolicyUpdater:
         self._policy_update_task = None
         self._stopping = False
         # policy fetcher - fetches policy bundles
-        self._policy_fetcher = PolicyFetcher()
+        self._policy_fetcher = PolicyFetcher(
+            source_id=self._source_ids[0] if len(self._source_ids) == 1 else None
+        )
         # callbacks on policy changes
         self._data_fetcher = data_fetcher or DataFetcher()
         self._callbacks_register = callbacks_register or CallbacksRegister()
@@ -106,6 +198,7 @@ class PolicyUpdater:
             else {}
         )
         self._policy_update_queue = asyncio.Queue()
+        self._multi_source_retry_task = None
         self._tasks = TasksPool()
         self._on_connect_callbacks = on_connect or []
         self._on_disconnect_callbacks = on_disconnect or []
@@ -144,17 +237,28 @@ class PolicyUpdater:
             message=message.model_dump(),
         )
 
+        if self._source_ids and message.source_id not in self._source_ids:
+            logger.warning(
+                "Ignoring policy update for unselected source {source_id}; selected sources are {configured_source_ids}",
+                source_id=message.source_id,
+                configured_source_ids=self._source_ids,
+            )
+            return
+
         directories = list(
             set(message.changed_directories).intersection(
                 set(self._subscription_directories)
             )
         )
-        await self.trigger_update_policy(directories)
+        await self.trigger_update_policy(directories, source_id=message.source_id)
 
     async def trigger_update_policy(
-        self, directories: List[str] = None, force_full_update: bool = False
+        self,
+        directories: List[str] = None,
+        force_full_update: bool = False,
+        source_id: Optional[str] = None,
     ):
-        await self._policy_update_queue.put((directories, force_full_update))
+        await self._policy_update_queue.put((directories, force_full_update, source_id))
 
     async def _on_connect(self, client: PubSubClient, channel: RpcChannel):
         """Pub/Sub on_connect callback On connection to backend, whether its
@@ -166,7 +270,7 @@ class PolicyUpdater:
         start from scratch.
         """
         logger.info("Connected to server")
-        await self.trigger_update_policy()
+        await self.trigger_update_policy(force_full_update=self._multi_source)
         if opal_common_config.STATISTICS_ENABLED:
             await self._client.wait_until_ready()
             # publish statistics to the server about new connection from client (only if STATISTICS_ENABLED is True, default to False)
@@ -203,6 +307,14 @@ class PolicyUpdater:
         """Stops the policy updater."""
         self._stopping = True
         logger.info("Stopping policy updater")
+
+        if self._multi_source_retry_task is not None:
+            self._multi_source_retry_task.cancel()
+            try:
+                await self._multi_source_retry_task
+            except asyncio.CancelledError:
+                pass
+            self._multi_source_retry_task = None
 
         # disconnect from Pub/Sub
         if self._client is not None:
@@ -270,6 +382,7 @@ class PolicyUpdater:
         self,
         directories: List[str],
         force_full_update: bool,
+        source_id: Optional[str] = None,
     ):
         """Fetches policy (code, e.g: rego) from backend and stores it in the
         policy store.
@@ -279,6 +392,11 @@ class PolicyUpdater:
             directories (List[str], optional): specific source directories we want.
             force_full_update (bool, optional): if true, ignore stored hash and fetch full policy bundle.
         """
+        if self._multi_source:
+            return await self._update_multiple_source_policies(
+                directories, force_full_update, source_id
+            )
+
         directories = (
             directories
             if directories is not None
@@ -304,7 +422,7 @@ class PolicyUpdater:
             bundle: Optional[
                 PolicyBundle
             ] = await self._policy_fetcher.fetch_policy_bundle(
-                directories, base_hash=base_hash
+                directories, base_hash=base_hash, source_id=source_id
             )
             if bundle:
                 if bundle.old_hash is None:
@@ -355,11 +473,133 @@ class PolicyUpdater:
                         self._callbacks_reporter.report_update_results(report)
                     )
 
+    async def _update_multiple_source_policies(
+        self,
+        directories: Optional[List[str]],
+        force_full_update: bool,
+        source_id: Optional[str],
+    ):
+        directories = default_subscribed_policy_directories(
+            self._subscription_directories
+        )
+        if source_id is not None and source_id not in self._source_ids:
+            logger.warning(
+                "Ignoring update for unselected policy source {source_id}",
+                source_id=source_id,
+            )
+            return
+
+        source_ids = (
+            self._source_ids if force_full_update or source_id is None else [source_id]
+        )
+        updated_bundles = {}
+        source_errors = {}
+        for current_source_id in source_ids:
+            try:
+                bundle = await self._policy_fetcher.fetch_policy_bundle(
+                    directories,
+                    base_hash=None,
+                    source_id=current_source_id,
+                )
+            except Exception as exc:
+                source_errors[current_source_id] = repr(exc)
+                logger.exception(
+                    "Failed to fetch policy source {source_id}",
+                    source_id=current_source_id,
+                )
+                continue
+            if bundle is not None:
+                updated_bundles[current_source_id] = bundle
+
+        if not updated_bundles:
+            self._schedule_multi_source_retry()
+            return
+
+        available_bundles = {**self._source_bundles, **updated_bundles}
+        candidate_bundles = {
+            current_source_id: available_bundles[current_source_id]
+            for current_source_id in self._source_ids
+            if current_source_id in available_bundles
+        }
+        missing_sources = set(self._source_ids).difference(candidate_bundles)
+        if missing_sources:
+            logger.warning(
+                "Skipping aggregate policy update until every selected source has a full snapshot; missing: {source_ids}",
+                source_ids=sorted(missing_sources),
+            )
+            self._schedule_multi_source_retry()
+            return
+
+        try:
+            aggregate_bundle = merge_source_policy_bundles(candidate_bundles)
+        except ValueError as exc:
+            logger.error(
+                "Rejecting conflicting policy sources: {error}", error=str(exc)
+            )
+            return
+
+        bundle_succeeded = True
+        bundle_error = None
+        try:
+            async with self._policy_store.transaction_context(
+                aggregate_bundle.hash, transaction_type=TransactionType.policy
+            ) as store_transaction:
+                for current_source_id in source_ids:
+                    store_transaction._update_remote_status(
+                        url=(
+                            f"{self._policy_fetcher.policy_endpoint_url}"
+                            f"?source_id={current_source_id}"
+                        ),
+                        status=current_source_id not in source_errors,
+                        error=source_errors.get(current_source_id),
+                    )
+                await store_transaction.set_policies(aggregate_bundle)
+        except Exception:
+            logger.exception("Failed to apply aggregate policy bundle")
+            self._schedule_multi_source_retry()
+            return
+
+        self._source_bundles = candidate_bundles
+        self._source_hashes.update(
+            {
+                current_source_id: bundle.hash
+                for current_source_id, bundle in updated_bundles.items()
+            }
+        )
+        if source_errors:
+            self._schedule_multi_source_retry()
+        if self._should_send_reports:
+            report = DataUpdateReport(policy_hash=aggregate_bundle.hash, reports=[])
+            self._tasks.add_task(self._callbacks_reporter.report_update_results(report))
+
+    def _schedule_multi_source_retry(self):
+        if self._stopping:
+            return
+        if (
+            self._multi_source_retry_task is None
+            or self._multi_source_retry_task.done()
+        ):
+            self._multi_source_retry_task = asyncio.create_task(
+                self._retry_multi_source_refresh()
+            )
+
+    async def _retry_multi_source_refresh(self):
+        try:
+            await asyncio.sleep(5)
+            if not self._stopping:
+                await self.trigger_update_policy(force_full_update=True)
+        except asyncio.CancelledError:
+            raise
+
     async def handle_policy_updates(self):
         while True:
             try:
-                directories, force_full_update = await self._policy_update_queue.get()
-                await self.update_policy(directories, force_full_update)
+                (
+                    directories,
+                    force_full_update,
+                    source_id,
+                ) = await self._policy_update_queue.get()
+                await self.update_policy(directories, force_full_update, source_id)
             except asyncio.CancelledError:
                 logger.debug("PolicyUpdater policy update task was cancelled")
                 break

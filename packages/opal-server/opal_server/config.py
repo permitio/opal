@@ -1,11 +1,15 @@
 import os
 import pathlib
+import re
 from enum import Enum
+from pathlib import Path
+from typing import List, Optional
 
 from opal_common.authentication.types import EncryptionKeyFormat
 from opal_common.confi import Confi
 from opal_common.schemas.data import DEFAULT_DATA_TOPIC, ServerDataSourceConfig
 from opal_common.schemas.webhook import GitWebhookRequestParams
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 confi = Confi(prefix="OPAL_")
 
@@ -18,6 +22,76 @@ class PolicySourceTypes(str, Enum):
 class PolicyBundleServerType(str, Enum):
     HTTP = "HTTP"
     AWS_S3 = "AWS-S3"
+
+
+class ApiPolicyBundleSource(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    source_id: str = Field(min_length=1)
+    url: str = Field(min_length=1)
+    filename: str = "bundle.tar.gz"
+    token: Optional[str] = None
+    token_id: Optional[str] = None
+    server_type: Optional[PolicyBundleServerType] = None
+    region: Optional[str] = None
+    polling_interval: Optional[int] = Field(default=None, ge=0)
+    clone_path: Optional[str] = None
+    tmp_path: Optional[str] = None
+    git_add_pattern: Optional[str] = None
+
+    @field_validator("source_id")
+    @classmethod
+    def validate_source_id(cls, value):
+        if (
+            not value[0].isascii()
+            or not value[0].isalnum()
+            or not all(
+                char.isascii() and (char.isalnum() or char in "-_") for char in value
+            )
+        ):
+            raise ValueError("source_id must contain only letters, digits, '-' or '_'")
+        return value
+
+    @field_validator("filename")
+    @classmethod
+    def validate_filename(cls, value):
+        if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*", value):
+            raise ValueError("filename must be a plain filename without path segments")
+        return value
+
+
+class ApiPolicyBundleSources(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    sources: List[ApiPolicyBundleSource] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def validate_unique_sources(self):
+        source_ids = [source.source_id for source in self.sources]
+        if len(source_ids) != len(set(source_ids)):
+            raise ValueError("source_id values must be unique")
+
+        for path_field in ("clone_path", "tmp_path"):
+            paths = [
+                str(Path(path).expanduser().resolve())
+                for source in self.sources
+                if (path := getattr(source, path_field)) is not None
+            ]
+            if len(paths) != len(set(paths)):
+                raise ValueError(f"configured {path_field} values must be unique")
+        return self
+
+
+def validate_policy_bundle_source_mode(
+    static_sources: ApiPolicyBundleSources,
+    legacy_bundle_url: Optional[str],
+    manifest_url: Optional[str],
+) -> None:
+    if manifest_url and (static_sources.sources or legacy_bundle_url):
+        raise ValueError(
+            "Configure only one of POLICY_BUNDLE_SOURCES, POLICY_BUNDLE_URL, "
+            "or POLICY_BUNDLE_MANIFEST_URL"
+        )
 
 
 class ServerRole(str, Enum):
@@ -177,6 +251,48 @@ class OpalServerConfig(Confi):
         "POLICY_BUNDLE_URL",
         None,
         description="Set your API bundle URL, relevant only on API source type",
+    )
+    POLICY_BUNDLE_SOURCES = confi.model(
+        "POLICY_BUNDLE_SOURCES",
+        ApiPolicyBundleSources,
+        {"sources": []},
+        description="Static list of independent API bundle sources",
+    )
+    POLICY_BUNDLE_MANIFEST_URL = confi.str(
+        "POLICY_BUNDLE_MANIFEST_URL",
+        None,
+        description="URL of a remote JSON manifest listing API bundle sources",
+    )
+    POLICY_BUNDLE_MANIFEST_REFRESH_INTERVAL = confi.int(
+        "POLICY_BUNDLE_MANIFEST_REFRESH_INTERVAL",
+        60,
+        description="Interval in seconds for refreshing the remote API bundle source manifest",
+    )
+    POLICY_BUNDLE_MANIFEST_REQUEST_TIMEOUT = confi.int(
+        "POLICY_BUNDLE_MANIFEST_REQUEST_TIMEOUT",
+        10,
+        description="Timeout in seconds for fetching the remote API bundle source manifest",
+    )
+    POLICY_BUNDLE_MANIFEST_SERVER_TYPE = confi.enum(
+        "POLICY_BUNDLE_MANIFEST_SERVER_TYPE",
+        PolicyBundleServerType,
+        PolicyBundleServerType.HTTP,
+        description="Authentication type for the remote API bundle source manifest",
+    )
+    POLICY_BUNDLE_MANIFEST_SERVER_TOKEN = confi.str(
+        "POLICY_BUNDLE_MANIFEST_SERVER_TOKEN",
+        None,
+        description="Bearer token used to fetch the remote API bundle source manifest",
+    )
+    POLICY_BUNDLE_MANIFEST_SERVER_TOKEN_ID = confi.str(
+        "POLICY_BUNDLE_MANIFEST_SERVER_TOKEN_ID",
+        None,
+        description="Access key ID used when fetching an AWS S3 API bundle source manifest",
+    )
+    POLICY_BUNDLE_MANIFEST_SERVER_AWS_REGION = confi.str(
+        "POLICY_BUNDLE_MANIFEST_SERVER_AWS_REGION",
+        "us-east-1",
+        description="AWS region for the remote API bundle source manifest",
     )
     POLICY_REPO_CLONE_PATH = confi.str(
         "POLICY_REPO_CLONE_PATH",

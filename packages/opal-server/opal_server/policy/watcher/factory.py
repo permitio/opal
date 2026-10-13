@@ -1,4 +1,5 @@
 from functools import partial
+from pathlib import Path
 from typing import Any, List, Optional
 
 from fastapi_websocket_pubsub.pub_sub_server import PubSubEndpoint
@@ -8,9 +9,18 @@ from opal_common.logger import logger
 from opal_common.sources.api_policy_source import ApiPolicySource
 from opal_common.sources.git_policy_source import GitPolicySource
 from opal_common.topics.publisher import TopicPublisher
-from opal_server.config import PolicySourceTypes, opal_server_config
+from opal_server.config import (
+    PolicySourceTypes,
+    opal_server_config,
+    validate_policy_bundle_source_mode,
+)
 from opal_server.policy.watcher.callbacks import publish_changed_directories
-from opal_server.policy.watcher.task import BasePolicyWatcherTask, PolicyWatcherTask
+from opal_server.policy.watcher.manifest import get_policy_bundle_sources_registry
+from opal_server.policy.watcher.task import (
+    BasePolicyWatcherTask,
+    MultiPolicyWatcherTask,
+    PolicyWatcherTask,
+)
 from opal_server.scopes.task import ScopesPolicyWatcherTask
 
 
@@ -54,6 +64,11 @@ def setup_watcher_task(
 
     # load defaults
     source_type = load_conf_if_none(source_type, opal_server_config.POLICY_SOURCE_TYPE)
+    if (
+        opal_server_config.POLICY_BUNDLE_MANIFEST_URL
+        and source_type != PolicySourceTypes.Api
+    ):
+        raise ValueError("POLICY_BUNDLE_MANIFEST_URL requires API policy source type")
 
     clone_path_finder = load_conf_if_none(
         clone_path_finder,
@@ -103,6 +118,152 @@ def setup_watcher_task(
             request_timeout=request_timeout,
         )
     elif source_type == PolicySourceTypes.Api:
+        validate_policy_bundle_source_mode(
+            opal_server_config.POLICY_BUNDLE_SOURCES,
+            opal_server_config.POLICY_BUNDLE_URL,
+            opal_server_config.POLICY_BUNDLE_MANIFEST_URL,
+        )
+        if opal_server_config.POLICY_BUNDLE_MANIFEST_URL:
+
+            def create_manifest_source(source_config):
+                default_tmp_path = Path(opal_server_config.POLICY_BUNDLE_TMP_PATH)
+                source = ApiPolicySource(
+                    remote_source_url=source_config.url,
+                    local_clone_path=source_config.clone_path
+                    or str(
+                        Path(opal_server_config.POLICY_REPO_CLONE_PATH)
+                        / f"{opal_server_config.POLICY_REPO_CLONE_FOLDER_PREFIX}_{source_config.source_id}"
+                    ),
+                    polling_interval=(
+                        polling_interval
+                        if source_config.polling_interval is None
+                        else source_config.polling_interval
+                    ),
+                    token=source_config.token or policy_bundle_token,
+                    token_id=source_config.token_id
+                    or load_conf_if_none(
+                        policy_bundle_token_id,
+                        opal_server_config.POLICY_BUNDLE_SERVER_TOKEN_ID,
+                    ),
+                    bundle_server_type=source_config.server_type
+                    or load_conf_if_none(
+                        policy_bundle_server_type,
+                        opal_server_config.POLICY_BUNDLE_SERVER_TYPE,
+                    ),
+                    policy_bundle_path=source_config.tmp_path
+                    or str(
+                        default_tmp_path.with_name(
+                            f"{default_tmp_path.stem}-{source_config.source_id}{default_tmp_path.suffix}"
+                        )
+                    ),
+                    policy_bundle_git_add_pattern=source_config.git_add_pattern
+                    or opal_server_config.POLICY_BUNDLE_GIT_ADD_PATTERN,
+                    region=source_config.region
+                    or load_conf_if_none(
+                        policy_bundle_aws_region,
+                        opal_server_config.POLICY_BUNDLE_SERVER_AWS_REGION,
+                    ),
+                    bundle_filename=source_config.filename,
+                    source_id=source_config.source_id,
+                )
+                source.add_on_new_policy_callback(
+                    partial(
+                        publish_changed_directories,
+                        publisher=publisher,
+                        file_extensions=extensions,
+                        bundle_ignore=bundle_ignore,
+                        source_id=source_config.source_id,
+                    )
+                )
+                return source
+
+            return MultiPolicyWatcherTask(
+                {},
+                pubsub_endpoint,
+                manifest_registry=get_policy_bundle_sources_registry(),
+                source_factory=create_manifest_source,
+            )
+
+        if opal_server_config.POLICY_BUNDLE_SOURCES.sources:
+            policy_sources = {}
+            clone_paths = []
+            tmp_paths = []
+            for source_config in opal_server_config.POLICY_BUNDLE_SOURCES.sources:
+                clone_path = source_config.clone_path or str(
+                    Path(opal_server_config.POLICY_REPO_CLONE_PATH)
+                    / f"{opal_server_config.POLICY_REPO_CLONE_FOLDER_PREFIX}_{source_config.source_id}"
+                )
+                default_tmp_path = Path(opal_server_config.POLICY_BUNDLE_TMP_PATH)
+                tmp_path = source_config.tmp_path or str(
+                    default_tmp_path.with_name(
+                        f"{default_tmp_path.stem}-{source_config.source_id}{default_tmp_path.suffix}"
+                    )
+                )
+                clone_paths.append(Path(clone_path).expanduser().resolve())
+                tmp_paths.append(Path(tmp_path).expanduser().resolve())
+                source_polling_interval = (
+                    polling_interval
+                    if source_config.polling_interval is None
+                    else source_config.polling_interval
+                )
+                source_server_type = source_config.server_type or load_conf_if_none(
+                    policy_bundle_server_type,
+                    opal_server_config.POLICY_BUNDLE_SERVER_TYPE,
+                )
+                source_region = source_config.region or load_conf_if_none(
+                    policy_bundle_aws_region,
+                    opal_server_config.POLICY_BUNDLE_SERVER_AWS_REGION,
+                )
+                source = ApiPolicySource(
+                    remote_source_url=source_config.url,
+                    local_clone_path=clone_path,
+                    polling_interval=source_polling_interval,
+                    token=source_config.token or policy_bundle_token,
+                    token_id=source_config.token_id
+                    or load_conf_if_none(
+                        policy_bundle_token_id,
+                        opal_server_config.POLICY_BUNDLE_SERVER_TOKEN_ID,
+                    ),
+                    bundle_server_type=source_server_type,
+                    policy_bundle_path=tmp_path,
+                    policy_bundle_git_add_pattern=source_config.git_add_pattern
+                    or opal_server_config.POLICY_BUNDLE_GIT_ADD_PATTERN,
+                    region=source_region,
+                    bundle_filename=source_config.filename,
+                    source_id=source_config.source_id,
+                )
+                source.add_on_new_policy_callback(
+                    partial(
+                        publish_changed_directories,
+                        publisher=publisher,
+                        file_extensions=extensions,
+                        bundle_ignore=bundle_ignore,
+                        source_id=source_config.source_id,
+                    )
+                )
+                policy_sources[source_config.source_id] = source
+            if len(clone_paths) != len(set(clone_paths)):
+                raise ValueError("API bundle sources must use distinct clone paths")
+            if len(tmp_paths) != len(set(tmp_paths)):
+                raise ValueError("API bundle sources must use distinct temporary paths")
+            if any(
+                clone_path == tmp_path
+                or clone_path in tmp_path.parents
+                or tmp_path in clone_path.parents
+                for clone_path in clone_paths
+                for tmp_path in tmp_paths
+            ):
+                raise ValueError(
+                    "API bundle temporary paths must not be inside a source repository"
+                )
+            if any(
+                left == right or left in right.parents or right in left.parents
+                for index, left in enumerate(clone_paths)
+                for right in clone_paths[index + 1 :]
+            ):
+                raise ValueError("API bundle source repositories must not overlap")
+            return MultiPolicyWatcherTask(policy_sources, pubsub_endpoint)
+
         remote_source_url = load_conf_if_none(
             remote_source_url, opal_server_config.POLICY_BUNDLE_URL
         )

@@ -4,6 +4,7 @@ from typing import Optional, Tuple
 from urllib.parse import urlparse
 
 import aiohttp
+from aiohttp import ClientSession
 from fastapi import status
 from fastapi.exceptions import HTTPException
 from opal_common.git_utils.tar_file_to_local_git_extractor import (
@@ -57,6 +58,8 @@ class ApiPolicySource(BasePolicySource):
         bundle_server_type: Optional[PolicyBundleServerType] = None,
         policy_bundle_path=".",
         policy_bundle_git_add_pattern="*",
+        bundle_filename="bundle.tar.gz",
+        source_id: Optional[str] = None,
     ):
         super().__init__(
             remote_source_url=remote_source_url,
@@ -67,9 +70,11 @@ class ApiPolicySource(BasePolicySource):
         self.token_id = token_id
         self.server_type = bundle_server_type
         self.region = region
+        self.bundle_filename = bundle_filename
+        self.source_id = source_id
         self.bundle_hash = None
         self.etag = None
-        self.tmp_bundle_path = Path(policy_bundle_path)
+        self.tmp_bundle_path = Path(policy_bundle_path).expanduser()
         self.policy_bundle_git_add_pattern = policy_bundle_git_add_pattern
         self.tar_to_git = TarFileToLocalGitExtractor(
             self.local_clone_path,
@@ -139,7 +144,7 @@ class ApiPolicySource(BasePolicySource):
         ):
             split_url = urlparse(self.remote_source_url)
             host = split_url.netloc
-            path = split_url.path + "/" + path
+            path = split_url.path.rstrip("/") + "/" + path.lstrip("/")
 
             return build_aws_rest_auth_headers(
                 self.token_id, token, host, path, self.region
@@ -165,16 +170,16 @@ class ApiPolicySource(BasePolicySource):
             BundleHash: previous bundle hash on None if this is the initial bundle file
             BundleHash: current bundle hash
         """
-        path = "bundle.tar.gz"
+        path = self.bundle_filename
 
         auth_headers = self.build_auth_headers(token=token, path=path)
         etag_headers = (
             {"ETag": self.etag, "If-None-Match": self.etag} if self.etag else {}
         )
 
-        full_url = f"{url}/{path}"
+        full_url = f"{url.rstrip('/')}/{self.bundle_filename}"
 
-        async with aiohttp.ClientSession(
+        async with ClientSession(
             trust_env=True,
         ) as session:
             try:
@@ -263,8 +268,9 @@ class ApiPolicySource(BasePolicySource):
         call the callbacks registered with _on_new_policy().
         """
         logger.info(
-            "Fetching changes from remote: '{remote}'",
+            "Fetching changes from remote: '{remote}' (source: {source_id})",
             remote=redact_url(self.remote_source_url),
+            source_id=self.source_id or "default",
         )
         (
             has_changes,
