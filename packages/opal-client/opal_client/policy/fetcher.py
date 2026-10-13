@@ -4,6 +4,7 @@ import aiohttp
 from fastapi import HTTPException, status
 from opal_client.config import opal_client_config
 from opal_client.logger import logger
+from opal_common.logging_utils.errors import describe_error, describe_validation_error
 from opal_common.schemas.policy import PolicyBundle
 from opal_common.security.sslcontext import get_custom_ssl_context
 from opal_common.utils import (
@@ -19,8 +20,9 @@ def force_valid_bundle(bundle) -> PolicyBundle:
     try:
         return PolicyBundle(**bundle)
     except ValidationError as e:
+        # Neither the bundle nor str(e) - both carry the policy and data contents.
         logger.warning(
-            "server returned invalid bundle: {err}", bundle=bundle, err=repr(e)
+            "server returned invalid bundle: {err}", err=describe_validation_error(e)
         )
         raise
 
@@ -71,7 +73,7 @@ class PolicyFetcher:
         except Exception as err:
             logger.warning(
                 "Failed all attempts to fetch bundle, got error: {err}",
-                err=repr(err),
+                err=describe_error(err),
             )
             raise
 
@@ -124,5 +126,5 @@ class PolicyFetcher:
 
                     return bundle
             except aiohttp.ClientError as e:
-                logger.warning("server connection error: {err}", err=repr(e))
+                logger.warning("server connection error: {err}", err=describe_error(e))
                 raise

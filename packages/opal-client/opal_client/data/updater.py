@@ -733,7 +733,7 @@ class DataUpdater:
         """
         logger.info(
             "Saving fetched data to policy-store: source url='{url}', destination path='{path}'",
-            url=url,
+            url=redact_url(url),
             path=path or "/",
         )
         if save_method == "PUT":

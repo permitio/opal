@@ -22,6 +22,7 @@ from opal_client.policy_store.schemas import PolicyStoreAuth
 from opal_client.utils import exclude_none_fields, proxy_response
 from opal_common.engine.parsing import get_rego_package
 from opal_common.git_utils.bundle_utils import BundleUtils
+from opal_common.logging_utils.errors import describe_error
 from opal_common.paths import PathUtils
 from opal_common.schemas.policy import DataModule, PolicyBundle, RegoModule
 from opal_common.schemas.store import JSONPatchAction, StoreTransaction, TransactionType
@@ -456,7 +457,9 @@ class OpaClient(LivenessProbeMixin, BasePolicyStoreClient):
                         "token": response["access_token"],
                     }
             except aiohttp.ClientError as e:
-                logger.warning("OAuth server connection error: {err}", err=repr(e))
+                logger.warning(
+                    "OAuth server connection error: {err}", err=describe_error(e)
+                )
                 raise
 
     async def _get_auth_headers(self) -> {}:
@@ -515,7 +518,7 @@ class OpaClient(LivenessProbeMixin, BasePolicyStoreClient):
                         ],
                     )
             except aiohttp.ClientError as e:
-                logger.warning("Opa connection error: {err}", err=repr(e))
+                logger.warning("Opa connection error: {err}", err=describe_error(e))
                 raise
 
     @fail_silently()
@@ -535,7 +538,7 @@ class OpaClient(LivenessProbeMixin, BasePolicyStoreClient):
                     result = await opa_response.json()
                     return result.get("result", {}).get("raw", None)
             except aiohttp.ClientError as e:
-                logger.warning("Opa connection error: {err}", err=repr(e))
+                logger.warning("Opa connection error: {err}", err=describe_error(e))
                 raise
 
     @fail_silently()
@@ -555,7 +558,7 @@ class OpaClient(LivenessProbeMixin, BasePolicyStoreClient):
                     result = await opa_response.json()
                     return OpaClient._extract_modules_from_policies_json(result)
             except aiohttp.ClientError as e:
-                logger.warning("Opa connection error: {err}", err=repr(e))
+                logger.warning("Opa connection error: {err}", err=describe_error(e))
                 raise
 
     @affects_transaction
@@ -589,7 +592,7 @@ class OpaClient(LivenessProbeMixin, BasePolicyStoreClient):
                         ],
                     )
             except aiohttp.ClientError as e:
-                logger.warning("Opa connection error: {err}", err=repr(e))
+                logger.warning("Opa connection error: {err}", err=describe_error(e))
                 raise
 
     async def get_policy_module_ids(self) -> List[str]:
@@ -759,12 +762,12 @@ class OpaClient(LivenessProbeMixin, BasePolicyStoreClient):
                 path=module_path,
             )
         except aiohttp.ClientError as e:
-            logger.warning("Opa connection error: {err}", err=repr(e))
+            logger.warning("Opa connection error: {err}", err=describe_error(e))
             raise
         except json.JSONDecodeError as e:
             logger.warning(
                 "bundle contains non-json data module: {module_path}",
-                err=repr(e),
+                err=describe_error(e),
                 module_path=module_path,
                 bundle_hash=hash,
             )
@@ -809,7 +812,7 @@ class OpaClient(LivenessProbeMixin, BasePolicyStoreClient):
                         self._policy_data_cache.set(path, json.loads(data))
                     return response
             except aiohttp.ClientError as e:
-                logger.warning("Opa connection error: {err}", err=repr(e))
+                logger.warning("Opa connection error: {err}", err=describe_error(e))
                 raise
 
     @affects_transaction
@@ -853,7 +856,7 @@ class OpaClient(LivenessProbeMixin, BasePolicyStoreClient):
                         self._policy_data_cache.patch(path, policy_data)
                     return response
             except aiohttp.ClientError as e:
-                logger.warning("Opa connection error: {err}", err=repr(e))
+                logger.warning("Opa connection error: {err}", err=describe_error(e))
                 raise
 
     @affects_transaction
@@ -887,7 +890,7 @@ class OpaClient(LivenessProbeMixin, BasePolicyStoreClient):
                         self._policy_data_cache.delete(path)
                     return response
             except aiohttp.ClientError as e:
-                logger.warning("Opa connection error: {err}", err=repr(e))
+                logger.warning("Opa connection error: {err}", err=describe_error(e))
                 raise
 
     @fail_silently()
@@ -916,7 +919,7 @@ class OpaClient(LivenessProbeMixin, BasePolicyStoreClient):
                     json_response = await opa_response.json()
                     return json_response.get("result", {})
         except aiohttp.ClientError as e:
-            logger.warning("Opa connection error: {err}", err=repr(e))
+            logger.warning("Opa connection error: {err}", err=describe_error(e))
             raise
 
     @retry(**RETRY_CONFIG)
@@ -948,7 +951,7 @@ class OpaClient(LivenessProbeMixin, BasePolicyStoreClient):
                 ) as opa_response:
                     return await proxy_response(opa_response)
         except aiohttp.ClientError as e:
-            logger.warning("Opa connection error: {err}", err=repr(e))
+            logger.warning("Opa connection error: {err}", err=describe_error(e))
             raise
 
     @retry(**RETRY_CONFIG)
@@ -978,7 +981,7 @@ class OpaClient(LivenessProbeMixin, BasePolicyStoreClient):
                 logger.error(
                     "Cannot write to OPAL transaction log, transaction id={id}, error={err} with data={data}",
                     id=transaction.id,
-                    err=repr(e),
+                    err=describe_error(e),
                     data=transaction_data,
                 )
 

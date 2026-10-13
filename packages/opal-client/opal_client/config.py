@@ -42,6 +42,7 @@ class OpalClientConfig(Confi):
         None,
         description="The authentication (bearer) token OPAL client will use to "
         "authenticate against the policy store (i.e: OPA agent).",
+        sensitive=True,
     )
     POLICY_STORE_AUTH_OAUTH_SERVER = confi.str(
         "POLICY_STORE_AUTH_OAUTH_SERVER",
@@ -57,6 +58,7 @@ class OpalClientConfig(Confi):
         "POLICY_STORE_AUTH_OAUTH_CLIENT_SECRET",
         None,
         description="The client secret OPAL will use to authenticate against the OAuth server.",
+        sensitive=True,
     )
 
     POLICY_STORE_CONN_RETRY: ConnRetryOptions = confi.model(
@@ -271,6 +273,7 @@ class OpalClientConfig(Confi):
         "THIS_IS_A_DEV_SECRET",
         description="The authentication token for the OPAL server",
         flags=["-t"],
+        sensitive=True,
     )
 
     # client-api server
