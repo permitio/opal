@@ -118,6 +118,10 @@ services:
       # changing SCOPES_REPO_CLONES_SHARDS between boots moves every source_id,
       # orphaning all previous clone dirs — a real ops event worth gating.
       OPAL_SCOPES_REPO_CLONES_SHARDS: "${OPAL_TEST_SHARDS:-1}"
+      # Repack threshold for the pack-count gate (test_repack.py), which lowers
+      # it for its own container only. The default is the code default, so every
+      # other gate (the RSS guards included) runs with the production value.
+      OPAL_SCOPES_GIT_REPACK_PACK_LIMIT: "${OPAL_TEST_REPACK_PACK_LIMIT:-50}"
       OPAL_SCOPES: "1"
       # Fail hung clones/fetches fast. The code default (120s) exceeds the
       # bed's serve windows: with FIFO queueing over SCOPES_GIT_MAX_WORKERS
