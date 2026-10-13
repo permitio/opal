@@ -9,6 +9,7 @@ call site itself emits.
 
 import asyncio
 import logging
+import re
 from contextlib import contextmanager
 from typing import Iterator, List, Tuple
 
@@ -58,7 +59,10 @@ async def test_redis_connect_log_masks_password():
         RedisDB(f"redis://fakeuser:{FAKE_PASSWORD}@redis.example.com:6379/0")
 
     assert any("Connecting to Redis" in line for line in text), text
-    assert any("redis.example.com:6379" in line for line in serialized), serialized
+    assert any(
+        re.search(r"redis://\*\*\*@redis\.example\.com:6379", line)
+        for line in serialized
+    ), serialized
     _assert_absent([FAKE_PASSWORD], text, serialized)
 
 
@@ -128,7 +132,11 @@ def test_data_config_redirect_log_masks_external_source_url():
         )
 
     assert response.status_code == 307
-    redirected = [line for line in serialized if "config.example.com" in line]
+    redirected = [
+        line
+        for line in serialized
+        if re.search(r"https://\*\*\*@config\.example\.com/sources", line)
+    ]
     assert redirected, serialized
     _assert_absent([FAKE_PASSWORD, FAKE_KEY], text, serialized)
 
