@@ -230,6 +230,12 @@ class BundleMaker:
         # cast back to string paths
         return [str(path) for path in sorted_paths]
 
+    @staticmethod
+    def _get_module_package_name(path: Path, contents: str) -> str:
+        if path.suffix == ".rego":
+            return get_rego_package(contents) or ""
+        return ""
+
     def make_bundle(self, commit: Commit) -> PolicyBundle:
         """Creates a *complete* bundle of all the policy and data modules found
         in the policy repo, when the repo HEAD is at the given `commit`.
@@ -269,7 +275,7 @@ class BundleMaker:
                     policy_modules.append(
                         RegoModule(
                             path=str(path),
-                            package_name=get_rego_package(contents) or "",
+                            package_name=self._get_module_package_name(path, contents),
                             rego=contents,
                         )
                     )
@@ -333,7 +339,7 @@ class BundleMaker:
                     policy_modules.append(
                         RegoModule(
                             path=str(path),
-                            package_name=get_rego_package(contents) or "",
+                            package_name=self._get_module_package_name(path, contents),
                             rego=contents,
                         )
                     )

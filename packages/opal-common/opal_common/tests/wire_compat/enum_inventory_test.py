@@ -64,6 +64,10 @@ NOT_ON_THE_WIRE: Dict[str, str] = {
         "get_args() yields explicit strings and never formats an enum into an "
         "argument, so the dump path does not apply."
     ),
+    "opal_client.engine.options:OpenFGAServerOptions": (
+        "not serialized to a peer - get_args() explicitly extracts .value from "
+        "LogLevel when building OpenFGA's argv rather than relying on model_dump."
+    ),
     "opal_client.policy.options:ConnRetryOptions": (
         "configuration, not a payload: read via confi.model for the four "
         "OPAL_*_CONN_RETRY keys and consumed in-process by toTenacityConfig(), "
