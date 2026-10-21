@@ -18,6 +18,7 @@ import io
 import json
 import logging
 import sys
+import threading
 from pathlib import Path
 
 import opal_server.scopes
@@ -39,7 +40,15 @@ STDLIB_LOGGERS_CONFIGURE_LOGS_TOUCHES = (*LOGGING_CONFIG["loggers"], "ddtrace")
 
 
 class MasterLogs:
+    """Records from this test's thread only.
+
+    when_ready and the stubbed preload run on it. Worker threads that
+    earlier tests left behind can log at any moment (e.g. a late Future
+    callback error), which a real master, a fresh process, never sees.
+    """
+
     def __init__(self):
+        self.thread_id = threading.get_ident()
         #: (level, message) of every record the default-handler stand-in got.
         self.default_records = []
         #: What the configured sink wrote (the stream configure_logs() bound).
@@ -61,7 +70,11 @@ class MasterLogs:
             for line in self.stream.getvalue().splitlines()
             if line.startswith("{")
         ]
-        return [(r["level"]["name"], r["message"]) for r in records]
+        return [
+            (r["level"]["name"], r["message"])
+            for r in records
+            if r["thread"]["id"] == self.thread_id
+        ]
 
 
 def _is_pytest_handler(handler):
@@ -100,6 +113,7 @@ def master_logs(monkeypatch):
             (m.record["level"].name, m.record["message"])
         ),
         level="DEBUG",
+        filter=lambda r: r["thread"].id == logs.thread_id,
     )
     monkeypatch.setattr(opal_common_config, "LOG_LEVEL", "INFO")
     monkeypatch.setattr(opal_common_config, "LOG_SERIALIZE", True)
