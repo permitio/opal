@@ -1,4 +1,4 @@
-from opal_common.logger import logger
+from opal_common.logger import configure_logs, logger
 
 
 def post_fork(server, worker):
@@ -7,6 +7,14 @@ def post_fork(server, worker):
 
 
 def when_ready(server):
+    # This runs in the gunicorn MASTER, before any worker configured logging.
+    # Without configure_logs() the master logs with loguru's defaults (DEBUG
+    # level, plaintext, diagnose=True, no credential scrubbing) while the
+    # scopes preload logs per-scope git chatter and git errors that can carry
+    # the remote URL and its auth. Called before the import so nothing the
+    # import might log reaches the default handler either.
+    configure_logs()
+
     try:
         import opal_server.scopes.task
     except ImportError:

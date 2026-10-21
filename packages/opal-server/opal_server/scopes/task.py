@@ -203,7 +203,8 @@ class ScopesPolicyWatcherTask(BasePolicyWatcherTask):
         """Clone all scopes repositories as part as server startup.
 
         This speeds up the first sync of scopes after workers are
-        started.
+        started. Expects configure_logs() to have run; see
+        scripts/gunicorn_conf.py::when_ready.
         """
         if opal_server_config.SCOPES:
             # This runs in the gunicorn MASTER (scripts/gunicorn_conf.py:when_ready)

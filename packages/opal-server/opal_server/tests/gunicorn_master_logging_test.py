@@ -1,0 +1,318 @@
+"""The gunicorn master must configure logging before it logs anything.
+
+``scripts/gunicorn_conf.py::when_ready`` runs in the gunicorn master, where no
+worker has called ``configure_logs()``. Anything logged before that call goes
+to loguru's default handler: DEBUG level, plaintext, no credential scrubbing.
+
+These tests run the real ``configure_logs()`` against a loguru whose only sink
+is a recording stand-in for that default handler. ``configure_logs()`` removes
+the stand-in, so whatever it recorded reached the default handler before
+logging was configured.
+"""
+
+import asyncio
+import contextlib
+import importlib.abc
+import importlib.util
+import io
+import json
+import logging
+import sys
+from pathlib import Path
+
+import opal_server.scopes
+import opal_server.scopes.task as task_module
+import pytest
+from loguru import logger
+from opal_common.config import opal_common_config
+from opal_common.logger import configure_logs
+from opal_common.logging_utils.intercept import InterceptHandler
+from opal_server.config import opal_server_config
+from uvicorn.config import LOGGING_CONFIG
+
+GUNICORN_CONF = Path(__file__).resolve().parents[4] / "scripts" / "gunicorn_conf.py"
+CREDENTIAL = "s3cret-FAKE-123"
+CREDENTIALED_REMOTE = f"https://user:{CREDENTIAL}@git.example.com/org/policy.git"
+# The stdlib loggers configure_logs() rewires: hijack_uvicorn_logs takes the
+# uvicorn names from the same LOGGING_CONFIG, fix_ddtrace_logging the other.
+STDLIB_LOGGERS_CONFIGURE_LOGS_TOUCHES = (*LOGGING_CONFIG["loggers"], "ddtrace")
+
+
+class MasterLogs:
+    def __init__(self):
+        #: (level, message) of every record the default-handler stand-in got.
+        self.default_records = []
+        #: What the configured sink wrote (the stream configure_logs() bound).
+        self.stream = io.StringIO()
+
+    @contextlib.contextmanager
+    def streams(self):
+        """configure_logs() binds sys.stderr/stdout when it runs; pytest swaps
+        them per test phase, so redirect only around the configuring call."""
+        with contextlib.redirect_stderr(self.stream), contextlib.redirect_stdout(
+            self.stream
+        ):
+            yield
+
+    def configured(self):
+        """(level, message) of every record the configured sink wrote."""
+        records = [
+            json.loads(line)["record"]
+            for line in self.stream.getvalue().splitlines()
+            if line.startswith("{")
+        ]
+        return [(r["level"]["name"], r["message"]) for r in records]
+
+
+def _is_pytest_handler(handler):
+    return type(handler).__module__.startswith("_pytest")
+
+
+@pytest.fixture
+def master_logs(monkeypatch):
+    """A fresh process's loguru state; prior state is restored afterwards.
+
+    loguru's ``Core`` starts with no handlers, no patcher and
+    ``min_level=inf``; the stand-in then plays the default stderr handler.
+    Handlers are swapped out by assignment, never ``logger.remove()``, which
+    would stop the ones restored at teardown. Teardown also restores the
+    non-pytest root handlers and the stdlib loggers configure_logs() rewires;
+    pytest's own root capture handlers, which ``basicConfig(force=True)``
+    closes (as building an OpalServer does), are left to pytest.
+    """
+    core = logger._core
+    # Private loguru state (as in redaction_fixtures.without_log_patcher):
+    # fail loudly if a loguru upgrade renames it, rather than swap nothing.
+    assert isinstance(core.handlers, dict), "loguru internals changed"
+    assert hasattr(core, "min_level") and hasattr(core, "patcher")
+    saved_core = (core.handlers, core.min_level, core.patcher)
+    root = logging.getLogger()
+    saved_root = ([h for h in root.handlers if not _is_pytest_handler(h)], root.level)
+    saved_stdlib = {}
+    for name in STDLIB_LOGGERS_CONFIGURE_LOGS_TOUCHES:
+        lg = logging.getLogger(name)
+        saved_stdlib[name] = (list(lg.handlers), lg.propagate, lg.level)
+
+    core.handlers, core.min_level, core.patcher = {}, float("inf"), None
+    logs = MasterLogs()
+    logger.add(
+        lambda m: logs.default_records.append(
+            (m.record["level"].name, m.record["message"])
+        ),
+        level="DEBUG",
+    )
+    monkeypatch.setattr(opal_common_config, "LOG_LEVEL", "INFO")
+    monkeypatch.setattr(opal_common_config, "LOG_SERIALIZE", True)
+    monkeypatch.setattr(opal_common_config, "LOG_COLORIZE", False)
+    monkeypatch.setattr(opal_common_config, "LOG_TO_FILE", False)
+    monkeypatch.setattr(opal_common_config, "LOG_PIPE_TO_STDERR", True)
+    try:
+        yield logs
+    finally:
+        logger.remove()
+        core.handlers, core.min_level, core.patcher = saved_core
+
+        saved_root_handlers, saved_root_level = saved_root
+        for handler in list(root.handlers):
+            if isinstance(handler, InterceptHandler):
+                root.removeHandler(handler)
+        for handler in saved_root_handlers:
+            if handler not in root.handlers:
+                root.addHandler(handler)
+        root.setLevel(saved_root_level)
+
+        for name, (handlers, propagate, level) in saved_stdlib.items():
+            lg = logging.getLogger(name)
+            lg.handlers, lg.propagate = handlers, propagate
+            lg.setLevel(level)
+
+
+@pytest.fixture
+def gunicorn_conf():
+    """Loads scripts/gunicorn_conf.py (not a package) the way gunicorn's -c
+    does."""
+    spec = importlib.util.spec_from_file_location("gunicorn_conf", GUNICORN_CONF)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+class _FakeScopesService:
+    def __init__(self, *args, **kwargs):
+        pass
+
+    async def sync_scopes(self, *args, **kwargs):
+        # Stands in for the per-scope git chatter of the real preload.
+        logger.debug("fake sync detail")
+        logger.info("fake sync info")
+        logger.warning(f"fake git error for {CREDENTIALED_REMOTE}")
+
+
+def _fake_redis_db(url):
+    # Like opal_server.redis_utils.RedisDB, which logs on construction.
+    logger.debug(f"Connecting to Redis: {url}")
+    return object()
+
+
+@pytest.fixture
+def stub_preload(monkeypatch):
+    monkeypatch.setattr(task_module, "configure_server_metrics", lambda: None)
+    monkeypatch.setattr(task_module, "RedisDB", _fake_redis_db)
+    monkeypatch.setattr(task_module, "ScopeRepository", lambda db: object())
+    monkeypatch.setattr(task_module, "ScopesService", _FakeScopesService)
+    monkeypatch.setattr(task_module, "drain_git_ops", lambda timeout: True)
+    monkeypatch.setattr(task_module, "shutdown_git_executor", lambda: None)
+    monkeypatch.setattr(
+        task_module.GitPolicyFetcher, "reset_caches", staticmethod(lambda: None)
+    )
+    yield
+    # preload_scopes' asyncio.run() leaves the main thread without a current
+    # loop; give it one back for later tests (same as the preload_*_test.py
+    # files).
+    asyncio.set_event_loop(asyncio.new_event_loop())
+
+
+def _run_when_ready(gunicorn_conf, master_logs, monkeypatch, scopes):
+    monkeypatch.setattr(opal_server_config, "SCOPES", scopes)
+    with master_logs.streams():
+        gunicorn_conf.when_ready(None)
+
+
+@pytest.mark.parametrize("level", ["INFO", "DEBUG"])
+def test_when_ready_scopes_on_no_record_reaches_default_handler(
+    level, master_logs, gunicorn_conf, stub_preload, monkeypatch
+):
+    monkeypatch.setattr(opal_common_config, "LOG_LEVEL", level)
+
+    _run_when_ready(gunicorn_conf, master_logs, monkeypatch, scopes=True)
+
+    assert master_logs.default_records == []
+    configured = master_logs.configured()
+    assert ("INFO", "Preloading repo clones for scopes") in configured
+    assert ("INFO", "fake sync info") in configured
+    assert ("WARNING", "Finished preloading repo clones for scopes.") in configured
+    assert ("WARNING", "Finished pre loading scopes...") in configured
+    # The preload's git error line is emitted, with its credential masked.
+    assert any("git.example.com/org/policy.git" in m for _, m in configured)
+    assert CREDENTIAL not in master_logs.stream.getvalue()
+    debug = [m for lvl, m in configured if lvl == "DEBUG"]
+    if level == "INFO":
+        assert debug == []
+    else:
+        assert "fake sync detail" in debug
+        assert any(m.startswith("Connecting to Redis") for m in debug)
+
+
+def test_when_ready_scopes_off_warning_goes_to_configured_handler(
+    master_logs, gunicorn_conf, stub_preload, monkeypatch
+):
+    _run_when_ready(gunicorn_conf, master_logs, monkeypatch, scopes=False)
+
+    assert master_logs.default_records == []
+    assert master_logs.configured() == [("WARNING", "Finished pre loading scopes...")]
+
+
+@pytest.mark.parametrize("scopes", [True, False])
+def test_default_handler_sees_records_when_configure_logs_is_skipped(
+    scopes, master_logs, gunicorn_conf, stub_preload, monkeypatch
+):
+    """Positive control: the stand-in does record what reaches the default
+    handler, so the empty assertions above mean something."""
+    monkeypatch.setattr(gunicorn_conf, "configure_logs", lambda: None)
+
+    _run_when_ready(gunicorn_conf, master_logs, monkeypatch, scopes=scopes)
+
+    assert ("WARNING", "Finished pre loading scopes...") in master_logs.default_records
+    if scopes:
+        assert ("DEBUG", "fake sync detail") in master_logs.default_records
+        assert any(CREDENTIAL in m for _, m in master_logs.default_records)
+    assert master_logs.stream.getvalue() == ""
+
+
+class _FakeScopesTaskModule(importlib.abc.MetaPathFinder, importlib.abc.Loader):
+    """Serves an ``opal_server.scopes.task`` that logs while it is imported."""
+
+    def find_spec(self, fullname, path, target=None):
+        if fullname == "opal_server.scopes.task":
+            return importlib.util.spec_from_loader(fullname, self)
+        return None
+
+    def exec_module(self, module):
+        logger.debug("import-time record")
+
+        class ScopesPolicyWatcherTask:
+            @staticmethod
+            def preload_scopes():
+                pass
+
+        module.ScopesPolicyWatcherTask = ScopesPolicyWatcherTask
+
+
+@pytest.fixture
+def import_logging_scopes_task(monkeypatch):
+    monkeypatch.delitem(sys.modules, "opal_server.scopes.task")
+    monkeypatch.delattr(opal_server.scopes, "task")
+    monkeypatch.setattr(sys, "meta_path", [_FakeScopesTaskModule(), *sys.meta_path])
+
+
+def test_when_ready_configures_logs_before_importing_scopes_task(
+    master_logs, gunicorn_conf, import_logging_scopes_task, monkeypatch
+):
+    monkeypatch.setattr(opal_common_config, "LOG_LEVEL", "DEBUG")
+
+    _run_when_ready(gunicorn_conf, master_logs, monkeypatch, scopes=True)
+
+    assert master_logs.default_records == []
+    assert ("DEBUG", "import-time record") in master_logs.configured()
+
+
+def test_import_time_record_reaches_default_handler_when_configure_logs_is_skipped(
+    master_logs, gunicorn_conf, import_logging_scopes_task, monkeypatch
+):
+    monkeypatch.setattr(gunicorn_conf, "configure_logs", lambda: None)
+
+    _run_when_ready(gunicorn_conf, master_logs, monkeypatch, scopes=True)
+
+    assert ("DEBUG", "import-time record") in master_logs.default_records
+
+
+@pytest.mark.parametrize(
+    "configure_logs_runs", [True, False], ids=["configured", "control-skipped"]
+)
+def test_when_ready_configures_logs_even_when_opal_server_is_absent(
+    configure_logs_runs, master_logs, gunicorn_conf, monkeypatch
+):
+    """The client images share gunicorn_conf.py and have no opal_server."""
+    monkeypatch.setitem(sys.modules, "opal_server.scopes.task", None)
+    if not configure_logs_runs:
+        monkeypatch.setattr(gunicorn_conf, "configure_logs", lambda: None)
+
+    with master_logs.streams():
+        assert gunicorn_conf.when_ready(None) is None
+    logger.info("after when_ready")
+
+    if configure_logs_runs:
+        assert master_logs.default_records == []
+        assert master_logs.configured() == [("INFO", "after when_ready")]
+    else:
+        assert master_logs.default_records == [("INFO", "after when_ready")]
+
+
+def test_preload_scopes_does_not_reconfigure_logging(
+    master_logs, stub_preload, monkeypatch
+):
+    """when_ready owns the master's logging setup; preload must not replace the
+    sinks already in place."""
+    monkeypatch.setattr(opal_server_config, "SCOPES", True)
+    task_module.ScopesPolicyWatcherTask.preload_scopes()
+    logger.info("after preload")
+
+    received = [m for _, m in master_logs.default_records]
+    assert "Preloading repo clones for scopes" in received
+    assert "after preload" in received
+
+    # Control: configure_logs() is observable here as replacing the sink.
+    with master_logs.streams():
+        configure_logs()
+    logger.info("after configure_logs")
+    assert "after configure_logs" not in [m for _, m in master_logs.default_records]
