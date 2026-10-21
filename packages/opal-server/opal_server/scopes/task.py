@@ -166,8 +166,8 @@ class ScopesPolicyWatcherTask(BasePolicyWatcherTask):
                     await self._service.sync_scopes(only_poll_updates=True)
                 except asyncio.CancelledError:
                     raise
-                except Exception as e:
-                    logger.exception(f"Periodic sync (sync_scopes) failed")
+                except Exception:
+                    logger.exception("Periodic sync (sync_scopes) failed")
 
         except asyncio.CancelledError:
             logger.info("Periodic sync cancelled")
