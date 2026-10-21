@@ -75,7 +75,7 @@ class NewCommitsCallbacks(PolicyFetcherCallbacks):
             )
             return
 
-        logger.info(
+        logger.debug(
             f"scope '{self._scope_id}': Found new commits: old HEAD was '{previous_head}', new HEAD is '{head}'"
         )
         if not self._scope_repo_dir.exists():

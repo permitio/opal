@@ -513,7 +513,7 @@ def init_scope_router(
         try:
             _ = await scopes.get(scope_id)
 
-            logger.info(f"Refresh scope: {scope_id}")
+            logger.debug(f"Refresh scope: {scope_id}")
 
             # If the hinted hash is None, we have no way to know whether we should
             # re-fetch the remote, so we force fetch, just in case.
