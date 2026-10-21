@@ -161,7 +161,6 @@ services:
 #
 #    # Key log messages you should see:
 #    # OPAL Server:
-#    # - "Publishing data update to topics: {'tenant_data'}, reason: Load tenant1..."
 #    # - "Broadcasting incoming event: {'topic': 'tenant_data', 'notifier_id': ...}"
 #    #
 #    # OPAL Client:
@@ -207,7 +206,7 @@ services:
 #
 # 9. Monitor live update logs (same monitoring as step 5):
 #    # OPAL Server will show:
-#    # - "Publishing data update to topics: {'tenant_data'}, reason: Live data refresh..."
+#    # - "Broadcasting incoming event: {'topic': 'tenant_data', 'notifier_id': ...}"
 #    #
 #    # OPAL Client will show:
 #    # - "Received event on topic: tenant_data"

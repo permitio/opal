@@ -1,4 +1,5 @@
 import json
+import os
 
 import pytest
 from opal_common.fetcher.providers.http_fetch_provider import (
@@ -6,6 +7,7 @@ from opal_common.fetcher.providers.http_fetch_provider import (
     HttpMethods,
 )
 from opal_common.schemas.data import DataSourceEntry, DataUpdate
+from opal_common.tests.log_capture import capture_records, starting_with
 from opal_server.data.data_update_publisher import DataUpdatePublisher
 
 
@@ -53,3 +55,38 @@ async def test_published_payload_is_json_serializable():
     for _topics, payload in publisher.published:
         # raises TypeError on an enum member surviving the dump
         json.dumps(payload)
+
+
+@pytest.mark.asyncio
+async def test_publish_data_updates_line_is_debug_and_missing_topics_warning_stays():
+    """The per-update line is DEBUG (PER-16361: at INFO it was one indexed line
+    per data update); the missing-topics warning stays visible at the deployed
+    level, with the entry's credentials redacted."""
+    update = DataUpdate(
+        reason="test reason",
+        entries=[
+            DataSourceEntry(url="http://example.com/a", topics=["a/b"]),
+            DataSourceEntry(
+                url="https://user:s3cret@example.com/b?token=FAKE-TOKEN", topics=[]
+            ),
+        ],
+    )
+
+    with capture_records() as logs:
+        await DataUpdatePublisher(_RecordingPublisher()).publish_data_updates(update)
+
+    pid = os.getpid()
+    [line] = starting_with(logs.emitted, f"[{pid}] Publishing data update to topics:")
+    assert line["level"].name == "DEBUG"
+    assert line["extra"]["topics"] == {"a", "a/b"}
+    assert line["extra"]["reason"] == "test reason"
+    # Logged entries keep the topics as given, from before the expansion.
+    assert [e["topics"] for e in line["extra"]["entries"]] == [["a/b"], []]
+
+    [warning] = starting_with(logs.emitted, f"[{pid}] No topics were provided")
+    assert warning["level"].name == "WARNING"
+    assert "s3cret" not in warning["message"]
+    assert "FAKE-TOKEN" not in warning["message"]
+
+    assert starting_with(logs.deployed, f"[{pid}] No topics were provided")
+    assert not starting_with(logs.deployed, f"[{pid}] Publishing data update")
