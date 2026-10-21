@@ -187,12 +187,13 @@ OPAL_DEFAULT_UPDATE_CALLBACKS={"callbacks":[("http://opal_server:7002/data/callb
 After triggering an update via the API, your OPAL server log will look something like this:
 
 ```
-opal_server.data.data_update_publisher  | INFO  | [10] Publishing data update to topics: ['policy_data'], reason: , entries: [('https://api.country.is/23.54.6.78', 'PUT', '/users/bob/location')]
 uvicorn.protocols.http.httptools_impl   | INFO  | 172.27.0.1:63456 - "POST /data/config HTTP/1.1" 200
 fastapi_websocket_pubsub.event_notifier | INFO  | calling subscription callbacks for sub_id=0d949d8473824c8280a3ff6ab9146cd0 with topic=policy_data
 fastapi_websocket_pubsub.event_broadc...| INFO  | Broadcasting incoming event
 fastapi_websocket_pubsub.event_notifier | INFO  | calling subscription callbacks for sub_id=ee10bc3da76444e899c58b861b0079c2 with topic=policy_data
 ```
+
+With `OPAL_LOG_LEVEL=DEBUG` the server also logs each update's topics, reason and entries (`Publishing data update to topics: ...`).
 
 OPAL client will receive the update and will call the callback url (last log line):
 
