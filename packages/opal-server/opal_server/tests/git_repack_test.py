@@ -2049,12 +2049,19 @@ async def test_purge_the_refresh_waited_behind_leaves_it_nothing_to_do(
     await repo.sync()  # marks due
     sid = repo.source_id
     svc = _service(tmp_path)  # the deleted scope is no longer stored
-    if purge == "floor-cannot-read":
+    # The floor parks in its store read until this is set. Ungated, a read that
+    # fails at once ends the floor in the tick that starts it: from 3.12
+    # asyncio.wait_for runs the read in the floor's own task.
+    read_gate = asyncio.Event()
+    read_store = svc._scopes.all
 
-        async def _unreadable() -> list:
+    async def _gated_read() -> list:
+        await read_gate.wait()
+        if purge == "floor-cannot-read":
             raise ConnectionError("scope store unreachable")
+        return await read_store()
 
-        monkeypatch.setattr(svc._scopes, "all", _unreadable)
+    monkeypatch.setattr(svc._scopes, "all", _gated_read)
 
     if purge == "fleet":
         async with GitPolicyFetcher.lock_source(sid):
@@ -2069,11 +2076,15 @@ async def test_purge_the_refresh_waited_behind_leaves_it_nothing_to_do(
         floor = asyncio.ensure_future(
             svc._purge_local_clone_best_effort(sid, repo.clone_path, "s1")
         )
-        await asyncio.sleep(0)  # it takes the lock and reads the store
-        assert GitPolicyFetcher.repo_locks[sid].locked()
+        await asyncio.sleep(0)  # it takes the lock and parks in the store read
+        lock = GitPolicyFetcher.repo_locks[sid]
+        assert lock.locked()
         repack = asyncio.ensure_future(
             GitPolicyFetcher.run_due_repack(sid, wait_for_lock=True)
         )
+        await asyncio.sleep(0)  # it queues behind the floor
+        assert len(lock._waiters or ()) == 1, "the repack is not queued"
+        read_gate.set()
         await asyncio.wait_for(floor, 10)
     await asyncio.wait_for(repack, 10)
 
