@@ -370,6 +370,7 @@ def test_timeout_stops_git_and_removes_its_temp_packs(
         f': > "$pack/.tmp-$$-pack-0123abcd.pack"\n'
         f': > "$pack/.tmp-$$-pack-0123abcd.idx"\n'
         f': > "$pack/pack-0123abcd.pack"\n'
+        f': > "$pack/pack-0123abcd.rev"\n'
         f': > "$pack/pack_git2_Zz9Yy8"\n'
         f'echo $$ > "{state}/leader.pid"\n'
         f"{child}\n"
@@ -419,7 +420,12 @@ def test_leftovers_of_a_dead_repack_are_removed_before_git_runs(tmp_path, monkey
     for name in (
         ".tmp-999-pack-dead.pack",
         ".tmp-999-pack-dead.idx",
-        "pack-cccc.pack",  # killed between git's two renames
+        "pack-aaaa.rev",  # an indexed pack's: stays with it
+        "pack-cccc.pack",  # killed between git's renames of .pack and .idx,
+        "pack-cccc.rev",  # which come in this order (git 2.41+ writes .rev)
+        "pack-cccc.mtimes",
+        "pack-cccc.bitmap",
+        "pack-cccc.promisor",
         "pack-dddd.idx",  # libgit2 about to link in pack-dddd.pack
         "pack_git2_0cfe7f06b9343d09",
         "pack_git2_0cfe7f06b934idx.lock",
@@ -435,6 +441,7 @@ def test_leftovers_of_a_dead_repack_are_removed_before_git_runs(tmp_path, monkey
     assert sorted(seen.read_text().split()) == [
         "pack-aaaa.idx",
         "pack-aaaa.pack",
+        "pack-aaaa.rev",
         "pack-dddd.idx",
         "pack_git2_0cfe7f06b9343d09",
         "pack_git2_0cfe7f06b934idx.lock",
@@ -448,7 +455,13 @@ def test_pack_whose_index_the_listing_missed_stays(tmp_path, monkeypatch):
     pack is checked on disk and kept; a pack truly without its index goes."""
     pack = _pack_dir(tmp_path / "clone")
     pack.mkdir(parents=True)
-    for name in ("pack-eeee.pack", "pack-eeee.idx", "pack-ffff.pack"):
+    for name in (
+        "pack-eeee.pack",
+        "pack-eeee.idx",
+        "pack-eeee.rev",
+        "pack-ffff.pack",
+        "pack-ffff.rev",
+    ):
         (pack / name).write_bytes(b"x")
     real_names = git_fetcher._pack_dir_names
     monkeypatch.setattr(
@@ -459,7 +472,11 @@ def test_pack_whose_index_the_listing_missed_stays(tmp_path, monkeypatch):
 
     git_fetcher._remove_repack_leftovers(pack, "in this test")
 
-    assert sorted(os.listdir(pack)) == ["pack-eeee.idx", "pack-eeee.pack"]
+    assert sorted(os.listdir(pack)) == [
+        "pack-eeee.idx",
+        "pack-eeee.pack",
+        "pack-eeee.rev",
+    ]
 
 
 @pytest.mark.parametrize(

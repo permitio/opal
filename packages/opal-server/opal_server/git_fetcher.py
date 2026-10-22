@@ -771,6 +771,16 @@ def _unindexed_packs(names: frozenset[str]) -> frozenset[str]:
     return frozenset(n for n in names if _is_pack(n) and _index_name(n) not in names)
 
 
+# The files git installs next to a new pack after its .pack and before its
+# .idx, which comes last (git 2.41 and later write a .rev by default).
+_PACK_COMPANION_SUFFIXES = (".rev", ".mtimes", ".bitmap", ".promisor")
+
+
+def _pack_companions(pack: str) -> frozenset[str]:
+    stem = pack[: -len(".pack")]
+    return frozenset(stem + suffix for suffix in _PACK_COMPANION_SUFFIXES)
+
+
 def _indexed_pack_count(names: frozenset[str]) -> int:
     return sum(1 for n in names if _is_pack(n)) - len(_unindexed_packs(names))
 
@@ -799,14 +809,16 @@ def _remove_repack_leftovers(pack_dir: Path, why: str) -> None:
     file (``tmp_*`` from a pack-objects, ``.tmp-<pid>-pack-*`` staged by a
     repack) is garbage, whichever repack left it.
 
-    So is every ``pack-*.pack`` without its ``.idx``. Git installs a new
-    pack ``.pack`` first and ``.idx`` last, so a repack stopped in between
-    leaves a full-size pack that no reader and no later repack will ever
-    see. No other writer shows one: libgit2 commits a fetched pack's
-    ``.idx`` before its ``.pack`` (its in-flight ``pack_git2_*`` names
-    match nothing here), and the lock keeps out any other repack. A pack
-    whose ``.idx`` turns out to be there after all (see
-    ``_index_may_exist``) stays.
+    So is every ``pack-*.pack`` without its ``.idx``, with the files git
+    installs beside it before the ``.idx`` (``_pack_companions``). Git
+    installs a new pack ``.pack`` first and ``.idx`` last, so a repack
+    stopped in between leaves a full-size pack that no reader and no later
+    repack will ever see. No other writer shows one: libgit2 commits a
+    fetched pack's ``.idx`` before its ``.pack`` (its in-flight
+    ``pack_git2_*`` names match nothing here), and the lock keeps out any
+    other repack. An ``.idx`` without its ``.pack`` is just that libgit2
+    install, and stays. A pack whose ``.idx`` turns out to be there after
+    all (see ``_index_may_exist``) stays too, with its companions.
 
     Never raises; a file left behind is a disk cost, not a reason to mask
     the error the caller is about to see.
@@ -815,10 +827,11 @@ def _remove_repack_leftovers(pack_dir: Path, why: str) -> None:
     if names is None:
         return
     doomed = {n for n in names if n.startswith(_GIT_TEMP_PACK_PREFIXES)}
-    doomed |= _unindexed_packs(names)
+    for pack in _unindexed_packs(names):
+        if not _index_may_exist(pack_dir, pack):
+            doomed.add(pack)
+            doomed |= _pack_companions(pack) & names
     for name in sorted(doomed):
-        if _is_pack(name) and _index_may_exist(pack_dir, name):
-            continue
         try:
             os.unlink(pack_dir / name)
         except FileNotFoundError:
