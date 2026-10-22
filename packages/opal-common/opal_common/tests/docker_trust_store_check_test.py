@@ -216,7 +216,7 @@ def test_no_certificate_directory_does_not_scan_the_working_directory(
     assert check_trust_store.find_distrusted() == {}
 
 
-def _tlv(tag, content):
+def _tlv(tag: int, content: bytes) -> bytes:
     """A DER element; long-form length when the content needs it."""
     if len(content) < 0x80:
         return bytes([tag, len(content)]) + content
@@ -272,7 +272,12 @@ def _reencoded(
     )
 
 
-ISSUER, SUBJECT, KEY = 3, 5, 6  # TBSCertificate field positions in a v3 certificate
+SERIAL, ISSUER, SUBJECT, KEY = (
+    1,
+    3,
+    5,
+    6,
+)  # TBSCertificate field positions in a v3 certificate
 
 
 def _field_content_length(field: bytes) -> int:
@@ -314,6 +319,12 @@ NON_DER = {
         _reencoded(f[SUBJECT], tag=b"\x3f\x10"),
         *f[SUBJECT + 1 :],
     ],
+    # A primitive one (1f, not 3f): a mask that only caught constructed forms would miss it.
+    "primitive high-tag-number tag": lambda f: [
+        *f[:SERIAL],
+        _reencoded(f[SERIAL], tag=b"\x1f\x02"),
+        *f[SERIAL + 1 :],
+    ],
 }
 
 
@@ -343,6 +354,9 @@ def test_a_non_der_certificate_fails_instead_of_hashing_the_wrong_bytes(
         pytest.param(b"\x30\x82\x00\x80", "non-minimal", id="leading zero octet"),
         pytest.param(b"\x30\x80", "indefinite", id="indefinite"),
         pytest.param(b"\x3f\x10\x81\x80", "high-tag-number", id="high tag number"),
+        pytest.param(
+            b"\x1f\x02\x81\x80", "high-tag-number", id="primitive high tag number"
+        ),
     ],
 )
 def test_each_non_der_length_rule_on_its_own(header, reason):
@@ -370,6 +384,52 @@ def test_a_der_long_form_length_is_read():
 def test_a_walk_that_does_not_end_on_the_key_fails(stores, edit):
     _, system_bundle, _ = stores
     system_bundle.write_text(_rebuilt(CAS[G3], edit) + system_bundle.read_text())
+    with pytest.raises(SystemExit, match=r"block 1\): .*no SubjectPublicKeyInfo"):
+        check_trust_store.find_distrusted()
+
+
+def _key_edited(edit_children):
+    """A TBSCertificate edit that rebuilds the SubjectPublicKeyInfo from edited
+    children."""
+
+    def edit(fields):
+        algorithm, bits = _children(fields[KEY], 0)
+        return [
+            *fields[:KEY],
+            _tlv(0x30, b"".join(edit_children(algorithm, bits))),
+            *fields[KEY + 1 :],
+        ]
+
+    return edit
+
+
+def _algorithm_oid_retagged(algorithm: bytes) -> bytes:
+    oid, *rest = _children(algorithm, 0)
+    return _tlv(0x30, _reencoded(oid, tag=b"\x0d") + b"".join(rest))
+
+
+# One case per _is_spki condition: each is refused by exactly that condition.
+NOT_SPKI = {
+    "key tagged SET": lambda f: [
+        *f[:KEY],
+        _reencoded(f[KEY], tag=b"\x31"),
+        *f[KEY + 1 :],
+    ],
+    "algorithm tagged SET": _key_edited(lambda a, b: [_reencoded(a, tag=b"\x31"), b]),
+    "algorithm without OID": _key_edited(lambda a, b: [_algorithm_oid_retagged(a), b]),
+    "key bits as OCTET STRING": _key_edited(
+        lambda a, b: [a, _reencoded(b, tag=b"\x04")]
+    ),
+    "element after the key bits": _key_edited(lambda a, b: [a, b, b"\x05\x00"]),
+}
+
+
+@pytest.mark.parametrize("shape", sorted(NOT_SPKI))
+def test_a_key_without_spki_shape_fails(stores, shape):
+    _, system_bundle, _ = stores
+    system_bundle.write_text(
+        _rebuilt(CAS[G3], NOT_SPKI[shape]) + system_bundle.read_text()
+    )
     with pytest.raises(SystemExit, match=r"block 1\): .*no SubjectPublicKeyInfo"):
         check_trust_store.find_distrusted()
 
