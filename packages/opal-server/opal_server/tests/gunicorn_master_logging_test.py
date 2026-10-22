@@ -34,6 +34,7 @@ from uvicorn.config import LOGGING_CONFIG
 GUNICORN_CONF = Path(__file__).resolve().parents[4] / "scripts" / "gunicorn_conf.py"
 CREDENTIAL = "s3cret-FAKE-123"
 CREDENTIALED_REMOTE = f"https://user:{CREDENTIAL}@git.example.com/org/policy.git"
+CREDENTIALED_REDIS_URL = f"redis://:{CREDENTIAL}@redis.example.com:6379"
 # The stdlib loggers configure_logs() rewires: hijack_uvicorn_logs takes the
 # uvicorn names from the same LOGGING_CONFIG, fix_ddtrace_logging the other.
 STDLIB_LOGGERS_CONFIGURE_LOGS_TOUCHES = (*LOGGING_CONFIG["loggers"], "ddtrace")
@@ -107,6 +108,11 @@ def master_logs(monkeypatch):
         saved_stdlib[name] = (list(lg.handlers), lg.propagate, lg.level)
 
     core.handlers, core.min_level, core.patcher = {}, float("inf"), None
+    # A fresh process's root logger: no handlers of ours, level WARNING (an
+    # InterceptHandler an earlier test left would route stdlib on its own).
+    for handler in saved_root[0]:
+        root.removeHandler(handler)
+    root.setLevel(logging.WARNING)
     logs = MasterLogs()
     logger.add(
         lambda m: logs.default_records.append(
@@ -163,17 +169,15 @@ class _FakeScopesService:
 
 
 def _fake_redis_db(url):
-    # Like opal_server.redis_utils.RedisDB, which logs its URL on construction.
-    # Passed raw, so masking it is up to the master's own log setup.
+    # Logs its URL on construction, as opal_server.redis_utils.RedisDB does. The
+    # fake passes it raw, so only the master's own log setup can mask it.
     logger.debug("Connecting to Redis: {url}", url=url)
     return object()
 
 
 @pytest.fixture
 def stub_preload(monkeypatch):
-    monkeypatch.setattr(
-        opal_server_config, "REDIS_URL", f"redis://:{CREDENTIAL}@redis.example.com:6379"
-    )
+    monkeypatch.setattr(opal_server_config, "REDIS_URL", CREDENTIALED_REDIS_URL)
     monkeypatch.setattr(task_module, "configure_server_metrics", lambda: None)
     monkeypatch.setattr(task_module, "RedisDB", _fake_redis_db)
     monkeypatch.setattr(task_module, "ScopeRepository", lambda db: object())
@@ -210,7 +214,8 @@ def test_when_ready_scopes_on_no_record_reaches_default_handler(
     assert ("INFO", "fake sync info") in configured
     assert ("WARNING", "Finished preloading repo clones for scopes.") in configured
     assert ("WARNING", "Finished pre loading scopes...") in configured
-    # Credentials in the preload's lines (git remote, Redis URL) are masked.
+    # No credential reaches the master's output: the git remote line is masked,
+    # and the Redis URL line (DEBUG) is checked masked in the DEBUG case below.
     assert any("git.example.com/org/policy.git" in m for _, m in configured)
     assert CREDENTIAL not in master_logs.stream.getvalue()
     debug = [m for lvl, m in configured if lvl == "DEBUG"]
@@ -244,6 +249,8 @@ def test_default_handler_sees_records_when_configure_logs_is_skipped(
     if scopes:
         assert ("DEBUG", "fake sync detail") in master_logs.default_records
         assert any(CREDENTIAL in m for _, m in master_logs.default_records)
+        redis_line = f"Connecting to Redis: {CREDENTIALED_REDIS_URL}"
+        assert ("DEBUG", redis_line) in master_logs.default_records
     assert master_logs.stream.getvalue() == ""
 
 
@@ -314,6 +321,29 @@ def test_when_ready_configures_logs_even_when_opal_server_is_absent(
         assert master_logs.configured() == [("INFO", "after when_ready")]
     else:
         assert master_logs.default_records == [("INFO", "after when_ready")]
+
+
+@pytest.mark.parametrize(
+    "configure_logs_runs", [True, False], ids=["configured", "control-skipped"]
+)
+def test_when_ready_routes_stdlib_logging_to_the_configured_sink(
+    configure_logs_runs, master_logs, gunicorn_conf, monkeypatch
+):
+    """configure_logs() also takes over stdlib logging in the master, so a
+    third-party library's records land in the configured sink at their
+    level."""
+    monkeypatch.setitem(sys.modules, "opal_server.scopes.task", None)
+    if not configure_logs_runs:
+        monkeypatch.setattr(gunicorn_conf, "configure_logs", lambda: None)
+
+    with master_logs.streams():
+        gunicorn_conf.when_ready(None)
+    logging.getLogger("some.third_party.lib").warning("stdlib warning")
+
+    if configure_logs_runs:
+        assert master_logs.configured() == [("WARNING", "stdlib warning")]
+    else:
+        assert master_logs.stream.getvalue() == ""
 
 
 def test_preload_scopes_does_not_reconfigure_logging(
