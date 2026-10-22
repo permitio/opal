@@ -26,6 +26,7 @@ import subprocess
 import sys
 import threading
 import time
+import weakref
 from pathlib import Path
 
 import git
@@ -1966,15 +1967,42 @@ def test_preload_marks_the_repack_due_and_the_first_pass_runs_it(tmp_path, monke
     assert git_fetcher._repacks_due == {}
 
 
-def test_forked_child_starts_with_the_single_flight_free():
+def test_forked_child_starts_with_the_single_flight_free(tmp_path, monkeypatch):
     """A repack thread running in the parent at fork does not exist in the
-    child, so nothing there could release the lock it inherited held."""
+    child, so nothing there could release the lock it inherited held.
+
+    The fork handler runs here, in the test process, so every global it
+    resets is swapped for a stand-in first: what the rest of the process
+    holds across it (a busy marker, the real single-flight lock) is left
+    alone.
+    """
     held = git_fetcher._repack_lock
     assert held.acquire(blocking=False)
+    git_fetcher._git_busy.add("held-across-the-handler")
+    busy_lock = threading.Lock()
+    busy_lock.acquire()  # the 'before' fork handler holds it across fork
+    lock_fd = os.open(tmp_path, os.O_RDONLY)
     try:
-        git_fetcher._reset_git_executor_after_fork()
-        assert not git_fetcher._repack_lock.locked()
+        with monkeypatch.context() as m:
+            m.setattr(git_fetcher, "_git_busy_lock", busy_lock)
+            m.setattr(git_fetcher, "_live_ops_semaphores", weakref.WeakKeyDictionary())
+            m.setattr(git_fetcher, "_git_busy", {"a stale marker"})
+            m.setattr(git_fetcher, "_repack_lock_fds", {lock_fd})
+            m.setattr(git_fetcher, "_repack_lock", held)
+
+            git_fetcher._reset_git_executor_after_fork()
+
+            assert git_fetcher._repack_lock is not held
+            assert not git_fetcher._repack_lock.locked()
+            assert not busy_lock.locked()
+            assert git_fetcher._git_busy == set()
+            assert git_fetcher._repack_lock_fds == set()
+            with pytest.raises(OSError):
+                os.fstat(lock_fd)
+        assert git_fetcher._repack_lock is held and held.locked()
+        assert "held-across-the-handler" in git_fetcher._git_busy
     finally:
+        git_fetcher._git_busy.discard("held-across-the-handler")
         if held.locked():
             held.release()
 
