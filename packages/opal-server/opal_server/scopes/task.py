@@ -166,8 +166,8 @@ class ScopesPolicyWatcherTask(BasePolicyWatcherTask):
                     await self._service.sync_scopes(only_poll_updates=True)
                 except asyncio.CancelledError:
                     raise
-                except Exception as e:
-                    logger.exception(f"Periodic sync (sync_scopes) failed")
+                except Exception:
+                    logger.exception("Periodic sync (sync_scopes) failed")
 
         except asyncio.CancelledError:
             logger.info("Periodic sync cancelled")
@@ -203,10 +203,11 @@ class ScopesPolicyWatcherTask(BasePolicyWatcherTask):
         """Clone all scopes repositories as part as server startup.
 
         This speeds up the first sync of scopes after workers are
-        started.
+        started. Expects configure_logs() to have run; see
+        scripts/gunicorn_conf.py::when_ready.
         """
         if opal_server_config.SCOPES:
-            # This runs in the gunicorn MASTER (scripts/gunicorn_conf.py:when_ready)
+            # This runs in the gunicorn MASTER (scripts/gunicorn_conf.py::when_ready)
             # before any worker configured monitoring. Without this the git
             # metrics emitted during preload (git_ops_in_flight, scopes.count,
             # sources_in_backoff, git_op_failures...) go out un-namespaced and
