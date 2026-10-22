@@ -12,8 +12,11 @@ opal-common).
 import base64
 import hashlib
 import importlib.util
+import os
 import re
 import ssl
+import subprocess
+import sys
 import warnings
 from pathlib import Path
 
@@ -211,3 +214,125 @@ def test_no_certificate_directory_does_not_scan_the_working_directory(
         [],
     )
     assert check_trust_store.find_distrusted() == {}
+
+
+def _tlv(tag: int, content: bytes) -> bytes:
+    """A DER element; long-form length when the content needs it."""
+    if len(content) < 0x80:
+        return bytes([tag, len(content)]) + content
+    size = (len(content).bit_length() + 7) // 8
+    return bytes([tag, 0x80 | size]) + len(content).to_bytes(size, "big") + content
+
+
+def _children(der: bytes, element_start: int) -> list[bytes]:
+    """The raw child elements of the constructed element at element_start."""
+    pos, end = check_trust_store._element(der, element_start)
+    children = []
+    while pos < end:
+        child_end = check_trust_store._element(der, pos)[1]
+        children.append(der[pos:child_end])
+        pos = child_end
+    return children
+
+
+def _rebuilt(pem: str, edit_tbs) -> str:
+    """The certificate with its TBSCertificate's fields passed through
+    edit_tbs; the signature no longer verifies, which the key walk never
+    checks."""
+    der = ssl.PEM_cert_to_DER_cert(pem)
+    tbs, sig_alg, sig = _children(der, 0)
+    tbs = _tlv(0x30, b"".join(edit_tbs(_children(tbs, 0))))
+    return ssl.DER_cert_to_PEM_cert(_tlv(0x30, tbs + sig_alg + sig))
+
+
+def test_a_v1_certificate_is_walked_without_the_version_field():
+    # A v1 TBSCertificate has no [0] version (or [3] extensions); every certifi root is v3.
+    v1 = _rebuilt(
+        CAS[G3], lambda fields: [f for f in fields if f[0] not in (0xA0, 0xA3)]
+    )
+    assert ssl.PEM_cert_to_DER_cert(v1) != ssl.PEM_cert_to_DER_cert(CAS[G3])
+    assert check_trust_store.key_hashes(v1) == {_key_hash(CAS[G3])}
+
+
+def test_a_ber_indefinite_length_fails_instead_of_hashing_the_wrong_field(stores):
+    # issuer re-encoded with BER's indefinite length: read as empty, it would shift the walk.
+    def indefinite_issuer(fields):
+        issuer = fields[3]
+        content_start, end = check_trust_store._element(issuer, 0)
+        return [
+            *fields[:3],
+            b"\x30\x80" + issuer[content_start:end] + b"\x00\x00",
+            *fields[4:],
+        ]
+
+    _, system_bundle, _ = stores
+    system_bundle.write_text(
+        _rebuilt(CAS[G3], indefinite_issuer) + system_bundle.read_text()
+    )
+    with pytest.raises(
+        SystemExit, match=r"unparsable certificate \(block 1\): .*not DER"
+    ):
+        check_trust_store.find_distrusted()
+
+
+def test_no_default_ca_file_fails_with_its_message(stores, monkeypatch):
+    monkeypatch.setattr(
+        check_trust_store.ssl,
+        "get_default_verify_paths",
+        lambda: ssl.DefaultVerifyPaths(
+            None,  # what Python reports when it is missing
+            None,  # what Python reports when it is missing
+            "SSL_CERT_FILE",
+            "/nonexistent",
+            "SSL_CERT_DIR",
+            "/nonexistent",
+        ),
+    )
+    with pytest.raises(SystemExit, match="OpenSSL has no default CA file"):
+        check_trust_store.find_distrusted()
+
+
+def test_the_directory_walk_reads_top_level_pem_files_only(stores):
+    # What OpenSSL's hashed-directory lookup, Go and rustls-native-certs load: a DER file, a
+    # README, a dangling symlink and a subdirectory are not trust anchors, and are skipped.
+    _, _, certs_dir = stores
+    (certs_dir / "root.der").write_bytes(ssl.PEM_cert_to_DER_cert(CAS[G3]))
+    (certs_dir / "README").write_text("certificates are installed by ca-certificates\n")
+    (certs_dir / "dangling.pem").symlink_to(certs_dir / "gone.pem")
+    (certs_dir / "nested").mkdir()
+    (certs_dir / "nested" / "root.pem").write_text(CAS[G3])
+    assert check_trust_store.find_distrusted() == {}
+
+
+@pytest.mark.parametrize("store", [0, 1], ids=["certifi", "system"])
+def test_main_names_the_fix_for_each_store(stores, store, capsys):
+    bundle = stores[store]
+    bundle.write_text(bundle.read_text() + CAS[G3])
+    assert check_trust_store.main() == 1
+    err = capsys.readouterr().err
+    assert f"{bundle.resolve()}: {G3}" in err
+    assert (
+        check_trust_store.CERTIFI_FIX if store == 0 else check_trust_store.SYSTEM_FIX
+    ) in err
+
+
+@pytest.mark.parametrize("trusted", [True, False], ids=["compromised", "clean"])
+def test_the_script_exit_status_is_the_build_gate(stores, trusted):
+    # What the Dockerfile runs. certifi's bundle is the installed (locked) one; the system store
+    # comes from SSL_CERT_FILE / SSL_CERT_DIR, which get_default_verify_paths() honours.
+    _, system_bundle, certs_dir = stores
+    if trusted:
+        system_bundle.write_text(system_bundle.read_text() + CAS[G3])
+    result = subprocess.run(
+        [sys.executable, str(Path(check_trust_store.__file__))],
+        env={
+            **os.environ,
+            "SSL_CERT_FILE": str(system_bundle),
+            "SSL_CERT_DIR": str(certs_dir),
+        },
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == (1 if trusted else 0), result.stderr
+    assert (G3 in result.stderr) is trusted
