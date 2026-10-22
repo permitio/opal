@@ -1388,6 +1388,8 @@ class GitPolicyFetcher(PolicyFetcher):
         re-check that ``repo_locks`` still maps ``source_id`` to the lock we
         acquired — a waiter woken after a delete would otherwise proceed under
         the stale lock, unserialized against holders of the freshly-minted one.
+        run_due_repack takes the same lock the same way, but gives up instead
+        of retrying when it finds it unmapped.
         """
         while True:
             lock = GitPolicyFetcher.repo_locks.setdefault(source_id, asyncio.Lock())
@@ -1805,10 +1807,14 @@ class GitPolicyFetcher(PolicyFetcher):
         refresh's: outside a pass, the watcher's trigger calls this for
         the refreshed scope's source once its sync is done (with
         POLICY_REFRESH_INTERVAL=0 no pass runs after the boot one).
-        Under the clone's lock_source; a mark a purge or another pass
-        took while this waited for it is dropped. A clone with a git op
-        still in flight is skipped and keeps its mark for later. Never
-        raises but CancelledError (or another BaseException).
+        Never raises but CancelledError (or another BaseException).
+
+        Under the clone's lock_source lock, and the mark is taken only
+        under it, right before the repack runs, so every skip keeps it
+        for a later pass or refresh: a clone with a git op still in
+        flight, a lock a pass finds in use (below), and a lock a purge
+        took away while this waited for it. A mark gone by the time this
+        starts (a purge, another repack) mints no lock for the clone.
 
         ``wait_for_lock`` False, a pass's: while any other task holds the
         clone's lock_source or is queued for it, the clone is skipped and
@@ -1820,19 +1826,31 @@ class GitPolicyFetcher(PolicyFetcher):
         trigger, and skipping would starve the clone whose lock is never
         free at the end of a pass, the busiest one.
         """
-        if not wait_for_lock:
-            lock = GitPolicyFetcher.repo_locks.get(source_id)
-            if lock is not None and _lock_is_busy(lock):
-                logger.debug(
-                    "Not repacking scope clone {source_id} in this pass: another "
-                    "sync of it holds or waits for its lock, so the next pass or "
-                    "refresh of it repacks it",
-                    source_id=source_id,
-                )
-                return
+        # Before the lock is minted: a purge may have taken the mark with
+        # its source (while an earlier repack of the pass ran, say), and
+        # nothing would remove a lock minted for it now.
+        if source_id not in _repacks_due:
+            return
+        lock = GitPolicyFetcher.repo_locks.setdefault(source_id, asyncio.Lock())
+        if not wait_for_lock and _lock_is_busy(lock):
+            logger.debug(
+                "Not repacking scope clone {source_id} in this pass: another "
+                "sync of it holds or waits for its lock, so the next pass or "
+                "refresh of it repacks it",
+                source_id=source_id,
+            )
+            return
         # Nothing is awaited between the check and the acquire, so a lock
         # found free is taken without waiting.
-        async with GitPolicyFetcher.lock_source(source_id):
+        async with lock:
+            if GitPolicyFetcher.repo_locks.get(source_id) is not lock:
+                # lock_source's re-check, without its retry. Only a purge
+                # unmaps a lock, while it holds it, so this one was taken
+                # away while this waited: the source was purged, mark and
+                # all, or the purge kept the clone and its mark (the delete
+                # floor when it cannot read the store) for a later pass.
+                # Retrying would mint a lock that can outlive the source.
+                return
             if git_op_in_flight(source_id):
                 # A git op of this clone outlived its awaiter (a fetch past
                 # SCOPES_GIT_FETCH_TIMEOUT, say) and runs on through the

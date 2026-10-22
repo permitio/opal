@@ -1984,6 +1984,108 @@ async def _run_due_repacks_from(entry: str, source_id: str) -> None:
         await GitPolicyFetcher.run_due_repack(source_id, wait_for_lock=True)
 
 
+@pytest.mark.asyncio
+async def test_source_purged_during_an_earlier_repack_of_the_pass_gets_no_lock(
+    tmp_path, monkeypatch
+):
+    """A scope deleted while the pass repacks another clone is purged, with its
+    mark and its clone's lock.
+
+    The pass, which listed the marks when it started, then skips that
+    source without minting it a lock: nothing would remove one (invariant
+    I4 of the git-leak bed).
+    """
+    gate = threading.Event()
+    spy = _RepackSpy(gate=gate)
+    monkeypatch.setattr(git_fetcher, "_repack_clone", spy)
+    first = _ScopeRepo(tmp_path, "a")
+    gone = _ScopeRepo(tmp_path, "gone")
+    for repo in (first, gone):
+        await repo.fetched(_LIMIT - 1)
+    for repo in (first, gone):
+        repo.push()
+        await repo.sync()  # marks due
+    assert list(git_fetcher._repacks_due) == [first.source_id, gone.source_id]
+
+    run = asyncio.ensure_future(
+        GitPolicyFetcher.run_due_repacks({first.source_id, gone.source_id})
+    )
+    try:
+        assert await run_sync(spy.started.wait, 5), "the first repack never started"
+        # The fleet purge, as handle_purge_message runs it.
+        async with GitPolicyFetcher.lock_source(gone.source_id):
+            purge_local_memory(gone.source_id, str(gone.clone_path))
+            GitPolicyFetcher.repo_locks.pop(gone.source_id, None)
+    finally:
+        gate.set()
+    await asyncio.wait_for(run, 30)
+
+    assert spy.calls == [str(first.clone_path)]
+    assert git_fetcher._repacks_due == {}
+    assert gone.source_id not in GitPolicyFetcher.repo_locks, "stray lock minted"
+
+
+@pytest.mark.parametrize("purge", ["fleet", "delete-floor", "floor-cannot-read"])
+@pytest.mark.asyncio
+async def test_purge_the_refresh_waited_behind_leaves_it_nothing_to_do(
+    tmp_path, monkeypatch, purge
+):
+    """A purge of the clone's source holds its lock_source, and the refresh's
+    repack queues behind it.
+
+    Every purge takes the lock away (it pops the entry while it holds
+    it), so the repack gives up rather than retry on a fresh lock: it
+    repacks nothing and mints no lock to outlive the source. Where the
+    purge dropped the mark, nothing is left. Where it kept the clone and
+    the mark (the delete floor when it cannot read the store), the mark
+    stays for a later pass, which is why the repack takes the mark only
+    under the lock.
+    """
+    spy = _RepackSpy()
+    monkeypatch.setattr(git_fetcher, "_repack_clone", spy)
+    repo = _ScopeRepo(tmp_path, "s1")
+    await repo.fetched(_LIMIT - 1)
+    repo.push()
+    await repo.sync()  # marks due
+    sid = repo.source_id
+    svc = _service(tmp_path)  # the deleted scope is no longer stored
+    if purge == "floor-cannot-read":
+
+        async def _unreadable() -> list:
+            raise ConnectionError("scope store unreachable")
+
+        monkeypatch.setattr(svc._scopes, "all", _unreadable)
+
+    if purge == "fleet":
+        async with GitPolicyFetcher.lock_source(sid):
+            repack = asyncio.ensure_future(
+                GitPolicyFetcher.run_due_repack(sid, wait_for_lock=True)
+            )
+            await asyncio.sleep(0)  # it queues behind the purge
+            # handle_purge_message's critical section.
+            purge_local_memory(sid, str(repo.clone_path))
+            GitPolicyFetcher.repo_locks.pop(sid, None)
+    else:
+        floor = asyncio.ensure_future(
+            svc._purge_local_clone_best_effort(sid, repo.clone_path, "s1")
+        )
+        await asyncio.sleep(0)  # it takes the lock and reads the store
+        assert GitPolicyFetcher.repo_locks[sid].locked()
+        repack = asyncio.ensure_future(
+            GitPolicyFetcher.run_due_repack(sid, wait_for_lock=True)
+        )
+        await asyncio.wait_for(floor, 10)
+    await asyncio.wait_for(repack, 10)
+
+    assert spy.calls == []
+    assert sid not in GitPolicyFetcher.repo_locks, "stray lock minted"
+    if purge == "floor-cannot-read":
+        assert set(git_fetcher._repacks_due) == {sid}
+        assert repo.clone_path.exists()
+    else:
+        assert git_fetcher._repacks_due == {}
+
+
 @pytest.mark.parametrize("entry", ["pass", "refresh"])
 @pytest.mark.asyncio
 async def test_due_repack_waits_out_a_git_op_of_the_clone_that_outlived_its_awaiter(
