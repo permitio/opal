@@ -1780,12 +1780,16 @@ class GitPolicyFetcher(PolicyFetcher):
     async def run_due_repacks(live_source_ids: AbstractSet[str]) -> None:
         """Repack every clone a fetch marked due: the sync pass's last step.
 
-        Run after every notification of the pass, so a repack delays no
-        notification, only the next syncs of its own clone: each repack
-        runs under that clone's lock_source, which keeps every other git
-        op of this process off the clone while git rewrites its packs.
-        One at a time, because repacks are single-flight: run side by
-        side, all but one would be skipped.
+        Run after every notification of the pass, so within one pass a
+        repack delays no notification, only the next syncs of its own
+        clone: each repack runs under that clone's lock_source, which
+        keeps every other git op of this process off the clone while git
+        rewrites its packs. That includes the syncs of another pass
+        running at the same time (the boot sync next to the first
+        periodic pass, a refresh of every scope), whose notifications for
+        that clone wait for the repack. One at a time, because repacks
+        are single-flight: run side by side, all but one would be
+        skipped.
 
         A mark whose source no scope uses any more (``live_source_ids``:
         every scope's, read at the start of the pass) is dropped. The rest

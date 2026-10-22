@@ -388,17 +388,21 @@ class OpalServerConfig(Confi):
         "no time limit. Either one keeps the pod-wide repack lock, so no other "
         "repack starts in the pod until it exits. It must stay bounded because "
         "the repack holds the clone's sync lock while it runs. Repacks run one at "
-        "a time at the end of a sync pass, after its notifications, so a repack "
-        "delays none of them, but every later sync and refresh of the scopes on "
-        "that clone waits for it, and the next periodic pass starts only once the "
-        "repacks are done. The default is about 7x a repack measured on a "
-        "production clone (16s for 61k branches, most of it CPU); too low a value "
-        "is worse than too high, since a repack that always times out never "
-        "reclaims any disk. Watch opal_server.scopes.git_repack with "
-        "outcome:timeout and git_repack_seconds. 0, negative, nan or inf fall "
-        "back to the default of 120 seconds, and a value over 86400 (a day) is "
-        "capped at 86400 with a warning, because a wait of more than about 24 "
-        "days overflows and fails every repack; there is no way to set no limit.",
+        "a time at the end of a sync pass, after its notifications, so within one "
+        "pass a repack delays none of them, and a refresh of a single scope runs "
+        "its repack right after its own notification. A repack still delays "
+        "another pass running at the same time (the boot sync next to the first "
+        "periodic pass, or a POST /scopes/refresh): that pass's sync of the clone "
+        "waits for it, and so does every later sync and refresh of the scopes on "
+        "that clone. The next periodic pass starts only once the repacks are "
+        "done. The default is about 7x a repack measured on a production clone "
+        "(16s for 61k branches, most of it CPU); too low a value is worse than "
+        "too high, since a repack that always times out never reclaims any disk. "
+        "Watch opal_server.scopes.git_repack with outcome:timeout and "
+        "git_repack_seconds. 0, negative, nan or inf fall back to the default of "
+        "120 seconds, and a value over 86400 (a day) is capped at 86400 with a "
+        "warning, because a wait of more than about 24 days overflows and fails "
+        "every repack; there is no way to set no limit.",
     )
     SCOPES_POLICY_CLONE_WAIT_SECONDS = confi.float(
         "SCOPES_POLICY_CLONE_WAIT_SECONDS",
