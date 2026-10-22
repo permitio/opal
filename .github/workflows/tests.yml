@@ -12,6 +12,16 @@ on:
   # Allows you to run this workflow manually from the Actions tab
   workflow_dispatch:
 
+env:
+  # With the docker-container builder that setup-buildx-action creates, buildx (>= 0.30)
+  # adds the GitHub event payload to the build's provenance and writes that provenance
+  # into the metadata file even in its default `min` mode. build-push-action prints the
+  # metadata file in a "Metadata" log group, so a pull_request run would put the PR title
+  # and description from the triggering event (re-runs reuse it) into this public repo's
+  # logs, where editing the description later cannot remove them. Set for the whole
+  # workflow so a build job added later is covered too.
+  BUILDX_METADATA_PROVENANCE: disabled
+
 jobs:
   build:
     services:
@@ -98,13 +108,6 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     name: E2E Tests
-    env:
-      # buildx writes provenance into the build's metadata file (even in its default `min`
-      # mode) and build-push-action prints that file in a "Metadata" log group. Its
-      # invocation environment holds the whole GitHub event payload: on a pull_request run,
-      # the PR title and description as they were when the run started, so editing the
-      # description later could not take text back out of this public repo's logs.
-      BUILDX_METADATA_PROVENANCE: disabled
     steps:
       # BUILD PHASE
       - name: Checkout
@@ -181,9 +184,6 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     name: E2E Tests (Alpine)
-    env:
-      # See the e2e-tests job.
-      BUILDX_METADATA_PROVENANCE: disabled
     steps:
       - name: Checkout
         uses: actions/checkout@v2
