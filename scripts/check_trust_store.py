@@ -83,8 +83,9 @@ SYSTEM_FIX = (
     "Alpine >= 20261020-r0), so the key comes from elsewhere: a ca-certificates release "
     "that still ships it, or a file another package or step added. `dpkg -S <path>` or "
     "`apk info --who-owns <path>` names the owner of a packaged file; the generated "
-    "ca-certificates.crt is rebuilt from /usr/share/ca-certificates and "
-    "/etc/ca-certificates.conf, so check those"
+    "ca-certificates.crt is rebuilt from the /usr/share/ca-certificates entries "
+    "enabled in /etc/ca-certificates.conf plus every certificate in "
+    "/usr/local/share/ca-certificates, so check those"
 )
 
 
