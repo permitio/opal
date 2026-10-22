@@ -36,9 +36,6 @@ def _stub_redis_layer(monkeypatch):
     """
     monkeypatch.setattr(task_module, "RedisDB", lambda url: object())
     monkeypatch.setattr(task_module, "ScopeRepository", lambda db: object())
-    # The real configure_logs() calls logger.remove(), which would drop the
-    # capture sinks the warning tests below add before calling preload.
-    monkeypatch.setattr(task_module, "configure_logs", lambda: None)
     yield
 
 

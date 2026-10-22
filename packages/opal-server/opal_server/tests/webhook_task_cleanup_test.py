@@ -1,6 +1,7 @@
 import asyncio
 
 import pytest
+from opal_common.tests.log_capture import capture_records, starting_with
 from opal_server.policy.watcher.task import BasePolicyWatcherTask
 
 
@@ -66,6 +67,35 @@ async def test_failed_trigger_exception_is_retrieved_and_logged():
     ), f"failure not logged: {records}"
 
     await asyncio.gather(*w._webhook_tasks, return_exceptions=True)
+
+
+@pytest.mark.asyncio
+async def test_webhook_listener_line_is_debug_and_failure_line_stays_error():
+    """'Webhook listener triggered (N)' is DEBUG (PER-16361: at INFO it was one
+    line per webhook message per pod leader); N, the task-list length, is still
+    in the message.
+
+    The swept-failure ERROR stays visible at the deployed level.
+    """
+    w = _FailingWatcher(pubsub_endpoint=None)
+
+    with capture_records() as logs:
+        await w._on_webhook("webhook", None)  # schedules a trigger that raises
+        await asyncio.gather(*w._webhook_tasks, return_exceptions=True)
+        await w._on_webhook("webhook", None)  # sweeps the failure
+        await asyncio.gather(*w._webhook_tasks, return_exceptions=True)
+
+    listener = starting_with(logs.emitted, "Webhook listener triggered")
+    assert [r["message"] for r in listener] == [
+        "Webhook listener triggered (0)",
+        "Webhook listener triggered (1)",
+    ]
+    assert {r["level"].name for r in listener} == {"DEBUG"}
+    [failure] = starting_with(logs.emitted, "Webhook trigger task failed")
+    assert failure["level"].name == "ERROR"
+
+    assert starting_with(logs.deployed, "Webhook trigger task failed")
+    assert not starting_with(logs.deployed, "Webhook listener triggered")
 
 
 class _CredentialLeakingWatcher(BasePolicyWatcherTask):

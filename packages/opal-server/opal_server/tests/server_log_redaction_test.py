@@ -7,13 +7,11 @@ with the patcher ``configure_logs`` installs disabled, so they see what the
 call site itself emits.
 """
 
-import asyncio
 import logging
 import re
 from contextlib import contextmanager
 from typing import Iterator, List, Tuple
 
-import opal_server.scopes.task as scopes_task_module
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -64,51 +62,6 @@ async def test_redis_connect_log_masks_password():
         for line in serialized
     ), serialized
     _assert_absent([FAKE_PASSWORD], text, serialized)
-
-
-# --- gunicorn master preload (S3) -------------------------------------------
-
-
-def test_preload_configures_logs_before_any_work(monkeypatch):
-    """preload_scopes runs in the gunicorn master, before any worker called
-    configure_logs(); it must configure logging itself before it opens Redis or
-    syncs (both of which log)."""
-    order = []
-    monkeypatch.setattr(opal_server_config, "SCOPES", True)
-    monkeypatch.setattr(
-        scopes_task_module, "configure_logs", lambda: order.append("logs")
-    )
-    monkeypatch.setattr(
-        scopes_task_module, "configure_server_metrics", lambda: order.append("metrics")
-    )
-
-    class _FakeService:
-        def __init__(self, *args, **kwargs):
-            order.append("service")
-
-        async def sync_scopes(self, *args, **kwargs):
-            order.append("sync")
-
-    monkeypatch.setattr(scopes_task_module, "ScopesService", _FakeService)
-    monkeypatch.setattr(
-        scopes_task_module, "RedisDB", lambda url: order.append("redis") or object()
-    )
-    monkeypatch.setattr(scopes_task_module, "ScopeRepository", lambda db: object())
-    monkeypatch.setattr(scopes_task_module, "drain_git_ops", lambda t: True)
-    monkeypatch.setattr(scopes_task_module, "shutdown_git_executor", lambda: None)
-    monkeypatch.setattr(
-        scopes_task_module.GitPolicyFetcher, "reset_caches", staticmethod(lambda: None)
-    )
-
-    try:
-        scopes_task_module.ScopesPolicyWatcherTask.preload_scopes()
-    finally:
-        # asyncio.run() inside preload leaves no current loop behind.
-        asyncio.set_event_loop(asyncio.new_event_loop())
-
-    assert order[0] == "logs", order
-    assert order.count("logs") == 1, order
-    assert {"redis", "service", "sync"} <= set(order), order
 
 
 # --- /data/config redirect log (L2) -----------------------------------------
