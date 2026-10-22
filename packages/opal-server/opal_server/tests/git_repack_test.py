@@ -610,6 +610,35 @@ def test_sweeping_the_clones_dir_mid_repack_lets_no_second_repack_run(
 # --- the repack lock -------------------------------------------------------------
 
 
+def _flock_fails_with(monkeypatch, code: int) -> None:
+    """Make every flock raise ``code``: what a clones directory on an NFS mount
+    without local_lock=flock answers (ENOLCK), or a read-only fd asked for an
+    exclusive lock there (EBADF)."""
+
+    def _flock(fd, operation):
+        raise OSError(code, os.strerror(code))
+
+    monkeypatch.setattr(git_fetcher.fcntl, "flock", _flock)
+
+
+@pytest.mark.parametrize("code", [errno.ENOLCK, errno.EBADF], ids=["ENOLCK", "EBADF"])
+def test_lock_that_cannot_be_taken_raises_and_keeps_no_fd(tmp_path, monkeypatch, code):
+    """Not "another repack holds it" (that is a skip): the repack fails, and
+    the fd opened for the lock is closed, not left in the set the fork handler
+    closes in every child."""
+    clone_path = _fake_clone(tmp_path)
+    runs = tmp_path / "runs"
+    _install_git_shim(tmp_path, monkeypatch, f'echo run >> "{runs}"\n')
+    _flock_fails_with(monkeypatch, code)
+
+    with pytest.raises(OSError) as info:
+        _repack_clone(clone_path, timeout=60)
+
+    assert info.value.errno == code
+    assert git_fetcher._repack_lock_fds == set()
+    assert not runs.exists()
+
+
 def test_one_lock_for_every_clone_in_the_directory(tmp_path):
     """One lock per pod holds only while every scope clone sits directly in
     the one clones directory: checked through the fetcher's own layout."""
@@ -1345,6 +1374,47 @@ async def test_failed_repack_still_completes_the_sync_and_waits_out_an_hour(
 
 
 @pytest.mark.asyncio
+async def test_lock_that_cannot_be_taken_fails_the_repack_not_the_sync(
+    tmp_path, monkeypatch, emitted, records
+):
+    """Where flock fails on the clones directory (NFS without
+    local_lock=flock), every repack is an error that cools down, and the sync
+    still notifies."""
+    scope = _ScopeRepo(tmp_path, "s1")
+    await scope.fetched(_LIMIT - 1)
+    _flock_fails_with(monkeypatch, errno.ENOLCK)
+
+    tip = await scope.push_and_sync()  # must not raise
+
+    assert scope.notified[-1][1] == tip
+    assert _repack_outcomes(emitted) == ["error"]
+    assert scope.source_id in git_fetcher._repack_failed_at
+    assert git_fetcher._repack_lock_fds == set()
+    assert _count_pack_files(scope.clone_path) == _LIMIT
+    [warning] = [r for r in records if r["level"].name == "WARNING"]
+    assert "OSError" in warning["message"]
+
+
+def test_failed_repack_prunes_the_expired_cooldowns_of_other_sources(emitted):
+    """What keeps the cooldowns bounded as sources come and go: a deleted
+    scope's entry is never looked up again, so only the next failure, of
+    any clone, removes it once it has expired."""
+    now = time.monotonic()
+    cooldown = git_fetcher._REPACK_FAILURE_COOLDOWN_SECONDS
+    git_fetcher._repack_failed_at.update(
+        {"expired": now - cooldown - 1, "cooling": now - 10}
+    )
+    due = git_fetcher._DueRepack(
+        source_id="failing", repo_path="/nonexistent", scope_id="s1", url="u"
+    )
+
+    GitPolicyFetcher._on_repack_failed(due, GitRepackError(1, "fatal: x"), 0.5)
+
+    assert set(git_fetcher._repack_failed_at) == {"cooling", "failing"}
+    assert _repack_outcomes(emitted) == ["error"]
+
+
+@pytest.mark.asyncio
 async def test_missing_git_is_logged_once_and_then_never_tried_again(
     tmp_path, monkeypatch, emitted, records
 ):
@@ -1731,6 +1801,48 @@ async def test_pass_drops_the_mark_of_a_source_no_scope_uses_any_more(
     assert _count_pack_files(gone.clone_path) == _LIMIT
     assert _repack_outcomes(emitted) == []
     assert _skips(emitted) == []
+
+
+@pytest.mark.parametrize("when", ["marking", "repacking"])
+@pytest.mark.asyncio
+async def test_unreadable_pack_dir_is_a_warning_not_a_failed_sync(
+    tmp_path, monkeypatch, emitted, records, when
+):
+    """EACCES (or EIO) listing the pack dir, when the fetch marks the clone
+    or when the pass would repack it: the sync and the pass complete, PDPs
+    hear about the new commit, and the one sign is a WARNING."""
+    spy = _RepackSpy()
+    monkeypatch.setattr(git_fetcher, "_repack_clone", spy)
+    repo = _ScopeRepo(tmp_path, "s1")
+    pubsub = _FakePubSub()
+    svc = _service(tmp_path, _scope_on(repo, "s1"), pubsub=pubsub)
+    await repo.fetched(_LIMIT - 1)
+    tip = str(repo.push())
+    pack = _pack_dir(repo.clone_path)
+    real_scandir = os.scandir
+
+    def _scandir(path="."):
+        if Path(path) == pack:
+            raise PermissionError(errno.EACCES, "Permission denied", str(path))
+        return real_scandir(path)
+
+    if when == "marking":
+        monkeypatch.setattr(os, "scandir", _scandir)
+        await svc.sync_scopes()
+    else:
+        await svc.sync_scope(scope_id="s1", force_fetch=True)  # a refresh marks
+        assert set(git_fetcher._repacks_due) == {repo.source_id}
+        monkeypatch.setattr(os, "scandir", _scandir)
+        await svc.sync_scopes(only_poll_updates=True)  # s1 is not polled
+
+    assert ("s1", tip) in pubsub.notified()
+    assert spy.calls == []
+    assert git_fetcher._repacks_due == {}
+    assert _repack_outcomes(emitted) == []
+    assert [r for r in records if r["level"].name == "ERROR"] == []
+    [warning] = [r for r in records if r["level"].name == "WARNING"]
+    assert warning["message"].startswith("Could not count the packs")
+    assert "PermissionError" in warning["message"]
 
 
 @pytest.mark.parametrize("purge", ["fleet", "delete-floor"])
