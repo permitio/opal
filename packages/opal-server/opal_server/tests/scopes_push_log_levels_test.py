@@ -264,9 +264,7 @@ async def test_hinted_hash_line_stays_info(tmp_path, clear_fetcher_caches):
     source = _source(url=str(tmp_path / "remote"))
     fetcher = GitPolicyFetcher(tmp_path / "opal", SCOPE_ID, source)
     await fetcher.fetch_and_notify_on_changes()  # clones
-    clone = pygit2.Repository(
-        str(GitPolicyFetcher.repo_clone_path(tmp_path / "opal", source))
-    )
+    clone = fetcher._get_repo()
 
     with capture_records() as logs:
         assert await fetcher._should_fetch(clone, hinted_hash="0" * 40) is True

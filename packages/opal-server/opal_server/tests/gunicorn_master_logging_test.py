@@ -27,7 +27,6 @@ import pytest
 from loguru import logger
 from opal_common.config import opal_common_config
 from opal_common.logger import configure_logs
-from opal_common.logging_utils.intercept import InterceptHandler
 from opal_server.config import opal_server_config
 from uvicorn.config import LOGGING_CONFIG
 
@@ -103,7 +102,6 @@ def master_logs(monkeypatch):
     # Private loguru state (as in redaction_fixtures.without_log_patcher):
     # fail loudly if a loguru upgrade renames it, rather than swap nothing.
     assert isinstance(core.handlers, dict), "loguru internals changed"
-    assert hasattr(core, "min_level") and hasattr(core, "patcher")
     saved_core = (core.handlers, core.min_level, core.patcher)
     root = logging.getLogger()
     saved_root_handlers = [h for h in root.handlers if not _is_pytest_handler(h)]
@@ -133,11 +131,8 @@ def master_logs(monkeypatch):
         logger.remove()
         core.handlers, core.min_level, core.patcher = saved_core
 
-        for handler in list(root.handlers):
-            if isinstance(handler, InterceptHandler):
-                root.removeHandler(handler)
-        for handler in saved_root_handlers:
-            root.addHandler(handler)
+        root.handlers = [h for h in root.handlers if _is_pytest_handler(h)]
+        root.handlers += saved_root_handlers
         root.setLevel(saved_root_level)
 
         for name, (handlers, propagate, level) in saved_stdlib.items():
