@@ -156,6 +156,7 @@ async def test_push_with_no_tracked_files_warns_and_does_not_publish(
         ("missing", f"on_update({SCOPE_ID}) was triggered, but repo path is not found"),
         ("not a repo", "Got exception for repo in path"),
     ],
+    ids=["missing", "not-a-repo"],
 )
 async def test_on_update_error_lines_stay_error(tmp_path, clone_state, error_prefix):
     source = _source()
@@ -253,6 +254,26 @@ async def test_already_fetched_line_is_debug_and_missing_branch_line_stays_info(
     assert missing["level"].name == "INFO"
     assert starting_with(logs.deployed, "Target branch was not found")
     assert not starting_with(logs.deployed, "Repo was fetched after refresh request")
+
+
+@pytest.mark.asyncio
+async def test_hinted_hash_line_stays_info(tmp_path, clear_fetcher_caches):
+    """A hinted commit absent from the clone triggers a fetch, at INFO."""
+    remote = git.Repo.init(tmp_path / "remote", initial_branch="main")
+    _commit(remote, "policy/a.rego", "package a\n")
+    source = _source(url=str(tmp_path / "remote"))
+    fetcher = GitPolicyFetcher(tmp_path / "opal", SCOPE_ID, source)
+    await fetcher.fetch_and_notify_on_changes()  # clones
+    clone = pygit2.Repository(
+        str(GitPolicyFetcher.repo_clone_path(tmp_path / "opal", source))
+    )
+
+    with capture_records() as logs:
+        assert await fetcher._should_fetch(clone, hinted_hash="0" * 40) is True
+
+    [hinted] = starting_with(logs.emitted, "Hinted commit hash was not found")
+    assert hinted["level"].name == "INFO"
+    assert starting_with(logs.deployed, "Hinted commit hash was not found")
 
 
 @pytest.mark.asyncio
