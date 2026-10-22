@@ -98,6 +98,13 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     name: E2E Tests
+    env:
+      # buildx writes provenance into the build's metadata file (even in its default `min`
+      # mode) and build-push-action prints that file in a "Metadata" log group. Its
+      # invocation environment holds the whole GitHub event payload: on a pull_request run,
+      # the PR title and description as they were when the run started, so editing the
+      # description later could not take text back out of this public repo's logs.
+      BUILDX_METADATA_PROVENANCE: disabled
     steps:
       # BUILD PHASE
       - name: Checkout
@@ -174,6 +181,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     name: E2E Tests (Alpine)
+    env:
+      # See the e2e-tests job.
+      BUILDX_METADATA_PROVENANCE: disabled
     steps:
       - name: Checkout
         uses: actions/checkout@v2
