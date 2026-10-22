@@ -12,6 +12,16 @@ on:
   # Allows you to run this workflow manually from the Actions tab
   workflow_dispatch:
 
+env:
+  # With the docker-container builder that setup-buildx-action creates, buildx (>= 0.30)
+  # adds the GitHub event payload to the build's provenance and writes that provenance
+  # into the metadata file even in its default `min` mode. build-push-action prints the
+  # metadata file in a "Metadata" log group, so a pull_request run would put the PR title
+  # and description from the triggering event (re-runs reuse it) into this public repo's
+  # logs, where editing the description later cannot remove them. Set for the whole
+  # workflow so a build job added later is covered too.
+  BUILDX_METADATA_PROVENANCE: disabled
+
 jobs:
   build:
     services:
