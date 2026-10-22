@@ -8,3 +8,7 @@ Dockerfile
 .dockerignore
 .gitignore
 .pre-commit-config.yaml
+# Test fixtures that hold certificates, such as the compromised eMudhra CAs the
+# trust-store test uses: `COPY ./packages` would otherwise put them in every
+# image, where a scanner looking for those certificates finds them.
+packages/**/tests/*.pem
