@@ -3,7 +3,7 @@ for tests that pin the level of a log line."""
 
 from contextlib import contextmanager
 from dataclasses import dataclass, field
-from typing import Iterator, List
+from typing import Any, Dict, Iterator, List
 
 from loguru import logger
 from opal_common.tests.redaction_fixtures import without_log_patcher
@@ -12,12 +12,12 @@ from opal_common.tests.redaction_fixtures import without_log_patcher
 @dataclass
 class CapturedRecords:
     #: Every record at DEBUG and above.
-    emitted: List[dict] = field(default_factory=list)
+    emitted: List[Dict[str, Any]] = field(default_factory=list)
     #: What a sink at OPAL's default level (``LOG_LEVEL=INFO``) receives.
-    deployed: List[dict] = field(default_factory=list)
+    deployed: List[Dict[str, Any]] = field(default_factory=list)
 
 
-def starting_with(records: List[dict], prefix: str) -> List[dict]:
+def starting_with(records: List[Dict[str, Any]], prefix: str) -> List[Dict[str, Any]]:
     return [r for r in records if r["message"].startswith(prefix)]
 
 
