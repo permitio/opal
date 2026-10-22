@@ -134,6 +134,65 @@ def test_repack_merges_fetch_packs_into_one_and_keeps_every_commit(tmp_path):
     )
 
 
+def _git(
+    repo_path: Path, *args: str, check: bool = True, stdin: str | None = None
+) -> subprocess.CompletedProcess:
+    return subprocess.run(
+        ["git", "-C", str(repo_path), *args],
+        check=check,
+        capture_output=True,
+        text=True,
+        input=stdin,
+    )
+
+
+def test_repack_keeps_a_packed_object_no_ref_names_yet(tmp_path):
+    """A fetch in another process installs its pack first and moves its ref
+    afterwards, so a repack can list that pack while nothing names its objects
+    yet. They must survive: the fetch then points the ref at them.
+
+    The other fetch is a pack-objects writing straight into the clone's
+    pack dir, holding a commit (and its tree and blob) no ref reaches.
+    """
+    clone_path, _ = _clone_with_fetch_packs(tmp_path, fetches=2)
+    remote = pygit2.Repository(str(tmp_path / "remote.git"))
+    try:
+        blob = remote.create_blob(b"package policy\n# landing\n")
+        builder = remote.TreeBuilder()
+        builder.insert("policy.rego", blob, pygit2.GIT_FILEMODE_BLOB)
+        landing = str(
+            remote.create_commit(
+                None,
+                _SIG,
+                _SIG,
+                "landing",
+                builder.write(),
+                [remote.head.target],
+            )
+        )
+    finally:
+        remote.free()
+    _git(
+        tmp_path / "remote.git",
+        "pack-objects",
+        "--revs",
+        "-q",
+        str(_pack_dir(clone_path) / "pack"),
+        stdin=f"{landing}\n",
+    )
+    assert _count_pack_files(clone_path) == 3
+    assert _git(clone_path, "cat-file", "-t", landing).stdout.strip() == "commit"
+
+    _repack_clone(clone_path, timeout=60)
+
+    assert _count_pack_files(clone_path) == 1
+    assert (
+        _git(clone_path, "cat-file", "-t", landing, check=False).returncode == 0
+    ), "the repack deleted an object a landing fetch is about to point a ref at"
+    _git(clone_path, "update-ref", "refs/heads/landed", landing)
+    _git(clone_path, "fsck", "--no-progress")
+
+
 def test_repack_writes_no_dumb_http_catalog(tmp_path):
     """No update-server-info: nothing serves a scope clone over dumb HTTP.
 
@@ -744,6 +803,7 @@ def test_repack_runs_git_with_expected_args_and_minimal_env(tmp_path, monkeypatc
         "repack",
         "-a",
         "-d",
+        "-k",
         "-n",
         "-q",
     ]
@@ -1442,10 +1502,10 @@ async def test_zombie_cap_refusal_is_not_an_attempt_and_arms_no_cooldown(
 async def test_tip_dropped_by_a_force_push_is_still_readable_after_the_repack(
     tmp_path,
 ):
-    """``-a -d`` drops what nothing references, and a PDP's diff base may be a
-    commit a force-push took off the branch.
+    """``-a -d`` without ``-k`` drops what nothing references, and a PDP's diff
+    base may be a commit a force-push took off the branch.
 
-    The reflogs keep it.
+    The reflogs keep it, and ``-k`` would keep it without them.
     """
     scope = _ScopeRepo(tmp_path, "s1")
     await scope.fetched(_LIMIT - 2)

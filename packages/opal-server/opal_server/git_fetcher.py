@@ -129,6 +129,16 @@ class GitRepackIncompleteError(RuntimeError):
     lingering one in the gunicorn master, reads the same; the next repack
     merges that pack.) Only packs with an index count: a ``.pack`` without
     its ``.idx`` is no pack to git or libgit2.
+
+    That fetch can also land its pack BEFORE git lists the packs, and move
+    its ref only after pack-objects has read the refs. Its objects are then
+    in a pack git replaces, reachable from no ref git saw, while the ref
+    update succeeds because they are still on disk. Without ``-k`` git
+    deletes that pack and with it the only copy of the commit the ref now
+    names: the clone is left with a dangling ref, ``_get_valid_repo`` finds
+    the head object missing, and the whole clone is deleted and cloned
+    again. With ``-k`` such objects are copied into the new pack, so a
+    repack never deletes an object, and git still leaves a single pack.
     """
 
     def __init__(self, packs: int) -> None:
@@ -899,10 +909,11 @@ def _repack_clone(
     *,
     term_grace: float = _REPACK_TERM_GRACE_SECONDS,
 ) -> bool:
-    """Merge every pack of a scope clone into one: ``git repack -a -d``.
+    """Merge every pack of a scope clone into one: ``git repack -a -d -k``.
 
-    Blocking; run it off the event loop. ``-a -d`` writes one pack holding
-    every object reachable from a ref or reflog, deletes the packs it
+    Blocking; run it off the event loop. ``-a -d -k`` writes one pack
+    holding every object of the clone, reachable from a ref or reflog or
+    not (``-k``, see ``GitRepackIncompleteError``), deletes the packs it
     replaced, and (via prune-packed) the loose objects now in it. Readers
     are safe meanwhile: git and libgit2 both treat an object missing from
     the packs they loaded as a miss, re-scan the pack dir and retry, so even
@@ -986,6 +997,9 @@ def _run_repack(
     # anything that unwinds through here. (A worker SIGKILLed mid-repack
     # leaves git to run to completion either way: gunicorn signals the
     # worker's pid, not its group. git keeps the repack lock meanwhile.)
+    # -k: objects of the old packs that no ref reaches go into the new pack
+    # instead of being deleted with it, so a repack never removes an object
+    # (see GitRepackIncompleteError for the fetch that needs it).
     # -n: no update-server-info. Nothing serves a scope clone over dumb HTTP,
     # and on a repository with many branches .git/info/refs is large (7 MB
     # per clone of a 61k-branch one), rewritten on every repack.
@@ -999,6 +1013,7 @@ def _run_repack(
             "repack",
             "-a",
             "-d",
+            "-k",
             "-n",
             "-q",
         ],
