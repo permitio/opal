@@ -11,6 +11,7 @@ pyjwt at 2.15.1:
   issued by AWS ALB and similar systems. 2.14.0 and 2.15.0 rejected it.
 """
 
+import base64
 import time
 from uuid import uuid4
 
@@ -68,7 +69,12 @@ def test_non_canonical_signature_is_rejected():
     # but not the decoded bytes.
     last = B64URL.index(signature[-1])
     assert last & 0b1111 == 0
-    tampered = _with_signature(token, signature[:-1] + B64URL[last | 1])
-    assert tampered != token
-    with pytest.raises(Unauthorized):
-        _verifier().verify(tampered)
+    tampered_signature = signature[:-1] + B64URL[last | 1]
+    assert base64.urlsafe_b64decode(tampered_signature + "==") == (
+        base64.urlsafe_b64decode(signature + "==")
+    )
+    # verify() maps every failure to Unauthorized, so pin the detail: PyJWT
+    # raises DecodeError("Invalid crypto padding") for this encoding.
+    with pytest.raises(Unauthorized) as exc_info:
+        _verifier().verify(_with_signature(token, tampered_signature))
+    assert exc_info.value.detail == {"error": "Could not decode access token"}
