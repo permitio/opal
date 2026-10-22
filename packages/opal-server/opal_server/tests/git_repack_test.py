@@ -905,6 +905,23 @@ def test_repack_default_timeout_matches_the_config_default(monkeypatch):
     )
 
 
+def test_timeout_description_states_the_real_bounds():
+    """The operator-facing bound, timeout plus 30 seconds, is these
+    constants: change one and the description must change with it."""
+    described = " ".join(
+        opal_server_config.entries["SCOPES_GIT_REPACK_TIMEOUT"].description.split()
+    )
+    grace = git_fetcher._REPACK_TERM_GRACE_SECONDS
+    stopping = grace + git_fetcher._REPACK_KILL_WAIT_SECONDS
+    slack = git_fetcher._REPACK_EXECUTOR_SLACK_SECONDS
+    default = git_fetcher._REPACK_DEFAULT_TIMEOUT_SECONDS
+    assert f"then SIGKILL {grace:.0f} seconds later" in described
+    assert f"Stopping git can take up to {stopping:.0f} seconds" in described
+    assert f"up to {slack:.0f} seconds past the timeout" in described
+    assert f"the timeout plus {slack:.0f} seconds" in described
+    assert f"({default + slack:.0f} seconds with the default)" in described
+
+
 @pytest.mark.parametrize("bad", [0.0, -5.0, math.nan, math.inf])
 def test_repack_clone_refuses_to_run_unbounded(tmp_path, monkeypatch, bad):
     """Handed an unvalidated timeout, the primitive still applies the default
