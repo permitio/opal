@@ -163,13 +163,17 @@ class _FakeScopesService:
 
 
 def _fake_redis_db(url):
-    # Like opal_server.redis_utils.RedisDB, which logs on construction.
-    logger.debug(f"Connecting to Redis: {url}")
+    # Like opal_server.redis_utils.RedisDB, which logs its URL on construction.
+    # Passed raw, so masking it is up to the master's own log setup.
+    logger.debug("Connecting to Redis: {url}", url=url)
     return object()
 
 
 @pytest.fixture
 def stub_preload(monkeypatch):
+    monkeypatch.setattr(
+        opal_server_config, "REDIS_URL", f"redis://:{CREDENTIAL}@redis.example.com:6379"
+    )
     monkeypatch.setattr(task_module, "configure_server_metrics", lambda: None)
     monkeypatch.setattr(task_module, "RedisDB", _fake_redis_db)
     monkeypatch.setattr(task_module, "ScopeRepository", lambda db: object())
@@ -206,7 +210,7 @@ def test_when_ready_scopes_on_no_record_reaches_default_handler(
     assert ("INFO", "fake sync info") in configured
     assert ("WARNING", "Finished preloading repo clones for scopes.") in configured
     assert ("WARNING", "Finished pre loading scopes...") in configured
-    # The preload's git error line is emitted, with its credential masked.
+    # Credentials in the preload's lines (git remote, Redis URL) are masked.
     assert any("git.example.com/org/policy.git" in m for _, m in configured)
     assert CREDENTIAL not in master_logs.stream.getvalue()
     debug = [m for lvl, m in configured if lvl == "DEBUG"]
@@ -214,7 +218,7 @@ def test_when_ready_scopes_on_no_record_reaches_default_handler(
         assert debug == []
     else:
         assert "fake sync detail" in debug
-        assert any(m.startswith("Connecting to Redis") for m in debug)
+        assert "Connecting to Redis: redis://***@redis.example.com:6379" in debug
 
 
 def test_when_ready_scopes_off_warning_goes_to_configured_handler(

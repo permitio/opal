@@ -47,6 +47,11 @@ async def test_publish_data_updates_line_is_debug_and_missing_topics_warning_sta
     assert line["extra"]["reason"] == "test reason"
     # Logged entries keep the topics as given, from before the expansion.
     assert [e["topics"] for e in line["extra"]["entries"]] == [["a/b"], []]
+    # Shown at DEBUG, the entries' URLs are redacted at the call site.
+    logged_urls = [e["url"] for e in line["extra"]["entries"]]
+    assert logged_urls[0] == "http://example.com/a"
+    assert "example.com/b" in logged_urls[1]
+    assert "s3cret" not in logged_urls[1] and "FAKE-TOKEN" not in logged_urls[1]
 
     [warning] = starting_with(logs.emitted, f"[{pid}] No topics were provided")
     assert warning["level"].name == "WARNING"
