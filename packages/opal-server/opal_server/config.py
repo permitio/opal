@@ -336,10 +336,12 @@ class OpalServerConfig(Confi):
     SCOPES_GIT_REPACK_PACK_LIMIT = confi.int(
         "SCOPES_GIT_REPACK_PACK_LIMIT",
         50,
-        description="Pack-file count at which a scope clone is repacked: after a "
-        "successful fetch, once the clone holds at least this many pack files, "
-        "the sync runs git repack -a -d -k on it, merging them into a single pack "
-        "and dropping the duplicate objects. Objects no branch reaches any more, "
+        description="Pack-file count at which a scope clone is repacked: once a "
+        "successful fetch leaves the clone holding at least this many pack files, "
+        "git repack -a -d -k runs on it at the end of the sync pass, after the "
+        "pass has sent its notifications, merging them into a single pack and "
+        "dropping the duplicate objects. A fetch outside a pass (a scope refresh) "
+        "leaves the clone to the next pass. Objects no branch reaches any more, "
         "those of branches deleted upstream included, are kept in the merged pack "
         "rather than deleted, so that a repack never removes an object a fetch in "
         "another process is about to point a branch at; the cost is that they "
@@ -365,17 +367,18 @@ class OpalServerConfig(Confi):
         "SCOPES_GIT_REPACK_PACK_LIMIT). Unlike SCOPES_GIT_FETCH_TIMEOUT it is "
         "HARD: when it expires the git process is stopped and its temporary files "
         "are removed, so a stuck repack leaves neither a process nor partial "
-        "packs behind, and the clone keeps the packs it already had. It must "
-        "stay bounded because the repack holds the clone's sync lock while it "
-        "runs, so every sync and refresh of the scopes on that clone waits for "
-        "it, and each waiting sync holds a SCOPES_GIT_MAX_WORKERS slot, so a "
-        "long repack stalls the whole sync pass, not just its clone. The "
-        "default is about 7x a repack measured on a production clone (16s "
-        "for 61k branches, most of it CPU); too low a value is worse than too "
-        "high, since a repack that always times out never reclaims any disk. "
-        "Watch opal_server.scopes.git_repack with outcome:timeout and "
-        "git_repack_seconds. 0, negative, nan or inf fall back to the default "
-        "of 120 seconds; there is no way to set no limit.",
+        "packs behind, and the clone keeps the packs it already had. It must stay "
+        "bounded because the repack holds the clone's sync lock while it runs. "
+        "Repacks run one at a time at the end of a sync pass, after its "
+        "notifications, so a repack delays none of them, but every later sync and "
+        "refresh of the scopes on that clone waits for it, and the next periodic "
+        "pass starts only once the repacks are done. The default is about 7x a "
+        "repack measured on a production clone (16s for 61k branches, most of it "
+        "CPU); too low a value is worse than too high, since a repack that always "
+        "times out never reclaims any disk. Watch opal_server.scopes.git_repack "
+        "with outcome:timeout and git_repack_seconds. 0, negative, nan or inf "
+        "fall back to the default of 120 seconds; there is no way to set no "
+        "limit.",
     )
     SCOPES_POLICY_CLONE_WAIT_SECONDS = confi.float(
         "SCOPES_POLICY_CLONE_WAIT_SECONDS",

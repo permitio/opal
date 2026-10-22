@@ -1,6 +1,7 @@
 """The scope-clone repack: the primitive (``_count_pack_files``,
 ``_repack_clone``), the repack lock it runs under, its wiring into the scope
-sync (``GitPolicyFetcher._maybe_repack``), and the GitPython handles on scope
+sync (a fetch marks the clone due, ``GitPolicyFetcher.run_due_repacks`` ends
+the sync pass by repacking it), and the GitPython handles on scope
 clones that must be closed for a repack's deleted packs to free their disk.
 
 The repository tests use real git: a bare remote and a libgit2 clone of it,
@@ -13,6 +14,7 @@ repack cannot be made to hang on cue.
 """
 
 import asyncio
+import datetime
 import errno
 import fcntl
 import math
@@ -27,12 +29,14 @@ import time
 from pathlib import Path
 
 import git
+import opal_server.scopes.task as task_module
 import pygit2
 import pytest
 from opal_common.async_utils import run_sync
 from opal_common.logger import logger
 from opal_common.monitoring import metrics
 from opal_common.schemas.policy_source import GitPolicyScopeSource, NoAuthData
+from opal_common.schemas.scopes import Scope
 from opal_server import git_fetcher
 from opal_server.config import OpalServerConfig, opal_server_config
 from opal_server.git_fetcher import (
@@ -47,7 +51,9 @@ from opal_server.git_fetcher import (
     _repack_timeout_seconds,
     git_op_in_flight,
 )
-from opal_server.scopes.service import NewCommitsCallbacks
+from opal_server.scopes.purge import purge_local_memory
+from opal_server.scopes.scope_repository import ScopeNotFoundError
+from opal_server.scopes.service import NewCommitsCallbacks, ScopesService
 
 _SIG = pygit2.Signature("opal-test", "opal-test@example.com")
 
@@ -885,7 +891,8 @@ def test_repack_clone_refuses_to_run_unbounded(tmp_path, monkeypatch, bad):
 #
 # A real GitPolicyFetcher syncing a local bare remote. Its first sync clones
 # (loose objects, no pack); every forced sync after a push fetches and adds one
-# pack, so with the limit at 3 the third fetch is the one that repacks.
+# pack, so with the limit at 3 the third fetch is the one that marks the clone
+# due, and the pass it is part of (``_ScopeRepo.sync_pass``) repacks it.
 
 _LIMIT = 3
 
@@ -898,6 +905,7 @@ def _clean_fetcher_state(monkeypatch):
     monkeypatch.setattr(opal_server_config, "SCOPES_GIT_REPACK_PACK_LIMIT", _LIMIT)
     monkeypatch.setattr(git_fetcher, "_repack_git_missing", False)
     monkeypatch.setattr(git_fetcher, "_repack_failed_at", {})
+    monkeypatch.setattr(git_fetcher, "_repacks_due", {})
     GitPolicyFetcher.reset_caches()
     GitPolicyFetcher.source_backoff.clear()
     yield
@@ -981,18 +989,21 @@ def records():
 
 
 class _RepackSpy:
-    """Stands in for ``_repack_clone``: records each call, then optionally
-    blocks until ``gate`` opens, then raises ``raises`` or runs the real
-    repack."""
+    """Stands in for ``_repack_clone``: records each call, runs ``on_start``,
+    then optionally blocks until ``gate`` opens, then raises ``raises`` or runs
+    the real repack."""
 
-    def __init__(self, raises: BaseException | None = None, gate=None):
+    def __init__(self, raises: BaseException | None = None, gate=None, on_start=None):
         self.raises = raises
         self.gate = gate
+        self.on_start = on_start
         self.calls: list = []
         self.started = threading.Event()
 
     def __call__(self, repo_path, timeout, **kwargs):
         self.calls.append(os.fspath(repo_path))
+        if self.on_start is not None:
+            self.on_start()
         self.started.set()
         if self.gate is not None:
             self.gate.wait(10)
@@ -1064,12 +1075,21 @@ class _ScopeRepo:
         return rewritten
 
     async def sync(self, **kwargs) -> None:
+        """This scope's sync on its own, as a refresh runs it: it can mark the
+        clone's repack due, never run it."""
         kwargs.setdefault("force_fetch", True)
         await self.fetcher.fetch_and_notify_on_changes(**kwargs)
 
+    async def sync_pass(self, **kwargs) -> None:
+        """A sync pass of this scope: its sync, then the due repacks the pass
+        ends with. Every source marked due counts as live here; dropping the
+        mark of a dead one has tests of its own."""
+        await self.sync(**kwargs)
+        await GitPolicyFetcher.run_due_repacks(set(git_fetcher._repacks_due))
+
     async def push_and_sync(self) -> str:
         tip = self.push()
-        await self.sync()
+        await self.sync_pass()
         return str(tip)
 
     async def fetched(self, times: int) -> None:
@@ -1137,7 +1157,7 @@ async def test_sync_repacks_the_clone_once_its_packs_reach_the_limit(
 async def test_repack_holds_lock_source_so_a_second_sync_of_the_clone_waits(
     tmp_path, monkeypatch
 ):
-    """The repack runs under the fetching sync's lock_source.
+    """The due repack runs under the clone's lock_source.
 
     So nothing else in the process touches the clone until it is done: a
     second sync of the same source queues behind it (it neither runs nor
@@ -1221,23 +1241,26 @@ async def test_limit_of_zero_or_less_never_repacks(
 
 
 @pytest.mark.asyncio
-async def test_only_a_fetch_made_by_this_sync_triggers_a_repack(tmp_path, monkeypatch):
+async def test_only_a_fetch_made_by_this_sync_marks_a_repack_due(tmp_path, monkeypatch):
     """A sync that fetched nothing added no pack (phase 2 of a pass), and a
-    fetch that failed raised before the housekeeping; neither repacks, even
-    with the clone already at the limit."""
+    fetch that failed raised before the housekeeping; neither marks the clone
+    due, even with the clone already at the limit."""
     spy = _RepackSpy()
     monkeypatch.setattr(git_fetcher, "_repack_clone", spy)
     scope = _ScopeRepo(tmp_path, "s1")
     await scope.fetched(_LIMIT - 1)
     monkeypatch.setattr(opal_server_config, "SCOPES_GIT_REPACK_PACK_LIMIT", _LIMIT - 1)
 
-    await scope.sync(force_fetch=False)  # the branch is there: no fetch
+    await scope.sync_pass(force_fetch=False)  # the branch is there: no fetch
+    assert git_fetcher._repacks_due == {}
     assert spy.calls == []
 
     scope.remote.free()
     os.rename(tmp_path / "s1.git", tmp_path / "gone.git")
     with pytest.raises(pygit2.GitError):
         await scope.sync()
+    assert git_fetcher._repacks_due == {}
+    await GitPolicyFetcher.run_due_repacks({scope.source_id})
     assert spy.calls == []
     assert _count_pack_files(scope.clone_path) == _LIMIT - 1
 
@@ -1514,7 +1537,7 @@ async def test_tip_dropped_by_a_force_push_is_still_readable_after_the_repack(
     assert _count_pack_files(scope.clone_path) == _LIMIT - 1
 
     new_tip = str(scope.force_push(onto=base))
-    await scope.sync()  # force-updates origin/master, then repacks
+    await scope.sync_pass()  # force-updates origin/master, then repacks
 
     assert _count_pack_files(scope.clone_path) == 1
     assert scope.notified[-1][:2] == (old_tip, new_tip)
@@ -1532,6 +1555,243 @@ async def test_tip_dropped_by_a_force_push_is_still_readable_after_the_repack(
         fresh.free()
     diff = await run_sync(scope.fetcher.make_bundle, old_tip)
     assert (diff.old_hash, diff.hash) == (old_tip, new_tip)
+
+
+# --- run at the end of the sync pass: ScopesService.sync_scopes ----------------
+#
+# A fetch that leaves a clone at the limit only marks it due; the pass repacks
+# it last, once every notification of the pass is out. Real syncs through the
+# service, against an in-memory scope store.
+
+
+class _FakeScopes:
+    """The scope store the service reads, in memory."""
+
+    def __init__(self, *scopes: Scope):
+        self.scopes = {s.scope_id: s for s in scopes}
+
+    async def get(self, scope_id: str) -> Scope:
+        if scope_id not in self.scopes:
+            raise ScopeNotFoundError(scope_id)
+        return self.scopes[scope_id]
+
+    async def all(self) -> list:
+        return list(self.scopes.values())
+
+    async def delete(self, scope_id: str) -> None:
+        self.scopes.pop(scope_id, None)
+
+
+class _FakePubSub:
+    """Records every publish: the notifications PDPs would get."""
+
+    def __init__(self):
+        self.published: list = []
+
+    async def publish(self, topics, data=None) -> None:
+        self.published.append((list(topics), data))
+
+    def notified(self) -> set:
+        """(scope id, new policy hash) of every notification so far."""
+        return {
+            (topics[0].split(":", 1)[0], data.new_policy_hash)
+            for topics, data in self.published
+        }
+
+
+def _scope_on(repo: _ScopeRepo, scope_id: str) -> Scope:
+    """A scope on ``repo``'s source (not polled, the source's default)."""
+    return Scope(scope_id=scope_id, policy=repo.fetcher._source)
+
+
+def _service(tmp_path: Path, *scopes: Scope, pubsub=None) -> ScopesService:
+    return ScopesService(
+        base_dir=tmp_path / "base",
+        scopes=_FakeScopes(*scopes),
+        pubsub_endpoint=pubsub if pubsub is not None else _FakePubSub(),
+    )
+
+
+@pytest.mark.asyncio
+async def test_pass_notifies_every_scope_before_it_repacks(tmp_path, monkeypatch):
+    """The repack a phase-1 fetch makes due waits for phase 2: the scope that
+    shares the clone (and so every phase-2 scope) is notified of the new
+    commit before the repack starts, not after it."""
+    repo = _ScopeRepo(tmp_path, "s1")
+    pubsub = _FakePubSub()
+    svc = _service(
+        tmp_path, _scope_on(repo, "s1"), _scope_on(repo, "s2"), pubsub=pubsub
+    )
+    notified_at_start: list = []
+    spy = _RepackSpy(on_start=lambda: notified_at_start.append(pubsub.notified()))
+    monkeypatch.setattr(git_fetcher, "_repack_clone", spy)
+    await svc.sync_scopes()  # the clone: no pack yet
+    for _ in range(_LIMIT - 1):
+        repo.push()
+        await svc.sync_scopes()
+    assert _count_pack_files(repo.clone_path) == _LIMIT - 1
+    assert spy.calls == []
+
+    tip = str(repo.push())
+    await svc.sync_scopes()  # s1's fetch reaches the limit; s2 is phase 2
+
+    assert spy.calls == [str(repo.clone_path)]
+    [notified] = notified_at_start
+    assert ("s1", tip) in notified
+    assert ("s2", tip) in notified, "phase 2 was notified only after the repack"
+    assert _count_pack_files(repo.clone_path) == 1
+    assert git_fetcher._repacks_due == {}
+
+
+@pytest.mark.asyncio
+async def test_pass_repacks_every_due_clone_one_after_another(
+    tmp_path, monkeypatch, emitted
+):
+    """Run side by side, all repacks but one would find the in-process lock
+    held and be skipped; one after another, each clone the pass found due is
+    repacked."""
+    spy = _RepackSpy()
+    monkeypatch.setattr(git_fetcher, "_repack_clone", spy)
+    first = _ScopeRepo(tmp_path, "s1")
+    second = _ScopeRepo(tmp_path, "s2")
+    svc = _service(tmp_path, _scope_on(first, "s1"), _scope_on(second, "s2"))
+    await first.fetched(_LIMIT - 1)
+    await second.fetched(_LIMIT - 1)
+    first.push()
+    second.push()
+
+    await svc.sync_scopes()
+
+    assert sorted(spy.calls) == sorted([str(first.clone_path), str(second.clone_path)])
+    assert _count_pack_files(first.clone_path) == 1
+    assert _count_pack_files(second.clone_path) == 1
+    assert _repack_outcomes(emitted) == ["ok", "ok"]
+    assert _skips(emitted) == []
+
+
+@pytest.mark.asyncio
+async def test_refresh_marks_the_repack_due_and_the_next_pass_runs_it_once(
+    tmp_path, monkeypatch, emitted
+):
+    """A refresh (POST /scopes/{id}/refresh, a PUT) syncs its scope outside any
+    pass, the way the watcher's trigger does: the fetch marks the clone due and
+    repacks nothing.
+
+    The next pass repacks it, once, and clears the mark.
+    """
+    spy = _RepackSpy()
+    monkeypatch.setattr(git_fetcher, "_repack_clone", spy)
+    repo = _ScopeRepo(tmp_path, "s1")
+    svc = _service(tmp_path, _scope_on(repo, "s1"))
+    await repo.fetched(_LIMIT - 1)
+    tip = str(repo.push())
+
+    await svc.sync_scope(
+        scope_id="s1", force_fetch=True, req_time=datetime.datetime.now()
+    )
+
+    assert spy.calls == []
+    assert _count_pack_files(repo.clone_path) == _LIMIT
+    assert set(git_fetcher._repacks_due) == {repo.source_id}
+    assert _repack_outcomes(emitted) == []
+    assert repo.fetcher.make_bundle().hash == tip  # served before any repack
+
+    await svc.sync_scopes()
+    assert spy.calls == [str(repo.clone_path)]
+    assert _count_pack_files(repo.clone_path) == 1
+    assert git_fetcher._repacks_due == {}
+    assert _repack_outcomes(emitted) == ["ok"]
+
+    await svc.sync_scopes()
+    assert spy.calls == [str(repo.clone_path)]
+    assert _repack_outcomes(emitted) == ["ok"]
+
+
+@pytest.mark.asyncio
+async def test_pass_drops_the_mark_of_a_source_no_scope_uses_any_more(
+    tmp_path, monkeypatch, emitted
+):
+    """The scope whose fetch marked the clone was deleted (or repointed)
+    before the pass: the pass drops the mark instead of repacking a clone
+    that nothing serves."""
+    spy = _RepackSpy()
+    monkeypatch.setattr(git_fetcher, "_repack_clone", spy)
+    gone = _ScopeRepo(tmp_path, "gone")
+    kept = _ScopeRepo(tmp_path, "kept")
+    svc = _service(tmp_path, _scope_on(kept, "kept"))  # "gone" is not stored
+    await gone.fetched(_LIMIT - 1)
+    gone.push()
+    await gone.sync()
+    assert set(git_fetcher._repacks_due) == {gone.source_id}
+
+    await svc.sync_scopes()
+
+    assert spy.calls == []
+    assert git_fetcher._repacks_due == {}
+    assert _count_pack_files(gone.clone_path) == _LIMIT
+    assert _repack_outcomes(emitted) == []
+    assert _skips(emitted) == []
+
+
+@pytest.mark.parametrize("purge", ["fleet", "delete-floor"])
+@pytest.mark.asyncio
+async def test_purging_a_source_drops_its_mark(tmp_path, purge):
+    """A scope deleted mid-pass is purged before the pass gets to its due
+    repack: the purge takes the mark with it, as it does the source's other
+    in-memory state, on every worker (the fleet purge) and on the one that
+    served the DELETE (its floor)."""
+    repo = _ScopeRepo(tmp_path, "s1")
+    await repo.fetched(_LIMIT - 1)
+    repo.push()
+    await repo.sync()
+    assert set(git_fetcher._repacks_due) == {repo.source_id}
+
+    if purge == "fleet":
+        purge_local_memory(repo.source_id, str(repo.clone_path))
+    else:
+        await _service(tmp_path)._purge_local_clone_best_effort(
+            repo.source_id, repo.clone_path, "s1"
+        )
+        assert not repo.clone_path.exists()
+
+    assert git_fetcher._repacks_due == {}
+
+
+def test_preload_marks_the_repack_due_and_the_first_pass_runs_it(tmp_path, monkeypatch):
+    """The preload runs in the gunicorn master before any worker starts, so a
+    repack there would hold up every worker.
+
+    It only marks the clone; the mark is inherited by the forked leader,
+    whose first pass repacks it even when that pass fetches nothing
+    (here: a periodic pass, and the scope is not polled).
+    """
+    spy = _RepackSpy()
+    monkeypatch.setattr(git_fetcher, "_repack_clone", spy)
+    repo = _ScopeRepo(tmp_path, "s1")
+    scopes = _FakeScopes(_scope_on(repo, "s1"))
+    asyncio.run(repo.fetched(_LIMIT - 1))
+    repo.push()
+    monkeypatch.setattr(opal_server_config, "SCOPES", True)
+    monkeypatch.setattr(opal_server_config, "BASE_DIR", str(tmp_path / "base"))
+    monkeypatch.setattr(task_module, "RedisDB", lambda url: None)
+    monkeypatch.setattr(task_module, "ScopeRepository", lambda db: scopes)
+    # Both would replace this test's log sinks and metrics client.
+    monkeypatch.setattr(task_module, "configure_logs", lambda: None)
+    monkeypatch.setattr(task_module, "configure_server_metrics", lambda: None)
+
+    task_module.ScopesPolicyWatcherTask.preload_scopes()
+
+    assert spy.calls == []
+    assert _count_pack_files(repo.clone_path) == _LIMIT
+    assert set(git_fetcher._repacks_due) == {repo.source_id}
+
+    leader = ScopesService(
+        base_dir=tmp_path / "base", scopes=scopes, pubsub_endpoint=_FakePubSub()
+    )
+    asyncio.run(leader.sync_scopes(only_poll_updates=True))
+    assert spy.calls == [str(repo.clone_path)]
+    assert _count_pack_files(repo.clone_path) == 1
+    assert git_fetcher._repacks_due == {}
 
 
 def test_forked_child_starts_with_the_single_flight_free():

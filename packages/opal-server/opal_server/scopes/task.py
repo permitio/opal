@@ -225,7 +225,12 @@ class ScopesPolicyWatcherTask(BasePolicyWatcherTask):
                 scopes=ScopeRepository(RedisDB(opal_server_config.REDIS_URL)),
                 pubsub_endpoint=None,
             )
-            asyncio.run(service.sync_scopes(notify_on_changes=False))
+            # No repack here, where it would delay the start of every worker:
+            # the preload's fetches only mark their clones due, the marks are
+            # inherited across fork, and the leader's first pass repacks.
+            asyncio.run(
+                service.sync_scopes(notify_on_changes=False, run_due_repacks=False)
+            )
 
             # Bounded window for a just-finished clone/fetch to clear its in-flight
             # marker before teardown+fork. Ops still lingering (hung remote) are

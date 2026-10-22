@@ -28,7 +28,7 @@ _COMPOSE_LIMIT_ENV = "OPAL_TEST_REPACK_PACK_LIMIT"
 _REPO = "mutation-repack"
 _SCOPE = "repack"
 
-# GitPolicyFetcher._maybe_repack's INFO line.
+# GitPolicyFetcher._repack_due_clone's INFO line.
 _REPACK_LOG = re.compile(
     r"Repacked scope clone (?P<path>\S+) \(.*?\) in (?P<seconds>[\d.]+)s: "
     r"(?P<packs_before>\d+) packs \((?P<bytes_before>\d+) bytes\) -> "
@@ -60,9 +60,9 @@ def _settled_pack_count(sid: str, timeout: float = 60) -> int:
     """The clone's ``pack-*.pack`` count once its pack dir is quiet.
 
     The served hash moves as soon as the fetch lands, while the repack
-    runs right after it, so a single read can catch the new pack next to
-    the old ones (limit + 1). Quiet means no git temp file and two reads
-    in a row agree.
+    runs at the end of the sync pass that fetched, so a single read can
+    catch the new pack next to the old ones (limit + 1). Quiet means no
+    git temp file and two reads in a row agree.
     """
     deadline = time.time() + timeout
     previous = None

@@ -419,6 +419,7 @@ class ScopesService:
                     # of a scope later re-created against the same URL, on the
                     # strength of a deleted scope's failure history.
                     GitPolicyFetcher.forget_source_backoff(deleted_source_id)
+                    GitPolicyFetcher.forget_repack_due(deleted_source_id)
                     try:
                         await run_sync(shutil.rmtree, safe_path)
                     except FileNotFoundError:
@@ -462,9 +463,13 @@ class ScopesService:
             await asyncio.gather(*list(self._local_purges), return_exceptions=True)
 
     async def sync_scopes(
-        self, only_poll_updates=False, notify_on_changes=True, honor_backoff=True
+        self,
+        only_poll_updates=False,
+        notify_on_changes=True,
+        honor_backoff=True,
+        run_due_repacks=True,
     ):
-        """Sync every scope, in two phases.
+        """Sync every scope, in two phases, then repack the due clones.
 
         ``honor_backoff`` defaults to True because a whole-fleet pass is what
         the per-source backoff exists for: the periodic poll and the pre-fork
@@ -476,12 +481,23 @@ class ScopesService:
         costs N attempts per pass without it.
 
         The refresh-all endpoint passes False: see ScopesPolicyWatcherTask.
+
+        The clones whose fetches left them at SCOPES_GIT_REPACK_PACK_LIMIT
+        (in this pass or since the last one) are repacked last, once every
+        notification of the pass is out; see GitPolicyFetcher.run_due_repacks.
+        The pre-fork preload passes ``run_due_repacks=False``: there a repack
+        would delay the start of every worker, and the forked leader's first
+        pass runs what the preload marked.
         """
         with tracer.trace("scopes_service.sync_scopes"):
             scopes = await self._scopes.all()
             # Emitted before the poll-updates filter below, so this is always the
             # true total rather than flapping with the caller's filter.
             metrics.gauge("opal_server.scopes.count", len(scopes))
+            # Every scope's source, also from before the filter: a scope this
+            # pass does not poll is alive all the same, and so is the repack a
+            # refresh of it marked due.
+            live_source_ids = {GitPolicyFetcher.source_id(s.policy) for s in scopes}
             # Once per pass as well as on transitions: a DogStatsD gauge is
             # NO DATA between sends, and the steady state the backoff creates
             # (dead sources parked for the cap) has almost no transitions.
@@ -545,6 +561,12 @@ class ScopesService:
                 notify_on_changes=notify_on_changes,
                 honor_backoff=honor_backoff,
             )
+
+            # Last, after both phases' notifications: a repack holds its
+            # clone's lock_source for seconds to minutes, and run inside the
+            # fetching sync in phase 1 it held up every phase-2 scope.
+            if run_due_repacks:
+                await GitPolicyFetcher.run_due_repacks(live_source_ids)
 
     async def _sync_scopes_concurrently(
         self, scopes, semaphore, *, force_fetch, notify_on_changes, honor_backoff=False
