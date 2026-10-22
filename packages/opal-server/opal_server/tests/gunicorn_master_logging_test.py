@@ -87,10 +87,18 @@ def master_logs(monkeypatch):
     ``min_level=inf``; the stand-in then plays the default stderr handler.
     Handlers are swapped out by assignment, never ``logger.remove()``, which
     would stop the ones restored at teardown. Teardown also restores the
-    non-pytest root handlers and the stdlib loggers configure_logs() rewires;
-    pytest's own root capture handlers, which ``basicConfig(force=True)``
-    closes (as building an OpalServer does), are left to pytest.
+    non-pytest root handlers and the stdlib loggers configure_logs() rewires.
+    pytest's root handlers are not restored: ``basicConfig(force=True)``
+    closes them, as building an OpalServer does. pytest re-adds its per-phase
+    capture handlers; its live-log and log-file handlers stay detached for
+    the rest of the session.
     """
+    # Before any state is swapped, so a failure here leaves nothing to undo.
+    monkeypatch.setattr(opal_common_config, "LOG_LEVEL", "INFO")
+    monkeypatch.setattr(opal_common_config, "LOG_SERIALIZE", True)
+    monkeypatch.setattr(opal_common_config, "LOG_COLORIZE", False)
+    monkeypatch.setattr(opal_common_config, "LOG_TO_FILE", False)
+    monkeypatch.setattr(opal_common_config, "LOG_PIPE_TO_STDERR", True)
     core = logger._core
     # Private loguru state (as in redaction_fixtures.without_log_patcher):
     # fail loudly if a loguru upgrade renames it, rather than swap nothing.
@@ -105,26 +113,21 @@ def master_logs(monkeypatch):
         lg = logging.getLogger(name)
         saved_stdlib[name] = (list(lg.handlers), lg.propagate, lg.level)
 
-    core.handlers, core.min_level, core.patcher = {}, float("inf"), None
-    # A fresh process's root logger: no handlers of ours, level WARNING (an
-    # InterceptHandler an earlier test left would route stdlib on its own).
-    for handler in saved_root_handlers:
-        root.removeHandler(handler)
-    root.setLevel(logging.WARNING)
-    logs = MasterLogs()
-    logger.add(
-        lambda m: logs.default_records.append(
-            (m.record["level"].name, m.record["message"])
-        ),
-        level="DEBUG",
-        filter=lambda r: r["thread"].id == logs.thread_id,
-    )
-    monkeypatch.setattr(opal_common_config, "LOG_LEVEL", "INFO")
-    monkeypatch.setattr(opal_common_config, "LOG_SERIALIZE", True)
-    monkeypatch.setattr(opal_common_config, "LOG_COLORIZE", False)
-    monkeypatch.setattr(opal_common_config, "LOG_TO_FILE", False)
-    monkeypatch.setattr(opal_common_config, "LOG_PIPE_TO_STDERR", True)
     try:
+        core.handlers, core.min_level, core.patcher = {}, float("inf"), None
+        # A fresh process's root logger: no handlers of ours, level WARNING (an
+        # InterceptHandler an earlier test left would route stdlib on its own).
+        for handler in saved_root_handlers:
+            root.removeHandler(handler)
+        root.setLevel(logging.WARNING)
+        logs = MasterLogs()
+        logger.add(
+            lambda m: logs.default_records.append(
+                (m.record["level"].name, m.record["message"])
+            ),
+            level="DEBUG",
+            filter=lambda r: r["thread"].id == logs.thread_id,
+        )
         yield logs
     finally:
         logger.remove()
