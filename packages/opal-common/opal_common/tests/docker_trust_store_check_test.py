@@ -19,6 +19,7 @@ import subprocess
 import sys
 import warnings
 from pathlib import Path
+from typing import Optional
 
 import certifi
 import pytest
@@ -54,7 +55,7 @@ def _blocks(text: str) -> list[str]:
     return [pem for _, pem in BLOCK.findall(text)]
 
 
-def _key_hash(pem: str) -> str | None:
+def _key_hash(pem: str) -> Optional[str]:
     """The SubjectPublicKeyInfo SHA-256, computed by cryptography rather than
     by the script; None for a certificate cryptography refuses to load."""
     try:
@@ -268,8 +269,8 @@ def test_a_v1_certificate_is_walked_without_the_version_field():
 
 def _reencoded(
     field: bytes,
-    tag: bytes | None = None,
-    length: bytes | None = None,
+    tag: Optional[bytes] = None,
+    length: Optional[bytes] = None,
     trailer: bytes = b"",
 ) -> bytes:
     """A TBSCertificate field with its tag and/or length octets replaced; the
