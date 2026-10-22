@@ -202,7 +202,7 @@ def test_no_certificate_directory_does_not_scan_the_working_directory(
         "get_default_verify_paths",
         lambda: ssl.DefaultVerifyPaths(
             str(system_bundle),
-            None,  # what Python reports when the directory is missing
+            None,  # it is None when the directory is missing
             "SSL_CERT_FILE",
             str(system_bundle),
             "SSL_CERT_DIR",
@@ -216,7 +216,7 @@ def test_no_certificate_directory_does_not_scan_the_working_directory(
     assert check_trust_store.find_distrusted() == {}
 
 
-def _tlv(tag: int, content: bytes) -> bytes:
+def _tlv(tag, content):
     """A DER element; long-form length when the content needs it."""
     if len(content) < 0x80:
         return bytes([tag, len(content)]) + content
@@ -254,20 +254,78 @@ def test_a_v1_certificate_is_walked_without_the_version_field():
     assert check_trust_store.key_hashes(v1) == {_key_hash(CAS[G3])}
 
 
-def test_a_ber_indefinite_length_fails_instead_of_hashing_the_wrong_field(stores):
-    # issuer re-encoded with BER's indefinite length: read as empty, it would shift the walk.
-    def indefinite_issuer(fields):
-        issuer = fields[3]
-        content_start, end = check_trust_store._element(issuer, 0)
-        return [
-            *fields[:3],
-            b"\x30\x80" + issuer[content_start:end] + b"\x00\x00",
-            *fields[4:],
-        ]
+def _reencoded(
+    field: bytes,
+    tag: bytes | None = None,
+    length: bytes | None = None,
+    trailer: bytes = b"",
+) -> bytes:
+    """A TBSCertificate field with its tag and/or length octets replaced; the
+    content is kept."""
+    content_start, end = check_trust_store._element(field, 0)
+    header_length = field[1:content_start]
+    return (
+        (tag or field[:1])
+        + (length if length is not None else header_length)
+        + field[content_start:end]
+        + trailer
+    )
 
+
+ISSUER, SUBJECT, KEY = 3, 5, 6  # TBSCertificate field positions in a v3 certificate
+
+
+def _field_content_length(field: bytes) -> int:
+    content_start, end = check_trust_store._element(field, 0)
+    return end - content_start
+
+
+NON_DER = {
+    # BER's indefinite length: read as empty, it would shift the walk.
+    "indefinite issuer": lambda f: [
+        *f[:ISSUER],
+        _reencoded(f[ISSUER], length=b"\x80", trailer=b"\x00\x00"),
+        *f[ISSUER + 1 :],
+    ],
+    # Five length octets: more than any certificate needs.
+    "five length octets": lambda f: [
+        *f[:ISSUER],
+        _reencoded(
+            f[ISSUER],
+            length=b"\x85" + _field_content_length(f[ISSUER]).to_bytes(5, "big"),
+        ),
+        *f[ISSUER + 1 :],
+    ],
+    # The long form for a length below 128 (30 81 76 instead of 30 76), on the key itself.
+    "long form for a short length": lambda f: [
+        *f[:KEY],
+        _reencoded(f[KEY], length=b"\x81" + bytes([_field_content_length(f[KEY])])),
+        *f[KEY + 1 :],
+    ],
+    # A leading zero length octet (30 82 00 76).
+    "leading zero length octet": lambda f: [
+        *f[:KEY],
+        _reencoded(f[KEY], length=b"\x82\x00" + bytes([_field_content_length(f[KEY])])),
+        *f[KEY + 1 :],
+    ],
+    # A high-tag-number tag for the subject's SEQUENCE: a one-octet reading takes 0x10 as the length.
+    "high-tag-number tag": lambda f: [
+        *f[:SUBJECT],
+        _reencoded(f[SUBJECT], tag=b"\x3f\x10"),
+        *f[SUBJECT + 1 :],
+    ],
+}
+
+
+@pytest.mark.parametrize("encoding", sorted(NON_DER))
+def test_a_non_der_certificate_fails_instead_of_hashing_the_wrong_bytes(
+    stores, encoding
+):
+    # OpenSSL loads several of these as trust anchors with the root's real key, so the gate must
+    # refuse the file rather than pass a hash of other bytes.
     _, system_bundle, _ = stores
     system_bundle.write_text(
-        _rebuilt(CAS[G3], indefinite_issuer) + system_bundle.read_text()
+        _rebuilt(CAS[G3], NON_DER[encoding]) + system_bundle.read_text()
     )
     with pytest.raises(
         SystemExit, match=r"unparsable certificate \(block 1\): .*not DER"
@@ -275,13 +333,55 @@ def test_a_ber_indefinite_length_fails_instead_of_hashing_the_wrong_field(stores
         check_trust_store.find_distrusted()
 
 
-def test_no_default_ca_file_fails_with_its_message(stores, monkeypatch):
+@pytest.mark.parametrize(
+    ("header", "reason"),
+    [
+        # Lengths of 128 or more, so the long form is the right form and only the named rule applies.
+        pytest.param(
+            b"\x30\x85\x01\x00\x00\x00\x00", "oversized", id="five length octets"
+        ),
+        pytest.param(b"\x30\x82\x00\x80", "non-minimal", id="leading zero octet"),
+        pytest.param(b"\x30\x80", "indefinite", id="indefinite"),
+        pytest.param(b"\x3f\x10\x81\x80", "high-tag-number", id="high tag number"),
+    ],
+)
+def test_each_non_der_length_rule_on_its_own(header, reason):
+    with pytest.raises(ValueError, match=reason):
+        check_trust_store._element(header + bytes(128), 0)
+
+
+def test_a_der_long_form_length_is_read():
+    assert check_trust_store._element(b"\x30\x81\x80" + bytes(128), 0) == (3, 131)
+
+
+@pytest.mark.parametrize(
+    "edit",
+    [
+        # subject removed: the walk ends on the [3] extensions.
+        pytest.param(
+            lambda f: [x for i, x in enumerate(f) if i != SUBJECT], id="no subject"
+        ),
+        # issuer duplicated: the walk ends on the subject Name, a SEQUENCE too.
+        pytest.param(
+            lambda f: [*f[: ISSUER + 1], f[ISSUER], *f[ISSUER + 1 :]], id="issuer twice"
+        ),
+    ],
+)
+def test_a_walk_that_does_not_end_on_the_key_fails(stores, edit):
+    _, system_bundle, _ = stores
+    system_bundle.write_text(_rebuilt(CAS[G3], edit) + system_bundle.read_text())
+    with pytest.raises(SystemExit, match=r"block 1\): .*no SubjectPublicKeyInfo"):
+        check_trust_store.find_distrusted()
+
+
+@pytest.mark.usefixtures("stores")
+def test_no_default_ca_file_fails_with_its_message(monkeypatch):
     monkeypatch.setattr(
         check_trust_store.ssl,
         "get_default_verify_paths",
         lambda: ssl.DefaultVerifyPaths(
-            None,  # what Python reports when it is missing
-            None,  # what Python reports when it is missing
+            None,  # it is None when the file is missing
+            None,  # it is None when the directory is missing
             "SSL_CERT_FILE",
             "/nonexistent",
             "SSL_CERT_DIR",

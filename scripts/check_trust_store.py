@@ -67,14 +67,18 @@ PEM_BLOCK = re.compile(
 )
 LONG_FORM = 0x80
 MAX_LENGTH_OCTETS = 4  # 4 GiB; no certificate comes near it
+HIGH_TAG_NUMBER = 0x1F  # tag-number bits all set: the tag continues in later octets
 SEQUENCE = 0x30
+OBJECT_IDENTIFIER = 0x06
+BIT_STRING = 0x03
 CONTEXT_TAG_0 = 0xA0  # TBSCertificate's optional [0] version
 TBS_FIELDS_BEFORE_SPKI = 5  # serialNumber, signature, issuer, validity, subject
 CERTIFI_FIX = "certifi must be >= 2026.10.19: check the floor in packages/opal-common/requires.txt"
 SYSTEM_FIX = (
-    "the system store comes from the ca-certificates upgrade in docker/Dockerfile (Debian "
-    ">= 20250419~deb12u2 from bookworm-security, Alpine >= 20261020-r0): rebuild that layer without "
-    "the cache (docker build --no-cache), and check the package mirror has the fixed version"
+    "the Dockerfile installs the fixed ca-certificates (Debian >= 20250419~deb12u2, Alpine >= "
+    "20261020-r0), so the key comes from elsewhere: `dpkg -S <path>` or `apk info --who-owns <path>` "
+    "names the package that installed the file; check that its release drops the eMudhra CAs, or "
+    "remove what added the file"
 )
 
 
@@ -82,22 +86,49 @@ def _element(der: bytes, pos: int) -> tuple[int, int]:
     """Where the content of the DER element at pos starts, and where the
     element ends.
 
+    Strictly DER. OpenSSL also loads some BER encodings as trust anchors; reading one here would
+    hash the wrong bytes without an error, so the check would pass a key it never compared.
+
     Raises:
-        ValueError: the element is truncated, or uses a length form DER does not allow (BER's
-            indefinite length, which would otherwise read as an empty element and send the walk to
-            the wrong field, or more length octets than a certificate can need).
+        ValueError: the element is truncated, or is not DER: a high-tag-number tag (read as a
+            one-octet tag, its next octet would be taken for the length), BER's indefinite length,
+            more length octets than a certificate can need, or a length in more octets than
+            needed (a leading zero octet, or the long form for a length below 128).
     """
+    if der[pos] & HIGH_TAG_NUMBER == HIGH_TAG_NUMBER:
+        raise ValueError("not DER: high-tag-number form")
     length = der[pos + 1]
     start = pos + 2
     if length & LONG_FORM:
         size = length & ~LONG_FORM
-        if not 0 < size <= MAX_LENGTH_OCTETS:
-            raise ValueError("not DER: indefinite or oversized length")
+        if not 0 < size <= MAX_LENGTH_OCTETS or der[start] == 0:
+            raise ValueError("not DER: indefinite, oversized or non-minimal length")
         length = int.from_bytes(der[start : start + size], "big")
+        if length < LONG_FORM:
+            raise ValueError("not DER: long form for a short length")
         start += size
     if start + length > len(der):
         raise ValueError("truncated DER")
     return start, start + length
+
+
+def _is_spki(der: bytes, pos: int) -> bool:
+    """Whether the element at pos has SubjectPublicKeyInfo's shape: a SEQUENCE
+    whose content is an AlgorithmIdentifier (a SEQUENCE starting with an OID)
+    and then a BIT STRING that ends exactly where the SEQUENCE does.
+
+    No other TBSCertificate field looks like that: a Name's children are
+    SETs, Validity's are times, and an AlgorithmIdentifier starts with the OID itself.
+    """
+    if der[pos] != SEQUENCE:
+        return False
+    content, end = _element(der, pos)
+    if der[content] != SEQUENCE:
+        return False
+    algorithm, algorithm_end = _element(der, content)
+    if der[algorithm] != OBJECT_IDENTIFIER or der[algorithm_end] != BIT_STRING:
+        return False
+    return _element(der, algorithm_end)[1] == end
 
 
 def spki(der: bytes) -> bytes:
@@ -109,7 +140,8 @@ def spki(der: bytes) -> bytes:
     no [0] version field, are walked too.
 
     Raises:
-        ValueError: the walk does not end on a SEQUENCE, i.e. the certificate is malformed.
+        ValueError: the walk does not end on a SubjectPublicKeyInfo-shaped element, i.e. the
+            certificate is malformed and the walk would otherwise hash another field.
     """
     tbs, _ = _element(der, 0)
     pos, _ = _element(der, tbs)
@@ -117,7 +149,7 @@ def spki(der: bytes) -> bytes:
         pos = _element(der, pos)[1]
     for _ in range(TBS_FIELDS_BEFORE_SPKI):
         pos = _element(der, pos)[1]
-    if der[pos] != SEQUENCE:
+    if not _is_spki(der, pos):
         raise ValueError("no SubjectPublicKeyInfo where the TBSCertificate walk ends")
     return der[pos : _element(der, pos)[1]]
 
