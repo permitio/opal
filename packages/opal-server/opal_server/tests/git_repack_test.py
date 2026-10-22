@@ -1930,6 +1930,61 @@ async def test_purging_a_source_drops_its_mark(tmp_path, purge):
     assert git_fetcher._repacks_due == {}
 
 
+@pytest.mark.asyncio
+async def test_due_repack_waits_out_a_git_op_of_the_clone_that_outlived_its_awaiter(
+    tmp_path, monkeypatch, emitted
+):
+    """A later fetch of a clone already marked due timed out, and its thread
+    runs on through the clone's cached handle.
+
+    The pass skips that clone's repack and keeps the mark. Run beside
+    the fetch, the repack would rewrite the packs the fetch reads, clear
+    its busy marker (so the next sync would fetch beside it as well) and
+    free() the handle it uses. Once the fetch is gone, the next pass
+    repacks the clone.
+    """
+    scope = _ScopeRepo(tmp_path, "s1")
+    await scope.fetched(_LIMIT - 1)
+    scope.push()
+    await scope.sync()  # reaches the limit: marked due
+    assert set(git_fetcher._repacks_due) == {scope.source_id}
+    path = str(scope.clone_path)
+    handle = GitPolicyFetcher.repos[path]
+    freed = _watch_free(handle, path)
+
+    gate = threading.Event()
+    in_fetch = threading.Event()
+
+    def _hung_fetch(self, *args, **kwargs):
+        in_fetch.set()
+        gate.wait(30)  # then returns without touching the handle again
+
+    monkeypatch.setattr(pygit2.remotes.Remote, "fetch", _hung_fetch)
+    monkeypatch.setattr(opal_server_config, "SCOPES_GIT_FETCH_TIMEOUT", 0.3)
+    scope.push()
+    try:
+        await scope.sync()  # stops waiting for the fetch after 0.3 s
+        assert in_fetch.is_set()
+        assert git_op_in_flight(scope.source_id)
+
+        await GitPolicyFetcher.run_due_repacks({scope.source_id})
+
+        assert _repack_outcomes(emitted) == []
+        assert _skips(emitted) == []  # not another repack running: not counted
+        assert set(git_fetcher._repacks_due) == {scope.source_id}
+        assert git_op_in_flight(scope.source_id), "the fetch's busy marker is gone"
+        assert GitPolicyFetcher.repos.get(path) is handle
+        assert freed == [], "the handle the fetch thread uses was free()'d"
+    finally:
+        gate.set()
+    assert await run_sync(git_fetcher.drain_git_ops, 10)
+
+    await GitPolicyFetcher.run_due_repacks({scope.source_id})
+    assert _repack_outcomes(emitted) == ["ok"]
+    assert _count_pack_files(scope.clone_path) == 1
+    assert git_fetcher._repacks_due == {}
+
+
 def test_preload_marks_the_repack_due_and_the_first_pass_runs_it(tmp_path, monkeypatch):
     """The preload runs in the gunicorn master before any worker starts, so a
     repack there would hold up every worker.
