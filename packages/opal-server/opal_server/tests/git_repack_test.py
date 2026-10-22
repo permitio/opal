@@ -1801,14 +1801,53 @@ async def test_pass_repacks_every_due_clone_one_after_another(
 
 
 @pytest.mark.asyncio
-async def test_refresh_marks_the_repack_due_and_the_next_pass_runs_it_once(
+async def test_refresh_repacks_the_clone_it_left_due_with_no_periodic_pass(
     tmp_path, monkeypatch, emitted
 ):
-    """A refresh (POST /scopes/{id}/refresh, a PUT) syncs its scope outside any
-    pass, the way the watcher's trigger does: the fetch marks the clone due and
-    repacks nothing.
+    """With POLICY_REFRESH_INTERVAL=0, the default, the leader runs one pass,
+    at boot, and every later sync is a refresh (POST /scopes/{id}/refresh, a
+    PUT) that the watcher's trigger runs on its own.
 
-    The next pass repacks it, once, and clears the mark.
+    So the trigger repacks the clone its sync left due, right after the
+    sync, once the refresh's notification is out.
+    """
+    monkeypatch.setattr(opal_server_config, "POLICY_REFRESH_INTERVAL", 0)
+    repo = _ScopeRepo(tmp_path, "s1")
+    pubsub = _FakePubSub()
+    notified_at_start: list = []
+    spy = _RepackSpy(on_start=lambda: notified_at_start.append(pubsub.notified()))
+    monkeypatch.setattr(git_fetcher, "_repack_clone", spy)
+    # Built without __init__, which needs Redis (scopes_task_wiring_test's way).
+    watcher = task_module.ScopesPolicyWatcherTask.__new__(
+        task_module.ScopesPolicyWatcherTask
+    )
+    watcher._service = _service(tmp_path, _scope_on(repo, "s1"), pubsub=pubsub)
+    await repo.fetched(_LIMIT - 1)
+    tip = str(repo.push())
+
+    await watcher.trigger(topic=None, data={"scope_id": "s1", "force_fetch": True})
+
+    assert spy.calls == [str(repo.clone_path)]
+    [notified] = notified_at_start
+    assert ("s1", tip) in notified, "the repack started before the notification"
+    assert _count_pack_files(repo.clone_path) == 1
+    assert git_fetcher._repacks_due == {}
+    assert _repack_outcomes(emitted) == ["ok"]
+
+    # Below the limit again: the next refresh repacks nothing.
+    await watcher.trigger(topic=None, data={"scope_id": "s1", "force_fetch": True})
+    assert spy.calls == [str(repo.clone_path)]
+
+
+@pytest.mark.asyncio
+async def test_sync_of_one_scope_marks_the_repack_due_and_the_next_pass_runs_it_once(
+    tmp_path, monkeypatch, emitted
+):
+    """ScopesService.sync_scope, the sync of one scope that the watcher's
+    trigger runs outside any pass, only marks the clone due: the repack is the
+    trigger's next step, or the next pass's.
+
+    The pass repacks it once and clears the mark.
     """
     spy = _RepackSpy()
     monkeypatch.setattr(git_fetcher, "_repack_clone", spy)

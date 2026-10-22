@@ -146,7 +146,7 @@ class ScopesService:
         notify_on_changes: bool = True,
         req_time: datetime.datetime = None,
         honor_backoff: bool = False,
-    ):
+    ) -> Optional[str]:
         """Sync one scope's policy source.
 
         ``honor_backoff`` marks this call as pass-originated, letting the
@@ -156,6 +156,10 @@ class ScopesService:
         arrive here through the watcher's ``trigger`` — always attempt the
         source: a customer who has just repaired credentials must not be told
         200 OK and then wait out hours or days of backoff.
+
+        Returns the source id of the scope's git source, whether or not its
+        fetch succeeded, so that the trigger can repack the clone this sync
+        may have left due; None for a scope that is not on git.
         """
         if scope is None:
             assert scope_id, ValueError("scope_id not set for sync_scope")
@@ -164,7 +168,7 @@ class ScopesService:
         with tracer.trace("scopes_service.sync_scope", resource=scope.scope_id):
             if not isinstance(scope.policy, GitPolicyScopeSource):
                 logger.warning("Non-git scopes are currently not supported!")
-                return
+                return None
             source = cast(GitPolicyScopeSource, scope.policy)
 
             logger.debug(
@@ -243,6 +247,7 @@ class ScopesService:
                     "traceback for the failed sync of scope {scope_id}",
                     scope_id=scope.scope_id,
                 )
+            return source_id
 
     async def delete_scope(self, scope_id: str):
         with tracer.trace("scopes_service.delete_scope", resource=scope_id):

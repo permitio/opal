@@ -1089,7 +1089,8 @@ def _run_repack(
 #
 # A fetch that leaves a clone at SCOPES_GIT_REPACK_PACK_LIMIT only marks it due
 # (GitPolicyFetcher._mark_repack_due); the sync pass repacks the due clones
-# last, after every notification it sends (GitPolicyFetcher.run_due_repacks).
+# last, after every notification it sends (GitPolicyFetcher.run_due_repacks),
+# and a refresh of one scope right after its sync (run_due_repack).
 # Their per-process, in-memory state follows. Nothing here holds a handle, an
 # fd or a loop-bound object, so reset_caches leaves it all alone; only the
 # single-flight lock is reset in a forked child. (The repack lock's fds belong
@@ -1149,9 +1150,10 @@ class _DueRepack(NamedTuple):
 
 
 # source_id -> its clone, marked due by a fetch and repacked at the end of the
-# next sync pass. Mutated only on the event loop, so no lock. Inherited across
-# fork on purpose: the preload in the gunicorn master marks but never repacks,
-# and the forked leader's first pass runs what it marked.
+# next sync pass, or by the refresh that marked it. Mutated only on the event
+# loop, so no lock. Inherited across fork on purpose: the preload in the
+# gunicorn master marks but never repacks, and the forked leader's first pass
+# runs what it marked.
 _repacks_due: Dict[str, _DueRepack] = {}
 
 
@@ -1717,7 +1719,7 @@ class GitPolicyFetcher(PolicyFetcher):
         would hold up the change check and notification of every scope the
         pass handles after this one, and in the boot preload the start of
         every worker. A sync outside a pass (a refresh, a PUT) marks too,
-        and the next pass repacks.
+        and the watcher's trigger repacks right after it (run_due_repack).
 
         Never fails the sync, and marks nothing when the limit is 0 or
         negative, when git was found missing, while this source waits out
@@ -1768,35 +1770,48 @@ class GitPolicyFetcher(PolicyFetcher):
         side, all but one would be skipped.
 
         A mark whose source no scope uses any more (``live_source_ids``:
-        every scope's, read at the start of the pass) is dropped, as is
-        one a purge or another pass took while this one waited for the
-        clone's lock_source. A clone with a git op still in flight is
-        skipped and keeps its mark for a later pass. Like the sync it ends,
-        never fails the pass: nothing but CancelledError (or another
-        BaseException) leaves it.
+        every scope's, read at the start of the pass) is dropped. The rest
+        go through run_due_repack. Like the sync it ends, never fails the
+        pass: nothing but CancelledError (or another BaseException) leaves
+        it.
         """
         for source_id in list(_repacks_due):
             if source_id not in live_source_ids:
                 _repacks_due.pop(source_id, None)
                 continue
-            async with GitPolicyFetcher.lock_source(source_id):
-                if git_op_in_flight(source_id):
-                    # A git op of this clone outlived its awaiter (a fetch
-                    # past SCOPES_GIT_FETCH_TIMEOUT, say) and runs on
-                    # through the clone's cached handle. Run beside it, the
-                    # repack would rewrite the packs that op reads, clear its
-                    # busy marker (the markers are a set, so the next sync
-                    # would fetch beside it too) and free() the handle it
-                    # uses. Checked before the mark is taken, so it stays.
-                    logger.debug(
-                        "Not repacking scope clone {source_id} now: a previous "
-                        "git operation on it is still running after its timeout",
-                        source_id=source_id,
-                    )
-                    continue
-                due = _repacks_due.pop(source_id, None)
-                if due is not None:
-                    await GitPolicyFetcher._repack_due_clone(due)
+            await GitPolicyFetcher.run_due_repack(source_id)
+
+    @staticmethod
+    async def run_due_repack(source_id: str) -> None:
+        """Repack ``source_id``'s clone if a fetch marked it due.
+
+        Each due repack of a pass runs through here, and so does a
+        refresh's: outside a pass, the watcher's trigger calls this for
+        the refreshed scope's source once its sync is done (with
+        POLICY_REFRESH_INTERVAL=0 no pass runs after the boot one).
+        Under the clone's lock_source; a mark a purge or another pass
+        took while this waited for it is dropped. A clone with a git op
+        still in flight is skipped and keeps its mark for later. Never
+        raises but CancelledError (or another BaseException).
+        """
+        async with GitPolicyFetcher.lock_source(source_id):
+            if git_op_in_flight(source_id):
+                # A git op of this clone outlived its awaiter (a fetch past
+                # SCOPES_GIT_FETCH_TIMEOUT, say) and runs on through the
+                # clone's cached handle. Run beside it, the repack would
+                # rewrite the packs that op reads, clear its busy marker (the
+                # markers are a set, so the next sync would fetch beside it
+                # too) and free() the handle it uses. Checked before the mark
+                # is taken, so it stays.
+                logger.debug(
+                    "Not repacking scope clone {source_id} now: a previous git "
+                    "operation on it is still running after its timeout",
+                    source_id=source_id,
+                )
+                return
+            due = _repacks_due.pop(source_id, None)
+            if due is not None:
+                await GitPolicyFetcher._repack_due_clone(due)
 
     @staticmethod
     async def _repack_due_clone(due: _DueRepack) -> None:

@@ -177,7 +177,7 @@ class ScopesPolicyWatcherTask(BasePolicyWatcherTask):
         if data is not None and isinstance(data, dict):
             # Refresh single scope
             try:
-                await self._service.sync_scope(
+                source_id = await self._service.sync_scope(
                     scope_id=data["scope_id"],
                     force_fetch=data.get("force_fetch", False),
                     hinted_hash=data.get("hinted_hash"),
@@ -187,6 +187,15 @@ class ScopesPolicyWatcherTask(BasePolicyWatcherTask):
                 logger.warning(
                     "Got invalid keyword args for single scope refresh: %s", data
                 )
+                return
+            if source_id is not None:
+                # Outside a pass nothing else repacks the clone this sync may
+                # have left at SCOPES_GIT_REPACK_PACK_LIMIT, and with
+                # POLICY_REFRESH_INTERVAL=0 (the default) no pass runs after
+                # the boot one. The refresh's notification is out by now, and
+                # every trigger is a task of its own, so the repack delays
+                # only the next syncs of this clone.
+                await GitPolicyFetcher.run_due_repack(source_id)
         else:
             # Refresh all scopes. This branch is reached only from something
             # asking for a sync NOW — POST /scopes/refresh (the git-provider
