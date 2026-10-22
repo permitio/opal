@@ -13,7 +13,7 @@ def when_ready(server):
     # scopes preload logs per-scope git chatter and git errors that can carry
     # the remote URL and its auth. Called before the import so nothing the
     # import might log reaches the default handler either. It also routes
-    # stdlib logging (third-party libraries) into the same configured sink.
+    # stdlib (third-party) logging into loguru.
     configure_logs()
 
     try:

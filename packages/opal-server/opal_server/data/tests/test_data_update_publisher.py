@@ -61,7 +61,10 @@ async def test_published_payload_is_json_serializable():
 async def test_publish_data_updates_line_is_debug_and_missing_topics_warning_stays():
     """The per-update line is DEBUG (PER-16361: at INFO it was one indexed line
     per data update); the missing-topics warning stays visible at the deployed
-    level, with the entry's credentials redacted."""
+    level.
+
+    Both lines redact the entries' credentials.
+    """
     update = DataUpdate(
         reason="test reason",
         entries=[
@@ -86,7 +89,8 @@ async def test_publish_data_updates_line_is_debug_and_missing_topics_warning_sta
     logged_urls = [e["url"] for e in line["extra"]["entries"]]
     assert logged_urls[0] == "http://example.com/a"
     assert "example.com/b" in logged_urls[1]
-    assert "s3cret" not in logged_urls[1] and "FAKE-TOKEN" not in logged_urls[1]
+    assert "s3cret" not in logged_urls[1]
+    assert "FAKE-TOKEN" not in logged_urls[1]
 
     [warning] = starting_with(logs.emitted, f"[{pid}] No topics were provided")
     assert warning["level"].name == "WARNING"
