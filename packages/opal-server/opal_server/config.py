@@ -387,7 +387,9 @@ class OpalServerConfig(Confi):
         "is worse than too high, since a repack that always times out never "
         "reclaims any disk. Watch opal_server.scopes.git_repack with "
         "outcome:timeout and git_repack_seconds. 0, negative, nan or inf fall "
-        "back to the default of 120 seconds; there is no way to set no limit.",
+        "back to the default of 120 seconds, and a value over 86400 (a day) is "
+        "capped at 86400 with a warning, because a wait of more than about 24 "
+        "days overflows and fails every repack; there is no way to set no limit.",
     )
     SCOPES_POLICY_CLONE_WAIT_SECONDS = confi.float(
         "SCOPES_POLICY_CLONE_WAIT_SECONDS",

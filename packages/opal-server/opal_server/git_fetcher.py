@@ -456,6 +456,13 @@ def _backoff_delay(n: int) -> float:
 
 # SCOPES_GIT_REPACK_TIMEOUT's declared default; a test pins the two together.
 _REPACK_DEFAULT_TIMEOUT_SECONDS = 120.0
+# The longest repack timeout honoured. subprocess waits on git in a C int of
+# milliseconds, so communicate() raises OverflowError for anything over about
+# 24.8 days, and every repack would fail; a day is far past any real repack.
+_REPACK_MAX_TIMEOUT_SECONDS = 24 * 3600.0
+# Latched once the cap has been logged, so a capped value warns once per
+# process, not on every repack.
+_repack_timeout_cap_logged = False
 
 
 def _repack_timeout_or_default(value) -> float:
@@ -464,9 +471,22 @@ def _repack_timeout_or_default(value) -> float:
     Unlike run_in_git_executor's timeout, 0 does NOT mean "no limit": a
     repack holds the clone's sync lock, so an unbounded one would stall
     every scope on that clone behind a stuck git process. 0, negative,
-    nan and inf all fall back to the default.
+    nan and inf all fall back to the default, and a value over a day is
+    capped at a day (logged once).
     """
-    return _finite_positive_or_zero(value) or _REPACK_DEFAULT_TIMEOUT_SECONDS
+    global _repack_timeout_cap_logged
+    seconds = _finite_positive_or_zero(value) or _REPACK_DEFAULT_TIMEOUT_SECONDS
+    if seconds <= _REPACK_MAX_TIMEOUT_SECONDS:
+        return seconds
+    if not _repack_timeout_cap_logged:
+        _repack_timeout_cap_logged = True
+        logger.warning(
+            "Scope clone repack timeout {value}s (SCOPES_GIT_REPACK_TIMEOUT) is "
+            "over the cap of {cap:.0f}s; using {cap:.0f}s",
+            value=value,
+            cap=_REPACK_MAX_TIMEOUT_SECONDS,
+        )
+    return _REPACK_MAX_TIMEOUT_SECONDS
 
 
 def _repack_timeout_seconds() -> float:
@@ -933,7 +953,8 @@ def _repack_clone(
     ``TimeoutError`` is raised; the clone keeps the packs it had, because
     git deletes the old packs only after the new one is in place. A
     ``timeout`` that is not a positive finite number falls back to the
-    default: this never runs unbounded.
+    default, and one over a day is capped at a day: this never runs
+    unbounded.
 
     Raises:
         TimeoutError: the repack ran past ``timeout``.

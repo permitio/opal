@@ -890,11 +890,35 @@ def test_missing_git_raises_git_not_found(tmp_path, monkeypatch, kind):
         (math.nan, 120.0),
         (math.inf, 120.0),
         (-math.inf, 120.0),
+        (86400.0, 86400.0),
+        (86401.0, 86400.0),
+        (3_000_000, 86400.0),
     ],
 )
 def test_repack_timeout_seconds_never_means_no_limit(monkeypatch, configured, expected):
     monkeypatch.setattr(opal_server_config, "SCOPES_GIT_REPACK_TIMEOUT", configured)
     assert _repack_timeout_seconds() == expected
+
+
+def test_timeout_over_a_day_is_capped_with_one_warning(monkeypatch, records):
+    monkeypatch.setattr(opal_server_config, "SCOPES_GIT_REPACK_TIMEOUT", 3_000_000)
+
+    assert _repack_timeout_seconds() == 86400.0
+    assert _repack_timeout_seconds() == 86400.0
+
+    [warning] = [r for r in records if r["level"].name == "WARNING"]
+    assert "3000000" in warning["message"]
+    assert "86400" in warning["message"]
+
+
+def test_repack_given_a_huge_timeout_still_runs(tmp_path):
+    """subprocess waits in a C int of milliseconds: past about 24.8 days
+    communicate() raises OverflowError, and every repack would fail."""
+    clone_path, _ = _clone_with_fetch_packs(tmp_path, fetches=2)
+
+    assert _repack_clone(clone_path, timeout=3_000_000) is True
+
+    assert _count_pack_files(clone_path) == 1
 
 
 def test_repack_default_timeout_matches_the_config_default(monkeypatch):
@@ -947,11 +971,13 @@ _LIMIT = 3
 def _clean_fetcher_state(monkeypatch):
     """Limit 3, and a clean slate of the per-process state the sync keeps: the
     fetcher's class-level caches (as invalid_repo_recovery_test does) and the
-    repack's failure cooldowns and git-missing latch."""
+    repack's due marks, failure cooldowns, git-missing latch and timeout-cap
+    latch."""
     monkeypatch.setattr(opal_server_config, "SCOPES_GIT_REPACK_PACK_LIMIT", _LIMIT)
     monkeypatch.setattr(git_fetcher, "_repack_git_missing", False)
     monkeypatch.setattr(git_fetcher, "_repack_failed_at", {})
     monkeypatch.setattr(git_fetcher, "_repacks_due", {})
+    monkeypatch.setattr(git_fetcher, "_repack_timeout_cap_logged", False)
     GitPolicyFetcher.reset_caches()
     GitPolicyFetcher.source_backoff.clear()
     yield
