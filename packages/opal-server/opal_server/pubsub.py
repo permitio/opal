@@ -29,6 +29,7 @@ from opal_common.authentication.types import JWTClaims
 from opal_common.authentication.verifier import Unauthorized
 from opal_common.confi.confi import load_conf_if_none
 from opal_common.config import opal_common_config
+from opal_common.http_utils import SENSITIVE_QUERY_PARAMS
 from opal_common.logger import logger
 from opal_server.config import opal_server_config
 from opal_server.pubsub_resilience import (
@@ -60,6 +61,19 @@ class ClientInfo(BaseModel):
 current_client: ContextVar[ClientInfo] = ContextVar("current_client")
 
 
+def _mask_sensitive_query_params(query_params: QueryParams) -> Dict[str, str]:
+    """Copy a client's websocket query params, masking sensitive values.
+
+    The copy is what ``ClientInfo`` keeps and ``/pubsub_client_info``
+    returns, so a ``?token=...`` on a client's pubsub URL is reported as
+    ``token=***``. Keys are kept so the parameter is still visible.
+    """
+    return {
+        key: "***" if key.lower() in SENSITIVE_QUERY_PARAMS else value
+        for key, value in query_params.items()
+    }
+
+
 class ClientTracker:
     def __init__(self):
         self._clients_by_ids: Dict[str, ClientInfo] = {}
@@ -88,7 +102,7 @@ class ClientTracker:
                     source_host=source_host,
                     source_port=source_port,
                     connect_time=time.time(),
-                    query_params=query_params,
+                    query_params=_mask_sensitive_query_params(query_params),
                 )
             client_info.refcount += 1
             self._clients_by_ids[client_id] = client_info

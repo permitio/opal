@@ -445,7 +445,7 @@ Base directory for OPAL server.
 
 Default: `True`
 
-Disable RPC logging.
+Suppress DEBUG logs of the websocket RPC/pub-sub libraries (`fastapi_websocket_rpc`, `fastapi_websocket_pubsub`), which include message payloads. Their INFO and higher logs (connection lifecycle) are kept. Set to `False` to see them when debugging with `OPAL_LOG_LEVEL=DEBUG`.
 
 #### OPAL_WS_LOCAL_URL
 

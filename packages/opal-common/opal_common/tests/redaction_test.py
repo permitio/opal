@@ -21,8 +21,17 @@ from opal_common.fetcher.providers.fastapi_rpc_fetch_provider import (
 from opal_common.fetcher.providers.http_fetch_provider import HttpFetcherConfig
 from opal_common.http_utils import redact_url, redact_url_in_text
 from opal_common.schemas.data import DataSourceEntry, DataUpdate
+from opal_common.tests.redaction_fixtures import without_log_patcher
 
 SECRET_TOKEN = "Bearer super-secret-token-must-not-leak"
+
+
+@pytest.fixture(autouse=True)
+def _no_global_log_patcher():
+    """The sinks below must see the models' own rendering, not what the patcher
+    an earlier ``configure_logs()`` installed makes of it."""
+    with without_log_patcher():
+        yield
 
 
 def _models():

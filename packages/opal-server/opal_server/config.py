@@ -33,7 +33,10 @@ class OpalServerConfig(Confi):
         description="The local WebSocket URL for OPAL",
     )
     OPAL_WS_TOKEN = confi.str(
-        "WS_TOKEN", "THIS_IS_A_DEV_SECRET", description="The WebSocket token for OPAL"
+        "WS_TOKEN",
+        "THIS_IS_A_DEV_SECRET",
+        description="The WebSocket token for OPAL",
+        sensitive=True,
     )
     CLIENT_LOAD_LIMIT_NOTATION = confi.str(
         "CLIENT_LOAD_LIMIT_NOTATION",
@@ -133,6 +136,7 @@ class OpalServerConfig(Confi):
         "AUTH_PRIVATE_KEY_PASSPHRASE",
         None,
         description="The passphrase for the private key",
+        sensitive=True,
     )
 
     AUTH_PRIVATE_KEY = confi.delay(
@@ -142,6 +146,7 @@ class OpalServerConfig(Confi):
             key_format=AUTH_PRIVATE_KEY_FORMAT,
             passphrase=AUTH_PRIVATE_KEY_PASSPHRASE,
             description="The private key for authentication",
+            sensitive=True,
         )
     )
 
@@ -157,7 +162,10 @@ class OpalServerConfig(Confi):
     )
 
     AUTH_MASTER_TOKEN = confi.str(
-        "AUTH_MASTER_TOKEN", None, description="The master token for authentication"
+        "AUTH_MASTER_TOKEN",
+        None,
+        description="The master token for authentication",
+        sensitive=True,
     )
 
     # policy source watcher
@@ -199,7 +207,10 @@ class OpalServerConfig(Confi):
         description="The main branch of the policy repository",
     )
     POLICY_REPO_SSH_KEY = confi.str(
-        "POLICY_REPO_SSH_KEY", None, description="The SSH key for the policy repository"
+        "POLICY_REPO_SSH_KEY",
+        None,
+        description="The SSH key for the policy repository",
+        sensitive=True,
     )
     POLICY_REPO_MANIFEST_PATH = confi.str(
         "POLICY_REPO_MANIFEST_PATH",
@@ -441,11 +452,13 @@ class OpalServerConfig(Confi):
         "POLICY_BUNDLE_SERVER_TOKEN",
         None,
         description="Secret token to be sent to API bundle server",
+        sensitive=True,
     )
     POLICY_BUNDLE_SERVER_TOKEN_ID = confi.str(
         "POLICY_BUNDLE_SERVER_TOKEN_ID",
         None,
         description="The id of the secret token to be sent to API bundle server",
+        sensitive=True,
     )
     POLICY_BUNDLE_SERVER_AWS_REGION = confi.str(
         "POLICY_BUNDLE_SERVER_AWS_REGION",
@@ -577,6 +590,7 @@ class OpalServerConfig(Confi):
         "POLICY_REPO_WEBHOOK_SECRET",
         None,
         description="The secret for the policy repository webhook",
+        sensitive=True,
     )
     # The topic the event of the webhook will publish
     POLICY_REPO_WEBHOOK_TOPIC = "webhook"
@@ -619,7 +633,14 @@ class OpalServerConfig(Confi):
         "BUNDLE_IGNORE", [], description="List of patterns to ignore in the bundle"
     )
 
-    NO_RPC_LOGS = confi.bool("NO_RPC_LOGS", True, description="Disable RPC logs")
+    NO_RPC_LOGS = confi.bool(
+        "NO_RPC_LOGS",
+        True,
+        description=(
+            "Suppress DEBUG logs of the websocket RPC/pub-sub libraries, which "
+            "include message payloads (INFO and above are kept)"
+        ),
+    )
 
     # client-api server
     SERVER_WORKER_COUNT = confi.int(

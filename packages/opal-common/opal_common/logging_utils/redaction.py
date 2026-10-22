@@ -60,7 +60,8 @@ class RedactedReprMixin:
         for key, value in super().__repr_args__():
             if key in redacted:
                 value = "<redacted>"
-            elif key in url_redacted and isinstance(value, str):
-                value = redact_url(value)
+            elif key in url_redacted and value is not None:
+                # str() also covers pydantic URL types (e.g. ``AnyHttpUrl``).
+                value = redact_url(str(value))
             args.append((key, value))
         return args
