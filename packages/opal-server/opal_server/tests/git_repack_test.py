@@ -2339,6 +2339,11 @@ def test_preload_marks_the_repack_due_and_the_first_pass_runs_it(tmp_path, monke
     assert git_fetcher._repacks_due == {}
 
 
+class _LoopKey:
+    """A weakly referenceable key, as the event loops keying
+    _live_ops_semaphores are."""
+
+
 def test_forked_child_starts_with_the_single_flight_free(tmp_path, monkeypatch):
     """A repack thread running in the parent at fork does not exist in the
     child, so nothing there could release the lock it inherited held.
@@ -2353,13 +2358,16 @@ def test_forked_child_starts_with_the_single_flight_free(tmp_path, monkeypatch):
     git_fetcher._git_busy.add("held-across-the-handler")
     busy_lock = threading.Lock()
     busy_lock.acquire()  # the 'before' fork handler holds it across fork
+    loop = _LoopKey()  # held here, so its entry outlives the setup
+    semaphores: weakref.WeakKeyDictionary = weakref.WeakKeyDictionary({loop: object()})
     lock_fd = os.open(tmp_path, os.O_RDONLY)
+    lock_fds = {lock_fd}
     try:
         with monkeypatch.context() as m:
             m.setattr(git_fetcher, "_git_busy_lock", busy_lock)
-            m.setattr(git_fetcher, "_live_ops_semaphores", weakref.WeakKeyDictionary())
+            m.setattr(git_fetcher, "_live_ops_semaphores", semaphores)
             m.setattr(git_fetcher, "_git_busy", {"a stale marker"})
-            m.setattr(git_fetcher, "_repack_lock_fds", {lock_fd})
+            m.setattr(git_fetcher, "_repack_lock_fds", lock_fds)
             m.setattr(git_fetcher, "_repack_lock", held)
 
             git_fetcher._reset_git_executor_after_fork()
@@ -2367,8 +2375,9 @@ def test_forked_child_starts_with_the_single_flight_free(tmp_path, monkeypatch):
             assert git_fetcher._repack_lock is not held
             assert not git_fetcher._repack_lock.locked()
             assert not busy_lock.locked()
+            assert len(semaphores) == 0, "the live-op semaphores were kept"
             assert git_fetcher._git_busy == set()
-            assert git_fetcher._repack_lock_fds == set()
+            assert lock_fds == set()
             with pytest.raises(OSError):
                 os.fstat(lock_fd)
         assert git_fetcher._repack_lock is held and held.locked()
@@ -2377,6 +2386,10 @@ def test_forked_child_starts_with_the_single_flight_free(tmp_path, monkeypatch):
         git_fetcher._git_busy.discard("held-across-the-handler")
         if held.locked():
             held.release()
+        # Only if the handler did not: the number of an fd it closed may
+        # belong to another open file by now.
+        if lock_fd in lock_fds:
+            os.close(lock_fd)
 
 
 # --- GitPython handles on scope clones are closed ------------------------------
