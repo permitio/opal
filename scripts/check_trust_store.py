@@ -12,11 +12,15 @@ they chain to:
 
 * certifi's bundle - requests and httpx verify against it by default.
 * the system bundle and certificate directory (from Debian's or Alpine's
-  ca-certificates) - aiohttp, websockets, git and the stdlib ssl module through
-  OpenSSL, and the bundled OPA through Go's crypto/x509.
+  ca-certificates) - aiohttp, websockets and the stdlib ssl module through
+  OpenSSL; pygit2, which hands libgit2 the stdlib's default paths (its wheel's
+  own OpenSSL directory does not exist in the image); git's HTTPS transport
+  through libcurl (GnuTLS on Debian, OpenSSL on Alpine); and the bundled
+  OPA/EOPA through Go's crypto/x509.
 
 The fix is certifi >= 2026.10.19 (floored in opal-common's requires.txt) and
-the patched ca-certificates the Dockerfile upgrades to. This check is what
+the patched ca-certificates the Dockerfile requires (floored in `apk add`,
+version-checked after `apt-get install`). This check is what
 notices when either is missing, e.g. a base image or package mirror without the
 fix. A layer taken from the build cache does not re-run it, but was checked
 when it was built: the check is part of the RUN that installs the packages.
@@ -75,10 +79,12 @@ CONTEXT_TAG_0 = 0xA0  # TBSCertificate's optional [0] version
 TBS_FIELDS_BEFORE_SPKI = 5  # serialNumber, signature, issuer, validity, subject
 CERTIFI_FIX = "certifi must be >= 2026.10.19: check the floor in packages/opal-common/requires.txt"
 SYSTEM_FIX = (
-    "the Dockerfile installs the fixed ca-certificates (Debian >= 20250419~deb12u2, Alpine >= "
-    "20261020-r0), so the key comes from elsewhere: `dpkg -S <path>` or `apk info --who-owns <path>` "
-    "names the package that installed the file; check that its release drops the eMudhra CAs, or "
-    "remove what added the file"
+    "the Dockerfile requires the fixed ca-certificates (Debian >= 20250419~deb12u2, "
+    "Alpine >= 20261020-r0), so the key comes from elsewhere: a ca-certificates release "
+    "that still ships it, or a file another package or step added. `dpkg -S <path>` or "
+    "`apk info --who-owns <path>` names the owner of a packaged file; the generated "
+    "ca-certificates.crt is rebuilt from /usr/share/ca-certificates and "
+    "/etc/ca-certificates.conf, so check those"
 )
 
 

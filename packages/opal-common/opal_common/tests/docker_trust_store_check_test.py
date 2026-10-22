@@ -24,15 +24,21 @@ import certifi
 import pytest
 from cryptography import x509
 from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
+from cryptography.utils import CryptographyDeprecationWarning
 
 _SCRIPT = Path(__file__).resolve().parents[4] / "scripts" / "check_trust_store.py"
+FIXTURE = Path(__file__).with_name("emudhra_compromised_cas.pem")
 if not _SCRIPT.is_file():
-    pytest.skip(f"{_SCRIPT} is not here", allow_module_level=True)
+    # An installed opal-common ships this module but neither scripts/ nor the
+    # fixture: skip there. In a source checkout (the fixture is here) a missing
+    # script means it moved, and the gate would go untested: fail instead.
+    if FIXTURE.is_file():
+        raise RuntimeError(f"{_SCRIPT} is missing; update this path if scripts/ moved")
+    pytest.skip("an installed opal-common has no scripts/", allow_module_level=True)
 _spec = importlib.util.spec_from_file_location("check_trust_store", _SCRIPT)
 check_trust_store = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(check_trust_store)
 
-FIXTURE = Path(__file__).with_name("emudhra_compromised_cas.pem")
 # A PEM block, and the first of the comment lines above it, if any.
 BLOCK = re.compile(
     r"(?:^# ([^\n]+)\n)?(?:^#[^\n]*\n)*(-----BEGIN CERTIFICATE-----\n.+?-----END CERTIFICATE-----\n)",
@@ -48,14 +54,17 @@ def _blocks(text: str) -> list[str]:
     return [pem for _, pem in BLOCK.findall(text)]
 
 
-def _key_hash(pem: str) -> str:
+def _key_hash(pem: str) -> str | None:
     """The SubjectPublicKeyInfo SHA-256, computed by cryptography rather than
-    by the script."""
-    with warnings.catch_warnings():
-        warnings.simplefilter(
-            "ignore"
-        )  # a negative serial in a real root only warns, for now
-        cert = x509.load_pem_x509_certificate(pem.encode())
+    by the script; None for a certificate cryptography refuses to load."""
+    try:
+        with warnings.catch_warnings():
+            # A non-positive serial in a real root only warns, for now; a later
+            # cryptography will refuse those roots, which must not break this suite.
+            warnings.simplefilter("ignore", CryptographyDeprecationWarning)
+            cert = x509.load_pem_x509_certificate(pem.encode())
+    except ValueError:
+        return None
     return hashlib.sha256(
         cert.public_key().public_bytes(Encoding.DER, PublicFormat.SubjectPublicKeyInfo)
     ).hexdigest()
@@ -110,9 +119,12 @@ def test_the_denied_keys_are_the_fixture_certificates():
 
 def test_the_key_walk_agrees_with_cryptography_on_every_real_root():
     pems = _blocks(Path(certifi.where()).read_text()) + list(CAS.values())
-    assert len(pems) > 100
-    for pem in pems:
-        assert check_trust_store.key_hashes(pem) == {_key_hash(pem)}
+    # Only the roots cryptography loads can be compared; keep enough of them.
+    compared = [(pem, _key_hash(pem)) for pem in pems]
+    compared = [(pem, key) for pem, key in compared if key is not None]
+    assert len(compared) > 100
+    for pem, key in compared:
+        assert check_trust_store.key_hashes(pem) == {key}
 
 
 def test_locked_certifi_does_not_trust_them():

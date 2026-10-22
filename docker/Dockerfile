@@ -32,11 +32,16 @@ RUN ln -s /opal/wait-for.sh /usr/wait-for.sh
 
 # netcat (nc) is used by the wait-for.sh script.
 # ca-certificates is listed to UPGRADE it: the base image's copy trusts the compromised
-# eMudhra CAs (CVE-2026-111943), fixed in 20250419~deb12u2 from bookworm-security.
+# eMudhra CAs (CVE-2026-111943), fixed in 20250419~deb12u2 from bookworm-security. apt
+# cannot express a floor, so the version is checked right after the install: a mirror or
+# sources list without bookworm-security fails here, naming the cause.
 # check_trust_store.py fails the build if this or certifi's bundle still trusts them; it runs
 # after every step that installs OS packages, and stays in the image for re-checking it.
 COPY scripts/check_trust_store.py .
 RUN apt-get update && apt-get install -y netcat-traditional jq wget ca-certificates && apt-get clean && \
+  v="$(dpkg-query -W -f='${Version}' ca-certificates)" && \
+  { dpkg --compare-versions "$v" ge '20250419~deb12u2' || \
+    { echo "ca-certificates $v is below 20250419~deb12u2 (CVE-2026-111943): is bookworm-security reachable?" >&2; exit 1; }; } && \
   python check_trust_store.py
 
 # copy startup script (create link at old path to maintain backward compatibility)
@@ -294,11 +299,14 @@ COPY --from=build-stage-alpine /usr/local /usr/local
 RUN adduser -D -h /opal -s /bin/bash opal && apk add --no-cache bash netcat-openbsd jq wget
 RUN apk add --no-cache libssh2 http-parser
 WORKDIR /opal
-# Upgrades ca-certificates (and the -bundle package, which `apk add --upgrade` leaves behind) to
-# 20261020-r0, which drops the root of the compromised eMudhra CAs (CVE-2026-111943).
-# check_trust_store.py fails the build if it or certifi's bundle still trusts them.
+# Floors ca-certificates and ca-certificates-bundle at 20261020-r0, which drops the root of the
+# compromised eMudhra CAs (CVE-2026-111943). Declared to apk, so a stale index fails here with
+# apk's own version error, and /etc/apk/world keeps the floor for any later `apk add`. Both
+# packages are named: `apk add --upgrade ca-certificates` alone leaves -bundle behind.
+# check_trust_store.py fails the build if they or certifi's bundle still trust the CAs.
 COPY scripts/check_trust_store.py .
-RUN apk upgrade --no-cache ca-certificates ca-certificates-bundle && python check_trust_store.py
+RUN apk add --no-cache 'ca-certificates>=20261020-r0' 'ca-certificates-bundle>=20261020-r0' && \
+  python check_trust_store.py
 COPY scripts/wait-for.sh .
 RUN chmod +x ./wait-for.sh
 RUN ln -s /opal/wait-for.sh /usr/wait-for.sh
