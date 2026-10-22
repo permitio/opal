@@ -41,14 +41,10 @@ STDLIB_LOGGERS_CONFIGURE_LOGS_TOUCHES = (*LOGGING_CONFIG["loggers"], "ddtrace")
 
 
 class MasterLogs:
-    """Records from this test's thread only.
-
-    when_ready and the stubbed preload run on it. Worker threads that
-    earlier tests left behind can log at any moment (e.g. a late Future
-    callback error), which a real master, a fresh process, never sees.
-    """
-
     def __init__(self):
+        #: when_ready and the stubbed preload run on this thread. Worker threads
+        #: earlier tests left behind can log at any moment (e.g. a late Future
+        #: callback error), which a real master, a fresh process, never sees.
         self.thread_id = threading.get_ident()
         #: (level, message) of every record the default-handler stand-in got.
         self.default_records = []
@@ -65,7 +61,8 @@ class MasterLogs:
             yield
 
     def configured(self):
-        """(level, message) of every record the configured sink wrote."""
+        """(level, message) of every record the configured sink wrote from this
+        test's thread."""
         records = [
             json.loads(line)["record"]
             for line in self.stream.getvalue().splitlines()
@@ -101,7 +98,8 @@ def master_logs(monkeypatch):
     assert hasattr(core, "min_level") and hasattr(core, "patcher")
     saved_core = (core.handlers, core.min_level, core.patcher)
     root = logging.getLogger()
-    saved_root = ([h for h in root.handlers if not _is_pytest_handler(h)], root.level)
+    saved_root_handlers = [h for h in root.handlers if not _is_pytest_handler(h)]
+    saved_root_level = root.level
     saved_stdlib = {}
     for name in STDLIB_LOGGERS_CONFIGURE_LOGS_TOUCHES:
         lg = logging.getLogger(name)
@@ -110,7 +108,7 @@ def master_logs(monkeypatch):
     core.handlers, core.min_level, core.patcher = {}, float("inf"), None
     # A fresh process's root logger: no handlers of ours, level WARNING (an
     # InterceptHandler an earlier test left would route stdlib on its own).
-    for handler in saved_root[0]:
+    for handler in saved_root_handlers:
         root.removeHandler(handler)
     root.setLevel(logging.WARNING)
     logs = MasterLogs()
@@ -132,13 +130,11 @@ def master_logs(monkeypatch):
         logger.remove()
         core.handlers, core.min_level, core.patcher = saved_core
 
-        saved_root_handlers, saved_root_level = saved_root
         for handler in list(root.handlers):
             if isinstance(handler, InterceptHandler):
                 root.removeHandler(handler)
         for handler in saved_root_handlers:
-            if handler not in root.handlers:
-                root.addHandler(handler)
+            root.addHandler(handler)
         root.setLevel(saved_root_level)
 
         for name, (handlers, propagate, level) in saved_stdlib.items():
@@ -248,7 +244,8 @@ def test_default_handler_sees_records_when_configure_logs_is_skipped(
     assert ("WARNING", "Finished pre loading scopes...") in master_logs.default_records
     if scopes:
         assert ("DEBUG", "fake sync detail") in master_logs.default_records
-        assert any(CREDENTIAL in m for _, m in master_logs.default_records)
+        git_line = f"fake git error for {CREDENTIALED_REMOTE}"
+        assert ("WARNING", git_line) in master_logs.default_records
         redis_line = f"Connecting to Redis: {CREDENTIALED_REDIS_URL}"
         assert ("DEBUG", redis_line) in master_logs.default_records
     assert master_logs.stream.getvalue() == ""
@@ -330,20 +327,25 @@ def test_when_ready_routes_stdlib_logging_to_the_configured_sink(
     configure_logs_runs, master_logs, gunicorn_conf, monkeypatch
 ):
     """configure_logs() also takes over stdlib logging in the master, so a
-    third-party library's records land in the configured sink at their
-    level."""
+    third-party library's records, INFO included, land in the configured sink
+    at their level; in a fresh process they never reach loguru at all."""
     monkeypatch.setitem(sys.modules, "opal_server.scopes.task", None)
     if not configure_logs_runs:
         monkeypatch.setattr(gunicorn_conf, "configure_logs", lambda: None)
 
     with master_logs.streams():
         gunicorn_conf.when_ready(None)
-    logging.getLogger("some.third_party.lib").warning("stdlib warning")
+    third_party = logging.getLogger("some.third_party.lib")
+    third_party.info("stdlib info")
+    third_party.warning("stdlib warning")
 
     if configure_logs_runs:
-        assert master_logs.configured() == [("WARNING", "stdlib warning")]
+        assert master_logs.configured() == [
+            ("INFO", "stdlib info"),
+            ("WARNING", "stdlib warning"),
+        ]
     else:
-        assert master_logs.stream.getvalue() == ""
+        assert master_logs.default_records == []
 
 
 def test_preload_scopes_does_not_reconfigure_logging(
