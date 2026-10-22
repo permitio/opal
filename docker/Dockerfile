@@ -30,8 +30,14 @@ COPY scripts/wait-for.sh .
 RUN chmod +x ./wait-for.sh
 RUN ln -s /opal/wait-for.sh /usr/wait-for.sh
 
-# netcat (nc) is used by the wait-for.sh script
-RUN apt-get update && apt-get install -y netcat-traditional jq wget && apt-get clean
+# netcat (nc) is used by the wait-for.sh script.
+# ca-certificates is listed to UPGRADE it: the base image's copy trusts the roots of the
+# compromised eMudhra intermediates (CVE-2026-111943), fixed in 20250419~deb12u2 from
+# bookworm-security. check_trust_store.py (bind-mounted, not shipped) fails the build if
+# this or certifi's bundle still trusts them.
+RUN --mount=type=bind,source=scripts/check_trust_store.py,target=/tmp/check_trust_store.py \
+  apt-get update && apt-get install -y netcat-traditional jq wget ca-certificates && apt-get clean && \
+  python /tmp/check_trust_store.py
 
 # copy startup script (create link at old path to maintain backward compatibility)
 COPY ./scripts/start.sh .
@@ -284,7 +290,13 @@ RUN pip install --no-cache-dir --upgrade pip && pip install --no-cache-dir -r ./
 FROM python:3.10-alpine AS common-alpine
 RUN rm -r /usr/local/lib/python3.10/site-packages || true
 COPY --from=build-stage-alpine /usr/local /usr/local
-RUN adduser -D -h /opal -s /bin/bash opal && apk add --no-cache bash netcat-openbsd jq wget
+# Upgrades ca-certificates (and the -bundle package, which `apk add --upgrade` leaves behind) to
+# 20261020-r0, which drops the root of the compromised eMudhra intermediates (CVE-2026-111943).
+# check_trust_store.py fails the build if it or certifi's bundle still trusts them.
+RUN --mount=type=bind,source=scripts/check_trust_store.py,target=/tmp/check_trust_store.py \
+  adduser -D -h /opal -s /bin/bash opal && apk add --no-cache bash netcat-openbsd jq wget && \
+  apk upgrade --no-cache ca-certificates ca-certificates-bundle && \
+  python /tmp/check_trust_store.py
 RUN apk add --no-cache libssh2 http-parser
 WORKDIR /opal
 COPY scripts/wait-for.sh .
