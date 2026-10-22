@@ -360,8 +360,13 @@ class OpalServerConfig(Confi):
         "retried once an hour. Its memory counts against the container's limit: "
         "allow about 0.5 KB per object of the repository (measured 1.2 GB for a "
         "61k-branch repository of 2.3 million objects, 0.8 GB for 1.6 million). A "
-        "container already near its limit can be OOM-killed by the repack. Raise "
-        "it to repack less often; 0 or negative disables repacking.",
+        "container already near its limit can be OOM-killed by the repack. It "
+        "needs disk too: git writes the merged pack before it deletes the old "
+        "ones, so the volume holding the clones needs free space for about one "
+        "more copy of the clone's packs. A repack that runs out of space fails, "
+        "is logged and is not retried for an hour, and while it writes, fetches "
+        "of other clones on that volume can fail as well. Raise the limit to "
+        "repack less often; 0 or negative disables repacking.",
     )
     SCOPES_GIT_REPACK_TIMEOUT = confi.float(
         "SCOPES_GIT_REPACK_TIMEOUT",
