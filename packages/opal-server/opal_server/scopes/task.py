@@ -207,7 +207,7 @@ class ScopesPolicyWatcherTask(BasePolicyWatcherTask):
         scripts/gunicorn_conf.py::when_ready.
         """
         if opal_server_config.SCOPES:
-            # This runs in the gunicorn MASTER (scripts/gunicorn_conf.py:when_ready)
+            # This runs in the gunicorn MASTER (scripts/gunicorn_conf.py::when_ready)
             # before any worker configured monitoring. Without this the git
             # metrics emitted during preload (git_ops_in_flight, scopes.count,
             # sources_in_backoff, git_op_failures...) go out un-namespaced and
