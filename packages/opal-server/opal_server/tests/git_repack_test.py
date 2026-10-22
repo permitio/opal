@@ -1743,6 +1743,16 @@ def _service(tmp_path: Path, *scopes: Scope, pubsub=None) -> ScopesService:
     )
 
 
+def _watcher(service: ScopesService) -> "task_module.ScopesPolicyWatcherTask":
+    """The leader's watcher task on ``service``, for its trigger; built without
+    __init__, which needs Redis (scopes_task_wiring_test's way)."""
+    watcher = task_module.ScopesPolicyWatcherTask.__new__(
+        task_module.ScopesPolicyWatcherTask
+    )
+    watcher._service = service
+    return watcher
+
+
 @pytest.mark.asyncio
 async def test_pass_notifies_every_scope_before_it_repacks(tmp_path, monkeypatch):
     """The repack a phase-1 fetch makes due waits for phase 2: the scope that
@@ -1817,11 +1827,7 @@ async def test_refresh_repacks_the_clone_it_left_due_with_no_periodic_pass(
     notified_at_start: list = []
     spy = _RepackSpy(on_start=lambda: notified_at_start.append(pubsub.notified()))
     monkeypatch.setattr(git_fetcher, "_repack_clone", spy)
-    # Built without __init__, which needs Redis (scopes_task_wiring_test's way).
-    watcher = task_module.ScopesPolicyWatcherTask.__new__(
-        task_module.ScopesPolicyWatcherTask
-    )
-    watcher._service = _service(tmp_path, _scope_on(repo, "s1"), pubsub=pubsub)
+    watcher = _watcher(_service(tmp_path, _scope_on(repo, "s1"), pubsub=pubsub))
     await repo.fetched(_LIMIT - 1)
     tip = str(repo.push())
 
@@ -1969,18 +1975,28 @@ async def test_purging_a_source_drops_its_mark(tmp_path, purge):
     assert git_fetcher._repacks_due == {}
 
 
+async def _run_due_repacks_from(entry: str, source_id: str) -> None:
+    """The due repack of ``source_id``, run the way a pass ends or the way the
+    watcher's trigger ends a refresh."""
+    if entry == "pass":
+        await GitPolicyFetcher.run_due_repacks({source_id})
+    else:
+        await GitPolicyFetcher.run_due_repack(source_id, wait_for_lock=True)
+
+
+@pytest.mark.parametrize("entry", ["pass", "refresh"])
 @pytest.mark.asyncio
 async def test_due_repack_waits_out_a_git_op_of_the_clone_that_outlived_its_awaiter(
-    tmp_path, monkeypatch, emitted
+    tmp_path, monkeypatch, emitted, entry
 ):
     """A later fetch of a clone already marked due timed out, and its thread
     runs on through the clone's cached handle.
 
-    The pass skips that clone's repack and keeps the mark. Run beside
-    the fetch, the repack would rewrite the packs the fetch reads, clear
-    its busy marker (so the next sync would fetch beside it as well) and
-    free() the handle it uses. Once the fetch is gone, the next pass
-    repacks the clone.
+    The pass (or the refresh) skips that clone's repack and keeps the
+    mark. Run beside the fetch, the repack would rewrite the packs the
+    fetch reads, clear its busy marker (so the next sync would fetch
+    beside it as well) and free() the handle it uses. Once the fetch is
+    gone, the next one repacks the clone.
     """
     scope = _ScopeRepo(tmp_path, "s1")
     await scope.fetched(_LIMIT - 1)
@@ -2006,7 +2022,7 @@ async def test_due_repack_waits_out_a_git_op_of_the_clone_that_outlived_its_awai
         assert in_fetch.is_set()
         assert git_op_in_flight(scope.source_id)
 
-        await GitPolicyFetcher.run_due_repacks({scope.source_id})
+        await _run_due_repacks_from(entry, scope.source_id)
 
         assert _repack_outcomes(emitted) == []
         assert _skips(emitted) == []  # not another repack running: not counted
@@ -2018,9 +2034,169 @@ async def test_due_repack_waits_out_a_git_op_of_the_clone_that_outlived_its_awai
         gate.set()
     assert await run_sync(git_fetcher.drain_git_ops, 10)
 
-    await GitPolicyFetcher.run_due_repacks({scope.source_id})
+    await _run_due_repacks_from(entry, scope.source_id)
     assert _repack_outcomes(emitted) == ["ok"]
     assert _count_pack_files(scope.clone_path) == 1
+    assert git_fetcher._repacks_due == {}
+
+
+@pytest.mark.asyncio
+async def test_pass_never_waits_on_a_due_clone_another_sync_holds(
+    tmp_path, monkeypatch
+):
+    """A refresh of a scope the periodic pass does not poll marked its clone
+    due, and a second refresh of it hangs in its fetch with
+    SCOPES_GIT_FETCH_TIMEOUT=0 (no limit), holding the clone's lock_source.
+
+    The pass needs no lock of that clone to end, so it skips the repack
+    and keeps the mark instead of waiting: waiting, it would never end,
+    and neither would the periodic polling or the leader heartbeat. The
+    next pass after the refresh repacks the clone.
+    """
+    spy = _RepackSpy()
+    monkeypatch.setattr(git_fetcher, "_repack_clone", spy)
+    unpolled = _ScopeRepo(tmp_path, "unpolled")  # poll_updates=False
+    polled = _ScopeRepo(tmp_path, "polled")
+    polled.fetcher._source.poll_updates = True
+    pubsub = _FakePubSub()
+    svc = _service(
+        tmp_path,
+        _scope_on(unpolled, "unpolled"),
+        _scope_on(polled, "polled"),
+        pubsub=pubsub,
+    )
+    await unpolled.fetched(_LIMIT - 1)
+    await polled.fetched(1)
+    unpolled.push()
+    await svc.sync_scope(scope_id="unpolled", force_fetch=True)  # marks due
+    assert set(git_fetcher._repacks_due) == {unpolled.source_id}
+
+    gate = threading.Event()
+    in_fetch = threading.Event()
+    real_fetch = pygit2.remotes.Remote.fetch
+
+    def _hung_fetch(self, *args, **kwargs):
+        in_fetch.set()
+        gate.wait(30)
+        return real_fetch(self, *args, **kwargs)
+
+    monkeypatch.setattr(pygit2.remotes.Remote, "fetch", _hung_fetch)
+    monkeypatch.setattr(opal_server_config, "SCOPES_GIT_FETCH_TIMEOUT", 0)
+    unpolled.push()
+    hung = asyncio.ensure_future(svc.sync_scope(scope_id="unpolled", force_fetch=True))
+    try:
+        assert await run_sync(in_fetch.wait, 5), "the second refresh never fetched"
+        monkeypatch.setattr(pygit2.remotes.Remote, "fetch", real_fetch)
+        tip = str(polled.push())
+
+        periodic = asyncio.ensure_future(svc.sync_scopes(only_poll_updates=True))
+        done, _ = await asyncio.wait({periodic}, timeout=10)
+
+        assert done, "the pass waited on the lock of a clone it does not need"
+        periodic.result()
+        assert ("polled", tip) in pubsub.notified()
+        assert spy.calls == []
+        assert set(git_fetcher._repacks_due) == {unpolled.source_id}
+        assert not hung.done()
+    finally:
+        gate.set()
+    await asyncio.wait_for(hung, 10)
+
+    await svc.sync_scopes(only_poll_updates=True)
+    assert spy.calls == [str(unpolled.clone_path)]
+    assert git_fetcher._repacks_due == {}
+
+
+@pytest.mark.asyncio
+async def test_pass_never_queues_behind_a_sync_woken_for_the_clone_lock(
+    tmp_path, monkeypatch
+):
+    """Between a release of the clone's lock_source and the queued sync it
+    wakes taking it, the lock reads as free, yet an acquire then would queue
+    behind that sync's whole hold.
+
+    The pass counts a queued task as using the lock too, and skips.
+    """
+    spy = _RepackSpy()
+    monkeypatch.setattr(git_fetcher, "_repack_clone", spy)
+    scope = _ScopeRepo(tmp_path, "s1")
+    await scope.fetched(_LIMIT - 1)
+    scope.push()
+    await scope.sync()  # marks due
+    sid = scope.source_id
+    queued_in = asyncio.Event()
+    queued_gate = asyncio.Event()
+
+    async def _queued_sync():
+        async with GitPolicyFetcher.lock_source(sid):
+            queued_in.set()
+            await queued_gate.wait()
+
+    # A bound for a pass that does queue, so the test fails instead of hanging.
+    unstick = asyncio.get_running_loop().call_later(5, queued_gate.set)
+    try:
+        async with GitPolicyFetcher.lock_source(sid):
+            queued = asyncio.ensure_future(_queued_sync())
+            await asyncio.sleep(0)  # it queues for the lock
+        # Released: the queued sync is woken but has not taken the lock, and
+        # this task goes on without yielding to it.
+        assert not GitPolicyFetcher.repo_locks[sid].locked()
+        assert not queued_in.is_set()
+
+        await GitPolicyFetcher.run_due_repacks({sid})
+
+        assert not queued_gate.is_set(), "the pass queued behind the woken sync"
+        assert spy.calls == []
+        assert set(git_fetcher._repacks_due) == {sid}
+    finally:
+        unstick.cancel()
+        queued_gate.set()
+    await asyncio.wait_for(queued, 5)
+    assert queued_in.is_set()
+
+
+@pytest.mark.asyncio
+async def test_refresh_waits_for_the_clone_lock_its_repack_needs(tmp_path, monkeypatch):
+    """Unlike a pass, the refresh's repack waits for the clone's lock_source,
+    as the refresh's own sync just did: nothing waits on the watcher's trigger,
+    and on a clone whose lock is never free at the end of a pass (the busiest
+    one, refreshed back to back) skipping would starve the repack for good.
+
+    Here another sync of the clone queues for its lock during the
+    refresh's fetch: the refresh repacks once that sync is done.
+    """
+    spy = _RepackSpy()
+    monkeypatch.setattr(git_fetcher, "_repack_clone", spy)
+    repo = _ScopeRepo(tmp_path, "s1")
+    svc = _service(tmp_path, _scope_on(repo, "s1"))
+    watcher = _watcher(svc)
+    await repo.fetched(_LIMIT - 1)
+    repo.push()
+    gate = threading.Event()
+    in_fetch = threading.Event()
+    real_fetch = pygit2.remotes.Remote.fetch
+
+    def _slow_fetch(self, *args, **kwargs):
+        in_fetch.set()
+        gate.wait(10)
+        return real_fetch(self, *args, **kwargs)
+
+    monkeypatch.setattr(pygit2.remotes.Remote, "fetch", _slow_fetch)
+    refresh = asyncio.ensure_future(
+        watcher.trigger(topic=None, data={"scope_id": "s1", "force_fetch": True})
+    )
+    try:
+        assert await run_sync(in_fetch.wait, 5), "the refresh never fetched"
+        other = asyncio.ensure_future(svc.sync_scope(scope_id="s1"))
+        await asyncio.sleep(0)
+        lock = GitPolicyFetcher.repo_locks[repo.source_id]
+        assert len(lock._waiters or ()) == 1, "the other sync is not queued"
+    finally:
+        gate.set()
+    await asyncio.wait_for(asyncio.gather(refresh, other), 10)
+
+    assert spy.calls == [str(repo.clone_path)]
+    assert _count_pack_files(repo.clone_path) == 1
     assert git_fetcher._repacks_due == {}
 
 

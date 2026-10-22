@@ -1244,6 +1244,22 @@ def _emit_repack_skipped() -> None:
     )
 
 
+def _lock_is_busy(lock: asyncio.Lock) -> bool:
+    """Whether acquiring ``lock`` now would wait: it is held, or a task is
+    queued for it.
+
+    locked() alone is not enough: between a release and the queued task
+    it wakes taking the lock, locked() is False, and an acquire then
+    queues behind that task's whole hold. asyncio.Lock has no public way
+    to ask, nor a non-blocking acquire. Its queue is ``_waiters`` on every
+    CPython this package supports (3.10 to 3.12); without one this falls
+    back to locked() alone. A cancelled waiter does not count, as it does
+    not for the lock's own acquire.
+    """
+    waiters = getattr(lock, "_waiters", None) or ()
+    return lock.locked() or any(not w.cancelled() for w in waiters)
+
+
 class PolicyFetcherCallbacks:
     async def on_update(self, old_head: Optional[str], head: str):
         pass
@@ -1779,10 +1795,10 @@ class GitPolicyFetcher(PolicyFetcher):
             if source_id not in live_source_ids:
                 _repacks_due.pop(source_id, None)
                 continue
-            await GitPolicyFetcher.run_due_repack(source_id)
+            await GitPolicyFetcher.run_due_repack(source_id, wait_for_lock=False)
 
     @staticmethod
-    async def run_due_repack(source_id: str) -> None:
+    async def run_due_repack(source_id: str, *, wait_for_lock: bool) -> None:
         """Repack ``source_id``'s clone if a fetch marked it due.
 
         Each due repack of a pass runs through here, and so does a
@@ -1793,7 +1809,29 @@ class GitPolicyFetcher(PolicyFetcher):
         took while this waited for it is dropped. A clone with a git op
         still in flight is skipped and keeps its mark for later. Never
         raises but CancelledError (or another BaseException).
+
+        ``wait_for_lock`` False, a pass's: while any other task holds the
+        clone's lock_source or is queued for it, the clone is skipped and
+        keeps its mark for the next pass or refresh. A pass needs no
+        clone's lock to end, and one held by a fetch that never returns
+        (SCOPES_GIT_FETCH_TIMEOUT=0) would stop every later periodic
+        pass, and the leader heartbeat with them. True, a refresh's: it
+        waits, as the refresh's own sync just did. Nothing waits on the
+        trigger, and skipping would starve the clone whose lock is never
+        free at the end of a pass, the busiest one.
         """
+        if not wait_for_lock:
+            lock = GitPolicyFetcher.repo_locks.get(source_id)
+            if lock is not None and _lock_is_busy(lock):
+                logger.debug(
+                    "Not repacking scope clone {source_id} in this pass: another "
+                    "sync of it holds or waits for its lock, so the next pass or "
+                    "refresh of it repacks it",
+                    source_id=source_id,
+                )
+                return
+        # Nothing is awaited between the check and the acquire, so a lock
+        # found free is taken without waiting.
         async with GitPolicyFetcher.lock_source(source_id):
             if git_op_in_flight(source_id):
                 # A git op of this clone outlived its awaiter (a fetch past
