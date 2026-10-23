@@ -1,6 +1,7 @@
-# syntax=docker/dockerfile:1.19
+# syntax=docker/dockerfile:1.19@sha256:b6afd42430b15f2d2a4c5a02b919e98a525b785b1aaff16747d2f623364e39b6
 # The syntax line must stay first. COPY --exclude below needs dockerfile frontend 1.19 or later
-# (1.17 and 1.18 reject the flag).
+# (1.17 and 1.18 reject the flag). The digest pins the frontend that builds every image; when
+# you change the tag, update the digest with it (docker buildx imagetools inspect <tag>).
 # BUILD STAGE ---------------------------------------
 # split this stage to save time and reduce image size
 # ---------------------------------------------------
@@ -58,7 +59,8 @@ COPY ./scripts/gunicorn_conf.py .
 COPY ./README.md .
 # --exclude, not .dockerignore: CI and the release build from a Git context, where BuildKit
 # ignores .dockerignore. The trust-store test's fixture holds the compromised eMudhra
-# certificates, and an image scanner looking for them would flag the image.
+# certificates, and a search of the image's files for them would report it, even though
+# nothing trusts it.
 COPY --exclude=**/tests/*.pem ./packages ./packages/
 # install the opal-common package
 RUN cd ./packages/opal-common && python setup.py install
@@ -323,7 +325,8 @@ COPY ./scripts/gunicorn_conf.py .
 COPY ./README.md .
 # --exclude, not .dockerignore: CI and the release build from a Git context, where BuildKit
 # ignores .dockerignore. The trust-store test's fixture holds the compromised eMudhra
-# certificates, and an image scanner looking for them would flag the image.
+# certificates, and a search of the image's files for them would report it, even though
+# nothing trusts it.
 COPY --exclude=**/tests/*.pem ./packages ./packages/
 RUN cd ./packages/opal-common && python setup.py install
 ENV PATH=/opal:/root/.local/bin:$PATH
