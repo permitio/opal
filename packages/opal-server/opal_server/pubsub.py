@@ -32,6 +32,7 @@ from opal_common.config import opal_common_config
 from opal_common.http_utils import SENSITIVE_QUERY_PARAMS
 from opal_common.logger import logger
 from opal_server.config import opal_server_config
+from opal_server.publisher import warn_on_unescaped_percent_in_uri
 from opal_server.pubsub_resilience import (
     FreezablePubSubEndpoint,
     ReconnectingBroadcaster,
@@ -155,6 +156,8 @@ class PubSub:
         broadcaster_uri = load_conf_if_none(
             broadcaster_uri, opal_server_config.BROADCAST_URI
         )
+        if broadcaster_uri is not None:
+            warn_on_unescaped_percent_in_uri(broadcaster_uri)
         self.pubsub_router = APIRouter()
         self.api_router = APIRouter()
         # Pub/Sub Internals
