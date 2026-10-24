@@ -1,0 +1,29 @@
+{
+  "tuples": [
+    {
+      "user": "user:anne",
+      "relation": "admin",
+      "object": "organization:acme"
+    },
+    {
+      "user": "user:bob",
+      "relation": "member",
+      "object": "organization:acme"
+    },
+    {
+      "user": "organization:acme",
+      "relation": "org",
+      "object": "folder:engineering"
+    },
+    {
+      "user": "folder:engineering",
+      "relation": "parent",
+      "object": "document:roadmap"
+    },
+    {
+      "user": "user:charlie",
+      "relation": "viewer",
+      "object": "document:roadmap"
+    }
+  ]
+}

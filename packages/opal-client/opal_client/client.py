@@ -20,8 +20,12 @@ from opal_client.connectivity.api import init_connectivity_router
 from opal_client.data.api import init_data_router
 from opal_client.data.fetcher import DataFetcher
 from opal_client.data.updater import DataUpdater
-from opal_client.engine.options import CedarServerOptions, OpaServerOptions
-from opal_client.engine.runner import CedarRunner, OpaRunner
+from opal_client.engine.options import (
+    CedarServerOptions,
+    OpaServerOptions,
+    OpenFGAServerOptions,
+)
+from opal_client.engine.runner import CedarRunner, OpaRunner, OpenFGARunner
 from opal_client.limiter import StartupLoadLimiter
 from opal_client.policy.api import init_policy_router
 from opal_client.policy.updater import PolicyUpdater
@@ -50,6 +54,8 @@ class OpalClient:
         inline_opa_options: OpaServerOptions = None,
         inline_cedar_enabled: bool = None,
         inline_cedar_options: CedarServerOptions = None,
+        inline_openfga_enabled: bool = None,
+        inline_openfga_options: OpenFGAServerOptions = None,
         verifier: Optional[JWTVerifier] = None,
         store_backup_path: Optional[str] = None,
         store_backup_interval: Optional[int] = None,
@@ -79,6 +85,9 @@ class OpalClient:
         )
         inline_cedar_enabled: bool = (
             inline_cedar_enabled or opal_client_config.INLINE_CEDAR_ENABLED
+        )
+        inline_openfga_enabled: bool = (
+            inline_openfga_enabled or opal_client_config.INLINE_OPENFGA_ENABLED
         )
         opal_client_identifier: str = (
             opal_client_config.OPAL_CLIENT_STAT_ID or f"CLIENT_{uuid.uuid4().hex}"
@@ -169,6 +178,8 @@ class OpalClient:
             inline_cedar_enabled,
             inline_opa_options,
             inline_cedar_options,
+            inline_openfga_enabled,
+            inline_openfga_options,
         )
 
         custom_ssl_context = get_custom_ssl_context()
@@ -210,7 +221,9 @@ class OpalClient:
         inline_cedar_enabled: bool,
         inline_opa_options: Optional[OpaServerOptions] = None,
         inline_cedar_options: Optional[CedarServerOptions] = None,
-    ) -> Union[OpaRunner, CedarRunner, Literal[False]]:
+        inline_openfga_enabled: bool = False,
+        inline_openfga_options: Optional[OpenFGAServerOptions] = None,
+    ) -> Union[OpaRunner, CedarRunner, OpenFGARunner, Literal[False]]:
         if inline_opa_enabled and self.policy_store_type == PolicyStoreTypes.OPA:
             inline_opa_options = (
                 inline_opa_options or opal_client_config.INLINE_OPA_CONFIG
@@ -255,6 +268,18 @@ class OpalClient:
             return CedarRunner.setup_cedar_runner(
                 options=inline_cedar_options,
                 piped_logs_format=opal_client_config.INLINE_CEDAR_LOG_FORMAT,
+            )
+
+        elif (
+            inline_openfga_enabled
+            and self.policy_store_type == PolicyStoreTypes.OPENFGA
+        ):
+            inline_openfga_options = (
+                inline_openfga_options or opal_client_config.INLINE_OPENFGA_CONFIG
+            )
+            return OpenFGARunner.setup_openfga_runner(
+                options=inline_openfga_options,
+                piped_logs_format=opal_client_config.INLINE_OPENFGA_LOG_FORMAT,
             )
 
         return False
