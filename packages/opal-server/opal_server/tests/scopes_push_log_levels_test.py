@@ -4,11 +4,11 @@ The kept line is ``NewCommitsCallbacks.trigger_notification``'s "Triggering
 policy update for scope", logged once per publish by each pod leader. The other
 lines of the push chain are DEBUG; their WARN/ERROR siblings keep their level.
 
-The exactly-one-INFO tests cover ``on_update`` and a ``sync_scope`` force-fetch
-(a refresh without a hint, refresh-all, the periodic poll). Other paths keep
-their own INFO lines: a scope's first sync, a hinted refresh, per-pass lines
-and fetch anomalies. "INFO" means OPAL's own loggers; third-party loggers are
-excluded.
+The exactly-one-INFO tests cover ``on_update``, a ``sync_scope`` force-fetch (a
+refresh without a hint) and ``sync_scopes`` (refresh-all, the periodic poll),
+which adds its one per-pass line. Other paths keep their own INFO lines: a
+scope's first sync, a hinted refresh and fetch anomalies. "INFO" means OPAL's
+own loggers; third-party loggers are excluded.
 """
 
 import datetime
@@ -42,6 +42,9 @@ class FakeScopeRepository:
             raise ScopeNotFoundError(scope_id)
         return self._scopes[scope_id]
 
+    async def all(self):
+        return list(self._scopes.values())
+
 
 class FakeAuthenticator:
     """Mimics a JWTAuthenticator whose verifier is disabled (no public key)."""
@@ -60,8 +63,10 @@ class RecordingPubSub:
         self.published.append((topics, data))
 
 
-def _source(url="https://git.example.com/org/policy.git"):
-    return GitPolicyScopeSource(source_type="git", url=url, auth=NoAuthData())
+def _source(url="https://git.example.com/org/policy.git", poll_updates=False):
+    return GitPolicyScopeSource(
+        source_type="git", url=url, auth=NoAuthData(), poll_updates=poll_updates
+    )
 
 
 def _opal_records(records, level):
@@ -146,6 +151,8 @@ async def test_push_with_no_tracked_files_warns_and_does_not_publish(
         logs.emitted, "new commits detected but no tracked files were affected"
     )
     assert warning["level"].name == "WARNING"
+    # "Found new commits" is DEBUG, so the scope has to travel on the warning.
+    assert warning["extra"]["scope_id"] == SCOPE_ID
     assert not starting_with(logs.emitted, "Triggering policy update")
 
 
@@ -203,6 +210,63 @@ async def test_sync_scope_incremental_push_logs_exactly_one_info_line(
     assert info["message"].startswith(f"Triggering policy update for scope {SCOPE_ID}")
     assert _opal_records(logs.emitted, "WARNING") == []
     assert _opal_records(logs.emitted, "ERROR") == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "only_poll_updates", [False, True], ids=["refresh-all", "periodic-poll"]
+)
+async def test_sync_scopes_push_logs_the_pass_line_and_one_info_line(
+    tmp_path, clear_fetcher_caches, only_poll_updates
+):
+    """Refresh-all and the periodic poll go through sync_scopes: one per-pass
+    INFO line, then one "Triggering policy update" per pushed scope."""
+    remote = git.Repo.init(tmp_path / "remote", initial_branch="main")
+    _commit(remote, "policy/a.rego", "package a\n")
+    source = _source(url=str(tmp_path / "remote"), poll_updates=True)
+    pubsub = RecordingPubSub()
+    service = ScopesService(
+        base_dir=tmp_path / "opal",
+        scopes=FakeScopeRepository([Scope(scope_id=SCOPE_ID, policy=source)]),
+        pubsub_endpoint=pubsub,
+    )
+    await service.sync_scopes(only_poll_updates=only_poll_updates)  # clones
+    assert len(pubsub.published) == 1
+    _commit(remote, "policy/a.rego", "package a\n\ndefault allow := false\n")
+
+    with capture_records() as logs:
+        await service.sync_scopes(only_poll_updates=only_poll_updates)
+
+    assert len(pubsub.published) == 2
+    [pass_line, info] = _opal_records(logs.emitted, "INFO")
+    assert pass_line["message"].startswith("OPAL Scopes: syncing 1 scopes")
+    assert info["message"].startswith(f"Triggering policy update for scope {SCOPE_ID}")
+    assert _opal_records(logs.emitted, "WARNING") == []
+    assert _opal_records(logs.emitted, "ERROR") == []
+
+
+@pytest.mark.asyncio
+async def test_duplicate_refresh_logs_no_info_line(tmp_path, clear_fetcher_caches):
+    """A refresh whose request predates the last fetch is skipped at DEBUG."""
+    remote = git.Repo.init(tmp_path / "remote", initial_branch="main")
+    _commit(remote, "policy/a.rego", "package a\n")
+    scope = Scope(scope_id=SCOPE_ID, policy=_source(url=str(tmp_path / "remote")))
+    service = ScopesService(
+        base_dir=tmp_path / "opal",
+        scopes=FakeScopeRepository([scope]),
+        pubsub_endpoint=RecordingPubSub(),
+    )
+    # Back a second, so a coarse clock can't stamp the clone at the same time.
+    req_time = datetime.datetime.now() - datetime.timedelta(seconds=1)
+    await service.sync_scope(scope_id=SCOPE_ID)  # clones; records the fetch time
+
+    with capture_records() as logs:
+        await service.sync_scope(scope_id=SCOPE_ID, force_fetch=True, req_time=req_time)
+
+    [fetched] = starting_with(logs.emitted, "Repo was fetched after refresh request")
+    assert fetched["level"].name == "DEBUG"
+    assert not starting_with(logs.emitted, "Fetching remote")
+    assert _opal_records(logs.emitted, "INFO") == []
 
 
 def test_refresh_scope_line_is_debug_and_still_publishes(tmp_path):
