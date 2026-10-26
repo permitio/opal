@@ -456,6 +456,25 @@ class DataUpdater:
             logger.exception("Failed to calculate hash for data")
             return ""
 
+    def _entry_matches_data_topics(self, entry_topics: List[str]) -> bool:
+        """Whether a data entry targets one of this client's data topics.
+
+        A scoped client subscribes to ``<scope_id>:data:<topic>``, and the
+        entries of its scope's data sources config carry that form. Updates
+        published through ``POST /scopes/{scope_id}/data/update`` are delivered
+        on the scoped topic, but their entries carry ``data:<topic>``: the
+        server prefixes the scope on the published topic only. Normalise
+        unscoped entry topics to this client's scope so that both forms match.
+        """
+        topics = set(entry_topics)
+        if self._scope_id != "default":
+            prefix = f"{self._scope_id}:"
+            topics = {
+                topic if topic.startswith(prefix) else f"{prefix}{topic}"
+                for topic in topics
+            }
+        return not topics.isdisjoint(set(self._data_topics))
+
     async def _update_policy_data(self, update: DataUpdate) -> None:
         """Performs the core data update process for the given DataUpdate
         object.
@@ -488,7 +507,7 @@ class DataUpdater:
                 continue
 
             # Only process entries that match one of our subscribed data topics
-            if set(entry.topics).isdisjoint(set(self._data_topics)):
+            if not self._entry_matches_data_topics(entry.topics):
                 logger.debug(
                     "Data entry for url {url} has no topics matching the data topics, skipping",
                     url=redact_url(entry.url),
