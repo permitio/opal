@@ -222,14 +222,14 @@ docker compose -f docker/docker-compose-single-topic-multi-tenant.yml logs -f op
 
 You should see the following logs:
 ```
+Publishing data update to topics: {'tenant_data'}, reason: Add tenant1 data source, entries: [{'url': 'http://example_external_data_provider:80/acl/tenant1', 'method': 'PUT', 'path': '/acl/tenant1', 'inline_data': False, 'topics': ['tenant_data']}]
 185.199.109.133:55981 - "POST /data/config HTTP/1.1" 200
 Broadcasting incoming event: {'topic': 'tenant_data', 'notifier_id': '7a4b55cd27d34df8a1e4ff5fc5c7516f'}
 ```
 
-With `OPAL_LOG_LEVEL=DEBUG` the server also logs each update's topics, reason and entries (`Publishing data update to topics: ...`).
-
 Then again for tenant 2:
 ```
+Publishing data update to topics: {'tenant_data'}, reason: Add tenant2 data source, entries: [{'url': 'http://example_external_data_provider:80/acl/tenant2', 'method': 'PUT', 'path': '/acl/tenant2', 'inline_data': False, 'topics': ['tenant_data']}]
 185.199.109.133:59019 - "POST /data/config HTTP/1.1" 200
 Broadcasting incoming event: {'topic': 'tenant_data', 'notifier_id': '4dd064469d75485c9d3547c7dda55215'}
 ```

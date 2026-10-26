@@ -204,5 +204,5 @@ class ScopedServerSideTopicPublisher(ServerSideTopicPublisher):
 
     async def publish(self, topics: TopicList, data: Any = None):
         scoped_topics = [f"{self._scope_id}:{topic}" for topic in topics]
-        logger.debug("Publishing to topics: {topics}", topics=scoped_topics)
+        logger.info("Publishing to topics: {topics}", topics=scoped_topics)
         await super().publish(scoped_topics, data)

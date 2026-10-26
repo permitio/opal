@@ -101,7 +101,7 @@ class DataUpdatePublisher:
                 )
 
         # publish all topics with all their sub combinations
-        logger.debug(
+        logger.info(
             "[{pid}] Publishing data update to topics: {topics}, reason: {reason}, entries: {entries}",
             pid=os.getpid(),
             topics=all_topic_combos,
