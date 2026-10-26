@@ -37,9 +37,18 @@ def _scrub_record_message(record):
                 extra[key] = redact_sensitive_text(value)
 
 
+_logs_configured = False
+
+
+def logs_configured() -> bool:
+    """Whether configure_logs() has run in this process."""
+    return _logs_configured
+
+
 def configure_logs():
     """Takeover process logs and create a logger with Loguru according to the
     configuration."""
+    global _logs_configured
     fix_ddtrace_logging()
 
     intercept_handler = InterceptHandler()
@@ -84,6 +93,7 @@ def configure_logs():
             serialize=opal_common_config.LOG_FILE_SERIALIZE,
             level=opal_common_config.LOG_FILE_LEVEL,
         )
+    _logs_configured = True
 
 
 def get_logger(name=""):

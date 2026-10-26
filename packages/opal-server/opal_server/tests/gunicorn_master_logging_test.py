@@ -21,11 +21,13 @@ import sys
 import threading
 from pathlib import Path
 
+import opal_common.logger as opal_logger
 import opal_server.scopes
 import opal_server.scopes.task as task_module
 import pytest
 from loguru import logger
 from opal_common.config import opal_common_config
+from opal_common.http_utils import redact_url
 from opal_common.logger import configure_logs
 from opal_server.config import opal_server_config
 from uvicorn.config import LOGGING_CONFIG
@@ -34,6 +36,7 @@ GUNICORN_CONF = Path(__file__).resolve().parents[4] / "scripts" / "gunicorn_conf
 CREDENTIAL = "s3cret-FAKE-123"
 CREDENTIALED_REMOTE = f"https://user:{CREDENTIAL}@git.example.com/org/policy.git"
 CREDENTIALED_REDIS_URL = f"redis://:{CREDENTIAL}@redis.example.com:6379"
+CLONE_ERROR = repr(Exception(f"clone failed for {CREDENTIALED_REMOTE}"))
 # The stdlib loggers configure_logs() rewires: hijack_uvicorn_logs takes the
 # uvicorn names from the same LOGGING_CONFIG, fix_ddtrace_logging the other.
 STDLIB_LOGGERS_CONFIGURE_LOGS_TOUCHES = (*LOGGING_CONFIG["loggers"], "ddtrace")
@@ -98,6 +101,7 @@ def master_logs(monkeypatch):
     monkeypatch.setattr(opal_common_config, "LOG_COLORIZE", False)
     monkeypatch.setattr(opal_common_config, "LOG_TO_FILE", False)
     monkeypatch.setattr(opal_common_config, "LOG_PIPE_TO_STDERR", True)
+    monkeypatch.setattr(opal_logger, "_logs_configured", False)
     core = logger._core
     # Private loguru state (as in redaction_fixtures.without_log_patcher):
     # fail loudly if a loguru upgrade renames it, rather than swap nothing.
@@ -156,10 +160,16 @@ class _FakeScopesService:
         pass
 
     async def sync_scopes(self, *args, **kwargs):
-        # Stands in for the per-scope git chatter of the real preload.
+        # Stands in for the per-scope git chatter of the real preload; the
+        # warning has the shape of GitPolicyFetcher._clone's failure line, whose
+        # err kwarg (raw, as git renders it) also lands in record["extra"].
         logger.debug("fake sync detail")
         logger.info("fake sync info")
-        logger.warning(f"fake git error for {CREDENTIALED_REMOTE}")
+        logger.warning(
+            "Could not clone repo at {url}: {err}",
+            url=redact_url(CREDENTIALED_REMOTE),
+            err=CLONE_ERROR,
+        )
 
 
 def _fake_redis_db(url):
@@ -196,9 +206,14 @@ def _run_when_ready(gunicorn_conf, master_logs, monkeypatch, scopes):
 
 @pytest.mark.parametrize("level", ["INFO", "DEBUG"])
 def test_when_ready_scopes_on_no_record_reaches_default_handler(
-    level, master_logs, gunicorn_conf, stub_preload, monkeypatch
+    level, master_logs, gunicorn_conf, stub_preload, monkeypatch, tmp_path
 ):
     monkeypatch.setattr(opal_common_config, "LOG_LEVEL", level)
+    # The file sink is path-based, so it isn't stream-wrapped: only the
+    # patcher keeps credentials out of it, message and extra alike.
+    log_file = tmp_path / "opal.log"
+    monkeypatch.setattr(opal_common_config, "LOG_TO_FILE", True)
+    monkeypatch.setattr(opal_common_config, "LOG_FILE_PATH", str(log_file))
 
     _run_when_ready(gunicorn_conf, master_logs, monkeypatch, scopes=True)
 
@@ -212,6 +227,9 @@ def test_when_ready_scopes_on_no_record_reaches_default_handler(
     # and the Redis URL line (DEBUG) is checked masked in the DEBUG case below.
     assert any("git.example.com/org/policy.git" in m for _, m in configured)
     assert CREDENTIAL not in master_logs.stream.getvalue()
+    file_output = log_file.read_text()
+    assert "Could not clone repo at" in file_output
+    assert CREDENTIAL not in file_output
     debug = [m for lvl, m in configured if lvl == "DEBUG"]
     if level == "INFO":
         assert debug == []
@@ -234,16 +252,20 @@ def test_default_handler_sees_records_when_configure_logs_is_skipped(
     scopes, master_logs, gunicorn_conf, stub_preload, monkeypatch
 ):
     """Positive control: the stand-in does record what reaches the default
-    handler, so the empty assertions above mean something."""
+    handler, so the empty assertions above mean something. preload_scopes'
+    own fallback is skipped too, as in a master where nothing configures."""
     monkeypatch.setattr(gunicorn_conf, "configure_logs", lambda: None)
+    monkeypatch.setattr(task_module, "configure_logs", lambda: None)
 
     _run_when_ready(gunicorn_conf, master_logs, monkeypatch, scopes=scopes)
 
     assert ("WARNING", "Finished pre loading scopes...") in master_logs.default_records
     if scopes:
         assert ("DEBUG", "fake sync detail") in master_logs.default_records
-        git_line = f"fake git error for {CREDENTIALED_REMOTE}"
-        assert ("WARNING", git_line) in master_logs.default_records
+        clone_line = (
+            f"Could not clone repo at {redact_url(CREDENTIALED_REMOTE)}: {CLONE_ERROR}"
+        )
+        assert ("WARNING", clone_line) in master_logs.default_records
         redis_line = f"Connecting to Redis: {CREDENTIALED_REDIS_URL}"
         assert ("DEBUG", redis_line) in master_logs.default_records
     assert master_logs.stream.getvalue() == ""
@@ -346,12 +368,30 @@ def test_when_ready_routes_stdlib_logging_to_the_configured_sink(
         assert master_logs.default_records == []
 
 
-def test_preload_scopes_does_not_reconfigure_logging(
+def test_preload_scopes_configures_logging_when_nothing_did(
     master_logs, stub_preload, monkeypatch
 ):
-    """when_ready owns the master's logging setup; preload must not replace the
-    sinks already in place."""
+    """A custom GUNICORN_CONF may call preload_scopes() without when_ready's
+    configure_logs(); the preload then configures logging itself."""
     monkeypatch.setattr(opal_server_config, "SCOPES", True)
+
+    with master_logs.streams():
+        task_module.ScopesPolicyWatcherTask.preload_scopes()
+
+    assert master_logs.default_records == []
+    assert ("INFO", "Preloading repo clones for scopes") in master_logs.configured()
+    assert CREDENTIAL not in master_logs.stream.getvalue()
+    # Recorded, so a later preload in this process keeps these sinks.
+    assert opal_logger.logs_configured()
+
+
+def test_preload_scopes_keeps_logging_already_configured(
+    master_logs, stub_preload, monkeypatch
+):
+    """Once logging is configured (as when_ready does), preload must not
+    replace the sinks already in place."""
+    monkeypatch.setattr(opal_server_config, "SCOPES", True)
+    monkeypatch.setattr(opal_logger, "_logs_configured", True)
     task_module.ScopesPolicyWatcherTask.preload_scopes()
     logger.info("after preload")
 

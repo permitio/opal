@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi_websocket_pubsub import Topic
-from opal_common.logger import logger
+from opal_common.logger import configure_logs, logger, logs_configured
 from opal_common.monitoring import metrics
 from opal_server.config import opal_server_config
 from opal_server.git_fetcher import (
@@ -203,10 +203,14 @@ class ScopesPolicyWatcherTask(BasePolicyWatcherTask):
         """Clone all scopes repositories as part as server startup.
 
         This speeds up the first sync of scopes after workers are
-        started. Expects configure_logs() to have run; see
-        scripts/gunicorn_conf.py::when_ready.
+        started. scripts/gunicorn_conf.py::when_ready configures logging
+        before calling this; a caller that didn't (e.g. a custom
+        GUNICORN_CONF) gets configure_logs() here, so the preload never
+        logs through loguru's unscrubbed default handler.
         """
         if opal_server_config.SCOPES:
+            if not logs_configured():
+                configure_logs()
             # This runs in the gunicorn MASTER (scripts/gunicorn_conf.py::when_ready)
             # before any worker configured monitoring. Without this the git
             # metrics emitted during preload (git_ops_in_flight, scopes.count,
