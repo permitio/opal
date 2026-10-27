@@ -124,6 +124,25 @@ jobs:
           tags: |
             permitio/opal-server:test
 
+      - name: Check that no test certificate fixture is in the images
+        # .dockerignore doesn't apply to the Git context build-push-action builds from, so
+        # docker/Dockerfile excludes these with COPY --exclude. This fails if one slips back in.
+        run: |
+          for image in permitio/opal-client:test permitio/opal-server:test; do
+            tests=$(docker run --rm --entrypoint sh "$image" -c 'find /opal/packages -path "*/tests/*" -name "*.py" | wc -l')
+            found=$(docker run --rm --entrypoint sh "$image" -c 'find /opal/packages -name "*.pem"')
+            if [ "$tests" -eq 0 ]; then
+              echo "::error::$image: no test modules under /opal/packages, so this check saw nothing"
+              exit 1
+            fi
+            if [ -n "$found" ]; then
+              echo "::error::$image carries certificate fixtures:"
+              echo "$found"
+              exit 1
+            fi
+            echo "$image: no .pem among $tests test files"
+          done
+
       - name: Set up Python
         uses: actions/setup-python@v2
         with:
@@ -198,6 +217,25 @@ jobs:
           load: true
           tags: |
             permitio/opal-server:test-alpine
+
+      - name: Check that no test certificate fixture is in the images
+        # .dockerignore doesn't apply to the Git context build-push-action builds from, so
+        # docker/Dockerfile excludes these with COPY --exclude. This fails if one slips back in.
+        run: |
+          for image in permitio/opal-client:test-alpine permitio/opal-server:test-alpine; do
+            tests=$(docker run --rm --entrypoint sh "$image" -c 'find /opal/packages -path "*/tests/*" -name "*.py" | wc -l')
+            found=$(docker run --rm --entrypoint sh "$image" -c 'find /opal/packages -name "*.pem"')
+            if [ "$tests" -eq 0 ]; then
+              echo "::error::$image: no test modules under /opal/packages, so this check saw nothing"
+              exit 1
+            fi
+            if [ -n "$found" ]; then
+              echo "::error::$image carries certificate fixtures:"
+              echo "$found"
+              exit 1
+            fi
+            echo "$image: no .pem among $tests test files"
+          done
 
       - name: Create alpine docker compose file
         run: sed 's/:latest-alpine/:test-alpine/g' docker/docker-compose-example-alpine.yml > docker/docker-compose-test-alpine.yml
