@@ -41,6 +41,8 @@ class DropRootPathTraces(TraceFilter):
 
 
 WEBSOCKET_MESSAGES_ENV = "DD_TRACE_WEBSOCKET_MESSAGES_ENABLED"
+# The pre-4.x name, which ddtrace 4 still honours when the new one is unset.
+LEGACY_WEBSOCKET_ENV = "DD_ASGI_TRACE_WEBSOCKET"
 
 
 def configure_apm(enable_apm: bool, service_name: str):
@@ -54,13 +56,16 @@ def configure_apm(enable_apm: bool, service_name: str):
     # ddtrace 4 traces every websocket message by default (3.x did not). OPAL's pub/sub runs
     # over websockets, so that would turn each published update into spans, and it logs a
     # warning with a traceback whenever a close is sent to a client that already left. Keep the
-    # 3.x behaviour unless the operator chose otherwise: the env default covers integrations
-    # patched below; the config assignment covers those already imported (under ddtrace-run,
-    # fastapi's and starlette's configs are read when the app imports fastapi, before this runs).
-    # FastAPI's middleware reads config.fastapi, Starlette's config.starlette, plain ASGI apps
-    # config.asgi.
-    operator_choice = os.environ.get(WEBSOCKET_MESSAGES_ENV)
-    os.environ.setdefault(WEBSOCKET_MESSAGES_ENV, "false")
+    # 3.x behaviour unless the operator set either variable. The assignment below covers an
+    # integration in either order: one already imported (under ddtrace-run, fastapi's and
+    # starlette's configs are read when the app imports fastapi), and one imported later, since
+    # getattr creates the config and ddtrace keeps values already set when the integration
+    # registers. FastAPI's middleware reads config.fastapi, Starlette's config.starlette, plain
+    # ASGI apps config.asgi.
+    operator_chose = any(
+        os.environ.get(name) is not None
+        for name in (WEBSOCKET_MESSAGES_ENV, LEGACY_WEBSOCKET_ENV)
+    )
 
     patch(
         fastapi=True,
@@ -73,7 +78,7 @@ def configure_apm(enable_apm: bool, service_name: str):
     tracer.configure(
         trace_processors=[DropRootPathTraces()],
     )
-    if operator_choice is None:
+    if not operator_chose:
         for integration in ("asgi", "starlette", "fastapi"):
             getattr(config, integration).trace_asgi_websocket_messages = False
 

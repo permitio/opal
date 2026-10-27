@@ -12,7 +12,11 @@ import textwrap
 
 import pytest
 from ddtrace.trace import Span
-from opal_common.monitoring.apm import WEBSOCKET_MESSAGES_ENV, DropRootPathTraces
+from opal_common.monitoring.apm import (
+    LEGACY_WEBSOCKET_ENV,
+    WEBSOCKET_MESSAGES_ENV,
+    DropRootPathTraces,
+)
 
 
 def _root(**tags):
@@ -81,18 +85,14 @@ apm.DropRootPathTraces.process_trace = _spy
 """
 
 
-def _run_child(code, websocket_messages=None):
-    env = {
-        k: v
-        for k, v in os.environ.items()
-        if k not in (WEBSOCKET_MESSAGES_ENV, "DD_TRACE_ENABLED")
-    }
+def _run_child(code, operator_env=None):
+    dropped = (WEBSOCKET_MESSAGES_ENV, LEGACY_WEBSOCKET_ENV, "DD_TRACE_ENABLED")
+    env = {k: v for k, v in os.environ.items() if k not in dropped}
     env.update(_CHILD_ENV)
     # The parent's import path, so the child tests this checkout's opal_common even where it is
     # not installed (or an older copy is).
     env["PYTHONPATH"] = os.pathsep.join(sys.path)
-    if websocket_messages is not None:
-        env[WEBSOCKET_MESSAGES_ENV] = websocket_messages
+    env.update(operator_env or {})
     return subprocess.run(
         [sys.executable, "-c", code],
         env=env,
@@ -147,44 +147,85 @@ def test_configure_apm_runs_on_installed_ddtrace():
     assert result.returncode == 0, result.stderr
 
 
+# One websocket app per integration config configure_apm sets: FastAPI reads config.fastapi,
+# Starlette config.starlette, a bare ASGI app wrapped in TraceMiddleware config.asgi.
+_WS_APPS = {
+    "fastapi": """
+import fastapi
+app = fastapi.FastAPI()
+
+@app.websocket("/ws")
+async def ws(websocket: fastapi.WebSocket):
+    await websocket.accept()
+    for _ in range(3):
+        await websocket.send_text(await websocket.receive_text())
+    await websocket.close()
+""",
+    "starlette": """
+from starlette.applications import Starlette
+from starlette.routing import WebSocketRoute
+
+async def ws(websocket):
+    await websocket.accept()
+    for _ in range(3):
+        await websocket.send_text(await websocket.receive_text())
+    await websocket.close()
+
+app = Starlette(routes=[WebSocketRoute("/ws", ws)])
+""",
+    "asgi": """
+from ddtrace.contrib.asgi import TraceMiddleware
+
+async def bare(scope, receive, send):
+    await receive()  # websocket.connect
+    await send({"type": "websocket.accept"})
+    for _ in range(3):
+        message = await receive()
+        await send({"type": "websocket.send", "text": message["text"]})
+    await send({"type": "websocket.close", "code": 1000})
+
+app = TraceMiddleware(bare)
+""",
+}
+# What the operator set: (environment, whether they asked for message tracing).
+_OPERATOR = {
+    "unset": ({}, False),
+    "new-true": ({WEBSOCKET_MESSAGES_ENV: "true"}, True),
+    "new-false": ({WEBSOCKET_MESSAGES_ENV: "false"}, False),
+    "legacy-true": ({LEGACY_WEBSOCKET_ENV: "true"}, True),
+}
+
+
+@pytest.mark.parametrize("operator", sorted(_OPERATOR))
+@pytest.mark.parametrize("app_kind", sorted(_WS_APPS))
 @pytest.mark.parametrize(
     "prelude", ["", "import ddtrace.auto"], ids=["patch", "ddtrace-run"]
 )
-@pytest.mark.parametrize(
-    ("operator_value", "traced"), [(None, False), ("true", True), ("false", False)]
-)
-def test_websocket_message_tracing_keeps_the_3x_default(
-    prelude, operator_value, traced
-):
+def test_websocket_message_tracing_keeps_the_3x_default(prelude, app_kind, operator):
     """Ddtrace 4 traces every websocket message by default; OPAL's pub/sub runs
     over websockets.
 
     configure_apm keeps ddtrace 3's default (off) unless the operator
-    set DD_TRACE_WEBSOCKET_MESSAGES_ENABLED, and then leaves their
-    choice alone. Checked by the spans that reach the trace processor
-    for a real websocket session, both with configure_apm patching and
-    under ddtrace-run (`import ddtrace.auto`), where FastAPI's
-    integration config is read before configure_apm runs.
+    set DD_TRACE_WEBSOCKET_MESSAGES_ENABLED or the older
+    DD_ASGI_TRACE_WEBSOCKET, and then leaves their choice alone. Checked
+    by the websocket.* spans that reach the trace processor for a real
+    session, for each integration config it sets, with configure_apm
+    patching and under ddtrace-run (`import ddtrace.auto`). A plain
+    Starlette app is instrumented only under ddtrace-run: configure_apm
+    patches fastapi, not starlette.
     """
+    operator_env, wants_tracing = _OPERATOR[operator]
+    instrumented = app_kind != "starlette" or prelude != ""
     code = (
         prelude
         + "\n"
         + _SPY
+        + "\nfrom opal_common.monitoring.apm import configure_apm\n"
+        + 'configure_apm(True, "opal-apm-test")\n'
+        + _WS_APPS[app_kind]
         + textwrap.dedent(
             """
-            import fastapi
-            from fastapi.testclient import TestClient
-            from opal_common.monitoring.apm import configure_apm
-            configure_apm(True, "opal-apm-test")
-            app = fastapi.FastAPI()
-
-            @app.websocket("/ws")
-            async def ws(websocket: fastapi.WebSocket):
-                await websocket.accept()
-                for _ in range(3):
-                    await websocket.send_text(await websocket.receive_text())
-                await websocket.close()
-
+            from starlette.testclient import TestClient
             with TestClient(app).websocket_connect("/ws") as conn:
                 for i in range(3):
                     conn.send_text(str(i))
@@ -194,7 +235,8 @@ def test_websocket_message_tracing_keeps_the_3x_default(
             """
         )
     )
-    result = _run_child(code, websocket_messages=operator_value)
+    result = _run_child(code, operator_env)
     assert result.returncode == 0, result.stderr
     message_spans = int(result.stdout.strip().splitlines()[-1])
-    assert (message_spans > 0) == traced, f"{message_spans} websocket.* spans"
+    expected = wants_tracing and instrumented
+    assert (message_spans > 0) == expected, f"{message_spans} websocket.* spans"

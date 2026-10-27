@@ -71,9 +71,9 @@ For more information about ddtrace v3.0.0 changes, see the [official migration g
 
 ### ddtrace v4
 
-ddtrace v4 traces every websocket message by default; v3 did not. OPAL's pub/sub runs over websockets, so that would turn each published update into spans. OPAL keeps the v3 behaviour: the Docker images set `DD_TRACE_WEBSOCKET_MESSAGES_ENABLED=false`, and `configure_apm` applies the same default to the ASGI, Starlette and FastAPI integrations when the variable is not set, including under `ddtrace-run`. Set it to `true` to trace websocket messages.
+ddtrace v4 traces every websocket message by default; v3 did not. OPAL's pub/sub runs over websockets, so that would turn each published update into spans. OPAL keeps the v3 behaviour: the Docker images set `DD_TRACE_WEBSOCKET_MESSAGES_ENABLED=false`, and `configure_apm` applies the same default to the ASGI, Starlette and FastAPI integrations when neither `DD_TRACE_WEBSOCKET_MESSAGES_ENABLED` nor the older `DD_ASGI_TRACE_WEBSOCKET` is set, including under `ddtrace-run`. Set `DD_TRACE_WEBSOCKET_MESSAGES_ENABLED=true` to trace websocket messages; in the Docker images it is the only variable that does, since the image's own setting takes precedence over the older name.
 
-OPAL needed no code changes for ddtrace v4: none of the APIs v4 removed (`Pin`, `Span.set_tag_str`, `ddtrace.settings`, the `opentracer` package and others) are used by OPAL. If you import ddtrace yourself next to OPAL, for example from a custom fetch provider, check your own code against the [v4.0.0 release notes](https://github.com/DataDog/dd-trace-py/releases/tag/v4.0.0).
+OPAL uses none of the APIs v4 removed (`Pin`, `Span.set_tag_str`, `ddtrace.settings`, the `opentracer` package and others); its only v4-specific change is the websocket default above. If you import ddtrace yourself next to OPAL, for example from a custom fetch provider, check your own code against the [v4.0.0 release notes](https://github.com/DataDog/dd-trace-py/releases/tag/v4.0.0).
 
 
 ## OPAL Client tracker (EAP)
