@@ -11,4 +11,4 @@ ddtrace>=4.8.2,<5 # 4.8.1 and earlier: GHSA-mw54-j2v2-42hr (CVE-2026-50271)
 certifi>=2026.10.19 # not directly required; drops emSign ECC Root CA - G3, the root of the compromised eMudhra intermediates (CVE-2026-111943)
 requests>=2.32.0 # not directly required, pinned by Snyk to avoid a vulnerability
 httpx>=0.27.0
-urllib3>=2.2.2 # not directly required, pinned by Snyk to avoid a vulnerability
+urllib3>=2.8.0 # not directly required; 2.8.0 fixes CVE-2026-97687 and CVE-2026-97689

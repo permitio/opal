@@ -13,8 +13,10 @@ COPY ./packages/requires.txt ./base_requires.txt
 COPY ./packages/opal-common/requires.txt ./common_requires.txt
 COPY ./packages/opal-client/requires.txt ./client_requires.txt
 COPY ./packages/opal-server/requires.txt ./server_requires.txt
-# install python deps
-RUN pip install --no-cache-dir --upgrade pip && pip install --no-cache-dir -r ./base_requires.txt -r ./common_requires.txt -r ./client_requires.txt -r ./server_requires.txt
+# install python deps. setuptools is upgraded explicitly: the base image's copy already meets
+# requires.txt's floor, so pip would keep it, and setuptools < 84.1 carries CVE-2025-47273 and
+# vendors jaraco.context and wheel releases with CVEs of their own.
+RUN pip install --no-cache-dir --upgrade pip 'setuptools>=84.1.0' && pip install --no-cache-dir -r ./base_requires.txt -r ./common_requires.txt -r ./client_requires.txt -r ./server_requires.txt
 
 # COMMON IMAGE --------------------------------------
 # ---------------------------------------------------
@@ -42,7 +44,8 @@ RUN ln -s /opal/wait-for.sh /usr/wait-for.sh
 # check_trust_store.py fails the build if this or certifi's bundle still trusts them; it runs
 # after every step that installs OS packages, and stays in the image for re-checking it.
 COPY scripts/check_trust_store.py .
-RUN apt-get update && apt-get install -y netcat-traditional jq wget ca-certificates && apt-get clean && \
+# apt-get upgrade picks up Debian security updates the base image predates (openssl, for one)
+RUN apt-get update && apt-get upgrade -y && apt-get install -y netcat-traditional jq wget ca-certificates && apt-get clean && \
   v="$(dpkg-query -W -f='${Version}' ca-certificates)" && \
   { dpkg --compare-versions "$v" ge '20250419~deb12u2' || \
     { echo "ca-certificates $v is below 20250419~deb12u2 (CVE-2026-111943): is bookworm-security reachable?" >&2; exit 1; }; } && \
@@ -301,13 +304,16 @@ COPY ./packages/requires.txt ./base_requires.txt
 COPY ./packages/opal-common/requires.txt ./common_requires.txt
 COPY ./packages/opal-client/requires.txt ./client_requires.txt
 COPY ./packages/opal-server/requires.txt ./server_requires.txt
-RUN pip install --no-cache-dir --upgrade pip && pip install --no-cache-dir -r ./base_requires.txt -r ./common_requires.txt -r ./client_requires.txt -r ./server_requires.txt
+# setuptools upgraded explicitly, as in build-stage above
+RUN pip install --no-cache-dir --upgrade pip 'setuptools>=84.1.0' && pip install --no-cache-dir -r ./base_requires.txt -r ./common_requires.txt -r ./client_requires.txt -r ./server_requires.txt
 
 # COMMON IMAGE (ALPINE) -------------------------------------
 # -----------------------------------------------------------
 FROM python:3.10-alpine AS common-alpine
 RUN rm -r /usr/local/lib/python3.10/site-packages || true
 COPY --from=build-stage-alpine /usr/local /usr/local
+# apk upgrade picks up Alpine security updates the base image predates (zlib, for one)
+RUN apk upgrade --no-cache
 RUN adduser -D -h /opal -s /bin/bash opal && apk add --no-cache bash netcat-openbsd jq wget
 RUN apk add --no-cache libssh2 http-parser
 WORKDIR /opal
