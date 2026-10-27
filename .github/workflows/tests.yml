@@ -76,13 +76,14 @@ jobs:
     # wherever a developer happens to have opa installed.
     - name: Install OPA (for the inline-OPA argv tests)
       run: |
-        curl -fsSL -o /usr/local/bin/opa \
-          https://openpolicyagent.org/downloads/v${OPA_VERSION}/opa_linux_amd64_static
+        # --retry: a dropped connection mid-download failed a whole leg once (curl: (56))
+        curl -fsSL --retry 3 --retry-all-errors -o /usr/local/bin/opa \
+          "https://openpolicyagent.org/downloads/v${OPA_VERSION}/opa_linux_amd64_static"
         chmod +x /usr/local/bin/opa
         opa version
       env:
         # pinned: an unpinned `latest` would make a flag rename look like our bug
-        OPA_VERSION: 1.20.2
+        OPA_VERSION: 1.21.4  # keep equal to the opa-extractor image in docker/Dockerfile
     - name: Lint with flake8
       run: |
         # stop the build if there are Python syntax errors or undefined names
@@ -293,6 +294,29 @@ jobs:
       - name: Output container logs (alpine)
         run: docker compose -f docker/docker-compose-test-alpine.yml logs
 
+  binary-stages:
+    # The OPA and EOPA extraction stages, for both release architectures. The jobs above
+    # build amd64 only, and arm64 builds run only in on_release.yml, so a wrong opa_digest
+    # or EOPA checksum after a version bump would otherwise fail only once a release is cut.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130  # v3.7.0
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f  # v3.12.0
+      - name: Build the OPA and EOPA stages for linux/amd64 and linux/arm64
+        run: |
+          for target in opa-extractor eopa-extractor; do
+            docker buildx build --platform linux/amd64,linux/arm64 --target "$target" -f docker/Dockerfile .
+          done
+
   ci:
     # The branch ruleset requires only this check, so the jobs above and their
     # matrix legs can be renamed without editing the ruleset. always(): GitHub
@@ -300,7 +324,7 @@ jobs:
     # fail, when a needed job fails or is cancelled.
     name: CI
     if: always()
-    needs: [build, e2e-tests, e2e-tests-alpine]
+    needs: [build, e2e-tests, e2e-tests-alpine, binary-stages]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
