@@ -12,7 +12,7 @@ import textwrap
 
 import pytest
 from ddtrace.trace import Span
-from opal_common.monitoring.apm import DropRootPathTraces
+from opal_common.monitoring.apm import WEBSOCKET_MESSAGES_ENV, DropRootPathTraces
 
 
 def _root(**tags):
@@ -111,3 +111,46 @@ def test_configure_apm_runs_on_installed_ddtrace():
         timeout=120,
     )
     assert result.returncode == 0, result.stderr
+
+
+@pytest.mark.parametrize(
+    ("operator_value", "expected"), [(None, False), ("true", True), ("false", False)]
+)
+def test_websocket_message_tracing_keeps_the_3x_default(operator_value, expected):
+    """Ddtrace 4 traces every websocket message by default; OPAL's pub/sub runs
+    over websockets.
+
+    configure_apm keeps ddtrace 3's default (off) unless the operator
+    set DD_TRACE_WEBSOCKET_MESSAGES_ENABLED, and then leaves their
+    choice alone.
+    """
+    code = textwrap.dedent(
+        """
+        import fastapi  # imported first, as opal-server does, so patch() applies the ASGI integration now
+        from ddtrace import config
+        from opal_common.monitoring.apm import configure_apm
+        configure_apm(True, "opal-apm-test")
+        print(config.asgi.trace_asgi_websocket_messages)
+        """
+    )
+    env = {k: v for k, v in os.environ.items() if k != WEBSOCKET_MESSAGES_ENV}
+    env.update(
+        {
+            "DD_TRACE_AGENT_URL": "http://127.0.0.1:9",
+            "DD_TRACE_ENABLED": "false",
+            "DD_INSTRUMENTATION_TELEMETRY_ENABLED": "false",
+            "DD_REMOTE_CONFIGURATION_ENABLED": "false",
+            "PYTHONPATH": os.pathsep.join(sys.path),
+        }
+    )
+    if operator_value is not None:
+        env[WEBSOCKET_MESSAGES_ENV] = operator_value
+    result = subprocess.run(
+        [sys.executable, "-c", code],
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip().splitlines()[-1] == str(expected)
