@@ -75,8 +75,14 @@ async def test_publish_data_updates_line_is_debug_and_missing_topics_warning_sta
         ],
     )
 
+    publisher = _RecordingPublisher()
     with capture_records() as logs:
-        await DataUpdatePublisher(_RecordingPublisher()).publish_data_updates(update)
+        await DataUpdatePublisher(publisher).publish_data_updates(update)
+
+    # The update is still published, with every topic combination.
+    [(topics, data)] = publisher.published
+    assert set(topics) == {"a", "a/b"}
+    assert data["reason"] == "test reason"
 
     pid = os.getpid()
     [line] = starting_with(logs.emitted, f"[{pid}] Publishing data update to topics:")
