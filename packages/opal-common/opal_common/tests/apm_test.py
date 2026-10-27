@@ -33,6 +33,11 @@ def _child(root):
         ({"http.route": "/data/config"}, False),
         ({"http.url": "http://opal:7002/"}, True),
         ({"http.url": "http://opal:7002/healthcheck"}, False),
+        # The rule is the URL's path, not its last character, and a query does not change it.
+        ({"http.url": "http://opal:7002/data/"}, False),
+        ({"http.url": "http://opal:7002/?x=1"}, True),
+        # urlparse raises ValueError on this; the filter fails open and keeps the trace.
+        ({"http.url": "http://[::1"}, False),
         ({}, False),
     ],
 )
@@ -71,6 +76,7 @@ def test_configure_apm_runs_on_installed_ddtrace():
             from opal_common.monitoring.apm import configure_apm, fix_ddtrace_logging
             configure_apm(True, "opal-apm-test")
             fix_ddtrace_logging()
+            import aiohttp  # imported after patch(), so the aiohttp integration is applied too
             import fastapi
             from fastapi.testclient import TestClient
             app = fastapi.FastAPI()
@@ -80,19 +86,26 @@ def test_configure_apm_runs_on_installed_ddtrace():
             assert client.get("/").status_code == 200
             assert client.get("/healthcheck").status_code == 200
         assert getattr(fastapi, "_datadog_patch", False), "FastAPI was not patched"
+        assert getattr(aiohttp, "_datadog_patch", False), "aiohttp was not patched"
         ours = [str(w.message) for w in caught if issubclass(w.category, DDTraceDeprecationWarning)]
         assert not ours, ours
         """
     )
     env = {
-        # no agent here: keep the tracer from trying to reach one
+        # No agent here. configure_apm's tracer.configure() turns the tracer back on whatever
+        # DD_TRACE_ENABLED says, and the requests below finish spans, so the agent URL points at
+        # a closed local port: a flush fails there and nothing leaves the host. Telemetry and
+        # remote config, which have their own endpoints, are off.
+        "DD_TRACE_AGENT_URL": "http://127.0.0.1:9",
         "DD_TRACE_ENABLED": "false",
         "DD_INSTRUMENTATION_TELEMETRY_ENABLED": "false",
         "DD_REMOTE_CONFIGURATION_ENABLED": "false",
     }
     result = subprocess.run(
         [sys.executable, "-c", code],
-        env={**os.environ, **env},
+        # The parent's import path, so the child tests this checkout's opal_common even where
+        # it is not installed (or an older copy is).
+        env={**os.environ, **env, "PYTHONPATH": os.pathsep.join(sys.path)},
         capture_output=True,
         text=True,
         timeout=120,
