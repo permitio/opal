@@ -171,6 +171,14 @@ class _FakeScopesService:
             url=redact_url(CREDENTIALED_REMOTE),
             err=CLONE_ERROR,
         )
+        # A rendered traceback and a non-str extra value: the patcher masks
+        # neither, so only the sink wrappers keep these credentials out.
+        try:
+            raise Exception(CLONE_ERROR)
+        except Exception:
+            logger.opt(exception=True).warning(
+                "fake sync failure", remote={"url": CREDENTIALED_REMOTE}
+            )
 
 
 def _fake_redis_db(url):
@@ -210,8 +218,7 @@ def test_when_ready_scopes_on_no_record_reaches_default_handler(
     level, master_logs, gunicorn_conf, stub_preload, monkeypatch, tmp_path
 ):
     monkeypatch.setattr(opal_common_config, "LOG_LEVEL", level)
-    # The file sink is path-based, so it isn't stream-wrapped: only the
-    # patcher keeps credentials out of it, message and extra alike.
+    # The master also writes to the file sink, which has its own wrapper.
     log_file = tmp_path / "opal.log"
     monkeypatch.setattr(opal_common_config, "LOG_TO_FILE", True)
     monkeypatch.setattr(opal_common_config, "LOG_FILE_PATH", str(log_file))
@@ -406,3 +413,61 @@ def test_preload_scopes_keeps_logging_already_configured(
         configure_logs()
     logger.info("after configure_logs")
     assert "after configure_logs" not in [m for _, m in master_logs.default_records]
+
+
+@pytest.mark.parametrize("patched", [True, False], ids=["patcher", "control-no-op"])
+def test_configure_logs_masks_records_for_sinks_added_later(
+    patched, master_logs, monkeypatch
+):
+    """configure_logs' own sinks are wrapped; the patcher it installs is what
+    masks the message and str extras for a sink added afterwards."""
+    if not patched:
+        monkeypatch.setattr(opal_logger, "_scrub_record_message", lambda record: None)
+    with master_logs.streams():
+        configure_logs()
+    later = []
+    sink_id = logger.add(lambda m: later.append(m.record["message"]), level="DEBUG")
+    try:
+        logger.warning("Connecting to Redis: {url}", url=CREDENTIALED_REDIS_URL)
+    finally:
+        logger.remove(sink_id)
+
+    assert len(later) == 1
+    assert (CREDENTIAL in later[0]) is not patched
+
+
+def _log_caught_error():
+    marker = "frame-local-value"
+    try:
+        # Not an f-string: diagnose annotates only the names on this line.
+        raise ValueError("boom " + str(len(marker)))
+    except ValueError:
+        logger.exception("caught")
+
+
+def _caller_above_the_catch():
+    _log_caught_error()
+
+
+@pytest.mark.parametrize("enabled", [False, True], ids=["off", "control-on"])
+def test_file_sink_follows_log_traceback_and_log_diagnose(
+    enabled, master_logs, monkeypatch, tmp_path
+):
+    """Loguru's own defaults (backtrace and diagnose on) would extend the file
+    sink's tracebacks above the catch point and print frame-local values."""
+    log_file = tmp_path / "opal.log"
+    monkeypatch.setattr(opal_common_config, "LOG_TO_FILE", True)
+    monkeypatch.setattr(opal_common_config, "LOG_FILE_PATH", str(log_file))
+    monkeypatch.setattr(opal_common_config, "LOG_FILE_LEVEL", "DEBUG")
+    monkeypatch.setattr(opal_common_config, "LOG_FILE_SERIALIZE", False)
+    monkeypatch.setattr(opal_common_config, "LOG_TRACEBACK", enabled)
+    monkeypatch.setattr(opal_common_config, "LOG_DIAGNOSE", enabled)
+    with master_logs.streams():
+        configure_logs()
+
+    _caller_above_the_catch()
+
+    output = log_file.read_text()
+    assert "ValueError: boom 17" in output
+    assert ("frame-local-value" in output) is enabled
+    assert ("_caller_above_the_catch" in output) is enabled

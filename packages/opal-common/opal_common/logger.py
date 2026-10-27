@@ -7,7 +7,10 @@ from opal_common.http_utils import redact_sensitive_text
 from opal_common.logging_utils.filter import ModuleFilter
 from opal_common.logging_utils.formatter import Formatter
 from opal_common.logging_utils.intercept import InterceptHandler
-from opal_common.logging_utils.scrubbing import CredentialScrubbingStream
+from opal_common.logging_utils.scrubbing import (
+    CredentialScrubbingFileSink,
+    CredentialScrubbingStream,
+)
 from opal_common.logging_utils.thirdparty import hijack_uvicorn_logs
 from opal_common.monitoring.apm import fix_ddtrace_logging
 
@@ -22,10 +25,10 @@ def _scrub_record_message(record):
     dumps even when the message does not reference it.
 
     Runs once per record (order-independent across sinks), so it also protects
-    the optional rotating file sink, which is path-based and cannot be
-    stream-wrapped. The stream sink is *additionally* wrapped with
-    ``CredentialScrubbingStream`` to scrub rendered exception tracebacks and
-    non-``str`` extra values, which this pass does not touch.
+    any sink added later. configure_logs' own sinks are *additionally* wrapped
+    (``CredentialScrubbingStream``, ``CredentialScrubbingFileSink``) to scrub
+    rendered exception tracebacks and non-``str`` extra values, which this pass
+    does not touch.
     """
     message = record.get("message")
     if message:
@@ -71,8 +74,8 @@ def configure_logs():
     # Wrap the stream so credentials are masked in the final formatted record -
     # including third-party exception tracebacks (e.g. aiohttp rendering
     # ``https://user:pw@host?token=...``) that the model-layer redaction cannot
-    # reach. Message/extra scrubbing for all sinks (incl. the rotating file sink,
-    # which cannot be wrapped) is handled by the patcher above.
+    # reach. The file sink below is wrapped the same way; the patcher above
+    # covers message/extra for any other sink.
     logger.add(
         CredentialScrubbingStream(pipe),
         filter=filter.filter,
@@ -86,12 +89,19 @@ def configure_logs():
     # log to a file
     if opal_common_config.LOG_TO_FILE:
         logger.add(
-            opal_common_config.LOG_FILE_PATH,
-            compression=opal_common_config.LOG_FILE_COMPRESSION,
-            retention=opal_common_config.LOG_FILE_RETENTION,
-            rotation=opal_common_config.LOG_FILE_ROTATION,
+            CredentialScrubbingFileSink(
+                opal_common_config.LOG_FILE_PATH,
+                compression=opal_common_config.LOG_FILE_COMPRESSION,
+                retention=opal_common_config.LOG_FILE_RETENTION,
+                rotation=opal_common_config.LOG_FILE_ROTATION,
+            ),
             serialize=opal_common_config.LOG_FILE_SERIALIZE,
             level=opal_common_config.LOG_FILE_LEVEL,
+            # As the stream sink: loguru's defaults (backtrace and diagnose on)
+            # would write frame-local variable values into the file.
+            backtrace=opal_common_config.LOG_TRACEBACK,
+            diagnose=opal_common_config.LOG_DIAGNOSE,
+            colorize=False,
         )
     _logs_configured = True
 
