@@ -226,6 +226,12 @@ class OpalServerClient:
         resp = requests.post(f"{self.base_url}/scopes/refresh", timeout=30)
         resp.raise_for_status()
 
+    def refresh_scope(self, scope_id: str) -> None:
+        # POST /scopes/{id}/refresh: the leader syncs that one scope (a forced
+        # fetch, since no hinted hash is passed) outside any sync pass.
+        resp = requests.post(f"{self.base_url}/scopes/{scope_id}/refresh", timeout=30)
+        resp.raise_for_status()
+
 
 class GiteaAdmin:
     """Host-side admin client for the test bed's Gitea.

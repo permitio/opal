@@ -1,6 +1,5 @@
 import asyncio
 import datetime
-import shutil
 from functools import partial
 from pathlib import Path
 from typing import List, Optional, Set, cast
@@ -23,6 +22,7 @@ from opal_server.git_fetcher import (
     PolicyFetcherCallbacks,
     emit_sources_in_backoff,
     git_op_in_flight,
+    remove_clone_dir_exclusive,
 )
 from opal_server.policy.watcher.callbacks import (
     create_policy_update,
@@ -426,7 +426,10 @@ class ScopesService:
                     GitPolicyFetcher.forget_source_backoff(deleted_source_id)
                     GitPolicyFetcher.forget_repack_due(deleted_source_id)
                     try:
-                        await run_sync(shutil.rmtree, safe_path)
+                        # Under the pod's repack lock: the leader, another
+                        # process, may be repacking this very clone, and an
+                        # rmtree beside it fails half-way.
+                        removed = await run_sync(remove_clone_dir_exclusive, safe_path)
                     except FileNotFoundError:
                         pass  # never cloned (or already gone) — nothing to clean
                     except OSError as e:
@@ -434,6 +437,14 @@ class ScopesService:
                             f"Failed to remove clone dir {safe_path} of deleted "
                             f"scope {scope_id}: {e!r}"
                         )
+                    else:
+                        if not removed:
+                            logger.warning(
+                                f"Not removing clone dir {safe_path} of deleted "
+                                f"scope {scope_id}: a repack in this pod still "
+                                "holds the repack lock; the dir stays until "
+                                "PER-15612's sweep lands"
+                            )
                 finally:
                     if (
                         minted is not None
@@ -502,17 +513,25 @@ class ScopesService:
             # Every scope's source, also from before the filter: a scope this
             # pass does not poll is alive all the same, and so is the repack a
             # refresh of it marked due.
-            live_source_ids = {GitPolicyFetcher.source_id(s.policy) for s in scopes}
+            # Computed once: the partition below needs the same ids.
+            scopes_with_ids = [
+                (scope, GitPolicyFetcher.source_id(scope.policy)) for scope in scopes
+            ]
+            live_source_ids = {src_id for _, src_id in scopes_with_ids}
             # Once per pass as well as on transitions: a DogStatsD gauge is
             # NO DATA between sends, and the steady state the backoff creates
             # (dead sources parked for the cap) has almost no transitions.
             emit_sources_in_backoff()
             if only_poll_updates:
                 # Only sync scopes that have polling enabled (in a periodic check)
-                scopes = [scope for scope in scopes if scope.policy.poll_updates]
+                scopes_with_ids = [
+                    (scope, src_id)
+                    for scope, src_id in scopes_with_ids
+                    if scope.policy.poll_updates
+                ]
 
             logger.info(
-                f"OPAL Scopes: syncing {len(scopes)} scopes in the background (polling updates: {only_poll_updates})"
+                f"OPAL Scopes: syncing {len(scopes_with_ids)} scopes in the background (polling updates: {only_poll_updates})"
             )
 
             # Partition into distinct repos (cloned/fetched once, with priority
@@ -521,51 +540,54 @@ class ScopesService:
             unique_scopes = []
             duplicate_scopes = []
             seen_source_ids = set()
-            for scope in scopes:
-                src_id = GitPolicyFetcher.source_id(scope.policy)
+            for scope, src_id in scopes_with_ids:
                 if src_id in seen_source_ids:
                     duplicate_scopes.append(scope)
                 else:
                     seen_source_ids.add(src_id)
                     unique_scopes.append(scope)
 
-            # Phase 1 clones/fetches every distinct repo; phase 2 then checks the
-            # duplicates against those now-present repos.
-            #
-            # The two phases have different cost profiles, so they get separate
-            # bounds. Phase 1 does the network clone/fetch, so it is capped at
-            # SCOPES_GIT_MAX_WORKERS: one unreachable repo then only stalls its
-            # own slot (for the fetch timeout), not the whole pass.
-            git_semaphore = asyncio.Semaphore(
-                max(1, opal_server_config.SCOPES_GIT_MAX_WORKERS)
-            )
-            await self._sync_scopes_concurrently(
-                unique_scopes,
-                git_semaphore,
-                force_fetch=True,
-                notify_on_changes=notify_on_changes,
-                honor_backoff=honor_backoff,
-            )
+            # In flight until both phases are done, so that no repack starts
+            # meanwhile (see GitPolicyFetcher.sync_pass), this pass's own
+            # included.
+            with GitPolicyFetcher.sync_pass():
+                # Phase 1 clones/fetches every distinct repo; phase 2 then checks the
+                # duplicates against those now-present repos.
+                #
+                # The two phases have different cost profiles, so they get separate
+                # bounds. Phase 1 does the network clone/fetch, so it is capped at
+                # SCOPES_GIT_MAX_WORKERS: one unreachable repo then only stalls its
+                # own slot (for the fetch timeout), not the whole pass.
+                git_semaphore = asyncio.Semaphore(
+                    max(1, opal_server_config.SCOPES_GIT_MAX_WORKERS)
+                )
+                await self._sync_scopes_concurrently(
+                    unique_scopes,
+                    git_semaphore,
+                    force_fetch=True,
+                    notify_on_changes=notify_on_changes,
+                    honor_backoff=honor_backoff,
+                )
 
-            # Phase 2 is local-only in the common case: the repos were just
-            # handled in phase 1, so _should_fetch returns False and no network
-            # fetch happens (only a disk open + change-check + notify).
-            # It shares the loop's default executor (the same pool that serves
-            # policy bundles), so bound it by the SAME SCOPES_GIT_MAX_WORKERS
-            # knob as phase 1 rather than a hard-coded floor: an operator who
-            # lowers the knob to protect a small pod must be able to lower phase
-            # 2 too, and over-subscribing that ~min(32, cpu+4)-thread pool only
-            # queues work and contends with bundle serving. (The earlier
-            # max(..., 32) made 32 a floor the knob could never reduce below.)
-            local_concurrency = max(1, opal_server_config.SCOPES_GIT_MAX_WORKERS)
-            local_semaphore = asyncio.Semaphore(local_concurrency)
-            await self._sync_scopes_concurrently(
-                duplicate_scopes,
-                local_semaphore,
-                force_fetch=False,
-                notify_on_changes=notify_on_changes,
-                honor_backoff=honor_backoff,
-            )
+                # Phase 2 is local-only in the common case: the repos were just
+                # handled in phase 1, so _should_fetch returns False and no network
+                # fetch happens (only a disk open + change-check + notify).
+                # It shares the loop's default executor (the same pool that serves
+                # policy bundles), so bound it by the SAME SCOPES_GIT_MAX_WORKERS
+                # knob as phase 1 rather than a hard-coded floor: an operator who
+                # lowers the knob to protect a small pod must be able to lower phase
+                # 2 too, and over-subscribing that ~min(32, cpu+4)-thread pool only
+                # queues work and contends with bundle serving. (The earlier
+                # max(..., 32) made 32 a floor the knob could never reduce below.)
+                local_concurrency = max(1, opal_server_config.SCOPES_GIT_MAX_WORKERS)
+                local_semaphore = asyncio.Semaphore(local_concurrency)
+                await self._sync_scopes_concurrently(
+                    duplicate_scopes,
+                    local_semaphore,
+                    force_fetch=False,
+                    notify_on_changes=notify_on_changes,
+                    honor_backoff=honor_backoff,
+                )
 
             # Last, after both phases' notifications: a repack holds its
             # clone's lock_source for seconds to minutes, and run inside the

@@ -195,7 +195,8 @@ class ScopesPolicyWatcherTask(BasePolicyWatcherTask):
                 # the boot one. The refresh's notification is out by now, and
                 # every trigger is a task of its own, so the repack delays
                 # only the next syncs of this clone. It waits for the clone's
-                # lock, unlike a pass's: see run_due_repack.
+                # lock, unlike a pass's, and leaves the clone to the pass
+                # when one is running: see run_due_repack.
                 await GitPolicyFetcher.run_due_repack(source_id, wait_for_lock=True)
         else:
             # Refresh all scopes. This branch is reached only from something

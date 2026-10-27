@@ -15,7 +15,7 @@ import time
 import weakref
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import thread as cf_thread
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import AbstractSet, Awaitable, Callable, Dict, NamedTuple, Optional, cast
@@ -119,16 +119,19 @@ class GitRepackError(RuntimeError):
 
 
 class GitRepackIncompleteError(RuntimeError):
-    """``git repack -a -d`` exited 0, yet the clone holds more than one pack.
+    """``git repack -a -d`` exited 0, yet more than one of the packs the clone
+    held before it started is still there.
 
     Git replaces every pack it started with by one, so the exit status is
     not to be believed: a ``waitpid(-1)`` elsewhere in this process (a
     SIGCHLD reaper) reaps git first, and subprocess then reads exit 0 for
-    whatever git really did. Treated as a failed repack. (A fetch in
-    another process that lands a pack while git runs, the preload's
-    lingering one in the gunicorn master, reads the same; the next repack
-    merges that pack.) Only packs with an index count: a ``.pack`` without
-    its ``.idx`` is no pack to git or libgit2.
+    whatever git really did. Treated as a failed repack. Only packs older
+    than the repack count: a fetch in another process (the preload's
+    lingering one in the gunicorn master, a worker that just lost the
+    leadership) can land a pack while git runs, and the next repack merges
+    it. One old pack may survive, the new pack under its name when the
+    objects did not change. Only packs with an index count: a ``.pack``
+    without its ``.idx`` is no pack to git or libgit2.
 
     That fetch can also land its pack BEFORE git lists the packs, and move
     its ref only after pack-objects has read the refs. Its objects are then
@@ -265,7 +268,7 @@ def _reset_git_executor_after_fork() -> None:
     'before' handler acquired it and the child inherits it LOCKED). Reinit it in
     place FIRST (dropping it without a matching acquire — re-acquiring would
     deadlock), then mutate _git_busy directly (child is single-threaded here)."""
-    global _git_busy_lock, _repack_lock
+    global _git_busy_lock, _repack_lock, _sync_passes_in_flight
     reinit = getattr(_git_busy_lock, "_at_fork_reinit", None)
     if callable(reinit):
         reinit()
@@ -275,6 +278,8 @@ def _reset_git_executor_after_fork() -> None:
     _git_busy.clear()
     # A repack running in the parent has no thread here to release it.
     _repack_lock = threading.Lock()
+    # Nor does a pass the parent was running continue here.
+    _sync_passes_in_flight = 0
     # Nor to close this child's copies of the repack lock fds it held at
     # fork. Kept open they would hold the lock for as long as this child
     # lives, so closed, and never LOCK_UN'd: an flock belongs to the open
@@ -686,6 +691,21 @@ _REPACK_STDERR_TAIL_CHARS = 2000
 # git's environment. HOME / XDG_CONFIG_HOME keep the operator's global git
 # config (safe.directory, for one) in effect.
 _REPACK_ENV_ALLOWLIST = ("PATH", "HOME", "XDG_CONFIG_HOME")
+# What git and its pack-objects get as oom_score_adj on Linux. The repack runs
+# in the opal-server container's memory cgroup and can transiently take about
+# 0.5 KB per object; when that pushes the cgroup over its limit, the kernel
+# should kill the repack (the cooldown handles it) rather than a server worker
+# and every client connected to it. Raising one's own score needs no privilege.
+_REPACK_OOM_SCORE_ADJ = 1000
+# How old an .idx without its .pack must be before a repack's sweep removes it.
+# git deletes an old pack's .pack before its .idx, so a repack killed while it
+# deletes leaves the .idx alone; libgit2's own install leaves one only for the
+# milliseconds between committing the .idx and renaming the .pack in.
+_ORPHAN_INDEX_MIN_AGE_SECONDS = 60.0
+# A file in a scope clone's .git dir whose mtime is its last failed repack, so
+# the failure cooldown outlives the process that recorded it (a new leader, a
+# restarted worker). git ignores files it does not know in .git.
+_REPACK_FAILED_MARKER = "opal-repack-failed"
 # Git's temporary names in objects/pack. Measured on git 2.39 (the image's)
 # and 2.54: a signalled or failed pack-objects leaves its in-progress
 # ``tmp_pack_XXXXXX`` (also tmp_idx_/tmp_rev_/...) behind; git never removes
@@ -801,6 +821,42 @@ def _index_may_exist(pack_dir: Path, pack: str) -> bool:
     return True
 
 
+def _pack_name(index: str) -> str:
+    return index[: -len(".idx")] + ".pack"
+
+
+def _orphan_indexes(pack_dir: Path, names: frozenset[str]) -> frozenset[str]:
+    """The ``pack-*.idx`` in ``names`` with no ``.pack`` on disk, no ``.keep``,
+    and older than ``_ORPHAN_INDEX_MIN_AGE_SECONDS``.
+
+    Anything that cannot be checked counts as not orphaned: it stays.
+    """
+    now = time.time()
+    orphans = set()
+    for name in names:
+        if not (name.startswith("pack-") and name.endswith(".idx")):
+            continue
+        pack = _pack_name(name)
+        keep = name[: -len(".idx")] + ".keep"
+        if pack in names or keep in names:
+            continue
+        try:
+            os.lstat(pack_dir / pack)
+        except FileNotFoundError:
+            pass
+        except OSError:
+            continue
+        else:
+            continue  # the .pack is there after all
+        try:
+            mtime = os.lstat(pack_dir / name).st_mtime
+        except OSError:
+            continue
+        if now - mtime >= _ORPHAN_INDEX_MIN_AGE_SECONDS:
+            orphans.add(name)
+    return frozenset(orphans)
+
+
 def _remove_repack_leftovers(pack_dir: Path, why: str) -> None:
     """Delete what dead or failed repacks left in ``pack_dir``.
 
@@ -816,9 +872,20 @@ def _remove_repack_leftovers(pack_dir: Path, why: str) -> None:
     repack will ever see. No other writer shows one: libgit2 commits a
     fetched pack's ``.idx`` before its ``.pack`` (its in-flight
     ``pack_git2_*`` names match nothing here), and the lock keeps out any
-    other repack. An ``.idx`` without its ``.pack`` is just that libgit2
-    install, and stays. A pack whose ``.idx`` turns out to be there after
-    all (see ``_index_may_exist``) stays too, with its companions.
+    other repack. A pack whose ``.idx`` turns out to be there after all
+    (see ``_index_may_exist``) stays too, with its companions.
+
+    An ``.idx`` without its ``.pack`` is usually that libgit2 install,
+    caught in the milliseconds between its two renames, and stays. One
+    older than ``_ORPHAN_INDEX_MIN_AGE_SECONDS`` is not: git deletes an old
+    pack's ``.pack`` before its ``.idx``, so a repack killed while it
+    deletes leaves the ``.idx`` (the size of the pack's index) for good.
+    That one goes, with its companions, unless a ``.keep`` asks to keep
+    the pack.
+
+    The checks run while the delete set is built, not right before each
+    unlink; with libgit2's install order nothing can turn a file found
+    doomed here into a live one before it is removed.
 
     Never raises; a file left behind is a disk cost, not a reason to mask
     the error the caller is about to see.
@@ -831,6 +898,9 @@ def _remove_repack_leftovers(pack_dir: Path, why: str) -> None:
         if not _index_may_exist(pack_dir, pack):
             doomed.add(pack)
             doomed |= _pack_companions(pack) & names
+    for index in _orphan_indexes(pack_dir, names):
+        doomed.add(index)
+        doomed |= _pack_companions(_pack_name(index)) & names
     for name in sorted(doomed):
         try:
             os.unlink(pack_dir / name)
@@ -892,6 +962,42 @@ def _drop_repack_lock(fd: int) -> None:
         logger.warning("Could not close repack lock fd {fd}: {err!r}", fd=fd, err=err)
 
 
+def remove_clone_dir_exclusive(path: str) -> bool:
+    """``shutil.rmtree(path)`` of a scope clone, under the repack lock.
+
+    For a process that deletes a clone without holding the lock_source
+    of the process that repacks it (the DELETE floor runs on whichever
+    worker served the request, the repack on the leader): an rmtree
+    beside a running git repack can fail half-way (ENOTEMPTY) or fail
+    the repack. Waits for a running repack, polling, for at most as long
+    as one can hold the lock (the repack timeout plus its stop and
+    sweep), and returns False without removing anything if it is still
+    held then.
+
+    Blocking; run it off the event loop. Raises what rmtree raises, and
+    FileNotFoundError when the clones' directory is gone.
+    """
+    deadline = time.monotonic() + _repack_timeout_seconds() + _REPACK_STOP_SECONDS
+    while True:
+        fd = _take_repack_lock(_repack_lock_dir(path))
+        if fd is not None:
+            break
+        if time.monotonic() >= deadline:
+            return False
+        time.sleep(_REMOVE_CLONE_POLL_SECONDS)
+    try:
+        shutil.rmtree(path)
+    finally:
+        _drop_repack_lock(fd)
+    return True
+
+
+# How long a repack can hold the repack lock past its timeout: the SIGTERM
+# grace, the SIGKILL wait and a sweep of the pack dir.
+_REPACK_STOP_SECONDS = _REPACK_TERM_GRACE_SECONDS + _REPACK_KILL_WAIT_SECONDS + 10.0
+_REMOVE_CLONE_POLL_SECONDS = 0.25
+
+
 def _signal_repack_group(proc: subprocess.Popen[bytes], sig: int) -> None:
     # The group id is git's pid (start_new_session made it a session leader).
     # Signalled only while that pid is unreaped (returncode None): a reaped
@@ -904,19 +1010,21 @@ def _signal_repack_group(proc: subprocess.Popen[bytes], sig: int) -> None:
         pass  # the whole group has already exited
 
 
-def _stop_repack(proc: subprocess.Popen[bytes], grace: float) -> None:
+def _stop_repack(proc: subprocess.Popen[bytes], grace: float) -> bool:
     """SIGTERM git's process group, then SIGKILL it if still running after
     ``grace`` seconds (``grace`` <= 0 kills at once).
 
     Waits with communicate(), not wait(): it drains stderr (a child
     blocked writing to a full pipe could not exit) and returns only once
     every process holding the pipe has exited, pack-objects included.
+    Returns whether they have: False when one outlived the SIGKILL wait
+    (stuck in uninterruptible I/O), and so may still be renaming files.
     """
     if grace > 0:
         _signal_repack_group(proc, signal.SIGTERM)
         try:
             proc.communicate(timeout=grace)
-            return
+            return True
         except subprocess.TimeoutExpired:
             logger.warning(
                 "git repack (pid {pid}) still running {grace}s after SIGTERM; "
@@ -930,10 +1038,13 @@ def _stop_repack(proc: subprocess.Popen[bytes], grace: float) -> None:
     except subprocess.TimeoutExpired:
         logger.error(
             "git repack (pid {pid}) still running {secs}s after SIGKILL "
-            "(stuck in uninterruptible I/O?)",
+            "(stuck in uninterruptible I/O?); leaving its files for the next "
+            "repack to sweep",
             pid=proc.pid,
             secs=_REPACK_KILL_WAIT_SECONDS,
         )
+        return False
+    return True
 
 
 def _repack_clone(
@@ -1037,20 +1148,10 @@ def _run_repack(
     # -n: no update-server-info. Nothing serves a scope clone over dumb HTTP,
     # and on a repository with many branches .git/info/refs is large (7 MB
     # per clone of a 61k-branch one), rewritten on every repack.
+    # The success check below counts only the packs older than this.
+    started_at = time.time()
     proc = subprocess.Popen(
-        [
-            git,
-            "-C",
-            os.fspath(repo_path),
-            "-c",
-            "pack.threads=1",
-            "repack",
-            "-a",
-            "-d",
-            "-k",
-            "-n",
-            "-q",
-        ],
+        _repack_argv(git, repo_path),
         stdin=subprocess.DEVNULL,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.PIPE,
@@ -1061,16 +1162,19 @@ def _run_repack(
     try:
         _, stderr = proc.communicate(timeout=timeout)
     except subprocess.TimeoutExpired:
-        _stop_repack(proc, term_grace)
-        _clean_up()
+        # A git that outlived its SIGKILL may still be renaming files in the
+        # pack dir: a sweep now could delete a .pack whose .idx lands after
+        # it. The next repack sweeps, once the lock says git is gone.
+        if _stop_repack(proc, term_grace):
+            _clean_up()
         raise TimeoutError(
             f"git repack of {os.fspath(repo_path)} exceeded {timeout}s"
         ) from None
     except BaseException:
         # Anything else unwinding through communicate() (a KeyboardInterrupt
         # in a foreground run): no grace, but no orphaned git either.
-        _stop_repack(proc, 0.0)
-        _clean_up()
+        if _stop_repack(proc, 0.0):
+            _clean_up()
         raise
     if proc.returncode != 0:
         # A pack-objects that died (ENOSPC, OOM kill) leaves its partial
@@ -1079,10 +1183,72 @@ def _run_repack(
         tail = stderr.decode("utf-8", "replace").strip()
         raise GitRepackError(proc.returncode, tail[-_REPACK_STDERR_TAIL_CHARS:])
     names = _pack_dir_names(pack_dir)
-    packs = _indexed_pack_count(names) if names is not None else 1
+    packs = _indexed_packs_older_than(pack_dir, names, started_at) if names else 0
     if packs > 1:
         _clean_up()
         raise GitRepackIncompleteError(packs)
+
+
+def _repack_argv(git: str, repo_path: str | os.PathLike[str]) -> list[str]:
+    """The command ``_run_repack`` runs.
+
+    ``pack.packSizeLimit=0``: an operator's global git config must not
+    split the merged pack, which would read as an incomplete repack every
+    time. On Linux git starts through ``sh``, which raises its own
+    oom_score_adj and then execs git (same pid, so the process group and
+    every signal are unchanged); pack-objects inherits the score.
+    """
+    argv = [
+        git,
+        "-C",
+        os.fspath(repo_path),
+        "-c",
+        "pack.threads=1",
+        "-c",
+        "pack.packSizeLimit=0",
+        "repack",
+        "-a",
+        "-d",
+        "-k",
+        "-n",
+        "-q",
+    ]
+    if not (os.path.exists(_OOM_SCORE_ADJ_PATH) and os.path.exists(_SH)):
+        return argv
+    script = (
+        f"{{ echo {_REPACK_OOM_SCORE_ADJ} > {_OOM_SCORE_ADJ_PATH}; }} 2>/dev/null; "
+        'exec "$@"'
+    )
+    return [_SH, "-c", script, "sh", *argv]
+
+
+_OOM_SCORE_ADJ_PATH = "/proc/self/oom_score_adj"
+_SH = "/bin/sh"
+
+
+def _indexed_packs_older_than(
+    pack_dir: Path, names: frozenset[str], started_at: float
+) -> int:
+    """How many indexed packs in ``names`` were last modified before
+    ``started_at``.
+
+    One that cannot be stat'ed counts, as the old check counted every
+    pack.
+    """
+    count = 0
+    for name in names:
+        if not _is_pack(name) or _index_name(name) not in names:
+            continue
+        try:
+            mtime = os.lstat(pack_dir / name).st_mtime
+        except FileNotFoundError:
+            continue
+        except OSError:
+            count += 1
+            continue
+        if mtime < started_at:
+            count += 1
+    return count
 
 
 # --- scope clone repack: when the sync runs it --------------------------------
@@ -1130,13 +1296,74 @@ _repack_lock = threading.Lock()
 # source_id -> time.monotonic() of its last failed or timed-out repack, as in
 # SourceBackoff. Mutated only on the event loop, so no lock (same reasoning as
 # GitPolicyFetcher.source_backoff). The preload never repacks, so a forked
-# worker inherits it empty.
+# worker inherits it empty. The clone's _REPACK_FAILED_MARKER carries the same
+# fact across processes: a new leader, or a restarted worker, starts with this
+# dict empty, and without the marker would retry a repack that keeps failing
+# (a timeout, an OOM kill) at its first pass instead of an hour later.
 _repack_failed_at: Dict[str, float] = {}
 
 # Latched the first time git turns out not to be installed: one ERROR, then
 # every later repack in this process is skipped. Also inherited across fork:
-# the child runs from the same image.
+# the child runs from the same image. Per process on purpose: a missing git
+# fails at once, so a new process finding out again costs nothing.
 _repack_git_missing = False
+
+# Sync passes running in this process right now (phases 1 and 2; a pass leaves
+# the count before it repacks). A repack does not start while one runs: a pass
+# takes a slot of its SCOPES_GIT_MAX_WORKERS semaphore before it waits for a
+# clone's lock_source, so its syncs of a clone being repacked would fill every
+# slot and stall the whole pass, every other clone's scopes included, until
+# the repack ended. The mark stays, and the pass that ends last repacks it.
+# Mutated only on the event loop; a forked child starts from 0.
+_sync_passes_in_flight = 0
+
+# Logged once per process, the first time SCOPES_GIT_REPACK_PACK_LIMIT is 1.
+_repack_limit_clamp_logged = False
+
+
+def _repack_pack_limit() -> int:
+    """SCOPES_GIT_REPACK_PACK_LIMIT as the repack uses it: 0 when off, and
+    never 1. A clone holds at least one pack after any fetch, so at 1 every
+    fetch would mark it and every repack would rewrite it whole."""
+    global _repack_limit_clamp_logged
+    limit = opal_server_config.SCOPES_GIT_REPACK_PACK_LIMIT
+    if limit <= 0:
+        return 0
+    if limit == 1:
+        if not _repack_limit_clamp_logged:
+            _repack_limit_clamp_logged = True
+            logger.warning(
+                "SCOPES_GIT_REPACK_PACK_LIMIT=1 would repack a scope clone after "
+                "every fetch; using 2"
+            )
+        return 2
+    return limit
+
+
+def _repack_failed_marker(repo_path: str | os.PathLike[str]) -> Path:
+    return Path(repo_path) / ".git" / _REPACK_FAILED_MARKER
+
+
+def _record_repack_failure(repo_path: str | os.PathLike[str]) -> None:
+    """Stamp the clone's failure marker with now; never raises."""
+    marker = _repack_failed_marker(repo_path)
+    try:
+        marker.touch()
+        os.utime(marker)
+    except OSError as e:
+        logger.debug("Could not write {path}: {err!r}", path=marker, err=e)
+
+
+def _repack_failed_recently(repo_path: str | os.PathLike[str]) -> bool:
+    """Whether the clone's failure marker is younger than the cooldown.
+
+    Blocking (a stat); a marker that cannot be read counts as none.
+    """
+    try:
+        mtime = _repack_failed_marker(repo_path).stat().st_mtime
+    except OSError:
+        return False
+    return time.time() - mtime < _REPACK_FAILURE_COOLDOWN_SECONDS
 
 
 class _DueRepack(NamedTuple):
@@ -1221,14 +1448,13 @@ def _repack_clone_exclusive(
 def _emit_repack_attempt(outcome: str, seconds: Optional[float] = None) -> None:
     # The counter is per attempt, never per skip: a skip happens on every
     # fetch of a clone below the limit. Tagged by outcome only, never by
-    # scope or source, to keep the cardinality fixed. The gauge is tagged by
-    # pid for the same reason as _emit_git_ops_in_flight.
+    # scope or source, to keep the cardinality fixed. The duration is a
+    # distribution, not a gauge: a gauge keeps only the last value of each
+    # flush interval, and every repack's duration matters.
     metrics.increment("opal_server.scopes.git_repack", tags={"outcome": outcome})
     if seconds is not None:
-        metrics.gauge(
-            "opal_server.scopes.git_repack_seconds",
-            seconds,
-            tags={"pid": str(os.getpid()), "outcome": outcome},
+        metrics.distribution(
+            "opal_server.scopes.git_repack_seconds", seconds, tags={"outcome": outcome}
         )
 
 
@@ -1741,10 +1967,11 @@ class GitPolicyFetcher(PolicyFetcher):
 
         Never fails the sync, and marks nothing when the limit is 0 or
         negative, when git was found missing, while this source waits out
-        a failed repack, or when the clone holds fewer packs than the
-        limit.
+        a failed repack (in this process, or in any other one: see
+        _REPACK_FAILED_MARKER), or when the clone holds fewer packs than
+        the limit.
         """
-        limit = opal_server_config.SCOPES_GIT_REPACK_PACK_LIMIT
+        limit = _repack_pack_limit()
         if limit <= 0 or _repack_git_missing or _repack_cooling_down(self._source_id):
             return
         path = str(self._repo_path)
@@ -1758,7 +1985,7 @@ class GitPolicyFetcher(PolicyFetcher):
                 err=e,
             )
             return
-        if packs >= limit:
+        if packs >= limit and not await run_sync(_repack_failed_recently, path):
             _repacks_due[self._source_id] = _DueRepack(
                 source_id=self._source_id,
                 repo_path=path,
@@ -1777,6 +2004,21 @@ class GitPolicyFetcher(PolicyFetcher):
         _repacks_due.pop(source_id, None)
 
     @staticmethod
+    @contextmanager
+    def sync_pass():
+        """Count a sync pass's phases as in flight (_sync_passes_in_flight).
+
+        ScopesService.sync_scopes wraps its two phases in this, and runs
+        its due repacks only after it exits.
+        """
+        global _sync_passes_in_flight
+        _sync_passes_in_flight += 1
+        try:
+            yield
+        finally:
+            _sync_passes_in_flight -= 1
+
+    @staticmethod
     async def run_due_repacks(live_source_ids: AbstractSet[str]) -> None:
         """Repack every clone a fetch marked due: the sync pass's last step.
 
@@ -1784,12 +2026,12 @@ class GitPolicyFetcher(PolicyFetcher):
         repack delays no notification, only the next syncs of its own
         clone: each repack runs under that clone's lock_source, which
         keeps every other git op of this process off the clone while git
-        rewrites its packs. That includes the syncs of another pass
-        running at the same time (the boot sync next to the first
-        periodic pass, a refresh of every scope), whose notifications for
-        that clone wait for the repack. One at a time, because repacks
-        are single-flight: run side by side, all but one would be
-        skipped.
+        rewrites its packs. None starts while another pass runs (the boot
+        sync next to the first periodic pass, a refresh of every scope):
+        its marks stay, and whichever pass ends last repacks them (see
+        _sync_passes_in_flight). A pass that starts while a repack runs
+        still waits for that one. One at a time, because repacks are
+        single-flight: run side by side, all but one would be skipped.
 
         A mark whose source no scope uses any more (``live_source_ids``:
         every scope's, read at the start of the pass) is dropped. The rest
@@ -1815,9 +2057,11 @@ class GitPolicyFetcher(PolicyFetcher):
 
         Under the clone's lock_source lock, and the mark is taken only
         under it, right before the repack runs, so every skip keeps it
-        for a later pass or refresh: a clone with a git op still in
-        flight, a lock a pass finds in use (below), and a lock a purge
-        took away while this waited for it. A mark gone by the time this
+        for a later pass or refresh: a sync pass in flight in this
+        process, a clone with a git op still in flight, a lock a pass
+        finds in use (below), a lock a purge took away while this waited
+        for it, and a repack that could not start because another one is
+        running (see _repack_due_clone). A mark gone by the time this
         starts (a purge, another repack) mints no lock for the clone.
 
         ``wait_for_lock`` False, a pass's: while any other task holds the
@@ -1834,6 +2078,8 @@ class GitPolicyFetcher(PolicyFetcher):
         # its source (while an earlier repack of the pass ran, say), and
         # nothing would remove a lock minted for it now.
         if source_id not in _repacks_due:
+            return
+        if GitPolicyFetcher._pass_defers_repack(source_id):
             return
         lock = GitPolicyFetcher.repo_locks.setdefault(source_id, asyncio.Lock())
         if not wait_for_lock and _lock_is_busy(lock):
@@ -1869,12 +2115,29 @@ class GitPolicyFetcher(PolicyFetcher):
                     source_id=source_id,
                 )
                 return
+            # Again: a refresh's wait for the lock can outlast the start of
+            # a pass.
+            if GitPolicyFetcher._pass_defers_repack(source_id):
+                return
             due = _repacks_due.pop(source_id, None)
             if due is not None:
-                await GitPolicyFetcher._repack_due_clone(due)
+                await GitPolicyFetcher._repack_due_clone(due, lock)
 
     @staticmethod
-    async def _repack_due_clone(due: _DueRepack) -> None:
+    def _pass_defers_repack(source_id: str) -> bool:
+        """Whether a sync pass in flight keeps this repack from starting (see
+        _sync_passes_in_flight); the mark stays for the pass that ends last."""
+        if not _sync_passes_in_flight:
+            return False
+        logger.debug(
+            "Not repacking scope clone {source_id} while a sync pass runs: the "
+            "pass that ends last repacks it",
+            source_id=source_id,
+        )
+        return True
+
+    @staticmethod
+    async def _repack_due_clone(due: _DueRepack, lock: asyncio.Lock) -> None:
         """Repack one clone marked due; best-effort.
 
         Called under the clone's lock_source, so nothing else in this
@@ -1886,15 +2149,16 @@ class GitPolicyFetcher(PolicyFetcher):
         Checks again what the mark checked, since the pass can end long
         after the fetch that marked it: returns without doing or counting
         anything when the limit is 0 or negative, when git was found
-        missing, while this source waits out a failed repack, or when the
-        clone holds fewer packs than the limit (re-cloned since, say). A
-        clone at the limit while another repack is running in this pod, a
-        previous leader's included, is skipped, never waited for (a later
-        fetch marks it again), and the skip is counted as git_op_skipped
-        with reason repack_running.
+        missing, while this source waits out a failed repack (in any
+        process), or when the clone holds fewer packs than the limit
+        (re-cloned since, say). A clone at the limit while another repack
+        is running in this pod, a previous leader's included, or while the
+        git executor refuses new work, is skipped, never waited for, and
+        keeps its mark for the next pass or refresh; the repack-running
+        skip is counted as git_op_skipped with reason repack_running.
         """
         global _repack_git_missing
-        limit = opal_server_config.SCOPES_GIT_REPACK_PACK_LIMIT
+        limit = _repack_pack_limit()
         if limit <= 0 or _repack_git_missing or _repack_cooling_down(due.source_id):
             return
         path = due.repo_path
@@ -1908,12 +2172,13 @@ class GitPolicyFetcher(PolicyFetcher):
                 err=e,
             )
             return
-        if packs_before < limit:
+        if packs_before < limit or await run_sync(_repack_failed_recently, path):
             return
         # Only a peek, so that a skip costs no git-executor slot or thread;
         # the executor thread's own non-blocking acquire is what decides.
         if _repack_lock.locked():
             _emit_repack_skipped()
+            GitPolicyFetcher._keep_due(due, lock)
             return
         timeout = _repack_timeout_seconds()
         # Timed from here, a wait for a git-executor slot included: the
@@ -1944,6 +2209,7 @@ class GitPolicyFetcher(PolicyFetcher):
             logger.debug(
                 "Not repacking scope clone {path} this time: {err}", path=path, err=e
             )
+            GitPolicyFetcher._keep_due(due, lock)
             return
         except GitNotFoundError as e:
             if not _repack_git_missing:
@@ -1958,11 +2224,13 @@ class GitPolicyFetcher(PolicyFetcher):
                 )
             return
         except Exception as e:
+            await run_sync(_record_repack_failure, path)
             GitPolicyFetcher._on_repack_failed(due, e, time.monotonic() - started)
             return
         seconds = time.monotonic() - started
         if sizes is None:
             _emit_repack_skipped()
+            GitPolicyFetcher._keep_due(due, lock)
             logger.debug(
                 "Not repacking scope clone {path} now: another repack is running "
                 "(in this process, or in another one such as a previous leader)",
@@ -1983,6 +2251,19 @@ class GitPolicyFetcher(PolicyFetcher):
             packs_after=sizes.packs_after,
             bytes_after=sizes.bytes_after,
         )
+
+    @staticmethod
+    def _keep_due(due: _DueRepack, lock: asyncio.Lock) -> None:
+        """Put back the mark run_due_repack took for a repack that could not
+        start, held under ``lock``, the clone's lock_source.
+
+        Only while ``lock`` is still the clone's: a purge unmaps it (the
+        purge handler then works under a fresh one) and drops the mark, and
+        putting the mark back would revive a purged source. A fetch's newer
+        mark wins.
+        """
+        if GitPolicyFetcher.repo_locks.get(due.source_id) is lock:
+            _repacks_due.setdefault(due.source_id, due)
 
     @staticmethod
     def _on_repack_failed(due: _DueRepack, err: Exception, seconds: float) -> None:

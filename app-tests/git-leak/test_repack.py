@@ -96,9 +96,14 @@ def _recreate_opal_server(opal) -> float:
 
 @pytest.mark.timeout(1200)
 @pytest.mark.allow_worker_restart
-def test_pushes_keep_pack_count_bounded(opal, gitea_admin, tmp_path):
+@pytest.mark.parametrize("refresh", ["all", "scope"])
+def test_pushes_keep_pack_count_bounded(opal, gitea_admin, tmp_path, refresh):
     """Push PUSHES commits, refreshing after each: the clone must never hold
     more than PACK_LIMIT packs, and the scope must serve the last push.
+
+    Both ways a repack runs: ``all`` refreshes every scope (a sync pass,
+    which repacks at its end), ``scope`` refreshes this one scope (outside
+    any pass, so the refresh repacks right after its own sync).
 
     And the bound must have been EARNED: the count starts at the clone's own
     pack, builds up to the limit and drops back, and the server logged at
@@ -112,7 +117,10 @@ def test_pushes_keep_pack_count_bounded(opal, gitea_admin, tmp_path):
     os.environ[_COMPOSE_LIMIT_ENV] = server_limit
     try:
         up_seconds = _recreate_opal_server(opal)
-        print(f"\n[repack gate] limit {server_limit}: up in {up_seconds:.1f}s")
+        print(
+            f"\n[repack gate] refresh {refresh}, limit {server_limit}: "
+            f"up in {up_seconds:.1f}s"
+        )
 
         gitea_admin.create_repo(_REPO)
         opal.put_scope(_SCOPE, gitea_repo_url(_REPO))
@@ -125,7 +133,10 @@ def test_pushes_keep_pack_count_bounded(opal, gitea_admin, tmp_path):
         loop_started = time.monotonic()
         for push in range(1, PUSHES + 1):
             sha = mutator.push_file("data.json", f'{{"push": {push}}}\n')
-            opal.refresh_all()
+            if refresh == "all":
+                opal.refresh_all()
+            else:
+                opal.refresh_scope(_SCOPE)
             assert wait_until(
                 lambda sha=sha: _served_hash(opal) == sha, timeout=120, interval=0.5
             ), f"push {push} ({sha}) never served after a refresh"
