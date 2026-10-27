@@ -1006,6 +1006,7 @@ def _clean_fetcher_state(monkeypatch):
     monkeypatch.setattr(git_fetcher, "_repack_limit_clamp_logged", False)
     monkeypatch.setattr(git_fetcher, "_sync_passes_in_flight", 0)
     monkeypatch.setattr(git_fetcher, "_orphan_index_first_seen", {})
+    monkeypatch.setattr(git_fetcher, "_repack_cooldown_logged_at", {})
     GitPolicyFetcher.reset_caches()
     GitPolicyFetcher.source_backoff.clear()
     yield
@@ -1455,8 +1456,14 @@ async def test_failed_repack_still_completes_the_sync_and_waits_out_an_hour(
     git_fetcher._repack_failed_at[
         scope.source_id
     ] -= git_fetcher._REPACK_FAILURE_COOLDOWN_SECONDS
-    hour_ago = time.time() - git_fetcher._REPACK_FAILURE_COOLDOWN_SECONDS
-    os.utime(marker, (hour_ago, hour_ago))
+    # The marker counts from the start of the repack, for the cooldown plus
+    # as long as that repack could have run.
+    expired = time.time() - (
+        git_fetcher._REPACK_FAILURE_COOLDOWN_SECONDS
+        + git_fetcher._repack_timeout_seconds()
+        + git_fetcher._REPACK_STOP_SECONDS
+    )
+    os.utime(marker, (expired, expired))
     spy.raises = None
     await scope.push_and_sync()
     assert spy.calls == [path, path]
@@ -2967,3 +2974,105 @@ async def test_delete_floor_keeps_the_clone_while_a_repack_holds_the_lock(
         for r in records
         if r["level"].name == "WARNING"
     )
+
+
+def test_marker_counts_for_the_cooldown_plus_the_repack_timeout(tmp_path):
+    """Stamped when the repack started: a container killed at the end of a
+    long repack still restarts into a whole cooldown."""
+    clone_path = _fake_clone(tmp_path)
+    git_fetcher._record_repack_failure(clone_path)
+    marker = git_fetcher._repack_failed_marker(clone_path)
+    started = time.time() - git_fetcher._REPACK_FAILURE_COOLDOWN_SECONDS - 60
+    os.utime(marker, (started, started))
+    assert git_fetcher._repack_failed_recently(clone_path)
+    long_ago = started - git_fetcher._repack_timeout_seconds() - 3600
+    os.utime(marker, (long_ago, long_ago))
+    assert not git_fetcher._repack_failed_recently(clone_path)
+
+
+def test_index_without_its_pack_for_a_day_goes_at_the_first_sighting(tmp_path):
+    """A process change can keep a sweep from seeing an orphan twice; one a day
+    old is settled by its mtime, which no clock skew stretches that far."""
+    pack = tmp_path / "pack"
+    pack.mkdir()
+    (pack / "pack-ancient.idx").write_bytes(b"x")
+    day_ago = time.time() - 2 * 86400
+    os.utime(pack / "pack-ancient.idx", (day_ago, day_ago))
+    git_fetcher._remove_repack_leftovers(pack, "test")
+    assert os.listdir(pack) == []
+
+
+@pytest.mark.asyncio
+async def test_marker_of_a_repack_still_running_elsewhere_is_a_counted_skip(
+    tmp_path, monkeypatch, emitted
+):
+    """The marker of a repack another process still runs (an orphaned git of a
+    previous leader) is no failure: the due repack is skipped and counted like
+    any repack_running skip, and keeps its mark."""
+    spy = _RepackSpy()
+    monkeypatch.setattr(git_fetcher, "_repack_clone", spy)
+    scope = _ScopeRepo(tmp_path, "s1")
+    await scope.fetched(_LIMIT - 1)
+    scope.push()
+    await scope.sync()
+    git_fetcher._record_repack_failure(scope.clone_path)
+    held = _hold_lock(git_fetcher._repack_lock_dir(scope.clone_path))
+    try:
+        await GitPolicyFetcher.run_due_repacks({scope.source_id})
+    finally:
+        os.close(held)
+    assert spy.calls == []
+    assert _skips(emitted) == [{"reason": "repack_running"}]
+    assert scope.source_id in git_fetcher._repacks_due
+
+
+@pytest.mark.asyncio
+async def test_clone_in_cooldown_is_named_once_per_cooldown(
+    tmp_path, monkeypatch, records
+):
+    spy = _RepackSpy()
+    monkeypatch.setattr(git_fetcher, "_repack_clone", spy)
+    scope = _ScopeRepo(tmp_path, "s1")
+    await scope.fetched(_LIMIT - 1)
+    scope.push()
+    await scope.sync()
+    due = git_fetcher._repacks_due[scope.source_id]
+    git_fetcher._record_repack_failure(scope.clone_path)
+    await GitPolicyFetcher.run_due_repacks({scope.source_id})
+    git_fetcher._repacks_due[scope.source_id] = due
+    await GitPolicyFetcher.run_due_repacks({scope.source_id})
+    infos = [
+        r
+        for r in records
+        if r["level"].name == "INFO" and "did not finish" in r["message"]
+    ]
+    assert len(infos) == 1
+    assert spy.calls == []
+
+
+@pytest.mark.asyncio
+async def test_cancelled_delete_floor_still_releases_the_lock_after_its_rmtree(
+    tmp_path, monkeypatch
+):
+    """The rmtree and the lock's release run on one thread, shielded: a caller
+    cancelled meanwhile never leaves the repack lock held."""
+    clones = tmp_path / "git_sources"
+    clone = clones / "src"
+    (clone / ".git").mkdir(parents=True)
+    gate = threading.Event()
+    real = git_fetcher._rmtree_then_drop_lock
+
+    def _slow(path, fd):
+        gate.wait(10)
+        real(path, fd)
+
+    monkeypatch.setattr(git_fetcher, "_rmtree_then_drop_lock", _slow)
+    task = asyncio.ensure_future(git_fetcher.remove_clone_dir_exclusive(str(clone)))
+    assert await _wait_for_async(lambda: bool(git_fetcher._repack_lock_fds))
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    gate.set()
+    assert await _wait_for_async(lambda: not git_fetcher._repack_lock_fds)
+    assert not clone.exists()
+    assert _lock_is_free(clones)

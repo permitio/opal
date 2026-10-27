@@ -861,11 +861,20 @@ def _orphan_indexes(pack_dir: Path, names: frozenset[str]) -> frozenset[str]:
     orphans = set()
     for path in candidates:
         first_seen = _orphan_index_first_seen.setdefault(path, now)
-        if now - first_seen >= _ORPHAN_INDEX_MIN_AGE_SECONDS:
+        if now - first_seen >= _ORPHAN_INDEX_MIN_AGE_SECONDS or _older_than_a_day(path):
             orphans.add(os.path.basename(path))
             # About to be removed; one that survives the unlink is seen anew.
             del _orphan_index_first_seen[path]
     return frozenset(orphans)
+
+
+def _older_than_a_day(path: str) -> bool:
+    """Whether ``path``'s mtime is a day old: no clock skew stretches that far,
+    so it settles an orphan a process change kept from being seen twice."""
+    try:
+        return time.time() - os.lstat(path).st_mtime >= 86400.0
+    except OSError:
+        return False
 
 
 # Full path of an .idx seen without its .pack -> time.monotonic() when a sweep
@@ -1003,9 +1012,11 @@ async def remove_clone_dir_exclusive(path: str) -> bool:
             return False
         await asyncio.sleep(_REMOVE_CLONE_POLL_SECONDS)
     # The rmtree and the release run on one thread, with nothing awaited
-    # between taking the lock and handing it over: a caller cancelled
-    # mid-rmtree cannot release the lock while the thread still deletes.
-    await run_sync(_rmtree_then_drop_lock, path, fd)
+    # between taking the lock and handing it over, so the lock is released
+    # only once the rmtree is done, whatever happens to the caller.
+    # Shielded: cancelled while still queued for an executor thread, the
+    # work item would be dropped and the lock fd never closed.
+    await asyncio.shield(run_sync(_rmtree_then_drop_lock, path, fd))
     return True
 
 
@@ -1333,6 +1344,9 @@ _sync_passes_in_flight = 0
 # before it runs beside one anyway.
 _PASS_DEFER_MAX_SECONDS = 1800.0
 
+# source_id -> time.monotonic() when _log_cooldown_once last logged it.
+_repack_cooldown_logged_at: Dict[str, float] = {}
+
 # Logged once per process, the first time SCOPES_GIT_REPACK_PACK_LIMIT is 1.
 _repack_limit_clamp_logged = False
 
@@ -1381,19 +1395,43 @@ def _clear_repack_failure(repo_path: str | os.PathLike[str]) -> None:
 
 
 def _repack_failed_recently(repo_path: str | os.PathLike[str]) -> bool:
-    """Whether the clone's failure marker is younger than the cooldown.
+    """Whether the clone's failure marker is recent enough to skip it.
 
-    Blocking (a stat). A marker that cannot be read counts as none, and
-    so does one dated more than a minute in the future (a wall clock
-    stepped back), which would otherwise block repacks for longer than
-    the cooldown.
+    The marker is stamped when a repack starts, so it counts for the
+    cooldown plus as long as that repack could have run: a container
+    OOM-killed at the end of a long repack still restarts into a full
+    cooldown. Blocking (a stat). A marker that cannot be read counts as
+    none, and so does one dated more than a cooldown in the future (a
+    wall clock stepped back, or a filesystem server's clock far ahead),
+    which would otherwise block repacks for longer than intended.
     """
     try:
         mtime = _repack_failed_marker(repo_path).stat().st_mtime
     except OSError:
         return False
     age = time.time() - mtime
-    return -60.0 <= age < _REPACK_FAILURE_COOLDOWN_SECONDS
+    window = (
+        _REPACK_FAILURE_COOLDOWN_SECONDS
+        + _repack_timeout_seconds()
+        + _REPACK_STOP_SECONDS
+    )
+    return -_REPACK_FAILURE_COOLDOWN_SECONDS <= age < window
+
+
+def _repack_lock_held(repo_path: str | os.PathLike[str]) -> bool:
+    """Whether a repack holds the pod-wide repack lock right now (probed
+    without blocking); False when it cannot be told.
+
+    Blocking.
+    """
+    try:
+        fd = _take_repack_lock(_repack_lock_dir(repo_path))
+    except OSError:
+        return False
+    if fd is None:
+        return True
+    _drop_repack_lock(fd)
+    return False
 
 
 class _DueRepack(NamedTuple):
@@ -2233,7 +2271,16 @@ class GitPolicyFetcher(PolicyFetcher):
                 err=e,
             )
             return
-        if packs_before < limit or await run_sync(_repack_failed_recently, path):
+        if packs_before < limit:
+            return
+        if await run_sync(_repack_failed_recently, path):
+            if await run_sync(_repack_lock_held, path):
+                # The marker of a repack still running (a previous leader's
+                # orphaned git, say): a skip like any other, mark kept.
+                _emit_repack_skipped()
+                GitPolicyFetcher._keep_due(due, lock)
+                return
+            GitPolicyFetcher._log_cooldown_once(due)
             return
         # Only a peek, so that a skip costs no git-executor slot or thread;
         # the executor thread's own non-blocking acquire is what decides.
@@ -2286,6 +2333,10 @@ class GitPolicyFetcher(PolicyFetcher):
             return
         except Exception as e:
             GitPolicyFetcher._on_repack_failed(due, e, time.monotonic() - started)
+            # On disk too, for the other processes and the next leader (a
+            # failure before git started has no attempt stamp of its own);
+            # after the in-memory record, which a cancel here cannot undo.
+            await run_sync(_record_repack_failure, path)
             return
         seconds = time.monotonic() - started
         if sizes is None:
@@ -2313,6 +2364,26 @@ class GitPolicyFetcher(PolicyFetcher):
         )
 
     @staticmethod
+    def _log_cooldown_once(due: _DueRepack) -> None:
+        """Say once per cooldown why a clone at the limit is not repacked: a
+        repack of it failed, or never finished (its process died, an OOM
+        kill of the container included), within the cooldown."""
+        now = time.monotonic()
+        logged = _repack_cooldown_logged_at.get(due.source_id)
+        if logged is not None and now - logged < _REPACK_FAILURE_COOLDOWN_SECONDS:
+            return
+        _repack_cooldown_logged_at[due.source_id] = now
+        logger.info(
+            "Not repacking scope clone {path} ({url}): a repack of it failed or "
+            "did not finish (its process died) less than {cooldown:.0f}s ago; "
+            "see {marker}",
+            path=due.repo_path,
+            url=due.url,
+            cooldown=_REPACK_FAILURE_COOLDOWN_SECONDS,
+            marker=_REPACK_FAILED_MARKER,
+        )
+
+    @staticmethod
     def _keep_due(due: _DueRepack, lock: asyncio.Lock) -> None:
         """Put back the mark run_due_repack took for a repack that could not
         start, held under ``lock``, the clone's lock_source.
@@ -2335,10 +2406,6 @@ class GitPolicyFetcher(PolicyFetcher):
             if now - failed_at >= _REPACK_FAILURE_COOLDOWN_SECONDS:
                 del _repack_failed_at[source_id]
         _repack_failed_at[due.source_id] = now
-        # On disk too, for the other processes and the next leader (a
-        # failure before git started has no attempt stamp of its own). A
-        # touch, after the in-memory record: nothing here awaits.
-        _record_repack_failure(due.repo_path)
         outcome = "timeout" if isinstance(err, TimeoutError) else "error"
         still_running = GitPolicyFetcher._release_handle_after_repack(due)
         _emit_repack_attempt(outcome, seconds)
