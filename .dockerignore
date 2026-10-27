@@ -9,7 +9,7 @@ Dockerfile
 .gitignore
 .pre-commit-config.yaml
 # Test fixtures that hold certificates, such as the compromised eMudhra CAs the
-# trust-store test uses. Applies to local builds only: BuildKit skips
-# .dockerignore for a Git context, which is what CI and the release build from,
+# trust-store test uses. CI and the release build from the checkout, where this
+# applies. BuildKit skips .dockerignore for a Git context (docker build <git-url>),
 # so docker/Dockerfile excludes them with COPY --exclude as well.
 packages/**/tests/*.pem
