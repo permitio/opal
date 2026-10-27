@@ -57,8 +57,8 @@ COPY ./scripts/gunicorn_conf.py .
 # copy app code
 
 COPY ./README.md .
-# --exclude, not .dockerignore: CI and the release build from a Git context, where BuildKit
-# ignores .dockerignore. The trust-store test's fixture holds the compromised eMudhra
+# --exclude as well as .dockerignore: a build from a Git context (docker build <git-url>)
+# skips .dockerignore. The trust-store test's fixture holds the compromised eMudhra
 # certificates, and a search of the image's files for them would report it, even though
 # nothing trusts it.
 COPY --exclude=**/tests/*.pem ./packages ./packages/
@@ -66,6 +66,10 @@ COPY --exclude=**/tests/*.pem ./packages ./packages/
 RUN cd ./packages/opal-common && python setup.py install
 # Make sure scripts in .local are usable:
 ENV PATH=/opal:/root/.local/bin:$PATH
+# With OPAL_ENABLE_DATADOG_APM, start.sh runs gunicorn under ddtrace-run. ddtrace 4 traces every
+# websocket message by default (3.x did not), which would turn each pub/sub update into spans.
+# Keep the 3.x behaviour; set it to true to opt in. configure_apm applies the same default.
+ENV DD_TRACE_WEBSOCKET_MESSAGES_ENABLED=false
 # run gunicorn
 CMD ["./start.sh"]
 
@@ -323,13 +327,17 @@ RUN chmod +x ./start.sh
 RUN ln -s /opal/start.sh /start.sh
 COPY ./scripts/gunicorn_conf.py .
 COPY ./README.md .
-# --exclude, not .dockerignore: CI and the release build from a Git context, where BuildKit
-# ignores .dockerignore. The trust-store test's fixture holds the compromised eMudhra
+# --exclude as well as .dockerignore: a build from a Git context (docker build <git-url>)
+# skips .dockerignore. The trust-store test's fixture holds the compromised eMudhra
 # certificates, and a search of the image's files for them would report it, even though
 # nothing trusts it.
 COPY --exclude=**/tests/*.pem ./packages ./packages/
 RUN cd ./packages/opal-common && python setup.py install
 ENV PATH=/opal:/root/.local/bin:$PATH
+# With OPAL_ENABLE_DATADOG_APM, start.sh runs gunicorn under ddtrace-run. ddtrace 4 traces every
+# websocket message by default (3.x did not), which would turn each pub/sub update into spans.
+# Keep the 3.x behaviour; set it to true to opt in. configure_apm applies the same default.
+ENV DD_TRACE_WEBSOCKET_MESSAGES_ENABLED=false
 CMD ["./start.sh"]
 
 
