@@ -3052,27 +3052,56 @@ async def test_clone_in_cooldown_is_named_once_per_cooldown(
 
 @pytest.mark.asyncio
 async def test_cancelled_delete_floor_still_releases_the_lock_after_its_rmtree(
-    tmp_path, monkeypatch
+    tmp_path,
 ):
-    """The rmtree and the lock's release run on one thread, shielded: a caller
-    cancelled meanwhile never leaves the repack lock held."""
+    """Cancelled while its rmtree is still queued for an executor thread, the
+    DELETE floor must not drop the work item: the lock fd is closed only by
+    it. The default executor is one thread, busy, so the item queues."""
+    from concurrent.futures import ThreadPoolExecutor
+
     clones = tmp_path / "git_sources"
     clone = clones / "src"
     (clone / ".git").mkdir(parents=True)
+    loop = asyncio.get_running_loop()
+    executor = ThreadPoolExecutor(1)
+    loop.set_default_executor(executor)
     gate = threading.Event()
-    real = git_fetcher._rmtree_then_drop_lock
+    blocker = loop.run_in_executor(None, gate.wait, 10)
+    try:
+        task = asyncio.ensure_future(git_fetcher.remove_clone_dir_exclusive(str(clone)))
+        assert await _wait_for_async(lambda: bool(git_fetcher._repack_lock_fds))
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        gate.set()
+        await blocker
+        assert await _wait_for_async(lambda: not git_fetcher._repack_lock_fds)
+        assert not clone.exists()
+        assert _lock_is_free(clones)
+    finally:
+        gate.set()
+        executor.shutdown(wait=True)
 
-    def _slow(path, fd):
-        gate.wait(10)
-        real(path, fd)
 
-    monkeypatch.setattr(git_fetcher, "_rmtree_then_drop_lock", _slow)
-    task = asyncio.ensure_future(git_fetcher.remove_clone_dir_exclusive(str(clone)))
-    assert await _wait_for_async(lambda: bool(git_fetcher._repack_lock_fds))
-    task.cancel()
-    with pytest.raises(asyncio.CancelledError):
-        await task
-    gate.set()
-    assert await _wait_for_async(lambda: not git_fetcher._repack_lock_fds)
-    assert not clone.exists()
-    assert _lock_is_free(clones)
+@pytest.mark.asyncio
+async def test_clone_whose_marker_predates_the_restart_is_named_once(
+    tmp_path, monkeypatch, records
+):
+    """The documented case: a container OOM-killed mid-repack restarts with
+    the marker in place and nothing in memory. The clone is still marked
+    due, and the due repack names it once per cooldown instead of
+    repacking it."""
+    spy = _RepackSpy()
+    monkeypatch.setattr(git_fetcher, "_repack_clone", spy)
+    scope = _ScopeRepo(tmp_path, "s1")
+    await scope.fetched(_LIMIT - 1)
+    git_fetcher._record_repack_failure(scope.clone_path)  # before the restart
+    await scope.push_and_sync()
+    await scope.push_and_sync()
+    assert spy.calls == []
+    infos = [
+        r
+        for r in records
+        if r["level"].name == "INFO" and "did not finish" in r["message"]
+    ]
+    assert len(infos) == 1

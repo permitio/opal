@@ -2038,9 +2038,9 @@ class GitPolicyFetcher(PolicyFetcher):
 
         Never fails the sync, and marks nothing when the limit is 0 or
         negative, when git was found missing, while this source waits out
-        a failed repack (in this process, or in any other one: see
-        _REPACK_FAILED_MARKER), or when the clone holds fewer packs than
-        the limit.
+        a failed repack in this process, or when the clone holds fewer
+        packs than the limit. A failure in another process
+        (_REPACK_FAILED_MARKER) is the due repack's to read.
         """
         limit = _repack_pack_limit()
         if limit <= 0 or _repack_git_missing or _repack_cooling_down(self._source_id):
@@ -2056,7 +2056,10 @@ class GitPolicyFetcher(PolicyFetcher):
                 err=e,
             )
             return
-        if packs >= limit and not await run_sync(_repack_failed_recently, path):
+        # A clone whose repack failed in another process (its marker) is marked
+        # all the same: the due repack reads the marker, names the clone once
+        # per cooldown and tells a dead repack from one still running.
+        if packs >= limit:
             previous = _repacks_due.get(self._source_id)
             _repacks_due[self._source_id] = _DueRepack(
                 source_id=self._source_id,
@@ -2079,6 +2082,7 @@ class GitPolicyFetcher(PolicyFetcher):
         behind repacked at the end of that pass.
         """
         _repacks_due.pop(source_id, None)
+        _repack_cooldown_logged_at.pop(source_id, None)
 
     @staticmethod
     @contextmanager
