@@ -161,11 +161,12 @@ class _FakeScopesService:
 
     async def sync_scopes(self, *args, **kwargs):
         # Stands in for the per-scope git chatter of the real preload; the
-        # warning has the shape of GitPolicyFetcher._clone's failure line, whose
-        # err kwarg (raw, as git renders it) also lands in record["extra"].
+        # error has the level and shape of GitPolicyFetcher._clone's failure
+        # line, whose err kwarg (raw, as git renders it) also lands in
+        # record["extra"].
         logger.debug("fake sync detail")
         logger.info("fake sync info")
-        logger.warning(
+        logger.error(
             "Could not clone repo at {url}: {err}",
             url=redact_url(CREDENTIALED_REMOTE),
             err=CLONE_ERROR,
@@ -265,7 +266,7 @@ def test_default_handler_sees_records_when_configure_logs_is_skipped(
         clone_line = (
             f"Could not clone repo at {redact_url(CREDENTIALED_REMOTE)}: {CLONE_ERROR}"
         )
-        assert ("WARNING", clone_line) in master_logs.default_records
+        assert ("ERROR", clone_line) in master_logs.default_records
         redis_line = f"Connecting to Redis: {CREDENTIALED_REDIS_URL}"
         assert ("DEBUG", redis_line) in master_logs.default_records
     assert master_logs.stream.getvalue() == ""
