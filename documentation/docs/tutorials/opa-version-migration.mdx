@@ -154,12 +154,11 @@ Once you've migrated all your policies:
 
 ## OPA bundled in the client image
 
-The `permitio/opal-client` image ships the OPA binary that runs as the inline engine. From OPAL 0.10.0-rc.2 on it is **OPA 1.21.4**; earlier images shipped OPA 1.9.0. OPA tightened its compiler between those versions, so a policy that loaded on the old image can be **rejected when the client loads it** on the new one, with or without v0 compatibility mode:
+The `permitio/opal-client` image ships the OPA binary that runs as the inline engine. OPAL images released after 0.10.0-rc.2 ship **OPA 1.21.4**; earlier images shipped OPA 1.9.0. OPA tightened its compiler between those versions, so a policy that loaded on the old image can be **rejected when the client loads it** on the new one, with or without v0 compatibility mode:
 
 - **OPA 1.19.0: stricter safety for `:=`.** The right-hand side of an assignment is now a read. A policy that bound a variable backwards through `:=` (for example `x := y; x = 7`, with `y` never assigned) now fails with `rego_unsafe_var_error`. See the [1.19.0 release notes](https://github.com/open-policy-agent/opa/releases/tag/v1.19.0).
 - **OPA 1.20.0: new `and` and `or` keywords.** `import future.keywords` now imports them too, so a policy with that import that uses `and` or `or` as a name no longer parses. See the [1.20.0 release notes](https://github.com/open-policy-agent/opa/releases/tag/v1.20.0).
 - **OPA 1.21.0: empty composite literals are typed as empty, and `in` is type-checked.** `{}`, `[]` and `set()` no longer have the type of "any collection", so selecting from or iterating one is a type error at compile time, and so is an `in` whose element can't be in the collection's type. See the [1.21.0 release notes](https://github.com/open-policy-agent/opa/releases/tag/v1.21.0).
-- **OPA 1.21.0: YAML is parsed with the YAML 1.2 core schema.** Words such as `yes`, `no`, `on` and `off` are now plain strings, not booleans (`true` and `false` are unaffected). This applies to YAML data, bundles, config files and `yaml.unmarshal`.
 
 **Before upgrading,** run the new OPA's checker against your policy repository:
 
@@ -170,6 +169,13 @@ docker run --rm -v "$PWD:/policy" openpolicyagent/opa:1.21.4-static check --v0-c
 ```
 
 A policy that fails here would fail to load in the new client image. Fix it first, or stay on the previous image until you have.
+
+**Not caught by `opa check`.** Two changes reject nothing at compile time, so check them by hand:
+
+- **OPA 1.21.0 parses YAML with the YAML 1.2 core schema.** Unquoted `y`, `n`, `yes`, `no`, `on` and `off` used to be booleans and are now strings (`true` and `false` are unaffected). Policies still compile, but a rule such as `deny if data.flags.block == true` stops matching when the YAML says `block: yes`, so a decision can change without any error. Search the policy repository for `yaml.unmarshal`, and for those unquoted words in YAML that OPA reads (data files, bundles, config), then quote them or use `true`/`false`.
+- **OPA 1.21.3 changes bundle signing.** If you pass OPA a config file (`OPAL_INLINE_OPA_CONFIG`, `config_file`) with a `signing` block: signatures are now required whenever the block is present, even without `keyid`, and a `signing` block with no entries under the top-level `keys` is now a startup error.
+
+For the full list, read OPA's [changelog](https://github.com/open-policy-agent/opa/blob/v1.21.4/CHANGELOG.md) from 1.10.0 to 1.21.4.
 
 ## Troubleshooting
 

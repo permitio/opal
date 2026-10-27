@@ -120,22 +120,23 @@ WORKDIR /opal
 # documentation/docs/tutorials/opa-version-migration.mdx ("OPA bundled in the client image").
 #
 # The default is pinned by digest (the multi-arch index of `${opa_image}:${opa_tag}`).
-# When you override opa_tag, pass the new image's digest as opa_digest, or an empty
-# opa_digest to take the tag as it resolves.
+# When you override opa_image or opa_tag, pass the new image's digest as opa_digest, or an
+# empty opa_digest to take the tag as it resolves.
 ARG opa_image=openpolicyagent/opa
 ARG opa_tag=1.21.4-static
 ARG opa_digest=sha256:47f93480b09e24c220ae75f1e9133585ba6d698059951668d35e6a4fc32ebc82
 ARG TARGETARCH
 RUN src="docker://${opa_image}:${opa_tag}" && \
   if [ -n "${opa_digest}" ]; then \
-    got="sha256:$(skopeo inspect --raw "${src}" | sha256sum | cut -d' ' -f1)" && \
-    { [ "${got}" = "${opa_digest}" ] || { echo "${opa_image}:${opa_tag} is ${got}, expected ${opa_digest}; pass --build-arg opa_digest=<digest> (or an empty one) when overriding opa_tag" >&2; exit 1; }; } && \
+    skopeo inspect --raw "${src}" > manifest.json && \
+    got="sha256:$(sha256sum manifest.json | cut -d' ' -f1)" && \
+    { [ "${got}" = "${opa_digest}" ] || { echo "${opa_image}:${opa_tag} is ${got}, expected ${opa_digest}; pass --build-arg opa_digest=<digest> (or an empty one) when overriding opa_image or opa_tag" >&2; exit 1; }; } && \
     src="docker://${opa_image}@${opa_digest}"; \
   fi && \
   skopeo copy --override-arch "${TARGETARCH}" "${src}" docker-archive:./image.tar && \
   mkdir image && tar xf image.tar -C ./image && cat image/*.tar | tar xf - -C ./image -i && \
   find image/ -name "opa*" -type f -executable -print0 | xargs -0 -I "{}" cp {} ./opa && chmod 755 ./opa && \
-  rm -r image image.tar
+  rm -rf image image.tar manifest.json
 
 
 # OPA CLIENT IMAGE ----------------------------------
