@@ -199,7 +199,15 @@ _OPERATOR = {
 @pytest.mark.parametrize("operator", sorted(_OPERATOR))
 @pytest.mark.parametrize("app_kind", sorted(_WS_APPS))
 @pytest.mark.parametrize(
-    "prelude", ["", "import ddtrace.auto"], ids=["patch", "ddtrace-run"]
+    "prelude",
+    [
+        "",
+        "import ddtrace.auto",
+        # opal-server's order: fastapi (and so the integrations) imported at module level,
+        # configure_apm called later from OpalServer.__init__.
+        "import ddtrace.auto\nimport fastapi, starlette.applications, starlette.routing, ddtrace.contrib.asgi",
+    ],
+    ids=["patch", "ddtrace-run", "ddtrace-run-imported-first"],
 )
 def test_websocket_message_tracing_keeps_the_3x_default(prelude, app_kind, operator):
     """Ddtrace 4 traces every websocket message by default; OPAL's pub/sub runs
@@ -210,7 +218,8 @@ def test_websocket_message_tracing_keeps_the_3x_default(prelude, app_kind, opera
     DD_ASGI_TRACE_WEBSOCKET, and then leaves their choice alone. Checked
     by the websocket.* spans that reach the trace processor for a real
     session, for each integration config it sets, with configure_apm
-    patching and under ddtrace-run (`import ddtrace.auto`). A plain
+    patching and under ddtrace-run (`import ddtrace.auto`), also with the
+    integrations imported before configure_apm, as opal-server does. A plain
     Starlette app is instrumented only under ddtrace-run: configure_apm
     patches fastapi, not starlette.
     """
