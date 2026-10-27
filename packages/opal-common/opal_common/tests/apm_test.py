@@ -115,25 +115,32 @@ def test_configure_apm_runs_on_installed_ddtrace():
     enables was not patched: fastapi, aiohttp, loguru, and redis and
     asyncpg where installed (the opal-server legs).
     """
-    code = _SPY + textwrap.dedent(
+    # Recording starts before _SPY imports apm (and with it ddtrace), so a deprecated name that
+    # apm imports at module level fails the test too.
+    record_warnings = textwrap.dedent(
         """
         import importlib, importlib.util, warnings
         warnings.simplefilter("always")
-        with warnings.catch_warnings(record=True) as caught:
-            from opal_common.monitoring.apm import configure_apm, fix_ddtrace_logging
-            configure_apm(True, "opal-apm-test")
-            fix_ddtrace_logging()
-            import aiohttp  # imported after patch(), so the aiohttp integration is applied too
-            import fastapi
-            import loguru
-            from fastapi.testclient import TestClient
-            app = fastapi.FastAPI()
-            app.get("/")(lambda: {"ok": True})
-            app.get("/healthcheck")(lambda: {"ok": True})
-            client = TestClient(app)
-            assert client.get("/").status_code == 200
-            assert client.get("/healthcheck").status_code == 200
-            others = [importlib.import_module(n) for n in ("redis", "asyncpg") if importlib.util.find_spec(n)]
+        caught = []
+        warnings.showwarning = lambda *args: caught.append(warnings.WarningMessage(*args))
+        """
+    )
+    check = textwrap.dedent(
+        """
+        from opal_common.monitoring.apm import configure_apm, fix_ddtrace_logging
+        configure_apm(True, "opal-apm-test")
+        fix_ddtrace_logging()
+        import aiohttp  # imported after patch(), so the aiohttp integration is applied too
+        import fastapi
+        import loguru
+        from fastapi.testclient import TestClient
+        app = fastapi.FastAPI()
+        app.get("/")(lambda: {"ok": True})
+        app.get("/healthcheck")(lambda: {"ok": True})
+        client = TestClient(app)
+        assert client.get("/").status_code == 200
+        assert client.get("/healthcheck").status_code == 200
+        others = [importlib.import_module(n) for n in ("redis", "asyncpg") if importlib.util.find_spec(n)]
         for module in (fastapi, aiohttp, loguru, *others):
             assert getattr(module, "_datadog_patch", False), f"{module.__name__} was not patched"
         routes = [(route, dropped) for route, _, dropped in seen]
@@ -143,7 +150,7 @@ def test_configure_apm_runs_on_installed_ddtrace():
         assert not ours, ours
         """
     )
-    result = _run_child(code)
+    result = _run_child(record_warnings + _SPY + check)
     assert result.returncode == 0, result.stderr
 
 
