@@ -157,8 +157,14 @@ jobs:
 
       - name: Check that no test certificate fixture is in the images
         # .dockerignore and docker/Dockerfile's COPY --exclude both keep them out. This fails if
-        # one slips back in.
+        # one slips back in. These builds read .dockerignore, so they can't show that --exclude
+        # works alone; pin it, since a build that skips .dockerignore (docker build <git-url>)
+        # has only --exclude.
         run: |
+          if [ "$(grep -cF -- 'COPY --exclude=**/tests/*.pem ./packages ./packages/' docker/Dockerfile)" -ne 2 ]; then
+            echo "::error::docker/Dockerfile must keep COPY --exclude=**/tests/*.pem in both stages, for builds that skip .dockerignore"
+            exit 1
+          fi
           for image in permitio/opal-client:test permitio/opal-server:test; do
             tests=$(docker run --rm --entrypoint sh "$image" -c 'find /opal/packages -path "*/tests/*" -name "*.py" | wc -l')
             found=$(docker run --rm --entrypoint sh "$image" -c 'find /opal/packages -name "*.pem"')
@@ -253,8 +259,14 @@ jobs:
 
       - name: Check that no test certificate fixture is in the images
         # .dockerignore and docker/Dockerfile's COPY --exclude both keep them out. This fails if
-        # one slips back in.
+        # one slips back in. These builds read .dockerignore, so they can't show that --exclude
+        # works alone; pin it, since a build that skips .dockerignore (docker build <git-url>)
+        # has only --exclude.
         run: |
+          if [ "$(grep -cF -- 'COPY --exclude=**/tests/*.pem ./packages ./packages/' docker/Dockerfile)" -ne 2 ]; then
+            echo "::error::docker/Dockerfile must keep COPY --exclude=**/tests/*.pem in both stages, for builds that skip .dockerignore"
+            exit 1
+          fi
           for image in permitio/opal-client:test-alpine permitio/opal-server:test-alpine; do
             tests=$(docker run --rm --entrypoint sh "$image" -c 'find /opal/packages -path "*/tests/*" -name "*.py" | wc -l')
             found=$(docker run --rm --entrypoint sh "$image" -c 'find /opal/packages -name "*.pem"')
