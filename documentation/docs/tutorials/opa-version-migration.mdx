@@ -152,6 +152,24 @@ Once you've migrated all your policies:
 - **OPAL v0.9.x**: `OPAL_OPA_V0_COMPAT` defaults to `true` for easier migration
 - **OPAL v0.10.0+**: `OPAL_OPA_V0_COMPAT` will be unconfigured (effectively `false`) by default
 
+## OPA bundled in the client image
+
+The `permitio/opal-client` image ships the OPA binary that runs as the inline engine. From OPAL 0.10.0-rc.2 on it is **OPA 1.21.4**; earlier images shipped OPA 1.9.0. OPA tightened its compiler between those versions, so a policy that loaded on the old image can be **rejected when the client loads it** on the new one, with or without v0 compatibility mode:
+
+- **OPA 1.19.0: stricter safety for `:=`.** The right-hand side of an assignment is now a read. A policy that bound a variable backwards through `:=` (for example `x := y; x = 7`, with `y` never assigned) now fails with `rego_unsafe_var_error`. See the [1.19.0 release notes](https://github.com/open-policy-agent/opa/releases/tag/v1.19.0).
+- **OPA 1.21.0: empty composite literals are typed as empty.** `{}`, `[]` and `set()` no longer have the type of "any collection", so selecting from or iterating one is a type error at compile time. See the [1.21.0 release notes](https://github.com/open-policy-agent/opa/releases/tag/v1.21.0).
+- **OPA 1.21.0: YAML is parsed with the YAML 1.2 core schema.** Words such as `yes`, `no`, `on` and `off` are now plain strings, not booleans (`true` and `false` are unaffected). This applies to YAML data, bundles, config files and `yaml.unmarshal`.
+
+**Before upgrading,** run the new OPA's checker against your policy repository:
+
+```bash
+docker run --rm -v "$PWD:/policy" openpolicyagent/opa:1.21.4-static check /policy
+# if you run with OPAL_OPA_V0_COMPAT=true:
+docker run --rm -v "$PWD:/policy" openpolicyagent/opa:1.21.4-static check --v0-compatible /policy
+```
+
+A policy that fails here would fail to load in the new client image. Fix it first, or stay on the previous image until you have.
+
 ## Troubleshooting
 
 ### Common Migration Issues
