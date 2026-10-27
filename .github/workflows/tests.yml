@@ -102,6 +102,7 @@ jobs:
         id: build_client
         uses: docker/build-push-action@v2
         with:
+          context: .
           file: docker/Dockerfile
           push: false
           target: client
@@ -115,6 +116,7 @@ jobs:
         id: build_server
         uses: docker/build-push-action@v2
         with:
+          context: .
           file: docker/Dockerfile
           push: false
           target: server
@@ -125,8 +127,8 @@ jobs:
             permitio/opal-server:test
 
       - name: Check that no test certificate fixture is in the images
-        # .dockerignore doesn't apply to the Git context build-push-action builds from, so
-        # docker/Dockerfile excludes these with COPY --exclude. This fails if one slips back in.
+        # .dockerignore and docker/Dockerfile's COPY --exclude both keep them out. This fails if
+        # one slips back in.
         run: |
           for image in permitio/opal-client:test permitio/opal-server:test; do
             tests=$(docker run --rm --entrypoint sh "$image" -c 'find /opal/packages -path "*/tests/*" -name "*.py" | wc -l')
@@ -196,6 +198,7 @@ jobs:
         id: build_client_alpine
         uses: docker/build-push-action@v2
         with:
+          context: .
           file: docker/Dockerfile
           push: false
           target: client-alpine
@@ -209,6 +212,7 @@ jobs:
         id: build_server_alpine
         uses: docker/build-push-action@v2
         with:
+          context: .
           file: docker/Dockerfile
           push: false
           target: server-alpine
@@ -219,8 +223,8 @@ jobs:
             permitio/opal-server:test-alpine
 
       - name: Check that no test certificate fixture is in the images
-        # .dockerignore doesn't apply to the Git context build-push-action builds from, so
-        # docker/Dockerfile excludes these with COPY --exclude. This fails if one slips back in.
+        # .dockerignore and docker/Dockerfile's COPY --exclude both keep them out. This fails if
+        # one slips back in.
         run: |
           for image in permitio/opal-client:test-alpine permitio/opal-server:test-alpine; do
             tests=$(docker run --rm --entrypoint sh "$image" -c 'find /opal/packages -path "*/tests/*" -name "*.py" | wc -l')

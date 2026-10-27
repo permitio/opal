@@ -75,6 +75,7 @@ jobs:
         id: build_client
         uses: docker/build-push-action@v6
         with:
+          context: .
           file: docker/Dockerfile
           push: false
           target: client
@@ -88,6 +89,7 @@ jobs:
         id: build_server
         uses: docker/build-push-action@v6
         with:
+          context: .
           file: docker/Dockerfile
           push: false
           target: server
@@ -250,14 +252,18 @@ jobs:
           tags: ${{ steps.tags.outputs.tags }}
 
       - name: Check that the pushed image installs the release version
+        # Runs after the push, so a failure means these tags already point at the wrong image
         env:
           IMAGE: ${{ matrix.repository }}@${{ steps.build.outputs.digest }}
           EXPECTED: ${{ steps.version.outputs.pypi_version }}
+          TAGS: ${{ steps.tags.outputs.tags }}
         run: |
           actual=$(docker run --rm --platform linux/amd64 --entrypoint pip "$IMAGE" show opal-common | sed -n 's/^Version: //p')
           echo "$IMAGE installs opal-common $actual"
           if [ "$actual" != "$EXPECTED" ]; then
-            echo "::error::$IMAGE installs opal-common '$actual', expected '$EXPECTED'"
+            echo "::error::$IMAGE installs opal-common '$actual', expected '$EXPECTED'. It is already pushed under the tags below; fix the build, re-run this job to re-push them, and for a GA release point latest back at the previous version until then."
+            echo "Tags now pointing at the wrong image:"
+            echo "$TAGS"
             exit 1
           fi
 
@@ -299,6 +305,12 @@ jobs:
           echo "Original version tag: $version_tag"
           echo "PyPI version: $pypi_version"
           cat packages/__packaging__.py
+
+          # If the sed stops matching, the packages would be built and uploaded as 0.0.0
+          if [ -z "$pypi_version" ] || ! grep -qF "__version__ = \"$pypi_version\"" packages/__packaging__.py; then
+            echo "::error::packages/__packaging__.py does not carry the release version '$pypi_version'"
+            exit 1
+          fi
 
       - name: Build every sub-packages
         run: |
