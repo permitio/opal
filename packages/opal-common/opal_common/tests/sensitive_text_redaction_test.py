@@ -11,7 +11,10 @@ from loguru import logger
 from opal_common.http_utils import redact_sensitive_text, redact_url_in_text
 from opal_common.logger import _scrub_record_message
 from opal_common.logging_utils.errors import describe_error, describe_validation_error
-from opal_common.logging_utils.scrubbing import CredentialScrubbingStream
+from opal_common.logging_utils.scrubbing import (
+    CredentialScrubbingFileSink,
+    CredentialScrubbingStream,
+)
 from opal_common.tests.redaction_fixtures import (
     capture_logs,
     response_error,
@@ -298,3 +301,67 @@ def test_scrubbing_stream_masks_auth_header_in_traceback():
 
     assert FAKE_KEY not in buffer.getvalue()
     assert "'Authorization': '***'" in buffer.getvalue()
+
+
+def _log_credential_in_extra_and_traceback():
+    try:
+        raise RuntimeError(repr(response_error({"Authorization": FAKE_KEY})))
+    except RuntimeError:
+        logger.opt(exception=True).error(
+            "request failed", headers={"Authorization": f"Bearer {FAKE_KEY}"}
+        )
+
+
+@pytest.mark.parametrize("wrapped", [True, False], ids=["wrapped", "control-raw-path"])
+def test_scrubbing_file_sink_masks_extra_and_traceback(wrapped, tmp_path):
+    """The control arm adds the plain path, as configure_logs() used to, and
+    shows the credential reaches the file without the wrapper."""
+    log_file = tmp_path / "opal.log"
+    sink = CredentialScrubbingFileSink(log_file) if wrapped else str(log_file)
+    sink_id = logger.add(sink, level="DEBUG", serialize=True, diagnose=False)
+    try:
+        _log_credential_in_extra_and_traceback()
+    finally:
+        logger.remove(sink_id)
+
+    output = log_file.read_text()
+    record = json.loads(output)["record"]
+    assert record["message"] == "request failed"
+    if wrapped:
+        assert FAKE_KEY not in output
+        assert record["extra"]["headers"] == {"Authorization": "***"}
+    else:
+        assert FAKE_KEY in output
+
+
+def test_scrubbing_file_sink_keeps_time_based_rotation(tmp_path):
+    """Time-based rotation reads message.record["time"] on every write, so the
+    masked text must still carry loguru's record."""
+    log_file = tmp_path / "opal.log"
+    sink_id = logger.add(
+        CredentialScrubbingFileSink(log_file, rotation="00:00"),
+        level="DEBUG",
+        catch=False,
+    )
+    try:
+        logger.info("GET http://h/p?token={t}", t=FAKE_KEY)
+    finally:
+        logger.remove(sink_id)
+
+    output = log_file.read_text()
+    assert "GET http://h/p?token=***" in output
+    assert FAKE_KEY not in output
+
+
+def test_scrubbing_file_sink_closes_and_compresses_on_remove(tmp_path):
+    """logger.remove() reaches FileSink.stop(), which closes the file and
+    applies the configured compression, as it does for a path sink."""
+    log_file = tmp_path / "opal.log"
+    sink_id = logger.add(
+        CredentialScrubbingFileSink(log_file, compression="zip"), level="DEBUG"
+    )
+    logger.info("one line")
+    logger.remove(sink_id)
+
+    assert not log_file.exists()
+    assert (tmp_path / "opal.log.zip").exists()
