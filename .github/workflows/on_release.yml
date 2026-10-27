@@ -206,6 +206,7 @@ jobs:
           python-version: '3.11.8'
 
       - name: Bump version - packaging__.py
+        id: version
         run: |
           # Install required packages
           pip install semver packaging
@@ -225,7 +226,15 @@ jobs:
           echo "PyPI version: $pypi_version"
           cat packages/__packaging__.py
 
+          # If the sed stops matching, the images would silently install 0.0.0 again
+          if [ -z "$pypi_version" ] || ! grep -qF "__version__ = \"$pypi_version\"" packages/__packaging__.py; then
+            echo "::error::packages/__packaging__.py does not carry the release version '$pypi_version'"
+            exit 1
+          fi
+          echo "pypi_version=$pypi_version" >> "$GITHUB_OUTPUT"
+
       - name: Build and push ${{ matrix.name }}
+        id: build
         uses: docker/build-push-action@v6
         with:
           # Build from this checkout, which holds the version bump above. Without a context the
@@ -239,6 +248,18 @@ jobs:
           cache-from: type=registry,ref=${{ steps.tags.outputs.cache_ref }}
           cache-to: type=inline
           tags: ${{ steps.tags.outputs.tags }}
+
+      - name: Check that the pushed image installs the release version
+        env:
+          IMAGE: ${{ matrix.repository }}@${{ steps.build.outputs.digest }}
+          EXPECTED: ${{ steps.version.outputs.pypi_version }}
+        run: |
+          actual=$(docker run --rm --platform linux/amd64 --entrypoint pip "$IMAGE" show opal-common | sed -n 's/^Version: //p')
+          echo "$IMAGE installs opal-common $actual"
+          if [ "$actual" != "$EXPECTED" ]; then
+            echo "::error::$IMAGE installs opal-common '$actual', expected '$EXPECTED'"
+            exit 1
+          fi
 
   publish_python_packages:
     needs:
