@@ -55,22 +55,32 @@ def test_configure_apm_runs_on_installed_ddtrace():
     """configure_apm patches integrations process-wide, so it runs in a child
     interpreter.
 
-    It fails on an exception or on any warning ddtrace raises about the
-    calls OPAL makes (a removal is announced as a deprecation one major
-    ahead).
+    The child then builds a FastAPI app and serves requests through it,
+    so the patched integration code runs, not only its registration. It
+    fails on an exception, on any DDTraceDeprecationWarning (a removal
+    is announced as a deprecation one major ahead; ddtrace warns with a
+    stacklevel, so the filename is the caller's, not ddtrace's), or if
+    FastAPI was not patched.
     """
     code = textwrap.dedent(
         """
         import warnings
         warnings.simplefilter("always")
+        from ddtrace import DDTraceDeprecationWarning
         with warnings.catch_warnings(record=True) as caught:
             from opal_common.monitoring.apm import configure_apm, fix_ddtrace_logging
             configure_apm(True, "opal-apm-test")
             fix_ddtrace_logging()
-        ours = [
-            str(w.message) for w in caught
-            if "ddtrace" in (w.filename or "") or "ddtrace" in str(w.message)
-        ]
+            import fastapi
+            from fastapi.testclient import TestClient
+            app = fastapi.FastAPI()
+            app.get("/")(lambda: {"ok": True})
+            app.get("/healthcheck")(lambda: {"ok": True})
+            client = TestClient(app)
+            assert client.get("/").status_code == 200
+            assert client.get("/healthcheck").status_code == 200
+        assert getattr(fastapi, "_datadog_patch", False), "FastAPI was not patched"
+        ours = [str(w.message) for w in caught if issubclass(w.category, DDTraceDeprecationWarning)]
         assert not ours, ours
         """
     )
