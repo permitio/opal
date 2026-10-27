@@ -228,6 +228,10 @@ jobs:
       - name: Build and push ${{ matrix.name }}
         uses: docker/build-push-action@v6
         with:
+          # Build from this checkout, which holds the version bump above. Without a context the
+          # action builds from the Git context (the tagged commit), and the images installed the
+          # packages as 0.0.0.
+          context: .
           file: docker/Dockerfile
           platforms: linux/amd64,linux/arm64
           push: true
