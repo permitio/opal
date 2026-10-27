@@ -1,3 +1,7 @@
+# syntax=docker/dockerfile:1.19@sha256:b6afd42430b15f2d2a4c5a02b919e98a525b785b1aaff16747d2f623364e39b6
+# The syntax line must stay first. COPY --exclude below needs dockerfile frontend 1.19 or later
+# (1.17 and 1.18 reject the flag). The digest pins the frontend that builds every image; when
+# you change the tag, update the digest with it (docker buildx imagetools inspect <tag>).
 # BUILD STAGE ---------------------------------------
 # split this stage to save time and reduce image size
 # ---------------------------------------------------
@@ -30,8 +34,19 @@ COPY scripts/wait-for.sh .
 RUN chmod +x ./wait-for.sh
 RUN ln -s /opal/wait-for.sh /usr/wait-for.sh
 
-# netcat (nc) is used by the wait-for.sh script
-RUN apt-get update && apt-get install -y netcat-traditional jq wget && apt-get clean
+# netcat (nc) is used by the wait-for.sh script.
+# ca-certificates is listed to UPGRADE it: the base image's copy trusts the compromised
+# eMudhra CAs (CVE-2026-111943), fixed in 20250419~deb12u2 from bookworm-security. apt
+# cannot express a floor, so the version is checked right after the install: a mirror or
+# sources list without bookworm-security fails here, naming the cause.
+# check_trust_store.py fails the build if this or certifi's bundle still trusts them; it runs
+# after every step that installs OS packages, and stays in the image for re-checking it.
+COPY scripts/check_trust_store.py .
+RUN apt-get update && apt-get install -y netcat-traditional jq wget ca-certificates && apt-get clean && \
+  v="$(dpkg-query -W -f='${Version}' ca-certificates)" && \
+  { dpkg --compare-versions "$v" ge '20250419~deb12u2' || \
+    { echo "ca-certificates $v is below 20250419~deb12u2 (CVE-2026-111943): is bookworm-security reachable?" >&2; exit 1; }; } && \
+  python check_trust_store.py
 
 # copy startup script (create link at old path to maintain backward compatibility)
 COPY ./scripts/start.sh .
@@ -42,11 +57,19 @@ COPY ./scripts/gunicorn_conf.py .
 # copy app code
 
 COPY ./README.md .
-COPY ./packages ./packages/
+# --exclude as well as .dockerignore: a build from a Git context (docker build <git-url>)
+# skips .dockerignore. The trust-store test's fixture holds the compromised eMudhra
+# certificates, and a search of the image's files for them would report it, even though
+# nothing trusts it.
+COPY --exclude=**/tests/*.pem ./packages ./packages/
 # install the opal-common package
 RUN cd ./packages/opal-common && python setup.py install
 # Make sure scripts in .local are usable:
 ENV PATH=/opal:/root/.local/bin:$PATH
+# With OPAL_ENABLE_DATADOG_APM, start.sh runs gunicorn under ddtrace-run. ddtrace 4 traces every
+# websocket message by default (3.x did not), which would turn each pub/sub update into spans.
+# Keep the 3.x behaviour; set it to true to opt in. configure_apm applies the same default.
+ENV DD_TRACE_WEBSOCKET_MESSAGES_ENABLED=false
 # run gunicorn
 CMD ["./start.sh"]
 
@@ -206,7 +229,8 @@ USER opal
 # ---------------------------------------------------
 FROM common AS server
 
-RUN apt-get update && apt-get install -y openssh-client git && apt-get clean
+RUN apt-get update && apt-get install -y openssh-client git && apt-get clean && \
+  python check_trust_store.py
 RUN git config --global core.symlinks false # Mitigate CVE-2024-32002
 
 USER opal
@@ -308,6 +332,14 @@ COPY --from=build-stage-alpine /usr/local /usr/local
 RUN adduser -D -h /opal -s /bin/bash opal && apk add --no-cache bash netcat-openbsd jq wget
 RUN apk add --no-cache libssh2 http-parser
 WORKDIR /opal
+# Floors ca-certificates and ca-certificates-bundle at 20261020-r0, which drops the root of the
+# compromised eMudhra CAs (CVE-2026-111943). Declared to apk, so a stale index fails here with
+# apk's own version error, and /etc/apk/world keeps the floor for any later `apk add`. Both
+# packages are named: `apk add --upgrade ca-certificates` alone leaves -bundle behind.
+# check_trust_store.py fails the build if they or certifi's bundle still trust the CAs.
+COPY scripts/check_trust_store.py .
+RUN apk add --no-cache 'ca-certificates>=20261020-r0' 'ca-certificates-bundle>=20261020-r0' && \
+  python check_trust_store.py
 COPY scripts/wait-for.sh .
 RUN chmod +x ./wait-for.sh
 RUN ln -s /opal/wait-for.sh /usr/wait-for.sh
@@ -316,9 +348,17 @@ RUN chmod +x ./start.sh
 RUN ln -s /opal/start.sh /start.sh
 COPY ./scripts/gunicorn_conf.py .
 COPY ./README.md .
-COPY ./packages ./packages/
+# --exclude as well as .dockerignore: a build from a Git context (docker build <git-url>)
+# skips .dockerignore. The trust-store test's fixture holds the compromised eMudhra
+# certificates, and a search of the image's files for them would report it, even though
+# nothing trusts it.
+COPY --exclude=**/tests/*.pem ./packages ./packages/
 RUN cd ./packages/opal-common && python setup.py install
 ENV PATH=/opal:/root/.local/bin:$PATH
+# With OPAL_ENABLE_DATADOG_APM, start.sh runs gunicorn under ddtrace-run. ddtrace 4 traces every
+# websocket message by default (3.x did not), which would turn each pub/sub update into spans.
+# Keep the 3.x behaviour; set it to true to opt in. configure_apm applies the same default.
+ENV DD_TRACE_WEBSOCKET_MESSAGES_ENABLED=false
 CMD ["./start.sh"]
 
 
@@ -378,7 +418,7 @@ USER opal
 # SERVER IMAGE (ALPINE) -----------------------------
 # ---------------------------------------------------
 FROM common-alpine AS server-alpine
-RUN apk add --no-cache openssh-client git libssh2
+RUN apk add --no-cache openssh-client git libssh2 && python check_trust_store.py
 RUN git config --global core.symlinks false
 USER opal
 ARG TRUST_POLICY_REPO_HOST_SSH_FINGERPRINT="true"

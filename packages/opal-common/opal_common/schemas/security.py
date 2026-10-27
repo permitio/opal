@@ -1,8 +1,9 @@
 from datetime import datetime, timedelta
 from enum import Enum
-from typing import Optional
+from typing import ClassVar, Optional, Set
 from uuid import UUID, uuid4
 
+from opal_common.logging_utils.redaction import RedactedReprMixin
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 PEER_TYPE_DESCRIPTION = (
@@ -21,12 +22,34 @@ class PeerType(str, Enum):
     listener = "listener"
 
 
+DEFAULT_TTL = timedelta(days=365)
+
+
+def _ttl_wire_schema(schema: dict) -> None:
+    """Publish ``ttl`` as the number of seconds it is sent as.
+
+    pydantic 2.14 renders a timedelta field's validation-mode (input) JSON
+    schema as an ISO-8601 duration string (default ``"P1Y"``), and
+    ``ser_json_timedelta`` keeps only the serialization-mode (output) schema
+    a number. Earlier 2.x versions give a number in both modes. FastAPI
+    publishes the input schema for the ``/token`` request body
+    (``AccessTokenRequest-Input``), so on 2.14 that body read as a string.
+    Fixing the schema here keeps the published OpenAPI the same on every
+    pydantic version the package admits.
+    """
+    schema.pop("format", None)
+    schema["type"] = "number"
+    schema["default"] = DEFAULT_TTL.total_seconds()
+
+
 class AccessTokenRequest(BaseModel):
     """A request to generate an access token to opal server."""
 
     id: UUID = Field(default_factory=uuid4)
     type: PeerType = Field(PeerType.client, description=PEER_TYPE_DESCRIPTION)
-    ttl: timedelta = Field(timedelta(days=365), description=TTL_DESCRIPTION)
+    ttl: timedelta = Field(
+        DEFAULT_TTL, description=TTL_DESCRIPTION, json_schema_extra=_ttl_wire_schema
+    )
     claims: dict = Field({}, description=CLAIMS_DESCRIPTION)
 
     # ``ser_json_timedelta="float"`` keeps ``ttl`` on the wire as float seconds,
@@ -59,7 +82,9 @@ class TokenDetails(BaseModel):
     claims: dict
 
 
-class AccessToken(BaseModel):
+class AccessToken(RedactedReprMixin, BaseModel):
+    _redacted_repr_fields: ClassVar[Set[str]] = {"token"}
+
     token: str
     type: str = "bearer"
     details: Optional[TokenDetails] = None

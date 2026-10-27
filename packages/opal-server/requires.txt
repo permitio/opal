@@ -1,7 +1,7 @@
 click>=8.1.3,<9
 permit-broadcaster[postgres,redis,kafka]==0.2.7
-gitpython>=3.1.32,<4
-pyjwt[crypto]>=2.1.0,<3
+gitpython>=3.2.1,<4 # 3.2.0 and earlier: GHSA-83vg-56qc-22m7; 3.1.62 and earlier: GHSA-f9j4-qggq-h239 and 5 more
+pyjwt[crypto]>=2.15.1,<3 # 2.14.0 and earlier: GHSA-42vr-xj54-vc7v, GHSA-x33g-cr3x-6449 (and 12 more before 2.14.0); 2.15.1 decodes '='-padded segments again
 slowapi>=0.1.5,<1
 # slowapi is stuck on and old `redis`, so fix that and switch from aioredis to redis
 pygit2>=1.14.1,<1.15

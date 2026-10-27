@@ -28,6 +28,7 @@ from opal_common.authentication.casting import cast_private_key
 from opal_common.authentication.deps import JWTAuthenticator, get_token_from_header
 from opal_common.authentication.types import EncryptionKeyFormat, JWTClaims
 from opal_common.authentication.verifier import Unauthorized
+from opal_common.http_utils import redact_url_in_text
 from opal_common.logger import logger
 from opal_common.monitoring import metrics
 from opal_common.schemas.data import (
@@ -285,12 +286,14 @@ async def _make_bundle_waiting_for_clone(
         # what makes the `error` count readable — a bundle build that failed
         # for its own reasons AFTER the clone appeared.
         if outcome == "error":
+            # git errors can embed the remote URL with its auth; bound kwargs
+            # reach serialize=True sinks verbatim, so redact before binding.
             logger.info(
                 "Scope {scope_id} held {waited:.1f}s waiting for its clone "
-                "before failing: {exc!r}",
+                "before failing: {exc}",
                 scope_id=scope_id,
                 waited=loop.time() - started,
-                exc=exc,
+                exc=redact_url_in_text(repr(exc)),
             )
         raise
     finally:
@@ -391,7 +394,8 @@ def init_scope_router(
             # dir stays on disk until PER-15612's sweep lands.
             logger.warning(
                 f"Could not read previous record for scope "
-                f"{scope_in.scope_id}, skipping repoint purge: {e!r}"
+                f"{scope_in.scope_id}, skipping repoint purge: "
+                f"{redact_url_in_text(repr(e))}"
             )
 
         verify_private_key_or_throw(scope_in)
@@ -437,7 +441,9 @@ def init_scope_router(
     @router.get(
         "",
         response_model=List[Scope],
-        response_model_exclude={"policy": {"auth"}},
+        # The response is a list, so the exclude must address every item;
+        # a bare {"policy": {"auth"}} is silently ignored for a list.
+        response_model_exclude={"__all__": {"policy": {"auth"}}},
     )
     async def get_all_scopes(*, claims: JWTClaims = Depends(authenticator)):
         try:
@@ -615,10 +621,10 @@ def init_scope_router(
             # wait has already logged the abandonment once, with the hold.
             if not exc.client_disconnected:
                 logger.info(
-                    "Scope {scope_id} clone is not populated yet ({exc!r}), "
+                    "Scope {scope_id} clone is not populated yet ({exc}), "
                     "returning 503 after waiting {waited:.1f}s",
                     scope_id=scope_id,
-                    exc=exc,
+                    exc=redact_url_in_text(repr(exc)),
                     waited=exc.waited_seconds,
                 )
                 metrics.event(
@@ -636,9 +642,9 @@ def init_scope_router(
             )
         except BranchHeadNotFoundError as exc:
             logger.error(
-                "Scope {scope_id} bundle unavailable: {exc!r} (non-retryable)",
+                "Scope {scope_id} bundle unavailable: {exc} (non-retryable)",
                 scope_id=scope_id,
-                exc=exc,
+                exc=redact_url_in_text(repr(exc)),
             )
             metrics.event(
                 "ScopePolicyUnavailable",
@@ -666,10 +672,10 @@ def init_scope_router(
             OSError,
         ) as exc:
             logger.warning(
-                "Scope {scope_id} is live but its clone is unavailable ({exc!r}), "
+                "Scope {scope_id} is live but its clone is unavailable ({exc}), "
                 "returning 503",
                 scope_id=scope_id,
-                exc=exc,
+                exc=redact_url_in_text(repr(exc)),
             )
             metrics.event(
                 "ScopePolicyUnavailable",
@@ -738,11 +744,11 @@ def init_scope_router(
             if not exc.client_disconnected:
                 logger.warning(
                     "Default-scope bundle for {scope_id} is temporarily "
-                    "unavailable after waiting {waited:.1f}s ({exc!r}), "
+                    "unavailable after waiting {waited:.1f}s ({exc}), "
                     "returning 503",
                     scope_id=scope_id,
                     waited=exc.waited_seconds,
-                    exc=exc,
+                    exc=redact_url_in_text(repr(exc)),
                 )
             raise HTTPException(
                 status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -768,9 +774,9 @@ def init_scope_router(
             # these codes, so it was wrong in the unsafe direction.
             logger.warning(
                 "Default-scope bundle for {scope_id} is temporarily unavailable "
-                "({exc!r}), returning 503",
+                "({exc}), returning 503",
                 scope_id=scope_id,
-                exc=exc,
+                exc=redact_url_in_text(repr(exc)),
             )
             raise HTTPException(
                 status.HTTP_503_SERVICE_UNAVAILABLE,

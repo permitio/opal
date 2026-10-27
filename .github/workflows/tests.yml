@@ -5,12 +5,22 @@ name: Tests
 
 on:
   push:
-    branches: [ master ]
+    branches: [ master, 'release/**' ]
   pull_request:
-    branches: [ master ]
+    branches: [ master, 'release/**' ]
 
   # Allows you to run this workflow manually from the Actions tab
   workflow_dispatch:
+
+env:
+  # With the docker-container builder that setup-buildx-action creates, buildx (>= 0.30)
+  # adds the GitHub event payload to the build's provenance and writes that provenance
+  # into the metadata file even in its default `min` mode. build-push-action prints the
+  # metadata file in a "Metadata" log group, so a pull_request run would put the PR title
+  # and description from the triggering event (re-runs reuse it) into this public repo's
+  # logs, where editing the description later cannot remove them. Set for the whole
+  # workflow so a build job added later is covered too.
+  BUILDX_METADATA_PROVENANCE: disabled
 
 jobs:
   build:
@@ -27,6 +37,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     strategy:
+      # Every leg reports its own result; with fail-fast one failing leg
+      # cancels the others and hides whether they pass.
+      fail-fast: false
       matrix:
         python-version: ["3.10", "3.11", "3.12"]
         # 3.13 leg: opal-common and opal-client only. Their python_requires
@@ -117,6 +130,7 @@ jobs:
         id: build_client
         uses: docker/build-push-action@v2
         with:
+          context: .
           file: docker/Dockerfile
           push: false
           target: client
@@ -130,6 +144,7 @@ jobs:
         id: build_server
         uses: docker/build-push-action@v2
         with:
+          context: .
           file: docker/Dockerfile
           push: false
           target: server
@@ -138,6 +153,25 @@ jobs:
           load: true
           tags: |
             permitio/opal-server:test
+
+      - name: Check that no test certificate fixture is in the images
+        # .dockerignore and docker/Dockerfile's COPY --exclude both keep them out. This fails if
+        # one slips back in.
+        run: |
+          for image in permitio/opal-client:test permitio/opal-server:test; do
+            tests=$(docker run --rm --entrypoint sh "$image" -c 'find /opal/packages -path "*/tests/*" -name "*.py" | wc -l')
+            found=$(docker run --rm --entrypoint sh "$image" -c 'find /opal/packages -name "*.pem"')
+            if [ "$tests" -eq 0 ]; then
+              echo "::error::$image: no test modules under /opal/packages, so this check saw nothing"
+              exit 1
+            fi
+            if [ -n "$found" ]; then
+              echo "::error::$image carries certificate fixtures:"
+              echo "$found"
+              exit 1
+            fi
+            echo "$image: no .pem among $tests test files"
+          done
 
       - name: Set up Python
         uses: actions/setup-python@v2
@@ -192,6 +226,7 @@ jobs:
         id: build_client_alpine
         uses: docker/build-push-action@v2
         with:
+          context: .
           file: docker/Dockerfile
           push: false
           target: client-alpine
@@ -205,6 +240,7 @@ jobs:
         id: build_server_alpine
         uses: docker/build-push-action@v2
         with:
+          context: .
           file: docker/Dockerfile
           push: false
           target: server-alpine
@@ -213,6 +249,25 @@ jobs:
           load: true
           tags: |
             permitio/opal-server:test-alpine
+
+      - name: Check that no test certificate fixture is in the images
+        # .dockerignore and docker/Dockerfile's COPY --exclude both keep them out. This fails if
+        # one slips back in.
+        run: |
+          for image in permitio/opal-client:test-alpine permitio/opal-server:test-alpine; do
+            tests=$(docker run --rm --entrypoint sh "$image" -c 'find /opal/packages -path "*/tests/*" -name "*.py" | wc -l')
+            found=$(docker run --rm --entrypoint sh "$image" -c 'find /opal/packages -name "*.pem"')
+            if [ "$tests" -eq 0 ]; then
+              echo "::error::$image: no test modules under /opal/packages, so this check saw nothing"
+              exit 1
+            fi
+            if [ -n "$found" ]; then
+              echo "::error::$image carries certificate fixtures:"
+              echo "$found"
+              exit 1
+            fi
+            echo "$image: no .pem among $tests test files"
+          done
 
       - name: Create alpine docker compose file
         run: sed 's/:latest-alpine/:test-alpine/g' docker/docker-compose-example-alpine.yml > docker/docker-compose-test-alpine.yml
@@ -225,3 +280,47 @@ jobs:
 
       - name: Output container logs (alpine)
         run: docker compose -f docker/docker-compose-test-alpine.yml logs
+
+  ci:
+    # The branch ruleset requires only this check, so the jobs above and their
+    # matrix legs can be renamed without editing the ruleset. always(): GitHub
+    # counts a skipped required check as passing, so this job must run, and
+    # fail, when a needed job fails or is cancelled.
+    name: CI
+    if: always()
+    needs: [build, e2e-tests, e2e-tests-alpine]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Check that the CI job needs every other job
+        run: |
+          workflow=.github/workflows/tests.yml
+          # The parentheses matter: yq reads a - b - c as a - (b - c).
+          unlisted=$(yq -r '((.jobs | keys) - ["ci"]) - .jobs.ci.needs | .[]' "$workflow")
+          unknown=$(yq -r '.jobs.ci.needs - ((.jobs | keys) - ["ci"]) | .[]' "$workflow")
+          if [[ -n "$unlisted" ]]; then
+            echo "Add these jobs to the needs list of the CI job in $workflow:" >&2
+            echo "$unlisted" >&2
+          fi
+          if [[ -n "$unknown" ]]; then
+            echo "These names in the needs list of the CI job in $workflow are not jobs:" >&2
+            echo "$unknown" >&2
+          fi
+          if [[ -n "$unlisted" || -n "$unknown" ]]; then
+            exit 1
+          fi
+      - name: Require every job to succeed
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: |
+          jq -r 'to_entries[] | "\(.key): \(.value.result)"' <<<"$NEEDS"
+          if ! jq -e 'all(.[]; .result == "success")' <<<"$NEEDS" >/dev/null; then
+            echo "A required job did not succeed." >&2
+            exit 1
+          fi

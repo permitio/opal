@@ -2,11 +2,13 @@ from typing import Any, ClassVar, Dict, List, Optional, Set, Tuple, Union
 
 from opal_common.fetcher.events import coerce_config_model_to_dict
 from opal_common.fetcher.providers.http_fetch_provider import HttpFetcherConfig
+from opal_common.http_utils import redact_url
 from opal_common.logging_utils.redaction import RedactedReprMixin
 from opal_common.schemas.store import JSONPatchAction
 from pydantic import (
     AnyHttpUrl,
     BaseModel,
+    ConfigDict,
     Field,
     SerializeAsAny,
     ValidationInfo,
@@ -32,6 +34,9 @@ class DataSourceEntry(RedactedReprMixin, BaseModel):
     # ``url`` can embed credentials (``user:token@host`` / ``?token=``); strip
     # them via redact_url while keeping host/path visible for debugging.
     _redacted_url_fields: ClassVar[Set[str]] = {"url"}
+    # pydantic v2 renders the rejected input into a ValidationError's text
+    # (``input_value=...``) - for these models, a config with its auth headers.
+    model_config = ConfigDict(hide_input_in_errors=True)
 
     @field_validator("config", mode="before")
     @classmethod
@@ -108,6 +113,8 @@ class DataSourceConfig(BaseModel):
     updates)
     """
 
+    model_config = ConfigDict(hide_input_in_errors=True)
+
     entries: List[DataSourceEntryWithPollingInterval] = Field(
         [], description="list of data sources and how to fetch from them"
     )
@@ -139,7 +146,7 @@ class DataSourceConfig(BaseModel):
         ]
 
 
-class ServerDataSourceConfig(BaseModel):
+class ServerDataSourceConfig(RedactedReprMixin, BaseModel):
     """As its data source configuration, the server can either hold:
 
     1) A static DataSourceConfig returned to all clients regardless of
@@ -158,6 +165,9 @@ class ServerDataSourceConfig(BaseModel):
     claims, in order to apply authorization and/or other conditions
     before returning the data sources relevant to said client.
     """
+
+    _redacted_url_fields: ClassVar[Set[str]] = {"external_source_url"}
+    model_config = ConfigDict(hide_input_in_errors=True)
 
     config: Optional[DataSourceConfig] = Field(
         None, description="static list of data sources and how to fetch from them"
@@ -182,11 +192,14 @@ class ServerDataSourceConfig(BaseModel):
         return self
 
 
-class CallbackEntry(BaseModel):
+class CallbackEntry(RedactedReprMixin, BaseModel):
     """An entry in the callbacks register.
 
     this schema is used by the callbacks api
     """
+
+    _redacted_url_fields: ClassVar[Set[str]] = {"url"}
+    model_config = ConfigDict(hide_input_in_errors=True)
 
     key: Optional[str] = Field(
         None, description="unique id to identify this callback (optional)"
@@ -206,12 +219,30 @@ class UpdateCallback(BaseModel):
     HttpFetcherConfig defining how to approach the URL
     """
 
+    model_config = ConfigDict(hide_input_in_errors=True)
+
     callbacks: List[Union[str, Tuple[str, HttpFetcherConfig]]]
+
+    def __repr_args__(self):
+        # Callback urls can embed credentials; the configs mask their own fields.
+        for key, value in super().__repr_args__():
+            if key == "callbacks":
+                value = [
+                    (
+                        redact_url(callback)
+                        if isinstance(callback, str)
+                        else (redact_url(callback[0]), *callback[1:])
+                    )
+                    for callback in value
+                ]
+            yield key, value
 
 
 class DataUpdate(BaseModel):
     """DataSources used as OPAL-server configuration Data update sent to
     clients."""
+
+    model_config = ConfigDict(hide_input_in_errors=True)
 
     # a UUID to identify this update (used as part of an updates complition callback)
     id: Optional[str] = None
@@ -231,6 +262,8 @@ class DataUpdate(BaseModel):
 class DataEntryReport(BaseModel):
     """A report of the processing of a single DataSourceEntry."""
 
+    model_config = ConfigDict(hide_input_in_errors=True)
+
     # ``SerializeAsAny`` for the same reason as ``DataUpdate.entries`` above -
     # and this is the one that reaches the wire, since the report is POSTed to
     # the callback URL by ``CallbacksReporter``.
@@ -246,6 +279,8 @@ class DataEntryReport(BaseModel):
 
 
 class DataUpdateReport(BaseModel):
+    model_config = ConfigDict(hide_input_in_errors=True)
+
     # the UUID of the update this report is for
     update_id: Optional[str] = None
     # Each DataSourceEntry and how it was processed

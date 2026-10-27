@@ -48,6 +48,7 @@ from fastapi_websocket_pubsub.event_notifier import Subscription
 from fastapi_websocket_pubsub.util import pydantic_serialize
 from fastapi_websocket_rpc.connection_manager import ConnectionManager
 from opal_common.logger import logger
+from pydantic import ValidationError
 
 ReconnectCallback = Callable[[], Awaitable[None]]
 
@@ -568,6 +569,18 @@ class ReconnectingBroadcaster(EventBroadcaster):
         """
         try:
             notification = BroadcastNotification.model_validate_json(event.message)
+        except ValidationError as exc:
+            # The ValidationError text quotes the rejected input, i.e. the raw
+            # broadcast payload, which can carry DataUpdate fetcher headers.
+            # Log only where and why validation failed.
+            logger.error(
+                "Dropping malformed incoming broadcast: {count} validation "
+                "error(s) at {errors}",
+                count=exc.error_count(),
+                errors=[(error["loc"], error["type"]) for error in exc.errors()],
+            )
+            return
+        try:
             # Avoid re-publishing our own broadcasts
             if notification.notifier_id != self._id:
                 logger.debug(

@@ -154,7 +154,7 @@ For more information, see [monitoring OPAL](/tutorials/monitoring_opal).
 
 Default: `False`
 
-Enable tracing with DataDog APM. **Note:** OPAL uses ddtrace v3.0.0+ which requires Python 3.8+.
+Enable tracing with DataDog APM. **Note:** OPAL uses ddtrace v4.8.2+ (below 5). ddtrace itself supports Python 3.9+; OPAL requires Python 3.10+.
 
 For more information, see [monitoring OPAL](/tutorials/monitoring_opal).
 
@@ -445,7 +445,7 @@ Base directory for OPAL server.
 
 Default: `True`
 
-Disable RPC logging.
+Suppress DEBUG logs of the websocket RPC/pub-sub libraries (`fastapi_websocket_rpc`, `fastapi_websocket_pubsub`), which include message payloads. Their INFO and higher logs (connection lifecycle) are kept. Set to `False` to see them when debugging with `OPAL_LOG_LEVEL=DEBUG`.
 
 #### OPAL_WS_LOCAL_URL
 

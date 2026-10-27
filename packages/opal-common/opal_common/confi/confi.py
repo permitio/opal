@@ -16,8 +16,16 @@ from decouple import Csv, UndefinedValueError, config, text_type, undefined
 from opal_common.authentication.casting import cast_private_key, cast_public_key
 from opal_common.authentication.types import EncryptionKeyFormat, PrivateKey, PublicKey
 from opal_common.confi.cli import get_cli_object_for_config_objects
-from opal_common.confi.types import ConfiDelay, ConfiEntry, no_cast
+from opal_common.confi.types import (
+    REDACTED,
+    ConfiDelay,
+    ConfiEntry,
+    holds_no_credential,
+    no_cast,
+)
+from opal_common.http_utils import redact_sensitive_text
 from opal_common.logging_utils.decorators import log_exception
+from opal_common.logging_utils.errors import describe_validation_error
 from pydantic import BaseModel, ValidationError
 from typer import Typer
 
@@ -46,6 +54,21 @@ def cast_boolean(value):
             raise UndefinedValueError(f"{value} - is not a valid boolean")
     else:
         raise UndefinedValueError(f"{value} - is not a valid boolean")
+
+
+def _printable_value(entry: ConfiEntry, rendered: str) -> str:
+    """Returns ``rendered`` (the printed form of ``entry.value``), safe to
+    print.
+
+    A sensitive entry's value is replaced with ``<redacted>`` unless it holds
+    no credential (see ``holds_no_credential``). Credentials embedded in any
+    other value - URL userinfo, ``?token=`` params, auth headers - are masked.
+    The rendered text is scrubbed rather than the value parsed as a URL, since
+    ``debug_repr`` renders values with ``repr()`` (quoted).
+    """
+    if entry.sensitive and not holds_no_credential(entry.value):
+        return REDACTED
+    return redact_sensitive_text(rendered)
 
 
 def cast_pydantic(model: BaseModel):
@@ -88,7 +111,15 @@ ValueT = TypeVar("ValueT")
 
 
 class Confi:
-    """Interface to create typed configuration entries."""
+    """Interface to create typed configuration entries.
+
+    Every entry builder (``str``, ``int``, ``bool``, ``float``, ``list``,
+    ``model``, ``enum``, ``private_key``, ``public_key``) accepts
+    ``sensitive=True``: the entry's value is then shown as ``<redacted>`` by
+    ``repr()`` / ``debug_repr()`` (``print-config``) and in ``--help``. An
+    entry whose key looks like a credential (``SENSITIVE_KEY_PATTERN``) is
+    treated as sensitive without the flag.
+    """
 
     def __init__(self, prefix=None, is_model=True) -> None:
         """
@@ -177,6 +208,7 @@ class Confi:
         cast_from_json=no_cast,
         type: ValueT = str,
         flags: List[str] = None,
+        sensitive: bool = False,
         **kwargs,
     ) -> Union[ValueT, ConfiEntry]:
         if self._is_model:
@@ -190,6 +222,7 @@ class Confi:
                 type=type,
                 index=self._counter,
                 flags=flags,
+                sensitive=sensitive,
                 **kwargs,
             )
             # track count for indexing
@@ -221,14 +254,21 @@ class Confi:
         except ValidationError as err:
             logger = logging.getLogger()
             logger.error(f"Failed parsing config key- {key}")
-            raise
+            # pydantic's message embeds the raw value (input_value=...), and values
+            # such as OPAL_DATA_CONFIG_SOURCES carry fetcher auth headers.
+            raise ValueError(
+                f"Failed parsing config key {key}: {describe_validation_error(err)}"
+            ) from None
         except:
             raise
         return res
 
     def __repr__(self) -> str:
         return json.dumps(
-            {k: str(v.value) for k, v in self.entries.items()},
+            {
+                k: _printable_value(entry, str(entry.value))
+                for k, entry in self.entries.items()
+            },
             indent=2,
             sort_keys=True,
         )
@@ -241,7 +281,8 @@ class Confi:
         items.sort(key=lambda item: item[0])
         indent = " " * 4
         for key, entry in items:
-            repr_string += f"{indent}{key}: {repr(entry.value)}\n"
+            value = _printable_value(entry, repr(entry.value))
+            repr_string += f"{indent}{key}: {value}\n"
         return repr_string
 
     def get_cli_object(

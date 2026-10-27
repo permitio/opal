@@ -1,7 +1,8 @@
 import re
 from enum import Enum
-from typing import Any, Iterable, List, Optional
+from typing import Any, ClassVar, Iterable, List, Optional, Set
 
+from opal_common.logging_utils.redaction import RedactedReprMixin
 from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validator
 
 HOST_ADDR_PATTERN = re.compile(
@@ -90,6 +91,7 @@ class OpaServerOptions(BaseModel):
         use_enum_values=True,
         populate_by_name=True,
         alias_generator=_cli_alias,
+        hide_input_in_errors=True,
     )
 
     def get_cli_options_dict(self):
@@ -112,9 +114,12 @@ class OpaServerOptions(BaseModel):
         )
 
 
-class CedarServerOptions(BaseModel):
+class CedarServerOptions(RedactedReprMixin, BaseModel):
     """Options to configure the Cedar agent (apply when choosing to run Cedar
     inline)."""
+
+    # printed by print-config as part of INLINE_CEDAR_CONFIG
+    _redacted_repr_fields: ClassVar[Set[str]] = {"authentication_token"}
 
     addr: str = Field(
         "0.0.0.0:8180",
@@ -137,6 +142,7 @@ class CedarServerOptions(BaseModel):
         use_enum_values=True,
         populate_by_name=True,
         alias_generator=_cli_alias,
+        hide_input_in_errors=True,
     )
 
     @field_validator("authentication")
