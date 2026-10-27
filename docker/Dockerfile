@@ -14,9 +14,11 @@ COPY ./packages/opal-common/requires.txt ./common_requires.txt
 COPY ./packages/opal-client/requires.txt ./client_requires.txt
 COPY ./packages/opal-server/requires.txt ./server_requires.txt
 # install python deps. setuptools is upgraded explicitly: the base image's copy already meets
-# requires.txt's floor, so pip would keep it, and setuptools < 84.1 carries CVE-2025-47273 and
-# vendors jaraco.context and wheel releases with CVEs of their own.
-RUN pip install --no-cache-dir --upgrade pip 'setuptools>=84.1.0' && pip install --no-cache-dir -r ./base_requires.txt -r ./common_requires.txt -r ./client_requires.txt -r ./server_requires.txt
+# requires.txt's floor, so pip would keep it, and setuptools < 84.1 carries CVE-2026-59890 and
+# GHSA-xmj3-9gf7-h52w and vendors jaraco.context and wheel releases with CVEs of their own.
+# Capped at the major: the images still install OPAL with the deprecated `setup.py install`, so
+# a new setuptools major could break an unchanged rebuild (82 already dropped pkg_resources).
+RUN pip install --no-cache-dir --upgrade pip 'setuptools>=84.1.0,<85' && pip install --no-cache-dir -r ./base_requires.txt -r ./common_requires.txt -r ./client_requires.txt -r ./server_requires.txt
 
 # COMMON IMAGE --------------------------------------
 # ---------------------------------------------------
@@ -305,7 +307,7 @@ COPY ./packages/opal-common/requires.txt ./common_requires.txt
 COPY ./packages/opal-client/requires.txt ./client_requires.txt
 COPY ./packages/opal-server/requires.txt ./server_requires.txt
 # setuptools upgraded explicitly, as in build-stage above
-RUN pip install --no-cache-dir --upgrade pip 'setuptools>=84.1.0' && pip install --no-cache-dir -r ./base_requires.txt -r ./common_requires.txt -r ./client_requires.txt -r ./server_requires.txt
+RUN pip install --no-cache-dir --upgrade pip 'setuptools>=84.1.0,<85' && pip install --no-cache-dir -r ./base_requires.txt -r ./common_requires.txt -r ./client_requires.txt -r ./server_requires.txt
 
 # COMMON IMAGE (ALPINE) -------------------------------------
 # -----------------------------------------------------------
