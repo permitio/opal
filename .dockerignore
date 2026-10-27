@@ -1,3 +1,5 @@
+# The build context is the checkout (CI and the release use context: .); nothing copies .git
+.git
 venv/
 documentation/
 rego_clone/
