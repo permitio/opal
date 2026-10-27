@@ -12,9 +12,19 @@ stay) empty.
 """
 import asyncio
 
+import opal_common.logger as opal_common_logger
 import opal_server.scopes.task as task_module
 import pytest
 from opal_server.config import opal_server_config
+
+
+@pytest.fixture(autouse=True)
+def _logging_already_configured(monkeypatch):
+    """scripts/gunicorn_conf.py::when_ready configures logging before it calls
+    preload_scopes(), so the preload keeps the sinks already in place. Without
+    this, the first preload in a session runs the real configure_logs(), whose
+    logger.remove() drops the capture sinks the drain-warning tests add."""
+    monkeypatch.setattr(opal_common_logger, "_logs_configured", True)
 
 
 @pytest.fixture(autouse=True)
