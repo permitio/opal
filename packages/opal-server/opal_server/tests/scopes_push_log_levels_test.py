@@ -151,7 +151,9 @@ async def test_push_with_no_tracked_files_warns_and_does_not_publish(
         logs.emitted, "new commits detected but no tracked files were affected"
     )
     assert warning["level"].name == "WARNING"
-    # "Found new commits" is DEBUG, so the scope has to travel on the warning.
+    # "Found new commits" is DEBUG, so the scope travels on the warning's
+    # extra, which serialized output carries; the default plaintext format
+    # prints only the message.
     assert warning["extra"]["scope_id"] == SCOPE_ID
     assert not starting_with(logs.emitted, "Triggering policy update")
 
