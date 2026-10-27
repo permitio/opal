@@ -55,7 +55,10 @@ def configure_apm(enable_apm: bool, service_name: str):
     # over websockets, so that would turn each published update into spans, and it logs a
     # warning with a traceback whenever a close is sent to a client that already left. Keep the
     # 3.x behaviour unless the operator chose otherwise: the env default covers integrations
-    # patched below, the config assignment an ASGI integration already imported (ddtrace-run).
+    # patched below; the config assignment covers those already imported (under ddtrace-run,
+    # fastapi's and starlette's configs are read when the app imports fastapi, before this runs).
+    # FastAPI's middleware reads config.fastapi, Starlette's config.starlette, plain ASGI apps
+    # config.asgi.
     operator_choice = os.environ.get(WEBSOCKET_MESSAGES_ENV)
     os.environ.setdefault(WEBSOCKET_MESSAGES_ENV, "false")
 
@@ -71,7 +74,8 @@ def configure_apm(enable_apm: bool, service_name: str):
         trace_processors=[DropRootPathTraces()],
     )
     if operator_choice is None:
-        config.asgi.trace_asgi_websocket_messages = False
+        for integration in ("asgi", "starlette", "fastapi"):
+            getattr(config, integration).trace_asgi_websocket_messages = False
 
 
 def fix_ddtrace_logging():
