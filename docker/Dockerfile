@@ -57,8 +57,8 @@ COPY ./scripts/gunicorn_conf.py .
 # copy app code
 
 COPY ./README.md .
-# --exclude, not .dockerignore: CI and the release build from a Git context, where BuildKit
-# ignores .dockerignore. The trust-store test's fixture holds the compromised eMudhra
+# --exclude as well as .dockerignore: a build from a Git context (docker build <git-url>)
+# skips .dockerignore. The trust-store test's fixture holds the compromised eMudhra
 # certificates, and a search of the image's files for them would report it, even though
 # nothing trusts it.
 COPY --exclude=**/tests/*.pem ./packages ./packages/
@@ -323,8 +323,8 @@ RUN chmod +x ./start.sh
 RUN ln -s /opal/start.sh /start.sh
 COPY ./scripts/gunicorn_conf.py .
 COPY ./README.md .
-# --exclude, not .dockerignore: CI and the release build from a Git context, where BuildKit
-# ignores .dockerignore. The trust-store test's fixture holds the compromised eMudhra
+# --exclude as well as .dockerignore: a build from a Git context (docker build <git-url>)
+# skips .dockerignore. The trust-store test's fixture holds the compromised eMudhra
 # certificates, and a search of the image's files for them would report it, even though
 # nothing trusts it.
 COPY --exclude=**/tests/*.pem ./packages ./packages/
