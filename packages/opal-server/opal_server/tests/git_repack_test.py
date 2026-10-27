@@ -537,13 +537,10 @@ def test_exit_zero_that_leaves_packs_behind_is_a_failure(tmp_path, monkeypatch):
     """
     clone_path = _fake_clone(tmp_path)
     # A real repack starts at the pack limit, so a git that failed leaves
-    # several packs older than it: two here, both from before the repack.
+    # several of the packs it started with: two here.
     pack = _pack_dir(clone_path)
     for name in ("pack-cccc.pack", "pack-cccc.idx"):
         (pack / name).write_bytes(b"x")
-    long_ago = time.time() - 600
-    for name in ("pack-aaaa.pack", "pack-cccc.pack"):
-        os.utime(pack / name, (long_ago, long_ago))
     _install_git_shim(
         tmp_path,
         monkeypatch,
@@ -1008,6 +1005,7 @@ def _clean_fetcher_state(monkeypatch):
     monkeypatch.setattr(git_fetcher, "_repack_timeout_cap_logged", False)
     monkeypatch.setattr(git_fetcher, "_repack_limit_clamp_logged", False)
     monkeypatch.setattr(git_fetcher, "_sync_passes_in_flight", 0)
+    monkeypatch.setattr(git_fetcher, "_orphan_index_first_seen", {})
     GitPolicyFetcher.reset_caches()
     GitPolicyFetcher.source_backoff.clear()
     yield
@@ -2535,8 +2533,6 @@ def test_pack_a_fetch_lands_while_git_runs_is_not_an_incomplete_repack(
     one is a complete repack, not a failure and an hour's cooldown.
     """
     clone_path = _fake_clone(tmp_path)
-    long_ago = time.time() - 600
-    os.utime(_pack_dir(clone_path) / "pack-aaaa.pack", (long_ago, long_ago))
     _install_git_shim(
         tmp_path,
         monkeypatch,
@@ -2582,41 +2578,54 @@ def test_git_runs_with_a_raised_oom_score(tmp_path, monkeypatch):
     assert out.read_text().strip() == str(git_fetcher._REPACK_OOM_SCORE_ADJ)
 
 
-def _aged(path: Path, seconds: float) -> None:
-    then = time.time() - seconds
-    os.utime(path, (then, then))
-
-
-def test_old_index_without_its_pack_is_swept_with_its_companions(tmp_path):
+def test_index_seen_without_its_pack_for_a_minute_is_swept_with_companions(tmp_path):
     """Git deletes an old pack's .pack before its .idx, so a repack killed mid-
-    delete leaves the .idx for good; the next repack's sweep takes it."""
+    delete leaves the .idx for good.
+
+    A sweep that finds it orphaned a minute after an earlier sweep did
+    removes it, with its companions.
+    """
     pack = tmp_path / "pack"
     pack.mkdir()
     for name in ("pack-old1.idx", "pack-old1.rev", "pack-live.pack", "pack-live.idx"):
         (pack / name).write_bytes(b"x")
-    _aged(pack / "pack-old1.idx", 3600)
 
+    git_fetcher._remove_repack_leftovers(pack, "test")  # first sighting: stays
+    assert "pack-old1.idx" in os.listdir(pack)
+
+    path = os.fspath(pack / "pack-old1.idx")
+    git_fetcher._orphan_index_first_seen[
+        path
+    ] -= git_fetcher._ORPHAN_INDEX_MIN_AGE_SECONDS
     git_fetcher._remove_repack_leftovers(pack, "test")
 
     assert sorted(os.listdir(pack)) == ["pack-live.idx", "pack-live.pack"]
+    assert path not in git_fetcher._orphan_index_first_seen
 
 
-def test_young_or_kept_index_without_its_pack_stays(tmp_path):
-    """A young one is libgit2 between committing the .idx and renaming the
-    .pack in; a .keep asks to keep the pack."""
+def test_index_whose_pack_arrives_or_is_kept_stays(tmp_path):
+    """One sighting is libgit2 between committing the .idx and renaming the
+    .pack in: once the .pack is there the .idx is forgotten.
+
+    A .keep asks to keep the pack.
+    """
     pack = tmp_path / "pack"
     pack.mkdir()
     for name in ("pack-young.idx", "pack-kept.idx", "pack-kept.keep"):
         (pack / name).write_bytes(b"x")
-    _aged(pack / "pack-kept.idx", 3600)
-
+    git_fetcher._remove_repack_leftovers(pack, "test")
+    (pack / "pack-young.pack").write_bytes(b"x")  # the rename landed
+    for path in list(git_fetcher._orphan_index_first_seen):
+        git_fetcher._orphan_index_first_seen[path] -= 3600
     git_fetcher._remove_repack_leftovers(pack, "test")
 
     assert sorted(os.listdir(pack)) == [
         "pack-kept.idx",
         "pack-kept.keep",
         "pack-young.idx",
+        "pack-young.pack",
     ]
+    assert git_fetcher._orphan_index_first_seen == {}
 
 
 def test_no_sweep_while_git_outlives_its_sigkill(tmp_path, monkeypatch):
@@ -2747,16 +2756,20 @@ def test_keep_due_never_revives_the_mark_of_a_purged_source():
     GitPolicyFetcher.repo_locks.pop("src", None)
 
 
-def test_remove_clone_dir_exclusive_removes_under_the_repack_lock(tmp_path):
+@pytest.mark.asyncio
+async def test_remove_clone_dir_exclusive_removes_under_the_repack_lock(tmp_path):
     clones = tmp_path / "git_sources"
     clone = clones / "src"
     (clone / ".git").mkdir(parents=True)
-    assert git_fetcher.remove_clone_dir_exclusive(str(clone)) is True
+    assert await git_fetcher.remove_clone_dir_exclusive(str(clone)) is True
     assert not clone.exists()
     assert _lock_is_free(clones)
 
 
-def test_remove_clone_dir_exclusive_waits_for_a_running_repack(tmp_path, monkeypatch):
+@pytest.mark.asyncio
+async def test_remove_clone_dir_exclusive_waits_for_a_running_repack(
+    tmp_path, monkeypatch
+):
     """The DELETE floor runs on any worker, not under the repacking leader's
     lock_source: it waits for the repack lock, bounded, and leaves the dir
     if a repack still holds it then."""
@@ -2767,9 +2780,190 @@ def test_remove_clone_dir_exclusive_waits_for_a_running_repack(tmp_path, monkeyp
     (clone / ".git").mkdir(parents=True)
     held = _hold_lock(clones)
     try:
-        assert git_fetcher.remove_clone_dir_exclusive(str(clone)) is False
+        assert await git_fetcher.remove_clone_dir_exclusive(str(clone)) is False
         assert clone.exists()
     finally:
         os.close(held)
-    assert git_fetcher.remove_clone_dir_exclusive(str(clone)) is True
+    assert await git_fetcher.remove_clone_dir_exclusive(str(clone)) is True
     assert not clone.exists()
+
+
+@pytest.mark.asyncio
+async def test_passes_that_never_stop_defer_a_repack_for_half_an_hour_at_most(
+    tmp_path, monkeypatch, emitted
+):
+    """Each deferral is counted; once the mark is _PASS_DEFER_MAX_SECONDS old
+    the repack runs beside the pass instead of waiting for a gap that never
+    comes."""
+    spy = _RepackSpy()
+    monkeypatch.setattr(git_fetcher, "_repack_clone", spy)
+    scope = _ScopeRepo(tmp_path, "s1")
+    await scope.fetched(_LIMIT - 1)
+    scope.push()
+    await scope.sync()
+    due = git_fetcher._repacks_due[scope.source_id]
+    assert due.marked_at is not None
+
+    with GitPolicyFetcher.sync_pass():
+        await GitPolicyFetcher.run_due_repacks({scope.source_id})
+        assert spy.calls == []
+        assert _skips(emitted) == [{"reason": "pass_in_flight"}]
+
+        # A later fetch's mark keeps the first mark's time.
+        scope.push()
+        await scope.sync()
+        assert git_fetcher._repacks_due[scope.source_id].marked_at == due.marked_at
+
+        git_fetcher._repacks_due[scope.source_id] = git_fetcher._repacks_due[
+            scope.source_id
+        ]._replace(marked_at=due.marked_at - git_fetcher._PASS_DEFER_MAX_SECONDS)
+        await GitPolicyFetcher.run_due_repacks({scope.source_id})
+    assert spy.calls == [str(scope.clone_path)]
+    assert _count_pack_files(scope.clone_path) == 1
+
+
+@pytest.mark.asyncio
+async def test_refresh_that_waited_for_the_lock_defers_to_a_pass_started_meanwhile(
+    tmp_path, monkeypatch
+):
+    """The pass check runs again once the lock is held: a refresh's wait for
+    the clone's lock can outlast the start of a pass."""
+    spy = _RepackSpy()
+    monkeypatch.setattr(git_fetcher, "_repack_clone", spy)
+    scope = _ScopeRepo(tmp_path, "s1")
+    await scope.fetched(_LIMIT - 1)
+    scope.push()
+    await scope.sync()
+    lock = GitPolicyFetcher.repo_locks.setdefault(scope.source_id, asyncio.Lock())
+    await lock.acquire()
+    refresh = asyncio.ensure_future(
+        GitPolicyFetcher.run_due_repack(scope.source_id, wait_for_lock=True)
+    )
+    assert await _wait_for_async(lambda: _lock_has_waiter(lock))
+    with GitPolicyFetcher.sync_pass():
+        lock.release()
+        await asyncio.wait_for(refresh, timeout=10)
+    assert spy.calls == []
+    assert scope.source_id in git_fetcher._repacks_due
+
+
+def _lock_has_waiter(lock: asyncio.Lock) -> bool:
+    return any(not w.cancelled() for w in (getattr(lock, "_waiters", None) or ()))
+
+
+async def _wait_for_async(condition, deadline_seconds: float = 10.0) -> bool:
+    async def _poll():
+        while not condition():
+            await asyncio.sleep(0.01)
+
+    try:
+        await asyncio.wait_for(_poll(), timeout=deadline_seconds)
+    except asyncio.TimeoutError:
+        return False
+    return True
+
+
+@pytest.mark.asyncio
+async def test_repack_blocked_by_another_process_or_the_zombie_cap_keeps_its_mark(
+    tmp_path, monkeypatch, emitted
+):
+    spy = _RepackSpy()
+    monkeypatch.setattr(git_fetcher, "_repack_clone", spy)
+    scope = _ScopeRepo(tmp_path, "s1")
+    await scope.fetched(_LIMIT - 1)
+    scope.push()
+    await scope.sync()
+
+    # Another process holds the pod-wide lock: _repack_clone returns False.
+    clones_dir = git_fetcher._repack_lock_dir(scope.clone_path)
+    held = _hold_lock(clones_dir)
+    try:
+        await GitPolicyFetcher.run_due_repacks({scope.source_id})
+    finally:
+        os.close(held)
+    assert scope.source_id in git_fetcher._repacks_due
+    assert _skips(emitted) == [{"reason": "repack_running"}]
+
+    # The git executor refuses work at the zombie cap.
+    real_run = git_fetcher.run_in_git_executor
+
+    async def _refuse(func, *args, **kwargs):
+        if func is git_fetcher._repack_clone_exclusive:
+            raise GitConcurrencyLimitExceeded("cap reached")
+        return await real_run(func, *args, **kwargs)
+
+    monkeypatch.setattr(git_fetcher, "run_in_git_executor", _refuse)
+    await GitPolicyFetcher.run_due_repacks({scope.source_id})
+    assert scope.source_id in git_fetcher._repacks_due
+    assert _repack_outcomes(emitted) == []
+    assert _count_pack_files(scope.clone_path) == _LIMIT
+
+
+@pytest.mark.asyncio
+async def test_mark_made_before_a_failure_elsewhere_waits_out_the_marker(
+    tmp_path, monkeypatch
+):
+    """A clone marked due before another process's repack of it failed is
+    still left alone for the hour: the due repack reads the marker too."""
+    spy = _RepackSpy()
+    monkeypatch.setattr(git_fetcher, "_repack_clone", spy)
+    scope = _ScopeRepo(tmp_path, "s1")
+    await scope.fetched(_LIMIT - 1)
+    scope.push()
+    await scope.sync()
+    assert scope.source_id in git_fetcher._repacks_due
+    git_fetcher._record_repack_failure(scope.clone_path)
+
+    await GitPolicyFetcher.run_due_repacks({scope.source_id})
+    assert spy.calls == []
+
+
+def test_attempt_marker_is_there_while_git_runs_and_gone_after_success(
+    tmp_path, monkeypatch
+):
+    """Stamped before git starts, so a container OOM-killed mid-repack leaves
+    it behind; removed once the repack is done."""
+    clone_path = _fake_clone(tmp_path)
+    out = tmp_path / "seen"
+    marker = git_fetcher._repack_failed_marker(clone_path)
+    _install_git_shim(
+        tmp_path, monkeypatch, f'[ -f "{marker}" ] && echo stamped > "{out}"\n'
+    )
+    assert _repack_clone(clone_path, timeout=60) is True
+    assert out.read_text().strip() == "stamped"
+    assert not marker.exists()
+
+
+def test_marker_dated_in_the_future_does_not_block_repacks(tmp_path):
+    clone_path = _fake_clone(tmp_path)
+    git_fetcher._record_repack_failure(clone_path)
+    marker = git_fetcher._repack_failed_marker(clone_path)
+    assert git_fetcher._repack_failed_recently(clone_path)
+    future = time.time() + 7200
+    os.utime(marker, (future, future))
+    assert not git_fetcher._repack_failed_recently(clone_path)
+
+
+@pytest.mark.asyncio
+async def test_delete_floor_keeps_the_clone_while_a_repack_holds_the_lock(
+    tmp_path, monkeypatch, records
+):
+    """The floor's removal waits for the repack lock and, past its bound,
+    leaves the dir and says so."""
+    import opal_server.scopes.service as service_module
+
+    repo = _ScopeRepo(tmp_path, "s1")
+    await repo.sync()
+    svc = _service(tmp_path)  # the scope is gone from the store
+
+    async def _never_free(path):
+        return False
+
+    monkeypatch.setattr(service_module, "remove_clone_dir_exclusive", _never_free)
+    await svc._purge_local_clone_best_effort(repo.source_id, repo.clone_path, "s1")
+    assert repo.clone_path.exists()
+    assert any(
+        "still holds the repack lock" in r["message"]
+        for r in records
+        if r["level"].name == "WARNING"
+    )

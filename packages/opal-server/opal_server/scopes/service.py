@@ -7,7 +7,6 @@ from typing import List, Optional, Set, cast
 import git
 from ddtrace import tracer
 from fastapi_websocket_pubsub import PubSubEndpoint
-from opal_common.async_utils import run_sync
 from opal_common.git_utils.commit_viewer import VersionedFile
 from opal_common.http_utils import redact_url
 from opal_common.logger import logger
@@ -429,7 +428,7 @@ class ScopesService:
                         # Under the pod's repack lock: the leader, another
                         # process, may be repacking this very clone, and an
                         # rmtree beside it fails half-way.
-                        removed = await run_sync(remove_clone_dir_exclusive, safe_path)
+                        removed = await remove_clone_dir_exclusive(safe_path)
                     except FileNotFoundError:
                         pass  # never cloned (or already gone) — nothing to clean
                     except OSError as e:
@@ -442,8 +441,8 @@ class ScopesService:
                             logger.warning(
                                 f"Not removing clone dir {safe_path} of deleted "
                                 f"scope {scope_id}: a repack in this pod still "
-                                "holds the repack lock; the dir stays until "
-                                "PER-15612's sweep lands"
+                                "holds the repack lock; the dir stays until a "
+                                "later cleanup removes it"
                             )
                 finally:
                     if (
