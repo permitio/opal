@@ -215,6 +215,7 @@ def test_when_ready_scopes_on_no_record_reaches_default_handler(
     log_file = tmp_path / "opal.log"
     monkeypatch.setattr(opal_common_config, "LOG_TO_FILE", True)
     monkeypatch.setattr(opal_common_config, "LOG_FILE_PATH", str(log_file))
+    monkeypatch.setattr(opal_common_config, "LOG_FILE_LEVEL", "DEBUG")
 
     _run_when_ready(gunicorn_conf, master_logs, monkeypatch, scopes=True)
 
