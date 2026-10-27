@@ -9,8 +9,9 @@ Tests send no traces, so tracing, telemetry and remote config are off for the te
 Tests that exercise APM (opal_common/tests/apm_test.py) run it in child interpreters that
 set their own environment.
 
-This must run before ddtrace is imported, which a rootdir conftest does: pytest loads it
-before collecting any test module.
+This must run before ddtrace is imported. A rootdir conftest runs before any test module is
+collected, but ddtrace's own pytest plugin would import it even earlier, so pytest.ini does not
+load that plugin (`-p no:ddtrace`).
 """
 
 import os
