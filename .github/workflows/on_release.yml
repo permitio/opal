@@ -252,16 +252,22 @@ jobs:
           tags: ${{ steps.tags.outputs.tags }}
 
       - name: Check that the pushed image installs the release version
-        # Runs after the push, so a failure means these tags already point at the wrong image
+        # Runs after the push, so a version mismatch means these tags already point at the wrong image
+        shell: bash
         env:
           IMAGE: ${{ matrix.repository }}@${{ steps.build.outputs.digest }}
           EXPECTED: ${{ steps.version.outputs.pypi_version }}
           TAGS: ${{ steps.tags.outputs.tags }}
         run: |
-          actual=$(docker run --rm --platform linux/amd64 --entrypoint pip "$IMAGE" show opal-common | sed -n 's/^Version: //p')
+          # A registry error or an empty digest is not a wrong version: report it as what it is
+          if ! show=$(docker run --rm --platform linux/amd64 --entrypoint pip "$IMAGE" show opal-common); then
+            echo "::error::could not read opal-common's version from $IMAGE (see the error above): the image could not be pulled or run, or it does not install opal-common. Check the pushed image by hand before announcing the release."
+            exit 1
+          fi
+          actual=$(printf '%s\n' "$show" | sed -n 's/^Version: //p')
           echo "$IMAGE installs opal-common $actual"
           if [ "$actual" != "$EXPECTED" ]; then
-            echo "::error::$IMAGE installs opal-common '$actual', expected '$EXPECTED'. It is already pushed under the tags below; fix the build, re-run this job to re-push them, and for a GA release point latest back at the previous version until then."
+            echo "::error::$IMAGE installs opal-common '$actual', expected '$EXPECTED'. It is already pushed under the tags below. Re-running this job rebuilds the same commit, so fix the build on the branch and publish a new release; for a GA release, point latest back at the previous version until then."
             echo "Tags now pointing at the wrong image:"
             echo "$TAGS"
             exit 1

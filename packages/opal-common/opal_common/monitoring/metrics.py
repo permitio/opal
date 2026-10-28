@@ -48,5 +48,9 @@ def gauge(metric: str, value: float, tags: Optional[dict[str, str]] = None):
     datadog.statsd.gauge(metric, value, tags=_format_tags(tags))
 
 
+def distribution(metric: str, value: float, tags: Optional[dict[str, str]] = None):
+    datadog.statsd.distribution(metric, value, tags=_format_tags(tags))
+
+
 def event(title: str, message: str, tags: Optional[dict[str, str]] = None):
     datadog.statsd.event(title=title, message=message, tags=_format_tags(tags))

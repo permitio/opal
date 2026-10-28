@@ -55,6 +55,13 @@ sent from the server. OPAL can aggregate data from multiple sources. This may in
 
 OPAL Client supports running eOPA as the inline engine.
 
+:::caution
+Upstream eOPA is archived, and v1.45.1 is its last release. Its embedded OPA (v1.10.1), its Go
+toolchain and its bundled dependencies get no further security fixes, so the
+`permitio/opal-client-eopa` image keeps known vulnerabilities that the standard image does not.
+Use `permitio/opal-client` unless you depend on an eOPA-only feature.
+:::
+
 ```yml showLineNumbers {3}
 service:
   opal_client:
