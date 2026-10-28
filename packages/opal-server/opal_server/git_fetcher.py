@@ -96,11 +96,22 @@ class CloneNotPopulatedError(ValueError):
 
 
 class BranchHeadNotFoundError(ValueError):
-    """Configured branch has no resolvable HEAD (permanent misconfig), NOT a
-    transient clone gap.
+    """The clone has remote-tracking refs, but not the configured branch's.
+
+    Permanent when the branch really does not exist (a misconfiguration);
+    transient when it was pushed after this clone's last fetch, which the
+    bundle route waits out (see SCOPES_POLICY_BRANCH_REFRESH_INTERVAL). Not a
+    clone gap: that is CloneNotPopulatedError.
 
     Subclasses ValueError so broad handlers still catch it.
+
+    ``waited_seconds`` and ``client_disconnected`` mean what they mean on
+    CloneNotPopulatedError: how long the request was held for the branch, and
+    that the caller hung up meanwhile.
     """
+
+    waited_seconds: float = 0.0
+    client_disconnected: bool = False
 
 
 class GitRepackError(RuntimeError):
