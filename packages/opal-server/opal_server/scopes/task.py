@@ -182,6 +182,8 @@ class ScopesPolicyWatcherTask(BasePolicyWatcherTask):
                     force_fetch=data.get("force_fetch", False),
                     hinted_hash=data.get("hinted_hash"),
                     req_time=datetime.datetime.now(),
+                    # PUT /scopes sets it when the scope's source changed.
+                    notify_all=bool(data.get("repointed", False)),
                 )
             except KeyError:
                 logger.warning(

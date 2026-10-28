@@ -492,6 +492,27 @@ class OpalServerConfig(Confi):
         "pod: a pod running N workers holds up to N times this number. 0 or "
         "negative means no cap.",
     )
+    SCOPES_POLICY_BRANCH_REFRESH_INTERVAL = confi.float(
+        "SCOPES_POLICY_BRANCH_REFRESH_INTERVAL",
+        60.0,
+        description="When GET /scopes/:scope_id/policy finds the scope's clone populated but "
+        "without the scope's branch, this worker asks every server to refresh that "
+        "scope (a forced fetch, as POST /scopes/:scope_id/refresh does) and holds "
+        "the request in the SCOPES_POLICY_CLONE_WAIT_SECONDS wait, under the same "
+        "in-flight cap, serving the bundle as soon as the branch is there. A branch "
+        "pushed after this server's last fetch is not a misconfiguration: right "
+        "after a PUT /scopes that moves a scope to another repository, every pod "
+        "answers this way until its own fetch of that repository lands, and a pod "
+        "that missed the PUT's broadcast, or whose fetch failed, keeps answering it "
+        "until something else refreshes that clone. An opal-client that starts in "
+        "that window makes five attempts, then waits for the next policy message, "
+        "with no policy loaded. The refresh is requested at most once per this many "
+        "seconds per scope per worker: within that interval a further miss answers "
+        "the immediate 409 it answered before, so a branch that really does not "
+        "exist costs one held request and one fetch per interval, not one per "
+        "request. When the wait runs out with the branch still missing the answer "
+        "is that same 409. 0 or negative disables it (409 immediately, as before).",
+    )
     LEADER_LOCK_FILE_PATH = confi.str(
         "LEADER_LOCK_FILE_PATH",
         "/tmp/opal_server_leader.lock",
