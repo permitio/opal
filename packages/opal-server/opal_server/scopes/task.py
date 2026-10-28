@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi_websocket_pubsub import Topic
-from opal_common.logger import configure_logs, logger
+from opal_common.logger import configure_logs, logger, logs_configured
 from opal_common.monitoring import metrics
 from opal_server.config import opal_server_config
 from opal_server.git_fetcher import (
@@ -166,8 +166,8 @@ class ScopesPolicyWatcherTask(BasePolicyWatcherTask):
                     await self._service.sync_scopes(only_poll_updates=True)
                 except asyncio.CancelledError:
                     raise
-                except Exception as e:
-                    logger.exception(f"Periodic sync (sync_scopes) failed")
+                except Exception:
+                    logger.exception("Periodic sync (sync_scopes) failed")
 
         except asyncio.CancelledError:
             logger.info("Periodic sync cancelled")
@@ -214,18 +214,18 @@ class ScopesPolicyWatcherTask(BasePolicyWatcherTask):
         """Clone all scopes repositories as part as server startup.
 
         This speeds up the first sync of scopes after workers are
-        started.
+        started. scripts/gunicorn_conf.py::when_ready configures logging
+        before calling this; a caller that didn't (e.g. a custom
+        GUNICORN_CONF) gets configure_logs() here, so the preload never
+        logs through loguru's unscrubbed default handler.
         """
         if opal_server_config.SCOPES:
-            # This runs in the gunicorn MASTER (scripts/gunicorn_conf.py:when_ready)
-            # before any worker configured monitoring.
-            #
-            # Without configure_logs() the master logs with loguru's defaults
-            # (DEBUG level, diagnose=True, no URL redaction) while preload logs
-            # git errors that can carry the remote URL and its auth.
-            configure_logs()
-            # Without configure_server_metrics() the git metrics emitted during
-            # preload (git_ops_in_flight, scopes.count, sources_in_backoff,
+            if not logs_configured():
+                configure_logs()
+            # This runs in the gunicorn MASTER (scripts/gunicorn_conf.py::when_ready)
+            # before any worker configured monitoring. Without
+            # configure_server_metrics() the git metrics emitted during preload
+            # (git_ops_in_flight, scopes.count, sources_in_backoff,
             # git_op_failures...) go out un-namespaced and never reach the
             # dashboards/monitors built on permit.opal.*.
             configure_server_metrics()

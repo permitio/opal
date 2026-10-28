@@ -74,7 +74,7 @@ class NewCommitsCallbacks(PolicyFetcherCallbacks):
             )
             return
 
-        logger.info(
+        logger.debug(
             f"scope '{self._scope_id}': Found new commits: old HEAD was '{previous_head}', new HEAD is '{head}'"
         )
         if not self._scope_repo_dir.exists():
@@ -102,12 +102,18 @@ class NewCommitsCallbacks(PolicyFetcherCallbacks):
                     repo.commit(head), repo.commit(head), predicate=predicate
                 )
             else:
-                notification = await create_policy_update(
-                    repo.commit(previous_head),
-                    repo.commit(head),
-                    self._source.extensions,
-                    predicate=predicate,
-                )
+                # "Found new commits" is DEBUG; this binds the scope to the
+                # "no tracked files were affected" WARN, whose text has only the
+                # hashes. The scope lands in record["extra"], so it shows only in
+                # serialized output (OPAL_LOG_SERIALIZE or a serialized file
+                # sink), not in the default plaintext format.
+                with logger.contextualize(scope_id=self._scope_id):
+                    notification = await create_policy_update(
+                        repo.commit(previous_head),
+                        repo.commit(head),
+                        self._source.extensions,
+                        predicate=predicate,
+                    )
 
         if notification is not None:
             await self.trigger_notification(notification)

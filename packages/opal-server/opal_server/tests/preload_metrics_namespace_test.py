@@ -10,6 +10,7 @@ the namespaced names could see the boot phase.
 import asyncio
 
 import datadog
+import opal_common.logger as opal_common_logger
 import pytest
 from opal_common.config import opal_common_config
 from opal_common.monitoring import metrics
@@ -94,11 +95,12 @@ def test_preload_configures_metrics_before_syncing(monkeypatch):
     configure the client BEFORE the first sync emits anything."""
     order = []
     monkeypatch.setattr(opal_server_config, "SCOPES", True)
+    # As in when_ready, logging is configured before the preload, so the
+    # preload leaves the session's logging alone.
+    monkeypatch.setattr(opal_common_logger, "_logs_configured", True)
     monkeypatch.setattr(
         task_module, "configure_server_metrics", lambda: order.append("configure")
     )
-    # Keep the process-wide loguru/logging setup untouched by this test.
-    monkeypatch.setattr(task_module, "configure_logs", lambda: None)
 
     class _FakeService:
         def __init__(self, *a, **k):

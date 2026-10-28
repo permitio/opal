@@ -2570,7 +2570,7 @@ class GitPolicyFetcher(PolicyFetcher):
     ) -> bool:
         if force_fetch:
             if req_time is not None and await self._was_fetched_after(req_time):
-                logger.info(
+                logger.debug(
                     "Repo was fetched after refresh request, override force_fetch with False"
                 )
             else:

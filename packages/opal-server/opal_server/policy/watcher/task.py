@@ -28,7 +28,7 @@ class BasePolicyWatcherTask:
         await self.stop()
 
     async def _on_webhook(self, topic: Topic, data: Any):
-        logger.info(f"Webhook listener triggered ({len(self._webhook_tasks)})")
+        logger.debug(f"Webhook listener triggered ({len(self._webhook_tasks)})")
         # Rebuild rather than remove-while-iterating: list.remove() inside a
         # `for t in self._webhook_tasks` loop skips the element after each removal,
         # so finished tasks accumulate. Retrieve exceptions before dropping the
