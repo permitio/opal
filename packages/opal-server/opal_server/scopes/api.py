@@ -88,12 +88,12 @@ _clone_wait_inflight = 0
 # identical line per request.
 _clone_wait_clamp_logged = False
 
-# When this worker last asked every server to refresh a scope whose clone lacked
-# its branch (scope id -> loop time), so a branch that really does not exist
-# costs one held request and one fetch per SCOPES_POLICY_BRANCH_REFRESH_INTERVAL
-# instead of one per request. Event-loop only, like the in-flight count, and
-# bounded: the oldest entries go first, and one that goes early only allows an
-# extra refresh.
+# When this worker last asked every server to sync a scope whose clone lacked
+# its branch (scope id -> loop time): at most once per
+# SCOPES_POLICY_BRANCH_REFRESH_INTERVAL, whose description states what a branch
+# that really does not exist costs. Event-loop only, like the in-flight count,
+# and bounded: the oldest entries go first, and one that goes early only allows
+# an extra request.
 _branch_refresh_requested: "OrderedDict[str, float]" = OrderedDict()
 _BRANCH_REFRESH_TRACKED_MAX = 10_000
 
@@ -302,7 +302,9 @@ async def _make_bundle_waiting_for_clone(
 
     Exactly one `policy_clone_wait` count is emitted per request that reaches
     the wait, tagged with how it ended: served, timeout, shed, disconnected,
-    cancelled or error, and with what it waited for (``for``: clone or branch).
+    cancelled, error or unrequested (a branch wait whose sync was never
+    requested, because its publish failed), and with what it waited for
+    (``for``: clone or branch).
     The 503 or 409 the caller shapes carries ``waited_seconds`` and
     ``client_disconnected``.
     """
@@ -351,6 +353,21 @@ async def _make_bundle_waiting_for_clone(
         if branch_deadline is None:
             raise pending  # the immediate 409: not a wait
         deadline = min(deadline, branch_deadline)
+        # Again: a request that published yielded in the publish, and other
+        # first misses may have taken slots meanwhile. The sync is requested
+        # by now, so later misses can still ride it.
+        if 0 < cap <= _clone_wait_inflight:
+            logger.info(
+                "Scope {scope_id} branch wait is at its {cap}-request cap; "
+                "answering 409 without waiting",
+                scope_id=scope_id,
+                cap=cap,
+            )
+            metrics.increment(
+                _CLONE_WAIT_METRIC, tags={"outcome": "shed", "for": waiting_for}
+            )
+            _note_wait(pending, 0.0)
+            raise pending
     outcome = "error"
 
     _clone_wait_inflight += 1
@@ -374,6 +391,14 @@ async def _make_bundle_waiting_for_clone(
             # overshoot the hold an operator configured.
             await asyncio.sleep(min(_CLONE_WAIT_POLL_SECONDS, remaining))
 
+            if waiting_for == "branch" and scope_id not in _branch_refresh_requested:
+                # The sync this request rode was never requested: its publish
+                # failed and the claim was given back. Holding on would wait
+                # for a fetch nobody asked for.
+                outcome = "unrequested"
+                _note_wait(pending, loop.time() - started)
+                raise pending
+
             if request is not None and await request.is_disconnected():
                 outcome = "disconnected"
                 logger.info(
@@ -396,15 +421,20 @@ async def _make_bundle_waiting_for_clone(
                 if waiting_for == "branch":
                     continue
                 # The clone landed without the branch: settled once, at the
-                # first miss, like a miss on the first attempt.
-                waiting_for = "branch"
-                if request_refresh is None:
-                    raise
-                branch_deadline = await _branch_wait_deadline(
-                    scope_id, request_refresh, loop.time(), wait
+                # first miss, like a miss on the first attempt. A miss that
+                # will not be waited for ends the clone wait it was: counted
+                # with `for: clone`, its hold carried to the 409.
+                branch_deadline = (
+                    None
+                    if request_refresh is None
+                    else await _branch_wait_deadline(
+                        scope_id, request_refresh, loop.time(), wait
+                    )
                 )
                 if branch_deadline is None:
+                    _note_wait(exc, loop.time() - started)
                     raise
+                waiting_for = "branch"
                 deadline = min(deadline, branch_deadline)
                 continue
             outcome = "served"
@@ -782,9 +812,11 @@ def init_scope_router(
             # branch is missing from its own clone (_should_fetch), so only the
             # servers that lack it fetch, and the rest do not queue a fetch on
             # the clone's lock in front of every other scope sharing it.
+            # It honours the source's failure backoff, as a pass does: a client
+            # missing a branch is not someone who has just repaired the source.
             await pubsub_endpoint.publish(
                 opal_server_config.POLICY_REPO_WEBHOOK_TOPIC,
-                {"scope_id": scope_id, "force_fetch": False},
+                {"scope_id": scope_id, "force_fetch": False, "honor_backoff": True},
             )
 
         try:

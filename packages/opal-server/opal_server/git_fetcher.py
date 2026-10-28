@@ -68,7 +68,8 @@ class CloneNotPopulatedError(ValueError):
     all, so this clone has not been populated yet.
 
     Distinct from BranchHeadNotFoundError, which means the namespace has refs
-    but not the configured one — a real misconfiguration. This is transient by
+    but not the configured one: a misconfiguration, or a branch pushed after
+    the clone's last fetch (see that class). This is transient by
     construction: _clone() rmtree's the destination and clones INTO the final
     path, so for the whole duration of a recovery re-clone the dir exists with
     no remote refs.
@@ -2588,6 +2589,16 @@ class GitPolicyFetcher(PolicyFetcher):
                 return True  # must fetch
 
         if not RepoInterface.has_remote_branch(repo, self._source.branch, self._remote):
+            if req_time is not None and await self._was_fetched_after(req_time):
+                # A fetch that started after this request already looked for
+                # the branch (a fetch brings every branch), so a burst of
+                # requests for a branch the remote does not have costs one
+                # fetch, not one per request.
+                logger.debug(
+                    "Target branch was not found in local clone, but the remote "
+                    "was fetched after this request; not fetching again"
+                )
+                return False
             logger.info(
                 "Target branch was not found in local clone, re-fetching the remote"
             )

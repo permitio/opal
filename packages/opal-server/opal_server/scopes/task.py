@@ -184,6 +184,8 @@ class ScopesPolicyWatcherTask(BasePolicyWatcherTask):
                     req_time=datetime.datetime.now(),
                     # PUT /scopes sets it when the scope's source changed.
                     notify_all=bool(data.get("repointed", False)),
+                    # A sync a bundle request asked for (its branch was missing).
+                    honor_backoff=bool(data.get("honor_backoff", False)),
                 )
             except KeyError:
                 logger.warning(

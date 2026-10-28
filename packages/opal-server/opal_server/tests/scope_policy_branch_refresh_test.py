@@ -91,6 +91,22 @@ class RecordingPubSub:
         ]
 
 
+class SlowPubSub(RecordingPubSub):
+    """A publish that suspends, as a real broadcaster's does: other requests
+    run between a request's claim and the end of its publish."""
+
+    def __init__(self, delay=0.05, fail=False):
+        super().__init__(fail=False)
+        self.delay = delay
+        self.fail_after_delay = fail
+
+    async def publish(self, topics, data=None):
+        await asyncio.sleep(self.delay)
+        if self.fail_after_delay:
+            raise ConnectionError("broadcaster down")
+        self.published.append((topics, data))
+
+
 def _scope(scope_id="live", url="https://git/live.git", branch="main"):
     return Scope(
         scope_id=scope_id,
@@ -225,7 +241,9 @@ def test_a_branch_fetched_while_held_is_served(monkeypatch, emitted):
     assert resp.json()["hash"] == "head"
     assert calls == ["abc", "abc", "abc"], "the client's base_hash was not kept"
     # Not forced: only servers whose clone lacks the branch fetch.
-    assert pubsub.syncs() == [{"scope_id": "live", "force_fetch": False}]
+    assert pubsub.syncs() == [
+        {"scope_id": "live", "force_fetch": False, "honor_backoff": True}
+    ]
     assert _refreshes(emitted) == ["requested"]
     assert _waits(emitted) == [{"outcome": "served", "for": "branch"}]
 
@@ -250,9 +268,12 @@ async def test_concurrent_misses_ride_the_first_requests_sync(monkeypatch, emitt
     the first asks for the sync.
 
     Mutation: answering the immediate 409 to a miss while the first request's
-    sync is in flight (the claim-only throttle) fails all but one request.
+    sync is in flight (the claim-only throttle) fails all but one request;
+    recording the claim after the publish instead of before it requests one
+    sync per request. The publish suspends, so the other misses arrive while
+    the first request is still publishing.
     """
-    pubsub = RecordingPubSub()
+    pubsub = SlowPubSub()
     gate = _gate(monkeypatch)
     transport = httpx.ASGITransport(app=_app(pubsub))
     async with httpx.AsyncClient(transport=transport, base_url="http://bed") as client:
@@ -348,7 +369,8 @@ def test_a_sync_that_cannot_be_requested_gives_the_interval_back(monkeypatch, em
     getting the immediate 409 for the rest of the interval.
 
     Mutation: keeping the claim on a failed publish makes the second request
-    answer 409 at once without requesting anything.
+    ride a sync nobody requested: it is answered without any sync being
+    published.
     """
     pubsub = RecordingPubSub(fail=True)
     client = _client(pubsub)
@@ -398,7 +420,9 @@ def test_a_clone_that_lands_without_the_branch_is_waited_for(monkeypatch, emitte
     resp = _client(pubsub).get("/scopes/live/policy")
 
     assert resp.status_code == 200
-    assert pubsub.syncs() == [{"scope_id": "live", "force_fetch": False}]
+    assert pubsub.syncs() == [
+        {"scope_id": "live", "force_fetch": False, "honor_backoff": True}
+    ]
     assert _waits(emitted) == [{"outcome": "served", "for": "branch"}]
 
 
@@ -604,3 +628,196 @@ async def test_an_unmoved_head_notifies_only_on_a_repoint(
     await callbacks.on_update(head, head)
 
     assert len(pubsub.published) == published
+
+
+# --- review round 2: bounds, riders, the cap after a publish ---------------
+
+
+@pytest.mark.asyncio
+async def test_a_rider_is_held_no_longer_than_the_first_requests_deadline(
+    monkeypatch,
+):
+    """A request that rides another's sync gets that request's deadline, not a
+    fresh one: a branch that does not exist holds requests for at most one
+    clone wait after the sync was requested.
+
+    Mutation: giving a rider `now + wait` instead of `requested + wait` holds B
+    for a full extra wait.
+    """
+    _script(monkeypatch, _missing)
+    transport = httpx.ASGITransport(app=_app(RecordingPubSub()))
+    async with httpx.AsyncClient(transport=transport, base_url="http://bed") as client:
+
+        async def late_rider():
+            await asyncio.sleep(0.7 * WAIT)
+            started = asyncio.get_running_loop().time()
+            resp = await client.get("/scopes/live/policy")
+            return resp, asyncio.get_running_loop().time() - started
+
+        first, (rider, rider_elapsed) = await asyncio.gather(
+            client.get("/scopes/live/policy"), late_rider()
+        )
+
+    assert first.status_code == rider.status_code == 409
+    assert rider_elapsed < 0.6 * WAIT, f"the rider was held {rider_elapsed:.2f}s"
+
+
+def test_a_branch_miss_late_in_a_clone_wait_keeps_the_clone_waits_deadline(
+    monkeypatch,
+):
+    """The in-loop `min`: a clone that lands without the branch late in its
+    wait does not restart the budget, which is clamped below the load
+    balancer's idle timeout.
+
+    Mutation: `deadline = branch_deadline` instead of the `min` polls well
+    past the budget and fails the bound on the polls.
+    """
+    poll = 0.02
+    calls = _script(monkeypatch, *([_populating] * 10 + [_missing]))
+
+    resp = _client(RecordingPubSub()).get("/scopes/live/policy")
+
+    assert resp.status_code == 409
+    assert len(calls) <= WAIT / poll + 2, f"{len(calls)} polls for a {WAIT}s budget"
+
+
+@pytest.mark.asyncio
+async def test_an_in_loop_miss_without_a_sync_ends_as_the_clone_wait_it_was(
+    monkeypatch, emitted
+):
+    """The clone lands without the branch, and the request may not wait for it
+    (here: no sync can be requested, as on the default-scope path).
+
+    It is the clone wait's end: counted `for: clone`, and its hold is
+    carried to the 409 so the route reports it.
+    """
+    _script(monkeypatch, _populating, _populating, _missing)
+    fetcher = GitPolicyFetcher(Path("/unused"), "live", _scope().policy)
+
+    with pytest.raises(BranchHeadNotFoundError) as raised:
+        await scopes_api._make_bundle_waiting_for_clone(fetcher, None, "live")
+
+    assert raised.value.waited_seconds > 0
+    assert _waits(emitted) == [{"outcome": "error", "for": "clone"}]
+
+
+def test_an_in_loop_miss_after_the_sync_had_its_chance_is_answered_at_once(
+    monkeypatch, emitted
+):
+    pubsub = RecordingPubSub()
+    client = _client(pubsub)
+    _script(monkeypatch, _missing)
+    assert client.get("/scopes/live/policy").status_code == 409  # its chance
+
+    calls = _script(monkeypatch, _populating, _missing, _ready)
+    resp = client.get("/scopes/live/policy")
+
+    assert resp.status_code == 409
+    assert len(calls) == 2, "the miss was held after its sync had had its chance"
+    assert len(pubsub.syncs()) == 1
+    assert _waits(emitted)[-1] == {"outcome": "error", "for": "clone"}
+
+
+@pytest.mark.asyncio
+async def test_riders_of_a_failed_publish_are_released(monkeypatch, emitted):
+    """A request that rides a sync whose publish then fails is not held for a
+    sync nobody requested: at its next poll it gets the 409.
+
+    Mutation: dropping the rider's claim check holds it until the first
+    request's deadline (outcome timeout).
+    """
+    pubsub = SlowPubSub(delay=0.1, fail=True)
+    _script(monkeypatch, _missing)
+    transport = httpx.ASGITransport(app=_app(pubsub))
+    async with httpx.AsyncClient(transport=transport, base_url="http://bed") as client:
+
+        async def rider():
+            await asyncio.sleep(0.03)
+            started = asyncio.get_running_loop().time()
+            resp = await client.get("/scopes/live/policy")
+            return resp, asyncio.get_running_loop().time() - started
+
+        first, (ridden, elapsed) = await asyncio.gather(
+            client.get("/scopes/live/policy"), rider()
+        )
+
+    assert first.status_code == ridden.status_code == 409
+    assert elapsed < 0.6 * WAIT, f"the rider was held {elapsed:.2f}s"
+    assert {"outcome": "unrequested", "for": "branch"} in _waits(emitted)
+
+
+@pytest.mark.asyncio
+async def test_the_cap_is_checked_again_after_a_publish(monkeypatch, emitted):
+    """Two scopes' first misses both pass the cap check, then yield in their
+    publishes; only one may take the last slot.
+
+    Mutation: dropping the second cap check lets both in, past the cap.
+    """
+    monkeypatch.setattr(opal_server_config, "SCOPES_POLICY_CLONE_WAIT_MAX_INFLIGHT", 1)
+    peak = {"n": 0}
+    real = scopes_api._publish_clone_wait_inflight
+
+    def tracking():
+        peak["n"] = max(peak["n"], scopes_api._clone_wait_inflight)
+        real()
+
+    monkeypatch.setattr(scopes_api, "_publish_clone_wait_inflight", tracking)
+    gate = _gate(monkeypatch)
+    transport = httpx.ASGITransport(app=_app(SlowPubSub(), _scope("a"), _scope("b")))
+    async with httpx.AsyncClient(transport=transport, base_url="http://bed") as client:
+
+        async def open_soon():
+            await asyncio.sleep(0.15)
+            gate["open"] = True
+
+        a, b, _ = await asyncio.gather(
+            client.get("/scopes/a/policy"), client.get("/scopes/b/policy"), open_soon()
+        )
+
+    assert sorted([a.status_code, b.status_code]) == [200, 409]
+    assert peak["n"] <= 1, f"{peak['n']} requests held under a cap of 1"
+    assert {"outcome": "shed", "for": "branch"} in _waits(emitted)
+
+
+@pytest.mark.asyncio
+async def test_a_burst_for_a_missing_branch_costs_one_fetch(monkeypatch, tmp_path):
+    """A fetch that started after a sync request arrived already looked for the
+    branch, so that request does not fetch again.
+
+    Mutation: dropping the `_was_fetched_after(req_time)` check in the
+    missing-branch arm of `_should_fetch` fetches for every request.
+    """
+    fetcher = GitPolicyFetcher(Path(tmp_path), "live", _scope().policy)
+    monkeypatch.setattr(
+        "opal_server.git_fetcher.RepoInterface.has_remote_branch",
+        lambda *a, **k: False,
+    )
+    asked = datetime.datetime.now()
+    GitPolicyFetcher.repos_last_fetched.pop(fetcher._source_id, None)
+    try:
+        assert await fetcher._should_fetch(None, req_time=asked) is True
+        GitPolicyFetcher.repos_last_fetched[
+            fetcher._source_id
+        ] = asked + datetime.timedelta(seconds=1)
+        assert await fetcher._should_fetch(None, req_time=asked) is False
+        # Without a request time (a pass), the missing branch is still fetched.
+        assert await fetcher._should_fetch(None) is True
+    finally:
+        GitPolicyFetcher.repos_last_fetched.pop(fetcher._source_id, None)
+
+
+@pytest.mark.asyncio
+async def test_the_trigger_passes_the_backoff_flag_on():
+    seen = []
+
+    class Service:
+        async def sync_scope(self, **kwargs):
+            seen.append(kwargs)
+            return None
+
+    task = ScopesPolicyWatcherTask.__new__(ScopesPolicyWatcherTask)
+    task._service = Service()
+    await task.trigger(None, {"scope_id": "s", "honor_backoff": True})
+    await task.trigger(None, {"scope_id": "s"})
+
+    assert [k["honor_backoff"] for k in seen] == [True, False]

@@ -313,13 +313,26 @@ async def test_already_fetched_line_is_debug_and_missing_branch_line_stays_info(
             repo, force_fetch=True, req_time=req_time
         )
 
-    assert should_fetch is True
+    # A fetch that started after the request already looked for the branch
+    # (PER-17978): no second fetch, and both lines stay at DEBUG.
+    assert should_fetch is False
     [fetched] = starting_with(logs.emitted, "Repo was fetched after refresh request")
     assert fetched["level"].name == "DEBUG"
+    [coalesced] = starting_with(logs.emitted, "Target branch was not found")
+    assert coalesced["level"].name == "DEBUG"
+    assert not starting_with(logs.deployed, "Target branch was not found")
+    assert not starting_with(logs.deployed, "Repo was fetched after refresh request")
+
+    # No fetch since the request (an unforced sync, as a bundle request's is):
+    # the missing branch is fetched, said at INFO.
+    later = req_time + datetime.timedelta(seconds=2)
+    with capture_records() as logs:
+        should_fetch = await fetcher._should_fetch(repo, req_time=later)
+
+    assert should_fetch is True
     [missing] = starting_with(logs.emitted, "Target branch was not found")
     assert missing["level"].name == "INFO"
     assert starting_with(logs.deployed, "Target branch was not found")
-    assert not starting_with(logs.deployed, "Repo was fetched after refresh request")
 
 
 @pytest.mark.asyncio

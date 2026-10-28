@@ -517,10 +517,13 @@ class OpalServerConfig(Confi):
         "nothing. So a branch that really does not exist costs, per interval, at "
         "most one clone-wait budget of held requests on each worker that sees a "
         "miss (bounded by the in-flight cap), and one sync request from each of "
-        "those workers to every server, where only the servers whose clone lacks "
-        "the branch fetch. When the wait runs out with the branch still missing, "
-        "the answer is that same 409. 0 or negative disables it (409 immediately, "
-        "as before); nan, inf and -inf are treated as disabled too. Requires "
+        "those workers to every server. Every server's clone lacks a branch that "
+        "does not exist, so each server fetches, but once for a burst of these "
+        "requests, not once per request: a fetch that started after a request "
+        "arrived answers it. These syncs honour the source's failure backoff. When "
+        "the wait runs out with the branch still missing, the answer is that same "
+        "409. 0 or negative disables it (409 immediately, as before); nan, inf and "
+        "-inf are treated as disabled too. Requires "
         "SCOPES_POLICY_CLONE_WAIT_SECONDS > 0: with that wait disabled, no sync is "
         "requested either.",
     )
