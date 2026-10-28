@@ -141,6 +141,9 @@ def purge_local_memory(source_id: str, clone_path: str) -> None:
     # sources_in_backoff gauge for the life of the process, and would suppress
     # the first sync of a scope later re-created against the same URL.
     GitPolicyFetcher.forget_source_backoff(source_id)
+    # And a repack due at the end of the pass now running would repack a
+    # clone no scope serves any more.
+    GitPolicyFetcher.forget_repack_due(source_id)
 
 
 async def handle_purge_message(subscription, data: Any) -> None:
