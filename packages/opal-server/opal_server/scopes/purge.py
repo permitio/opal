@@ -55,7 +55,6 @@ All three are PER-15612. The memory purge is unaffected by them: it is
 authorized by the leader's confirmation and is self-healing in both directions.
 """
 import asyncio
-import re
 from pathlib import Path
 from typing import Any, Optional
 
@@ -64,14 +63,6 @@ from opal_common.schemas.policy_source import GitPolicyScopeSource
 from opal_server.config import opal_server_config
 from opal_server.git_fetcher import SOURCE_ID_RE, GitPolicyFetcher, git_op_in_flight
 from pydantic import BaseModel, ValidationError
-
-# \Z (not $) so a trailing newline can't sneak past validation: in Python `$`
-# also matches just before a final "\n", so "<64hex>-0\n" would wrongly pass.
-# [0-9], not \d: for a `str` pattern \d is Unicode and also matches e.g. Arabic-
-# Indic digits. Containment is unaffected either way (the derived path stays
-# under base_dir and could not exist), but the id this validates is a sha256
-# hex digest + an ASCII shard index, so say that.
-_SOURCE_ID_RE = SOURCE_ID_RE
 
 
 def confined_clone_path(base_dir, source_id: str):
@@ -94,7 +85,7 @@ def confined_clone_path(base_dir, source_id: str):
     and an arbitrary ``repos`` key, and it is what makes the confinement
     property survive PER-15612 putting an rmtree back on this path.
     """
-    if not _SOURCE_ID_RE.match(source_id):
+    if not SOURCE_ID_RE.match(source_id):
         return None
     return str(GitPolicyFetcher.base_dir(Path(base_dir)) / source_id)
 
