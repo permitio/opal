@@ -11,6 +11,7 @@ from opal_server.git_fetcher import (
     GitPolicyFetcher,
     drain_git_ops,
     git_busy_count,
+    reclone_hung_enabled,
     reclone_hung_scope_clones,
     shutdown_git_executor,
 )
@@ -244,13 +245,19 @@ class ScopesPolicyWatcherTask(BasePolicyWatcherTask):
                 # the clones: delete the ones whose git op was still hung when
                 # its process ended, so the sync clones them fresh, as on a new
                 # pod (see SCOPES_GIT_RECLONE_HUNG_ON_START). With the setting
-                # off it only removes leftover hung-op markers. In the same
-                # event loop as the sync, which reads the scopes again: the
-                # Redis client is not reused across asyncio.run calls.
-                live_source_ids = {
-                    GitPolicyFetcher.source_id(scope.policy)
-                    for scope in await scopes.all()
-                }
+                # off it only removes leftover hung-op markers, and needs no
+                # scope list. In the same event loop as the sync, which reads
+                # the scopes again: the Redis client binds its connections to
+                # the loop that first uses them, so it cannot be reused across
+                # asyncio.run calls.
+                live_source_ids = (
+                    {
+                        GitPolicyFetcher.source_id(scope.policy)
+                        for scope in await scopes.all()
+                    }
+                    if reclone_hung_enabled()
+                    else None
+                )
                 reclone_hung_scope_clones(
                     Path(opal_server_config.BASE_DIR), live_source_ids
                 )

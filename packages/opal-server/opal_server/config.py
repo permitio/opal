@@ -289,12 +289,14 @@ class OpalServerConfig(Confi):
         "sync clones it fresh, as on a new pod: if that clone fails or hangs "
         "too (the remote is still unreachable), the source has no clone, and "
         "its scopes no policy, until a clone succeeds, again as on a new pod. "
-        "When marked clones span at least two repositories, and at least half "
-        "of the repositories the current scopes use, the hang is most likely "
-        "the git provider's and nothing is deleted, so every scope keeps its "
-        "last fetched policy. Do not share BASE_DIR between running servers "
-        "with this on: any marker counts, whoever wrote it. Each clone "
-        "deleted increments opal_server.scopes.hung_clone_recloned.",
+        "When the marked clones of the current scopes' sources span at least "
+        "two of their repositories, and at least half of them, the hang is "
+        "most likely the git provider's and nothing is deleted, so every "
+        "scope keeps its last fetched policy; nothing is deleted either when "
+        "no clone on disk is one the current scopes use. Do not share "
+        "BASE_DIR between running servers with this on: any marker counts, "
+        "whoever wrote it. Each clone deleted increments "
+        "opal_server.scopes.hung_clone_recloned.",
     )
     SCOPES_GIT_MAX_ZOMBIES = confi.int(
         "SCOPES_GIT_MAX_ZOMBIES",

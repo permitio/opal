@@ -166,6 +166,23 @@ async def test_a_failing_op_past_its_timeout_still_clears_its_marker(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_a_fast_failure_keeps_other_processes_markers(tmp_path):
+    """Revoked credentials, a deleted repository: a marker a killed worker left
+    must stay, so the next start still re-clones."""
+    d = tmp_path / "m.hung"
+    d.mkdir()
+    (d / "other-1-0").write_text("")
+
+    def _fails():
+        raise pygit2.GitError("authentication required")
+
+    with pytest.raises(pygit2.GitError):
+        await run_in_git_executor(_fails, timeout=5, marker_dir=d, mark_when_hung=True)
+    _join_marker_threads()
+    assert (d / "other-1-0").exists()
+
+
+@pytest.mark.asyncio
 async def test_an_op_within_its_timeout_leaves_no_marker(tmp_path):
     d = tmp_path / "m.hung"
     assert (
@@ -374,8 +391,12 @@ async def test_a_failed_marker_thread_start_keeps_the_ops_outcome(
             release.wait, 5, timeout=0.05, marker_dir=d, mark_when_hung=True
         )
     release.set()
-    started = [m for m in warnings_logged if "Could not start the hung-op" in m]
+    started = [m for m in warnings_logged if "Could not start a thread to" in m]
     assert len(started) == 2
+    assert any(
+        "clear the stale hung-op markers in" in m and str(d) in m for m in started
+    )
+    assert any("record the hang of this op in" in m and str(d) in m for m in started)
 
 
 @pytest.mark.asyncio
@@ -460,7 +481,11 @@ async def test_a_hung_fetch_marks_its_clone_only_when_enabled(
 
 
 @pytest.mark.asyncio
-async def test_a_hung_clone_marks_its_clone_path(tmp_path, monkeypatch, on):
+@pytest.mark.parametrize("enabled", [True, False])
+async def test_a_hung_clone_marks_its_clone_path_only_when_enabled(
+    tmp_path, monkeypatch, enabled
+):
+    monkeypatch.setattr(opal_server_config, "SCOPES_GIT_RECLONE_HUNG_ON_START", enabled)
     fetcher, clone = _fetcher(tmp_path)
     release = threading.Event()
     monkeypatch.setattr(
@@ -468,7 +493,11 @@ async def test_a_hung_clone_marks_its_clone_path(tmp_path, monkeypatch, on):
     )
     monkeypatch.setattr(opal_server_config, "SCOPES_GIT_FETCH_TIMEOUT", 0.05)
     await fetcher.fetch_and_notify_on_changes()  # the clone times out
-    await _until(lambda: _markers(clone))
+    if enabled:
+        await _until(lambda: _markers(clone))
+    else:
+        _join_marker_threads()
+        assert _markers(clone) == []
     release.set()
     await _until(lambda: not _markers(clone))
 
@@ -512,6 +541,39 @@ async def test_markers_are_cleared_even_with_the_setting_off(tmp_path):
     )  # cleared on its own thread
 
 
+def test_clear_hung_markers_retries_when_an_entry_vanishes_mid_walk(
+    tmp_path, monkeypatch
+):
+    """Python 3.10-3.12 rmtree stops with FileNotFoundError when an entry it
+    listed is removed first, leaving the rest."""
+    clone = _clone_dir(tmp_path, _sid(1), hung=True)
+    real = git_fetcher_module.shutil.rmtree
+    calls = []
+
+    def _vanishing(path, *a, **k):
+        calls.append(path)
+        if len(calls) == 1:
+            raise FileNotFoundError(2, "No such file", str(Path(path) / "gone"))
+        return real(path, *a, **k)
+
+    monkeypatch.setattr(git_fetcher_module.shutil, "rmtree", _vanishing)
+    clear_hung_markers(hung_marker_dir(clone))
+    assert len(calls) == 2 and not hung_marker_dir(clone).exists()
+
+
+def test_clear_hung_markers_warns_when_the_retry_fails_too(
+    tmp_path, monkeypatch, warnings_logged
+):
+    clone = _clone_dir(tmp_path, _sid(1), hung=True)
+
+    def _vanishing(path, *a, **k):
+        raise FileNotFoundError(2, "No such file", str(Path(path) / "gone"))
+
+    monkeypatch.setattr(git_fetcher_module.shutil, "rmtree", _vanishing)
+    clear_hung_markers(hung_marker_dir(clone))
+    assert any("Could not remove hung-op markers" in m for m in warnings_logged)
+
+
 def test_clear_hung_markers_never_raises(tmp_path, monkeypatch):
     clone = _clone_dir(tmp_path, _sid(1), hung=True)
 
@@ -534,7 +596,7 @@ def test_off_by_default_never_deletes_a_clone(tmp_path, monkeypatch):
 
     monkeypatch.setattr(git_fetcher_module, "_take_repack_lock", _no_disk)
     assert opal_server_config.SCOPES_GIT_RECLONE_HUNG_ON_START is False
-    assert reclone_hung_scope_clones(tmp_path) == 0
+    assert reclone_hung_scope_clones(tmp_path, None) == 0
     assert hung.exists()
 
 
@@ -545,10 +607,16 @@ def test_deletes_only_marked_clones(tmp_path, on, monkeypatch):
     )
     hung = _clone_dir(tmp_path, _sid(1, 0), hung=True)
     healthy = _clone_dir(tmp_path, _sid(1, 1))
-    assert reclone_hung_scope_clones(tmp_path) == 1
+    assert reclone_hung_scope_clones(tmp_path, None) == 1
     assert not hung.exists() and not hung_marker_dir(hung).exists()
     assert healthy.exists()
     assert seen == ["opal_server.scopes.hung_clone_recloned"]
+    # The repack lock is free again: the master must not carry it across fork.
+    fd = os.open(_root(tmp_path), os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    finally:
+        os.close(fd)
 
 
 def test_any_markers_count_whoever_wrote_them(tmp_path, on):
@@ -556,21 +624,21 @@ def test_any_markers_count_whoever_wrote_them(tmp_path, on):
     left by the previous pod on a reused volume counts too."""
     clone = _clone_dir(tmp_path, _sid(1))
     _mark(clone, host="previous-pod")
-    assert reclone_hung_scope_clones(tmp_path) == 1
+    assert reclone_hung_scope_clones(tmp_path, None) == 1
     assert not clone.exists() and not hung_marker_dir(clone).exists()
 
 
 def test_an_empty_marker_dir_is_just_removed(tmp_path, on):
     clone = _clone_dir(tmp_path, _sid(1))
     hung_marker_dir(clone).mkdir()
-    assert reclone_hung_scope_clones(tmp_path) == 0
+    assert reclone_hung_scope_clones(tmp_path, None) == 0
     assert clone.exists() and not hung_marker_dir(clone).exists()
 
 
 def test_a_marker_without_its_clone_is_just_removed(tmp_path, on):
     """A scope deleted since: no orphan clone comes back."""
     _mark(_root(tmp_path) / _sid(1))
-    assert reclone_hung_scope_clones(tmp_path) == 0
+    assert reclone_hung_scope_clones(tmp_path, None) == 0
     assert list(_root(tmp_path).iterdir()) == []
 
 
@@ -579,7 +647,7 @@ def test_markers_of_a_symlinked_clone_never_delete_it(tmp_path, on):
     link = _root(tmp_path) / _sid(2)
     link.symlink_to(target, target_is_directory=True)
     _mark(link)
-    assert reclone_hung_scope_clones(tmp_path) == 0
+    assert reclone_hung_scope_clones(tmp_path, None) == 0
     assert target.exists() and link.exists()
     assert _markers(link)  # kept: a clone it cannot delete keeps its markers
 
@@ -590,19 +658,19 @@ def test_a_marker_dir_that_is_a_symlink_is_ignored(tmp_path, on):
     elsewhere.mkdir()
     (elsewhere / "planted-1-0").write_text("")
     hung_marker_dir(clone).symlink_to(elsewhere, target_is_directory=True)
-    assert reclone_hung_scope_clones(tmp_path) == 0
+    assert reclone_hung_scope_clones(tmp_path, None) == 0
     assert clone.exists() and (elsewhere / "planted-1-0").exists()
 
 
 def test_a_marker_of_a_name_that_is_not_a_source_id_is_ignored(tmp_path, on):
     clone = _clone_dir(tmp_path, "not-a-source-id", hung=True)
-    assert reclone_hung_scope_clones(tmp_path) == 0
+    assert reclone_hung_scope_clones(tmp_path, None) == 0
     assert clone.exists() and _markers(clone)
 
 
 def test_a_source_id_with_a_trailing_newline_is_ignored(tmp_path, on):
     clone = _clone_dir(tmp_path, _sid(3) + "\n", hung=True)
-    assert reclone_hung_scope_clones(tmp_path) == 0
+    assert reclone_hung_scope_clones(tmp_path, None) == 0
     assert clone.exists() and _markers(clone)
 
 
@@ -610,7 +678,7 @@ def test_a_file_where_the_marker_dir_would_be_is_ignored(tmp_path, on):
     clone = _clone_dir(tmp_path, _sid(4))
     as_file = _root(tmp_path) / f"{_sid(4)}.hung"
     as_file.write_text("")
-    assert reclone_hung_scope_clones(tmp_path) == 0
+    assert reclone_hung_scope_clones(tmp_path, None) == 0
     assert clone.exists() and as_file.exists()
 
 
@@ -627,13 +695,13 @@ def test_a_clone_that_cannot_be_statted_is_logged_not_raised(
         return real(self)
 
     monkeypatch.setattr(Path, "is_symlink", _eio)
-    assert reclone_hung_scope_clones(tmp_path) == 0
+    assert reclone_hung_scope_clones(tmp_path, None) == 0
     assert clone.exists() and _markers(clone)
     assert any("Could not delete hung scope clone" in m for m in warnings_logged)
 
 
 def test_missing_root_is_a_new_pod(tmp_path, on):
-    assert reclone_hung_scope_clones(tmp_path / "nowhere") == 0
+    assert reclone_hung_scope_clones(tmp_path / "nowhere", None) == 0
 
 
 def test_does_nothing_while_a_repack_holds_the_lock(tmp_path, on):
@@ -641,7 +709,7 @@ def test_does_nothing_while_a_repack_holds_the_lock(tmp_path, on):
     fd = os.open(_root(tmp_path), os.O_RDONLY | os.O_DIRECTORY)
     try:
         fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        assert reclone_hung_scope_clones(tmp_path) == 0
+        assert reclone_hung_scope_clones(tmp_path, None) == 0
         assert hung.exists() and _markers(hung)
     finally:
         os.close(fd)
@@ -658,7 +726,7 @@ def test_a_failed_delete_keeps_the_marker_for_the_next_start(tmp_path, on, monke
         return real(path, *a, **k)
 
     monkeypatch.setattr(git_fetcher_module.shutil, "rmtree", _rmtree)
-    assert reclone_hung_scope_clones(tmp_path) == 1
+    assert reclone_hung_scope_clones(tmp_path, None) == 1
     assert stuck.exists() and _markers(stuck)
     assert not other.exists() and not hung_marker_dir(other).exists()
 
@@ -670,13 +738,13 @@ def test_an_unlistable_root_is_logged_not_raised(tmp_path, on, monkeypatch):
         raise PermissionError(13, "Permission denied", str(path))
 
     monkeypatch.setattr(git_fetcher_module.os, "scandir", _denied)
-    assert reclone_hung_scope_clones(tmp_path) == 0
+    assert reclone_hung_scope_clones(tmp_path, None) == 0
 
 
 def test_with_the_setting_off_a_start_removes_every_marker(tmp_path):
     hung = _clone_dir(tmp_path, _sid(1), hung=True)
     _mark(_root(tmp_path) / _sid(2))  # a deleted scope's
-    assert reclone_hung_scope_clones(tmp_path) == 0
+    assert reclone_hung_scope_clones(tmp_path, None) == 0
     assert hung.exists()  # never deleted with the setting off
     assert not hung_marker_dir(hung).exists()
     assert not hung_marker_dir(_root(tmp_path) / _sid(2)).exists()
@@ -686,7 +754,7 @@ def test_markers_of_a_deleted_scope_are_removed(tmp_path, on):
     gone = _root(tmp_path) / _sid(1)
     _mark(gone, host="old-pod")
     _clone_dir(tmp_path, _sid(2))  # git_sources exists with something in it
-    assert reclone_hung_scope_clones(tmp_path) == 0
+    assert reclone_hung_scope_clones(tmp_path, None) == 0
     assert not hung_marker_dir(gone).exists()
 
 
@@ -697,7 +765,7 @@ def test_a_partly_deleted_clone_keeps_its_markers(tmp_path, on, monkeypatch):
         raise FileNotFoundError(2, "No such file", str(Path(path) / ".git" / "x"))
 
     monkeypatch.setattr(git_fetcher_module.shutil, "rmtree", _vanishing_entry)
-    assert reclone_hung_scope_clones(tmp_path) == 0
+    assert reclone_hung_scope_clones(tmp_path, None) == 0
     assert clone.exists() and _markers(clone)
 
 
@@ -706,7 +774,7 @@ def test_a_non_positive_fetch_timeout_is_warned_about(
 ):
     monkeypatch.setattr(opal_server_config, "SCOPES_GIT_FETCH_TIMEOUT", 0)
     _clone_dir(tmp_path, _sid(1), hung=True)
-    assert reclone_hung_scope_clones(tmp_path) == 1  # still acts on what it finds
+    assert reclone_hung_scope_clones(tmp_path, None) == 1  # still acts on what it finds
     assert any("is not positive" in m for m in warnings_logged)
 
 
@@ -718,14 +786,15 @@ def test_one_repo_hung_across_its_shards_is_recloned(tmp_path, on):
     repositories."""
     for shard in range(3):
         _clone_dir(tmp_path, _sid(1, shard), hung=True)
-    for n in range(2, 6):
+    for n in range(2, 4):
         _clone_dir(tmp_path, _sid(n))
-    assert reclone_hung_scope_clones(tmp_path) == 3
+    # 1 of 3 repositories; counted per shard it would be 3 of 5, an outage.
+    assert reclone_hung_scope_clones(tmp_path, None) == 3
 
 
 def test_a_single_repo_deployment_is_recloned(tmp_path, on):
     _clone_dir(tmp_path, _sid(1), hung=True)
-    assert reclone_hung_scope_clones(tmp_path) == 1
+    assert reclone_hung_scope_clones(tmp_path, None) == 1
 
 
 def test_a_provider_wide_hang_keeps_every_clone(tmp_path, on):
@@ -733,7 +802,7 @@ def test_a_provider_wide_hang_keeps_every_clone(tmp_path, on):
     for n in (1, 2, 3):
         _clone_dir(tmp_path, _sid(n), hung=True)
     healthy = _clone_dir(tmp_path, _sid(4))
-    assert reclone_hung_scope_clones(tmp_path) == 0
+    assert reclone_hung_scope_clones(tmp_path, None) == 0
     for n in (1, 2, 3):
         clone = _root(tmp_path) / _sid(n)
         assert clone.exists() and _markers(clone)
@@ -751,7 +820,7 @@ def test_a_provider_wide_hang_keeps_every_clone(tmp_path, on):
 def test_the_provider_wide_guard_boundaries(tmp_path, on, hung, total, recloned):
     for n in range(total):
         _clone_dir(tmp_path, _sid(n), hung=n < hung)
-    assert reclone_hung_scope_clones(tmp_path) == recloned
+    assert reclone_hung_scope_clones(tmp_path, None) == recloned
 
 
 def test_clones_no_scope_uses_do_not_dilute_the_guard(tmp_path, on):
@@ -778,12 +847,34 @@ def test_hung_clones_no_scope_uses_are_deleted_but_never_count(tmp_path, on):
     assert reclone_hung_scope_clones(tmp_path, live) == 3
 
 
+def test_live_sources_without_a_clone_do_not_dilute_the_guard(tmp_path, on):
+    """Five live sources, two cloned, both hung: an outage, counted from the
+    clones on disk."""
+    live = {_sid(n) for n in range(1, 6)}
+    for n in (1, 2):
+        _clone_dir(tmp_path, _sid(n), hung=True)
+    assert reclone_hung_scope_clones(tmp_path, live) == 0
+
+
+@pytest.mark.parametrize("live", [set(), {_sid(99)}])
+def test_no_live_clone_on_disk_keeps_every_hung_clone(
+    tmp_path, on, live, warnings_logged
+):
+    """An empty scope list (a store being repopulated, say) must not turn the
+    guard off: a scope that comes back during an outage still has its clone."""
+    for n in (1, 2, 3):
+        _clone_dir(tmp_path, _sid(n), hung=True)
+    assert reclone_hung_scope_clones(tmp_path, live) == 0
+    assert all((_root(tmp_path) / _sid(n)).exists() for n in (1, 2, 3))
+    assert any("none is a clone of a current scope" in m for m in warnings_logged)
+
+
 # --- the preload wiring ---------------------------------------------------------------------
 
 
 @pytest.fixture
 def preload(monkeypatch, tmp_path):
-    state = {"events": [], "sync": None, "scopes": [], "live": []}
+    state = {"events": [], "sync": None, "scopes": [], "live": [], "loops": []}
     monkeypatch.setattr(opal_common_logger, "_logs_configured", True)
     monkeypatch.setattr(task_module, "configure_server_metrics", lambda: None)
     monkeypatch.setattr(task_module, "RedisDB", lambda url: object())
@@ -793,6 +884,7 @@ def preload(monkeypatch, tmp_path):
             pass
 
         async def all(self):
+            state["loops"].append(asyncio.get_running_loop())
             return state["scopes"]
 
     monkeypatch.setattr(task_module, "ScopeRepository", _Scopes)
@@ -802,13 +894,14 @@ def preload(monkeypatch, tmp_path):
             pass
 
         async def sync_scopes(self, *a, **k):
+            state["loops"].append(asyncio.get_running_loop())
             state["events"].append("sync_scopes")
             if state["sync"]:
                 state["sync"]()
 
     real = task_module.reclone_hung_scope_clones
 
-    def _sweep(base_dir, live_source_ids=None):
+    def _sweep(base_dir, live_source_ids):
         state["events"].append("sweep")
         state["live"].append(live_source_ids)
         return real(base_dir, live_source_ids)
@@ -829,8 +922,15 @@ def test_preload_sweeps_before_it_syncs(preload):
 
 
 def test_preload_end_to_end(tmp_path, on, preload):
-    hung = _clone_dir(tmp_path, _sid(1), hung=True)
-    healthy = _clone_dir(tmp_path, _sid(2))
+    policies = [
+        SimpleNamespace(url=f"https://example.com/{n}.git", branch="main")
+        for n in (1, 2)
+    ]
+    preload["scopes"] = [SimpleNamespace(policy=p) for p in policies]
+    hung, healthy = (
+        _clone_dir(tmp_path, GitPolicyFetcher.source_id(p), hung=h)
+        for p, h in zip(policies, (True, False))
+    )
     at_sync = {}
     preload["sync"] = lambda: at_sync.update(
         hung=hung.exists(), healthy=healthy.exists()
@@ -845,7 +945,22 @@ def test_no_preload_when_scopes_are_off(preload, monkeypatch):
     assert preload["events"] == []
 
 
-def test_preload_counts_only_the_scopes_sources(preload):
+def test_preload_reads_the_scopes_and_syncs_in_one_event_loop(on, preload):
+    """The Redis client binds its connections to the loop that first uses
+    them: reading the scopes in one asyncio.run and syncing in another fails
+    at a real start."""
+    preload["run"]()
+    first, second = preload["loops"]
+    assert first is second
+
+
+def test_preload_reads_no_scopes_with_the_setting_off(preload):
+    preload["run"]()
+    assert preload["live"] == [None]
+    assert len(preload["loops"]) == 1  # the sync's own read only
+
+
+def test_preload_counts_only_the_scopes_sources(on, preload):
     policy = SimpleNamespace(url="https://example.com/r.git", branch="main")
     preload["scopes"] = [SimpleNamespace(policy=policy)]
     preload["run"]()

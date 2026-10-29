@@ -26,7 +26,9 @@ the purge driven by an actual scope delete/repoint.
 There is therefore NO reconciliation of any kind in this PR, and exactly ONE
 path RECLAIMS a clone dir — removes it and leaves it removed: the best-effort
 local floor ``ScopesService.delete_scope`` spawns on the worker serving the
-DELETE.
+DELETE. That local floor is master's behaviour (master removed the dir
+inline there, with no broadcast involved), kept so a dropped broadcast does not
+regress against the merge base.
 
 Two other ``rmtree`` sites exist and are not reclamation: ``git_fetcher``'s
 invalid-repo recovery and ``_clone``'s partial-dir wipe both delete-and-replace
@@ -43,13 +45,12 @@ repack lock, and the preload's sync then re-creates them. The hung-op
 marker dirs beside the clones (``git_sources/<id>.hung``) are removed by
 ``shutil.rmtree`` too, whatever the setting: by ``clear_hung_markers`` after a
 fetch or clone that succeeds within its timeout, by the sweep for markers
-whose clone is gone, and on every start with the setting off. Their paths
+whose clone is gone and after each hung clone it deletes, and on every start
+with the setting off. Their paths
 come either from ``hung_marker_dir(self._repo_path)`` or from a ``git_sources``
 listing whose name, less the ``.hung`` suffix, matches ``SOURCE_ID_RE``, so they
 never leave ``git_sources``. An audit of "can caller-controlled input reach an
-rmtree?" has to account for all four clone sites and these marker removals. That is
-master's behaviour (master removed it inline there, with no broadcast involved),
-kept so a dropped broadcast does not regress against the merge base.
+rmtree?" has to account for all four clone sites and these marker removals.
 
 What that leaves on disk, stated plainly because nothing else will reclaim it:
 

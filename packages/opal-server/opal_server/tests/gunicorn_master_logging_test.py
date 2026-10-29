@@ -188,22 +188,11 @@ def _fake_redis_db(url):
     return object()
 
 
-class _NoScopes:
-    """The preload reads the scopes before its sweep: none here."""
-
-    def __init__(self, db):
-        pass
-
-    async def all(self):
-        return []
-
-
 @pytest.fixture
-def stub_preload(monkeypatch):
+def stub_preload(monkeypatch, preload_sandbox):
     monkeypatch.setattr(opal_server_config, "REDIS_URL", CREDENTIALED_REDIS_URL)
     monkeypatch.setattr(task_module, "configure_server_metrics", lambda: None)
     monkeypatch.setattr(task_module, "RedisDB", _fake_redis_db)
-    monkeypatch.setattr(task_module, "ScopeRepository", _NoScopes)
     monkeypatch.setattr(task_module, "ScopesService", _FakeScopesService)
     monkeypatch.setattr(task_module, "drain_git_ops", lambda timeout: True)
     monkeypatch.setattr(task_module, "shutdown_git_executor", lambda: None)

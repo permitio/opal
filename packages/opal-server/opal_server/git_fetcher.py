@@ -614,20 +614,26 @@ def _remove_hung_marker(marker: Path) -> None:
         )
 
 
-def _start_marker_thread(target, *args) -> None:
+def _start_marker_thread(target, *args, what: str, path: Path) -> None:
     """Run marker housekeeping on a daemon thread of its own.
 
     Never raises: at the process's thread limit (most likely while many
     timed-out git threads linger) the start fails, and that must not
     replace the git op's own outcome. The markers then stay as they
-    are until a later op's housekeeping.
+    are until a later op's housekeeping. what and path say, in the
+    warning, which clone lost what.
     """
     try:
         threading.Thread(
             target=target, args=args, name="opal-git-hung-marker", daemon=True
         ).start()
     except RuntimeError as e:
-        logger.warning("Could not start the hung-op marker thread: {err}", err=repr(e))
+        logger.warning(
+            "Could not start a thread to {what} {path}: {err}",
+            what=what,
+            path=path,
+            err=repr(e),
+        )
 
 
 def clear_hung_markers(markers: Path) -> None:
@@ -639,21 +645,30 @@ def clear_hung_markers(markers: Path) -> None:
     outlive a later good fetch. Blocking: run_in_git_executor calls it
     on the op's own thread. Never raises.
     """
-    try:
-        shutil.rmtree(markers)
-    except FileNotFoundError:
-        pass  # the common case: nothing ever hung
-    except OSError as e:
-        logger.warning(
-            "Could not remove hung-op markers {path}: {err}",
-            path=markers,
-            err=repr(e),
-        )
+    for attempt in (1, 2):
+        try:
+            shutil.rmtree(markers)
+            return
+        except FileNotFoundError as e:
+            if not os.path.lexists(markers):
+                return  # gone: nothing hung, or another process removed it
+            # On Python 3.10-3.12 rmtree stops when an entry it listed is
+            # removed before it gets there (another process's op returning
+            # and removing its own marker), leaving the rest: once more.
+            err: OSError = e
+        except OSError as e:
+            err = e
+            break
+    logger.warning(
+        "Could not remove hung-op markers {path}: {err}",
+        path=markers,
+        err=repr(err),
+    )
 
 
-# When at least this many distinct repositories have hung clones, and they are
-# at least _HUNG_RECLONE_MAX_REPO_SHARE of the repositories the current scopes
-# use (counted from their clones on disk), the hang is most likely
+# When the hung clones of the current scopes' sources span at least this many
+# of their repositories, and at least _HUNG_RECLONE_MAX_REPO_SHARE of them
+# (counted from their clones on disk), the hang is most likely
 # the git provider's rather than one repository's: deleting every clone would
 # turn stale-but-served policy into no policy for every scope while the remote
 # is still down, so the sweep deletes nothing.
@@ -667,7 +682,7 @@ def _repo_of(source_id: str) -> str:
 
 
 def reclone_hung_scope_clones(
-    base_dir: Path, live_source_ids: Optional[AbstractSet[str]] = None
+    base_dir: Path, live_source_ids: Optional[AbstractSet[str]]
 ) -> int:
     """Delete every scope clone with a hung-op marker, left by a git op that
     never finished before its server process ended; return how many were
@@ -682,7 +697,10 @@ def reclone_hung_scope_clones(
     live_source_ids, the source ids the current scopes use, bounds that count
     to them: clone dirs that no scope uses any more (a repointed scope's old
     one, say) stay on disk and would otherwise dilute the share. None counts
-    every clone dir.
+    every clone dir; the setting off ignores it. When no clone on disk is
+    one the scopes use (the scope list came back empty, say), nothing is
+    deleted: nothing serves from those clones, so keeping them costs
+    nothing, while a scope that comes back during an outage still has one.
     Runs under the repack lock and does nothing while a repack holds it. With
     the setting off it only removes markers, which mean nothing then. Never
     raises: a clone it cannot fully delete keeps its markers for the next start.
@@ -777,9 +795,18 @@ def _reclone_hung_under_lock(
             )
     if not hung:
         return 0
-    # A hung clone no scope uses is still deleted (nothing serves from it),
-    # but only the live ones count towards an outage.
+    # A hung clone no scope uses is deleted along with the others (nothing
+    # serves from it) unless the guard keeps everything, but only the live
+    # ones count towards an outage.
     live = clones if live_source_ids is None else clones & live_source_ids
+    if not live:
+        logger.warning(
+            "{hung} scope clones had a git op still hung when its server "
+            "process ended, but none is a clone of a current scope's source: "
+            "keeping them all",
+            hung=len(hung),
+        )
+        return 0
     hung_repos = {_repo_of(s) for s in hung if s in live}
     all_repos = {_repo_of(s) for s in live}
     if len(hung_repos) >= _HUNG_RECLONE_MIN_REPOS_FOR_OUTAGE and len(
@@ -983,7 +1010,12 @@ async def run_in_git_executor(
                     # earlier hang calls for a fresh clone. Only a stat on the
                     # common path; the rare removal runs on a thread of its
                     # own, so it never adds to this op's time.
-                    _start_marker_thread(clear_hung_markers, marker_dir)
+                    _start_marker_thread(
+                        clear_hung_markers,
+                        marker_dir,
+                        what="clear the stale hung-op markers in",
+                        path=marker_dir,
+                    )
 
     sem = _get_live_ops_semaphore()
     await sem.acquire()
@@ -1032,7 +1064,10 @@ async def run_in_git_executor(
                 # On a thread of its own, never awaited: the marker sits on the
                 # clones' volume, whose slowness may be what made the op hang,
                 # and neither the caller nor the live-op slot may wait for it.
-                _start_marker_thread(_mark_hung)
+                # Lost, the hang goes unrecorded: a restart won't re-clone.
+                _start_marker_thread(
+                    _mark_hung, what="record the hang of this op in", path=hung_marker
+                )
             raise TimeoutError(f"git operation exceeded {timeout}s")
         return fut.result()
     finally:
