@@ -565,18 +565,22 @@ def test_clear_hung_markers_warns_when_the_retry_fails_too(
 ):
     clone = _clone_dir(tmp_path, _sid(1), hung=True)
 
+    calls = []
+
     def _vanishing(path, *a, **k):
+        calls.append(path)
         raise FileNotFoundError(2, "No such file", str(Path(path) / "gone"))
 
     monkeypatch.setattr(git_fetcher_module.shutil, "rmtree", _vanishing)
     clear_hung_markers(hung_marker_dir(clone))
+    assert len(calls) == 2  # one retry, no more
     assert any("Could not remove hung-op markers" in m for m in warnings_logged)
 
 
 def test_clear_hung_markers_on_a_dir_already_gone_is_quiet(tmp_path, warnings_logged):
     """Another process removed it first: nothing to do, nothing to warn."""
     clear_hung_markers(tmp_path / "gone.hung")
-    assert not any("Could not remove hung-op markers" in m for m in warnings_logged)
+    assert warnings_logged == []
 
 
 def test_clear_hung_markers_never_raises(tmp_path, monkeypatch):
