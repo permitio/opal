@@ -32,6 +32,7 @@ from opal_common.monitoring import metrics
 from opal_common.schemas.policy import PolicyBundle
 from opal_common.schemas.policy_source import GitPolicyScopeSource, NoAuthData
 from opal_common.schemas.scopes import Scope
+from opal_server import git_fetcher as git_fetcher_module
 from opal_server.config import opal_server_config
 from opal_server.git_fetcher import (
     BranchHeadNotFoundError,
@@ -821,3 +822,279 @@ async def test_the_trigger_passes_the_backoff_flag_on():
     await task.trigger(None, {"scope_id": "s"})
 
     assert [k["honor_backoff"] for k in seen] == [True, False]
+
+
+# --- what is served and stored stays the scope's own -----------------------
+#
+# Real clones of a local origin, no mocked git: the claims the change rests on
+# for the policy a client ends up with.
+
+
+def _shared_bed(tmp_path):
+    """An origin with `main`, and a service whose clone of it is shared by
+    every scope on it (the default single shard)."""
+    origin = git.Repo.init(tmp_path / "origin", initial_branch="main")
+    _commit(origin, "policy/app.rego", 'package app\n\nmarker := "main"\n')
+    return origin, str(tmp_path / "origin")
+
+
+def _git_scope(scope_id, url, branch):
+    return Scope(
+        scope_id=scope_id,
+        policy=GitPolicyScopeSource(
+            source_type="git", url=url, branch=branch, auth=NoAuthData()
+        ),
+    )
+
+
+def _push_branch(origin, branch, marker):
+    """Create ``branch`` on the origin from main, with its own marker; return
+    its head."""
+    origin.git.checkout("-b", branch, "main")
+    head = _commit(
+        origin, "policy/app.rego", f'package app\n\nmarker := "{marker}"\n'
+    ).hexsha
+    origin.git.checkout("main")
+    return head
+
+
+def _rego(bundle):
+    return [m.rego for m in bundle.policy_modules]
+
+
+class SyncingPubSub(RecordingPubSub):
+    """Delivers the webhook topic to a watcher task, as the broadcaster does on
+    every leader, and records everything."""
+
+    def __init__(self, task):
+        super().__init__()
+        self._task = task
+        self.syncs_running = []
+
+    async def publish(self, topics, data=None):
+        await super().publish(topics, data)
+        if topics == opal_server_config.POLICY_REPO_WEBHOOK_TOPIC:
+            self.syncs_running.append(
+                asyncio.ensure_future(self._task.trigger(topics, data))
+            )
+
+
+@pytest.mark.asyncio
+async def test_a_held_request_is_served_exactly_its_own_branch(
+    tmp_path, monkeypatch, clear_fetcher_caches
+):
+    """A pod that missed a PUT's broadcast: the scope's record names a branch
+    its shared clone has never fetched. The request is held, its sync fetches,
+    and the bundle is the branch's own head, byte for byte, not the content of
+    the other branch living in the same clone; the other scope's bundle is
+    unchanged by the fetch.
+
+    Mutation: building the bundle from any ref but the scope's branch head
+    (the scope ref, or the clone's checked-out branch) fails the content or
+    hash assertions.
+    """
+    monkeypatch.setattr(opal_server_config, "SCOPES_POLICY_CLONE_WAIT_SECONDS", 20.0)
+    origin, url = _shared_bed(tmp_path)
+    main_head = origin.head.commit.hexsha
+    warm = _git_scope("warm", url, "main")
+    scopes = FakeScopeRepository([warm])
+    task = ScopesPolicyWatcherTask.__new__(ScopesPolicyWatcherTask)
+    pubsub = SyncingPubSub(task)
+    service = ScopesService(base_dir=tmp_path, scopes=scopes, pubsub_endpoint=pubsub)
+    task._service = service
+    await service.sync_scope(scope_id="warm")  # the clone, with main only
+
+    env_head = _push_branch(origin, "env2", "env2")
+    # The record a pod that missed the broadcast holds: no sync of it ran here.
+    await scopes.put(_git_scope("moved", url, "env2"))
+
+    app = FastAPI()
+    app.include_router(
+        init_scope_router(scopes, FakeAuthenticator(), pubsub, service),
+        prefix="/scopes",
+    )
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://bed") as client:
+        moved = await client.get("/scopes/moved/policy")
+        still = await client.get("/scopes/warm/policy")
+    await asyncio.gather(*pubsub.syncs_running)
+
+    assert moved.status_code == 200, moved.text
+    moved_bundle = PolicyBundle(**moved.json())
+    assert moved_bundle.hash == env_head
+    assert _rego(moved_bundle) == ['package app\n\nmarker := "env2"\n']
+
+    assert still.status_code == 200
+    warm_bundle = PolicyBundle(**still.json())
+    assert warm_bundle.hash == main_head
+    assert _rego(warm_bundle) == ['package app\n\nmarker := "main"\n']
+
+    # The fetched branch is the origin's, commit for commit.
+    clone = git.Repo(GitPolicyFetcher.repo_clone_path(tmp_path, warm.policy))
+    assert clone.commit("refs/remotes/origin/env2").hexsha == env_head
+    assert clone.commit("refs/remotes/origin/main").hexsha == main_head
+
+
+@pytest.mark.asyncio
+async def test_a_coalesced_sync_finds_a_branch_another_scopes_fetch_brought(
+    tmp_path, monkeypatch, clear_fetcher_caches
+):
+    """The coalescing in `_should_fetch` skips a fetch for a branch missing
+    from the clone only when a fetch of the same clone started after the
+    request. That is sound because a fetch brings every branch, whichever
+    scope asked for it: a branch the origin had when such a fetch started is
+    in the clone, so the skip is reached only for a branch the origin did not
+    have after the request arrived. Here the sync after another scope's fetch
+    finds its branch, at the origin's head, without fetching, and notifies its
+    clients. A fetch that started BEFORE the request does not count, nor does
+    one under way when the branch was pushed.
+
+    Mutation: a fetch narrowed to the asking scope's branch fails the first
+    part; treating any earlier fetch as an answer fails the second; recording
+    a fetch's completion time instead of its start fails the third. Dropping
+    the coalescing is test_a_burst_for_a_missing_branch_costs_one_fetch's."""
+    origin, url = _shared_bed(tmp_path)
+    scopes = FakeScopeRepository([_git_scope("warm", url, "main")])
+    pubsub = RecordingPubSub()
+    service = ScopesService(base_dir=tmp_path, scopes=scopes, pubsub_endpoint=pubsub)
+    await service.sync_scope(scope_id="warm")
+    source_id = GitPolicyFetcher.source_id(_git_scope("warm", url, "main").policy)
+
+    # 1. The branch is pushed, the request arrives, then another scope's
+    #    forced sync fetches the shared clone.
+    env2_head = _push_branch(origin, "env2", "env2")
+    await scopes.put(_git_scope("s2", url, "env2"))
+    asked = datetime.datetime.now()
+    await service.sync_scope(scope_id="warm", force_fetch=True)
+    fetched_at = GitPolicyFetcher.repos_last_fetched[source_id]
+    assert fetched_at > asked
+    published = len(pubsub.published)
+
+    await service.sync_scope(scope_id="s2", req_time=asked)
+
+    assert (
+        GitPolicyFetcher.repos_last_fetched[source_id] == fetched_at
+    ), "the coalesced sync fetched again"
+    assert len(pubsub.published) == published + 1, "s2's clients were not told"
+    clone = git.Repo(
+        GitPolicyFetcher.repo_clone_path(tmp_path, scopes._scopes["s2"].policy)
+    )
+    assert clone.commit("refs/remotes/origin/env2").hexsha == env2_head
+
+    # 2. A branch pushed after the last fetch started, asked for after the
+    #    push: that fetch does not answer the request, so the sync fetches.
+    env3_head = _push_branch(origin, "env3", "env3")
+    await scopes.put(_git_scope("s3", url, "env3"))
+    asked = datetime.datetime.now()
+    assert fetched_at < asked
+
+    await service.sync_scope(scope_id="s3", req_time=asked)
+
+    assert GitPolicyFetcher.repos_last_fetched[source_id] > asked
+    assert clone.commit("refs/remotes/origin/env3").hexsha == env3_head
+
+    # 3. A branch pushed WHILE a fetch runs, after that fetch read the
+    #    origin's refs, and asked for before it completes: the fetch did not
+    #    bring it, so it must not count as answering the request. This is why
+    #    the fetch's start time is recorded, not its completion.
+    real_executor = git_fetcher_module.run_in_git_executor
+    during = {}
+
+    async def executor(func, *args, **kwargs):
+        result = await real_executor(func, *args, **kwargs)
+        if during.pop("arm", False):
+            during["head"] = _push_branch(origin, "env4", "env4")
+            during["asked"] = datetime.datetime.now()
+        return result
+
+    monkeypatch.setattr(git_fetcher_module, "run_in_git_executor", executor)
+    during["arm"] = True
+    await service.sync_scope(scope_id="warm", force_fetch=True)
+    assert "head" in during, "the fetch did not run"
+    await scopes.put(_git_scope("s4", url, "env4"))
+
+    await service.sync_scope(scope_id="s4", req_time=during["asked"])
+
+    assert clone.commit("refs/remotes/origin/env4").hexsha == during["head"]
+
+
+@pytest.mark.asyncio
+async def test_a_repoint_whose_fetch_fails_tells_nobody(tmp_path, clear_fetcher_caches):
+    """A repoint forces the fetch so that its update-all never names a stale
+    head. When that fetch fails, nothing is published and the scope's ref
+    does not move: a client is not sent back to whatever the clone held from
+    the last time the scope used this repository.
+
+    Mutation: notifying before the fetch, or on its failure, publishes."""
+    origin, url = _shared_bed(tmp_path)
+    scope = _git_scope("s", url, "main")
+    pubsub = RecordingPubSub()
+    service = ScopesService(
+        base_dir=tmp_path, scopes=FakeScopeRepository([scope]), pubsub_endpoint=pubsub
+    )
+    await service.sync_scope(scope_id="s")
+    assert len(pubsub.published) == 1
+    clone = git.Repo(GitPolicyFetcher.repo_clone_path(tmp_path, scope.policy))
+    ref_before = clone.commit("scopes/s").hexsha
+
+    _commit(origin, "policy/app.rego", 'package app\n\nmarker := "newer"\n')
+    (tmp_path / "origin").rename(tmp_path / "gone")  # the remote is unreachable
+
+    task = ScopesPolicyWatcherTask.__new__(ScopesPolicyWatcherTask)
+    task._service = service
+    try:
+        await task.trigger(
+            None, {"scope_id": "s", "force_fetch": True, "repointed": True}
+        )
+    except Exception:
+        pass  # a failed fetch may surface; what matters is what was published
+
+    assert len(pubsub.published) == 1, "a failed repoint fetch notified clients"
+    assert clone.commit("scopes/s").hexsha == ref_before
+
+
+def test_put_stores_the_record_exactly_as_sent(monkeypatch):
+    """The change adds keys to the sync message PUT /scopes publishes, and
+    nothing else: the stored record, its data entries included, is the request
+    body, and the repoint purge names the old source as before."""
+    monkeypatch.setattr(scopes_api, "verify_private_key_or_throw", lambda s: None)
+    old = _scope(url="https://git/a.git")
+    new = Scope(
+        scope_id="live",
+        policy=GitPolicyScopeSource(
+            source_type="git",
+            url="https://git/b.git",
+            branch="env",
+            auth=NoAuthData(auth_type="none"),
+            directories=["policy"],
+        ),
+        data={
+            "entries": [
+                {
+                    "url": "https://data.example/v1/facts",
+                    "topics": ["policy_data"],
+                    "dst_path": "/facts",
+                }
+            ]
+        },
+    )
+    repo = FakeScopeRepository([old])
+    pubsub = RecordingPubSub()
+    service = ScopesService(
+        base_dir=Path("/unused"), scopes=repo, pubsub_endpoint=pubsub
+    )
+    app = FastAPI()
+    app.include_router(
+        init_scope_router(repo, FakeAuthenticator(), pubsub, service), prefix="/scopes"
+    )
+
+    assert TestClient(app).put("/scopes", json=new.model_dump()).status_code == 201
+
+    assert repo._scopes["live"] == new
+    assert repo._scopes["live"].model_dump() == new.model_dump()
+    purges = [
+        d for t, d in pubsub.published if t == [opal_server_config.SCOPES_PURGE_CHANNEL]
+    ]
+    assert [(p["source_id"], p["reason"]) for p in purges] == [
+        (GitPolicyFetcher.source_id(old.policy), "repoint")
+    ]
