@@ -189,11 +189,10 @@ def _fake_redis_db(url):
 
 
 @pytest.fixture
-def stub_preload(monkeypatch):
+def stub_preload(monkeypatch, preload_sandbox):
     monkeypatch.setattr(opal_server_config, "REDIS_URL", CREDENTIALED_REDIS_URL)
     monkeypatch.setattr(task_module, "configure_server_metrics", lambda: None)
     monkeypatch.setattr(task_module, "RedisDB", _fake_redis_db)
-    monkeypatch.setattr(task_module, "ScopeRepository", lambda db: object())
     monkeypatch.setattr(task_module, "ScopesService", _FakeScopesService)
     monkeypatch.setattr(task_module, "drain_git_ops", lambda timeout: True)
     monkeypatch.setattr(task_module, "shutdown_git_executor", lambda: None)

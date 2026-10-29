@@ -263,6 +263,41 @@ class OpalServerConfig(Confi):
         "handles are left unfreed by the pre-fork cache reset, avoiding a use-after-free "
         "(0 = don't wait).",
     )
+    SCOPES_GIT_RECLONE_HUNG_ON_START = confi.bool(
+        "SCOPES_GIT_RECLONE_HUNG_ON_START",
+        False,
+        description="Whether a server start clones again the scope clones on which a git "
+        "op was still hung when its server process ended. A fetch or clone "
+        "that runs past SCOPES_GIT_FETCH_TIMEOUT keeps running on its daemon "
+        "thread, and the clone is not fetched again while it lasts. With this "
+        "on (and SCOPES_GIT_FETCH_TIMEOUT positive), such an op writes a "
+        "marker file of its own, with a unique name, in a directory beside "
+        "the clone (git_sources/SOURCE_ID.hung/, SOURCE_ID being the clone's "
+        "directory name) and removes it when it returns. A marker whose "
+        "process ended first (a container restart, or a worker killed mid-op) "
+        "stays until a fetch or clone of that source succeeds within its "
+        "timeout, which removes them all; a fetch that fails quickly (revoked "
+        "credentials, a deleted repository) or succeeds only after its "
+        "timeout does not remove it. With this off a start removes them all. "
+        "A container restarted while an op was still hung (by an "
+        "orchestrator's health check, say) keeps its clones on its volume and "
+        "would otherwise go back to that clone, while a new pod (empty "
+        "volume) clones fresh. The pre-fork scope preload, which "
+        "scripts/gunicorn_conf.py runs in the gunicorn master before any "
+        "worker exists (as the Docker image does; opal-server run has no "
+        "preload), deletes every clone with a marker before its sync, so the "
+        "sync clones it fresh, as on a new pod: if that clone fails or hangs "
+        "too (the remote is still unreachable), the source has no clone, and "
+        "its scopes no policy, until a clone succeeds, again as on a new pod. "
+        "When the marked clones of the current scopes' sources span at least "
+        "two of the repositories those scopes have a clone of on disk, and at "
+        "least half of them, the hang is most likely the git provider's and "
+        "nothing is deleted, so every scope keeps its last fetched policy; "
+        "nothing is deleted either when no clone on disk is one the current "
+        "scopes use. Do not share BASE_DIR between running servers with this "
+        "on: any marker counts, whoever wrote it. Each clone deleted "
+        "increments opal_server.scopes.hung_clone_recloned.",
+    )
     SCOPES_GIT_MAX_ZOMBIES = confi.int(
         "SCOPES_GIT_MAX_ZOMBIES",
         # 4x the default SCOPES_GIT_MAX_WORKERS. Once this many git ops (live +
