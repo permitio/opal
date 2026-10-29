@@ -181,3 +181,104 @@ class CedarServerOptions(RedactedReprMixin, BaseModel):
         yield match.group("port") or "8180"
 
         # TODO: files
+
+
+class OpenFGAServerOptions(RedactedReprMixin, BaseModel):
+    """Options to configure the OpenFGA server (apply when choosing to run
+    OpenFGA inline)."""
+
+    _redacted_repr_fields: ClassVar[Set[str]] = {
+        "authn_preshared_keys",
+        "datastore_uri",
+    }
+
+    http_addr: str = Field(
+        "0.0.0.0:8080",
+        description="listening address of the OpenFGA HTTP server (e.g., [ip]:<port>)",
+    )
+    grpc_addr: Optional[str] = Field(
+        None,
+        description="listening address of the OpenFGA gRPC server (e.g., [ip]:<port>)",
+    )
+    datastore_engine: Optional[str] = Field(
+        None,
+        description="datastore engine to use (e.g., memory, postgres, mysql)",
+    )
+    datastore_uri: Optional[str] = Field(
+        None,
+        description="connection URI for the datastore engine",
+    )
+    authn_method: Optional[str] = Field(
+        None,
+        description="authentication method (none, preshared, oidc)",
+    )
+    authn_preshared_keys: Optional[str] = Field(
+        None,
+        description="comma-separated preshared keys when authn_method is preshared",
+    )
+    playground_enabled: Optional[bool] = Field(
+        None,
+        description="whether to enable the OpenFGA playground",
+    )
+    log_level: Optional[LogLevel] = Field(
+        None,
+        description="log level for OpenFGA server",
+    )
+
+    model_config = ConfigDict(
+        use_enum_values=True,
+        populate_by_name=True,
+        hide_input_in_errors=True,
+    )
+
+    @field_validator("http_addr")
+    @classmethod
+    def validate_http_addr(cls, v: str) -> str:
+        match = HOST_ADDR_PATTERN.match(v)
+        if not match:
+            raise ValueError(
+                f"Invalid http_addr format: {v}. Expected [ip]:<port>, e.g. '0.0.0.0:8080', ':8080'"
+            )
+        return v
+
+    def get_args(self) -> Iterable[str]:
+        match = HOST_ADDR_PATTERN.match(self.http_addr)
+        if not match:
+            raise ValueError(
+                f"Invalid http_addr format: {self.http_addr}. Expected [ip]:<port>, e.g. '0.0.0.0:8080', ':8080'"
+            )
+        host = match.group("addr") or "0.0.0.0"
+        port = match.group("port") or "8080"
+        yield "--http-addr"
+        yield f"{host}:{port}"
+
+        if self.grpc_addr is not None:
+            yield "--grpc-addr"
+            yield self.grpc_addr
+        if self.datastore_engine is not None:
+            yield "--datastore-engine"
+            yield self.datastore_engine
+        if self.datastore_uri is not None:
+            yield "--datastore-uri"
+            yield self.datastore_uri
+        if self.authn_method is not None:
+            yield "--authn-method"
+            yield self.authn_method
+        if self.authn_preshared_keys is not None:
+            yield "--authn-preshared-keys"
+            yield self.authn_preshared_keys
+        if self.playground_enabled is not None:
+            yield (
+                "--playground-enabled"
+                if self.playground_enabled
+                else "--playground-enabled=false"
+            )
+        if self.log_level is not None:
+            log_level_val = (
+                self.log_level.value
+                if isinstance(self.log_level, Enum)
+                else str(self.log_level)
+            )
+            yield "--log-level"
+            yield log_level_val
+

@@ -1,6 +1,10 @@
 from enum import Enum
 
-from opal_client.engine.options import CedarServerOptions, OpaServerOptions
+from opal_client.engine.options import (
+    CedarServerOptions,
+    OpaServerOptions,
+    OpenFGAServerOptions,
+)
 from opal_client.policy.options import ConnRetryOptions
 from opal_client.policy_store.schemas import PolicyStoreAuth, PolicyStoreTypes
 from opal_common.confi import Confi, confi
@@ -229,6 +233,68 @@ class OpalClientConfig(Confi):
         EngineLogFormat,
         EngineLogFormat.NONE,
         description="The log format to use for inline Cedar logs",
+    )
+
+    # OpenFGA policy store and runner configuration -------------------------------
+
+    POLICY_STORE_OPENFGA_STORE_ID = confi.str(
+        "POLICY_STORE_OPENFGA_STORE_ID",
+        None,
+        description="The OpenFGA store ID to use. If not set, OPAL will look up or create a store by POLICY_STORE_OPENFGA_STORE_NAME.",
+    )
+
+    POLICY_STORE_OPENFGA_STORE_NAME = confi.str(
+        "POLICY_STORE_OPENFGA_STORE_NAME",
+        "opal",
+        description="The OpenFGA store name to look up or create when POLICY_STORE_OPENFGA_STORE_ID is not specified.",
+    )
+
+    POLICY_STORE_OPENFGA_AUTHORIZATION_MODEL_ID = confi.str(
+        "POLICY_STORE_OPENFGA_AUTHORIZATION_MODEL_ID",
+        None,
+        description="Optional initial OpenFGA authorization model ID.",
+    )
+
+    OPENFGA_STORE_ID = confi.str(
+        "OPENFGA_STORE_ID",
+        confi.delay(
+            lambda POLICY_STORE_OPENFGA_STORE_ID=None: POLICY_STORE_OPENFGA_STORE_ID
+        ),
+        description="Alias for POLICY_STORE_OPENFGA_STORE_ID.",
+    )
+
+    OPENFGA_MODEL_ID = confi.str(
+        "OPENFGA_MODEL_ID",
+        confi.delay(
+            lambda POLICY_STORE_OPENFGA_AUTHORIZATION_MODEL_ID=None: POLICY_STORE_OPENFGA_AUTHORIZATION_MODEL_ID
+        ),
+        description="Alias for POLICY_STORE_OPENFGA_AUTHORIZATION_MODEL_ID.",
+    )
+
+    INLINE_OPENFGA_ENABLED = confi.bool(
+        "INLINE_OPENFGA_ENABLED",
+        False,
+        description="Whether or not OPAL should run the OpenFGA server by itself in the same container",
+    )
+
+    INLINE_OPENFGA_EXEC_PATH = confi.str(
+        "INLINE_OPENFGA_EXEC_PATH",
+        None,
+        description="Path to the OpenFGA executable. Defaults to searching for 'openfga' binary in PATH if not specified.",
+    )
+
+    INLINE_OPENFGA_CONFIG = confi.model(
+        "INLINE_OPENFGA_CONFIG",
+        OpenFGAServerOptions,
+        {},
+        description="CLI options used when running `openfga run` inline",
+    )
+
+    INLINE_OPENFGA_LOG_FORMAT: EngineLogFormat = confi.enum(
+        "INLINE_OPENFGA_LOG_FORMAT",
+        EngineLogFormat,
+        EngineLogFormat.NONE,
+        description="The log format to use for inline OpenFGA logs",
     )
 
     # configuration for fastapi routes

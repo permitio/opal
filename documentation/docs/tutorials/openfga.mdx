@@ -1,0 +1,256 @@
+# OpenFGA and OPAL
+
+[OpenFGA](https://openfga.dev/) is an open-source, high-performance Relationship-Based Access Control (ReBAC) and Fine-Grained Authorization (FGA) engine inspired by Google Zanzibar and hosted by the Cloud Native Computing Foundation (CNCF).
+
+OPAL natively supports **OpenFGA** as a policy store (`OPAL_POLICY_STORE_TYPE=OPENFGA`), enabling real-time synchronization of both **OpenFGA authorization models** (from Git repositories in `.fga` DSL, `.json`, or `.yaml` format) and **relationship tuples** (from external data sources and APIs via OPAL's pub/sub data update pipeline).
+
+---
+
+## Key Features
+
+- **Automatic Model Synchronization from Git**: Write authorization models in OpenFGA's `.fga` DSL, `.json`, or `.yaml` formats (including multi-file modular `.fga` repositories) and let OPAL automatically compile and publish new authorization model versions whenever changes are pushed to Git.
+- **Real-Time Relationship Tuple Updates**: Fetch initial relationship tuples via `OPAL_DATA_CONFIG_SOURCES` and stream incremental tuple writes, patches, and deletes in real time using OPAL's event-driven data update notifications.
+- **Distributed OpenFGA Deployments**: Run a single OpenFGA instance or scale out to multiple distributed OpenFGA instances (e.g., sidecars or regional read/write replicas) that stay continuously synchronized from a single OPAL Server.
+- **Flexible Deployment Topologies**: Connect OPAL Client to an external OpenFGA service (`OPAL_INLINE_OPA_ENABLED=false`) or let OPAL Client manage an inline OpenFGA process (`OPAL_INLINE_OPENFGA_ENABLED=true`).
+- **Health & Liveness Monitoring**: Built-in background liveness probing against OpenFGA's `/healthz` endpoint integrated with OPAL Client's `/healthy` and `/ready` probes.
+
+---
+
+## Quick Start
+
+To launch a complete working example of OPAL Server, OPAL Client, and OpenFGA with Docker Compose:
+
+```bash
+git clone https://github.com/permitio/opal.git
+cd opal
+docker compose -f docker/docker-compose-example-openfga.yml up -d
+```
+
+Once started, the following endpoints are available:
+- **OPAL Server**: `http://localhost:7002`
+- **OPAL Client**: `http://localhost:7766`
+- **OpenFGA HTTP API**: `http://localhost:8080`
+- **OpenFGA Playground**: `http://localhost:3000/playground`
+
+---
+
+## Write Policies (Authorization Models)
+
+OPAL supports OpenFGA authorization models written in either the human-friendly **`.fga` DSL** or the **OpenFGA JSON/YAML** schema.
+
+For example, create a `model.fga` file in your policy Git repository (see `docker/docker_files/openfga_policy/model.fga`):
+
+```dsl
+model
+  schema 1.1
+
+type user
+
+type organization
+  relations
+    define member: [user]
+    define admin: [user]
+
+type folder
+  relations
+    define org: [organization]
+    define owner: [user] or admin from org
+    define editor: [user] or owner
+    define viewer: [user, organization#member] or editor
+
+type document
+  relations
+    define parent: [folder]
+    define owner: [user] or owner from parent
+    define editor: [user] or owner or editor from parent
+    define viewer: [user, user:*] or editor or viewer from parent
+```
+
+Configure OPAL Server to watch `.fga` (and/or `.json`) files in your repository:
+
+```bash
+export OPAL_POLICY_REPO_URL=https://github.com/your-org/your-openfga-policies.git
+export OPAL_FILTER_FILE_EXTENSIONS=.fga,.json
+export OPAL_POLICY_REPO_POLICY_EXTENSIONS=.fga,.json
+```
+
+When OPAL Client receives the policy bundle from OPAL Server, it transpiles `.fga` DSL modules (merging multiple modules if present) and writes the resulting authorization model to OpenFGA (`POST /stores/{store_id}/authorization-models`).
+
+---
+
+## Use a Data Fetcher for Relationship Tuples
+
+OPAL's data fetching engine synchronizes relationship tuples from your external services, databases, or APIs into OpenFGA.
+
+### Initial Data Source Configuration
+
+Provide a JSON document containing relationship tuples (for example, `docker/docker_files/openfga_data/data.json`):
+
+```json
+{
+  "tuples": [
+    {
+      "user": "user:anne",
+      "relation": "admin",
+      "object": "organization:acme"
+    },
+    {
+      "user": "user:bob",
+      "relation": "member",
+      "object": "organization:acme"
+    },
+    {
+      "user": "organization:acme",
+      "relation": "org",
+      "object": "folder:engineering"
+    },
+    {
+      "user": "folder:engineering",
+      "relation": "parent",
+      "object": "document:roadmap"
+    },
+    {
+      "user": "user:charlie",
+      "relation": "viewer",
+      "object": "document:roadmap"
+    }
+  ]
+}
+```
+
+Configure `OPAL_DATA_CONFIG_SOURCES` on the OPAL Server so every connecting OPAL Client fetches and reconciles the relationship tuples on startup:
+
+```bash
+export OPAL_DATA_CONFIG_SOURCES='{
+  "config": {
+    "entries": [{
+      "url": "http://openfga_data_nginx/data.json",
+      "topics": ["policy_data"],
+      "dst_path": ""
+    }]
+  }
+}'
+```
+
+### Triggering Live Tuple Updates
+
+You can push incremental relationship changes at any time by publishing a `DataUpdate` event to OPAL Server's `/data/config` endpoint (or via the `opal-client publish-data-update` CLI), using either declarative tuples or explicit `writes` / `deletes`:
+
+```bash
+curl -X POST http://localhost:7002/data/config \
+  -H "Content-Type: application/json" \
+  -d '{
+    "entries": [
+      {
+        "url": "http://openfga_data_nginx/data.json",
+        "topics": ["policy_data"],
+        "dst_path": "",
+        "save_method": "PUT"
+      }
+    ],
+    "reason": "Sync updated relationship tuples to OpenFGA"
+  }'
+```
+
+---
+
+## Run OpenFGA with the Provided Configuration
+
+### Single OpenFGA Client
+
+Use `docker/docker-compose-example-openfga.yml` to run OPAL with a single OpenFGA instance:
+
+```bash
+docker compose -f docker/docker-compose-example-openfga.yml up -d
+```
+
+Key OPAL Client environment variables:
+- `OPAL_POLICY_STORE_TYPE=OPENFGA`
+- `OPAL_POLICY_STORE_URL=http://openfga:8080`
+- `OPAL_POLICY_STORE_OPENFGA_STORE_NAME=opal-demo` (or `OPAL_POLICY_STORE_OPENFGA_STORE_ID` to target a pre-existing store ID)
+- `OPAL_POLICY_STORE_AUTH_TYPE=token` and `OPAL_POLICY_STORE_AUTH_TOKEN=<token>` when OpenFGA is configured with pre-shared key authentication (`--authn-method=preshared`), or `oauth` when using OIDC client credentials.
+
+### Multiple Distributed OpenFGA Clients
+
+To run multiple independent OpenFGA instances (for example, sidecar PDPs across microservices) kept in sync by OPAL Server, use `docker/docker-compose-example-openfga-multi.yml`:
+
+```bash
+docker compose -f docker/docker-compose-example-openfga-multi.yml up -d
+```
+
+This starts two isolated OpenFGA servers (`http://localhost:8080` and `http://localhost:8082`), each paired with its own OPAL Client (`http://localhost:7766` and `http://localhost:7767`). Both OpenFGA instances automatically receive the same authorization model and relationship tuple updates from OPAL Server.
+
+---
+
+## Interacting with OpenFGA
+
+1. **Discover the Store ID**:
+   ```bash
+   STORE_ID=$(curl -s http://localhost:8080/stores | jq -r '.stores[] | select(.name=="opal-demo") | .id')
+   echo "Store ID: $STORE_ID"
+   ```
+
+2. **Inspect Synced Relationship Tuples**:
+   ```bash
+   curl -s -X POST "http://localhost:8080/stores/${STORE_ID}/read" \
+     -H "Content-Type: application/json" \
+     -d '{}' | jq .
+   ```
+
+3. **Perform Authorization Checks (`/check`)**:
+   Check whether `user:anne` (who is `admin` of `organization:acme`, which owns `folder:engineering`, the parent of `document:roadmap`) has `editor` access to `document:roadmap`:
+   ```bash
+   curl -s -X POST "http://localhost:8080/stores/${STORE_ID}/check" \
+     -H "Content-Type: application/json" \
+     -d '{
+       "tuple_key": {
+         "user": "user:anne",
+         "relation": "editor",
+         "object": "document:roadmap"
+       }
+     }' | jq .
+   ```
+   Expected response:
+   ```json
+   {
+     "allowed": true
+   }
+   ```
+
+   Check whether `user:charlie` (a `viewer` on `document:roadmap`) has `editor` access:
+   ```bash
+   curl -s -X POST "http://localhost:8080/stores/${STORE_ID}/check" \
+     -H "Content-Type: application/json" \
+     -d '{
+       "tuple_key": {
+         "user": "user:charlie",
+         "relation": "editor",
+         "object": "document:roadmap"
+       }
+     }' | jq .
+   ```
+   Expected response:
+   ```json
+   {
+     "allowed": false
+   }
+   ```
+
+---
+
+## Monitoring
+
+You can inspect OPAL Server, OPAL Client, and OpenFGA logs and health status at any time:
+
+```bash
+# View OPAL Server and Client logs
+docker compose -f docker/docker-compose-example-openfga.yml logs opal_server
+docker compose -f docker/docker-compose-example-openfga.yml logs opal_client
+
+# Check OPAL Client readiness and liveness (includes OpenFGA /healthz probe)
+curl -i http://localhost:7766/ready
+curl -i http://localhost:7766/healthy
+
+# Check OpenFGA server health directly
+curl -s http://localhost:8080/healthz
+```
