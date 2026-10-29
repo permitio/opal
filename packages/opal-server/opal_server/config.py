@@ -272,7 +272,7 @@ class OpalServerConfig(Confi):
         "its daemon thread, and the clone is not fetched again while it lasts. "
         "With this on (and SCOPES_GIT_FETCH_TIMEOUT positive), such an op writes "
         "a marker file of its own, named after the host and process, in a "
-        "directory beside the clone (git_sources/<source id>.hung/) and removes "
+        "directory beside the clone (git_sources/SOURCE_ID.hung/, SOURCE_ID being the clone's directory name) and removes "
         "it when it returns; a later fetch or clone of that source that succeeds "
         "within its timeout removes them all, and with this off a start removes "
         "them all. A "
