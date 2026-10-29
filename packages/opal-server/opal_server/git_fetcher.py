@@ -645,7 +645,7 @@ def clear_hung_markers(markers: Path) -> None:
     outlive a later good fetch. Blocking: run_in_git_executor calls it
     on the op's own thread. Never raises.
     """
-    for attempt in (1, 2):
+    for _ in range(2):
         try:
             shutil.rmtree(markers)
             return

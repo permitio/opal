@@ -393,10 +393,9 @@ async def test_a_failed_marker_thread_start_keeps_the_ops_outcome(
     release.set()
     started = [m for m in warnings_logged if "Could not start a thread to" in m]
     assert len(started) == 2
-    assert any(
-        "clear the stale hung-op markers in" in m and str(d) in m for m in started
-    )
-    assert any("record the hang of this op in" in m and str(d) in m for m in started)
+    # The hang's marker is a file inside d, so pin each path exactly.
+    assert any(f"clear the stale hung-op markers in {d}: " in m for m in started)
+    assert any(f"record the hang of this op in {d}{os.sep}" in m for m in started)
 
 
 @pytest.mark.asyncio
@@ -572,6 +571,12 @@ def test_clear_hung_markers_warns_when_the_retry_fails_too(
     monkeypatch.setattr(git_fetcher_module.shutil, "rmtree", _vanishing)
     clear_hung_markers(hung_marker_dir(clone))
     assert any("Could not remove hung-op markers" in m for m in warnings_logged)
+
+
+def test_clear_hung_markers_on_a_dir_already_gone_is_quiet(tmp_path, warnings_logged):
+    """Another process removed it first: nothing to do, nothing to warn."""
+    clear_hung_markers(tmp_path / "gone.hung")
+    assert not any("Could not remove hung-op markers" in m for m in warnings_logged)
 
 
 def test_clear_hung_markers_never_raises(tmp_path, monkeypatch):
@@ -847,6 +852,17 @@ def test_hung_clones_no_scope_uses_are_deleted_but_never_count(tmp_path, on):
     assert reclone_hung_scope_clones(tmp_path, live) == 3
 
 
+def test_hung_leftovers_beside_healthy_live_clones_are_deleted(tmp_path, on):
+    live = {_sid(1), _sid(2)}
+    for s in live:
+        _clone_dir(tmp_path, s)
+    leftovers = [_clone_dir(tmp_path, _sid(n), hung=True) for n in (5, 6)]
+    assert reclone_hung_scope_clones(tmp_path, live) == 2
+    for c in leftovers:
+        assert not c.exists() and not hung_marker_dir(c).exists()
+    assert all((_root(tmp_path) / s).exists() for s in live)
+
+
 def test_live_sources_without_a_clone_do_not_dilute_the_guard(tmp_path, on):
     """Five live sources, two cloned, both hung: an outage, counted from the
     clones on disk."""
@@ -874,7 +890,14 @@ def test_no_live_clone_on_disk_keeps_every_hung_clone(
 
 @pytest.fixture
 def preload(monkeypatch, tmp_path):
-    state = {"events": [], "sync": None, "scopes": [], "live": [], "loops": []}
+    state = {
+        "events": [],
+        "sync": None,
+        "scopes": [],
+        "live": [],
+        "loops": [],
+        "reads": 0,
+    }
     monkeypatch.setattr(opal_common_logger, "_logs_configured", True)
     monkeypatch.setattr(task_module, "configure_server_metrics", lambda: None)
     monkeypatch.setattr(task_module, "RedisDB", lambda url: object())
@@ -884,6 +907,7 @@ def preload(monkeypatch, tmp_path):
             pass
 
         async def all(self):
+            state["reads"] += 1
             state["loops"].append(asyncio.get_running_loop())
             return state["scopes"]
 
@@ -957,7 +981,7 @@ def test_preload_reads_the_scopes_and_syncs_in_one_event_loop(on, preload):
 def test_preload_reads_no_scopes_with_the_setting_off(preload):
     preload["run"]()
     assert preload["live"] == [None]
-    assert len(preload["loops"]) == 1  # the sync's own read only
+    assert preload["reads"] == 0  # the sync stub reads none either
 
 
 def test_preload_counts_only_the_scopes_sources(on, preload):
