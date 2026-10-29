@@ -274,12 +274,13 @@ class OpalServerConfig(Confi):
         "a marker file of its own, named after the host and process, in a "
         "directory beside the clone (git_sources/<source id>.hung/) and removes "
         "it when it returns; a later fetch or clone of that source that succeeds "
-        "within its timeout removes them all, whether or not this is on. A "
-        "container restarted while one was still hung (by a liveness probe on "
-        "FETCH_HEAD age, say) keeps its clones on its volume and would otherwise "
+        "within its timeout removes them all, and with this off a start removes "
+        "them all. A "
+        "container restarted while one was still hung (by an orchestrator's "
+        "health check, say) keeps its clones on its volume and would otherwise "
         "go back to that clone, while a new pod (empty volume) clones fresh. On "
         "start, in the gunicorn master before any worker exists, the pre-fork "
-        "scope preload deletes every clone with a marker from this host before "
+        "scope preload deletes every clone with a marker before "
         "its sync, so the sync clones it fresh, as on a new pod: if that clone "
         "fails or hangs too (the remote is still unreachable), the source has no "
         "clone, and its scopes no policy, until a clone succeeds, again as on a "
@@ -288,7 +289,8 @@ class OpalServerConfig(Confi):
         "nothing is deleted, so every scope keeps its last fetched policy. A git "
         "op that fails quickly (revoked credentials, a deleted repository) leaves "
         "no marker, so such a clone keeps serving its last fetched policy. Do not "
-        "share BASE_DIR between running servers with this on. Each clone deleted "
+        "share BASE_DIR between running servers with this on: any marker counts, "
+        "whoever wrote it. Each clone deleted "
         "increments opal_server.scopes.hung_clone_recloned.",
     )
     SCOPES_GIT_MAX_ZOMBIES = confi.int(

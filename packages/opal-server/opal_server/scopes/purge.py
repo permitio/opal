@@ -38,7 +38,7 @@ start, in the gunicorn master's preload before any worker exists:
 SCOPES_GIT_RECLONE_HUNG_ON_START) deletes clone dirs it LISTS from
 ``git_sources``, so its targets come from the filesystem, not from
 ``source_id(source)``; it deletes only real directories whose name matches
-``SOURCE_ID_RE`` and that have a hung-op marker from this host, under the
+``SOURCE_ID_RE`` and that have a hung-op marker, under the
 repack lock, and the preload's sync then re-creates them. An audit of "can
 caller-controlled input reach an rmtree?" has to account for all four. That is
 master's behaviour (master removed it inline there, with no broadcast involved),

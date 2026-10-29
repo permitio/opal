@@ -116,7 +116,7 @@ async def test_an_op_past_its_timeout_marks_until_it_returns(tmp_path):
             5,
             timeout=0.05,
             busy_key="k1",
-            hung_marker_dir=d,
+            marker_dir=d,
             mark_when_hung=True,
         )
     await _until(lambda: d.is_dir() and any(d.iterdir()))  # the op still runs
@@ -137,7 +137,7 @@ async def test_a_failing_op_past_its_timeout_still_clears_its_marker(tmp_path):
 
     with pytest.raises(TimeoutError):
         await run_in_git_executor(
-            _fails, timeout=0.05, hung_marker_dir=d, mark_when_hung=True
+            _fails, timeout=0.05, marker_dir=d, mark_when_hung=True
         )
     await _until(lambda: d.is_dir() and any(d.iterdir()))
     release.set()
@@ -149,7 +149,7 @@ async def test_an_op_within_its_timeout_leaves_no_marker(tmp_path):
     d = tmp_path / "m.hung"
     assert (
         await run_in_git_executor(
-            lambda: 42, timeout=5, hung_marker_dir=d, mark_when_hung=True
+            lambda: 42, timeout=5, marker_dir=d, mark_when_hung=True
         )
         == 42
     )
@@ -173,7 +173,7 @@ async def test_an_unwritable_marker_is_logged_not_raised(tmp_path):
     release = threading.Event()
     with pytest.raises(TimeoutError):  # the op's own timeout, nothing else
         await run_in_git_executor(
-            release.wait, 5, timeout=0.05, hung_marker_dir=d, mark_when_hung=True
+            release.wait, 5, timeout=0.05, marker_dir=d, mark_when_hung=True
         )
     release.set()
 
@@ -202,7 +202,7 @@ async def test_a_stalled_marker_write_delays_neither_the_timeout_nor_the_slot(
     t0 = time.monotonic()
     with pytest.raises(TimeoutError):
         await run_in_git_executor(
-            release.wait, 5, timeout=0.05, hung_marker_dir=d, mark_when_hung=True
+            release.wait, 5, timeout=0.05, marker_dir=d, mark_when_hung=True
         )
     assert time.monotonic() - t0 < 2
     # The single slot is free again: another op runs while the write stalls.
@@ -226,7 +226,7 @@ async def test_one_op_returning_does_not_clear_another_ops_marker(tmp_path):
     for ev in (first, second):
         with pytest.raises(TimeoutError):
             await run_in_git_executor(
-                ev.wait, 5, timeout=0.05, hung_marker_dir=d, mark_when_hung=True
+                ev.wait, 5, timeout=0.05, marker_dir=d, mark_when_hung=True
             )
     await _until(lambda: d.is_dir() and len(list(d.iterdir())) == 2)
     first.set()
@@ -371,15 +371,13 @@ def test_deletes_only_marked_clones(tmp_path, on, monkeypatch):
     assert seen == ["opal_server.scopes.hung_clone_recloned"]
 
 
-def test_markers_from_another_host_are_left_alone(tmp_path, on):
-    """A replica sharing the volume may still be running that op."""
-    theirs = _clone_dir(tmp_path, _sid(1))
-    _mark(theirs, host="replica-b")
-    both = _clone_dir(tmp_path, _sid(2), hung=True)
-    other = _mark(both, host="replica-b")
+def test_any_markers_count_whoever_wrote_them(tmp_path, on):
+    """Sharing BASE_DIR between running servers is not supported, so a marker
+    left by the previous pod on a reused volume counts too."""
+    clone = _clone_dir(tmp_path, _sid(1))
+    _mark(clone, host="previous-pod")
     assert reclone_hung_scope_clones(tmp_path) == 1
-    assert theirs.exists() and _markers(theirs) == ["replica-b-1234-0"]
-    assert not both.exists() and other.exists()
+    assert not clone.exists() and not hung_marker_dir(clone).exists()
 
 
 def test_an_empty_marker_dir_is_just_removed(tmp_path, on):
@@ -520,27 +518,13 @@ def test_no_preload_when_scopes_are_off(preload, monkeypatch):
 # --- round 5 --------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize(
-    "name,ours",
-    [
-        (f"{HOST}-12-0", True),
-        (f"{HOST}-replica-12-0", False),  # another host whose name extends ours
-        ("other-12-0", False),
-        (f"{HOST}-12", False),
-        (HOST, False),
-    ],
-)
-def test_marker_ownership_is_an_exact_host_match(name, ours):
-    assert git_fetcher_module._is_our_marker(name) is ours
-
-
 @pytest.mark.asyncio
 async def test_a_successful_op_clears_markers_without_marking(tmp_path):
     d = tmp_path / "m.hung"
     d.mkdir()
     (d / "other-1-0").write_text("")
-    assert await run_in_git_executor(lambda: "ok", timeout=5, hung_marker_dir=d) == "ok"
-    assert not d.exists()
+    assert await run_in_git_executor(lambda: "ok", timeout=5, marker_dir=d) == "ok"
+    await _until(lambda: not d.exists())  # removed on a thread of its own
 
 
 @pytest.mark.asyncio
@@ -548,7 +532,7 @@ async def test_no_marker_without_mark_when_hung(tmp_path):
     d = tmp_path / "m.hung"
     release = threading.Event()
     with pytest.raises(TimeoutError):
-        await run_in_git_executor(release.wait, 5, timeout=0.05, hung_marker_dir=d)
+        await run_in_git_executor(release.wait, 5, timeout=0.05, marker_dir=d)
     release.set()
     await _until(lambda: True)
     assert not d.exists() or not any(d.iterdir())
@@ -581,7 +565,7 @@ def test_a_provider_wide_hang_keeps_every_clone(tmp_path, on):
     assert healthy.exists()
 
 
-def test_another_hosts_markers_of_a_deleted_scope_are_removed(tmp_path, on):
+def test_markers_of_a_deleted_scope_are_removed(tmp_path, on):
     gone = _root(tmp_path) / _sid(1)
     _mark(gone, host="old-pod")
     _clone_dir(tmp_path, _sid(2))  # git_sources exists with something in it
@@ -604,3 +588,72 @@ def test_a_non_positive_fetch_timeout_is_warned_about(tmp_path, on, monkeypatch)
     monkeypatch.setattr(opal_server_config, "SCOPES_GIT_FETCH_TIMEOUT", 0)
     _clone_dir(tmp_path, _sid(1), hung=True)
     assert reclone_hung_scope_clones(tmp_path) == 1  # still acts on what it finds
+
+
+# --- round 6 --------------------------------------------------------------------------
+
+
+def test_with_the_setting_off_a_start_removes_every_marker(tmp_path):
+    hung = _clone_dir(tmp_path, _sid(1), hung=True)
+    _mark(_root(tmp_path) / _sid(2))  # a deleted scope's
+    assert reclone_hung_scope_clones(tmp_path) == 0
+    assert hung.exists()  # never deleted with the setting off
+    assert not hung_marker_dir(hung).exists()
+    assert not hung_marker_dir(_root(tmp_path) / _sid(2)).exists()
+
+
+@pytest.mark.asyncio
+async def test_a_late_success_removes_only_its_own_marker(tmp_path):
+    """An op that timed out and then succeeded proves little about the other
+    hung ops on the clone: their markers stay."""
+    d = tmp_path / "m.hung"
+    d.mkdir()
+    other = d / "other-1-0"
+    other.write_text("")
+    release = threading.Event()
+    with pytest.raises(TimeoutError):
+        await run_in_git_executor(
+            release.wait, 5, timeout=0.05, marker_dir=d, mark_when_hung=True
+        )
+    await _until(lambda: len(list(d.iterdir())) == 2)
+    release.set()  # returns True: a success, but after its timeout
+    await _until(lambda: len(list(d.iterdir())) == 1)
+    assert other.exists()
+
+
+@pytest.mark.asyncio
+async def test_a_stalled_marker_write_never_blocks_the_ops_own_thread(
+    tmp_path, monkeypatch
+):
+    """The op returns while its marker write is stuck on the volume: the op's
+    thread still finishes (the lock never covers file I/O), and the marker,
+    once written, is removed since the op had already returned."""
+    d = tmp_path / "m.hung"
+    write_started, resume_write = threading.Event(), threading.Event()
+    real_touch = Path.touch
+
+    def _slow_touch(self, *a, **k):
+        write_started.set()
+        resume_write.wait(5)
+        return real_touch(self, *a, **k)
+
+    monkeypatch.setattr(Path, "touch", _slow_touch)
+    op_finished = asyncio.Event()
+    real_consume = git_fetcher_module._consume_future_result
+
+    def _consume(fut):  # the op future's done-callback, on the event loop
+        op_finished.set()
+        return real_consume(fut)
+
+    monkeypatch.setattr(git_fetcher_module, "_consume_future_result", _consume)
+    release = threading.Event()
+    with pytest.raises(TimeoutError):
+        await run_in_git_executor(
+            release.wait, 5, timeout=0.05, marker_dir=d, mark_when_hung=True
+        )
+    await _until(write_started.is_set)
+    release.set()
+    await asyncio.wait_for(op_finished.wait(), 2)  # while the write is stuck
+    assert not resume_write.is_set()
+    resume_write.set()
+    await _until(lambda: d.is_dir() and not any(d.iterdir()))
