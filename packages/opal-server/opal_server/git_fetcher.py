@@ -545,13 +545,29 @@ emit_sources_in_backoff = _emit_sources_in_backoff
 # while it lasts, so the clone stops fetching. If a probe on its FETCH_HEAD age
 # then restarts the container, the clones survive the restart (they live on a
 # volume) and the restarted server goes straight back to that clone. A new pod
-# starts with an empty volume, clones fresh and recovers. The sweep below gives
-# a restarted container the new pod's starting point for the clones that need
-# it, and leaves every clone that is fetching normally where it is.
+# starts with an empty volume, clones fresh and recovers.
+#
+# The preload therefore moves such a clone aside before its sync, so the sync
+# clones it fresh, and afterwards either deletes the old copy (the clone
+# succeeded) or moves it back (it did not: the remote is unreachable, say, and
+# the last fetched policy is better than none). Only clones of sources that a
+# polled scope uses are judged, and only while a periodic pass runs: no other
+# clone is fetched regularly, so for those an old FETCH_HEAD means nothing.
 
-# GitPolicyFetcher.source_id(): a sha256 hex digest, "-", the shard index. The
-# sweep removes nothing else it finds under git_sources.
-_SOURCE_ID_RE = re.compile(r"^[0-9a-f]{64}-[0-9]+$")
+# GitPolicyFetcher.source_id(): a sha256 hex digest, "-", the shard index.
+_SOURCE_ID_RE = re.compile(r"[0-9a-f]{64}-[0-9]+")
+# A clone moved aside is renamed to this prefix plus its source id, in the
+# same directory: never a source id itself, so nothing else ever uses it.
+_STALE_CLONE_PREFIX = ".stale-"
+
+
+class QuarantinedClone(NamedTuple):
+    """A stale clone the preload moved aside before its sync."""
+
+    source_id: str
+    clone: Path  # where the sync clones it again
+    trash: Path  # where the old copy waits for settle_quarantined_clones()
+    since: float  # time.time() of the move
 
 
 def _stale_clone_max_age_seconds() -> float:
@@ -560,6 +576,10 @@ def _stale_clone_max_age_seconds() -> float:
     0.0 means "disabled".
     """
     return _finite_positive_or_zero(opal_server_config.SCOPES_GIT_STALE_CLONE_MAX_AGE)
+
+
+def stale_clone_sweep_enabled() -> bool:
+    return _stale_clone_max_age_seconds() > 0
 
 
 def _clone_last_fetch_time(clone: Path) -> Optional[float]:
@@ -580,78 +600,190 @@ def _clone_last_fetch_time(clone: Path) -> Optional[float]:
     return None
 
 
-def remove_stale_scope_clones(base_dir: Path) -> int:
-    """Delete the scope clones whose last fetch is older than
-    SCOPES_GIT_STALE_CLONE_MAX_AGE; return how many were deleted.
-
-    Meant for the pre-fork preload, before its sync: nothing else in this
-    container touches the clones yet (no worker exists and the previous
-    container is gone), so a plain rmtree is safe there, and the sync that
-    follows clones every deleted one fresh. Calling it anywhere else would
-    delete clones from under live fetches.
-
-    It never raises: a clone it cannot judge or delete is kept, and the sync
-    handles it as it would have without this. A disabled setting (the
-    default) returns at once without touching the disk.
-    """
+def _sweep_max_age_or_zero() -> float:
+    """The max age if the sweep can run safely now, else 0.0 (with the reason
+    logged)."""
     max_age = _stale_clone_max_age_seconds()
     if max_age <= 0:
-        return 0
-    root = GitPolicyFetcher.base_dir(base_dir)
+        return 0.0
+    interval = _finite_positive_or_zero(opal_server_config.POLICY_REFRESH_INTERVAL)
+    if interval <= 0:
+        logger.warning(
+            "SCOPES_GIT_STALE_CLONE_MAX_AGE is set but POLICY_REFRESH_INTERVAL is "
+            "not: without a periodic pass no clone is fetched regularly, so a "
+            "clone's age says nothing about it. Not checking clones for staleness."
+        )
+        return 0.0
+    floor = interval + _finite_positive_or_zero(
+        opal_server_config.SCOPES_GIT_FETCH_TIMEOUT
+    )
+    if max_age <= floor:
+        logger.warning(
+            "SCOPES_GIT_STALE_CLONE_MAX_AGE ({max_age:.0f}s) is not above "
+            "POLICY_REFRESH_INTERVAL plus SCOPES_GIT_FETCH_TIMEOUT ({floor:.0f}s), "
+            "so a clone that fetches normally could look stale. Not checking "
+            "clones for staleness.",
+            max_age=max_age,
+            floor=floor,
+        )
+        return 0.0
+    return max_age
+
+
+def _remove_tree_or_warn(path: Path, what: str) -> bool:
     try:
-        entries = list(os.scandir(root))
+        shutil.rmtree(path)
     except FileNotFoundError:
-        return 0  # nothing cloned yet: a new pod
+        pass  # already gone: the intended end state
     except OSError as e:
         logger.warning(
-            "Not checking scope clones for staleness: cannot list {root}: {err}",
+            "Could not delete {what} {path}: {err}", what=what, path=path, err=repr(e)
+        )
+        return False
+    return True
+
+
+def quarantine_stale_scope_clones(
+    base_dir: Path, polled_source_ids: AbstractSet[str]
+) -> list[QuarantinedClone]:
+    """Move aside every clone of a polled source whose last fetch is older than
+    SCOPES_GIT_STALE_CLONE_MAX_AGE; return what was moved.
+
+    For the pre-fork preload, before its sync, while nothing else in this
+    container uses the clones. Hand the result to settle_quarantined_clones()
+    once the sync is done, whatever happened in it. Only real directories
+    named like one of ``polled_source_ids`` are judged, never a symlink. The
+    moves happen under the repack lock, and are skipped while a repack holds
+    it. Never raises: a clone it cannot judge or move stays where it is and is
+    synced as before.
+    """
+    max_age = _sweep_max_age_or_zero()
+    if max_age <= 0 or not polled_source_ids:
+        return []
+    root = GitPolicyFetcher.base_dir(base_dir)
+    try:
+        lock = _take_repack_lock(root)
+    except FileNotFoundError:
+        return []  # nothing cloned yet: a new pod
+    except OSError as e:
+        logger.warning(
+            "Not checking scope clones for staleness: cannot lock {root}: {err}",
             root=root,
             err=repr(e),
         )
-        return 0
-    now = time.time()
-    removed = 0
-    for entry in entries:
-        # A real directory named like a source id, never a symlink: the repack
-        # lock file and anything else an operator left here stay untouched.
+        return []
+    if lock is None:
+        logger.warning(
+            "Not checking scope clones for staleness: a repack holds the lock "
+            "on {root}",
+            root=root,
+        )
+        return []
+    moved: list[QuarantinedClone] = []
+    try:
         try:
-            if not _SOURCE_ID_RE.match(entry.name) or not entry.is_dir(
-                follow_symlinks=False
-            ):
-                continue
-            clone = Path(entry.path)
-            fetched_at = _clone_last_fetch_time(clone)
-        except OSError:
-            continue
-        if fetched_at is None:
-            continue
-        age = now - fetched_at
-        if age <= max_age:
-            continue
-        try:
-            shutil.rmtree(clone)
-        except FileNotFoundError:
-            pass  # already gone: the intended end state
+            entries = list(os.scandir(root))
         except OSError as e:
             logger.warning(
-                "Could not delete stale scope clone {source_id} (last fetched "
-                "{age:.0f}s ago); the sync uses it as is: {err}",
-                source_id=entry.name,
-                age=age,
+                "Not checking scope clones for staleness: cannot list {root}: {err}",
+                root=root,
                 err=repr(e),
             )
-            continue
-        removed += 1
-        metrics.increment("opal_server.scopes.stale_clone_removed")
-        logger.warning(
-            "Deleted stale scope clone {source_id}: last fetched {age:.0f}s ago, "
-            "over SCOPES_GIT_STALE_CLONE_MAX_AGE ({max_age:.0f}s); the preload "
-            "clones it again",
-            source_id=entry.name,
-            age=age,
-            max_age=max_age,
-        )
-    return removed
+            return []
+        now = time.time()
+        for entry in entries:
+            if entry.name.startswith(_STALE_CLONE_PREFIX):
+                # Left by a start that died before settling it. Its clone
+                # has been synced since, by that start or a later one.
+                _remove_tree_or_warn(Path(entry.path), "leftover stale clone")
+                continue
+            try:
+                if (
+                    not _SOURCE_ID_RE.fullmatch(entry.name)
+                    or entry.name not in polled_source_ids
+                    or not entry.is_dir(follow_symlinks=False)
+                ):
+                    continue
+                clone = Path(entry.path)
+                fetched_at = _clone_last_fetch_time(clone)
+            except OSError:
+                continue
+            if fetched_at is None or now - fetched_at <= max_age:
+                continue
+            trash = root / f"{_STALE_CLONE_PREFIX}{entry.name}"
+            try:
+                if trash.exists():
+                    _remove_tree_or_warn(trash, "leftover stale clone")
+                os.rename(clone, trash)
+            except OSError as e:
+                logger.warning(
+                    "Could not move stale scope clone {source_id} aside (last "
+                    "fetched {age:.0f}s ago); the preload syncs it as is: {err}",
+                    source_id=entry.name,
+                    age=now - fetched_at,
+                    err=repr(e),
+                )
+                continue
+            moved.append(QuarantinedClone(entry.name, clone, trash, now))
+            logger.warning(
+                "Scope clone {source_id} last fetched {age:.0f}s ago, over "
+                "SCOPES_GIT_STALE_CLONE_MAX_AGE ({max_age:.0f}s): the preload "
+                "clones it again, and keeps the old copy if that fails",
+                source_id=entry.name,
+                age=now - fetched_at,
+                max_age=max_age,
+            )
+    finally:
+        _drop_repack_lock(lock)
+    return moved
+
+
+def settle_quarantined_clones(moved: list[QuarantinedClone]) -> None:
+    """After the preload's sync: delete each old copy whose clone was cloned
+    again, and move back the ones whose clone was not.
+
+    A clone whose git op is still in flight (a clone past its timeout)
+    keeps its old copy aside; the next start deletes it. Never raises.
+    """
+    for q in moved:
+        outcome = "recloned"
+        try:
+            if git_op_in_flight(q.source_id):
+                outcome = "in_flight"
+                logger.warning(
+                    "Scope clone {source_id} is still being cloned; its old copy "
+                    "stays at {trash} until the next start",
+                    source_id=q.source_id,
+                    trash=q.trash,
+                )
+                continue
+            fetched_at = _clone_last_fetch_time(q.clone)
+            if fetched_at is not None and fetched_at >= q.since - 1:
+                _remove_tree_or_warn(q.trash, "old copy of scope clone")
+                continue
+            # The sync could not clone it: put the last fetched clone back, as
+            # the server had it before this sweep.
+            outcome = "restored"
+            if q.clone.exists() and not _remove_tree_or_warn(q.clone, "failed clone"):
+                outcome = "lost"
+                continue
+            os.rename(q.trash, q.clone)
+            logger.warning(
+                "Scope clone {source_id} could not be cloned again; restored the "
+                "last fetched copy",
+                source_id=q.source_id,
+            )
+        except OSError as e:
+            outcome = "lost"
+            logger.warning(
+                "Could not settle stale scope clone {source_id}: {err}",
+                source_id=q.source_id,
+                err=repr(e),
+            )
+        finally:
+            metrics.increment(
+                "opal_server.scopes.stale_clone", tags={"outcome": outcome}
+            )
 
 
 def _consume_future_result(fut) -> None:
