@@ -538,99 +538,62 @@ def _emit_sources_in_backoff() -> None:
 emit_sources_in_backoff = _emit_sources_in_backoff
 
 
-# --- stale scope clones at process start ---------------------------------------
+# --- hung scope fetches across a restart ----------------------------------------
 #
-# A clone whose fetch hangs past SCOPES_GIT_FETCH_TIMEOUT keeps that git op
-# running on its daemon thread, and every later sync of the clone is skipped
-# while it lasts, so the clone stops fetching. If a probe on its FETCH_HEAD age
-# then restarts the container, the clones survive the restart (they live on a
-# volume) and the restarted server goes straight back to that clone. A new pod
-# starts with an empty volume, clones fresh and recovers.
+# A fetch that runs past SCOPES_GIT_FETCH_TIMEOUT keeps running on its daemon
+# thread, and every later sync of the clone is skipped while it lasts, so the
+# clone stops fetching. If a probe then restarts the container, the clones
+# survive the restart (they live on a volume) and the restarted server goes
+# straight back to that clone. A new pod starts with an empty volume, clones
+# fresh and recovers.
 #
-# The preload therefore moves such a clone aside before its sync, so the sync
-# clones it fresh, and afterwards either deletes the old copy (the clone
-# succeeded) or moves it back (it did not: the remote is unreachable, say, and
-# the last fetched policy is better than none). Only clones of sources that a
-# polled scope uses are judged, and only while a periodic pass runs: no other
-# clone is fetched regularly, so for those an old FETCH_HEAD means nothing.
+# With SCOPES_GIT_RECLONE_HUNG_ON_START, such a fetch leaves _HUNG_FETCH_MARKER
+# in the clone's .git for as long as it lingers (run_in_git_executor), so a
+# marker found at start means the previous process ended with that fetch still
+# hung. The preload moves each marked clone aside before its sync, so the sync
+# clones it fresh, and afterwards deletes the old copy (the clone succeeded) or
+# moves it back (it did not: the last fetched policy is better than none).
 
+_HUNG_FETCH_MARKER = "opal-fetch-hung"
 # GitPolicyFetcher.source_id(): a sha256 hex digest, "-", the shard index.
 _SOURCE_ID_RE = re.compile(r"[0-9a-f]{64}-[0-9]+")
 # A clone moved aside is renamed to this prefix plus its source id, in the
 # same directory: never a source id itself, so nothing else ever uses it.
-_STALE_CLONE_PREFIX = ".stale-"
+_HUNG_CLONE_PREFIX = ".hung-"
+
+
+def reclone_hung_enabled() -> bool:
+    return bool(opal_server_config.SCOPES_GIT_RECLONE_HUNG_ON_START)
+
+
+def _hung_fetch_marker(clone: Path) -> Path:
+    return clone / ".git" / _HUNG_FETCH_MARKER
 
 
 class QuarantinedClone(NamedTuple):
-    """A stale clone the preload moved aside before its sync."""
+    """A clone with a hung-fetch marker, moved aside before the preload's
+    sync."""
 
     source_id: str
     clone: Path  # where the sync clones it again
     trash: Path  # where the old copy waits for settle_quarantined_clones()
-    since: float  # time.time() of the move
+    since: datetime.datetime  # datetime.now() of the move
 
 
-def _stale_clone_max_age_seconds() -> float:
-    """SCOPES_GIT_STALE_CLONE_MAX_AGE, validated.
-
-    0.0 means "disabled".
-    """
-    return _finite_positive_or_zero(opal_server_config.SCOPES_GIT_STALE_CLONE_MAX_AGE)
-
-
-def stale_clone_sweep_enabled() -> bool:
-    return _stale_clone_max_age_seconds() > 0
-
-
-def _clone_last_fetch_time(clone: Path) -> Optional[float]:
-    """When the clone last fetched: FETCH_HEAD's mtime, else HEAD's.
-
-    libgit2 writes FETCH_HEAD in the clone and rewrites it on every fetch, an
-    up-to-date one included, which is what makes it the age a probe can
-    watch. HEAD, written by the clone, is the fallback for a clone that lost
-    its FETCH_HEAD. None when neither exists: that is no clone this sweep
-    knows how to judge, and _get_valid_repo() deals with an unusable one.
-    """
+def _is_complete_clone(clone: Path) -> bool:
+    """A clone a finished clone or fetch left: FETCH_HEAD is written once the
+    clone's own fetch is done, and no fetch on it is marked hung."""
     git_dir = clone / ".git"
-    for name in ("FETCH_HEAD", "HEAD"):
-        try:
-            return (git_dir / name).stat().st_mtime
-        except FileNotFoundError:
-            continue
-    return None
-
-
-def _sweep_max_age_or_zero() -> float:
-    """The max age if the sweep can run safely now, else 0.0 (with the reason
-    logged)."""
-    max_age = _stale_clone_max_age_seconds()
-    if max_age <= 0:
-        return 0.0
-    interval = _finite_positive_or_zero(opal_server_config.POLICY_REFRESH_INTERVAL)
-    if interval <= 0:
-        logger.warning(
-            "SCOPES_GIT_STALE_CLONE_MAX_AGE is set but POLICY_REFRESH_INTERVAL is "
-            "not: without a periodic pass no clone is fetched regularly, so a "
-            "clone's age says nothing about it. Not checking clones for staleness."
-        )
-        return 0.0
-    floor = interval + _finite_positive_or_zero(
-        opal_server_config.SCOPES_GIT_FETCH_TIMEOUT
-    )
-    if max_age <= floor:
-        logger.warning(
-            "SCOPES_GIT_STALE_CLONE_MAX_AGE ({max_age:.0f}s) is not above "
-            "POLICY_REFRESH_INTERVAL plus SCOPES_GIT_FETCH_TIMEOUT ({floor:.0f}s), "
-            "so a clone that fetches normally could look stale. Not checking "
-            "clones for staleness.",
-            max_age=max_age,
-            floor=floor,
-        )
-        return 0.0
-    return max_age
+    return (git_dir / "FETCH_HEAD").is_file() and not (
+        git_dir / _HUNG_FETCH_MARKER
+    ).exists()
 
 
 def _remove_tree_or_warn(path: Path, what: str) -> bool:
+    """Delete a tree; True when it is gone afterwards.
+
+    Never raises.
+    """
     try:
         shutil.rmtree(path)
     except FileNotFoundError:
@@ -643,22 +606,58 @@ def _remove_tree_or_warn(path: Path, what: str) -> bool:
     return True
 
 
-def quarantine_stale_scope_clones(
-    base_dir: Path, polled_source_ids: AbstractSet[str]
-) -> list[QuarantinedClone]:
-    """Move aside every clone of a polled source whose last fetch is older than
-    SCOPES_GIT_STALE_CLONE_MAX_AGE; return what was moved.
+def _put_back(trash: Path, clone: Path) -> bool:
+    """Move an old copy back to its clone path, replacing whatever partial
+    clone is there, and drop its hung marker (the hang it recorded was the
+    previous process's).
 
-    For the pre-fork preload, before its sync, while nothing else in this
-    container uses the clones. Hand the result to settle_quarantined_clones()
-    once the sync is done, whatever happened in it. Only real directories
-    named like one of ``polled_source_ids`` are judged, never a symlink. The
-    moves happen under the repack lock, and are skipped while a repack holds
-    it. Never raises: a clone it cannot judge or move stays where it is and is
-    synced as before.
+    True on success. Never raises.
     """
-    max_age = _sweep_max_age_or_zero()
-    if max_age <= 0 or not polled_source_ids:
+    if clone.exists() and not _remove_tree_or_warn(clone, "partial clone"):
+        return False
+    try:
+        os.rename(trash, clone)
+    except OSError as e:
+        logger.warning(
+            "Could not move {trash} back to {clone}: {err}",
+            trash=trash,
+            clone=clone,
+            err=repr(e),
+        )
+        return False
+    try:
+        _hung_fetch_marker(clone).unlink()
+    except OSError:
+        pass  # gone already, or the next start tries this clone again
+    return True
+
+
+def _settle_leftover(trash: Path, clone: Path) -> None:
+    """An old copy a previous start left aside: delete it once its clone is
+    complete, else put it back. Never raises."""
+    if _is_complete_clone(clone):
+        _remove_tree_or_warn(trash, "old copy of scope clone")
+    elif _put_back(trash, clone):
+        logger.warning(
+            "Restored the old copy of scope clone {source_id}: the clone a "
+            "previous start began is missing or incomplete",
+            source_id=clone.name,
+        )
+
+
+def quarantine_hung_scope_clones(base_dir: Path) -> list[QuarantinedClone]:
+    """Move aside every scope clone with a hung-fetch marker; return what was
+    moved.
+
+    For the pre-fork preload, before its sync, while nothing else in
+    this container uses the clones. Hand the result to
+    settle_quarantined_clones() once the sync is done, whatever happened
+    in it. Only real directories named like a source id are considered,
+    never a symlink. Runs under the repack lock, and does nothing while
+    a repack holds it. Never raises: a clone it cannot move is synced as
+    it is.
+    """
+    if not reclone_hung_enabled():
         return []
     root = GitPolicyFetcher.base_dir(base_dir)
     try:
@@ -667,14 +666,14 @@ def quarantine_stale_scope_clones(
         return []  # nothing cloned yet: a new pod
     except OSError as e:
         logger.warning(
-            "Not checking scope clones for staleness: cannot lock {root}: {err}",
+            "Not checking scope clones for hung fetches: cannot lock {root}: {err}",
             root=root,
             err=repr(e),
         )
         return []
     if lock is None:
         logger.warning(
-            "Not checking scope clones for staleness: a repack holds the lock "
+            "Not checking scope clones for hung fetches: a repack holds the lock "
             "on {root}",
             root=root,
         )
@@ -685,53 +684,51 @@ def quarantine_stale_scope_clones(
             entries = list(os.scandir(root))
         except OSError as e:
             logger.warning(
-                "Not checking scope clones for staleness: cannot list {root}: {err}",
+                "Not checking scope clones for hung fetches: cannot list "
+                "{root}: {err}",
                 root=root,
                 err=repr(e),
             )
             return []
-        now = time.time()
         for entry in entries:
-            if entry.name.startswith(_STALE_CLONE_PREFIX):
-                # Left by a start that died before settling it. Its clone
-                # has been synced since, by that start or a later one.
-                _remove_tree_or_warn(Path(entry.path), "leftover stale clone")
-                continue
+            name = entry.name
+            if name.startswith(_HUNG_CLONE_PREFIX):
+                source_id = name[len(_HUNG_CLONE_PREFIX) :]
+                if _SOURCE_ID_RE.fullmatch(source_id):
+                    _settle_leftover(Path(entry.path), root / source_id)
+        for entry in entries:
             try:
-                if (
-                    not _SOURCE_ID_RE.fullmatch(entry.name)
-                    or entry.name not in polled_source_ids
-                    or not entry.is_dir(follow_symlinks=False)
+                if not _SOURCE_ID_RE.fullmatch(entry.name) or not entry.is_dir(
+                    follow_symlinks=False
                 ):
                     continue
                 clone = Path(entry.path)
-                fetched_at = _clone_last_fetch_time(clone)
+                if not _hung_fetch_marker(clone).exists():
+                    continue
             except OSError:
                 continue
-            if fetched_at is None or now - fetched_at <= max_age:
-                continue
-            trash = root / f"{_STALE_CLONE_PREFIX}{entry.name}"
+            trash = root / f"{_HUNG_CLONE_PREFIX}{entry.name}"
             try:
-                if trash.exists():
-                    _remove_tree_or_warn(trash, "leftover stale clone")
+                if trash.exists() and not _remove_tree_or_warn(
+                    trash, "old copy of scope clone"
+                ):
+                    continue
+                since = datetime.datetime.now()
                 os.rename(clone, trash)
             except OSError as e:
                 logger.warning(
-                    "Could not move stale scope clone {source_id} aside (last "
-                    "fetched {age:.0f}s ago); the preload syncs it as is: {err}",
+                    "Could not move scope clone {source_id} aside; the preload "
+                    "syncs it as it is: {err}",
                     source_id=entry.name,
-                    age=now - fetched_at,
                     err=repr(e),
                 )
                 continue
-            moved.append(QuarantinedClone(entry.name, clone, trash, now))
+            moved.append(QuarantinedClone(entry.name, clone, trash, since))
             logger.warning(
-                "Scope clone {source_id} last fetched {age:.0f}s ago, over "
-                "SCOPES_GIT_STALE_CLONE_MAX_AGE ({max_age:.0f}s): the preload "
-                "clones it again, and keeps the old copy if that fails",
+                "Scope clone {source_id} had a fetch still hung when the previous "
+                "server process ended: the preload clones it again, and keeps "
+                "the old copy if that fails",
                 source_id=entry.name,
-                age=now - fetched_at,
-                max_age=max_age,
             )
     finally:
         _drop_repack_lock(lock)
@@ -742,47 +739,46 @@ def settle_quarantined_clones(moved: list[QuarantinedClone]) -> None:
     """After the preload's sync: delete each old copy whose clone was cloned
     again, and move back the ones whose clone was not.
 
-    A clone whose git op is still in flight (a clone past its timeout)
-    keeps its old copy aside; the next start deletes it. Never raises.
+    "Cloned again" is what the fetcher itself recorded: a successful
+    clone sets repos_last_fetched for its source. A clone whose git op
+    is still in flight (past its timeout) keeps its old copy aside, for
+    the next start to settle. Never raises.
     """
     for q in moved:
-        outcome = "recloned"
+        outcome = "lost"
         try:
             if git_op_in_flight(q.source_id):
                 outcome = "in_flight"
                 logger.warning(
                     "Scope clone {source_id} is still being cloned; its old copy "
-                    "stays at {trash} until the next start",
+                    "stays at {trash} for the next start",
                     source_id=q.source_id,
                     trash=q.trash,
                 )
                 continue
-            fetched_at = _clone_last_fetch_time(q.clone)
-            if fetched_at is not None and fetched_at >= q.since - 1:
+            cloned_at = GitPolicyFetcher.repos_last_fetched.get(q.source_id)
+            if cloned_at is not None and cloned_at >= q.since:
+                outcome = "recloned"
                 _remove_tree_or_warn(q.trash, "old copy of scope clone")
                 continue
-            # The sync could not clone it: put the last fetched clone back, as
-            # the server had it before this sweep.
-            outcome = "restored"
-            if q.clone.exists() and not _remove_tree_or_warn(q.clone, "failed clone"):
-                outcome = "lost"
-                continue
-            os.rename(q.trash, q.clone)
+            # Not cloned again (unreachable remote, or skipped): put the last
+            # fetched clone back, as the server had it before this check.
+            if _put_back(q.trash, q.clone):
+                outcome = "restored"
+                logger.warning(
+                    "Scope clone {source_id} was not cloned again; restored its "
+                    "last fetched copy",
+                    source_id=q.source_id,
+                )
+        except Exception as e:  # never let the preload fail here
             logger.warning(
-                "Scope clone {source_id} could not be cloned again; restored the "
-                "last fetched copy",
-                source_id=q.source_id,
-            )
-        except OSError as e:
-            outcome = "lost"
-            logger.warning(
-                "Could not settle stale scope clone {source_id}: {err}",
+                "Could not settle scope clone {source_id}: {err}",
                 source_id=q.source_id,
                 err=repr(e),
             )
         finally:
             metrics.increment(
-                "opal_server.scopes.stale_clone", tags={"outcome": outcome}
+                "opal_server.scopes.hung_clone", tags={"outcome": outcome}
             )
 
 
@@ -813,7 +809,14 @@ def _get_live_ops_semaphore() -> asyncio.Semaphore:
     return sem
 
 
-async def run_in_git_executor(func, *args, timeout: float, busy_key=None, **kwargs):
+async def run_in_git_executor(
+    func,
+    *args,
+    timeout: float,
+    busy_key=None,
+    hung_marker: Optional[Path] = None,
+    **kwargs,
+):
     """Run a blocking git call on its own daemon thread with a hard timeout.
 
     ``SCOPES_GIT_MAX_WORKERS`` bounds LIVE (non-timed-out) ops via an asyncio
@@ -836,6 +839,11 @@ async def run_in_git_executor(func, *args, timeout: float, busy_key=None, **kwar
     cleared only when the blocking call actually returns (on its own thread).
     Callers use ``git_op_in_flight`` to avoid starting a second git op against
     the same repository while a timed-out one is still running.
+
+    When ``hung_marker`` is given, an op that outlives its timeout creates that
+    file and removes it once it actually returns, so a marker that survives
+    the process (a container restart) says the op never finished. See
+    quarantine_hung_scope_clones.
     """
     global _zombie_cap_logged
     # Clamped like every sibling knob in this subsystem: unclamped, a negative
@@ -865,12 +873,27 @@ async def run_in_git_executor(func, *args, timeout: float, busy_key=None, **kwar
 
     loop = asyncio.get_running_loop()
 
+    # Whether the op returned, and whether it left a hung marker: the marker is
+    # written on the event loop at the timeout and removed on the op's own
+    # thread when it returns, so both sides take this lock, and a marker is
+    # never written for an op that already returned.
+    hung_lock = threading.Lock()
+    hung = {"returned": False, "marked": False}
+
     def _runner():
         try:
             return func(*args, **kwargs)
         finally:
             if busy_key is not None:
                 _mark_git_op_done(busy_key)
+            if hung_marker is not None:
+                with hung_lock:
+                    hung["returned"] = True
+                    if hung["marked"]:
+                        try:
+                            hung_marker.unlink()
+                        except OSError:
+                            pass  # the clone is gone, or the next start sees it
 
     sem = _get_live_ops_semaphore()
     await sem.acquire()
@@ -912,6 +935,18 @@ async def run_in_git_executor(func, *args, timeout: float, busy_key=None, **kwar
         if not done:
             # Zombie: free the capacity slot; the private daemon thread lingers
             # until the OS gives up, tracked only by busy_key.
+            if hung_marker is not None:
+                with hung_lock:
+                    if not hung["returned"]:
+                        try:
+                            hung_marker.touch()
+                            hung["marked"] = True
+                        except OSError as e:
+                            logger.warning(
+                                "Could not write hung-fetch marker {path}: {err}",
+                                path=hung_marker,
+                                err=repr(e),
+                            )
             raise TimeoutError(f"git operation exceeded {timeout}s")
         return fut.result()
     finally:
@@ -2169,6 +2204,9 @@ class GitPolicyFetcher(PolicyFetcher):
                                     callbacks=self._auth_callbacks,
                                     timeout=opal_server_config.SCOPES_GIT_FETCH_TIMEOUT,
                                     busy_key=self._source_id,
+                                    hung_marker=_hung_fetch_marker(self._repo_path)
+                                    if reclone_hung_enabled()
+                                    else None,
                                 )
                             except TimeoutError as exc:
                                 # Expected when a repo is unreachable: log cleanly

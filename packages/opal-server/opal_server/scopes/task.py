@@ -11,10 +11,9 @@ from opal_server.git_fetcher import (
     GitPolicyFetcher,
     drain_git_ops,
     git_busy_count,
-    quarantine_stale_scope_clones,
+    quarantine_hung_scope_clones,
     settle_quarantined_clones,
     shutdown_git_executor,
-    stale_clone_sweep_enabled,
 )
 from opal_server.metrics_setup import configure_server_metrics
 from opal_server.policy.watcher.task import BasePolicyWatcherTask
@@ -235,45 +234,24 @@ class ScopesPolicyWatcherTask(BasePolicyWatcherTask):
             logger.info("Preloading repo clones for scopes")
 
             base_dir = Path(opal_server_config.BASE_DIR)
-            scopes = ScopeRepository(RedisDB(opal_server_config.REDIS_URL))
             service = ScopesService(
                 base_dir=base_dir,
-                scopes=scopes,
+                scopes=ScopeRepository(RedisDB(opal_server_config.REDIS_URL)),
                 pubsub_endpoint=None,
             )
-            # Stale clones moved aside before the sync (see
-            # SCOPES_GIT_STALE_CLONE_MAX_AGE), settled once it is done.
-            quarantined: list = []
-
-            async def _sweep_then_sync():
-                # One event loop for both: the Redis client binds to the loop
-                # of its first call. The sweep runs before the sync, while
-                # nothing else in this container uses the clones.
-                if stale_clone_sweep_enabled():
-                    try:
-                        polled = {
-                            GitPolicyFetcher.source_id(scope.policy)
-                            for scope in await scopes.all()
-                            if scope.policy.poll_updates
-                        }
-                        quarantined.extend(
-                            quarantine_stale_scope_clones(base_dir, polled)
-                        )
-                    except Exception:
-                        logger.exception(
-                            "Checking scope clones for staleness failed; the "
-                            "preload syncs them as they are"
-                        )
+            # Before the sync, while nothing else in this container uses the
+            # clones: move aside the ones whose fetch was still hung when the
+            # previous process ended, so the sync clones them fresh (see
+            # SCOPES_GIT_RECLONE_HUNG_ON_START). A no-op unless that is set.
+            quarantined = quarantine_hung_scope_clones(base_dir)
+            try:
                 # No repack here, where it would delay the start of every
                 # worker: the preload's fetches only mark their clones due, the
                 # marks are inherited across fork, and the leader's first pass
                 # repacks.
-                await service.sync_scopes(
-                    notify_on_changes=False, run_due_repacks=False
+                asyncio.run(
+                    service.sync_scopes(notify_on_changes=False, run_due_repacks=False)
                 )
-
-            try:
-                asyncio.run(_sweep_then_sync())
 
                 # Bounded window for a just-finished clone/fetch to clear its
                 # in-flight marker before teardown+fork. Ops still lingering
