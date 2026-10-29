@@ -62,7 +62,7 @@ from typing import Any, Optional
 from opal_common.logger import logger
 from opal_common.schemas.policy_source import GitPolicyScopeSource
 from opal_server.config import opal_server_config
-from opal_server.git_fetcher import GitPolicyFetcher, git_op_in_flight
+from opal_server.git_fetcher import SOURCE_ID_RE, GitPolicyFetcher, git_op_in_flight
 from pydantic import BaseModel, ValidationError
 
 # \Z (not $) so a trailing newline can't sneak past validation: in Python `$`
@@ -71,7 +71,7 @@ from pydantic import BaseModel, ValidationError
 # Indic digits. Containment is unaffected either way (the derived path stays
 # under base_dir and could not exist), but the id this validates is a sha256
 # hex digest + an ASCII shard index, so say that.
-_SOURCE_ID_RE = re.compile(r"\A[0-9a-f]{64}-[0-9]+\Z")
+_SOURCE_ID_RE = SOURCE_ID_RE
 
 
 def confined_clone_path(base_dir, source_id: str):

@@ -11,8 +11,7 @@ from opal_server.git_fetcher import (
     GitPolicyFetcher,
     drain_git_ops,
     git_busy_count,
-    quarantine_hung_scope_clones,
-    settle_quarantined_clones,
+    reclone_hung_scope_clones,
     shutdown_git_executor,
 )
 from opal_server.metrics_setup import configure_server_metrics
@@ -233,51 +232,41 @@ class ScopesPolicyWatcherTask(BasePolicyWatcherTask):
             configure_server_metrics()
             logger.info("Preloading repo clones for scopes")
 
-            base_dir = Path(opal_server_config.BASE_DIR)
+            # Before the sync, while nothing else in this container uses the
+            # clones: delete the ones whose git op was still hung when the
+            # previous process ended, so the sync clones them fresh, as on a new
+            # pod (see SCOPES_GIT_RECLONE_HUNG_ON_START). A no-op unless set.
+            reclone_hung_scope_clones(Path(opal_server_config.BASE_DIR))
+
             service = ScopesService(
-                base_dir=base_dir,
+                base_dir=Path(opal_server_config.BASE_DIR),
                 scopes=ScopeRepository(RedisDB(opal_server_config.REDIS_URL)),
                 pubsub_endpoint=None,
             )
-            # Before the sync, while nothing else in this container uses the
-            # clones: move aside the ones whose fetch was still hung when the
-            # previous process ended, so the sync clones them fresh (see
-            # SCOPES_GIT_RECLONE_HUNG_ON_START). A no-op unless that is set.
-            quarantined = quarantine_hung_scope_clones(base_dir)
-            try:
-                # No repack here, where it would delay the start of every
-                # worker: the preload's fetches only mark their clones due, the
-                # marks are inherited across fork, and the leader's first pass
-                # repacks.
-                asyncio.run(
-                    service.sync_scopes(notify_on_changes=False, run_due_repacks=False)
-                )
+            # No repack here, where it would delay the start of every worker:
+            # the preload's fetches only mark their clones due, the marks are
+            # inherited across fork, and the leader's first pass repacks.
+            asyncio.run(
+                service.sync_scopes(notify_on_changes=False, run_due_repacks=False)
+            )
 
-                # Bounded window for a just-finished clone/fetch to clear its
-                # in-flight marker before teardown+fork. Ops still lingering
-                # (hung remote) are left running; reset_caches's guard then
-                # skips freeing their handles. A False return means the drain
-                # timed out with git ops STILL running: those threads persist
-                # in the master across the fork, so a forked worker can race
-                # them on the shared clone dir. Log it — this is the one
-                # condition that carries that risk, and it must not be silent.
-                drained = drain_git_ops(
-                    opal_server_config.SCOPES_GIT_PRELOAD_DRAIN_TIMEOUT
+            # Bounded window for a just-finished clone/fetch to clear its in-flight
+            # marker before teardown+fork. Ops still lingering (hung remote) are
+            # left running; reset_caches's guard then skips freeing their handles.
+            # A False return means the drain timed out with git ops STILL running:
+            # those threads persist in the master across the fork, so a forked
+            # worker can race them on the shared clone dir. Log it — this is the
+            # one condition that carries that risk, and it must not be silent.
+            drained = drain_git_ops(opal_server_config.SCOPES_GIT_PRELOAD_DRAIN_TIMEOUT)
+            if not drained:
+                logger.warning(
+                    "Preload drain timed out ({timeout}s) with git ops still "
+                    "in flight ({in_flight}); they persist in the master across "
+                    "fork. Consider raising SCOPES_GIT_PRELOAD_DRAIN_TIMEOUT or "
+                    "lowering SCOPES_GIT_FETCH_TIMEOUT.",
+                    timeout=opal_server_config.SCOPES_GIT_PRELOAD_DRAIN_TIMEOUT,
+                    in_flight=git_busy_count(),
                 )
-                if not drained:
-                    logger.warning(
-                        "Preload drain timed out ({timeout}s) with git ops still "
-                        "in flight ({in_flight}); they persist in the master "
-                        "across fork. Consider raising "
-                        "SCOPES_GIT_PRELOAD_DRAIN_TIMEOUT or lowering "
-                        "SCOPES_GIT_FETCH_TIMEOUT.",
-                        timeout=opal_server_config.SCOPES_GIT_PRELOAD_DRAIN_TIMEOUT,
-                        in_flight=git_busy_count(),
-                    )
-            finally:
-                # After the drain, so that as few clones as possible are still
-                # in flight; before the cache reset, which frees the handles.
-                settle_quarantined_clones(quarantined)
 
             # Clear git-op bookkeeping built during preload (in-flight markers
             # and the loop-bound live-op semaphore) so the gunicorn master does

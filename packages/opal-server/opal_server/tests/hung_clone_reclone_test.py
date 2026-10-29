@@ -1,48 +1,46 @@
-"""SCOPES_GIT_RECLONE_HUNG_ON_START: a fetch that outlives its timeout leaves a
-marker in its clone for as long as it lingers; a server start moves each
-marked clone aside before the preload's sync, so the sync clones it fresh, then
-deletes the old copy or, when the clone was not redone, moves it back."""
+"""SCOPES_GIT_RECLONE_HUNG_ON_START: a fetch or clone that outlives its timeout
+leaves a marker beside its clone for as long as it lingers, and any later
+successful fetch or clone of that source removes it; a server start deletes each
+marked clone before the preload's sync, which clones it fresh."""
 import asyncio
-import datetime
 import fcntl
 import os
 import subprocess
 import threading
-import time
 from pathlib import Path
 
 import opal_common.logger as opal_common_logger
 import opal_server.git_fetcher as git_fetcher_module
+import opal_server.scopes.purge as purge_module
 import opal_server.scopes.task as task_module
 import pygit2
 import pytest
 from opal_common.schemas.policy_source import GitPolicyScopeSource, NoAuthData
 from opal_server.config import opal_server_config
 from opal_server.git_fetcher import (
+    SOURCE_ID_RE,
     GitPolicyFetcher,
-    QuarantinedClone,
-    quarantine_hung_scope_clones,
+    hung_marker_path,
+    reclone_hung_scope_clones,
     run_in_git_executor,
-    settle_quarantined_clones,
 )
-
-MARKER = "opal-fetch-hung"
 
 
 def _sid(n: int, shard: int = 0) -> str:
     return f"{n:064x}-{shard}"
 
 
-def _clone_dir(base: Path, name: str, *, complete=True, hung=False) -> Path:
-    """A directory that looks like a scope clone."""
-    git_dir = GitPolicyFetcher.base_dir(base) / name / ".git"
-    git_dir.mkdir(parents=True)
-    (git_dir / "HEAD").write_text("ref: refs/heads/main\n")
-    if complete:
-        (git_dir / "FETCH_HEAD").write_text("x\n")
+def _root(base: Path) -> Path:
+    return GitPolicyFetcher.base_dir(base)
+
+
+def _clone_dir(base: Path, name: str, *, hung=False) -> Path:
+    clone = _root(base) / name
+    (clone / ".git").mkdir(parents=True)
+    (clone / ".git" / "FETCH_HEAD").write_text("x\n")
     if hung:
-        (git_dir / MARKER).write_text("")
-    return git_dir.parent
+        hung_marker_path(clone).write_text("")
+    return clone
 
 
 @pytest.fixture(autouse=True)
@@ -67,19 +65,6 @@ def on(monkeypatch):
     monkeypatch.setattr(opal_server_config, "SCOPES_GIT_RECLONE_HUNG_ON_START", True)
 
 
-@pytest.fixture
-def outcomes(monkeypatch):
-    seen = []
-    monkeypatch.setattr(
-        git_fetcher_module.metrics,
-        "increment",
-        lambda name, *a, tags=None, **k: seen.append(
-            (name, (tags or {}).get("outcome"))
-        ),
-    )
-    return seen
-
-
 async def _until(predicate, timeout=5.0):
     """Bounded poll for a condition another thread sets."""
 
@@ -90,12 +75,22 @@ async def _until(predicate, timeout=5.0):
     await asyncio.wait_for(_wait(), timeout)
 
 
-# --- the marker, in run_in_git_executor ---------------------------------------------
+def test_marker_sits_beside_the_clone():
+    clone = Path("/x/git_sources") / _sid(1)
+    assert hung_marker_path(clone) == Path("/x/git_sources") / f"{_sid(1)}.hung"
+
+
+def test_purge_validates_ids_with_the_same_pattern():
+    assert purge_module._SOURCE_ID_RE is SOURCE_ID_RE
+    assert SOURCE_ID_RE.match(_sid(1)) and not SOURCE_ID_RE.match(_sid(1) + "\n")
+
+
+# --- the marker, in run_in_git_executor ------------------------------------------------
 
 
 @pytest.mark.asyncio
 async def test_an_op_past_its_timeout_marks_until_it_returns(tmp_path):
-    marker = tmp_path / MARKER
+    marker = tmp_path / "m.hung"
     release = threading.Event()
     with pytest.raises(TimeoutError):
         await run_in_git_executor(
@@ -107,15 +102,8 @@ async def test_an_op_past_its_timeout_marks_until_it_returns(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_an_op_within_its_timeout_leaves_no_marker(tmp_path):
-    marker = tmp_path / MARKER
-    assert await run_in_git_executor(lambda: 42, timeout=5, hung_marker=marker) == 42
-    assert not marker.exists()
-
-
-@pytest.mark.asyncio
 async def test_a_failing_op_past_its_timeout_still_clears_its_marker(tmp_path):
-    marker = tmp_path / MARKER
+    marker = tmp_path / "m.hung"
     release = threading.Event()
 
     def _fails():
@@ -130,6 +118,13 @@ async def test_a_failing_op_past_its_timeout_still_clears_its_marker(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_an_op_within_its_timeout_leaves_no_marker(tmp_path):
+    marker = tmp_path / "m.hung"
+    assert await run_in_git_executor(lambda: 42, timeout=5, hung_marker=marker) == 42
+    assert not marker.exists()
+
+
+@pytest.mark.asyncio
 async def test_no_marker_without_hung_marker(tmp_path):
     release = threading.Event()
     with pytest.raises(TimeoutError):
@@ -139,15 +134,36 @@ async def test_no_marker_without_hung_marker(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_an_unwritable_marker_is_logged_not_raised_past_the_timeout(tmp_path):
-    marker = tmp_path / "missing-dir" / MARKER
+async def test_an_unwritable_marker_is_logged_not_raised(tmp_path):
+    blocker = tmp_path / "a-file"
+    blocker.write_text("")
+    marker = blocker / "m.hung"  # its parent is a file: cannot be created
     release = threading.Event()
     with pytest.raises(TimeoutError):  # the op's own timeout, nothing else
         await run_in_git_executor(release.wait, 5, timeout=0.05, hung_marker=marker)
     release.set()
 
 
-# --- the marker, through a real fetch ------------------------------------------------
+@pytest.mark.asyncio
+async def test_the_marker_is_written_off_the_event_loop(tmp_path, monkeypatch):
+    marker = tmp_path / "m.hung"
+    loop_thread = threading.get_ident()
+    writers = []
+    real_touch = Path.touch
+
+    def _touch(self, *a, **k):
+        writers.append(threading.get_ident())
+        return real_touch(self, *a, **k)
+
+    monkeypatch.setattr(Path, "touch", _touch)
+    release = threading.Event()
+    with pytest.raises(TimeoutError):
+        await run_in_git_executor(release.wait, 5, timeout=0.05, hung_marker=marker)
+    release.set()
+    assert writers and loop_thread not in writers
+
+
+# --- the marker, through a real scope fetch and clone ----------------------------------------
 
 
 def _origin(tmp_path: Path) -> Path:
@@ -162,12 +178,7 @@ def _origin(tmp_path: Path) -> Path:
     return origin
 
 
-@pytest.mark.asyncio
-@pytest.mark.parametrize("enabled", [True, False])
-async def test_a_hung_scope_fetch_marks_its_clone_only_when_enabled(
-    tmp_path, monkeypatch, enabled
-):
-    monkeypatch.setattr(opal_server_config, "SCOPES_GIT_RECLONE_HUNG_ON_START", enabled)
+def _fetcher(tmp_path):
     source = GitPolicyScopeSource(
         source_type="git",
         url=str(_origin(tmp_path)),
@@ -175,24 +186,67 @@ async def test_a_hung_scope_fetch_marks_its_clone_only_when_enabled(
         auth=NoAuthData(auth_type="none"),
     )
     base = tmp_path / "base"
-    fetcher = GitPolicyFetcher(base, "scope-1", source)
-    await fetcher.fetch_and_notify_on_changes()  # clones
-    clone = GitPolicyFetcher.repo_clone_path(base, source)
-    assert (clone / ".git" / "FETCH_HEAD").exists()
+    return GitPolicyFetcher(base, "scope-1", source), GitPolicyFetcher.repo_clone_path(
+        base, source
+    )
 
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("enabled", [True, False])
+async def test_a_hung_fetch_marks_its_clone_only_when_enabled(
+    tmp_path, monkeypatch, enabled
+):
+    monkeypatch.setattr(opal_server_config, "SCOPES_GIT_RECLONE_HUNG_ON_START", enabled)
+    fetcher, clone = _fetcher(tmp_path)
+    await fetcher.fetch_and_notify_on_changes()  # clones
     release = threading.Event()
     monkeypatch.setattr(
         pygit2.remotes.Remote, "fetch", lambda self, *a, **k: release.wait(5)
     )
     monkeypatch.setattr(opal_server_config, "SCOPES_GIT_FETCH_TIMEOUT", 0.05)
     await fetcher.fetch_and_notify_on_changes(force_fetch=True)  # times out
-    marker = clone / ".git" / MARKER
-    assert marker.exists() is enabled
+    assert hung_marker_path(clone).exists() is enabled
     release.set()
-    await _until(lambda: not marker.exists())
+    await _until(lambda: not hung_marker_path(clone).exists())
 
 
-# --- quarantine before the sync -------------------------------------------------------
+@pytest.mark.asyncio
+async def test_a_hung_clone_marks_its_clone_path(tmp_path, monkeypatch, on):
+    fetcher, clone = _fetcher(tmp_path)
+    release = threading.Event()
+    monkeypatch.setattr(
+        git_fetcher_module, "clone_repository", lambda *a, **k: release.wait(5)
+    )
+    monkeypatch.setattr(opal_server_config, "SCOPES_GIT_FETCH_TIMEOUT", 0.05)
+    await fetcher.fetch_and_notify_on_changes()  # the clone times out
+    assert hung_marker_path(clone).exists()
+    release.set()
+    await _until(lambda: not hung_marker_path(clone).exists())
+
+
+@pytest.mark.asyncio
+async def test_a_later_successful_fetch_clears_a_marker_from_another_process(
+    tmp_path, on
+):
+    """The process whose op hung died (a worker recycled, say): the marker it
+    left must not outlive the next good fetch."""
+    fetcher, clone = _fetcher(tmp_path)
+    await fetcher.fetch_and_notify_on_changes()  # clones
+    hung_marker_path(clone).write_text("")
+    await fetcher.fetch_and_notify_on_changes(force_fetch=True)
+    assert not hung_marker_path(clone).exists()
+
+
+@pytest.mark.asyncio
+async def test_a_successful_clone_clears_a_leftover_marker(tmp_path, on):
+    fetcher, clone = _fetcher(tmp_path)
+    clone.parent.mkdir(parents=True)
+    hung_marker_path(clone).write_text("")
+    await fetcher.fetch_and_notify_on_changes()  # clones
+    assert not hung_marker_path(clone).exists()
+
+
+# --- the start-time sweep ------------------------------------------------------------------
 
 
 def test_off_by_default_and_touches_nothing(tmp_path, monkeypatch):
@@ -203,62 +257,76 @@ def test_off_by_default_and_touches_nothing(tmp_path, monkeypatch):
 
     monkeypatch.setattr(git_fetcher_module, "_take_repack_lock", _no_disk)
     assert opal_server_config.SCOPES_GIT_RECLONE_HUNG_ON_START is False
-    assert quarantine_hung_scope_clones(tmp_path) == []
+    assert reclone_hung_scope_clones(tmp_path) == 0
     assert hung.exists()
 
 
-def test_moves_only_marked_clones(tmp_path, on):
+def test_deletes_only_marked_clones(tmp_path, on, monkeypatch):
+    seen = []
+    monkeypatch.setattr(
+        git_fetcher_module.metrics, "increment", lambda name, *a, **k: seen.append(name)
+    )
     hung = _clone_dir(tmp_path, _sid(1, 0), hung=True)
     healthy = _clone_dir(tmp_path, _sid(1, 1))
-    (q,) = quarantine_hung_scope_clones(tmp_path)
-    assert q.source_id == _sid(1, 0) and q.clone == hung
-    assert not hung.exists() and q.trash.is_dir() and healthy.exists()
-    assert q.trash.name == f".hung-{_sid(1, 0)}"
-    assert isinstance(q.since, datetime.datetime)
+    assert reclone_hung_scope_clones(tmp_path) == 1
+    assert not hung.exists() and not hung_marker_path(hung).exists()
+    assert healthy.exists()
+    assert seen == ["opal_server.scopes.hung_clone_recloned"]
 
 
-def test_ignores_what_is_not_a_real_clone_dir(tmp_path, on):
-    root = GitPolicyFetcher.base_dir(tmp_path)
-    odd = _clone_dir(tmp_path, _sid(1) + "\n", hung=True)  # not a source id
-    target = _clone_dir(tmp_path, "elsewhere", hung=True)
+def test_a_marker_without_its_clone_is_just_removed(tmp_path, on):
+    """A scope deleted since: no orphan clone comes back."""
+    _root(tmp_path).mkdir(parents=True)
+    marker = _root(tmp_path) / f"{_sid(1)}.hung"
+    marker.write_text("")
+    assert reclone_hung_scope_clones(tmp_path) == 0
+    assert not marker.exists()
+    assert list(_root(tmp_path).iterdir()) == []
+
+
+def test_ignores_what_is_not_a_marker_of_a_real_clone_dir(tmp_path, on):
+    root = _root(tmp_path)
+    target = _clone_dir(tmp_path, "elsewhere")
     link = root / _sid(2)
     link.symlink_to(target, target_is_directory=True)
-    a_file = root / _sid(3)
-    a_file.write_text("")
-    assert quarantine_hung_scope_clones(tmp_path) == []
-    for p in (odd, target, link, a_file):
+    (root / f"{_sid(2)}.hung").write_text("")  # marker of a symlink
+    (root / "not-a-source-id.hung").write_text("")
+    newline = _clone_dir(tmp_path, _sid(3) + "\n")
+    (root / f"{_sid(3)}\n.hung").write_text("")
+    assert reclone_hung_scope_clones(tmp_path) == 0
+    for p in (target, link, newline, root / f"{_sid(2)}.hung"):
         assert p.exists(), p
 
 
 def test_missing_root_is_a_new_pod(tmp_path, on):
-    assert quarantine_hung_scope_clones(tmp_path / "nowhere") == []
+    assert reclone_hung_scope_clones(tmp_path / "nowhere") == 0
 
 
 def test_does_nothing_while_a_repack_holds_the_lock(tmp_path, on):
     hung = _clone_dir(tmp_path, _sid(1), hung=True)
-    fd = os.open(GitPolicyFetcher.base_dir(tmp_path), os.O_RDONLY | os.O_DIRECTORY)
+    fd = os.open(_root(tmp_path), os.O_RDONLY | os.O_DIRECTORY)
     try:
         fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        assert quarantine_hung_scope_clones(tmp_path) == []
-        assert hung.exists()
+        assert reclone_hung_scope_clones(tmp_path) == 0
+        assert hung.exists() and hung_marker_path(hung).exists()
     finally:
         os.close(fd)
 
 
-def test_a_failed_move_keeps_the_clone(tmp_path, on, monkeypatch):
+def test_a_failed_delete_keeps_the_marker_for_the_next_start(tmp_path, on, monkeypatch):
     stuck = _clone_dir(tmp_path, _sid(1, 0), hung=True)
     other = _clone_dir(tmp_path, _sid(1, 1), hung=True)
-    real = os.rename
+    real = git_fetcher_module.shutil.rmtree
 
-    def _rename(src, dst):
-        if Path(src) == stuck:
-            raise PermissionError(13, "Permission denied", str(src))
-        return real(src, dst)
+    def _rmtree(path, *a, **k):
+        if Path(path) == stuck:
+            raise PermissionError(13, "Permission denied", str(path))
+        return real(path, *a, **k)
 
-    monkeypatch.setattr(git_fetcher_module.os, "rename", _rename)
-    moved = quarantine_hung_scope_clones(tmp_path)
-    assert [q.source_id for q in moved] == [_sid(1, 1)]
-    assert stuck.exists() and not other.exists()
+    monkeypatch.setattr(git_fetcher_module.shutil, "rmtree", _rmtree)
+    assert reclone_hung_scope_clones(tmp_path) == 1
+    assert stuck.exists() and hung_marker_path(stuck).exists()
+    assert not other.exists() and not hung_marker_path(other).exists()
 
 
 def test_an_unlistable_root_is_logged_not_raised(tmp_path, on, monkeypatch):
@@ -268,106 +336,10 @@ def test_an_unlistable_root_is_logged_not_raised(tmp_path, on, monkeypatch):
         raise PermissionError(13, "Permission denied", str(path))
 
     monkeypatch.setattr(git_fetcher_module.os, "scandir", _denied)
-    assert quarantine_hung_scope_clones(tmp_path) == []
+    assert reclone_hung_scope_clones(tmp_path) == 0
 
 
-# --- leftovers of an earlier start -------------------------------------------------------
-
-
-def test_a_leftover_is_deleted_once_its_clone_is_complete(tmp_path, on):
-    root = GitPolicyFetcher.base_dir(tmp_path)
-    clone = _clone_dir(tmp_path, _sid(1))
-    leftover = root / f".hung-{_sid(1)}"
-    (leftover / ".git").mkdir(parents=True)
-    assert quarantine_hung_scope_clones(tmp_path) == []
-    assert not leftover.exists() and clone.exists()
-
-
-@pytest.mark.parametrize("state", ["missing", "partial", "hung"])
-def test_a_leftover_is_put_back_when_its_clone_is_not_complete(tmp_path, on, state):
-    """The start that moved it died mid-sync, or its clone was still running
-    and then failed: the old copy is the only good one."""
-    root = GitPolicyFetcher.base_dir(tmp_path)
-    leftover = root / f".hung-{_sid(1)}"
-    (leftover / ".git").mkdir(parents=True)
-    (leftover / ".git" / "FETCH_HEAD").write_text("old\n")
-    (leftover / ".git" / MARKER).write_text("")
-    if state == "partial":
-        _clone_dir(tmp_path, _sid(1), complete=False)
-    elif state == "hung":
-        _clone_dir(tmp_path, _sid(1), hung=True)
-    moved = quarantine_hung_scope_clones(tmp_path)
-    clone = root / _sid(1)
-    if state == "hung":
-        # Put back (marker dropped), then judged on its own: not hung any more.
-        assert moved == []
-    assert not leftover.exists()
-    assert (clone / ".git" / "FETCH_HEAD").read_text() == "old\n"
-    assert not (clone / ".git" / MARKER).exists()
-
-
-# --- settle after the sync ----------------------------------------------------------------
-
-
-def _moved(tmp_path) -> QuarantinedClone:
-    _clone_dir(tmp_path, _sid(1), hung=True)
-    (q,) = quarantine_hung_scope_clones(tmp_path)
-    return q
-
-
-def test_recloned_deletes_the_old_copy(tmp_path, on, outcomes):
-    q = _moved(tmp_path)
-    _clone_dir(tmp_path, q.source_id)  # the sync's fresh clone
-    GitPolicyFetcher.repos_last_fetched[q.source_id] = datetime.datetime.now()
-    settle_quarantined_clones([q])
-    assert q.clone.exists() and not q.trash.exists()
-    assert outcomes == [("opal_server.scopes.hung_clone", "recloned")]
-
-
-def test_a_success_recorded_before_the_move_does_not_count(tmp_path, on, outcomes):
-    GitPolicyFetcher.repos_last_fetched[_sid(1)] = datetime.datetime.now()
-    time.sleep(0.01)
-    q = _moved(tmp_path)
-    settle_quarantined_clones([q])
-    assert outcomes[-1][1] == "restored"
-
-
-@pytest.mark.parametrize("partial", [False, True])
-def test_not_recloned_puts_the_old_copy_back(tmp_path, on, outcomes, partial):
-    q = _moved(tmp_path)
-    if partial:
-        _clone_dir(tmp_path, q.source_id, complete=False)
-    settle_quarantined_clones([q])
-    assert not q.trash.exists()
-    git_dir = q.clone / ".git"
-    assert (git_dir / "FETCH_HEAD").exists() and not (git_dir / MARKER).exists()
-    assert outcomes == [("opal_server.scopes.hung_clone", "restored")]
-
-
-def test_in_flight_leaves_both_for_the_next_start(tmp_path, on, outcomes, monkeypatch):
-    q = _moved(tmp_path)
-    live = _clone_dir(tmp_path, q.source_id, complete=False)
-    monkeypatch.setattr(
-        git_fetcher_module, "git_op_in_flight", lambda k: k == q.source_id
-    )
-    settle_quarantined_clones([q])
-    assert live.exists() and q.trash.exists()
-    assert outcomes == [("opal_server.scopes.hung_clone", "in_flight")]
-
-
-def test_settle_never_raises_and_reports_lost(tmp_path, on, outcomes, monkeypatch):
-    q = _moved(tmp_path)
-
-    def _boom(*a, **k):
-        raise OSError("disk gone")
-
-    monkeypatch.setattr(git_fetcher_module.os, "rename", _boom)
-    settle_quarantined_clones([q])
-    assert q.trash.exists()  # still there for the next start
-    assert outcomes == [("opal_server.scopes.hung_clone", "lost")]
-
-
-# --- the preload wiring -----------------------------------------------------------------
+# --- the preload wiring ---------------------------------------------------------------------
 
 
 @pytest.fixture
@@ -387,22 +359,14 @@ def preload(monkeypatch, tmp_path):
             if state["sync"]:
                 state["sync"]()
 
-    real_q, real_s = (
-        task_module.quarantine_hung_scope_clones,
-        task_module.settle_quarantined_clones,
-    )
+    real = task_module.reclone_hung_scope_clones
 
-    def _q(base_dir):
-        state["events"].append("quarantine")
-        return real_q(base_dir)
-
-    def _s(moved):
-        state["events"].append("settle")
-        real_s(moved)
+    def _sweep(base_dir):
+        state["events"].append("sweep")
+        return real(base_dir)
 
     monkeypatch.setattr(task_module, "ScopesService", _Service)
-    monkeypatch.setattr(task_module, "quarantine_hung_scope_clones", _q)
-    monkeypatch.setattr(task_module, "settle_quarantined_clones", _s)
+    monkeypatch.setattr(task_module, "reclone_hung_scope_clones", _sweep)
     monkeypatch.setattr(task_module, "drain_git_ops", lambda timeout: True)
     monkeypatch.setattr(task_module, "shutdown_git_executor", lambda: None)
     monkeypatch.setattr(opal_server_config, "SCOPES", True)
@@ -411,59 +375,23 @@ def preload(monkeypatch, tmp_path):
     return state
 
 
-def test_preload_order_is_quarantine_sync_settle(preload):
+def test_preload_sweeps_before_it_syncs(preload):
     preload["run"]()
-    assert preload["events"] == ["quarantine", "sync_scopes", "settle"]
+    assert preload["events"] == ["sweep", "sync_scopes"]
 
 
 def test_preload_end_to_end(tmp_path, on, preload):
-    """Two marked clones: the sync clones one again and not the other. A
-    healthy clone is never touched."""
-    root = GitPolicyFetcher.base_dir(tmp_path)
-    _clone_dir(tmp_path, _sid(1), hung=True)
-    _clone_dir(tmp_path, _sid(2), hung=True)
-    healthy = _clone_dir(tmp_path, _sid(3))
+    hung = _clone_dir(tmp_path, _sid(1), hung=True)
+    healthy = _clone_dir(tmp_path, _sid(2))
     at_sync = {}
-
-    def _sync():
-        at_sync.update({n: (root / _sid(n)).exists() for n in (1, 2, 3)})
-        _clone_dir(tmp_path, _sid(1))  # cloned again
-        GitPolicyFetcher.repos_last_fetched[_sid(1)] = datetime.datetime.now()
-
-    preload["sync"] = _sync
+    preload["sync"] = lambda: at_sync.update(
+        hung=hung.exists(), healthy=healthy.exists()
+    )
     preload["run"]()
-    assert at_sync == {1: False, 2: False, 3: True}
-    for n in (1, 2, 3):
-        assert not ((root / _sid(n)) / ".git" / MARKER).exists(), n
-    assert not any(p.name.startswith(".hung-") for p in root.iterdir())
-    assert healthy.exists()
-
-
-def test_preload_settles_even_when_the_sync_raises(tmp_path, on, preload):
-    _clone_dir(tmp_path, _sid(1), hung=True)
-
-    def _sync():
-        raise RuntimeError("redis went away")
-
-    preload["sync"] = _sync
-    with pytest.raises(RuntimeError):
-        preload["run"]()
-    assert preload["events"][-1] == "settle"
-    assert (
-        GitPolicyFetcher.base_dir(tmp_path) / _sid(1) / ".git" / "FETCH_HEAD"
-    ).exists()
+    assert at_sync == {"hung": False, "healthy": True}
 
 
 def test_no_preload_when_scopes_are_off(preload, monkeypatch):
     monkeypatch.setattr(opal_server_config, "SCOPES", False)
     preload["run"]()
     assert preload["events"] == []
-
-
-# --- the libgit2 behaviour "complete clone" relies on -----------------------------------
-
-
-def test_libgit2_clone_writes_fetch_head(tmp_path):
-    repo = pygit2.clone_repository(str(_origin(tmp_path)), str(tmp_path / "c"))
-    assert (tmp_path / "c" / ".git" / "FETCH_HEAD").is_file()
-    repo.free()
