@@ -19,7 +19,7 @@
     "@docusaurus/theme-mermaid": "3.10.1",
     "@inkeep/cxkit-docusaurus": "0.5.119",
     "@mdx-js/react": "3.1.1",
-    "axios": "1.18.1",
+    "axios": "1.20.0",
     "clsx": "2.1.1",
     "docusaurus-plugin-sass": "0.2.6",
     "micromatch": "^4.0.8",
