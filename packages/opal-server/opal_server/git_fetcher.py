@@ -589,25 +589,46 @@ def _hung_marker_name() -> str:
     return f"{_HUNG_MARKER_HOST}-{os.getpid()}-{next(_hung_marker_seq)}"
 
 
-def clear_hung_markers(repo_path: Path) -> None:
+def clear_hung_markers(markers: Path) -> None:
     """After a successful fetch or clone of this source, by any process: the
     clone works, so whatever hang the markers recorded no longer calls for a
     fresh clone.
 
     Not tied to the setting, so markers left while it was on cannot
-    outlive a later good fetch. Blocking; run it off the event loop.
-    Never raises.
+    outlive a later good fetch. Blocking: run_in_git_executor calls it
+    on the op's own thread. Never raises.
     """
     try:
-        shutil.rmtree(hung_marker_dir(repo_path))
+        shutil.rmtree(markers)
     except FileNotFoundError:
         pass  # the common case: nothing ever hung
     except OSError as e:
         logger.warning(
             "Could not remove hung-op markers {path}: {err}",
-            path=hung_marker_dir(repo_path),
+            path=markers,
             err=repr(e),
         )
+
+
+# When at least this many distinct repositories have hung clones, and they are
+# at least _HUNG_RECLONE_MAX_REPO_SHARE of all of them, the hang is most likely
+# the git provider's rather than one repository's: deleting every clone would
+# turn stale-but-served policy into no policy for every scope while the remote
+# is still down, so the sweep deletes nothing.
+_HUNG_RECLONE_MIN_REPOS_FOR_OUTAGE = 2
+_HUNG_RECLONE_MAX_REPO_SHARE = 0.5
+
+
+def _repo_of(source_id: str) -> str:
+    """The repository part of a source id: its shards share it."""
+    return source_id.rsplit("-", 1)[0]
+
+
+def _is_our_marker(name: str) -> bool:
+    """Whether a marker file was written by this host: <host>-<pid>-<seq>,
+    parsed from the right since a hostname may contain "-"."""
+    parts = name.rsplit("-", 2)
+    return len(parts) == 3 and parts[0] == _HUNG_MARKER_HOST
 
 
 def reclone_hung_scope_clones(base_dir: Path) -> int:
@@ -615,15 +636,23 @@ def reclone_hung_scope_clones(base_dir: Path) -> int:
     previous server process ended; return how many were deleted.
 
     For the pre-fork preload, before its sync, which clones each deleted one
-    fresh: nothing else in this container uses the clones then, and markers
-    another host wrote (a replica sharing the volume) are left alone. Only a
-    real directory named like a source id is deleted, never a symlink; markers
-    whose clone is gone (a deleted scope) are just removed. Runs under the
-    repack lock and does nothing while a repack holds it. Never raises: a clone
-    it cannot delete keeps its markers for the next start.
+    fresh: nothing else in this container uses the clones then. Markers another
+    host wrote are left alone, but sharing BASE_DIR between running servers is
+    not supported with this setting on. Only a real directory named like a
+    source id is deleted, never a symlink. Markers of a clone that is gone (a
+    deleted scope) are removed whoever wrote them. When the hung clones span
+    many repositories (see _HUNG_RECLONE_MAX_REPO_SHARE) nothing is deleted.
+    Runs under the repack lock and does nothing while a repack holds it. Never
+    raises: a clone it cannot fully delete keeps its markers for the next start.
     """
     if not reclone_hung_enabled():
         return 0
+    if _finite_positive_or_zero(opal_server_config.SCOPES_GIT_FETCH_TIMEOUT) <= 0:
+        logger.warning(
+            "SCOPES_GIT_RECLONE_HUNG_ON_START is on but SCOPES_GIT_FETCH_TIMEOUT "
+            "is not positive: with no timeout no git op is ever marked hung, so "
+            "this setting does nothing"
+        )
     root = GitPolicyFetcher.base_dir(base_dir)
     try:
         lock = _take_repack_lock(root)
@@ -643,79 +672,101 @@ def reclone_hung_scope_clones(base_dir: Path) -> int:
             root=root,
         )
         return 0
-    deleted = 0
     try:
-        try:
-            with os.scandir(root) as it:
-                names = [e.name for e in it]
-        except OSError as e:
-            logger.warning(
-                "Not checking scope clones for hung git ops: cannot list "
-                "{root}: {err}",
-                root=root,
-                err=repr(e),
-            )
-            return 0
-        for name in names:
-            source_id = name[: -len(_HUNG_MARKER_SUFFIX)]
-            if not name.endswith(_HUNG_MARKER_SUFFIX) or not SOURCE_ID_RE.match(
-                source_id
-            ):
-                continue
-            if _reclone_one(root / source_id, root / name):
-                deleted += 1
+        return _reclone_hung_under_lock(root)
     finally:
         _drop_repack_lock(lock)
-    return deleted
+
+
+def _reclone_hung_under_lock(root: Path) -> int:
+    try:
+        with os.scandir(root) as it:
+            names = [e.name for e in it]
+    except OSError as e:
+        logger.warning(
+            "Not checking scope clones for hung git ops: cannot list {root}: {err}",
+            root=root,
+            err=repr(e),
+        )
+        return 0
+    clones = {n for n in names if SOURCE_ID_RE.match(n)}
+    hung: list[str] = []  # source ids with a marker from this host
+    for name in names:
+        source_id = name[: -len(_HUNG_MARKER_SUFFIX)]
+        if not name.endswith(_HUNG_MARKER_SUFFIX) or not SOURCE_ID_RE.match(source_id):
+            continue
+        markers = root / name
+        try:
+            if markers.is_symlink() or not markers.is_dir():
+                continue
+            if source_id not in clones:
+                # The scope was deleted: no clone to protect, whoever wrote it.
+                shutil.rmtree(markers)
+                continue
+            files = list(markers.iterdir())
+            if not files:
+                markers.rmdir()  # every op returned
+            elif any(_is_our_marker(p.name) for p in files):
+                hung.append(source_id)
+        except OSError as e:
+            logger.warning(
+                "Could not read hung-op markers {path}: {err}",
+                path=markers,
+                err=repr(e),
+            )
+    if not hung:
+        return 0
+    hung_repos = {_repo_of(s) for s in hung}
+    all_repos = {_repo_of(s) for s in clones}
+    if len(hung_repos) >= _HUNG_RECLONE_MIN_REPOS_FOR_OUTAGE and len(
+        hung_repos
+    ) >= _HUNG_RECLONE_MAX_REPO_SHARE * len(all_repos):
+        logger.warning(
+            "Clones of {hung} of {total} repositories had a git op still hung when "
+            "the previous server process ended: most likely the git provider, "
+            "not the clones. Keeping them all, so their scopes keep their last "
+            "fetched policy.",
+            hung=len(hung_repos),
+            total=len(all_repos),
+        )
+        return 0
+    return sum(_reclone_one(root / s, root / f"{s}{_HUNG_MARKER_SUFFIX}") for s in hung)
 
 
 def _reclone_one(clone: Path, markers: Path) -> bool:
-    """The sweep's work on one source; True when it deleted the clone."""
-    try:
-        if markers.is_symlink() or not markers.is_dir():
-            return False
-        ours = [
-            p for p in markers.iterdir() if p.name.startswith(f"{_HUNG_MARKER_HOST}-")
-        ]
-        if not ours:
-            if not any(markers.iterdir()):
-                markers.rmdir()  # every op returned; nothing to do
-            return False
-        deleted = False
-        if clone.is_symlink():
-            logger.warning(
-                "Not deleting hung scope clone {source_id}: it is a symlink",
-                source_id=clone.name,
-            )
-        else:
-            try:
-                shutil.rmtree(clone)
-                deleted = True
-            except FileNotFoundError:
-                pass  # its scope was deleted: only the markers are left
-            if deleted:
-                metrics.increment("opal_server.scopes.hung_clone_recloned")
-                logger.warning(
-                    "Scope clone {source_id} had a git op still hung when the "
-                    "previous server process ended: deleted it, the preload "
-                    "clones it again",
-                    source_id=clone.name,
-                )
-        for p in ours:
-            p.unlink(missing_ok=True)
-        try:
-            markers.rmdir()
-        except OSError:
-            pass  # another host's markers are still in it
-        return deleted
-    except OSError as e:
+    """Delete one hung clone and this host's markers; True when it deleted
+    it."""
+    if clone.is_symlink():
         logger.warning(
-            "Could not delete hung scope clone {source_id}; the preload syncs it "
-            "as it is, and the next start tries again: {err}",
+            "Not deleting hung scope clone {source_id}: it is a symlink",
             source_id=clone.name,
-            err=repr(e),
         )
         return False
+    try:
+        shutil.rmtree(clone)
+    except OSError as e:
+        if not isinstance(e, FileNotFoundError) or clone.exists():
+            logger.warning(
+                "Could not delete hung scope clone {source_id}; the preload syncs "
+                "it as it is, and the next start tries again: {err}",
+                source_id=clone.name,
+                err=repr(e),
+            )
+            return False
+    metrics.increment("opal_server.scopes.hung_clone_recloned")
+    logger.warning(
+        "Scope clone {source_id} had a git op still hung when the previous server "
+        "process ended: deleted it, the preload clones it again",
+        source_id=clone.name,
+    )
+    try:
+        for p in markers.iterdir():
+            if _is_our_marker(p.name):
+                p.unlink(missing_ok=True)
+        markers.rmdir()
+    except OSError:
+        pass  # another host's markers are still in it
+    return True
 
 
 def _consume_future_result(fut) -> None:
@@ -751,6 +802,7 @@ async def run_in_git_executor(
     timeout: float,
     busy_key=None,
     hung_marker_dir: Optional[Path] = None,
+    mark_when_hung: bool = False,
     **kwargs,
 ):
     """Run a blocking git call on its own daemon thread with a hard timeout.
@@ -776,10 +828,13 @@ async def run_in_git_executor(
     Callers use ``git_op_in_flight`` to avoid starting a second git op against
     the same repository while a timed-out one is still running.
 
-    When ``hung_marker_dir`` is given, an op that outlives its timeout writes a
-    marker file of its own in that directory and removes it once it actually
-    returns, so a marker that survives the process (a container restart) says
-    the op never finished. See reclone_hung_scope_clones.
+    When ``hung_marker_dir`` is given, an op that succeeds within its timeout
+    removes that directory on its own thread (the clone works, so no earlier
+    hang calls for a fresh clone). With ``mark_when_hung`` too, an op that
+    outlives its timeout writes a marker file of its own in it and removes
+    only that file once it actually returns, so a marker that survives the
+    process (a container restart) says the op never finished. See
+    reclone_hung_scope_clones.
     """
     global _zombie_cap_logged
     # Clamped like every sibling knob in this subsystem: unclamped, a negative
@@ -816,7 +871,9 @@ async def run_in_git_executor(
     hung_lock = threading.Lock()
     hung = {"returned": False, "marked": False}
     hung_marker = (
-        hung_marker_dir / _hung_marker_name() if hung_marker_dir is not None else None
+        hung_marker_dir / _hung_marker_name()
+        if hung_marker_dir is not None and mark_when_hung
+        else None
     )
 
     def _mark_hung():
@@ -836,19 +893,29 @@ async def run_in_git_executor(
                 )
 
     def _runner():
+        succeeded = False
         try:
-            return func(*args, **kwargs)
+            result = func(*args, **kwargs)
+            succeeded = True
+            return result
         finally:
             if busy_key is not None:
                 _mark_git_op_done(busy_key)
-            if hung_marker is not None:
+            if hung_marker_dir is not None:
                 with hung_lock:
                     hung["returned"] = True
-                    if hung["marked"]:
-                        try:
-                            hung_marker.unlink()
-                        except OSError:
-                            pass  # gone already, or the next start sees it
+                    marked = hung["marked"]
+                if marked:
+                    # Only this op's own marker: another process's op on the
+                    # same clone may still be hung.
+                    try:
+                        hung_marker.unlink()
+                    except OSError:
+                        pass  # gone already, or the next start sees it
+                elif succeeded:
+                    # Finished within its timeout: the clone works, so no
+                    # earlier hang calls for a fresh clone.
+                    clear_hung_markers(hung_marker_dir)
 
     sem = _get_live_ops_semaphore()
     await sem.acquire()
@@ -2155,9 +2222,8 @@ class GitPolicyFetcher(PolicyFetcher):
                                     callbacks=self._auth_callbacks,
                                     timeout=opal_server_config.SCOPES_GIT_FETCH_TIMEOUT,
                                     busy_key=self._source_id,
-                                    hung_marker_dir=hung_marker_dir(self._repo_path)
-                                    if reclone_hung_enabled()
-                                    else None,
+                                    hung_marker_dir=hung_marker_dir(self._repo_path),
+                                    mark_when_hung=reclone_hung_enabled(),
                                 )
                             except TimeoutError as exc:
                                 # Expected when a repo is unreachable: log cleanly
@@ -2197,7 +2263,6 @@ class GitPolicyFetcher(PolicyFetcher):
                                 self._source_id
                             ] = fetch_started
                             self._clear_source_backoff()
-                            await run_sync(clear_hung_markers, self._repo_path)
                             logger.debug(
                                 f"Fetch completed: {redact_url(self._source.url)}"
                             )
@@ -2720,9 +2785,8 @@ class GitPolicyFetcher(PolicyFetcher):
                 callbacks=self._auth_callbacks,
                 timeout=opal_server_config.SCOPES_GIT_FETCH_TIMEOUT,
                 busy_key=self._source_id,
-                hung_marker_dir=hung_marker_dir(self._repo_path)
-                if reclone_hung_enabled()
-                else None,
+                hung_marker_dir=hung_marker_dir(self._repo_path),
+                mark_when_hung=reclone_hung_enabled(),
             )
         except (pygit2.GitError, TimeoutError) as exc:
             metrics.increment(
@@ -2745,7 +2809,6 @@ class GitPolicyFetcher(PolicyFetcher):
             )
         else:
             logger.info(f"Clone completed: {redact_url(self._source.url)}")
-            await run_sync(clear_hung_markers, self._repo_path)
             # Cleared on the awaited SUCCESS of the git op itself, before the
             # local bookkeeping below: the remote is demonstrably reachable, so
             # a later failure inside _notify_on_changes (a corrupt object

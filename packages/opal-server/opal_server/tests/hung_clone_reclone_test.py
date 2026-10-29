@@ -112,7 +112,12 @@ async def test_an_op_past_its_timeout_marks_until_it_returns(tmp_path):
     release = threading.Event()
     with pytest.raises(TimeoutError):
         await run_in_git_executor(
-            release.wait, 5, timeout=0.05, busy_key="k1", hung_marker_dir=d
+            release.wait,
+            5,
+            timeout=0.05,
+            busy_key="k1",
+            hung_marker_dir=d,
+            mark_when_hung=True,
         )
     await _until(lambda: d.is_dir() and any(d.iterdir()))  # the op still runs
     (marker,) = list(d.iterdir())
@@ -131,7 +136,9 @@ async def test_a_failing_op_past_its_timeout_still_clears_its_marker(tmp_path):
         raise pygit2.GitError("remote hung up")
 
     with pytest.raises(TimeoutError):
-        await run_in_git_executor(_fails, timeout=0.05, hung_marker_dir=d)
+        await run_in_git_executor(
+            _fails, timeout=0.05, hung_marker_dir=d, mark_when_hung=True
+        )
     await _until(lambda: d.is_dir() and any(d.iterdir()))
     release.set()
     await _until(lambda: not any(d.iterdir()))
@@ -140,7 +147,12 @@ async def test_a_failing_op_past_its_timeout_still_clears_its_marker(tmp_path):
 @pytest.mark.asyncio
 async def test_an_op_within_its_timeout_leaves_no_marker(tmp_path):
     d = tmp_path / "m.hung"
-    assert await run_in_git_executor(lambda: 42, timeout=5, hung_marker_dir=d) == 42
+    assert (
+        await run_in_git_executor(
+            lambda: 42, timeout=5, hung_marker_dir=d, mark_when_hung=True
+        )
+        == 42
+    )
     assert not d.exists()
 
 
@@ -160,7 +172,9 @@ async def test_an_unwritable_marker_is_logged_not_raised(tmp_path):
     d = blocker / "m.hung"  # its parent is a file: cannot be created
     release = threading.Event()
     with pytest.raises(TimeoutError):  # the op's own timeout, nothing else
-        await run_in_git_executor(release.wait, 5, timeout=0.05, hung_marker_dir=d)
+        await run_in_git_executor(
+            release.wait, 5, timeout=0.05, hung_marker_dir=d, mark_when_hung=True
+        )
     release.set()
 
 
@@ -187,7 +201,9 @@ async def test_a_stalled_marker_write_delays_neither_the_timeout_nor_the_slot(
     release = threading.Event()
     t0 = time.monotonic()
     with pytest.raises(TimeoutError):
-        await run_in_git_executor(release.wait, 5, timeout=0.05, hung_marker_dir=d)
+        await run_in_git_executor(
+            release.wait, 5, timeout=0.05, hung_marker_dir=d, mark_when_hung=True
+        )
     assert time.monotonic() - t0 < 2
     # The single slot is free again: another op runs while the write stalls.
     assert (
@@ -209,7 +225,9 @@ async def test_one_op_returning_does_not_clear_another_ops_marker(tmp_path):
     first, second = threading.Event(), threading.Event()
     for ev in (first, second):
         with pytest.raises(TimeoutError):
-            await run_in_git_executor(ev.wait, 5, timeout=0.05, hung_marker_dir=d)
+            await run_in_git_executor(
+                ev.wait, 5, timeout=0.05, hung_marker_dir=d, mark_when_hung=True
+            )
     await _until(lambda: d.is_dir() and len(list(d.iterdir())) == 2)
     first.set()
     await _until(lambda: len(list(d.iterdir())) == 1)
@@ -397,7 +415,7 @@ def test_ignores_what_is_not_a_marker_of_a_real_clone_dir(tmp_path, on):
         hung_marker_dir(root / "not-a-source-id"),
     ):
         assert p.exists(), p
-    assert not hung_marker_dir(link).exists()  # its own markers are cleared
+    assert _markers(link)  # kept: a clone it cannot delete keeps its markers
 
 
 def test_missing_root_is_a_new_pod(tmp_path, on):
@@ -497,3 +515,92 @@ def test_no_preload_when_scopes_are_off(preload, monkeypatch):
     monkeypatch.setattr(opal_server_config, "SCOPES", False)
     preload["run"]()
     assert preload["events"] == []
+
+
+# --- round 5 --------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "name,ours",
+    [
+        (f"{HOST}-12-0", True),
+        (f"{HOST}-replica-12-0", False),  # another host whose name extends ours
+        ("other-12-0", False),
+        (f"{HOST}-12", False),
+        (HOST, False),
+    ],
+)
+def test_marker_ownership_is_an_exact_host_match(name, ours):
+    assert git_fetcher_module._is_our_marker(name) is ours
+
+
+@pytest.mark.asyncio
+async def test_a_successful_op_clears_markers_without_marking(tmp_path):
+    d = tmp_path / "m.hung"
+    d.mkdir()
+    (d / "other-1-0").write_text("")
+    assert await run_in_git_executor(lambda: "ok", timeout=5, hung_marker_dir=d) == "ok"
+    assert not d.exists()
+
+
+@pytest.mark.asyncio
+async def test_no_marker_without_mark_when_hung(tmp_path):
+    d = tmp_path / "m.hung"
+    release = threading.Event()
+    with pytest.raises(TimeoutError):
+        await run_in_git_executor(release.wait, 5, timeout=0.05, hung_marker_dir=d)
+    release.set()
+    await _until(lambda: True)
+    assert not d.exists() or not any(d.iterdir())
+
+
+def test_one_repo_hung_across_its_shards_is_recloned(tmp_path, on):
+    """A single big repository on 3 shards, among other healthy
+    repositories."""
+    for shard in range(3):
+        _clone_dir(tmp_path, _sid(1, shard), hung=True)
+    for n in range(2, 6):
+        _clone_dir(tmp_path, _sid(n))
+    assert reclone_hung_scope_clones(tmp_path) == 3
+
+
+def test_a_single_repo_deployment_is_recloned(tmp_path, on):
+    _clone_dir(tmp_path, _sid(1), hung=True)
+    assert reclone_hung_scope_clones(tmp_path) == 1
+
+
+def test_a_provider_wide_hang_keeps_every_clone(tmp_path, on):
+    """Most repositories hung at once: likely the provider, keep stale policy."""
+    for n in (1, 2, 3):
+        _clone_dir(tmp_path, _sid(n), hung=True)
+    healthy = _clone_dir(tmp_path, _sid(4))
+    assert reclone_hung_scope_clones(tmp_path) == 0
+    for n in (1, 2, 3):
+        clone = _root(tmp_path) / _sid(n)
+        assert clone.exists() and _markers(clone)
+    assert healthy.exists()
+
+
+def test_another_hosts_markers_of_a_deleted_scope_are_removed(tmp_path, on):
+    gone = _root(tmp_path) / _sid(1)
+    _mark(gone, host="old-pod")
+    _clone_dir(tmp_path, _sid(2))  # git_sources exists with something in it
+    assert reclone_hung_scope_clones(tmp_path) == 0
+    assert not hung_marker_dir(gone).exists()
+
+
+def test_a_partly_deleted_clone_keeps_its_markers(tmp_path, on, monkeypatch):
+    clone = _clone_dir(tmp_path, _sid(1), hung=True)
+
+    def _vanishing_entry(path, *a, **k):
+        raise FileNotFoundError(2, "No such file", str(Path(path) / ".git" / "x"))
+
+    monkeypatch.setattr(git_fetcher_module.shutil, "rmtree", _vanishing_entry)
+    assert reclone_hung_scope_clones(tmp_path) == 0
+    assert clone.exists() and _markers(clone)
+
+
+def test_a_non_positive_fetch_timeout_is_warned_about(tmp_path, on, monkeypatch):
+    monkeypatch.setattr(opal_server_config, "SCOPES_GIT_FETCH_TIMEOUT", 0)
+    _clone_dir(tmp_path, _sid(1), hung=True)
+    assert reclone_hung_scope_clones(tmp_path) == 1  # still acts on what it finds

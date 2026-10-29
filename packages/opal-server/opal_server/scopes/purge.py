@@ -32,8 +32,15 @@ Two other ``rmtree`` sites exist and are not reclamation: ``git_fetcher``'s
 invalid-repo recovery and ``_clone``'s partial-dir wipe both delete-and-replace
 a dir they are about to re-create. Both run under ``lock_source`` and target
 ``self._repo_path``, derived from ``GitPolicyFetcher.source_id(source)`` — a
-sha256 digest of the URL, never wire input. An audit of "can caller-controlled
-input reach an rmtree?" has to account for all three. That is
+sha256 digest of the URL, never wire input. A fourth runs only at process
+start, in the gunicorn master's preload before any worker exists:
+``git_fetcher.reclone_hung_scope_clones`` (off unless
+SCOPES_GIT_RECLONE_HUNG_ON_START) deletes clone dirs it LISTS from
+``git_sources``, so its targets come from the filesystem, not from
+``source_id(source)``; it deletes only real directories whose name matches
+``SOURCE_ID_RE`` and that have a hung-op marker from this host, under the
+repack lock, and the preload's sync then re-creates them. An audit of "can
+caller-controlled input reach an rmtree?" has to account for all four. That is
 master's behaviour (master removed it inline there, with no broadcast involved),
 kept so a dropped broadcast does not regress against the merge base.
 
