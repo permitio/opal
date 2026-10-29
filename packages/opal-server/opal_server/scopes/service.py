@@ -166,8 +166,9 @@ class ScopesService:
         or a stale PUT followed by the corrective one, notifies nobody, and a
         client that fetched in between keeps that policy until the next commit.
 
-        ``honor_backoff`` marks this call as pass-originated, letting the
-        fetcher skip a source that keeps failing (see
+        ``honor_backoff`` marks this call as pass-originated, or as the sync
+        a bundle request asked for because the scope's branch was missing from
+        its clone, letting the fetcher skip a source that keeps failing (see
         SCOPES_GIT_BACKOFF_BASE_SECONDS). It defaults to False so the explicit
         callers — POST /scopes/{id}/refresh and PUT /scopes, both of which
         arrive here through the watcher's ``trigger`` — always attempt the

@@ -297,8 +297,10 @@ async def _make_bundle_waiting_for_clone(
     younger than the wait are held too, until the same deadline, without asking
     again; after that, for the rest of the interval, a miss gets the 409 at
     once. A hold that runs out gets the same 409. The in-flight cap is checked
-    before any of it, so a shed request neither requests a sync nor uses up
-    the interval.
+    before any of it, so a request shed there neither requests a sync nor uses
+    up the interval. A request that has just requested the sync is checked
+    again; if it is shed then, the sync it requested stands for the interval
+    and later misses ride it.
 
     Exactly one `policy_clone_wait` count is emitted per request that reaches
     the wait, tagged with how it ended: served, timeout, shed, disconnected,

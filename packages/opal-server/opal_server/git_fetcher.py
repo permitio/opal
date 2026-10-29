@@ -1832,8 +1832,9 @@ class GitPolicyFetcher(PolicyFetcher):
         we use this hint to avoid an necessary fetch.
 
         ``honor_backoff`` says this call is pass-originated (the periodic sync
-        and the boot preload) and may be skipped while the source is serving
-        out a failure backoff. It defaults to False so every explicit path —
+        and the boot preload), or is the sync a bundle request asked for
+        because the scope's branch was missing from its clone, and may be
+        skipped while the source is serving out a failure backoff. It defaults to False so every explicit path —
         POST /scopes/{id}/refresh, POST /scopes/refresh, PUT /scopes — attempts
         the source immediately: those are someone asking for this repo, now,
         and the most likely reason they are asking is that they just fixed it.
