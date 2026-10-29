@@ -11,6 +11,7 @@ from opal_server.git_fetcher import (
     GitPolicyFetcher,
     drain_git_ops,
     git_busy_count,
+    remove_stale_scope_clones,
     shutdown_git_executor,
 )
 from opal_server.metrics_setup import configure_server_metrics
@@ -230,6 +231,12 @@ class ScopesPolicyWatcherTask(BasePolicyWatcherTask):
             # dashboards/monitors built on permit.opal.*.
             configure_server_metrics()
             logger.info("Preloading repo clones for scopes")
+
+            # Before the sync, while nothing else in this container uses the
+            # clones: a container restarted because a clone stopped fetching
+            # would otherwise reuse that clone (see SCOPES_GIT_STALE_CLONE_MAX_AGE).
+            # A no-op unless that is set.
+            remove_stale_scope_clones(Path(opal_server_config.BASE_DIR))
 
             service = ScopesService(
                 base_dir=Path(opal_server_config.BASE_DIR),

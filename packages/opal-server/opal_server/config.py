@@ -263,6 +263,27 @@ class OpalServerConfig(Confi):
         "handles are left unfreed by the pre-fork cache reset, avoiding a use-after-free "
         "(0 = don't wait).",
     )
+    SCOPES_GIT_STALE_CLONE_MAX_AGE = confi.float(
+        "SCOPES_GIT_STALE_CLONE_MAX_AGE",
+        0.0,
+        description="Seconds since a scope clone's last fetch after which the "
+        "pre-fork scope preload deletes that clone before it syncs, so the "
+        "preload clones it fresh. The age is taken from the clone's "
+        ".git/FETCH_HEAD, which the clone writes and every fetch rewrites, or "
+        "from .git/HEAD when FETCH_HEAD is missing. It runs once per process "
+        "start, in the gunicorn master, "
+        "before any worker exists. Its purpose is a container that restarts "
+        "with its clones still on disk, for example after a liveness probe "
+        "killed it because a clone stopped fetching: without this the restarted "
+        "server reuses that clone and can stay stuck on it, while a new pod "
+        "(empty volume) clones fresh and recovers. Set it above the longest "
+        "normal gap between fetches of a clone (POLICY_REFRESH_INTERVAL plus "
+        "slow fetches) and below any probe threshold that restarts the "
+        "container on a stale FETCH_HEAD. A deleted clone of a repository that "
+        "cannot be cloned at that moment (revoked credentials, deleted repo) "
+        "leaves its scopes without a policy until a clone succeeds, as on a "
+        "new pod. 0 (the default), negative, nan or inf disable it.",
+    )
     SCOPES_GIT_MAX_ZOMBIES = confi.int(
         "SCOPES_GIT_MAX_ZOMBIES",
         # 4x the default SCOPES_GIT_MAX_WORKERS. Once this many git ops (live +

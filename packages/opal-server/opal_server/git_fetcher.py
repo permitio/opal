@@ -7,6 +7,7 @@ import hashlib
 import inspect
 import math
 import os
+import re
 import shutil
 import signal
 import subprocess
@@ -535,6 +536,122 @@ def _emit_sources_in_backoff() -> None:
 # Public name for callers outside this module (the per-pass emission in
 # scopes/service.py); the underscore-prefixed one stays for in-module use.
 emit_sources_in_backoff = _emit_sources_in_backoff
+
+
+# --- stale scope clones at process start ---------------------------------------
+#
+# A clone whose fetch hangs past SCOPES_GIT_FETCH_TIMEOUT keeps that git op
+# running on its daemon thread, and every later sync of the clone is skipped
+# while it lasts, so the clone stops fetching. If a probe on its FETCH_HEAD age
+# then restarts the container, the clones survive the restart (they live on a
+# volume) and the restarted server goes straight back to that clone. A new pod
+# starts with an empty volume, clones fresh and recovers. The sweep below gives
+# a restarted container the new pod's starting point for the clones that need
+# it, and leaves every clone that is fetching normally where it is.
+
+# GitPolicyFetcher.source_id(): a sha256 hex digest, "-", the shard index. The
+# sweep removes nothing else it finds under git_sources.
+_SOURCE_ID_RE = re.compile(r"^[0-9a-f]{64}-[0-9]+$")
+
+
+def _stale_clone_max_age_seconds() -> float:
+    """SCOPES_GIT_STALE_CLONE_MAX_AGE, validated.
+
+    0.0 means "disabled".
+    """
+    return _finite_positive_or_zero(opal_server_config.SCOPES_GIT_STALE_CLONE_MAX_AGE)
+
+
+def _clone_last_fetch_time(clone: Path) -> Optional[float]:
+    """When the clone last fetched: FETCH_HEAD's mtime, else HEAD's.
+
+    libgit2 writes FETCH_HEAD in the clone and rewrites it on every fetch, an
+    up-to-date one included, which is what makes it the age a probe can
+    watch. HEAD, written by the clone, is the fallback for a clone that lost
+    its FETCH_HEAD. None when neither exists: that is no clone this sweep
+    knows how to judge, and _get_valid_repo() deals with an unusable one.
+    """
+    git_dir = clone / ".git"
+    for name in ("FETCH_HEAD", "HEAD"):
+        try:
+            return (git_dir / name).stat().st_mtime
+        except FileNotFoundError:
+            continue
+    return None
+
+
+def remove_stale_scope_clones(base_dir: Path) -> int:
+    """Delete the scope clones whose last fetch is older than
+    SCOPES_GIT_STALE_CLONE_MAX_AGE; return how many were deleted.
+
+    Meant for the pre-fork preload, before its sync: nothing else in this
+    container touches the clones yet (no worker exists and the previous
+    container is gone), so a plain rmtree is safe there, and the sync that
+    follows clones every deleted one fresh. Calling it anywhere else would
+    delete clones from under live fetches.
+
+    It never raises: a clone it cannot judge or delete is kept, and the sync
+    handles it as it would have without this. A disabled setting (the
+    default) returns at once without touching the disk.
+    """
+    max_age = _stale_clone_max_age_seconds()
+    if max_age <= 0:
+        return 0
+    root = GitPolicyFetcher.base_dir(base_dir)
+    try:
+        entries = list(os.scandir(root))
+    except FileNotFoundError:
+        return 0  # nothing cloned yet: a new pod
+    except OSError as e:
+        logger.warning(
+            "Not checking scope clones for staleness: cannot list {root}: {err}",
+            root=root,
+            err=repr(e),
+        )
+        return 0
+    now = time.time()
+    removed = 0
+    for entry in entries:
+        # A real directory named like a source id, never a symlink: the repack
+        # lock file and anything else an operator left here stay untouched.
+        try:
+            if not _SOURCE_ID_RE.match(entry.name) or not entry.is_dir(
+                follow_symlinks=False
+            ):
+                continue
+            clone = Path(entry.path)
+            fetched_at = _clone_last_fetch_time(clone)
+        except OSError:
+            continue
+        if fetched_at is None:
+            continue
+        age = now - fetched_at
+        if age <= max_age:
+            continue
+        try:
+            shutil.rmtree(clone)
+        except FileNotFoundError:
+            pass  # already gone: the intended end state
+        except OSError as e:
+            logger.warning(
+                "Could not delete stale scope clone {source_id} (last fetched "
+                "{age:.0f}s ago); the sync uses it as is: {err}",
+                source_id=entry.name,
+                age=age,
+                err=repr(e),
+            )
+            continue
+        removed += 1
+        metrics.increment("opal_server.scopes.stale_clone_removed")
+        logger.warning(
+            "Deleted stale scope clone {source_id}: last fetched {age:.0f}s ago, "
+            "over SCOPES_GIT_STALE_CLONE_MAX_AGE ({max_age:.0f}s); the preload "
+            "clones it again",
+            source_id=entry.name,
+            age=age,
+            max_age=max_age,
+        )
+    return removed
 
 
 def _consume_future_result(fut) -> None:
