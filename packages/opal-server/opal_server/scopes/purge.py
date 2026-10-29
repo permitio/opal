@@ -39,8 +39,15 @@ SCOPES_GIT_RECLONE_HUNG_ON_START) deletes clone dirs it LISTS from
 ``git_sources``, so its targets come from the filesystem, not from
 ``source_id(source)``; it deletes only real directories whose name matches
 ``SOURCE_ID_RE`` and that have a hung-op marker, under the
-repack lock, and the preload's sync then re-creates them. An audit of "can
-caller-controlled input reach an rmtree?" has to account for all four. That is
+repack lock, and the preload's sync then re-creates them. The hung-op
+marker dirs beside the clones (``git_sources/<id>.hung``) are removed by
+``shutil.rmtree`` too, whatever the setting: by ``clear_hung_markers`` after a
+fetch or clone that succeeds within its timeout, by the sweep for markers
+whose clone is gone, and on every start with the setting off. Their paths
+come either from ``hung_marker_dir(self._repo_path)`` or from a ``git_sources``
+listing whose name, less the ``.hung`` suffix, matches ``SOURCE_ID_RE``, so they
+never leave ``git_sources``. An audit of "can caller-controlled input reach an
+rmtree?" has to account for all four clone sites and these marker removals. That is
 master's behaviour (master removed it inline there, with no broadcast involved),
 kept so a dropped broadcast does not regress against the merge base.
 

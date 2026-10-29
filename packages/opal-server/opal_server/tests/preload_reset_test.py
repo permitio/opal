@@ -27,6 +27,16 @@ def _logging_already_configured(monkeypatch):
     monkeypatch.setattr(opal_common_logger, "_logs_configured", True)
 
 
+class _NoScopes:
+    """The preload reads the scopes before its sweep: none here."""
+
+    def __init__(self, db):
+        pass
+
+    async def all(self):
+        return []
+
+
 @pytest.fixture(autouse=True)
 def _stub_redis_layer(monkeypatch):
     """preload_scopes() evaluates ``ScopeRepository(RedisDB(...))`` before the
@@ -45,7 +55,7 @@ def _stub_redis_layer(monkeypatch):
     where each file needs it.
     """
     monkeypatch.setattr(task_module, "RedisDB", lambda url: object())
-    monkeypatch.setattr(task_module, "ScopeRepository", lambda db: object())
+    monkeypatch.setattr(task_module, "ScopeRepository", _NoScopes)
     yield
 
 

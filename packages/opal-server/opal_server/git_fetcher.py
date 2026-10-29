@@ -9,6 +9,7 @@ import itertools
 import math
 import os
 import re
+import secrets
 import shutil
 import signal
 import socket
@@ -563,8 +564,11 @@ emit_sources_in_backoff = _emit_sources_in_backoff
 # scopes/purge.py, which validates the ids a purge names.
 SOURCE_ID_RE = re.compile(r"\A[0-9a-f]{64}-[0-9]+\Z")
 _HUNG_MARKER_SUFFIX = ".hung"
-# Part of a marker's name, with the pid and a per-process sequence, so the
-# markers of different processes, containers or hosts never collide.
+# Part of a marker's name, with the pid, a per-process sequence and a random
+# part. The random part is what keeps names apart across a container restarted
+# in place: it keeps its hostname, its fresh pid namespace usually hands out
+# the same pids again, and the sequence starts over, so a new op could
+# otherwise take the name of a marker the previous run left.
 _HUNG_MARKER_HOST = socket.gethostname().replace(os.sep, "_") or "host"
 _hung_marker_seq = itertools.count()
 
@@ -585,9 +589,45 @@ def hung_marker_dir(repo_path: Path) -> Path:
 
 
 def _hung_marker_name() -> str:
-    """This op's own marker file name: host, pid, and a per-process
-    sequence."""
-    return f"{_HUNG_MARKER_HOST}-{os.getpid()}-{next(_hung_marker_seq)}"
+    """This op's own marker file name: host, pid, a per-process sequence and a
+    random part."""
+    return (
+        f"{_HUNG_MARKER_HOST}-{os.getpid()}-{next(_hung_marker_seq)}"
+        f"-{secrets.token_hex(4)}"
+    )
+
+
+def _remove_hung_marker(marker: Path) -> None:
+    """Remove one op's own marker once the op returned.
+
+    Never raises.
+    """
+    try:
+        marker.unlink()
+    except FileNotFoundError:
+        pass
+    except OSError as e:
+        logger.warning(
+            "Could not remove hung-op marker {path}: {err}",
+            path=marker,
+            err=repr(e),
+        )
+
+
+def _start_marker_thread(target, *args) -> None:
+    """Run marker housekeeping on a daemon thread of its own.
+
+    Never raises: at the process's thread limit (most likely while many
+    timed-out git threads linger) the start fails, and that must not
+    replace the git op's own outcome. The markers then stay as they
+    are until a later op's housekeeping.
+    """
+    try:
+        threading.Thread(
+            target=target, args=args, name="opal-git-hung-marker", daemon=True
+        ).start()
+    except RuntimeError as e:
+        logger.warning("Could not start the hung-op marker thread: {err}", err=repr(e))
 
 
 def clear_hung_markers(markers: Path) -> None:
@@ -612,7 +652,8 @@ def clear_hung_markers(markers: Path) -> None:
 
 
 # When at least this many distinct repositories have hung clones, and they are
-# at least _HUNG_RECLONE_MAX_REPO_SHARE of all of them, the hang is most likely
+# at least _HUNG_RECLONE_MAX_REPO_SHARE of the repositories the current scopes
+# use (counted from their clones on disk), the hang is most likely
 # the git provider's rather than one repository's: deleting every clone would
 # turn stale-but-served policy into no policy for every scope while the remote
 # is still down, so the sweep deletes nothing.
@@ -625,10 +666,12 @@ def _repo_of(source_id: str) -> str:
     return source_id.rsplit("-", 1)[0]
 
 
-def reclone_hung_scope_clones(base_dir: Path) -> int:
+def reclone_hung_scope_clones(
+    base_dir: Path, live_source_ids: Optional[AbstractSet[str]] = None
+) -> int:
     """Delete every scope clone with a hung-op marker, left by a git op that
-    never finished before the previous server process ended; return how many
-    were deleted.
+    never finished before its server process ended; return how many were
+    deleted.
 
     For the pre-fork preload, before its sync, which clones each deleted one
     fresh: nothing else uses the clones then, since sharing BASE_DIR between
@@ -636,6 +679,10 @@ def reclone_hung_scope_clones(base_dir: Path) -> int:
     directory named like a source id is deleted, never a symlink. Markers of a
     clone that is gone (a deleted scope) are removed. When the hung clones span
     many repositories (see _HUNG_RECLONE_MAX_REPO_SHARE) nothing is deleted.
+    live_source_ids, the source ids the current scopes use, bounds that count
+    to them: clone dirs that no scope uses any more (a repointed scope's old
+    one, say) stay on disk and would otherwise dilute the share. None counts
+    every clone dir.
     Runs under the repack lock and does nothing while a repack holds it. With
     the setting off it only removes markers, which mean nothing then. Never
     raises: a clone it cannot fully delete keeps its markers for the next start.
@@ -669,7 +716,7 @@ def reclone_hung_scope_clones(base_dir: Path) -> int:
         )
         return 0
     try:
-        return _reclone_hung_under_lock(root)
+        return _reclone_hung_under_lock(root, live_source_ids)
     finally:
         _drop_repack_lock(lock)
 
@@ -691,7 +738,9 @@ def _remove_hung_marker_dirs(root: Path) -> None:
             clear_hung_markers(root / name)
 
 
-def _reclone_hung_under_lock(root: Path) -> int:
+def _reclone_hung_under_lock(
+    root: Path, live_source_ids: Optional[AbstractSet[str]]
+) -> int:
     try:
         with os.scandir(root) as it:
             names = [e.name for e in it]
@@ -728,8 +777,11 @@ def _reclone_hung_under_lock(root: Path) -> int:
             )
     if not hung:
         return 0
-    hung_repos = {_repo_of(s) for s in hung}
-    all_repos = {_repo_of(s) for s in clones}
+    # A hung clone no scope uses is still deleted (nothing serves from it),
+    # but only the live ones count towards an outage.
+    live = clones if live_source_ids is None else clones & live_source_ids
+    hung_repos = {_repo_of(s) for s in hung if s in live}
+    all_repos = {_repo_of(s) for s in live}
     if len(hung_repos) >= _HUNG_RECLONE_MIN_REPOS_FOR_OUTAGE and len(
         hung_repos
     ) >= _HUNG_RECLONE_MAX_REPO_SHARE * len(all_repos):
@@ -746,24 +798,32 @@ def _reclone_hung_under_lock(root: Path) -> int:
 
 
 def _reclone_one(clone: Path) -> bool:
-    """Delete one hung clone, then its markers; True when it deleted it."""
-    if clone.is_symlink():
-        logger.warning(
-            "Not deleting hung scope clone {source_id}: it is a symlink",
-            source_id=clone.name,
-        )
-        return False
+    """Delete one hung clone, then its markers; True when it deleted it.
+
+    Never raises: the stat calls are inside the try too, since on Python
+    3.10-3.12 they re-raise e.g. EIO or EACCES, and a raise here would
+    stop the server from starting.
+    """
     try:
-        shutil.rmtree(clone)
-    except OSError as e:
-        if not isinstance(e, FileNotFoundError) or clone.exists():
+        if clone.is_symlink():
             logger.warning(
-                "Could not delete hung scope clone {source_id}; the preload syncs "
-                "it as it is, and the next start tries again: {err}",
+                "Not deleting hung scope clone {source_id}: it is a symlink",
                 source_id=clone.name,
-                err=repr(e),
             )
             return False
+        try:
+            shutil.rmtree(clone)
+        except FileNotFoundError:
+            if clone.exists():
+                raise
+    except OSError as e:
+        logger.warning(
+            "Could not delete hung scope clone {source_id}; the preload syncs "
+            "it as it is, and the next start tries again: {err}",
+            source_id=clone.name,
+            err=repr(e),
+        )
+        return False
     metrics.increment("opal_server.scopes.hung_clone_recloned")
     logger.warning(
         "Scope clone {source_id} had a git op still hung when the previous server "
@@ -899,7 +959,7 @@ async def run_in_git_executor(
             hung["marked"] = not returned
         if returned:
             # The op returned while the marker was being written.
-            hung_marker.unlink(missing_ok=True)
+            _remove_hung_marker(hung_marker)
 
     def _runner():
         succeeded = False
@@ -917,21 +977,13 @@ async def run_in_git_executor(
                 if marked:
                     # Only this op's own marker: another process's op on the
                     # same clone may still be hung.
-                    try:
-                        hung_marker.unlink()
-                    except OSError:
-                        pass  # gone already, or the next start sees it
+                    _remove_hung_marker(hung_marker)
                 elif succeeded and not timed_out and os.path.isdir(marker_dir):
                     # Finished within its timeout: the clone works, so no
                     # earlier hang calls for a fresh clone. Only a stat on the
                     # common path; the rare removal runs on a thread of its
                     # own, so it never adds to this op's time.
-                    threading.Thread(
-                        target=clear_hung_markers,
-                        args=(marker_dir,),
-                        name="opal-git-hung-marker",
-                        daemon=True,
-                    ).start()
+                    _start_marker_thread(clear_hung_markers, marker_dir)
 
     sem = _get_live_ops_semaphore()
     await sem.acquire()
@@ -980,9 +1032,7 @@ async def run_in_git_executor(
                 # On a thread of its own, never awaited: the marker sits on the
                 # clones' volume, whose slowness may be what made the op hang,
                 # and neither the caller nor the live-op slot may wait for it.
-                threading.Thread(
-                    target=_mark_hung, name="opal-git-hung-marker", daemon=True
-                ).start()
+                _start_marker_thread(_mark_hung)
             raise TimeoutError(f"git operation exceeded {timeout}s")
         return fut.result()
     finally:

@@ -232,23 +232,37 @@ class ScopesPolicyWatcherTask(BasePolicyWatcherTask):
             configure_server_metrics()
             logger.info("Preloading repo clones for scopes")
 
-            # Before the sync, while nothing else in this container uses the
-            # clones: delete the ones whose git op was still hung when the
-            # previous process ended, so the sync clones them fresh, as on a new
-            # pod (see SCOPES_GIT_RECLONE_HUNG_ON_START). A no-op unless set.
-            reclone_hung_scope_clones(Path(opal_server_config.BASE_DIR))
-
+            scopes = ScopeRepository(RedisDB(opal_server_config.REDIS_URL))
             service = ScopesService(
                 base_dir=Path(opal_server_config.BASE_DIR),
-                scopes=ScopeRepository(RedisDB(opal_server_config.REDIS_URL)),
+                scopes=scopes,
                 pubsub_endpoint=None,
             )
-            # No repack here, where it would delay the start of every worker:
-            # the preload's fetches only mark their clones due, the marks are
-            # inherited across fork, and the leader's first pass repacks.
-            asyncio.run(
-                service.sync_scopes(notify_on_changes=False, run_due_repacks=False)
-            )
+
+            async def _preload():
+                # Before the sync, while nothing else in this container uses
+                # the clones: delete the ones whose git op was still hung when
+                # its process ended, so the sync clones them fresh, as on a new
+                # pod (see SCOPES_GIT_RECLONE_HUNG_ON_START). With the setting
+                # off it only removes leftover hung-op markers. In the same
+                # event loop as the sync, which reads the scopes again: the
+                # Redis client is not reused across asyncio.run calls.
+                live_source_ids = {
+                    GitPolicyFetcher.source_id(scope.policy)
+                    for scope in await scopes.all()
+                }
+                reclone_hung_scope_clones(
+                    Path(opal_server_config.BASE_DIR), live_source_ids
+                )
+                # No repack here, where it would delay the start of every
+                # worker: the preload's fetches only mark their clones due, the
+                # marks are inherited across fork, and the leader's first pass
+                # repacks.
+                await service.sync_scopes(
+                    notify_on_changes=False, run_due_repacks=False
+                )
+
+            asyncio.run(_preload())
 
             # Bounded window for a just-finished clone/fetch to clear its in-flight
             # marker before teardown+fork. Ops still lingering (hung remote) are
