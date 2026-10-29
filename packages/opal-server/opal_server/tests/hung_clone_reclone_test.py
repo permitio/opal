@@ -310,7 +310,9 @@ async def test_a_later_successful_fetch_clears_a_marker_from_another_process(
     _mark(clone, host="other-host")
     _mark(clone)
     await fetcher.fetch_and_notify_on_changes(force_fetch=True)
-    assert not hung_marker_dir(clone).exists()
+    await _until(
+        lambda: not hung_marker_dir(clone).exists()
+    )  # cleared on its own thread
 
 
 @pytest.mark.asyncio
@@ -318,7 +320,9 @@ async def test_a_successful_clone_clears_leftover_markers(tmp_path, on):
     fetcher, clone = _fetcher(tmp_path)
     _mark(clone)
     await fetcher.fetch_and_notify_on_changes()  # clones
-    assert not hung_marker_dir(clone).exists()
+    await _until(
+        lambda: not hung_marker_dir(clone).exists()
+    )  # cleared on its own thread
 
 
 @pytest.mark.asyncio
@@ -329,7 +333,9 @@ async def test_markers_are_cleared_even_with_the_setting_off(tmp_path):
     await fetcher.fetch_and_notify_on_changes()  # clones
     _mark(clone)
     await fetcher.fetch_and_notify_on_changes(force_fetch=True)
-    assert not hung_marker_dir(clone).exists()
+    await _until(
+        lambda: not hung_marker_dir(clone).exists()
+    )  # cleared on its own thread
 
 
 def test_clear_hung_markers_never_raises(tmp_path, monkeypatch):
