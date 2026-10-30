@@ -1802,3 +1802,49 @@ def test_a_put_that_loses_the_repoint_flag_says_so(monkeypatch, fails, repointed
     assert resp.status_code == 500
     warned = [r for r in logs.emitted if r["message"].startswith("Repoint of scope")]
     assert len(warned) == (1 if repointed else 0)
+
+
+@pytest.mark.asyncio
+async def test_a_publish_that_ends_cancelled_gives_its_claim_back(monkeypatch, emitted):
+    """The publish is cancelled and its request is not.
+
+    Mutation: treating only a raised exception as a failure lets the
+    CancelledError through the request, with the claim kept and nothing
+    counted.
+    """
+
+    async def cancelled():
+        raise asyncio.CancelledError()
+
+    _script(monkeypatch, _missing)
+    fetcher = GitPolicyFetcher(Path("/unused"), "live", _scope().policy)
+
+    with pytest.raises(BranchHeadNotFoundError):
+        await _hold(fetcher, cancelled)
+
+    assert "live" not in scopes_api._branch_refresh_requested
+    assert _refreshes(emitted) == ["publish_failed"]
+
+
+@pytest.mark.asyncio
+async def test_an_abandoned_publish_that_ends_cancelled_gives_its_claim_back(
+    monkeypatch, emitted
+):
+    """Mutation: skipping a cancelled publish in the done callback keeps the
+    claim for the interval."""
+    stuck = asyncio.Event()
+
+    async def never_returns():
+        await stuck.wait()
+
+    _script(monkeypatch, _missing)
+    fetcher = GitPolicyFetcher(Path("/unused"), "live", _scope().policy)
+    with pytest.raises(BranchHeadNotFoundError):
+        await _hold(fetcher, never_returns)
+    [publish] = scopes_api._branch_refresh_publishes
+
+    publish.cancel()
+    await _until(lambda: "publish_failed" in _refreshes(emitted))
+
+    assert "live" not in scopes_api._branch_refresh_requested
+    assert _refreshes(emitted) == ["publish_timeout", "publish_failed"]

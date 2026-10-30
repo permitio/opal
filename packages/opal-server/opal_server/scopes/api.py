@@ -239,6 +239,14 @@ def _branch_refresh_failed(
     )
 
 
+def _publish_error(publish: "asyncio.Future[None]") -> Optional[BaseException]:
+    """Why an ended publish did not go out, if it did not.
+
+    A publish can end cancelled without its request being cancelled.
+    """
+    return asyncio.CancelledError() if publish.cancelled() else publish.exception()
+
+
 def _abandoned_publish_done(
     scope_id: str,
     claim: float,
@@ -246,8 +254,9 @@ def _abandoned_publish_done(
     publish: "asyncio.Future[None]",
 ) -> None:
     """A publish nobody is waiting for any more ended."""
-    if not publish.cancelled() and publish.exception() is not None:
-        _branch_refresh_failed(scope_id, claim, previous, publish.exception())
+    error = _publish_error(publish)
+    if error is not None:
+        _branch_refresh_failed(scope_id, claim, previous, error)
 
 
 async def _branch_wait_claim(
@@ -275,6 +284,11 @@ async def _branch_wait_claim(
     requested. "Cannot be requested" means a local failure to publish: a
     broadcast backend outage is buffered for replay, not raised, so it counts
     as requested.
+
+    ``policy_branch_refresh`` counts what requests saw, so it does not sum to
+    the publishes: ``publish_timeout`` can be followed by ``publish_failed``
+    for the same publish, and a request cancelled during a publish that then
+    succeeds counts nothing.
     """
     hold = _branch_hold(scope_id, now, wait)
     if hold is None:
@@ -306,10 +320,9 @@ async def _branch_wait_claim(
             scope_id=scope_id,
         )
         return claim
-    try:
-        publish.result()
-    except Exception as exc:
-        _branch_refresh_failed(scope_id, now, previous, exc)
+    error = _publish_error(publish)
+    if error is not None:
+        _branch_refresh_failed(scope_id, now, previous, error)
         return None
     metrics.increment(_BRANCH_REFRESH_METRIC, tags={"outcome": "requested"})
     logger.info(
