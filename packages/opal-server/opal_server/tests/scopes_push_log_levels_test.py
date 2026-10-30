@@ -313,13 +313,63 @@ async def test_already_fetched_line_is_debug_and_missing_branch_line_stays_info(
             repo, force_fetch=True, req_time=req_time
         )
 
-    assert should_fetch is True
+    # A fetch that started after the request already looked for the branch
+    # (PER-17978): no second fetch, and both lines stay at DEBUG.
+    assert should_fetch is False
     [fetched] = starting_with(logs.emitted, "Repo was fetched after refresh request")
     assert fetched["level"].name == "DEBUG"
+    [coalesced] = starting_with(logs.emitted, "Target branch was not found")
+    assert coalesced["level"].name == "DEBUG"
+    assert not starting_with(logs.deployed, "Target branch was not found")
+    assert not starting_with(logs.deployed, "Repo was fetched after refresh request")
+
+    # No fetch since the request (an unforced sync, as a bundle request's is):
+    # the missing branch is fetched, said at INFO.
+    later = req_time + datetime.timedelta(seconds=2)
+    with capture_records() as logs:
+        should_fetch = await fetcher._should_fetch(repo, req_time=later)
+
+    assert should_fetch is True
     [missing] = starting_with(logs.emitted, "Target branch was not found")
     assert missing["level"].name == "INFO"
     assert starting_with(logs.deployed, "Target branch was not found")
-    assert not starting_with(logs.deployed, "Repo was fetched after refresh request")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("from_a_bundle_request", [True, False])
+async def test_a_coalesced_sync_of_a_missing_branch(
+    tmp_path, clear_fetcher_caches, from_a_bundle_request
+):
+    """The whole sync, not only _should_fetch. One a bundle request asked for
+    (it honours the backoff) rides a later fetch and logs nothing at ERROR,
+    since every server runs it once per request. Any other, a PUT's say, keeps
+    the line: it is what reports a scope written with a wrong branch.
+
+    Mutation: notifying regardless logs the ERROR in the first case; skipping
+    for every sync loses it in the second.
+    """
+    remote = git.Repo.init(tmp_path / "remote", initial_branch="main")
+    _commit(remote, "policy/a.rego", "package a\n")
+    url = str(tmp_path / "remote")
+    await GitPolicyFetcher(
+        tmp_path / "opal", "warm", _source(url=url)
+    ).fetch_and_notify_on_changes()  # clones
+    missing = _source(url=url)
+    missing.branch = "no-such-branch"
+    fetcher = GitPolicyFetcher(tmp_path / "opal", SCOPE_ID, missing)
+    asked = datetime.datetime.now()
+    GitPolicyFetcher.repos_last_fetched[
+        fetcher._source_id
+    ] = asked + datetime.timedelta(seconds=1)
+
+    with capture_records() as logs:
+        await fetcher.fetch_and_notify_on_changes(
+            req_time=asked, honor_backoff=from_a_bundle_request
+        )
+
+    assert starting_with(logs.emitted, "Target branch was not found")
+    errors = starting_with(logs.emitted, "Did not find target branch on remote")
+    assert len(errors) == (0 if from_a_bundle_request else 1)
 
 
 @pytest.mark.asyncio

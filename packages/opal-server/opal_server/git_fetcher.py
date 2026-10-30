@@ -47,6 +47,7 @@ from pygit2 import (
     discover_repository,
     reference_is_valid_name,
 )
+from pygit2.enums import FetchPrune
 
 # Source ids whose scope git op (clone/fetch) is still running on a pool thread
 # — including one that already exceeded its timeout but whose blocking pygit2
@@ -68,7 +69,8 @@ class CloneNotPopulatedError(ValueError):
     all, so this clone has not been populated yet.
 
     Distinct from BranchHeadNotFoundError, which means the namespace has refs
-    but not the configured one — a real misconfiguration. This is transient by
+    but not the configured one: a misconfiguration, or a branch pushed after
+    the clone's last fetch (see that class). This is transient by
     construction: _clone() rmtree's the destination and clones INTO the final
     path, so for the whole duration of a recovery re-clone the dir exists with
     no remote refs.
@@ -96,11 +98,22 @@ class CloneNotPopulatedError(ValueError):
 
 
 class BranchHeadNotFoundError(ValueError):
-    """Configured branch has no resolvable HEAD (permanent misconfig), NOT a
-    transient clone gap.
+    """The clone has remote-tracking refs, but not the configured branch's.
+
+    Permanent when the branch really does not exist (a misconfiguration);
+    transient when it was pushed after this clone's last fetch, which the
+    bundle route waits out (see SCOPES_POLICY_BRANCH_REFRESH_INTERVAL). Not a
+    clone gap: that is CloneNotPopulatedError.
 
     Subclasses ValueError so broad handlers still catch it.
+
+    ``waited_seconds`` and ``client_disconnected`` mean what they mean on
+    CloneNotPopulatedError: how long the request was held for the branch, and
+    that the caller hung up meanwhile.
     """
+
+    waited_seconds: float = 0.0
+    client_disconnected: bool = False
 
 
 class GitRepackError(RuntimeError):
@@ -1820,8 +1833,9 @@ class GitPolicyFetcher(PolicyFetcher):
         we use this hint to avoid an necessary fetch.
 
         ``honor_backoff`` says this call is pass-originated (the periodic sync
-        and the boot preload) and may be skipped while the source is serving
-        out a failure backoff. It defaults to False so every explicit path —
+        and the boot preload), or is the sync a bundle request asked for
+        because the scope's branch was missing from its clone, and may be
+        skipped while the source is serving out a failure backoff. It defaults to False so every explicit path —
         POST /scopes/{id}/refresh, POST /scopes/refresh, PUT /scopes — attempts
         the source immediately: those are someone asking for this repo, now,
         and the most likely reason they are asking is that they just fixed it.
@@ -1915,9 +1929,17 @@ class GitPolicyFetcher(PolicyFetcher):
                             # the request already satisfies it.
                             fetch_started = datetime.datetime.now()
                             try:
+                                # Pruned when configured, so a branch deleted
+                                # on the remote leaves the clone: otherwise its
+                                # stale remote-tracking ref is served as the head.
                                 await run_in_git_executor(
                                     repo.remotes[self._remote].fetch,
                                     callbacks=self._auth_callbacks,
+                                    prune=(
+                                        FetchPrune.PRUNE
+                                        if opal_server_config.SCOPES_GIT_FETCH_PRUNE
+                                        else FetchPrune.UNSPECIFIED
+                                    ),
                                     timeout=opal_server_config.SCOPES_GIT_FETCH_TIMEOUT,
                                     busy_key=self._source_id,
                                 )
@@ -1963,8 +1985,20 @@ class GitPolicyFetcher(PolicyFetcher):
                                 f"Fetch completed: {redact_url(self._source.url)}"
                             )
 
-                        # New commits might be present because of a previous fetch made by another scope
-                        await self._notify_on_changes(repo)
+                        # New commits might be present because of a previous fetch made by another scope.
+                        # Skipped when the sync a bundle request asked for rode
+                        # another's fetch for a branch the clone lacks
+                        # (_should_fetch): nothing can have changed for it, and
+                        # an ERROR on every server per request is noise. Other
+                        # syncs (PUT /scopes, the refresh routes) keep the line.
+                        if (
+                            should_fetch
+                            or not honor_backoff
+                            or RepoInterface.has_remote_branch(
+                                repo, self._source.branch, self._remote
+                            )
+                        ):
+                            await self._notify_on_changes(repo)
                         if should_fetch:
                             # Housekeeping for the pack that fetch just wrote:
                             # marked here, repacked at the end of the pass.
@@ -2577,6 +2611,16 @@ class GitPolicyFetcher(PolicyFetcher):
                 return True  # must fetch
 
         if not RepoInterface.has_remote_branch(repo, self._source.branch, self._remote):
+            if req_time is not None and await self._was_fetched_after(req_time):
+                # A fetch that started after this request already looked for
+                # the branch (a fetch brings every branch), so a burst of
+                # requests for a branch the remote does not have costs one
+                # fetch, not one per request.
+                logger.debug(
+                    "Target branch was not found in local clone, but the remote "
+                    "was fetched after this request; not fetching again"
+                )
+                return False
             logger.info(
                 "Target branch was not found in local clone, re-fetching the remote"
             )
@@ -2662,10 +2706,9 @@ class GitPolicyFetcher(PolicyFetcher):
                 # an empty remote-tracking namespace means the clone has not been
                 # populated yet (transient), whereas siblings present but ours
                 # missing means the configured branch is wrong (permanent).
-                prefix = f"refs/remotes/{self._remote}/"
-                if not any(ref.startswith(prefix) for ref in repo.listall_references()):
+                if not self._has_remote_tracking_refs(Path(repo.path)):
                     raise CloneNotPopulatedError(
-                        f"No {prefix}* refs yet at {self._repo_path}"
+                        f"No refs/remotes/{self._remote}/* refs yet at {self._repo_path}"
                     )
                 head_commit_hash = None
         finally:
@@ -2673,9 +2716,58 @@ class GitPolicyFetcher(PolicyFetcher):
             if callable(free):
                 free()
         if not head_commit_hash:
-            logger.error("Could not find current branch head")
-            raise BranchHeadNotFoundError("Could not find current branch head")
+            # DEBUG: every caller reports the exception, and a held bundle
+            # request may see this before its branch arrives.
+            message = (
+                "Could not find current branch head: "
+                f"{self._remote}/{self._source.branch}"
+            )
+            logger.debug(message)
+            raise BranchHeadNotFoundError(message)
         return head_commit_hash
+
+    def _has_remote_tracking_refs(self, git_dir: Path) -> bool:
+        """Whether the clone has any refs/remotes/<remote>/* ref, read from disk
+        without listing every ref: a clone of a repository with tens of
+        thousands of branches has as many ref files.
+
+        A libgit2 clone writes its refs loose, so the first entry of the
+        remote's ref directory answers; packed-refs is read only when that
+        directory is empty, and only until the first match.
+        """
+        try:
+            with os.scandir(git_dir / "refs" / "remotes" / self._remote) as entries:
+                if next(entries, None) is not None:
+                    return True
+        except (FileNotFoundError, NotADirectoryError):
+            pass
+        needle = f" refs/remotes/{self._remote}/"
+        try:
+            with open(git_dir / "packed-refs", encoding="utf-8", errors="replace") as f:
+                return any(needle in line for line in f)
+        except FileNotFoundError:
+            return False
+
+    def has_branch_ref(self) -> bool:
+        """Whether the clone has the scope's remote-tracking ref: one ref
+        lookup, which is what a held bundle request polls before building a
+        bundle. False when there is no clone (yet) either, and for a branch
+        name that cannot be a ref; make_bundle is what tells the reasons apart.
+
+        A fresh handle, for the reason _get_current_branch_head gives.
+        """
+        try:
+            repo = Repository(str(self._repo_path))
+        except pygit2.GitError:
+            return False
+        try:
+            return RepoInterface.has_remote_branch(
+                repo, self._source.branch, self._remote
+            )
+        except pygit2.InvalidSpecError:
+            return False
+        finally:
+            repo.free()
 
     @tracer.wrap("git_policy_fetcher.make_bundle")
     def make_bundle(self, base_hash: Optional[str] = None) -> PolicyBundle:

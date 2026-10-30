@@ -236,6 +236,18 @@ class OpalServerConfig(Confi):
         "bounds how many such threads accumulate. Either way one unreachable repo "
         "never blocks boot or other scopes (0 = no timeout).",
     )
+    SCOPES_GIT_FETCH_PRUNE = confi.bool(
+        "SCOPES_GIT_FETCH_PRUNE",
+        False,
+        description="Whether a scope fetch prunes: a branch deleted on the remote "
+        "then leaves the clone, so a scope naming it misses instead of being "
+        "served the deleted branch's last head. Off by default: a pruned fetch "
+        "compares every local and remote ref, which on a clone with tens of "
+        "thousands of branches adds seconds per fetch under the lock every scope "
+        "on that clone shares (about 2 s on 5.5 s at 61,000 refs). Only "
+        "`refs/remotes/<remote>/*` are pruned; the scopes' "
+        "`refs/heads/scopes/*` stay.",
+    )
     SCOPES_GIT_MAX_WORKERS = confi.int(
         "SCOPES_GIT_MAX_WORKERS",
         # Worst-case OS-thread count during an outage is this limit plus the
@@ -296,10 +308,12 @@ class OpalServerConfig(Confi):
         "nothing else records a failure: without it every pass re-attempts every "
         "dead repo, and so does every duplicate scope sharing that repo — a "
         "handful of dead repositories can account for thousands of clone attempts "
-        "per hour. Only the periodic pass and the boot preload honour it (in "
+        "per hour. The periodic pass and the boot preload honour it (in "
         "both phases, and re-checked under the source lock, so duplicates of a "
-        "source that fails in a pass cost one attempt, not one per scope): an "
-        "explicit POST /scopes/:scope_id/refresh, POST /scopes/refresh or "
+        "source that fails in a pass cost one attempt, not one per scope), and so "
+        "does the sync GET /scopes/:scope_id/policy requests for a scope whose "
+        "branch is missing from its clone (SCOPES_POLICY_BRANCH_REFRESH_INTERVAL); "
+        "an explicit POST /scopes/:scope_id/refresh, POST /scopes/refresh or "
         "PUT /scopes attempts the source immediately, so an operator who has "
         "just repaired credentials recovers at once, and any successful clone or "
         "fetch clears both the delay and the consecutive-failure count. The state "
@@ -459,7 +473,8 @@ class OpalServerConfig(Confi):
         "loop, so it occupies no thread between polls and leaves the event loop "
         "and the gunicorn worker heartbeat unaffected; it is abandoned early if "
         "the client disconnects. 0 or negative disables the wait (answer 503 "
-        "immediately). nan, inf and -inf are treated as disabled too: unlike a "
+        "immediately), and with it the branch wait of "
+        "SCOPES_POLICY_BRANCH_REFRESH_INTERVAL. nan, inf and -inf are treated as disabled too: unlike a "
         "non-numeric value, which fails this process at startup when the "
         "environment is parsed, they parse cleanly — inf would otherwise mean "
         "the clamped maximum hold on every clone-in-progress request, and nan "
@@ -471,8 +486,9 @@ class OpalServerConfig(Confi):
         64,
         description="Maximum number of requests one worker process may hold at "
         "once inside the SCOPES_POLICY_CLONE_WAIT_SECONDS wait. Requests beyond "
-        "the cap get the immediate 503 + Retry-After 30 they would have got "
-        "before the wait existed, so the cap can never make things worse than "
+        "the cap get the immediate answer they would have got before the wait "
+        "existed (503 + Retry-After 30 for a clone in progress, 409 for a missing "
+        "branch), so the cap can never make things worse than "
         "not waiting. It exists because polling is cheap but RELEASING is not: "
         "when the clone lands, every held request builds a full bundle on the "
         "loop's DEFAULT executor: about min(32, cpu+4) threads shared by every "
@@ -491,6 +507,55 @@ class OpalServerConfig(Confi):
         "websocket that worker still holds. The count is per process, not per "
         "pod: a pod running N workers holds up to N times this number. 0 or "
         "negative means no cap.",
+    )
+    SCOPES_POLICY_BRANCH_REFRESH_INTERVAL = confi.float(
+        "SCOPES_POLICY_BRANCH_REFRESH_INTERVAL",
+        0.0,
+        description="Off by default (0): set it, for example to 60, to enable it. "
+        "When GET /scopes/:scope_id/policy finds the scope's clone populated but "
+        "without the scope's branch, or finds no clone of the scope's repository "
+        "at all, this worker asks every server to sync that "
+        "scope and holds the request in the SCOPES_POLICY_CLONE_WAIT_SECONDS wait, "
+        "under the same in-flight cap, polling that one branch ref and serving the "
+        "bundle as soon as the branch is there. The sync is not forced: a server "
+        "fetches only when its own clone "
+        "lacks the branch. A branch pushed after a server's last fetch is not a "
+        "misconfiguration: right after a PUT /scopes that moves a scope to another "
+        "repository, every pod answers this way until its own fetch of that "
+        "repository lands, and a pod that missed the PUT's broadcast, or whose "
+        "fetch failed, keeps answering it until something else syncs that clone. An "
+        "opal-client that starts in that window makes five attempts, then waits for "
+        "the next policy message, with no policy loaded. Each worker process "
+        "requests that sync at most once per this many seconds per scope. Further "
+        "misses of the scope on that worker while its request is younger than the "
+        "clone wait are held too, without asking again, until the first hold's "
+        "deadline; after that, for the rest of the interval, a miss gets the "
+        "immediate 409 (503 with no clone) it got before. A request shed at the "
+        "in-flight cap before "
+        "it requests the sync requests nothing; a request that has just requested "
+        "it is checked against the cap again, and if it is shed then, its request "
+        "stands for the rest of the interval. So a branch that really does not "
+        "exist costs, per interval, at most one clone-wait budget of held requests "
+        "on each worker that sees a miss (bounded by the in-flight cap), and one "
+        "sync request from each of those workers to every server. Every server's "
+        "clone lacks a branch that does not exist, so each server fetches once per "
+        "sync request, except that requests reaching a server before its next "
+        "fetch of that repository starts share that fetch: requests that arrive "
+        "together cost one or two fetches, while requests spread over the interval "
+        "(one client's retries usually reach different workers seconds apart) cost "
+        "one each, under the lock every scope on that clone shares; a request that "
+        "finds no clone costs the same, and a server whose clone has the branch "
+        "does not fetch. Weigh that before turning this on for a clone with tens of "
+        "thousands of branches. These syncs honour the source's failure backoff, so they do not "
+        "retry a repository whose fetches keep failing; a server whose fetch has "
+        "just failed fetches the branch only for a request that arrives after that "
+        "backoff (SCOPES_GIT_BACKOFF_BASE_SECONDS) has passed. When "
+        "the wait runs out with the branch still missing, the answer is that same "
+        "409 (a 503 + Retry-After 5 when there is still no clone). 0 or negative "
+        "disables it (409 or 503 immediately, as before); nan, inf and "
+        "-inf are treated as disabled too. Requires "
+        "SCOPES_POLICY_CLONE_WAIT_SECONDS > 0: with that wait disabled, no sync is "
+        "requested either.",
     )
     LEADER_LOCK_FILE_PATH = confi.str(
         "LEADER_LOCK_FILE_PATH",

@@ -2,7 +2,9 @@ import asyncio
 import math
 import os
 import pathlib
-from typing import List, Optional, cast
+from collections import OrderedDict
+from functools import partial
+from typing import Awaitable, Callable, List, Optional, Set, Tuple, cast
 
 import pygit2
 from fastapi import (
@@ -67,9 +69,10 @@ _RETRY_AFTER_CLONE_IN_PROGRESS = "30"
 # second config key: the operator-visible quantity is the total hold
 # (SCOPES_POLICY_CLONE_WAIT_SECONDS), while every SCOPES_* key is permanent
 # public surface — config_docs_drift_test pins each one verbatim into the
-# published reference. One poll is a cheap disk read (open the repo, list its
-# refs), so a second between polls costs at most one such read per waiting
-# request per second and still returns within a second of the clone landing.
+# published reference. One poll is a cheap disk read (open the repo, look up
+# a ref, read one ref directory), so a second between polls costs at most one
+# such read per waiting request per second and still returns within a second
+# of the clone landing.
 # The published description says "once a second"; a test couples the two.
 _CLONE_WAIT_POLL_SECONDS = 1.0
 
@@ -87,7 +90,24 @@ _clone_wait_inflight = 0
 # identical line per request.
 _clone_wait_clamp_logged = False
 
+# When this worker last asked every server to sync a scope whose clone lacked
+# its branch (scope id -> loop time): at most once per
+# SCOPES_POLICY_BRANCH_REFRESH_INTERVAL, whose description states what a branch
+# that really does not exist costs. Event-loop only, like the in-flight count,
+# and bounded: the oldest entries go first. One that goes early allows an extra
+# request, and releases the requests held for it with their 409 at their next
+# poll, as a failed publish does; that takes this many scopes missing their
+# branch within one hold.
+_branch_refresh_requested: "OrderedDict[str, float]" = OrderedDict()
+_BRANCH_REFRESH_TRACKED_MAX = 10_000
+
+# Sync requests being published, some after the request that made them stopped
+# waiting (its hold ran out, or it was cancelled). Referenced here until they
+# end: the event loop keeps only weak references to tasks.
+_branch_refresh_publishes: "Set[asyncio.Future[None]]" = set()
+
 _CLONE_WAIT_METRIC = "opal_server.scopes.policy_clone_wait"
+_BRANCH_REFRESH_METRIC = "opal_server.scopes.policy_branch_refresh"
 _CLONE_WAIT_INFLIGHT_METRIC = "opal_server.scopes.policy_clone_wait_inflight"
 _CLONE_WAIT_SECONDS_METRIC = "opal_server.scopes.policy_clone_wait_seconds"
 
@@ -145,11 +165,180 @@ def _publish_clone_wait_inflight() -> None:
     )
 
 
+def _bounded_branch_refresh_interval() -> float:
+    """SCOPES_POLICY_BRANCH_REFRESH_INTERVAL, validated. 0.0 means "off".
+
+    nan, inf and -inf are off too: for an interval, inf would read as
+    "ask once, then never again", and nan as nothing at all.
+    """
+    try:
+        interval = float(opal_server_config.SCOPES_POLICY_BRANCH_REFRESH_INTERVAL)
+    except (TypeError, ValueError):
+        return 0.0
+    if not math.isfinite(interval) or interval <= 0:
+        return 0.0
+    return interval
+
+
+def _branch_hold(
+    scope_id: str, now: float, wait: float
+) -> Optional[Tuple[float, bool]]:
+    """The claim a miss of ``scope_id`` at ``now`` would hold for (the time its
+    sync was requested; the hold ends ``wait`` after it), and whether it must
+    request the sync itself, without the side effects: None for the immediate
+    409.
+
+    - No sync requested by this worker within the interval: claim ``now``
+      (the caller requests the sync).
+    - One requested less than ``wait`` ago: ride that claim, without asking
+      again, so concurrent misses ride the same sync.
+    - One requested longer ago than that, within the interval: the sync had
+      its chance and the branch is still missing, so answer 409 at once.
+    """
+    interval = _bounded_branch_refresh_interval()
+    if interval <= 0:
+        return None
+    requested = _branch_refresh_requested.get(scope_id)
+    if requested is None or now - requested >= interval:
+        return now, True
+    if now - requested < wait:
+        return requested, False
+    return None
+
+
+def _record_branch_refresh(scope_id: str, now: float) -> Optional[float]:
+    """Claim ``scope_id``'s sync at ``now``; returns the claim it replaced."""
+    previous = _branch_refresh_requested.get(scope_id)
+    _branch_refresh_requested[scope_id] = now
+    _branch_refresh_requested.move_to_end(scope_id)
+    while len(_branch_refresh_requested) > _BRANCH_REFRESH_TRACKED_MAX:
+        _branch_refresh_requested.popitem(last=False)
+    return previous
+
+
+def _branch_refresh_failed(
+    scope_id: str, claim: float, previous: Optional[float], exc: BaseException
+) -> None:
+    """A sync request's publish raised: give its claim back, count and log it.
+
+    Only this request's own claim, and the one it replaced is restored:
+    a newer claim is another request's sync, and the requests riding an
+    older one are not this publish's to release.
+    """
+    if _branch_refresh_requested.get(scope_id) == claim:
+        if previous is None:
+            del _branch_refresh_requested[scope_id]
+        else:
+            _branch_refresh_requested[scope_id] = previous
+    metrics.increment(_BRANCH_REFRESH_METRIC, tags={"outcome": "publish_failed"})
+    logger.warning(
+        "Scope {scope_id} has no branch in its clone, and its sync could "
+        "not be requested: {exc}",
+        scope_id=scope_id,
+        exc=redact_url_in_text(repr(exc)),
+    )
+
+
+def _publish_error(publish: "asyncio.Future[None]") -> Optional[BaseException]:
+    """Why an ended publish did not go out, if it did not.
+
+    A publish can end cancelled without its request being cancelled.
+    """
+    return asyncio.CancelledError() if publish.cancelled() else publish.exception()
+
+
+def _abandoned_publish_done(
+    scope_id: str,
+    claim: float,
+    previous: Optional[float],
+    publish: "asyncio.Future[None]",
+) -> None:
+    """A publish nobody is waiting for any more ended."""
+    error = _publish_error(publish)
+    if error is not None:
+        _branch_refresh_failed(scope_id, claim, previous, error)
+
+
+async def _branch_wait_claim(
+    scope_id: str,
+    request_refresh: Callable[[], Awaitable[None]],
+    now: float,
+    wait: float,
+    deadline: float,
+) -> Optional[float]:
+    """The scope's ref is missing from this server's disk: request a sync of
+    the scope when this worker has not within the interval, and return the
+    claim the request holds for, ending ``wait`` after it (None: answer at
+    once, without a wait).
+
+    The publish is bounded by the request's ``deadline``: a slow broadcast
+    backend must not hold the request past its hold. On a timeout the claim
+    is kept, since the publish may still go out; if it then raises, the claim
+    is given back and the failure reported then. "Timeout" means the publish
+    was still running when the hold ended, which includes a clone that landed
+    on the hold's last poll.
+
+    A sync that cannot be requested is the same no, and gives this request's
+    claim back: holding would wait for a fetch nobody asked for, and keeping
+    the claim would answer every miss of the interval at once with no sync
+    requested. "Cannot be requested" means a local failure to publish: a
+    broadcast backend outage is buffered for replay, not raised, so it counts
+    as requested.
+
+    ``policy_branch_refresh`` counts what requests saw, so it does not sum to
+    the publishes: ``publish_timeout`` can be followed by ``publish_failed``
+    for the same publish, and a request cancelled during a publish that then
+    succeeds counts nothing.
+    """
+    hold = _branch_hold(scope_id, now, wait)
+    if hold is None:
+        return None
+    claim, must_request = hold
+    if not must_request:
+        return claim  # rides the sync another request asked for
+    previous = _record_branch_refresh(scope_id, now)
+    loop = asyncio.get_running_loop()
+    publish = asyncio.ensure_future(request_refresh())
+    _branch_refresh_publishes.add(publish)
+    publish.add_done_callback(_branch_refresh_publishes.discard)
+    abandoned = partial(_abandoned_publish_done, scope_id, now, previous)
+    try:
+        # asyncio.wait neither cancels the publish nor raises its exception,
+        # so a TimeoutError of the publish's own is a failed publish.
+        done, _ = await asyncio.wait(
+            {publish}, timeout=max(0.0, deadline - loop.time())
+        )
+    except asyncio.CancelledError:
+        publish.add_done_callback(abandoned)
+        raise
+    if not done:
+        publish.add_done_callback(abandoned)
+        metrics.increment(_BRANCH_REFRESH_METRIC, tags={"outcome": "publish_timeout"})
+        logger.warning(
+            "Scope {scope_id} has no branch in its clone, and its sync request "
+            "was still being published when the hold ran out",
+            scope_id=scope_id,
+        )
+        return claim
+    error = _publish_error(publish)
+    if error is not None:
+        _branch_refresh_failed(scope_id, now, previous, error)
+        return None
+    metrics.increment(_BRANCH_REFRESH_METRIC, tags={"outcome": "requested"})
+    logger.info(
+        "Scope {scope_id} has no branch in its clone yet; requested a sync and "
+        "holding the request for it",
+        scope_id=scope_id,
+    )
+    return claim
+
+
 async def _make_bundle_waiting_for_clone(
     fetcher: GitPolicyFetcher,
     base_hash: Optional[str],
     scope_id: str,
     request: Optional[Request] = None,
+    request_refresh: Optional[Callable[[], Awaitable[None]]] = None,
 ) -> PolicyBundle:
     """Build the bundle, holding the request while the clone is populated.
 
@@ -185,12 +374,38 @@ async def _make_bundle_waiting_for_clone(
     and still fail to build a bundle (an absent branch is a 409, a gutted
     object store a retryable 503), and the wait must not re-label those.
 
+    One exception to that: a populated clone WITHOUT the scope's branch
+    (BranchHeadNotFoundError), or no clone at all (NoSuchPathError, or
+    InvalidGitRepositoryError while a clone is just starting), is waited for
+    too, when ``request_refresh`` is given (``_branch_wait_claim``). A
+    branch pushed after this server's last fetch is the usual cause: every pod
+    answers that way right after a scope moves to another repository, until
+    its own fetch lands; a pod that has never cloned that repository has no
+    clone of it. Such a hold polls one ref (``has_branch_ref``) and builds the
+    bundle only once the ref is there. The first miss of
+    a scope on this worker within SCOPES_POLICY_BRANCH_REFRESH_INTERVAL
+    requests a sync of the scope and is held for it; misses while that sync is
+    younger than the wait are held too, until the same deadline, without asking
+    again; after that, for the rest of the interval, a miss gets the 409 at
+    once. A hold that runs out gets the same 409. The in-flight cap is checked
+    before any of it, so a request shed there neither requests a sync nor uses
+    up the interval. A request that has just requested the sync is checked
+    again; if it is shed then, the sync it requested stands for the interval
+    and later misses ride it. A hold that runs out without a clone answers the
+    503 it would have got at once.
+
     Exactly one `policy_clone_wait` count is emitted per request that reaches
     the wait, tagged with how it ended: served, timeout, shed, disconnected,
-    cancelled or error.
+    cancelled, error or unrequested (a branch wait whose sync was never
+    requested, because its publish failed locally; see
+    ``_branch_wait_claim``), and with what it waited for (``for``: clone or
+    branch, a missing or just-starting clone included).
+    The 503 or 409 the caller shapes carries ``waited_seconds`` and
+    ``client_disconnected``.
     """
     global _clone_wait_inflight
 
+    waiting_for = "clone"
     try:
         return await run_sync(fetcher.make_bundle, base_hash)
     except CloneNotPopulatedError as first_exc:
@@ -198,23 +413,70 @@ async def _make_bundle_waiting_for_clone(
         if wait <= 0:
             first_exc.waited_seconds = 0.0
             raise
+        pending: Exception = first_exc
+    except (
+        BranchHeadNotFoundError,
+        NoSuchPathError,
+        InvalidGitRepositoryError,  # a clone just starting; a poll holds for it too
+    ) as first_exc:
+        wait = _bounded_clone_wait()
+        if wait <= 0 or request_refresh is None:
+            raise
+        # Decided before the cap: a miss that would not wait is not shed from
+        # a wait (with the interval off, or after the sync had its chance).
+        if _branch_hold(scope_id, asyncio.get_running_loop().time(), wait) is None:
+            raise
         pending = first_exc
+        waiting_for = "branch"
 
+    # What a shed request is answered.
+    status_now = "409" if isinstance(pending, BranchHeadNotFoundError) else "503"
     cap = opal_server_config.SCOPES_POLICY_CLONE_WAIT_MAX_INFLIGHT
     if 0 < cap <= _clone_wait_inflight:
         logger.info(
-            "Scope {scope_id} clone wait is at its {cap}-request cap; "
-            "answering 503 without waiting",
+            "Scope {scope_id} {waiting_for} wait is at its {cap}-request cap; "
+            "answering {status} without waiting",
             scope_id=scope_id,
+            waiting_for=waiting_for,
             cap=cap,
+            status=status_now,
         )
-        metrics.increment(_CLONE_WAIT_METRIC, tags={"outcome": "shed"})
-        pending.waited_seconds = 0.0
+        metrics.increment(
+            _CLONE_WAIT_METRIC, tags={"outcome": "shed", "for": waiting_for}
+        )
+        _note_wait(pending, 0.0)
         raise pending
 
     loop = asyncio.get_running_loop()
     started = loop.time()
     deadline = started + wait
+    # The time of the sync request a branch wait holds for.
+    claim = started
+    if waiting_for == "branch":
+        assert request_refresh is not None  # checked with the first attempt
+        held_for = await _branch_wait_claim(
+            scope_id, request_refresh, started, wait, deadline
+        )
+        if held_for is None:
+            raise pending  # the immediate 409 or 503: not a wait
+        claim = held_for
+        deadline = min(deadline, claim + wait)
+        # Again: a request that published yielded in the publish, and other
+        # first misses may have taken slots meanwhile. The sync is requested
+        # by now, so later misses can still ride it.
+        if 0 < cap <= _clone_wait_inflight:
+            logger.info(
+                "Scope {scope_id} branch wait is at its {cap}-request cap; "
+                "answering {status} without waiting",
+                scope_id=scope_id,
+                cap=cap,
+                status=status_now,
+            )
+            metrics.increment(
+                _CLONE_WAIT_METRIC, tags={"outcome": "shed", "for": waiting_for}
+            )
+            _note_wait(pending, 0.0)
+            raise pending
     outcome = "error"
 
     _clone_wait_inflight += 1
@@ -241,32 +503,87 @@ async def _make_bundle_waiting_for_clone(
             if request is not None and await request.is_disconnected():
                 outcome = "disconnected"
                 logger.info(
-                    "Scope {scope_id} clone wait abandoned after {waited:.1f}s: "
-                    "the client disconnected",
+                    "Scope {scope_id} {waiting_for} wait abandoned after "
+                    "{waited:.1f}s: the client disconnected",
                     scope_id=scope_id,
+                    waiting_for=waiting_for,
                     waited=loop.time() - started,
                 )
-                pending.waited_seconds = loop.time() - started
-                pending.client_disconnected = True
+                _note_wait(pending, loop.time() - started, client_disconnected=True)
                 raise pending
 
-            try:
-                bundle = await run_sync(fetcher.make_bundle, base_hash)
-            except CloneNotPopulatedError as exc:
-                pending = exc
-                continue
+            bundle: Optional[PolicyBundle] = None
+            if waiting_for == "branch":
+                # One ref lookup per poll once the clone is known to lack the
+                # branch; the bundle is built once the ref is there. A miss of
+                # make_bundle costs far more on a clone of a repository with
+                # tens of thousands of branches. Until then a poll tries the
+                # bundle, which fails at once without a clone and says which
+                # answer this hold has come to.
+                if not isinstance(pending, BranchHeadNotFoundError) or await run_sync(
+                    fetcher.has_branch_ref
+                ):
+                    try:
+                        bundle = await run_sync(fetcher.make_bundle, base_hash)
+                    except (
+                        CloneNotPopulatedError,
+                        BranchHeadNotFoundError,
+                        NoSuchPathError,
+                        InvalidGitRepositoryError,
+                    ) as exc:
+                        pending = exc
+                if bundle is None:
+                    # After the attempt, so a branch that has just landed is
+                    # served. The claim this request holds for was given back
+                    # (its publish failed) or evicted: holding on would wait
+                    # for a fetch nobody asked for. A newer claim is a sync
+                    # requested since, which keeps it held.
+                    current = _branch_refresh_requested.get(scope_id)
+                    if current is None or current < claim:
+                        outcome = "unrequested"
+                        _note_wait(pending, loop.time() - started)
+                        raise pending
+                    continue
+            else:
+                try:
+                    bundle = await run_sync(fetcher.make_bundle, base_hash)
+                except CloneNotPopulatedError as exc:
+                    pending = exc
+                    continue
+                except BranchHeadNotFoundError as exc:
+                    pending = exc
+                    # The clone landed without the branch: settled once, at
+                    # the first miss, like a miss on the first attempt. A miss
+                    # that will not be waited for ends the clone wait it was:
+                    # counted with `for: clone`, its hold carried to the 409.
+                    held_for = (
+                        None
+                        if request_refresh is None
+                        else await _branch_wait_claim(
+                            scope_id, request_refresh, loop.time(), wait, deadline
+                        )
+                    )
+                    if held_for is None:
+                        _note_wait(exc, loop.time() - started)
+                        raise
+                    waiting_for = "branch"
+                    claim = held_for
+                    deadline = min(deadline, claim + wait)
+                    continue
             outcome = "served"
             logger.info(
-                "Scope {scope_id} clone became available after {waited:.1f}s wait",
+                "Scope {scope_id} {waiting_for} became available after "
+                "{waited:.1f}s wait",
                 scope_id=scope_id,
+                waiting_for=waiting_for,
                 waited=loop.time() - started,
             )
             return bundle
 
         # Carried on the exception so each caller can report the hold without
-        # this function having to know how the 503 it falls through to is
-        # shaped.
-        pending.waited_seconds = loop.time() - started
+        # this function having to know how the 503 or 409 it falls through to
+        # is shaped.
+        _note_wait(pending, loop.time() - started)
         raise pending
     except asyncio.CancelledError:
         # A BaseException since 3.8, so no `except Exception` arm would see it.
@@ -274,8 +591,9 @@ async def _make_bundle_waiting_for_clone(
         # look exactly like one where nothing is waiting.
         outcome = "cancelled"
         logger.info(
-            "Scope {scope_id} clone wait cancelled after {waited:.1f}s",
+            "Scope {scope_id} {waiting_for} wait cancelled after {waited:.1f}s",
             scope_id=scope_id,
+            waiting_for=waiting_for,
             waited=loop.time() - started,
         )
         raise
@@ -289,23 +607,39 @@ async def _make_bundle_waiting_for_clone(
             # git errors can embed the remote URL with its auth; bound kwargs
             # reach serialize=True sinks verbatim, so redact before binding.
             logger.info(
-                "Scope {scope_id} held {waited:.1f}s waiting for its clone "
-                "before failing: {exc}",
+                "Scope {scope_id} held {waited:.1f}s waiting for its "
+                "{waiting_for} before failing: {exc}",
                 scope_id=scope_id,
+                waiting_for=waiting_for,
                 waited=loop.time() - started,
                 exc=redact_url_in_text(repr(exc)),
             )
+            _note_wait(exc, loop.time() - started)
         raise
     finally:
         _clone_wait_inflight -= 1
         _publish_clone_wait_inflight()
-        metrics.increment(_CLONE_WAIT_METRIC, tags={"outcome": outcome})
+        metrics.increment(
+            _CLONE_WAIT_METRIC, tags={"outcome": outcome, "for": waiting_for}
+        )
         if outcome in ("served", "timeout"):
             metrics.gauge(
                 _CLONE_WAIT_SECONDS_METRIC,
                 loop.time() - started,
-                tags={"outcome": outcome},
+                tags={"outcome": outcome, "for": waiting_for},
             )
+
+
+def _note_wait(
+    exc: Exception, waited_seconds: float, client_disconnected: bool = False
+) -> None:
+    """Carry the hold on the exception the caller shapes into its 503 or 409.
+
+    Only the two wait exceptions declare the attributes; the route reads
+    them off any other with a default.
+    """
+    exc.waited_seconds = waited_seconds  # type: ignore[attr-defined]
+    exc.client_disconnected = client_disconnected  # type: ignore[attr-defined]
 
 
 def verify_private_key(private_key: str, key_format: EncryptionKeyFormat) -> bool:
@@ -375,6 +709,7 @@ def init_scope_router(
 
         old_source_id = None
         old_clone_path = None
+        created = False
         try:
             old_scope = await scopes.get(scope_in.scope_id)
             if isinstance(old_scope.policy, GitPolicyScopeSource):
@@ -386,7 +721,7 @@ def init_scope_router(
                     )
                 )
         except ScopeNotFoundError:
-            pass  # brand-new scope — nothing to repoint away from
+            created = True  # brand-new scope — nothing to repoint away from
         except Exception as e:
             # An unreadable old record must not block the overwrite that
             # fixes it. Its source_id is unknowable anyway, so no purge can be
@@ -405,36 +740,69 @@ def init_scope_router(
             if isinstance(scope_in.policy, GitPolicyScopeSource)
             else None
         )
+        repointed = old_source_id != new_source_id
         try:
-            await scopes.put(scope_in)
-        finally:
-            # The repoint purge must stay reachable even when put() raises an
-            # ambiguous outcome (committed server-side, error surfaced to the
-            # client): a retry would see old_source_id == new_source_id
-            # already (the store was updated) and never re-trigger the purge,
-            # orphaning the old source permanently. Same channel/handlers as
-            # delete — over-publishing self-heals, since the leader
-            # sibling-checks and a source still shared by another scope
-            # survives.
-            if old_source_id is not None and old_source_id != new_source_id:
-                await pubsub_endpoint.publish(
-                    [opal_server_config.SCOPES_PURGE_CHANNEL],
-                    ScopePurgeCommand(
-                        source_id=old_source_id,
-                        clone_path=old_clone_path,
-                        scope_id=scope_in.scope_id,
-                        reason="repoint",
-                    ).model_dump(),
+            try:
+                await scopes.put(scope_in)
+            finally:
+                # The repoint purge must stay reachable even when put() raises an
+                # ambiguous outcome (committed server-side, error surfaced to the
+                # client): a retry would see old_source_id == new_source_id
+                # already (the store was updated) and never re-trigger the purge,
+                # orphaning the old source permanently. Same channel/handlers as
+                # delete — over-publishing self-heals, since the leader
+                # sibling-checks and a source still shared by another scope
+                # survives.
+                if old_source_id is not None and old_source_id != new_source_id:
+                    await pubsub_endpoint.publish(
+                        [opal_server_config.SCOPES_PURGE_CHANNEL],
+                        ScopePurgeCommand(
+                            source_id=old_source_id,
+                            clone_path=old_clone_path,
+                            scope_id=scope_in.scope_id,
+                            reason="repoint",
+                        ).model_dump(),
+                    )
+
+            force_fetch_str = " (force fetch)" if force_fetch else ""
+            logger.info(f"Sync scope: {scope_in.scope_id}{force_fetch_str}")
+
+            # All server replicas (leaders) should sync the scope. A repoint (the
+            # source changed, or there was no readable previous record to compare
+            # with) also tells their syncs to notify the scope's clients whatever
+            # the clone's scope ref says: a clone of a repository the scope used
+            # before still holds the ref it had then (a repoint leaves the old
+            # clone on disk), and when the branch head equals it the sync would
+            # notify nobody, leaving a client that fetched while the scope pointed
+            # elsewhere on that policy. A repoint also forces the fetch: that old
+            # clone may not have been fetched since, and an update-all for its
+            # stale head would move every client back to an older policy.
+            #
+            # The flag is lost when put() stored the record and then raised, or a
+            # publish raised after it: the retry sees old == new. The request that
+            # loses it logs so below. A server without this change never sets it.
+            # Either way the sync notifies only when the head differs from the
+            # clone's scope ref, as before, so don't repoint scopes while servers
+            # are mid-rollout, and a retried repoint is not guaranteed to tell
+            # clients whose head did not move.
+            await pubsub_endpoint.publish(
+                opal_server_config.POLICY_REPO_WEBHOOK_TOPIC,
+                {
+                    "scope_id": scope_in.scope_id,
+                    "force_fetch": force_fetch or repointed,
+                    "repointed": repointed,
+                },
+            )
+        except Exception:
+            # Not for a create: its retry finds no scope ref, and notifies.
+            if repointed and not created:
+                logger.warning(
+                    "Repoint of scope {scope_id} failed before its sync was "
+                    "requested. If the record was stored, a retry will not force "
+                    "the notify: clients whose head did not move are not told",
+                    scope_id=scope_in.scope_id,
                 )
-
-        force_fetch_str = " (force fetch)" if force_fetch else ""
-        logger.info(f"Sync scope: {scope_in.scope_id}{force_fetch_str}")
-
-        # All server replicas (leaders) should sync the scope.
-        await pubsub_endpoint.publish(
-            opal_server_config.POLICY_REPO_WEBHOOK_TOPIC,
-            {"scope_id": scope_in.scope_id, "force_fetch": force_fetch},
-        )
+            raise
 
         return Response(status_code=status.HTTP_201_CREATED)
 
@@ -592,9 +960,27 @@ def init_scope_router(
             cast(GitPolicyScopeSource, scope.policy),
         )
 
+        async def _request_refresh() -> None:
+            # Every leader syncs the scope. Not forced: a sync fetches when the
+            # branch is missing from its own clone (_should_fetch), so only the
+            # servers that lack it fetch, and the rest do not queue a fetch on
+            # the clone's lock in front of every other scope sharing it.
+            # It honours the source's failure backoff, as a pass does: a client
+            # missing a branch is not someone who has just repaired the source.
+            await pubsub_endpoint.publish(
+                opal_server_config.POLICY_REPO_WEBHOOK_TOPIC,
+                {"scope_id": scope_id, "force_fetch": False, "honor_backoff": True},
+            )
+
         try:
             return await _make_bundle_waiting_for_clone(
-                fetcher, base_hash, scope_id, request
+                fetcher,
+                base_hash,
+                scope_id,
+                request,
+                request_refresh=(
+                    _request_refresh if pubsub_endpoint is not None else None
+                ),
             )
         except CloneNotPopulatedError as exc:
             # The clone has no refs/remotes/<remote>/* at all, so it is being
@@ -641,16 +1027,25 @@ def init_scope_router(
                 headers={"Retry-After": _RETRY_AFTER_CLONE_IN_PROGRESS},
             )
         except BranchHeadNotFoundError as exc:
-            logger.error(
-                "Scope {scope_id} bundle unavailable: {exc} (non-retryable)",
-                scope_id=scope_id,
-                exc=redact_url_in_text(repr(exc)),
-            )
-            metrics.event(
-                "ScopePolicyUnavailable",
-                message=f"Scope {scope_id} policy 409 (branch unresolved)",
-                tags={"scope_id": scope_id, "status": "409", "retryable": "false"},
-            )
+            # Skipped for a caller that hung up during the branch wait, as the
+            # 503 arm does: the answer goes nowhere.
+            if not exc.client_disconnected:
+                logger.error(
+                    "Scope {scope_id} bundle unavailable after waiting "
+                    "{waited:.1f}s: {exc} (non-retryable)",
+                    scope_id=scope_id,
+                    waited=exc.waited_seconds,
+                    exc=redact_url_in_text(repr(exc)),
+                )
+                metrics.event(
+                    "ScopePolicyUnavailable",
+                    message=f"Scope {scope_id} policy 409 (branch unresolved)",
+                    tags={
+                        "scope_id": scope_id,
+                        "status": "409",
+                        "retryable": "false",
+                    },
+                )
             raise HTTPException(
                 status.HTTP_409_CONFLICT,
                 detail=(
@@ -671,17 +1066,21 @@ def init_scope_router(
             ValueError,
             OSError,
         ) as exc:
-            logger.warning(
-                "Scope {scope_id} is live but its clone is unavailable ({exc}), "
-                "returning 503",
-                scope_id=scope_id,
-                exc=redact_url_in_text(repr(exc)),
-            )
-            metrics.event(
-                "ScopePolicyUnavailable",
-                message=f"Scope {scope_id} policy 503 (clone unavailable)",
-                tags={"scope_id": scope_id, "status": "503", "retryable": "true"},
-            )
+            # Skipped for a caller that hung up during a hold, as the arms
+            # above do: the answer goes nowhere.
+            if not getattr(exc, "client_disconnected", False):
+                logger.warning(
+                    "Scope {scope_id} is live but its clone is unavailable ({exc}), "
+                    "returning 503 after waiting {waited:.1f}s",
+                    scope_id=scope_id,
+                    exc=redact_url_in_text(repr(exc)),
+                    waited=getattr(exc, "waited_seconds", 0.0),
+                )
+                metrics.event(
+                    "ScopePolicyUnavailable",
+                    message=f"Scope {scope_id} policy 503 (clone unavailable)",
+                    tags={"scope_id": scope_id, "status": "503", "retryable": "true"},
+                )
             raise HTTPException(
                 status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail=(
@@ -750,6 +1149,24 @@ def init_scope_router(
                     waited=exc.waited_seconds,
                     exc=redact_url_in_text(repr(exc)),
                 )
+            raise HTTPException(
+                status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=(
+                    f"Policy clone for scope {scope_id} is temporarily "
+                    "unavailable, retry shortly"
+                ),
+                headers={"Retry-After": _RETRY_AFTER_CLONE_UNAVAILABLE},
+            )
+        except BranchHeadNotFoundError as exc:
+            # Ahead of the broad tuple (it subclasses ValueError), for the
+            # level: a default scope's wrong branch is not a temporary
+            # condition, whatever this path answers. Same 503 as the tuple.
+            logger.error(
+                "Default-scope bundle for {scope_id} is unavailable: {exc}, "
+                "returning 503",
+                scope_id=scope_id,
+                exc=redact_url_in_text(repr(exc)),
+            )
             raise HTTPException(
                 status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail=(

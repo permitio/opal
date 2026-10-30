@@ -61,14 +61,18 @@ class NewCommitsCallbacks(PolicyFetcherCallbacks):
         scope_id: str,
         source: GitPolicyScopeSource,
         pubsub_endpoint: PubSubEndpoint,
+        notify_all: bool = False,
     ):
         self._scope_repo_dir = GitPolicyFetcher.repo_clone_path(base_dir, source)
         self._scope_id = scope_id
         self._source = source
         self._pubsub_endpoint = pubsub_endpoint
+        # A repoint's sync (see ScopesService.sync_scope): notify the scope's
+        # clients of every directory even when the head has not moved.
+        self._notify_all = notify_all
 
     async def on_update(self, previous_head: str, head: str):
-        if previous_head == head:
+        if previous_head == head and not self._notify_all:
             logger.debug(
                 f"scope '{self._scope_id}': No new commits, HEAD is at '{head}'"
             )
@@ -97,7 +101,7 @@ class NewCommitsCallbacks(PolicyFetcherCallbacks):
         # Repo's `git cat-file` processes would hold the packs they read open
         # until the garbage collector gets to it, a repack's deleted ones too.
         with repo:
-            if previous_head is None:
+            if previous_head is None or self._notify_all:
                 notification = await create_update_all_directories_in_repo(
                     repo.commit(head), repo.commit(head), predicate=predicate
                 )
@@ -151,11 +155,20 @@ class ScopesService:
         notify_on_changes: bool = True,
         req_time: datetime.datetime = None,
         honor_backoff: bool = False,
+        notify_all: bool = False,
     ) -> Optional[str]:
         """Sync one scope's policy source.
 
-        ``honor_backoff`` marks this call as pass-originated, letting the
-        fetcher skip a source that keeps failing (see
+        ``notify_all`` is set by a repoint (PUT /scopes with a changed source):
+        once the sync has the head, the scope's clients are told to fetch every
+        directory, even when the head equals what this clone last recorded for
+        the scope. Without it a move back to a repository the scope used before,
+        or a stale PUT followed by the corrective one, notifies nobody, and a
+        client that fetched in between keeps that policy until the next commit.
+
+        ``honor_backoff`` marks this call as pass-originated, or as the sync
+        a bundle request asked for because the scope's branch was missing from
+        its clone, letting the fetcher skip a source that keeps failing (see
         SCOPES_GIT_BACKOFF_BASE_SECONDS). It defaults to False so the explicit
         callers — POST /scopes/{id}/refresh and PUT /scopes, both of which
         arrive here through the watcher's ``trigger`` — always attempt the
@@ -187,6 +200,7 @@ class ScopesService:
                     scope_id=scope.scope_id,
                     source=source,
                     pubsub_endpoint=self._pubsub_endpoint,
+                    notify_all=notify_all,
                 )
 
             source_id = GitPolicyFetcher.source_id(source)

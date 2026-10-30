@@ -8,6 +8,7 @@ PR2-era regression lock).
 
 import asyncio
 import time
+from pathlib import Path
 
 import pytest
 from fastapi import FastAPI
@@ -203,22 +204,25 @@ from opal_server.git_fetcher import GitPolicyFetcher as _Fetcher  # noqa: E402
 class _FakeRepo:
     """Stand-in for pygit2.Repository whose resolve_refish outcome we control.
 
-    ``refs`` is the on-disk reference list. It decides the KeyError split: an
-    empty remote-tracking namespace means the clone is still being populated
-    (transient), refs present but not ours means the branch is misconfigured
-    (permanent). Defaults to a populated namespace so existing callers keep
-    exercising the permanent case.
+    ``refs`` are written as loose ref files under ``path``, the git dir the
+    KeyError split reads: an empty remote-tracking namespace means the clone
+    is still being populated (transient), refs present but not ours means the
+    branch is misconfigured (permanent). Defaults to a populated namespace so
+    existing callers keep exercising the permanent case.
     """
 
-    def __init__(self, resolve, refs=("refs/remotes/origin/some-other-branch",)):
+    def __init__(
+        self, resolve, refs=("refs/remotes/origin/some-other-branch",), path=None
+    ):
         self._resolve = resolve
-        self._refs = list(refs)
+        self.path = path
+        for ref in refs:
+            loose = Path(path) / ref
+            loose.parent.mkdir(parents=True, exist_ok=True)
+            loose.write_text("0" * 40 + "\n")
 
     def resolve_refish(self, refish):
         return self._resolve()
-
-    def listall_references(self):
-        return self._refs
 
     def free(self):  # _get_current_branch_head free()s the handle in finally
         pass
@@ -251,7 +255,7 @@ def test_branch_head_missing_ref_is_permanent_branchheadnotfound(tmp_path, monke
     # the clone is populated, our branch simply is not there -> permanent.
     monkeypatch.setattr(
         "opal_server.git_fetcher.Repository",
-        lambda path: _FakeRepo(_raise(KeyError("no such ref"))),
+        lambda path: _FakeRepo(_raise(KeyError("no such ref")), path=tmp_path / "g"),
     )
     with pytest.raises(BranchHeadNotFoundError):
         _branch_head_fetcher(tmp_path)._get_current_branch_head()
@@ -262,7 +266,9 @@ def test_branch_head_transient_giterror_propagates(tmp_path, monkeypatch):
     # Must propagate (route -> 503), NOT become BranchHeadNotFoundError (409).
     monkeypatch.setattr(
         "opal_server.git_fetcher.Repository",
-        lambda path: _FakeRepo(_raise(pygit2.GitError("odb: object not found"))),
+        lambda path: _FakeRepo(
+            _raise(pygit2.GitError("odb: object not found")), path=tmp_path / "g"
+        ),
     )
     with pytest.raises(pygit2.GitError):
         _branch_head_fetcher(tmp_path)._get_current_branch_head()
@@ -271,7 +277,9 @@ def test_branch_head_transient_giterror_propagates(tmp_path, monkeypatch):
 def test_branch_head_success_returns_hash(tmp_path, monkeypatch):
     monkeypatch.setattr(
         "opal_server.git_fetcher.Repository",
-        lambda path: _FakeRepo(lambda: (_FakeCommit("deadbeef"), None)),
+        lambda path: _FakeRepo(
+            lambda: (_FakeCommit("deadbeef"), None), path=tmp_path / "g"
+        ),
     )
     assert _branch_head_fetcher(tmp_path)._get_current_branch_head() == "deadbeef"
 
@@ -354,16 +362,39 @@ def test_branch_head_with_no_remote_refs_is_transient_not_permanent(
     refs/remotes/<remote>/* at all. That is indistinguishable from a wrong
     branch by resolve_refish alone, and it is the opposite verdict.
 
-    Mutation: dropping the listall_references check raises
+    Mutation: dropping the remote-tracking refs check raises
     BranchHeadNotFoundError (the 409 path) and fails here.
     """
     from opal_server.git_fetcher import CloneNotPopulatedError
 
     monkeypatch.setattr(
         "opal_server.git_fetcher.Repository",
-        lambda path: _FakeRepo(_raise(KeyError("no such ref")), refs=[]),
+        lambda path: _FakeRepo(
+            _raise(KeyError("no such ref")), refs=[], path=tmp_path / "g"
+        ),
     )
     with pytest.raises(CloneNotPopulatedError):
+        _branch_head_fetcher(tmp_path)._get_current_branch_head()
+
+
+def test_packed_remote_refs_count_as_a_populated_clone(tmp_path, monkeypatch):
+    """The split reads the loose ref directory first and falls back to
+    packed-refs: a clone whose refs were packed is populated, so its missing
+    branch is the 409, not a clone in progress."""
+    git_dir = tmp_path / "g"
+    git_dir.mkdir()
+    (git_dir / "packed-refs").write_text(
+        "# pack-refs with: peeled fully-peeled sorted \n"
+        + "0" * 40
+        + " refs/heads/scopes/s1\n"
+        + "0" * 40
+        + " refs/remotes/origin/some-other-branch\n"
+    )
+    monkeypatch.setattr(
+        "opal_server.git_fetcher.Repository",
+        lambda path: _FakeRepo(_raise(KeyError("no such ref")), refs=[], path=git_dir),
+    )
+    with pytest.raises(BranchHeadNotFoundError):
         _branch_head_fetcher(tmp_path)._get_current_branch_head()
 
 
