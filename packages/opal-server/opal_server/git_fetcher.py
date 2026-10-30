@@ -2700,10 +2700,9 @@ class GitPolicyFetcher(PolicyFetcher):
                 # an empty remote-tracking namespace means the clone has not been
                 # populated yet (transient), whereas siblings present but ours
                 # missing means the configured branch is wrong (permanent).
-                prefix = f"refs/remotes/{self._remote}/"
-                if not any(ref.startswith(prefix) for ref in repo.listall_references()):
+                if not self._has_remote_tracking_refs(Path(repo.path)):
                     raise CloneNotPopulatedError(
-                        f"No {prefix}* refs yet at {self._repo_path}"
+                        f"No refs/remotes/{self._remote}/* refs yet at {self._repo_path}"
                     )
                 head_commit_hash = None
         finally:
@@ -2711,9 +2710,52 @@ class GitPolicyFetcher(PolicyFetcher):
             if callable(free):
                 free()
         if not head_commit_hash:
-            logger.error("Could not find current branch head")
+            # DEBUG: every caller reports the outcome, and a held bundle
+            # request may see this before its branch arrives.
+            logger.debug("Could not find current branch head")
             raise BranchHeadNotFoundError("Could not find current branch head")
         return head_commit_hash
+
+    def _has_remote_tracking_refs(self, git_dir: Path) -> bool:
+        """Whether the clone has any refs/remotes/<remote>/* ref, read from disk
+        without listing every ref: a clone of a repository with tens of
+        thousands of branches has as many ref files.
+
+        A libgit2 clone writes its refs loose, so the first entry of the
+        remote's ref directory answers; packed-refs is read only when that
+        directory is empty, and only until the first match.
+        """
+        try:
+            with os.scandir(git_dir / "refs" / "remotes" / self._remote) as entries:
+                if next(entries, None) is not None:
+                    return True
+        except (FileNotFoundError, NotADirectoryError):
+            pass
+        needle = f" refs/remotes/{self._remote}/"
+        try:
+            with open(git_dir / "packed-refs", encoding="utf-8", errors="replace") as f:
+                return any(needle in line for line in f)
+        except FileNotFoundError:
+            return False
+
+    def has_branch_ref(self) -> bool:
+        """Whether the clone has the scope's remote-tracking ref: one ref
+        lookup, which is what a held bundle request polls before building a
+        bundle. False when there is no clone (yet) either; make_bundle is what
+        tells the reasons apart.
+
+        A fresh handle, for the reason _get_current_branch_head gives.
+        """
+        try:
+            repo = Repository(str(self._repo_path))
+        except pygit2.GitError:
+            return False
+        try:
+            return RepoInterface.has_remote_branch(
+                repo, self._source.branch, self._remote
+            )
+        finally:
+            repo.free()
 
     @tracer.wrap("git_policy_fetcher.make_bundle")
     def make_bundle(self, base_hash: Optional[str] = None) -> PolicyBundle:

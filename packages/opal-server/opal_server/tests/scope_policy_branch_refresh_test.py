@@ -33,6 +33,7 @@ from opal_common.monitoring import metrics
 from opal_common.schemas.policy import PolicyBundle
 from opal_common.schemas.policy_source import GitPolicyScopeSource, NoAuthData
 from opal_common.schemas.scopes import Scope
+from opal_common.tests.log_capture import capture_records
 from opal_server import git_fetcher as git_fetcher_module
 from opal_server.config import opal_server_config
 from opal_server.git_fetcher import (
@@ -199,7 +200,12 @@ def _refreshes(emitted):
 
 
 def _script(monkeypatch, *outcomes):
-    """make_bundle plays ``outcomes`` in order, the last one repeating."""
+    """make_bundle plays ``outcomes`` in order, the last one repeating.
+
+    The branch wait's one-ref probe defers to it: every poll builds.
+    What a poll costs on a real clone is
+    test_a_held_poll_is_one_ref_lookup's.
+    """
     calls = []
 
     def fake(self, base_hash=None):
@@ -207,6 +213,7 @@ def _script(monkeypatch, *outcomes):
         return outcomes[min(len(calls) - 1, len(outcomes) - 1)]()
 
     monkeypatch.setattr(GitPolicyFetcher, "make_bundle", fake)
+    monkeypatch.setattr(GitPolicyFetcher, "has_branch_ref", lambda self: True)
     return calls
 
 
@@ -222,6 +229,7 @@ def _gate(monkeypatch):
         return _ready()
 
     monkeypatch.setattr(GitPolicyFetcher, "make_bundle", fake)
+    monkeypatch.setattr(GitPolicyFetcher, "has_branch_ref", lambda self: True)
     return gate
 
 
@@ -480,6 +488,15 @@ def test_the_claims_are_bounded(monkeypatch):
     for n in range(5):
         scopes_api._record_branch_refresh(f"s{n}", float(n))
     assert list(scopes_api._branch_refresh_requested) == ["s2", "s3", "s4"]
+
+
+def test_a_re_recorded_claim_is_the_newest(monkeypatch):
+    """Mutation: dropping `move_to_end` evicts a, the scope just claimed again,
+    instead of b."""
+    monkeypatch.setattr(scopes_api, "_BRANCH_REFRESH_TRACKED_MAX", 2)
+    for n, scope_id in enumerate("abac"):
+        scopes_api._record_branch_refresh(scope_id, float(n))
+    assert list(scopes_api._branch_refresh_requested) == ["a", "c"]
 
 
 # --- a repoint fetches and always notifies -------------------------------
@@ -1104,6 +1121,113 @@ def test_put_stores_the_record_exactly_as_sent(monkeypatch):
 # --- review round 3: what a hold costs, a missing clone, pruning, claims -----
 
 
+def _route_app(scopes, pubsub, service):
+    app = FastAPI()
+    app.include_router(
+        init_scope_router(scopes, FakeAuthenticator(), pubsub, service),
+        prefix="/scopes",
+    )
+    return httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://bed"
+    )
+
+
+@pytest.mark.asyncio
+async def test_a_held_poll_is_one_ref_lookup(
+    tmp_path, monkeypatch, clear_fetcher_caches
+):
+    """A held request polls the scope's one remote-tracking ref and builds a
+    bundle only once it is there, and nothing on its path lists every ref: on a
+    clone of a repository with tens of thousands of branches, a listing costs
+    seconds, on the shared executor. The miss is logged once, by the route's
+    409.
+
+    Mutation: polling make_bundle (as before) builds once per poll, lists
+    every ref each time, and logs an ERROR per poll.
+    """
+    origin, url = _shared_bed(tmp_path)
+    warm = _git_scope("warm", url, "main")
+    scopes = FakeScopeRepository([warm, _git_scope("moved", url, "env2")])
+    pubsub = RecordingPubSub()  # the sync is requested, and never runs
+    service = ScopesService(base_dir=tmp_path, scopes=scopes, pubsub_endpoint=pubsub)
+    await service.sync_scope(scope_id="warm")  # the clone, without env2
+
+    builds = []
+    real_make_bundle = GitPolicyFetcher.make_bundle
+
+    def counting_make_bundle(self, base_hash=None):
+        builds.append(base_hash)
+        return real_make_bundle(self, base_hash)
+
+    listings = []
+    real_listall = pygit2.Repository.listall_references
+
+    def counting_listall(self):
+        listings.append(1)
+        return real_listall(self)
+
+    monkeypatch.setattr(GitPolicyFetcher, "make_bundle", counting_make_bundle)
+    monkeypatch.setattr(pygit2.Repository, "listall_references", counting_listall)
+
+    with capture_records() as logs:
+        async with _route_app(scopes, pubsub, service) as client:
+            resp = await client.get("/scopes/moved/policy")
+
+    assert resp.status_code == 409
+    assert len(pubsub.syncs()) == 1
+    assert len(builds) == 1, f"{len(builds)} bundle builds for one held request"
+    assert listings == [], "a held request listed every ref in the clone"
+    errors = [r for r in logs.emitted if r["level"].name == "ERROR"]
+    assert len(errors) == 1, [r["message"] for r in errors]
+
+
+@pytest.mark.asyncio
+async def test_a_pod_without_the_clone_requests_a_sync_and_is_served(
+    tmp_path, monkeypatch, clear_fetcher_caches
+):
+    """A scope moved to a repository this pod has never cloned, on a pod that
+    missed the PUT's broadcast: the request asks for the sync, which clones,
+    and is served.
+
+    Mutation: answering NoSuchPathError at once (as before) returns the 503
+    with no sync requested.
+    """
+    monkeypatch.setattr(opal_server_config, "SCOPES_POLICY_CLONE_WAIT_SECONDS", 20.0)
+    origin, url = _shared_bed(tmp_path)
+    scopes = FakeScopeRepository([_git_scope("moved", url, "main")])
+    task = ScopesPolicyWatcherTask.__new__(ScopesPolicyWatcherTask)
+    pubsub = SyncingPubSub(task)
+    service = ScopesService(base_dir=tmp_path, scopes=scopes, pubsub_endpoint=pubsub)
+    task._service = service
+
+    async with _route_app(scopes, pubsub, service) as client:
+        resp = await client.get("/scopes/moved/policy")
+    await asyncio.gather(*pubsub.syncs_running)
+
+    assert resp.status_code == 200, resp.text
+    assert PolicyBundle(**resp.json()).hash == origin.head.commit.hexsha
+    assert len(pubsub.syncs()) == 1
+
+
+@pytest.mark.asyncio
+async def test_a_pod_without_the_clone_answers_503_once_the_hold_runs_out(
+    tmp_path, emitted, clear_fetcher_caches
+):
+    """The sync is requested but no clone appears: the request gets the
+    retryable 503 it got before, after the hold."""
+    pubsub = RecordingPubSub()
+    scopes = FakeScopeRepository([_git_scope("moved", str(tmp_path / "none"), "main")])
+    service = ScopesService(base_dir=tmp_path, scopes=scopes, pubsub_endpoint=pubsub)
+
+    async with _route_app(scopes, pubsub, service) as client:
+        resp = await client.get("/scopes/moved/policy")
+
+    assert resp.status_code == 503
+    assert resp.headers["retry-after"] == "5"
+    assert len(pubsub.syncs()) == 1
+    assert _waits(emitted) == [{"outcome": "timeout", "for": "branch"}]
+
+
 @pytest.mark.asyncio
 async def test_a_branch_deleted_on_the_remote_leaves_the_clone(
     tmp_path, clear_fetcher_caches
@@ -1149,3 +1273,123 @@ async def test_a_branch_deleted_on_the_remote_leaves_the_clone(
     assert scope_refs <= after, "a scope's own ref was pruned"
     with pytest.raises(BranchHeadNotFoundError):
         GitPolicyFetcher(tmp_path, "moved", moved.policy).make_bundle()
+
+
+@pytest.mark.asyncio
+async def test_a_publish_that_does_not_return_is_bounded_by_the_hold(
+    monkeypatch, emitted
+):
+    """A slow broadcast backend does not hold the request past its hold, and
+    the claim is kept, since the publish may still go out.
+
+    Mutation: awaiting the publish unbounded never answers (the test's own
+    deadline fails it).
+    """
+    stuck = asyncio.Event()
+
+    async def never_returns():
+        await stuck.wait()
+
+    _script(monkeypatch, _missing)
+    fetcher = GitPolicyFetcher(Path("/unused"), "live", _scope().policy)
+    loop = asyncio.get_running_loop()
+    started = loop.time()
+
+    with pytest.raises(BranchHeadNotFoundError):
+        await asyncio.wait_for(
+            scopes_api._make_bundle_waiting_for_clone(
+                fetcher, None, "live", request_refresh=never_returns
+            ),
+            5 * WAIT,
+        )
+
+    assert loop.time() - started < 2 * WAIT
+    assert _refreshes(emitted) == ["publish_timeout"]
+    assert "live" in scopes_api._branch_refresh_requested
+    [publish] = scopes_api._branch_refresh_publishes  # still referenced
+    stuck.set()
+    await publish
+    assert not scopes_api._branch_refresh_publishes
+
+
+@pytest.mark.asyncio
+async def test_a_failed_publish_gives_back_only_its_own_claim(monkeypatch, emitted):
+    """It restores the claim it replaced, and leaves a newer one alone: the
+    requests holding for either are not its to release.
+
+    Mutation: popping the scope's entry on any failed publish (as before)
+    drops both.
+    """
+    monkeypatch.setattr(
+        opal_server_config, "SCOPES_POLICY_BRANCH_REFRESH_INTERVAL", WAIT / 3
+    )
+    claims = scopes_api._branch_refresh_requested
+
+    async def fails():
+        raise ConnectionError("no local subscriber")
+
+    loop = asyncio.get_running_loop()
+
+    # The claim it replaced, older than the interval, comes back.
+    now = loop.time()
+    claims["live"] = now - WAIT
+    assert (
+        await scopes_api._branch_wait_claim("live", fails, now, WAIT, now + WAIT)
+        is None
+    )
+    assert claims["live"] == now - WAIT
+
+    # A newer claim recorded while it was publishing stays.
+    release = asyncio.Event()
+
+    async def fails_late():
+        await release.wait()
+        raise ConnectionError("no local subscriber")
+
+    now = loop.time()
+    pending = asyncio.ensure_future(
+        scopes_api._branch_wait_claim("live", fails_late, now, WAIT, now + WAIT)
+    )
+    while claims.get("live") != now:  # its claim is recorded
+        await asyncio.sleep(0)
+    claims["live"] = now + 1.0  # a newer request's
+    release.set()
+    assert await pending is None
+    assert claims["live"] == now + 1.0
+    assert _refreshes(emitted) == ["publish_failed", "publish_failed"]
+
+
+@pytest.mark.asyncio
+async def test_a_branch_that_lands_as_the_claim_goes_is_served(monkeypatch, emitted):
+    """The release check runs after the bundle attempt: a branch that arrives
+    at the poll that would find the claim gone is served, not answered 409.
+
+    Mutation: checking the claim before the attempt (as before) answers 409.
+    """
+
+    class WithdrawnAfterOnePoll(OrderedDict):
+        """The claim is seen by the rider's hold decision and by its first
+        poll, then given back (another request's publish failed)."""
+
+        reads = 0
+
+        def get(self, key, default=None):
+            self.reads += 1
+            return super().get(key, default) if self.reads <= 2 else default
+
+    claims = WithdrawnAfterOnePoll()
+    # A rider: the sync was requested by another request just now.
+    claims["live"] = asyncio.get_running_loop().time()
+    monkeypatch.setattr(scopes_api, "_branch_refresh_requested", claims)
+    _script(monkeypatch, _missing, _missing, _ready)
+    fetcher = GitPolicyFetcher(Path("/unused"), "live", _scope().policy)
+
+    async def not_asked():
+        raise AssertionError("a rider requested a sync")
+
+    bundle = await scopes_api._make_bundle_waiting_for_clone(
+        fetcher, None, "live", request_refresh=not_asked
+    )
+
+    assert bundle.hash == "head"
+    assert _waits(emitted) == [{"outcome": "served", "for": "branch"}]
