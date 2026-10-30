@@ -720,6 +720,14 @@ def init_scope_router(
         # elsewhere on that policy. A repoint also forces the fetch: that old
         # clone may not have been fetched since, and an update-all for its
         # stale head would move every client back to an older policy.
+        #
+        # Unlike the purge above, the flag is not published from the finally,
+        # so it is lost when put() stored the record and then raised: the
+        # retry sees old == new. A server without this change never sets it.
+        # Either way the sync notifies only when the head differs from the
+        # clone's scope ref, as before, so don't repoint scopes while servers
+        # are mid-rollout, and a retried repoint is not guaranteed to tell
+        # clients whose head did not move.
         repointed = old_source_id != new_source_id
         await pubsub_endpoint.publish(
             opal_server_config.POLICY_REPO_WEBHOOK_TOPIC,
