@@ -2743,8 +2743,8 @@ class GitPolicyFetcher(PolicyFetcher):
     def has_branch_ref(self) -> bool:
         """Whether the clone has the scope's remote-tracking ref: one ref
         lookup, which is what a held bundle request polls before building a
-        bundle. False when there is no clone (yet) either; make_bundle is what
-        tells the reasons apart.
+        bundle. False when there is no clone (yet) either, and for a branch
+        name that cannot be a ref; make_bundle is what tells the reasons apart.
 
         A fresh handle, for the reason _get_current_branch_head gives.
         """
@@ -2756,6 +2756,8 @@ class GitPolicyFetcher(PolicyFetcher):
             return RepoInterface.has_remote_branch(
                 repo, self._source.branch, self._remote
             )
+        except pygit2.InvalidSpecError:
+            return False
         finally:
             repo.free()
 

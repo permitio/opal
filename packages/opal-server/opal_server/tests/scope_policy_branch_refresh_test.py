@@ -500,11 +500,15 @@ def test_a_plain_clone_wait_is_tagged_as_one(monkeypatch, emitted):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "miss, status", [(_missing, 409), (_no_clone, 503)], ids=["branch", "no_clone"]
+)
 async def test_a_client_that_hangs_up_during_a_branch_wait_is_not_reported(
-    monkeypatch, emitted
+    monkeypatch, emitted, miss, status
 ):
-    """The 409 is shaped for a socket nobody is reading: no ERROR line and no
-    unavailable event for it, as on the clone wait's 503."""
+    """The 409, or a missing clone's 503, is shaped for a socket nobody is
+    reading: no ERROR or WARNING line and no unavailable event for it, as on
+    the clone wait's 503."""
     polls = {"n": 0}
 
     async def hung_up_after_two_polls(self):
@@ -513,13 +517,13 @@ async def test_a_client_that_hangs_up_during_a_branch_wait_is_not_reported(
 
     monkeypatch.setattr(Request, "is_disconnected", hung_up_after_two_polls)
     monkeypatch.setattr(opal_server_config, "SCOPES_POLICY_CLONE_WAIT_SECONDS", 5.0)
-    _script(monkeypatch, _missing)
+    _script(monkeypatch, miss)
 
     transport = httpx.ASGITransport(app=_app(RecordingPubSub()))
     async with httpx.AsyncClient(transport=transport, base_url="http://bed") as client:
         resp = await client.get("/scopes/live/policy")
 
-    assert resp.status_code == 409
+    assert resp.status_code == status
     assert _waits(emitted) == [{"outcome": "disconnected", "for": "branch"}]
     assert not [
         t for t, _ in emitted["event"] if t == "ScopePolicyUnavailable"
@@ -1284,12 +1288,70 @@ async def test_a_pod_without_the_clone_answers_503_once_the_hold_runs_out(
     scopes = FakeScopeRepository([_git_scope("moved", str(tmp_path / "none"), "main")])
     service = ScopesService(base_dir=tmp_path, scopes=scopes, pubsub_endpoint=pubsub)
 
-    async with _route_app(scopes, pubsub, service) as client:
-        resp = await client.get("/scopes/moved/policy")
+    with capture_records() as logs:
+        async with _route_app(scopes, pubsub, service) as client:
+            resp = await client.get("/scopes/moved/policy")
 
     assert resp.status_code == 503
     assert resp.headers["retry-after"] == "5"
     assert len(pubsub.syncs()) == 1
+    assert _waits(emitted) == [{"outcome": "timeout", "for": "branch"}]
+    # The hold is reported, as on the other two answers.
+    [line] = [m["message"] for m in logs.emitted if "is live but" in m["message"]]
+    assert f"after waiting {WAIT:.1f}s" in line
+
+
+@pytest.mark.asyncio
+async def test_a_no_clone_hold_whose_clone_lands_without_the_branch_gets_the_409(
+    tmp_path, monkeypatch, clear_fetcher_caches
+):
+    """The sync clones the repository, and the branch is not in it: the answer
+    is the permanent 409 for that, not "clone unavailable".
+
+    Mutation: polling only the ref keeps the first attempt's NoSuchPathError
+    for the whole hold, and answers 503.
+    """
+    monkeypatch.setattr(opal_server_config, "SCOPES_POLICY_CLONE_WAIT_SECONDS", 1.0)
+    _, url = _shared_bed(tmp_path)
+    scope = _git_scope("moved", url, "no-such-branch")
+    clone_path = GitPolicyFetcher.repo_clone_path(tmp_path, scope.policy)
+
+    class ClonesOnPublish(RecordingPubSub):
+        async def publish(self, topics, data=None):
+            await super().publish(topics, data)
+            git.Repo.clone_from(url, clone_path).close()
+
+    pubsub = ClonesOnPublish()
+    scopes = FakeScopeRepository([scope])
+    service = ScopesService(base_dir=tmp_path, scopes=scopes, pubsub_endpoint=pubsub)
+
+    async with _route_app(scopes, pubsub, service) as client:
+        resp = await client.get("/scopes/moved/policy")
+
+    assert resp.status_code == 409, resp.text
+
+
+@pytest.mark.asyncio
+async def test_a_branch_name_that_cannot_be_a_ref_keeps_its_409(
+    tmp_path, emitted, clear_fetcher_caches
+):
+    """The poll's lookup raises for such a name, where a make_bundle answers a
+    miss.
+
+    Mutation: letting InvalidSpecError out of has_branch_ref ends the hold as
+    `error`, with the retryable 503.
+    """
+    _, url = _shared_bed(tmp_path)
+    warm = _git_scope("warm", url, "main")
+    scopes = FakeScopeRepository([warm, _git_scope("moved", url, "x~1")])
+    pubsub = RecordingPubSub()
+    service = ScopesService(base_dir=tmp_path, scopes=scopes, pubsub_endpoint=pubsub)
+    await service.sync_scope(scope_id="warm")
+
+    async with _route_app(scopes, pubsub, service) as client:
+        resp = await client.get("/scopes/moved/policy")
+
+    assert resp.status_code == 409, resp.text
     assert _waits(emitted) == [{"outcome": "timeout", "for": "branch"}]
 
 

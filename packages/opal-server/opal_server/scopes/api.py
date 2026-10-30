@@ -496,16 +496,22 @@ async def _make_bundle_waiting_for_clone(
 
             bundle: Optional[PolicyBundle] = None
             if waiting_for == "branch":
-                # One ref lookup per poll; the bundle is built once the ref is
-                # there. A miss of make_bundle costs far more on a clone of a
-                # repository with tens of thousands of branches.
-                if await run_sync(fetcher.has_branch_ref):
+                # One ref lookup per poll once the clone is known to lack the
+                # branch; the bundle is built once the ref is there. A miss of
+                # make_bundle costs far more on a clone of a repository with
+                # tens of thousands of branches. Until then a poll tries the
+                # bundle, which fails at once without a clone and says which
+                # answer this hold has come to.
+                if not isinstance(pending, BranchHeadNotFoundError) or await run_sync(
+                    fetcher.has_branch_ref
+                ):
                     try:
                         bundle = await run_sync(fetcher.make_bundle, base_hash)
                     except (
                         CloneNotPopulatedError,
                         BranchHeadNotFoundError,
                         NoSuchPathError,
+                        InvalidGitRepositoryError,
                     ) as exc:
                         pending = exc
                 if bundle is None:
@@ -610,10 +616,19 @@ def _note_wait(
 ) -> None:
     """Carry the hold on the exception the caller shapes into its 503 or 409.
 
-    Both wait exceptions declare the two attributes; anything else
-    passes through untouched.
+    Both wait exceptions declare the two attributes, and the route reads
+    them off a missing clone's with a default; anything else passes
+    through untouched.
     """
-    if isinstance(exc, (CloneNotPopulatedError, BranchHeadNotFoundError)):
+    if isinstance(
+        exc,
+        (
+            CloneNotPopulatedError,
+            BranchHeadNotFoundError,
+            NoSuchPathError,
+            InvalidGitRepositoryError,
+        ),
+    ):
         exc.waited_seconds = waited_seconds
         exc.client_disconnected = client_disconnected
 
@@ -1030,17 +1045,21 @@ def init_scope_router(
             ValueError,
             OSError,
         ) as exc:
-            logger.warning(
-                "Scope {scope_id} is live but its clone is unavailable ({exc}), "
-                "returning 503",
-                scope_id=scope_id,
-                exc=redact_url_in_text(repr(exc)),
-            )
-            metrics.event(
-                "ScopePolicyUnavailable",
-                message=f"Scope {scope_id} policy 503 (clone unavailable)",
-                tags={"scope_id": scope_id, "status": "503", "retryable": "true"},
-            )
+            # Skipped for a caller that hung up during a hold, as the arms
+            # above do: the answer goes nowhere.
+            if not getattr(exc, "client_disconnected", False):
+                logger.warning(
+                    "Scope {scope_id} is live but its clone is unavailable ({exc}), "
+                    "returning 503 after waiting {waited:.1f}s",
+                    scope_id=scope_id,
+                    exc=redact_url_in_text(repr(exc)),
+                    waited=getattr(exc, "waited_seconds", 0.0),
+                )
+                metrics.event(
+                    "ScopePolicyUnavailable",
+                    message=f"Scope {scope_id} policy 503 (clone unavailable)",
+                    tags={"scope_id": scope_id, "status": "503", "retryable": "true"},
+                )
             raise HTTPException(
                 status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail=(
