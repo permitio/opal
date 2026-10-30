@@ -498,12 +498,15 @@ class OpalServerConfig(Confi):
     )
     SCOPES_POLICY_BRANCH_REFRESH_INTERVAL = confi.float(
         "SCOPES_POLICY_BRANCH_REFRESH_INTERVAL",
-        60.0,
-        description="When GET /scopes/:scope_id/policy finds the scope's clone populated but "
-        "without the scope's branch, this worker asks every server to sync that "
+        0.0,
+        description="Off by default (0): set it, for example to 60, to enable it. "
+        "When GET /scopes/:scope_id/policy finds the scope's clone populated but "
+        "without the scope's branch, or finds no clone of the scope's repository "
+        "at all, this worker asks every server to sync that "
         "scope and holds the request in the SCOPES_POLICY_CLONE_WAIT_SECONDS wait, "
-        "under the same in-flight cap, serving the bundle as soon as the branch is "
-        "there. The sync is not forced: a server fetches only when its own clone "
+        "under the same in-flight cap, polling that one branch ref and serving the "
+        "bundle as soon as the branch is there. The sync is not forced: a server "
+        "fetches only when its own clone "
         "lacks the branch. A branch pushed after a server's last fetch is not a "
         "misconfiguration: right after a PUT /scopes that moves a scope to another "
         "repository, every pod answers this way until its own fetch of that "
@@ -532,7 +535,8 @@ class OpalServerConfig(Confi):
         "just failed fetches the branch only for a request that arrives after that "
         "backoff (SCOPES_GIT_BACKOFF_BASE_SECONDS) has passed. When "
         "the wait runs out with the branch still missing, the answer is that same "
-        "409. 0 or negative disables it (409 immediately, as before); nan, inf and "
+        "409 (a 503 + Retry-After 5 when there is still no clone). 0 or negative "
+        "disables it (409 or 503 immediately, as before); nan, inf and "
         "-inf are treated as disabled too. Requires "
         "SCOPES_POLICY_CLONE_WAIT_SECONDS > 0: with that wait disabled, no sync is "
         "requested either.",
