@@ -654,7 +654,7 @@ async def test_an_unmoved_head_notifies_only_on_a_repoint(
 
 @pytest.mark.asyncio
 async def test_a_rider_is_held_no_longer_than_the_first_requests_deadline(
-    monkeypatch,
+    monkeypatch, emitted
 ):
     """A request that rides another's sync gets that request's deadline, not a
     fresh one: a branch that does not exist holds requests for at most one
@@ -667,18 +667,29 @@ async def test_a_rider_is_held_no_longer_than_the_first_requests_deadline(
     transport = httpx.ASGITransport(app=_app(RecordingPubSub()))
     async with httpx.AsyncClient(transport=transport, base_url="http://bed") as client:
 
-        async def late_rider():
-            await asyncio.sleep(0.7 * WAIT)
-            started = asyncio.get_running_loop().time()
+        async def first_request():
             resp = await client.get("/scopes/live/policy")
-            return resp, asyncio.get_running_loop().time() - started
+            return resp, asyncio.get_running_loop().time()
 
-        first, (rider, rider_elapsed) = await asyncio.gather(
-            client.get("/scopes/live/policy"), late_rider()
+        async def late_rider():
+            # Arrives late in the first request's hold, so that its own
+            # deadline would be well after the first request's.
+            await asyncio.sleep(0.7 * WAIT)
+            resp = await client.get("/scopes/live/policy")
+            return resp, asyncio.get_running_loop().time()
+
+        (first, first_done), (rider, rider_done) = await asyncio.gather(
+            first_request(), late_rider()
         )
 
     assert first.status_code == rider.status_code == 409
-    assert rider_elapsed < 0.6 * WAIT, f"the rider was held {rider_elapsed:.2f}s"
+    # Timed against the first request's end, not the rider's own start: both
+    # end at the same deadline, and load delays both alike. The mutant ends
+    # the rider about 0.7 * WAIT after the first.
+    gap = rider_done - first_done
+    assert gap < 0.35 * WAIT, f"the rider was held {gap:.2f}s past the first"
+    # Both held to that deadline, not the rider released early.
+    assert [w["outcome"] for w in _waits(emitted)] == ["timeout", "timeout"]
 
 
 def test_a_branch_miss_late_in_a_clone_wait_keeps_the_clone_waits_deadline(
@@ -718,6 +729,9 @@ async def test_an_in_loop_miss_without_a_sync_ends_as_the_clone_wait_it_was(
 
     assert raised.value.waited_seconds > 0
     assert _waits(emitted) == [{"outcome": "error", "for": "clone"}]
+    # Mutation: settling the miss without the `request_refresh is None` guard
+    # counts a failed publish for a sync this path never asks for.
+    assert _refreshes(emitted) == []
 
 
 def test_an_in_loop_miss_after_the_sync_had_its_chance_is_answered_at_once(
@@ -1060,13 +1074,10 @@ async def test_a_repoint_whose_fetch_fails_tells_nobody(tmp_path, clear_fetcher_
 
     task = ScopesPolicyWatcherTask.__new__(ScopesPolicyWatcherTask)
     task._service = service
-    try:
-        await task.trigger(
-            None, {"scope_id": "s", "force_fetch": True, "repointed": True}
-        )
-    except Exception:
-        pass  # a failed fetch may surface; what matters is what was published
+    await task.trigger(None, {"scope_id": "s", "force_fetch": True, "repointed": True})
 
+    # The fetch was attempted, and failed: a failed fetch records a backoff.
+    assert GitPolicyFetcher.source_id(scope.policy) in GitPolicyFetcher.source_backoff
     assert len(pubsub.published) == 1, "a failed repoint fetch notified clients"
     assert clone.commit("scopes/s").hexsha == ref_before
 
