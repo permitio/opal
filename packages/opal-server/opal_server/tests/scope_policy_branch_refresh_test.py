@@ -25,6 +25,7 @@ from pathlib import Path
 
 import git
 import httpx
+import pygit2
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -1098,3 +1099,53 @@ def test_put_stores_the_record_exactly_as_sent(monkeypatch):
     assert [(p["source_id"], p["reason"]) for p in purges] == [
         (GitPolicyFetcher.source_id(old.policy), "repoint")
     ]
+
+
+# --- review round 3: what a hold costs, a missing clone, pruning, claims -----
+
+
+@pytest.mark.asyncio
+async def test_a_branch_deleted_on_the_remote_leaves_the_clone(
+    tmp_path, clear_fetcher_caches
+):
+    """A fetch prunes the remote-tracking ref of a branch the remote deleted,
+    so the scope that names it misses (and a bundle request waits for the
+    branch) instead of being served the deleted branch's last head. The scopes'
+    own refs/heads/scopes/* refs are not pruned.
+
+    Mutation: fetching without prune keeps refs/remotes/origin/env2, and its
+    stale head is served.
+    """
+    origin, url = _shared_bed(tmp_path)
+    _push_branch(origin, "env2", "env2")
+    warm = _git_scope("warm", url, "main")
+    moved = _git_scope("moved", url, "env2")
+    service = ScopesService(
+        base_dir=tmp_path,
+        scopes=FakeScopeRepository([warm, moved]),
+        pubsub_endpoint=RecordingPubSub(),
+    )
+    await service.sync_scope(scope_id="warm")
+    await service.sync_scope(scope_id="moved")
+    clone_path = str(GitPolicyFetcher.repo_clone_path(tmp_path, warm.policy))
+
+    def refs():
+        repo = pygit2.Repository(clone_path)
+        try:
+            return set(repo.listall_references())
+        finally:
+            repo.free()
+
+    scope_refs = {r for r in refs() if r.startswith("refs/heads/scopes/")}
+    assert scope_refs == {"refs/heads/scopes/warm", "refs/heads/scopes/moved"}
+    assert "refs/remotes/origin/env2" in refs()
+
+    origin.git.branch("-D", "env2")
+    await service.sync_scope(scope_id="warm", force_fetch=True)
+
+    after = refs()
+    assert "refs/remotes/origin/env2" not in after
+    assert "refs/remotes/origin/main" in after
+    assert scope_refs <= after, "a scope's own ref was pruned"
+    with pytest.raises(BranchHeadNotFoundError):
+        GitPolicyFetcher(tmp_path, "moved", moved.policy).make_bundle()
