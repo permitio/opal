@@ -1728,3 +1728,30 @@ async def test_a_request_cancelled_in_its_publish(monkeypatch, emitted, fails):
 
     assert ("live" in scopes_api._branch_refresh_requested) is not fails
     assert _refreshes(emitted) == (["publish_failed"] if fails else [])
+
+
+@pytest.mark.asyncio
+async def test_a_default_scope_with_a_wrong_branch_is_an_error_that_names_it(
+    tmp_path, clear_fetcher_caches
+):
+    """Its answer stays the 503 of that path, but the line says what is wrong,
+    at ERROR, not "temporarily unavailable" at WARNING.
+
+    Mutation: dropping the path's BranchHeadNotFoundError arm logs a WARNING;
+    the old exception message does not name the branch.
+    """
+    _, url = _shared_bed(tmp_path)
+    warm = _git_scope("warm", url, "main")
+    scopes = FakeScopeRepository([warm, _git_scope("default", url, "no-such-branch")])
+    pubsub = RecordingPubSub()
+    service = ScopesService(base_dir=tmp_path, scopes=scopes, pubsub_endpoint=pubsub)
+    await service.sync_scope(scope_id="warm")
+
+    with capture_records() as logs:
+        async with _route_app(scopes, pubsub, service) as client:
+            resp = await client.get("/scopes/unknown/policy")
+
+    assert resp.status_code == 503
+    assert resp.headers["retry-after"] == "5"
+    [error] = [r["message"] for r in logs.emitted if r["level"].name == "ERROR"]
+    assert "origin/no-such-branch" in error

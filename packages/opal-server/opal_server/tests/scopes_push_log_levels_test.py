@@ -336,15 +336,17 @@ async def test_already_fetched_line_is_debug_and_missing_branch_line_stays_info(
 
 
 @pytest.mark.asyncio
-async def test_a_coalesced_sync_of_a_missing_branch_logs_no_error(
-    tmp_path, clear_fetcher_caches
+@pytest.mark.parametrize("from_a_bundle_request", [True, False])
+async def test_a_coalesced_sync_of_a_missing_branch(
+    tmp_path, clear_fetcher_caches, from_a_bundle_request
 ):
-    """The whole sync, not only _should_fetch: one that rides a later fetch for
-    a branch the clone lacks logs nothing at ERROR, since every server runs it
-    once per sync a bundle request asks for.
+    """The whole sync, not only _should_fetch. One a bundle request asked for
+    (it honours the backoff) rides a later fetch and logs nothing at ERROR,
+    since every server runs it once per request. Any other, a PUT's say, keeps
+    the line: it is what reports a scope written with a wrong branch.
 
-    Mutation: notifying regardless of the skipped fetch logs "Did not find
-    target branch on remote" at ERROR.
+    Mutation: notifying regardless logs the ERROR in the first case; skipping
+    for every sync loses it in the second.
     """
     remote = git.Repo.init(tmp_path / "remote", initial_branch="main")
     _commit(remote, "policy/a.rego", "package a\n")
@@ -361,10 +363,13 @@ async def test_a_coalesced_sync_of_a_missing_branch_logs_no_error(
     ] = asked + datetime.timedelta(seconds=1)
 
     with capture_records() as logs:
-        await fetcher.fetch_and_notify_on_changes(req_time=asked)
+        await fetcher.fetch_and_notify_on_changes(
+            req_time=asked, honor_backoff=from_a_bundle_request
+        )
 
     assert starting_with(logs.emitted, "Target branch was not found")
-    assert not _opal_records(logs.emitted, "ERROR")
+    errors = starting_with(logs.emitted, "Did not find target branch on remote")
+    assert len(errors) == (0 if from_a_bundle_request else 1)
 
 
 @pytest.mark.asyncio

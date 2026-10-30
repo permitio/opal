@@ -1136,6 +1136,24 @@ def init_scope_router(
                 ),
                 headers={"Retry-After": _RETRY_AFTER_CLONE_UNAVAILABLE},
             )
+        except BranchHeadNotFoundError as exc:
+            # Ahead of the broad tuple (it subclasses ValueError), for the
+            # level: a default scope's wrong branch is not a temporary
+            # condition, whatever this path answers. Same 503 as the tuple.
+            logger.error(
+                "Default-scope bundle for {scope_id} is unavailable: {exc}, "
+                "returning 503",
+                scope_id=scope_id,
+                exc=redact_url_in_text(repr(exc)),
+            )
+            raise HTTPException(
+                status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=(
+                    f"Policy clone for scope {scope_id} is temporarily "
+                    "unavailable, retry shortly"
+                ),
+                headers={"Retry-After": _RETRY_AFTER_CLONE_UNAVAILABLE},
+            )
         except (
             InvalidGitRepositoryError,
             NoSuchPathError,

@@ -1986,13 +1986,17 @@ class GitPolicyFetcher(PolicyFetcher):
                             )
 
                         # New commits might be present because of a previous fetch made by another scope.
-                        # Skipped when this sync rode another's fetch for a
-                        # branch the clone lacks (_should_fetch): nothing can
-                        # have changed for a branch the clone does not have,
-                        # and an ERROR for it on every server per coalesced
-                        # request is noise.
-                        if should_fetch or RepoInterface.has_remote_branch(
-                            repo, self._source.branch, self._remote
+                        # Skipped when the sync a bundle request asked for rode
+                        # another's fetch for a branch the clone lacks
+                        # (_should_fetch): nothing can have changed for it, and
+                        # an ERROR on every server per request is noise. Other
+                        # syncs (PUT /scopes, the refresh routes) keep the line.
+                        if (
+                            should_fetch
+                            or not honor_backoff
+                            or RepoInterface.has_remote_branch(
+                                repo, self._source.branch, self._remote
+                            )
                         ):
                             await self._notify_on_changes(repo)
                         if should_fetch:
@@ -2712,10 +2716,14 @@ class GitPolicyFetcher(PolicyFetcher):
             if callable(free):
                 free()
         if not head_commit_hash:
-            # DEBUG: every caller reports the outcome, and a held bundle
+            # DEBUG: every caller reports the exception, and a held bundle
             # request may see this before its branch arrives.
-            logger.debug("Could not find current branch head")
-            raise BranchHeadNotFoundError("Could not find current branch head")
+            message = (
+                "Could not find current branch head: "
+                f"{self._remote}/{self._source.branch}"
+            )
+            logger.debug(message)
+            raise BranchHeadNotFoundError(message)
         return head_commit_hash
 
     def _has_remote_tracking_refs(self, git_dir: Path) -> bool:
