@@ -375,8 +375,9 @@ async def _make_bundle_waiting_for_clone(
     object store a retryable 503), and the wait must not re-label those.
 
     One exception to that: a populated clone WITHOUT the scope's branch
-    (BranchHeadNotFoundError), or no clone at all (NoSuchPathError), is waited
-    for too, when ``request_refresh`` is given (``_branch_wait_claim``). A
+    (BranchHeadNotFoundError), or no clone at all (NoSuchPathError, or
+    InvalidGitRepositoryError while a clone is just starting), is waited for
+    too, when ``request_refresh`` is given (``_branch_wait_claim``). A
     branch pushed after this server's last fetch is the usual cause: every pod
     answers that way right after a scope moves to another repository, until
     its own fetch lands; a pod that has never cloned that repository has no
@@ -398,7 +399,7 @@ async def _make_bundle_waiting_for_clone(
     cancelled, error or unrequested (a branch wait whose sync was never
     requested, because its publish failed locally; see
     ``_branch_wait_claim``), and with what it waited for (``for``: clone or
-    branch, a missing clone included).
+    branch, a missing or just-starting clone included).
     The 503 or 409 the caller shapes carries ``waited_seconds`` and
     ``client_disconnected``.
     """
