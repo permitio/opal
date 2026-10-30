@@ -525,11 +525,17 @@ async def test_a_client_that_hangs_up_during_a_branch_wait_is_not_reported(
     _script(monkeypatch, miss)
 
     transport = httpx.ASGITransport(app=_app(RecordingPubSub()))
-    async with httpx.AsyncClient(transport=transport, base_url="http://bed") as client:
-        resp = await client.get("/scopes/live/policy")
+    with capture_records() as logs:
+        async with httpx.AsyncClient(
+            transport=transport, base_url="http://bed"
+        ) as client:
+            resp = await client.get("/scopes/live/policy")
 
     assert resp.status_code == status
     assert _waits(emitted) == [{"outcome": "disconnected", "for": "branch"}]
+    assert not [
+        r["message"] for r in logs.emitted if r["level"].name in ("WARNING", "ERROR")
+    ]
     assert not [
         t for t, _ in emitted["event"] if t == "ScopePolicyUnavailable"
     ], "a client that had hung up still produced a 409 event"
@@ -1307,18 +1313,20 @@ async def test_a_pod_without_the_clone_answers_503_once_the_hold_runs_out(
     assert _waits(emitted) == [{"outcome": "timeout", "for": "branch"}]
     # The hold is reported, as on the other two answers.
     [line] = [m["message"] for m in logs.emitted if "is live but" in m["message"]]
-    assert f"after waiting {WAIT:.1f}s" in line
+    assert _waited_figure(line) >= 0.9 * WAIT
 
 
 @pytest.mark.asyncio
 async def test_a_no_clone_hold_whose_clone_lands_without_the_branch_gets_the_409(
-    tmp_path, monkeypatch, clear_fetcher_caches
+    tmp_path, monkeypatch, emitted, clear_fetcher_caches
 ):
     """The sync clones the repository, and the branch is not in it: the answer
-    is the permanent 409 for that, not "clone unavailable".
+    is the permanent 409 for that, not "clone unavailable", at the end of the
+    hold, since a fetch may still bring the branch.
 
     Mutation: polling only the ref keeps the first attempt's NoSuchPathError
-    for the whole hold, and answers 503.
+    for the whole hold, and answers 503; raising at the first miss ends the
+    hold early as `error`.
     """
     monkeypatch.setattr(opal_server_config, "SCOPES_POLICY_CLONE_WAIT_SECONDS", 1.0)
     _, url = _shared_bed(tmp_path)
@@ -1338,6 +1346,17 @@ async def test_a_no_clone_hold_whose_clone_lands_without_the_branch_gets_the_409
         resp = await client.get("/scopes/moved/policy")
 
     assert resp.status_code == 409, resp.text
+    assert _waits(emitted) == [{"outcome": "timeout", "for": "branch"}]
+
+
+def test_a_no_clone_hold_keeps_holding_through_a_half_made_clone(monkeypatch, emitted):
+    """Mutation: leaving InvalidGitRepositoryError out of the poll's catch ends
+    the hold as `error`, with an early 503."""
+    pubsub = RecordingPubSub()
+    _script(monkeypatch, _no_clone, _half_made, _ready)
+
+    assert _client(pubsub).get("/scopes/live/policy").status_code == 200
+    assert _waits(emitted) == [{"outcome": "served", "for": "branch"}]
 
 
 @pytest.mark.asyncio
@@ -1512,21 +1531,21 @@ async def test_a_branch_that_lands_as_the_claim_goes_is_served(monkeypatch, emit
 
     Mutation: checking the claim before the attempt (as before) answers 409.
     """
-
-    class WithdrawnAfterOnePoll(OrderedDict):
-        """The claim is seen by the rider's two hold decisions and by its first
-        poll, then given back (another request's publish failed)."""
-
-        reads = 0
-
-        def get(self, key, default=None):
-            self.reads += 1
-            return super().get(key, default) if self.reads <= 3 else default
-
-    claims = WithdrawnAfterOnePoll()
+    claims = scopes_api._branch_refresh_requested
     # A rider: the sync was requested by another request just now.
     claims["live"] = asyncio.get_running_loop().time()
-    monkeypatch.setattr(scopes_api, "_branch_refresh_requested", claims)
+    real_sleep = asyncio.sleep
+    polls = []
+
+    async def withdrawn_as_the_second_poll_wakes(delay):
+        # Another request's publish failed between the two polls: before
+        # anything the second poll does, wherever the check is.
+        await real_sleep(delay)
+        polls.append(delay)
+        if len(polls) == 2:
+            del claims["live"]
+
+    monkeypatch.setattr(asyncio, "sleep", withdrawn_as_the_second_poll_wakes)
     _script(monkeypatch, _missing, _missing, _ready)
     fetcher = GitPolicyFetcher(Path("/unused"), "live", _scope().policy)
 
@@ -1900,3 +1919,57 @@ def test_a_hold_that_ends_in_an_unclassified_error_reports_its_wait(monkeypatch)
     assert resp.status_code == 503
     [line] = [m["message"] for m in logs.emitted if "is live but" in m["message"]]
     assert _waited_figure(line) >= 0.1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("abandoned", [False, True], ids=["awaited", "abandoned"])
+async def test_a_failed_publish_restores_the_claim_a_request_is_still_riding(
+    monkeypatch, emitted, abandoned
+):
+    """An interval shorter than the wait: request A's sync went out and A is
+    still held for it when B's publish fails. Abandoned is B cancelled during
+    its publish, since a hold of B's own would outlast A's.
+
+    Mutation: deleting the claim instead of restoring the one it replaced ends
+    A `unrequested`; in the abandoned case, so does passing no `previous` to
+    the done callback.
+    """
+    monkeypatch.setattr(
+        opal_server_config, "SCOPES_POLICY_BRANCH_REFRESH_INTERVAL", WAIT / 3
+    )
+    claims = scopes_api._branch_refresh_requested
+    loop = asyncio.get_running_loop()
+    release = asyncio.Event()
+
+    async def publishes():
+        pass
+
+    async def fails_when_released():
+        await release.wait()
+        raise ConnectionError("no local subscriber")
+
+    _script(monkeypatch, _missing)
+    fetcher = GitPolicyFetcher(Path("/unused"), "live", _scope().policy)
+
+    first = _hold(fetcher, publishes)
+    await _until(lambda: _refreshes(emitted) == ["requested"])
+    claimed = claims["live"]
+    await _until(lambda: loop.time() - claimed >= WAIT / 3)
+
+    later = _hold(fetcher, fails_when_released)
+    await _until(lambda: claims["live"] != claimed)
+    if abandoned:
+        later.cancel()
+    release.set()
+    await _until(lambda: "publish_failed" in _refreshes(emitted))
+    assert claims["live"] == claimed
+
+    with pytest.raises(BranchHeadNotFoundError):
+        await first
+    with pytest.raises(
+        asyncio.CancelledError if abandoned else BranchHeadNotFoundError
+    ):
+        await later
+
+    assert _refreshes(emitted) == ["requested", "publish_failed"]
+    assert _waits(emitted) == [{"outcome": "timeout", "for": "branch"}]
