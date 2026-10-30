@@ -245,7 +245,8 @@ class OpalServerConfig(Confi):
         "compares every local and remote ref, which on a clone with tens of "
         "thousands of branches adds seconds per fetch under the lock every scope "
         "on that clone shares (about 2 s on 5.5 s at 61,000 refs). Only "
-        "refs/remotes/<remote>/* are pruned; the scopes' refs/heads/scopes/* stay.",
+        "`refs/remotes/<remote>/*` are pruned; the scopes' "
+        "`refs/heads/scopes/*` stay.",
     )
     SCOPES_GIT_MAX_WORKERS = confi.int(
         "SCOPES_GIT_MAX_WORKERS",
@@ -529,7 +530,8 @@ class OpalServerConfig(Confi):
         "misses of the scope on that worker while its request is younger than the "
         "clone wait are held too, without asking again, until the first hold's "
         "deadline; after that, for the rest of the interval, a miss gets the "
-        "immediate 409 it got before. A request shed at the in-flight cap before "
+        "immediate 409 (503 with no clone) it got before. A request shed at the "
+        "in-flight cap before "
         "it requests the sync requests nothing; a request that has just requested "
         "it is checked against the cap again, and if it is shed then, its request "
         "stands for the rest of the interval. So a branch that really does not "
