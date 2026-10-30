@@ -404,6 +404,10 @@ async def _make_bundle_waiting_for_clone(
         wait = _bounded_clone_wait()
         if wait <= 0 or request_refresh is None:
             raise
+        # Decided before the cap: a miss that would not wait is not shed from
+        # a wait (with the interval off, or after the sync had its chance).
+        if _branch_hold(scope_id, asyncio.get_running_loop().time(), wait) is None:
+            raise
         pending = first_exc
         waiting_for = "branch"
 

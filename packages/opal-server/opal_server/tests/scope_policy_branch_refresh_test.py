@@ -29,13 +29,14 @@ import pygit2
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from git import NoSuchPathError
 from opal_common.monitoring import metrics
 from opal_common.schemas.policy import PolicyBundle
 from opal_common.schemas.policy_source import GitPolicyScopeSource, NoAuthData
 from opal_common.schemas.scopes import Scope
 from opal_common.tests.log_capture import capture_records
 from opal_server import git_fetcher as git_fetcher_module
-from opal_server.config import opal_server_config
+from opal_server.config import OpalServerConfig, opal_server_config
 from opal_server.git_fetcher import (
     BranchHeadNotFoundError,
     CloneNotPopulatedError,
@@ -142,6 +143,10 @@ def _client(pubsub, *scopes):
 
 def _missing():
     raise BranchHeadNotFoundError("Could not find current branch head")
+
+
+def _no_clone():
+    raise NoSuchPathError("/no/such/clone")
 
 
 def _populating():
@@ -363,6 +368,42 @@ def test_a_disabled_interval_keeps_the_immediate_409(monkeypatch, interval):
     assert resp.status_code == 409
     assert len(calls) == 1
     assert not pubsub.syncs()
+
+
+@pytest.mark.parametrize(
+    "miss, status, retry_after",
+    [(_missing, 409, None), (_no_clone, 503, "5")],
+    ids=["missing_branch", "no_clone"],
+)
+def test_with_the_interval_off_a_full_cap_sheds_nothing(
+    monkeypatch, emitted, miss, status, retry_after
+):
+    """The answers and the metrics of a deployment that has not opted in: a
+    miss is not a wait, so the shed count the cap is tuned on does not grow.
+
+    Mutation: deciding only after the cap check counts `shed`.
+    """
+    monkeypatch.setattr(opal_server_config, "SCOPES_POLICY_BRANCH_REFRESH_INTERVAL", 0)
+    monkeypatch.setattr(opal_server_config, "SCOPES_POLICY_CLONE_WAIT_MAX_INFLIGHT", 1)
+    monkeypatch.setattr(scopes_api, "_clone_wait_inflight", 1)
+    pubsub = RecordingPubSub()
+    _script(monkeypatch, miss)
+    try:
+        resp = _client(pubsub).get("/scopes/live/policy")
+    finally:
+        scopes_api._clone_wait_inflight = 0
+
+    assert resp.status_code == status
+    assert resp.headers.get("retry-after") == retry_after
+    assert not pubsub.syncs()
+    assert _waits(emitted) == []
+
+
+def test_the_defaults_are_the_wait_off_and_no_prune():
+    """Read from the declaration, which the fixture's values do not touch: a
+    deployment gets neither without opting in."""
+    assert OpalServerConfig.SCOPES_POLICY_BRANCH_REFRESH_INTERVAL.default == 0.0
+    assert OpalServerConfig.SCOPES_GIT_FETCH_PRUNE.default is False
 
 
 def test_no_clone_wait_means_no_branch_wait_either(monkeypatch):
@@ -1402,14 +1443,14 @@ async def test_a_branch_that_lands_as_the_claim_goes_is_served(monkeypatch, emit
     """
 
     class WithdrawnAfterOnePoll(OrderedDict):
-        """The claim is seen by the rider's hold decision and by its first
+        """The claim is seen by the rider's two hold decisions and by its first
         poll, then given back (another request's publish failed)."""
 
         reads = 0
 
         def get(self, key, default=None):
             self.reads += 1
-            return super().get(key, default) if self.reads <= 2 else default
+            return super().get(key, default) if self.reads <= 3 else default
 
     claims = WithdrawnAfterOnePoll()
     # A rider: the sync was requested by another request just now.
