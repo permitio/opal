@@ -413,7 +413,11 @@ async def _make_bundle_waiting_for_clone(
             first_exc.waited_seconds = 0.0
             raise
         pending: Exception = first_exc
-    except (BranchHeadNotFoundError, NoSuchPathError) as first_exc:
+    except (
+        BranchHeadNotFoundError,
+        NoSuchPathError,
+        InvalidGitRepositoryError,  # a clone just starting; a poll holds for it too
+    ) as first_exc:
         wait = _bounded_clone_wait()
         if wait <= 0 or request_refresh is None:
             raise
@@ -609,6 +613,7 @@ async def _make_bundle_waiting_for_clone(
                 waited=loop.time() - started,
                 exc=redact_url_in_text(repr(exc)),
             )
+            _note_wait(exc, loop.time() - started)
         raise
     finally:
         _clone_wait_inflight -= 1
@@ -629,21 +634,11 @@ def _note_wait(
 ) -> None:
     """Carry the hold on the exception the caller shapes into its 503 or 409.
 
-    Both wait exceptions declare the two attributes, and the route reads
-    them off a missing clone's with a default; anything else passes
-    through untouched.
+    Only the two wait exceptions declare the attributes; the route reads
+    them off any other with a default.
     """
-    if isinstance(
-        exc,
-        (
-            CloneNotPopulatedError,
-            BranchHeadNotFoundError,
-            NoSuchPathError,
-            InvalidGitRepositoryError,
-        ),
-    ):
-        exc.waited_seconds = waited_seconds
-        exc.client_disconnected = client_disconnected
+    exc.waited_seconds = waited_seconds  # type: ignore[attr-defined]
+    exc.client_disconnected = client_disconnected  # type: ignore[attr-defined]
 
 
 def verify_private_key(private_key: str, key_format: EncryptionKeyFormat) -> bool:
@@ -713,6 +708,7 @@ def init_scope_router(
 
         old_source_id = None
         old_clone_path = None
+        created = False
         try:
             old_scope = await scopes.get(scope_in.scope_id)
             if isinstance(old_scope.policy, GitPolicyScopeSource):
@@ -724,7 +720,7 @@ def init_scope_router(
                     )
                 )
         except ScopeNotFoundError:
-            pass  # brand-new scope — nothing to repoint away from
+            created = True  # brand-new scope — nothing to repoint away from
         except Exception as e:
             # An unreadable old record must not block the overwrite that
             # fixes it. Its source_id is unknowable anyway, so no purge can be
@@ -797,7 +793,8 @@ def init_scope_router(
                 },
             )
         except Exception:
-            if repointed:
+            # Not for a create: its retry finds no scope ref, and notifies.
+            if repointed and not created:
                 logger.warning(
                     "Repoint of scope {scope_id} failed before its sync was "
                     "requested. If the record was stored, a retry will not force "

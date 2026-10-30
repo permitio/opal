@@ -20,6 +20,7 @@ like.
 """
 import asyncio
 import datetime
+import re
 from collections import OrderedDict
 from pathlib import Path
 
@@ -29,7 +30,7 @@ import pygit2
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from git import NoSuchPathError
+from git import InvalidGitRepositoryError, NoSuchPathError
 from opal_common.monitoring import metrics
 from opal_common.schemas.policy import PolicyBundle
 from opal_common.schemas.policy_source import GitPolicyScopeSource, NoAuthData
@@ -147,6 +148,10 @@ def _missing():
 
 def _no_clone():
     raise NoSuchPathError("/no/such/clone")
+
+
+def _half_made():
+    raise InvalidGitRepositoryError("/a/clone/just/starting")
 
 
 def _populating():
@@ -1179,6 +1184,10 @@ def test_put_stores_the_record_exactly_as_sent(monkeypatch):
 # --- review round 3: what a hold costs, a missing clone, pruning, claims -----
 
 
+def _waited_figure(line):
+    return float(re.search(r"after waiting (\d+\.\d)s", line)[1])
+
+
 async def _until(condition, timeout=5.0):
     """Polls ``condition`` under a deadline, so a regression fails, not
     hangs."""
@@ -1758,14 +1767,25 @@ async def test_a_default_scope_with_a_wrong_branch_is_an_error_that_names_it(
 
 
 @pytest.mark.parametrize(
-    "fails, repointed",
-    # An unchanged source publishes no purge.
-    [("put", True), ("purge", True), ("sync", True), ("put", False), ("sync", False)],
+    "fails, source",
+    # An unchanged source and a new scope publish no purge.
+    [
+        ("put", "moved"),
+        ("purge", "moved"),
+        ("sync", "moved"),
+        ("put", "same"),
+        ("sync", "same"),
+        ("put", "new"),
+        ("sync", "new"),
+    ],
 )
-def test_a_put_that_loses_the_repoint_flag_says_so(monkeypatch, fails, repointed):
+def test_a_put_that_loses_the_repoint_flag_says_so(monkeypatch, fails, source):
     """The retry cannot tell: it sees old == new. The request that failed can.
+    A create loses nothing a client would notice: its retry finds no scope ref
+    and notifies.
 
-    Mutation: dropping the `except` logs nothing.
+    Mutation: dropping the `except` logs nothing; dropping `not created` logs
+    it for a create.
     """
     monkeypatch.setattr(scopes_api, "verify_private_key_or_throw", lambda s: None)
 
@@ -1783,8 +1803,8 @@ def test_a_put_that_loses_the_repoint_flag_says_so(monkeypatch, fails, repointed
                 raise ConnectionError("the store answered with an error")
 
     old = _scope(url="https://git/a.git")
-    new = _scope(url="https://git/b.git" if repointed else "https://git/a.git")
-    repo = FailingScopes([old])
+    new = _scope(url="https://git/a.git" if source == "same" else "https://git/b.git")
+    repo = FailingScopes([] if source == "new" else [old])
     pubsub = FailingPubSub()
     service = ScopesService(
         base_dir=Path("/unused"), scopes=repo, pubsub_endpoint=pubsub
@@ -1801,7 +1821,7 @@ def test_a_put_that_loses_the_repoint_flag_says_so(monkeypatch, fails, repointed
 
     assert resp.status_code == 500
     warned = [r for r in logs.emitted if r["message"].startswith("Repoint of scope")]
-    assert len(warned) == (1 if repointed else 0)
+    assert len(warned) == (1 if source == "moved" else 0)
 
 
 @pytest.mark.asyncio
@@ -1848,3 +1868,35 @@ async def test_an_abandoned_publish_that_ends_cancelled_gives_its_claim_back(
 
     assert "live" not in scopes_api._branch_refresh_requested
     assert _refreshes(emitted) == ["publish_timeout", "publish_failed"]
+
+
+def test_a_request_that_finds_a_clone_just_starting_is_held(monkeypatch, emitted):
+    """The first attempt agrees with the polls about a half-made clone.
+
+    Mutation: leaving InvalidGitRepositoryError out of the first attempt's
+    catch answers the immediate 503.
+    """
+    pubsub = RecordingPubSub()
+    _script(monkeypatch, _half_made, _ready)
+
+    assert _client(pubsub).get("/scopes/live/policy").status_code == 200
+    assert len(pubsub.syncs()) == 1
+    assert _waits(emitted) == [{"outcome": "served", "for": "branch"}]
+
+
+def test_a_hold_that_ends_in_an_unclassified_error_reports_its_wait(monkeypatch):
+    """Mutation: not carrying the hold in the wait's `except Exception` arm
+    logs "after waiting 0.0s" next to the line that says how long it held."""
+
+    def tree_walk_failed():
+        raise OSError("tree walk failed")
+
+    monkeypatch.setattr(opal_server_config, "SCOPES_POLICY_CLONE_WAIT_SECONDS", 5.0)
+    _script(monkeypatch, *([_populating] * 10 + [tree_walk_failed]))
+
+    with capture_records() as logs:
+        resp = _client(RecordingPubSub()).get("/scopes/live/policy")
+
+    assert resp.status_code == 503
+    [line] = [m["message"] for m in logs.emitted if "is live but" in m["message"]]
+    assert _waited_figure(line) >= 0.1
