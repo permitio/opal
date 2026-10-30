@@ -1755,3 +1755,50 @@ async def test_a_default_scope_with_a_wrong_branch_is_an_error_that_names_it(
     assert resp.headers["retry-after"] == "5"
     [error] = [r["message"] for r in logs.emitted if r["level"].name == "ERROR"]
     assert "origin/no-such-branch" in error
+
+
+@pytest.mark.parametrize(
+    "fails, repointed",
+    # An unchanged source publishes no purge.
+    [("put", True), ("purge", True), ("sync", True), ("put", False), ("sync", False)],
+)
+def test_a_put_that_loses_the_repoint_flag_says_so(monkeypatch, fails, repointed):
+    """The retry cannot tell: it sees old == new. The request that failed can.
+
+    Mutation: dropping the `except` logs nothing.
+    """
+    monkeypatch.setattr(scopes_api, "verify_private_key_or_throw", lambda s: None)
+
+    class FailingPubSub(RecordingPubSub):
+        async def publish(self, topics, data=None):
+            purge = topics == [opal_server_config.SCOPES_PURGE_CHANNEL]
+            if fails == ("purge" if purge else "sync"):
+                raise ConnectionError("no local subscriber")
+            await super().publish(topics, data)
+
+    class FailingScopes(FakeScopeRepository):
+        async def put(self, scope):
+            await super().put(scope)
+            if fails == "put":
+                raise ConnectionError("the store answered with an error")
+
+    old = _scope(url="https://git/a.git")
+    new = _scope(url="https://git/b.git" if repointed else "https://git/a.git")
+    repo = FailingScopes([old])
+    pubsub = FailingPubSub()
+    service = ScopesService(
+        base_dir=Path("/unused"), scopes=repo, pubsub_endpoint=pubsub
+    )
+    app = FastAPI()
+    app.include_router(
+        init_scope_router(repo, FakeAuthenticator(), pubsub, service), prefix="/scopes"
+    )
+
+    with capture_records() as logs:
+        resp = TestClient(app, raise_server_exceptions=False).put(
+            "/scopes", json=new.model_dump()
+        )
+
+    assert resp.status_code == 500
+    warned = [r for r in logs.emitted if r["message"].startswith("Repoint of scope")]
+    assert len(warned) == (1 if repointed else 0)

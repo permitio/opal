@@ -730,58 +730,68 @@ def init_scope_router(
             if isinstance(scope_in.policy, GitPolicyScopeSource)
             else None
         )
-        try:
-            await scopes.put(scope_in)
-        finally:
-            # The repoint purge must stay reachable even when put() raises an
-            # ambiguous outcome (committed server-side, error surfaced to the
-            # client): a retry would see old_source_id == new_source_id
-            # already (the store was updated) and never re-trigger the purge,
-            # orphaning the old source permanently. Same channel/handlers as
-            # delete — over-publishing self-heals, since the leader
-            # sibling-checks and a source still shared by another scope
-            # survives.
-            if old_source_id is not None and old_source_id != new_source_id:
-                await pubsub_endpoint.publish(
-                    [opal_server_config.SCOPES_PURGE_CHANNEL],
-                    ScopePurgeCommand(
-                        source_id=old_source_id,
-                        clone_path=old_clone_path,
-                        scope_id=scope_in.scope_id,
-                        reason="repoint",
-                    ).model_dump(),
-                )
-
-        force_fetch_str = " (force fetch)" if force_fetch else ""
-        logger.info(f"Sync scope: {scope_in.scope_id}{force_fetch_str}")
-
-        # All server replicas (leaders) should sync the scope. A repoint (the
-        # source changed, or there was no readable previous record to compare
-        # with) also tells their syncs to notify the scope's clients whatever
-        # the clone's scope ref says: a clone of a repository the scope used
-        # before still holds the ref it had then (a repoint leaves the old
-        # clone on disk), and when the branch head equals it the sync would
-        # notify nobody, leaving a client that fetched while the scope pointed
-        # elsewhere on that policy. A repoint also forces the fetch: that old
-        # clone may not have been fetched since, and an update-all for its
-        # stale head would move every client back to an older policy.
-        #
-        # Unlike the purge above, the flag is not published from the finally,
-        # so it is lost when put() stored the record and then raised: the
-        # retry sees old == new. A server without this change never sets it.
-        # Either way the sync notifies only when the head differs from the
-        # clone's scope ref, as before, so don't repoint scopes while servers
-        # are mid-rollout, and a retried repoint is not guaranteed to tell
-        # clients whose head did not move.
         repointed = old_source_id != new_source_id
-        await pubsub_endpoint.publish(
-            opal_server_config.POLICY_REPO_WEBHOOK_TOPIC,
-            {
-                "scope_id": scope_in.scope_id,
-                "force_fetch": force_fetch or repointed,
-                "repointed": repointed,
-            },
-        )
+        try:
+            try:
+                await scopes.put(scope_in)
+            finally:
+                # The repoint purge must stay reachable even when put() raises an
+                # ambiguous outcome (committed server-side, error surfaced to the
+                # client): a retry would see old_source_id == new_source_id
+                # already (the store was updated) and never re-trigger the purge,
+                # orphaning the old source permanently. Same channel/handlers as
+                # delete — over-publishing self-heals, since the leader
+                # sibling-checks and a source still shared by another scope
+                # survives.
+                if old_source_id is not None and old_source_id != new_source_id:
+                    await pubsub_endpoint.publish(
+                        [opal_server_config.SCOPES_PURGE_CHANNEL],
+                        ScopePurgeCommand(
+                            source_id=old_source_id,
+                            clone_path=old_clone_path,
+                            scope_id=scope_in.scope_id,
+                            reason="repoint",
+                        ).model_dump(),
+                    )
+
+            force_fetch_str = " (force fetch)" if force_fetch else ""
+            logger.info(f"Sync scope: {scope_in.scope_id}{force_fetch_str}")
+
+            # All server replicas (leaders) should sync the scope. A repoint (the
+            # source changed, or there was no readable previous record to compare
+            # with) also tells their syncs to notify the scope's clients whatever
+            # the clone's scope ref says: a clone of a repository the scope used
+            # before still holds the ref it had then (a repoint leaves the old
+            # clone on disk), and when the branch head equals it the sync would
+            # notify nobody, leaving a client that fetched while the scope pointed
+            # elsewhere on that policy. A repoint also forces the fetch: that old
+            # clone may not have been fetched since, and an update-all for its
+            # stale head would move every client back to an older policy.
+            #
+            # The flag is lost when put() stored the record and then raised, or a
+            # publish raised after it: the retry sees old == new. The request that
+            # loses it logs so below. A server without this change never sets it.
+            # Either way the sync notifies only when the head differs from the
+            # clone's scope ref, as before, so don't repoint scopes while servers
+            # are mid-rollout, and a retried repoint is not guaranteed to tell
+            # clients whose head did not move.
+            await pubsub_endpoint.publish(
+                opal_server_config.POLICY_REPO_WEBHOOK_TOPIC,
+                {
+                    "scope_id": scope_in.scope_id,
+                    "force_fetch": force_fetch or repointed,
+                    "repointed": repointed,
+                },
+            )
+        except Exception:
+            if repointed:
+                logger.warning(
+                    "Repoint of scope {scope_id} failed before its sync was "
+                    "requested. If the record was stored, a retry will not force "
+                    "the notify: clients whose head did not move are not told",
+                    scope_id=scope_in.scope_id,
+                )
+            raise
 
         return Response(status_code=status.HTTP_201_CREATED)
 
